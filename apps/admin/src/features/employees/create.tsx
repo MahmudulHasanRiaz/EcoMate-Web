@@ -17,11 +17,13 @@ import { toast } from 'sonner'
 import { Loader2, Search, ArrowLeft } from 'lucide-react'
 import { useDesignationsQuery } from '@/features/designations/hooks'
 import { useAccessPresetsQuery } from '@/features/access-presets/hooks'
+import { useDepartmentsQuery } from '@/features/departments/hooks'
 
 export default function CreateEmployeePage() {
   const navigate = useNavigate()
   const { data: designations } = useDesignationsQuery()
   const { data: presets } = useAccessPresetsQuery(1, '')
+  const { data: departments } = useDepartmentsQuery()
 
   const [step, setStep] = useState<'search' | 'form'>('search')
   const [searchQuery, setSearchQuery] = useState('')
@@ -146,6 +148,16 @@ export default function CreateEmployeePage() {
                     onValueChange={(v) => setFormData({ ...formData, designationId: v })}
                     placeholder='Select designation'
                     items={(designations || []).map((d: any) => ({ label: d.name, value: d.id }))}
+                    isControlled
+                  />
+                </div>
+                <div className='grid gap-2'>
+                  <Label>Department</Label>
+                  <SelectDropdown
+                    defaultValue={formData.departmentId}
+                    onValueChange={(v) => setFormData({ ...formData, departmentId: v })}
+                    placeholder='Select department'
+                    items={(departments?.data || []).map((d: any) => ({ label: d.name, value: d.id }))}
                     isControlled
                   />
                 </div>

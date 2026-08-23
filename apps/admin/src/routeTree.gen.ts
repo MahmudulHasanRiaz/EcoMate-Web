@@ -92,6 +92,7 @@ import { Route as AuthenticatedOpInventoryBinLocationsRouteImport } from './rout
 import { Route as AuthenticatedOpInventoryAdjustmentsRouteImport } from './routes/_authenticated/op/inventory/adjustments'
 import { Route as AuthenticatedOpEmployeesPresetsRouteImport } from './routes/_authenticated/op/employees/presets'
 import { Route as AuthenticatedOpEmployeesDesignationsRouteImport } from './routes/_authenticated/op/employees/designations'
+import { Route as AuthenticatedOpEmployeesDepartmentsRouteImport } from './routes/_authenticated/op/employees/departments'
 import { Route as AuthenticatedOpEmployeesCreateRouteImport } from './routes/_authenticated/op/employees/create'
 import { Route as AuthenticatedOpCustomersIdRouteImport } from './routes/_authenticated/op/customers/$id'
 import { Route as AuthenticatedOpAccountingReportsRouteImport } from './routes/_authenticated/op/accounting/reports'
@@ -620,6 +621,12 @@ const AuthenticatedOpEmployeesDesignationsRoute =
     path: '/op/employees/designations',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOpEmployeesDepartmentsRoute =
+  AuthenticatedOpEmployeesDepartmentsRouteImport.update({
+    id: '/op/employees/departments',
+    path: '/op/employees/departments',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpEmployeesCreateRoute =
   AuthenticatedOpEmployeesCreateRouteImport.update({
     id: '/op/employees/create',
@@ -938,6 +945,7 @@ export interface FileRoutesByFullPath {
   '/op/accounting/reports': typeof AuthenticatedOpAccountingReportsRoute
   '/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/op/employees/create': typeof AuthenticatedOpEmployeesCreateRoute
+  '/op/employees/departments': typeof AuthenticatedOpEmployeesDepartmentsRoute
   '/op/employees/designations': typeof AuthenticatedOpEmployeesDesignationsRoute
   '/op/employees/presets': typeof AuthenticatedOpEmployeesPresetsRoute
   '/op/inventory/adjustments': typeof AuthenticatedOpInventoryAdjustmentsRoute
@@ -1070,6 +1078,7 @@ export interface FileRoutesByTo {
   '/op/accounting/reports': typeof AuthenticatedOpAccountingReportsRoute
   '/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/op/employees/create': typeof AuthenticatedOpEmployeesCreateRoute
+  '/op/employees/departments': typeof AuthenticatedOpEmployeesDepartmentsRoute
   '/op/employees/designations': typeof AuthenticatedOpEmployeesDesignationsRoute
   '/op/employees/presets': typeof AuthenticatedOpEmployeesPresetsRoute
   '/op/inventory/adjustments': typeof AuthenticatedOpInventoryAdjustmentsRoute
@@ -1204,6 +1213,7 @@ export interface FileRoutesById {
   '/_authenticated/op/accounting/reports': typeof AuthenticatedOpAccountingReportsRoute
   '/_authenticated/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/_authenticated/op/employees/create': typeof AuthenticatedOpEmployeesCreateRoute
+  '/_authenticated/op/employees/departments': typeof AuthenticatedOpEmployeesDepartmentsRoute
   '/_authenticated/op/employees/designations': typeof AuthenticatedOpEmployeesDesignationsRoute
   '/_authenticated/op/employees/presets': typeof AuthenticatedOpEmployeesPresetsRoute
   '/_authenticated/op/inventory/adjustments': typeof AuthenticatedOpInventoryAdjustmentsRoute
@@ -1338,6 +1348,7 @@ export interface FileRouteTypes {
     | '/op/accounting/reports'
     | '/op/customers/$id'
     | '/op/employees/create'
+    | '/op/employees/departments'
     | '/op/employees/designations'
     | '/op/employees/presets'
     | '/op/inventory/adjustments'
@@ -1470,6 +1481,7 @@ export interface FileRouteTypes {
     | '/op/accounting/reports'
     | '/op/customers/$id'
     | '/op/employees/create'
+    | '/op/employees/departments'
     | '/op/employees/designations'
     | '/op/employees/presets'
     | '/op/inventory/adjustments'
@@ -1603,6 +1615,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/accounting/reports'
     | '/_authenticated/op/customers/$id'
     | '/_authenticated/op/employees/create'
+    | '/_authenticated/op/employees/departments'
     | '/_authenticated/op/employees/designations'
     | '/_authenticated/op/employees/presets'
     | '/_authenticated/op/inventory/adjustments'
@@ -2305,6 +2318,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpEmployeesDesignationsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/op/employees/departments': {
+      id: '/_authenticated/op/employees/departments'
+      path: '/op/employees/departments'
+      fullPath: '/op/employees/departments'
+      preLoaderRoute: typeof AuthenticatedOpEmployeesDepartmentsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/employees/create': {
       id: '/_authenticated/op/employees/create'
       path: '/op/employees/create'
@@ -2767,6 +2787,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpAccountingReportsRoute: typeof AuthenticatedOpAccountingReportsRoute
   AuthenticatedOpCustomersIdRoute: typeof AuthenticatedOpCustomersIdRoute
   AuthenticatedOpEmployeesCreateRoute: typeof AuthenticatedOpEmployeesCreateRoute
+  AuthenticatedOpEmployeesDepartmentsRoute: typeof AuthenticatedOpEmployeesDepartmentsRoute
   AuthenticatedOpEmployeesDesignationsRoute: typeof AuthenticatedOpEmployeesDesignationsRoute
   AuthenticatedOpEmployeesPresetsRoute: typeof AuthenticatedOpEmployeesPresetsRoute
   AuthenticatedOpInventoryAdjustmentsRoute: typeof AuthenticatedOpInventoryAdjustmentsRoute
@@ -2867,6 +2888,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpAccountingReportsRoute: AuthenticatedOpAccountingReportsRoute,
   AuthenticatedOpCustomersIdRoute: AuthenticatedOpCustomersIdRoute,
   AuthenticatedOpEmployeesCreateRoute: AuthenticatedOpEmployeesCreateRoute,
+  AuthenticatedOpEmployeesDepartmentsRoute:
+    AuthenticatedOpEmployeesDepartmentsRoute,
   AuthenticatedOpEmployeesDesignationsRoute:
     AuthenticatedOpEmployeesDesignationsRoute,
   AuthenticatedOpEmployeesPresetsRoute: AuthenticatedOpEmployeesPresetsRoute,

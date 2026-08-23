@@ -165,14 +165,16 @@ export class PayrollService {
     });
   }
 
-  async findAllPayslips(page = 1, perPage = 20) {
+  async findAllPayslips(page = 1, perPage = 20, periodKey?: string) {
     page = Math.max(1, page);
     perPage = Math.max(1, Math.min(100, perPage));
+    const where = periodKey ? { periodKey } : {};
     const [data, total] = await Promise.all([
       this.prisma.payslip.findMany({
         skip: (page - 1) * perPage,
         take: perPage,
         orderBy: { createdAt: 'desc' },
+        where,
         include: {
           employee: {
             select: {
@@ -183,7 +185,7 @@ export class PayrollService {
           },
         },
       }),
-      this.prisma.payslip.count(),
+      this.prisma.payslip.count({ where }),
     ]);
 
     return {

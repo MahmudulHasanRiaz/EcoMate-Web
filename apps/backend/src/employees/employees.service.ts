@@ -4,10 +4,20 @@ import {
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
+import { EmployeeStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { baPrisma } from '../better-auth/prisma';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
+
+const TERMINAL_STATUSES: EmployeeStatus[] = ['terminated', 'resigned'];
+
+const EMPLOYEE_STATUS_TRANSITIONS: Record<EmployeeStatus, EmployeeStatus[]> = {
+  active: ['inactive', 'terminated', 'resigned'],
+  inactive: ['active', 'terminated', 'resigned'],
+  terminated: [],
+  resigned: [],
+};
 
 @Injectable()
 export class EmployeesService {
@@ -114,7 +124,9 @@ export class EmployeesService {
           designationId: dto.designationId,
           accessPresetId: dto.accessPresetId,
           employmentType: dto.employmentType || 'full_time',
+          status: dto.status,
           joiningDate: new Date(dto.joiningDate),
+          exitDate: dto.exitDate ? new Date(dto.exitDate) : undefined,
           salary: dto.salary ?? undefined,
           bankAccountNo: dto.bankAccountNo,
           bankName: dto.bankName,
@@ -138,17 +150,63 @@ export class EmployeesService {
         data: { role: 'employee' },
       });
 
+      const profile = await tx.userProfile.findUnique({
+        where: { betterAuthUserId: dto.betterAuthUserId },
+        select: { id: true, role: true },
+      });
+      if (profile && profile.role === 'customer') {
+        await tx.userProfile.update({
+          where: { id: profile.id },
+          data: { role: 'employee' },
+        });
+      }
+
       return employee;
     });
   }
 
   async update(id: string, dto: UpdateEmployeeDto) {
-    await this.findOne(id);
+    const current = await this.findOne(id);
+
+    if (dto.departmentId !== undefined) {
+      const dept = await this.prisma.department.findUnique({
+        where: { id: dto.departmentId },
+      });
+      if (!dept) throw new NotFoundException('Department not found');
+    }
+    if (dto.designationId !== undefined) {
+      const desig = await this.prisma.designation.findUnique({
+        where: { id: dto.designationId },
+      });
+      if (!desig) throw new NotFoundException('Designation not found');
+    }
+    if (dto.accessPresetId !== undefined) {
+      const preset = await this.prisma.accessPreset.findUnique({
+        where: { id: dto.accessPresetId },
+      });
+      if (!preset) throw new NotFoundException('Access preset not found');
+    }
+
+    if (dto.status && dto.status !== current.status) {
+      const allowed = EMPLOYEE_STATUS_TRANSITIONS[current.status] ?? [];
+      if (!allowed.includes(dto.status)) {
+        throw new BadRequestException(
+          `Invalid status transition from ${current.status} to ${dto.status}`,
+        );
+      }
+      if (TERMINAL_STATUSES.includes(dto.status) && !dto.exitDate) {
+        throw new BadRequestException(
+          `exitDate is required when status is ${dto.status}`,
+        );
+      }
+    }
+
     return this.prisma.employee.update({
       where: { id },
       data: {
         ...dto,
         joiningDate: dto.joiningDate ? new Date(dto.joiningDate) : undefined,
+        exitDate: dto.exitDate ? new Date(dto.exitDate) : undefined,
       },
       include: {
         department: { select: { id: true, name: true, slug: true } },
@@ -165,9 +223,12 @@ export class EmployeesService {
 
   async remove(id: string) {
     const emp = await this.findOne(id);
+    const profile = await this.prisma.userProfile.findUnique({
+      where: { betterAuthUserId: emp.betterAuthUserId },
+    });
     await baPrisma.betterAuthUser.update({
       where: { id: emp.betterAuthUserId },
-      data: { role: 'admin' },
+      data: { role: profile?.role ?? 'customer' },
     });
     return this.prisma.employee.delete({ where: { id } });
   }

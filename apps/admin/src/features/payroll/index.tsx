@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Loader2, Plus, CheckCircle, FileText } from 'lucide-react'
+import { Loader2, Plus, CheckCircle, FileText, X } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -29,10 +29,18 @@ export function Payroll() {
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
   const [perPage] = useState(20)
+  const [periodFilter, setPeriodFilter] = useState('')
 
   const { data, isLoading } = useQuery({
-    queryKey: ['payroll-payslips', page],
-    queryFn: () => payrollApi.listPayslips({ page, perPage }).then(r => r.data),
+    queryKey: ['payroll-payslips', page, periodFilter],
+    queryFn: () =>
+      payrollApi
+        .listPayslips({
+          page,
+          perPage,
+          periodKey: periodFilter || undefined,
+        })
+        .then(r => r.data),
   })
 
   const payslips: PayslipResponse[] = Array.isArray(data?.data) ? data.data : []
@@ -64,8 +72,35 @@ export function Payroll() {
         ) : (
           <Card>
             <CardHeader>
-              <CardTitle>Payslips</CardTitle>
-              <CardDescription>All generated payslips across employees.</CardDescription>
+              <div className='flex flex-wrap items-center justify-between gap-4'>
+                <div>
+                  <CardTitle>Payslips</CardTitle>
+                  <CardDescription>All generated payslips across employees.</CardDescription>
+                </div>
+                <div className='flex items-center gap-2'>
+                  <Input
+                    type='month'
+                    value={periodFilter}
+                    onChange={(e) => {
+                      setPeriodFilter(e.target.value)
+                      setPage(1)
+                    }}
+                    className='w-48'
+                    aria-label='Filter by payroll period'
+                  />
+                  {periodFilter && (
+                    <Button
+                      variant='ghost'
+                      size='icon'
+                      className='h-9 w-9 shrink-0'
+                      onClick={() => setPeriodFilter('')}
+                      title='Clear period filter'
+                    >
+                      <X className='h-4 w-4' />
+                    </Button>
+                  )}
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               {payslips.length === 0 ? (
@@ -86,7 +121,9 @@ export function Payroll() {
                   <TableBody>
                     {payslips.map(ps => (
                       <TableRow key={ps.id}>
-                        <TableCell className='font-medium'>{ps.employee?.firstName} {ps.employee?.lastName}</TableCell>
+                        <TableCell className='font-medium'>
+  {ps.employee ? `${ps.employee.employeeId} · ${ps.employee.betterAuthUser?.name || '—'}` : '—'}
+</TableCell>
                         <TableCell className='text-sm text-muted-foreground'>
                           {new Date(ps.periodStart).toLocaleDateString()} - {new Date(ps.periodEnd).toLocaleDateString()}
                         </TableCell>

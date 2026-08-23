@@ -10,11 +10,16 @@ jest.mock('../../better-auth/prisma', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { EmployeeStatus, EmploymentType } from '@prisma/client';
 import { EmployeesService } from '../employees.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateEmployeeDto } from '../dto/create-employee.dto';
+import { baPrisma } from '../../better-auth/prisma';
 
 describe('EmployeesService', () => {
   let service: EmployeesService;
@@ -40,7 +45,7 @@ describe('EmployeesService', () => {
   };
   const mockEmployee = {
     id: 'emp-1',
-    userId: null,
+    betterAuthUserId: 'ba-user-test',
     employeeId: 'EMP-250624-0001',
     firstName: 'John',
     lastName: 'Doe',
@@ -81,6 +86,18 @@ describe('EmployeesService', () => {
       },
       designation: {
         findUnique: jest.fn().mockResolvedValue(mockDesignation),
+      },
+      accessPreset: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'preset-1',
+          name: 'Staff',
+        }),
+      },
+      userProfile: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: 'profile-1', role: 'customer' }),
+        update: jest.fn().mockResolvedValue({}),
       },
       orderCounter: {
         upsert: jest.fn().mockResolvedValue({ date: '250624', seq: 1 }),
@@ -141,6 +158,79 @@ describe('EmployeesService', () => {
       };
       await expect(service.create(dto)).rejects.toThrow(ConflictException);
     });
+
+    it('should promote customer profile to employee role on create', async () => {
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+        id: 'profile-1',
+        role: 'customer',
+      });
+      const dto: CreateEmployeeDto = {
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+      };
+      await service.create(dto);
+      expect(prisma.userProfile.update).toHaveBeenCalledWith({
+        where: { id: 'profile-1' },
+        data: { role: 'employee' },
+      });
+    });
+
+    it('should not downgrade manager profile on create', async () => {
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+        id: 'profile-1',
+        role: 'manager',
+      });
+      const dto: CreateEmployeeDto = {
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+      };
+      await service.create(dto);
+      expect(prisma.userProfile.update).not.toHaveBeenCalled();
+    });
+
+    it('should not change admin profile on create', async () => {
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+        id: 'profile-1',
+        role: 'admin',
+      });
+      const dto: CreateEmployeeDto = {
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+      };
+      await service.create(dto);
+      expect(prisma.userProfile.update).not.toHaveBeenCalled();
+    });
+
+    it('should not promote already-employee profile on create', async () => {
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+        id: 'profile-1',
+        role: 'employee',
+      });
+      const dto: CreateEmployeeDto = {
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+      };
+      await service.create(dto);
+      expect(prisma.userProfile.update).not.toHaveBeenCalled();
+    });
+
+    it('should persist status and exitDate on create when provided', async () => {
+      const dto: CreateEmployeeDto = {
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+        status: 'inactive',
+        exitDate: '2025-06-01',
+      };
+      await service.create(dto);
+      expect(prisma.employee.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'inactive',
+            exitDate: expect.any(Date),
+          }),
+        }),
+      );
+    });
   });
 
   describe('findAll', () => {
@@ -181,6 +271,123 @@ describe('EmployeesService', () => {
         service.update('nonexistent', { bankName: 'Test Bank' }),
       ).rejects.toThrow(NotFoundException);
     });
+
+    it('should persist status on update', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await service.update('emp-1', { status: 'inactive' });
+      expect(prisma.employee.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'inactive' }),
+        }),
+      );
+    });
+
+    it('should persist exitDate on update', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await service.update('emp-1', { exitDate: '2025-06-01' });
+      expect(prisma.employee.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ exitDate: expect.any(Date) }),
+        }),
+      );
+    });
+
+    it('should allow active→inactive transition', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await service.update('emp-1', { status: 'inactive' });
+      expect(prisma.employee.update).toHaveBeenCalled();
+    });
+
+    it('should allow inactive→active transition', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+        ...mockEmployee,
+        status: EmployeeStatus.inactive,
+      });
+      await service.update('emp-1', { status: 'active' });
+      expect(prisma.employee.update).toHaveBeenCalled();
+    });
+
+    it('should allow active→terminated when exitDate is provided', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await service.update('emp-1', {
+        status: 'terminated',
+        exitDate: '2025-06-01',
+      });
+      expect(prisma.employee.update).toHaveBeenCalled();
+    });
+
+    it('should allow active→resigned when exitDate is provided', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await service.update('emp-1', {
+        status: 'resigned',
+        exitDate: '2025-06-01',
+      });
+      expect(prisma.employee.update).toHaveBeenCalled();
+    });
+
+    it('should skip transition check when status is unchanged', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await service.update('emp-1', { status: 'active' });
+      expect(prisma.employee.update).toHaveBeenCalled();
+    });
+
+    it('should throw on invalid transition from terminated', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+        ...mockEmployee,
+        status: EmployeeStatus.terminated,
+      });
+      await expect(
+        service.update('emp-1', { status: 'active' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw on invalid transition from resigned', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+        ...mockEmployee,
+        status: EmployeeStatus.resigned,
+      });
+      await expect(
+        service.update('emp-1', { status: 'inactive' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw when terminated without exitDate', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await expect(
+        service.update('emp-1', { status: 'terminated' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw when resigned without exitDate', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await expect(
+        service.update('emp-1', { status: 'resigned' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw when department is not found', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.department.findUnique as jest.Mock).mockResolvedValue(null);
+      await expect(
+        service.update('emp-1', { departmentId: 'unknown-dept' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw when designation is not found', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.designation.findUnique as jest.Mock).mockResolvedValue(null);
+      await expect(
+        service.update('emp-1', { designationId: 'unknown-desig' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw when access preset is not found', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.accessPreset.findUnique as jest.Mock).mockResolvedValue(null);
+      await expect(
+        service.update('emp-1', { accessPresetId: 'unknown-preset' }),
+      ).rejects.toThrow(NotFoundException);
+    });
   });
 
   describe('remove', () => {
@@ -191,6 +398,29 @@ describe('EmployeesService', () => {
       expect(prisma.employee.delete).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'emp-1' } }),
       );
+    });
+
+    it('should reset BA role to the UserProfile role', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+        id: 'profile-1',
+        role: 'manager',
+      });
+      await service.remove('emp-1');
+      expect(baPrisma.betterAuthUser.update).toHaveBeenCalledWith({
+        where: { id: 'ba-user-test' },
+        data: { role: 'manager' },
+      });
+    });
+
+    it('should reset BA role to customer when no profile exists', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(null);
+      await service.remove('emp-1');
+      expect(baPrisma.betterAuthUser.update).toHaveBeenCalledWith({
+        where: { id: 'ba-user-test' },
+        data: { role: 'customer' },
+      });
     });
   });
 });

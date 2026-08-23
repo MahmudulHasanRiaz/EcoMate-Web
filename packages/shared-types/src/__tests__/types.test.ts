@@ -4,14 +4,24 @@ import { ClientConfig } from '../client-config';
 
 describe('shared-types', () => {
   describe('FEATURES', () => {
-    it('has 77 features', () => {
-      expect(Object.keys(FEATURES).length).toBe(77);
+    it('has 80 features', () => {
+      expect(Object.keys(FEATURES).length).toBe(80);
     });
 
     it('has storefront and admin features', () => {
       expect(FEATURES).toHaveProperty('storefront');
       expect(FEATURES).toHaveProperty('admin_products');
       expect(FEATURES).toHaveProperty('admin_accounting');
+    });
+
+    it('registers HR umbrella + staff-user features (P0-I)', () => {
+      expect(FEATURES).toHaveProperty('admin_hr');
+      expect(FEATURES['admin_hr'].enabled).toBe(true);
+      expect(FEATURES['admin_hr'].dependencies).toBeUndefined();
+      expect(FEATURES).toHaveProperty('admin_staff_users');
+      expect(FEATURES['admin_staff_users'].enabled).toBe(true);
+      expect(FEATURES).toHaveProperty('admin_access_presets');
+      expect(FEATURES['admin_access_presets'].enabled).toBe(true);
     });
 
     it('storefront has no dependencies', () => {

@@ -67,6 +67,8 @@ export const FEATURES: Record<string, FeatureFlag> = {
   admin_settings: { key: 'admin_settings', enabled: true },
   admin_media: { key: 'admin_media', enabled: true },
   admin_users: { key: 'admin_users', enabled: true },
+  admin_staff_users: { key: 'admin_staff_users', enabled: true },
+  admin_access_presets: { key: 'admin_access_presets', enabled: true },
   admin_print: { key: 'admin_print', enabled: true, dependencies: ['admin_orders'] },
   admin_coupons: { key: 'admin_coupons', enabled: true, dependencies: ['admin_products', 'admin_orders'] },
 
@@ -89,10 +91,11 @@ export const FEATURES: Record<string, FeatureFlag> = {
   admin_accounting: { key: 'admin_accounting', enabled: true },
   admin_financial_periods: { key: 'admin_financial_periods', enabled: true, dependencies: ['admin_accounting'] },
 
-  // ── I: HR & Operations (3) ──
+  // ── I: HR & Operations (4) ──
   admin_payroll: { key: 'admin_payroll', enabled: true },
   admin_employees: { key: 'admin_employees', enabled: true },
   admin_tasks: { key: 'admin_tasks', enabled: true },
+  admin_hr: { key: 'admin_hr', enabled: true },
 
   // ── J: Marketing & Content (6) ──
   admin_email_campaigns: { key: 'admin_email_campaigns', enabled: true, dependencies: ['admin_customers'] },

@@ -42,10 +42,12 @@ export class PayrollController {
   findAllPayslips(
     @Query('page') page?: string,
     @Query('perPage') perPage?: string,
+    @Query('periodKey') periodKey?: string,
   ) {
     return this.payrollService.findAllPayslips(
       page ? parseInt(page) : 1,
       perPage ? parseInt(perPage) : 20,
+      periodKey,
     );
   }
 

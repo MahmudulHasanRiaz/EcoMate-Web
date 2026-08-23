@@ -9,6 +9,10 @@ import { fromNodeHeaders } from 'better-auth/node';
 import { auth } from '../../better-auth/auth.config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import {
+  computeEffectivePermissions,
+} from '../permissions/effective-permissions';
+import { getAllPermissions } from '../permissions/registry';
 
 @Injectable()
 export class DualModeAuthGuard {
@@ -44,7 +48,11 @@ export class DualModeAuthGuard {
           if (user.lockoutUntil && user.lockoutUntil > new Date()) {
             throw new UnauthorizedException('Account is temporarily locked');
           }
-          request.user = { ...user, userId: user.id };
+          request.user = {
+            ...user,
+            userId: user.id,
+            permissions: await this.loadPermissionsFor(user),
+          };
           return true;
         }
       } catch {
@@ -144,5 +152,27 @@ export class DualModeAuthGuard {
 
     // 401 so admin panel auto-refresh can detect and re-try with new token
     throw new UnauthorizedException('Authentication required');
+  }
+
+  private async loadPermissionsFor(user: any): Promise<string[]> {
+    const role = user.role || 'customer';
+    if (role === 'superadmin' || role === 'admin') {
+      return getAllPermissions();
+    }
+    if (role === 'customer' || !user.betterAuthUserId) {
+      return [];
+    }
+    const baUser = await this.prisma.betterAuthUser.findUnique({
+      where: { id: user.betterAuthUserId },
+      select: {
+        override_permissions: true,
+        employee: { include: { accessPreset: true } },
+      },
+    });
+    return computeEffectivePermissions({
+      role,
+      employeeLink: baUser?.employee ?? null,
+      overridePermissions: baUser?.override_permissions,
+    });
   }
 }

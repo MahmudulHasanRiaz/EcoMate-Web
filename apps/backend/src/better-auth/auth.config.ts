@@ -3,7 +3,7 @@ import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { customSession } from 'better-auth/plugins';
 import { baPrisma } from './prisma';
-import { getAllPermissions } from '../common/permissions/registry';
+import { computeEffectivePermissions } from '../common/permissions/effective-permissions';
 
 const secret = process.env.BETTER_AUTH_SECRET;
 if (!secret) {
@@ -69,24 +69,23 @@ export const auth = betterAuth({
         const overridePerms: string[] =
           (user as any).override_permissions || [];
 
-        if (role === 'employee') {
+        let employeeLink: { accessPreset?: { permissions: string[] } | null } | null = null;
+        if (role !== 'admin' && role !== 'superadmin' && role !== 'customer') {
           const emp = await baPrisma.employee.findUnique({
             where: { betterAuthUserId: user.id },
             include: { accessPreset: true },
           });
           if (emp) {
             employeeId = emp.id;
-            if (emp.accessPreset) {
-              permissions = [...emp.accessPreset.permissions];
-            }
-            if (overridePerms.length > 0) {
-              permissions = [...new Set([...permissions, ...overridePerms])];
-            }
+            employeeLink = emp;
           }
-        } else if (role === 'admin' || role === 'superadmin') {
-          permissions =
-            overridePerms.length > 0 ? overridePerms : getAllPermissions();
         }
+
+        permissions = computeEffectivePermissions({
+          role,
+          employeeLink,
+          overridePermissions: overridePerms,
+        });
 
         if (role === 'customer') {
           const profile = await baPrisma.customerProfile.findUnique({

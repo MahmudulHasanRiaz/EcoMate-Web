@@ -4,6 +4,7 @@ import {
   MinLength,
   IsOptional,
   IsEnum,
+  IsArray,
 } from 'class-validator';
 import { UserRole, UserStatus } from '@prisma/client';
 
@@ -44,4 +45,9 @@ export class UpdateUserDto {
   @IsString()
   @MinLength(6)
   password?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  override_permissions?: string[];
 }

@@ -7,7 +7,7 @@ import {
   IsNumber,
   Min,
 } from 'class-validator';
-import { EmploymentType } from '@prisma/client';
+import { EmploymentType, EmployeeStatus } from '@prisma/client';
 
 export class CreateEmployeeDto {
   @IsString()
@@ -33,6 +33,14 @@ export class CreateEmployeeDto {
   @IsDateString()
   @IsNotEmpty()
   joiningDate: string;
+
+  @IsOptional()
+  @IsEnum(EmployeeStatus)
+  status?: EmployeeStatus;
+
+  @IsOptional()
+  @IsDateString()
+  exitDate?: string;
 
   @IsOptional()
   @IsNumber()

@@ -2807,7 +2807,6 @@ export class OrdersService {
         data: {
           paymentStatus: verified ? 'PAID' : 'PAYMENT_PENDING',
           statusId: targetStatus!.id,
-          ...(note ? { internalNote: note } : {}),
         },
         include: {
           status: true,

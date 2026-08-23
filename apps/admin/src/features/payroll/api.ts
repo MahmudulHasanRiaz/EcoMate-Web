@@ -11,9 +11,16 @@ export interface PayslipResponse {
   status: string
   generatedAt: string
   paidAt: string | null
+  reviewedAt: string | null
+  approvedAt: string | null
+  periodKey: string | null
   notes: string | null
   items?: PayslipItemResponse[]
-  employee?: { id: string; firstName: string; lastName: string; employeeId: string }
+  employee?: {
+    id: string
+    employeeId: string
+    betterAuthUser: { name: string; email: string }
+  }
 }
 
 export interface PayslipItemResponse {
@@ -51,7 +58,8 @@ export const payrollApi = {
   setSalaryStructure: (data: any) => apiClient.post<SalaryStructureResponse>('/payroll/salary-structure', data),
   getSalaryStructure: (employeeId: string) => apiClient.get<SalaryStructureResponse>(`/payroll/salary-structure/${employeeId}`),
   generatePayslip: (data: any) => apiClient.post<PayslipResponse>('/payroll/payslips/generate', data),
-  listPayslips: (params?: any) => apiClient.get<PaginatedResponse<PayslipResponse>>('/payroll/payslips', { params }),
+  listPayslips: (params?: { page?: number; perPage?: number; periodKey?: string }) =>
+    apiClient.get<PaginatedResponse<PayslipResponse>>('/payroll/payslips', { params }),
   getPayslip: (id: string) => apiClient.get<PayslipResponse>(`/payroll/payslips/${id}`),
   approvePayslip: (id: string) => apiClient.patch(`/payroll/payslips/${id}/approve`),
 }

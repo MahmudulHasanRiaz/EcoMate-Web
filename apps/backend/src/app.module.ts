@@ -68,6 +68,7 @@ import { QueueModule } from './queue/queue.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ReferralsModule } from './referrals/referrals.module';
 import { EmployeesModule } from './employees/employees.module';
+import { DepartmentsModule } from './departments/departments.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { AccessPresetsModule } from './access-presets/access-presets.module';
 import { DesignationsModule } from './designations/designations.module';
@@ -152,6 +153,7 @@ import { SecurityDashboardModule } from './security-dashboard/security-dashboard
     CampaignsModule,
     AccessPresetsModule,
     DesignationsModule,
+    DepartmentsModule,
     EmployeesModule,
     PayrollModule,
     FinancialPeriodsModule,

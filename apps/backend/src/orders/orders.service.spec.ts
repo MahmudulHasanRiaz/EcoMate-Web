@@ -2185,6 +2185,72 @@ describe('OrdersService', () => {
       expect(trackingCapture.capture).not.toHaveBeenCalled();
     });
 
+    it('does not write internalNote to the order when a note string is passed', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        salesChannel: 'WEBSITE',
+        paymentStatus: 'PAYMENT_VERIFYING',
+        status: mockConfirmedStatus,
+      });
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        mockConfirmedStatus,
+      );
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        paymentStatus: 'PAID',
+        status: mockConfirmedStatus,
+      });
+      (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+      (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+
+      await service.verifyPayment(
+        'order-id-1',
+        true,
+        'payment screenshot attached',
+      );
+
+      expect(prisma.order.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'order-id-1' },
+          data: expect.objectContaining({
+            paymentStatus: 'PAID',
+            statusId: 'status-confirmed',
+          }),
+        }),
+      );
+      const updateCall = (prisma.order.update as jest.Mock).mock.calls[0][0];
+      expect(updateCall.data).not.toHaveProperty('internalNote');
+    });
+
+    it('does not write internalNote when no note is passed', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        salesChannel: 'WEBSITE',
+        paymentStatus: 'PAYMENT_VERIFYING',
+        status: mockConfirmedStatus,
+      });
+      (prisma.orderStatus.findUnique as jest.Mock).mockImplementation((arg) =>
+        Promise.resolve(
+          arg?.where?.name === 'Payment Pending'
+            ? { id: 'status-payment-pending', name: 'Payment Pending' }
+            : mockConfirmedStatus,
+        ),
+      );
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        paymentStatus: 'PAYMENT_PENDING',
+        status: { id: 'status-payment-pending', name: 'Payment Pending' },
+      });
+
+      await service.verifyPayment('order-id-1', false);
+
+      const updateCall = (prisma.order.update as jest.Mock).mock.calls[0][0];
+      expect(updateCall.data).not.toHaveProperty('internalNote');
+      expect(updateCall.data.paymentStatus).toBe('PAYMENT_PENDING');
+      expect(updateCall.data.statusId).toBe('status-payment-pending');
+    });
+
     it('fires a validated Purchase when configured status matches (Delivered)', async () => {
       const deliveredStatus = {
         id: 'status-delivered',

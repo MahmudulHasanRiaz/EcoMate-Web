@@ -20,6 +20,7 @@ enum UserRole {
   manager
   packing_assistant
   customer
+  employee
 }
 
 enum AvailabilityMode {
@@ -1921,7 +1922,9 @@ model Employee {
 
 enum PayslipStatus {
   draft
+  reviewed
   approved
+  partially_paid
   paid
   cancelled
 }
@@ -1961,6 +1964,9 @@ model Payslip {
   status          PayslipStatus @default(draft)
   generatedAt     DateTime      @default(now())
   paidAt          DateTime?
+  reviewedAt      DateTime?
+  approvedAt      DateTime?
+  periodKey       String?
   notes           String?       @db.Text
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt

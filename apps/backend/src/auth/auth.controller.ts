@@ -25,13 +25,16 @@ import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
 import { SecurityService } from '../security/security.service';
+import { computeEffectivePermissions } from '../common/permissions/effective-permissions';
 import { getAllPermissions } from '../common/permissions/registry';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly security: SecurityService,
+    private readonly prisma: PrismaService,
   ) {}
 
   @Public()
@@ -124,13 +127,31 @@ export class AuthController {
     // or compute from role for JWT path
     let permissions = user.permissions;
     if (!permissions || !Array.isArray(permissions)) {
-      if (user.role === 'superadmin' || user.role === 'admin') {
-        permissions = getAllPermissions();
-      } else {
-        permissions = [];
-      }
+      permissions = await this.loadEffectivePermissions(user);
     }
     return { ...profile, permissions };
+  }
+
+  private async loadEffectivePermissions(user: any): Promise<string[]> {
+    const role = user.role || 'customer';
+    if (role === 'superadmin' || role === 'admin') {
+      return getAllPermissions();
+    }
+    if (role === 'customer' || !user.betterAuthUserId) {
+      return [];
+    }
+    const baUser = await this.prisma.betterAuthUser.findUnique({
+      where: { id: user.betterAuthUserId },
+      select: {
+        override_permissions: true,
+        employee: { include: { accessPreset: true } },
+      },
+    });
+    return computeEffectivePermissions({
+      role,
+      employeeLink: baUser?.employee ?? null,
+      overridePermissions: baUser?.override_permissions,
+    });
   }
 
   @RateLimitPolicy('auth')

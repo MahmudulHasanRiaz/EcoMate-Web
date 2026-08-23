@@ -9,7 +9,23 @@ jest.mock('bcryptjs', () => ({
   compare: jest.fn().mockResolvedValue(true),
 }));
 
+jest.mock('../better-auth/prisma', () => ({
+  baPrisma: {
+    betterAuthUser: {
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    },
+    betterAuthAccount: {
+      create: jest.fn(),
+      updateMany: jest.fn(),
+      delete: jest.fn(),
+    },
+  },
+}));
+
 import * as bcrypt from 'bcryptjs';
+import { baPrisma } from '../better-auth/prisma';
 
 describe('UsersService', () => {
   let service: UsersService;
@@ -251,6 +267,68 @@ describe('UsersService', () => {
       );
       expect(prisma.userProfile.create).not.toHaveBeenCalled();
     });
+
+    it('should strip unknown keys and persist override_permissions to betterAuthUser on create', async () => {
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.userProfile.create as jest.Mock).mockResolvedValue({
+        ...mockUserResponse,
+        id: 'user-id-3',
+      });
+      (prisma.userSettings.create as jest.Mock).mockResolvedValue({
+        id: 'settings-3',
+        userId: 'user-id-3',
+      });
+      (baPrisma.betterAuthUser.create as jest.Mock).mockResolvedValue({
+        id: 'ba-3',
+      });
+      (prisma.userProfile.update as jest.Mock).mockResolvedValue(
+        mockUserResponse,
+      );
+
+      await service.create({
+        ...createDto,
+        username: 'janesmith3',
+        email: 'jane3@example.com',
+        override_permissions: ['view_orders', 'not_a_real_permission'],
+      });
+
+      expect(baPrisma.betterAuthUser.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            override_permissions: ['view_orders'],
+          }),
+        }),
+      );
+      expect(
+        (baPrisma.betterAuthUser.create as jest.Mock).mock.calls[0][0].data
+          .override_permissions,
+      ).not.toContain('not_a_real_permission');
+    });
+
+    it('should omit override_permissions from BA create when not provided', async () => {
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.userProfile.create as jest.Mock).mockResolvedValue({
+        ...mockUserResponse,
+        id: 'user-id-4',
+      });
+      (prisma.userSettings.create as jest.Mock).mockResolvedValue({
+        id: 'settings-4',
+        userId: 'user-id-4',
+      });
+      (baPrisma.betterAuthUser.create as jest.Mock).mockResolvedValue({
+        id: 'ba-4',
+      });
+
+      await service.create({
+        ...createDto,
+        username: 'janesmith4',
+        email: 'jane4@example.com',
+      });
+
+      const createData = (baPrisma.betterAuthUser.create as jest.Mock).mock
+        .calls[0][0].data;
+      expect(createData).not.toHaveProperty('override_permissions');
+    });
   });
 
   describe('update', () => {
@@ -341,6 +419,63 @@ describe('UsersService', () => {
       expect(updateCall.data).not.toHaveProperty('password');
       expect(updateCall.data).not.toHaveProperty('status');
       expect(updateCall.data).not.toHaveProperty('role');
+    });
+
+    it('should strip unknown keys and persist override_permissions to betterAuthUser on update', async () => {
+      (prisma.userProfile.findUnique as jest.Mock)
+        .mockResolvedValueOnce({
+          ...mockUserResponse,
+          betterAuthUserId: 'ba-1',
+        })
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
+      (prisma.userProfile.update as jest.Mock).mockResolvedValue(
+        mockUserResponse,
+      );
+
+      await service.update('user-id-1', {
+        override_permissions: ['view_orders', 'view_products', 'ghost_key'],
+      });
+
+      expect(baPrisma.betterAuthUser.update).toHaveBeenCalledWith({
+        where: { id: 'ba-1' },
+        data: { override_permissions: ['view_orders', 'view_products'] },
+      });
+    });
+
+    it('update with empty array clears override_permissions (empty array = clear; undefined = leave unchanged)', async () => {
+      (prisma.userProfile.findUnique as jest.Mock)
+        .mockResolvedValueOnce({
+          ...mockUserResponse,
+          betterAuthUserId: 'ba-1',
+        })
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
+      (prisma.userProfile.update as jest.Mock).mockResolvedValue(
+        mockUserResponse,
+      );
+
+      await service.update('user-id-1', { override_permissions: [] });
+
+      expect(baPrisma.betterAuthUser.update).toHaveBeenCalledWith({
+        where: { id: 'ba-1' },
+        data: { override_permissions: [] },
+      });
+    });
+
+    it('update with undefined override_permissions leaves BA user unchanged (no BA write)', async () => {
+      (prisma.userProfile.findUnique as jest.Mock)
+        .mockResolvedValueOnce({
+          ...mockUserResponse,
+          betterAuthUserId: 'ba-1',
+        });
+      (prisma.userProfile.update as jest.Mock).mockResolvedValue(
+        mockUserResponse,
+      );
+
+      await service.update('user-id-1', { status: 'inactive' });
+
+      expect(baPrisma.betterAuthUser.update).not.toHaveBeenCalled();
     });
   });
 

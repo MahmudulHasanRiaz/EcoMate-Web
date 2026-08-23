@@ -183,6 +183,44 @@ describe('PayrollService', () => {
         ),
       ).rejects.toThrow(BadRequestException);
     });
+
+    it('creates a draft payslip without forcing the lifecycle groundwork columns', async () => {
+      const txCreate = jest.fn().mockReturnValue({ id: 'ps-1' });
+      const tx = {
+        payslip: {
+          create: txCreate,
+          findUnique: jest.fn().mockResolvedValue({
+            ...mockPayslip,
+            status: 'draft',
+            reviewedAt: null,
+            approvedAt: null,
+            periodKey: null,
+          }),
+        },
+        payslipItem: { createMany: jest.fn().mockResolvedValue({ count: 8 }) },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementation((cb: any) =>
+        cb(tx),
+      );
+
+      const result = await service.generatePayslip(
+        'emp-1',
+        new Date('2025-06-01'),
+        new Date('2025-06-30'),
+      );
+
+      const createData = txCreate.mock.calls[0][0].data;
+      expect(createData.status).toBe('draft');
+      expect(createData).not.toHaveProperty('reviewedAt');
+      expect(createData).not.toHaveProperty('approvedAt');
+      expect(createData).not.toHaveProperty('periodKey');
+      expect(result).toMatchObject({
+        status: 'draft',
+        reviewedAt: null,
+        approvedAt: null,
+        periodKey: null,
+      });
+    });
   });
 
   describe('findAllPayslips', () => {
@@ -190,6 +228,34 @@ describe('PayrollService', () => {
       const result = await service.findAllPayslips(1, 10);
       expect(result.data).toHaveLength(1);
       expect(result.meta.total).toBe(1);
+    });
+
+    it('passes an empty where when no period filter is provided', async () => {
+      await service.findAllPayslips(1, 10);
+
+      expect(prisma.payslip.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: {} }),
+      );
+      expect(prisma.payslip.count).toHaveBeenCalledWith({ where: {} });
+    });
+
+    it('passes the periodKey filter to findMany and count', async () => {
+      await service.findAllPayslips(1, 10, '2026-08');
+
+      expect(prisma.payslip.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { periodKey: '2026-08' } }),
+      );
+      expect(prisma.payslip.count).toHaveBeenCalledWith({
+        where: { periodKey: '2026-08' },
+      });
+    });
+
+    it('keeps pagination applied alongside the period filter', async () => {
+      await service.findAllPayslips(2, 10, '2026-08');
+
+      expect(prisma.payslip.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 10, take: 10 }),
+      );
     });
   });
 

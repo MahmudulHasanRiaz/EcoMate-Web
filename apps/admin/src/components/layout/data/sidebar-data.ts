@@ -131,6 +131,7 @@ export const sidebarData: SidebarData = {
           items: [
             { title: 'All Employees', url: '/op/employees' },
             { title: 'Create Employee', url: '/op/employees/create' },
+            { title: 'Departments', url: '/op/employees/departments', feature: 'admin_employees' },
             { title: 'Designations', url: '/op/employees/designations' },
           ],
         },
