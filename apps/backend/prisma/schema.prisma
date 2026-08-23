@@ -1937,6 +1937,7 @@ model Employee {
   weeklyOffs       WeeklyOff[]
   commissionRules  CommissionRule[]
   commissionEarnings CommissionEarning[]
+  leaveRequests    LeaveRequest[]
 
   @@index([departmentId])
   @@index([designationId])
@@ -3432,4 +3433,46 @@ model MarketingDailyProductCost {
 
   @@unique([productId, date])
   @@index([date])
+}
+
+enum LeaveStatus {
+  pending
+  approved
+  rejected
+  cancelled
+}
+
+model LeaveType {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  code        String   @unique
+  daysPerYear Int
+  isPaid      Boolean  @default(true)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  requests LeaveRequest[]
+}
+
+model LeaveRequest {
+  id           String     @id @default(uuid())
+  employeeId   String
+  employee     Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  typeId       String
+  type         LeaveType  @relation(fields: [typeId], references: [id], onDelete: Restrict)
+  startDate    DateTime
+  endDate      DateTime
+  days         Int
+  reason       String
+  status       LeaveStatus @default(pending)
+  decisionNote String?
+  approvedById String?
+  approvedAt   DateTime?
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([employeeId, startDate])
+  @@index([status])
 }

@@ -45,6 +45,7 @@ import { PAYSLIP_STATUS_BADGE } from '@/features/payroll/components/payslip-stat
 import { EarningsTable } from '@/features/hr-ledgers/components/earnings-table'
 import { DeductionsTable } from '@/features/hr-ledgers/components/deductions-table'
 import { CommissionEarningsTab } from '@/features/commissions/components/earnings-table'
+import { LeaveTab } from '@/features/hr-leave'
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return '—'
@@ -66,6 +67,7 @@ function InfoRow({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function PlaceholderTab({ icon: Icon, module }: { icon: typeof Banknote; module: string }) {
+  void Icon
   return (
     <Card>
       <CardContent className='flex flex-col items-center justify-center py-16 text-center'>
@@ -666,7 +668,7 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
             <DeductionsTable employeeId={employee.id} />
           </TabsContent>
           <TabsContent value='leave'>
-            <PlaceholderTab icon={CalendarDays} module='Leave' />
+            <LeaveTab employeeId={employee.id} />
           </TabsContent>
 
           <TabsContent value='schedule' className='space-y-4'>

@@ -29,6 +29,7 @@ import { Route as AuthenticatedMonOverviewRouteImport } from './routes/_authenti
 import { Route as AuthenticatedMonBlockingSettingsRouteImport } from './routes/_authenticated/mon/blocking-settings'
 import { Route as AuthenticatedHrPresetsRouteImport } from './routes/_authenticated/hr/presets'
 import { Route as AuthenticatedHrOverviewRouteImport } from './routes/_authenticated/hr/overview'
+import { Route as AuthenticatedHrLeaveRouteImport } from './routes/_authenticated/hr/leave'
 import { Route as AuthenticatedHrCommissionsRouteImport } from './routes/_authenticated/hr/commissions'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as authLicenseActivateRouteImport } from './routes/(auth)/license/activate'
@@ -252,6 +253,11 @@ const AuthenticatedHrPresetsRoute = AuthenticatedHrPresetsRouteImport.update({
 const AuthenticatedHrOverviewRoute = AuthenticatedHrOverviewRouteImport.update({
   id: '/hr/overview',
   path: '/hr/overview',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedHrLeaveRoute = AuthenticatedHrLeaveRouteImport.update({
+  id: '/hr/leave',
+  path: '/hr/leave',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedHrCommissionsRoute =
@@ -1008,6 +1014,7 @@ export interface FileRoutesByFullPath {
   '/license/activate': typeof authLicenseActivateRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/hr/commissions': typeof AuthenticatedHrCommissionsRoute
+  '/hr/leave': typeof AuthenticatedHrLeaveRoute
   '/hr/overview': typeof AuthenticatedHrOverviewRoute
   '/hr/presets': typeof AuthenticatedHrPresetsRoute
   '/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
@@ -1152,6 +1159,7 @@ export interface FileRoutesByTo {
   '/license/activate': typeof authLicenseActivateRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/hr/commissions': typeof AuthenticatedHrCommissionsRoute
+  '/hr/leave': typeof AuthenticatedHrLeaveRoute
   '/hr/overview': typeof AuthenticatedHrOverviewRoute
   '/hr/presets': typeof AuthenticatedHrPresetsRoute
   '/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
@@ -1298,6 +1306,7 @@ export interface FileRoutesById {
   '/(auth)/license/activate': typeof authLicenseActivateRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/_authenticated/hr/commissions': typeof AuthenticatedHrCommissionsRoute
+  '/_authenticated/hr/leave': typeof AuthenticatedHrLeaveRoute
   '/_authenticated/hr/overview': typeof AuthenticatedHrOverviewRoute
   '/_authenticated/hr/presets': typeof AuthenticatedHrPresetsRoute
   '/_authenticated/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
@@ -1444,6 +1453,7 @@ export interface FileRouteTypes {
     | '/license/activate'
     | '/errors/$error'
     | '/hr/commissions'
+    | '/hr/leave'
     | '/hr/overview'
     | '/hr/presets'
     | '/mon/blocking-settings'
@@ -1588,6 +1598,7 @@ export interface FileRouteTypes {
     | '/license/activate'
     | '/errors/$error'
     | '/hr/commissions'
+    | '/hr/leave'
     | '/hr/overview'
     | '/hr/presets'
     | '/mon/blocking-settings'
@@ -1733,6 +1744,7 @@ export interface FileRouteTypes {
     | '/(auth)/license/activate'
     | '/_authenticated/errors/$error'
     | '/_authenticated/hr/commissions'
+    | '/_authenticated/hr/leave'
     | '/_authenticated/hr/overview'
     | '/_authenticated/hr/presets'
     | '/_authenticated/mon/blocking-settings'
@@ -2015,6 +2027,13 @@ declare module '@tanstack/react-router' {
       path: '/hr/overview'
       fullPath: '/hr/overview'
       preLoaderRoute: typeof AuthenticatedHrOverviewRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/hr/leave': {
+      id: '/_authenticated/hr/leave'
+      path: '/hr/leave'
+      fullPath: '/hr/leave'
+      preLoaderRoute: typeof AuthenticatedHrLeaveRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/hr/commissions': {
@@ -2993,6 +3012,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpSettingsRouteRoute: typeof AuthenticatedOpSettingsRouteRouteWithChildren
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
   AuthenticatedHrCommissionsRoute: typeof AuthenticatedHrCommissionsRoute
+  AuthenticatedHrLeaveRoute: typeof AuthenticatedHrLeaveRoute
   AuthenticatedHrOverviewRoute: typeof AuthenticatedHrOverviewRoute
   AuthenticatedHrPresetsRoute: typeof AuthenticatedHrPresetsRoute
   AuthenticatedMonBlockingSettingsRoute: typeof AuthenticatedMonBlockingSettingsRoute
@@ -3104,6 +3124,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
     AuthenticatedOpSettingsRouteRouteWithChildren,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
   AuthenticatedHrCommissionsRoute: AuthenticatedHrCommissionsRoute,
+  AuthenticatedHrLeaveRoute: AuthenticatedHrLeaveRoute,
   AuthenticatedHrOverviewRoute: AuthenticatedHrOverviewRoute,
   AuthenticatedHrPresetsRoute: AuthenticatedHrPresetsRoute,
   AuthenticatedMonBlockingSettingsRoute: AuthenticatedMonBlockingSettingsRoute,
