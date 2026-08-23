@@ -73,6 +73,7 @@ import { HrModule } from './hr/hr.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { AccessPresetsModule } from './access-presets/access-presets.module';
 import { DesignationsModule } from './designations/designations.module';
+import { HrScheduleModule } from './hr-schedule/hr-schedule.module';
 import { AccountsModule } from './accounts/accounts.module';
 import { PayrollModule } from './payroll/payroll.module';
 import { StockModule } from './stock/stock.module';
@@ -158,6 +159,7 @@ import { SecurityDashboardModule } from './security-dashboard/security-dashboard
     EmployeesModule,
     PayrollModule,
     HrModule,
+    HrScheduleModule,
     FinancialPeriodsModule,
     OpeningBalancesModule,
     AccountsModule,

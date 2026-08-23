@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, Eye } from 'lucide-react'
 import { employeesApi, type EmployeeResponse, type EmploymentType, type EmployeeStatus } from './api'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -23,6 +23,8 @@ const STATUS_BADGE: Record<EmployeeStatus, string> = {
   inactive: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
   terminated: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
   resigned: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
+  on_leave: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300',
+  suspended: 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300',
 }
 
 const EMPLOYMENT_TYPE_BADGE: Record<EmploymentType, string> = {
@@ -44,7 +46,11 @@ const STATUS_LABELS: Record<EmployeeStatus, string> = {
   inactive: 'Inactive',
   terminated: 'Terminated',
   resigned: 'Resigned',
+  on_leave: 'On Leave',
+  suspended: 'Suspended',
 }
+
+export { STATUS_BADGE, STATUS_LABELS, EMPLOYMENT_TYPE_BADGE, EMPLOYMENT_TYPE_LABELS }
 
 function formatCurrency(amount: number | null | undefined) {
   if (amount == null) return '—'
@@ -150,7 +156,7 @@ export function Employees() {
         </div>
 
         <div className='flex gap-2'>
-          {['', 'active', 'inactive', 'terminated', 'resigned'].map(s => (
+          {['', 'active', 'inactive', 'terminated', 'resigned', 'on_leave', 'suspended'].map(s => (
             <Button
               key={s}
               variant={statusFilter === s ? 'default' : 'outline'}
@@ -212,6 +218,13 @@ export function Employees() {
                       <TableCell className='text-right font-mono'>{formatCurrency(employee.salary)}</TableCell>
                       <TableCell>
                         <div className='flex gap-1'>
+                          <Button
+                            variant='ghost' size='icon' className='h-7 w-7'
+                            onClick={() => navigate({ to: '/hr/employees/$id', params: { id: employee.id } })}
+                            title='View'
+                          >
+                            <Eye className='h-3.5 w-3.5' />
+                          </Button>
                           <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => openEdit(employee)}>
                             <Pencil className='h-3.5 w-3.5' />
                           </Button>

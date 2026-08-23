@@ -14,6 +14,7 @@ import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 import { PermissionsAny } from '../common/decorators/permissions.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('employees')
 @Roles('superadmin', 'admin', 'manager')
@@ -55,8 +56,12 @@ export class EmployeesController {
 
   @Put(':id')
   @PermissionsAny('manage_employees')
-  update(@Param('id') id: string, @Body() dto: UpdateEmployeeDto) {
-    return this.employeesService.update(id, dto);
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateEmployeeDto,
+    @CurrentUser() user?: any,
+  ) {
+    return this.employeesService.update(id, dto, user?.userId ?? user?.id);
   }
 
   @Delete(':id')

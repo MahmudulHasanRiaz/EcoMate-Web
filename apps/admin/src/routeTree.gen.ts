@@ -109,6 +109,7 @@ import { Route as AuthenticatedHrUsersIdRouteImport } from './routes/_authentica
 import { Route as AuthenticatedHrEmployeesDesignationsRouteImport } from './routes/_authenticated/hr/employees/designations'
 import { Route as AuthenticatedHrEmployeesDepartmentsRouteImport } from './routes/_authenticated/hr/employees/departments'
 import { Route as AuthenticatedHrEmployeesCreateRouteImport } from './routes/_authenticated/hr/employees/create'
+import { Route as AuthenticatedHrEmployeesIdRouteImport } from './routes/_authenticated/hr/employees/$id'
 import { Route as AuthenticatedOpSettingsPersonalIndexRouteImport } from './routes/_authenticated/op/settings/personal/index'
 import { Route as AuthenticatedOpPrintPriceLabelsIndexRouteImport } from './routes/_authenticated/op/print/price-labels/index'
 import { Route as AuthenticatedOpPrintBulkIndexRouteImport } from './routes/_authenticated/op/print/bulk/index'
@@ -728,6 +729,12 @@ const AuthenticatedHrEmployeesCreateRoute =
     path: '/hr/employees/create',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedHrEmployeesIdRoute =
+  AuthenticatedHrEmployeesIdRouteImport.update({
+    id: '/hr/employees/$id',
+    path: '/hr/employees/$id',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpSettingsPersonalIndexRoute =
   AuthenticatedOpSettingsPersonalIndexRouteImport.update({
     id: '/personal/',
@@ -1000,6 +1007,7 @@ export interface FileRoutesByFullPath {
   '/op/overview': typeof AuthenticatedOpOverviewRoute
   '/mon/': typeof AuthenticatedMonIndexRoute
   '/op/': typeof AuthenticatedOpIndexRoute
+  '/hr/employees/$id': typeof AuthenticatedHrEmployeesIdRoute
   '/hr/employees/create': typeof AuthenticatedHrEmployeesCreateRoute
   '/hr/employees/departments': typeof AuthenticatedHrEmployeesDepartmentsRoute
   '/hr/employees/designations': typeof AuthenticatedHrEmployeesDesignationsRoute
@@ -1142,6 +1150,7 @@ export interface FileRoutesByTo {
   '/op/overview': typeof AuthenticatedOpOverviewRoute
   '/mon': typeof AuthenticatedMonIndexRoute
   '/op': typeof AuthenticatedOpIndexRoute
+  '/hr/employees/$id': typeof AuthenticatedHrEmployeesIdRoute
   '/hr/employees/create': typeof AuthenticatedHrEmployeesCreateRoute
   '/hr/employees/departments': typeof AuthenticatedHrEmployeesDepartmentsRoute
   '/hr/employees/designations': typeof AuthenticatedHrEmployeesDesignationsRoute
@@ -1286,6 +1295,7 @@ export interface FileRoutesById {
   '/_authenticated/op/overview': typeof AuthenticatedOpOverviewRoute
   '/_authenticated/mon/': typeof AuthenticatedMonIndexRoute
   '/_authenticated/op/': typeof AuthenticatedOpIndexRoute
+  '/_authenticated/hr/employees/$id': typeof AuthenticatedHrEmployeesIdRoute
   '/_authenticated/hr/employees/create': typeof AuthenticatedHrEmployeesCreateRoute
   '/_authenticated/hr/employees/departments': typeof AuthenticatedHrEmployeesDepartmentsRoute
   '/_authenticated/hr/employees/designations': typeof AuthenticatedHrEmployeesDesignationsRoute
@@ -1430,6 +1440,7 @@ export interface FileRouteTypes {
     | '/op/overview'
     | '/mon/'
     | '/op/'
+    | '/hr/employees/$id'
     | '/hr/employees/create'
     | '/hr/employees/departments'
     | '/hr/employees/designations'
@@ -1572,6 +1583,7 @@ export interface FileRouteTypes {
     | '/op/overview'
     | '/mon'
     | '/op'
+    | '/hr/employees/$id'
     | '/hr/employees/create'
     | '/hr/employees/departments'
     | '/hr/employees/designations'
@@ -1715,6 +1727,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/overview'
     | '/_authenticated/mon/'
     | '/_authenticated/op/'
+    | '/_authenticated/hr/employees/$id'
     | '/_authenticated/hr/employees/create'
     | '/_authenticated/hr/employees/departments'
     | '/_authenticated/hr/employees/designations'
@@ -2551,6 +2564,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedHrEmployeesCreateRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/hr/employees/$id': {
+      id: '/_authenticated/hr/employees/$id'
+      path: '/hr/employees/$id'
+      fullPath: '/hr/employees/$id'
+      preLoaderRoute: typeof AuthenticatedHrEmployeesIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/settings/personal/': {
       id: '/_authenticated/op/settings/personal/'
       path: '/personal'
@@ -2959,6 +2979,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpOverviewRoute: typeof AuthenticatedOpOverviewRoute
   AuthenticatedMonIndexRoute: typeof AuthenticatedMonIndexRoute
   AuthenticatedOpIndexRoute: typeof AuthenticatedOpIndexRoute
+  AuthenticatedHrEmployeesIdRoute: typeof AuthenticatedHrEmployeesIdRoute
   AuthenticatedHrEmployeesCreateRoute: typeof AuthenticatedHrEmployeesCreateRoute
   AuthenticatedHrEmployeesDepartmentsRoute: typeof AuthenticatedHrEmployeesDepartmentsRoute
   AuthenticatedHrEmployeesDesignationsRoute: typeof AuthenticatedHrEmployeesDesignationsRoute
@@ -3068,6 +3089,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpOverviewRoute: AuthenticatedOpOverviewRoute,
   AuthenticatedMonIndexRoute: AuthenticatedMonIndexRoute,
   AuthenticatedOpIndexRoute: AuthenticatedOpIndexRoute,
+  AuthenticatedHrEmployeesIdRoute: AuthenticatedHrEmployeesIdRoute,
   AuthenticatedHrEmployeesCreateRoute: AuthenticatedHrEmployeesCreateRoute,
   AuthenticatedHrEmployeesDepartmentsRoute:
     AuthenticatedHrEmployeesDepartmentsRoute,

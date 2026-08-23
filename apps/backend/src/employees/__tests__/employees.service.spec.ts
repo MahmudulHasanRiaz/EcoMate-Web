@@ -93,6 +93,9 @@ describe('EmployeesService', () => {
           name: 'Staff',
         }),
       },
+      employmentHistory: {
+        createMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
       userProfile: {
         findUnique: jest
           .fn()
@@ -231,6 +234,35 @@ describe('EmployeesService', () => {
         }),
       );
     });
+
+    it('should accept reportingToId on create', async () => {
+      const dto: CreateEmployeeDto = {
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+        reportingToId: 'emp-9',
+      };
+      (prisma.employee.findUnique as jest.Mock)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 'emp-9', employeeId: 'EMP-250624-0009' });
+      await service.create(dto);
+      expect(prisma.employee.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ reportingToId: 'emp-9' }),
+        }),
+      );
+    });
+
+    it('should throw when reporting manager does not exist on create', async () => {
+      const dto: CreateEmployeeDto = {
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+        reportingToId: 'ghost',
+      };
+      (prisma.employee.findUnique as jest.Mock)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
+      await expect(service.create(dto)).rejects.toThrow(NotFoundException);
+    });
   });
 
   describe('findAll', () => {
@@ -305,6 +337,40 @@ describe('EmployeesService', () => {
       });
       await service.update('emp-1', { status: 'active' });
       expect(prisma.employee.update).toHaveBeenCalled();
+    });
+
+    it('should allow active→on_leave transition', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await service.update('emp-1', { status: 'on_leave' });
+      expect(prisma.employee.update).toHaveBeenCalled();
+    });
+
+    it('should allow on_leave→suspended transition', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+        ...mockEmployee,
+        status: EmployeeStatus.on_leave,
+      });
+      await service.update('emp-1', { status: 'suspended' });
+      expect(prisma.employee.update).toHaveBeenCalled();
+    });
+
+    it('should allow suspended→active transition', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+        ...mockEmployee,
+        status: EmployeeStatus.suspended,
+      });
+      await service.update('emp-1', { status: 'active' });
+      expect(prisma.employee.update).toHaveBeenCalled();
+    });
+
+    it('should block inactive→on_leave→terminated chain from suspended', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+        ...mockEmployee,
+        status: EmployeeStatus.suspended,
+      });
+      await expect(
+        service.update('emp-1', { status: 'terminated' }),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('should allow active→terminated when exitDate is provided', async () => {
@@ -387,6 +453,160 @@ describe('EmployeesService', () => {
       await expect(
         service.update('emp-1', { accessPresetId: 'unknown-preset' }),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should write employment history when status changes', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await service.update('emp-1', { status: 'inactive' });
+      expect(prisma.employmentHistory.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.arrayContaining([
+            expect.objectContaining({
+              field: 'status',
+              oldValue: 'active',
+              newValue: 'inactive',
+              changedById: null,
+            }),
+          ]),
+        }),
+      );
+    });
+
+    it('should record actor as changedById on history rows', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await service.update('emp-1', { status: 'inactive' }, 'actor-42');
+      expect(prisma.employmentHistory.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.arrayContaining([
+            expect.objectContaining({ changedById: 'actor-42' }),
+          ]),
+        }),
+      );
+    });
+
+    it('should not write employment history when nothing relevant changes', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await service.update('emp-1', { bankName: 'Test Bank' });
+      expect(prisma.employmentHistory.createMany).not.toHaveBeenCalled();
+    });
+
+    it('should not write employment history on same-status update', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await service.update('emp-1', { status: 'active' });
+      expect(prisma.employmentHistory.createMany).not.toHaveBeenCalled();
+    });
+
+    it('should write department history with resolved names', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.department.findUnique as jest.Mock).mockResolvedValue({
+        id: 'dept-2',
+        name: 'Support',
+        slug: 'support',
+      });
+      await service.update('emp-1', { departmentId: 'dept-2' });
+      expect(prisma.employmentHistory.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.arrayContaining([
+            expect.objectContaining({
+              field: 'department',
+              oldValue: 'Engineering',
+              newValue: 'Support',
+            }),
+          ]),
+        }),
+      );
+    });
+
+    it('should write designation history with resolved names', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.designation.findUnique as jest.Mock).mockResolvedValue({
+        id: 'desig-2',
+        name: 'Lead',
+        slug: 'lead',
+        level: 2,
+      });
+      await service.update('emp-1', { designationId: 'desig-2' });
+      expect(prisma.employmentHistory.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.arrayContaining([
+            expect.objectContaining({
+              field: 'designation',
+              oldValue: 'Developer',
+              newValue: 'Lead',
+            }),
+          ]),
+        }),
+      );
+    });
+
+    it('should write employment_type history with raw values', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await service.update('emp-1', { employmentType: 'contract' });
+      expect(prisma.employmentHistory.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.arrayContaining([
+            expect.objectContaining({
+              field: 'employment_type',
+              oldValue: 'full_time',
+              newValue: 'contract',
+            }),
+          ]),
+        }),
+      );
+    });
+
+    it('should write reporting_manager history as employeeId and name', async () => {
+      (prisma.employee.findUnique as jest.Mock)
+        .mockResolvedValueOnce(mockEmployee)
+        .mockResolvedValueOnce({
+          id: 'emp-9',
+          employeeId: 'EMP-250624-0009',
+          betterAuthUser: { name: 'Jane Doe' },
+        });
+      await service.update('emp-1', { reportingToId: 'emp-9' });
+      expect(prisma.employmentHistory.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.arrayContaining([
+            expect.objectContaining({
+              field: 'reporting_manager',
+              oldValue: null,
+              newValue: 'EMP-250624-0009 · Jane Doe',
+            }),
+          ]),
+        }),
+      );
+    });
+
+    it('should throw BadRequest when reporting to themselves', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await expect(
+        service.update('emp-1', { reportingToId: 'emp-1' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw NotFound when reporting manager does not exist', async () => {
+      (prisma.employee.findUnique as jest.Mock)
+        .mockResolvedValueOnce(mockEmployee)
+        .mockResolvedValueOnce(null);
+      await expect(
+        service.update('emp-1', { reportingToId: 'ghost' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should persist reportingToId on update', async () => {
+      (prisma.employee.findUnique as jest.Mock)
+        .mockResolvedValueOnce(mockEmployee)
+        .mockResolvedValueOnce({
+          id: 'emp-9',
+          employeeId: 'EMP-250624-0009',
+          betterAuthUser: { name: 'Jane Doe' },
+        });
+      await service.update('emp-1', { reportingToId: 'emp-9' }, 'actor-1');
+      expect(prisma.employee.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ reportingToId: 'emp-9' }),
+        }),
+      );
     });
   });
 

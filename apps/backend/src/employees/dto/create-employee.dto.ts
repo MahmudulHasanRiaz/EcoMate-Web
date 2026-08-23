@@ -27,6 +27,10 @@ export class CreateEmployeeDto {
   accessPresetId?: string;
 
   @IsOptional()
+  @IsString()
+  reportingToId?: string;
+
+  @IsOptional()
   @IsEnum(EmploymentType)
   employmentType?: EmploymentType;
 

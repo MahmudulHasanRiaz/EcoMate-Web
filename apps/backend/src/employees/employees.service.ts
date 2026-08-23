@@ -13,8 +13,10 @@ import { UpdateEmployeeDto } from './dto/update-employee.dto';
 const TERMINAL_STATUSES: EmployeeStatus[] = ['terminated', 'resigned'];
 
 const EMPLOYEE_STATUS_TRANSITIONS: Record<EmployeeStatus, EmployeeStatus[]> = {
-  active: ['inactive', 'terminated', 'resigned'],
-  inactive: ['active', 'terminated', 'resigned'],
+  active: ['inactive', 'on_leave', 'suspended', 'terminated', 'resigned'],
+  inactive: ['active', 'on_leave', 'suspended', 'terminated', 'resigned'],
+  on_leave: ['active', 'inactive', 'suspended'],
+  suspended: ['active', 'on_leave'],
   terminated: [],
   resigned: [],
 };
@@ -45,6 +47,13 @@ export class EmployeesService {
             select: { id: true, name: true, slug: true, level: true },
           },
           accessPreset: { select: { id: true, name: true } },
+          reportingTo: {
+            select: {
+              id: true,
+              employeeId: true,
+              betterAuthUser: { select: { name: true } },
+            },
+          },
           betterAuthUser: {
             select: { id: true, name: true, email: true, role: true },
           },
@@ -68,6 +77,13 @@ export class EmployeesService {
           select: { id: true, name: true, slug: true, level: true },
         },
         accessPreset: { select: { id: true, name: true } },
+        reportingTo: {
+          select: {
+            id: true,
+            employeeId: true,
+            betterAuthUser: { select: { name: true } },
+          },
+        },
         betterAuthUser: {
           select: { id: true, name: true, email: true, role: true },
         },
@@ -106,6 +122,12 @@ export class EmployeesService {
       });
       if (!preset) throw new NotFoundException('Access preset not found');
     }
+    if (dto.reportingToId) {
+      const manager = await this.prisma.employee.findUnique({
+        where: { id: dto.reportingToId },
+      });
+      if (!manager) throw new NotFoundException('Employee not found');
+    }
 
     return this.prisma.$transaction(async (tx) => {
       const counter = await tx.orderCounter.upsert({
@@ -123,6 +145,7 @@ export class EmployeesService {
           departmentId: dto.departmentId,
           designationId: dto.designationId,
           accessPresetId: dto.accessPresetId,
+          reportingToId: dto.reportingToId,
           employmentType: dto.employmentType || 'full_time',
           status: dto.status,
           joiningDate: new Date(dto.joiningDate),
@@ -165,26 +188,61 @@ export class EmployeesService {
     });
   }
 
-  async update(id: string, dto: UpdateEmployeeDto) {
-    const current = await this.findOne(id);
+  async update(id: string, dto: UpdateEmployeeDto, actorId?: string) {
+    const current = await this.prisma.employee.findUnique({
+      where: { id },
+      include: {
+        department: { select: { id: true, name: true } },
+        designation: { select: { id: true, name: true } },
+        reportingTo: {
+          select: {
+            id: true,
+            employeeId: true,
+            betterAuthUser: { select: { name: true } },
+          },
+        },
+      },
+    });
+    if (!current) throw new NotFoundException('Employee not found');
 
-    if (dto.departmentId !== undefined) {
-      const dept = await this.prisma.department.findUnique({
+    let newDepartment: { id: string; name: string } | null = null;
+    if (dto.departmentId !== undefined && dto.departmentId !== current.departmentId) {
+      newDepartment = await this.prisma.department.findUnique({
         where: { id: dto.departmentId },
       });
-      if (!dept) throw new NotFoundException('Department not found');
+      if (!newDepartment) throw new NotFoundException('Department not found');
     }
-    if (dto.designationId !== undefined) {
-      const desig = await this.prisma.designation.findUnique({
+    let newDesignation: { id: string; name: string } | null = null;
+    if (dto.designationId !== undefined && dto.designationId !== current.designationId) {
+      newDesignation = await this.prisma.designation.findUnique({
         where: { id: dto.designationId },
       });
-      if (!desig) throw new NotFoundException('Designation not found');
+      if (!newDesignation) throw new NotFoundException('Designation not found');
     }
-    if (dto.accessPresetId !== undefined) {
+    if (dto.accessPresetId !== undefined && dto.accessPresetId !== current.accessPresetId) {
       const preset = await this.prisma.accessPreset.findUnique({
         where: { id: dto.accessPresetId },
       });
       if (!preset) throw new NotFoundException('Access preset not found');
+    }
+    let newManager: {
+      id: string;
+      employeeId: string;
+      betterAuthUser: { name: string | null } | null;
+    } | null = null;
+    if (dto.reportingToId !== undefined && dto.reportingToId !== current.reportingToId) {
+      if (dto.reportingToId === current.id) {
+        throw new BadRequestException('Employee cannot report to themselves');
+      }
+      newManager = await this.prisma.employee.findUnique({
+        where: { id: dto.reportingToId },
+        select: {
+          id: true,
+          employeeId: true,
+          betterAuthUser: { select: { name: true } },
+        },
+      });
+      if (!newManager) throw new NotFoundException('Employee not found');
     }
 
     if (dto.status && dto.status !== current.status) {
@@ -201,23 +259,120 @@ export class EmployeesService {
       }
     }
 
-    return this.prisma.employee.update({
-      where: { id },
-      data: {
-        ...dto,
-        joiningDate: dto.joiningDate ? new Date(dto.joiningDate) : undefined,
-        exitDate: dto.exitDate ? new Date(dto.exitDate) : undefined,
-      },
-      include: {
-        department: { select: { id: true, name: true, slug: true } },
-        designation: {
-          select: { id: true, name: true, slug: true, level: true },
+    const changedById = actorId ?? null;
+    const historyRows: {
+      employeeId: string;
+      field:
+        | 'status'
+        | 'department'
+        | 'designation'
+        | 'reporting_manager'
+        | 'employment_type';
+      oldValue: string | null;
+      newValue: string | null;
+      effectiveFrom: Date;
+      changedById: string | null;
+    }[] = [];
+
+    if (dto.status !== undefined && dto.status !== current.status) {
+      historyRows.push({
+        employeeId: id,
+        field: 'status',
+        oldValue: current.status,
+        newValue: dto.status,
+        effectiveFrom: new Date(),
+        changedById,
+      });
+    }
+    if (
+      dto.departmentId !== undefined &&
+      dto.departmentId !== current.departmentId
+    ) {
+      historyRows.push({
+        employeeId: id,
+        field: 'department',
+        oldValue: current.department?.name ?? current.departmentId,
+        newValue: newDepartment?.name ?? dto.departmentId,
+        effectiveFrom: new Date(),
+        changedById,
+      });
+    }
+    if (
+      dto.designationId !== undefined &&
+      dto.designationId !== current.designationId
+    ) {
+      historyRows.push({
+        employeeId: id,
+        field: 'designation',
+        oldValue: current.designation?.name ?? current.designationId,
+        newValue: newDesignation?.name ?? dto.designationId,
+        effectiveFrom: new Date(),
+        changedById,
+      });
+    }
+    if (
+      dto.employmentType !== undefined &&
+      dto.employmentType !== current.employmentType
+    ) {
+      historyRows.push({
+        employeeId: id,
+        field: 'employment_type',
+        oldValue: current.employmentType,
+        newValue: dto.employmentType,
+        effectiveFrom: new Date(),
+        changedById,
+      });
+    }
+    if (
+      dto.reportingToId !== undefined &&
+      dto.reportingToId !== current.reportingToId
+    ) {
+      const reporterLabel = (emp: {
+        employeeId: string;
+        betterAuthUser: { name: string | null } | null;
+      } | null, fallback: string | null): string | null => {
+        if (!emp) return fallback;
+        const name = emp.betterAuthUser?.name;
+        return name ? `${emp.employeeId} · ${name}` : emp.employeeId;
+      };
+      historyRows.push({
+        employeeId: id,
+        field: 'reporting_manager',
+        oldValue: reporterLabel(
+          current.reportingTo,
+          current.reportingToId ?? null,
+        ),
+        newValue: reporterLabel(newManager, dto.reportingToId ?? null),
+        effectiveFrom: new Date(),
+        changedById,
+      });
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const employee = await tx.employee.update({
+        where: { id },
+        data: {
+          ...dto,
+          joiningDate: dto.joiningDate ? new Date(dto.joiningDate) : undefined,
+          exitDate: dto.exitDate ? new Date(dto.exitDate) : undefined,
         },
-        accessPreset: { select: { id: true, name: true } },
-        betterAuthUser: {
-          select: { id: true, name: true, email: true, role: true },
+        include: {
+          department: { select: { id: true, name: true, slug: true } },
+          designation: {
+            select: { id: true, name: true, slug: true, level: true },
+          },
+          accessPreset: { select: { id: true, name: true } },
+          betterAuthUser: {
+            select: { id: true, name: true, email: true, role: true },
+          },
         },
-      },
+      });
+
+      if (historyRows.length > 0) {
+        await tx.employmentHistory.createMany({ data: historyRows });
+      }
+
+      return employee;
     });
   }
 

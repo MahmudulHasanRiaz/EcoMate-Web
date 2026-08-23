@@ -133,6 +133,8 @@ model UserProfile {
   convertedLeads CheckoutLead[]  @relation("CheckoutLeadConvertedBy")
   referrals      Referral[]
   posSessions    PosSession[]
+  employmentHistory EmploymentHistory[] @relation("EmploymentChangedBy")
+  weeklyOffsCreated WeeklyOff[]         @relation("WeeklyOffCreatedBy")
   packingLocks   PackingLock[]
   orderEditLocks OrderEditLock[]
 
@@ -1862,6 +1864,17 @@ enum EmployeeStatus {
   inactive
   terminated
   resigned
+  on_leave
+  suspended
+}
+
+enum EmploymentHistoryField {
+  status
+  department
+  designation
+  reporting_manager
+  employment_type
+  weekly_off
 }
 
 model Department {
@@ -1895,6 +1908,7 @@ model Employee {
   departmentId      String?
   designationId     String?
   accessPresetId    String?
+  reportingToId     String?
   employmentType    EmploymentType @default(full_time)
   status            EmployeeStatus @default(active)
   joiningDate       DateTime
@@ -1911,13 +1925,19 @@ model Employee {
   designation      Designation?      @relation(fields: [designationId], references: [id], onDelete: SetNull)
   accessPreset     AccessPreset?     @relation(fields: [accessPresetId], references: [id], onDelete: SetNull)
   betterAuthUser   betterAuthUser    @relation(fields: [betterAuthUserId], references: [id], onDelete: Cascade)
+  reportingTo      Employee?         @relation("EmployeeReports", fields: [reportingToId], references: [id], onDelete: SetNull)
+  reports          Employee[]        @relation("EmployeeReports")
   salaryStructures SalaryStructure[]
   payslips         Payslip[]
+  history          EmploymentHistory[]
+  weeklyOffs       WeeklyOff[]
 
   @@index([departmentId])
   @@index([designationId])
   @@index([accessPresetId])
+  @@index([reportingToId])
   @@index([status])
+  @@index([status, departmentId])
 }
 
 enum PayslipStatus {
@@ -1989,6 +2009,39 @@ model PayslipItem {
   payslip Payslip @relation(fields: [payslipId], references: [id], onDelete: Cascade)
 
   @@index([payslipId])
+}
+
+model EmploymentHistory {
+  id            String                   @id @default(uuid())
+  employeeId    String
+  field         EmploymentHistoryField
+  oldValue      String?
+  newValue      String?
+  effectiveFrom DateTime                 @default(now())
+  changedById   String?
+  createdAt     DateTime                 @default(now())
+
+  employee  Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  changedBy UserProfile? @relation("EmploymentChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
+
+  @@index([employeeId, effectiveFrom])
+}
+
+model WeeklyOff {
+  id            String   @id @default(uuid())
+  employeeId    String
+  dayOfWeek     Int
+  effectiveFrom DateTime @default(now())
+  effectiveTo   DateTime?
+  createdById   String?
+  note          String?  @db.Text
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  employee  Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  createdBy UserProfile? @relation("WeeklyOffCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([employeeId, effectiveFrom])
 }
 
 enum AccountType {

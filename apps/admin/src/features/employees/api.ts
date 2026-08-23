@@ -1,7 +1,20 @@
 import { apiClient } from '@/lib/api-client'
 
 export type EmploymentType = 'full_time' | 'part_time' | 'contract' | 'internship'
-export type EmployeeStatus = 'active' | 'inactive' | 'terminated' | 'resigned'
+export type EmployeeStatus = 'active' | 'inactive' | 'terminated' | 'resigned' | 'on_leave' | 'suspended'
+
+export interface UpdateEmployeeDto {
+  status?: EmployeeStatus
+  exitDate?: string | null
+  reportingToId?: string | null
+  departmentId?: string | null
+  designationId?: string | null
+  employmentType?: EmploymentType
+  salary?: number
+  bankName?: string
+  bankAccountNo?: string
+  notes?: string
+}
 
 export interface EmployeeResponse {
   id: string
@@ -13,6 +26,7 @@ export interface EmployeeResponse {
   employmentType: EmploymentType
   status: EmployeeStatus
   joiningDate: string
+  exitDate?: string | null
   salary?: number | null
   bankAccountNo?: string | null
   bankName?: string | null
@@ -24,6 +38,11 @@ export interface EmployeeResponse {
   designation?: { id: string; name: string; slug: string; level?: number | null } | null
   accessPreset?: { id: string; name: string } | null
   betterAuthUser?: { id: string; name: string; email: string; role: string } | null
+  reportingTo?: {
+    id: string
+    employeeId: string
+    betterAuthUser?: { id?: string; name: string } | null
+  } | null
 }
 
 export interface PaginatedResponse<T> {
@@ -49,4 +68,14 @@ export const employeesApi = {
     apiClient.put<EmployeeResponse>(`/employees/${id}`, data),
   delete: (id: string) =>
     apiClient.delete(`/employees/${id}`),
+}
+
+export async function getEmployee(id: string) {
+  const res = await apiClient.get<EmployeeResponse>(`/employees/${id}`)
+  return res.data
+}
+
+export async function updateEmployee(id: string, dto: UpdateEmployeeDto) {
+  const res = await apiClient.put<EmployeeResponse>(`/employees/${id}`, dto)
+  return res.data
 }
