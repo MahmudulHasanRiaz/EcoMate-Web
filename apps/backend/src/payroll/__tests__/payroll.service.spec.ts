@@ -77,78 +77,114 @@ describe('PayrollService', () => {
     employee: mockEmployee,
   };
 
+  const prismaMock = {
+    $transaction: jest.fn((cb: any) => cb(prismaMock)),
+    employee: {
+      findUnique: jest.fn().mockResolvedValue(mockEmployee),
+      update: jest.fn().mockResolvedValue({ ...mockEmployee, salary: '47000' }),
+    },
+    salaryStructure: {
+      findFirst: jest.fn().mockResolvedValue(mockSalaryStructure),
+      findMany: jest.fn().mockResolvedValue([mockSalaryStructure]),
+      create: jest.fn().mockResolvedValue(mockSalaryStructure),
+      update: jest.fn().mockResolvedValue(mockSalaryStructure),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
+    payslip: {
+      findMany: jest.fn().mockResolvedValue([mockPayslip]),
+      findUnique: jest.fn().mockResolvedValue(mockPayslip),
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockResolvedValue(mockPayslip),
+      update: jest.fn().mockResolvedValue({
+        ...mockPayslip,
+        status: 'paid',
+        paidAt: new Date(),
+      }),
+      count: jest.fn().mockResolvedValue(1),
+    },
+    payslipItem: {
+      createMany: jest.fn().mockResolvedValue({ count: 3 }),
+    },
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PayrollService,
         {
           provide: PrismaService,
-          useValue: {
-            $transaction: jest.fn((cb: any) =>
-              cb({
-                payslip: {
-                  create: jest.fn().mockResolvedValue(mockPayslip),
-                  findUnique: jest.fn().mockResolvedValue(mockPayslip),
-                },
-                payslipItem: {
-                  createMany: jest.fn().mockResolvedValue({ count: 8 }),
-                },
-              }),
-            ),
-            employee: {
-              findUnique: jest.fn().mockResolvedValue(mockEmployee),
-            },
-            salaryStructure: {
-              findFirst: jest.fn().mockResolvedValue(mockSalaryStructure),
-              findMany: jest.fn().mockResolvedValue([mockSalaryStructure]),
-              create: jest.fn().mockResolvedValue(mockSalaryStructure),
-              update: jest.fn().mockResolvedValue(mockSalaryStructure),
-              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-            },
-            payslip: {
-              findMany: jest.fn().mockResolvedValue([mockPayslip]),
-              findUnique: jest.fn().mockResolvedValue(mockPayslip),
-              findFirst: jest.fn().mockResolvedValue(null),
-              create: jest.fn().mockResolvedValue(mockPayslip),
-              update: jest.fn().mockResolvedValue({
-                ...mockPayslip,
-                status: 'paid',
-                paidAt: new Date(),
-              }),
-              count: jest.fn().mockResolvedValue(1),
-            },
-            payslipItem: {
-              createMany: jest.fn().mockResolvedValue({ count: 3 }),
-            },
-          },
+          useValue: prismaMock,
         },
       ],
     }).compile();
 
     service = module.get<PayrollService>(PayrollService);
     prisma = module.get<PrismaService>(PrismaService);
+
+    prismaMock.employee.findUnique.mockResolvedValue(mockEmployee);
+    prismaMock.employee.update.mockResolvedValue({
+      ...mockEmployee,
+      salary: '47000',
+    });
+    prismaMock.salaryStructure.findFirst.mockResolvedValue(mockSalaryStructure);
+    prismaMock.salaryStructure.findMany.mockResolvedValue([
+      mockSalaryStructure,
+    ]);
+    prismaMock.salaryStructure.create.mockResolvedValue(mockSalaryStructure);
+    prismaMock.salaryStructure.update.mockResolvedValue(mockSalaryStructure);
+    prismaMock.salaryStructure.updateMany.mockResolvedValue({ count: 1 });
+    prismaMock.payslip.findMany.mockResolvedValue([mockPayslip]);
+    prismaMock.payslip.findUnique.mockResolvedValue(mockPayslip);
+    prismaMock.payslip.findFirst.mockResolvedValue(null);
+    prismaMock.payslip.create.mockResolvedValue(mockPayslip);
+    prismaMock.payslip.update.mockResolvedValue({
+      ...mockPayslip,
+      status: 'paid',
+      paidAt: new Date(),
+    });
+    prismaMock.payslip.count.mockResolvedValue(1);
+    prismaMock.payslipItem.createMany.mockResolvedValue({ count: 3 });
   });
 
   describe('setSalaryStructure', () => {
+    const dto = {
+      employeeId: 'emp-1',
+      basicSalary: 30000,
+      houseAllowance: 10000,
+      medicalAllowance: 5000,
+      transportAllowance: 3000,
+      otherAllowance: 2000,
+      taxDeduction: 2000,
+      insuranceDeduction: 1000,
+    };
+
     it('should create salary structure for an employee', async () => {
-      const dto = {
-        employeeId: 'emp-1',
-        basicSalary: 30000,
-        houseAllowance: 10000,
-        medicalAllowance: 5000,
-        transportAllowance: 3000,
-        otherAllowance: 2000,
-        taxDeduction: 2000,
-        insuranceDeduction: 1000,
-      };
       const result = await service.setSalaryStructure(dto);
       expect(result).toBeDefined();
       expect(prisma.salaryStructure.create).toHaveBeenCalled();
     });
 
+    it('should mirror the net salary onto Employee.salary (decision #7)', async () => {
+      await service.setSalaryStructure(dto);
+      expect(prisma.salaryStructure.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { employeeId: 'emp-1', isActive: true },
+          data: expect.objectContaining({
+            isActive: false,
+            effectiveTo: expect.any(Date),
+          }),
+        }),
+      );
+      expect(prisma.employee.update).toHaveBeenCalledWith({
+        where: { id: 'emp-1' },
+        data: { salary: expect.anything() },
+      });
+      const updateCall = (prisma.employee.update as jest.Mock).mock.calls[0][0];
+      expect(Number(updateCall.data.salary)).toBe(47000);
+    });
+
     it('should throw if employee not found', async () => {
       jest.spyOn(prisma.employee, 'findUnique').mockResolvedValue(null);
-      const dto = { employeeId: 'invalid', basicSalary: 30000 };
       await expect(service.setSalaryStructure(dto)).rejects.toThrow(
         NotFoundException,
       );
@@ -199,7 +235,7 @@ describe('PayrollService', () => {
         },
         payslipItem: { createMany: jest.fn().mockResolvedValue({ count: 8 }) },
       };
-      (prisma.$transaction as jest.Mock).mockImplementation((cb: any) =>
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb: any) =>
         cb(tx),
       );
 

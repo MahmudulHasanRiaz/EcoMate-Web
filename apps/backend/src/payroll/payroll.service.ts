@@ -37,26 +37,37 @@ export class PayrollService {
     const totalDeductions = taxDeduction + insuranceDeduction + otherDeduction;
     const netSalary = totalEarnings - totalDeductions;
 
-    await this.prisma.salaryStructure.updateMany({
-      where: { employeeId: dto.employeeId, isActive: true },
-      data: { isActive: false },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      await tx.salaryStructure.updateMany({
+        where: { employeeId: dto.employeeId, isActive: true },
+        data: { isActive: false, effectiveTo: new Date() },
+      });
 
-    return this.prisma.salaryStructure.create({
-      data: {
-        employeeId: dto.employeeId,
-        basicSalary,
-        houseAllowance,
-        medicalAllowance,
-        transportAllowance,
-        otherAllowance,
-        taxDeduction,
-        insuranceDeduction,
-        otherDeduction,
-        totalEarnings,
-        totalDeductions,
-        netSalary,
-      },
+      const structure = await tx.salaryStructure.create({
+        data: {
+          employeeId: dto.employeeId,
+          basicSalary,
+          houseAllowance,
+          medicalAllowance,
+          transportAllowance,
+          otherAllowance,
+          taxDeduction,
+          insuranceDeduction,
+          otherDeduction,
+          totalEarnings,
+          totalDeductions,
+          netSalary,
+        },
+      });
+
+      // Decision #7: Employee.salary is a read-only mirror of the active
+      // SalaryStructure net — the structure is the single source of truth.
+      await tx.employee.update({
+        where: { id: dto.employeeId },
+        data: { salary: netSalary },
+      });
+
+      return structure;
     });
   }
 

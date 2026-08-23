@@ -1928,6 +1928,8 @@ model Employee {
   reportingTo      Employee?         @relation("EmployeeReports", fields: [reportingToId], references: [id], onDelete: SetNull)
   reports          Employee[]        @relation("EmployeeReports")
   salaryStructures SalaryStructure[]
+  earnings         EmployeeEarning[]
+  deductions       EmployeeDeduction[]
   payslips         Payslip[]
   history          EmploymentHistory[]
   weeklyOffs       WeeklyOff[]
@@ -1963,7 +1965,8 @@ model SalaryStructure {
   totalEarnings      Decimal  @db.Decimal(10, 2)
   totalDeductions    Decimal  @default(0) @db.Decimal(10, 2)
   netSalary          Decimal  @db.Decimal(10, 2)
-  effectiveFrom      DateTime @default(now())
+  effectiveFrom      DateTime  @default(now())
+  effectiveTo        DateTime?
   isActive           Boolean  @default(true)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
@@ -1971,6 +1974,64 @@ model SalaryStructure {
   employee Employee @relation(fields: [employeeId], references: [id])
 
   @@index([employeeId])
+}
+
+enum EarningType {
+  bonus
+  incentive
+  commission
+  other
+}
+
+enum DeductionType {
+  fine
+  other
+}
+
+enum LedgerStatus {
+  draft
+  approved
+  paid
+}
+
+model EmployeeEarning {
+  id             String       @id @default(uuid())
+  employeeId     String
+  employee       Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  type           EarningType
+  amount         Decimal      @db.Decimal(10, 2)
+  reason         String
+  applicableFrom DateTime?
+  applicableTo   DateTime?
+  status         LedgerStatus @default(draft)
+  payslipId      String?
+  createdById    String?
+  approvedById   String?
+  approvedAt     DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([employeeId, applicableFrom])
+}
+
+model EmployeeDeduction {
+  id             String         @id @default(uuid())
+  employeeId     String
+  employee       Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  type           DeductionType
+  amount         Decimal        @db.Decimal(10, 2)
+  reason         String
+  applicableFrom DateTime?
+  applicableTo   DateTime?
+  status         LedgerStatus   @default(draft)
+  payslipId      String?
+  createdById    String?
+  approvedById   String?
+  approvedAt     DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([employeeId, applicableFrom])
 }
 
 model Payslip {

@@ -3,15 +3,12 @@ import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import {
   ArrowLeft,
-  ArrowDownToLine,
-  Banknote,
   CalendarDays,
   CreditCard,
   Loader2,
   Pencil,
   Percent,
   RotateCcw,
-  TrendingUp,
   Wallet,
 } from 'lucide-react'
 import { Header } from '@/components/layout/header'
@@ -39,6 +36,9 @@ import { useScheduleQuery, useHistoryQuery } from '@/features/hr-schedule/hooks'
 import { ScheduleEditor } from '@/features/hr-schedule/components/schedule-editor'
 import { MonthCalendar } from '@/features/hr-schedule/components/month-calendar'
 import { HistoryTable } from '@/features/hr-schedule/components/history-table'
+import { useSalaryStructureQuery, useSetSalaryStructureMutation } from '@/features/payroll/hooks'
+import { EarningsTable } from '@/features/hr-ledgers/components/earnings-table'
+import { DeductionsTable } from '@/features/hr-ledgers/components/deductions-table'
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return '—'
@@ -80,6 +80,165 @@ interface EmploymentForm {
   reportingToId: string
   exitDate?: Date
   notes: string
+}
+
+const SALARY_FIELDS: { key: string; label: string }[] = [
+  { key: 'basicSalary', label: 'Basic Salary' },
+  { key: 'houseAllowance', label: 'House Allowance' },
+  { key: 'medicalAllowance', label: 'Medical Allowance' },
+  { key: 'transportAllowance', label: 'Transport Allowance' },
+  { key: 'otherAllowance', label: 'Other Allowance' },
+  { key: 'taxDeduction', label: 'Tax Deduction' },
+  { key: 'insuranceDeduction', label: 'Insurance Deduction' },
+  { key: 'otherDeduction', label: 'Other Deduction' },
+]
+
+function CompensationTab({ employeeId, mirrorSalary }: { employeeId: string; mirrorSalary?: number | null }) {
+  const { data: structure, isLoading } = useSalaryStructureQuery(employeeId)
+  const setMut = useSetSalaryStructureMutation(employeeId)
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState<Record<string, string>>({
+    basicSalary: '0',
+    houseAllowance: '0',
+    medicalAllowance: '0',
+    transportAllowance: '0',
+    otherAllowance: '0',
+    taxDeduction: '0',
+    insuranceDeduction: '0',
+    otherDeduction: '0',
+  })
+
+  function openDialog() {
+    setForm({
+      basicSalary: String(structure?.basicSalary ?? 0),
+      houseAllowance: String(structure?.houseAllowance ?? 0),
+      medicalAllowance: String(structure?.medicalAllowance ?? 0),
+      transportAllowance: String(structure?.transportAllowance ?? 0),
+      otherAllowance: String(structure?.otherAllowance ?? 0),
+      taxDeduction: String(structure?.taxDeduction ?? 0),
+      insuranceDeduction: String(structure?.insuranceDeduction ?? 0),
+      otherDeduction: String(structure?.otherDeduction ?? 0),
+    })
+    setOpen(true)
+  }
+
+  function num(key: string) {
+    const n = Number(form[key])
+    return Number.isFinite(n) && n >= 0 ? n : 0
+  }
+
+  function handleSubmit() {
+    setMut.mutate(
+      {
+        employeeId,
+        basicSalary: num('basicSalary'),
+        houseAllowance: num('houseAllowance'),
+        medicalAllowance: num('medicalAllowance'),
+        transportAllowance: num('transportAllowance'),
+        otherAllowance: num('otherAllowance'),
+        taxDeduction: num('taxDeduction'),
+        insuranceDeduction: num('insuranceDeduction'),
+        otherDeduction: num('otherDeduction'),
+      },
+      { onSuccess: () => setOpen(false) },
+    )
+  }
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className='py-16'>
+          <Skeleton className='h-40 w-full' />
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className='flex flex-wrap items-center justify-between gap-2'>
+          <div>
+            <CardTitle>Current Salary Structure</CardTitle>
+            <CardDescription>
+              Employee.salary (mirror): {mirrorSalary == null ? '—' : `${mirrorSalary.toLocaleString()} ৳`}
+            </CardDescription>
+          </div>
+          <Button variant='outline' size='sm' onClick={openDialog}>
+            <Pencil className='h-3.5 w-3.5 mr-1' />
+            {structure ? 'Change Salary Structure' : 'Set Salary Structure'}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {!structure ? (
+          <div className='flex flex-col items-center gap-3 py-12 text-center'>
+            <p className='text-sm text-muted-foreground'>No active salary structure yet.</p>
+            <Button size='sm' onClick={openDialog}>Set Salary Structure</Button>
+          </div>
+        ) : (
+          <div className='grid gap-6 sm:grid-cols-2'>
+            <div className='space-y-3'>
+              <p className='text-xs font-semibold uppercase tracking-wide text-muted-foreground'>Earnings</p>
+              <div className='grid grid-cols-2 gap-x-6 gap-y-3'>
+                <InfoRow label='Basic'>{Number(structure.basicSalary).toLocaleString()} ৳</InfoRow>
+                <InfoRow label='House Allowance'>{Number(structure.houseAllowance).toLocaleString()} ৳</InfoRow>
+                <InfoRow label='Medical Allowance'>{Number(structure.medicalAllowance).toLocaleString()} ৳</InfoRow>
+                <InfoRow label='Transport Allowance'>{Number(structure.transportAllowance).toLocaleString()} ৳</InfoRow>
+                <InfoRow label='Other Allowance'>{Number(structure.otherAllowance).toLocaleString()} ৳</InfoRow>
+                <InfoRow label='Total Earnings'>{Number(structure.totalEarnings).toLocaleString()} ৳</InfoRow>
+              </div>
+            </div>
+            <div className='space-y-3'>
+              <p className='text-xs font-semibold uppercase tracking-wide text-muted-foreground'>Deductions</p>
+              <div className='grid grid-cols-2 gap-x-6 gap-y-3'>
+                <InfoRow label='Tax'>{Number(structure.taxDeduction).toLocaleString()} ৳</InfoRow>
+                <InfoRow label='Insurance'>{Number(structure.insuranceDeduction).toLocaleString()} ৳</InfoRow>
+                <InfoRow label='Other'>{Number(structure.otherDeduction).toLocaleString()} ৳</InfoRow>
+                <InfoRow label='Total Deductions'>{Number(structure.totalDeductions).toLocaleString()} ৳</InfoRow>
+              </div>
+            </div>
+          </div>
+        )}
+        {structure && (
+          <div className='mt-6 rounded-lg border bg-muted/40 p-4'>
+            <div className='flex items-center justify-between'>
+              <p className='text-sm font-medium text-muted-foreground'>Net Salary</p>
+              <p className='text-2xl font-bold tabular-nums'>{Number(structure.netSalary).toLocaleString()} ৳</p>
+            </div>
+          </div>
+        )}
+      </CardContent>
+
+      <Dialog open={open} onOpenChange={(o) => { if (!o) setOpen(false) }}>
+        <DialogContent className='sm:max-w-[560px]'>
+          <DialogHeader>
+            <DialogTitle>{structure ? 'Change Salary Structure' : 'Set Salary Structure'}</DialogTitle>
+          </DialogHeader>
+          <div className='grid gap-3 py-4 sm:grid-cols-2'>
+            {SALARY_FIELDS.map((f) => (
+              <div className='grid gap-2' key={f.key}>
+                <Label>{f.label}</Label>
+                <Input
+                  type='number'
+                  min={0}
+                  value={form[f.key]}
+                  onChange={(e) => setForm((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                />
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant='outline' onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={handleSubmit} disabled={setMut.isPending}>
+              {setMut.isPending && <Loader2 className='h-4 w-4 animate-spin mr-1' />}
+              Save Structure
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  )
 }
 
 export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
@@ -406,7 +565,7 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
           </TabsContent>
 
           <TabsContent value='compensation'>
-            <PlaceholderTab icon={Banknote} module='Compensation' />
+            <CompensationTab employeeId={employee.id} mirrorSalary={employee.salary} />
           </TabsContent>
           <TabsContent value='payroll'>
             <PlaceholderTab icon={Wallet} module='Payroll' />
@@ -418,10 +577,10 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
             <PlaceholderTab icon={Percent} module='Commission' />
           </TabsContent>
           <TabsContent value='earnings'>
-            <PlaceholderTab icon={TrendingUp} module='Earnings' />
+            <EarningsTable employeeId={employee.id} />
           </TabsContent>
           <TabsContent value='deductions'>
-            <PlaceholderTab icon={ArrowDownToLine} module='Deductions' />
+            <DeductionsTable employeeId={employee.id} />
           </TabsContent>
           <TabsContent value='leave'>
             <PlaceholderTab icon={CalendarDays} module='Leave' />
