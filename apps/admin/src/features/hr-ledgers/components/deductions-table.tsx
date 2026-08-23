@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -42,7 +42,7 @@ function formatDate(dateStr?: string | null) {
 
 export function DeductionsTable({ employeeId, page: initialPage }: { employeeId: string; page?: number }) {
   const [page, setPage] = useState(initialPage ?? 1)
-  const { data, isLoading } = useDeductionsQuery({ employeeId, page })
+  const { data, isLoading, isError, refetch } = useDeductionsQuery({ employeeId, page })
   const approveMut = useApproveDeductionMutation(employeeId)
 
   const rows: DeductionRow[] = Array.isArray(data?.data) ? data.data : []
@@ -62,6 +62,13 @@ export function DeductionsTable({ employeeId, page: initialPage }: { employeeId:
       <CardContent>
         {isLoading ? (
           <div className='flex justify-center py-8'><Loader2 className='animate-spin h-6 w-6 text-muted-foreground' /></div>
+        ) : isError ? (
+          <div className='flex flex-col items-center gap-3 py-10 text-center'>
+            <p className='text-sm text-muted-foreground'>Could not load deductions.</p>
+            <Button variant='outline' size='sm' onClick={() => refetch()}>
+              <RotateCcw className='h-4 w-4 mr-1' /> Retry
+            </Button>
+          </div>
         ) : rows.length === 0 ? (
           <div className='py-8 text-center text-sm text-muted-foreground'>No deductions recorded yet</div>
         ) : (

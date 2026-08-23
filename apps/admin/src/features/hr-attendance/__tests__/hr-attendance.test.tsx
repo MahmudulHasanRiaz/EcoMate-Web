@@ -153,4 +153,30 @@ describe('AttendancePage', () => {
       'Attendance record already exists for this employee on this date',
     )
   })
+
+  it('shows a friendly error with Retry (not an empty table) when the list request fails', async () => {
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/hr/attendance/daily-overview') {
+        return Promise.resolve({ data: { date: '2026-08-23', total: 0, counts: EMPTY_COUNTS } })
+      }
+      if (url === '/hr/attendance') {
+        return Promise.reject({ response: { status: 403, data: { message: 'Forbidden' } } })
+      }
+      if (url === '/employees') {
+        return Promise.resolve({ data: { data: EMPLOYEES, meta: { total: 1, page: 1, perPage: 100, totalPages: 1 } } })
+      }
+      if (url === '/departments') {
+        return Promise.resolve({ data: EMPTY_LIST })
+      }
+      return Promise.resolve({ data: {} })
+    })
+
+    const { getByText, getByRole } = await wrap(<AttendancePage />)
+
+    await expect
+      .element(getByText('Could not load attendance records.'))
+      .toBeInTheDocument()
+    await expect.element(getByRole('button', { name: /Retry/i })).toBeInTheDocument()
+    expect(mockGet).toHaveBeenCalledWith('/hr/attendance', expect.anything())
+  })
 })

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Pencil, Trash2, Loader2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Loader2, RotateCcw } from 'lucide-react'
 import { useDesignationsQuery, useDesignationMutations } from './hooks'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -20,7 +20,7 @@ export default function DesignationsPage() {
   const [level, setLevel] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
 
-  const { data, isLoading } = useDesignationsQuery()
+  const { data, isLoading, isError, refetch } = useDesignationsQuery()
   const { createDesignation, updateDesignation, deleteDesignation } = useDesignationMutations()
 
   function openCreate() {
@@ -86,6 +86,17 @@ export default function DesignationsPage() {
                   <TableRow>
                     <TableCell colSpan={4} className='text-center py-8'>
                       <Loader2 className='animate-spin h-6 w-6 mx-auto text-muted-foreground' />
+                    </TableCell>
+                  </TableRow>
+                ) : isError ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className='py-8'>
+                      <div className='flex flex-col items-center gap-3 text-center'>
+                        <p className='text-sm text-muted-foreground'>Could not load designations.</p>
+                        <Button variant='outline' size='sm' onClick={() => refetch()}>
+                          <RotateCcw className='h-4 w-4 mr-1' /> Retry
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ) : listData.length === 0 ? (

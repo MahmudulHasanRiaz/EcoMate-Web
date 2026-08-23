@@ -64,17 +64,29 @@ export class HrAttendanceService {
       );
     }
 
-    return this.prisma.attendanceRecord.create({
-      data: {
-        employeeId: dto.employeeId,
-        date,
-        status: dto.status,
-        checkInTime,
-        checkOutTime,
-        note: dto.note ?? null,
-        recordedById: actorId ?? null,
-      },
-    });
+    try {
+      return await this.prisma.attendanceRecord.create({
+        data: {
+          employeeId: dto.employeeId,
+          date,
+          status: dto.status,
+          checkInTime,
+          checkOutTime,
+          note: dto.note ?? null,
+          recordedById: actorId ?? null,
+        },
+      });
+    } catch (err) {
+      // Race guard: two concurrent creates for the same (employeeId, date)
+      // can both pass the pre-check above; the unique constraint then fires
+      // P2002 — surface as a friendly 409, not a raw Prisma error.
+      if ((err as { code?: string } | null)?.code === 'P2002') {
+        throw new ConflictException(
+          'Attendance record already exists for this employee on this date',
+        );
+      }
+      throw err;
+    }
   }
 
   async updateRecord(id: string, dto: UpdateAttendanceDto, actorId?: string) {

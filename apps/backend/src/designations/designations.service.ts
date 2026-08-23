@@ -34,13 +34,23 @@ export class DesignationsService {
     if (existing)
       throw new ConflictException('Designation name already exists');
 
-    return this.prisma.designation.create({
-      data: {
-        name: dto.name,
-        slug,
-        level: dto.level ?? 0,
-      },
-    });
+    try {
+      return await this.prisma.designation.create({
+        data: {
+          name: dto.name,
+          slug,
+          level: dto.level ?? 0,
+        },
+      });
+    } catch (err) {
+      // Race + slug-collision guard: names differing only in case share a
+      // slug, and concurrent creates can both pass the pre-check — P2002 on
+      // name/slug surfaces as a friendly 409.
+      if ((err as { code?: string } | null)?.code === 'P2002') {
+        throw new ConflictException('Designation name already exists');
+      }
+      throw err;
+    }
   }
 
   async update(id: string, dto: UpdateDesignationDto) {
@@ -59,10 +69,17 @@ export class DesignationsService {
       data.slug = dto.name.toLowerCase().replace(/\s+/g, '-');
     }
 
-    return this.prisma.designation.update({
-      where: { id },
-      data,
-    });
+    try {
+      return await this.prisma.designation.update({
+        where: { id },
+        data,
+      });
+    } catch (err) {
+      if ((err as { code?: string } | null)?.code === 'P2002') {
+        throw new ConflictException('Designation name already exists');
+      }
+      throw err;
+    }
   }
 
   async remove(id: string) {

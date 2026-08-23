@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2, Trash2 } from 'lucide-react'
+import { Loader2, RotateCcw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
@@ -46,7 +46,7 @@ function formatMoney(n?: number | null) {
 const METHODS: PaymentMethod[] = ['Cash', 'Bank', 'Check', 'Mobile']
 
 export function PaymentsPanel({ employeeId }: { employeeId: string }) {
-  const { data, isLoading } = usePayslipsQuery({ employeeId })
+  const { data, isLoading, isError, refetch } = usePayslipsQuery({ employeeId })
   const [selectedPayslipId, setSelectedPayslipId] = useState<string | null>(null)
 
   const rows: PayslipResponse[] = Array.isArray(data?.data) ? data.data : []
@@ -64,6 +64,13 @@ export function PaymentsPanel({ employeeId }: { employeeId: string }) {
         {isLoading ? (
           <div className='flex justify-center py-8'>
             <Loader2 className='animate-spin h-6 w-6 text-muted-foreground' />
+          </div>
+        ) : isError ? (
+          <div className='flex flex-col items-center gap-3 py-10 text-center'>
+            <p className='text-sm text-muted-foreground'>Could not load payslips.</p>
+            <Button variant='outline' size='sm' onClick={() => refetch()}>
+              <RotateCcw className='h-4 w-4 mr-1' /> Retry
+            </Button>
           </div>
         ) : rows.length === 0 ? (
           <div className='py-8 text-center text-sm text-muted-foreground'>
@@ -119,7 +126,7 @@ function PaymentsForPayslip({
   employeeId: string
   payslip: PayslipResponse
 }) {
-  const { data: payments, isLoading } = usePaymentsQuery(payslip.id)
+  const { data: payments, isLoading, isError, refetch } = usePaymentsQuery(payslip.id)
   const createMut = useCreatePaymentMutation(employeeId, payslip.id)
   const deleteMut = useDeletePaymentMutation(employeeId, payslip.id)
 
@@ -247,6 +254,13 @@ function PaymentsForPayslip({
       {isLoading ? (
         <div className='flex justify-center py-6'>
           <Loader2 className='animate-spin h-5 w-5 text-muted-foreground' />
+        </div>
+      ) : isError ? (
+        <div className='flex flex-col items-center gap-3 py-6 text-center'>
+          <p className='text-sm text-muted-foreground'>Could not load payments.</p>
+          <Button variant='outline' size='sm' onClick={() => refetch()}>
+            <RotateCcw className='h-4 w-4 mr-1' /> Retry
+          </Button>
         </div>
       ) : list.length === 0 ? (
         <p className='py-4 text-center text-sm text-muted-foreground'>No payments recorded.</p>

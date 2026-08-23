@@ -138,35 +138,46 @@ export class EmployeesService {
 
       const employeeId = `EMP-${this.dateStr()}-${String(counter.seq).padStart(4, '0')}`;
 
-      const employee = await tx.employee.create({
-        data: {
-          betterAuthUserId: dto.betterAuthUserId,
-          employeeId,
-          departmentId: dto.departmentId,
-          designationId: dto.designationId,
-          accessPresetId: dto.accessPresetId,
-          reportingToId: dto.reportingToId,
-          employmentType: dto.employmentType || 'full_time',
-          status: dto.status,
-          joiningDate: new Date(dto.joiningDate),
-          exitDate: dto.exitDate ? new Date(dto.exitDate) : undefined,
-          salary: dto.salary ?? undefined,
-          bankAccountNo: dto.bankAccountNo,
-          bankName: dto.bankName,
-          profilePictureUrl: dto.profilePictureUrl,
-          notes: dto.notes,
-        },
-        include: {
-          department: { select: { id: true, name: true, slug: true } },
-          designation: {
-            select: { id: true, name: true, slug: true, level: true },
+      // Race guard: two concurrent creates for the same BA user can both pass
+      // the pre-check above; the unique betterAuthUserId constraint then fires
+      // P2002 — surface as a friendly 409, not a raw Prisma error.
+      let employee;
+      try {
+        employee = await tx.employee.create({
+          data: {
+            betterAuthUserId: dto.betterAuthUserId,
+            employeeId,
+            departmentId: dto.departmentId,
+            designationId: dto.designationId,
+            accessPresetId: dto.accessPresetId,
+            reportingToId: dto.reportingToId,
+            employmentType: dto.employmentType || 'full_time',
+            status: dto.status,
+            joiningDate: new Date(dto.joiningDate),
+            exitDate: dto.exitDate ? new Date(dto.exitDate) : undefined,
+            salary: dto.salary ?? undefined,
+            bankAccountNo: dto.bankAccountNo,
+            bankName: dto.bankName,
+            profilePictureUrl: dto.profilePictureUrl,
+            notes: dto.notes,
           },
-          accessPreset: { select: { id: true, name: true } },
-          betterAuthUser: {
-            select: { id: true, name: true, email: true, role: true },
+          include: {
+            department: { select: { id: true, name: true, slug: true } },
+            designation: {
+              select: { id: true, name: true, slug: true, level: true },
+            },
+            accessPreset: { select: { id: true, name: true } },
+            betterAuthUser: {
+              select: { id: true, name: true, email: true, role: true },
+            },
           },
-        },
-      });
+        });
+      } catch (err) {
+        if ((err as { code?: string } | null)?.code === 'P2002') {
+          throw new ConflictException('User is already an employee');
+        }
+        throw err;
+      }
 
       await baPrisma.betterAuthUser.update({
         where: { id: dto.betterAuthUserId },

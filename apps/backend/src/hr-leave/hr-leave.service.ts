@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLeaveTypeDto } from './dto/create-leave-type.dto';
@@ -11,15 +16,37 @@ export class HrLeaveService {
   constructor(private prisma: PrismaService) {}
 
   async createType(dto: CreateLeaveTypeDto) {
-    return this.prisma.leaveType.create({
-      data: {
-        name: dto.name,
-        code: dto.code,
-        daysPerYear: dto.daysPerYear,
-        isPaid: dto.isPaid ?? true,
-        isActive: dto.isActive ?? true,
-      },
+    const byName = await this.prisma.leaveType.findUnique({
+      where: { name: dto.name },
     });
+    if (byName)
+      throw new ConflictException('Leave type with this name already exists');
+    const byCode = await this.prisma.leaveType.findUnique({
+      where: { code: dto.code },
+    });
+    if (byCode)
+      throw new ConflictException('Leave type with this code already exists');
+
+    try {
+      return await this.prisma.leaveType.create({
+        data: {
+          name: dto.name,
+          code: dto.code,
+          daysPerYear: dto.daysPerYear,
+          isPaid: dto.isPaid ?? true,
+          isActive: dto.isActive ?? true,
+        },
+      });
+    } catch (err) {
+      // Race guard: concurrent creates can both pass the pre-checks; P2002 on
+      // the unique name/code constraints surfaces as a friendly 409.
+      if ((err as { code?: string } | null)?.code === 'P2002') {
+        throw new ConflictException(
+          'Leave type with this name or code already exists',
+        );
+      }
+      throw err;
+    }
   }
 
   async listTypes(filter: { isActive?: boolean } = {}) {
@@ -34,23 +61,73 @@ export class HrLeaveService {
   async updateType(id: string, dto: UpdateLeaveTypeDto) {
     const existing = await this.prisma.leaveType.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Leave type not found');
-    return this.prisma.leaveType.update({
-      where: { id },
-      data: {
-        ...(dto.name !== undefined ? { name: dto.name } : {}),
-        ...(dto.code !== undefined ? { code: dto.code } : {}),
-        ...(dto.daysPerYear !== undefined ? { daysPerYear: dto.daysPerYear } : {}),
-        ...(dto.isPaid !== undefined ? { isPaid: dto.isPaid } : {}),
-        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
-      },
-    });
+
+    if (dto.name !== undefined && dto.name !== existing.name) {
+      const byName = await this.prisma.leaveType.findUnique({
+        where: { name: dto.name },
+      });
+      if (byName)
+        throw new ConflictException(
+          'Leave type with this name already exists',
+        );
+    }
+    if (dto.code !== undefined && dto.code !== existing.code) {
+      const byCode = await this.prisma.leaveType.findUnique({
+        where: { code: dto.code },
+      });
+      if (byCode)
+        throw new ConflictException(
+          'Leave type with this code already exists',
+        );
+    }
+
+    try {
+      return await this.prisma.leaveType.update({
+        where: { id },
+        data: {
+          ...(dto.name !== undefined ? { name: dto.name } : {}),
+          ...(dto.code !== undefined ? { code: dto.code } : {}),
+          ...(dto.daysPerYear !== undefined ? { daysPerYear: dto.daysPerYear } : {}),
+          ...(dto.isPaid !== undefined ? { isPaid: dto.isPaid } : {}),
+          ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+        },
+      });
+    } catch (err) {
+      if ((err as { code?: string } | null)?.code === 'P2002') {
+        throw new ConflictException(
+          'Leave type with this name or code already exists',
+        );
+      }
+      throw err;
+    }
   }
 
   async deleteType(id: string) {
     const existing = await this.prisma.leaveType.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Leave type not found');
-    await this.prisma.leaveType.delete({ where: { id } });
-    return { success: true, id };
+
+    // LeaveType → LeaveRequest is onDelete: Restrict; deleting a type that
+    // has requests would throw a raw P2003. Surface it as a friendly 409.
+    const requestCount = await this.prisma.leaveRequest.count({
+      where: { typeId: id },
+    });
+    if (requestCount > 0)
+      throw new ConflictException(
+        'Cannot delete leave type that has requests',
+      );
+
+    try {
+      await this.prisma.leaveType.delete({ where: { id } });
+      return { success: true, id };
+    } catch (err) {
+      // Race guard: a request created between the count and the delete.
+      if ((err as { code?: string } | null)?.code === 'P2003') {
+        throw new ConflictException(
+          'Cannot delete leave type that has requests',
+        );
+      }
+      throw err;
+    }
   }
 
   private computeDays(start: Date, end: Date): number {

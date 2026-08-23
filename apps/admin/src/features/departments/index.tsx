@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Pencil, Trash2, Loader2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Loader2, RotateCcw } from 'lucide-react'
 import { useDepartmentsQuery, useDepartmentMutations } from './hooks'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -22,7 +22,7 @@ export default function DepartmentsPage() {
   const [isActiveField, setIsActiveField] = useState(true)
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
 
-  const { data, isLoading } = useDepartmentsQuery()
+  const { data, isLoading, isError, refetch } = useDepartmentsQuery()
   const { createDepartment, updateDepartment, deleteDepartment } = useDepartmentMutations()
 
   function openCreate() {
@@ -97,6 +97,17 @@ export default function DepartmentsPage() {
                   <TableRow>
                     <TableCell colSpan={6} className='text-center py-8'>
                       <Loader2 className='animate-spin h-6 w-6 mx-auto text-muted-foreground' />
+                    </TableCell>
+                  </TableRow>
+                ) : isError ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className='py-8'>
+                      <div className='flex flex-col items-center gap-3 text-center'>
+                        <p className='text-sm text-muted-foreground'>Could not load departments.</p>
+                        <Button variant='outline' size='sm' onClick={() => refetch()}>
+                          <RotateCcw className='h-4 w-4 mr-1' /> Retry
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ) : listData.length === 0 ? (

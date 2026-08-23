@@ -83,6 +83,32 @@ describe('HrAttendanceService', () => {
       expect(prismaMock.attendanceRecord.create).not.toHaveBeenCalled();
     });
 
+    it('converts a concurrent P2002 race on (employeeId, date) into 409', async () => {
+      prismaMock.employee.findUnique.mockResolvedValue(EMPLOYEE_ACTIVE);
+      prismaMock.attendanceRecord.findUnique.mockResolvedValue(null);
+      prismaMock.attendanceRecord.create.mockRejectedValue({
+        code: 'P2002',
+        meta: { target: ['employeeId', 'date'] },
+      });
+
+      await expect(service.createRecord(baseDto, 'actor-1')).rejects.toThrow(
+        ConflictException,
+      );
+      await expect(
+        service.createRecord(baseDto, 'actor-1'),
+      ).rejects.toThrow(/already exists for this employee on this date/i);
+    });
+
+    it('rethrows non-unique failures from the create', async () => {
+      prismaMock.employee.findUnique.mockResolvedValue(EMPLOYEE_ACTIVE);
+      prismaMock.attendanceRecord.findUnique.mockResolvedValue(null);
+      prismaMock.attendanceRecord.create.mockRejectedValue(new Error('boom'));
+
+      await expect(service.createRecord(baseDto, 'actor-1')).rejects.toThrow(
+        'boom',
+      );
+    });
+
     it('throws 404 when the employee is missing', async () => {
       prismaMock.employee.findUnique.mockResolvedValue(null);
       await expect(service.createRecord(baseDto, 'actor-1')).rejects.toThrow(

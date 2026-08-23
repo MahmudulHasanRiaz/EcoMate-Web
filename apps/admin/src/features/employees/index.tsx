@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, Eye } from 'lucide-react'
+import { Plus, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, Eye, RotateCcw } from 'lucide-react'
 import { employeesApi, type EmployeeResponse, type EmploymentType, type EmployeeStatus } from './api'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -79,7 +79,7 @@ export function Employees() {
   })
   const [deleteTarget, setDeleteTarget] = useState<EmployeeResponse | null>(null)
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['employees', page, perPage, statusFilter],
     queryFn: () => employeesApi.list({ page, perPage, status: statusFilter || undefined }).then(r => r.data),
   })
@@ -189,6 +189,21 @@ export function Employees() {
                   <TableRow>
                     <TableCell colSpan={9} className='text-center py-8'>
                       <Loader2 className='animate-spin h-6 w-6 mx-auto text-muted-foreground' />
+                    </TableCell>
+                  </TableRow>
+                ) : isError ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className='py-8'>
+                      <div className='flex flex-col items-center gap-3 text-center'>
+                        <p className='text-sm text-muted-foreground'>
+                          {(error as any)?.response?.status === 403
+                            ? 'You don\'t have permission to view employees.'
+                            : 'Could not load employees.'}
+                        </p>
+                        <Button variant='outline' size='sm' onClick={() => refetch()}>
+                          <RotateCcw className='h-4 w-4 mr-1' /> Retry
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ) : listData.length === 0 ? (

@@ -76,6 +76,19 @@ describe('DepartmentsService', () => {
         ConflictException,
       );
     });
+
+    it('converts a concurrent P2002/slug-collision race into 409', async () => {
+      (prisma.department.create as jest.Mock).mockRejectedValue({
+        code: 'P2002',
+        meta: { target: ['slug'] },
+      });
+      await expect(service.create({ name: 'Sales' })).rejects.toThrow(
+        ConflictException,
+      );
+      await expect(service.create({ name: 'Sales' })).rejects.toThrow(
+        /name already exists/i,
+      );
+    });
   });
 
   describe('findAll', () => {

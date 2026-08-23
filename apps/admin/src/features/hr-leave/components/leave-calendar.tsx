@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
 import { getDay, getDaysInMonth, startOfMonth } from 'date-fns'
 import { cn } from '@/lib/utils'
-import { Loader2 } from 'lucide-react'
+import { Loader2, RotateCcw } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { useCalendarQuery } from '../hooks'
 
 const WEEKDAY_HEADERS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -19,7 +20,7 @@ export function LeaveCalendar({
   year: number
   month: number
 }) {
-  const { data, isLoading } = useCalendarQuery({ employeeId, year, month })
+  const { data, isLoading, isError, refetch } = useCalendarQuery({ employeeId, year, month })
 
   const leaves = Array.isArray(data) ? data : []
 
@@ -47,6 +48,17 @@ export function LeaveCalendar({
     return (
       <div className='flex justify-center py-6'>
         <Loader2 className='animate-spin h-6 w-6 text-muted-foreground' />
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <div className='flex flex-col items-center gap-3 py-8 text-center'>
+        <p className='text-sm text-muted-foreground'>Could not load leave calendar.</p>
+        <Button variant='outline' size='sm' onClick={() => refetch()}>
+          <RotateCcw className='h-4 w-4 mr-1' /> Retry
+        </Button>
       </div>
     )
   }

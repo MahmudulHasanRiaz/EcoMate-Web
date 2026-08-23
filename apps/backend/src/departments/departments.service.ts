@@ -50,14 +50,24 @@ export class DepartmentsService {
     if (existing)
       throw new ConflictException('Department name already exists');
 
-    return this.prisma.department.create({
-      data: {
-        name: dto.name,
-        slug: this.slugify(dto.name),
-        description: dto.description,
-        isActive: dto.isActive ?? true,
-      },
-    });
+    try {
+      return await this.prisma.department.create({
+        data: {
+          name: dto.name,
+          slug: this.slugify(dto.name),
+          description: dto.description,
+          isActive: dto.isActive ?? true,
+        },
+      });
+    } catch (err) {
+      // Race + slug-collision guard: names differing only in case share a
+      // slug, and concurrent creates can both pass the pre-check — P2002 on
+      // name/slug surfaces as a friendly 409.
+      if ((err as { code?: string } | null)?.code === 'P2002') {
+        throw new ConflictException('Department name already exists');
+      }
+      throw err;
+    }
   }
 
   async update(id: string, dto: UpdateDepartmentDto) {
@@ -76,10 +86,17 @@ export class DepartmentsService {
       data.slug = this.slugify(dto.name);
     }
 
-    return this.prisma.department.update({
-      where: { id },
-      data,
-    });
+    try {
+      return await this.prisma.department.update({
+        where: { id },
+        data,
+      });
+    } catch (err) {
+      if ((err as { code?: string } | null)?.code === 'P2002') {
+        throw new ConflictException('Department name already exists');
+      }
+      throw err;
+    }
   }
 
   async remove(id: string) {

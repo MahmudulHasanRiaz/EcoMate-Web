@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { HrLeaveService } from '../hr-leave.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -42,6 +42,7 @@ describe('HrLeaveService', () => {
 
   describe('leave type CRUD', () => {
     it('createType persists with defaults', async () => {
+      prismaMock.leaveType.findUnique.mockResolvedValue(null);
       prismaMock.leaveType.create.mockResolvedValue({ id: 'lt-1' });
       const res = await service.createType({
         name: 'Casual Leave',
@@ -58,6 +59,60 @@ describe('HrLeaveService', () => {
           isActive: true,
         }),
       });
+    });
+
+    it('createType rejects a duplicate name', async () => {
+      prismaMock.leaveType.findUnique.mockResolvedValueOnce({ id: 'lt-x' });
+      await expect(
+        service.createType({ name: 'Casual Leave', code: 'x', daysPerYear: 1 }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('createType rejects a duplicate code', async () => {
+      prismaMock.leaveType.findUnique.mockResolvedValueOnce(null);
+      prismaMock.leaveType.findUnique.mockResolvedValueOnce({ id: 'lt-x' });
+      await expect(
+        service.createType({ name: 'New Leave', code: 'casual', daysPerYear: 1 }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('converts a concurrent P2002 race on name/code into 409', async () => {
+      prismaMock.leaveType.findUnique.mockResolvedValue(null);
+      prismaMock.leaveType.create.mockRejectedValue({
+        code: 'P2002',
+        meta: { target: ['name'] },
+      });
+      await expect(
+        service.createType({ name: 'Casual Leave', code: 'casual', daysPerYear: 10 }),
+      ).rejects.toThrow(ConflictException);
+      await expect(
+        service.createType({ name: 'Casual Leave', code: 'casual', daysPerYear: 10 }),
+      ).rejects.toThrow(/already exists/i);
+    });
+
+    it('updateType rejects moving onto another type name/code', async () => {
+      prismaMock.leaveType.findUnique.mockResolvedValueOnce({ id: 'lt-1', name: 'A', code: 'a' });
+      prismaMock.leaveType.findUnique.mockResolvedValueOnce({ id: 'lt-2', name: 'Casual Leave' });
+      await expect(
+        service.updateType('lt-1', { name: 'Casual Leave' }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('deleteType rejects a type that has leave requests', async () => {
+      prismaMock.leaveType.findUnique.mockResolvedValue({ id: 'lt-1' });
+      prismaMock.leaveRequest.count.mockResolvedValue(2);
+      await expect(service.deleteType('lt-1')).rejects.toThrow(ConflictException);
+      expect(prismaMock.leaveType.delete).not.toHaveBeenCalled();
+    });
+
+    it('deleteType converts a concurrent P2003 FK-restrict into 409', async () => {
+      prismaMock.leaveType.findUnique.mockResolvedValue({ id: 'lt-1' });
+      prismaMock.leaveRequest.count.mockResolvedValue(0);
+      prismaMock.leaveType.delete.mockRejectedValue({
+        code: 'P2003',
+        meta: { field_name: 'LeaveRequest_typeId_fkey' },
+      });
+      await expect(service.deleteType('lt-1')).rejects.toThrow(ConflictException);
     });
 
     it('listTypes filters by isActive', async () => {

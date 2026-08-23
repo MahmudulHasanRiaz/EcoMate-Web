@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -46,6 +47,7 @@ export function LeaveTypeDialog({ type }: { type?: LeaveType | null }) {
 
   function handleSubmit() {
     if (!name.trim() || !code.trim()) {
+      toast.error('Name and code are required')
       return
     }
     const dto = {

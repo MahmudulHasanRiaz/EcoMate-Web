@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, RotateCcw } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -41,7 +41,7 @@ import type { LeaveRequest, LeaveStatus, LeaveType } from './api'
 const TYPE_PAID_BADGE = 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
 
 function TypesTab() {
-  const { data: types, isLoading } = useLeaveTypesQuery({})
+  const { data: types, isLoading, isError, refetch } = useLeaveTypesQuery({})
   const deleteMut = useDeleteTypeMutation()
   const [deleteTarget, setDeleteTarget] = useState<LeaveType | null>(null)
   const rows: LeaveType[] = Array.isArray(types) ? types : []
@@ -60,6 +60,13 @@ function TypesTab() {
       <CardContent>
         {isLoading ? (
           <div className='flex justify-center py-8'><Loader2 className='animate-spin h-6 w-6 text-muted-foreground' /></div>
+        ) : isError ? (
+          <div className='flex flex-col items-center gap-3 py-10 text-center'>
+            <p className='text-sm text-muted-foreground'>Could not load leave types.</p>
+            <Button variant='outline' size='sm' onClick={() => refetch()}>
+              <RotateCcw className='h-4 w-4 mr-1' /> Retry
+            </Button>
+          </div>
         ) : rows.length === 0 ? (
           <div className='py-8 text-center text-sm text-muted-foreground'>No leave types yet.</div>
         ) : (

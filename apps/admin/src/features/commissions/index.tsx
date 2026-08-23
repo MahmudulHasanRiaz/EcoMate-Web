@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, RotateCcw } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -26,7 +26,7 @@ function formatAmount(rule: CommissionRule) {
 }
 
 export function CommissionsPage() {
-  const { data: rules, isLoading } = useCommissionRulesQuery({})
+  const { data: rules, isLoading, isError, refetch } = useCommissionRulesQuery({})
   const setActiveMut = useSetRuleActiveMutation()
   const deleteMut = useDeleteRuleMutation()
   const [deleteTarget, setDeleteTarget] = useState<CommissionRule | null>(null)
@@ -62,6 +62,13 @@ export function CommissionsPage() {
           <CardContent>
             {isLoading ? (
               <div className='flex justify-center py-8'><Loader2 className='animate-spin h-6 w-6 text-muted-foreground' /></div>
+            ) : isError ? (
+              <div className='flex flex-col items-center gap-3 py-10 text-center'>
+                <p className='text-sm text-muted-foreground'>Could not load commission rules.</p>
+                <Button variant='outline' size='sm' onClick={() => refetch()}>
+                  <RotateCcw className='h-4 w-4 mr-1' /> Retry
+                </Button>
+              </div>
             ) : rows.length === 0 ? (
               <div className='py-8 text-center text-sm text-muted-foreground'>No commission rules yet.</div>
             ) : (

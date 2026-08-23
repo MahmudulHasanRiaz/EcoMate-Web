@@ -232,18 +232,31 @@ export class PayrollService {
     ];
 
     return this.prisma.$transaction(async (tx) => {
-      const payslip = await tx.payslip.create({
-        data: {
-          employeeId,
-          periodStart,
-          periodEnd,
-          periodKey,
-          totalEarnings: grossEarnings,
-          totalDeductions: totalDeductions,
-          netPay,
-          status: 'draft',
-        },
-      });
+      // Race guard: two concurrent generations for the same (employeeId,
+      // periodKey) can both pass the pre-check above; the unique constraint
+      // then fires P2002 — surface it as a friendly 409, not a raw Prisma.
+      let payslip;
+      try {
+        payslip = await tx.payslip.create({
+          data: {
+            employeeId,
+            periodStart,
+            periodEnd,
+            periodKey,
+            totalEarnings: grossEarnings,
+            totalDeductions: totalDeductions,
+            netPay,
+            status: 'draft',
+          },
+        });
+      } catch (err) {
+        if ((err as { code?: string } | null)?.code === 'P2002') {
+          throw new ConflictException(
+            'Payslip already exists for this period',
+          );
+        }
+        throw err;
+      }
 
       await tx.payslipItem.createMany({
         data: items.map((item) => ({ ...item, payslipId: payslip.id })),

@@ -1,4 +1,4 @@
-import { Loader2, ChevronLeft, ChevronRight, ArrowRight } from 'lucide-react'
+import { Loader2, ChevronLeft, ChevronRight, ArrowRight, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import type { HistoryEntry } from '../api'
@@ -38,15 +38,24 @@ interface HistoryTableProps {
   data: HistoryEntry[]
   meta: { total: number; page: number; perPage: number; totalPages: number } | undefined
   isLoading: boolean
+  isError?: boolean
+  onRetry?: () => void
   onPageChange: (page: number) => void
 }
 
-export function HistoryTable({ data, meta, isLoading, onPageChange }: HistoryTableProps) {
+export function HistoryTable({ data, meta, isLoading, isError, onRetry, onPageChange }: HistoryTableProps) {
   return (
     <div>
       {isLoading ? (
         <div className='flex justify-center py-8'>
           <Loader2 className='animate-spin h-6 w-6 text-muted-foreground' />
+        </div>
+      ) : isError ? (
+        <div className='flex flex-col items-center gap-3 py-10 text-center'>
+          <p className='text-sm text-muted-foreground'>Could not load change history.</p>
+          <Button variant='outline' size='sm' onClick={() => onRetry?.()}>
+            <RotateCcw className='h-4 w-4 mr-1' /> Retry
+          </Button>
         </div>
       ) : data.length === 0 ? (
         <div className='py-8 text-center text-sm text-muted-foreground'>No changes recorded yet</div>

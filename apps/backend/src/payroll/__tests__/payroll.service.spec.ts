@@ -489,6 +489,57 @@ describe('PayrollService', () => {
         ),
       ).rejects.toThrow(ConflictException);
     });
+
+    it('converts a concurrent P2002 race on (employeeId, periodKey) into 409', async () => {
+      const tx = {
+        payslip: {
+          create: jest
+            .fn()
+            .mockRejectedValue({ code: 'P2002', meta: { target: ['employeeId', 'periodKey'] } }),
+          findUnique: jest.fn(),
+        },
+        payslipItem: { createMany: jest.fn() },
+      };
+      (prisma.$transaction as jest.Mock)
+        .mockImplementationOnce((cb: any) => cb(tx))
+        .mockImplementationOnce((cb: any) => cb(tx));
+
+      await expect(
+        service.generatePayslip(
+          'emp-1',
+          new Date('2025-06-01'),
+          new Date('2025-06-30'),
+        ),
+      ).rejects.toThrow(ConflictException);
+      await expect(
+        service.generatePayslip(
+          'emp-1',
+          new Date('2025-06-01'),
+          new Date('2025-06-30'),
+        ),
+      ).rejects.toThrow(/already exists for this period/i);
+    });
+
+    it('rethrows non-unique failures from the create', async () => {
+      const tx = {
+        payslip: {
+          create: jest.fn().mockRejectedValue(new Error('boom')),
+          findUnique: jest.fn(),
+        },
+        payslipItem: { createMany: jest.fn() },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb: any) =>
+        cb(tx),
+      );
+
+      await expect(
+        service.generatePayslip(
+          'emp-1',
+          new Date('2025-06-01'),
+          new Date('2025-06-30'),
+        ),
+      ).rejects.toThrow('boom');
+    });
   });
 
   describe('setStatus (§5.1 lifecycle)', () => {

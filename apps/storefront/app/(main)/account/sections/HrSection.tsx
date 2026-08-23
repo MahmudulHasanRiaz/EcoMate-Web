@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Loader2,
+  RefreshCcw,
   User,
   Wallet,
   Receipt,
@@ -108,6 +109,20 @@ function EmptyState({ message }: { message: string }) {
   );
 }
 
+function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="text-center py-12">
+      <p className="text-sm text-gray-500">{message}</p>
+      <button
+        onClick={onRetry}
+        className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-brand-blue border border-brand-blue/30 rounded-lg px-4 py-2 hover:bg-brand-blue/5 transition-colors"
+      >
+        <RefreshCcw size={14} /> Retry
+      </button>
+    </div>
+  );
+}
+
 function Card({ children }: { children: React.ReactNode }) {
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8">
@@ -130,15 +145,32 @@ function ProfileTab() {
   const { config } = useStorefrontConfig();
   const [data, setData] = useState<HrProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(false);
     getHrProfile()
       .then(setData)
-      .catch(() => setData(null))
+      .catch(() => {
+        setData(null);
+        setError(true);
+      })
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    load();
+  }, [load]);
+
   if (loading) return <Spinner />;
+  if (error)
+    return (
+      <Card>
+        <h3 className="text-xl font-bold text-gray-800 mb-6">My Profile</h3>
+        <ErrorState message="Could not load your profile." onRetry={load} />
+      </Card>
+    );
   if (!data) return <EmptyState message="Profile not available" />;
 
   const rows: { label: string; value: string }[] = [
@@ -192,18 +224,33 @@ function SalaryTab() {
   const [data, setData] = useState<SalaryStructure | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(false);
     getHrSalary()
       .then(setData)
       .catch((err) => {
         if (err?.response?.status === 404) setNotFound(true);
+        else setError(true);
         setData(null);
       })
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    load();
+  }, [load]);
+
   if (loading) return <Spinner />;
+  if (error)
+    return (
+      <Card>
+        <h3 className="text-xl font-bold text-gray-800 mb-6">Salary</h3>
+        <ErrorState message="Could not load your salary structure." onRetry={load} />
+      </Card>
+    );
   if (notFound || !data)
     return (
       <Card>
@@ -295,16 +342,27 @@ function PayslipsTab() {
   const { config } = useStorefrontConfig();
   const [items, setItems] = useState<Payslip[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [payments, setPayments] = useState<Record<string, PayrollPayment[]>>({});
+  const [paymentsFailed, setPaymentsFailed] = useState<Record<string, boolean>>({});
   const [loadingPayments, setLoadingPayments] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(false);
     getHrPayslips(1, 50)
       .then((res) => setItems(res.data || []))
-      .catch(() => setItems([]))
+      .catch(() => {
+        setItems([]);
+        setError(true);
+      })
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const toggle = async (id: string) => {
     if (expanded === id) {
@@ -313,19 +371,32 @@ function PayslipsTab() {
     }
     setExpanded(id);
     if (!payments[id]) {
-      setLoadingPayments(id);
-      try {
-        const res = await getHrPayslipPayments(id);
-        setPayments((p) => ({ ...p, [id]: res || [] }));
-      } catch {
-        setPayments((p) => ({ ...p, [id]: [] }));
-      } finally {
-        setLoadingPayments(null);
-      }
+      retryPayments(id);
+    }
+  };
+
+  const retryPayments = async (id: string) => {
+    setPaymentsFailed((f) => (f[id] ? { ...f, [id]: false } : f));
+    setLoadingPayments(id);
+    try {
+      const res = await getHrPayslipPayments(id);
+      setPayments((p) => ({ ...p, [id]: res || [] }));
+    } catch {
+      setPayments((p) => ({ ...p, [id]: [] }));
+      setPaymentsFailed((f) => ({ ...f, [id]: true }));
+    } finally {
+      setLoadingPayments(null);
     }
   };
 
   if (loading) return <Spinner />;
+  if (error)
+    return (
+      <Card>
+        <h3 className="text-xl font-bold text-gray-800 mb-6">Payslips</h3>
+        <ErrorState message="Could not load your payslips." onRetry={load} />
+      </Card>
+    );
   if (items.length === 0)
     return (
       <Card>
@@ -373,6 +444,18 @@ function PayslipsTab() {
               <div className="px-4 pb-4">
                 {loadingPayments === p.id ? (
                   <Spinner />
+                ) : paymentsFailed[p.id] ? (
+                  <div className="flex flex-col items-center gap-2 py-3">
+                    <p className="text-xs text-gray-400">
+                      Could not load payments.
+                    </p>
+                    <button
+                      onClick={() => retryPayments(p.id)}
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-brand-blue"
+                    >
+                      <RefreshCcw size={13} /> Retry
+                    </button>
+                  </div>
                 ) : (payments[p.id] || []).length === 0 ? (
                   <p className="text-xs text-gray-400 py-2">
                     No payments recorded
@@ -426,15 +509,32 @@ function CommissionTab() {
   const { config } = useStorefrontConfig();
   const [items, setItems] = useState<CommissionEarning[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(false);
     getHrCommissions(1, 50)
       .then((res) => setItems(res.data || []))
-      .catch(() => setItems([]))
+      .catch(() => {
+        setItems([]);
+        setError(true);
+      })
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    load();
+  }, [load]);
+
   if (loading) return <Spinner />;
+  if (error)
+    return (
+      <Card>
+        <h3 className="text-xl font-bold text-gray-800 mb-6">My Commissions</h3>
+        <ErrorState message="Could not load your commissions." onRetry={load} />
+      </Card>
+    );
 
   return (
     <Card>
@@ -483,15 +583,32 @@ function EarningsTab() {
   const { config } = useStorefrontConfig();
   const [items, setItems] = useState<EmployeeEarning[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(false);
     getHrEarnings(1, 50)
       .then((res) => setItems(res.data || []))
-      .catch(() => setItems([]))
+      .catch(() => {
+        setItems([]);
+        setError(true);
+      })
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    load();
+  }, [load]);
+
   if (loading) return <Spinner />;
+  if (error)
+    return (
+      <Card>
+        <h3 className="text-xl font-bold text-gray-800 mb-6">My Earnings</h3>
+        <ErrorState message="Could not load your earnings." onRetry={load} />
+      </Card>
+    );
 
   return (
     <Card>
@@ -540,15 +657,32 @@ function DeductionsTab() {
   const { config } = useStorefrontConfig();
   const [items, setItems] = useState<EmployeeDeduction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(false);
     getHrDeductions(1, 50)
       .then((res) => setItems(res.data || []))
-      .catch(() => setItems([]))
+      .catch(() => {
+        setItems([]);
+        setError(true);
+      })
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    load();
+  }, [load]);
+
   if (loading) return <Spinner />;
+  if (error)
+    return (
+      <Card>
+        <h3 className="text-xl font-bold text-gray-800 mb-6">My Deductions</h3>
+        <ErrorState message="Could not load your deductions." onRetry={load} />
+      </Card>
+    );
 
   return (
     <Card>
@@ -603,6 +737,7 @@ function LeaveTab() {
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [types, setTypes] = useState<LeaveType[]>([]);
   const [loading, setLoading] = useState(true);
+  const [requestsError, setRequestsError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [typeId, setTypeId] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -611,9 +746,14 @@ function LeaveTab() {
   const [formError, setFormError] = useState("");
 
   const loadRequests = useCallback(() => {
+    setLoading(true);
+    setRequestsError(false);
     getHrLeaveRequests(1, 50)
       .then((res) => setRequests(res.data || []))
-      .catch(() => setRequests([]))
+      .catch(() => {
+        setRequests([]);
+        setRequestsError(true);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -748,6 +888,8 @@ function LeaveTab() {
 
       {loading ? (
         <Spinner />
+      ) : requestsError ? (
+        <ErrorState message="Could not load your leave requests." onRetry={loadRequests} />
       ) : requests.length === 0 ? (
         <EmptyState message="No leave requests found" />
       ) : (
@@ -799,13 +941,23 @@ function LeaveTab() {
 function ScheduleTab() {
   const [days, setDays] = useState<number[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(false);
     getHrSchedule()
       .then((res) => setDays(res.days || []))
-      .catch(() => setDays([]))
+      .catch(() => {
+        setDays([]);
+        setError(true);
+      })
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   if (loading) return <Spinner />;
 
@@ -814,7 +966,9 @@ function ScheduleTab() {
   return (
     <Card>
       <h3 className="text-xl font-bold text-gray-800 mb-6">My Weekly Schedule</h3>
-      {!days || days.length === 0 ? (
+      {error ? (
+        <ErrorState message="Could not load your weekly schedule." onRetry={load} />
+      ) : !days || days.length === 0 ? (
         <EmptyState message="No weekly off days configured" />
       ) : (
         <div className="flex flex-wrap gap-2">
@@ -877,20 +1031,32 @@ function fmtTime(iso?: string | null) {
 function AttendanceTab() {
   const [items, setItems] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(false);
     getHrMyAttendance()
       .then((res) => setItems(Array.isArray(res) ? res : []))
-      .catch(() => setItems([]))
+      .catch(() => {
+        setItems([]);
+        setError(true);
+      })
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   if (loading) return <Spinner />;
 
   return (
     <Card>
       <h3 className="text-xl font-bold text-gray-800 mb-6">My Attendance</h3>
-      {items.length === 0 ? (
+      {error ? (
+        <ErrorState message="Could not load your attendance." onRetry={load} />
+      ) : items.length === 0 ? (
         <EmptyState message="No attendance records found" />
       ) : (
         <div className="overflow-x-auto">

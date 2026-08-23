@@ -76,14 +76,34 @@ describe('HrSection attendance self-service', () => {
     expect(getHrMyAttendance).toHaveBeenCalledWith();
   });
 
-  it('does not crash when the attendance request fails', async () => {
+  it('shows a friendly error with Retry (not a blank or empty state) when the attendance request fails', async () => {
     vi.mocked(getHrMyAttendance).mockRejectedValue(new Error('network'));
 
     render(<HrSection />);
     fireEvent.click(screen.getByRole('button', { name: /Attendance/i }));
 
     expect(
-      await screen.findByText('No attendance records found'),
+      await screen.findByText('Could not load your attendance.'),
     ).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Retry/i })).toBeTruthy();
+    expect(screen.queryByText('No attendance records found')).toBeNull();
+  });
+
+  it('recovers when Retry is clicked after a failure', async () => {
+    vi.mocked(getHrMyAttendance)
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce([...RECORDS] as any);
+
+    render(<HrSection />);
+    fireEvent.click(screen.getByRole('button', { name: /Attendance/i }));
+
+    expect(
+      await screen.findByText('Could not load your attendance.'),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /Retry/i }));
+
+    expect(await screen.findByText('Present')).toBeTruthy();
+    expect(getHrMyAttendance).toHaveBeenCalledTimes(2);
   });
 });

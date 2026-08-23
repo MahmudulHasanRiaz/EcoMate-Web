@@ -103,7 +103,7 @@ const SALARY_FIELDS: { key: string; label: string }[] = [
 ]
 
 function CompensationTab({ employeeId, mirrorSalary }: { employeeId: string; mirrorSalary?: number | null }) {
-  const { data: structure, isLoading } = useSalaryStructureQuery(employeeId)
+  const { data: structure, isLoading, isError, refetch } = useSalaryStructureQuery(employeeId)
   const setMut = useSetSalaryStructureMutation(employeeId)
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState<Record<string, string>>({
@@ -158,6 +158,19 @@ function CompensationTab({ employeeId, mirrorSalary }: { employeeId: string; mir
       <Card>
         <CardContent className='py-16'>
           <Skeleton className='h-40 w-full' />
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (isError) {
+    return (
+      <Card>
+        <CardContent className='flex flex-col items-center gap-3 py-16 text-center'>
+          <p className='text-sm text-muted-foreground'>Could not load salary structure.</p>
+          <Button variant='outline' size='sm' onClick={() => refetch()}>
+            <RotateCcw className='h-4 w-4 mr-1' /> Retry
+          </Button>
         </CardContent>
       </Card>
     )
@@ -251,7 +264,7 @@ function CompensationTab({ employeeId, mirrorSalary }: { employeeId: string; mir
 }
 
 function PayrollTab({ employeeId }: { employeeId: string }) {
-  const { data, isLoading } = usePayslipsQuery({ employeeId })
+  const { data, isLoading, isError, refetch } = usePayslipsQuery({ employeeId })
   const [viewId, setViewId] = useState<string | null>(null)
 
   const rows = Array.isArray(data?.data) ? data.data : []
@@ -271,6 +284,13 @@ function PayrollTab({ employeeId }: { employeeId: string }) {
         {isLoading ? (
           <div className='flex justify-center py-8'>
             <Loader2 className='animate-spin h-6 w-6 text-muted-foreground' />
+          </div>
+        ) : isError ? (
+          <div className='flex flex-col items-center gap-3 py-10 text-center'>
+            <p className='text-sm text-muted-foreground'>Could not load payslips.</p>
+            <Button variant='outline' size='sm' onClick={() => refetch()}>
+              <RotateCcw className='h-4 w-4 mr-1' /> Retry
+            </Button>
           </div>
         ) : rows.length === 0 ? (
           <div className='py-8 text-center text-sm text-muted-foreground'>
@@ -332,11 +352,12 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
     data: employee,
     isLoading,
     isError,
+    error: employeeError,
     refetch,
   } = useEmployeeQuery(employeeId)
-  const { data: scheduleData } = useScheduleQuery(employeeId)
+  const { data: scheduleData, isError: scheduleError, refetch: refetchSchedule } = useScheduleQuery(employeeId)
   const [historyPage, setHistoryPage] = useState(1)
-  const { data: historyData, isLoading: historyLoading } = useHistoryQuery(employeeId, historyPage)
+  const { data: historyData, isLoading: historyLoading, isError: historyError, refetch: refetchHistory } = useHistoryQuery(employeeId, historyPage)
 
   const updateEmpMut = useUpdateEmployeeMutation()
 
@@ -378,13 +399,18 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
   }
 
   if (isError || !employee) {
+    const notFound = (employeeError as any)?.response?.status === 404
     return (
       <>
         <Header fixed><GlobalSearchBar className='me-auto' /><ThemeSwitch /><ProfileDropdown /></Header>
         <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
           <Card>
             <CardContent className='flex flex-col items-center gap-3 py-16 text-center'>
-              <p className='text-sm text-muted-foreground'>Could not load employee details.</p>
+              <p className='text-sm text-muted-foreground'>
+                {notFound
+                  ? 'Employee not found. It may have been deleted or you do not have access.'
+                  : 'Could not load employee details.'}
+              </p>
               <Button variant='outline' size='sm' onClick={() => refetch()}>
                 <RotateCcw className='h-4 w-4 mr-1' /> Retry
               </Button>
@@ -685,11 +711,20 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
                   <CardDescription>Days this employee does not work.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <ScheduleEditor
-                    employeeId={employee.id}
-                    initialDays={scheduleData?.days ?? []}
-                    initialNote={null}
-                  />
+                  {scheduleError ? (
+                    <div className='flex flex-col items-center gap-3 py-10 text-center'>
+                      <p className='text-sm text-muted-foreground'>Could not load schedule.</p>
+                      <Button variant='outline' size='sm' onClick={() => refetchSchedule()}>
+                        <RotateCcw className='h-4 w-4 mr-1' /> Retry
+                      </Button>
+                    </div>
+                  ) : (
+                    <ScheduleEditor
+                      employeeId={employee.id}
+                      initialDays={scheduleData?.days ?? []}
+                      initialNote={null}
+                    />
+                  )}
                 </CardContent>
               </Card>
               <Card>
@@ -712,6 +747,8 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
                   data={historyData?.data ?? []}
                   meta={historyData?.meta}
                   isLoading={historyLoading}
+                  isError={historyError}
+                  onRetry={refetchHistory}
                   onPageChange={setHistoryPage}
                 />
               </CardContent>

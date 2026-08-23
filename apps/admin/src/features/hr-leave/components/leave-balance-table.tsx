@@ -1,10 +1,11 @@
-import { Loader2 } from 'lucide-react'
+import { Loader2, RotateCcw } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { useBalancesQuery } from '../hooks'
 
 export function LeaveBalanceTable({ employeeId }: { employeeId?: string }) {
-  const { data, isLoading } = useBalancesQuery(employeeId)
+  const { data, isLoading, isError, refetch } = useBalancesQuery(employeeId)
 
   const rows = Array.isArray(data) ? data : []
 
@@ -20,6 +21,17 @@ export function LeaveBalanceTable({ employeeId }: { employeeId?: string }) {
     return (
       <div className='flex justify-center py-8'>
         <Loader2 className='animate-spin h-6 w-6 text-muted-foreground' />
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <div className='flex flex-col items-center gap-3 py-10 text-center'>
+        <p className='text-sm text-muted-foreground'>Could not load leave balances.</p>
+        <Button variant='outline' size='sm' onClick={() => refetch()}>
+          <RotateCcw className='h-4 w-4 mr-1' /> Retry
+        </Button>
       </div>
     )
   }

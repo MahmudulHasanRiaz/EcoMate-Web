@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -22,7 +22,7 @@ function StatusBadge() {
 
 export function CommissionEarningsTab({ employeeId, page: initialPage }: { employeeId: string; page?: number }) {
   const [page, setPage] = useState(initialPage ?? 1)
-  const { data, isLoading } = useCommissionEarningsQuery({ employeeId, page })
+  const { data, isLoading, isError, refetch } = useCommissionEarningsQuery({ employeeId, page })
 
   const rows: CommissionEarningRow[] = Array.isArray(data?.data) ? data.data : []
   const meta = data?.meta
@@ -38,6 +38,13 @@ export function CommissionEarningsTab({ employeeId, page: initialPage }: { emplo
       <CardContent>
         {isLoading ? (
           <div className='flex justify-center py-8'><Loader2 className='animate-spin h-6 w-6 text-muted-foreground' /></div>
+        ) : isError ? (
+          <div className='flex flex-col items-center gap-3 py-10 text-center'>
+            <p className='text-sm text-muted-foreground'>Could not load commission earnings.</p>
+            <Button variant='outline' size='sm' onClick={() => refetch()}>
+              <RotateCcw className='h-4 w-4 mr-1' /> Retry
+            </Button>
+          </div>
         ) : rows.length === 0 ? (
           <div className='py-8 text-center text-sm text-muted-foreground'>No commission earnings yet.</div>
         ) : (

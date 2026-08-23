@@ -162,6 +162,32 @@ describe('EmployeesService', () => {
       await expect(service.create(dto)).rejects.toThrow(ConflictException);
     });
 
+    it('converts a concurrent P2002 race on betterAuthUserId into 409', async () => {
+      (prisma.employee.create as jest.Mock).mockRejectedValue({
+        code: 'P2002',
+        meta: { target: ['betterAuthUserId'] },
+      });
+      const dto: CreateEmployeeDto = {
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+      };
+      await expect(service.create(dto)).rejects.toThrow(ConflictException);
+      await expect(service.create(dto)).rejects.toThrow(
+        /already an employee/i,
+      );
+    });
+
+    it('rethrows non-unique failures from the create', async () => {
+      (prisma.employee.create as jest.Mock).mockRejectedValue(
+        new Error('boom'),
+      );
+      const dto: CreateEmployeeDto = {
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+      };
+      await expect(service.create(dto)).rejects.toThrow('boom');
+    });
+
     it('should promote customer profile to employee role on create', async () => {
       (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
         id: 'profile-1',
