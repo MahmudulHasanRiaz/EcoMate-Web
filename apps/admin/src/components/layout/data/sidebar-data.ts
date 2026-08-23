@@ -149,6 +149,7 @@ export const sidebarData: SidebarData = {
           ],
         },
         { title: 'Payroll', url: '/hr/payroll', icon: DollarSign, feature: 'admin_payroll', permissions: ['view_hr'] },
+        { title: 'Commissions', url: '/hr/commissions', icon: Percent, feature: 'admin_payroll', permissions: ['view_hr'] },
         {
           title: 'User Management',
           icon: Users,

@@ -18,6 +18,7 @@ import { TrackingCaptureService } from '../tracking/tracking-capture.service';
 import { TrackingSettingsService } from '../tracking/tracking-settings.service';
 import { resolveActionSource } from '../tracking/meta-action-source';
 import { Prisma } from '@prisma/client';
+import { CommissionsService } from '../commissions/commissions.service';
 
 @Injectable()
 export class PosOrdersService {
@@ -31,6 +32,7 @@ export class PosOrdersService {
     private readonly mediaResolver: MediaResolverService,
     private readonly trackingCapture: TrackingCaptureService,
     private readonly trackingSettings: TrackingSettingsService,
+    private readonly commissionsService: CommissionsService,
   ) {}
 
   private mediaUrls(value: unknown): string[] {
@@ -492,7 +494,7 @@ export class PosOrdersService {
 
     // Everything that reads or writes DB prices/stock happens inside a single
     // Prisma transaction to close the TOCTOU (time-of-check-time-of-use) window.
-    return this.prisma.$transaction(async (tx) => {
+    const order = await this.prisma.$transaction(async (tx) => {
       // Server-authoritative pricing and item validation INSIDE transaction
       const authItems =
         await this.validateAndFetchAuthoritativeItems(dto, tx);
@@ -763,6 +765,22 @@ export class PosOrdersService {
         include: { items: true, payments: true, customer: true },
       });
     });
+
+    // Commission hook (decision #5): a POS order is created already in a
+    // terminal status ('Confirmed' for delivery, 'Delivered' for counter/takeaway).
+    // Evaluate active commission rules. Resilient — never breaks the sale.
+    if (order) {
+      try {
+        await this.commissionsService.processOrderCommissions(order.id);
+      } catch (err) {
+        this.logger.error(
+          `Commission hook failed for POS order ${order.id}:`,
+          err,
+        );
+      }
+    }
+
+    return order;
   }
 
   private async fireOfflinePurchase(

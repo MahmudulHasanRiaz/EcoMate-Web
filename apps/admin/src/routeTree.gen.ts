@@ -29,6 +29,7 @@ import { Route as AuthenticatedMonOverviewRouteImport } from './routes/_authenti
 import { Route as AuthenticatedMonBlockingSettingsRouteImport } from './routes/_authenticated/mon/blocking-settings'
 import { Route as AuthenticatedHrPresetsRouteImport } from './routes/_authenticated/hr/presets'
 import { Route as AuthenticatedHrOverviewRouteImport } from './routes/_authenticated/hr/overview'
+import { Route as AuthenticatedHrCommissionsRouteImport } from './routes/_authenticated/hr/commissions'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as authLicenseActivateRouteImport } from './routes/(auth)/license/activate'
 import { Route as AuthenticatedOpSettingsRouteRouteImport } from './routes/_authenticated/op/settings/route'
@@ -253,6 +254,12 @@ const AuthenticatedHrOverviewRoute = AuthenticatedHrOverviewRouteImport.update({
   path: '/hr/overview',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedHrCommissionsRoute =
+  AuthenticatedHrCommissionsRouteImport.update({
+    id: '/hr/commissions',
+    path: '/hr/commissions',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedErrorsErrorRoute =
   AuthenticatedErrorsErrorRouteImport.update({
     id: '/errors/$error',
@@ -1000,6 +1007,7 @@ export interface FileRoutesByFullPath {
   '/op/settings': typeof AuthenticatedOpSettingsRouteRouteWithChildren
   '/license/activate': typeof authLicenseActivateRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/hr/commissions': typeof AuthenticatedHrCommissionsRoute
   '/hr/overview': typeof AuthenticatedHrOverviewRoute
   '/hr/presets': typeof AuthenticatedHrPresetsRoute
   '/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
@@ -1143,6 +1151,7 @@ export interface FileRoutesByTo {
   '/op/settings': typeof AuthenticatedOpSettingsRouteRouteWithChildren
   '/license/activate': typeof authLicenseActivateRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/hr/commissions': typeof AuthenticatedHrCommissionsRoute
   '/hr/overview': typeof AuthenticatedHrOverviewRoute
   '/hr/presets': typeof AuthenticatedHrPresetsRoute
   '/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
@@ -1288,6 +1297,7 @@ export interface FileRoutesById {
   '/_authenticated/op/settings': typeof AuthenticatedOpSettingsRouteRouteWithChildren
   '/(auth)/license/activate': typeof authLicenseActivateRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/_authenticated/hr/commissions': typeof AuthenticatedHrCommissionsRoute
   '/_authenticated/hr/overview': typeof AuthenticatedHrOverviewRoute
   '/_authenticated/hr/presets': typeof AuthenticatedHrPresetsRoute
   '/_authenticated/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
@@ -1433,6 +1443,7 @@ export interface FileRouteTypes {
     | '/op/settings'
     | '/license/activate'
     | '/errors/$error'
+    | '/hr/commissions'
     | '/hr/overview'
     | '/hr/presets'
     | '/mon/blocking-settings'
@@ -1576,6 +1587,7 @@ export interface FileRouteTypes {
     | '/op/settings'
     | '/license/activate'
     | '/errors/$error'
+    | '/hr/commissions'
     | '/hr/overview'
     | '/hr/presets'
     | '/mon/blocking-settings'
@@ -1720,6 +1732,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/settings'
     | '/(auth)/license/activate'
     | '/_authenticated/errors/$error'
+    | '/_authenticated/hr/commissions'
     | '/_authenticated/hr/overview'
     | '/_authenticated/hr/presets'
     | '/_authenticated/mon/blocking-settings'
@@ -2002,6 +2015,13 @@ declare module '@tanstack/react-router' {
       path: '/hr/overview'
       fullPath: '/hr/overview'
       preLoaderRoute: typeof AuthenticatedHrOverviewRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/hr/commissions': {
+      id: '/_authenticated/hr/commissions'
+      path: '/hr/commissions'
+      fullPath: '/hr/commissions'
+      preLoaderRoute: typeof AuthenticatedHrCommissionsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/errors/$error': {
@@ -2972,6 +2992,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpPrintRouteRoute: typeof AuthenticatedOpPrintRouteRouteWithChildren
   AuthenticatedOpSettingsRouteRoute: typeof AuthenticatedOpSettingsRouteRouteWithChildren
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
+  AuthenticatedHrCommissionsRoute: typeof AuthenticatedHrCommissionsRoute
   AuthenticatedHrOverviewRoute: typeof AuthenticatedHrOverviewRoute
   AuthenticatedHrPresetsRoute: typeof AuthenticatedHrPresetsRoute
   AuthenticatedMonBlockingSettingsRoute: typeof AuthenticatedMonBlockingSettingsRoute
@@ -3082,6 +3103,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpSettingsRouteRoute:
     AuthenticatedOpSettingsRouteRouteWithChildren,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
+  AuthenticatedHrCommissionsRoute: AuthenticatedHrCommissionsRoute,
   AuthenticatedHrOverviewRoute: AuthenticatedHrOverviewRoute,
   AuthenticatedHrPresetsRoute: AuthenticatedHrPresetsRoute,
   AuthenticatedMonBlockingSettingsRoute: AuthenticatedMonBlockingSettingsRoute,

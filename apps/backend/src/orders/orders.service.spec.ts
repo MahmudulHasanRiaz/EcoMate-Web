@@ -16,6 +16,7 @@ import { CostingLotService } from '../stock/costing-lot.service';
 import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
 import { OrderStockDeductService } from '../stock/order-stock-deduct.service';
 import { OrderEditLockService } from './order-edit-lock.service';
+import { CommissionsService } from '../commissions/commissions.service';
 
 describe('OrdersService', () => {
   let service: OrdersService;
@@ -350,6 +351,12 @@ describe('OrdersService', () => {
           provide: OrderStockDeductService,
           useValue: {
             deductForOrder: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: CommissionsService,
+          useValue: {
+            processOrderCommissions: jest.fn().mockResolvedValue(0),
           },
         },
       ],

@@ -45,6 +45,7 @@ import { BlockedEntriesService } from '../blocked-entries/blocked-entries.servic
 import { SecurityService } from '../security/security.service';
 import { OrderEditLockService } from './order-edit-lock.service';
 import { MarketingAttributionService } from '../marketing/marketing-attribution.service';
+import { CommissionsService } from '../commissions/commissions.service';
 
 const ORDER_TRANSITIONS: Record<string, string[]> = {
   Pending: ['Payment Pending', 'Hold', 'Confirmed', 'Cancelled'],
@@ -193,6 +194,7 @@ export class OrdersService {
     private readonly cancelReturnStock: CancelReturnStockService,
     private readonly orderStockDeduct: OrderStockDeductService,
     private readonly editLock: OrderEditLockService,
+    private readonly commissionsService: CommissionsService,
     @Optional()
     private readonly marketingAttribution?: MarketingAttributionService,
   ) {}
@@ -2734,6 +2736,20 @@ export class OrdersService {
       },
     });
 
+    // Commission hook (decision #5): when an order reaches the Confirmed
+    // status, evaluate its active commission rules. Resilient — never breaks
+    // the order update on failure.
+    if (updated.status.name === 'Confirmed') {
+      try {
+        await this.commissionsService.processOrderCommissions(updated.id);
+      } catch (err) {
+        this.logger.error(
+          `Commission hook failed for confirmed order ${updated.id}:`,
+          err,
+        );
+      }
+    }
+
     return updated;
   }
 
@@ -2784,7 +2800,7 @@ export class OrdersService {
   }
 
   async verifyPayment(orderId: string, verified: boolean, note?: string) {
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
         include: { status: true },
@@ -2859,6 +2875,21 @@ export class OrdersService {
 
       return updated;
     });
+
+    // Commission hook (decision #5): verified payment lands the order on
+    // 'Confirmed'; evaluate active commission rules. Resilient.
+    if (verified) {
+      try {
+        await this.commissionsService.processOrderCommissions(orderId);
+      } catch (err) {
+        this.logger.error(
+          `Commission hook failed for verified order ${orderId}:`,
+          err,
+        );
+      }
+    }
+
+    return updated;
   }
 
   async addItem(orderId: string, dto: UpdateOrderItemDto, userId?: string) {

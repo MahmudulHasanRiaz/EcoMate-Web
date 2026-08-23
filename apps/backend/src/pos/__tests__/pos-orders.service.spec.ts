@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { MediaResolverService } from '../../media/media-resolver.service';
 import { TrackingCaptureService } from '../../tracking/tracking-capture.service';
 import { TrackingSettingsService } from '../../tracking/tracking-settings.service';
+import { CommissionsService } from '../../commissions/commissions.service';
 
 describe('PosOrdersService', () => {
   let service: PosOrdersService;
@@ -151,6 +152,10 @@ describe('PosOrdersService', () => {
               currency: 'BDT',
             }),
           },
+        },
+        {
+          provide: CommissionsService,
+          useValue: { processOrderCommissions: jest.fn().mockResolvedValue(0) },
         },
       ],
     }).compile();

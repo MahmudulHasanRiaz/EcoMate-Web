@@ -44,6 +44,7 @@ import { PaymentsPanel } from '@/features/payroll/components/payments-panel'
 import { PAYSLIP_STATUS_BADGE } from '@/features/payroll/components/payslip-status-badge'
 import { EarningsTable } from '@/features/hr-ledgers/components/earnings-table'
 import { DeductionsTable } from '@/features/hr-ledgers/components/deductions-table'
+import { CommissionEarningsTab } from '@/features/commissions/components/earnings-table'
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return '—'
@@ -656,7 +657,7 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
             <PaymentsPanel employeeId={employee.id} />
           </TabsContent>
           <TabsContent value='commission'>
-            <PlaceholderTab icon={Percent} module='Commission' />
+            <CommissionEarningsTab employeeId={employee.id} />
           </TabsContent>
           <TabsContent value='earnings'>
             <EarningsTable employeeId={employee.id} />

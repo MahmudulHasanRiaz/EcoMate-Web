@@ -619,6 +619,7 @@ model OrderStatus {
   createdAt    DateTime @default(now())
 
   orders Order[]
+  commissionRules CommissionRule[]
 }
 
 model Order {
@@ -681,6 +682,7 @@ model Order {
   stockTransfers StockTransfer[]
   orderAttribution    OrderAttribution?
   marketingAllocations MarketingCostAllocation[]
+  commissionEarnings   CommissionEarning[]
 
   @@index([customerId])
   @@index([statusId])
@@ -1933,6 +1935,8 @@ model Employee {
   payslips         Payslip[]
   history          EmploymentHistory[]
   weeklyOffs       WeeklyOff[]
+  commissionRules  CommissionRule[]
+  commissionEarnings CommissionEarning[]
 
   @@index([departmentId])
   @@index([designationId])
@@ -1994,6 +1998,11 @@ enum LedgerStatus {
   paid
 }
 
+enum CommissionAmountType {
+  fixed
+  percent
+}
+
 model EmployeeEarning {
   id             String       @id @default(uuid())
   employeeId     String
@@ -2032,6 +2041,43 @@ model EmployeeDeduction {
   updatedAt      DateTime       @updatedAt
 
   @@index([employeeId, applicableFrom])
+}
+
+model CommissionRule {
+  id             String               @id @default(uuid())
+  employeeId     String
+  employee       Employee             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  triggerStatusId String?
+  triggerStatus  OrderStatus?         @relation(fields: [triggerStatusId], references: [id], onDelete: SetNull)
+  amountType     CommissionAmountType
+  amount         Decimal              @db.Decimal(10, 2)
+  valueBasis     String               @default("order_total")
+  minOrderAmount Decimal?             @db.Decimal(10, 2)
+  capPerOrder    Decimal?             @db.Decimal(10, 2)
+  isActive       Boolean              @default(true)
+  createdById    String?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  earnings       CommissionEarning[]
+  @@index([employeeId, isActive])
+}
+
+model CommissionEarning {
+  id         String       @id @default(uuid())
+  employeeId String
+  employee   Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  ruleId     String
+  rule       CommissionRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  orderId    String
+  order      Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount     Decimal      @db.Decimal(10, 2)
+  status     LedgerStatus @default(approved)
+  payslipId  String?
+  createdAt  DateTime     @default(now())
+
+  @@unique([orderId, ruleId])
+  @@index([employeeId, createdAt])
 }
 
 model Payslip {

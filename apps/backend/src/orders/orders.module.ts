@@ -10,6 +10,7 @@ import { InventoryModule } from '../inventory/inventory.module';
 import { CouponsModule } from '../coupons/coupons.module';
 import { BlockedEntriesModule } from '../blocked-entries/blocked-entries.module';
 import { MarketingModule } from '../marketing/marketing.module';
+import { CommissionsModule } from '../commissions/commissions.module';
 
 @Module({
   controllers: [OrdersController, OrderStatusController],
@@ -22,6 +23,7 @@ import { MarketingModule } from '../marketing/marketing.module';
     BlockedEntriesModule,
     CouponsModule,
     MarketingModule,
+    CommissionsModule,
   ],
 })
 export class OrdersModule {}
