@@ -25,6 +25,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { DatePicker } from '@/components/date-picker'
 import { useEmployeeQuery, useUpdateEmployeeMutation } from '../hooks'
@@ -36,7 +37,11 @@ import { useScheduleQuery, useHistoryQuery } from '@/features/hr-schedule/hooks'
 import { ScheduleEditor } from '@/features/hr-schedule/components/schedule-editor'
 import { MonthCalendar } from '@/features/hr-schedule/components/month-calendar'
 import { HistoryTable } from '@/features/hr-schedule/components/history-table'
-import { useSalaryStructureQuery, useSetSalaryStructureMutation } from '@/features/payroll/hooks'
+import { useSalaryStructureQuery, useSetSalaryStructureMutation, usePayslipsQuery } from '@/features/payroll/hooks'
+import { PayslipDialog } from '@/features/payroll/components/payslip-dialog'
+import { PayslipDetail } from '@/features/payroll/components/payslip-detail'
+import { PaymentsPanel } from '@/features/payroll/components/payments-panel'
+import { PAYSLIP_STATUS_BADGE } from '@/features/payroll/components/payslip-status-badge'
 import { EarningsTable } from '@/features/hr-ledgers/components/earnings-table'
 import { DeductionsTable } from '@/features/hr-ledgers/components/deductions-table'
 
@@ -235,6 +240,83 @@ function CompensationTab({ employeeId, mirrorSalary }: { employeeId: string; mir
               Save Structure
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  )
+}
+
+function PayrollTab({ employeeId }: { employeeId: string }) {
+  const { data, isLoading } = usePayslipsQuery({ employeeId })
+  const [viewId, setViewId] = useState<string | null>(null)
+
+  const rows = Array.isArray(data?.data) ? data.data : []
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className='flex flex-wrap items-center justify-between gap-2'>
+          <div>
+            <CardTitle>Payslips</CardTitle>
+            <CardDescription>Generate and review this employee's payslips.</CardDescription>
+          </div>
+          <PayslipDialog employeeId={employeeId} />
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className='flex justify-center py-8'>
+            <Loader2 className='animate-spin h-6 w-6 text-muted-foreground' />
+          </div>
+        ) : rows.length === 0 ? (
+          <div className='py-8 text-center text-sm text-muted-foreground'>
+            No payslips yet. Generate one to get started.
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Period</TableHead>
+                <TableHead>Range</TableHead>
+                <TableHead className='text-right'>Net Pay</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className='w-20'>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row) => {
+                const badge = PAYSLIP_STATUS_BADGE[row.status]
+                return (
+                  <TableRow key={row.id}>
+                    <TableCell className='font-medium'>{row.periodKey ?? '—'}</TableCell>
+                    <TableCell className='text-sm text-muted-foreground'>
+                      {formatDate(row.periodStart)} – {formatDate(row.periodEnd)}
+                    </TableCell>
+                    <TableCell className='text-right tabular-nums'>
+                      {Number(row.netPay).toLocaleString()} ৳
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={`border-transparent ${badge.className}`}>{badge.label}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Button variant='ghost' size='sm' onClick={() => setViewId(row.id)}>
+                        View
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+
+      <Dialog open={!!viewId} onOpenChange={(o) => { if (!o) setViewId(null) }}>
+        <DialogContent className='sm:max-w-[640px]'>
+          <DialogHeader>
+            <DialogTitle>Payslip Detail</DialogTitle>
+          </DialogHeader>
+          {viewId && <PayslipDetail payslipId={viewId} />}
         </DialogContent>
       </Dialog>
     </Card>
@@ -568,10 +650,10 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
             <CompensationTab employeeId={employee.id} mirrorSalary={employee.salary} />
           </TabsContent>
           <TabsContent value='payroll'>
-            <PlaceholderTab icon={Wallet} module='Payroll' />
+            <PayrollTab employeeId={employee.id} />
           </TabsContent>
           <TabsContent value='payments'>
-            <PlaceholderTab icon={CreditCard} module='Payments' />
+            <PaymentsPanel employeeId={employee.id} />
           </TabsContent>
           <TabsContent value='commission'>
             <PlaceholderTab icon={Percent} module='Commission' />

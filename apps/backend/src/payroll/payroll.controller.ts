@@ -47,11 +47,13 @@ export class PayrollController {
     @Query('page') page?: string,
     @Query('perPage') perPage?: string,
     @Query('periodKey') periodKey?: string,
+    @Query('employeeId') employeeId?: string,
   ) {
     return this.payrollService.findAllPayslips(
       page ? parseInt(page) : 1,
       perPage ? parseInt(perPage) : 20,
       periodKey,
+      employeeId,
     );
   }
 
@@ -64,5 +66,14 @@ export class PayrollController {
   @PermissionsAny('manage_payroll')
   approvePayslip(@Param('id') id: string) {
     return this.payrollService.approvePayslip(id);
+  }
+
+  @Patch('payslips/:id/status')
+  @PermissionsAny('manage_payroll')
+  setPayslipStatus(
+    @Param('id') id: string,
+    @Body() dto: { status: 'reviewed' | 'approved' | 'cancelled' },
+  ) {
+    return this.payrollService.setStatus(id, dto.status);
   }
 }

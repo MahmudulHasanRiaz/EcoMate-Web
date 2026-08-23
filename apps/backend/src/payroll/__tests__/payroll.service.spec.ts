@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { PayrollService } from '../payroll.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -15,6 +19,7 @@ describe('PayrollService', () => {
     email: 'john@example.com',
     salary: '50000',
     status: 'active',
+    joiningDate: new Date('2025-01-01'),
   };
 
   const mockSalaryStructure = {
@@ -105,6 +110,18 @@ describe('PayrollService', () => {
     payslipItem: {
       createMany: jest.fn().mockResolvedValue({ count: 3 }),
     },
+    employeeEarning: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    employeeDeduction: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    payrollPayment: {
+      findMany: jest.fn().mockResolvedValue([]),
+      aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }),
+      create: jest.fn().mockResolvedValue({ id: 'pay-1' }),
+      delete: jest.fn().mockResolvedValue({ id: 'pay-1' }),
+    },
   };
 
   beforeEach(async () => {
@@ -144,6 +161,12 @@ describe('PayrollService', () => {
     });
     prismaMock.payslip.count.mockResolvedValue(1);
     prismaMock.payslipItem.createMany.mockResolvedValue({ count: 3 });
+    prismaMock.employeeEarning.findMany.mockResolvedValue([]);
+    prismaMock.employeeDeduction.findMany.mockResolvedValue([]);
+    prismaMock.payrollPayment.findMany.mockResolvedValue([]);
+    prismaMock.payrollPayment.aggregate.mockResolvedValue({
+      _sum: { amount: null },
+    });
   });
 
   describe('setSalaryStructure', () => {
@@ -230,7 +253,7 @@ describe('PayrollService', () => {
             status: 'draft',
             reviewedAt: null,
             approvedAt: null,
-            periodKey: null,
+            periodKey: '2025-06',
           }),
         },
         payslipItem: { createMany: jest.fn().mockResolvedValue({ count: 8 }) },
@@ -249,12 +272,12 @@ describe('PayrollService', () => {
       expect(createData.status).toBe('draft');
       expect(createData).not.toHaveProperty('reviewedAt');
       expect(createData).not.toHaveProperty('approvedAt');
-      expect(createData).not.toHaveProperty('periodKey');
+      expect(createData.periodKey).toBe('2025-06');
       expect(result).toMatchObject({
         status: 'draft',
         reviewedAt: null,
         approvedAt: null,
-        periodKey: null,
+        periodKey: '2025-06',
       });
     });
   });
@@ -304,6 +327,222 @@ describe('PayrollService', () => {
     it('should throw if payslip not found', async () => {
       jest.spyOn(prisma.payslip, 'findUnique').mockResolvedValue(null);
       await expect(service.approvePayslip('invalid')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('generatePayslip — pro-ration (§5.4)', () => {
+    it('reduces earnings when the employee joins mid-period', async () => {
+      const midPeriodEmployee = {
+        ...mockEmployee,
+        joiningDate: new Date('2025-06-16'),
+      };
+      jest
+        .spyOn(prisma.employee, 'findUnique')
+        .mockResolvedValue(midPeriodEmployee);
+
+      const txCreate = jest.fn().mockReturnValue({ id: 'ps-new' });
+      const tx = {
+        payslip: {
+          create: txCreate,
+          findUnique: jest.fn().mockResolvedValue({
+            ...mockPayslip,
+            status: 'draft',
+            periodKey: '2025-06',
+          }),
+        },
+        payslipItem: { createMany: jest.fn().mockResolvedValue({ count: 8 }) },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb: any) =>
+        cb(tx),
+      );
+
+      await service.generatePayslip(
+        'emp-1',
+        new Date('2025-06-01'),
+        new Date('2025-06-30'),
+      );
+
+      const data = txCreate.mock.calls[0][0].data;
+      // Full structure earnings = 50000; ~14/29 of the period elapsed.
+      expect(data.totalEarnings).toBeLessThan(50000);
+      expect(data.totalEarnings).toBeGreaterThan(0);
+      // Deductions stay full.
+      expect(data.totalDeductions).toBe(3000);
+    });
+  });
+
+  describe('generatePayslip — ledger sums (§5.4)', () => {
+    it('includes approved earnings and deductions in the totals', async () => {
+      jest.spyOn(prisma.employeeEarning, 'findMany').mockResolvedValue([
+        {
+          id: 'earn-1',
+          employeeId: 'emp-1',
+          type: 'bonus',
+          amount: '5000',
+          reason: 'Retention bonus',
+          applicableFrom: null,
+          applicableTo: null,
+          status: 'approved',
+        } as any,
+      ]);
+      jest.spyOn(prisma.employeeDeduction, 'findMany').mockResolvedValue([
+        {
+          id: 'ded-1',
+          employeeId: 'emp-1',
+          type: 'fine',
+          amount: '1000',
+          reason: 'Late',
+          applicableFrom: null,
+          applicableTo: null,
+          status: 'approved',
+        } as any,
+      ]);
+
+      const txCreate = jest.fn().mockReturnValue({ id: 'ps-new' });
+      const tx = {
+        payslip: {
+          create: txCreate,
+          findUnique: jest.fn().mockResolvedValue({
+            ...mockPayslip,
+            status: 'draft',
+            periodKey: '2025-06',
+          }),
+        },
+        payslipItem: { createMany: jest.fn().mockResolvedValue({ count: 10 }) },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb: any) =>
+        cb(tx),
+      );
+
+      await service.generatePayslip(
+        'emp-1',
+        new Date('2025-06-01'),
+        new Date('2025-06-30'),
+      );
+
+      const data = txCreate.mock.calls[0][0].data;
+      // 50000 earnings + 5000 ledger earning; 3000 deductions + 1000 ledger.
+      expect(data.totalEarnings).toBe(55000);
+      expect(data.totalDeductions).toBe(4000);
+      expect(data.netPay).toBe(51000);
+    });
+
+    it('scopes ledger lookups to the period window', async () => {
+      const findMany = jest
+        .spyOn(prisma.employeeEarning, 'findMany')
+        .mockResolvedValue([]);
+
+      const txCreate = jest.fn().mockReturnValue({ id: 'ps-new' });
+      const tx = {
+        payslip: {
+          create: txCreate,
+          findUnique: jest.fn().mockResolvedValue({
+            ...mockPayslip,
+            status: 'draft',
+            periodKey: '2025-06',
+          }),
+        },
+        payslipItem: { createMany: jest.fn().mockResolvedValue({ count: 8 }) },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb: any) =>
+        cb(tx),
+      );
+
+      await service.generatePayslip(
+        'emp-1',
+        new Date('2025-06-01'),
+        new Date('2025-06-30'),
+      );
+
+      // The ledger query must constrain earnings to the applicable-from/to
+      // window so out-of-period entries are excluded at the DB layer.
+      const where = findMany.mock.calls[0][0].where;
+      expect(where).toMatchObject({
+        employeeId: 'emp-1',
+        status: 'approved',
+        AND: expect.any(Array),
+      });
+      const and = where.AND;
+      expect(and[0].OR).toContainEqual({ applicableFrom: null });
+      expect(and[0].OR).toContainEqual({
+        applicableFrom: { lte: new Date('2025-06-30') },
+      });
+      expect(and[1].OR).toContainEqual({ applicableTo: null });
+      expect(and[1].OR).toContainEqual({
+        applicableTo: { gte: new Date('2025-06-01') },
+      });
+    });
+  });
+
+  describe('generatePayslip — duplicate periodKey (§5.1)', () => {
+    it('throws ConflictException when a payslip exists for the period', async () => {
+      jest
+        .spyOn(prisma.payslip, 'findFirst')
+        .mockResolvedValue({ ...mockPayslip, periodKey: '2025-06' });
+      await expect(
+        service.generatePayslip(
+          'emp-1',
+          new Date('2025-06-01'),
+          new Date('2025-06-30'),
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe('setStatus (§5.1 lifecycle)', () => {
+    const setup = (status: string) =>
+      jest
+        .spyOn(prisma.payslip, 'findUnique')
+        .mockResolvedValue({ ...mockPayslip, status });
+
+    it('allows draft → reviewed', async () => {
+      setup('draft');
+      const update = jest
+        .spyOn(prisma.payslip, 'update')
+        .mockResolvedValue({ ...mockPayslip, status: 'reviewed' });
+      const res = await service.setStatus('ps-1', 'reviewed');
+      expect(res.status).toBe('reviewed');
+      expect(update.mock.lastCall[0].data).toHaveProperty('reviewedAt');
+    });
+
+    it('allows reviewed → approved', async () => {
+      setup('reviewed');
+      const update = jest
+        .spyOn(prisma.payslip, 'update')
+        .mockResolvedValue({ ...mockPayslip, status: 'approved' });
+      const res = await service.setStatus('ps-1', 'approved');
+      expect(res.status).toBe('approved');
+      expect(update.mock.lastCall[0].data).toHaveProperty('approvedAt');
+    });
+
+    it('allows reviewed → cancelled', async () => {
+      setup('reviewed');
+      const update = jest
+        .spyOn(prisma.payslip, 'update')
+        .mockResolvedValue({ ...mockPayslip, status: 'cancelled' });
+      const res = await service.setStatus('ps-1', 'cancelled');
+      expect(res.status).toBe('cancelled');
+    });
+
+    it('rejects draft → approved (invalid transition)', async () => {
+      setup('draft');
+      await expect(service.setStatus('ps-1', 'approved')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('rejects approved → draft (locked)', async () => {
+      setup('approved');
+      await expect(service.setStatus('ps-1', 'draft')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('throws NotFound when the payslip is missing', async () => {
+      jest.spyOn(prisma.payslip, 'findUnique').mockResolvedValue(null);
+      await expect(service.setStatus('missing', 'reviewed')).rejects.toThrow(
         NotFoundException,
       );
     });

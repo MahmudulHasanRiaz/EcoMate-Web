@@ -2054,10 +2054,12 @@ model Payslip {
 
   employee Employee      @relation(fields: [employeeId], references: [id])
   items    PayslipItem[]
+  payments  PayrollPayment[]
 
   @@index([employeeId])
   @@index([status])
   @@index([periodStart, periodEnd])
+  @@unique([employeeId, periodKey])
 }
 
 model PayslipItem {
@@ -2068,6 +2070,21 @@ model PayslipItem {
   amount    Decimal @db.Decimal(10, 2)
 
   payslip Payslip @relation(fields: [payslipId], references: [id], onDelete: Cascade)
+
+  @@index([payslipId])
+}
+
+model PayrollPayment {
+  id          String   @id @default(uuid())
+  payslipId   String
+  payslip     Payslip  @relation(fields: [payslipId], references: [id], onDelete: Cascade)
+  amount      Decimal  @db.Decimal(10, 2)
+  paidAt      DateTime @default(now())
+  method      String?
+  referenceNo String?
+  note        String?
+  recordedById String?
+  createdAt   DateTime @default(now())
 
   @@index([payslipId])
 }

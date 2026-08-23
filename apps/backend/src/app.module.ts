@@ -75,6 +75,7 @@ import { AccessPresetsModule } from './access-presets/access-presets.module';
 import { DesignationsModule } from './designations/designations.module';
 import { HrScheduleModule } from './hr-schedule/hr-schedule.module';
 import { HrLedgersModule } from './hr-ledgers/hr-ledgers.module';
+import { HrPaymentsModule } from './hr-payments/hr-payments.module';
 import { AccountsModule } from './accounts/accounts.module';
 import { PayrollModule } from './payroll/payroll.module';
 import { StockModule } from './stock/stock.module';
@@ -162,6 +163,7 @@ import { SecurityDashboardModule } from './security-dashboard/security-dashboard
     HrModule,
     HrScheduleModule,
     HrLedgersModule,
+    HrPaymentsModule,
     FinancialPeriodsModule,
     OpeningBalancesModule,
     AccountsModule,

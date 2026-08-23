@@ -24,6 +24,6 @@ describe('PayrollController', () => {
 
     controller.findAllPayslips('2', '20', '2026-08');
 
-    expect(service.findAllPayslips).toHaveBeenCalledWith(2, 20, '2026-08');
+    expect(service.findAllPayslips).toHaveBeenCalledWith(2, 20, '2026-08', undefined);
   });
 });
