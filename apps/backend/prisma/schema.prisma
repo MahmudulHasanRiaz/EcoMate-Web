@@ -1991,6 +1991,8 @@ model SalaryStructure {
   effectiveFrom      DateTime  @default(now())
   effectiveTo        DateTime?
   isActive           Boolean  @default(true)
+  createdById        String?
+  updatedById        String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -2112,6 +2114,8 @@ model Payslip {
   paidAt          DateTime?
   reviewedAt      DateTime?
   approvedAt      DateTime?
+  reviewedById    String?
+  approvedById    String?
   periodKey       String?
   notes           String?       @db.Text
   createdAt       DateTime      @default(now())
@@ -3721,4 +3725,21 @@ model RawAttendanceEvent {
   idempotencyKey   String              @unique
   status           AttendanceEventStatus @default(PROCESSED)
   ingestedAt       DateTime            @default(now())
+}
+
+// ---------- HR Production Hardening (Plan) ----------
+
+model CommissionReversal {
+  id                  String           @id @default(uuid())
+  commissionEarningId String
+  commissionEarning   CommissionEarning @relation(fields: [commissionEarningId], references: [id], onDelete: Cascade)
+  orderId             String?
+  amount              Decimal          @db.Decimal(10, 2)
+  reason              String
+  refundedAmount      Decimal?         @db.Decimal(10, 2)
+  reversedById        String?
+  reversedAt          DateTime         @default(now())
+  createdAt           DateTime         @default(now())
+  // Partial-unique (orderId non-null only) created in migration SQL.
+  @@index([commissionEarningId])
 }
