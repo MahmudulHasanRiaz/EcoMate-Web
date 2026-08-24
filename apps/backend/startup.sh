@@ -26,7 +26,11 @@ else
   echo "[Startup] Custom backup directories must be writable by UID 1001"
 fi
 
-echo "[Startup] Running database migrations..."
+echo "[Startup] Resolving failed migrations (self-heal before migrate deploy)..."
+# Reads the same DATABASE_URL env the migrate step uses. A failed migration row
+# would otherwise block `migrate deploy` (P3009) on every redeploy until fixed by
+# hand; this resolves known ones safely and aborts on unknowns.
+./resolve-failed-migrations.sh
 npx prisma migrate deploy 2>&1
 echo "[Startup] Migrations applied successfully"
 
