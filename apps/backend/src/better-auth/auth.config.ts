@@ -19,6 +19,13 @@ export const auth = betterAuth({
   secret: secret || 'dev-secret-local-fallback-2026',
   basePath: '/api/better-auth',
   baseURL: process.env.BETTER_AUTH_URL || 'http://localhost:4000',
+  // Dev-only: SPA origins proxied to this API. Production is same-origin;
+  // this list only relaxes CSRF origin checks for the local dev frontends.
+  trustedOrigins: [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://localhost:4000',
+  ],
   database: prismaAdapter(baPrisma, { provider: 'postgresql' }),
   emailAndPassword: { enabled: true },
   socialProviders: {
