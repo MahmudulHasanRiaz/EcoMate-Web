@@ -9,6 +9,8 @@
 # that auto-migrate on boot this bricks every redeploy until it is fixed by hand.
 #
 # This script detects those rows and resolves the KNOWN one(s) safely:
+#   - First reconciles the HR-domain base schema (see reconcile-hr-base.sql) so a
+#     rolled-back migration can actually re-apply after drift (P3018 fix).
 #   - If the migration's DDL verifiably landed  -> `resolve --applied`
 #   - If the migration's DDL verifiably did NOT -> `resolve --rolled-back`
 #   - Any migration we cannot classify         -> ABORT (fail safe, never guess)
@@ -20,6 +22,30 @@
 set -e
 
 : "${DATABASE_URL:?resolve-failed-migrations.sh requires DATABASE_URL}"
+
+# Reconciliation SQL: recreates the HR-domain BASE objects (enums + tables) to
+# the exact applied-state shape the migration chain expects at
+# 20260823120001_add_payslip_lifecycle_groundwork, CREATE-if-absent /
+# skip-if-exists throughout. Heals the drift that causes P3018 "type ... does
+# not exist" when a rolled-back migration is re-applied against a database whose
+# base objects never materialised (history recorded applied, schema missing).
+# Resolve relative to this script's directory so it works both in the container
+# (/app) and when run from the repo checkout (apps/backend).
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+RECONCILE_SQL="${SCRIPT_DIR}/reconcile-hr-base.sql"
+apply_reconcile() {
+  if [ -f "$RECONCILE_SQL" ]; then
+    echo "[Startup] Applying HR base reconciliation (heals missing base objects)..."
+    if PGOPTIONS='-c client_min_messages=warning' psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$RECONCILE_SQL" 2>&1; then
+      echo "[Startup] HR base reconciliation applied (no-op when everything exists)."
+    else
+      echo "[Startup] FATAL: HR base reconciliation failed."
+      exit 1
+    fi
+  else
+    echo "[Startup] WARN: reconciliation file not found at $RECONCILE_SQL — skipping."
+  fi
+}
 
 # Select migrations that STARTED but never FINISHED and were never rolled back.
 # These are the rows that trip P3009.
@@ -68,6 +94,13 @@ probe_ddl() {
 }
 
 resolve_failed() {
+  # ALWAYS reconcile the HR base first. Production drift can leave a base object
+  # missing while every migration row is marked applied (the exact cause of
+  # P3018 "type ... does not exist") — the reconciliation creates anything absent
+  # and skips anything present, so it heals the schema before we even look at
+  # failed rows. Safe to run on every boot (all guards idempotent).
+  apply_reconcile
+
   echo "[Startup] Detecting failed migrations..."
   failures="$(failed_migrations)"
   if [ -z "$failures" ]; then
