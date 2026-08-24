@@ -401,7 +401,7 @@ export default function CreateEmployeePage() {
                       {SALARY_FIELDS.slice(0, 5).map((f) => (
                         <div className='grid gap-2' key={f.key}>
                           <Label>{f.label}</Label>
-                          <Input type='number' min={0} value={salary[f.key]} onChange={(e) => setSalary({ ...salary, [f.key]: e.target.value })} />
+                          <Input type='number' min={0} value={String(salary[f.key] ?? '')} onChange={(e) => setSalary({ ...salary, [f.key]: e.target.value })} />
                         </div>
                       ))}
                     </div>
@@ -410,7 +410,7 @@ export default function CreateEmployeePage() {
                       {SALARY_FIELDS.slice(5).map((f) => (
                         <div className='grid gap-2' key={f.key}>
                           <Label>{f.label}</Label>
-                          <Input type='number' min={0} value={salary[f.key]} onChange={(e) => setSalary({ ...salary, [f.key]: e.target.value })} />
+                          <Input type='number' min={0} value={String(salary[f.key] ?? '')} onChange={(e) => setSalary({ ...salary, [f.key]: e.target.value })} />
                         </div>
                       ))}
                     </div>

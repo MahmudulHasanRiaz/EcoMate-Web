@@ -1,4 +1,4 @@
-import { useState, type ComponentType, type ReactNode } from 'react'
+import { useState, useEffect, useRef, type ComponentType, type ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -30,9 +30,10 @@ import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { DatePicker } from '@/components/date-picker'
 import { useEmployeeQuery, useUpdateEmployeeMutation, useBankAccountsQuery, useCreateBankAccountMutation, useUpdateBankAccountMutation, useDeleteBankAccountMutation, useSetPrimaryBankAccountMutation } from '../hooks'
-import { employeesApi, type EmployeeStatus, type EmploymentType, type UpdateEmployeeDto, type AttendanceMethod, type EmployeeResponse, type EmployeeGender } from '../api'
+import { employeesApi, type EmployeeStatus, type EmploymentType, type UpdateEmployeeDto, type AttendanceMethod, type EmployeeResponse, type EmployeeGender, GENDER_LABELS, ATTENDANCE_METHOD_LABELS } from '../api'
 import { BankAccountsCard } from './bank-accounts-card'
 import { SalaryHistoryCard } from '@/features/payroll/components/salary-history'
+import { pendingEffectiveFrom } from '@/features/payroll/lib/pending-structure'
 import { useSalaryStructureHistoryQuery, usePayrollSummaryQuery } from '@/features/payroll/hooks'
 import { STATUS_BADGE, STATUS_LABELS, EMPLOYMENT_TYPE_BADGE, EMPLOYMENT_TYPE_LABELS } from '../index'
 import { useDepartmentsQuery } from '@/features/departments/hooks'
@@ -250,6 +251,7 @@ function CompensationTab({ employeeId, mirrorSalary }: { employeeId: string; mir
           structures={historyData ?? []}
           summary={summary}
           mirrorSalary={mirrorSalary}
+          pendingEffectiveFrom={pendingEffectiveFrom(historyData ?? [])}
           isLoading={historyLoading || summaryLoading}
           isError={historyError}
           onRetry={refetchHistory}
@@ -443,7 +445,9 @@ function PersonalInfoCard({ employee }: { employee: EmployeeResponse }) {
       <CardContent>
         <div className='grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3'>
           <InfoRow label='Date of Birth'>{formatDate(employee.dateOfBirth)}</InfoRow>
-          <InfoRow label='Gender'>{employee.gender || '—'}</InfoRow>
+          <InfoRow label='Gender'>
+            {employee.gender ? GENDER_LABELS[employee.gender] : '—'}
+          </InfoRow>
           <InfoRow label='Nationality'>{employee.nationality || '—'}</InfoRow>
           <InfoRow label='NID Number'>{employee.nidNumber || '—'}</InfoRow>
           <InfoRow label='Phone'>{'—'}</InfoRow>
@@ -568,6 +572,17 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
   const { data: historyData, isLoading: historyLoading, isError: historyError, refetch: refetchHistory } = useHistoryQuery(employeeId, historyPage)
 
   const updateEmpMut = useUpdateEmployeeMutation()
+
+  const [empTab, setEmpTab] = useState('overview')
+  const empTabListRef = useRef<HTMLDivElement>(null)
+
+  // G-26: keep the active section tab in view on narrow screens where the tab
+  // list scrolls horizontally.
+  useEffect(() => {
+    const list = empTabListRef.current
+    const active = list?.querySelector<HTMLElement>('[data-state="active"]')
+    active?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+  }, [empTab])
 
   const [empEditOpen, setEmpEditOpen] = useState(false)
   const [empForm, setEmpForm] = useState<EmploymentForm>({
@@ -714,8 +729,12 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
           </CardContent>
         </Card>
 
-        <Tabs defaultValue='overview'>
-          <TabsList className='h-auto w-full flex-nowrap overflow-x-auto lg:flex-wrap lg:overflow-visible'>
+        <Tabs value={empTab} onValueChange={setEmpTab}>
+          <TabsList
+            ref={empTabListRef}
+            aria-label='Employee sections'
+            className='h-auto w-full flex-nowrap overflow-x-auto lg:flex-wrap lg:overflow-visible'
+          >
             <TabsTrigger value='overview'>Overview</TabsTrigger>
             <TabsTrigger value='employment'>Employment</TabsTrigger>
             <TabsTrigger value='compensation'>Compensation</TabsTrigger>
@@ -796,7 +815,11 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
                   <InfoRow label='Exit Date'>{formatDate(employee.exitDate)}</InfoRow>
                   <InfoRow label='Confirmation Date'>{formatDate(employee.confirmationDate)}</InfoRow>
                   <InfoRow label='Exit Reason'>{employee.exitReason || '—'}</InfoRow>
-                  <InfoRow label='Attendance Method'>{employee.attendanceMethod || '—'}</InfoRow>
+                  <InfoRow label='Attendance Method'>
+                    {employee.attendanceMethod
+                      ? ATTENDANCE_METHOD_LABELS[employee.attendanceMethod]
+                      : '—'}
+                  </InfoRow>
                 </div>
               </CardContent>
             </Card>

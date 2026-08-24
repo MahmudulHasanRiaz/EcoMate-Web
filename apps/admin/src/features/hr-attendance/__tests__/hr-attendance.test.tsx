@@ -15,7 +15,8 @@ vi.mock('@/components/global-search-bar', () => ({ GlobalSearchBar: () => null }
 vi.mock('@/components/theme-switch', () => ({ ThemeSwitch: () => null }))
 vi.mock('@/components/profile-dropdown', () => ({ ProfileDropdown: () => null }))
 vi.mock('@/components/layout/header', () => ({ Header: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+vi.mock('sonner', () => ({ toast }))
+const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
 
 const authPermissions = vi.hoisted(() => ({
   value: ['manage_attendance', 'manage_attendance_devices', 'manage_hr_settings'],
@@ -201,5 +202,103 @@ describe('AttendancePage', () => {
 
     await expect.element(getByText('MISSING CHECKOUT')).toBeInTheDocument()
     await expect.element(getByRole('button', { name: /Close Session/i })).toBeInTheDocument()
+  })
+
+  describe('Add Day (G-03 UI)', () => {
+    beforeEach(() => {
+      authPermissions.value = [
+        'manage_attendance',
+        'manage_attendance_devices',
+        'manage_hr_settings',
+        'manage_attendance_adjustments',
+      ]
+    })
+
+    it('renders an enabled Add Day action with permission and opens the dialog with fields', async () => {
+      const { getByRole, getByText } = await wrap(<AttendancePage />)
+
+      const addBtn = getByRole('button', { name: /Add Day/i })
+      await expect.element(addBtn).toBeInTheDocument()
+      await expect.element(addBtn).toBeEnabled()
+
+      await userEvent.click(addBtn)
+
+      await expect.element(getByText('Add Manual Day')).toBeInTheDocument()
+      await expect.element(getByRole('combobox', { name: /Employee/i })).toBeInTheDocument()
+
+      await getByRole('combobox', { name: /Employee/i }).click()
+      await vi.waitFor(() => {
+        expect(mockGet).toHaveBeenCalledWith(
+          '/employees',
+          expect.objectContaining({
+            params: expect.objectContaining({ perPage: 50 }),
+          }),
+        )
+      })
+      await expect.element(getByRole('button', { name: /EMP-001 · John Doe/i })).toBeInTheDocument()
+    })
+
+    it('disables the Add Day action and shows the hint when the adjustments permission is missing', async () => {
+      authPermissions.value = ['manage_attendance']
+      const { getByRole, getByText } = await wrap(<AttendancePage />)
+
+      await expect.element(getByRole('button', { name: /Add Day/i })).toBeDisabled()
+      await expect
+        .element(
+          getByText('Requires Manage Attendance Adjustments permission.'),
+        )
+        .toBeInTheDocument()
+    })
+
+    it('posts /hr/attendance/days with employee, date, status and reason on save', async () => {
+      const { getByRole, getByText } = await wrap(<AttendancePage />)
+      await userEvent.click(getByRole('button', { name: /Add Day/i }))
+
+      await getByRole('combobox', { name: /Employee/i }).click()
+      await getByRole('button', { name: /EMP-001 · John Doe/i }).click()
+
+      await userEvent.type(
+        getByRole('textbox', { name: /Reason/i }),
+        'Absent due to emergency',
+      )
+      await userEvent.click(getByRole('button', { name: /Save Day/i }))
+
+      await vi.waitFor(() => {
+        expect(mockPost).toHaveBeenCalledWith('/hr/attendance/days', {
+          employeeId: 'emp-1',
+          date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+          status: 'ABSENT',
+          reason: 'Absent due to emergency',
+        })
+      })
+    })
+
+    it('keeps the dialog open and surfaces the server 409 duplicate-day message', async () => {
+      mockPost.mockImplementation((url: string) => {
+        if (url === '/hr/attendance/days') {
+          return Promise.reject({
+            response: {
+              status: 409,
+              data: { message: 'An attendance day already exists for this date' },
+            },
+          })
+        }
+        return Promise.resolve({ data: {} })
+      })
+
+      const { getByRole, getByText } = await wrap(<AttendancePage />)
+      await userEvent.click(getByRole('button', { name: /Add Day/i }))
+      await getByRole('combobox', { name: /Employee/i }).click()
+      await getByRole('button', { name: /EMP-001 · John Doe/i }).click()
+      await userEvent.type(getByRole('textbox', { name: /Reason/i }), 'Duplicate')
+      await userEvent.click(getByRole('button', { name: /Save Day/i }))
+
+      await vi.waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith(
+          'An attendance day already exists for this date',
+        )
+      })
+      await expect.element(getByText('Add Manual Day')).toBeInTheDocument()
+    })
   })
 })

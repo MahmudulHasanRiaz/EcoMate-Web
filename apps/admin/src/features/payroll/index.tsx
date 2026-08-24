@@ -137,7 +137,7 @@ export function Payroll() {
                         <TableCell>
                           <div className='flex gap-1'>
                             {ps.status === 'draft' && (
-                              <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => approveMut.mutate(ps.id)} title='Approve'>
+                              <Button variant='ghost' size='icon' className='h-7 w-7' disabled={approveMut.isPending} onClick={() => approveMut.mutate(ps.id)} title='Approve' aria-label='Approve payslip'>
                                 <CheckCircle className='h-3.5 w-3.5 text-green-600' />
                               </Button>
                             )}

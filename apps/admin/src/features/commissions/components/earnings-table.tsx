@@ -83,7 +83,7 @@ function ReverseDialog({
   onOpenChange,
 }: {
   earning: CommissionEarningRow | null
-  onOpenChange: (o: boolean) => void
+  onOpenChange: (earning: CommissionEarningRow | null) => void
 }) {
   const reverseMut = useReverseEarningMutation()
   const [reason, setReason] = useState('')
@@ -108,7 +108,7 @@ function ReverseDialog({
       {
         onSuccess: () => {
           reset()
-          onOpenChange(false)
+          onOpenChange(null)
         },
       },
     )
@@ -118,8 +118,10 @@ function ReverseDialog({
     <Dialog
       open={open}
       onOpenChange={(o) => {
-        if (!o) reset()
-        onOpenChange(o)
+        if (!o) {
+          reset()
+          onOpenChange(null)
+        }
       }}
     >
       <DialogContent className='sm:max-w-[520px]'>
@@ -154,7 +156,7 @@ function ReverseDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant='outline' onClick={() => onOpenChange(false)}>
+          <Button variant='outline' onClick={() => onOpenChange(null)}>
             Cancel
           </Button>
           <Button

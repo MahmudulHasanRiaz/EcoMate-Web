@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, Eye, RotateCcw, ArrowDownAZ, ArrowUpAZ, Search } from 'lucide-react'
-import { employeesApi, type EmployeeResponse, type EmploymentType, type EmployeeStatus, type AttendanceMethod, type EmployeesQuery } from './api'
+import { employeesApi, type EmployeeResponse, type EmploymentType, type EmployeeStatus, type AttendanceMethod, type EmployeesQuery, ATTENDANCE_METHOD_LABELS } from './api'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -226,9 +226,9 @@ export function Employees() {
               <SelectTrigger className='w-[150px] h-9'><SelectValue placeholder='Attendance' /></SelectTrigger>
               <SelectContent>
                 <SelectItem value='all'>All Methods</SelectItem>
-                <SelectItem value='APP'>App</SelectItem>
-                <SelectItem value='MACHINE'>Machine</SelectItem>
-                <SelectItem value='NONE'>None</SelectItem>
+                <SelectItem value='APP'>{ATTENDANCE_METHOD_LABELS.APP}</SelectItem>
+                <SelectItem value='MACHINE'>{ATTENDANCE_METHOD_LABELS.MACHINE}</SelectItem>
+                <SelectItem value='NONE'>{ATTENDANCE_METHOD_LABELS.NONE}</SelectItem>
               </SelectContent>
             </Select>
             <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>

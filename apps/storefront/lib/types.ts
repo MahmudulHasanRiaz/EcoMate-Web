@@ -111,6 +111,8 @@ export interface User {
   role: string;
   createdAt: string;
   updatedAt: string;
+  /** True when an Employee record exists for this user (My HR access). */
+  isEmployee?: boolean;
 }
 
 export interface Combo {

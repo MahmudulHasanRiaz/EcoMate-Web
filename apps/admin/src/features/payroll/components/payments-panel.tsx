@@ -331,6 +331,7 @@ export function PaymentsForPayslip({
                         disabled={voidMut.isPending}
                         onClick={() => setVoidTarget(p)}
                         title='Void payment'
+                        aria-label='Void payment'
                       >
                         {voidMut.isPending && voidMut.variables?.paymentId === p.id ? (
                           <Loader2 className='h-3.5 w-3.5 animate-spin' />

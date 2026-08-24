@@ -433,6 +433,7 @@ export function DevicesTab() {
                         variant='ghost'
                         size='sm'
                         title='Test connection'
+                        aria-label='Test connection'
                         disabled={busyId === d.id}
                         onClick={() => handleTest(d)}
                       >
@@ -442,18 +443,19 @@ export function DevicesTab() {
                         variant='ghost'
                         size='sm'
                         title='Sync now'
+                        aria-label='Sync now'
                         disabled={busyId === d.id}
                         onClick={() => handleSync(d)}
                       >
                         {busyId === d.id && syncMut.isPending ? <Loader2 className='h-3.5 w-3.5 animate-spin' /> : <RefreshCw className='h-3.5 w-3.5' />}
                       </Button>
-                      <Button variant='ghost' size='sm' title='Mappings' onClick={() => setMappingDevice(d)}>
+                      <Button variant='ghost' size='sm' title='Mappings' aria-label='Mappings' onClick={() => setMappingDevice(d)}>
                         <Link2 className='h-3.5 w-3.5' />
                       </Button>
-                      <Button variant='ghost' size='sm' title='Edit' onClick={() => setEditing(d)}>
+                      <Button variant='ghost' size='sm' title='Edit' aria-label='Edit' onClick={() => setEditing(d)}>
                         <Pencil className='h-3.5 w-3.5' />
                       </Button>
-                      <Button variant='ghost' size='sm' className='text-destructive' title='Delete' onClick={() => setDeleting(d)}>
+                      <Button variant='ghost' size='sm' className='text-destructive' title='Delete' aria-label='Delete' onClick={() => setDeleting(d)}>
                         <Trash2 className='h-3.5 w-3.5' />
                       </Button>
                     </div>

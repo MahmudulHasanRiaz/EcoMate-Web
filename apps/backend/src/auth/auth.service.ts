@@ -317,6 +317,7 @@ export class AuthService implements OnModuleInit {
         role: true,
         createdAt: true,
         updatedAt: true,
+        betterAuthUserId: true,
       },
     });
 
@@ -324,7 +325,15 @@ export class AuthService implements OnModuleInit {
       throw new UnauthorizedException('User not found');
     }
 
-    return user;
+    const { betterAuthUserId, ...profile } = user;
+    const isEmployee = betterAuthUserId
+      ? !!(await this.prisma.employee.findFirst({
+          where: { betterAuthUserId },
+          select: { id: true },
+        }))
+      : false;
+
+    return { ...profile, isEmployee };
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
@@ -643,6 +652,7 @@ export class AuthService implements OnModuleInit {
     id: string;
     email: string;
     role: string;
+    betterAuthUserId?: string | null;
   }) {
     const payload = { sub: user.id, email: user.email, role: user.role };
     const accessExpiresIn = (process.env['JWT_EXPIRES_IN'] ||
@@ -671,6 +681,13 @@ export class AuthService implements OnModuleInit {
       },
     });
 
+    const isEmployee = user.betterAuthUserId
+      ? !!(await this.prisma.employee.findFirst({
+          where: { betterAuthUserId: user.betterAuthUserId },
+          select: { id: true },
+        }))
+      : false;
+
     return {
       accessToken,
       refreshToken,
@@ -678,6 +695,7 @@ export class AuthService implements OnModuleInit {
         id: user.id,
         email: user.email,
         role: user.role,
+        isEmployee,
       },
     };
   }

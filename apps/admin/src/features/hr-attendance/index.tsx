@@ -13,6 +13,7 @@ import { DailyOverview } from './components/daily-overview'
 import { AdjustmentsTab } from './components/adjustments-tab'
 import { DevicesTab } from './components/devices-tab'
 import { SettingsTab } from './components/settings-tab'
+import { AddDayAction } from './components/add-day'
 import { dhakaTodayDate, type AttendanceStatus } from './api'
 
 const SUB_TABS = [
@@ -26,6 +27,7 @@ const SUB_TABS = [
 export function AttendancePage({ initialTab }: { initialTab?: string }) {
   const permissions = useAuthStore((s) => s.auth.user?.permissions) ?? []
   const canManageDevices = permissions.includes('manage_attendance_devices')
+  const canAdjustDays = permissions.includes('manage_attendance_adjustments')
 
   const [tab, setTab] = useState(SUB_TABS.some((t) => t.value === initialTab) ? initialTab! : 'today')
   const [todayEmployeeId, setTodayEmployeeId] = useState('')
@@ -48,11 +50,14 @@ export function AttendancePage({ initialTab }: { initialTab?: string }) {
       </Header>
 
       <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
-        <div>
-          <h2 className='text-2xl font-bold tracking-tight'>Attendance Management</h2>
-          <p className='mt-1 text-sm text-muted-foreground'>
-            Live check-in state, daily records, adjustments, devices, and mode settings.
-          </p>
+        <div className='flex flex-wrap items-center justify-between gap-3'>
+          <div>
+            <h2 className='text-2xl font-bold tracking-tight'>Attendance Management</h2>
+            <p className='mt-1 text-sm text-muted-foreground'>
+              Live check-in state, daily records, adjustments, devices, and mode settings.
+            </p>
+          </div>
+          <AddDayAction canAdd={canAdjustDays} />
         </div>
 
         <Tabs value={tab} onValueChange={setTab}>

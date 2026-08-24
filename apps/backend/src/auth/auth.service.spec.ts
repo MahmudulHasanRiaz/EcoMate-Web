@@ -71,6 +71,9 @@ describe('AuthService', () => {
               update: jest.fn(),
               updateMany: jest.fn().mockResolvedValue({ count: 1 }),
             },
+            employee: {
+              findFirst: jest.fn(),
+            },
             userSettings: {
               create: jest.fn(),
             },
@@ -183,7 +186,12 @@ describe('AuthService', () => {
       expect(result).toEqual({
         accessToken: 'access-token-mock',
         refreshToken: 'refresh-token-mock',
-        user: { id: mockUser.id, email: mockUser.email, role: mockUser.role },
+        user: {
+          id: mockUser.id,
+          email: mockUser.email,
+          role: mockUser.role,
+          isEmployee: false,
+        },
       });
     });
 
@@ -225,6 +233,55 @@ describe('AuthService', () => {
         id: mockUser.id,
         email: mockUser.email,
         role: mockUser.role,
+        isEmployee: false,
+      });
+    });
+
+    it('login user payload reports isEmployee true for a manager with an Employee record', async () => {
+      const manager = { ...mockUser, role: 'manager', betterAuthUserId: 'ba-mgr' };
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(manager);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      (jwtService.sign as jest.Mock)
+        .mockReturnValueOnce('access-token-mock')
+        .mockReturnValueOnce('refresh-token-mock');
+      (prisma.refreshToken.create as jest.Mock).mockResolvedValue(
+        mockTokenRecord,
+      );
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue({ id: 'emp-mgr' });
+
+      const result = await service.login(loginDto);
+
+      expect(prisma.employee.findFirst).toHaveBeenCalledWith({
+        where: { betterAuthUserId: 'ba-mgr' },
+        select: { id: true },
+      });
+      expect(result.user).toEqual({
+        id: mockUser.id,
+        email: mockUser.email,
+        role: 'manager',
+        isEmployee: true,
+      });
+    });
+
+    it('login user payload reports isEmployee false for staff with no Employee record', async () => {
+      const pureStaff = { ...mockUser, role: 'cashier' };
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(pureStaff);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      (jwtService.sign as jest.Mock)
+        .mockReturnValueOnce('access-token-mock')
+        .mockReturnValueOnce('refresh-token-mock');
+      (prisma.refreshToken.create as jest.Mock).mockResolvedValue(
+        mockTokenRecord,
+      );
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(null);
+
+      const result = await service.login(loginDto);
+
+      expect(result.user).toEqual({
+        id: mockUser.id,
+        email: mockUser.email,
+        role: 'cashier',
+        isEmployee: false,
       });
     });
 
@@ -389,6 +446,47 @@ describe('AuthService', () => {
       await expect(service.me('nonexistent-id')).rejects.toThrow(
         UnauthorizedException,
       );
+    });
+
+    it('sets isEmployee true when an Employee record exists for betterAuthUserId (manager with Employee → true)', async () => {
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+        ...mockUser,
+        role: 'manager',
+        betterAuthUserId: 'ba-1',
+      });
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue({ id: 'emp-1' });
+
+      const result = await service.me('user-id-1');
+
+      expect(prisma.employee.findFirst).toHaveBeenCalledWith({
+        where: { betterAuthUserId: 'ba-1' },
+        select: { id: true },
+      });
+      expect(result.isEmployee).toBe(true);
+    });
+
+    it('sets isEmployee false when no Employee record is linked', async () => {
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+        ...mockUser,
+        betterAuthUserId: 'ba-1',
+      });
+      (prisma.employee.findFirst as jest.Mock).mockResolvedValue(null);
+
+      const result = await service.me('user-id-1');
+
+      expect(result.isEmployee).toBe(false);
+    });
+
+    it('skips the employee lookup when the profile has no betterAuthUserId (isEmployee false)', async () => {
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+        ...mockUser,
+        betterAuthUserId: null,
+      });
+
+      const result = await service.me('user-id-1');
+
+      expect(result.isEmployee).toBe(false);
+      expect(prisma.employee.findFirst).not.toHaveBeenCalled();
     });
   });
 

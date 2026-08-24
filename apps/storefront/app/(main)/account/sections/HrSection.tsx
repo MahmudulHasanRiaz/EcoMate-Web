@@ -29,6 +29,7 @@ import {
   getHrSchedule,
   getHrLeaveTypes,
   getHrLeaveRequests,
+  getHrMyLeaveBalances,
   createHrLeaveRequest,
   cancelHrLeaveRequest,
   getHrMyAttendance,
@@ -47,6 +48,7 @@ import {
   type EmployeeDeduction,
   type LeaveType,
   type LeaveRequest,
+  type LeaveBalance,
   type HrDayState,
   type HrAttendanceDay,
 } from "@/lib/api/hr";
@@ -61,6 +63,22 @@ type TabKey =
   | "leave"
   | "schedule"
   | "attendance";
+
+const SESSION_EXPIRED_MESSAGE =
+  "Your session has expired. Please sign in again.";
+
+const isSessionExpiredErr = (err: unknown) =>
+  (err as any)?.response?.status === 401;
+
+/* G-21: any /hr/my call returning 401 (after the client's refresh attempt
+   failed) is surfaced as ONE friendly inline message in the pill area. */
+let sessionExpiredHandler: (() => void) | null = null;
+export function subscribeHrSessionExpired(cb: (() => void) | null) {
+  sessionExpiredHandler = cb;
+}
+function notifyHrSessionExpired() {
+  sessionExpiredHandler?.();
+}
 
 const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: "profile", label: "Profile", icon: <User size={16} /> },
@@ -170,7 +188,8 @@ function ProfileTab() {
     setError(false);
     getHrProfile()
       .then(setData)
-      .catch(() => {
+      .catch((err) => {
+        if (isSessionExpiredErr(err)) notifyHrSessionExpired();
         setData(null);
         setError(true);
       })
@@ -250,6 +269,7 @@ function SalaryTab() {
     getHrSalary()
       .then(setData)
       .catch((err) => {
+        if (isSessionExpiredErr(err)) notifyHrSessionExpired();
         if (err?.response?.status === 404) setNotFound(true);
         else setError(true);
         setData(null);
@@ -371,7 +391,8 @@ function PayslipsTab() {
     setError(false);
     getHrPayslips(1, 50)
       .then((res) => setItems(res.data || []))
-      .catch(() => {
+      .catch((err) => {
+        if (isSessionExpiredErr(err)) notifyHrSessionExpired();
         setItems([]);
         setError(true);
       })
@@ -399,7 +420,8 @@ function PayslipsTab() {
     try {
       const res = await getHrPayslipPayments(id);
       setPayments((p) => ({ ...p, [id]: res || [] }));
-    } catch {
+    } catch (err: any) {
+      if (isSessionExpiredErr(err)) notifyHrSessionExpired();
       setPayments((p) => ({ ...p, [id]: [] }));
       setPaymentsFailed((f) => ({ ...f, [id]: true }));
     } finally {
@@ -534,7 +556,8 @@ function CommissionTab() {
     setError(false);
     getHrCommissions(1, 50)
       .then((res) => setItems(res.data || []))
-      .catch(() => {
+      .catch((err) => {
+        if (isSessionExpiredErr(err)) notifyHrSessionExpired();
         setItems([]);
         setError(true);
       })
@@ -608,7 +631,8 @@ function EarningsTab() {
     setError(false);
     getHrEarnings(1, 50)
       .then((res) => setItems(res.data || []))
-      .catch(() => {
+      .catch((err) => {
+        if (isSessionExpiredErr(err)) notifyHrSessionExpired();
         setItems([]);
         setError(true);
       })
@@ -682,7 +706,8 @@ function DeductionsTab() {
     setError(false);
     getHrDeductions(1, 50)
       .then((res) => setItems(res.data || []))
-      .catch(() => {
+      .catch((err) => {
+        if (isSessionExpiredErr(err)) notifyHrSessionExpired();
         setItems([]);
         setError(true);
       })
@@ -745,6 +770,68 @@ function DeductionsTab() {
 }
 
 /* ---------------- Leave ---------------- */
+function LeaveBalanceCard() {
+  const [balances, setBalances] = useState<LeaveBalance[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(false);
+    getHrMyLeaveBalances()
+      .then(setBalances)
+      .catch((err) => {
+        if (isSessionExpiredErr(err)) notifyHrSessionExpired();
+        setBalances([]);
+        setError(true);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return (
+    <Card>
+      <h4 className="text-sm font-bold text-gray-700 mb-4">Leave Balance</h4>
+      {loading ? (
+        <Spinner />
+      ) : error ? (
+        <ErrorState message="Could not load your leave balances." onRetry={load} />
+      ) : !balances || balances.length === 0 ? (
+        <EmptyState message="No leave balances available" />
+      ) : (
+        <div className="space-y-2">
+          {balances.map((b) => (
+            <div
+              key={b.typeId || b.typeName}
+              className="flex items-center justify-between p-3 rounded-xl bg-gray-50"
+            >
+              <div>
+                <p className="text-sm font-semibold text-gray-800">
+                  {b.typeName}
+                </p>
+                <p className="text-xs text-gray-500">
+                  Total <b className="text-gray-700">{b.entitlement}</b> · Used{" "}
+                  <b className="text-gray-700">{b.used}</b>
+                </p>
+              </div>
+              <span
+                className={`text-lg font-bold tabular-nums ${
+                  b.remaining > 0 ? "text-brand-blue" : "text-amber-500"
+                }`}
+              >
+                {b.remaining}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 const FALLBACK_LEAVE_TYPES: LeaveType[] = [
   { id: "", name: "Casual Leave", code: "casual", daysPerYear: 0, isPaid: true, isActive: true },
   { id: "", name: "Sick Leave", code: "sick", daysPerYear: 0, isPaid: true, isActive: true },
@@ -768,7 +855,8 @@ function LeaveTab() {
     setRequestsError(false);
     getHrLeaveRequests(1, 50)
       .then((res) => setRequests(res.data || []))
-      .catch(() => {
+      .catch((err) => {
+        if (isSessionExpiredErr(err)) notifyHrSessionExpired();
         setRequests([]);
         setRequestsError(true);
       })
@@ -786,7 +874,8 @@ function LeaveTab() {
           setTypes(FALLBACK_LEAVE_TYPES);
         }
       })
-      .catch(() => {
+      .catch((err) => {
+        if (isSessionExpiredErr(err)) notifyHrSessionExpired();
         setTypes(FALLBACK_LEAVE_TYPES);
       });
   }, [loadRequests]);
@@ -808,6 +897,7 @@ function LeaveTab() {
       if (types[0]?.id) setTypeId(types[0].id);
       loadRequests();
     } catch (err: any) {
+      if (isSessionExpiredErr(err)) notifyHrSessionExpired();
       toast.error(err?.response?.data?.message || "Failed to submit request");
     } finally {
       setSubmitting(false);
@@ -820,6 +910,7 @@ function LeaveTab() {
       toast.success("Leave request cancelled");
       loadRequests();
     } catch (err: any) {
+      if (isSessionExpiredErr(err)) notifyHrSessionExpired();
       toast.error(err?.response?.data?.message || "Failed to cancel request");
     }
   };
@@ -827,6 +918,10 @@ function LeaveTab() {
   return (
     <Card>
       <h3 className="text-xl font-bold text-gray-800 mb-6">My Leave Requests</h3>
+
+      <div className="mb-8">
+        <LeaveBalanceCard />
+      </div>
 
       <form
         onSubmit={handleSubmit}
@@ -966,7 +1061,8 @@ function ScheduleTab() {
     setError(false);
     getHrSchedule()
       .then((res) => setDays(res.days || []))
-      .catch(() => {
+      .catch((err) => {
+        if (isSessionExpiredErr(err)) notifyHrSessionExpired();
         setDays([]);
         setError(true);
       })
@@ -1082,7 +1178,8 @@ function AttendanceTab() {
     setTodayError(false);
     getHrMyAttendanceToday()
       .then(setDayState)
-      .catch(() => {
+      .catch((err) => {
+        if (isSessionExpiredErr(err)) notifyHrSessionExpired();
         setDayState(null);
         setTodayError(true);
       })
@@ -1092,7 +1189,8 @@ function AttendanceTab() {
     setListError(false);
     getHrMyAttendance()
       .then((res) => setItems(Array.isArray(res) ? res : []))
-      .catch(() => {
+      .catch((err) => {
+        if (isSessionExpiredErr(err)) notifyHrSessionExpired();
         setItems([]);
         setListError(true);
       })
@@ -1110,6 +1208,7 @@ function AttendanceTab() {
       toast.success(successMsg);
       load();
     } catch (err: any) {
+      if (isSessionExpiredErr(err)) notifyHrSessionExpired();
       toast.error(serverError(err, "Could not complete the action"));
     } finally {
       setActionLoading(false);
@@ -1259,6 +1358,12 @@ function AttendanceTab() {
 
 export function HrSection() {
   const [active, setActive] = useState<TabKey>("profile");
+  const [sessionExpired, setSessionExpired] = useState(false);
+
+  useEffect(() => {
+    subscribeHrSessionExpired(() => setSessionExpired(true));
+    return () => subscribeHrSessionExpired(null);
+  }, []);
 
   const render = () => {
     switch (active) {
@@ -1310,6 +1415,15 @@ export function HrSection() {
           </button>
         ))}
       </div>
+
+      {sessionExpired && (
+        <div
+          role="status"
+          className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-800"
+        >
+          {SESSION_EXPIRED_MESSAGE}
+        </div>
+      )}
 
       {render()}
     </div>

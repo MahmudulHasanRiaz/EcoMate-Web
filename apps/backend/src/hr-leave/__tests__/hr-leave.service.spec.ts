@@ -18,6 +18,7 @@ describe('HrLeaveService', () => {
     leaveRequest: {
       create: jest.fn(),
       findMany: jest.fn(),
+      findFirst: jest.fn(),
       findUnique: jest.fn(),
       update: jest.fn(),
       count: jest.fn(),
@@ -241,6 +242,137 @@ describe('HrLeaveService', () => {
       await expect(
         service.cancelRequest('lr-1', 'actor-1'),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('overlapping leave guard (G-14)', () => {
+    const reqDto = {
+      employeeId: 'emp-1',
+      typeId: 'lt-1',
+      startDate: '2026-01-02',
+      endDate: '2026-01-04',
+      reason: 'vacation',
+    };
+
+    it('blocks a create that overlaps an existing pending/approved request (409) and queries exactly the overlap statuses', async () => {
+      prismaMock.employee.findUnique.mockResolvedValue({ id: 'emp-1' });
+      prismaMock.leaveType.findUnique.mockResolvedValue({ id: 'lt-1' });
+      prismaMock.leaveRequest.findFirst.mockResolvedValue({ id: 'lr-existing' });
+
+      await expect(service.createRequest(reqDto)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(prismaMock.leaveRequest.create).not.toHaveBeenCalled();
+      expect(prismaMock.leaveRequest.findFirst).toHaveBeenCalledWith({
+        where: {
+          employeeId: 'emp-1',
+          status: { in: ['pending', 'approved'] },
+          startDate: { lte: new Date('2026-01-04') },
+          endDate: { gte: new Date('2026-01-02') },
+        },
+        select: { id: true },
+      });
+    });
+
+    it('blocks a create that overlaps an approved request too (status filter covers approved)', async () => {
+      prismaMock.employee.findUnique.mockResolvedValue({ id: 'emp-1' });
+      prismaMock.leaveType.findUnique.mockResolvedValue({ id: 'lt-1' });
+      prismaMock.leaveRequest.findFirst.mockResolvedValue({ id: 'lr-approved' });
+
+      await expect(service.createRequest(reqDto)).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    it('allows a create adjacent to an existing request (end +1 day, no overlap)', async () => {
+      prismaMock.employee.findUnique.mockResolvedValue({ id: 'emp-1' });
+      prismaMock.leaveType.findUnique.mockResolvedValue({ id: 'lt-1' });
+      prismaMock.leaveRequest.findFirst.mockResolvedValue(null);
+      prismaMock.leaveRequest.create.mockResolvedValue({ id: 'lr-new' });
+
+      const res = await service.createRequest({
+        ...reqDto,
+        startDate: '2026-01-05',
+        endDate: '2026-01-06',
+      });
+      expect(res).toEqual({ id: 'lr-new' });
+      expect(prismaMock.leaveRequest.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('blocks approving a pending request that overlaps another approved one (re-check, excluding itself)', async () => {
+      prismaMock.leaveRequest.findUnique.mockResolvedValue({
+        id: 'lr-2',
+        status: 'pending',
+        employeeId: 'emp-1',
+        startDate: new Date('2026-01-02'),
+        endDate: new Date('2026-01-04'),
+      });
+      prismaMock.leaveRequest.findFirst.mockResolvedValue({ id: 'lr-approved' });
+
+      await expect(service.approveRequest('lr-2', {})).rejects.toThrow(
+        ConflictException,
+      );
+      expect(prismaMock.leaveRequest.update).not.toHaveBeenCalled();
+      expect(prismaMock.leaveRequest.findFirst).toHaveBeenCalledWith({
+        where: {
+          employeeId: 'emp-1',
+          status: { in: ['pending', 'approved'] },
+          startDate: { lte: new Date('2026-01-04') },
+          endDate: { gte: new Date('2026-01-02') },
+          id: { not: 'lr-2' },
+        },
+        select: { id: true },
+      });
+    });
+
+    it('approves when no overlapping pending/approved request exists', async () => {
+      prismaMock.leaveRequest.findUnique.mockResolvedValue({
+        id: 'lr-2',
+        status: 'pending',
+        employeeId: 'emp-1',
+        startDate: new Date('2026-01-02'),
+        endDate: new Date('2026-01-04'),
+      });
+      prismaMock.leaveRequest.findFirst.mockResolvedValue(null);
+      prismaMock.leaveRequest.update.mockResolvedValue({ id: 'lr-2', status: 'approved' });
+
+      const res = await service.approveRequest('lr-2', {});
+      expect(res.status).toBe('approved');
+      expect(prismaMock.leaveRequest.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('cancelling an approved request restores the balance (cancelled excluded from derived balance)', async () => {
+      prismaMock.employee.findUnique.mockResolvedValue({ id: 'emp-1' });
+      prismaMock.leaveType.findMany.mockResolvedValue([
+        { id: 'lt-1', name: 'Casual Leave', isPaid: true, daysPerYear: 10 },
+      ]);
+      // Before cancel: the approved request is counted → used 5 / remaining 5.
+      prismaMock.leaveRequest.aggregate.mockResolvedValue({ _sum: { days: 5 } });
+      const before = await service.leaveBalances('emp-1');
+      expect(before[0].used).toBe(5);
+      expect(before[0].remaining).toBe(5);
+
+      // Cancel the approved request (status → cancelled).
+      prismaMock.leaveRequest.findUnique.mockResolvedValue({
+        id: 'lr-1',
+        status: 'approved',
+        createdById: 'actor-1',
+      });
+      prismaMock.leaveRequest.update.mockResolvedValue({ id: 'lr-1', status: 'cancelled' });
+      await service.cancelRequest('lr-1', 'actor-1');
+      expect(prismaMock.leaveRequest.update).toHaveBeenCalledWith({
+        where: { id: 'lr-1' },
+        data: { status: 'cancelled' },
+      });
+
+      // After cancel: cancelled is excluded from approved-only aggregate → restored.
+      prismaMock.leaveRequest.aggregate.mockResolvedValue({ _sum: { days: 0 } });
+      prismaMock.leaveType.findMany.mockResolvedValue([
+        { id: 'lt-1', name: 'Casual Leave', isPaid: true, daysPerYear: 10 },
+      ]);
+      const after = await service.leaveBalances('emp-1');
+      expect(after[0].used).toBe(0);
+      expect(after[0].remaining).toBe(10);
     });
   });
 

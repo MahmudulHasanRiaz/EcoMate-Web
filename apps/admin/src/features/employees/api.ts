@@ -7,6 +7,19 @@ export type AttendanceMethod = 'APP' | 'MACHINE' | 'NONE'
 export type BankAccountType = 'SAVINGS' | 'CURRENT' | 'OTHERS'
 export type BankVerificationStatus = 'PENDING' | 'VERIFIED' | 'REJECTED'
 
+// G-32: never render raw enum values — map them to user-facing labels.
+export const GENDER_LABELS: Record<EmployeeGender, string> = {
+  MALE: 'Male',
+  FEMALE: 'Female',
+  OTHER: 'Other',
+}
+
+export const ATTENDANCE_METHOD_LABELS: Record<AttendanceMethod, string> = {
+  APP: 'App',
+  MACHINE: 'Machine',
+  NONE: 'None (disabled)',
+}
+
 export interface EmployeeBankAccount {
   id: string
   employeeId: string
@@ -33,6 +46,7 @@ export interface CreateBankAccountDto {
   routingNumber?: string
   isPrimary?: boolean
   verificationStatus?: BankVerificationStatus
+  verificationNote?: string
   notes?: string
 }
 

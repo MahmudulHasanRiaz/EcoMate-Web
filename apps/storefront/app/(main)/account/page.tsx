@@ -109,12 +109,13 @@ export default function AccountPage() {
   }
 
   const renderSection = () => {
+    const canViewHr = user?.isEmployee || user?.role === 'employee';
     switch (activeSection) {
       case 'profile': return <ProfileSection />;
       case 'orders': return <OrdersSection />;
       case 'addresses': return <AddressesSection />;
       case 'settings': return <SettingsSection />;
-      case 'hr': return <HrSection />;
+      case 'hr': return canViewHr ? <HrSection /> : <ProfileSection />;
       default: return <ProfileSection />;
     }
   };

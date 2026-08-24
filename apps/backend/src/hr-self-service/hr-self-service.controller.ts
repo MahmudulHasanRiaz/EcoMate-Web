@@ -15,7 +15,7 @@ import { CreateSelfLeaveRequestDto } from './dto/create-self-leave-request.dto';
 import { SelfAttendanceActionDto } from './dto/self-attendance-action.dto';
 
 @Controller('hr/my')
-@Roles('employee')
+@Roles('superadmin', 'admin', 'manager', 'cashier', 'employee')
 export class HrSelfServiceController {
   constructor(private readonly service: HrSelfServiceService) {}
 
@@ -29,6 +29,11 @@ export class HrSelfServiceController {
   @Get('profile')
   getProfile(@CurrentUser() user: any) {
     return this.service.getProfile(this.assertEmployee(user));
+  }
+
+  @Get('leave-balances')
+  getLeaveBalances(@CurrentUser() user: any) {
+    return this.service.getLeaveBalances(this.assertEmployee(user));
   }
 
   @Get('salary')

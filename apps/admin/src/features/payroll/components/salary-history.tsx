@@ -32,6 +32,7 @@ export interface SalaryHistoryCardProps {
   structures: SalaryStructureResponse[]
   summary?: PayrollSummaryResponse
   mirrorSalary?: number | null
+  pendingEffectiveFrom?: string
   isLoading?: boolean
   isError?: boolean
   onRetry?: () => void
@@ -41,6 +42,7 @@ export function SalaryHistoryCard({
   structures,
   summary,
   mirrorSalary,
+  pendingEffectiveFrom,
   isLoading,
   isError,
   onRetry,
@@ -58,6 +60,13 @@ export function SalaryHistoryCard({
         </div>
       </CardHeader>
       <CardContent className='space-y-4'>
+        {pendingEffectiveFrom && (
+          <div className='flex flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300'>
+            <span className='font-medium'>
+              New structure starts {fmtWindowDate(pendingEffectiveFrom)}
+            </span>
+          </div>
+        )}
         <div className='rounded-lg border bg-muted/40 p-4 text-sm'>
           <div className='flex flex-wrap items-center gap-x-6 gap-y-2'>
             <span>

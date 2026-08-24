@@ -113,6 +113,11 @@ export class HrSelfServiceService {
     return this.leave.listTypes({ isActive: true });
   }
 
+  async getLeaveBalances(user: SelfUser) {
+    const employee = await this.resolveEmployee(user);
+    return this.leave.leaveBalances(employee.id);
+  }
+
   async getLeaveRequests(user: SelfUser, page = 1, perPage = 20) {
     const employee = await this.resolveEmployee(user);
     return this.leave.listRequests({ employeeId: employee.id }, page, perPage);

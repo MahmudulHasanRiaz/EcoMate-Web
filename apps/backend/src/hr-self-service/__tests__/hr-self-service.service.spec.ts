@@ -47,6 +47,7 @@ describe('HrSelfServiceService', () => {
     listRequests: jest.fn(),
     createRequest: jest.fn(),
     cancelRequest: jest.fn(),
+    leaveBalances: jest.fn(),
   };
   const scheduleMock = { getSchedule: jest.fn() };
   const attendanceMock = {
@@ -108,6 +109,50 @@ describe('HrSelfServiceService', () => {
         }),
       );
       expect(result).toEqual(RESOLVED_EMP);
+    });
+  });
+
+  describe('dual-role My HR (G-10)', () => {
+    const MANAGER_session = {
+      betterAuthUserId: 'ba-mgr',
+      userId: 'mgr-1',
+      role: 'manager',
+    };
+
+    it('returns the manager their own profile when an Employee record is linked', async () => {
+      const managerEmp = { ...RESOLVED_EMP, id: 'emp-mgr' };
+      prismaMock.employee.findFirst.mockResolvedValue(managerEmp);
+      const result = await service.getProfile(MANAGER_session);
+      expect(prismaMock.employee.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { betterAuthUserId: 'ba-mgr' } }),
+      );
+      expect(result).toEqual(managerEmp);
+    });
+
+    it('staff with no Employee record get 404 on self-service (resolveEmployee) — not their data', async () => {
+      prismaMock.employee.findFirst.mockResolvedValue(null);
+      await expect(service.getProfile(MANAGER_session)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('getLeaveBalances returns only the resolved employee balances', async () => {
+      leaveMock.leaveBalances.mockResolvedValue([
+        { typeName: 'Casual Leave', entitlement: 10, used: 2, remaining: 8 },
+      ]);
+      const res = await service.getLeaveBalances(SESSION_USER);
+      expect(leaveMock.leaveBalances).toHaveBeenCalledWith('emp-1');
+      expect(res).toEqual([
+        { typeName: 'Casual Leave', entitlement: 10, used: 2, remaining: 8 },
+      ]);
+    });
+
+    it('getLeaveBalances 404s when no Employee record is linked', async () => {
+      prismaMock.employee.findFirst.mockResolvedValue(null);
+      await expect(service.getLeaveBalances(SESSION_USER)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(leaveMock.leaveBalances).not.toHaveBeenCalled();
     });
   });
 

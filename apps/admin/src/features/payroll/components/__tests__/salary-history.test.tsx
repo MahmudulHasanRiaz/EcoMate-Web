@@ -95,4 +95,23 @@ describe('SalaryHistoryCard', () => {
       .element(getByText(/No salary history yet/i))
       .toBeInTheDocument()
   })
+
+  it('shows a future-structure chip when pendingEffectiveFrom is provided', async () => {
+    const { getByText } = await render(
+      <SalaryHistoryCard
+        structures={[openStructure]}
+        pendingEffectiveFrom='2026-12-01T00:00:00.000Z'
+      />
+    )
+
+    await expect
+      .element(getByText('New structure starts Dec 1, 2026'))
+      .toBeInTheDocument()
+  })
+
+  it('does not show the future-structure chip when pendingEffectiveFrom is absent', async () => {
+    const { getByText } = await render(<SalaryHistoryCard structures={[openStructure]} />)
+
+    expect((await getByText(/New structure starts/).all()).length).toBe(0)
+  })
 })

@@ -34,6 +34,16 @@ const EMPLOYEES = [
     status: 'active',
     attendanceMethod: 'MACHINE',
   },
+  {
+    id: 'emp-3',
+    employeeId: 'EMP-003',
+    employeeName: 'Sam Roe',
+    betterAuthUser: { id: 'u3', name: 'Sam Roe', email: 'sam@ecomate.com', role: 'employee' },
+    department: null,
+    designation: null,
+    status: 'active',
+    attendanceMethod: 'NONE',
+  },
 ]
 
 let todayState: Record<string, unknown> = { state: 'before_work', workedMinutes: 0, breakMinutes: 0 }
@@ -170,6 +180,12 @@ describe('TodayState', () => {
     await getByRole('option', { name: /EMP-002 · Jane Roe/i }).click()
 
     await expect.element(getByText('Machine attendance')).toBeInTheDocument()
+  })
+
+  it('labels an NONE attendance method chip as "None (disabled)"', async () => {
+    const { getByText } = await wrap(<TodayState employeeId='emp-3' onEmployeeIdChange={() => {}} />)
+
+    await expect.element(getByText('None (disabled)')).toBeInTheDocument()
   })
 
   it('shows MISSING CHECKOUT badge + Close Session action for an open-session day', async () => {

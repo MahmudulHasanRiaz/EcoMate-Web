@@ -20,6 +20,38 @@ export const apiClient = axios.create({
   },
 })
 
+/**
+ * Sign-in redirect used when a session can no longer be refreshed.
+ * `expired=1` lets the sign-in page surface a friendly "session expired"
+ * banner instead of a silent bounce. The current admin route is preserved
+ * (stripped of the /admin base) so the user can return after logging in.
+ */
+export function buildSessionExpiredRedirect(pathname: string, search: string): string {
+  let returnPath = pathname + search
+  if (returnPath.startsWith('/admin/')) {
+    returnPath = '/' + returnPath.slice(7)
+  }
+  const returnUrl = encodeURIComponent(returnPath)
+  return `/admin/sign-in?redirect=${returnUrl}&expired=1`
+}
+
+/**
+ * Only redirect on an expired session when there WAS an authenticated session.
+ * A bare 401 with no token while already on the sign-in page is just a failed
+ * anonymous call — bouncing there again would loop forever.
+ */
+export function shouldRedirectOnSessionExpiry(hadToken: boolean, pathname: string): boolean {
+  return hadToken || pathname !== '/admin/sign-in'
+}
+
+/**
+ * Injectable navigation seam. Tests replace `assign` so the exhausted-refresh
+ * path can be asserted without navigating the test browser away.
+ */
+export const sessionRedirect = {
+  assign: (url: string) => window.location.assign(url),
+}
+
 // Shared promise to deduplicate concurrent refresh calls within the same tab.
 // It must be reset after every settlement (success or failure): the backend
 // rotates the httpOnly refresh cookie on each /auth/refresh, so reusing the
@@ -124,19 +156,17 @@ apiClient.interceptors.response.use(
       }
     }
 
-    // All refresh retries exhausted. Clear auth and redirect to sign-in,
-    // preserving the current URL so the user can return after logging in.
+    // All refresh retries exhausted. Clear auth (token + user) so any other
+    // in-flight request / protected UI sees a logged-out state immediately.
     useAuthStore.getState().auth.reset()
 
-    // Build a router-relative redirect URL (strip /admin/ base from pathname).
-    // TanStack Router's navigate() resolves paths relative to the route tree,
-    // not the Vite base path, so we need just /op/products/... not /admin/op/...
-    let returnPath = window.location.pathname + window.location.search
-    if (returnPath.startsWith('/admin/')) {
-      returnPath = '/' + returnPath.slice(7)
+    // Attach ?expired=1 so the sign-in page can show a "session expired" banner.
+    const hadToken = !!originalRequest.headers?.Authorization
+    if (shouldRedirectOnSessionExpiry(hadToken, window.location.pathname)) {
+      sessionRedirect.assign(
+        buildSessionExpiredRedirect(window.location.pathname, window.location.search),
+      )
     }
-    const returnUrl = encodeURIComponent(returnPath)
-    window.location.href = `/admin/sign-in?redirect=${returnUrl}`
     return Promise.reject(error)
   },
 )

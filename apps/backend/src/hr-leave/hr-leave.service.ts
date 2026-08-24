@@ -134,6 +134,36 @@ export class HrLeaveService {
     return Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
   }
 
+  /**
+   * Overlap guard (G-14): a leave request must not overlap another request
+   * that is still pending or already approved. Existing rejected/cancelled
+   * requests never block (they are excluded by the status filter). `excludeId`
+   * is used at decision time so a pending request does not block its own
+   * approval.
+   */
+  private async assertNoOverlap(
+    employeeId: string,
+    startDate: Date,
+    endDate: Date,
+    excludeId?: string,
+  ) {
+    const overlap = await this.prisma.leaveRequest.findFirst({
+      where: {
+        employeeId,
+        status: { in: ['pending', 'approved'] },
+        startDate: { lte: endDate },
+        endDate: { gte: startDate },
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+      select: { id: true },
+    });
+    if (overlap) {
+      throw new ConflictException(
+        'Overlapping leave request already exists for this employee.',
+      );
+    }
+  }
+
   async createRequest(dto: CreateLeaveRequestDto, actorId?: string) {
     const employee = await this.prisma.employee.findUnique({
       where: { id: dto.employeeId },
@@ -151,6 +181,8 @@ export class HrLeaveService {
       throw new BadRequestException('endDate must be on or after startDate');
     }
     const days = dto.days ?? this.computeDays(startDate, endDate);
+
+    await this.assertNoOverlap(dto.employeeId, startDate, endDate);
 
     return this.prisma.leaveRequest.create({
       data: {
@@ -214,6 +246,9 @@ export class HrLeaveService {
 
   async approveRequest(id: string, dto: DecideLeaveRequestDto, actorId?: string) {
     const req = await this.loadPending(id);
+    // Re-check overlap at decision time — a race could otherwise allow two
+    // requests for the same range to both be approved.
+    await this.assertNoOverlap(req.employeeId, req.startDate, req.endDate, req.id);
     return this.prisma.leaveRequest.update({
       where: { id },
       data: {

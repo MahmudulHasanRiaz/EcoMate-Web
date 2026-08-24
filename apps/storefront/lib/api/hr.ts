@@ -95,6 +95,15 @@ export interface LeaveRequest {
   decisionNote?: string;
 }
 
+export interface LeaveBalance {
+  typeId: string;
+  typeName: string;
+  isPaid: boolean;
+  entitlement: number;
+  used: number;
+  remaining: number;
+}
+
 export interface Paginated<T> {
   data: T[];
   meta?: {
@@ -188,6 +197,13 @@ export async function getHrSchedule() {
 
 export async function getHrLeaveTypes() {
   const { data } = await apiClient.get<LeaveType[]>("/hr/my/leave-types");
+  return data;
+}
+
+export async function getHrMyLeaveBalances() {
+  const { data } = await apiClient.get<LeaveBalance[]>(
+    "/hr/my/leave-balances",
+  );
   return data;
 }
 

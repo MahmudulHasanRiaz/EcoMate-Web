@@ -6,6 +6,7 @@ import {
   type AttendanceListParams,
   type AttendanceMode,
   type CreateAdjustmentDto,
+  type CreateAttendanceDayDto,
   type CreateDeviceDto,
   type UpdateDeviceDto,
 } from './api'
@@ -166,6 +167,20 @@ export function useCloseSessionMutation() {
       toast.success('Session closed')
     },
     onError: (e: unknown) => toast.error(getErrorMessage(e, 'Could not close session')),
+  })
+}
+
+export function useCreateDayMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (dto: CreateAttendanceDayDto) =>
+      hrAttendanceApi.createDay(dto).then((r) => r.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [ADJUSTMENTS_KEY] })
+      invalidateAll(queryClient)
+      toast.success('Attendance day added')
+    },
+    onError: (e: unknown) => toast.error(getErrorMessage(e, 'Could not add attendance day')),
   })
 }
 

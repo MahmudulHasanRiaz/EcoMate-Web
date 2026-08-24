@@ -62,7 +62,7 @@ export function Sidebar({
         <SidebarItem icon={<MapPin size={18} />} label="Saved Addresses" isActive={activeSection === 'addresses'} onClick={() => onNavigate('addresses')} />
         <SidebarItem icon={<Heart size={18} />} label="Wishlist" onClick={() => router.push('/wishlist')} />
         <SidebarItem icon={<Settings size={18} />} label="Settings" isActive={activeSection === 'settings'} onClick={() => onNavigate('settings')} />
-        {user?.role === 'employee' && (
+        {(user?.isEmployee || user?.role === 'employee') && (
           <SidebarItem icon={<Briefcase size={18} />} label="My HR" isActive={activeSection === 'hr'} onClick={() => onNavigate('hr')} />
         )}
       </div>

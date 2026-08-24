@@ -44,7 +44,7 @@ export const ATTENDANCE_STATUS_BADGE: Record<AttendanceStatus, string> = {
 export const ATTENDANCE_METHOD_LABELS: Record<AttendanceMethod, string> = {
   APP: 'App attendance',
   MACHINE: 'Machine attendance',
-  NONE: 'Attendance disabled',
+  NONE: 'None (disabled)',
 }
 
 export interface AttendanceSession {
@@ -62,6 +62,8 @@ export interface DayState {
   checkOutAt?: string
   workedMinutes: number
   breakMinutes: number
+  /** True when the employee has an open session that never checked out. */
+  missingCheckout?: boolean
 }
 
 export interface AttendanceEmployee {
@@ -132,6 +134,14 @@ export interface CreateAdjustmentDto {
   originalValue?: string
   correctedValue: string
   reason: string
+}
+
+export interface CreateAttendanceDayDto {
+  employeeId: string
+  date: string
+  status: 'ABSENT' | 'ON_LEAVE' | 'WEEKLY_OFF'
+  reason: string
+  note?: string
 }
 
 export interface CloseSessionDto {
@@ -308,6 +318,10 @@ export const hrAttendanceApi = {
     apiClient.get<AdjustmentListResponse>('/hr/attendance/adjustments', { params }),
   createAdjustment: (dto: CreateAdjustmentDto) =>
     apiClient.post<AttendanceAdjustment>('/hr/attendance/adjustments', dto),
+
+  // Manual day (G-03 UI)
+  createDay: (dto: CreateAttendanceDayDto) =>
+    apiClient.post<AttendanceDayRow>('/hr/attendance/days', dto),
 
   // Missing-checkout close (G-12)
   closeSession: (dto: CloseSessionDto) =>
