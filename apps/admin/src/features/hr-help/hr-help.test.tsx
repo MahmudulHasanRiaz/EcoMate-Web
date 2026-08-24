@@ -28,6 +28,16 @@ describe('HelpPage', () => {
     await expect.element(getByText('উপস্থিতি — APP / MACHINE / BOTH (Attendance)')).toBeInTheDocument()
     await expect.element(getByText('ডিভাইস (Devices)')).toBeInTheDocument()
     await expect.element(getByText('My HR (কর্মচারী সেলফ-সার্ভিস)')).toBeInTheDocument()
+    await expect.element(getByText('উপস্থিতি — হাতে তৈরি অনুপস্থিতি দিবস (Add Day / Manual Absence)')).toBeInTheDocument()
+    await expect.element(getByText('উপস্থিতি — মিসিং চেকআউট (Missing Checkout Handling)')).toBeInTheDocument()
+    await expect.element(getByText('ডিভাইস — আনম্যাপড ইভেন্ট (Unmapped Events)')).toBeInTheDocument()
+    await expect.element(getByText('কমিশন — রিভার্সাল (Commission Reversals)')).toBeInTheDocument()
+    await expect.element(getByText('পে-রোল — মোট ও Void (Payroll Totals & Void)')).toBeInTheDocument()
+    await expect.element(getByText('কর্মচারী — পুনর্নিয়োগ (Employee Rehire)')).toBeInTheDocument()
+    await expect.element(getByText('ব্যাংক অ্যাকাউন্ট — যাচাই (Bank Account Verification)')).toBeInTheDocument()
+    await expect.element(getByText('সেশন মেয়াদোত্তীর্ণ (Session Expiry)')).toBeInTheDocument()
+    await expect.element(getByText('পরিভাষা তালিকা (Glossary)')).toBeInTheDocument()
+    await expect.element(getByText('সমস্যা সমাধান (Troubleshooting)')).toBeInTheDocument()
   })
 
   it('expands a collapsed section to reveal its numbered steps', async () => {

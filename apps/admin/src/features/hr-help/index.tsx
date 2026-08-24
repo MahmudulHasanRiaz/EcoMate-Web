@@ -97,6 +97,112 @@ const SECTIONS: HelpSection[] = [
       '৪. Leave আবেদন, payslip ডাউনলোড — সব এক জায়গায়।',
     ],
   },
+  {
+    id: 'attendance-add-day',
+    title: 'উপস্থিতি — হাতে তৈরি অনুপস্থিতি দিবস (Add Day / Manual Absence)',
+    steps: [
+      '১. Attendance → Adjustments ট্যাবে "Add Day" বাটনে ক্লিক করুন।',
+      '২. ডায়ালগে employee নির্বাচন করুন, তারিখ, স্ট্যাটাস (Present / Absent / Leave) ও কারণ দিন।',
+      '৩. "Manage Attendance Adjustments" permission ছাড়া এই বাটন দেখাবে না।',
+      '৪. যখন employee ভুলে check-in করেন বা remote work ম্যানুয়ালি রেকর্ড করতে হয়, তখন এটি ব্যবহার করুন।',
+    ],
+  },
+  {
+    id: 'attendance-missing-checkout',
+    title: 'উপস্থিতি — মিসিং চেকআউট (Missing Checkout Handling)',
+    steps: [
+      '১. "Missing Checkout" ব্যাজ মানে: কর্মচারী check-in করেছেন কিন্তু checkout করেননি — session এখনো খোলা।',
+      '২. Today ট্যাবে "Close Session" বাটনে ক্লিক করে checkout সময় রেকর্ড করুন।',
+      '৩. মিসিং checkout রেপোর্ট ও পে-রোলে হিসাবে সময় ভুল হতে পারে — তাই এটি সময়মতো সমাধান করুন।',
+    ],
+  },
+  {
+    id: 'devices-unmapped',
+    title: 'ডিভাইস — আনম্যাপড ইভেন্ট (Unmapped Events)',
+    steps: [
+      '১. "Unmapped" ব্যাজ মানে: ডিভাইসের ইভেন্ট কোনো employee-র সাথে ম্যাপ হয়নি।',
+      '২. Devices → Mappings-এ নতুন ম্যাপিং তৈরি করুন (device employee ID → employee)।',
+      '৩. Sync বাটনে আবার ক্লিক করুন — নতুন ম্যাপিং অনুযায়ী ইভেন্ট সমাধান হবে।',
+      '৪. Devices ট্যাবে Unmapped ব্যাজ থাকলে সেটি resolve না হওয়া পর্যন্ত দেখাবে।',
+    ],
+  },
+  {
+    id: 'commission-reversals',
+    title: 'কমিশন — রিভার্সাল (Commission Reversals)',
+    steps: [
+      '১. অর্ডার refund বা cancel হলে কমিশন অটো রিভার্স হয় — partial refund হলে আনুপাতিক, full cancel হলে পুরো।',
+      '২. Reversals earnings ট্যাবে দেখা যায়; reversals ফিল্টার দিয়ে বাছাই করুন।',
+      '৩. পেসলিপ approved হলে পরে কমিশন রিভার্স হয় না — তাই পে-রোল run এর আগে সব অর্ডার settle করুন।',
+    ],
+  },
+  {
+    id: 'payroll-totals-void',
+    title: 'পে-রোল — মোট ও Void (Payroll Totals & Void)',
+    steps: [
+      '১. Payslip summary এ Gross, Deductions, Commission, Net ও Paid — প্রতিটি মানে: Gross = মোট বেতন + কমিশন; Deductions = কাটা টাকা; Net = Gross − Deductions; Paid = ইতিমধ্যে পরিশোধিত।',
+      '২. "Void" মানে পেমেন্ট বাতিল — "Delete" এর পরিবর্তে ব্যবহৃত হয়; audit trail সংরক্ষিত থাকে।',
+      '৩. Void করতে: Void বাটনে ক্লিক করুন → কারণ দিন → পেমেন্ট মোট থেকে বাদ পড়বে।',
+    ],
+  },
+  {
+    id: 'employee-rehire',
+    title: 'কর্মচারী — পুনর্নিয়োগ (Employee Rehire)',
+    steps: [
+      '১. চাকরি শেষ বা পদত্যাগ করা employee-কে পুনরায় নিয়োগ দিতে: Employee পেজে যান → Edit → নতুন যোগদান তারিখ দিন।',
+      '২. Status স্বয়ংক্রিয়ভাবে Active-তে পরিবর্তন হবে।',
+      '৩. পুরানো তথ্য (পে-রোল, উপস্থিতি, কমিশন) সংরক্ষিত থাকে — নতুন যোগদান তারিখ থেকে নতুন হিসাব শুরু হয়।',
+    ],
+  },
+  {
+    id: 'bank-account-verification',
+    title: 'ব্যাংক অ্যাকাউন্ট — যাচাই (Bank Account Verification)',
+    steps: [
+      '১. "Set as primary" একটি অ্যাকাউন্টকে ডিফল্ট পেমেন্ট অ্যাকাউন্ট হিসেবে নির্ধারণ করে।',
+      '২. "Verify" বাটনে ক্লিক করে অ্যাকাউন্ট যাচাই করুন — একটি নোট সহ যাচাইকৃত হিসেবে চিহ্নিত হয়।',
+      '৩. যাচাইকৃত অ্যাকাউন্ট ছাড়া পেমেন্ট প্রক্রিয়ায় সমস্যা হতে পারে — তাই নতুন employee যোগ করলে ব্যাংক তথ্য যাচাই করুন।',
+    ],
+  },
+  {
+    id: 'session-expiry',
+    title: 'সেশন মেয়াদোত্তীর্ণ (Session Expiry)',
+    steps: [
+      '১. সেশনের মেয়াদ শেষ হলে sign-in পেজে রিডাইরেক্ট হবে একটি ব্যানার সহ।',
+      '২. শুধু আবার sign in করুন — কোনো তথ্য হারায় না।',
+      '৩. বারবার সেশন মেয়াদ শেষ হলে browser cache পরিষ্কার করুন বা IT টিমের সাথে যোগাযোগ করুন।',
+    ],
+  },
+  {
+    id: 'glossary',
+    title: 'পরিভাষা তালিকা (Glossary)',
+    steps: [
+      'Attendance = উপস্থিতি — কর্মচারীর কাজের হাজিরা',
+      'Session = সেশন — check-in থেকে checkout পর্যন্ত সময়কাল',
+      'Punch = পাঞ্চ — ডিভাইসে হাজিরা নির্দেশক ইভেন্ট',
+      'Employee = কর্মচারী — প্রতিষ্ঠানের নিয়মিত বা চুক্তিভিত্তিক কর্মী',
+      'Salary Structure = বেতন কাঠামো — মূল বেতন, ভাতা ও কাটা সমূহের সমষ্টি',
+      'Payslip = বেতন স্লিপ — মাসিক বেতন প্রতিবেদন',
+      'Commission = কমিশন — অর্ডার নির্ভর বোনাস',
+      'Leave = ছুটি — অনুমোদিত অনুপস্থিতি',
+      'Device Mapping = ডিভাইস ম্যাপিং — ডিভাইস ID-কে employee-র সাথে সংযুক্তকরণ',
+      'Void = বাতিল — পেমেন্ট বা লেনদেন অচল করা (audit trail সংরক্ষিত)',
+      'Rehire = পুনর্নিয়োগ — পদত্যাগকারী employee-কে আবার নিয়োগ দেওয়া',
+    ],
+  },
+  {
+    id: 'troubleshooting',
+    title: 'সমস্যা সমাধান (Troubleshooting)',
+    steps: [
+      '❌ "Session expired" → আবার sign in করুন।',
+      '❌ "409 Overlapping leave" → আগের leave request cancel করুন, তারপর নতুন করুন।',
+      '❌ "409 Duplicate SKU/slug" → SKU বা slug পরিবর্তন করুন।',
+      '❌ "Missing checkout badge" → Today ট্যাবে Close Session ব্যবহার করুন।',
+      '❌ "Unmapped events" → Devices → Mappings-এ নতুন ম্যাপিং তৈরি করুন।',
+      '❌ "403 Forbidden" → আপনার role permission পরীক্ষা করুন।',
+      '❌ "No employee record" → আগে Employee তৈরি করুন।',
+      '❌ "Commission after payslip approved" → Manual adjustment তৈরি করুন।',
+      '❌ "Salary structure future" → Compensation ট্যাবে দেখুন (amber chip দেখাবে)।',
+    ],
+  },
 ]
 
 export function HelpSection({ section, defaultOpen = false }: { section: HelpSection; defaultOpen?: boolean }) {

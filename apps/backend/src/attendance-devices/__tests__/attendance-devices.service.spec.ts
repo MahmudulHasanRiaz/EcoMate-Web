@@ -93,6 +93,7 @@ describe('AttendanceDevicesService', () => {
         create: jest.fn(),
         findMany: jest.fn(),
         count: jest.fn(),
+        groupBy: jest.fn().mockResolvedValue([]),
       },
     };
     encryption = { encrypt: jest.fn((p: string) => `enc:${p}`) };
@@ -173,11 +174,13 @@ describe('AttendanceDevicesService', () => {
       prisma.attendanceDevice.findMany.mockResolvedValue([
         { ...DEVICE, _count: { mappings: 2 } },
       ]);
+      prisma.rawAttendanceEvent.groupBy.mockResolvedValue([]);
       const res = await service.listDevices();
       const args = prisma.attendanceDevice.findMany.mock.calls[0][0];
       expect(args.select.credentialsEncrypted).toBeUndefined();
       expect(args.select._count).toEqual({ select: { mappings: true } });
       expect(res[0].mappingCount).toBe(2);
+      expect(res[0].unmappedEventCount).toBe(0);
       expect(res[0]).not.toHaveProperty('credentialsEncrypted');
     });
   });

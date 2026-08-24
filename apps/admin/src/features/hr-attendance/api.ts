@@ -172,6 +172,7 @@ export interface AttendanceDevice {
   lastSyncAt: string | null
   lastSyncError: string | null
   mappingCount?: number
+  unmappedEventCount?: number
   createdAt: string
   updatedAt: string
 }

@@ -71,12 +71,30 @@ export class AttendanceDevicesService {
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    const deviceIds = (devices as any[]).map((d) => d.id);
+
+    // G-13: batch-unmapped counts in a single query
+    const unmappedCounts = deviceIds.length
+      ? await this.prisma.rawAttendanceEvent.groupBy({
+          by: ['deviceId'],
+          where: { deviceId: { in: deviceIds }, status: 'UNMAPPED' as any },
+          _count: { id: true },
+        })
+      : [];
+
+    const countMap = new Map<string, number>();
+    for (const row of unmappedCounts) {
+      if (row.deviceId) countMap.set(row.deviceId, row._count.id);
+    }
+
     return (devices as Array<
         Record<string, unknown> & { credentialsEncrypted?: unknown; _count: { mappings: number } }
       >).map(
         ({ _count, credentialsEncrypted: _omit, ...device }) => ({
           ...device,
           mappingCount: _count.mappings,
+          unmappedEventCount: countMap.get((device as any).id) ?? 0,
         }),
       );
   }

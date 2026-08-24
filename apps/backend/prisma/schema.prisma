@@ -3734,6 +3734,8 @@ model RawAttendanceEvent {
   idempotencyKey   String              @unique
   status           AttendanceEventStatus @default(PROCESSED)
   ingestedAt       DateTime            @default(now())
+
+  @@index([status])
 }
 
 // ---------- HR Production Hardening (Plan) ----------

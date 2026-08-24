@@ -394,6 +394,7 @@ export function DevicesTab() {
                 <TableHead>Type</TableHead>
                 <TableHead>Location</TableHead>
                 <TableHead>Host:Port</TableHead>
+                <TableHead>Unmapped</TableHead>
                 <TableHead>Sync Status</TableHead>
                 <TableHead>Last Sync</TableHead>
                 <TableHead>Enabled</TableHead>
@@ -411,6 +412,18 @@ export function DevicesTab() {
                   <TableCell className='text-sm text-muted-foreground'>{d.location || '—'}</TableCell>
                   <TableCell className='text-sm text-muted-foreground tabular-nums'>
                     {d.host ? `${d.host}${d.port ? `:${d.port}` : ''}` : '—'}
+                  </TableCell>
+                  <TableCell>
+                    {'unmappedEventCount' in d && (d as any).unmappedEventCount > 0 ? (
+                      <Badge
+                        className='border-transparent bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                        aria-label={`${(d as any).unmappedEventCount} unmapped events`}
+                      >
+                        {(d as any).unmappedEventCount}
+                      </Badge>
+                    ) : (
+                      <span className='text-muted-foreground'>—</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Badge className={`border-transparent ${SYNC_BADGE[d.syncStatus]}`}>{d.syncStatus}</Badge>
