@@ -22,6 +22,7 @@ import { PageViewDto } from './dto/page-view.dto';
 import { PageViewBufferService } from './page-view-buffer.service';
 import { TrackingEventType } from './tracking.constants';
 import { synthesizeFbc } from './context-merge';
+import { sanitizeTrackingUrl } from './url-sanitize';
 
 /** Server-side hard opt-out: mirrors the storefront `ecomate_tracking_optout` cookie. */
 const OPTOUT_COOKIE = 'ecomate_tracking_optout';
@@ -183,8 +184,10 @@ export class TrackingController {
   ) {
     const source = this.classifySource(body.referrer || null);
     this.pageViewBuffer.push({
-      url: body.url,
-      referrer: body.referrer || null,
+      // Privacy P0: strip sensitive query params before long-term pageView
+      // persistence (same policy as TrackingContext.url/referrer).
+      url: sanitizeTrackingUrl(body.url) ?? '',
+      referrer: sanitizeTrackingUrl(body.referrer) || null,
       source,
       userAgent: (req.headers['user-agent'] as string) || '',
       ip,

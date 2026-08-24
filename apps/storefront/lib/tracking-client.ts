@@ -1,4 +1,5 @@
 import { isTrackingAllowed } from './tracking';
+import { sanitizeTrackingUrl } from './url-sanitize';
 
 const CTX_KEY = 'ecomate_ctx_id';
 
@@ -84,8 +85,10 @@ export async function syncContext(payload?: {
         body: JSON.stringify({
           ctxId: getOrCreateCtxId(),
           identifiers: payload?.identifiers ?? collectIdentifiers(),
-          url: payload?.url ?? location.href,
-          referrer: payload?.referrer ?? document.referrer,
+          // Privacy P0: strip sensitive query params (view tokens, keys)
+          // before the URL leaves the browser.
+          url: sanitizeTrackingUrl(payload?.url ?? location.href),
+          referrer: sanitizeTrackingUrl(payload?.referrer ?? document.referrer),
         }),
         keepalive: true,
       });

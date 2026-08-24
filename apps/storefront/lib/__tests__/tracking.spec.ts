@@ -53,6 +53,21 @@ describe('tracking', () => {
     expect(body.eventName).toBe('purchase');
   });
 
+  it('mirror body strips sensitive query params from url/referrer (privacy P0)', () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/checkout/thank-you?orderId=uuid-1&t=viewtoken',
+    );
+    trackEvent('Purchase', { value: 100 }, {}, 'purchase_ord-1');
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain('/tracking/events');
+    const body = JSON.parse(init!.body as string);
+    expect(body.userData.url).toBe(`${window.location.origin}/checkout/thank-you`);
+    expect(JSON.stringify(body)).not.toContain('viewtoken');
+    expect(JSON.stringify(body)).not.toContain('uuid-1');
+  });
+
   it('carries the eventId override through the pre-init queue', () => {
     setPixelIds('', ''); // clear pixel ids so trackEvent queues instead of firing
     window.fbq = vi.fn();
@@ -182,7 +197,23 @@ describe('tracking', () => {
     window.history.pushState({}, '', '/my-third-route');
     trackPageView();
     expect(window.fbq).not.toHaveBeenCalled();
-    expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining('/tracking/events'), expect.anything());
+  });
+
+  it('trackPageView sanitizes the GA4 page_location (privacy P0)', () => {
+    window.gtag = vi.fn();
+    window.history.pushState(
+      {},
+      '',
+      '/checkout/thank-you?orderId=uuid-1&t=viewtoken',
+    );
+    trackPageView();
+    expect(window.gtag).toHaveBeenCalled();
+    const ga4Call = vi.mocked(window.gtag).mock.calls.find((c: unknown[]) => c[0] === 'event');
+    const payload = ga4Call![2] as { page_location: string };
+    expect(payload.page_location).toBe(
+      `${window.location.origin}/checkout/thank-you`,
+    );
+    expect(JSON.stringify(ga4Call)).not.toContain('viewtoken');
   });
 
   it('setPixelIdentity after init does not double-fire init', async () => {

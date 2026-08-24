@@ -39,6 +39,31 @@ describe('tracking-client', () => {
     expect(body.ctxId).toBeDefined();
   });
 
+  it('syncContext strips sensitive query params from url/referrer (privacy P0)', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/checkout/thank-you?orderId=uuid-1&t=viewtoken',
+    );
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true } as any);
+    await syncContext();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain('/tracking/context');
+    const body = JSON.parse(init!.body as string);
+    expect(body.url).toBe(`${window.location.origin}/checkout/thank-you`);
+    expect(JSON.stringify(body)).not.toContain('viewtoken');
+    expect(JSON.stringify(body)).not.toContain('uuid-1');
+  });
+
+  it('syncContext keeps clean URLs unchanged', async () => {
+    window.history.replaceState({}, '', '/products/abc');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true } as any);
+    await syncContext();
+    const [, init] = fetchMock.mock.calls[0];
+    const body = JSON.parse(init!.body as string);
+    expect(body.url).toBe(`${window.location.origin}/products/abc`);
+  });
+
   it('captureMarketingSession posts landing attribution + ctxId to /marketing/capture', async () => {
     // Simulate a fbclid landing so the session attribution exists.
     window.history.replaceState({}, '', '/?utm_source=facebook&utm_medium=cpc&utm_campaign=launch&fbclid=fb.1.9.8');

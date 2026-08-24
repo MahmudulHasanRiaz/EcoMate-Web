@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { mergeContext, ContextInput, StoredIdentifiers } from './context-merge';
+import { sanitizeTrackingUrl } from './url-sanitize';
 
 @Injectable()
 export class TrackingContextService {
@@ -33,7 +34,17 @@ export class TrackingContextService {
             }
           : null;
 
-        const merged = mergeContext(existing, input);
+        // Privacy P0: sensitive query params (view tokens, keys) never enter
+        // the long-term context store or provider payloads. Sanitization is
+        // the single server-side choke point — every context writer
+        // (context endpoint, mirror fold) passes through upsertContext.
+        const sanitizedInput: ContextInput = {
+          ...input,
+          url: sanitizeTrackingUrl(input.url),
+          referrer: sanitizeTrackingUrl(input.referrer),
+        };
+
+        const merged = mergeContext(existing, sanitizedInput);
 
         const identifiers = merged.identifiers as unknown as Prisma.InputJsonValue;
         await tx.trackingContext.upsert({

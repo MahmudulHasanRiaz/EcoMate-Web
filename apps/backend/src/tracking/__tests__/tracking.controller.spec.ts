@@ -380,4 +380,39 @@ describe('TrackingController', () => {
       expect(trackingContext.upsertContext).not.toHaveBeenCalled();
     });
   });
+
+  describe('POST /tracking/page-view (privacy P0 sanitization)', () => {
+    const req = {
+      ip: '203.0.113.7',
+      headers: { 'user-agent': 'storefront-ua' },
+    } as never;
+
+    it('strips sensitive query params from url/referrer before buffering', async () => {
+      await controller.trackPageView(
+        {
+          url: 'https://ecomate.example/checkout/thank-you?orderId=uuid-1&t=viewtoken',
+          referrer: 'https://facebook.com/post?token=fb-secret',
+        },
+        '203.0.113.7',
+        req,
+      );
+      expect(pageViewBuffer.push).toHaveBeenCalledTimes(1);
+      const entry = pageViewBuffer.push.mock.calls[0][0];
+      expect(entry.url).toBe('https://ecomate.example/checkout/thank-you');
+      expect(entry.referrer).toBe('https://facebook.com/post');
+      expect(JSON.stringify(entry)).not.toContain('viewtoken');
+      expect(JSON.stringify(entry)).not.toContain('fb-secret');
+    });
+
+    it('keeps clean urls unchanged and null referrer null', async () => {
+      await controller.trackPageView(
+        { url: 'https://ecomate.example/products/abc' },
+        '203.0.113.7',
+        req,
+      );
+      const entry = pageViewBuffer.push.mock.calls[0][0];
+      expect(entry.url).toBe('https://ecomate.example/products/abc');
+      expect(entry.referrer).toBeNull();
+    });
+  });
 });

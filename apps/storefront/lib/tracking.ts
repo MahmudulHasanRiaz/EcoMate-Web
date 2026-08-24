@@ -1,5 +1,6 @@
 import { getOrCreateCtxId, getTrackingApiUrl } from './tracking-client';
 import { resolveCatalogId } from './catalog-id';
+import { sanitizeTrackingUrl } from './url-sanitize';
 
 /**
  * Landing-page tracking bridge (AddToCart catalog fix). The landing AI SDK
@@ -433,7 +434,9 @@ export function trackPageView() {
   if (meta) window.fbq('track', 'PageView');
   if (tiktok && typeof window.ttq.page === 'function') window.ttq.page();
   if (ga4 && window.gtag) window.gtag('event', 'page_view', {
-    page_location: url,
+    // Privacy P0: same sanitization policy — sensitive query params never
+    // reach provider boundaries (GA4 included).
+    page_location: sanitizeTrackingUrl(url) ?? url,
     page_title: typeof document !== 'undefined' ? document.title : '',
   });
   _lastPageViewUrl = url;
@@ -673,8 +676,14 @@ export function trackEvent(event: EventName, data?: Record<string, any>, userDat
 
   const fbp = getCookie('_fbp');
   const fbc = getCookie('_fbc');
-  const url = typeof window !== 'undefined' ? window.location.href : '';
-  const referrer = typeof document !== 'undefined' ? document.referrer : '';
+  // Privacy P0: strip sensitive query params (view tokens, keys) before the
+  // URL leaves the browser — same policy as syncContext/backend sanitizer.
+  const url = sanitizeTrackingUrl(
+    typeof window !== 'undefined' ? window.location.href : undefined,
+  );
+  const referrer = sanitizeTrackingUrl(
+    typeof document !== 'undefined' ? document.referrer : undefined,
+  );
 
   if (_metaId || _tiktokCode) {
     sendMirror(resolvedEventId, {
