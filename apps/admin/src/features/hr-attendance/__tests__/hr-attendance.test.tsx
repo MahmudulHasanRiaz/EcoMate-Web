@@ -167,4 +167,39 @@ describe('AttendancePage', () => {
     await expect.element(getByText('Audit-trailed corrections to attendance days')).toBeInTheDocument()
     await expect.element(getByRole('button', { name: /Add Adjustment/i })).toBeInTheDocument()
   })
+
+  it('labels a MISSING CHECKOUT row in the calendar and offers Close Session', async () => {
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/hr/attendance') {
+        return Promise.resolve({
+          data: {
+            data: [
+              {
+                id: 'day-1',
+                employeeId: 'emp-1',
+                date: '2026-08-23T00:00:00.000Z',
+                status: 'PRESENT',
+                workedMinutes: 480,
+                breakMinutes: 30,
+                missingCheckout: true,
+                employee: { employeeId: 'EMP-001', betterAuthUser: { name: 'John Doe' } },
+                sessions: [{ checkOutAt: null }],
+              },
+            ],
+            meta: { total: 1, page: 1, perPage: 20, totalPages: 0 },
+          },
+        })
+      }
+      if (url === '/hr/attendance/daily-overview') {
+        return Promise.resolve({ data: { date: '2026-08-23', total: 0, counts: EMPTY_COUNTS } })
+      }
+      return Promise.resolve({ data: {} })
+    })
+
+    const { getByRole, getByText } = await wrap(<AttendancePage />)
+    await userEvent.click(getByRole('tab', { name: 'Calendar' }))
+
+    await expect.element(getByText('MISSING CHECKOUT')).toBeInTheDocument()
+    await expect.element(getByRole('button', { name: /Close Session/i })).toBeInTheDocument()
+  })
 })

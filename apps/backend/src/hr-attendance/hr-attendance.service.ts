@@ -6,6 +6,14 @@ import {
 } from '@nestjs/common';
 import { Prisma, AttendanceStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { dhakaDateParts } from '../common/utils/dhaka-time';
+import {
+  dhakaToday,
+  dhakaDateOf,
+  parseLocalDate,
+  dhakaStartOfDay,
+  dhakaRangeForToday,
+} from './attendance-date';
 
 const DAY_INCLUDE = {
   sessions: { include: { breaks: true }, orderBy: { checkInAt: 'asc' as const } },
@@ -36,11 +44,22 @@ const EMPLOYEE_SELECT = {
 export class HrAttendanceService {
   constructor(private prisma: PrismaService) {}
 
-  /** Normalize any date value to UTC midnight so the (employeeId, date) unique key is stable. */
-  private normalizeDate(value?: string | Date): Date {
-    const d = value ? new Date(value) : new Date();
-    d.setUTCHours(0, 0, 0, 0);
-    return d;
+  /**
+   * Resolve a user-supplied local date string to the stored UTC-midnight
+   * convention, or — when absent — the server-authoritative Dhaka "today".
+   * `now` is an injection point for tests; production callers never pass it.
+   */
+  private resolveDate(date?: string, now?: Date): Date {
+    if (!date) return dhakaStartOfDay(dhakaToday(now));
+    try {
+      return parseLocalDate(date);
+    } catch {
+      throw new BadRequestException(`Invalid date '${date}'`);
+    }
+  }
+
+  private missingCheckoutOf(sessions: { checkOutAt?: Date | null }[]): boolean {
+    return (sessions ?? []).some((s) => !s.checkOutAt);
   }
 
   private async loadEmployee(employeeId: string) {
@@ -252,7 +271,7 @@ export class HrAttendanceService {
 
   async checkIn(
     employeeId: string,
-    opts: { note?: string; date?: string | Date } = {},
+    opts: { note?: string; date?: string; now?: Date } = {},
   ) {
     const employee = await this.loadEmployee(employeeId);
     if (employee.status === 'terminated' || employee.status === 'inactive') {
@@ -261,7 +280,7 @@ export class HrAttendanceService {
       );
     }
     await this.enforceAppPath(employee);
-    const date = this.normalizeDate(opts.date);
+    const date = this.resolveDate(opts.date, opts.now);
     return this.runDayTx(
       employeeId,
       date,
@@ -281,11 +300,11 @@ export class HrAttendanceService {
 
   async breakStart(
     employeeId: string,
-    opts: { date?: string | Date } = {},
+    opts: { date?: string; now?: Date } = {},
   ) {
     const employee = await this.loadEmployee(employeeId);
     await this.enforceAppPath(employee);
-    const date = this.normalizeDate(opts.date);
+    const date = this.resolveDate(opts.date, opts.now);
     return this.runDayTx(
       employeeId,
       date,
@@ -312,11 +331,11 @@ export class HrAttendanceService {
 
   async breakEnd(
     employeeId: string,
-    opts: { date?: string | Date } = {},
+    opts: { date?: string; now?: Date } = {},
   ) {
     const employee = await this.loadEmployee(employeeId);
     await this.enforceAppPath(employee);
-    const date = this.normalizeDate(opts.date);
+    const date = this.resolveDate(opts.date, opts.now);
     return this.runDayTx(
       employeeId,
       date,
@@ -340,11 +359,11 @@ export class HrAttendanceService {
 
   async checkOut(
     employeeId: string,
-    opts: { note?: string; date?: string | Date } = {},
+    opts: { note?: string; date?: string; now?: Date } = {},
   ) {
     const employee = await this.loadEmployee(employeeId);
     await this.enforceAppPath(employee);
-    const date = this.normalizeDate(opts.date);
+    const date = this.resolveDate(opts.date, opts.now);
     return this.runDayTx(
       employeeId,
       date,
@@ -369,40 +388,155 @@ export class HrAttendanceService {
   }
 
   // ------------------------------------------------------------------
+  // Manual absence days (G-03) & missing-checkout close (G-12)
+  // ------------------------------------------------------------------
+
+  async createDay(
+    dto: {
+      employeeId: string;
+      date: string;
+      status: 'ABSENT' | 'ON_LEAVE' | 'WEEKLY_OFF';
+      reason: string;
+      note?: string;
+    },
+    actorId?: string,
+  ) {
+    const date = parseLocalDate(dto.date);
+    const employee = await this.loadEmployee(dto.employeeId);
+    if (employee.status === 'terminated' || employee.status === 'inactive') {
+      throw new BadRequestException(
+        'Cannot record attendance for a terminated/inactive employee',
+      );
+    }
+    if (!dto.reason) {
+      throw new BadRequestException('Adjustment reason is required');
+    }
+    const status = dto.status;
+    if (!['ABSENT', 'ON_LEAVE', 'WEEKLY_OFF'].includes(status)) {
+      throw new BadRequestException(
+        `Invalid status '${status}'. Allowed: ABSENT, ON_LEAVE, WEEKLY_OFF`,
+      );
+    }
+    const existing = await this.prisma.attendanceDay.findUnique({
+      where: { employeeId_date: { employeeId: employee.id, date } },
+      select: { id: true },
+    });
+    if (existing) {
+      throw new ConflictException(
+        'An attendance day already exists for this date',
+      );
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const day = await tx.attendanceDay.create({
+        data: {
+          employeeId: employee.id,
+          date,
+          status,
+          attendanceMethod: employee.attendanceMethod ?? 'APP',
+          note: dto.note ?? null,
+        },
+      });
+      await tx.attendanceAdjustment.create({
+        data: {
+          employeeId: employee.id,
+          dayId: day.id,
+          field: 'status',
+          originalValue: null,
+          correctedValue: status,
+          reason: dto.reason,
+          adjustedById: actorId ?? null,
+        },
+      });
+      return day;
+    });
+  }
+
+  async closeSession(
+    dto: { dayId: string; reason: string },
+    actorId?: string,
+  ) {
+    if (!dto.reason) {
+      throw new BadRequestException('Adjustment reason is required');
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const day = await tx.attendanceDay.findUnique({
+        where: { id: dto.dayId },
+        include: DAY_INCLUDE,
+      });
+      if (!day) throw new NotFoundException('Attendance day not found');
+      const open = day.sessions.filter((s) => !s.checkOutAt);
+      if (open.length === 0) {
+        throw new BadRequestException('No open session');
+      }
+      const at = new Date();
+      for (const session of open) {
+        await tx.attendanceSession.update({
+          where: { id: session.id },
+          data: { checkOutAt: at },
+        });
+        await tx.attendanceAdjustment.create({
+          data: {
+            employeeId: day.employeeId,
+            dayId: day.id,
+            field: 'checkOutAt',
+            originalValue: null,
+            correctedValue: at.toISOString(),
+            reason: dto.reason,
+            adjustedById: actorId ?? null,
+          },
+        });
+      }
+      const closedSessions = day.sessions.map((s) =>
+        s.checkOutAt ? s : { ...s, checkOutAt: at },
+      );
+      const { workedMinutes, breakMinutes } = this.computeMinutes(
+        closedSessions as DayWithSessions['sessions'],
+        at,
+      );
+      await tx.attendanceDay.update({
+        where: { id: day.id },
+        data: { workedMinutes, breakMinutes },
+      });
+      return { dayId: day.id, sessionCount: open.length, checkOutAt: at };
+    });
+  }
+
+  // ------------------------------------------------------------------
   // Day state for the UI
   // ------------------------------------------------------------------
 
-  async getDayState(employeeId: string, date?: string | Date) {
-    const d = this.normalizeDate(date);
+  async getDayState(employeeId: string, date?: string, now?: Date) {
+    const d = date ? this.resolveDate(date) : dhakaRangeForToday(now).from;
     const day = await this.prisma.attendanceDay.findUnique({
       where: { employeeId_date: { employeeId, date: d } },
       include: DAY_INCLUDE,
     });
     if (!day) {
-      return { state: 'none', workedMinutes: 0, breakMinutes: 0 };
+      return { state: 'none', workedMinutes: 0, breakMinutes: 0, missingCheckout: false };
     }
     if (day.sessions.length === 0) {
-      return { state: 'before_work', workedMinutes: 0, breakMinutes: 0 };
+      return { state: 'before_work', workedMinutes: 0, breakMinutes: 0, missingCheckout: false };
     }
-    const now = new Date();
+    const nowDate = new Date();
     const open = this.openSessionOf(day);
     if (open) {
       const { workedMinutes, breakMinutes } = this.computeMinutes(
         day.sessions,
-        now,
+        nowDate,
       );
       return {
         state: this.openBreakOf(open) ? 'on_break' : 'working',
         checkInAt: open.checkInAt,
         workedMinutes,
         breakMinutes,
+        missingCheckout: true,
       };
     }
     const first = day.sessions[0];
     const last = day.sessions[day.sessions.length - 1];
     const { workedMinutes, breakMinutes } = this.computeMinutes(
       day.sessions,
-      now,
+      nowDate,
     );
     return {
       state: 'checked_out',
@@ -410,6 +544,7 @@ export class HrAttendanceService {
       checkOutAt: last.checkOutAt ?? undefined,
       workedMinutes: day.workedMinutes ?? workedMinutes,
       breakMinutes: day.breakMinutes ?? breakMinutes,
+      missingCheckout: false,
     };
   }
 
@@ -611,7 +746,7 @@ export class HrAttendanceService {
     if (filter.employeeId) where.employeeId = filter.employeeId;
     if (filter.status) where.status = filter.status as AttendanceStatus;
     if (filter.date) {
-      const start = this.normalizeDate(filter.date);
+      const start = this.resolveDate(filter.date);
       where.date = { gte: start, lt: new Date(start.getTime() + 86400000) };
     }
     if (filter.departmentId) {
@@ -633,13 +768,16 @@ export class HrAttendanceService {
       this.prisma.attendanceDay.count({ where }),
     ]);
     return {
-      data,
+      data: data.map((row) => ({
+        ...row,
+        missingCheckout: this.missingCheckoutOf(row.sessions),
+      })),
       meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) },
     };
   }
 
   async dailyOverview(dateStr: string) {
-    const date = this.normalizeDate(dateStr);
+    const date = this.resolveDate(dateStr);
     const rows = await this.prisma.attendanceDay.groupBy({
       by: ['status'],
       where: { date },
@@ -665,14 +803,150 @@ export class HrAttendanceService {
     const where: Prisma.AttendanceDayWhereInput = { employeeId };
     if (from || to) {
       where.date = {};
-      if (from) where.date.gte = this.normalizeDate(from);
-      if (to) where.date.lte = this.normalizeDate(to);
+      if (from) where.date.gte = this.resolveDate(from);
+      if (to) where.date.lte = this.resolveDate(to);
     }
-    return this.prisma.attendanceDay.findMany({
+    const rows = await this.prisma.attendanceDay.findMany({
       where,
       orderBy: { date: 'desc' },
       include: { sessions: { include: { breaks: true } } },
     });
+    return rows.map((row) => ({
+      ...row,
+      missingCheckout: this.missingCheckoutOf(row.sessions),
+    }));
+  }
+
+  /**
+   * Derived attendance report (G-18). Pure read — never auto-generates days.
+   * present = days with any session OR status PRESENT;
+   * absent = daysInRange − present − leaveDays − weeklyOffDays (>=0).
+   */
+  async report(
+    employeeId: string,
+    from?: string,
+    to?: string,
+    now?: Date,
+  ) {
+    await this.loadEmployee(employeeId);
+    const today = dhakaDateParts(now ?? new Date());
+    const y = today.year;
+    const m = String(today.month).padStart(2, '0');
+    const fromStr = from ?? `${y}-${m}-01`;
+    const toStr =
+      to ??
+      `${y}-${m}-${String(new Date(Date.UTC(y, today.month, 0)).getUTCDate()).padStart(2, '0')}`;
+    const fromDate = this.resolveDate(fromStr);
+    const toDate = this.resolveDate(toStr);
+
+    const [days, leaves, weeklyOffs] = await Promise.all([
+      this.prisma.attendanceDay.findMany({
+        where: { employeeId, date: { gte: fromDate, lte: toDate } },
+        include: DAY_INCLUDE,
+        orderBy: { date: 'asc' },
+      }),
+      this.prisma.leaveRequest.findMany({
+        where: {
+          employeeId,
+          status: 'approved',
+          startDate: { lte: toDate },
+          endDate: { gte: fromDate },
+        },
+        select: { startDate: true, endDate: true },
+      }),
+      this.prisma.weeklyOff.findMany({
+        where: {
+          employeeId,
+          effectiveFrom: { lte: toDate },
+          OR: [{ effectiveTo: null }, { effectiveTo: { gte: fromDate } }],
+        },
+        select: { dayOfWeek: true, effectiveFrom: true, effectiveTo: true },
+      }),
+    ]);
+
+    const dayByKey = new Map<string, DayWithSessions>();
+    for (const day of days) dayByKey.set(day.date.toISOString().slice(0, 10), day);
+
+    const leaveSet = new Set<string>();
+    for (const lv of leaves) {
+      let cursor = lv.startDate > fromDate ? lv.startDate : fromDate;
+      while (cursor <= toDate && cursor <= lv.endDate) {
+        leaveSet.add(cursor.toISOString().slice(0, 10));
+        cursor = new Date(cursor.getTime() + 86400000);
+      }
+    }
+
+    const weeklyOffSet = new Set<string>();
+    for (const wo of weeklyOffs) {
+      const from = wo.effectiveFrom > fromDate ? wo.effectiveFrom : fromDate;
+      const effTo = wo.effectiveTo;
+      for (let t = fromDate.getTime(); t <= toDate.getTime(); t += 86400000) {
+        const d = new Date(t);
+        if (d.getUTCDay() !== wo.dayOfWeek) continue;
+        if (d < from) continue;
+        if (effTo && d > effTo) continue;
+        weeklyOffSet.add(d.toISOString().slice(0, 10));
+      }
+    }
+
+    const first = fromDate.getTime();
+    const last = toDate.getTime();
+    const daysInRange = Math.round((last - first) / 86400000) + 1;
+    let present = 0;
+    let missingCheckout = 0;
+    let workedMinutes = 0;
+    let breakMinutes = 0;
+    const rows: {
+      date: string;
+      status: string | null;
+      present: boolean;
+      leave: boolean;
+      weeklyOff: boolean;
+      workedMinutes: number;
+      breakMinutes: number;
+      missingCheckout: boolean;
+    }[] = [];
+    for (let t = first; t <= last; t += 86400000) {
+      const key = new Date(t).toISOString().slice(0, 10);
+      const raw = dayByKey.get(key);
+      const hasSessions = (raw?.sessions?.length ?? 0) > 0;
+      const isPresent = !!raw && (hasSessions || raw.status === 'PRESENT');
+      const isLeave = leaveSet.has(key);
+      const isWeeklyOff =
+        weeklyOffSet.has(key) || (!!raw && raw.status === 'WEEKLY_OFF');
+      const isMissing = !!raw && this.missingCheckoutOf(raw.sessions);
+      if (isPresent) present += 1;
+      if (isMissing) missingCheckout += 1;
+      workedMinutes += raw?.workedMinutes ?? 0;
+      breakMinutes += raw?.breakMinutes ?? 0;
+      rows.push({
+        date: key,
+        status: raw?.status ?? null,
+        present: isPresent,
+        leave: isLeave,
+        weeklyOff: isWeeklyOff,
+        workedMinutes: raw?.workedMinutes ?? 0,
+        breakMinutes: raw?.breakMinutes ?? 0,
+        missingCheckout: isMissing,
+      });
+    }
+
+    const leaveDays = leaveSet.size;
+    const weeklyOffDays = weeklyOffSet.size;
+    return {
+      employeeId,
+      from: fromStr,
+      to: toStr,
+      daysInRange,
+      present,
+      absent: Math.max(0, daysInRange - present - leaveDays - weeklyOffDays),
+      leaveDays,
+      weeklyOffDays,
+      missingCheckout,
+      workedMinutes,
+      breakMinutes,
+      days: rows,
+    };
   }
 
   // ------------------------------------------------------------------
@@ -691,7 +965,7 @@ export class HrAttendanceService {
     }
     const employee = await this.loadEmployee(employeeId);
     await this.enforceMachinePath(employee);
-    const date = this.normalizeDate(occurredAt);
+    const date = dhakaStartOfDay(dhakaDateOf(occurredAt));
 
     return this.runDayTx(
       employeeId,

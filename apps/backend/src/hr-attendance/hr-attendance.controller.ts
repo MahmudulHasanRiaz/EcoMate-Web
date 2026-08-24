@@ -14,6 +14,8 @@ import { CheckInDto } from './dto/check-in.dto';
 import { CheckOutDto } from './dto/check-out.dto';
 import { BreakActionDto } from './dto/break-action.dto';
 import { AdjustAttendanceDto } from './dto/adjust-attendance.dto';
+import { CreateAttendanceDayDto } from './dto/create-day.dto';
+import { CloseSessionDto } from './dto/close-session.dto';
 
 @Controller('hr')
 @Roles('superadmin', 'admin', 'manager')
@@ -114,5 +116,32 @@ export class HrAttendanceController {
       dto,
       user?.userId ?? user?.id,
     );
+  }
+
+  @Post('attendance/days')
+  @PermissionsAny('manage_attendance_adjustments')
+  createDay(@Body() dto: CreateAttendanceDayDto, @CurrentUser() user?: any) {
+    return this.hrAttendanceService.createDay(
+      dto,
+      user?.userId ?? user?.id,
+    );
+  }
+
+  @Post('attendance/close-session')
+  @PermissionsAny('manage_attendance_adjustments')
+  closeSession(@Body() dto: CloseSessionDto, @CurrentUser() user?: any) {
+    return this.hrAttendanceService.closeSession(
+      dto,
+      user?.userId ?? user?.id,
+    );
+  }
+
+  @Get('attendance/report')
+  report(
+    @Query('employeeId') employeeId: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.hrAttendanceService.report(employeeId, from, to);
   }
 }

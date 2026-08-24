@@ -6,6 +6,7 @@ import { useDailyOverviewQuery } from '../hooks'
 import {
   ATTENDANCE_STATUSES,
   ATTENDANCE_STATUS_LABELS,
+  toDateKey,
 } from '../api'
 
 const STATUS_COUNT_BADGE: Record<string, string> = {
@@ -18,7 +19,7 @@ const STATUS_COUNT_BADGE: Record<string, string> = {
 }
 
 export function DailyOverview({ date }: { date: Date }) {
-  const dateKey = date ? date.toISOString().slice(0, 10) : undefined
+  const dateKey = date ? toDateKey(date) : undefined
   const { data, isLoading, isError, refetch } = useDailyOverviewQuery(dateKey!)
 
   const counts = data?.counts ?? null

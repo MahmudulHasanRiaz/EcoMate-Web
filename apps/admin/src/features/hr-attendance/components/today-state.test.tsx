@@ -171,4 +171,67 @@ describe('TodayState', () => {
 
     await expect.element(getByText('Machine attendance')).toBeInTheDocument()
   })
+
+  it('shows MISSING CHECKOUT badge + Close Session action for an open-session day', async () => {
+    todayState = {
+      state: 'working',
+      checkInAt: '2026-08-23T03:02:00.000Z',
+      workedMinutes: 125,
+      breakMinutes: 12,
+      missingCheckout: true,
+    }
+    historyDays = [
+      {
+        id: 'day-1',
+        employeeId: 'emp-1',
+        date: '2026-08-23T00:00:00.000Z',
+        status: 'PRESENT',
+        workedMinutes: 125,
+        breakMinutes: 12,
+        missingCheckout: true,
+      },
+    ]
+    const { getByRole, getByText } = await wrap(<StatefulTodayState />)
+
+    await selectEmployee({ getByText, getByRole })
+
+    await expect.element(getByText('MISSING CHECKOUT')).toBeInTheDocument()
+    await userEvent.click(getByRole('button', { name: /Close Session/i }))
+    await expect.element(getByRole('textbox')).toBeInTheDocument()
+  })
+
+  it('posts /hr/attendance/close-session with the reason when confirmed', async () => {
+    todayState = {
+      state: 'working',
+      checkInAt: '2026-08-23T03:02:00.000Z',
+      workedMinutes: 125,
+      breakMinutes: 12,
+      missingCheckout: true,
+    }
+    historyDays = [
+      {
+        id: 'day-1',
+        employeeId: 'emp-1',
+        date: '2026-08-23T00:00:00.000Z',
+        status: 'PRESENT',
+        workedMinutes: 125,
+        breakMinutes: 12,
+        missingCheckout: true,
+      },
+    ]
+    const { getByRole, getByText } = await wrap(<StatefulTodayState />)
+
+    await selectEmployee({ getByText, getByRole })
+    await userEvent.click(getByRole('button', { name: /Close Session/i }))
+
+    await userEvent.type(getByRole('textbox'), 'Missed logout')
+    await userEvent.click(getByRole('button', { name: /Confirm Close/i }))
+
+    await vi.waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith('/hr/attendance/close-session', {
+        dayId: 'day-1',
+        reason: 'Missed logout',
+      })
+    })
+  })
 })

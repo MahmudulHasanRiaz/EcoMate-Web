@@ -85,6 +85,7 @@ export interface AttendanceDayRow {
   updatedAt: string
   sessions?: AttendanceSession[]
   employee: AttendanceEmployee
+  missingCheckout?: boolean
 }
 
 export interface AttendanceListResponse {
@@ -130,6 +131,11 @@ export interface CreateAdjustmentDto {
   field: AdjustmentField
   originalValue?: string
   correctedValue: string
+  reason: string
+}
+
+export interface CloseSessionDto {
+  dayId: string
   reason: string
 }
 
@@ -203,12 +209,32 @@ export function toDateKey(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
+/** Business-date helpers: the attendance day boundary runs on Asia/Dhaka. */
+export function dhakaToday(now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Dhaka',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now)
+  const pick = (t: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === t)?.value ?? ''
+  return `${pick('year')}-${pick('month')}-${pick('day')}`
+}
+
+/** A local-midnight Date whose local components equal the Dhaka business date. */
+export function dhakaTodayDate(now: Date = new Date()): Date {
+  const [y, m, d] = dhakaToday(now).split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
 export function formatTime(iso?: string | null): string {
   if (!iso) return '—'
   return new Date(iso).toLocaleTimeString('en-US', {
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,
+    timeZone: 'Asia/Dhaka',
   })
 }
 
@@ -218,6 +244,7 @@ export function formatDate(dateStr?: string | null): string {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
+    timeZone: 'Asia/Dhaka',
   })
 }
 
@@ -281,6 +308,13 @@ export const hrAttendanceApi = {
     apiClient.get<AdjustmentListResponse>('/hr/attendance/adjustments', { params }),
   createAdjustment: (dto: CreateAdjustmentDto) =>
     apiClient.post<AttendanceAdjustment>('/hr/attendance/adjustments', dto),
+
+  // Missing-checkout close (G-12)
+  closeSession: (dto: CloseSessionDto) =>
+    apiClient.post<{ dayId: string; sessionCount: number; checkOutAt: string }>(
+      '/hr/attendance/close-session',
+      dto,
+    ),
 
   // Settings
   getSettings: () => apiClient.get<AttendanceSettings>('/hr/attendance/settings'),

@@ -13,7 +13,7 @@ import { DailyOverview } from './components/daily-overview'
 import { AdjustmentsTab } from './components/adjustments-tab'
 import { DevicesTab } from './components/devices-tab'
 import { SettingsTab } from './components/settings-tab'
-import type { AttendanceStatus } from './api'
+import { dhakaTodayDate, type AttendanceStatus } from './api'
 
 const SUB_TABS = [
   { value: 'today', label: 'Today' },
@@ -29,7 +29,7 @@ export function AttendancePage({ initialTab }: { initialTab?: string }) {
 
   const [tab, setTab] = useState(SUB_TABS.some((t) => t.value === initialTab) ? initialTab! : 'today')
   const [todayEmployeeId, setTodayEmployeeId] = useState('')
-  const [date, setDate] = useState<Date>(() => new Date())
+  const [date, setDate] = useState<Date>(() => dhakaTodayDate())
   const [employeeId, setEmployeeId] = useState('')
   const [status, setStatus] = useState<AttendanceStatus | 'all'>('all')
   const [departmentId, setDepartmentId] = useState('')

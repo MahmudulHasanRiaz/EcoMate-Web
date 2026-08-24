@@ -37,6 +37,7 @@ import {
   hrMyBreakStart,
   hrMyBreakEnd,
   hrMyCheckOut,
+  dhakaToday,
   type HrProfile,
   type SalaryStructure,
   type Payslip,
@@ -143,6 +144,17 @@ function fmtDate(d?: string | null) {
     year: "numeric",
     month: "short",
     day: "numeric",
+  });
+}
+
+/* Attendance day dates are stored as Dhaka-calendar UTC midnights — display them in the Dhaka timezone. */
+function fmtDhakaDate(d?: string | null) {
+  if (!d) return "—";
+  return new Date(d).toLocaleDateString("en-GB", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZone: "Asia/Dhaka",
   });
 }
 
@@ -1176,7 +1188,7 @@ function AttendanceTab() {
                 </p>
                 <div className="mt-3">
                   <AttendanceStatusBadge
-                    value={items.find((d) => d.date?.slice?.(0, 10) === new Date().toISOString().slice(0, 10))?.status}
+                    value={items.find((d) => d.date?.slice?.(0, 10) === dhakaToday())?.status}
                   />
                 </div>
               </>
@@ -1222,7 +1234,7 @@ function AttendanceTab() {
                 <tbody>
                   {items.map((r) => (
                     <tr key={r.id} className="border-t border-gray-50">
-                      <td className="py-3 pr-4 text-gray-700">{fmtDate(r.date)}</td>
+                      <td className="py-3 pr-4 text-gray-700">{fmtDhakaDate(r.date)}</td>
                       <td className="py-3 pr-4">
                         <AttendanceStatusBadge value={r.status} />
                       </td>

@@ -28,5 +28,10 @@ describe('HrSelfServiceController', () => {
       expect(methodOf('getTodayAttendance')).toBe(0);
       expect(pathOf('getAttendance')).toBe('attendance');
     });
+
+    it('exposes the self attendance report over /hr/my/attendance/report', () => {
+      expect(pathOf('getAttendanceReport')).toBe('attendance/report');
+      expect(methodOf('getAttendanceReport')).toBe(0);
+    });
   });
 });

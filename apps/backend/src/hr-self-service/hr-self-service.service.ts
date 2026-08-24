@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PayrollService } from '../payroll/payroll.service';
 import { HrLedgersService } from '../hr-ledgers/hr-ledgers.service';
@@ -6,6 +10,10 @@ import { CommissionsService } from '../commissions/commissions.service';
 import { HrLeaveService } from '../hr-leave/hr-leave.service';
 import { HrScheduleService } from '../hr-schedule/hr-schedule.service';
 import { HrAttendanceService } from '../hr-attendance/hr-attendance.service';
+import {
+  parseLocalDate,
+  dhakaToday,
+} from '../hr-attendance/attendance-date';
 import { CreateSelfLeaveRequestDto } from './dto/create-self-leave-request.dto';
 
 interface SelfUser {
@@ -146,23 +154,45 @@ export class HrSelfServiceService {
     return this.attendance.getDayState(employee.id, date);
   }
 
+  /**
+   * Self-service clock actions are server-authoritative on the Dhaka business
+   * date. If the client insists on a date, it must equal today.
+   */
+  private assertTodayOnly(date?: string) {
+    if (!date) return;
+    const given = parseLocalDate(date).getTime();
+    const today = parseLocalDate(dhakaToday()).getTime();
+    if (given !== today) {
+      throw new BadRequestException('Can only check in for today.');
+    }
+  }
+
   async checkInSelf(user: SelfUser, note?: string, date?: string) {
     const employee = await this.resolveEmployee(user);
+    this.assertTodayOnly(date);
     return this.attendance.checkIn(employee.id, { note, date });
   }
 
   async breakStartSelf(user: SelfUser, date?: string) {
     const employee = await this.resolveEmployee(user);
+    this.assertTodayOnly(date);
     return this.attendance.breakStart(employee.id, { date });
   }
 
   async breakEndSelf(user: SelfUser, date?: string) {
     const employee = await this.resolveEmployee(user);
+    this.assertTodayOnly(date);
     return this.attendance.breakEnd(employee.id, { date });
   }
 
   async checkOutSelf(user: SelfUser, note?: string, date?: string) {
     const employee = await this.resolveEmployee(user);
+    this.assertTodayOnly(date);
     return this.attendance.checkOut(employee.id, { note, date });
+  }
+
+  async getAttendanceReport(user: SelfUser, from?: string, to?: string) {
+    const employee = await this.resolveEmployee(user);
+    return this.attendance.report(employee.id, from, to);
   }
 }

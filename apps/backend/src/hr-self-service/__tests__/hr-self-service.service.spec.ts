@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { HrSelfServiceService } from '../hr-self-service.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PayrollService } from '../../payroll/payroll.service';
@@ -56,6 +56,7 @@ describe('HrSelfServiceService', () => {
     breakEnd: jest.fn(),
     checkOut: jest.fn(),
     getDayState: jest.fn(),
+    report: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -241,12 +242,12 @@ describe('HrSelfServiceService', () => {
   describe('self attendance state machine (employeeId never client-supplied)', () => {
     const evil = { employeeId: 'evil-emp' } as any;
 
-    it('checkInSelf uses the resolved employee, note/date passthrough', async () => {
+    it('checkInSelf uses the resolved employee and passes the note through (server dates today)', async () => {
       attendanceMock.checkIn.mockResolvedValue({ id: 's-1' });
-      const res = await service.checkInSelf(SESSION_USER, 'on time', '2026-08-28');
+      const res = await service.checkInSelf(SESSION_USER, 'on time');
       expect(attendanceMock.checkIn).toHaveBeenCalledWith('emp-1', {
         note: 'on time',
-        date: '2026-08-28',
+        date: undefined,
       });
       const args = attendanceMock.checkIn.mock.calls[0];
       expect(args[0]).toBe('emp-1');
@@ -254,22 +255,36 @@ describe('HrSelfServiceService', () => {
       expect(res).toEqual({ id: 's-1' });
     });
 
-    it('breakStartSelf / breakEndSelf pass the resolved employee', async () => {
-      await service.breakStartSelf(SESSION_USER, '2026-08-28');
+    it('rejects a self-service check-in date that is not today (400)', async () => {
+      await expect(
+        service.checkInSelf(SESSION_USER, 'x', '2020-01-01'),
+      ).rejects.toThrow(BadRequestException);
+      expect(attendanceMock.checkIn).not.toHaveBeenCalled();
+    });
+
+    it('breakStartSelf / breakEndSelf pass the resolved employee (server dates today)', async () => {
+      await service.breakStartSelf(SESSION_USER, undefined);
       expect(attendanceMock.breakStart).toHaveBeenCalledWith('emp-1', {
-        date: '2026-08-28',
+        date: undefined,
       });
-      await service.breakEndSelf(SESSION_USER, '2026-08-28');
+      await service.breakEndSelf(SESSION_USER, undefined);
       expect(attendanceMock.breakEnd).toHaveBeenCalledWith('emp-1', {
-        date: '2026-08-28',
+        date: undefined,
       });
     });
 
-    it('checkOutSelf passes resolved employee + note', async () => {
-      await service.checkOutSelf(SESSION_USER, 'wrap up', '2026-08-28');
+    it('rejects a self-service break date that is not today (400)', async () => {
+      await expect(
+        service.breakStartSelf(SESSION_USER, '2020-01-01'),
+      ).rejects.toThrow(BadRequestException);
+      expect(attendanceMock.breakStart).not.toHaveBeenCalled();
+    });
+
+    it('checkOutSelf passes resolved employee + note (server dates today)', async () => {
+      await service.checkOutSelf(SESSION_USER, 'wrap up');
       expect(attendanceMock.checkOut).toHaveBeenCalledWith('emp-1', {
         note: 'wrap up',
-        date: '2026-08-28',
+        date: undefined,
       });
       const args = attendanceMock.checkOut.mock.calls[0];
       expect(args[0]).toBe('emp-1');
@@ -297,6 +312,42 @@ describe('HrSelfServiceService', () => {
       expect(attendanceMock.checkIn).not.toHaveBeenCalled();
       expect(attendanceMock.checkOut).not.toHaveBeenCalled();
       expect(attendanceMock.getDayState).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('attendance report (G-18)', () => {
+    it('delegates the resolved employee + range to the shared attendance report', async () => {
+      attendanceMock.report.mockResolvedValue({
+        employeeId: 'emp-1',
+        daysInRange: 9,
+        present: 5,
+      });
+      const res = await service.getAttendanceReport(
+        SESSION_USER,
+        '2026-08-01',
+        '2026-08-09',
+      );
+      expect(attendanceMock.report).toHaveBeenCalledWith(
+        'emp-1',
+        '2026-08-01',
+        '2026-08-09',
+      );
+      // never a client-supplied employee id
+      const args = attendanceMock.report.mock.calls[0];
+      expect(args[0]).toBe('emp-1');
+      expect(res).toEqual({
+        employeeId: 'emp-1',
+        daysInRange: 9,
+        present: 5,
+      });
+    });
+
+    it('404s when the session employee is unlinked', async () => {
+      prismaMock.employee.findFirst.mockResolvedValue(null);
+      await expect(service.getAttendanceReport(OTHER_USER)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(attendanceMock.report).not.toHaveBeenCalled();
     });
   });
 

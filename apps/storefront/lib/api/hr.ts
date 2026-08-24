@@ -120,6 +120,19 @@ function qp(page?: number, perPage?: number) {
   return { page, perPage };
 }
 
+/** Asia/Dhaka business date ("YYYY-MM-DD" of the attendance day boundary). */
+export function dhakaToday(now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Dhaka",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const pick = (t: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === t)?.value ?? "";
+  return `${pick("year")}-${pick("month")}-${pick("day")}`;
+}
+
 export async function getHrProfile() {
   const { data } = await apiClient.get<HrProfile>("/hr/my/profile");
   return data;

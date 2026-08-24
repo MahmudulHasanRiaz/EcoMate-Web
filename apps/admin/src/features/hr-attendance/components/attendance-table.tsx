@@ -21,6 +21,7 @@ import {
   type AttendanceDayRow,
   type AttendanceStatus,
 } from '../api'
+import { MissingCheckoutBadge, CloseSessionAction } from './close-session'
 
 export function AttendanceTable({
   date,
@@ -138,11 +139,13 @@ export function AttendanceTable({
               <TableHead>Check Out</TableHead>
               <TableHead className='text-right'>Worked</TableHead>
               <TableHead className='text-right'>Break</TableHead>
+              <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.map((row) => {
               const times = sessionTimes(row)
+              const missing = !!row.missingCheckout
               return (
                 <TableRow key={row.id}>
                   <TableCell className='font-medium'>
@@ -153,9 +156,12 @@ export function AttendanceTable({
                   </TableCell>
                   <TableCell className='text-sm text-muted-foreground'>{formatDate(row.date)}</TableCell>
                   <TableCell>
-                    <Badge className={`border-transparent ${ATTENDANCE_STATUS_BADGE[row.status]}`}>
-                      {ATTENDANCE_STATUS_LABELS[row.status]}
-                    </Badge>
+                    <div className='flex flex-wrap items-center gap-1.5'>
+                      <Badge className={`border-transparent ${ATTENDANCE_STATUS_BADGE[row.status]}`}>
+                        {ATTENDANCE_STATUS_LABELS[row.status]}
+                      </Badge>
+                      {missing && <MissingCheckoutBadge />}
+                    </div>
                   </TableCell>
                   <TableCell className='text-sm text-muted-foreground'>{formatTime(times.checkInAt)}</TableCell>
                   <TableCell className='text-sm text-muted-foreground'>{formatTime(times.checkOutAt)}</TableCell>
@@ -165,6 +171,7 @@ export function AttendanceTable({
                   <TableCell className='text-right text-sm text-muted-foreground tabular-nums'>
                     {formatDuration(row.breakMinutes)}
                   </TableCell>
+                  <TableCell>{missing ? <CloseSessionAction dayId={row.id} /> : '—'}</TableCell>
                 </TableRow>
               )
             })}

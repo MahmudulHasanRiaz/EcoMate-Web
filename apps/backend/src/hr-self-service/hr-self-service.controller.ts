@@ -152,6 +152,15 @@ export class HrSelfServiceController {
     return this.service.getTodayAttendance(this.assertEmployee(user), date);
   }
 
+  @Get('attendance/report')
+  getAttendanceReport(
+    @CurrentUser() user: any,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.service.getAttendanceReport(this.assertEmployee(user), from, to);
+  }
+
   @Post('attendance/check-in')
   checkInSelf(
     @CurrentUser() user: any,

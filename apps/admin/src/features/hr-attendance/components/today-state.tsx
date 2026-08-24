@@ -12,6 +12,7 @@ import {
   ATTENDANCE_METHOD_LABELS,
   ATTENDANCE_STATUS_BADGE,
   ATTENDANCE_STATUS_LABELS,
+  dhakaTodayDate,
   formatDuration,
   formatTime,
   toDateKey,
@@ -27,6 +28,7 @@ import {
   useCheckOutMutation,
   useAttendanceHistoryQuery,
 } from '../hooks'
+import { MissingCheckoutBadge, CloseSessionAction } from './close-session'
 
 const METHOD_TONE: Record<AttendanceMethod, string> = {
   APP: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
@@ -51,7 +53,7 @@ export function TodayState({
   onEmployeeIdChange: (id: string) => void
   hideEmployeeSelect?: boolean
 }) {
-  const [date, setDate] = useState<Date>(() => new Date())
+  const [date, setDate] = useState<Date>(() => dhakaTodayDate())
   const dateKey = toDateKey(date)
 
   const { data: employees } = useQuery({
@@ -100,6 +102,7 @@ export function TodayState({
 
     const worked = today.data?.workedMinutes ?? 0
     const broken = today.data?.breakMinutes ?? 0
+    const missing = today.data?.missingCheckout ?? false
 
     switch (state) {
       case 'working': {
@@ -110,6 +113,7 @@ export function TodayState({
               <span className={`inline-block rounded-md px-3 py-1.5 text-sm font-semibold ${MAIN_TONE.working}`}>
                 Working
               </span>
+              {missing && <MissingCheckoutBadge />}
               <p className='mt-3 text-sm text-muted-foreground'>
                 Since <span className='font-medium text-foreground'>{formatTime(today.data?.checkInAt)}</span> ·
                 Worked {formatDuration(worked)} · Break {formatDuration(broken)}
@@ -129,6 +133,7 @@ export function TodayState({
                 {checkOutMut.isPending && <Loader2 className='h-4 w-4 animate-spin mr-1' />}
                 <LogOut className='h-4 w-4 mr-1.5' /> Check Out
               </Button>
+              {missing && dayRow?.id && <CloseSessionAction dayId={dayRow.id} />}
             </div>
           </div>
         )
@@ -140,6 +145,7 @@ export function TodayState({
               <span className={`inline-block rounded-md px-3 py-1.5 text-sm font-semibold ${MAIN_TONE.on_break}`}>
                 On Break
               </span>
+              {missing && <MissingCheckoutBadge />}
               <p className='mt-3 text-sm text-muted-foreground'>
                 Worked {formatDuration(worked)} · Break so far {formatDuration(broken)}
               </p>
@@ -149,6 +155,7 @@ export function TodayState({
                 {breakEndMut.isPending && <Loader2 className='h-4 w-4 animate-spin mr-1' />}
                 <Coffee className='h-4 w-4 mr-1.5' /> End Break
               </Button>
+              {missing && dayRow?.id && <CloseSessionAction dayId={dayRow.id} />}
             </div>
           </div>
         )

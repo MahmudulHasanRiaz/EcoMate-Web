@@ -21,6 +21,7 @@ import { employeesApi, type EmployeeResponse } from '@/features/employees/api'
 import {
   ATTENDANCE_STATUSES,
   ATTENDANCE_STATUS_LABELS,
+  dhakaTodayDate,
   formatDate,
   toDateKey,
   type AdjustmentField,
@@ -36,7 +37,7 @@ const ADJUSTABLE_FIELDS: { value: AdjustmentField; label: string }[] = [
 
 function AdjustmentsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const [employeeId, setEmployeeId] = useState('')
-  const [date, setDate] = useState<Date>(() => new Date())
+  const [date, setDate] = useState<Date>(() => dhakaTodayDate())
   const [field, setField] = useState<AdjustmentField>('status')
   const [statusValue, setStatusValue] = useState<AttendanceStatus>('PRESENT')
   const [minutesValue, setMinutesValue] = useState('')
@@ -59,7 +60,7 @@ function AdjustmentsDialog({ open, onOpenChange }: { open: boolean; onOpenChange
   useEffect(() => {
     if (!open) return
     setEmployeeId('')
-    setDate(new Date())
+    setDate(dhakaTodayDate())
     setField('status')
     setStatusValue('PRESENT')
     setMinutesValue('')

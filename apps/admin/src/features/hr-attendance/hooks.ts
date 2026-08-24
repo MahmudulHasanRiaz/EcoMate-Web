@@ -155,6 +155,20 @@ export function useCreateAdjustmentMutation() {
   })
 }
 
+export function useCloseSessionMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (dto: { dayId: string; reason: string }) =>
+      hrAttendanceApi.closeSession(dto).then((r) => r.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [ADJUSTMENTS_KEY] })
+      invalidateAll(queryClient)
+      toast.success('Session closed')
+    },
+    onError: (e: unknown) => toast.error(getErrorMessage(e, 'Could not close session')),
+  })
+}
+
 // ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------

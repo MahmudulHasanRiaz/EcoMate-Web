@@ -100,5 +100,42 @@ describe('HrAttendanceController', () => {
       expect(proto.updateRecord).toBeUndefined();
       expect(proto.findOne).toBeUndefined();
     });
+
+    it('POST /hr/attendance/days records a manual absence day with the adjustments permission', () => {
+      const proto = HrAttendanceController.prototype as any;
+      expect(proto.createDay).toBeDefined();
+      expect(pathOf(HrAttendanceController.prototype, 'createDay')).toBe(
+        'attendance/days',
+      );
+      expect(methodOf(HrAttendanceController.prototype, 'createDay')).toBe(1);
+      expect(
+        Reflect.getMetadata(
+          PERMISSIONS_ANY_KEY,
+          HrAttendanceController.prototype.createDay,
+        ),
+      ).toEqual(['manage_attendance_adjustments']);
+    });
+
+    it('POST /hr/attendance/close-session closes open sessions with the adjustments permission', () => {
+      const proto = HrAttendanceController.prototype as any;
+      expect(proto.closeSession).toBeDefined();
+      expect(pathOf(HrAttendanceController.prototype, 'closeSession')).toBe(
+        'attendance/close-session',
+      );
+      expect(methodOf(HrAttendanceController.prototype, 'closeSession')).toBe(1);
+      expect(
+        Reflect.getMetadata(
+          PERMISSIONS_ANY_KEY,
+          HrAttendanceController.prototype.closeSession,
+        ),
+      ).toEqual(['manage_attendance_adjustments']);
+    });
+
+    it('GET /hr/attendance/report exposes the derived attendance report', () => {
+      expect(pathOf(HrAttendanceController.prototype, 'report')).toBe(
+        'attendance/report',
+      );
+      expect(methodOf(HrAttendanceController.prototype, 'report')).toBe(0);
+    });
   });
 });

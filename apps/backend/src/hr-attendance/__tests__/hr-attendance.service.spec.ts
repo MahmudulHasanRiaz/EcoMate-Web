@@ -170,6 +170,9 @@ describe('HrAttendanceService', () => {
           return row;
         }),
       },
+      attendanceAdjustment: {
+        create: jest.fn(async (args: any) => ({ id: 'adj-new', ...args.data })),
+      },
     };
     return tx;
   };
@@ -187,6 +190,8 @@ describe('HrAttendanceService', () => {
     attendanceSession: { findUnique: jest.fn() },
     attendanceBreak: { findUnique: jest.fn() },
     attendanceAdjustment: { create: jest.fn(), findMany: jest.fn(), count: jest.fn() },
+    leaveRequest: { findMany: jest.fn() },
+    weeklyOff: { findMany: jest.fn() },
     $transaction: jest.fn(),
   };
 
@@ -309,6 +314,20 @@ describe('HrAttendanceService', () => {
         status: 'PRESENT',
         attendanceMethod: 'APP',
       });
+    });
+
+    it('defaults to Dhaka-today UTC-midnight when no date is supplied (server-authoritative)', async () => {
+      // 2026-08-24T18:30:00Z = 00:30 BDT on Aug 25 → business date 2026-08-25
+      const tx = makeStateTx(null);
+      prismaMock.$transaction.mockImplementation(async (cb: any) => cb(tx));
+
+      const res = await service.checkIn('emp-1', {
+        now: new Date('2026-08-24T18:30:00.000Z'),
+      });
+
+      expect(res).toMatchObject({ dayId: 'day-new' });
+      const createArg = tx.attendanceDay.create.mock.calls[0][0];
+      expect(createArg.data.date).toEqual(new Date('2026-08-25T00:00:00.000Z'));
     });
 
     it('throws 409 on a concurrent day-create P2002 race with friendly message', async () => {
@@ -870,7 +889,7 @@ describe('HrAttendanceService', () => {
       expect(call.include._count).toEqual({ select: { sessions: true } });
       expect(call.include.sessions).toEqual({ include: { breaks: true } });
       expect(res).toEqual({
-        data: [{ id: 'd-1', employee: {}, _count: { sessions: 2 } }],
+        data: [{ id: 'd-1', employee: {}, _count: { sessions: 2 }, missingCheckout: false }],
         meta: { total: 3, page: 2, perPage: 10, totalPages: 1 },
       });
     });
@@ -1102,6 +1121,406 @@ describe('HrAttendanceService', () => {
       await expect(
         service.ingestMachineEvent('emp-1', 'dev-1', 'CHECK_IN', occurred('2026-08-28T08:00:00.000Z')),
       ).rejects.toThrow(/application/i);
+    });
+
+    it('maps a near-midnight event to its Dhaka business date (00:30 BDT → next day)', async () => {
+      const tx = makeStateTx(null);
+      prismaMock.$transaction.mockImplementation(async (cb: any) => cb(tx));
+
+      const res = await service.ingestMachineEvent(
+        'emp-1',
+        'dev-1',
+        'CHECK_IN',
+        occurred('2026-08-24T18:30:00.000Z'),
+      );
+
+      expect(res).toEqual({ dayId: 'day-new', sessionId: 's-new' });
+      const dayCreate = tx.attendanceDay.create.mock.calls[0][0];
+      expect(dayCreate.data.date).toEqual(new Date('2026-08-25T00:00:00.000Z'));
+    });
+
+    it('keeps same-day events on the same Dhaka business date', async () => {
+      const tx = makeStateTx(null);
+      prismaMock.$transaction.mockImplementation(async (cb: any) => cb(tx));
+      await service.ingestMachineEvent(
+        'emp-1',
+        'dev-1',
+        'CHECK_IN',
+        occurred('2026-08-28T08:30:00.000Z'),
+      );
+      const dayCreate = tx.attendanceDay.create.mock.calls[0][0];
+      expect(dayCreate.data.date).toEqual(new Date('2026-08-28T00:00:00.000Z'));
+    });
+  });
+
+  describe('missingCheckout (derived open-session flag)', () => {
+    it('getDayState: open session → missingCheckout true', async () => {
+      prismaMock.attendanceDay.findUnique.mockResolvedValue(
+        makeDay({
+          sessions: [openSession('day-1', new Date('2026-08-28T09:00:00.000Z'))],
+        }),
+      );
+      const res = await service.getDayState('emp-1', '2026-08-28');
+      expect(res.missingCheckout).toBe(true);
+    });
+
+    it('getDayState: all sessions closed → missingCheckout false', async () => {
+      prismaMock.attendanceDay.findUnique.mockResolvedValue(
+        makeDay({
+          sessions: [
+            closedSession(
+              'day-1',
+              new Date('2026-08-28T09:00:00.000Z'),
+              new Date('2026-08-28T17:00:00.000Z'),
+            ),
+          ],
+        }),
+      );
+      const res = await service.getDayState('emp-1', '2026-08-28');
+      expect(res.missingCheckout).toBe(false);
+    });
+
+    it('getDayState: no day → missingCheckout false', async () => {
+      prismaMock.attendanceDay.findUnique.mockResolvedValue(null);
+      const res = await service.getDayState('emp-1', '2026-08-28');
+      expect(res.missingCheckout).toBe(false);
+    });
+
+    it('resolves "today" by Dhaka date when no date is supplied', async () => {
+      prismaMock.attendanceDay.findUnique.mockResolvedValue(null);
+      await service.getDayState(
+        'emp-1',
+        undefined,
+        new Date('2026-08-24T18:30:00.000Z'),
+      );
+      expect(prismaMock.attendanceDay.findUnique).toHaveBeenCalledWith({
+        where: {
+          employeeId_date: {
+            employeeId: 'emp-1',
+            date: new Date('2026-08-25T00:00:00.000Z'),
+          },
+        },
+        include: expect.anything(),
+      });
+    });
+
+    it('findAll rows carry missingCheckout for open sessions', async () => {
+      prismaMock.attendanceDay.count.mockResolvedValue(1);
+      prismaMock.attendanceDay.findMany.mockResolvedValue([
+        { id: 'd-1', employee: {}, _count: { sessions: 1 }, sessions: [{ checkOutAt: null }] },
+      ]);
+      const res = await service.findAll({}, 1, 20);
+      expect(res.data[0]).toMatchObject({ missingCheckout: true });
+    });
+
+    it('findAll rows carry missingCheckout=false for closed sessions', async () => {
+      prismaMock.attendanceDay.count.mockResolvedValue(1);
+      prismaMock.attendanceDay.findMany.mockResolvedValue([
+        { id: 'd-1', employee: {}, _count: { sessions: 1 }, sessions: [{ checkOutAt: new Date() }] },
+      ]);
+      const res = await service.findAll({}, 1, 20);
+      expect(res.data[0]).toMatchObject({ missingCheckout: false });
+    });
+
+    it('history rows carry missingCheckout', async () => {
+      prismaMock.attendanceDay.findMany.mockResolvedValue([
+        { id: 'd-1', sessions: [{ checkOutAt: null }] },
+        { id: 'd-2', sessions: [{ checkOutAt: new Date() }] },
+      ]);
+      const res = await service.history('emp-1', '2026-08-01', '2026-08-31');
+      expect(res[0]).toMatchObject({ missingCheckout: true });
+      expect(res[1]).toMatchObject({ missingCheckout: false });
+    });
+  });
+
+  describe('createDay (manual absence days)', () => {
+    it('creates an absence day + a status audit adjustment', async () => {
+      prismaMock.attendanceDay.findUnique.mockResolvedValue(null);
+      const tx = makeStateTx(null);
+      tx.attendanceDay.create.mockImplementation(async (args: any) => {
+        const row = {
+          id: 'day-new',
+          employeeId: args.data.employeeId,
+          date: args.data.date,
+          status: args.data.status,
+          attendanceMethod: args.data.attendanceMethod,
+          note: args.data.note ?? null,
+        };
+        return row;
+      });
+      prismaMock.$transaction.mockImplementation(async (cb: any) => cb(tx));
+
+      const res = await service.createDay(
+        {
+          employeeId: 'emp-1',
+          date: '2026-08-25',
+          status: 'ABSENT',
+          reason: 'No show, no call',
+        },
+        'actor-1',
+      );
+
+      expect(res).toMatchObject({
+        id: 'day-new',
+        status: 'ABSENT',
+        date: new Date('2026-08-25T00:00:00.000Z'),
+        attendanceMethod: 'APP',
+      });
+      expect(tx.attendanceDay.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          employeeId: 'emp-1',
+          date: new Date('2026-08-25T00:00:00.000Z'),
+          status: 'ABSENT',
+          attendanceMethod: 'APP',
+        }),
+      });
+      expect(tx.attendanceAdjustment.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          field: 'status',
+          originalValue: null,
+          correctedValue: 'ABSENT',
+          reason: 'No show, no call',
+          adjustedById: 'actor-1',
+          dayId: 'day-new',
+        }),
+      });
+    });
+
+    it('409 when a day already exists for (employee, date)', async () => {
+      prismaMock.attendanceDay.findUnique.mockResolvedValue({ id: 'day-1' });
+      await expect(
+        service.createDay({
+          employeeId: 'emp-1',
+          date: '2026-08-25',
+          status: 'ABSENT',
+          reason: 'x',
+        }),
+      ).rejects.toThrow(ConflictException);
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('400 for a terminated/inactive employee', async () => {
+      prismaMock.employee.findUnique.mockResolvedValue({
+        ...EMPLOYEE,
+        status: 'terminated',
+      });
+      await expect(
+        service.createDay({
+          employeeId: 'emp-1',
+          date: '2026-08-25',
+          status: 'ABSENT',
+          reason: 'x',
+        }),
+      ).rejects.toThrow(/terminated\/inactive/);
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('400 when reason is missing', async () => {
+      await expect(
+        service.createDay({
+          employeeId: 'emp-1',
+          date: '2026-08-25',
+          status: 'ABSENT',
+        } as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('400 for a status outside ABSENT/ON_LEAVE/WEEKLY_OFF', async () => {
+      await expect(
+        service.createDay({
+          employeeId: 'emp-1',
+          date: '2026-08-25',
+          status: 'PRESENT',
+          reason: 'x',
+        } as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('404 when the employee does not exist', async () => {
+      prismaMock.employee.findUnique.mockResolvedValue(null);
+      await expect(
+        service.createDay({
+          employeeId: 'missing',
+          date: '2026-08-25',
+          status: 'ABSENT',
+          reason: 'x',
+        }),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('closeSession (missing checkout)', () => {
+    it('closes the open session and writes a checkOutAt adjustment', async () => {
+      jest.useFakeTimers({ now: new Date('2026-08-28T18:00:00.000Z') });
+      const day = makeDay({
+        sessions: [openSession('day-1', new Date('2026-08-28T09:00:00.000Z'))],
+      });
+      const tx = makeStateTx(day);
+      prismaMock.$transaction.mockImplementation(async (cb: any) => cb(tx));
+
+      const res = await service.closeSession(
+        { dayId: 'day-1', reason: 'forgot to log out' },
+        'actor-1',
+      );
+
+      expect(res).toMatchObject({ dayId: 'day-1', sessionCount: 1 });
+      expect(day.sessions[0].checkOutAt).toEqual(new Date('2026-08-28T18:00:00.000Z'));
+      expect(tx.attendanceAdjustment.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          field: 'checkOutAt',
+          originalValue: null,
+          correctedValue: '2026-08-28T18:00:00.000Z',
+          reason: 'forgot to log out',
+          adjustedById: 'actor-1',
+          dayId: 'day-1',
+        }),
+      });
+    });
+
+    it('closes ALL open sessions when more than one is open', async () => {
+      const day = makeDay({
+        sessions: [
+          {
+            id: 's-1',
+            dayId: 'day-1',
+            source: 'APP',
+            deviceId: null,
+            checkInAt: new Date('2026-08-28T09:00:00.000Z'),
+            checkOutAt: null,
+            breaks: [],
+          },
+          {
+            id: 's-2',
+            dayId: 'day-1',
+            source: 'APP',
+            deviceId: null,
+            checkInAt: new Date('2026-08-28T14:00:00.000Z'),
+            checkOutAt: null,
+            breaks: [],
+          },
+        ],
+      });
+      const tx = makeStateTx(day);
+      prismaMock.$transaction.mockImplementation(async (cb: any) => cb(tx));
+
+      await service.closeSession({ dayId: 'day-1', reason: 'batch close' });
+
+      expect(tx.attendanceSession.update).toHaveBeenCalledTimes(2);
+      expect(tx.attendanceAdjustment.create).toHaveBeenCalledTimes(2);
+      expect(day.sessions.every((s) => s.checkOutAt)).toBe(true);
+    });
+
+    it('400 when there is no open session', async () => {
+      const day = makeDay({
+        sessions: [
+          closedSession(
+            'day-1',
+            new Date('2026-08-28T09:00:00.000Z'),
+            new Date('2026-08-28T17:00:00.000Z'),
+          ),
+        ],
+      });
+      const tx = makeStateTx(day);
+      prismaMock.$transaction.mockImplementation(async (cb: any) => cb(tx));
+      await expect(
+        service.closeSession({ dayId: 'day-1', reason: 'x' }),
+      ).rejects.toThrow(/No open session/);
+    });
+
+    it('404 when the day does not exist', async () => {
+      const tx = makeStateTx(null);
+      prismaMock.$transaction.mockImplementation(async (cb: any) => cb(tx));
+      await expect(
+        service.closeSession({ dayId: 'missing', reason: 'x' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('400 when reason is missing', async () => {
+      await expect(
+        service.closeSession({ dayId: 'day-1' } as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('report (G-18 derived attendance)', () => {
+    const dayPresentClosed = makeDay({
+      id: 'd-1',
+      date: new Date('2026-08-03T00:00:00.000Z'),
+      status: 'PRESENT',
+      workedMinutes: 480,
+      breakMinutes: 30,
+      sessions: [
+        closedSession(
+          's-1',
+          new Date('2026-08-03T09:00:00.000Z'),
+          new Date('2026-08-03T17:00:00.000Z'),
+        ),
+      ],
+    });
+    const dayPresentOpen = makeDay({
+      id: 'd-2',
+      date: new Date('2026-08-04T00:00:00.000Z'),
+      status: 'PRESENT',
+      workedMinutes: null,
+      breakMinutes: null,
+      sessions: [openSession('s-2', new Date('2026-08-04T09:00:00.000Z'))],
+    });
+
+    it('computes exact numbers from joined data (2 present, 1 leave, 2 weekly-off)', async () => {
+      prismaMock.attendanceDay.findMany.mockResolvedValue([dayPresentClosed, dayPresentOpen]);
+      prismaMock.leaveRequest.findMany.mockResolvedValue([
+        {
+          startDate: new Date('2026-08-05T00:00:00.000Z'),
+          endDate: new Date('2026-08-05T00:00:00.000Z'),
+        },
+      ]);
+      prismaMock.weeklyOff.findMany.mockResolvedValue([
+        {
+          dayOfWeek: 6,
+          effectiveFrom: new Date('2026-08-01T00:00:00.000Z'),
+          effectiveTo: null,
+        },
+      ]);
+
+      const res = await service.report('emp-1', '2026-08-01', '2026-08-09');
+
+      expect(res.daysInRange).toBe(9);
+      expect(res.present).toBe(2);
+      expect(res.leaveDays).toBe(1);
+      expect(res.weeklyOffDays).toBe(2);
+      expect(res.absent).toBe(4);
+      expect(res.missingCheckout).toBe(1);
+      expect(res.workedMinutes).toBe(480);
+      expect(res.breakMinutes).toBe(30);
+      expect(res.days).toHaveLength(9);
+      expect(res.days[2]).toMatchObject({
+        date: '2026-08-03',
+        present: true,
+        weeklyOff: false,
+        leave: false,
+        workedMinutes: 480,
+      });
+      expect(res.days[3]).toMatchObject({ date: '2026-08-04', missingCheckout: true });
+      expect(res.days[4]).toMatchObject({ date: '2026-08-05', leave: true, present: false });
+      expect(res.days[0]).toMatchObject({ date: '2026-08-01', weeklyOff: true });
+    });
+
+    it('defaults from/to to the current Dhaka month', async () => {
+      jest.useFakeTimers({ now: new Date('2026-08-24T18:30:00.000Z') });
+      prismaMock.attendanceDay.findMany.mockResolvedValue([]);
+      prismaMock.leaveRequest.findMany.mockResolvedValue([]);
+      prismaMock.weeklyOff.findMany.mockResolvedValue([]);
+      const res = await service.report('emp-1');
+      expect(res.from).toBe('2026-08-01');
+      expect(res.to).toBe('2026-08-31');
+      expect(res.daysInRange).toBe(31);
+    });
+
+    it('404 when the employee does not exist', async () => {
+      prismaMock.employee.findUnique.mockResolvedValue(null);
+      await expect(
+        service.report('missing', '2026-08-01', '2026-08-09'),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 });
