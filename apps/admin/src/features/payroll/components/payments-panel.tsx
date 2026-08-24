@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2, RotateCcw, Trash2 } from 'lucide-react'
+import { Loader2, RotateCcw, Ban } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -26,9 +27,9 @@ import {
   usePayslipsQuery,
   usePaymentsQuery,
   useCreatePaymentMutation,
-  useDeletePaymentMutation,
+  useVoidPaymentMutation,
 } from '../hooks'
-import type { PaymentMethod, PayslipResponse } from '../api'
+import type { PaymentMethod, PayslipResponse, PayrollPayment } from '../api'
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return '—'
@@ -119,7 +120,7 @@ export function PaymentsPanel({ employeeId }: { employeeId: string }) {
   )
 }
 
-function PaymentsForPayslip({
+export function PaymentsForPayslip({
   employeeId,
   payslip,
 }: {
@@ -128,7 +129,7 @@ function PaymentsForPayslip({
 }) {
   const { data: payments, isLoading, isError, refetch } = usePaymentsQuery(payslip.id)
   const createMut = useCreatePaymentMutation(employeeId, payslip.id)
-  const deleteMut = useDeletePaymentMutation(employeeId, payslip.id)
+  const voidMut = useVoidPaymentMutation(employeeId, payslip.id)
 
   const [open, setOpen] = useState(false)
   const [amount, setAmount] = useState('')
@@ -136,8 +137,13 @@ function PaymentsForPayslip({
   const [referenceNo, setReferenceNo] = useState('')
   const [note, setNote] = useState('')
 
+  const [voidTarget, setVoidTarget] = useState<PayrollPayment | null>(null)
+  const [voidReason, setVoidReason] = useState('')
+
   const list = Array.isArray(payments) ? payments : []
-  const totalPaid = list.reduce((s, p) => s + Number(p.amount), 0)
+  // G-20: only LIVE (non-voided) payments count toward the paid total.
+  const live = list.filter((p) => !p.voidedAt)
+  const totalPaid = live.reduce((s, p) => s + Number(p.amount), 0)
   const locked = payslip.status === 'paid'
   const canRecord = !['draft', 'reviewed', 'cancelled', 'paid'].includes(payslip.status)
 
@@ -162,6 +168,19 @@ function PaymentsForPayslip({
         onSuccess: () => {
           reset()
           setOpen(false)
+        },
+      },
+    )
+  }
+
+  function handleVoid() {
+    if (!voidTarget || !voidReason.trim()) return
+    voidMut.mutate(
+      { paymentId: voidTarget.id, reason: voidReason.trim() },
+      {
+        onSuccess: () => {
+          setVoidTarget(null)
+          setVoidReason('')
         },
       },
     )
@@ -276,33 +295,94 @@ function PaymentsForPayslip({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {list.map((p) => (
-              <TableRow key={p.id}>
-                <TableCell className='text-sm'>{formatDate(p.paidAt)}</TableCell>
-                <TableCell>{p.method ?? '—'}</TableCell>
-                <TableCell className='text-muted-foreground'>{p.referenceNo ?? '—'}</TableCell>
-                <TableCell className='text-right tabular-nums'>{formatMoney(p.amount)}</TableCell>
-                <TableCell>
-                  <Button
-                    variant='ghost'
-                    size='icon'
-                    className='h-8 w-8'
-                    disabled={locked || deleteMut.isPending}
-                    onClick={() => deleteMut.mutate(p.id)}
-                    title='Reverse payment'
-                  >
-                    {deleteMut.isPending && deleteMut.variables === p.id ? (
-                      <Loader2 className='h-3.5 w-3.5 animate-spin' />
-                    ) : (
-                      <Trash2 className='h-3.5 w-3.5 text-rose-600 dark:text-rose-400' />
+            {list.map((p) => {
+              const isVoided = !!p.voidedAt
+              return (
+                <TableRow key={p.id} className={isVoided ? 'opacity-60' : undefined}>
+                  <TableCell className='text-sm'>{formatDate(p.paidAt)}</TableCell>
+                  <TableCell>{p.method ?? '—'}</TableCell>
+                  <TableCell className='text-muted-foreground'>
+                    {p.referenceNo ?? '—'}
+                  </TableCell>
+                  <TableCell className='text-right tabular-nums'>
+                    {formatMoney(p.amount)}
+                    {isVoided && (
+                      <div className='text-right'>
+                        <Badge
+                          title={p.voidReason ?? undefined}
+                          className='border-transparent bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300'
+                        >
+                          Voided
+                        </Badge>
+                        {p.voidReason && (
+                          <p className='mt-0.5 text-[11px] text-muted-foreground'>
+                            {p.voidReason}
+                          </p>
+                        )}
+                      </div>
                     )}
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
+                  </TableCell>
+                  <TableCell>
+                    {!isVoided && (
+                      <Button
+                        variant='ghost'
+                        size='icon'
+                        className='h-8 w-8'
+                        disabled={voidMut.isPending}
+                        onClick={() => setVoidTarget(p)}
+                        title='Void payment'
+                      >
+                        {voidMut.isPending && voidMut.variables?.paymentId === p.id ? (
+                          <Loader2 className='h-3.5 w-3.5 animate-spin' />
+                        ) : (
+                          <Ban className='h-3.5 w-3.5 text-rose-600 dark:text-rose-400' />
+                        )}
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              )
+            })}
           </TableBody>
         </Table>
       )}
+
+      <Dialog open={!!voidTarget} onOpenChange={(o) => { if (!o) { setVoidTarget(null); setVoidReason('') } }}>
+        <DialogContent className='sm:max-w-[480px]'>
+          <DialogHeader>
+            <DialogTitle>Void Payment</DialogTitle>
+          </DialogHeader>
+          <div className='grid gap-4 py-4 text-sm'>
+            <p className='text-muted-foreground'>
+              Voiding the {formatMoney(voidTarget?.amount)} payment of{' '}
+              {formatDate(voidTarget?.paidAt)}. The payment is never deleted —
+              an auditable void with a reason is recorded.
+            </p>
+            <div className='grid gap-2'>
+              <Label>Reason (required)</Label>
+              <Textarea
+                value={voidReason}
+                onChange={(e) => setVoidReason(e.target.value)}
+                placeholder='e.g. Duplicate entry, incorrect amount'
+                aria-label='Void reason'
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant='outline' onClick={() => { setVoidTarget(null); setVoidReason('') }}>
+              Cancel
+            </Button>
+            <Button
+              variant='destructive'
+              onClick={handleVoid}
+              disabled={voidMut.isPending || !voidReason.trim()}
+            >
+              {voidMut.isPending && <Loader2 className='h-4 w-4 animate-spin mr-1' />}
+              Void Payment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

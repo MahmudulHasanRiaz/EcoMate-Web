@@ -13,6 +13,7 @@ import { GeneratePayslipDto } from './dto/generate-payslip.dto';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 import { PermissionsAny } from '../common/decorators/permissions.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('payroll')
 @Roles('superadmin', 'admin', 'manager')
@@ -23,8 +24,14 @@ export class PayrollController {
 
   @Post('salary-structure')
   @PermissionsAny('manage_payroll')
-  setSalaryStructure(@Body() dto: SetSalaryStructureDto) {
-    return this.payrollService.setSalaryStructure(dto);
+  setSalaryStructure(
+    @Body() dto: SetSalaryStructureDto,
+    @CurrentUser() user?: any,
+  ) {
+    return this.payrollService.setSalaryStructure(
+      dto,
+      user?.userId ?? user?.id,
+    );
   }
 
   @Get('salary-structure/history/:employeeId')
@@ -83,7 +90,12 @@ export class PayrollController {
   setPayslipStatus(
     @Param('id') id: string,
     @Body() dto: { status: 'reviewed' | 'approved' | 'cancelled' },
+    @CurrentUser() user?: any,
   ) {
-    return this.payrollService.setStatus(id, dto.status);
+    return this.payrollService.setStatus(
+      id,
+      dto.status,
+      user?.userId ?? user?.id,
+    );
   }
 }

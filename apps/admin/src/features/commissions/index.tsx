@@ -12,6 +12,7 @@ import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useCommissionRulesQuery, useSetRuleActiveMutation, useDeleteRuleMutation } from './hooks'
 import { RuleDialog } from './components/rule-dialog'
+import { EarningsTable } from './components/earnings-table'
 import type { CommissionRule, CommissionAmountType } from './api'
 
 const AMOUNT_TYPE_BADGE: Record<CommissionAmountType, string> = {
@@ -119,6 +120,8 @@ export function CommissionsPage() {
             )}
           </CardContent>
         </Card>
+
+        <EarningsTable />
       </Main>
 
       <ConfirmDialog

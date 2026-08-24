@@ -27,13 +27,45 @@ export interface CommissionEarningRow {
   orderId: string
   amount: number
   status: 'approved'
+  payslipId?: string | null
   createdAt: string
-  order: { id: string; displayId?: string | null } | null
+  employee?: { id: string; employeeId: string } | null
+  rule?: {
+    id: string
+    amountType: CommissionAmountType
+    amount: number
+  } | null
+  order: { id: string; displayId?: string | null; total?: number | null } | null
+  reversals?: {
+    id: string
+    amount: number
+    reason: string
+    reversedAt?: string | null
+    reversedById?: string | null
+  }[]
+}
+
+export interface CommissionEarningsTotals {
+  totalCommission: number
+  totalReversed: number
+  netPayable: number
 }
 
 export interface CommissionListResponse<T> {
   data: T[]
-  meta: { total: number; page: number; perPage: number; totalPages: number }
+  meta: {
+    total: number
+    page: number
+    perPage: number
+    totalPages: number
+    totals?: CommissionEarningsTotals
+  }
+}
+
+export interface ReverseEarningDto {
+  orderId?: string
+  reason: string
+  refundedAmount?: number
 }
 
 export interface CreateCommissionRuleDto {
@@ -58,6 +90,17 @@ export const commissionsApi = {
     apiClient.post<CommissionRule>(`/hr/commissions/rules/${id}/active`, { isActive }),
   deleteRule: (id: string) =>
     apiClient.delete(`/hr/commissions/rules/${id}`),
-  listEarnings: (params: { employeeId?: string; page?: number; perPage?: number }) =>
-    apiClient.get<CommissionListResponse<CommissionEarningRow>>('/hr/commissions/earnings', { params }),
+  listEarnings: (params: {
+    employeeId?: string
+    reversed?: string
+    inPayroll?: string
+    page?: number
+    perPage?: number
+  }) =>
+    apiClient.get<CommissionListResponse<CommissionEarningRow>>(
+      '/hr/commissions/earnings',
+      { params },
+    ),
+  reverseEarning: (id: string, dto: ReverseEarningDto) =>
+    apiClient.post<unknown>(`/hr/commissions/earnings/${id}/reverse`, dto),
 }

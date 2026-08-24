@@ -143,18 +143,20 @@ export function useCreatePaymentMutation(employeeId: string, payslipId: string) 
   })
 }
 
-export function useDeletePaymentMutation(employeeId: string, payslipId: string) {
+export function useVoidPaymentMutation(employeeId: string, payslipId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (paymentId: string) => payrollApi.deletePayment(payslipId, paymentId),
+    mutationFn: ({ paymentId, reason }: { paymentId: string; reason: string }) =>
+      payrollApi.voidPayment(payslipId, paymentId, reason).then((r) => r.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payroll-payments', payslipId] })
       queryClient.invalidateQueries({ queryKey: ['payslip', payslipId] })
       queryClient.invalidateQueries({ queryKey: ['payslips', employeeId] })
-      toast.success('Payment reversed')
+      queryClient.invalidateQueries({ queryKey: ['payroll-payslips'] })
+      toast.success('Payment voided')
     },
     onError: (e: any) =>
-      toast.error(e.response?.data?.message || 'Error reversing payment'),
+      toast.error(e.response?.data?.message || 'Error voiding payment'),
   })
 }
 

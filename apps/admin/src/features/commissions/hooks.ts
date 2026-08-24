@@ -4,10 +4,15 @@ import {
   commissionsApi,
   type CreateCommissionRuleDto,
   type UpdateCommissionRuleDto,
+  type ReverseEarningDto,
 } from './api'
 
 function invalidateRules(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.invalidateQueries({ queryKey: ['commission-rules'] })
+}
+
+function invalidateEarnings(queryClient: ReturnType<typeof useQueryClient>) {
+  queryClient.invalidateQueries({ queryKey: ['commission-earnings'] })
 }
 
 export function useCommissionRulesQuery({
@@ -75,16 +80,40 @@ export function useDeleteRuleMutation() {
 
 export function useCommissionEarningsQuery({
   employeeId,
-  page,
+  reversed,
+  inPayroll,
+  page = 1,
 }: {
   employeeId?: string
+  reversed?: string
+  inPayroll?: string
   page: number
 }) {
   return useQuery({
-    queryKey: ['commission-earnings', employeeId, page],
+    queryKey: ['commission-earnings', employeeId, reversed, inPayroll, page],
     queryFn: () =>
       commissionsApi
-        .listEarnings({ employeeId, page, perPage: 20 })
+        .listEarnings({
+          employeeId,
+          reversed,
+          inPayroll,
+          page,
+          perPage: 20,
+        })
         .then((r) => r.data),
+  })
+}
+
+export function useReverseEarningMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, dto }: { id: string; dto: ReverseEarningDto }) =>
+      commissionsApi.reverseEarning(id, dto).then((r) => r.data),
+    onSuccess: () => {
+      invalidateEarnings(queryClient)
+      toast.success('Commission reversal recorded')
+    },
+    onError: (e: any) =>
+      toast.error(e.response?.data?.message || 'Error reversing commission'),
   })
 }

@@ -357,6 +357,9 @@ describe('OrdersService', () => {
           provide: CommissionsService,
           useValue: {
             processOrderCommissions: jest.fn().mockResolvedValue(0),
+            reverseForOrder: jest
+              .fn()
+              .mockResolvedValue({ reversed: 0, already: 0 }),
           },
         },
       ],
@@ -2388,6 +2391,69 @@ describe('OrdersService', () => {
       expect(capture.mock.calls[0][0].payload.value).toBe(-2050);
     });
 
+    it('reverses approved commissions when the order is Cancelled (G-01 hook)', async () => {
+      const cancelledStatus = {
+        id: 'status-cancelled',
+        name: 'Cancelled',
+        isInitial: false,
+        nextStatuses: [],
+      };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        cancelledStatus,
+      );
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        statusId: 'status-cancelled',
+        status: cancelledStatus,
+      });
+      (prisma.systemSetting.findUnique as jest.Mock).mockResolvedValue({
+        key: 'tracking_refund_enabled',
+        value: 'false',
+      });
+      (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+      (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+
+      await service.updateStatus(
+        'order-id-1',
+        { statusId: 'status-cancelled', note: 'x' },
+        userId,
+      );
+
+      const commissions = module.get<CommissionsService>(CommissionsService);
+      expect(commissions.reverseForOrder).toHaveBeenCalledWith(
+        'order-id-1',
+        undefined,
+        'Order cancelled',
+      );
+    });
+
+    it('does NOT reverse commissions on a Confirmed transition (no-op for confirm path)', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        mockConfirmedStatus,
+      );
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        statusId: 'status-confirmed',
+        status: mockConfirmedStatus,
+      });
+      (prisma.systemSetting.findUnique as jest.Mock).mockResolvedValue(
+        null,
+      );
+      (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+      (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+
+      await service.updateStatus(
+        'order-id-1',
+        { statusId: 'status-confirmed' },
+        userId,
+      );
+
+      const commissions = module.get<CommissionsService>(CommissionsService);
+      expect(commissions.reverseForOrder).not.toHaveBeenCalled();
+    });
+
     it('blocks automated actors (system) from marking an order Returned', async () => {
       const returnPendingOrder = {
         ...mockOrder,
@@ -3209,6 +3275,12 @@ await service.bulkAssign(['order-1', 'trashed-1'], 'staff-1');
           orderId: 'order-id-1',
           referencePrefix: 'cancel',
         }),
+      );
+      const commissions = module.get<CommissionsService>(CommissionsService);
+      expect(commissions.reverseForOrder).toHaveBeenCalledWith(
+        'order-id-1',
+        undefined,
+        'Order cancelled',
       );
       expect((result as any).status.name).toBe('Cancelled');
       expect(out.data.statusId).toBe('status-cancelled');

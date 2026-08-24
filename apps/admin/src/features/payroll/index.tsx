@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { DataTablePagination } from '@/components/data-table-pagination'
 import { payrollApi, type PayslipResponse } from './api'
+import { PayrollSummaryBar } from './components/payroll-summary-bar'
 
 const statusVariant: Record<string, 'secondary' | 'default' | 'outline' | 'destructive'> = {
   draft: 'secondary',
@@ -70,7 +71,9 @@ export function Payroll() {
         {isLoading ? (
           <div className='flex justify-center py-12'><Loader2 className='animate-spin h-8 w-8 text-muted-foreground' /></div>
         ) : (
-          <Card>
+          <>
+            <PayrollSummaryBar summary={data?.meta?.summary} />
+            <Card>
             <CardHeader>
               <div className='flex flex-wrap items-center justify-between gap-4'>
                 <div>
@@ -148,6 +151,7 @@ export function Payroll() {
               {meta && <DataTablePagination page={meta.page} totalPages={meta.totalPages} total={meta.total} onPageChange={setPage} />}
             </CardContent>
           </Card>
+          </>
         )}
       </Main>
     </>

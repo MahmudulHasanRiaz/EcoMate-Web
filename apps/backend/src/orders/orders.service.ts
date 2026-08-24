@@ -2750,6 +2750,25 @@ export class OrdersService {
       }
     }
 
+    // Commission reversal hook (G-01, decision D1): an order leaving the
+    // pipeline as cancelled/returned reverses any approved earnings earned on
+    // it (full reversal — the order is gone). Resilient — never breaks the
+    // order update on failure.
+    if (['Cancelled', 'Returned'].includes(updated.status.name)) {
+      try {
+        await this.commissionsService.reverseForOrder(
+          updated.id,
+          undefined,
+          `Order ${updated.status.name.toLowerCase()}`,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `Commission reversal hook failed for ${updated.status.name} order ${updated.id}:`,
+          err,
+        );
+      }
+    }
+
     return updated;
   }
 
@@ -3254,6 +3273,26 @@ export class OrdersService {
       });
     }
 
+    // Commission reversal hook (G-01): bulk-cancelled / bulk-returned orders
+    // reverse approved earnings. Resilient — never breaks the bulk operation.
+    if (['Cancelled', 'Returned'].includes(targetStatus.name)) {
+      const reason = `Order ${targetStatus.name.toLowerCase()}`;
+      try {
+        for (const reversedId of validIds) {
+          await this.commissionsService.reverseForOrder(
+            reversedId,
+            undefined,
+            reason,
+          );
+        }
+      } catch (err) {
+        this.logger.warn(
+          `Commission reversal hook failed for bulk ${targetStatus.name} change:`,
+          err,
+        );
+      }
+    }
+
     return {
       updated: validIds.length,
       skipped: failedDetails.length,
@@ -3518,6 +3557,21 @@ export class OrdersService {
       },
     });
 
+    // Commission reversal hook (G-01): customer cancellation reverses approved
+    // earnings on the order. Resilient — never breaks the cancel flow.
+    try {
+      await this.commissionsService.reverseForOrder(
+        orderId,
+        undefined,
+        'Order cancelled',
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Commission reversal hook failed for customer-cancelled order ${orderId}:`,
+        err,
+      );
+    }
+
     return updated;
   }
 
@@ -3614,7 +3668,7 @@ export class OrdersService {
     newStatus: string,
     performedBy?: string,
   ) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
         include: {
@@ -3669,6 +3723,26 @@ export class OrdersService {
 
       return { success: true, from: currentStatus, to: newStatus };
     });
+
+    // Commission reversal hook (G-01): a transition into cancelled/returned
+    // reverses approved earnings on the order. Resilient — never breaks the
+    // transition result.
+    if (['Cancelled', 'Returned'].includes(newStatus)) {
+      try {
+        await this.commissionsService.reverseForOrder(
+          orderId,
+          undefined,
+          `Order ${newStatus.toLowerCase()}`,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `Commission reversal hook failed on transition to ${newStatus} for ${orderId}:`,
+          err,
+        );
+      }
+    }
+
+    return result;
   }
 
   private async executeTransitionSideEffects(

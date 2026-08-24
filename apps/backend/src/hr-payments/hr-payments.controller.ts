@@ -2,7 +2,6 @@ import {
   Controller,
   Get,
   Post,
-  Delete,
   Body,
   Param,
 } from '@nestjs/common';
@@ -12,6 +11,7 @@ import { PermissionsAny } from '../common/decorators/permissions.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { HrPaymentsService } from './hr-payments.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import { VoidPaymentDto } from './dto/void-payment.dto';
 
 @Controller('payroll')
 @Roles('superadmin', 'admin', 'manager')
@@ -37,15 +37,18 @@ export class HrPaymentsController {
     return this.hrPaymentsService.findPayments(id);
   }
 
-  @Delete('payslips/:id/payments/:paymentId')
-  deletePayment(
+  // G-20: void (auditable) replaces hard DELETE. reason is required.
+  @Post('payslips/:id/payments/:paymentId/void')
+  voidPayment(
     @Param('id') id: string,
     @Param('paymentId') paymentId: string,
+    @Body() dto: VoidPaymentDto,
     @CurrentUser() user?: any,
   ) {
-    return this.hrPaymentsService.deletePayment(
+    return this.hrPaymentsService.voidPayment(
       id,
       paymentId,
+      dto.reason,
       user?.userId ?? user?.id,
     );
   }

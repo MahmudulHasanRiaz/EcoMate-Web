@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import { PayslipStatus } from '@prisma/client';
 
 @Injectable()
 export class HrPaymentsService {
@@ -27,8 +28,9 @@ export class HrPaymentsService {
 
     const netPay = Number(payslip.netPay);
 
+    // G-20: only LIVE (non-voided) payments count toward the paid total.
     const agg = await this.prisma.payrollPayment.aggregate({
-      where: { payslipId: dto.payslipId },
+      where: { payslipId: dto.payslipId, voidedAt: null },
       _sum: { amount: true },
     });
     const paidSoFar = Number(agg._sum.amount ?? 0);
@@ -75,46 +77,67 @@ export class HrPaymentsService {
     });
   }
 
-  async deletePayment(payslipId: string, paymentId: string, actorId?: string) {
+  // G-20 / Decision D3: replaces hard DELETE with an auditable void. Original
+  // payment row immutable; voidedAt/voidedById/voidReason recorded. The payslip
+  // status is recomputed from the live (non-voided) payment sum, so voiding a
+  // full payment downgrades paid → partially_paid (or → approved at zero).
+  async voidPayment(
+    payslipId: string,
+    paymentId: string,
+    reason: string,
+    actorId?: string,
+  ) {
+    if (!reason?.trim()) {
+      throw new BadRequestException('reason is required to void a payment');
+    }
+
     const payslip = await this.prisma.payslip.findUnique({
       where: { id: payslipId },
     });
     if (!payslip)
       throw new NotFoundException(`Payslip with ID ${payslipId} not found`);
 
-    // Decision #2 (§5.2): payments may be removed only while the payslip is
-    // still pre-final (draft/reviewed); once approved/paid it is a locked
-    // accounting record — corrections go on a later period. We also allow it
-    // while partially paid so a mistaken partial can be reversed before full
-    // payment lands.
-    if (!['draft', 'reviewed', 'partially_paid'].includes(payslip.status))
-      throw new BadRequestException(
-        'Payments can only be removed before the payslip is fully paid',
-      );
-
     const payment = await this.prisma.payrollPayment.findUnique({
       where: { id: paymentId },
     });
-    if (!payment)
+    if (!payment || payment.payslipId !== payslipId)
       throw new NotFoundException(`Payment with ID ${paymentId} not found`);
 
+    if (payment.voidedAt)
+      throw new BadRequestException('Payment is already voided');
+
     return this.prisma.$transaction(async (tx) => {
-      await tx.payrollPayment.delete({ where: { id: paymentId } });
+      const voided = await tx.payrollPayment.update({
+        where: { id: paymentId },
+        data: {
+          voidedAt: new Date(),
+          voidedById: actorId ?? null,
+          voidReason: reason.trim(),
+        },
+      });
 
       const agg = await tx.payrollPayment.aggregate({
-        where: { payslipId },
+        where: { payslipId, voidedAt: null },
         _sum: { amount: true },
       });
-      const remaining = Number(agg._sum.amount ?? 0);
-      const newStatus =
-        remaining >= Number(payslip.netPay) ? 'paid' : 'partially_paid';
+      const totalValid = Number(agg._sum.amount ?? 0);
+      const netPay = Number(payslip.netPay);
+
+      let data: { status: PayslipStatus; paidAt: Date | null };
+      if (totalValid >= netPay) {
+        data = { status: 'paid', paidAt: new Date() };
+      } else if (totalValid > 0) {
+        data = { status: 'partially_paid', paidAt: null };
+      } else {
+        data = { status: 'approved', paidAt: null };
+      }
 
       const updatedPayslip = await tx.payslip.update({
         where: { id: payslipId },
-        data: newStatus === 'paid' ? { status: 'paid' } : { status: 'partially_paid' },
+        data,
       });
 
-      return { payment, payslip: updatedPayslip };
+      return { payment: voided, payslip: updatedPayslip };
     });
   }
 }

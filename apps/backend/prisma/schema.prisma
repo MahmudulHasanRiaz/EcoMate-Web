@@ -2097,6 +2097,8 @@ model CommissionEarning {
   payslipId  String?
   createdAt  DateTime     @default(now())
 
+  reversals CommissionReversal[]
+
   @@unique([orderId, ruleId])
   @@index([employeeId, createdAt])
 }
@@ -2153,6 +2155,9 @@ model PayrollPayment {
   referenceNo String?
   note        String?
   recordedById String?
+  voidedAt    DateTime?
+  voidedById  String?
+  voidReason  String?
   createdAt   DateTime @default(now())
 
   @@index([payslipId])

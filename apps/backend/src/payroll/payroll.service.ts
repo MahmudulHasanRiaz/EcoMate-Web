@@ -20,7 +20,7 @@ export class PayrollService {
     return `${y}-${mm}`;
   }
 
-  async setSalaryStructure(dto: SetSalaryStructureDto) {
+  async setSalaryStructure(dto: SetSalaryStructureDto, actorId?: string) {
     const employee = await this.prisma.employee.findUnique({
       where: { id: dto.employeeId },
     });
@@ -89,6 +89,7 @@ export class PayrollService {
           effectiveFrom,
           effectiveTo: null,
           isActive: true,
+          createdById: actorId ?? null,
         },
       });
 
@@ -226,10 +227,25 @@ export class PayrollService {
       ],
     };
 
-    const [approvedEarnings, approvedDeductions] = await Promise.all([
-      this.prisma.employeeEarning.findMany({ where: ledgerWhere }),
-      this.prisma.employeeDeduction.findMany({ where: ledgerWhere }),
-    ]);
+    const [approvedEarnings, approvedDeductions, commissionEarnings] =
+      await Promise.all([
+        this.prisma.employeeEarning.findMany({ where: ledgerWhere }),
+        this.prisma.employeeDeduction.findMany({ where: ledgerWhere }),
+        // Decision #2 (§G-02): only approved, NOT-yet-payslipped, NOT-reversed
+        // commission earnings feed the payslip as distinct 'Commission' items.
+        // payslipId is set inside the create tx (snapshot lock) so earnings
+        // already claimed by an earlier payslip are never double-included.
+        this.prisma.commissionEarning.findMany({
+          where: {
+            employeeId,
+            status: LedgerStatus.approved,
+            payslipId: null,
+            createdAt: { gte: periodStart, lte: periodEnd },
+            reversals: { none: {} },
+          },
+          select: { id: true, amount: true },
+        }),
+      ]);
 
     const ledgerEarningItems = approvedEarnings.map((e) => ({
       type: 'earnings' as const,
@@ -241,10 +257,16 @@ export class PayrollService {
       label: d.reason || d.type,
       amount: Number(d.amount),
     }));
+    const commissionItems = commissionEarnings.map((c) => ({
+      type: 'earnings' as const,
+      label: 'Commission',
+      amount: Number(c.amount),
+    }));
 
     const grossEarnings =
       proratedEarnings.reduce((s, e) => s + e.amount, 0) +
-      ledgerEarningItems.reduce((s, e) => s + e.amount, 0);
+      ledgerEarningItems.reduce((s, e) => s + e.amount, 0) +
+      commissionItems.reduce((s, e) => s + e.amount, 0);
     const totalDeductions =
       structureDeductions.reduce((s, d) => s + d.amount, 0) +
       ledgerDeductionItems.reduce((s, d) => s + d.amount, 0);
@@ -259,6 +281,7 @@ export class PayrollService {
       })),
       ...ledgerEarningItems,
       ...ledgerDeductionItems,
+      ...commissionItems,
     ];
 
     return this.prisma.$transaction(async (tx) => {
@@ -292,6 +315,19 @@ export class PayrollService {
         data: items.map((item) => ({ ...item, payslipId: payslip.id })),
       });
 
+      // Snapshot lock (Decision #2): claim every commission earning that fed
+      // this payslip. Guarded by `payslipId: null` so a concurrent generation
+      // can never double-claim a row; only the winner marks it.
+      if (commissionEarnings.length > 0) {
+        await tx.commissionEarning.updateMany({
+          where: {
+            id: { in: commissionEarnings.map((c) => c.id) },
+            payslipId: null,
+          },
+          data: { payslipId: payslip.id },
+        });
+      }
+
       return tx.payslip.findUnique({
         where: { id: payslip.id },
         include: { items: true, employee: true },
@@ -310,7 +346,7 @@ export class PayrollService {
     const where: any = {};
     if (periodKey) where.periodKey = periodKey;
     if (employeeId) where.employeeId = employeeId;
-    const [data, total] = await Promise.all([
+    const [data, total, summary] = await Promise.all([
       this.prisma.payslip.findMany({
         skip: (page - 1) * perPage,
         take: perPage,
@@ -327,11 +363,68 @@ export class PayrollService {
         },
       }),
       this.prisma.payslip.count({ where }),
+      this.buildPayslipSummary(where),
     ]);
 
     return {
       data,
-      meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) },
+      meta: {
+        total,
+        page,
+        perPage,
+        totalPages: Math.ceil(total / perPage),
+        summary,
+      },
+    };
+  }
+
+  // Decision #2 / G-23: the list meta carries financial summary for the current
+  // filter (periodKey/employee), computed over the FULL filtered set (not the
+  // page) so admin totals are filter-accurate. All plain aggregates — cheap.
+  private async buildPayslipSummary(where: any) {
+    const [empRows, earnAgg, deductAgg, netAgg, commAgg, payAgg] =
+      await Promise.all([
+        this.prisma.payslip.groupBy({
+          by: ['employeeId'],
+          where,
+        }),
+        this.prisma.payslip.aggregate({
+          where,
+          _sum: { totalEarnings: true },
+        }),
+        this.prisma.payslip.aggregate({
+          where,
+          _sum: { totalDeductions: true },
+        }),
+        this.prisma.payslip.aggregate({ where, _sum: { netPay: true } }),
+        // Commission is tracked as a distinct PayslipItem line labelled
+        // 'Commission' (see generatePayslip) — sum it across the filtered set.
+        this.prisma.payslipItem.aggregate({
+          where: { label: 'Commission', payslip: where },
+          _sum: { amount: true },
+        }),
+        // Only live (non-voided) payments count toward paid totals.
+        this.prisma.payrollPayment.aggregate({
+          where: { voidedAt: null, payslip: where },
+          _sum: { amount: true },
+        }),
+      ]);
+
+    const totalEarnings = Math.round(Number(earnAgg._sum.totalEarnings ?? 0) * 100) / 100;
+    const totalDeductions = Math.round(Number(deductAgg._sum.totalDeductions ?? 0) * 100) / 100;
+    const netPay = Math.round(Number(netAgg._sum.netPay ?? 0) * 100) / 100;
+    const totalCommission = Math.round(Number(commAgg._sum.amount ?? 0) * 100) / 100;
+    const totalPaid = Math.round(Number(payAgg._sum.amount ?? 0) * 100) / 100;
+    const outstanding = Math.round((netPay - totalPaid) * 100) / 100;
+
+    return {
+      employeeCount: empRows.length,
+      totalEarnings,
+      totalDeductions,
+      totalCommission,
+      netPay,
+      totalPaid,
+      outstanding,
     };
   }
 
@@ -374,7 +467,11 @@ export class PayrollService {
     cancelled: ['draft', 'reviewed'],
   };
 
-  async setStatus(id: string, status: 'reviewed' | 'approved' | 'cancelled') {
+  async setStatus(
+    id: string,
+    status: 'reviewed' | 'approved' | 'cancelled',
+    actorId?: string,
+  ) {
     const payslip = await this.prisma.payslip.findUnique({ where: { id } });
     if (!payslip)
       throw new NotFoundException(`Payslip with ID ${id} not found`);
@@ -387,10 +484,21 @@ export class PayrollService {
         `Invalid transition from "${payslip.status}" to "${status}"`,
       );
 
-    const data: { status: PayslipStatus; reviewedAt?: Date; approvedAt?: Date } =
-      { status };
-    if (status === 'reviewed') data.reviewedAt = new Date();
-    if (status === 'approved') data.approvedAt = new Date();
+    const data: {
+      status: PayslipStatus;
+      reviewedAt?: Date;
+      approvedAt?: Date;
+      reviewedById?: string | null;
+      approvedById?: string | null;
+    } = { status };
+    if (status === 'reviewed') {
+      data.reviewedAt = new Date();
+      data.reviewedById = actorId ?? null;
+    }
+    if (status === 'approved') {
+      data.approvedAt = new Date();
+      data.approvedById = actorId ?? null;
+    }
 
     return this.prisma.payslip.update({
       where: { id },

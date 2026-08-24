@@ -80,13 +80,32 @@ export interface PayrollPayment {
   method: string | null
   referenceNo: string | null
   note: string | null
+  voidedAt: string | null
+  voidedById: string | null
+  voidReason: string | null
 }
 
 export type PaymentMethod = 'Cash' | 'Bank' | 'Check' | 'Mobile'
 
+export interface PayslipListSummary {
+  employeeCount: number
+  totalEarnings: number
+  totalDeductions: number
+  totalCommission: number
+  netPay: number
+  totalPaid: number
+  outstanding: number
+}
+
 interface PaginatedResponse<T> {
   data: T[]
-  meta: { total: number; page: number; perPage: number; totalPages: number }
+  meta: {
+    total: number
+    page: number
+    perPage: number
+    totalPages: number
+    summary?: PayslipListSummary
+  }
 }
 
 export interface GeneratePayslipDto {
@@ -140,6 +159,9 @@ export const payrollApi = {
   createPayment: (payslipId: string, data: CreatePaymentDto) =>
     apiClient.post<PaymentResult>(`/payroll/payslips/${payslipId}/payments`, data),
 
-  deletePayment: (payslipId: string, paymentId: string) =>
-    apiClient.delete(`/payroll/payslips/${payslipId}/payments/${paymentId}`),
+  voidPayment: (payslipId: string, paymentId: string, reason: string) =>
+    apiClient.post<PaymentResult>(
+      `/payroll/payslips/${payslipId}/payments/${paymentId}/void`,
+      { reason },
+    ),
 }

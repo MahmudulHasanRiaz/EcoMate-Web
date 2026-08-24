@@ -16,6 +16,7 @@ import { CommissionsService } from './commissions.service';
 import { CreateCommissionRuleDto } from './dto/create-commission-rule.dto';
 import { UpdateCommissionRuleDto } from './dto/update-commission-rule.dto';
 import { SetCommissionRuleActiveDto } from './dto/update-commission-rule.dto';
+import { ReverseEarningDto } from './dto/reverse-earning.dto';
 
 @Controller('hr')
 @Roles('superadmin', 'admin', 'manager')
@@ -67,13 +68,28 @@ export class CommissionsController {
   @Get('commissions/earnings')
   listEarnings(
     @Query('employeeId') employeeId?: string,
+    @Query('reversed') reversed?: string,
+    @Query('inPayroll') inPayroll?: string,
     @Query('page') page?: string,
     @Query('perPage') perPage?: string,
   ) {
     return this.commissionsService.listEarnings(
-      { employeeId },
+      { employeeId, reversed, inPayroll },
       page ? parseInt(page, 10) : 1,
       perPage ? parseInt(perPage, 10) : 20,
+    );
+  }
+
+  @Post('commissions/earnings/:id/reverse')
+  reverseEarning(
+    @Param('id') id: string,
+    @Body() dto: ReverseEarningDto,
+    @CurrentUser() user?: any,
+  ) {
+    return this.commissionsService.reverseEarning(
+      id,
+      dto,
+      user?.userId ?? user?.id,
     );
   }
 }

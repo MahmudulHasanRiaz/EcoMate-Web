@@ -106,15 +106,24 @@ describe('PayrollService', () => {
         paidAt: new Date(),
       }),
       count: jest.fn().mockResolvedValue(1),
+      aggregate: jest.fn().mockResolvedValue({
+        _sum: { totalEarnings: null, totalDeductions: null, netPay: null },
+      }),
+      groupBy: jest.fn().mockResolvedValue([]),
     },
     payslipItem: {
       createMany: jest.fn().mockResolvedValue({ count: 3 }),
+      aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }),
     },
     employeeEarning: {
       findMany: jest.fn().mockResolvedValue([]),
     },
     employeeDeduction: {
       findMany: jest.fn().mockResolvedValue([]),
+    },
+    commissionEarning: {
+      findMany: jest.fn().mockResolvedValue([]),
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     payrollPayment: {
       findMany: jest.fn().mockResolvedValue([]),
@@ -163,8 +172,17 @@ describe('PayrollService', () => {
     prismaMock.payslipItem.createMany.mockResolvedValue({ count: 3 });
     prismaMock.employeeEarning.findMany.mockResolvedValue([]);
     prismaMock.employeeDeduction.findMany.mockResolvedValue([]);
+    prismaMock.commissionEarning.findMany.mockResolvedValue([]);
+    prismaMock.commissionEarning.updateMany.mockResolvedValue({ count: 0 });
     prismaMock.payrollPayment.findMany.mockResolvedValue([]);
     prismaMock.payrollPayment.aggregate.mockResolvedValue({
+      _sum: { amount: null },
+    });
+    prismaMock.payslip.aggregate.mockResolvedValue({
+      _sum: { totalEarnings: null, totalDeductions: null, netPay: null },
+    });
+    prismaMock.payslip.groupBy.mockResolvedValue([]);
+    prismaMock.payslipItem.aggregate.mockResolvedValue({
       _sum: { amount: null },
     });
   });
@@ -811,6 +829,209 @@ describe('PayrollService', () => {
       await expect(service.getSummary('ghost')).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('generatePayslip — commission integration (decision D2)', () => {
+    const txFor = (createResult = { id: 'ps-com' }) => ({
+      payslip: {
+        create: jest.fn().mockReturnValue(createResult),
+        findUnique: jest.fn().mockResolvedValue({
+          ...mockPayslip,
+          status: 'draft',
+          periodKey: '2025-06',
+        }),
+      },
+      payslipItem: { createMany: jest.fn().mockResolvedValue({ count: 10 }) },
+      commissionEarning: { updateMany: jest.fn().mockResolvedValue({ count: 2 }) },
+    });
+
+    it('adds approved, un-payslipped, non-reversed commission as a distinct item and claims it', async () => {
+      jest.spyOn(prisma.commissionEarning, 'findMany').mockResolvedValue([
+        { id: 'com-1', amount: '500' },
+        { id: 'com-2', amount: '250' },
+      ]);
+
+      const tx = txFor();
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb: any) =>
+        cb(tx),
+      );
+
+      await service.generatePayslip(
+        'emp-1',
+        new Date('2025-06-01'),
+        new Date('2025-06-30'),
+      );
+
+      // Each earning becomes a distinct 'Commission' earnings item.
+      const items = (tx.payslipItem.createMany as jest.Mock).mock.calls[0][0]
+        .data;
+      const commissionItems = items.filter(
+        (i: any) => i.label === 'Commission',
+      );
+      expect(commissionItems).toHaveLength(2);
+      expect(commissionItems.map((i: any) => i.amount)).toEqual([500, 250]);
+
+      // The payslip total includes the commission (+50000 structure earnings).
+      const createData = (tx.payslip.create as jest.Mock).mock.calls[0][0].data;
+      expect(createData.totalEarnings).toBe(50750);
+      expect(createData.netPay).toBe(47750);
+
+      // Snapshot lock marks the claimed earnings with payslipId.
+      expect(tx.commissionEarning.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['com-1', 'com-2'] }, payslipId: null },
+        data: { payslipId: 'ps-com' },
+      });
+    });
+
+    it('scopes the commission lookup to approved + not-yet-payslipped + NOT reversed', async () => {
+      const findMany = jest
+        .spyOn(prisma.commissionEarning, 'findMany')
+        .mockResolvedValue([]);
+
+      const tx = txFor();
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb: any) =>
+        cb(tx),
+      );
+
+      await service.generatePayslip(
+        'emp-1',
+        new Date('2025-06-01'),
+        new Date('2025-06-30'),
+      );
+
+      const where = findMany.mock.calls[0][0].where;
+      expect(where).toMatchObject({
+        employeeId: 'emp-1',
+        status: 'approved',
+        payslipId: null,
+        createdAt: {
+          gte: new Date('2025-06-01'),
+          lte: new Date('2025-06-30'),
+        },
+      });
+      expect(where.reversals).toEqual({ none: {} });
+    });
+
+    it('skips the updateMany claim when there is no commission (conditional)', async () => {
+      jest.spyOn(prisma.commissionEarning, 'findMany').mockResolvedValue([]);
+      const tx = txFor();
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb: any) =>
+        cb(tx),
+      );
+
+      await service.generatePayslip(
+        'emp-1',
+        new Date('2025-06-01'),
+        new Date('2025-06-30'),
+      );
+
+      expect(tx.commissionEarning.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('findAllPayslips — meta summary (G-23)', () => {
+    it('computes employeeCount, gross, commission, deductions, net, paid and outstanding', async () => {
+      jest
+        .spyOn(prisma.payslip, 'groupBy')
+        .mockResolvedValue([{ employeeId: 'e1' }, { employeeId: 'e2' }]);
+      jest
+        .spyOn(prisma.payslip, 'aggregate')
+        .mockResolvedValueOnce({ _sum: { totalEarnings: 10000 } })
+        .mockResolvedValueOnce({ _sum: { totalDeductions: 2000 } })
+        .mockResolvedValueOnce({ _sum: { netPay: 8000 } });
+      jest
+        .spyOn(prisma.payslipItem, 'aggregate')
+        .mockResolvedValue({ _sum: { amount: 500 } });
+      jest
+        .spyOn(prisma.payrollPayment, 'aggregate')
+        .mockResolvedValue({ _sum: { amount: 3000 } });
+
+      const result = await service.findAllPayslips(1, 10, '2025-06');
+
+      expect(result.meta.summary).toEqual({
+        employeeCount: 2,
+        totalEarnings: 10000,
+        totalDeductions: 2000,
+        totalCommission: 500,
+        netPay: 8000,
+        totalPaid: 3000,
+        outstanding: 5000,
+      });
+    });
+
+    it('scopes the paid total to non-voided payments only', async () => {
+      jest.spyOn(prisma.payslip, 'groupBy').mockResolvedValue([]);
+      jest.spyOn(prisma.payslip, 'aggregate').mockResolvedValue({
+        _sum: { totalEarnings: null, totalDeductions: null, netPay: 8000 },
+      });
+      jest
+        .spyOn(prisma.payrollPayment, 'aggregate')
+        .mockResolvedValue({ _sum: { amount: 1000 } });
+
+      await service.findAllPayslips(1, 10, '2025-06');
+
+      const call = (prisma.payrollPayment.aggregate as jest.Mock).mock
+        .lastCall[0];
+      expect(call.where).toMatchObject({ voidedAt: null });
+      const summary = (await service.findAllPayslips(1, 10)).meta.summary;
+      expect(summary.outstanding).toBe(7000);
+    });
+  });
+
+  describe('setStatus — actor recording (G-05)', () => {
+    it('records reviewedById on draft → reviewed', async () => {
+      jest
+        .spyOn(prisma.payslip, 'findUnique')
+        .mockResolvedValue({ ...mockPayslip, status: 'draft' });
+      const update = jest
+        .spyOn(prisma.payslip, 'update')
+        .mockResolvedValue({ ...mockPayslip, status: 'reviewed' });
+
+      await service.setStatus('ps-1', 'reviewed', 'actor-1');
+
+      const data = update.mock.lastCall![0].data as any;
+      expect(data.reviewedById).toBe('actor-1');
+    });
+
+    it('records approvedById on reviewed → approved', async () => {
+      jest
+        .spyOn(prisma.payslip, 'findUnique')
+        .mockResolvedValue({ ...mockPayslip, status: 'reviewed' });
+      const update = jest
+        .spyOn(prisma.payslip, 'update')
+        .mockResolvedValue({ ...mockPayslip, status: 'approved' });
+
+      await service.setStatus('ps-1', 'approved', 'actor-2');
+
+      const data = update.mock.lastCall![0].data as any;
+      expect(data.approvedById).toBe('actor-2');
+    });
+  });
+
+  describe('setSalaryStructure — actor recording (G-05)', () => {
+    it('records createdById from the actor', async () => {
+      const create = jest
+        .spyOn(prisma.salaryStructure, 'create')
+        .mockResolvedValue(mockSalaryStructure);
+
+      await service.setSalaryStructure(
+        {
+          employeeId: 'emp-1',
+          basicSalary: 30000,
+          houseAllowance: 10000,
+          medicalAllowance: 5000,
+          transportAllowance: 3000,
+          otherAllowance: 2000,
+          taxDeduction: 2000,
+          insuranceDeduction: 1000,
+          effectiveFrom: '2025-06-01',
+        },
+        'actor-3',
+      );
+
+      const data = (create as jest.Mock).mock.lastCall![0].data;
+      expect(data.createdById).toBe('actor-3');
     });
   });
 });
