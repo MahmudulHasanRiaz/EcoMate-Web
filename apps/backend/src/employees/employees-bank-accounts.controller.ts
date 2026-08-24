@@ -61,7 +61,10 @@ export class EmployeeBankAccountsController {
 
   @Delete('bank-accounts/:accountId')
   @PermissionsAny('manage_employees')
-  remove(@Param('accountId') accountId: string) {
-    return this.employeesService.deleteBankAccount(accountId);
+  remove(@Param('accountId') accountId: string, @CurrentUser() user?: any) {
+    return this.employeesService.deleteBankAccount(
+      accountId,
+      user?.userId ?? user?.id,
+    );
   }
 }

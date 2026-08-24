@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, Eye, RotateCcw } from 'lucide-react'
-import { employeesApi, type EmployeeResponse, type EmploymentType, type EmployeeStatus } from './api'
+import { Plus, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, Eye, RotateCcw, ArrowDownAZ, ArrowUpAZ, Search } from 'lucide-react'
+import { employeesApi, type EmployeeResponse, type EmploymentType, type EmployeeStatus, type AttendanceMethod, type EmployeesQuery } from './api'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -17,6 +17,8 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
+import { useDepartmentsQuery } from '@/features/departments/hooks'
+import { useDesignationsQuery } from '@/features/designations/hooks'
 
 const STATUS_BADGE: Record<EmployeeStatus, string> = {
   active: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
@@ -65,8 +67,15 @@ export function Employees() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
-  const [perPage] = useState(10)
+  const [perPage, setPerPage] = useState(10)
   const [statusFilter, setStatusFilter] = useState('')
+  const [departmentFilter, setDepartmentFilter] = useState('')
+  const [designationFilter, setDesignationFilter] = useState('')
+  const [attendanceFilter, setAttendanceFilter] = useState('')
+  const [sortBy, setSortBy] = useState<'createdAt' | 'joiningDate' | 'employeeId' | 'name'>('createdAt')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState('')
   const [editOpen, setEditOpen] = useState(false)
   const [editing, setEditing] = useState<EmployeeResponse | null>(null)
   const [editForm, setEditForm] = useState({
@@ -79,9 +88,29 @@ export function Employees() {
   })
   const [deleteTarget, setDeleteTarget] = useState<EmployeeResponse | null>(null)
 
+  const { data: departments } = useDepartmentsQuery()
+  const { data: designations } = useDesignationsQuery()
+
+  useEffect(() => {
+    const t = setTimeout(() => { setSearch(searchInput); setPage(1) }, 300)
+    return () => clearTimeout(t)
+  }, [searchInput])
+
+  const query: EmployeesQuery = {
+    page,
+    perPage,
+    status: statusFilter || undefined,
+    departmentId: departmentFilter || undefined,
+    designationId: designationFilter || undefined,
+    attendanceMethod: (attendanceFilter || undefined) as AttendanceMethod | undefined,
+    search: search || undefined,
+    sortBy,
+    sortOrder,
+  }
+
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['employees', page, perPage, statusFilter],
-    queryFn: () => employeesApi.list({ page, perPage, status: statusFilter || undefined }).then(r => r.data),
+    queryKey: ['employees', query],
+    queryFn: () => employeesApi.list(query).then(r => r.data),
   })
 
   const updateMut = useMutation({
@@ -155,17 +184,74 @@ export function Employees() {
           </Button>
         </div>
 
-        <div className='flex gap-2'>
-          {['', 'active', 'inactive', 'terminated', 'resigned', 'on_leave', 'suspended'].map(s => (
-            <Button
-              key={s}
-              variant={statusFilter === s ? 'default' : 'outline'}
-              size='sm'
-              onClick={() => { setStatusFilter(s); setPage(1) }}
-            >
-              {s ? STATUS_LABELS[s as EmployeeStatus] : 'All'}
+        <div className='flex flex-col gap-3'>
+          <div className='relative max-w-md'>
+            <Search className='absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground' />
+            <Input
+              className='pl-9'
+              placeholder='Search name, email or employee ID...'
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+            />
+          </div>
+          <div className='flex flex-wrap gap-2'>
+            <Select value={statusFilter || 'all'} onValueChange={(v) => { setStatusFilter(v === 'all' ? '' : v); setPage(1) }}>
+              <SelectTrigger className='w-[140px] h-9'><SelectValue placeholder='Status' /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value='all'>All Status</SelectItem>
+                {Object.entries(STATUS_LABELS).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={departmentFilter || 'all'} onValueChange={(v) => { setDepartmentFilter(v === 'all' ? '' : v); setPage(1) }}>
+              <SelectTrigger className='w-[160px] h-9'><SelectValue placeholder='Department' /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value='all'>All Departments</SelectItem>
+                {(departments?.data || []).map((d: any) => (
+                  <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={designationFilter || 'all'} onValueChange={(v) => { setDesignationFilter(v === 'all' ? '' : v); setPage(1) }}>
+              <SelectTrigger className='w-[160px] h-9'><SelectValue placeholder='Designation' /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value='all'>All Designations</SelectItem>
+                {(designations || []).map((d: any) => (
+                  <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={attendanceFilter || 'all'} onValueChange={(v) => { setAttendanceFilter(v === 'all' ? '' : v); setPage(1) }}>
+              <SelectTrigger className='w-[150px] h-9'><SelectValue placeholder='Attendance' /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value='all'>All Methods</SelectItem>
+                <SelectItem value='APP'>App</SelectItem>
+                <SelectItem value='MACHINE'>Machine</SelectItem>
+                <SelectItem value='NONE'>None</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
+              <SelectTrigger className='w-[150px] h-9'><SelectValue placeholder='Sort by' /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value='createdAt'>Created At</SelectItem>
+                <SelectItem value='joiningDate'>Joining Date</SelectItem>
+                <SelectItem value='employeeId'>Employee ID</SelectItem>
+                <SelectItem value='name'>Name</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button variant='outline' size='sm' className='h-9' onClick={() => { setSortOrder(s => s === 'asc' ? 'desc' : 'asc'); setPage(1) }} title='Toggle sort order'>
+              {sortOrder === 'asc' ? <ArrowUpAZ className='h-4 w-4' /> : <ArrowDownAZ className='h-4 w-4' />}
             </Button>
-          ))}
+            <Select value={String(perPage)} onValueChange={(v) => { setPerPage(Number(v)); setPage(1) }}>
+              <SelectTrigger className='w-[110px] h-9'><SelectValue placeholder='Per page' /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value='10'>10 / page</SelectItem>
+                <SelectItem value='25'>25 / page</SelectItem>
+                <SelectItem value='50'>50 / page</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         <Card>

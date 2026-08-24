@@ -86,6 +86,29 @@ describe('EmployeesService', () => {
     updatedAt: new Date(),
   };
 
+  const mockSalaryStructure = {
+    id: 'ss-1',
+    employeeId: 'emp-1',
+    basicSalary: '50000',
+    houseAllowance: '5000',
+    medicalAllowance: '2000',
+    transportAllowance: '1000',
+    otherAllowance: '0',
+    taxDeduction: '3000',
+    insuranceDeduction: '0',
+    otherDeduction: '0',
+    totalEarnings: '58000',
+    totalDeductions: '3000',
+    netSalary: '55000',
+    effectiveFrom: new Date(),
+    effectiveTo: null,
+    isActive: true,
+    createdById: null,
+    updatedById: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
   beforeEach(async () => {
     const prismaMock = {
       employee: {
@@ -111,6 +134,7 @@ describe('EmployeesService', () => {
       },
       employmentHistory: {
         createMany: jest.fn().mockResolvedValue({ count: 0 }),
+        count: jest.fn().mockResolvedValue(0),
       },
       userProfile: {
         findUnique: jest
@@ -135,11 +159,27 @@ describe('EmployeesService', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         delete: jest.fn().mockResolvedValue(mockBankAccount),
       },
+      salaryStructure: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue(mockSalaryStructure),
+        count: jest.fn().mockResolvedValue(0),
+      },
+      payslip: { count: jest.fn().mockResolvedValue(0) },
+      employeeEarning: { count: jest.fn().mockResolvedValue(0) },
+      employeeDeduction: { count: jest.fn().mockResolvedValue(0) },
+      commissionRule: { count: jest.fn().mockResolvedValue(0) },
+      commissionEarning: { count: jest.fn().mockResolvedValue(0) },
+      leaveRequest: { count: jest.fn().mockResolvedValue(0) },
+      attendanceDay: { count: jest.fn().mockResolvedValue(0) },
+      weeklyOff: { count: jest.fn().mockResolvedValue(0) },
       $transaction: jest.fn(),
     };
     prismaMock.$transaction.mockImplementation(
       async (cb: (tx: typeof prismaMock) => Promise<unknown>) => cb(prismaMock),
     );
+
+    (baPrisma.betterAuthUser.update as jest.Mock).mockClear();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -169,7 +209,11 @@ describe('EmployeesService', () => {
         employmentType: 'full_time',
       };
       const result = await service.create(dto);
-      expect(result).toEqual(mockEmployee);
+      expect(result).toEqual({
+        ...mockEmployee,
+        bankAccounts: [],
+        salaryStructures: [],
+      });
       expect(prisma.employee.create).toHaveBeenCalled();
     });
 
@@ -323,7 +367,7 @@ describe('EmployeesService', () => {
 
   describe('findAll', () => {
     it('should return paginated employees', async () => {
-      const result = await service.findAll(1, 10);
+      const result = await service.findAll({ page: 1, perPage: 10 });
       expect(result.data).toHaveLength(1);
       expect(result.meta.total).toBe(1);
     });
@@ -667,6 +711,10 @@ describe('EmployeesService', () => {
   });
 
   describe('remove', () => {
+    beforeEach(() => {
+      (prisma.employeeBankAccount.count as jest.Mock).mockResolvedValue(0);
+    });
+
     it('should delete an employee', async () => {
       (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
       const result = await service.remove('emp-1');
@@ -1045,6 +1093,534 @@ describe('EmployeesService', () => {
       await expect(service.deleteBankAccount('ghost')).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('findAll — search / filters / sort (G-06)', () => {
+    function lastFindMany() {
+      return (prisma.employee.findMany as jest.Mock).mock.lastCall[0];
+    }
+
+    it('searches name, email and employeeId ILIKE-insensitively', async () => {
+      await service.findAll({ search: 'JoHn' });
+      const call = lastFindMany();
+      expect(call.where.OR).toEqual([
+        { employeeId: { contains: 'JoHn', mode: 'insensitive' } },
+        {
+          betterAuthUser: {
+            is: {
+              OR: [
+                { name: { contains: 'JoHn', mode: 'insensitive' } },
+                { email: { contains: 'JoHn', mode: 'insensitive' } },
+              ],
+            },
+          },
+        },
+      ]);
+    });
+
+    it('applies department / designation / reportingTo / attendanceMethod filters', async () => {
+      await service.findAll({
+        departmentId: 'dept-1',
+        designationId: 'desig-9',
+        reportingToId: 'emp-9',
+        attendanceMethod: 'APP',
+      });
+      const call = lastFindMany();
+      expect(call.where).toMatchObject({
+        departmentId: 'dept-1',
+        designationId: 'desig-9',
+        reportingToId: 'emp-9',
+        attendanceMethod: 'APP',
+      });
+    });
+
+    it('combines search with status and a filter', async () => {
+      await service.findAll({ search: 'jane', status: 'active', departmentId: 'dept-1' });
+      const call = lastFindMany();
+      expect(call.where.status).toBe('active');
+      expect(call.where.departmentId).toBe('dept-1');
+      expect(call.where.OR).toBeDefined();
+    });
+
+    it('defaults to createdAt desc', async () => {
+      await service.findAll({});
+      expect(lastFindMany().orderBy).toEqual({ createdAt: 'desc' });
+    });
+
+    it('sorts by employeeId / joiningDate with the requested order', async () => {
+      await service.findAll({ sortBy: 'employeeId', sortOrder: 'asc' });
+      expect(lastFindMany().orderBy).toEqual({ employeeId: 'asc' });
+      await service.findAll({ sortBy: 'joiningDate', sortOrder: 'desc' });
+      expect(lastFindMany().orderBy).toEqual({ joiningDate: 'desc' });
+    });
+
+    it('sorts by name through the betterAuthUser relation', async () => {
+      await service.findAll({ sortBy: 'name', sortOrder: 'asc' });
+      expect(lastFindMany().orderBy).toEqual({ betterAuthUser: { name: 'asc' } });
+    });
+
+    it('keeps pagination working with the new filters', async () => {
+      await service.findAll({ page: 3, perPage: 50, search: 'x' });
+      const call = lastFindMany();
+      expect(call.skip).toBe(100);
+      expect(call.take).toBe(50);
+      expect(prisma.employee.count).toHaveBeenCalledWith(
+        expect.objectContaining({ where: call.where }),
+      );
+    });
+  });
+
+  describe('create — nested salary structure + bank account (G-15)', () => {
+    it('creates employee, salary structure and bank account atomically', async () => {
+      const result = await service.create(
+        {
+          betterAuthUserId: 'ba-user-test',
+          joiningDate: '2025-01-15',
+          salaryStructure: {
+            basicSalary: 50000,
+            houseAllowance: 5000,
+            medicalAllowance: 2000,
+            transportAllowance: 1000,
+            taxDeduction: 3000,
+          },
+          bankAccount: {
+            bankName: 'DBBL',
+            accountNumber: '9876543210',
+            accountType: 'SAVINGS',
+          },
+        },
+        'actor-42',
+      );
+
+      // net = (50000 + 5000 + 2000 + 1000) - 3000 = 55000
+      expect(prisma.salaryStructure.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            basicSalary: 50000,
+            totalEarnings: 58000,
+            totalDeductions: 3000,
+            netSalary: 55000,
+            isActive: true,
+            createdById: 'actor-42',
+            effectiveFrom: expect.any(Date),
+          }),
+        }),
+      );
+      // mirror salary onto the employee
+      expect(prisma.employee.update).toHaveBeenCalledWith({
+        where: { id: 'emp-1' },
+        data: { salary: 55000 },
+      });
+      // first account is primary + actor recorded
+      const bankCall = (prisma.employeeBankAccount.create as jest.Mock)
+        .mock.lastCall[0];
+      expect(bankCall.data).toMatchObject({
+        bankName: 'DBBL',
+        accountNumber: '9876543210',
+        isPrimary: true,
+        createdById: 'actor-42',
+      });
+      // returned employee carries bank + structures
+      expect(result.bankAccounts).toEqual([mockBankAccount]);
+      expect(result.salaryStructures).toEqual([mockSalaryStructure]);
+    });
+
+    it('creates without nested fields when none are sent', async () => {
+      const result = await service.create({
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+      });
+      expect(prisma.salaryStructure.create).not.toHaveBeenCalled();
+      expect(prisma.employeeBankAccount.create).not.toHaveBeenCalled();
+      expect(result.bankAccounts).toEqual([]);
+      expect(result.salaryStructures).toEqual([]);
+    });
+
+    it('never persists the legacy flat salary/bank fields on the employee row', async () => {
+      await service.create({
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+        salaryStructure: { basicSalary: 1000 },
+        bankAccount: { bankName: 'DBBL', accountNumber: '1' },
+      });
+      const createCall = (prisma.employee.create as jest.Mock).mock.lastCall[0];
+      expect(createCall.data.salary).toBeUndefined();
+      expect(createCall.data.bankAccountNo).toBeUndefined();
+      expect(createCall.data.bankName).toBeUndefined();
+      expect(createCall.data.salaryStructure).toBeUndefined();
+      expect(createCall.data.bankAccount).toBeUndefined();
+    });
+
+    it('defaults effectiveFrom to today when not sent', async () => {
+      const before = new Date();
+      await service.create({
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+        salaryStructure: { basicSalary: 1000 },
+      });
+      const structureCall = (prisma.salaryStructure.create as jest.Mock)
+        .mock.lastCall[0];
+      expect(structureCall.data.effectiveFrom).toBeInstanceOf(Date);
+      expect(structureCall.data.effectiveFrom.getTime()).toBeGreaterThanOrEqual(
+        before.getTime() - 1000,
+      );
+    });
+
+    it('still rejects an unknown department with nested payloads', async () => {
+      jest.spyOn(prisma.department, 'findUnique').mockResolvedValue(null);
+      await expect(
+        service.create({
+          betterAuthUserId: 'ba-user-test',
+          joiningDate: '2025-01-15',
+          departmentId: 'unknown',
+          salaryStructure: { basicSalary: 1000 },
+        }),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.salaryStructure.create).not.toHaveBeenCalled();
+    });
+
+    it('defaults accountName to the BA user name when not sent', async () => {
+      await service.create({
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+        bankAccount: { bankName: 'EBL', accountNumber: '555' },
+      });
+      const bankCall = (prisma.employeeBankAccount.create as jest.Mock)
+        .mock.lastCall[0];
+      expect(bankCall.data.accountName).toBe('John Doe');
+    });
+  });
+
+  describe('update — rehire + on_leave transitions (G-08)', () => {
+    const terminalEmployee = {
+      ...mockEmployee,
+      status: EmployeeStatus.terminated,
+      exitDate: new Date('2025-06-01'),
+      exitReason: 'RIF',
+    };
+
+    it('rehires a terminated employee when joiningDate is provided', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(
+        terminalEmployee,
+      );
+      await service.update(
+        'emp-1',
+        { status: 'active', joiningDate: '2026-08-01' },
+        'actor-1',
+      );
+      expect(prisma.employee.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'active',
+            joiningDate: expect.any(Date),
+            exitDate: null,
+            exitReason: null,
+          }),
+        }),
+      );
+    });
+
+    it('writes rehire history: status terminated→active + employment window', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(
+        terminalEmployee,
+      );
+      await service.update(
+        'emp-1',
+        { status: 'active', joiningDate: '2026-08-01' },
+        'actor-1',
+      );
+      const rows = (
+        prisma.employmentHistory.createMany as jest.Mock
+      ).mock.lastCall[0].data as any[];
+      const status = rows.find((r) => r.field === 'status');
+      expect(status).toMatchObject({
+        oldValue: 'terminated',
+        newValue: 'active',
+        changedById: 'actor-1',
+      });
+      const employment = rows.find((r) => r.field === 'employmentInformation');
+      expect(employment).toBeDefined();
+      const parsed = JSON.parse(employment.newValue as string);
+      expect(parsed).toMatchObject({ rehire: true });
+      expect(parsed.joiningDate).toBe('2026-08-01');
+    });
+
+    it('requires joiningDate to rehire from terminated', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(
+        terminalEmployee,
+      );
+      await expect(
+        service.update('emp-1', { status: 'active' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('requires joiningDate to rehire from resigned', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+        ...mockEmployee,
+        status: EmployeeStatus.resigned,
+        exitDate: new Date('2025-01-01'),
+      });
+      await expect(
+        service.update('emp-1', { status: 'active' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('allows rehire from resigned with joiningDate', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+        ...mockEmployee,
+        status: EmployeeStatus.resigned,
+        exitDate: new Date('2025-01-01'),
+      });
+      await service.update(
+        'emp-1',
+        { status: 'active', joiningDate: '2026-09-01' },
+        'actor-2',
+      );
+      expect(prisma.employee.update).toHaveBeenCalled();
+    });
+
+    it('allows on_leave → terminated with exitDate', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+        ...mockEmployee,
+        status: EmployeeStatus.on_leave,
+      });
+      await service.update('emp-1', {
+        status: 'terminated',
+        exitDate: '2026-01-01',
+      });
+      expect(prisma.employee.update).toHaveBeenCalled();
+    });
+
+    it('allows on_leave → resigned with exitDate', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+        ...mockEmployee,
+        status: EmployeeStatus.on_leave,
+      });
+      await service.update('emp-1', {
+        status: 'resigned',
+        exitDate: '2026-01-01',
+      });
+      expect(prisma.employee.update).toHaveBeenCalled();
+    });
+
+    it('still rejects on_leave → terminated without exitDate', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+        ...mockEmployee,
+        status: EmployeeStatus.on_leave,
+      });
+      await expect(
+        service.update('emp-1', { status: 'terminated' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('remove — financial/history guard (G-07)', () => {
+    beforeEach(() => {
+      (prisma.employeeBankAccount.count as jest.Mock).mockResolvedValue(0);
+    });
+
+    it('deletes a clean employee (no records)', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      const result = await service.remove('emp-1');
+      expect(result).toEqual(mockEmployee);
+      expect(prisma.employee.delete).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'emp-1' } }),
+      );
+    });
+
+    it.each([
+      ['payslip', 'payslip'],
+      ['salaryStructure', 'salaryStructure'],
+      ['employeeEarning', 'employeeEarning'],
+      ['employeeDeduction', 'employeeDeduction'],
+      ['commissionRule', 'commissionRule'],
+      ['commissionEarning', 'commissionEarning'],
+      ['leaveRequest', 'leaveRequest'],
+      ['attendanceDay', 'attendanceDay'],
+      ['bankAccount', 'employeeBankAccount'],
+      ['employmentHistory', 'employmentHistory'],
+      ['weeklyOff', 'weeklyOff'],
+    ])(
+      'refuses to delete when a %s exists',
+      async       (_label, model) => {
+        (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+        (prisma[model as keyof PrismaService].count as jest.Mock).mockResolvedValue(1);
+        await expect(service.remove('emp-1')).rejects.toThrow(ConflictException);
+        await expect(service.remove('emp-1')).rejects.toThrow(
+          /archive instead of deleting/,
+        );
+        expect(prisma.employee.delete).not.toHaveBeenCalled();
+        expect(baPrisma.betterAuthUser.update).not.toHaveBeenCalled();
+      },
+    );
+
+    it('surfaces a FK violation as the archive 409', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.employee.delete as jest.Mock).mockRejectedValue({
+        code: 'P2003',
+      });
+      await expect(service.remove('emp-1')).rejects.toThrow(ConflictException);
+      await expect(service.remove('emp-1')).rejects.toThrow(
+        /archive instead of deleting/,
+      );
+    });
+  });
+
+  describe('updateBankAccount — verification workflow (G-16)', () => {
+    it('records verificationStatus, verificationNote and the actor', async () => {
+      await service.updateBankAccount(
+        'ba-1',
+        {
+          verificationStatus: 'VERIFIED',
+          verificationNote: 'Passport + bank statement verified',
+        } as any,
+        'actor-9',
+      );
+      const updateCall = (prisma.employeeBankAccount.update as jest.Mock)
+        .mock.lastCall[0];
+      expect(updateCall.data).toMatchObject({
+        verificationStatus: 'VERIFIED',
+        verificationNote: 'Passport + bank statement verified',
+        updatedById: 'actor-9',
+      });
+    });
+
+    it('leaves isPrimary untouched when only verifying', async () => {
+      await service.updateBankAccount(
+        'ba-1',
+        { verificationStatus: 'VERIFIED' } as any,
+      );
+      const updateCall = (prisma.employeeBankAccount.update as jest.Mock)
+        .mock.lastCall[0];
+      expect(updateCall.data.isPrimary).toBe(false);
+    });
+  });
+
+  describe('update — personal/employment audit rows (G-19)', () => {
+    it('writes a personalInformation row with changed-field JSON', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await service.update(
+        'emp-1',
+        { dateOfBirth: '1990-04-12', nationality: 'Bangladeshi' },
+        'actor-1',
+      );
+      const rows = (
+        prisma.employmentHistory.createMany as jest.Mock
+      ).mock.lastCall[0].data as any[];
+      const row = rows.find((r) => r.field === 'personalInformation');
+      expect(row).toBeDefined();
+      expect(row.changedById).toBe('actor-1');
+      expect(JSON.parse(row.oldValue)).toEqual({
+        dateOfBirth: null,
+        nationality: null,
+      });
+      expect(JSON.parse(row.newValue)).toEqual({
+        dateOfBirth: '1990-04-12',
+        nationality: 'Bangladeshi',
+      });
+    });
+
+    it('writes an employmentInformation row when exitDate is cleared', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+        ...mockEmployee,
+        exitDate: new Date('2025-06-01'),
+      });
+      await service.update('emp-1', { exitDate: null } as any, 'actor-3');
+      const rows = (
+        prisma.employmentHistory.createMany as jest.Mock
+      ).mock.lastCall[0].data as any[];
+      const row = rows.find((r) => r.field === 'employmentInformation');
+      expect(row).toBeDefined();
+      expect(JSON.parse(row.oldValue)).toEqual({ exitDate: '2025-06-01' });
+      expect(JSON.parse(row.newValue)).toEqual({ exitDate: null });
+    });
+
+    it('does not write personal rows when nothing personal changed', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await service.update('emp-1', { departmentId: 'dept-2' } as any);
+      const rows = (
+        prisma.employmentHistory.createMany as jest.Mock
+      ).mock.lastCall ?? null;
+      if (rows) {
+        const data = rows[0].data as any[];
+        expect(data.some((r) => r.field === 'personalInformation')).toBe(false);
+        expect(data.some((r) => r.field === 'employmentInformation')).toBe(
+          false,
+        );
+      }
+    });
+  });
+
+  describe('bank accounts — audit rows (G-19)', () => {
+    beforeEach(() => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue({
+        id: 'emp-1',
+      });
+    });
+
+    it('writes a bankAccount row on create', async () => {
+      await service.createBankAccount(
+        'emp-1',
+        {
+          bankName: 'DBBL',
+          accountName: 'John Doe',
+          accountNumber: '0987654321',
+          isPrimary: true,
+        },
+        'actor-5',
+      );
+      const rows = (
+        prisma.employmentHistory.createMany as jest.Mock
+      ).mock.lastCall[0].data as any[];
+      const row = rows.find((r) => r.field === 'bankAccount');
+      expect(row).toBeDefined();
+      expect(row.changedById).toBe('actor-5');
+      expect(row.oldValue).toBeNull();
+      expect(JSON.parse(row.newValue)).toMatchObject({
+        bankName: 'DBBL',
+        accountNumber: '0987654321',
+        isPrimary: true,
+      });
+    });
+
+    it('writes a bankAccount row on update with old → new JSON', async () => {
+      await service.updateBankAccount(
+        'ba-1',
+        { branchName: 'Gulshan', verificationStatus: 'VERIFIED' } as any,
+        'actor-6',
+      );
+      const rows = (
+        prisma.employmentHistory.createMany as jest.Mock
+      ).mock.lastCall[0].data as any[];
+      const row = rows.find((r) => r.field === 'bankAccount');
+      expect(row).toBeDefined();
+      expect(JSON.parse(row.oldValue)).toMatchObject({ accountNumber: '1234567890' });
+      expect(JSON.parse(row.newValue)).toMatchObject({
+        branchName: 'Gulshan',
+        verificationStatus: 'VERIFIED',
+      });
+    });
+
+    it('writes a bankAccount row on delete with the removed account', async () => {
+      await service.deleteBankAccount('ba-1', 'actor-7');
+      const rows = (
+        prisma.employmentHistory.createMany as jest.Mock
+      ).mock.lastCall[0].data as any[];
+      const row = rows.find((r) => r.field === 'bankAccount');
+      expect(row).toBeDefined();
+      expect(JSON.parse(row.oldValue)).toMatchObject({ accountNumber: '1234567890' });
+      expect(row.newValue).toBeNull();
+    });
+  });
+
+  describe('findAll — no results shape', () => {
+    it('returns empty arrays for a nonexistent search', async () => {
+      (prisma.employee.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.employee.count as jest.Mock).mockResolvedValue(0);
+      const result = await service.findAll({ search: 'zzzz' });
+      expect(result.data).toEqual([]);
+      expect(result.meta.total).toBe(0);
     });
   });
 });

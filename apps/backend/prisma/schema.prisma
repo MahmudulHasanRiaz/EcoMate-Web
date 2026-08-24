@@ -1877,6 +1877,9 @@ enum EmploymentHistoryField {
   reporting_manager
   employment_type
   weekly_off
+  personalInformation
+  employmentInformation
+  bankAccount
 }
 
 model Department {
@@ -3605,6 +3608,7 @@ model EmployeeBankAccount {
   isPrimary          Boolean                @default(false)
   verificationStatus BankVerificationStatus @default(PENDING)
   notes              String?
+  verificationNote   String?
   createdById        String?
   updatedById        String?
   createdAt          DateTime               @default(now())

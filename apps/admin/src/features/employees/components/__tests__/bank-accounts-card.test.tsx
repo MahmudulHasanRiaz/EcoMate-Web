@@ -129,4 +129,48 @@ describe('BankAccountsCard', () => {
       .element(getByRole('heading', { name: 'Add Bank Account' }))
       .toBeInTheDocument()
   })
+
+  it('edit dialog exposes the verification workflow (G-16)', async () => {
+    const onEdit = vi.fn()
+    const { getByRole, getByText } = await render(
+      <BankAccountsCard
+        accounts={[{ ...baseAccount, id: 'ba-1', verificationStatus: 'PENDING' }]}
+        onAdd={vi.fn()}
+        onEdit={onEdit}
+        onDelete={vi.fn()}
+        onSetPrimary={vi.fn()}
+      />
+    )
+
+    await userEvent.click(getByRole('button', { name: 'Edit' }))
+    await expect.element(getByText(/Mark VERIFIED after validating bank documents/)).toBeInTheDocument()
+
+    const combos = Array.from(document.querySelectorAll('[role="combobox"]'))
+    const statusTrigger = combos.find((c) => c.textContent?.trim() === 'Pending')
+    expect(statusTrigger).toBeDefined()
+    statusTrigger!.click()
+    await vi.waitFor(() => {
+      const option = Array.from(document.querySelectorAll('[role="option"]')).find((o) => o.textContent === 'Verified')
+      expect(option).toBeDefined()
+    })
+    Array.from(document.querySelectorAll('[role="option"]')).find((o) => o.textContent === 'Verified')!.click()
+
+    const noteArea = Array.from(document.querySelectorAll('textarea')).find((t) =>
+      (t.getAttribute('placeholder') || '').includes('bank statement'),
+    )
+    expect(noteArea).toBeDefined()
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')!.set!
+    setter.call(noteArea, 'statement checked')
+    noteArea!.dispatchEvent(new Event('input', { bubbles: true }))
+
+    await userEvent.click(getByRole('button', { name: 'Save Changes' }))
+
+    expect(onEdit).toHaveBeenCalledWith(
+      'ba-1',
+      expect.objectContaining({
+        verificationStatus: 'VERIFIED',
+        verificationNote: 'statement checked',
+      }),
+    )
+  })
 })

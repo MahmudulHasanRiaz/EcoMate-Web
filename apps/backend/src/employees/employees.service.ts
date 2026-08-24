@@ -9,6 +9,7 @@ import {
   AttendanceModeSetting,
   EmployeeStatus,
   Prisma,
+  EmploymentHistoryField,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { baPrisma } from '../better-auth/prisma';
@@ -22,11 +23,106 @@ const TERMINAL_STATUSES: EmployeeStatus[] = ['terminated', 'resigned'];
 const EMPLOYEE_STATUS_TRANSITIONS: Record<EmployeeStatus, EmployeeStatus[]> = {
   active: ['inactive', 'on_leave', 'suspended', 'terminated', 'resigned'],
   inactive: ['active', 'on_leave', 'suspended', 'terminated', 'resigned'],
-  on_leave: ['active', 'inactive', 'suspended'],
+  on_leave: ['terminated', 'resigned', 'active', 'inactive', 'suspended'],
   suspended: ['active', 'on_leave'],
-  terminated: [],
-  resigned: [],
+  terminated: ['active'],
+  resigned: ['active'],
 };
+
+// G-19 audit grouping: personal fields (identity) and employment fields
+// (tenure) that are NOT already covered by the dedicated status / department /
+// designation / reporting_manager / employment_type rows.
+const AUDIT_FIELD_GROUPS: {
+  field: EmploymentHistoryField;
+  keys: string[];
+}[] = [
+  {
+    field: 'personalInformation',
+    keys: [
+      'dateOfBirth',
+      'gender',
+      'nationality',
+      'nidNumber',
+      'presentAddress',
+      'permanentAddress',
+      'emergencyContactName',
+      'emergencyContactPhone',
+      'emergencyContactRelation',
+      'confirmationDate',
+      'exitReason',
+    ],
+  },
+  {
+    field: 'employmentInformation',
+    keys: ['joiningDate', 'exitDate'],
+  },
+];
+
+const AUDIT_KEYS = AUDIT_FIELD_GROUPS.flatMap((g) => g.keys);
+
+const BANK_SNAPSHOT_KEYS = [
+  'bankName',
+  'branchName',
+  'accountName',
+  'accountNumber',
+  'accountType',
+  'routingNumber',
+  'isPrimary',
+  'verificationStatus',
+  'notes',
+  'verificationNote',
+] as const;
+
+// Models whose presence of any row for an employee blocks hard deletion
+// (G-07): the employee must be archived instead.
+const DELETE_GUARD_MODELS = [
+  'payslip',
+  'salaryStructure',
+  'employeeEarning',
+  'employeeDeduction',
+  'commissionRule',
+  'commissionEarning',
+  'leaveRequest',
+  'attendanceDay',
+  'employeeBankAccount',
+  'employmentHistory',
+  'weeklyOff',
+] as const;
+
+function serializeScalar(v: unknown): string | null {
+  if (v == null) return null;
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  return String(v);
+}
+
+function pickRecord(obj: Record<string, unknown>, keys: string[]) {
+  const out: Record<string, unknown> = {};
+  for (const k of keys) {
+    if (k in obj) out[k] = obj[k];
+  }
+  return out;
+}
+
+function bankSnapshot(obj: any): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const k of BANK_SNAPSHOT_KEYS) {
+    if (obj[k] !== undefined) out[k] = obj[k];
+  }
+  return out;
+}
+
+export interface EmployeeListQuery {
+  page?: number;
+  perPage?: number;
+  status?: string;
+  departmentId?: string;
+  designationId?: string;
+  reportingToId?: string;
+  attendanceMethod?: string;
+  search?: string;
+  sortBy?: 'createdAt' | 'joiningDate' | 'employeeId' | 'name';
+  sortOrder?: 'asc' | 'desc';
+}
 
 const EMPLOYEE_DETAIL_INCLUDE: Prisma.EmployeeInclude = {
   department: { select: { id: true, name: true, slug: true } },
@@ -45,28 +141,63 @@ const EMPLOYEE_DETAIL_INCLUDE: Prisma.EmployeeInclude = {
   bankAccounts: {
     orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
   },
+  salaryStructures: {
+    orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }],
+  },
 };
 
 @Injectable()
 export class EmployeesService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll(
-    page = 1,
-    perPage = 20,
-    status?: string,
-    departmentId?: string,
-  ) {
+  async findAll(query: EmployeeListQuery = {}) {
+    const page = query.page ?? 1;
+    const perPage = query.perPage ?? 20;
     const where: any = {};
-    if (status) where.status = status;
-    if (departmentId) where.departmentId = departmentId;
+    if (query.status) where.status = query.status;
+    if (query.departmentId) where.departmentId = query.departmentId;
+    if (query.designationId) where.designationId = query.designationId;
+    if (query.reportingToId) where.reportingToId = query.reportingToId;
+    if (query.attendanceMethod) where.attendanceMethod = query.attendanceMethod;
+    if (query.search) {
+      where.OR = [
+        { employeeId: { contains: query.search, mode: 'insensitive' } },
+        {
+          betterAuthUser: {
+            is: {
+              OR: [
+                { name: { contains: query.search, mode: 'insensitive' } },
+                { email: { contains: query.search, mode: 'insensitive' } },
+              ],
+            },
+          },
+        },
+      ];
+    }
+
+    const sortDir = query.sortOrder === 'asc' ? ('asc' as const) : ('desc' as const);
+    let orderBy: Prisma.EmployeeOrderByWithRelationInput;
+    switch (query.sortBy) {
+      case 'joiningDate':
+        orderBy = { joiningDate: sortDir };
+        break;
+      case 'employeeId':
+        orderBy = { employeeId: sortDir };
+        break;
+      case 'name':
+        orderBy = { betterAuthUser: { name: sortDir } };
+        break;
+      default:
+        orderBy = { createdAt: sortDir };
+        break;
+    }
 
     const [data, total] = await Promise.all([
       this.prisma.employee.findMany({
         where,
         skip: (page - 1) * perPage,
         take: perPage,
-        orderBy: { createdAt: 'desc' },
+        orderBy,
         include: {
           department: { select: { id: true, name: true, slug: true } },
           designation: {
@@ -134,7 +265,7 @@ export class EmployeesService {
     return employee;
   }
 
-  async create(dto: CreateEmployeeDto) {
+  async create(dto: CreateEmployeeDto, actorId?: string) {
     const baUser = await baPrisma.betterAuthUser.findUnique({
       where: { id: dto.betterAuthUserId },
     });
@@ -198,9 +329,6 @@ export class EmployeesService {
             status: dto.status,
             joiningDate: new Date(dto.joiningDate),
             exitDate: dto.exitDate ? new Date(dto.exitDate) : undefined,
-            salary: dto.salary ?? undefined,
-            bankAccountNo: dto.bankAccountNo,
-            bankName: dto.bankName,
             profilePictureUrl: dto.profilePictureUrl,
             notes: dto.notes,
             dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
@@ -236,6 +364,78 @@ export class EmployeesService {
         throw err;
       }
 
+      // G-15 nested salary structure: create it as the active window and mirror
+      // netSalary onto Employee.salary (the payroll mirror contract).
+      let createdStructure: unknown = null;
+      if (dto.salaryStructure) {
+        const { basicSalary } = dto.salaryStructure;
+        const houseAllowance = dto.salaryStructure.houseAllowance ?? 0;
+        const medicalAllowance = dto.salaryStructure.medicalAllowance ?? 0;
+        const transportAllowance = dto.salaryStructure.transportAllowance ?? 0;
+        const otherAllowance = dto.salaryStructure.otherAllowance ?? 0;
+        const taxDeduction = dto.salaryStructure.taxDeduction ?? 0;
+        const insuranceDeduction = dto.salaryStructure.insuranceDeduction ?? 0;
+        const otherDeduction = dto.salaryStructure.otherDeduction ?? 0;
+        const totalEarnings =
+          basicSalary +
+          houseAllowance +
+          medicalAllowance +
+          transportAllowance +
+          otherAllowance;
+        const totalDeductions =
+          taxDeduction + insuranceDeduction + otherDeduction;
+        const netSalary = totalEarnings - totalDeductions;
+        const effectiveFrom = dto.salaryStructure.effectiveFrom
+          ? new Date(dto.salaryStructure.effectiveFrom)
+          : new Date();
+
+        createdStructure = await tx.salaryStructure.create({
+          data: {
+            employeeId: employee.id,
+            basicSalary,
+            houseAllowance,
+            medicalAllowance,
+            transportAllowance,
+            otherAllowance,
+            taxDeduction,
+            insuranceDeduction,
+            otherDeduction,
+            totalEarnings,
+            totalDeductions,
+            netSalary,
+            effectiveFrom,
+            effectiveTo: null,
+            isActive: true,
+            createdById: actorId ?? null,
+          },
+        });
+
+        await tx.employee.update({
+          where: { id: employee.id },
+          data: { salary: netSalary },
+        });
+      }
+
+      // G-15 nested bank account: the first account is primary regardless of
+      // the flag. accountName defaults to the BA user's name when not sent
+      // (the DB column is NOT NULL).
+      let createdBank: unknown = null;
+      if (dto.bankAccount) {
+        const bankData = {
+          employeeId: employee.id,
+          bankName: dto.bankAccount.bankName,
+          branchName: dto.bankAccount.branchName ?? null,
+          accountName: dto.bankAccount.accountName || baUser.name || '',
+          accountNumber: dto.bankAccount.accountNumber,
+          accountType: dto.bankAccount.accountType ?? undefined,
+          routingNumber: dto.bankAccount.routingNumber ?? null,
+          isPrimary: true,
+          verificationStatus: 'PENDING' as const,
+          createdById: actorId ?? null,
+        };
+        createdBank = await tx.employeeBankAccount.create({ data: bankData });
+      }
+
       await baPrisma.betterAuthUser.update({
         where: { id: dto.betterAuthUserId },
         data: { role: 'employee' },
@@ -252,14 +452,42 @@ export class EmployeesService {
         });
       }
 
-      return employee;
+      return {
+        ...employee,
+        bankAccounts: dto.bankAccount ? [createdBank] : [],
+        salaryStructures: dto.salaryStructure ? [createdStructure] : [],
+      } as any;
     });
   }
 
   async update(id: string, dto: UpdateEmployeeDto, actorId?: string) {
     const current = await this.prisma.employee.findUnique({
       where: { id },
-      include: {
+      select: {
+        id: true,
+        status: true,
+        employmentType: true,
+        departmentId: true,
+        designationId: true,
+        accessPresetId: true,
+        reportingToId: true,
+        joiningDate: true,
+        exitDate: true,
+        exitReason: true,
+        confirmationDate: true,
+        dateOfBirth: true,
+        gender: true,
+        nationality: true,
+        nidNumber: true,
+        presentAddress: true,
+        permanentAddress: true,
+        emergencyContactName: true,
+        emergencyContactPhone: true,
+        emergencyContactRelation: true,
+        attendanceMethod: true,
+        salary: true,
+        bankAccountNo: true,
+        bankName: true,
         department: { select: { id: true, name: true } },
         designation: { select: { id: true, name: true } },
         reportingTo: {
@@ -317,11 +545,22 @@ export class EmployeesService {
       if (!newManager) throw new NotFoundException('Employee not found');
     }
 
+    // G-08: rehire = a terminal employee returning to active with a NEW
+    // employment start. Requires joiningDate and clears the previous exit data.
+    const rehire =
+      dto.status === 'active' &&
+      (current.status === 'terminated' || current.status === 'resigned');
+
     if (dto.status && dto.status !== current.status) {
       const allowed = EMPLOYEE_STATUS_TRANSITIONS[current.status] ?? [];
       if (!allowed.includes(dto.status)) {
         throw new BadRequestException(
           `Invalid status transition from ${current.status} to ${dto.status}`,
+        );
+      }
+      if (rehire && !dto.joiningDate) {
+        throw new BadRequestException(
+          `joiningDate is required to rehire a ${current.status} employee.`,
         );
       }
       if (TERMINAL_STATUSES.includes(dto.status) && !dto.exitDate) {
@@ -334,12 +573,7 @@ export class EmployeesService {
     const changedById = actorId ?? null;
     const historyRows: {
       employeeId: string;
-      field:
-        | 'status'
-        | 'department'
-        | 'designation'
-        | 'reporting_manager'
-        | 'employment_type';
+      field: EmploymentHistoryField;
       oldValue: string | null;
       newValue: string | null;
       effectiveFrom: Date;
@@ -421,17 +655,26 @@ export class EmployeesService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      // G-15 did not add nested fields to update; strip them defensively so a
+      // client cannot pass them into the scalar employee update.
+      const updateData: any = { ...dto };
+      delete updateData.salaryStructure;
+      delete updateData.bankAccount;
+      if (dto.joiningDate) updateData.joiningDate = new Date(dto.joiningDate);
+      if (dto.exitDate) updateData.exitDate = new Date(dto.exitDate);
+      if (dto.dateOfBirth) updateData.dateOfBirth = new Date(dto.dateOfBirth);
+      if (dto.confirmationDate) {
+        updateData.confirmationDate = new Date(dto.confirmationDate);
+      }
+      if (rehire) {
+        updateData.joiningDate = new Date(dto.joiningDate!);
+        updateData.exitDate = null;
+        updateData.exitReason = null;
+      }
+
       const employee = await tx.employee.update({
         where: { id },
-        data: {
-          ...dto,
-          joiningDate: dto.joiningDate ? new Date(dto.joiningDate) : undefined,
-          exitDate: dto.exitDate ? new Date(dto.exitDate) : undefined,
-          dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
-          confirmationDate: dto.confirmationDate
-            ? new Date(dto.confirmationDate)
-            : undefined,
-        },
+        data: updateData,
         include: {
           department: { select: { id: true, name: true, slug: true } },
           designation: {
@@ -447,6 +690,50 @@ export class EmployeesService {
         },
       });
 
+      // G-19: audit changed personal + employment detail as structured JSON.
+      // Only fields the DTO actually touches can be "changed" — otherwise an
+      // unspecified joiningDate would appear cleared to null.
+      const oldSnap: Record<string, unknown> = {};
+      const newSnap: Record<string, unknown> = {};
+      for (const k of AUDIT_KEYS) {
+        const oldVal = serializeScalar((current as any)[k]);
+        let newVal: string | null;
+        if (k === 'joiningDate' && rehire) {
+          newVal = dto.joiningDate ? dto.joiningDate.slice(0, 10) : null;
+        } else if (k === 'exitDate' && rehire) {
+          newVal = null;
+        } else if ((dto as any)[k] === undefined) {
+          continue;
+        } else {
+          newVal = serializeScalar((dto as any)[k]);
+        }
+        if (oldVal !== newVal) {
+          oldSnap[k] = oldVal;
+          newSnap[k] = newVal;
+        }
+      }
+      if (Object.keys(newSnap).length > 0) {
+        for (const group of AUDIT_FIELD_GROUPS) {
+          const changedKeys = group.keys.filter((k) => k in newSnap);
+          if (changedKeys.length === 0) continue;
+          let newValue = JSON.stringify(pickRecord(newSnap, changedKeys));
+          if (rehire && group.field === 'employmentInformation') {
+            newValue = JSON.stringify({
+              ...pickRecord(newSnap, changedKeys),
+              rehire: true,
+            });
+          }
+          historyRows.push({
+            employeeId: id,
+            field: group.field,
+            oldValue: JSON.stringify(pickRecord(oldSnap, changedKeys)),
+            newValue,
+            effectiveFrom: new Date(),
+            changedById,
+          });
+        }
+      }
+
       if (historyRows.length > 0) {
         await tx.employmentHistory.createMany({ data: historyRows });
       }
@@ -455,16 +742,48 @@ export class EmployeesService {
     });
   }
 
-  async remove(id: string) {
+  async remove(id: string, actorId?: string) {
+    void actorId; // reserved: employee deletion is not audited in G-19
     const emp = await this.findOne(id);
-    const profile = await this.prisma.userProfile.findUnique({
-      where: { betterAuthUserId: emp.betterAuthUserId },
+
+    const guard = async (tx: Prisma.TransactionClient) => {
+      const flags = await Promise.all(
+        DELETE_GUARD_MODELS.map(async (model) => {
+          const count = await (tx as any)[model].count({
+            where: { employeeId: id },
+          });
+          return count > 0;
+        }),
+      );
+      return flags.some(Boolean);
+    };
+
+    return this.prisma.$transaction(async (tx) => {
+      if (await guard(tx)) {
+        throw new ConflictException(
+          'Employee has financial/history records — archive instead of deleting.',
+        );
+      }
+      const profile = await tx.userProfile.findUnique({
+        where: { betterAuthUserId: emp.betterAuthUserId },
+      });
+      await baPrisma.betterAuthUser.update({
+        where: { id: emp.betterAuthUserId },
+        data: { role: profile?.role ?? 'customer' },
+      });
+      try {
+        return await tx.employee.delete({ where: { id } });
+      } catch (err) {
+        // A FK constraint firing at delete time means the pre-check missed a
+        // related record — treat it as the same archive requirement.
+        if ((err as { code?: string } | null)?.code === 'P2003') {
+          throw new ConflictException(
+            'Employee has financial/history records — archive instead of deleting.',
+          );
+        }
+        throw err;
+      }
     });
-    await baPrisma.betterAuthUser.update({
-      where: { id: emp.betterAuthUserId },
-      data: { role: profile?.role ?? 'customer' },
-    });
-    return this.prisma.employee.delete({ where: { id } });
   }
 
   // ---------- Bank accounts (sub-resource) ----------
@@ -495,21 +814,37 @@ export class EmployeesService {
           data: { isPrimary: false },
         });
       }
-      return tx.employeeBankAccount.create({
-        data: {
-          employeeId,
-          bankName: dto.bankName,
-          branchName: dto.branchName ?? null,
-          accountName: dto.accountName,
-          accountNumber: dto.accountNumber,
-          accountType: dto.accountType ?? undefined,
-          routingNumber: dto.routingNumber ?? null,
-          isPrimary,
-          verificationStatus: dto.verificationStatus ?? undefined,
-          notes: dto.notes ?? null,
-          createdById: actorId ?? null,
-        },
+      const bankData = {
+        bankName: dto.bankName,
+        branchName: dto.branchName ?? null,
+        accountName: dto.accountName,
+        accountNumber: dto.accountNumber,
+        accountType: dto.accountType ?? undefined,
+        routingNumber: dto.routingNumber ?? null,
+        isPrimary,
+        verificationStatus: dto.verificationStatus ?? undefined,
+        notes: dto.notes ?? null,
+        createdById: actorId ?? null,
+      };
+      const account = await tx.employeeBankAccount.create({
+        data: { ...bankData, employeeId },
       });
+
+      // G-19: bank account created → audit row.
+      await tx.employmentHistory.createMany({
+        data: [
+          {
+            employeeId,
+            field: 'bankAccount' as EmploymentHistoryField,
+            oldValue: null,
+            newValue: JSON.stringify(bankSnapshot(bankData)),
+            effectiveFrom: new Date(),
+            changedById: actorId ?? null,
+          },
+        ],
+      });
+
+      return account;
     });
   }
 
@@ -527,6 +862,15 @@ export class EmployeesService {
     const isPrimary =
       dto.isPrimary === undefined ? account.isPrimary : dto.isPrimary;
 
+    const newSnapshot = bankSnapshot({
+      ...account,
+      ...dto,
+      isPrimary,
+      updatedById: actorId ?? null,
+      notes: dto.notes ?? account.notes,
+      verificationNote: dto.verificationNote ?? account.verificationNote,
+    });
+
     return this.prisma.$transaction(async (tx) => {
       if (wantPrimary) {
         await tx.employeeBankAccount.updateMany({
@@ -538,7 +882,7 @@ export class EmployeesService {
           data: { isPrimary: false },
         });
       }
-      return tx.employeeBankAccount.update({
+      const updated = await tx.employeeBankAccount.update({
         where: { id },
         data: {
           bankName: dto.bankName,
@@ -549,10 +893,27 @@ export class EmployeesService {
           routingNumber: dto.routingNumber,
           isPrimary,
           verificationStatus: dto.verificationStatus,
+          verificationNote: dto.verificationNote,
           notes: dto.notes,
           updatedById: actorId ?? null,
         },
       });
+
+      // G-19: bank account patched → audit row with old/new JSON.
+      await tx.employmentHistory.createMany({
+        data: [
+          {
+            employeeId: account.employeeId,
+            field: 'bankAccount' as EmploymentHistoryField,
+            oldValue: JSON.stringify(bankSnapshot(account)),
+            newValue: JSON.stringify(newSnapshot),
+            effectiveFrom: new Date(),
+            changedById: actorId ?? null,
+          },
+        ],
+      });
+
+      return updated;
     });
   }
 
@@ -571,19 +932,49 @@ export class EmployeesService {
         },
         data: { isPrimary: false },
       });
-      return tx.employeeBankAccount.update({
+      const updated = await tx.employeeBankAccount.update({
         where: { id },
         data: { isPrimary: true, updatedById: actorId ?? null },
       });
+
+      await tx.employmentHistory.createMany({
+        data: [
+          {
+            employeeId: account.employeeId,
+            field: 'bankAccount' as EmploymentHistoryField,
+            oldValue: JSON.stringify(bankSnapshot(account)),
+            newValue: JSON.stringify(bankSnapshot(updated)),
+            effectiveFrom: new Date(),
+            changedById: actorId ?? null,
+          },
+        ],
+      });
+
+      return updated;
     });
   }
 
-  async deleteBankAccount(id: string) {
+  async deleteBankAccount(id: string, actorId?: string) {
     const account = await this.prisma.employeeBankAccount.findUnique({
       where: { id },
     });
     if (!account) throw new NotFoundException('Bank account not found');
-    return this.prisma.employeeBankAccount.delete({ where: { id } });
+    return this.prisma.$transaction(async (tx) => {
+      const deleted = await tx.employeeBankAccount.delete({ where: { id } });
+      await tx.employmentHistory.createMany({
+        data: [
+          {
+            employeeId: account.employeeId,
+            field: 'bankAccount' as EmploymentHistoryField,
+            oldValue: JSON.stringify(bankSnapshot(account)),
+            newValue: null,
+            effectiveFrom: new Date(),
+            changedById: actorId ?? null,
+          },
+        ],
+      });
+      return deleted;
+    });
   }
 
   async searchBaUsers(query: string) {

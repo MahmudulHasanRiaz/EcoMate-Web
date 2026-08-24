@@ -4,15 +4,17 @@ import {
   IsOptional,
   IsEnum,
   IsDateString,
-  IsNumber,
-  Min,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import {
   EmploymentType,
   EmployeeStatus,
   EmployeeGender,
   AttendanceMethod,
 } from '@prisma/client';
+import { CreateSalaryStructureDto } from './create-salary-structure.dto';
+import { CreateEmployeeBankAccountDto } from './create-employee-bank-account.dto';
 
 export class CreateEmployeeDto {
   @IsString()
@@ -52,17 +54,14 @@ export class CreateEmployeeDto {
   exitDate?: string;
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  salary?: number;
+  @ValidateNested()
+  @Type(() => CreateSalaryStructureDto)
+  salaryStructure?: CreateSalaryStructureDto;
 
   @IsOptional()
-  @IsString()
-  bankAccountNo?: string;
-
-  @IsOptional()
-  @IsString()
-  bankName?: string;
+  @ValidateNested()
+  @Type(() => CreateEmployeeBankAccountDto)
+  bankAccount?: CreateEmployeeBankAccountDto;
 
   @IsOptional()
   @IsString()

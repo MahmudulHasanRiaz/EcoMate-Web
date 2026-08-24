@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useState, useEffect, type ReactNode } from 'react'
 import { Pencil, Plus, Star, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -54,6 +54,8 @@ interface AccountFormState {
   accountType: BankAccountType | ''
   routingNumber: string
   isPrimary: boolean
+  verificationStatus: BankVerificationStatus
+  verificationNote: string
   notes: string
 }
 
@@ -65,8 +67,16 @@ const EMPTY_FORM: AccountFormState = {
   accountType: '',
   routingNumber: '',
   isPrimary: false,
+  verificationStatus: 'PENDING',
+  verificationNote: '',
   notes: '',
 }
+
+const VERIFICATION_OPTIONS: { value: BankVerificationStatus; label: string }[] = [
+  { value: 'PENDING', label: 'Pending' },
+  { value: 'VERIFIED', label: 'Verified' },
+  { value: 'REJECTED', label: 'Rejected' },
+]
 
 export interface BankAccountsCardProps {
   accounts: EmployeeBankAccount[]
@@ -98,6 +108,13 @@ function AccountDialog({
   onSubmit,
 }: AccountDialogProps) {
   const [form, setForm] = useState<AccountFormState>(initial)
+
+  // Re-seed the form every time the dialog opens: the component stays mounted
+  // between open/close cycles, so useState(initial) alone would keep stale
+  // (empty) values on the edit dialog.
+  useEffect(() => {
+    if (open) setForm(initial)
+  }, [open, initial])
 
   const canSubmit = form.bankName.trim() && form.accountName.trim() && form.accountNumber.trim()
 
@@ -186,6 +203,32 @@ function AccountDialog({
               onCheckedChange={(v) => setForm((f) => ({ ...f, isPrimary: v }))}
             />
           </div>
+          <div className='grid gap-2'>
+            <Label>Verification Status</Label>
+            <Select
+              value={form.verificationStatus}
+              onValueChange={(v) => setForm((f) => ({ ...f, verificationStatus: v as BankVerificationStatus }))}
+            >
+              <SelectTrigger><SelectValue placeholder='Status' /></SelectTrigger>
+              <SelectContent>
+                {VERIFICATION_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className='text-xs text-muted-foreground'>
+              Mark VERIFIED after validating bank documents.
+            </p>
+          </div>
+          <div className='col-span-2 grid gap-2'>
+            <Label>Verification Note</Label>
+            <Textarea
+              value={form.verificationNote}
+              onChange={(e) => setForm((f) => ({ ...f, verificationNote: e.target.value }))}
+              placeholder='e.g. bank statement + NID validated against employer records'
+              rows={2}
+            />
+          </div>
         </div>
         <DialogFooter>
           <Button variant='outline' onClick={onClose}>Cancel</Button>
@@ -258,6 +301,8 @@ export function BankAccountsCard({
                   accountType: account.accountType || '',
                   routingNumber: account.routingNumber || '',
                   isPrimary: account.isPrimary,
+                  verificationStatus: account.verificationStatus,
+                  verificationNote: (account as any).verificationNote || '',
                   notes: account.notes || '',
                 },
               })
@@ -341,6 +386,8 @@ export function BankAccountsCard({
             accountType: (form.accountType || undefined) as BankAccountType | undefined,
             routingNumber: form.routingNumber || undefined,
             isPrimary: form.isPrimary,
+            verificationStatus: form.verificationStatus,
+            verificationNote: form.verificationNote || undefined,
             notes: form.notes || undefined,
           })
           setEditTarget(null)

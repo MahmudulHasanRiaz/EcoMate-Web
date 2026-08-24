@@ -18,6 +18,7 @@ export interface EmployeeBankAccount {
   routingNumber?: string | null
   isPrimary: boolean
   verificationStatus: BankVerificationStatus
+  verificationNote?: string | null
   notes?: string | null
   createdAt: string
   updatedAt: string
@@ -60,6 +61,63 @@ export interface UpdateEmployeeDto {
   attendanceMethod?: AttendanceMethod
 }
 
+// G-15 nested payload captured at employee creation.
+export interface SalaryStructureInput {
+  basicSalary: number
+  houseAllowance?: number
+  medicalAllowance?: number
+  transportAllowance?: number
+  otherAllowance?: number
+  taxDeduction?: number
+  insuranceDeduction?: number
+  otherDeduction?: number
+  effectiveFrom?: string
+}
+
+export interface BankAccountInput {
+  bankName: string
+  branchName?: string
+  accountName?: string
+  accountNumber: string
+  accountType?: BankAccountType
+  routingNumber?: string
+  isPrimary?: boolean
+}
+
+export interface CreateEmployeeDto {
+  betterAuthUserId: string
+  departmentId?: string
+  designationId?: string
+  accessPresetId?: string
+  reportingToId?: string
+  employmentType?: EmploymentType
+  joiningDate: string
+  status?: EmployeeStatus
+  exitDate?: string
+  notes?: string
+  attendanceMethod?: AttendanceMethod
+  salaryStructure?: SalaryStructureInput
+  bankAccount?: BankAccountInput
+}
+
+export interface SalaryStructureEntry {
+  id: string
+  basicSalary: number
+  houseAllowance: number
+  medicalAllowance: number
+  transportAllowance: number
+  otherAllowance: number
+  taxDeduction: number
+  insuranceDeduction: number
+  otherDeduction: number
+  totalEarnings: number
+  totalDeductions: number
+  netSalary: number
+  effectiveFrom: string
+  effectiveTo?: string | null
+  isActive: boolean
+}
+
 export interface EmployeeResponse {
   id: string
   employeeId: string
@@ -100,6 +158,7 @@ export interface EmployeeResponse {
   exitReason?: string | null
   attendanceMethod: AttendanceMethod
   bankAccounts?: EmployeeBankAccount[]
+  salaryStructures?: SalaryStructureEntry[]
 }
 
 export interface PaginatedResponse<T> {
@@ -112,6 +171,12 @@ export interface EmployeesQuery {
   perPage?: number
   status?: string
   departmentId?: string
+  designationId?: string
+  reportingToId?: string
+  attendanceMethod?: string
+  search?: string
+  sortBy?: 'createdAt' | 'joiningDate' | 'employeeId' | 'name'
+  sortOrder?: 'asc' | 'desc'
 }
 
 export const employeesApi = {
@@ -119,7 +184,7 @@ export const employeesApi = {
     apiClient.get<PaginatedResponse<EmployeeResponse>>('/employees', { params: query }),
   get: (id: string) =>
     apiClient.get<EmployeeResponse>(`/employees/${id}`),
-  create: (data: any) =>
+  create: (data: CreateEmployeeDto) =>
     apiClient.post<EmployeeResponse>('/employees', data),
   update: (id: string, data: any) =>
     apiClient.put<EmployeeResponse>(`/employees/${id}`, data),

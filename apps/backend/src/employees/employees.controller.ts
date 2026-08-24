@@ -25,8 +25,8 @@ export class EmployeesController {
 
   @Post()
   @PermissionsAny('manage_employees')
-  create(@Body() dto: CreateEmployeeDto) {
-    return this.employeesService.create(dto);
+  create(@Body() dto: CreateEmployeeDto, @CurrentUser() user?: any) {
+    return this.employeesService.create(dto, user?.userId ?? user?.id);
   }
 
   @Get()
@@ -35,13 +35,25 @@ export class EmployeesController {
     @Query('perPage') perPage?: string,
     @Query('status') status?: string,
     @Query('departmentId') departmentId?: string,
+    @Query('designationId') designationId?: string,
+    @Query('reportingToId') reportingToId?: string,
+    @Query('attendanceMethod') attendanceMethod?: string,
+    @Query('search') search?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: string,
   ) {
-    return this.employeesService.findAll(
-      page ? parseInt(page) : 1,
-      perPage ? parseInt(perPage) : 20,
+    return this.employeesService.findAll({
+      page: page ? parseInt(page, 10) : 1,
+      perPage: perPage ? parseInt(perPage, 10) : 20,
       status,
       departmentId,
-    );
+      designationId,
+      reportingToId,
+      attendanceMethod,
+      search,
+      sortBy: sortBy as any,
+      sortOrder: sortOrder as any,
+    });
   }
 
   @Get('search/ba-users')
@@ -66,7 +78,7 @@ export class EmployeesController {
 
   @Delete(':id')
   @PermissionsAny('manage_employees')
-  remove(@Param('id') id: string) {
-    return this.employeesService.remove(id);
+  remove(@Param('id') id: string, @CurrentUser() user?: any) {
+    return this.employeesService.remove(id, user?.userId ?? user?.id);
   }
 }
