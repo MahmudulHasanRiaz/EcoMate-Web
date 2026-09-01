@@ -4428,6 +4428,40 @@ export class OrdersService {
       const totalValue = Number(order.total || 0);
       if (totalValue <= 0) return;
 
+      // Refund pairing gate: only emit a Refund for an order whose Purchase
+      // event was captured AND either already delivered to providers (SENT) or
+      // still deliverable (PENDING/CLAIMED/RETRY in-flight). Skip only when the
+      // Purchase definitively never reached Meta/TikTok:
+      //   - no Purchase capture at all (order never hit the configured trigger)
+      //   - Purchase outbox DEAD (5 failed attempts — never delivered)
+      //   - Purchase outbox missing (corrupted pipeline state)
+      // An order that never produced a Purchase must not emit a standalone
+      // refund — Meta/TikTok would record negative revenue with no matching
+      // purchase. Same eventId contract as every Purchase path
+      // (`purchase_{order.id}` in orders/POS/checkout-leads), so one lookup
+      // covers instant, validated, and offline captures.
+      const client = (tx ?? this.prisma) as Prisma.TransactionClient;
+      const purchaseSnapshot = await client.trackingSnapshot.findUnique({
+        where: { eventId: `purchase_${order.id}` },
+        select: { id: true },
+      });
+      if (!purchaseSnapshot) {
+        this.logger.log(
+          `Skipping refund event for order ${order.id}: no Purchase capture exists (purchase never sent)`,
+        );
+        return;
+      }
+      const purchaseOutbox = await client.trackingOutbox.findUnique({
+        where: { snapshotId: purchaseSnapshot.id },
+        select: { status: true },
+      });
+      if (!purchaseOutbox || purchaseOutbox.status === 'DEAD') {
+        this.logger.log(
+          `Skipping refund event for order ${order.id}: Purchase never delivered to providers (outbox ${purchaseOutbox?.status ?? 'missing'})`,
+        );
+        return;
+      }
+
       let phone = '';
       let firstName = '';
       const country = 'BD';

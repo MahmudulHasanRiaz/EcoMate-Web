@@ -238,6 +238,12 @@ describe('OrdersService', () => {
               findUnique: jest.fn().mockResolvedValue({ status: 'active' }),
               findFirst: jest.fn().mockResolvedValue({ status: 'active' }),
             },
+            trackingSnapshot: {
+              findUnique: jest.fn(),
+            },
+            trackingOutbox: {
+              findUnique: jest.fn(),
+            },
           },
         },
         {
@@ -2375,6 +2381,13 @@ describe('OrdersService', () => {
       });
       (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
       (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+      // Refund pairing gate: Purchase was captured and delivered (SENT).
+      (prisma.trackingSnapshot.findUnique as jest.Mock).mockResolvedValue({
+        id: 'purchase-snap-1',
+      });
+      (prisma.trackingOutbox.findUnique as jest.Mock).mockResolvedValue({
+        status: 'SENT',
+      });
 
       const trackingCapture =
         module.get<TrackingCaptureService>(TrackingCaptureService);
@@ -3288,6 +3301,51 @@ await service.bulkAssign(['order-1', 'trashed-1'], 'staff-1');
       expect(timeline[timeline.length - 1].note).toBe('Cancelled by customer');
     });
 
+    it('does NOT emit a Refund when the cancelled order never had a delivered Purchase (pairing gate)', async () => {
+      // Customer cancels an order that never reached the configured purchase
+      // trigger -> no Purchase snapshot -> NO Refund event may be created.
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        viewToken: 'the-token',
+      });
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue({
+        id: 'status-cancelled',
+        name: 'Cancelled',
+      });
+      (prisma.trackingSnapshot.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) => {
+          const txOrderUpdate = jest.fn().mockResolvedValue({
+            ...mockOrder,
+            status: { id: 'status-cancelled', name: 'Cancelled' },
+          });
+          const refundOrder = {
+            id: 'order-id-1',
+            total: 2050,
+            salesChannel: 'WEBSITE',
+            items: [{ id: 'item-1', productId: 'prod-1', quantity: 1, price: 2050 }],
+            customer: { firstName: 'John', phoneNumber: '+1234567890' },
+          };
+          const tx = {
+            ...prisma,
+            order: {
+              ...prisma.order,
+              update: txOrderUpdate,
+              findUnique: jest.fn().mockResolvedValue(refundOrder),
+            },
+          };
+          await cb(tx);
+          return { ...mockOrder, status: { id: 'status-cancelled', name: 'Cancelled' } };
+        },
+      );
+
+      await service.cancelByCustomer('order-id-1', 'the-token');
+
+      const trackingCapture =
+        module.get<TrackingCaptureService>(TrackingCaptureService);
+      expect(trackingCapture.capture).not.toHaveBeenCalled();
+    });
+
     it('throws ForbiddenException when no token is supplied', async () => {
       await expect(
         service.cancelByCustomer('order-id-1', ''),
@@ -3733,6 +3791,20 @@ await service.bulkAssign(['order-1', 'trashed-1'], 'staff-1');
       ],
     };
 
+    // Refund pairing gate fixtures: Purchase captured + delivered (SENT).
+    const mockPurchaseSent = () => {
+      (prisma.trackingSnapshot.findUnique as jest.Mock).mockResolvedValue({
+        id: 'purchase-snap-1',
+      });
+      (prisma.trackingOutbox.findUnique as jest.Mock).mockResolvedValue({
+        status: 'SENT',
+      });
+    };
+
+    beforeEach(() => {
+      mockPurchaseSent();
+    });
+
     it('captures a Refund snapshot with negative value and no legacy track', async () => {
       await (service as any).fireRefundEvent(refundOrder);
 
@@ -3795,6 +3867,65 @@ await service.bulkAssign(['order-1', 'trashed-1'], 'staff-1');
       const [input] = capture.mock.calls[0];
       expect(input.eventType).toBe('Refund');
       expect(input.actionSource).toBe('chat');
+    });
+
+    it('skips refund when NO Purchase capture exists (order never triggered)', async () => {
+      // The reported bug: an order that never reached the configured purchase
+      // trigger gets cancelled -> a standalone Refund was sent to Meta/TikTok.
+      (prisma.trackingSnapshot.findUnique as jest.Mock).mockResolvedValue(null);
+
+      await (service as any).fireRefundEvent(refundOrder);
+
+      expect(captureService().capture).not.toHaveBeenCalled();
+      expect(prisma.trackingOutbox.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('captures refund when Purchase outbox is still PENDING (in-flight, will deliver)', async () => {
+      // Quick-cancel edge: the Purchase is captured and the dispatcher is still
+      // delivering it. Suppressing this refund would leave Meta/TikTok with an
+      // unpaired Purchase (revenue over-count), so the refund MUST still fire.
+      (prisma.trackingSnapshot.findUnique as jest.Mock).mockResolvedValue({
+        id: 'purchase-snap-1',
+      });
+      (prisma.trackingOutbox.findUnique as jest.Mock).mockResolvedValue({
+        status: 'PENDING',
+      });
+
+      await (service as any).fireRefundEvent(refundOrder);
+
+      expect(captureService().capture).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips refund when Purchase captured but dead/failed at dispatch', async () => {
+      (prisma.trackingSnapshot.findUnique as jest.Mock).mockResolvedValue({
+        id: 'purchase-snap-1',
+      });
+      (prisma.trackingOutbox.findUnique as jest.Mock).mockResolvedValue({
+        status: 'DEAD',
+      });
+
+      await (service as any).fireRefundEvent(refundOrder);
+
+      expect(captureService().capture).not.toHaveBeenCalled();
+    });
+
+    it('skips refund when Purchase outbox row is missing entirely', async () => {
+      (prisma.trackingSnapshot.findUnique as jest.Mock).mockResolvedValue({
+        id: 'purchase-snap-1',
+      });
+      (prisma.trackingOutbox.findUnique as jest.Mock).mockResolvedValue(null);
+
+      await (service as any).fireRefundEvent(refundOrder);
+
+      expect(captureService().capture).not.toHaveBeenCalled();
+    });
+
+    it('still captures refund when the Purchase outbox is SENT (gate passes)', async () => {
+      mockPurchaseSent();
+
+      await (service as any).fireRefundEvent(refundOrder);
+
+      expect(captureService().capture).toHaveBeenCalledTimes(1);
     });
   });
 
