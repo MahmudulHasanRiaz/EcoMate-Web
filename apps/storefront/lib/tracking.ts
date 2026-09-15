@@ -459,11 +459,15 @@ export function flushQueue() {
 
   if (_eventQueue.length > 0) {
     _eventQueue.forEach(({ event, data, eventId }) => {
-      if (fbq && _metaId && _metaInited) {
+      // Same per-provider Purchase isolation as the live path: a queued
+      // Purchase flushes only to instant-mode providers' pixels.
+      const flushMeta = event !== 'Purchase' || _metaPurchaseMode === 'instant';
+      const flushTiktok = event !== 'Purchase' || _tiktokPurchaseMode === 'instant';
+      if (fbq && _metaId && _metaInited && flushMeta) {
         debug('Flushing queued Meta event:', event, data);
         fbq('track', event, data, { eventID: eventId });
       }
-      if (ttq && _tiktokCode) {
+      if (ttq && _tiktokCode && flushTiktok) {
         const tiktokEvent = event === 'Purchase' ? 'CompletePayment' : event;
         debug('Flushing queued TikTok event:', tiktokEvent, data);
         ttq.track(tiktokEvent, data, { event_id: eventId });
@@ -627,6 +631,15 @@ export function trackEvent(event: EventName, data?: Record<string, any>, userDat
     }
   }
 
+  // Per-provider Purchase isolation: a validated-mode provider must never fire
+  // its browser Pixel just because another provider is instant. The server
+  // dispatcher already gates CAPI per-provider (triggerMode vs purchaseModes);
+  // the browser Pixel needs the same gate or Meta would record an unvalidated
+  // order at checkout time via facebook.com/tr (same event_id dedups with the
+  // later CAPI send, but the event would exist before validation).
+  const fireMetaPixel = event !== 'Purchase' || _metaPurchaseMode === 'instant';
+  const fireTiktokPixel = event !== 'Purchase' || _tiktokPurchaseMode === 'instant';
+
   // Caller-provided dedup key (e.g. purchase_{orderId}) matches the server-side
   // capture so Meta dedups Pixel + CAPI. Otherwise derive a deterministic,
   // journey-scoped id (Wave-2.5 R-B fix) so accidental re-fires dedup instead of
@@ -646,11 +659,11 @@ export function trackEvent(event: EventName, data?: Record<string, any>, userDat
     debug('Queuing event (scripts not fully loaded yet):', event);
     _eventQueue.push({ event, data, eventId: resolvedEventId });
   } else {
-    if (fbq && _metaId && _metaInited) {
+    if (fbq && _metaId && _metaInited && fireMetaPixel) {
       debug('Firing Meta Pixel event:', event, data, { eventID: resolvedEventId });
       fbq('track', event, data, { eventID: resolvedEventId });
     }
-    if (ttq && _tiktokCode) {
+    if (ttq && _tiktokCode && fireTiktokPixel) {
       const tiktokEvent = event === 'Purchase' ? 'CompletePayment' : event;
       debug('Firing TikTok Pixel event:', tiktokEvent, data, { event_id: resolvedEventId });
       ttq.track(tiktokEvent, data, { event_id: resolvedEventId });

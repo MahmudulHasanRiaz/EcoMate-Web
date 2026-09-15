@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { trackEvent, trackAddToCart, trackViewContent, setPixelIds, initMetaPixel, setPixelIdentity, setConsent, setTrackingConsent, isTrackingAllowed, trackPageView, trackSearch } from '../tracking';
+import { trackEvent, trackAddToCart, trackViewContent, setPixelIds, initMetaPixel, setPixelIdentity, setConsent, setTrackingConsent, isTrackingAllowed, trackPageView, trackSearch, setTrackingConfig } from '../tracking';
 
 describe('tracking', () => {
   let fetchMock: ReturnType<typeof vi.spyOn>;
@@ -1137,6 +1137,74 @@ describe('tracking', () => {
       const call = vi.mocked(window.fbq).mock.calls.find((c: any[]) => c[1] === 'Search')!;
       expect(call[2].search_string.length).toBeLessThanOrEqual(200);
       expect(call[2].search_string.startsWith('xxx')).toBe(true);
+    });
+  });
+
+  // --- Purchase provider isolation (mixed instant/validated modes) ---
+  // A validated-mode provider must never fire its browser Pixel just because
+  // another provider is instant. The mirror still sends (same event_id) so the
+  // dispatcher can deliver CAPI to the instant provider(s).
+
+  describe('Purchase provider isolation', () => {
+    beforeEach(() => {
+      setTrackingConfig('instant', 'instant');
+    });
+
+    it('Meta validated + TikTok instant: Meta Pixel suppressed, TikTok fires, mirror sent with same event_id', () => {
+      setTrackingConfig('validated', 'instant');
+      try {
+        trackEvent('Purchase', { value: 100 }, {}, 'purchase_mixed-1');
+        expect(window.fbq).not.toHaveBeenCalledWith('track', 'Purchase', expect.anything(), expect.anything());
+        expect(window.ttq.track).toHaveBeenCalledWith('CompletePayment', { value: 100 }, { event_id: 'purchase_mixed-1' });
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+        expect(body.eventId).toBe('purchase_mixed-1');
+      } finally {
+        setTrackingConfig('instant', 'instant');
+      }
+    });
+
+    it('Meta instant + TikTok validated: TikTok Pixel suppressed, Meta fires, mirror sent with same event_id', () => {
+      setTrackingConfig('instant', 'validated');
+      try {
+        trackEvent('Purchase', { value: 100 }, {}, 'purchase_mixed-2');
+        expect(window.fbq).toHaveBeenCalledWith('track', 'Purchase', { value: 100 }, { eventID: 'purchase_mixed-2' });
+        expect(window.ttq.track).not.toHaveBeenCalled();
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+        expect(body.eventId).toBe('purchase_mixed-2');
+      } finally {
+        setTrackingConfig('instant', 'instant');
+      }
+    });
+
+    it('both validated: no Pixel, no mirror', () => {
+      setTrackingConfig('validated', 'validated');
+      try {
+        const callsBefore = fetchMock.mock.calls.length;
+        trackEvent('Purchase', { value: 100 }, {}, 'purchase_mixed-3');
+        expect(window.fbq).not.toHaveBeenCalled();
+        expect(window.ttq.track).not.toHaveBeenCalled();
+        expect(fetchMock.mock.calls.length).toBe(callsBefore);
+      } finally {
+        setTrackingConfig('instant', 'instant');
+      }
+    });
+
+    it('both instant: both Pixels fire with the same event_id', () => {
+      setTrackingConfig('instant', 'instant');
+      trackEvent('Purchase', { value: 100 }, {}, 'purchase_mixed-4');
+      expect(window.fbq).toHaveBeenCalledWith('track', 'Purchase', { value: 100 }, { eventID: 'purchase_mixed-4' });
+      expect(window.ttq.track).toHaveBeenCalledWith('CompletePayment', { value: 100 }, { event_id: 'purchase_mixed-4' });
+    });
+
+    it('non-Purchase events are unaffected by validated modes', () => {
+      setTrackingConfig('validated', 'validated');
+      try {
+        trackEvent('AddToCart', { value: 50 }, {}, 'add_to_cart_iso-1');
+        expect(window.fbq).toHaveBeenCalledWith('track', 'AddToCart', { value: 50 }, { eventID: 'add_to_cart_iso-1' });
+        expect(window.ttq.track).toHaveBeenCalled();
+      } finally {
+        setTrackingConfig('instant', 'instant');
+      }
     });
   });
 });
