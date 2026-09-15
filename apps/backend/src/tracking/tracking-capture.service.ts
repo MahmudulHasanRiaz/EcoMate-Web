@@ -136,4 +136,79 @@ export class TrackingCaptureService {
     }
     return this.prisma.$transaction(run);
   }
+
+  /**
+   * Validated-trigger requeue: the canonical Purchase snapshot already exists
+   * (instant capture won the race, same deterministic eventId → DEDUPED), but a
+   * validated-mode provider was deferred at dispatch time. Revive the outbox +
+   * the deferred providers' SKIPPED dispatch rows so the relay re-dispatches the
+   * SAME snapshot (same eventId) to them now. Providers already SENT are untouched.
+   */
+  async ensureValidatedDispatch(
+    eventId: string,
+    providers: string[],
+  ): Promise<{ requeued: boolean; providers: string[] }> {
+    if (providers.length === 0) return { requeued: false, providers: [] };
+    const snapshot = await this.prisma.trackingSnapshot.findUnique({
+      where: { eventId },
+      select: { id: true },
+    });
+    if (!snapshot) return { requeued: false, providers: [] };
+    const outbox = await this.prisma.trackingOutbox.findUnique({
+      where: { snapshotId: snapshot.id },
+    });
+    if (!outbox) return { requeued: false, providers: [] };
+    const revived: string[] = [];
+    for (const provider of providers) {
+      const row = await this.prisma.trackingDispatch.findUnique({
+        where: { snapshotId_provider: { snapshotId: snapshot.id, provider } },
+      });
+      // Only deferred (SKIPPED) rows are revived — SENT/RETRY/FAILED rows keep
+      // their state so a validated transition never duplicates a delivery.
+      if (row && row.status === 'SKIPPED') {
+        await this.prisma.trackingDispatch.update({
+          where: { id: row.id },
+          data: { status: 'PENDING', errorMsg: null },
+        });
+        await this.prisma.trackingDispatchEvent.create({
+          data: {
+            snapshotId: snapshot.id,
+            eventId,
+            orderId: row.orderId ?? null,
+            ctxId: row.ctxId ?? null,
+            provider,
+            toStatus: 'PENDING',
+            message: 'validated requeue: deferred provider revived',
+          },
+        });
+        revived.push(provider);
+      } else if (!row) {
+        // Provider never dispatched (e.g. outbox went SENT before it was
+        // enabled): create a PENDING row so the next dispatch covers it.
+        await this.prisma.trackingDispatch.create({
+          data: {
+            snapshotId: snapshot.id,
+            eventId,
+            provider,
+            status: 'PENDING',
+            providerEventId: eventId,
+          },
+        });
+        revived.push(provider);
+      }
+    }
+    if (revived.length === 0) return { requeued: false, providers: [] };
+    if (outbox.status !== 'PENDING') {
+      await this.prisma.trackingOutbox.update({
+        where: { id: outbox.id },
+        data: {
+          status: 'PENDING',
+          nextAttemptAt: new Date(),
+          lockedAt: null,
+          lockedBy: null,
+        },
+      });
+    }
+    return { requeued: true, providers: revived };
+  }
 }

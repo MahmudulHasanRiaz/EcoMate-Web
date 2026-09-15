@@ -5,6 +5,7 @@ import { OrdersEventService } from './orders-event.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TrackingCaptureService } from '../tracking/tracking-capture.service';
 import { TrackingSettingsService } from '../tracking/tracking-settings.service';
+import { TrackingContextService } from '../tracking/tracking-context.service';
 import { CustomersService } from '../customers/customers.service';
 import { StockService } from '../stock/stock.service';
 import { StockRouterService } from '../stock/stock-router.service';
@@ -269,6 +270,12 @@ describe('OrdersService', () => {
               capturedAt: '2025-01-15T00:00:00.000Z',
             }),
             get: jest.fn().mockResolvedValue(null),
+          },
+        },
+        {
+          provide: TrackingContextService,
+          useValue: {
+            getByCtxId: jest.fn().mockResolvedValue(null),
           },
         },
         {
@@ -1409,6 +1416,46 @@ describe('OrdersService', () => {
       expect(createCall.data.customerId).toBe('cust-1');
       expect(createCall.data.guestName).toBeUndefined();
       expect(createCall.data.guestPhone).toBeUndefined();
+    });
+
+    it('rolls back the order transaction when Purchase capture DB write fails', async () => {
+      // Simulate a DB failure during capture (e.g., tracking table constraint
+      // violation). The order MUST NOT commit — the transaction must roll back
+      // so that a committed order always has a durable Purchase intent.
+      const txError = new Error('tracking table unavailable');
+      const trackingCapture =
+        module.get<TrackingCaptureService>(TrackingCaptureService);
+      const capture = trackingCapture.capture as jest.Mock;
+      capture.mockRejectedValueOnce(txError);
+
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        mockInitialStatus,
+      );
+      (prisma.orderCounter.upsert as jest.Mock).mockResolvedValue({
+        date: '250115',
+        seq: 1,
+      });
+      (prisma.order.create as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        salesChannel: 'WEBSITE',
+        trackingSessionId: 'ctx-123',
+      });
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        salesChannel: 'WEBSITE',
+        trackingSessionId: 'ctx-123',
+      });
+      (prisma.productVariant.update as jest.Mock).mockResolvedValue({});
+
+      await expect(
+        service.create(
+          {
+            ...createOrderDto,
+            trackingSessionId: 'ctx-123',
+          },
+          '127.0.0.1',
+        ),
+      ).rejects.toThrow('tracking table unavailable');
     });
   });
 
@@ -3514,10 +3561,13 @@ await service.bulkAssign(['order-1', 'trashed-1'], 'staff-1');
       customer: {
         id: 'customer-id-1',
         name: 'John Doe',
-        firstName: 'John Doe',
-        lastName: '',
         email: 'john@example.com',
-        phoneNumber: '+1234567890',
+        phone: '+1234567890',
+      },
+      shippingAddress: {
+        phone: '+1234567890',
+        name: 'John Doe',
+        city: 'Dhaka',
       },
       items: [
         {
@@ -3561,7 +3611,7 @@ await service.bulkAssign(['order-1', 'trashed-1'], 'staff-1');
             phone: '+1234567890',
             firstName: 'John Doe',
             lastName: undefined,
-            city: undefined,
+            city: 'Dhaka',
             country: 'BD',
           },
         }),
@@ -3770,6 +3820,73 @@ await service.bulkAssign(['order-1', 'trashed-1'], 'staff-1');
       const [input] = capture.mock.calls[0];
       expect(input.payload.content_name).toBe('Starter Pack');
       expect(input.payload.content_ids).toEqual(['combo-1']);
+    });
+
+    describe('canonical customer identity field mapping', () => {
+      const captureService = () =>
+        module.get<TrackingCaptureService>(TrackingCaptureService);
+
+      it('uses shipping address phone/name when both shipping and customer are populated', async () => {
+        const order = {
+          ...baseOrder,
+          shippingAddress: { phone: '+8801999999999', name: 'Ship Name', city: 'Chittagong' },
+          customer: { ...baseOrder.customer, phone: '+1234567890', name: 'Profile Name' },
+        };
+        await (service as any).buildAndSendPurchaseEvent(order, 'instant');
+
+        const capture = captureService().capture as jest.Mock;
+        const [input] = capture.mock.calls[0];
+        // Shipping address is canonical — takes priority over customer profile
+        expect(input.payload.customer.phone).toBe('+8801999999999');
+        expect(input.payload.customer.firstName).toBe('Ship Name');
+      });
+
+      it('falls back to customer profile when shipping address is empty', async () => {
+        const order = {
+          ...baseOrder,
+          shippingAddress: {},
+          customer: { ...baseOrder.customer, phone: '+8801888888888', name: 'Profile Name' },
+        };
+        await (service as any).buildAndSendPurchaseEvent(order, 'instant');
+
+        const capture = captureService().capture as jest.Mock;
+        const [input] = capture.mock.calls[0];
+        expect(input.payload.customer.phone).toBe('+8801888888888');
+        expect(input.payload.customer.firstName).toBe('Profile Name');
+      });
+
+      it('falls back to guestPhone/guestName when both shipping and customer are empty', async () => {
+        const order = {
+          ...baseOrder,
+          shippingAddress: {},
+          customer: null,
+          guestPhone: '+8801777777777',
+          guestName: 'Guest User',
+        };
+        await (service as any).buildAndSendPurchaseEvent(order, 'instant');
+
+        const capture = captureService().capture as jest.Mock;
+        const [input] = capture.mock.calls[0];
+        expect(input.payload.customer.phone).toBe('+8801777777777');
+        expect(input.payload.customer.firstName).toBe('Guest User');
+      });
+
+      it('returns undefined for all identity fields when all are missing', async () => {
+        const order = {
+          ...baseOrder,
+          shippingAddress: {},
+          customer: null,
+          guestPhone: null,
+          guestName: null,
+        };
+        await (service as any).buildAndSendPurchaseEvent(order, 'instant');
+
+        const capture = captureService().capture as jest.Mock;
+        const [input] = capture.mock.calls[0];
+        // Empty strings are normalized to undefined for Meta PII fields
+        expect(input.payload.customer.phone).toBeUndefined();
+        expect(input.payload.customer.firstName).toBeUndefined();
+      });
     });
   });
 

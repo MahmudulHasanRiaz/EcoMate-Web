@@ -32,6 +32,8 @@ export interface DispatchJob {
 interface ConfigSnapshot {
   enabledProviders?: string[];
   successPolicy?: string;
+  purchaseModes?: { meta?: string; tiktok?: string };
+  validatedStatuses?: { meta?: string; tiktok?: string };
 }
 
 /**
@@ -179,8 +181,28 @@ export class TrackingDispatcherService {
       ctxId,
     };
 
-    const contextRow = ctxId ? await this.context.getByCtxId(ctxId) : null;
-    const contextView = this.buildContextView(contextRow);
+    // For Purchase events, prefer the frozen order-time tracking identity
+    // (captured at Purchase creation) over the live TrackingContext row.
+    // This ensures the dispatched payload carries the exact identity that
+    // existed when the qualifying action occurred — not a mutated later state.
+    const frozenIdentity = basePayload.trackingIdentity;
+    let contextView: TrackingContextView;
+    if (frozenIdentity && eventType === 'Purchase') {
+      contextView = {
+        externalId: frozenIdentity.externalId,
+        ip: frozenIdentity.ip,
+        userAgent: frozenIdentity.userAgent,
+        url: frozenIdentity.url,
+        referrer: frozenIdentity.referrer,
+        fbp: frozenIdentity.fbp,
+        fbc: frozenIdentity.fbc,
+        gclid: frozenIdentity.gclid,
+        ttclid: frozenIdentity.ttclid,
+      };
+    } else {
+      const contextRow = ctxId ? await this.context.getByCtxId(ctxId) : null;
+      contextView = this.buildContextView(contextRow);
+    }
 
     // Enrich the canonical payload (live or archived) with the event type + dedup id.
     // The business event time is a BigInt column — it must reach adapters as a number
@@ -233,7 +255,12 @@ export class TrackingDispatcherService {
     // offline signal is `actionSource = physical_store` at capture time.
     const serverOnly = actionSource === 'physical_store';
 
-    // Build the work set: enabled providers whose adapter supports the event type.
+    // Build the work set: enabled providers whose adapter supports the event type
+    // AND whose configured Purchase mode matches this snapshot's trigger.
+    // Provider isolation: Meta=instant / TikTok=validated share one canonical
+    // snapshot + eventId, but each provider dispatches only on its own timing.
+    // A deferred provider is SKIPPED (revived later by ensureValidatedDispatch
+    // when its validated transition lands) — never sent early, never duplicated.
     const eligible: Array<{ provider: string; adapter: TrackingProviderAdapter }> =
       [];
     for (const provider of enabledProviders) {
@@ -246,6 +273,15 @@ export class TrackingDispatcherService {
       }
       if (!adapter.supports(eventType, { serverOnly })) {
         await this.recordSkipped(source, provider, qj);
+        continue;
+      }
+      if (!this.isPurchaseProviderEligible(provider, config, payload)) {
+        await this.recordSkipped(
+          source,
+          provider,
+          qj,
+          `deferred: provider purchase mode does not match snapshot triggerMode '${payload.triggerMode ?? 'unset'}'`,
+        );
         continue;
       }
       eligible.push({ provider, adapter });
@@ -568,11 +604,46 @@ export class TrackingDispatcherService {
     }
   }
 
+  /**
+   * Per-provider Purchase timing gate. Non-Purchase events, offline triggers
+   * (POS / lead-recovery, no browser counterpart), and legacy snapshots without
+   * a triggerMode always pass. Otherwise a provider dispatches only when its
+   * configured purchase mode matches the snapshot trigger: instant-mode
+   * providers send instant/browser triggers, validated-mode providers send
+   * validated triggers.
+   *
+   * **offline (POS):** bypasses the gate entirely — POS orders have no browser
+   * pixel counterpart, so server-side dispatch is the only channel and all
+   * enabled providers must receive the event immediately.
+   *
+   * **legacy (triggerMode absent):** also bypasses the gate — snapshots created
+   * before the triggerMode feature was introduced predate per-provider timing
+   * configuration and must not be silently dropped.
+   */
+  private isPurchaseProviderEligible(
+    provider: string,
+    config: ConfigSnapshot,
+    payload: TrackingSnapshotPayload,
+  ): boolean {
+    if (payload.eventType !== 'Purchase') return true;
+    const trigger = payload.triggerMode;
+    if (!trigger || trigger === 'offline') return true;
+    const mode =
+      provider === 'meta'
+        ? config.purchaseModes?.meta || 'instant'
+        : provider === 'tiktok'
+          ? config.purchaseModes?.tiktok || 'instant'
+          : 'instant';
+    if (mode === 'validated') return trigger === 'validated';
+    return trigger === 'instant' || trigger === 'browser';
+  }
+
   /** Record an enabled-but-unsupported provider as a terminal SKIPPED dispatch row. */
   private async recordSkipped(
     source: DispatchSource,
     provider: string,
     queueJobId: string,
+    reason = 'provider does not support this event type in this mode',
   ): Promise<void> {
     const { row, created } = await this.ensureDispatchRow(source, provider, queueJobId, {
       status: 'SKIPPED',
@@ -585,13 +656,13 @@ export class TrackingDispatcherService {
         null,
         'SKIPPED',
         0,
-        'provider does not support this event type in this mode',
+        reason,
       );
     } else if (row.status !== 'SKIPPED' && row.status !== 'SENT') {
       // A non-terminal row that is now ineligible is parked as SKIPPED (audit only).
       await this.prisma.trackingDispatch.update({
         where: { id: row.id },
-        data: { status: 'SKIPPED' },
+        data: { status: 'SKIPPED', errorMsg: reason },
       });
       await this.appendDispatchEvent(
         source,
@@ -600,7 +671,7 @@ export class TrackingDispatcherService {
         row.status,
         'SKIPPED',
         row.attemptCount,
-        'provider no longer supports this event type in this mode',
+        reason,
       );
     }
   }

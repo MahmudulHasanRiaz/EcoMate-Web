@@ -2788,6 +2788,10 @@ model TrackingSnapshot {
   @@index([orderId])
   @@index([eventType, createdAt])
   @@index([createdAt]) // retention/replay scans
+  // Exactly-once Purchase ledger: one canonical Purchase (and one Refund) per
+  // business order. NULL orderIds (non-order browser events) never conflict in
+  // Postgres. Deterministic eventId UNIQUE stays the first-line dedup guard.
+  @@unique([orderId, eventType])
 }
 
 model TrackingOutbox {

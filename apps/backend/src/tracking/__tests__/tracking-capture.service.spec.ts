@@ -119,4 +119,83 @@ describe('TrackingCaptureService', () => {
     expect(transactionMock).not.toHaveBeenCalled();
     expect(result).toEqual({ status: 'CAPTURED', snapshotId: 'snap-tx' });
   });
+
+  describe('ensureValidatedDispatch', () => {
+    const snapshotFind = jest.fn();
+    const outboxFind = jest.fn();
+    const outboxUpdate = jest.fn();
+    const dispatchFind = jest.fn();
+    const dispatchUpdate = jest.fn();
+    const dispatchCreate = jest.fn();
+    const dispatchEventCreate2 = jest.fn();
+    const svc = new TrackingCaptureService({} as any);
+    // ensureValidatedDispatch reads this.prisma directly (not via $transaction)
+    svc.prisma = {
+      trackingSnapshot: { findUnique: snapshotFind },
+      trackingOutbox: { findUnique: outboxFind, update: outboxUpdate },
+      trackingDispatch: { findUnique: dispatchFind, update: dispatchUpdate, create: dispatchCreate },
+      trackingDispatchEvent: { create: dispatchEventCreate2 },
+    } as any;
+
+    beforeEach(() => jest.clearAllMocks());
+
+    it('revives a SKIPPED dispatch row for a validated-mode provider', async () => {
+      snapshotFind.mockResolvedValue({ id: 'snap-1' });
+      outboxFind.mockResolvedValue({ id: 'ob-1', status: 'SENT' });
+      dispatchFind.mockResolvedValue({ id: 'd-1', status: 'SKIPPED', orderId: 'ord-1', ctxId: 'ctx-1', attemptCount: 0 });
+
+      const result = await svc.ensureValidatedDispatch('purchase_ord-uuid', ['meta']);
+
+      expect(result.requeued).toBe(true);
+      expect(result.providers).toEqual(['meta']);
+      expect(dispatchUpdate).toHaveBeenCalledWith({
+        where: { id: 'd-1' },
+        data: { status: 'PENDING', errorMsg: null },
+      });
+      expect(outboxUpdate).toHaveBeenCalledWith({
+        where: { id: 'ob-1' },
+        data: expect.objectContaining({ status: 'PENDING', nextAttemptAt: expect.any(Date) }),
+      });
+    });
+
+    it('creates a new PENDING row when provider never dispatched', async () => {
+      snapshotFind.mockResolvedValue({ id: 'snap-2' });
+      outboxFind.mockResolvedValue({ id: 'ob-2', status: 'SENT' });
+      dispatchFind.mockResolvedValue(null); // no row for this provider
+
+      const result = await svc.ensureValidatedDispatch('purchase_ord-uuid', ['tiktok']);
+
+      expect(result.requeued).toBe(true);
+      expect(result.providers).toEqual(['tiktok']);
+      expect(dispatchCreate).toHaveBeenCalledWith({
+        data: expect.objectContaining({ status: 'PENDING', provider: 'tiktok' }),
+      });
+    });
+
+    it('skips already-SENT rows to prevent duplicate delivery', async () => {
+      snapshotFind.mockResolvedValue({ id: 'snap-3' });
+      outboxFind.mockResolvedValue({ id: 'ob-3', status: 'SENT' });
+      dispatchFind.mockResolvedValue({ id: 'd-3', status: 'SENT', orderId: null, ctxId: null, attemptCount: 1 });
+
+      const result = await svc.ensureValidatedDispatch('purchase_ord-uuid', ['meta']);
+
+      expect(result.requeued).toBe(false);
+      expect(result.providers).toEqual([]);
+      expect(dispatchUpdate).not.toHaveBeenCalled();
+      expect(outboxUpdate).not.toHaveBeenCalled();
+    });
+
+    it('returns no requeue when snapshot does not exist', async () => {
+      snapshotFind.mockResolvedValue(null);
+      const result = await svc.ensureValidatedDispatch('purchase_nonexistent', ['meta']);
+      expect(result.requeued).toBe(false);
+      expect(result.providers).toEqual([]);
+    });
+
+    it('returns no requeue when providers list is empty', async () => {
+      const result = await svc.ensureValidatedDispatch('purchase_ord-uuid', []);
+      expect(result.requeued).toBe(false);
+      expect(result.providers).toEqual([]);
+    });
+  });
 });

@@ -76,17 +76,24 @@ export default function ThankYouContent({
     const fireMeta = metaMode === 'instant';
     const fireTiktok = tiktokMode === 'instant';
 
-    // Wave-2.2 — sync the tracking context (ctxId + ids + url + referrer) FIRST so
-    // fbp/fbc are captured on the backend BEFORE the Purchase event is mirrored.
-    syncContext();
-
-    if (fireMeta || fireTiktok) {
-      const sharedData = buildPurchaseSharedData(order, config.currency.code);
-      const sharedUserData = buildPurchaseUserData(order);
-      trackEvent('Purchase', sharedData, sharedUserData, `purchase_${order.id}`);
-    }
-
+    // Mark synchronously so a StrictMode double-effect (or refresh race) can
+    // never fire a second browser delivery for this order. Server dedup on the
+    // canonical eventId (purchase_{order UUID}) is the second guard.
     sessionStorage.setItem(sessionKey, 'true');
+
+    // Sync the tracking context (ctxId + ids + url + referrer) FIRST and only
+    // then mirror the Purchase, so fbp/fbc are committed on the backend BEFORE
+    // the Purchase snapshot is captured. The browser never creates a second
+    // canonical event: it reuses the canonical eventId purchase_{order.id}.
+    void syncContext()
+      .catch(() => undefined)
+      .then(() => {
+        if (fireMeta || fireTiktok) {
+          const sharedData = buildPurchaseSharedData(order, config.currency.code);
+          const sharedUserData = buildPurchaseUserData(order);
+          trackEvent('Purchase', sharedData, sharedUserData, `purchase_${order.id}`);
+        }
+      });
   }, [order, clearCart, config.currency.code, config.meta?.purchaseMode, config.tiktok?.purchaseMode]);
 
   if (!orderId || (!order && !errorMessage)) {

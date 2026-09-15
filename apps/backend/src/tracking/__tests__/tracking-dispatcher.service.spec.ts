@@ -869,4 +869,240 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
       expect(seenFbLoginId).toBeUndefined();
     });
   });
+
+  describe('Purchase provider isolation — triggerMode gating', () => {
+    it('dispatches instant-mode provider for an instant-trigger Purchase snapshot', async () => {
+      snapshotFindUnique.mockResolvedValue({
+        ...snapshot,
+        payload: { value: 100, currency: 'BDT', eventType: 'Purchase', eventId: 'purchase_o-1', triggerMode: 'instant' },
+      });
+      outboxFindUnique.mockResolvedValue({
+        ...outbox,
+        configSnapshot: {
+          enabledProviders: ['meta'],
+          purchaseModes: { meta: 'instant', tiktok: 'instant' },
+        },
+      });
+
+      await service.process({ snapshotId: 'snap-1', outboxId: 'outbox-1', attemptCount: 0 }, 'job-1');
+
+      // meta send was called (provider dispatched)
+      expect(metaSend).toHaveBeenCalledTimes(1);
+      // No SKIPPED rows for meta
+      const skippedForMeta = dispatchCreate.mock.calls.filter(
+        (c: any) => c[0]?.data?.provider === 'meta' && c[0]?.data?.status === 'SKIPPED',
+      );
+      expect(skippedForMeta).toHaveLength(0);
+    });
+
+    it('defers validated-mode provider for an instant-trigger Purchase snapshot', async () => {
+      snapshotFindUnique.mockResolvedValue({
+        ...snapshot,
+        payload: { value: 100, currency: 'BDT', eventType: 'Purchase', eventId: 'purchase_o-1', triggerMode: 'instant' },
+      });
+      outboxFindUnique.mockResolvedValue({
+        ...outbox,
+        configSnapshot: {
+          enabledProviders: ['meta', 'tiktok'],
+          purchaseModes: { meta: 'instant', tiktok: 'validated' },
+        },
+      });
+
+      await service.process({ snapshotId: 'snap-1', outboxId: 'outbox-1', attemptCount: 0 }, 'job-1');
+
+      // Meta builds; TikTok is SKIPPED (validated mode doesn't match instant trigger)
+      const skippedCalls = dispatchCreate.mock.calls.filter(
+        (c: any) => c[0]?.data?.status === 'SKIPPED',
+      );
+      expect(skippedCalls.some((c: any) => c[0]?.data?.provider === 'tiktok')).toBe(true);
+      // tiktokSend should NOT have been called
+      expect(tiktokSend).not.toHaveBeenCalled();
+    });
+
+    it('offline trigger passes all providers (POS/lead-recovery, no browser counterpart)', async () => {
+      snapshotFindUnique.mockResolvedValue({
+        ...snapshot,
+        payload: { value: 100, currency: 'BDT', eventType: 'Purchase', eventId: 'purchase_o-1', triggerMode: 'offline' },
+      });
+      outboxFindUnique.mockResolvedValue({
+        ...outbox,
+        configSnapshot: {
+          enabledProviders: ['meta', 'tiktok'],
+          purchaseModes: { meta: 'validated', tiktok: 'validated' },
+        },
+      });
+
+      await service.process({ snapshotId: 'snap-1', outboxId: 'outbox-1', attemptCount: 0 }, 'job-1');
+
+      // Both send (offline bypasses mode gate)
+      expect(metaSend).toHaveBeenCalled();
+      expect(tiktokSend).toHaveBeenCalled();
+    });
+
+    it('legacy snapshot without triggerMode passes all providers', async () => {
+      snapshotFindUnique.mockResolvedValue({
+        ...snapshot,
+        payload: { value: 100, currency: 'BDT', eventType: 'Purchase', eventId: 'purchase_o-1' }, // no triggerMode
+      });
+      outboxFindUnique.mockResolvedValue({
+        ...outbox,
+        configSnapshot: {
+          enabledProviders: ['meta', 'tiktok'],
+          purchaseModes: { meta: 'validated', tiktok: 'validated' },
+        },
+      });
+
+      await service.process({ snapshotId: 'snap-1', outboxId: 'outbox-1', attemptCount: 0 }, 'job-1');
+
+      // Both send (legacy snapshots bypass the gate)
+      expect(metaSend).toHaveBeenCalled();
+      expect(tiktokSend).toHaveBeenCalled();
+    });
+
+    it('non-Purchase events are unaffected by triggerMode', async () => {
+      snapshotFindUnique.mockResolvedValue({
+        ...snapshot,
+        eventType: 'AddToCart',
+        payload: { value: 100, currency: 'BDT', eventType: 'AddToCart', eventId: 'atc_1' },
+      });
+      outboxFindUnique.mockResolvedValue({
+        ...outbox,
+        configSnapshot: {
+          enabledProviders: ['meta'],
+          purchaseModes: { meta: 'validated' },
+        },
+      });
+
+      await service.process({ snapshotId: 'snap-1', outboxId: 'outbox-1', attemptCount: 0 }, 'job-1');
+
+      expect(metaSend).toHaveBeenCalled();
+    });
+
+    it('legacy snapshot with no triggerMode dispatches to validated-mode provider (would otherwise skip)', async () => {
+      // This proves that a snapshot created BEFORE the triggerMode feature
+      // (triggerMode = undefined) is NOT silently dropped when the provider
+      // is currently configured as validated-mode. The legacy bypass is
+      // intentional: old snapshots predate per-provider timing config.
+      snapshotFindUnique.mockResolvedValue({
+        ...snapshot,
+        payload: { value: 100, currency: 'BDT', eventType: 'Purchase', eventId: 'purchase_o-1' },
+        // No triggerMode — simulates a legacy snapshot
+      });
+      outboxFindUnique.mockResolvedValue({
+        ...outbox,
+        configSnapshot: {
+          enabledProviders: ['meta'],
+          purchaseModes: { meta: 'validated' },
+        },
+      });
+
+      await service.process({ snapshotId: 'snap-1', outboxId: 'outbox-1', attemptCount: 0 }, 'job-1');
+
+      // Meta is configured as 'validated' but legacy snapshot has no triggerMode
+      // → legacy bypass sends to Meta anyway (not skipped)
+      expect(metaSend).toHaveBeenCalled();
+      const skippedForMeta = dispatchCreate.mock.calls.filter(
+        (c: any) => c[0]?.data?.provider === 'meta' && c[0]?.data?.status === 'SKIPPED',
+      );
+      expect(skippedForMeta).toHaveLength(0);
+    });
+  });
+
+  describe('Frozen order-time tracking identity (Purchase)', () => {
+    const snapshotWithIdentity = {
+      id: 'snap-1',
+      eventId: 'purchase_o-1',
+      eventType: 'Purchase',
+      orderId: 'ORD-001',
+      ctxId: 'ctx-old',
+      eventTime: BigInt(1722585600),
+      actionSource: 'website',
+      payload: {
+        value: 100,
+        currency: 'BDT',
+        eventType: 'Purchase',
+        eventId: 'purchase_o-1',
+        triggerMode: 'instant',
+        trackingIdentity: {
+          ip: '10.0.0.1',
+          userAgent: 'OldAgent/1.0',
+          url: 'https://old.example.com/checkout',
+          referrer: 'https://old.example.com/home',
+          externalId: 'ext-old-123',
+          fbp: 'fb.1.old',
+          fbc: 'fb.1.old.fbclid',
+          gclid: 'gclid-old',
+          ttclid: 'ttclid-old',
+        },
+      },
+    };
+
+    const outboxRow = {
+      id: 'outbox-1',
+      snapshotId: 'snap-1',
+      status: 'PENDING',
+      configSnapshot: {
+        enabledProviders: ['meta'],
+        purchaseModes: { meta: 'instant' },
+      },
+    };
+
+    it('does NOT read live TrackingContext when frozen identity exists on Purchase', async () => {
+      snapshotFindUnique.mockResolvedValue(snapshotWithIdentity);
+      outboxFindUnique.mockResolvedValue(outboxRow);
+
+      await service.process({ snapshotId: 'snap-1', outboxId: 'outbox-1', attemptCount: 0 }, 'job-1');
+
+      // The dispatcher should NOT have queried the live context — frozen identity was used
+      expect(contextGetByCtxId).not.toHaveBeenCalled();
+      // The adapter still receives a send
+      expect(metaSend).toHaveBeenCalled();
+    });
+
+    it('falls back to live context when no frozen identity exists (legacy snapshots)', async () => {
+      const legacySnapshot = {
+        ...snapshotWithIdentity,
+        payload: { value: 100, currency: 'BDT', eventType: 'Purchase', eventId: 'purchase_o-1' }, // no trackingIdentity
+      };
+      snapshotFindUnique.mockResolvedValue(legacySnapshot);
+      outboxFindUnique.mockResolvedValue(outboxRow);
+
+      await service.process({ snapshotId: 'snap-1', outboxId: 'outbox-1', attemptCount: 0 }, 'job-1');
+
+      // Legacy: dispatcher reads live context
+      expect(contextGetByCtxId).toHaveBeenCalledWith('ctx-old');
+      expect(metaSend).toHaveBeenCalled();
+    });
+
+    it('passes frozen identity values to adapter build (not live context)', async () => {
+      let capturedContextView: any = null;
+      const spyMeta: TrackingProviderAdapter = {
+        provider: 'meta',
+        version: 1,
+        providerApiVersion: 'v22.0',
+        supports: () => true,
+        build: (_payload, ctx) => {
+          capturedContextView = ctx;
+          return buildPayload('Purchase');
+        },
+        send: metaSend,
+      };
+      mockBuildAdapterRegistry.mockReturnValue([spyMeta]);
+
+      snapshotFindUnique.mockResolvedValue(snapshotWithIdentity);
+      outboxFindUnique.mockResolvedValue(outboxRow);
+
+      await service.process({ snapshotId: 'snap-1', outboxId: 'outbox-1', attemptCount: 0 }, 'job-1');
+
+      // The adapter should receive frozen identity values, NOT live context
+      expect(capturedContextView).toBeDefined();
+      expect(capturedContextView.ip).toBe('10.0.0.1');
+      expect(capturedContextView.userAgent).toBe('OldAgent/1.0');
+      expect(capturedContextView.url).toBe('https://old.example.com/checkout');
+      expect(capturedContextView.referrer).toBe('https://old.example.com/home');
+      expect(capturedContextView.externalId).toBe('ext-old-123');
+      expect(capturedContextView.fbp).toBe('fb.1.old');
+      expect(capturedContextView.fbc).toBe('fb.1.old.fbclid');
+    });
+  });
 });

@@ -144,6 +144,18 @@ export class MonitoringController {
     return { avgCaptureToDispatchSec, p95CaptureToDispatchSec };
   }
 
+  /**
+   * Purchase reconciliation (exactly-once observability): qualifying orders vs
+   * canonical Purchase events vs unique eventIds vs per-provider delivery rows.
+   * Every Purchase is traceable by orderId + eventId via `timeline`.
+   */
+  @Get('purchase-reconciliation')
+  async purchaseReconciliation() {
+    return {
+      reconciliation: await this.monitoring.getPurchaseReconciliation(),
+    };
+  }
+
   /** CAPI dedup-key usage over the window (event_id/external_id snapshots, fbp/fbc contexts). */
   @Get('dedup')
   async dedup(@Query('hours') hours?: string) {

@@ -101,10 +101,11 @@ describe('TrackingController', () => {
       expect(input.eventId).toBe('evt-123');
       expect(input.eventType).toBe('Purchase');
       expect(input.ctxId).toBe('ctx-abc');
-      expect(input.orderId).toBeUndefined();
+      expect(input.orderId).toBe('ord-42'); // Purchase mirrors carry the canonical displayId
       expect(input.actionSource).toBe('website');
       expect(typeof input.eventTime).toBe('number');
       expect(input.payload).toMatchObject({
+        triggerMode: 'browser',
         value: 1250,
         currency: 'BDT',
         content_ids: ['p1', 'p2'],

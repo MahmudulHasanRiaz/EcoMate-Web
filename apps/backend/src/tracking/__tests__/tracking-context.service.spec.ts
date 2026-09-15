@@ -27,20 +27,32 @@ describe('TrackingContextService', () => {
     expect(call[0].create.externalId).toBeDefined(); // server-generated
   });
 
-  it('merges into the existing row and never trusts browser ip/ua', async () => {
+  it('refreshes ip/ua with valid new values but never overwrites with empty', async () => {
     // Raw DB row from SELECT *: identifiers is the parsed JSON value, url/referrer are columns.
     const existing = {
       id: 'id-1', ctxId: 'ctx-1', externalId: 'ext-1', ip: '9.9.9.9', userAgent: 'UA-old',
       url: null, referrer: null, identifiers: { meta: { fbp: { value: 'old', firstSeenAt: 't' } } },
       firstSeenAt: new Date(), lastSeenAt: new Date(), createdAt: new Date(), updatedAt: new Date(),
     };
+
+    // Case 1: valid new IP/UA replaces stale values
     queryRawMock.mockResolvedValue([existing]);
     await service.upsertContext('ctx-1', { identifiers: { meta: { fbp: 'new' } } }, '5.5.5.5', 'UA-new');
     expect(upsertMock).toHaveBeenCalled();
-    const call = upsertMock.mock.calls[0][0];
-    expect(call.update.identifiers.meta.fbp.value).toBe('new'); // rotating: replaced
-    expect(call.update.ip).toBeUndefined();                     // ip/ua never overwritten
-    expect(call.update.userAgent).toBeUndefined();
+    const call1 = upsertMock.mock.calls[0][0];
+    expect(call1.update.identifiers.meta.fbp.value).toBe('new'); // rotating: replaced
+    expect(call1.update.ip).toBe('5.5.5.5');                    // valid new IP replaces stale
+    expect(call1.update.userAgent).toBe('UA-new');               // valid new UA replaces stale
+
+    upsertMock.mockClear();
+    queryRawMock.mockClear();
+
+    // Case 2: empty/missing values never overwrite existing valid ones
+    queryRawMock.mockResolvedValue([{ ...existing, ip: '5.5.5.5', userAgent: 'UA-new' }]);
+    await service.upsertContext('ctx-1', { identifiers: {} }, '', '');
+    const call2 = upsertMock.mock.calls[0][0];
+    expect(call2.update.ip).toBeUndefined();       // empty string → no overwrite
+    expect(call2.update.userAgent).toBeUndefined(); // empty string → no overwrite
   });
 
   it('getByCtxId returns the row or null', async () => {

@@ -208,6 +208,26 @@ const EMPTY_FUNNEL: DispatchFunnel = Object.freeze({
 const MAX_ERROR_MSG_LENGTH = 300;
 
 /**
+ * Purchase reconciliation (exactly-once observability): compares qualifying
+ * orders vs canonical Purchase events vs provider delivery rows vs unique
+ * event IDs. Every figure is traceable by orderId + eventId (see `timeline`).
+ */
+export interface PurchaseReconciliation {
+  /** Non-trashed orders (the eligibility base population). */
+  orders: number;
+  /** Canonical Purchase snapshots (exactly-once ledger). */
+  canonicalPurchases: number;
+  /** Distinct Purchase eventIds (must equal canonicalPurchases). */
+  uniquePurchaseEventIds: number;
+  /** Browser-origin Purchase snapshots (mirror fallback wins). */
+  browserOriginPurchases: number;
+  /** Per-provider dispatch rows for Purchase snapshots. */
+  byProvider: Record<string, { sent: number; pending: number; failed: number; skipped: number }>;
+  /** Purchase snapshots with no retrievable outbox (pipeline gap). */
+  orphanPurchases: number;
+}
+
+/**
  * MonitoringService (Phase 6) — read-only aggregate queries for the ops
  * dashboard. Every method is a Prisma aggregate/groupBy over the tracking
  * tables; no raw SQL and no writes. The funnel, retry histogram, and top
@@ -868,6 +888,58 @@ export class MonitoringService {
     const grade: HealthScore['grade'] =
       score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : score >= 60 ? 'D' : 'F';
     return { score, grade, penalties };
+  }
+
+  /**
+   * Purchase reconciliation summary. `orders` counts live (non-trashed) orders;
+   * per-order drill-down is the `timeline` endpoint (by eventId =
+   * purchase_{order UUID}). A healthy pipeline shows canonicalPurchases ==
+   * uniquePurchaseEventIds, and per-provider SENT matching the eligible share.
+   */
+  async getPurchaseReconciliation(): Promise<PurchaseReconciliation> {
+    // No FKs exist between the tracking log tables by design, so the
+    // snapshot↔outbox joins below are raw SQL on the string columns.
+    const [orders, canonicalPurchases, uniqueIds, browserRows, outboxedRows, dispatchRows] =
+      await Promise.all([
+        this.prisma.order.count({ where: { trashedAt: null } }),
+        this.prisma.trackingSnapshot.count({ where: { eventType: 'Purchase' } }),
+        this.prisma.trackingSnapshot.groupBy({
+          by: ['eventId'],
+          where: { eventType: 'Purchase' },
+        }),
+        this.prisma.$queryRaw<{ count: bigint }[]>`
+          SELECT COUNT(*)::bigint AS count FROM "TrackingSnapshot" s
+          JOIN "TrackingOutbox" o ON o."snapshotId" = s.id
+          WHERE s."eventType" = 'Purchase'
+            AND o."configSnapshot"->>'source' = 'browser'`,
+        this.prisma.$queryRaw<{ count: bigint }[]>`
+          SELECT COUNT(DISTINCT o."snapshotId")::bigint AS count
+          FROM "TrackingOutbox" o
+          JOIN "TrackingSnapshot" s ON s.id = o."snapshotId"
+          WHERE s."eventType" = 'Purchase'`,
+        this.prisma.trackingDispatch.findMany({
+          where: { eventId: { startsWith: 'purchase_' } },
+          select: { provider: true, status: true },
+        }),
+      ]);
+    const browserOriginPurchases = Number(browserRows[0]?.count ?? 0);
+    const outboxed = Number(outboxedRows[0]?.count ?? 0);
+    const byProvider: PurchaseReconciliation['byProvider'] = {};
+    for (const row of dispatchRows) {
+      const entry = (byProvider[row.provider] ??= { sent: 0, pending: 0, failed: 0, skipped: 0 });
+      if (row.status === 'SENT') entry.sent += 1;
+      else if (row.status === 'SKIPPED') entry.skipped += 1;
+      else if (row.status === 'FAILED' || row.status === 'DEAD') entry.failed += 1;
+      else entry.pending += 1;
+    }
+    return {
+      orders,
+      canonicalPurchases,
+      uniquePurchaseEventIds: uniqueIds.length,
+      browserOriginPurchases,
+      byProvider,
+      orphanPurchases: Math.max(0, canonicalPurchases - outboxed),
+    };
   }
 
   private cutoff(hours: number): Date {

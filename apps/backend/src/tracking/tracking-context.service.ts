@@ -47,6 +47,11 @@ export class TrackingContextService {
         const merged = mergeContext(existing, sanitizedInput);
 
         const identifiers = merged.identifiers as unknown as Prisma.InputJsonValue;
+        // IP/UA refresh: a valid new value replaces a stale one, but an
+        // empty/missing value never clobbers a stored valid one (Prisma
+        // `undefined` leaves the column untouched).
+        const freshIp = ip?.trim() ? ip : undefined;
+        const freshUa = userAgent?.trim() ? userAgent : undefined;
         await tx.trackingContext.upsert({
           where: { ctxId },
           create: {
@@ -62,6 +67,8 @@ export class TrackingContextService {
             url: merged.url ?? undefined,
             referrer: merged.referrer ?? undefined,
             identifiers,
+            ...(freshIp !== undefined ? { ip: freshIp } : {}),
+            ...(freshUa !== undefined ? { userAgent: freshUa } : {}),
           },
         });
       });

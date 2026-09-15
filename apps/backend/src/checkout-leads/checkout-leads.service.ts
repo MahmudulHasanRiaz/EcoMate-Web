@@ -536,6 +536,7 @@ export class CheckoutLeadsService {
           ),
           actionSource: resolveActionSource(order),
           payload: {
+            triggerMode: 'offline',
             value: totalValue,
             currency: (configSnapshot as any).currency || 'BDT',
             content_ids: itemsList

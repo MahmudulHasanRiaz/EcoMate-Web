@@ -59,15 +59,25 @@ export class TrackingController {
       // any other unmapped name is unknown/typo'd and skipped best-effort, but logged
       // so silently-dropped events are visible.
       if (eventType) {
+        // Purchase mirrors carry the canonical deterministic eventId
+        // (purchase_{order UUID}) and the business order id (displayId) so the
+        // mirror dedups against the server capture instead of creating a
+        // second logical Purchase. triggerMode 'browser' lets the dispatcher
+        // apply the same per-provider mode policy as an instant trigger.
+        const mirrorOrderId =
+          typeof body.customData?.order_id === 'string'
+            ? body.customData.order_id
+            : undefined;
         await this.trackingCapture.capture(
           {
             eventId: body.eventId || uuid(),
             eventType,
-            orderId: undefined,
+            orderId: mirrorOrderId,
             ctxId: body.ctxId,
             eventTime: Math.floor(Date.now() / 1000),
             actionSource: 'website',
             payload: {
+              ...(eventType === 'Purchase' ? { triggerMode: 'browser' as const } : {}),
               value: body.customData?.value,
               currency: body.customData?.currency,
               content_ids: body.customData?.content_ids,

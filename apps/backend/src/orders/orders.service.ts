@@ -12,6 +12,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { dhakaDateParts } from '../common/utils/dhaka-time';
 import { TrackingCaptureService } from '../tracking/tracking-capture.service';
 import { TrackingSettingsService } from '../tracking/tracking-settings.service';
+import { TrackingContextService } from '../tracking/tracking-context.service';
+import { StoredIdentifiers } from '../tracking/context-merge';
 import { CustomersService } from '../customers/customers.service';
 import { OrdersEventService } from './orders-event.service';
 import { StockService } from '../stock/stock.service';
@@ -182,6 +184,7 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly trackingCapture: TrackingCaptureService,
     private readonly trackingSettings: TrackingSettingsService,
+    private readonly trackingContext: TrackingContextService,
     private readonly customersService: CustomersService,
     private readonly events: OrdersEventService,
     private readonly stockService: StockService,
@@ -1000,6 +1003,30 @@ export class OrdersService {
         ? dto.officeNotes
         : await this.getDefaultOfficeNote();
 
+    // Pre-fetch tracking purchase-mode settings OUTSIDE the transaction so a
+    // settings-table failure never rolls back the order. Passed to
+    // firePurchaseInstant to avoid a non-transactional read inside the tx.
+    let preloadedPurchaseSettings: Record<string, string> = {};
+    try {
+      const purchaseSettings = await this.prisma.systemSetting.findMany({
+        where: {
+          key: {
+            in: [
+              'tracking_meta_purchase_mode',
+              'tracking_tiktok_purchase_mode',
+            ],
+          },
+        },
+      });
+      preloadedPurchaseSettings = Object.fromEntries(
+        purchaseSettings.map((s: any) => [s.key, s.value]),
+      );
+    } catch {
+      // Best-effort: if settings table is unreachable, purchase capture is
+      // skipped inside the transaction (both modes default to 'instant' but
+      // the lookup failure means we can't determine eligibility).
+    }
+
     const order = await this.prisma.$transaction(async (tx) => {
       // Fetch and validate database prices and active statuses
       const productIds = Array.from(
@@ -1766,36 +1793,33 @@ export class OrdersService {
       }
 
       // Capture the purchase snapshot inside the same transaction as the order
-      // insert (idempotent). Wrapped so a capture-side failure can never roll
-      // back the order.
-      try {
-        const orderWithItems = await tx.order.findUnique({
-          where: { id: created.id },
-          include: {
-            items: {
-              include: {
-                product: {
-                  select: {
-                    id: true,
-                    name: true,
-                    sku: true,
-                    category: { select: { name: true } },
-                  },
+      // insert (idempotent). DB errors propagate and roll back the entire
+      // transaction — a committed order MUST have a durable Purchase intent.
+      const orderWithItems = await tx.order.findUnique({
+        where: { id: created.id },
+        include: {
+          items: {
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                  sku: true,
+                  category: { select: { name: true } },
                 },
-                combo: { select: { id: true, name: true } },
-                variant: { select: { id: true, sku: true } },
               },
+              combo: { select: { id: true, name: true } },
+              variant: { select: { id: true, sku: true } },
             },
-            payments: true,
           },
-        });
-        if (orderWithItems) {
-          await this.firePurchaseInstant(orderWithItems as any, tx);
-        }
-      } catch (err) {
-        this.logger.error(
-          `Failed to capture purchase snapshot for order ${created.id}:`,
-          err,
+          payments: true,
+        },
+      });
+      if (orderWithItems) {
+        await this.firePurchaseInstant(
+          orderWithItems as any,
+          tx,
+          preloadedPurchaseSettings,
         );
       }
 
@@ -3226,11 +3250,12 @@ export class OrdersService {
         }
 
         // Capture tracking snapshots for every order the bulk change touched.
-        // firePurchaseValidated/fireRefundEvent self-gate on settings; the block
-        // is wrapped so a capture-side failure can never roll back the statuses.
-        try {
-          for (const order of orders) {
-            if (!validIds.includes(order.id)) continue;
+        // firePurchaseValidated/fireRefundEvent self-gate on settings; each
+        // order is isolated so one order's capture failure can never skip the
+        // remaining orders' Purchases, and never rolls back the statuses.
+        for (const order of orders) {
+          if (!validIds.includes(order.id)) continue;
+          try {
             const withItems = await tx.order.findUnique({
               where: { id: order.id },
               include: {
@@ -3263,12 +3288,12 @@ export class OrdersService {
             ) {
               await this.fireRefundEvent(withItems as any, tx);
             }
+          } catch (err) {
+            this.logger.error(
+              `Failed to capture tracking snapshot for order ${order.id} in bulk status change:`,
+              err,
+            );
           }
-        } catch (err) {
-          this.logger.error(
-            `Failed to capture tracking snapshots for bulk status change:`,
-            err,
-          );
         }
       });
     }
@@ -4232,33 +4257,26 @@ export class OrdersService {
     }
   }
 
-  private async firePurchaseInstant(order: any, tx?: Prisma.TransactionClient) {
-    try {
-      const settings = await this.prisma.systemSetting.findMany({
-        where: {
-          key: {
-            in: [
-              'tracking_meta_purchase_mode',
-              'tracking_tiktok_purchase_mode',
-            ],
-          },
-        },
-      });
-      const settingMap = Object.fromEntries(
-        settings.map((s: any) => [s.key, s.value]),
-      );
-      const metaInstant =
-        (settingMap['tracking_meta_purchase_mode'] || 'instant') === 'instant';
-      const tiktokInstant =
-        (settingMap['tracking_tiktok_purchase_mode'] || 'instant') ===
-        'instant';
+  /**
+   * Fire the instant Purchase capture inside the order transaction. Settings
+   * are pre-loaded outside the tx (see create()) to avoid non-transactional
+   * reads. DB errors propagate to the caller → transaction rollback, ensuring
+   * a committed order always has a durable Purchase intent.
+   */
+  private async firePurchaseInstant(
+    order: any,
+    tx: Prisma.TransactionClient,
+    preloadedSettings: Record<string, string> = {},
+  ) {
+    const settingMap = preloadedSettings;
+    const metaInstant =
+      (settingMap['tracking_meta_purchase_mode'] || 'instant') === 'instant';
+    const tiktokInstant =
+      (settingMap['tracking_tiktok_purchase_mode'] || 'instant') === 'instant';
 
-      if (!metaInstant && !tiktokInstant) return;
+    if (!metaInstant && !tiktokInstant) return;
 
-      await this.buildAndSendPurchaseEvent(order, 'instant', tx);
-    } catch (err) {
-      this.logger.error('Failed to fire instant purchase event:', err);
-    }
+    await this.buildAndSendPurchaseEvent(order, 'instant', tx);
   }
 
   private async firePurchaseValidated(
@@ -4298,7 +4316,20 @@ export class OrdersService {
 
       if (!metaFires && !tiktokFires) return;
 
-      await this.buildAndSendPurchaseEvent(order, 'validated', tx);
+      const result = await this.buildAndSendPurchaseEvent(order, 'validated', tx);
+      // Instant capture already owns the canonical snapshot (same deterministic
+      // eventId → DEDUPED): revive providers deferred at dispatch time so the
+      // SAME event is now delivered to the validated-mode providers.
+      if (result?.status === 'DEDUPED') {
+        const providers = [
+          ...(metaFires ? ['meta'] : []),
+          ...(tiktokFires ? ['tiktok'] : []),
+        ];
+        await this.trackingCapture.ensureValidatedDispatch(
+          `purchase_${order.id}`,
+          providers,
+        );
+      }
     } catch (err) {
       this.logger.error('Failed to fire validated purchase event:', err);
     }
@@ -4308,7 +4339,7 @@ export class OrdersService {
     order: any,
     mode: 'instant' | 'validated',
     tx?: Prisma.TransactionClient,
-  ) {
+  ): Promise<{ status: 'CAPTURED' | 'DEDUPED'; snapshotId?: string } | undefined> {
     let email = '';
     let phone = '';
     let firstName = '';
@@ -4318,22 +4349,30 @@ export class OrdersService {
     let zip = '';
     let country = 'BD';
 
+    // Canonical customer identity: shipping address is the source of truth for
+    // the Purchase payload (customer-entered checkout data). CustomerProfile
+    // fields are fallback for registered users without shipping details.
+    const shippingAddr = order.shippingAddress || {};
+    if (typeof shippingAddr === 'object') {
+      phone = shippingAddr.phone || '';
+      firstName = shippingAddr.name || '';
+    }
+
     if (order.customer) {
       email = order.customer.email || '';
-      firstName = order.customer.firstName || '';
+      if (!phone) phone = order.customer.phone || '';
+      if (!firstName) firstName = order.customer.name || '';
       lastName = order.customer.lastName || '';
-      phone = order.customer.phoneNumber || '';
     }
 
     if (!phone) phone = order.guestPhone || '';
     if (!firstName) firstName = order.guestName || '';
 
-    const shippingAddr = order.shippingAddress || {};
     if (typeof shippingAddr === 'object') {
       city = shippingAddr.city || shippingAddr.district || '';
       // Meta/GA4 match keys (Wave-2.5): state/zip are anonymous match fields —
       // they lift EMQ without PII. Read both the Address model names (state,
-      // zipCode) and storefront aliases (division, postalCode). Historical
+      // zipCode) and storefront aliases (division, postalCode, zip). Historical
       // orders without a persisted division are lazily resolved here from the
       // district via the canonical resolver (spec §21).
       state =
@@ -4341,12 +4380,12 @@ export class OrdersService {
         shippingAddr.division ||
         resolveDivision(shippingAddr.district) ||
         '';
-      zip = shippingAddr.zipCode || shippingAddr.postalCode || '';
+      zip = shippingAddr.zip || shippingAddr.zipCode || shippingAddr.postalCode || '';
       if (shippingAddr.country) country = shippingAddr.country;
     }
 
     const itemsList = (order.items as any[]) || [];
-    const totalValue = Number(order.total || 0);
+    const totalValue = Number(order.total || order.subtotal || 0);
 
     const contents = itemsList.map((i: any) => ({
       id: i.variant?.sku || i.product?.sku || i.productId || i.comboId || '',
@@ -4362,9 +4401,15 @@ export class OrdersService {
       : undefined;
     const contentCategory = firstItem?.product?.category?.name || undefined;
 
-    const createdAt = order.createdAt
-      ? Math.floor(new Date(order.createdAt).getTime() / 1000)
-      : Math.floor(Date.now() / 1000);
+    // Business event time: instant = order creation, validated = the actual
+    // qualifying status transition (now). A late validation must not backdate
+    // to checkout time.
+    const createdAt =
+      mode === 'validated'
+        ? Math.floor(Date.now() / 1000)
+        : order.createdAt
+          ? Math.floor(new Date(order.createdAt).getTime() / 1000)
+          : Math.floor(Date.now() / 1000);
 
     const actionSource = resolveActionSource(order);
 
@@ -4376,7 +4421,34 @@ export class OrdersService {
     // The event_id reaches Meta unchanged so Pixel + CAPI dedup correctly.
     const businessOrderId = order.displayId || order.id;
 
-    await this.trackingCapture.capture(
+    // Freeze the order-time tracking identity so the Purchase payload uses the
+    // exact identity that existed at checkout — not a later-mutated live context.
+    // The dispatcher reads this snapshot field instead of dereferencing ctxId
+    // against the mutable TrackingContext table.
+    let trackingIdentity: import('../tracking/tracking-snapshot.types').FrozenTrackingIdentity | undefined;
+    if (order.trackingSessionId) {
+      try {
+        const ctx = await this.trackingContext.getByCtxId(order.trackingSessionId);
+        if (ctx) {
+          const identifiers = (ctx.identifiers ?? {}) as unknown as StoredIdentifiers;
+          trackingIdentity = {
+            ip: ctx.ip || undefined,
+            userAgent: ctx.userAgent || undefined,
+            url: ctx.url || undefined,
+            referrer: ctx.referrer || undefined,
+            externalId: ctx.externalId || undefined,
+            fbp: identifiers.meta?.fbp?.value,
+            fbc: identifiers.meta?.fbc?.value,
+            gclid: identifiers.google?.gclid?.value,
+            ttclid: identifiers.tiktok?.ttclid?.value,
+          };
+        }
+      } catch {
+        // Best-effort freeze — if context lookup fails, dispatcher falls back to live
+      }
+    }
+
+    const captureResult = await this.trackingCapture.capture(
       {
         eventId: `purchase_${order.id}`,
         eventType: 'Purchase',
@@ -4385,6 +4457,7 @@ export class OrdersService {
         eventTime: createdAt,
         actionSource,
         payload: {
+          triggerMode: mode,
           value: totalValue,
           currency: (configSnapshot as any).currency || 'BDT',
           content_ids: itemsList
@@ -4400,6 +4473,7 @@ export class OrdersService {
           ),
           customerId: order.customerId ?? undefined,
           orderId: businessOrderId,
+          ...(trackingIdentity ? { trackingIdentity } : {}),
           customer: {
             email: email || undefined,
             phone: phone || undefined,
@@ -4415,6 +4489,7 @@ export class OrdersService {
       },
       tx,
     );
+    return captureResult;
   }
 
   private async fireRefundEvent(order: any, tx?: Prisma.TransactionClient) {
