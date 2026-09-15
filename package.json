@@ -23,26 +23,35 @@
     "react": "19.2.5",
     "react-dom": "19.2.5",
     "@nestjs/platform-express": {
-      "multer": "2.2.0"
+      "multer": "2.4.0"
     },
     "@fastify/static": "^10.1.2",
     "postcss": "8.5.25",
-    "vitest": "4.1.10",
+    "vitest": "4.1.11",
     "vite": "^8.0.8",
     "esbuild": "0.25.0",
-    "hono": "4.13.0",
+    "hono": "4.13.8",
     "valibot": ">=1.4.2",
-    "sharp": ">=0.35.0",
+    "sharp": ">=0.35.4",
     "find-my-way": ">=9.7.0",
     "brace-expansion": ">=5.0.8",
     "js-yaml": "5.2.3",
     "dompurify": "3.4.13",
-    "deepmerge-ts": "^8.0.0"
+    "deepmerge-ts": "^8.0.0",
+    "multer": "2.4.0",
+    "fastify": "5.12.4",
+    "qs": "6.16.0",
+    "nodemailer": "9.1.1",
+    "smol-toml": "1.8.0",
+    "browserslist": "4.28.9",
+    "baseline-browser-mapping": "2.11.23",
+    "@xmldom/xmldom": "0.9.12",
+    "mysql2": "3.24.4"
   },
   "devDependencies": {
     "@hono/node-server": "^2.0.11",
     "concurrently": "^9.2.1",
-    "fast-uri": "^3.1.4",
+    "fast-uri": "^3.1.6",
     "typescript": "^5",
     "vite": "^8.0.8"
   },
