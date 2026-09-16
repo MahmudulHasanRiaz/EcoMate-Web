@@ -9,12 +9,13 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2, Radio, Save, ExternalLink, ChevronsUpDown } from 'lucide-react'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { TrackingTabs } from './tracking-nav'
 import { MetaDestinationsCard, hasConfiguredDestinations } from './meta-destinations-card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ProviderHeader, PurchaseTimingFields } from './tracking-ui'
 
 export function TrackingSettings() {
   const queryClient = useQueryClient()
@@ -126,88 +127,66 @@ export function TrackingSettings() {
       <TrackingTabs />
       <Separator className='my-6' />
 
-      {/* Tracking pipeline relay */}
+      {/* Tracking pipeline relay — global kill switch for every provider. */}
       <Card className='overflow-hidden border-none shadow-md bg-gradient-to-br from-background to-muted/20'>
-        <CardHeader className='pb-4'>
-          <div className='flex items-center justify-between'>
-            <div className='flex items-center gap-2 mb-1'>
-              <Radio className='h-5 w-5 text-primary' />
-              <CardTitle className='text-xl'>Tracking Pipeline (Relay)</CardTitle>
+        <CardContent className='flex items-center justify-between gap-4 py-4'>
+          <div className='min-w-0'>
+            <div className='flex items-center gap-2 font-medium'>
+              <Radio className='h-4 w-4 shrink-0 text-primary' />
+              Tracking Pipeline (Relay)
             </div>
-            <Switch checked={relayEnabled} onCheckedChange={setRelayEnabled} />
-          </div>
-          <CardDescription>
-            When ON, captured events (Purchase, AddToCart, …) are dispatched to the enabled providers
-            (Meta, TikTok, GA4, Google Ads) through the outbox relay. When OFF, events are captured to the
-            outbox but <span className='font-medium'>not sent</span> to any provider.
-          </CardDescription>
-        </CardHeader>
-      </Card>
-      <Separator className='my-6' />
-
-      {/* Step 3 — Meta destinations (multi-pixel + multi-CAPI) */}
-      <MetaDestinationsCard
-        raw={metaDestinations}
-        onChange={setMetaDestinations}
-        disabled={setMut.isPending}
-      />
-      <Separator className='my-6' />
-
-      {/* Provider-level Meta delivery settings — always visible. These apply
-          whether delivery runs through destinations or the legacy fallback:
-          tracking_meta_enabled, tracking_meta_purchase_mode,
-          tracking_meta_validated_status. No per-destination purchase mode. */}
-      <Card className='overflow-hidden border-none shadow-md bg-gradient-to-br from-background to-muted/20'>
-        <CardHeader className='pb-4'>
-          <div className='flex items-center justify-between'>
-            <div className='flex items-center gap-2 mb-1'>
-              <Radio className='h-5 w-5 text-primary' />
-              <CardTitle className='text-xl'>Meta Delivery Settings</CardTitle>
-            </div>
-            <Switch checked={metaEnabled} onCheckedChange={setMetaEnabled} />
-          </div>
-          <CardDescription>
-            Master switch and Purchase timing for Meta delivery (applies to every Meta destination).
-          </CardDescription>
-        </CardHeader>
-        <CardContent className={metaEnabled ? '' : 'opacity-50 pointer-events-none'}>
-          <div className='space-y-2 sm:col-span-2 mt-4'>
-            <Label htmlFor='meta-purchase-mode'>Purchase Event Mode</Label>
-            <Select value={metaPurchaseMode} onValueChange={(v) => { setMetaPurchaseMode(v); if (v === 'instant') setMetaValidatedStatus(''); }}>
-              <SelectTrigger id='meta-purchase-mode' className='bg-background/50 w-full sm:w-72'>
-                <SelectValue placeholder='Select mode' />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value='instant'>Instant — Send immediately (client + server)</SelectItem>
-                <SelectItem value='validated'>Validated — Send when status is reached (server only)</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className='text-xs text-muted-foreground'>
-              Choose "Instant" for immediate purchase tracking, or "Validated" to delay until the order reaches a specific status.
+            <p className='mt-0.5 text-xs text-muted-foreground'>
+              When OFF, events are captured but <span className='font-medium'>not sent</span> to any provider.
             </p>
           </div>
-
-          {metaPurchaseMode === 'validated' && (
-            <div className='space-y-2 sm:col-span-2'>
-              <Label htmlFor='meta-validated-status'>Trigger on Status</Label>
-              <Select value={metaValidatedStatus} onValueChange={setMetaValidatedStatus}>
-                <SelectTrigger id='meta-validated-status' className='bg-background/50 w-full sm:w-72'>
-                  <SelectValue placeholder='Select order status' />
-                </SelectTrigger>
-                <SelectContent>
-                  {(statusList || []).map((s: any) => (
-                    <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className='text-xs text-muted-foreground'>
-                The Purchase event will be sent (server-side only) when the order reaches this status. Client identifiers (fbp, fbc) are saved at checkout and included.
-              </p>
-            </div>
-          )}
+          <Switch checked={relayEnabled} onCheckedChange={setRelayEnabled} aria-label='Tracking pipeline relay enabled' />
         </CardContent>
       </Card>
-      <Separator className='my-6' />
+
+      {/* Provider navigation — one provider's configuration visible at a time. */}
+      <Tabs defaultValue='meta' className='w-full'>
+        <TabsList className='grid w-full grid-cols-3 sm:w-auto sm:min-w-[24rem]' aria-label='Tracking providers'>
+          <TabsTrigger value='meta' className='gap-2'>
+            <span className={metaEnabled ? 'h-1.5 w-1.5 rounded-full bg-emerald-500' : 'h-1.5 w-1.5 rounded-full bg-muted-foreground/40'} aria-hidden />
+            Meta
+          </TabsTrigger>
+          <TabsTrigger value='tiktok' className='gap-2'>
+            <span className={tiktokEnabled ? 'h-1.5 w-1.5 rounded-full bg-emerald-500' : 'h-1.5 w-1.5 rounded-full bg-muted-foreground/40'} aria-hidden />
+            TikTok
+          </TabsTrigger>
+          <TabsTrigger value='ga4' className='gap-2'>GA4</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value='meta' className='mt-6 space-y-6'>
+          {/* Provider-level Meta delivery settings — always visible. These apply
+              whether delivery runs through destinations or the legacy fallback:
+              tracking_meta_enabled, tracking_meta_purchase_mode,
+              tracking_meta_validated_status. No per-destination purchase mode. */}
+          <Card className='overflow-hidden border-none shadow-md bg-gradient-to-br from-background to-muted/20'>
+            <CardHeader className='pb-4'>
+              <ProviderHeader title='Meta (Facebook)' enabled={metaEnabled} onToggle={setMetaEnabled} />
+              <CardDescription>
+                Delivery settings apply to every Meta destination.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className={metaEnabled ? '' : 'opacity-50 pointer-events-none'}>
+              <PurchaseTimingFields
+                idPrefix='meta'
+                mode={metaPurchaseMode}
+                onModeChange={(v) => { setMetaPurchaseMode(v); if (v === 'instant') setMetaValidatedStatus(''); }}
+                status={metaValidatedStatus}
+                onStatusChange={setMetaValidatedStatus}
+                statusList={statusList}
+              />
+            </CardContent>
+          </Card>
+
+          {/* Step 3 — Meta destinations (multi-pixel + multi-CAPI) */}
+          <MetaDestinationsCard
+            raw={metaDestinations}
+            onChange={setMetaDestinations}
+            disabled={setMut.isPending}
+          />
 
       {/* Legacy single-pixel credentials — fallback only. Collapsed while a
           destination exists (these values are then ignored for delivery);
@@ -300,168 +279,144 @@ export function TrackingSettings() {
           </CollapsibleContent>
         </Card>
       </Collapsible>
+        </TabsContent>
 
-      {/* TikTok Card */}
-      <Card className='overflow-hidden border-none shadow-md bg-gradient-to-br from-background to-muted/20'>
-        <CardHeader className='pb-4'>
-          <div className='flex items-center justify-between'>
-            <div className='flex items-center gap-2 mb-1'>
-              <Radio className='h-5 w-5 text-primary' />
-              <CardTitle className='text-xl'>TikTok Events API</CardTitle>
-            </div>
-            <Switch checked={tiktokEnabled} onCheckedChange={setTiktokEnabled} />
-          </div>
-          <CardDescription>
-            Server-side event tracking via TikTok Events API. Requires a Pixel Code and Access Token.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className={tiktokEnabled ? '' : 'opacity-50 pointer-events-none'}>
-          <div className='grid gap-6 sm:grid-cols-2'>
-            <div className='space-y-2'>
-              <Label htmlFor='tiktok-pixel-code'>Pixel Code</Label>
-              <Input
-                id='tiktok-pixel-code'
-                value={tiktokPixelCode}
-                onChange={e => setTiktokPixelCode(e.target.value)}
-                placeholder='CABC12345'
-                className='bg-background/50'
+        {/* TikTok — same visual language as Meta (header + purchase timing +
+            connection), but a SINGLE pixel connection: the backend and browser
+            currently support one TikTok destination only, so there is no Add
+            Destination control here. */}
+        <TabsContent value='tiktok' className='mt-6 space-y-6'>
+          <Card className='overflow-hidden border-none shadow-md bg-gradient-to-br from-background to-muted/20'>
+            <CardHeader className='pb-4'>
+              <ProviderHeader title='TikTok Events API' enabled={tiktokEnabled} onToggle={setTiktokEnabled} />
+              <CardDescription>
+                Server-side event tracking via TikTok Events API. Single pixel connection.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className={tiktokEnabled ? 'space-y-6' : 'space-y-6 opacity-50 pointer-events-none'}>
+              <PurchaseTimingFields
+                idPrefix='tiktok'
+                mode={tiktokPurchaseMode}
+                onModeChange={(v) => { setTiktokPurchaseMode(v); if (v === 'instant') setTiktokValidatedStatus(''); }}
+                status={tiktokValidatedStatus}
+                onStatusChange={setTiktokValidatedStatus}
+                statusList={statusList}
               />
-            </div>
-            <div className='space-y-2'>
-              <Label htmlFor='tiktok-access-token'>Access Token</Label>
-              <Input
-                id='tiktok-access-token'
-                type='password'
-                value={tiktokAccessToken}
-                onChange={e => setTiktokAccessToken(e.target.value)}
-                placeholder='tt...'
-                className='bg-background/50'
-              />
-            </div>
-          </div>
-          <div className='grid gap-6 sm:grid-cols-2 mt-4'>
-            <div className='space-y-2'>
-              <Label htmlFor='tiktok-test-code'>Test Event Code (Optional)</Label>
-              <Input
-                id='tiktok-test-code'
-                value={tiktokTestCode}
-                onChange={e => setTiktokTestCode(e.target.value)}
-                placeholder='Test event UUID from TikTok'
-                className='bg-background/50'
-              />
-              <p className='text-xs text-muted-foreground'>
-                TikTok Events Manager → Test Events gives a test code UUID. Leave empty for production.
-              </p>
-            </div>
-            <div className='flex items-center justify-between rounded-lg border bg-background/50 px-3 py-2'>
-              <div className='space-y-0.5'>
-                <Label htmlFor='tiktok-test-mode'>Enable Test Mode</Label>
-                <p className='text-xs text-muted-foreground'>
-                  Route events to the TikTok Test Events tool.
-                </p>
+              <div className='grid gap-4 sm:grid-cols-2'>
+                <div className='space-y-2'>
+                  <Label htmlFor='tiktok-pixel-code'>Pixel Code</Label>
+                  <Input
+                    id='tiktok-pixel-code'
+                    value={tiktokPixelCode}
+                    onChange={e => setTiktokPixelCode(e.target.value)}
+                    placeholder='CABC12345'
+                    className='bg-background/50'
+                  />
+                </div>
+                <div className='space-y-2'>
+                  <Label htmlFor='tiktok-access-token'>Access Token</Label>
+                  <Input
+                    id='tiktok-access-token'
+                    type='password'
+                    value={tiktokAccessToken}
+                    onChange={e => setTiktokAccessToken(e.target.value)}
+                    placeholder='tt...'
+                    className='bg-background/50'
+                  />
+                </div>
               </div>
-              <Switch id='tiktok-test-mode' checked={tiktokTestMode} onCheckedChange={setTiktokTestMode} />
-            </div>
-          </div>
-          <div className='space-y-2 sm:col-span-2 mt-4'>
-            <Label htmlFor='tiktok-purchase-mode'>Purchase Event Mode</Label>
-            <Select value={tiktokPurchaseMode} onValueChange={(v) => { setTiktokPurchaseMode(v); if (v === 'instant') setTiktokValidatedStatus(''); }}>
-              <SelectTrigger id='tiktok-purchase-mode' className='bg-background/50 w-full sm:w-72'>
-                <SelectValue placeholder='Select mode' />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value='instant'>Instant — Send immediately (client + server)</SelectItem>
-                <SelectItem value='validated'>Validated — Send when status is reached (server only)</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className='text-xs text-muted-foreground'>
-              Choose "Instant" for immediate purchase tracking, or "Validated" to delay until the order reaches a specific status.
-            </p>
-          </div>
+              <div className='grid gap-4 sm:grid-cols-2'>
+                <div className='space-y-2'>
+                  <Label htmlFor='tiktok-test-code'>Test Event Code (Optional)</Label>
+                  <Input
+                    id='tiktok-test-code'
+                    value={tiktokTestCode}
+                    onChange={e => setTiktokTestCode(e.target.value)}
+                    placeholder='Test event UUID from TikTok'
+                    className='bg-background/50'
+                  />
+                  <p className='text-xs text-muted-foreground'>
+                    TikTok Events Manager → Test Events gives a test code UUID. Leave empty for production.
+                  </p>
+                </div>
+                <div className='flex items-center justify-between rounded-lg border bg-background/50 px-3 py-2'>
+                  <div className='space-y-0.5'>
+                    <Label htmlFor='tiktok-test-mode'>Enable Test Mode</Label>
+                    <p className='text-xs text-muted-foreground'>
+                      Route events to the TikTok Test Events tool.
+                    </p>
+                  </div>
+                  <Switch id='tiktok-test-mode' checked={tiktokTestMode} onCheckedChange={setTiktokTestMode} />
+                </div>
+              </div>
+              <div>
+                <a
+                  href='https://ads.tiktok.com/help/article/evnts-api-get-started'
+                  target='_blank'
+                  rel='noreferrer'
+                  className='text-sm text-primary hover:inline-flex items-center gap-1'
+                >
+                  How to get TikTok Events API credentials <ExternalLink className='h-3 w-3' />
+                </a>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-          {tiktokPurchaseMode === 'validated' && (
-            <div className='space-y-2 sm:col-span-2'>
-              <Label htmlFor='tiktok-validated-status'>Trigger on Status</Label>
-              <Select value={tiktokValidatedStatus} onValueChange={setTiktokValidatedStatus}>
-                <SelectTrigger id='tiktok-validated-status' className='bg-background/50 w-full sm:w-72'>
-                  <SelectValue placeholder='Select order status' />
-                </SelectTrigger>
-                <SelectContent>
-                  {(statusList || []).map((s: any) => (
-                    <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className='text-xs text-muted-foreground'>
-                The Purchase event will be sent (server-side only) when the order reaches this status. Client identifiers (fbp, fbc) are saved at checkout and included.
-              </p>
-            </div>
-          )}
+        {/* GA4 — env-driven, no destinations. Compact read-only panel. */}
+        <TabsContent value='ga4' className='mt-6 space-y-6'>
+          <Card className='overflow-hidden border-none shadow-md bg-gradient-to-br from-background to-muted/20'>
+            <CardHeader className='pb-4'>
+              <div className='flex items-center gap-2 mb-1'>
+                <h3 className='text-base font-semibold'>Google Analytics 4 (GA4)</h3>
+                <Badge variant='secondary'>Managed via environment</Badge>
+              </div>
+              <CardDescription>
+                Client-side tracking via gtag.js. Configure via env vars: <code>NEXT_PUBLIC_GA_MEASUREMENT_ID</code>.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className='grid gap-4 sm:grid-cols-2'>
+                <div className='space-y-2'>
+                  <Label htmlFor='ga-measurement-id'>Measurement ID</Label>
+                  <Input
+                    id='ga-measurement-id'
+                    value=''
+                    readOnly
+                    placeholder='Set via NEXT_PUBLIC_GA_MEASUREMENT_ID env var'
+                    className='bg-background/50 text-muted-foreground'
+                  />
+                  <p className='text-xs text-muted-foreground'>
+                    Configured server-side via <code>GA_MEASUREMENT_ID</code> and <code>GA_API_SECRET</code>.
+                  </p>
+                </div>
+                <div className='space-y-2'>
+                  <Label htmlFor='ga-ads-id'>Google Ads Conversion ID</Label>
+                  <Input
+                    id='ga-ads-id'
+                    value=''
+                    readOnly
+                    placeholder='Set via GA_ADS_CONVERSION_ID env var'
+                    className='bg-background/50 text-muted-foreground'
+                  />
+                </div>
+              </div>
+              <div className='mt-4'>
+                <a
+                  href='https://developers.google.com/analytics/devguides/collection/ga4'
+                  target='_blank'
+                  rel='noreferrer'
+                  className='text-sm text-primary hover:underline inline-flex items-center gap-1'
+                >
+                  GA4 setup guide <ExternalLink className='h-3 w-3' />
+                </a>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
-          <div className='mt-4'>
-            <a
-              href='https://ads.tiktok.com/help/article/evnts-api-get-started'
-              target='_blank'
-              rel='noreferrer'
-              className='text-sm text-primary hover:inline-flex items-center gap-1'
-            >
-              How to get TikTok Events API credentials <ExternalLink className='h-3 w-3' />
-            </a>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* GA4 Card */}
-      <Card className='overflow-hidden border-none shadow-md bg-gradient-to-br from-background to-muted/20'>
-        <CardHeader className='pb-4'>
-          <div className='flex items-center gap-2 mb-1'>
-            <Radio className='h-5 w-5 text-primary' />
-            <CardTitle className='text-xl'>Google Analytics 4 (GA4)</CardTitle>
-          </div>
-          <CardDescription>
-            Client-side tracking via gtag.js. Configure via env vars: <code>NEXT_PUBLIC_GA_MEASUREMENT_ID</code>.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className='grid gap-6 sm:grid-cols-2'>
-            <div className='space-y-2'>
-              <Label htmlFor='ga-measurement-id'>Measurement ID</Label>
-              <Input
-                id='ga-measurement-id'
-                value=''
-                readOnly
-                placeholder='Set via NEXT_PUBLIC_GA_MEASUREMENT_ID env var'
-                className='bg-background/50 text-muted-foreground'
-              />
-              <p className='text-xs text-muted-foreground'>
-                Configured server-side via <code>GA_MEASUREMENT_ID</code> and <code>GA_API_SECRET</code>.
-              </p>
-            </div>
-            <div className='space-y-2'>
-              <Label htmlFor='ga-ads-id'>Google Ads Conversion ID</Label>
-              <Input
-                id='ga-ads-id'
-                value=''
-                readOnly
-                placeholder='Set via GA_ADS_CONVERSION_ID env var'
-                className='bg-background/50 text-muted-foreground'
-              />
-            </div>
-          </div>
-          <div className='mt-4'>
-            <a
-              href='https://developers.google.com/analytics/devguides/collection/ga4'
-              target='_blank'
-              rel='noreferrer'
-              className='text-sm text-primary hover:underline inline-flex items-center gap-1'
-            >
-              GA4 setup guide <ExternalLink className='h-3 w-3' />
-            </a>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className='flex items-center justify-between p-4 bg-muted/40 rounded-xl border border-dashed border-muted-foreground/20'>
+      <div className='sticky bottom-4 flex items-center justify-between gap-4 p-4 bg-muted/80 backdrop-blur rounded-xl border border-dashed border-muted-foreground/20 shadow-lg'>
         <div className='text-sm text-muted-foreground'>
           Changes will take effect immediately. Tracked events include PageView, AddToCart, Purchase, and more.
         </div>
