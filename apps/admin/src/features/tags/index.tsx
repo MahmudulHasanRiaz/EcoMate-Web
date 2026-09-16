@@ -72,7 +72,7 @@ export function Tags() {
   )
 
   const saveMut = useMutation({
-    mutationFn: (d: { name: string; slug: string }) =>
+    mutationFn: (d: { name: string; slug: string }): Promise<import('axios').AxiosResponse> =>
       editing ? tagsApi.update(editing.id, d) : tagsApi.create(d),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tags'] })
