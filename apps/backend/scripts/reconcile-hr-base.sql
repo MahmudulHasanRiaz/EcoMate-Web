@@ -207,25 +207,34 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_column THEN null; END $$;
 
 -- ---- Fix enum column types (db push may have created tables with TEXT columns) --
--- Payslip.status: TEXT -> PayslipStatus
+-- NOTE: Must DROP DEFAULT before ALTER TYPE (Postgres can't auto-cast TEXT defaults to enums)
+--       then SET DEFAULT after. Wrapped in DO blocks with EXCEPTION handling.
+
+-- Payslip.status: TEXT -> PayslipStatus (default: 'draft')
 DO $$ BEGIN
+    ALTER TABLE "Payslip" ALTER COLUMN "status" DROP DEFAULT;
     ALTER TABLE "Payslip" ALTER COLUMN "status" TYPE "PayslipStatus" USING "status"::"PayslipStatus";
-EXCEPTION WHEN undefined_column THEN null;  -- column doesn't exist, skip
-        WHEN undefined_object THEN null;     -- enum type doesn't exist, skip
+    ALTER TABLE "Payslip" ALTER COLUMN "status" SET DEFAULT 'draft';
+EXCEPTION WHEN undefined_column THEN null;
+        WHEN undefined_object THEN null;
         WHEN others THEN RAISE WARNING 'Could not alter Payslip.status type: %', SQLERRM;
 END $$;
 
--- Employee.status: TEXT -> EmployeeStatus
+-- Employee.status: TEXT -> EmployeeStatus (default: 'active')
 DO $$ BEGIN
+    ALTER TABLE "Employee" ALTER COLUMN "status" DROP DEFAULT;
     ALTER TABLE "Employee" ALTER COLUMN "status" TYPE "EmployeeStatus" USING "status"::"EmployeeStatus";
+    ALTER TABLE "Employee" ALTER COLUMN "status" SET DEFAULT 'active';
 EXCEPTION WHEN undefined_column THEN null;
         WHEN undefined_object THEN null;
         WHEN others THEN RAISE WARNING 'Could not alter Employee.status type: %', SQLERRM;
 END $$;
 
--- Employee.employmentType: TEXT -> EmploymentType
+-- Employee.employmentType: TEXT -> EmploymentType (default: 'full_time')
 DO $$ BEGIN
+    ALTER TABLE "Employee" ALTER COLUMN "employmentType" DROP DEFAULT;
     ALTER TABLE "Employee" ALTER COLUMN "employmentType" TYPE "EmploymentType" USING "employmentType"::"EmploymentType";
+    ALTER TABLE "Employee" ALTER COLUMN "employmentType" SET DEFAULT 'full_time';
 EXCEPTION WHEN undefined_column THEN null;
         WHEN undefined_object THEN null;
         WHEN others THEN RAISE WARNING 'Could not alter Employee.employmentType type: %', SQLERRM;
@@ -239,15 +248,25 @@ EXCEPTION WHEN undefined_column THEN null;
         WHEN others THEN RAISE WARNING 'Could not alter Employee.gender type: %', SQLERRM;
 END $$;
 
--- Employee.attendanceMethod: TEXT -> AttendanceMethod (added by later migration, may also be TEXT)
+-- Employee.gender: TEXT -> EmployeeGender (nullable, no default)
 DO $$ BEGIN
+    ALTER TABLE "Employee" ALTER COLUMN "gender" TYPE "EmployeeGender" USING "gender"::"EmployeeGender";
+EXCEPTION WHEN undefined_column THEN null;
+        WHEN undefined_object THEN null;
+        WHEN others THEN RAISE WARNING 'Could not alter Employee.gender type: %', SQLERRM;
+END $$;
+
+-- Employee.attendanceMethod: TEXT -> AttendanceMethod (default: 'APP')
+DO $$ BEGIN
+    ALTER TABLE "Employee" ALTER COLUMN "attendanceMethod" DROP DEFAULT;
     ALTER TABLE "Employee" ALTER COLUMN "attendanceMethod" TYPE "AttendanceMethod" USING "attendanceMethod"::"AttendanceMethod";
+    ALTER TABLE "Employee" ALTER COLUMN "attendanceMethod" SET DEFAULT 'APP';
 EXCEPTION WHEN undefined_column THEN null;
         WHEN undefined_object THEN null;
         WHEN others THEN RAISE WARNING 'Could not alter Employee.attendanceMethod type: %', SQLERRM;
 END $$;
 
--- AttendanceRecord.status: TEXT -> AttendanceStatus (may be TEXT if created early)
+-- AttendanceRecord.status: TEXT -> AttendanceStatus (no default)
 DO $$ BEGIN
     ALTER TABLE "AttendanceRecord" ALTER COLUMN "status" TYPE "AttendanceStatus" USING "status"::"AttendanceStatus";
 EXCEPTION WHEN undefined_column THEN null;
@@ -255,15 +274,17 @@ EXCEPTION WHEN undefined_column THEN null;
         WHEN others THEN RAISE WARNING 'Could not alter AttendanceRecord.status type: %', SQLERRM;
 END $$;
 
--- AttendanceSettings.mode: TEXT -> AttendanceModeSetting
+-- AttendanceSettings.mode: TEXT -> AttendanceModeSetting (default: 'APP')
 DO $$ BEGIN
+    ALTER TABLE "AttendanceSettings" ALTER COLUMN "mode" DROP DEFAULT;
     ALTER TABLE "AttendanceSettings" ALTER COLUMN "mode" TYPE "AttendanceModeSetting" USING "mode"::"AttendanceModeSetting";
+    ALTER TABLE "AttendanceSettings" ALTER COLUMN "mode" SET DEFAULT 'APP';
 EXCEPTION WHEN undefined_column THEN null;
         WHEN undefined_object THEN null;
         WHEN others THEN RAISE WARNING 'Could not alter AttendanceSettings.mode type: %', SQLERRM;
 END $$;
 
--- AttendanceDay.status: TEXT -> AttendanceStatus
+-- AttendanceDay.status: TEXT -> AttendanceStatus (no default)
 DO $$ BEGIN
     ALTER TABLE "AttendanceDay" ALTER COLUMN "status" TYPE "AttendanceStatus" USING "status"::"AttendanceStatus";
 EXCEPTION WHEN undefined_column THEN null;
@@ -271,23 +292,27 @@ EXCEPTION WHEN undefined_column THEN null;
         WHEN others THEN RAISE WARNING 'Could not alter AttendanceDay.status type: %', SQLERRM;
 END $$;
 
--- AttendanceDay.attendanceMethod: TEXT -> AttendanceMethod
+-- AttendanceDay.attendanceMethod: TEXT -> AttendanceMethod (default: 'APP')
 DO $$ BEGIN
+    ALTER TABLE "AttendanceDay" ALTER COLUMN "attendanceMethod" DROP DEFAULT;
     ALTER TABLE "AttendanceDay" ALTER COLUMN "attendanceMethod" TYPE "AttendanceMethod" USING "attendanceMethod"::"AttendanceMethod";
+    ALTER TABLE "AttendanceDay" ALTER COLUMN "attendanceMethod" SET DEFAULT 'APP';
 EXCEPTION WHEN undefined_column THEN null;
         WHEN undefined_object THEN null;
         WHEN others THEN RAISE WARNING 'Could not alter AttendanceDay.attendanceMethod type: %', SQLERRM;
 END $$;
 
--- AttendanceSession.source: TEXT -> AttendanceSessionSource
+-- AttendanceSession.source: TEXT -> AttendanceSessionSource (default: 'APP')
 DO $$ BEGIN
+    ALTER TABLE "AttendanceSession" ALTER COLUMN "source" DROP DEFAULT;
     ALTER TABLE "AttendanceSession" ALTER COLUMN "source" TYPE "AttendanceSessionSource" USING "source"::"AttendanceSessionSource";
+    ALTER TABLE "AttendanceSession" ALTER COLUMN "source" SET DEFAULT 'APP';
 EXCEPTION WHEN undefined_column THEN null;
         WHEN undefined_object THEN null;
         WHEN others THEN RAISE WARNING 'Could not alter AttendanceSession.source type: %', SQLERRM;
 END $$;
 
--- EmployeeBankAccount.accountType: TEXT -> BankAccountType
+-- EmployeeBankAccount.accountType: TEXT -> BankAccountType (nullable, no default)
 DO $$ BEGIN
     ALTER TABLE "EmployeeBankAccount" ALTER COLUMN "accountType" TYPE "BankAccountType" USING "accountType"::"BankAccountType";
 EXCEPTION WHEN undefined_column THEN null;
@@ -295,23 +320,27 @@ EXCEPTION WHEN undefined_column THEN null;
         WHEN others THEN RAISE WARNING 'Could not alter EmployeeBankAccount.accountType type: %', SQLERRM;
 END $$;
 
--- EmployeeBankAccount.verificationStatus: TEXT -> BankVerificationStatus
+-- EmployeeBankAccount.verificationStatus: TEXT -> BankVerificationStatus (default: 'PENDING')
 DO $$ BEGIN
+    ALTER TABLE "EmployeeBankAccount" ALTER COLUMN "verificationStatus" DROP DEFAULT;
     ALTER TABLE "EmployeeBankAccount" ALTER COLUMN "verificationStatus" TYPE "BankVerificationStatus" USING "verificationStatus"::"BankVerificationStatus";
+    ALTER TABLE "EmployeeBankAccount" ALTER COLUMN "verificationStatus" SET DEFAULT 'PENDING';
 EXCEPTION WHEN undefined_column THEN null;
         WHEN undefined_object THEN null;
         WHEN others THEN RAISE WARNING 'Could not alter EmployeeBankAccount.verificationStatus type: %', SQLERRM;
 END $$;
 
--- AttendanceDevice.syncStatus: TEXT -> AttendanceDeviceSyncStatus
+-- AttendanceDevice.syncStatus: TEXT -> AttendanceDeviceSyncStatus (default: 'IDLE')
 DO $$ BEGIN
+    ALTER TABLE "AttendanceDevice" ALTER COLUMN "syncStatus" DROP DEFAULT;
     ALTER TABLE "AttendanceDevice" ALTER COLUMN "syncStatus" TYPE "AttendanceDeviceSyncStatus" USING "syncStatus"::"AttendanceDeviceSyncStatus";
+    ALTER TABLE "AttendanceDevice" ALTER COLUMN "syncStatus" SET DEFAULT 'IDLE';
 EXCEPTION WHEN undefined_column THEN null;
         WHEN undefined_object THEN null;
         WHEN others THEN RAISE WARNING 'Could not alter AttendanceDevice.syncStatus type: %', SQLERRM;
 END $$;
 
--- RawAttendanceEvent.eventType: TEXT -> AttendanceEventType
+-- RawAttendanceEvent.eventType: TEXT -> AttendanceEventType (no default)
 DO $$ BEGIN
     ALTER TABLE "RawAttendanceEvent" ALTER COLUMN "eventType" TYPE "AttendanceEventType" USING "eventType"::"AttendanceEventType";
 EXCEPTION WHEN undefined_column THEN null;
@@ -319,31 +348,37 @@ EXCEPTION WHEN undefined_column THEN null;
         WHEN others THEN RAISE WARNING 'Could not alter RawAttendanceEvent.eventType type: %', SQLERRM;
 END $$;
 
--- RawAttendanceEvent.status: TEXT -> AttendanceEventStatus
+-- RawAttendanceEvent.status: TEXT -> AttendanceEventStatus (default: 'PROCESSED')
 DO $$ BEGIN
+    ALTER TABLE "RawAttendanceEvent" ALTER COLUMN "status" DROP DEFAULT;
     ALTER TABLE "RawAttendanceEvent" ALTER COLUMN "status" TYPE "AttendanceEventStatus" USING "status"::"AttendanceEventStatus";
+    ALTER TABLE "RawAttendanceEvent" ALTER COLUMN "status" SET DEFAULT 'PROCESSED';
 EXCEPTION WHEN undefined_column THEN null;
         WHEN undefined_object THEN null;
         WHEN others THEN RAISE WARNING 'Could not alter RawAttendanceEvent.status type: %', SQLERRM;
 END $$;
 
--- EmployeeEarning.status: TEXT -> LedgerStatus
+-- EmployeeEarning.status: TEXT -> LedgerStatus (default: 'draft')
 DO $$ BEGIN
+    ALTER TABLE "EmployeeEarning" ALTER COLUMN "status" DROP DEFAULT;
     ALTER TABLE "EmployeeEarning" ALTER COLUMN "status" TYPE "LedgerStatus" USING "status"::"LedgerStatus";
+    ALTER TABLE "EmployeeEarning" ALTER COLUMN "status" SET DEFAULT 'draft';
 EXCEPTION WHEN undefined_column THEN null;
         WHEN undefined_object THEN null;
         WHEN others THEN RAISE WARNING 'Could not alter EmployeeEarning.status type: %', SQLERRM;
 END $$;
 
--- EmployeeDeduction.status: TEXT -> LedgerStatus
+-- EmployeeDeduction.status: TEXT -> LedgerStatus (default: 'draft')
 DO $$ BEGIN
+    ALTER TABLE "EmployeeDeduction" ALTER COLUMN "status" DROP DEFAULT;
     ALTER TABLE "EmployeeDeduction" ALTER COLUMN "status" TYPE "LedgerStatus" USING "status"::"LedgerStatus";
+    ALTER TABLE "EmployeeDeduction" ALTER COLUMN "status" SET DEFAULT 'draft';
 EXCEPTION WHEN undefined_column THEN null;
         WHEN undefined_object THEN null;
         WHEN others THEN RAISE WARNING 'Could not alter EmployeeDeduction.status type: %', SQLERRM;
 END $$;
 
--- CommissionRule.amountType: TEXT -> CommissionAmountType
+-- CommissionRule.amountType: TEXT -> CommissionAmountType (no default)
 DO $$ BEGIN
     ALTER TABLE "CommissionRule" ALTER COLUMN "amountType" TYPE "CommissionAmountType" USING "amountType"::"CommissionAmountType";
 EXCEPTION WHEN undefined_column THEN null;
@@ -351,17 +386,21 @@ EXCEPTION WHEN undefined_column THEN null;
         WHEN others THEN RAISE WARNING 'Could not alter CommissionRule.amountType type: %', SQLERRM;
 END $$;
 
--- CommissionEarning.status: TEXT -> LedgerStatus
+-- CommissionEarning.status: TEXT -> LedgerStatus (default: 'approved')
 DO $$ BEGIN
+    ALTER TABLE "CommissionEarning" ALTER COLUMN "status" DROP DEFAULT;
     ALTER TABLE "CommissionEarning" ALTER COLUMN "status" TYPE "LedgerStatus" USING "status"::"LedgerStatus";
+    ALTER TABLE "CommissionEarning" ALTER COLUMN "status" SET DEFAULT 'approved';
 EXCEPTION WHEN undefined_column THEN null;
         WHEN undefined_object THEN null;
         WHEN others THEN RAISE WARNING 'Could not alter CommissionEarning.status type: %', SQLERRM;
 END $$;
 
--- LeaveRequest.status: TEXT -> LeaveStatus
+-- LeaveRequest.status: TEXT -> LeaveStatus (default: 'pending')
 DO $$ BEGIN
+    ALTER TABLE "LeaveRequest" ALTER COLUMN "status" DROP DEFAULT;
     ALTER TABLE "LeaveRequest" ALTER COLUMN "status" TYPE "LeaveStatus" USING "status"::"LeaveStatus";
+    ALTER TABLE "LeaveRequest" ALTER COLUMN "status" SET DEFAULT 'pending';
 EXCEPTION WHEN undefined_column THEN null;
         WHEN undefined_object THEN null;
         WHEN others THEN RAISE WARNING 'Could not alter LeaveRequest.status type: %', SQLERRM;
