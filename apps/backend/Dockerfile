@@ -55,10 +55,11 @@ COPY --from=builder /app/apps/backend/public ./public
 COPY apps/backend/startup.sh ./startup.sh
 COPY apps/backend/scripts/resolve-failed-migrations.sh ./resolve-failed-migrations.sh
 COPY apps/backend/scripts/reconcile-hr-base.sql ./reconcile-hr-base.sql
+COPY apps/backend/scripts/fix-p2039.sql ./fix-p2039.sql
 RUN mkdir -p /app/uploads /app/backup-storage/work /app/.cache /app/mobile-builds && \
     chown -R nestjs:nodejs /app/uploads /app/backup-storage /app/.cache /app/mobile-builds && \
     chmod +x startup.sh resolve-failed-migrations.sh && \
-    chmod 644 reconcile-hr-base.sql
+    chmod 644 reconcile-hr-base.sql fix-p2039.sql
 COPY mobile-builds /app/mobile-builds/
 RUN chown -R nestjs:nodejs /app/mobile-builds
 USER root

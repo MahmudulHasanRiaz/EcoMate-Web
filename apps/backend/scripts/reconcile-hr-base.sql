@@ -17,6 +17,10 @@
 --   - Employee table      : has accessPresetId/betterAuthUserId/profilePictureUrl,
 --                           WITHOUT reportingToId/dateOfBirth/etc. (those come from
 --                           LATER pending migrations)
+--
+-- v2: Each FK is wrapped in its own DO $$ block with EXCEPTION handling so that
+--     one FK failure (e.g., missing referenced table) does NOT abort all other FKs.
+--     Also adds column-add guards for betterAuthUserId on Employee (P2039 fix).
 -- ============================================================================
 
 -- ---- Enums (create-if-absent) -------------------------------------------------
@@ -133,6 +137,19 @@ CREATE TABLE IF NOT EXISTS "PayslipItem" (
     CONSTRAINT "PayslipItem_pkey" PRIMARY KEY ("id")
 );
 
+-- ---- Column additions (if table exists but column is missing — P2039 fix) -----
+DO $$ BEGIN
+    ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "betterAuthUserId" TEXT;
+EXCEPTION WHEN duplicate_column THEN null; END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "accessPresetId" TEXT;
+EXCEPTION WHEN duplicate_column THEN null; END $$;
+
+DO $$ BEGIN
+    ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "profilePictureUrl" TEXT;
+EXCEPTION WHEN duplicate_column THEN null; END $$;
+
 -- ---- Unique indexes + relation indexes (create-if-absent) --------------------
 CREATE UNIQUE INDEX IF NOT EXISTS "AccessPreset_name_key" ON "AccessPreset"("name");
 CREATE UNIQUE INDEX IF NOT EXISTS "Department_name_key" ON "Department"("name");
@@ -151,35 +168,66 @@ CREATE INDEX IF NOT EXISTS "Payslip_status_idx" ON "Payslip"("status");
 CREATE INDEX IF NOT EXISTS "Payslip_periodStart_periodEnd_idx" ON "Payslip"("periodStart", "periodEnd");
 CREATE INDEX IF NOT EXISTS "PayslipItem_payslipId_idx" ON "PayslipItem"("payslipId");
 
--- ---- Foreign keys (add-if-absent, guarded) -----------------------------------
-DO $$
-BEGIN
+-- ---- Foreign keys (individual blocks — one failure cannot abort others) -------
+DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Employee_departmentId_fkey') THEN
     ALTER TABLE "Employee" ADD CONSTRAINT "Employee_departmentId_fkey"
       FOREIGN KEY ("departmentId") REFERENCES "Department"("id") ON UPDATE CASCADE ON DELETE SET NULL;
   END IF;
+EXCEPTION WHEN others THEN
+  RAISE WARNING 'Could not create Employee_departmentId_fkey: %', SQLERRM;
+END $$;
+
+DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Employee_designationId_fkey') THEN
     ALTER TABLE "Employee" ADD CONSTRAINT "Employee_designationId_fkey"
       FOREIGN KEY ("designationId") REFERENCES "Designation"("id") ON UPDATE CASCADE ON DELETE SET NULL;
   END IF;
+EXCEPTION WHEN others THEN
+  RAISE WARNING 'Could not create Employee_designationId_fkey: %', SQLERRM;
+END $$;
+
+DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Employee_accessPresetId_fkey') THEN
     ALTER TABLE "Employee" ADD CONSTRAINT "Employee_accessPresetId_fkey"
       FOREIGN KEY ("accessPresetId") REFERENCES "AccessPreset"("id") ON UPDATE CASCADE ON DELETE SET NULL;
   END IF;
+EXCEPTION WHEN others THEN
+  RAISE WARNING 'Could not create Employee_accessPresetId_fkey: %', SQLERRM;
+END $$;
+
+DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Employee_betterAuthUserId_fkey') THEN
     ALTER TABLE "Employee" ADD CONSTRAINT "Employee_betterAuthUserId_fkey"
-      FOREIGN KEY ("betterAuthUserId") REFERENCES better_auth_users("id") ON UPDATE CASCADE ON DELETE CASCADE;
+      FOREIGN KEY ("betterAuthUserId") REFERENCES "better_auth_users"("id") ON UPDATE CASCADE ON DELETE CASCADE;
   END IF;
+EXCEPTION WHEN others THEN
+  RAISE WARNING 'Could not create Employee_betterAuthUserId_fkey: %', SQLERRM;
+END $$;
+
+DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'SalaryStructure_employeeId_fkey') THEN
     ALTER TABLE "SalaryStructure" ADD CONSTRAINT "SalaryStructure_employeeId_fkey"
       FOREIGN KEY ("employeeId") REFERENCES "Employee"("id") ON UPDATE CASCADE ON DELETE RESTRICT;
   END IF;
+EXCEPTION WHEN others THEN
+  RAISE WARNING 'Could not create SalaryStructure_employeeId_fkey: %', SQLERRM;
+END $$;
+
+DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Payslip_employeeId_fkey') THEN
     ALTER TABLE "Payslip" ADD CONSTRAINT "Payslip_employeeId_fkey"
       FOREIGN KEY ("employeeId") REFERENCES "Employee"("id") ON UPDATE CASCADE ON DELETE RESTRICT;
   END IF;
+EXCEPTION WHEN others THEN
+  RAISE WARNING 'Could not create Payslip_employeeId_fkey: %', SQLERRM;
+END $$;
+
+DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'PayslipItem_payslipId_fkey') THEN
     ALTER TABLE "PayslipItem" ADD CONSTRAINT "PayslipItem_payslipId_fkey"
       FOREIGN KEY ("payslipId") REFERENCES "Payslip"("id") ON UPDATE CASCADE ON DELETE CASCADE;
   END IF;
+EXCEPTION WHEN others THEN
+  RAISE WARNING 'Could not create PayslipItem_payslipId_fkey: %', SQLERRM;
 END $$;

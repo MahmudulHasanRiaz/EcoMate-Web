@@ -23,6 +23,7 @@ const PRISMA_USER_MESSAGES: Record<string, string> = {
   P2016: 'Query interpretation error. Please try again.',
   P2021: 'This feature is temporarily unavailable. Database setup in progress.',
   P2023: 'Database schema update in progress. Please try again shortly.',
+  P2039: 'A required database relation is missing. Please contact support.',
 };
 
 function parsePrismaError(exception: Prisma.PrismaClientKnownRequestError): {
