@@ -12,7 +12,7 @@ import { TrackingContextService } from './tracking-context.service';
 import { IdentityResolutionService } from './identity-resolution.service';
 import { getRetryBackoffMs } from './outbox-relay.service';
 import { TrackingNormalizer } from './tracking.normalizer';
-import { TrackingSettingsService } from './tracking-settings.service';
+import { TrackingSettingsService, DEFAULT_SUCCESS_POLICY } from './tracking-settings.service';
 import { DlqService } from './dlq.service';
 import { ReplayService } from './replay.service';
 import {
@@ -20,6 +20,13 @@ import {
   TrackingSnapshotPayload,
 } from './tracking-snapshot.types';
 import { SCHEMA_VERSION } from './tracking.constants';
+import {
+  CapturedDestinationRef,
+  LEGACY_DESTINATION_ID,
+  TrackingDestination,
+  findDestination,
+  isDestinationDeliverable,
+} from './destinations';
 
 /** BullMQ `tracking` job payload produced by the outbox relay (Task 2). */
 export interface DispatchJob {
@@ -34,6 +41,36 @@ interface ConfigSnapshot {
   successPolicy?: string;
   purchaseModes?: { meta?: string; tiktok?: string };
   validatedStatuses?: { meta?: string; tiktok?: string };
+  /**
+   * Capture-time destination eligibility (Step 3). The dispatcher materializes
+   * EXACTLY these destinations — a destination added after the event was captured
+   * never receives it. Absent on legacy snapshots, which fall back to a single
+   * legacy-identity target per provider.
+   */
+  destinations?: CapturedDestinationRef[];
+}
+
+/**
+ * One unit of delivery: a provider + a destination. A provider with destination
+ * configuration (meta) fans out to one target per capture-time destination ref; a
+ * provider without one (tiktok/ga4/google_ads) yields a single legacy-identity
+ * target, preserving its pre-Step-3 behaviour exactly.
+ */
+interface DispatchTarget {
+  provider: string;
+  destinationId: string;
+  /** Pinned dataset identity (meta). Undefined for providers with no destinations. */
+  pixelId?: string;
+  /** Purchase timing mode this target follows (recorded per ref at capture). */
+  purchaseMode: string;
+  /**
+   * True when the target came from a capture-time destination ref and must be
+   * resolved against the live destination list: a destination removed after
+   * capture becomes an observable SKIPPED (`destination_removed`), never a silent
+   * drop. A merely DISABLED destination still delivers — disabling is
+   * forward-looking.
+   */
+  destinationBound: boolean;
 }
 
 /**
@@ -255,36 +292,107 @@ export class TrackingDispatcherService {
     // offline signal is `actionSource = physical_store` at capture time.
     const serverOnly = actionSource === 'physical_store';
 
-    // Build the work set: enabled providers whose adapter supports the event type
-    // AND whose configured Purchase mode matches this snapshot's trigger.
-    // Provider isolation: Meta=instant / TikTok=validated share one canonical
-    // snapshot + eventId, but each provider dispatches only on its own timing.
-    // A deferred provider is SKIPPED (revived later by ensureValidatedDispatch
-    // when its validated transition lands) — never sent early, never duplicated.
-    const eligible: Array<{ provider: string; adapter: TrackingProviderAdapter }> =
-      [];
+    // Live destination list, read once per dispatch. Used ONLY to detect a
+    // destination REMOVED after capture — never to add one (a destination added
+    // today must not receive a historical event). Tokens are read separately in
+    // buildCfg so rotation works.
+    const liveDestinations = await this.settings.getMetaDestinations();
+
+    const captureRefs = Array.isArray(config.destinations)
+      ? config.destinations
+      : [];
+    const providerPurchaseMode = (provider: string): string =>
+      provider === 'meta'
+        ? config.purchaseModes?.meta || 'instant'
+        : provider === 'tiktok'
+          ? config.purchaseModes?.tiktok || 'instant'
+          : 'instant';
+
+    // Build the work set as (provider, destination) TARGETS. Provider isolation is
+    // preserved: Meta=instant / TikTok=validated share one canonical snapshot +
+    // eventId, but each target dispatches only on its own timing. A deferred target
+    // is SKIPPED (revived later by ensureValidatedDispatch when its validated
+    // transition lands) — never sent early, never duplicated.
+    const targets: DispatchTarget[] = [];
     for (const provider of enabledProviders) {
-      const adapter = adapterByProvider.get(provider);
+      const refs = captureRefs.filter((r) => r?.provider === provider);
+      if (refs.length) {
+        for (const ref of refs) {
+          targets.push({
+            provider,
+            destinationId: ref.destinationId || LEGACY_DESTINATION_ID,
+            pixelId: ref.pixelId,
+            purchaseMode: ref.purchaseMode || providerPurchaseMode(provider),
+            destinationBound: true,
+          });
+        }
+      } else {
+        // Legacy snapshot (captured before destinations existed) or a provider
+        // with no destination model: one legacy-identity target, behaviour
+        // unchanged from pre-Step-3.
+        targets.push({
+          provider,
+          destinationId: LEGACY_DESTINATION_ID,
+          purchaseMode: providerPurchaseMode(provider),
+          destinationBound: false,
+        });
+      }
+    }
+
+    const eligible: Array<{
+      provider: string;
+      destinationId: string;
+      pixelId?: string;
+      adapter: TrackingProviderAdapter;
+    }> = [];
+    for (const target of targets) {
+      const adapter = adapterByProvider.get(target.provider);
       if (!adapter) {
         this.logger.warn(
-          `No adapter registered for enabled provider '${provider}' (snapshot ${job.snapshotId})`,
+          `No adapter registered for enabled provider '${target.provider}' (snapshot ${job.snapshotId})`,
         );
         continue;
       }
-      if (!adapter.supports(eventType, { serverOnly })) {
-        await this.recordSkipped(source, provider, qj);
-        continue;
-      }
-      if (!this.isPurchaseProviderEligible(provider, config, payload)) {
+
+      // Removal check: a destinationBound target whose destination no longer
+      // exists (or was soft-removed) becomes an OBSERVABLE SKIPPED with a stable
+      // reason, replacing the pre-Step-3 silent `continue` that let the outbox
+      // reach SENT through a NOOP. Historical dispatch identity is preserved —
+      // the row keeps its destinationId; nothing is deleted.
+      if (
+        target.destinationBound &&
+        !this.isDeliverable(liveDestinations, target.destinationId)
+      ) {
         await this.recordSkipped(
           source,
-          provider,
+          target.provider,
+          target.destinationId,
           qj,
-          `deferred: provider purchase mode does not match snapshot triggerMode '${payload.triggerMode ?? 'unset'}'`,
+          'destination_removed',
         );
         continue;
       }
-      eligible.push({ provider, adapter });
+
+      if (!adapter.supports(eventType, { serverOnly })) {
+        await this.recordSkipped(source, target.provider, target.destinationId, qj);
+        continue;
+      }
+      if (!this.isTargetPurchaseEligible(target, payload)) {
+        await this.recordSkipped(
+          source,
+          target.provider,
+          target.destinationId,
+          qj,
+          `deferred: destination purchase mode does not match snapshot triggerMode '${payload.triggerMode ?? 'unset'}'`,
+        );
+        continue;
+      }
+      eligible.push({
+        provider: target.provider,
+        destinationId: target.destinationId,
+        pixelId: target.pixelId,
+        adapter,
+      });
     }
 
     // 7-day event-age guard (Decision B / R2): Meta's API rejects a whole
@@ -316,11 +424,15 @@ export class TrackingDispatcherService {
       }
     }
 
-    // Provider-independence: one provider's throw/refusal never blocks the others.
+    // Provider/destination independence: one target's throw/refusal never blocks
+    // the others (Step 3 requirement — Meta destination A succeeding must not be
+    // held hostage by Meta destination B failing).
     const settled = await Promise.allSettled(
-      eligible.map(({ provider, adapter }) =>
+      eligible.map(({ provider, destinationId, pixelId, adapter }) =>
         this.dispatchProvider(
           provider,
+          destinationId,
+          pixelId,
           adapter,
           source,
           payload,
@@ -330,15 +442,18 @@ export class TrackingDispatcherService {
       ),
     );
 
-    const statusByProvider = new Map<string, string>();
+    // Keyed by (provider, destinationId) so two destinations of the same provider
+    // can never collapse into one status — the outbox decision must see N rows.
+    const statusByTarget = new Map<string, string>();
     let firstError: string | null = null;
     settled.forEach((result, i) => {
-      const { provider } = eligible[i];
+      const { provider, destinationId } = eligible[i];
+      const key = `${provider}:${destinationId}`;
       if (result.status === 'fulfilled') {
-        statusByProvider.set(provider, result.value.status);
+        statusByTarget.set(key, result.value.status);
         if (result.value.errorMsg && !firstError) firstError = result.value.errorMsg;
       } else {
-        statusByProvider.set(provider, 'FAILED');
+        statusByTarget.set(key, 'FAILED');
         if (!firstError) {
           firstError = (result.reason as Error)?.message ?? 'dispatch threw';
         }
@@ -349,7 +464,7 @@ export class TrackingDispatcherService {
       source,
       outbox,
       config,
-      statusByProvider,
+      statusByTarget,
       qj,
       firstError,
       payload,
@@ -395,6 +510,8 @@ export class TrackingDispatcherService {
    */
   private async dispatchProvider(
     provider: string,
+    destinationId: string,
+    pixelId: string | undefined,
     adapter: TrackingProviderAdapter,
     source: DispatchSource,
     payload: TrackingSnapshotPayload,
@@ -405,9 +522,11 @@ export class TrackingDispatcherService {
       const { row: dispatch, created } = await this.ensureDispatchRow(
         source,
         provider,
+        destinationId,
         queueJobId,
         {
           status: 'PENDING',
+          pixelId,
           adapterVersion: adapter.version,
           providerApiVersion: adapter.providerApiVersion,
           normalizerVersion: this.normalizer.version,
@@ -482,7 +601,11 @@ export class TrackingDispatcherService {
         return { status: 'SKIPPED' };
       }
 
-      const cfg = await this.buildCfg(provider);
+      const cfg = await this.buildCfg(
+        provider,
+        destinationId,
+        pixelId ?? dispatch.pixelId ?? undefined,
+      );
       const result = await adapter.send(built, cfg);
       const status = this.classify(result);
       const errorMsg = result.ok ? null : result.rawResponse ?? 'send failed';
@@ -529,7 +652,13 @@ export class TrackingDispatcherService {
       // Best-effort: record the unexpected failure on the row so a retry/replay can see it.
       try {
         const row = await this.prisma.trackingDispatch.findUnique({
-          where: { snapshotId_provider: { snapshotId: source.snapshotId, provider } },
+          where: {
+            snapshotId_provider_destinationId: {
+              snapshotId: source.snapshotId,
+              provider,
+              destinationId,
+            },
+          },
         });
         if (row) {
           await this.prisma.trackingDispatch.update({
@@ -551,15 +680,18 @@ export class TrackingDispatcherService {
   }
 
   /**
-   * Find-or-create a TrackingDispatch row. The DB `@@unique([snapshotId, provider])`
+   * Find-or-create a TrackingDispatch row for one (snapshot, provider,
+   * destination). The DB `@@unique([snapshotId, provider, destinationId])`
    * constraint makes concurrent creates safe: a P2002 loser re-reads the winner.
    */
   private async ensureDispatchRow(
     source: DispatchSource,
     provider: string,
+    destinationId: string,
     queueJobId: string,
     opts: {
       status: 'PENDING' | 'SKIPPED';
+      pixelId?: string | null;
       adapterVersion?: number | null;
       providerApiVersion?: string | null;
       payloadVersion?: number | null;
@@ -567,7 +699,11 @@ export class TrackingDispatcherService {
     },
   ): Promise<{ row: any; created: boolean }> {
     const where = {
-      snapshotId_provider: { snapshotId: source.snapshotId, provider },
+      snapshotId_provider_destinationId: {
+        snapshotId: source.snapshotId,
+        provider,
+        destinationId,
+      },
     };
     const existing = await this.prisma.trackingDispatch.findUnique({ where });
     if (existing) return { row: existing, created: false };
@@ -581,6 +717,11 @@ export class TrackingDispatcherService {
           ctxId: source.ctxId ?? null,
           queueJobId,
           provider,
+          destinationId,
+          // Pinned delivery identity. Deliberately NOT the access token — the
+          // token is re-read per attempt so rotation works without rewriting
+          // historical rows.
+          pixelId: opts.pixelId ?? null,
           status: opts.status,
           providerEventId: source.eventId,
           attemptCount: 0,
@@ -605,49 +746,65 @@ export class TrackingDispatcherService {
   }
 
   /**
-   * Per-provider Purchase timing gate. Non-Purchase events, offline triggers
-   * (POS / lead-recovery, no browser counterpart), and legacy snapshots without
-   * a triggerMode always pass. Otherwise a provider dispatches only when its
-   * configured purchase mode matches the snapshot trigger: instant-mode
-   * providers send instant/browser triggers, validated-mode providers send
-   * validated triggers.
+   * Per-TARGET Purchase timing gate. Non-Purchase events, offline triggers
+   * (POS / lead-recovery, no browser counterpart), and legacy snapshots without a
+   * triggerMode always pass. Otherwise a target dispatches only when ITS recorded
+   * purchase mode matches the snapshot trigger.
+   *
+   * The mode is read from the target (capture-time ref) rather than re-derived
+   * from a provider-level setting here. Today every destination of a provider
+   * carries the same provider-level mode, so behaviour is identical to
+   * pre-Step-3; when a per-destination mode is introduced, only the ref builder
+   * changes — this gate, the schema, and the outbox model stay as they are.
    *
    * **offline (POS):** bypasses the gate entirely — POS orders have no browser
    * pixel counterpart, so server-side dispatch is the only channel and all
-   * enabled providers must receive the event immediately.
+   * enabled destinations must receive the event immediately.
    *
    * **legacy (triggerMode absent):** also bypasses the gate — snapshots created
    * before the triggerMode feature was introduced predate per-provider timing
    * configuration and must not be silently dropped.
    */
-  private isPurchaseProviderEligible(
-    provider: string,
-    config: ConfigSnapshot,
+  private isTargetPurchaseEligible(
+    target: DispatchTarget,
     payload: TrackingSnapshotPayload,
   ): boolean {
     if (payload.eventType !== 'Purchase') return true;
     const trigger = payload.triggerMode;
     if (!trigger || trigger === 'offline') return true;
-    const mode =
-      provider === 'meta'
-        ? config.purchaseModes?.meta || 'instant'
-        : provider === 'tiktok'
-          ? config.purchaseModes?.tiktok || 'instant'
-          : 'instant';
+    const mode = target.purchaseMode || 'instant';
     if (mode === 'validated') return trigger === 'validated';
     return trigger === 'instant' || trigger === 'browser';
   }
 
-  /** Record an enabled-but-unsupported provider as a terminal SKIPPED dispatch row. */
+  /**
+   * Whether a capture-time destination is still deliverable. Only REMOVAL (soft
+   * delete) blocks delivery; a destination that is merely `enabled: false` still
+   * receives events captured while it was enabled — disabling is forward-looking
+   * and must never retroactively drop an already-captured event.
+   */
+  private isDeliverable(
+    liveDestinations: TrackingDestination[],
+    destinationId: string,
+  ): boolean {
+    return isDestinationDeliverable(liveDestinations, destinationId);
+  }
+
+  /** Record an enabled-but-unsupported/deferred/removed target as a terminal SKIPPED dispatch row. */
   private async recordSkipped(
     source: DispatchSource,
     provider: string,
+    destinationId: string,
     queueJobId: string,
     reason = 'provider does not support this event type in this mode',
   ): Promise<void> {
-    const { row, created } = await this.ensureDispatchRow(source, provider, queueJobId, {
-      status: 'SKIPPED',
-    });
+    const { row, created } = await this.ensureDispatchRow(
+      source,
+      provider,
+      destinationId,
+      queueJobId,
+      { status: 'SKIPPED' },
+    );
     if (created) {
       await this.appendDispatchEvent(
         source,
@@ -676,21 +833,36 @@ export class TrackingDispatcherService {
     }
   }
 
-  /** Outbox terminal decision — SENT, DEAD, or PENDING-with-backoff (lock released). */
+  /**
+   * Outbox terminal decision — SENT, DEAD, or PENDING-with-backoff (lock released).
+   *
+   * Step 3 — DESTINATION-AWARE COMPLETION. `statusByTarget` holds one entry per
+   * (provider, destination) target, including targets already terminal from an
+   * earlier attempt (an already-SENT target re-reports SENT from the work-set
+   * short-circuit), so the decision sees the whole fan-out.
+   *
+   * The policy itself is unchanged (`ALL_SENT` by default, now actually recorded
+   * on the snapshot rather than re-defaulted). What changed is the ORDER of
+   * evaluation: a permanently-failed destination no longer DEADs the outbox while
+   * a sibling destination is still RETRY-able. Previously a single dead
+   * destination aborted the outbox and stopped retrying a sibling that had merely
+   * hit a transient error — one destination's permanent failure must not deny
+   * another destination its delivery.
+   */
   private async advanceOutbox(
     source: DispatchSource,
     outbox: any,
     config: ConfigSnapshot,
-    statusByProvider: Map<string, string>,
+    statusByTarget: Map<string, string>,
     queueJobId: string,
     firstError: string | null,
     payload?: TrackingSnapshotPayload,
-    eligible?: Array<{ provider: string; adapter: TrackingProviderAdapter }>,
+    eligible?: Array<{ provider: string; destinationId: string; adapter: TrackingProviderAdapter }>,
   ): Promise<void> {
-    const statuses = [...statusByProvider.values()];
-    const successPolicy = config.successPolicy ?? 'ALL_SENT';
+    const statuses = [...statusByTarget.values()];
+    const successPolicy = config.successPolicy ?? DEFAULT_SUCCESS_POLICY;
 
-    // Zero eligible providers: nothing to send — terminal success by NOOP.
+    // Zero eligible targets: nothing to send — terminal success by NOOP.
     if (statuses.length === 0) {
       await this.terminalOutbox(
         source,
@@ -710,11 +882,60 @@ export class TrackingDispatcherService {
         'SENT',
         queueJobId,
         null,
-        'all providers dispatched',
+        'all destinations dispatched',
       );
       return;
     }
 
+    // A target still in flight is the ONLY reason to keep retrying. Checked
+    // BEFORE the permanent-failure branch so a dead destination cannot cut short
+    // a sibling's retry cycle.
+    const hasRetryable = statuses.some(
+      (s) => !TERMINAL_SUCCESS_STATUSES.has(s) && s !== 'FAILED' && s !== 'DEAD',
+    );
+    if (hasRetryable) {
+      const nextAttempt = outbox.attemptCount + 1;
+      if (nextAttempt > MAX_OUTBOX_ATTEMPTS) {
+        await this.terminalOutbox(
+          source,
+          outbox,
+          'DEAD',
+          queueJobId,
+          firstError,
+          `max attempts (${MAX_OUTBOX_ATTEMPTS}) exceeded: ${firstError ?? ''}`,
+          payload,
+          eligible,
+        );
+        return;
+      }
+      await this.prisma.trackingOutbox.update({
+        where: { id: outbox.id },
+        data: {
+          status: 'PENDING',
+          attemptCount: nextAttempt,
+          nextAttemptAt: new Date(Date.now() + getRetryBackoffMs(nextAttempt)),
+          lockedAt: null,
+          lockedBy: null,
+          lastError: firstError,
+        },
+      });
+      await this.appendDispatchEvent(
+        source,
+        null,
+        queueJobId,
+        outbox.status,
+        'PENDING',
+        nextAttempt,
+        firstError,
+      );
+      return;
+    }
+
+    // Nothing retryable is left. Under ALL_SENT an unmet destination is terminal
+    // failure for the outbox; under ANY_SENT/N_SENT the branch below can still
+    // resolve it as delivered once at least one destination succeeded. The
+    // evaluator is policy-aware so implementing those policies later is a settings
+    // change, not a redesign of this method.
     const hasPermanentFailure = statuses.some(
       (s) => s === 'FAILED' || s === 'DEAD',
     );
@@ -725,48 +946,35 @@ export class TrackingDispatcherService {
         'DEAD',
         queueJobId,
         firstError,
-        `ALL_SENT policy unmet: ${firstError ?? 'provider permanently failed'}`,
+        `ALL_SENT policy unmet: ${firstError ?? 'destination permanently failed'}`,
         payload,
         eligible,
       );
       return;
     }
-
-    // Retryable path (or a non-ALL_SENT policy with partial success pending).
-    const nextAttempt = outbox.attemptCount + 1;
-    if (nextAttempt > MAX_OUTBOX_ATTEMPTS) {
+    if (hasPermanentFailure) {
       await this.terminalOutbox(
         source,
         outbox,
         'DEAD',
         queueJobId,
         firstError,
-        `max attempts (${MAX_OUTBOX_ATTEMPTS}) exceeded: ${firstError ?? ''}`,
+        `${successPolicy} policy unmet: ${firstError ?? 'destination permanently failed'}`,
         payload,
         eligible,
       );
       return;
     }
 
-    await this.prisma.trackingOutbox.update({
-      where: { id: outbox.id },
-      data: {
-        status: 'PENDING',
-        attemptCount: nextAttempt,
-        nextAttemptAt: new Date(Date.now() + getRetryBackoffMs(nextAttempt)),
-        lockedAt: null,
-        lockedBy: null,
-        lastError: firstError,
-      },
-    });
-    await this.appendDispatchEvent(
+    // Defensive: no retryable and no permanent failure can only mean an
+    // unrecognised status. Terminalise rather than leaving the row unclaimable.
+    await this.terminalOutbox(
       source,
-      null,
+      outbox,
+      'SENT',
       queueJobId,
-      outbox.status,
-      'PENDING',
-      nextAttempt,
-      firstError,
+      null,
+      'no further work (terminal)',
     );
   }
 
@@ -779,7 +987,11 @@ export class TrackingDispatcherService {
     lastError: string | null,
     message: string,
     payload?: TrackingSnapshotPayload,
-    eligible?: Array<{ provider: string; adapter: TrackingProviderAdapter }>,
+    eligible?: Array<{
+      provider: string;
+      destinationId: string;
+      adapter: TrackingProviderAdapter;
+    }>,
   ): Promise<void> {
     await this.prisma.trackingOutbox.update({
       where: { id: outbox.id },
@@ -816,7 +1028,11 @@ export class TrackingDispatcherService {
     source: DispatchSource,
     outbox: any,
     payload: TrackingSnapshotPayload,
-    eligible: Array<{ provider: string; adapter: TrackingProviderAdapter }>,
+    eligible: Array<{
+      provider: string;
+      destinationId: string;
+      adapter: TrackingProviderAdapter;
+    }>,
   ): Promise<void> {
     try {
       await this.replay.archive({
@@ -843,12 +1059,30 @@ export class TrackingDispatcherService {
    * each provider against the version it actually ran under.
    */
   private buildVersions(
-    eligible: Array<{ provider: string; adapter: TrackingProviderAdapter }>,
+    eligible: Array<{
+      provider: string;
+      destinationId: string;
+      adapter: TrackingProviderAdapter;
+    }>,
   ): Record<string, unknown> {
     const providers: Record<string, { adapterVersion: number; providerApiVersion: string }> =
       {};
-    for (const { provider, adapter } of eligible) {
+    // Per-destination pinning (Step 3): the provider-level map is retained for
+    // backward compatibility with existing replay version resolution, and a
+    // destination-scoped map is added so a future per-destination adapter version
+    // can be resolved without re-archiving.
+    const destinations: Record<
+      string,
+      { provider: string; destinationId: string; adapterVersion: number; providerApiVersion: string }
+    > = {};
+    for (const { provider, destinationId, adapter } of eligible) {
       providers[provider] = {
+        adapterVersion: adapter.version,
+        providerApiVersion: adapter.providerApiVersion,
+      };
+      destinations[`${provider}:${destinationId}`] = {
+        provider,
+        destinationId,
         adapterVersion: adapter.version,
         providerApiVersion: adapter.providerApiVersion,
       };
@@ -861,6 +1095,7 @@ export class TrackingDispatcherService {
       adapterVersion: adapter?.version ?? null,
       providerApiVersion: adapter?.providerApiVersion ?? null,
       providers,
+      destinations,
     };
   }
 
@@ -888,19 +1123,47 @@ export class TrackingDispatcherService {
     }
   }
 
-  /** Resolve the per-provider cfg the adapter's send() reads, incl. test codes. */
-  private async buildCfg(provider: string): Promise<ProviderConfig> {
+  /**
+   * Resolve the per-target cfg the adapter's send() reads, incl. test codes.
+   *
+   * CREDENTIAL IMMUTABILITY (Step 3): the ACCESS TOKEN is read live on every
+   * attempt so a rotated/expired credential can succeed on retry instead of
+   * failing identically five times and DEADing a recoverable event. The PIXEL ID
+   * is taken from the dispatch row's pinned value when present, so editing a
+   * destination's pixel id cannot silently re-target historical events at a
+   * different dataset — a pixel change is a NEW destination.
+   */
+  private async buildCfg(
+    provider: string,
+    destinationId: string,
+    pinnedPixelId?: string,
+  ): Promise<ProviderConfig> {
     switch (provider) {
-      case 'meta':
+      case 'meta': {
+        const destinations = await this.settings.getMetaDestinations();
+        const dest = findDestination(destinations, destinationId);
+        const currentPixelId = dest?.pixelId;
+        if (pinnedPixelId && currentPixelId && pinnedPixelId !== currentPixelId) {
+          this.logger.warn(
+            `Destination '${destinationId}' pixel id changed (pinned ${pinnedPixelId}, current ${currentPixelId}); delivering with the pinned identity`,
+          );
+        }
+        // Test code is honoured only when THIS destination's own test-mode flag is
+        // on, so a leftover code can never leak into production traffic.
+        const testEventCode =
+          dest && dest.testMode && dest.testEventCode
+            ? dest.testEventCode
+            : undefined;
         return {
           pixelId:
-            (await this.settings.get('tracking_meta_pixel_id', 'META_PIXEL_ID')) ??
+            pinnedPixelId ||
+            currentPixelId ||
+            (await this.settings.get('tracking_meta_pixel_id', 'META_PIXEL_ID')) ||
             undefined,
-          accessToken:
-            (await this.settings.get('tracking_meta_access_token', 'META_ACCESS_TOKEN')) ??
-            undefined,
-          testEventCode: (await this.settings.getTestEventCode('meta')) ?? undefined,
+          accessToken: dest?.accessToken || undefined,
+          testEventCode,
         };
+      }
       case 'tiktok':
         return {
           pixelCode:

@@ -12,13 +12,22 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
   const outboxCount = jest.fn();
   const outboxFindFirst = jest.fn();
   const dispatchEventCount = jest.fn();
+  const dispatchFindMany = jest.fn();
+  const orderCount = jest.fn();
+  const queryRaw = jest.fn();
 
   const prisma = {
     trackingSnapshot: { groupBy: snapshotGroupBy, count: snapshotCount },
-    trackingDispatch: { groupBy: dispatchGroupBy, count: dispatchCount },
+    trackingDispatch: {
+      groupBy: dispatchGroupBy,
+      count: dispatchCount,
+      findMany: dispatchFindMany,
+    },
     trackingContext: { count: contextCount },
     trackingOutbox: { findMany: outboxFindMany, count: outboxCount, findFirst: outboxFindFirst },
     trackingDispatchEvent: { count: dispatchEventCount },
+    order: { count: orderCount },
+    $queryRaw: queryRaw,
   } as any;
 
   const dlq = { getStats: jest.fn() } as unknown as DlqService;
@@ -40,6 +49,9 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
     outboxFindFirst.mockResolvedValue(null);
     dispatchEventCount.mockResolvedValue(0);
     dispatchCount.mockResolvedValue(0);
+    dispatchFindMany.mockResolvedValue([]);
+    orderCount.mockResolvedValue(0);
+    queryRaw.mockResolvedValue([{ count: BigInt(0) }]);
     queue.getJobCounts.mockResolvedValue({
       waiting: 1, active: 2, delayed: 0, failed: 0, completed: 5,
     });
@@ -316,7 +328,12 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
   });
 
   it('getEmqProxy computes the flagged share of windowed dispatches', async () => {
-    dispatchEventCount.mockResolvedValueOnce(3).mockResolvedValueOnce(10); // flagged, total
+    // Step 3: the denominator is a dispatch-ROW count (one row per destination
+    // delivery), not a lifecycle-event count — an event-based denominator was
+    // inflated by the events each delivery emits and drifted with destination
+    // fan-out.
+    dispatchEventCount.mockResolvedValueOnce(3); // quality-flagged
+    dispatchCount.mockResolvedValueOnce(10); // destination delivery rows
     await expect(service.getEmqProxy(hours)).resolves.toEqual({
       windowedDispatches: 10,
       qualityFlagged: 3,
@@ -328,13 +345,14 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
         message: { startsWith: 'match-key quality:' },
       },
     });
-    expect(dispatchEventCount).toHaveBeenNthCalledWith(2, {
-      where: { createdAt: { gte: cutoff }, provider: { not: null } },
+    expect(dispatchCount).toHaveBeenNthCalledWith(1, {
+      where: { createdAt: { gte: cutoff } },
     });
   });
 
   it('getEmqProxy returns a zero share when there are no dispatches', async () => {
-    dispatchEventCount.mockResolvedValueOnce(0).mockResolvedValueOnce(0);
+    dispatchEventCount.mockResolvedValueOnce(0);
+    dispatchCount.mockResolvedValueOnce(0);
     await expect(service.getEmqProxy(hours)).resolves.toEqual({
       windowedDispatches: 0,
       qualityFlagged: 0,
@@ -351,16 +369,18 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
         { status: 'DEAD', _count: 2 },
         { status: 'RETRY', _count: 5 },
       ]);
-      // getQualityRates' own dispatchEventCount reads: retry attempts, windowed,
-      // replay, then getEmqProxy adds: quality-flagged, windowed; capture-dedup
-      // markers. getMirrorCapture adds outboxCount ×2. Then the capture-level
-      // dedup read + windowed snapshot count.
+      // getQualityRates reads (Step 3): dispatch rows that needed a retry, then
+      // windowed dispatch rows; then replay transitions; getEmqProxy adds the
+      // quality-flagged event count + a windowed dispatch-row count; the
+      // capture-dedup marker count + the windowed snapshot count close it out.
+      // getMirrorCapture adds outboxCount ×2.
+      dispatchCount
+        .mockResolvedValueOnce(8) // rows with attemptCount > 0 (retriedRows)
+        .mockResolvedValueOnce(120) // windowed destination delivery rows
+        .mockResolvedValueOnce(120); // getEmqProxy windowed rows
       dispatchEventCount
-        .mockResolvedValueOnce(8)
-        .mockResolvedValueOnce(120)
-        .mockResolvedValueOnce(2)
-        .mockResolvedValueOnce(30)
-        .mockResolvedValueOnce(120)
+        .mockResolvedValueOnce(2) // replay transitions
+        .mockResolvedValueOnce(30) // quality-flagged
         .mockResolvedValueOnce(10); // 'capture dedup' markers
       snapshotCount.mockResolvedValueOnce(100); // capturedSnapshots
       outboxCount.mockResolvedValueOnce(60).mockResolvedValueOnce(120);
@@ -377,6 +397,7 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
         dedupedCaptures: 10,
         capturedSnapshots: 100,
         dedupRate: 10 / 110,
+        // retriedRows / windowedDispatches — fan-out invariant.
         retryRate: 8 / 120,
       });
       expect(quality.emq).toEqual({
@@ -406,6 +427,110 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
         retryRate: 0,
       });
       expect(quality.emq.noEmPhShare).toBe(0);
+    });
+
+    it('retryRate is a share of destination DELIVERIES (fan-out invariant)', async () => {
+      // 8 of 120 destination deliveries needed a retry. Because both terms are
+      // dispatch ROWS, adding a second destination per event scales numerator and
+      // denominator together — the rate stays 8/120 instead of being diluted by
+      // the destination count (the pre-Step-3 event-based denominator scaled with
+      // lifecycle events per delivery AND with fan-out).
+      dispatchCount
+        .mockResolvedValueOnce(8) // rows with attemptCount > 0
+        .mockResolvedValueOnce(120) // windowed destination delivery rows
+        .mockResolvedValueOnce(120); // getEmqProxy windowed rows
+      dispatchEventCount.mockResolvedValue(0);
+
+      const quality = await service.getQualityRates(hours);
+
+      expect(quality.retryRate).toBeCloseTo(8 / 120);
+      expect(dispatchCount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ attemptCount: { gt: 0 } }),
+        }),
+      );
+      // The denominator is a row count, never a lifecycle-event count.
+      expect(dispatchCount).toHaveBeenCalledWith({
+        where: { createdAt: { gte: expect.any(Date) } },
+      });
+    });
+  });
+
+  describe('getPurchaseReconciliation (Step 3 — canonical counts are not multiplied by destinations)', () => {
+    const reconcile = async (dispatchRows: unknown[]) => {
+      orderCount.mockResolvedValue(1);
+      snapshotCount.mockResolvedValue(1); // canonicalPurchases = 1 business event
+      snapshotGroupBy.mockResolvedValue([{ eventId: 'purchase_ord-1' }]);
+      queryRaw.mockResolvedValue([{ count: BigInt(1) }]);
+      dispatchFindMany.mockResolvedValue(dispatchRows);
+      return service.getPurchaseReconciliation();
+    };
+
+    it('counts ONE business Purchase while delivery rows fan out per destination', async () => {
+      const result = await reconcile([
+        { provider: 'meta', destinationId: 'primary', status: 'SENT' },
+        { provider: 'meta', destinationId: 'secondary', status: 'SENT' },
+      ]);
+
+      // Canonical, snapshot/outbox-level — NOT multiplied by the destination count.
+      expect(result.orders).toBe(1);
+      expect(result.canonicalPurchases).toBe(1);
+      expect(result.uniquePurchaseEventIds).toBe(1);
+      expect(result.orphanPurchases).toBe(0);
+
+      // Delivery counts ARE per destination.
+      expect(result.byDestination).toEqual({
+        'meta:primary': { sent: 1, pending: 0, failed: 0, skipped: 0 },
+        'meta:secondary': { sent: 1, pending: 0, failed: 0, skipped: 0 },
+      });
+      expect(result.byProvider.meta).toEqual({
+        sent: 2,
+        pending: 0,
+        failed: 0,
+        skipped: 0,
+      });
+    });
+
+    it('keys a destination-less legacy row as provider:default', async () => {
+      const result = await reconcile([
+        { provider: 'meta', destinationId: null, status: 'FAILED' },
+        { provider: 'tiktok', destinationId: 'default', status: 'SKIPPED' },
+      ]);
+
+      expect(result.byDestination['meta:default']).toEqual({
+        sent: 0,
+        pending: 0,
+        failed: 1,
+        skipped: 0,
+      });
+      expect(result.byDestination['tiktok:default']).toEqual({
+        sent: 0,
+        pending: 0,
+        failed: 0,
+        skipped: 1,
+      });
+      // Still one canonical business event despite three delivery states.
+      expect(result.canonicalPurchases).toBe(1);
+    });
+
+    it('buckets DEAD and FAILED together, and PENDING/RETRY as pending', async () => {
+      const result = await reconcile([
+        { provider: 'meta', destinationId: 'a', status: 'DEAD' },
+        { provider: 'meta', destinationId: 'b', status: 'PENDING' },
+        { provider: 'meta', destinationId: 'c', status: 'RETRY' },
+        { provider: 'meta', destinationId: 'd', status: 'SENT' },
+      ]);
+
+      expect(result.byDestination['meta:a'].failed).toBe(1);
+      expect(result.byDestination['meta:b'].pending).toBe(1);
+      expect(result.byDestination['meta:c'].pending).toBe(1);
+      expect(result.byDestination['meta:d'].sent).toBe(1);
+      expect(result.byProvider.meta).toEqual({
+        sent: 1,
+        pending: 2,
+        failed: 1,
+        skipped: 0,
+      });
     });
   });
 
@@ -479,6 +604,63 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
       await expect(service.getWatchdog(hours)).resolves.toEqual([]);
     });
 
+    it('flags retry-rate-high from the destination-row retry rate (fan-out invariant)', async () => {
+      restoreRedisUp();
+      (settings.get as jest.Mock).mockResolvedValue('true');
+      outboxFindFirst.mockResolvedValue({
+        nextAttemptAt: new Date(Date.now() + 5_000), // relay current
+      });
+      outboxCount.mockResolvedValue(0);
+      dispatchGroupBy.mockResolvedValue([]);
+      dispatchEventCount.mockResolvedValue(0);
+      snapshotCount.mockResolvedValue(0);
+      contextCount.mockResolvedValue(0);
+      // getWatchdog fans out to four services concurrently, so key the mock on the
+      // WHERE clause instead of call order (an OwOnce queue would be racy):
+      //   attemptCount  -> rows that needed a retry
+      //   status        -> getRuntimeHealth's in-flight dispatcher count
+      //   otherwise     -> windowed destination delivery rows
+      // 60/120 = 0.5, above RETRY_RATE_MAX (0.2).
+      dispatchCount.mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          where?.attemptCount ? 60 : where?.status ? 0 : 120,
+        ),
+      );
+
+      const violations = await service.getWatchdog(hours);
+
+      expect(violations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code: 'retry-rate-high', severity: 'warning' }),
+        ]),
+      );
+    });
+
+    it('does NOT flag retry-rate-high when the row-based rate is under the threshold', async () => {
+      restoreRedisUp();
+      (settings.get as jest.Mock).mockResolvedValue('true');
+      outboxFindFirst.mockResolvedValue({
+        nextAttemptAt: new Date(Date.now() + 5_000),
+      });
+      outboxCount.mockResolvedValue(0);
+      dispatchGroupBy.mockResolvedValue([]);
+      dispatchEventCount.mockResolvedValue(0);
+      snapshotCount.mockResolvedValue(0);
+      contextCount.mockResolvedValue(0);
+      // 12/120 = 0.1, under the 0.2 threshold.
+      dispatchCount.mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          where?.attemptCount ? 12 : where?.status ? 0 : 120,
+        ),
+      );
+
+      const violations = await service.getWatchdog(hours);
+
+      expect(
+        violations.some((v) => v.code === 'retry-rate-high'),
+      ).toBe(false);
+    });
+
     it('flags a critical relay backlog when the oldest pending outbox is stale', async () => {
       restoreRedisUp();
       (settings.get as jest.Mock).mockResolvedValue('true');
@@ -522,22 +704,38 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
     });
 
     it('flags elevated retry rate, terminal-failure spike, and EMQ match gap', async () => {
-      (settings.get as jest.Mock).mockResolvedValue(null); // relay disabled (info, benign)
-      outboxFindFirst.mockResolvedValue(null);
+      restoreRedisUp();
+      (settings.get as jest.Mock).mockResolvedValue('true'); // relay enabled
+      queue.getJobCounts.mockResolvedValue({
+        waiting: 1, active: 2, delayed: 0, failed: 0, completed: 5,
+      });
+      outboxFindFirst.mockResolvedValue({
+        nextAttemptAt: new Date(Date.now() + 5_000), // relay current
+      });
       outboxCount.mockResolvedValue(0);
-      dispatchCount.mockResolvedValue(0);
+      snapshotCount.mockResolvedValue(0);
+      contextCount.mockResolvedValue(0);
       dispatchGroupBy.mockResolvedValue([
         { status: 'SENT', _count: 5 },
         { status: 'FAILED', _count: 12 },
         { status: 'DEAD', _count: 3 },
       ]);
-      // retried attempts (30), windowed (100), replay (0) from getQualityRates;
-      // then getEmqProxy: flagged (60), windowed (100) — all persistent.
-      dispatchEventCount
-        .mockResolvedValueOnce(30)
-        .mockResolvedValueOnce(100)
-        .mockResolvedValueOnce(0)
-        .mockResolvedValue(60);
+      // Step 3 row-based rates: key mocks on the WHERE clause (concurrent fan-out).
+      //   attemptCount -> rows that needed a retry (30/100 = 0.3 > 0.2)
+      //   status       -> dispatcher in-flight count (0, no back-pressure)
+      //   otherwise    -> windowed destination delivery rows (100)
+      dispatchCount.mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          where?.attemptCount ? 30 : where?.status ? 0 : 100,
+        ),
+      );
+      //   replay marker -> 0; quality flag -> 60 (60/100 = 0.6 >= 0.5); else 0.
+      dispatchEventCount.mockImplementation((args: any) => {
+        const msg = args?.where?.message;
+        if (msg && typeof msg === 'object' && typeof msg.startsWith === 'string')
+          return Promise.resolve(60);
+        return Promise.resolve(0);
+      });
 
       const violations = await service.getWatchdog(hours);
       const codes = violations.map((v) => v.code);
@@ -648,13 +846,27 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
           throw new Error('redis down');
         },
       });
-      dispatchEventCount.mockResolvedValue(100); // retry-rate-high (-10) + emq-match-gap (-10)
+      // Step 3 row-based rates: 60/100 retried (retry-rate-high -10) and 60/100
+      // quality-flagged (emq-match-gap -10). Together with relay-backlog (20) +
+      // redis-down (20) + queue-down (20) + dead-failure-spike (20) = 100 -> 0.
+      dispatchCount.mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          where?.attemptCount ? 60 : where?.status ? 0 : 100,
+        ),
+      );
+      dispatchEventCount.mockImplementation((args: any) => {
+        const msg = args?.where?.message;
+        if (msg && typeof msg === 'object' && typeof msg.startsWith === 'string')
+          return Promise.resolve(60);
+        return Promise.resolve(0);
+      });
       dispatchGroupBy.mockResolvedValue([
         { status: 'FAILED', _count: 100 }, // dead-failure-spike -20
         { status: 'DEAD', _count: 100 },
       ]);
       outboxCount.mockResolvedValue(0);
-      dispatchCount.mockResolvedValue(0);
+      snapshotCount.mockResolvedValue(0);
+      contextCount.mockResolvedValue(0);
 
       const result = await service.getHealthScore(hours);
       expect(result.score).toBe(0);

@@ -197,5 +197,99 @@ describe('TrackingCaptureService', () => {
       expect(result.requeued).toBe(false);
       expect(result.providers).toEqual([]);
     });
+
+    it('revives EVERY capture-time destination of the provider (destination scope)', async () => {
+      snapshotFind.mockResolvedValue({ id: 'snap-multi' });
+      outboxFind.mockResolvedValue({
+        id: 'ob-multi',
+        status: 'SENT',
+        configSnapshot: {
+          destinations: [
+            { provider: 'meta', destinationId: 'primary', pixelId: '111' },
+            { provider: 'meta', destinationId: 'secondary', pixelId: '222' },
+          ],
+        },
+      });
+      dispatchFind.mockResolvedValue({
+        id: 'd-x',
+        status: 'SKIPPED',
+        orderId: 'ord-1',
+        ctxId: 'ctx-1',
+        attemptCount: 0,
+      });
+
+      const result = await svc.ensureValidatedDispatch('purchase_ord-uuid', ['meta']);
+
+      expect(result.requeued).toBe(true);
+      // Backward-compatible field stays provider-granular…
+      expect(result.providers).toEqual(['meta']);
+      // …and the new field reports the destination granularity.
+      expect(result.destinations.sort()).toEqual(['meta:primary', 'meta:secondary']);
+      // One revive per destination, keyed by the destination-aware composite.
+      expect(dispatchFind).toHaveBeenCalledWith({
+        where: {
+          snapshotId_provider_destinationId: {
+            snapshotId: 'snap-multi',
+            provider: 'meta',
+            destinationId: 'primary',
+          },
+        },
+      });
+      expect(dispatchFind).toHaveBeenCalledWith({
+        where: {
+          snapshotId_provider_destinationId: {
+            snapshotId: 'snap-multi',
+            provider: 'meta',
+            destinationId: 'secondary',
+          },
+        },
+      });
+    });
+
+    it('does not revive another provider’s destinations', async () => {
+      snapshotFind.mockResolvedValue({ id: 'snap-mixed' });
+      outboxFind.mockResolvedValue({
+        id: 'ob-mixed',
+        status: 'SENT',
+        configSnapshot: {
+          destinations: [
+            { provider: 'meta', destinationId: 'primary', pixelId: '111' },
+            { provider: 'tiktok', destinationId: 'default', pixelId: 'tt-1' },
+          ],
+        },
+      });
+      dispatchFind.mockResolvedValue({
+        id: 'd-y',
+        status: 'SKIPPED',
+        orderId: null,
+        ctxId: null,
+        attemptCount: 0,
+      });
+
+      const result = await svc.ensureValidatedDispatch('purchase_ord-uuid', ['meta']);
+
+      expect(result.destinations).toEqual(['meta:primary']);
+      // Only the meta destination was looked up.
+      const lookedUp = dispatchFind.mock.calls.map(
+        (c) => c[0].where.snapshotId_provider_destinationId.destinationId,
+      );
+      expect(lookedUp).toEqual(['primary']);
+    });
+
+    it('falls back to the legacy single destination for a pre-Step-3 snapshot', async () => {
+      snapshotFind.mockResolvedValue({ id: 'snap-legacy' });
+      outboxFind.mockResolvedValue({ id: 'ob-legacy', status: 'SENT' });
+      dispatchFind.mockResolvedValue({
+        id: 'd-z',
+        status: 'SKIPPED',
+        orderId: null,
+        ctxId: null,
+        attemptCount: 0,
+      });
+
+      const result = await svc.ensureValidatedDispatch('purchase_ord-uuid', ['meta']);
+
+      expect(result.destinations).toEqual(['meta:default']);
+    });
   });
 });

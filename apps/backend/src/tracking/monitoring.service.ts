@@ -119,10 +119,11 @@ const DLQ_DEPTH_MAX = 500;
  * Schema-less EMQ quality proxy (Wave-2.4 MON-2). Counts `TrackingDispatchEvent`
  * rows whose `message` begins with the dispatcher's `match-key quality:` prefix
  * (produced by the Meta adapter when user_data lacks em/ph). `noEmPhShare` is the
- * flagged fraction of windowed provider dispatches — an internal at-risk rate
+ * flagged fraction of windowed destination DELIVERIES — an internal at-risk rate
  * (NOT Meta's authoritative EMQ score, which lives in the Dataset Quality API).
  */
 export interface EmqProxy {
+  /** Destination delivery rows in the window (one per provider+destination). */
   windowedDispatches: number;
   qualityFlagged: number;
   noEmPhShare: number;
@@ -154,7 +155,7 @@ export interface QualityRates {
    * dedupedCaptures). 0 = every attempted capture was unique.
    */
   dedupRate: number;
-  /** retry attempts / provider dispatch attempts — per-attempt retry intensity. */
+  /** Share of windowed destination deliveries that needed >=1 retry (fan-out invariant). */
   retryRate: number;
   emq: EmqProxy;
   mirror: MirrorCaptureStats;
@@ -209,8 +210,15 @@ const MAX_ERROR_MSG_LENGTH = 300;
 
 /**
  * Purchase reconciliation (exactly-once observability): compares qualifying
- * orders vs canonical Purchase events vs provider delivery rows vs unique
+ * orders vs canonical Purchase events vs destination delivery rows vs unique
  * event IDs. Every figure is traceable by orderId + eventId (see `timeline`).
+ *
+ * Step 3 — the CANONICAL counters (`orders`, `canonicalPurchases`,
+ * `uniquePurchaseEventIds`, `browserOriginPurchases`, `orphanPurchases`) are all
+ * snapshot/outbox-level and therefore remain exactly 1 per business order no
+ * matter how many destinations fan out. Only the delivery breakdowns
+ * (`byProvider`, `byDestination`) count dispatch rows, and they are labelled as
+ * delivery counts so N destinations cannot be mistaken for N business events.
  */
 export interface PurchaseReconciliation {
   /** Non-trashed orders (the eligibility base population). */
@@ -221,8 +229,17 @@ export interface PurchaseReconciliation {
   uniquePurchaseEventIds: number;
   /** Browser-origin Purchase snapshots (mirror fallback wins). */
   browserOriginPurchases: number;
-  /** Per-provider dispatch rows for Purchase snapshots. */
+  /**
+   * Per-provider DELIVERY row counts (not business-event counts). With N Meta
+   * destinations a single delivered Purchase contributes N here.
+   */
   byProvider: Record<string, { sent: number; pending: number; failed: number; skipped: number }>;
+  /**
+   * Per-destination DELIVERY row counts, keyed `provider:destinationId` — the
+   * Step 3 granular view (answers "Order X → Meta dest A SENT, dest B FAILED"
+   * without touching the canonical counters).
+   */
+  byDestination: Record<string, { sent: number; pending: number; failed: number; skipped: number }>;
   /** Purchase snapshots with no retrievable outbox (pipeline gap). */
   orphanPurchases: number;
 }
@@ -492,10 +509,17 @@ export class MonitoringService {
   }
 
   /**
-   * EMQ quality proxy (Wave-2.4 MON-2): share of windowed provider dispatches
+   * EMQ quality proxy (Wave-2.4 MON-2): share of windowed destination deliveries
    * flagged by the adapter's `match-key quality:` event (NO_EM_PH / NO_IDENTITY).
    * Schema-less (counts TrackingDispatchEvent), an internal at-risk rate — the
    * authoritative EMQ score is Meta's Dataset Quality API (out-of-band reader).
+   *
+   * Step 3 — the denominator is the number of dispatch ROWS in the window, not the
+   * number of dispatch EVENTS. Each delivery emits several lifecycle events
+   * (PENDING/SENDING/terminal), so an event-based denominator was ~3x too large
+   * and the share was understated; it also drifted with destination fan-out
+   * because events-per-delivery is not constant across providers. A row is exactly
+   * one destination delivery, which is the unit the flag is emitted against.
    */
   async getEmqProxy(hours: number): Promise<EmqProxy> {
     const cutoff = this.cutoff(hours);
@@ -506,8 +530,8 @@ export class MonitoringService {
           message: { startsWith: 'match-key quality:' },
         },
       }),
-      this.prisma.trackingDispatchEvent.count({
-        where: { createdAt: { gte: cutoff }, provider: { not: null } },
+      this.prisma.trackingDispatch.count({
+        where: { createdAt: { gte: cutoff } },
       }),
     ]);
     return {
@@ -527,18 +551,24 @@ export class MonitoringService {
    */
   async getQualityRates(hours: number): Promise<QualityRates> {
     const cutoff = this.cutoff(hours);
-    const [rows, retriedAttempts, windowedDispatches, replayed, emq, mirror] =
+    const [rows, retriedRows, windowedDispatches, replayed, emq, mirror] =
       await Promise.all([
         this.prisma.trackingDispatch.groupBy({
           by: ['status'],
           _count: true,
           where: { createdAt: { gte: cutoff } },
         }),
-        this.prisma.trackingDispatchEvent.count({
-          where: { createdAt: { gte: cutoff }, toStatus: 'RETRY' },
+        // Rows that needed at least one retry — the numerator for retryRate.
+        this.prisma.trackingDispatch.count({
+          where: { createdAt: { gte: cutoff }, attemptCount: { gt: 0 } },
         }),
-        this.prisma.trackingDispatchEvent.count({
-          where: { createdAt: { gte: cutoff }, provider: { not: null } },
+        // Denominator = one row per destination delivery (matches the field's
+        // documented meaning). Step 3: an event-based denominator scaled with
+        // lifecycle events per delivery AND with destination fan-out, so a single
+        // failing destination among N reported 1/N of its true retry intensity.
+        // Row-based, the rate is fan-out invariant.
+        this.prisma.trackingDispatch.count({
+          where: { createdAt: { gte: cutoff } },
         }),
         this.prisma.trackingDispatchEvent.count({
           where: { createdAt: { gte: cutoff }, message: 'replay' },
@@ -575,7 +605,10 @@ export class MonitoringService {
       capturedSnapshots,
       replayed,
       dedupRate: dedupTotal > 0 ? dedupedCaptures / dedupTotal : 0,
-      retryRate: windowedDispatches > 0 ? retriedAttempts / windowedDispatches : 0,
+      // Share of windowed destination deliveries that needed at least one retry.
+      // Fan-out invariant: both terms are dispatch rows, so N destinations count
+      // as N deliveries — exactly as they should.
+      retryRate: windowedDispatches > 0 ? retriedRows / windowedDispatches : 0,
       emq,
       mirror,
     };
@@ -894,7 +927,13 @@ export class MonitoringService {
    * Purchase reconciliation summary. `orders` counts live (non-trashed) orders;
    * per-order drill-down is the `timeline` endpoint (by eventId =
    * purchase_{order UUID}). A healthy pipeline shows canonicalPurchases ==
-   * uniquePurchaseEventIds, and per-provider SENT matching the eligible share.
+   * uniquePurchaseEventIds, and delivery counts matching the eligible
+   * destinations.
+   *
+   * Step 3: every canonical figure stays snapshot/outbox-level, so adding
+   * destinations never multiplies the canonical Purchase count. The delivery
+   * breakdown is exposed twice — `byProvider` (unchanged shape, now documented as
+   * delivery counts) and `byDestination` (per destination identity).
    */
   async getPurchaseReconciliation(): Promise<PurchaseReconciliation> {
     // No FKs exist between the tracking log tables by design, so the
@@ -919,18 +958,40 @@ export class MonitoringService {
           WHERE s."eventType" = 'Purchase'`,
         this.prisma.trackingDispatch.findMany({
           where: { eventId: { startsWith: 'purchase_' } },
-          select: { provider: true, status: true },
+          select: { provider: true, destinationId: true, status: true },
         }),
       ]);
     const browserOriginPurchases = Number(browserRows[0]?.count ?? 0);
     const outboxed = Number(outboxedRows[0]?.count ?? 0);
-    const byProvider: PurchaseReconciliation['byProvider'] = {};
+    type DeliveryCounts = { sent: number; pending: number; failed: number; skipped: number };
+    const byProvider: Record<string, DeliveryCounts> = {};
+    const byDestination: Record<string, DeliveryCounts> = {};
     for (const row of dispatchRows) {
-      const entry = (byProvider[row.provider] ??= { sent: 0, pending: 0, failed: 0, skipped: 0 });
-      if (row.status === 'SENT') entry.sent += 1;
-      else if (row.status === 'SKIPPED') entry.skipped += 1;
-      else if (row.status === 'FAILED' || row.status === 'DEAD') entry.failed += 1;
-      else entry.pending += 1;
+      const providerEntry = (byProvider[row.provider] ??= {
+        sent: 0,
+        pending: 0,
+        failed: 0,
+        skipped: 0,
+      });
+      // Legacy rows (and providers without a destination model) carry the
+      // 'default' identity, so the key is stable for historical data too.
+      const key = `${row.provider}:${row.destinationId ?? 'default'}`;
+      const destEntry = (byDestination[key] ??= {
+        sent: 0,
+        pending: 0,
+        failed: 0,
+        skipped: 0,
+      });
+      const bucket =
+        row.status === 'SENT'
+          ? 'sent'
+          : row.status === 'SKIPPED'
+            ? 'skipped'
+            : row.status === 'FAILED' || row.status === 'DEAD'
+              ? 'failed'
+              : 'pending';
+      providerEntry[bucket] += 1;
+      destEntry[bucket] += 1;
     }
     return {
       orders,
@@ -938,6 +999,7 @@ export class MonitoringService {
       uniquePurchaseEventIds: uniqueIds.length,
       browserOriginPurchases,
       byProvider,
+      byDestination,
       orphanPurchases: Math.max(0, canonicalPurchases - outboxed),
     };
   }

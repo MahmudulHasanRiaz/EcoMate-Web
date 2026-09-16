@@ -26,7 +26,7 @@ const DEFAULT_CONFIG: StorefrontConfig = {
   about: { text: "" },
   shipping: { info: "" },
   payment: { info: "" },
-  meta: { pixelEnabled: false, pixelId: "", purchaseMode: "instant", validatedStatus: "" },
+  meta: { pixelEnabled: false, pixelId: "", pixelIds: [], purchaseMode: "instant", validatedStatus: "" },
   tiktok: { pixelEnabled: false, pixelCode: "", purchaseMode: "instant", validatedStatus: "" },
   menu: { header: { mode: "include", showAllCategories: false, excludedCategories: [], items: [] }, mobile: { mode: "include", showAllCategories: false, excludedCategories: [], items: [] }, footer: { columns: [] } },
   faq: { items: [] },

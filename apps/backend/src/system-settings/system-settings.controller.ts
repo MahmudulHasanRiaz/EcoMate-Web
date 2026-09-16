@@ -17,6 +17,11 @@ import { CacheService } from '../cache/cache.service';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
+import {
+  resolveMetaDestinations,
+  publicMetaDestinations,
+  validateMetaDestinations,
+} from '../tracking/destinations';
 import * as nodemailer from 'nodemailer';
 
 interface HeroSlide {
@@ -182,6 +187,47 @@ export class SystemSettingsController {
     const map: Record<string, string> = {};
     for (const s of settings) map[s.key] = s.value;
     if (map['smtp_pass']) map['smtp_pass'] = '********';
+
+    // SECRET REDACTION (Step 3). Provider access tokens must not be returned in a
+    // list/read response — a settings dump, a support screenshot, or a browser
+    // devtools capture would otherwise leak a credential that can write events
+    // into a live ad dataset. Presence is reported instead (`*_set`), which is all
+    // the editor needs. The write path treats an EMPTY submitted token as "keep the
+    // stored one", so redacting here cannot wipe a working credential.
+    for (const key of [
+      'tracking_meta_access_token',
+      'tracking_tiktok_access_token',
+    ]) {
+      if (map[key]) {
+        map[`${key}_set`] = 'true';
+        map[key] = '';
+      }
+    }
+
+    // The destination array carries one token per destination; redact each in
+    // place and expose `hasAccessToken` instead.
+    if (map['tracking_meta_destinations']) {
+      try {
+        const parsed = JSON.parse(map['tracking_meta_destinations']);
+        if (Array.isArray(parsed)) {
+          map['tracking_meta_destinations'] = JSON.stringify(
+            parsed.map((raw) => {
+              if (!raw || typeof raw !== 'object') return raw;
+              const entry = { ...(raw as Record<string, unknown>) };
+              const token =
+                typeof entry.accessToken === 'string' ? entry.accessToken : '';
+              entry.hasAccessToken = !!token;
+              entry.accessToken = '';
+              return entry;
+            }),
+          );
+        }
+      } catch {
+        // Malformed stored blob — leave it untouched; the resolver already falls
+        // back to the legacy single-pixel settings at delivery time.
+      }
+    }
+
     return map;
   }
 
@@ -411,8 +457,23 @@ export class SystemSettingsController {
           pixelEnabled:
             (map['tracking_meta_enabled'] || map['meta_pixel_enabled']) ===
             'true',
+          // Legacy single-pixel field, retained for backward compatibility with
+          // existing consumers. New code reads `pixelIds`.
           pixelId:
             map['tracking_meta_pixel_id'] || process.env.META_PIXEL_ID || '',
+          // Step 3 — multi-pixel browser fan-out. PUBLIC DATA ONLY: this is the
+          // browser-safe projection (id/label/pixelId) of the same destination
+          // list the server dispatcher uses, resolved by the SAME shared function
+          // so the browser can never initialize a pixel the server does not
+          // deliver to. Access tokens are structurally excluded from this shape
+          // and must never be added to it.
+          pixelIds: publicMetaDestinations(
+            resolveMetaDestinations(
+              map['tracking_meta_destinations'],
+              map['tracking_meta_pixel_id'] || process.env.META_PIXEL_ID,
+              map['tracking_meta_access_token'] || process.env.META_ACCESS_TOKEN,
+            ),
+          ).map((d) => d.pixelId),
           purchaseMode: map['tracking_meta_purchase_mode'] || 'instant',
           validatedStatus: map['tracking_meta_validated_status'] || '',
         },
@@ -669,6 +730,81 @@ export class SystemSettingsController {
       throw new BadRequestException('key must be a non-empty string');
     }
     let value = body.value ?? '';
+
+    // Masked-secret convention: an EMPTY submitted value for a redacted secret
+    // means "keep the stored one" (the GET handler never returns the token). This
+    // is what makes redaction non-destructive.
+    if (
+      value === '' &&
+      (key === 'tracking_meta_access_token' ||
+        key === 'tracking_tiktok_access_token')
+    ) {
+      const stored = await this.prisma.systemSetting.findUnique({
+        where: { key },
+      });
+      if (stored?.value) value = stored.value;
+    }
+
+    // Step 3 — Meta destination validation + secret-preserving merge.
+    //
+    // The destination array is a JSON settings blob with no DB-level constraint,
+    // so THIS is the only place its invariants can be enforced: immutable unique
+    // ids, a pixel id per live destination, a token per enabled destination, and a
+    // cap of 10. Rejecting here also prevents a malformed array from silently
+    // zeroing Meta delivery.
+    //
+    // SECRET HANDLING: list/read responses mask `accessToken` (see the GET
+    // handler), so the editor submits an EMPTY token for a destination it did not
+    // change. An empty submitted token therefore means "keep the stored one" — it
+    // must never wipe a working credential. A destination id that does not yet
+    // exist with an empty token is a real validation error (reported below).
+    if (key === 'tracking_meta_destinations') {
+      // An empty value is a legitimate "no destinations configured" state — the
+      // resolver falls back to the legacy single-pixel settings. Only a non-empty
+      // value is parsed and validated.
+      if (value.trim() === '') {
+        value = '';
+      } else {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(value);
+        } catch {
+          throw new BadRequestException(
+            'tracking_meta_destinations must be valid JSON',
+          );
+        }
+
+        const stored = await this.prisma.systemSetting.findUnique({
+          where: { key },
+        });
+        const storedDestinations = stored?.value
+          ? resolveMetaDestinations(stored.value, null, null)
+          : [];
+        const storedTokenById = new Map(
+          storedDestinations.map((d) => [d.id, d.accessToken]),
+        );
+
+        if (Array.isArray(parsed)) {
+          parsed = parsed.map((raw) => {
+            if (!raw || typeof raw !== 'object') return raw;
+            const entry = { ...(raw as Record<string, unknown>) };
+            const id = typeof entry.id === 'string' ? entry.id : '';
+            const submittedToken =
+              typeof entry.accessToken === 'string' ? entry.accessToken : '';
+            if (!submittedToken && storedTokenById.get(id)) {
+              entry.accessToken = storedTokenById.get(id);
+            }
+            return entry;
+          });
+        }
+
+        const result = validateMetaDestinations(parsed);
+        if (!result.ok) {
+          throw new BadRequestException(result.errors.join('; '));
+        }
+        value = JSON.stringify(result.value);
+      }
+    }
 
     // Library-sync any media URLs embedded in the setting being written.
     if (key === 'hero_slides') {

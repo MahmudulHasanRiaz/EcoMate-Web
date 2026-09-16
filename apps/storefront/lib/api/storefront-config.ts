@@ -86,7 +86,14 @@ export interface StorefrontConfig {
   };
   meta: {
     pixelEnabled: boolean;
+    /** @deprecated pre-Step-3 singular pixel id; use `pixelIds`. Kept as a fallback. */
     pixelId: string;
+    /**
+     * Step 3 — every enabled Meta destination's browser pixel id. PUBLIC DATA:
+     * this list must never carry an access token (the server excludes it by
+     * construction — see backend `publicMetaDestinations()`).
+     */
+    pixelIds?: string[];
     purchaseMode: 'instant' | 'validated';
     validatedStatus: string;
   };

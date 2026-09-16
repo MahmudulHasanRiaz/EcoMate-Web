@@ -2821,6 +2821,16 @@ model TrackingDispatch {
   ctxId              String?
   queueJobId         String?
   provider           String
+  // Immutable delivery-destination identity (Step 3). One dispatch row per
+  // (snapshot, provider, destination) — legacy rows and pre-destination installs
+  // carry 'default'. NOT NULL by design: a nullable column would let Postgres
+  // treat NULLs as distinct and silently defeat the unique key below.
+  destinationId      String   @default("default")
+  // Pinned delivery identity: which dataset this row targets. Recorded so a later
+  // pixel-id change cannot silently re-target history (a changed pixel id is a NEW
+  // destination). The access token is deliberately NOT pinned — it is re-read at
+  // send time so credential rotation works without rewriting historical rows.
+  pixelId            String?
   status             String   @default("PENDING") // PENDING|SENDING|SENT|RETRY|FAILED|DEDUPED|SKIPPED|DEAD
   providerEventId    String?
   httpStatus         Int?
@@ -2834,8 +2844,8 @@ model TrackingDispatch {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  @@unique([snapshotId, provider])
-  @@index([provider, status, createdAt])
+  @@unique([snapshotId, provider, destinationId])
+  @@index([provider, destinationId, status, createdAt])
   @@index([eventId, createdAt])
   @@index([orderId, createdAt])
   @@index([ctxId])

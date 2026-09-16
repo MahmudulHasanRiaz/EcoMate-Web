@@ -12,6 +12,7 @@ import { Loader2, Radio, Save, ExternalLink } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { TrackingTabs } from './tracking-nav'
+import { MetaDestinationsCard } from './meta-destinations-card'
 
 export function TrackingSettings() {
   const queryClient = useQueryClient()
@@ -41,6 +42,9 @@ export function TrackingSettings() {
   const [tiktokPurchaseMode, setTiktokPurchaseMode] = useState('instant')
   const [tiktokValidatedStatus, setTiktokValidatedStatus] = useState('')
   const [relayEnabled, setRelayEnabled] = useState(false)
+  // Step 3 — the destination array is edited as a raw JSON string by the card and
+  // written back verbatim (the server validates it).
+  const [metaDestinations, setMetaDestinations] = useState('')
 
   useEffect(() => {
     if (settings) {
@@ -59,6 +63,7 @@ export function TrackingSettings() {
       setTiktokPurchaseMode(settings.tracking_tiktok_purchase_mode || 'instant')
       setTiktokValidatedStatus(settings.tracking_tiktok_validated_status || '')
       setRelayEnabled(settings.tracking_relay_enabled === 'true')
+      setMetaDestinations(settings.tracking_meta_destinations || '')
     }
   }, [settings])
 
@@ -92,6 +97,7 @@ export function TrackingSettings() {
       { key: 'tracking_tiktok_purchase_mode', value: tiktokPurchaseMode },
       { key: 'tracking_tiktok_validated_status', value: tiktokValidatedStatus },
       { key: 'tracking_relay_enabled', value: String(relayEnabled) },
+      { key: 'tracking_meta_destinations', value: metaDestinations },
     ]
 
     Promise.all(updates.map(u => setMut.mutateAsync(u)))
@@ -131,7 +137,16 @@ export function TrackingSettings() {
       </Card>
       <Separator className='my-6' />
 
-      {/* Meta Card */}
+      {/* Step 3 — Meta destinations (multi-pixel + multi-CAPI) */}
+      <MetaDestinationsCard
+        raw={metaDestinations}
+        onChange={setMetaDestinations}
+        disabled={setMut.isPending}
+      />
+      <Separator className='my-6' />
+
+      {/* Meta Card — legacy single-destination fallback, used only while no
+          destination is configured above. */}
       <Card className='overflow-hidden border-none shadow-md bg-gradient-to-br from-background to-muted/20'>
         <CardHeader className='pb-4'>
           <div className='flex items-center justify-between'>
@@ -143,6 +158,10 @@ export function TrackingSettings() {
           </div>
           <CardDescription>
             Server-side event tracking via Meta CAPI. Requires a Pixel ID and Access Token.
+            <span className='block mt-1 text-xs'>
+              Legacy single-pixel settings — used only when no Meta destination is configured
+              above. Once a destination exists, these values are ignored for delivery.
+            </span>
           </CardDescription>
         </CardHeader>
         <CardContent className={metaEnabled ? '' : 'opacity-50 pointer-events-none'}>

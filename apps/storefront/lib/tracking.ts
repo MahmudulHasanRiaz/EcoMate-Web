@@ -305,7 +305,19 @@ function deterministicEventId(
   return `${snake}_${contentKey || 'n'}_${hashShort(ctxId)}_${bucket}`;
 }
 
-let _metaId = '';
+/**
+ * Enabled Meta browser pixel ids (Step 3 — multi-pixel).
+ *
+ * One fbq install serves every pixel: each id is registered with `fbq('init')`,
+ * and a single `fbq('track', …)` call then fans out to ALL initialized pixels with
+ * the SAME `eventID`. That is deliberate and is what keeps one business event one
+ * event: Meta's dedup namespace is (event_name + event_id) WITHIN one dataset, so
+ * reusing the canonical id per pixel dedups each pixel's own browser+server pair,
+ * while a per-pixel id would only break that dedup.
+ *
+ * The storefront receives pixel ids only — never an access token.
+ */
+let _metaIds: string[] = [];
 let _tiktokCode = '';
 let _metaPurchaseMode = 'instant';
 let _tiktokPurchaseMode = 'instant';
@@ -361,8 +373,15 @@ const debug = process.env.NODE_ENV !== 'production'
   ? (...args: unknown[]) => console.log('[TRACKING]', ...args)
   : () => {};
 
-export function setPixelIds(metaId: string, tiktokCode: string) {
-  _metaId = metaId;
+/**
+ * Set the enabled browser destinations. `metaIds` is the (possibly empty) list of
+ * enabled Meta pixel ids; a fresh call replaces the previous set — the queue is
+ * only flushed once the new set is armed.
+ */
+export function setPixelIds(metaIds: string[] | string, tiktokCode: string) {
+  _metaIds = (Array.isArray(metaIds) ? metaIds : [metaIds])
+    .map((id) => String(id || '').trim())
+    .filter(Boolean);
   _tiktokCode = tiktokCode;
   flushQueue();
 }
@@ -394,18 +413,29 @@ export function setPixelIdentity(externalId?: string | null, em?: string, ph?: s
  * sent (the fbq stub processes queued calls in order). Until it runs, Meta
  * events are held in `_eventQueue` — guaranteeing init-first ordering and that
  * the external_id is present at init for authenticated users.
+ *
+ * Step 3 — every enabled pixel is initialized first, then ONE PageView is fired.
+ * The single PageView call is intentional: fbq fans a `track` call out to every
+ * initialized pixel, so looping would multiply PageView per pixel instead of
+ * producing the intended per-pixel fan-out of one logical page view.
  */
 export function initMetaPixel() {
   if (typeof window === 'undefined') return;
   if (!isTrackingAllowed()) return;
-  if (_metaInited || !_metaId) return;
+  if (_metaInited || _metaIds.length === 0) return;
   const fbq = window.fbq;
   if (!fbq) return; // inline tag not defined yet — the inline script re-calls on readiness
   const advancedMatching: Record<string, string> = {};
   if (_metaExternalId) advancedMatching.external_id = _metaExternalId;
   if (_metaEm) advancedMatching.em = _metaEm;
   if (_metaPh) advancedMatching.ph = _metaPh;
-  fbq('init', _metaId, Object.keys(advancedMatching).length ? advancedMatching : undefined);
+  const am = Object.keys(advancedMatching).length ? advancedMatching : undefined;
+  // Initialize every pixel BEFORE any event fires. All pixels receive the same
+  // Advanced Matching object: identity is per shopper, not per destination, so a
+  // pixel can never be handed another destination's identity.
+  for (const id of _metaIds) {
+    fbq('init', id, am);
+  }
   fbq('track', 'PageView');
   _metaInited = true;
   flushQueue();
@@ -427,7 +457,7 @@ export function trackPageView() {
     debug('trackPageView — de-dupe, same URL:', url);
     return;
   }
-  const meta = !!(window.fbq && _metaId && _metaInited);
+  const meta = !!(window.fbq && _metaIds.length && _metaInited);
   const tiktok = !!(window.ttq && _tiktokCode);
   const ga4 = !!window.gtag;
   if (!meta && !tiktok && !ga4) return; // nothing armed yet — don't mark as visited
@@ -448,22 +478,25 @@ export function flushQueue() {
   const fbq = window.fbq;
   const ttq = window.ttq;
 
-  debug('flushQueue called. Status:', { _metaId, _tiktokCode, hasFbq: !!fbq, hasTtq: !!ttq, metaInited: _metaInited, queueLength: _eventQueue.length });
+  debug('flushQueue called. Status:', { metaIds: _metaIds, _tiktokCode, hasFbq: !!fbq, hasTtq: !!ttq, metaInited: _metaInited, queueLength: _eventQueue.length });
 
-  if (!_metaId && !_tiktokCode) return;
+  if (!_metaIds.length && !_tiktokCode) return;
   // Hold the whole queue until EVERY enabled provider is ready to fire. The old
   // guard used `&&` between the provider conditions, so a SINGLE-provider setup
   // (the common case) never returned here and drained/cleared the queue while
   // its script was still loading — dropping browser events (B4 fix).
-  if ((_metaId && (!fbq || !_metaInited)) || (_tiktokCode && !ttq)) return;
+  if ((_metaIds.length && (!fbq || !_metaInited)) || (_tiktokCode && !ttq)) return;
 
   if (_eventQueue.length > 0) {
     _eventQueue.forEach(({ event, data, eventId }) => {
       // Same per-provider Purchase isolation as the live path: a queued
-      // Purchase flushes only to instant-mode providers' pixels.
+      // Purchase flushes only to instant-mode providers' pixels. Provider-level
+      // mode means every initialized Meta pixel shares this one gate — Step 3
+      // keeps it that way deliberately; a per-destination mode would need this to
+      // become a per-pixel check.
       const flushMeta = event !== 'Purchase' || _metaPurchaseMode === 'instant';
       const flushTiktok = event !== 'Purchase' || _tiktokPurchaseMode === 'instant';
-      if (fbq && _metaId && _metaInited && flushMeta) {
+      if (fbq && _metaIds.length && _metaInited && flushMeta) {
         debug('Flushing queued Meta event:', event, data);
         fbq('track', event, data, { eventID: eventId });
       }
@@ -637,6 +670,13 @@ export function trackEvent(event: EventName, data?: Record<string, any>, userDat
   // the browser Pixel needs the same gate or Meta would record an unvalidated
   // order at checkout time via facebook.com/tr (same event_id dedups with the
   // later CAPI send, but the event would exist before validation).
+  //
+  // Step 3 — DELIBERATELY PROVIDER-LEVEL, covering every initialized Meta pixel:
+  // all of a provider's destinations fire together or none do, which mirrors the
+  // provider-level `tracking_meta_purchase_mode` the server enforces. If a future
+  // version introduces a per-destination mode (Pixel A = instant, Pixel B =
+  // validated), this single boolean is the one place that must become a per-pixel
+  // check — the queue path in flushQueue() above must change in lockstep.
   const fireMetaPixel = event !== 'Purchase' || _metaPurchaseMode === 'instant';
   const fireTiktokPixel = event !== 'Purchase' || _tiktokPurchaseMode === 'instant';
 
@@ -648,19 +688,22 @@ export function trackEvent(event: EventName, data?: Record<string, any>, userDat
   const fbq = window.fbq;
   const ttq = window.ttq;
 
-  debug('Pixel IDs and script status:', { _metaId, _tiktokCode, hasFbq: !!fbq, hasTtq: !!ttq });
+  debug('Pixel IDs and script status:', { metaIds: _metaIds, _tiktokCode, hasFbq: !!fbq, hasTtq: !!ttq });
 
-  if (!_metaId && !_tiktokCode) {
+  if (!_metaIds.length && !_tiktokCode) {
     debug('Queuing event (no IDs yet):', event);
     _eventQueue.push({ event, data, eventId: resolvedEventId });
-  } else if ((_metaId && (!fbq || !_metaInited)) || (_tiktokCode && !ttq)) {
+  } else if ((_metaIds.length && (!fbq || !_metaInited)) || (_tiktokCode && !ttq)) {
     // Meta events buffer until fbq('init') runs (_metaInited) so the external_id
     // is present at init and init-first ordering is guaranteed (Wave-2.1).
     debug('Queuing event (scripts not fully loaded yet):', event);
     _eventQueue.push({ event, data, eventId: resolvedEventId });
   } else {
-    if (fbq && _metaId && _metaInited && fireMetaPixel) {
-      debug('Firing Meta Pixel event:', event, data, { eventID: resolvedEventId });
+    if (fbq && _metaIds.length && _metaInited && fireMetaPixel) {
+      debug('Firing Meta Pixel event:', event, data, { eventID: resolvedEventId, pixels: _metaIds.length });
+      // ONE call fans out to every initialized pixel with the SAME canonical
+      // eventID (Step 3). Do not loop per pixel: the id must stay identical so
+      // each pixel dedups its own browser event against its CAPI event.
       fbq('track', event, data, { eventID: resolvedEventId });
     }
     if (ttq && _tiktokCode && fireTiktokPixel) {
@@ -698,12 +741,15 @@ export function trackEvent(event: EventName, data?: Record<string, any>, userDat
     typeof document !== 'undefined' ? document.referrer : undefined,
   );
 
-  if (_metaId || _tiktokCode) {
+  if (_metaIds.length || _tiktokCode) {
     sendMirror(resolvedEventId, {
       ctxId: getOrCreateCtxId(),
       eventId: resolvedEventId,
       eventName: eventNameToSnake(event),
       customData: data,
+      // NOTE: no destination/pixel identity is sent. Fan-out to individual
+      // destinations is decided entirely server-side from the capture-time
+      // destination refs, so the browser cannot pair Pixel A with CAPI B.
       userData: {
         ...userData,
         fbp,

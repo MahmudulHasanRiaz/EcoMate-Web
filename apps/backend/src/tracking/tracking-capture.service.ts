@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SCHEMA_VERSION } from './tracking.constants';
 import { TrackingSnapshotPayload } from './tracking-snapshot.types';
+import { LEGACY_DESTINATION_ID } from './destinations';
 
 /**
  * Input to TrackingCaptureService.capture.
@@ -140,64 +141,111 @@ export class TrackingCaptureService {
   /**
    * Validated-trigger requeue: the canonical Purchase snapshot already exists
    * (instant capture won the race, same deterministic eventId → DEDUPED), but a
-   * validated-mode provider was deferred at dispatch time. Revive the outbox +
-   * the deferred providers' SKIPPED dispatch rows so the relay re-dispatches the
+   * validated-mode provider was deferred at dispatch time. Revive the outbox + the
+   * deferred providers' SKIPPED dispatch rows so the relay re-dispatches the
    * SAME snapshot (same eventId) to them now. Providers already SENT are untouched.
+   *
+   * Step 3 — DESTINATION SCOPE. The caller keeps its provider-granular signature
+   * (a provider's Purchase mode is provider-level today, so every eligible
+   * destination of that provider follows it), but the revival itself is
+   * destination-granular: the destinations are read from the CAPTURE-TIME refs
+   * recorded on the outbox `configSnapshot`, and exactly one row is revived per
+   * destination. That is what stops a validated transition for `meta` from
+   * reviving an unrelated provider's destinations, and what makes a future
+   * per-destination mode a settings-only change.
+   *
+   * Legacy snapshots (captured before destinations existed) carry no
+   * `destinations` array and fall back to the single legacy destination id, which
+   * is the identity their rows already hold.
    */
   async ensureValidatedDispatch(
     eventId: string,
     providers: string[],
-  ): Promise<{ requeued: boolean; providers: string[] }> {
-    if (providers.length === 0) return { requeued: false, providers: [] };
+  ): Promise<{ requeued: boolean; providers: string[]; destinations: string[] }> {
+    if (providers.length === 0)
+      return { requeued: false, providers: [], destinations: [] };
     const snapshot = await this.prisma.trackingSnapshot.findUnique({
       where: { eventId },
       select: { id: true },
     });
-    if (!snapshot) return { requeued: false, providers: [] };
+    if (!snapshot) return { requeued: false, providers: [], destinations: [] };
     const outbox = await this.prisma.trackingOutbox.findUnique({
       where: { snapshotId: snapshot.id },
     });
-    if (!outbox) return { requeued: false, providers: [] };
+    if (!outbox) return { requeued: false, providers: [], destinations: [] };
+
+    const config = (outbox.configSnapshot ?? {}) as {
+      destinations?: Array<{ provider?: string; destinationId?: string; pixelId?: string }>;
+    };
+    const capturedRefs = Array.isArray(config.destinations) ? config.destinations : [];
+
+    const revivedProviders = new Set<string>();
     const revived: string[] = [];
     for (const provider of providers) {
-      const row = await this.prisma.trackingDispatch.findUnique({
-        where: { snapshotId_provider: { snapshotId: snapshot.id, provider } },
-      });
-      // Only deferred (SKIPPED) rows are revived — SENT/RETRY/FAILED rows keep
-      // their state so a validated transition never duplicates a delivery.
-      if (row && row.status === 'SKIPPED') {
-        await this.prisma.trackingDispatch.update({
-          where: { id: row.id },
-          data: { status: 'PENDING', errorMsg: null },
-        });
-        await this.prisma.trackingDispatchEvent.create({
-          data: {
-            snapshotId: snapshot.id,
-            eventId,
-            orderId: row.orderId ?? null,
-            ctxId: row.ctxId ?? null,
-            provider,
-            toStatus: 'PENDING',
-            message: 'validated requeue: deferred provider revived',
+      // Capture-time destination refs for this provider. Legacy snapshots have
+      // none recorded, so fall back to the pre-Step-3 single identity.
+      const refs = capturedRefs.filter((r) => r?.provider === provider);
+      const targets = refs.length
+        ? refs.map((r) => ({
+            destinationId: r.destinationId || LEGACY_DESTINATION_ID,
+            pixelId: r.pixelId,
+          }))
+        : [{ destinationId: LEGACY_DESTINATION_ID, pixelId: undefined }];
+
+      for (const target of targets) {
+        const row = await this.prisma.trackingDispatch.findUnique({
+          where: {
+            snapshotId_provider_destinationId: {
+              snapshotId: snapshot.id,
+              provider,
+              destinationId: target.destinationId,
+            },
           },
         });
-        revived.push(provider);
-      } else if (!row) {
-        // Provider never dispatched (e.g. outbox went SENT before it was
-        // enabled): create a PENDING row so the next dispatch covers it.
-        await this.prisma.trackingDispatch.create({
-          data: {
-            snapshotId: snapshot.id,
-            eventId,
-            provider,
-            status: 'PENDING',
-            providerEventId: eventId,
-          },
-        });
-        revived.push(provider);
+        // Only deferred (SKIPPED) rows are revived — SENT/RETRY/FAILED rows keep
+        // their state so a validated transition never duplicates a delivery.
+        if (row && row.status === 'SKIPPED') {
+          await this.prisma.trackingDispatch.update({
+            where: { id: row.id },
+            data: { status: 'PENDING', errorMsg: null },
+          });
+          await this.prisma.trackingDispatchEvent.create({
+            data: {
+              snapshotId: snapshot.id,
+              eventId,
+              orderId: row.orderId ?? null,
+              ctxId: row.ctxId ?? null,
+              provider,
+              toStatus: 'PENDING',
+              message: 'validated requeue: deferred destination revived',
+            },
+          });
+          revivedProviders.add(provider);
+          revived.push(`${provider}:${target.destinationId}`);
+        } else if (!row) {
+          // Destination never dispatched (e.g. the outbox went SENT before it was
+          // enabled): create a PENDING row so the next dispatch covers it.
+          await this.prisma.trackingDispatch.create({
+            data: {
+              snapshotId: snapshot.id,
+              eventId,
+              provider,
+              destinationId: target.destinationId,
+              pixelId: target.pixelId ?? null,
+              status: 'PENDING',
+              providerEventId: eventId,
+            },
+          });
+          revivedProviders.add(provider);
+          revived.push(`${provider}:${target.destinationId}`);
+        }
       }
     }
-    if (revived.length === 0) return { requeued: false, providers: [] };
+    // `providers` keeps its original meaning (which providers were revived) so the
+    // existing caller/contract is unchanged; `destinations` is the Step 3
+    // destination-granular detail.
+    if (revived.length === 0)
+      return { requeued: false, providers: [], destinations: [] };
     if (outbox.status !== 'PENDING') {
       await this.prisma.trackingOutbox.update({
         where: { id: outbox.id },
@@ -209,6 +257,10 @@ export class TrackingCaptureService {
         },
       });
     }
-    return { requeued: true, providers: revived };
+    return {
+      requeued: true,
+      providers: [...revivedProviders],
+      destinations: revived,
+    };
   }
 }

@@ -18,11 +18,23 @@ declare global {
 export default function TrackingScripts() {
   const { config } = useStorefrontConfig();
   const { user } = useAuth();
-  const metaId = config.meta.pixelEnabled ? config.meta.pixelId : "";
+  // Step 3 — every enabled Meta destination's pixel id (public data only; the
+  // access token never leaves the server). `pixelId` is the pre-Step-3 singular
+  // field, kept as a fallback so a storefront running against an older backend
+  // response still initializes its one pixel.
+  const metaIds: string[] = config.meta.pixelEnabled
+    ? config.meta.pixelIds?.length
+      ? config.meta.pixelIds
+      : config.meta.pixelId
+        ? [config.meta.pixelId]
+        : []
+    : [];
+  // Stable dependency key — the array identity changes on every render.
+  const metaIdsKey = metaIds.join(',');
   const tiktokCode = config.tiktok.pixelEnabled ? config.tiktok.pixelCode : "";
   const gaMeasurementId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID || '';
   const gaAdsConversionId = process.env.NEXT_PUBLIC_GA_ADS_CONVERSION_ID || '';
-  const hasAny = !!(metaId || tiktokCode || gaMeasurementId);
+  const hasAny = !!(metaIds.length || tiktokCode || gaMeasurementId);
   // Wave-2.1 — shopper external_id resolution state; gates the Meta pixel init
   // so the external_id is present at fbq('init') (no re-init, no next-load dep).
   // Wave-3 — fbLoginId rides along (CAPI mirror key, never in the pixel init).
@@ -95,7 +107,7 @@ export default function TrackingScripts() {
   }, []);
 
   useEffect(() => {
-    setPixelIds(metaId, tiktokCode);
+    setPixelIds(metaIds, tiktokCode);
     // Capture the session landing attribution on first app boot (first write
     // wins) so the landing page's utm/click-id/referrer survive to checkout.
     captureLandingAttribution();
@@ -109,7 +121,9 @@ export default function TrackingScripts() {
       syncContext();
     }, 3000);
     return () => clearTimeout(resync);
-  }, [metaId, tiktokCode, config.meta.purchaseMode, config.tiktok.purchaseMode]);
+    // metaIdsKey is the stable identity of the pixel-id set (see above).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [metaIdsKey, tiktokCode, config.meta.purchaseMode, config.tiktok.purchaseMode]);
 
   // Wave-2.1 — resolve the shopper's stable external_id for the Pixel. Endpoint
   // returns null when the flag is off or there is no linked CustomerProfile, so
@@ -148,11 +162,12 @@ export default function TrackingScripts() {
   // Wave-2.1 — once the pixel id and identity are both known, arm the data-driven
   // Meta init. Meta events buffer in initMetaPixel until this runs (init-first).
   useEffect(() => {
-    if (!metaId || !identity.ready) return;
+    if (!metaIds.length || !identity.ready) return;
     setPixelIdentity(identity.externalId, identity.em, identity.ph, identity.fbLoginId);
     (window as any).__TRACKING_INIT_READY = true;
     if (window.__initMetaPixel) window.__initMetaPixel();
-  }, [metaId, identity.ready, identity.externalId, identity.em, identity.ph, identity.fbLoginId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [metaIdsKey, identity.ready, identity.externalId, identity.em, identity.ph, identity.fbLoginId]);
 
   // B12: the orphaned public/scripts/tracking.js (deleted) is the only consumer
   // of __META_ID/__TIKTOK_CODE — dropped to close the latent double-fire hazard.
@@ -169,12 +184,13 @@ export default function TrackingScripts() {
         dangerouslySetInnerHTML={{
           __html: `
           (function() {
-            const metaId = ${JSON.stringify(metaId)};
+            const metaIds = ${JSON.stringify(metaIds)};
             const tiktokCode = ${JSON.stringify(tiktokCode)};
             const gaId = ${JSON.stringify(gaMeasurementId)};
 
-            // মেটা পিক্সেল
-            if (metaId && !window.fbq) {
+            // মেটা পিক্সেল — one fbq install serves every enabled pixel; each id is
+            // registered by initMetaPixel() once identity is resolved.
+            if (metaIds.length && !window.fbq) {
               !function(f,b,e,v,n,t,s)
               {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
               n.callMethod.apply(n,arguments):n.queue.push(arguments)};

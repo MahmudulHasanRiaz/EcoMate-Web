@@ -42,6 +42,7 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
   const settingsGet = jest.fn();
   const getTestEventCode = jest.fn();
   const isEnabledOrDefault = jest.fn();
+  const getMetaDestinations = jest.fn();
   const configGet = jest.fn();
   const dlqMirror = jest.fn();
   const replayArchive = jest.fn();
@@ -59,7 +60,15 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
     trackingDispatchEvent: { create: dispatchEventCreate },
   } as any;
   const context = { getByCtxId: contextGetByCtxId } as any;
-  const settings = { get: settingsGet, getTestEventCode, isEnabledOrDefault } as any;
+  const settings = {
+    get: settingsGet,
+    getTestEventCode,
+    isEnabledOrDefault,
+    // Step 3 — the dispatcher resolves the live destination list for the
+    // removal check and for per-destination credentials. Default: no configured
+    // destinations, so a legacy snapshot dispatches through the legacy path.
+    getMetaDestinations,
+  } as any;
   const config = { get: configGet } as any;
   const dlq = { mirror: dlqMirror } as any;
   const replay = { archive: replayArchive } as any;
@@ -133,7 +142,13 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
     dispatchFindUnique.mockResolvedValue(null);
     dispatchCreate.mockImplementation(({ data }: any) =>
       Promise.resolve({
-        id: `d-${data.provider}`,
+        // Legacy ('default') rows keep the historical `d-<provider>` id so the
+        // pre-Step-3 assertions still hold; a real destination gets its own id so
+        // per-destination assertions can address rows individually.
+        id:
+          data.destinationId && data.destinationId !== 'default'
+            ? `d-${data.provider}-${data.destinationId}`
+            : `d-${data.provider}`,
         ...data,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -144,6 +159,7 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
     outboxUpdate.mockResolvedValue({});
     settingsGet.mockResolvedValue(null);
     getTestEventCode.mockResolvedValue(null);
+    getMetaDestinations.mockResolvedValue([]);
     // Wave-1 safety guards default OFF in the harness so existing tests (whose
     // snapshots carry old eventTimes) keep dispatching; guard tests override.
     isEnabledOrDefault.mockResolvedValue(false);
@@ -771,6 +787,296 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
           }),
         }),
       );
+    });
+  });
+
+  describe('Step 3 — multi-destination Meta fan-out', () => {
+    const destFixture = (id: string, pixelId: string, accessToken: string) => ({
+      id,
+      label: id,
+      pixelId,
+      accessToken,
+      enabled: true,
+      browserPixelEnabled: true,
+      testEventCode: '',
+      testMode: false,
+      createdAt: '',
+      updatedAt: '',
+      removedAt: null,
+    });
+
+    const liveDestinations = [
+      destFixture('primary', '111', 'tok-A'),
+      destFixture('secondary', '222', 'tok-B'),
+    ];
+
+    const multiOutbox = {
+      ...outbox,
+      configSnapshot: {
+        enabledProviders: ['meta'],
+        successPolicy: 'ALL_SENT',
+        purchaseModes: { meta: 'instant' },
+        destinations: [
+          { provider: 'meta', destinationId: 'primary', pixelId: '111', purchaseMode: 'instant' },
+          { provider: 'meta', destinationId: 'secondary', pixelId: '222', purchaseMode: 'instant' },
+        ],
+      },
+    };
+
+    const setupMulti = () => {
+      mockBuildAdapterRegistry.mockReturnValue([fakeMeta]);
+      outboxFindUnique.mockResolvedValue(multiOutbox);
+      getMetaDestinations.mockResolvedValue(liveDestinations);
+      metaSend.mockResolvedValue(okResult());
+    };
+
+    it('creates ONE snapshot with N destination dispatch rows (not N snapshots)', async () => {
+      setupMulti();
+
+      await service.process(job, 'job-1');
+
+      const creates = dispatchCreate.mock.calls.map((c) => c[0].data);
+      expect(creates).toHaveLength(2);
+      expect(creates.map((d) => d.destinationId).sort()).toEqual([
+        'primary',
+        'secondary',
+      ]);
+      // Every row belongs to the SAME canonical snapshot.
+      expect(new Set(creates.map((d) => d.snapshotId))).toEqual(new Set(['snap-1']));
+      expect(metaSend).toHaveBeenCalledTimes(2);
+    });
+
+    it('sends the SAME canonical Purchase event id to every destination', async () => {
+      setupMulti();
+
+      await service.process(job, 'job-1');
+
+      const eventIds = metaSend.mock.calls.map((c) => c[0].eventId);
+      expect(eventIds).toEqual(['purchase_ord-1', 'purchase_ord-1']);
+    });
+
+    it('pins each destination pixel id on its dispatch row', async () => {
+      setupMulti();
+
+      await service.process(job, 'job-1');
+
+      const creates = dispatchCreate.mock.calls.map((c) => c[0].data);
+      expect(
+        creates.find((d) => d.destinationId === 'primary')?.pixelId,
+      ).toBe('111');
+      expect(
+        creates.find((d) => d.destinationId === 'secondary')?.pixelId,
+      ).toBe('222');
+    });
+
+    it('reads the CURRENT access token per destination (rotation works, token never pinned)', async () => {
+      setupMulti();
+
+      await service.process(job, 'job-1');
+
+      const cfgs = metaSend.mock.calls.map((c) => c[1]);
+      expect(cfgs.map((c: any) => c.accessToken).sort()).toEqual(['tok-A', 'tok-B']);
+      expect(cfgs.map((c: any) => c.pixelId).sort()).toEqual(['111', '222']);
+      // The token must NOT be persisted on the dispatch row.
+      const creates = dispatchCreate.mock.calls.map((c) => c[0].data);
+      for (const row of creates) {
+        expect(JSON.stringify(row)).not.toContain('tok-A');
+        expect(JSON.stringify(row)).not.toContain('tok-B');
+      }
+    });
+
+    it('one destination failing does not block the other (independent statuses)', async () => {
+      setupMulti();
+      metaSend
+        .mockResolvedValueOnce(okResult())
+        .mockResolvedValueOnce({
+          ok: false,
+          retryable: true,
+          httpStatus: 500,
+          rawResponse: 'destination B down',
+        });
+
+      await service.process(job, 'job-1');
+
+      expect(dispatchUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'd-meta-primary' },
+          data: expect.objectContaining({ status: 'SENT' }),
+        }),
+      );
+      expect(dispatchUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'd-meta-secondary' },
+          data: expect.objectContaining({ status: 'RETRY' }),
+        }),
+      );
+      // The outbox stays retryable rather than DEADing on one destination's failure.
+      expect(outboxUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'outbox-1' },
+          data: expect.objectContaining({ status: 'PENDING' }),
+        }),
+      );
+    });
+
+    it('a retry re-processes only the non-terminal destination, never the SENT sibling', async () => {
+      setupMulti();
+      // Simulate a second attempt: primary already SENT, secondary still RETRY.
+      dispatchFindUnique.mockImplementation(({ where }: any) => {
+        const key = where?.snapshotId_provider_destinationId;
+        if (key?.destinationId === 'primary') {
+          return Promise.resolve({
+            id: 'd-meta-primary',
+            status: 'SENT',
+            attemptCount: 1,
+          });
+        }
+        if (key?.destinationId === 'secondary') {
+          return Promise.resolve({
+            id: 'd-meta-secondary',
+            status: 'RETRY',
+            attemptCount: 1,
+          });
+        }
+        return Promise.resolve(null);
+      });
+      metaSend.mockResolvedValue(okResult());
+
+      await service.process(job, 'job-1');
+
+      // Exactly one POST — the already-SENT destination short-circuits on the
+      // work-set rule and is NOT re-sent because its sibling needed a retry.
+      expect(metaSend).toHaveBeenCalledTimes(1);
+      expect(metaSend.mock.calls[0][0].eventId).toBe('purchase_ord-1');
+    });
+
+    it('a removed destination becomes an observable SKIPPED(destination_removed), not a silent drop', async () => {
+      mockBuildAdapterRegistry.mockReturnValue([fakeMeta]);
+      outboxFindUnique.mockResolvedValue(multiOutbox);
+      // 'secondary' has been soft-removed since capture.
+      getMetaDestinations.mockResolvedValue([
+        liveDestinations[0],
+        { ...liveDestinations[1], removedAt: '2026-09-16T00:00:00.000Z', enabled: false },
+      ]);
+      metaSend.mockResolvedValue(okResult());
+
+      await service.process(job, 'job-1');
+
+      const creates = dispatchCreate.mock.calls.map((c) => c[0].data);
+      const removedRow = creates.find((d) => d.destinationId === 'secondary');
+      expect(removedRow).toMatchObject({ status: 'SKIPPED' });
+      expect(dispatchEventCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            toStatus: 'SKIPPED',
+            message: 'destination_removed',
+          }),
+        }),
+      );
+      // The surviving destination still delivered.
+      expect(metaSend).toHaveBeenCalledTimes(1);
+    });
+
+    it('still delivers to a destination merely DISABLED after capture', async () => {
+      mockBuildAdapterRegistry.mockReturnValue([fakeMeta]);
+      outboxFindUnique.mockResolvedValue(multiOutbox);
+      getMetaDestinations.mockResolvedValue([
+        liveDestinations[0],
+        { ...liveDestinations[1], enabled: false, removedAt: null },
+      ]);
+      metaSend.mockResolvedValue(okResult());
+
+      await service.process(job, 'job-1');
+
+      expect(metaSend).toHaveBeenCalledTimes(2);
+    });
+
+    it('never delivers a capture-time event to a destination added later', async () => {
+      mockBuildAdapterRegistry.mockReturnValue([fakeMeta]);
+      // The snapshot was captured with only 'primary' eligible.
+      outboxFindUnique.mockResolvedValue({
+        ...outbox,
+        configSnapshot: {
+          enabledProviders: ['meta'],
+          destinations: [
+            { provider: 'meta', destinationId: 'primary', pixelId: '111', purchaseMode: 'instant' },
+          ],
+        },
+      });
+      // A third destination now exists live.
+      getMetaDestinations.mockResolvedValue([
+        ...liveDestinations,
+        destFixture('added-later', '333', 'tok-C'),
+      ]);
+      metaSend.mockResolvedValue(okResult());
+
+      await service.process(job, 'job-1');
+
+      const creates = dispatchCreate.mock.calls.map((c) => c[0].data);
+      expect(creates.map((d) => d.destinationId)).toEqual(['primary']);
+      expect(metaSend).toHaveBeenCalledTimes(1);
+      expect(
+        creates.some((d) => d.destinationId === 'added-later'),
+      ).toBe(false);
+    });
+
+    it('recovers from a concurrent create via the P2002 loser re-read (never throws)', async () => {
+      setupMulti();
+      let created = 0;
+      dispatchFindUnique.mockImplementation(() =>
+        Promise.resolve(
+          created > 0
+            ? { id: 'd-winner', status: 'PENDING', attemptCount: 0 }
+            : null,
+        ),
+      );
+      dispatchCreate.mockImplementation(() => {
+        created += 1;
+        const err: any = new Error('Unique constraint failed');
+        err.code = 'P2002';
+        return Promise.reject(err);
+      });
+      metaSend.mockResolvedValue(okResult());
+
+      await expect(service.process(job, 'job-1')).resolves.toBeUndefined();
+
+      // The losing writer re-read the winner instead of surfacing the conflict.
+      expect(dispatchFindUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            snapshotId_provider_destinationId: expect.objectContaining({
+              snapshotId: 'snap-1',
+              provider: 'meta',
+            }),
+          }),
+        }),
+      );
+    });
+
+    it('keeps provider-level Purchase mode: a validated-mode destination ref is deferred', async () => {
+      mockBuildAdapterRegistry.mockReturnValue([fakeMeta]);
+      outboxFindUnique.mockResolvedValue({
+        ...outbox,
+        configSnapshot: {
+          enabledProviders: ['meta'],
+          purchaseModes: { meta: 'validated' },
+          destinations: [
+            { provider: 'meta', destinationId: 'primary', pixelId: '111', purchaseMode: 'validated' },
+          ],
+        },
+      });
+      getMetaDestinations.mockResolvedValue([liveDestinations[0]]);
+      snapshotFindUnique.mockResolvedValue({
+        ...snapshot,
+        payload: { ...snapshot.payload, triggerMode: 'instant' },
+      });
+
+      await service.process(job, 'job-1');
+
+      expect(metaSend).not.toHaveBeenCalled();
+      expect(dispatchCreate.mock.calls.map((c) => c[0].data)[0]).toMatchObject({
+        status: 'SKIPPED',
+      });
     });
   });
 
