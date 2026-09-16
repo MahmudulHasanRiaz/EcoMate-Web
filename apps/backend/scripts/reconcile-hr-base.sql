@@ -21,6 +21,10 @@
 -- v2: Each FK is wrapped in its own DO $$ block with EXCEPTION handling so that
 --     one FK failure (e.g., missing referenced table) does NOT abort all other FKs.
 --     Also adds column-add guards for betterAuthUserId on Employee (P2039 fix).
+-- v3: Fixes enum column type drift (db push created tables with TEXT columns).
+--     ALTERs all enum columns from TEXT to proper Postgres enum types.
+--     Adds missing enum values (reviewed, partially_paid, on_leave, suspended).
+--     Creates all HR enums that may be missing.
 -- ============================================================================
 
 -- ---- Enums (create-if-absent) -------------------------------------------------
@@ -34,6 +38,58 @@ DO $$ BEGIN CREATE TYPE "PayslipStatus" AS ENUM ('draft','approved','paid','canc
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 DO $$ BEGIN CREATE TYPE "AccountType" AS ENUM ('asset','liability','equity','income','expense');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+-- Add missing enum values that later migrations expect (idempotent)
+DO $$ BEGIN ALTER TYPE "PayslipStatus" ADD VALUE IF NOT EXISTS 'reviewed'; EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN ALTER TYPE "PayslipStatus" ADD VALUE IF NOT EXISTS 'partially_paid'; EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN ALTER TYPE "EmployeeStatus" ADD VALUE IF NOT EXISTS 'on_leave'; EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN ALTER TYPE "EmployeeStatus" ADD VALUE IF NOT EXISTS 'suspended'; EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+-- Additional enums that may be missing if only db push was used
+DO $$ BEGIN CREATE TYPE "LedgerStatus" AS ENUM ('draft','approved','paid');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN CREATE TYPE "EarningType" AS ENUM ('bonus','incentive','commission','other');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN CREATE TYPE "DeductionType" AS ENUM ('fine','other');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN CREATE TYPE "CommissionAmountType" AS ENUM ('fixed','percent');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN CREATE TYPE "LeaveStatus" AS ENUM ('pending','approved','rejected','cancelled');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN CREATE TYPE "AttendanceStatus" AS ENUM ('PRESENT','ABSENT','LATE','HALF_DAY','ON_LEAVE','WEEKLY_OFF');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN CREATE TYPE "EmployeeGender" AS ENUM ('MALE','FEMALE','OTHER');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN CREATE TYPE "AttendanceMethod" AS ENUM ('APP','MACHINE','NONE');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN CREATE TYPE "AttendanceModeSetting" AS ENUM ('APP','MACHINE','BOTH');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN CREATE TYPE "AttendanceSessionSource" AS ENUM ('APP','MACHINE','ADMIN');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN CREATE TYPE "BankAccountType" AS ENUM ('SAVINGS','CURRENT','OTHERS');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN CREATE TYPE "BankVerificationStatus" AS ENUM ('PENDING','VERIFIED','REJECTED');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN CREATE TYPE "AttendanceDeviceSyncStatus" AS ENUM ('IDLE','CONNECTED','DISCONNECTED','SYNCING','FAILED');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN CREATE TYPE "AttendanceEventType" AS ENUM ('CHECK_IN','CHECK_OUT','BREAK_START','BREAK_END','PUNCH');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN CREATE TYPE "AttendanceEventStatus" AS ENUM ('PENDING','UNMAPPED','PROCESSED','FAILED','SKIPPED');
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 -- ---- Tables (create-if-absent) ------------------------------------------------
@@ -149,6 +205,167 @@ EXCEPTION WHEN duplicate_column THEN null; END $$;
 DO $$ BEGIN
     ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "profilePictureUrl" TEXT;
 EXCEPTION WHEN duplicate_column THEN null; END $$;
+
+-- ---- Fix enum column types (db push may have created tables with TEXT columns) --
+-- Payslip.status: TEXT -> PayslipStatus
+DO $$ BEGIN
+    ALTER TABLE "Payslip" ALTER COLUMN "status" TYPE "PayslipStatus" USING "status"::"PayslipStatus";
+EXCEPTION WHEN undefined_column THEN null;  -- column doesn't exist, skip
+        WHEN undefined_object THEN null;     -- enum type doesn't exist, skip
+        WHEN others THEN RAISE WARNING 'Could not alter Payslip.status type: %', SQLERRM;
+END $$;
+
+-- Employee.status: TEXT -> EmployeeStatus
+DO $$ BEGIN
+    ALTER TABLE "Employee" ALTER COLUMN "status" TYPE "EmployeeStatus" USING "status"::"EmployeeStatus";
+EXCEPTION WHEN undefined_column THEN null;
+        WHEN undefined_object THEN null;
+        WHEN others THEN RAISE WARNING 'Could not alter Employee.status type: %', SQLERRM;
+END $$;
+
+-- Employee.employmentType: TEXT -> EmploymentType
+DO $$ BEGIN
+    ALTER TABLE "Employee" ALTER COLUMN "employmentType" TYPE "EmploymentType" USING "employmentType"::"EmploymentType";
+EXCEPTION WHEN undefined_column THEN null;
+        WHEN undefined_object THEN null;
+        WHEN others THEN RAISE WARNING 'Could not alter Employee.employmentType type: %', SQLERRM;
+END $$;
+
+-- Employee.gender: TEXT -> EmployeeGender (added by later migration, may also be TEXT)
+DO $$ BEGIN
+    ALTER TABLE "Employee" ALTER COLUMN "gender" TYPE "EmployeeGender" USING "gender"::"EmployeeGender";
+EXCEPTION WHEN undefined_column THEN null;
+        WHEN undefined_object THEN null;
+        WHEN others THEN RAISE WARNING 'Could not alter Employee.gender type: %', SQLERRM;
+END $$;
+
+-- Employee.attendanceMethod: TEXT -> AttendanceMethod (added by later migration, may also be TEXT)
+DO $$ BEGIN
+    ALTER TABLE "Employee" ALTER COLUMN "attendanceMethod" TYPE "AttendanceMethod" USING "attendanceMethod"::"AttendanceMethod";
+EXCEPTION WHEN undefined_column THEN null;
+        WHEN undefined_object THEN null;
+        WHEN others THEN RAISE WARNING 'Could not alter Employee.attendanceMethod type: %', SQLERRM;
+END $$;
+
+-- AttendanceRecord.status: TEXT -> AttendanceStatus (may be TEXT if created early)
+DO $$ BEGIN
+    ALTER TABLE "AttendanceRecord" ALTER COLUMN "status" TYPE "AttendanceStatus" USING "status"::"AttendanceStatus";
+EXCEPTION WHEN undefined_column THEN null;
+        WHEN undefined_object THEN null;
+        WHEN others THEN RAISE WARNING 'Could not alter AttendanceRecord.status type: %', SQLERRM;
+END $$;
+
+-- AttendanceSettings.mode: TEXT -> AttendanceModeSetting
+DO $$ BEGIN
+    ALTER TABLE "AttendanceSettings" ALTER COLUMN "mode" TYPE "AttendanceModeSetting" USING "mode"::"AttendanceModeSetting";
+EXCEPTION WHEN undefined_column THEN null;
+        WHEN undefined_object THEN null;
+        WHEN others THEN RAISE WARNING 'Could not alter AttendanceSettings.mode type: %', SQLERRM;
+END $$;
+
+-- AttendanceDay.status: TEXT -> AttendanceStatus
+DO $$ BEGIN
+    ALTER TABLE "AttendanceDay" ALTER COLUMN "status" TYPE "AttendanceStatus" USING "status"::"AttendanceStatus";
+EXCEPTION WHEN undefined_column THEN null;
+        WHEN undefined_object THEN null;
+        WHEN others THEN RAISE WARNING 'Could not alter AttendanceDay.status type: %', SQLERRM;
+END $$;
+
+-- AttendanceDay.attendanceMethod: TEXT -> AttendanceMethod
+DO $$ BEGIN
+    ALTER TABLE "AttendanceDay" ALTER COLUMN "attendanceMethod" TYPE "AttendanceMethod" USING "attendanceMethod"::"AttendanceMethod";
+EXCEPTION WHEN undefined_column THEN null;
+        WHEN undefined_object THEN null;
+        WHEN others THEN RAISE WARNING 'Could not alter AttendanceDay.attendanceMethod type: %', SQLERRM;
+END $$;
+
+-- AttendanceSession.source: TEXT -> AttendanceSessionSource
+DO $$ BEGIN
+    ALTER TABLE "AttendanceSession" ALTER COLUMN "source" TYPE "AttendanceSessionSource" USING "source"::"AttendanceSessionSource";
+EXCEPTION WHEN undefined_column THEN null;
+        WHEN undefined_object THEN null;
+        WHEN others THEN RAISE WARNING 'Could not alter AttendanceSession.source type: %', SQLERRM;
+END $$;
+
+-- EmployeeBankAccount.accountType: TEXT -> BankAccountType
+DO $$ BEGIN
+    ALTER TABLE "EmployeeBankAccount" ALTER COLUMN "accountType" TYPE "BankAccountType" USING "accountType"::"BankAccountType";
+EXCEPTION WHEN undefined_column THEN null;
+        WHEN undefined_object THEN null;
+        WHEN others THEN RAISE WARNING 'Could not alter EmployeeBankAccount.accountType type: %', SQLERRM;
+END $$;
+
+-- EmployeeBankAccount.verificationStatus: TEXT -> BankVerificationStatus
+DO $$ BEGIN
+    ALTER TABLE "EmployeeBankAccount" ALTER COLUMN "verificationStatus" TYPE "BankVerificationStatus" USING "verificationStatus"::"BankVerificationStatus";
+EXCEPTION WHEN undefined_column THEN null;
+        WHEN undefined_object THEN null;
+        WHEN others THEN RAISE WARNING 'Could not alter EmployeeBankAccount.verificationStatus type: %', SQLERRM;
+END $$;
+
+-- AttendanceDevice.syncStatus: TEXT -> AttendanceDeviceSyncStatus
+DO $$ BEGIN
+    ALTER TABLE "AttendanceDevice" ALTER COLUMN "syncStatus" TYPE "AttendanceDeviceSyncStatus" USING "syncStatus"::"AttendanceDeviceSyncStatus";
+EXCEPTION WHEN undefined_column THEN null;
+        WHEN undefined_object THEN null;
+        WHEN others THEN RAISE WARNING 'Could not alter AttendanceDevice.syncStatus type: %', SQLERRM;
+END $$;
+
+-- RawAttendanceEvent.eventType: TEXT -> AttendanceEventType
+DO $$ BEGIN
+    ALTER TABLE "RawAttendanceEvent" ALTER COLUMN "eventType" TYPE "AttendanceEventType" USING "eventType"::"AttendanceEventType";
+EXCEPTION WHEN undefined_column THEN null;
+        WHEN undefined_object THEN null;
+        WHEN others THEN RAISE WARNING 'Could not alter RawAttendanceEvent.eventType type: %', SQLERRM;
+END $$;
+
+-- RawAttendanceEvent.status: TEXT -> AttendanceEventStatus
+DO $$ BEGIN
+    ALTER TABLE "RawAttendanceEvent" ALTER COLUMN "status" TYPE "AttendanceEventStatus" USING "status"::"AttendanceEventStatus";
+EXCEPTION WHEN undefined_column THEN null;
+        WHEN undefined_object THEN null;
+        WHEN others THEN RAISE WARNING 'Could not alter RawAttendanceEvent.status type: %', SQLERRM;
+END $$;
+
+-- EmployeeEarning.status: TEXT -> LedgerStatus
+DO $$ BEGIN
+    ALTER TABLE "EmployeeEarning" ALTER COLUMN "status" TYPE "LedgerStatus" USING "status"::"LedgerStatus";
+EXCEPTION WHEN undefined_column THEN null;
+        WHEN undefined_object THEN null;
+        WHEN others THEN RAISE WARNING 'Could not alter EmployeeEarning.status type: %', SQLERRM;
+END $$;
+
+-- EmployeeDeduction.status: TEXT -> LedgerStatus
+DO $$ BEGIN
+    ALTER TABLE "EmployeeDeduction" ALTER COLUMN "status" TYPE "LedgerStatus" USING "status"::"LedgerStatus";
+EXCEPTION WHEN undefined_column THEN null;
+        WHEN undefined_object THEN null;
+        WHEN others THEN RAISE WARNING 'Could not alter EmployeeDeduction.status type: %', SQLERRM;
+END $$;
+
+-- CommissionRule.amountType: TEXT -> CommissionAmountType
+DO $$ BEGIN
+    ALTER TABLE "CommissionRule" ALTER COLUMN "amountType" TYPE "CommissionAmountType" USING "amountType"::"CommissionAmountType";
+EXCEPTION WHEN undefined_column THEN null;
+        WHEN undefined_object THEN null;
+        WHEN others THEN RAISE WARNING 'Could not alter CommissionRule.amountType type: %', SQLERRM;
+END $$;
+
+-- CommissionEarning.status: TEXT -> LedgerStatus
+DO $$ BEGIN
+    ALTER TABLE "CommissionEarning" ALTER COLUMN "status" TYPE "LedgerStatus" USING "status"::"LedgerStatus";
+EXCEPTION WHEN undefined_column THEN null;
+        WHEN undefined_object THEN null;
+        WHEN others THEN RAISE WARNING 'Could not alter CommissionEarning.status type: %', SQLERRM;
+END $$;
+
+-- LeaveRequest.status: TEXT -> LeaveStatus
+DO $$ BEGIN
+    ALTER TABLE "LeaveRequest" ALTER COLUMN "status" TYPE "LeaveStatus" USING "status"::"LeaveStatus";
+EXCEPTION WHEN undefined_column THEN null;
+        WHEN undefined_object THEN null;
+        WHEN others THEN RAISE WARNING 'Could not alter LeaveRequest.status type: %', SQLERRM;
+END $$;
 
 -- ---- Unique indexes + relation indexes (create-if-absent) --------------------
 CREATE UNIQUE INDEX IF NOT EXISTS "AccessPreset_name_key" ON "AccessPreset"("name");
