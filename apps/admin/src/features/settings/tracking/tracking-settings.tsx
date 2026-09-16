@@ -8,11 +8,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Radio, Save, ExternalLink } from 'lucide-react'
+import { Loader2, Radio, Save, ExternalLink, ChevronsUpDown } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
+import { Badge } from '@/components/ui/badge'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { TrackingTabs } from './tracking-nav'
-import { MetaDestinationsCard } from './meta-destinations-card'
+import { MetaDestinationsCard, hasConfiguredDestinations } from './meta-destinations-card'
 
 export function TrackingSettings() {
   const queryClient = useQueryClient()
@@ -45,6 +47,12 @@ export function TrackingSettings() {
   // Step 3 — the destination array is edited as a raw JSON string by the card and
   // written back verbatim (the server validates it).
   const [metaDestinations, setMetaDestinations] = useState('')
+  // Legacy fallback visibility: collapsed once destinations exist (their values
+  // are then ignored for delivery), expanded while legacy is the active path.
+  // null = follow hasDestinations; a user toggle overrides until it flips again.
+  const [legacyOpen, setLegacyOpen] = useState<boolean | null>(null)
+  const hasDestinations = hasConfiguredDestinations(metaDestinations)
+  const isLegacyOpen = legacyOpen ?? !hasDestinations
 
   useEffect(() => {
     if (settings) {
@@ -145,75 +153,24 @@ export function TrackingSettings() {
       />
       <Separator className='my-6' />
 
-      {/* Meta Card — legacy single-destination fallback, used only while no
-          destination is configured above. */}
+      {/* Provider-level Meta delivery settings — always visible. These apply
+          whether delivery runs through destinations or the legacy fallback:
+          tracking_meta_enabled, tracking_meta_purchase_mode,
+          tracking_meta_validated_status. No per-destination purchase mode. */}
       <Card className='overflow-hidden border-none shadow-md bg-gradient-to-br from-background to-muted/20'>
         <CardHeader className='pb-4'>
           <div className='flex items-center justify-between'>
             <div className='flex items-center gap-2 mb-1'>
               <Radio className='h-5 w-5 text-primary' />
-              <CardTitle className='text-xl'>Meta (Facebook) Conversions API</CardTitle>
+              <CardTitle className='text-xl'>Meta Delivery Settings</CardTitle>
             </div>
             <Switch checked={metaEnabled} onCheckedChange={setMetaEnabled} />
           </div>
           <CardDescription>
-            Server-side event tracking via Meta CAPI. Requires a Pixel ID and Access Token.
-            <span className='block mt-1 text-xs'>
-              Legacy single-pixel settings — used only when no Meta destination is configured
-              above. Once a destination exists, these values are ignored for delivery.
-            </span>
+            Master switch and Purchase timing for Meta delivery (applies to every Meta destination).
           </CardDescription>
         </CardHeader>
         <CardContent className={metaEnabled ? '' : 'opacity-50 pointer-events-none'}>
-          <div className='grid gap-6 sm:grid-cols-2'>
-            <div className='space-y-2'>
-              <Label htmlFor='meta-pixel-id'>Pixel ID</Label>
-              <Input
-                id='meta-pixel-id'
-                value={metaPixelId}
-                onChange={e => setMetaPixelId(e.target.value)}
-                placeholder='123456789012345'
-                className='bg-background/50'
-              />
-            </div>
-            <div className='space-y-2'>
-              <Label htmlFor='meta-access-token'>Access Token</Label>
-              <Input
-                id='meta-access-token'
-                type='password'
-                value={metaAccessToken}
-                onChange={e => setMetaAccessToken(e.target.value)}
-                placeholder='EAA...'
-                className='bg-background/50'
-              />
-            </div>
-          </div>
-          
-          <div className='grid gap-6 sm:grid-cols-2 mt-4'>
-            <div className='space-y-2'>
-              <Label htmlFor='meta-test-code'>Test Event Code (Optional)</Label>
-              <Input
-                id='meta-test-code'
-                value={metaTestCode}
-                onChange={e => setMetaTestCode(e.target.value)}
-                placeholder='TEST12345'
-                className='bg-background/50'
-              />
-              <p className='text-xs text-muted-foreground'>
-                Use this to test server-side events in Meta Events Manager. Leave empty for production.
-              </p>
-            </div>
-            <div className='flex items-center justify-between rounded-lg border bg-background/50 px-3 py-2'>
-              <div className='space-y-0.5'>
-                <Label htmlFor='meta-test-mode'>Enable Test Mode</Label>
-                <p className='text-xs text-muted-foreground'>
-                  Route events to the Meta Test Events tool (must be on with a test code to see server events).
-                </p>
-              </div>
-              <Switch id='meta-test-mode' checked={metaTestMode} onCheckedChange={setMetaTestMode} />
-            </div>
-          </div>
-
           <div className='space-y-2 sm:col-span-2 mt-4'>
             <Label htmlFor='meta-purchase-mode'>Purchase Event Mode</Label>
             <Select value={metaPurchaseMode} onValueChange={(v) => { setMetaPurchaseMode(v); if (v === 'instant') setMetaValidatedStatus(''); }}>
@@ -248,19 +205,101 @@ export function TrackingSettings() {
               </p>
             </div>
           )}
-
-          <div className='mt-4'>
-            <a
-              href='https://developers.facebook.com/docs/marketing-api/conversions-api/get-started'
-              target='_blank'
-              rel='noreferrer'
-              className='text-sm text-primary hover:underline inline-flex items-center gap-1'
-            >
-              How to get Meta CAPI credentials <ExternalLink className='h-3 w-3' />
-            </a>
-          </div>
         </CardContent>
       </Card>
+      <Separator className='my-6' />
+
+      {/* Legacy single-pixel credentials — fallback only. Collapsed while a
+          destination exists (these values are then ignored for delivery);
+          expanded while legacy is the active delivery path. Backend keys are
+          unchanged; this is a presentation change only. */}
+      <Collapsible open={isLegacyOpen} onOpenChange={setLegacyOpen}>
+        <Card className='overflow-hidden border-none shadow-md bg-gradient-to-br from-background to-muted/20'>
+          <CardHeader className='pb-4'>
+            <div className='flex items-center justify-between'>
+              <div className='flex items-center gap-2 mb-1'>
+                <Radio className='h-5 w-5 text-primary' />
+                <CardTitle className='text-xl'>Legacy Meta Configuration</CardTitle>
+                <Badge variant='secondary'>Fallback only</Badge>
+              </div>
+              <CollapsibleTrigger asChild>
+                <Button type='button' variant='ghost' size='sm'>
+                  {isLegacyOpen ? 'Hide' : 'Show'}
+                  <ChevronsUpDown className='h-4 w-4 ml-1' />
+                </Button>
+              </CollapsibleTrigger>
+            </div>
+            <CardDescription>
+              {hasDestinations
+                ? 'Not used while Meta destinations exist above — delivery uses the destinations. Kept for reference and rollback.'
+                : 'Used only when no Meta destination is configured above. Add a destination to switch to multi-pixel delivery.'}
+            </CardDescription>
+          </CardHeader>
+          <CollapsibleContent>
+            <CardContent>
+              <div className='grid gap-6 sm:grid-cols-2'>
+                <div className='space-y-2'>
+                  <Label htmlFor='meta-pixel-id'>Pixel ID</Label>
+                  <Input
+                    id='meta-pixel-id'
+                    value={metaPixelId}
+                    onChange={e => setMetaPixelId(e.target.value)}
+                    placeholder='123456789012345'
+                    className='bg-background/50'
+                  />
+                </div>
+                <div className='space-y-2'>
+                  <Label htmlFor='meta-access-token'>Access Token</Label>
+                  <Input
+                    id='meta-access-token'
+                    type='password'
+                    value={metaAccessToken}
+                    onChange={e => setMetaAccessToken(e.target.value)}
+                    placeholder='EAA...'
+                    className='bg-background/50'
+                  />
+                </div>
+              </div>
+
+              <div className='grid gap-6 sm:grid-cols-2 mt-4'>
+                <div className='space-y-2'>
+                  <Label htmlFor='meta-test-code'>Test Event Code (Optional)</Label>
+                  <Input
+                    id='meta-test-code'
+                    value={metaTestCode}
+                    onChange={e => setMetaTestCode(e.target.value)}
+                    placeholder='TEST12345'
+                    className='bg-background/50'
+                  />
+                  <p className='text-xs text-muted-foreground'>
+                    Use this to test server-side events in Meta Events Manager. Leave empty for production.
+                  </p>
+                </div>
+                <div className='flex items-center justify-between rounded-lg border bg-background/50 px-3 py-2'>
+                  <div className='space-y-0.5'>
+                    <Label htmlFor='meta-test-mode'>Enable Test Mode</Label>
+                    <p className='text-xs text-muted-foreground'>
+                      Route events to the Meta Test Events tool (must be on with a test code to see server events).
+                    </p>
+                  </div>
+                  <Switch id='meta-test-mode' checked={metaTestMode} onCheckedChange={setMetaTestMode} />
+                </div>
+              </div>
+
+              <div className='mt-4'>
+                <a
+                  href='https://developers.facebook.com/docs/marketing-api/conversions-api/get-started'
+                  target='_blank'
+                  rel='noreferrer'
+                  className='text-sm text-primary hover:underline inline-flex items-center gap-1'
+                >
+                  How to get Meta CAPI credentials <ExternalLink className='h-3 w-3' />
+                </a>
+              </div>
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
 
       {/* TikTok Card */}
       <Card className='overflow-hidden border-none shadow-md bg-gradient-to-br from-background to-muted/20'>

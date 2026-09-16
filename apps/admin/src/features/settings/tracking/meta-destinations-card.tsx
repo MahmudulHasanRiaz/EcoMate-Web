@@ -55,13 +55,28 @@ function newDestinationId(existing: MetaDestinationDraft[]): string {
   return `pixel-${Date.now().toString(36)}`
 }
 
+/**
+ * True when the stored array holds at least one destination entry (live,
+ * disabled, or soft-removed). The server ignores the legacy single-pixel
+ * fields whenever the array is non-empty, so the settings page uses this to
+ * decide when the legacy card becomes fallback-only.
+ */
+export function hasConfiguredDestinations(raw: string | undefined | null): boolean {
+  return parseDestinations(raw).length > 0
+}
+
 export function parseDestinations(raw: string | undefined | null): MetaDestinationDraft[] {
   if (!raw) return []
   try {
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
     return parsed
-      .filter((d) => d && typeof d === 'object' && !d.__proto__)
+      // NOTE: no `!d.__proto__` guard here — every plain object inherits
+      // Object.prototype (truthy), so that check dropped ALL entries and the
+      // card never displayed stored destinations. The map below builds a fresh
+      // literal with explicit fields, so a malicious `__proto__` key in the
+      // stored JSON cannot pollute anything.
+      .filter((d) => d && typeof d === 'object')
       .map((d: any) => ({
         id: String(d.id ?? ''),
         label: String(d.label ?? ''),
@@ -123,8 +138,13 @@ export function MetaDestinationsCard({ raw, onChange, disabled }: Props) {
   if (raw !== seed && !disabled) {
     // Only reseed when the drafts are in their pristine (unmodified) state.
     if (JSON.stringify(drafts) === JSON.stringify(parseDestinations(seed))) {
+      const fresh = parseDestinations(raw)
       setSeed(raw)
-      setDrafts(parseDestinations(raw))
+      setDrafts(fresh)
+      // Recompute: errors from the pre-save drafts must not linger once the
+      // server value is adopted (e.g. a just-saved destination is valid, but a
+      // stored token comes back masked as hasAccessToken — both validate clean).
+      setErrors(validateDrafts(fresh))
     }
   }
 
