@@ -182,7 +182,7 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
       adapterVersion: 1,
       providerApiVersion: 'v22.0',
       payloadVersion: 1,
-      normalizerVersion: 1,
+      normalizerVersion: 2,
     });
 
     // Each provider advanced its own row to SENT with attemptCount++ and versions.
@@ -633,7 +633,7 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
     expect(arg.versions).toMatchObject({
       schemaVersion: 1,
       payloadVersion: 1,
-      normalizerVersion: 1,
+      normalizerVersion: 2,
       adapterVersion: 1,
       providerApiVersion: 'v22.0',
       providers: {

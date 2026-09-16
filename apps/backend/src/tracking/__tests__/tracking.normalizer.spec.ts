@@ -116,12 +116,94 @@ describe('TrackingNormalizer (design §4.5 — single hashing/normalization abst
     });
   });
 
-  describe('hashCity / hashState / hashCountry', () => {
-    it('lowercases before hashing', () => {
+  /**
+   * Meta customer-information contract for ct/st (verified against
+   * https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/customer-information-parameters):
+   * ct — "Lowercase only with no punctuation, no special characters, and no spaces."
+   * st — non-US: "lowercase with no punctuation, no special characters, and no spaces".
+   */
+  describe('hashCity / hashState (Meta ct/st canonicalization)', () => {
+    it('lowercases a simple city/state', () => {
       expect(normalizer.hashCity('Dhaka')).toBe(sha256('dhaka'));
       expect(normalizer.hashState('Dhaka')).toBe(sha256('dhaka'));
+      expect(normalizer.hashCity('Chattogram')).toBe(sha256('chattogram'));
+    });
+
+    it('removes internal spaces (no spaces allowed)', () => {
+      expect(normalizer.hashCity('New York')).toBe(sha256('newyork'));
+      expect(normalizer.hashCity('Dhaka City')).toBe(sha256('dhakacity'));
+      expect(normalizer.hashState('New York')).toBe(sha256('newyork'));
+    });
+
+    it('removes straight and typographic apostrophes', () => {
+      expect(normalizer.hashCity("Cox's Bazar")).toBe(sha256('coxsbazar'));
+      expect(normalizer.hashCity('Cox’s Bazar')).toBe(sha256('coxsbazar'));
+    });
+
+    it('removes hyphens and periods', () => {
+      expect(normalizer.hashCity('Saint-Louis')).toBe(sha256('saintlouis'));
+      expect(normalizer.hashCity('Dhaka-City')).toBe(sha256('dhakacity'));
+      expect(normalizer.hashCity('St. Louis')).toBe(sha256('stlouis'));
+    });
+
+    it('trims surrounding whitespace', () => {
+      expect(normalizer.hashCity('  Dhaka  ')).toBe(sha256('dhaka'));
+      expect(normalizer.hashState('\tDhaka\n')).toBe(sha256('dhaka'));
+    });
+
+    it('collapses repeated whitespace to nothing', () => {
+      expect(normalizer.hashCity('New    York')).toBe(sha256('newyork'));
+    });
+
+    it('maps every spelling of the same place to one canonical hash', () => {
+      const canonical = sha256('coxsbazar');
+      expect(normalizer.hashCity("Cox's Bazar")).toBe(canonical);
+      expect(normalizer.hashCity('Cox’s Bazar')).toBe(canonical);
+      expect(normalizer.hashCity('COX’S  BAZAR')).toBe(canonical);
+      expect(normalizer.hashCity("  Cox's-Bazar  ")).toBe(canonical);
+    });
+
+    it('keeps distinct places distinct (normalization never merges them)', () => {
+      expect(normalizer.hashCity('Dhaka City')).not.toBe(
+        normalizer.hashCity('Dhaka'),
+      );
+      expect(normalizer.hashCity('Chattogram')).not.toBe(
+        normalizer.hashCity('Dhaka'),
+      );
+    });
+
+    it('deliberately collapses space-only variants (Meta removes spaces)', () => {
+      // Space removal is part of Meta's ct contract, so these two spellings of
+      // the same place MUST canonicalize identically — not a data-loss bug.
+      expect(normalizer.hashCity('New York')).toBe(normalizer.hashCity('NewYork'));
+    });
+
+    it('returns undefined when nothing survives normalization', () => {
+      expect(normalizer.hashCity('')).toBeUndefined();
+      expect(normalizer.hashCity('   ')).toBeUndefined();
+      expect(normalizer.hashCity("-'.")).toBeUndefined();
+      expect(normalizer.hashState('---')).toBeUndefined();
+    });
+
+    it('preserves Unicode letters and combining marks (never destroys geo data)', () => {
+      // Bangla: ঢ + া (combining mark) + ক + া — punctuation stripping must not
+      // eat the marks (stripping \p{L}\p{N} only would).
+      expect(normalizer.hashCity('ঢাকা')).toBe(sha256('ঢাকা'));
+      expect(normalizer.hashCity('চট্টগ্রাম')).toBe(sha256('চট্টগ্রাম'));
+      // Latin diacritics survive too
+      expect(normalizer.hashCity('Málaga')).toBe(sha256('málaga'));
+    });
+  });
+
+  describe('hashCountry', () => {
+    it('lowercases ISO alpha-2 and trims', () => {
       expect(normalizer.hashCountry('BD')).toBe(sha256('bd'));
       expect(normalizer.hashCountry(' Bd ')).toBe(sha256('bd'));
+    });
+
+    it('returns undefined for empty input', () => {
+      expect(normalizer.hashCountry('')).toBeUndefined();
+      expect(normalizer.hashCountry('  ')).toBeUndefined();
     });
   });
 

@@ -307,7 +307,7 @@ describe('RetentionCleanupService — Phase 7 scheduled retention/anonymization 
             versions: expect.objectContaining({
               schemaVersion: 1,
               payloadVersion: 1,
-              normalizerVersion: 1,
+              normalizerVersion: 2,
               adapterVersion: 2,
               providerApiVersion: 'v21.0',
               providers: { meta: { adapterVersion: 2, providerApiVersion: 'v21.0' } },

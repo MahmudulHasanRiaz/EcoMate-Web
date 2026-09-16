@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { MetaAdapter } from '../adapters/meta.adapter';
 import { ProviderPayload } from '../adapters/tracking-provider.adapter';
 import { TrackingNormalizer } from '../tracking.normalizer';
@@ -107,7 +108,7 @@ describe('MetaAdapter (design §4.6 — Meta CAPI provider adapter)', () => {
       expect(u.fn).toBe(normalizer.hashName('John'));
       expect(u.ln).toBe(normalizer.hashName('Doe'));
       expect(u.ct).toBe(normalizer.hashCity('Dhaka'));
-      expect(u.cn).toBe(normalizer.hashCountry('BD'));
+      expect(u.country).toBe(normalizer.hashCountry('BD'));
       expect(u.st).toBe(normalizer.hashState('Dhaka'));
       expect(u.zp).toBe(normalizer.hashZip('1212'));
       expect(u.external_id).toBe(normalizer.hashExternalId('CUST-42'));
@@ -116,6 +117,36 @@ describe('MetaAdapter (design §4.6 — Meta CAPI provider adapter)', () => {
       expect(u.fbc).toBe(ctx.fbc);
       expect(u.client_ip_address).toBe(ctx.ip);
       expect(u.client_user_agent).toBe(ctx.userAgent);
+    });
+
+    it('sends country under Meta’s documented `country` key — never the legacy `cn` key', () => {
+      const payload = adapter.build(snapshot, ctx, normalizer)!;
+
+      // Meta customer-information contract: the key is `country`
+      // (https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/customer-information-parameters).
+      // `cn` is NOT a Meta parameter — Meta silently ignores unknown keys, so the
+      // value would never reach the dataset.
+      expect(payload.user_data.country).toBe(normalizer.hashCountry('BD'));
+      expect(payload.user_data).not.toHaveProperty('cn');
+    });
+
+    it('canonicalizes ct/st (no spaces, no punctuation) before hashing', () => {
+      const payload = adapter.build(
+        {
+          ...snapshot,
+          customer: { ...snapshot.customer, city: "Cox's Bazar", state: 'New York' },
+        },
+        ctx,
+        normalizer,
+      )!;
+
+      expect(payload.user_data.ct).toBe(normalizer.hashCity("Cox's Bazar"));
+      expect(payload.user_data.ct).toBe(
+        createHash('sha256').update('coxsbazar').digest('hex'),
+      );
+      expect(payload.user_data.st).toBe(
+        createHash('sha256').update('newyork').digest('hex'),
+      );
     });
 
     it('builds the canonical Meta event envelope from the snapshot', () => {
@@ -208,7 +239,7 @@ describe('MetaAdapter (design §4.6 — Meta CAPI provider adapter)', () => {
       expect(payload.user_data.fn).toBeUndefined();
       expect(payload.user_data.ln).toBeUndefined();
       expect(payload.user_data.ct).toBeUndefined();
-      expect(payload.user_data.cn).toBeUndefined();
+      expect(payload.user_data.country).toBeUndefined();
       expect(payload.user_data.st).toBeUndefined();
       expect(payload.user_data.zp).toBeUndefined();
     });
@@ -441,6 +472,22 @@ describe('MetaAdapter (design §4.6 — Meta CAPI provider adapter)', () => {
       expect(body.data[0].user_data.em).toBe('abc123');
       expect(body.data[0].custom_data.value).toBe(2500);
       expect(body.test_event_code).toBe('TEST123');
+    });
+
+    it('POSTs a built payload whose Graph user_data carries `country` and no `cn`', async () => {
+      global.fetch = jest.fn().mockResolvedValue(mockResponse(200, '{}'));
+
+      const built = adapter.build(snapshot, ctx, normalizer)!;
+      await adapter.send(built, cfg);
+
+      const [, init] = (global.fetch as jest.Mock).mock.calls[0];
+      const body = JSON.parse(init.body);
+      const userData = body.data[0].user_data;
+      expect(userData.country).toBe(normalizer.hashCountry('BD'));
+      expect(userData).not.toHaveProperty('cn');
+      // ct/st are the Meta keys for city/state (unchanged by this hotfix)
+      expect(userData.ct).toBe(normalizer.hashCity('Dhaka'));
+      expect(userData.st).toBe(normalizer.hashState('Dhaka'));
     });
 
     it('omits test_event_code when not configured', async () => {

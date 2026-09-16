@@ -72,7 +72,10 @@ export class MetaAdapter implements TrackingProviderAdapter {
       fn: firstName ? normalizer.hashName(firstName) : undefined,
       ln: lastName ? normalizer.hashName(lastName) : undefined,
       ct: customer?.city ? normalizer.hashCity(customer.city) : undefined,
-      cn: customer?.country ? normalizer.hashCountry(customer.country) : undefined,
+      // Meta's parameter is `country` (ISO 3166-1 alpha-2, hashed). The legacy
+      // `cn` key is NOT a Meta parameter — Meta silently ignores unknown keys, so
+      // country data never reached the dataset.
+      country: customer?.country ? normalizer.hashCountry(customer.country) : undefined,
       zp: customer?.zip ? normalizer.hashZip(customer.zip) : undefined,
       st: customer?.state ? normalizer.hashState(customer.state) : undefined,
       external_id: ctx.externalId
@@ -155,7 +158,7 @@ export class MetaAdapter implements TrackingProviderAdapter {
           user_data.ct ||
           user_data.st ||
           user_data.zp ||
-          user_data.cn,
+          user_data.country,
       );
     if (!hasAnyIdentity) {
       return {

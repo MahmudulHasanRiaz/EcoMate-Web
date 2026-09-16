@@ -10,12 +10,14 @@ import { createHash } from 'node:crypto';
  *  - phone: always yields E.164-with-country-code (BD local → 880…), never a
  *    bare local number.
  *  - name: lowercase, punctuation stripped.
+ *  - city/state: lowercase, ALL punctuation/symbols/spaces removed
+ *    (Meta ct/st contract — see normalizeGeographic).
  *  - zip: de-dash/de-space, US ZIP+4 truncated to first 5 digits.
  *  - country: lowercase ISO alpha-2.
  */
 export class TrackingNormalizer {
   /** Bump when normalization rules change; recorded in configSnapshot and pinned by replay. */
-  readonly version = 1;
+  readonly version = 2;
 
   private sha256(value: string): string {
     return createHash('sha256').update(value).digest('hex');
@@ -61,13 +63,37 @@ export class TrackingNormalizer {
   }
 
   hashCity(city: string): string | undefined {
-    const normalized = city.trim().toLowerCase();
+    const normalized = this.normalizeGeographic(city);
     return normalized ? this.sha256(normalized) : undefined;
   }
 
   hashState(state: string): string | undefined {
-    const normalized = state.trim().toLowerCase();
+    const normalized = this.normalizeGeographic(state);
     return normalized ? this.sha256(normalized) : undefined;
+  }
+
+  /**
+   * Canonical geographic normalization shared by ct (city) and st (state), per
+   * Meta's customer-information contract: "Lowercase only with no punctuation,
+   * no special characters, and no spaces." Meta normalizes the same way on its
+   * side, so any retained space/apostrophe/hyphen produces a hash mismatch and
+   * silently costs match quality.
+   *
+   * Strips Unicode punctuation (includes ' ’ - . ,), symbols, and separators
+   * (spaces/tabs/newlines) rather than stripping "everything that isn't a
+   * letter/digit" — the latter would also delete combining marks and mangle
+   * non-Latin scripts (e.g. Bangla ঢাকা → ঢক). Letters, digits, and marks are
+   * preserved, so no meaningful geographic information is destroyed.
+   *
+   * Returns '' when nothing survives (e.g. "---"), so callers refuse to hash it.
+   *
+   * Not implemented: remapping US state names to 2-char ANSI codes. Meta
+   * requires that for US traffic, but this storefront is BD-only (country is
+   * fixed to 'BD' at capture), so the mapping would be dead code. Add it here
+   * if US shipping is ever enabled.
+   */
+  private normalizeGeographic(value: string): string {
+    return value.toLowerCase().replace(/[\p{P}\p{S}\p{Z}\s]/gu, '');
   }
 
   hashZip(zip: string): string | undefined {
