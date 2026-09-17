@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { ChevronRight, Minus, Plus, ShoppingBag, Phone, Heart, Copy, Check, Star, Truck, RefreshCw, ShieldCheck, Wallet, ChevronDown, ChevronUp, Loader2, X } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
@@ -285,7 +284,6 @@ function TrustBar({ config }: { config: any }) {
 }
 
 export default function ProductDetailClient({ product, defaultColor }: { product: Product; defaultColor?: string }) {
-  const router = useRouter();
   const { items, addToCart, updateQuantity } = useCart();
   const { config } = useStorefrontConfig();
   const { isWishlisted, toggle } = useWishlist();
@@ -460,33 +458,39 @@ export default function ProductDetailClient({ product, defaultColor }: { product
     window.scrollTo(0, 0);
   }, []);
 
-  // ViewContent fires when the RESOLVED viewed content changes (product OR
-  // variant). A variant change (44 → 46) produces a new catalog id → new
-  // logical event. The deterministic event_id inside trackViewContent collapses
-  // rerenders of the same viewed content (React state updates do NOT re-fire).
-  // For variable products the catalog only contains VARIANT items (evidence:
-  // CWB-1-40…46), so we wait for a resolved variant before firing — a
-  // product-level id would match no catalog item.
-  const isVariable_ = product.type === 'variable' && (product.variants?.length ?? 0) > 0;
-  const viewedCatalogId = resolveCatalogId(product, selectedVariant);
-  const viewReady = !isVariable_ || !!selectedVariant;
-  const lastViewedRef = useRef<string>('');
+  // ViewContent represents the Product Detail Page view itself — NOT variant
+  // selection. It fires exactly ONCE per product-page lifecycle, immediately on
+  // open, keyed by product.id: variant changes, re-selection, option edits,
+  // rerenders, and price/image/availability updates must never re-fire (they
+  // are interactions inside the same view, not new page views). A genuinely
+  // new product (id change, including client navigation that swaps the product
+  // prop without remounting) fires a new event with a new logical event_id.
+  //
+  // Identity: the PARENT product catalog id (product.sku || product.id) with
+  // content_type 'product'. The Meta catalog's variant items are matched by
+  // AddToCart/Purchase (which carry the resolved variant SKU); the page view
+  // itself is the parent product and must not be redefined per variant.
+  // Known trade-off: the feed emits variant rows only, so a parent SKU matches
+  // no single catalog row — accepted because inventing a viewed variant would
+  // fabricate the event. The product prop is server-rendered complete (sku
+  // present on first client render), so the fired identity is final; a later
+  // login enriches the same event server-side via mirror enrichment.
+  const lastViewedProductRef = useRef<string>('');
   useEffect(() => {
-    if (viewReady && viewedCatalogId && viewedCatalogId !== lastViewedRef.current) {
-      trackViewContent({
-        contentId: viewedCatalogId,
-        contentName: product.name,
-        contentCategory: product.category,
-        value: selectedVariant?.price ?? product.price,
-        currency: config.currency.code,
-        email: user?.email,
-        phone: user?.phoneNumber || undefined,
-        name: [user?.firstName, user?.lastName].filter(Boolean).join(' ') || undefined,
-        country: 'BD',
-      });
-      lastViewedRef.current = viewedCatalogId;
-    }
-  }, [viewedCatalogId, viewReady, product.name, product.category, selectedVariant?.price, config.currency.code, user?.email]);
+    if (!product?.id || lastViewedProductRef.current === product.id) return;
+    lastViewedProductRef.current = product.id;
+    trackViewContent({
+      contentId: resolveCatalogId(product, null),
+      contentName: product.name,
+      contentCategory: product.category,
+      value: product.price,
+      currency: config.currency.code,
+      email: user?.email,
+      phone: user?.phoneNumber || undefined,
+      name: [user?.firstName, user?.lastName].filter(Boolean).join(' ') || undefined,
+      country: 'BD',
+    });
+  }, [product.id, product.name, product.category, product.price, product.sku, config.currency.code, user?.email, user?.phoneNumber, user?.firstName, user?.lastName]);
 
   useEffect(() => {
     const controller = new AbortController();

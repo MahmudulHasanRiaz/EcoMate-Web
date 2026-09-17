@@ -130,13 +130,13 @@ export function trackAddToCart(input: {
  * journey-scoped id (`view_content_{contentKey}_{journeyHash}_{5sBucket}` in
  * deterministicEventId) where contentKey = content_ids[0] = the canonical
  * catalog id. Consequences:
- *  - same viewed catalog item (product or variant) within a 5s bucket → same
- *    event_id → React rerender / state updates / unrelated UI updates cannot
- *    create duplicate events (server eventId UNIQUE + Meta dedup).
- *  - genuine change of viewed content (product A → B, or variant 44 → 46)
- *    changes contentKey → a new event_id → a new logical ViewContent.
- * Callers still guard component-level re-fire with a last-viewed-content ref so
- * the effect only re-invokes this helper when the resolved catalog id changes.
+ *  - same viewed catalog item within a 5s bucket → same event_id → React
+ *    rerender / state updates cannot create duplicate events (server eventId
+ *    UNIQUE + Meta dedup).
+ *  - a genuinely different viewed product (A → B) changes contentKey → a new
+ *    event_id → a new logical ViewContent. Variant changes inside one Product
+ *    Detail Page must NOT call this helper again — one page view is one call.
+ * Callers guard re-fire per product-page lifecycle (e.g. keyed on product.id).
  *
  * `value` is the viewed item's price (Meta ViewContent semantics: value of the
  * page view); NEVER a cart/order total. contents[].quantity is 1 (a view, not a

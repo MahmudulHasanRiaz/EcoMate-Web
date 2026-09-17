@@ -1,3 +1,4 @@
+import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { StorefrontConfigProvider } from '@/context/StorefrontConfigContext';
@@ -200,34 +201,126 @@ describe('ProductDetailClient — ViewContent strict semantics', () => {
     await waitFor(() => expect(viewContentCalls()).toHaveLength(1));
   });
 
-  it('variable product waits for a resolved variant and fires with the VARIANT catalog id', async () => {
+  it('variable product fires IMMEDIATELY on open with the PARENT catalog id (no variant wait)', async () => {
     renderDetail(variantProduct);
     await waitFor(() => expect(viewContentCalls()).toHaveLength(1));
+    // Parent product identity — never a variant id, even though the catalog's
+    // variant items exist. Variant matching belongs to AddToCart/Purchase.
     expect(viewContentCalls()[0][2]).toMatchObject({
-      content_ids: ['CWB-1-44'],
-      value: 3400,
+      content_type: 'product',
+      content_ids: ['CWB-1'],
+      content_name: 'Classic Boot',
+      content_category: 'Footwear',
+      value: 4000,
+      currency: 'BDT',
     });
+    expect(viewContentMirrors()).toHaveLength(1);
   });
 
-  it('variant switch 44 → 46 → NEW ViewContent with the new variant catalog id', async () => {
+  it('variant switch 44 → 46 → NO new ViewContent (same page view)', async () => {
     renderDetail(variantProduct);
     await waitFor(() => expect(viewContentCalls()).toHaveLength(1));
-    expect(viewContentCalls()[0][2].content_ids).toEqual(['CWB-1-44']);
+    expect(viewContentCalls()[0][2].content_ids).toEqual(['CWB-1']);
     fireEvent.click(screen.getByRole('button', { name: '46' }));
-    await waitFor(() => expect(viewContentCalls()).toHaveLength(2));
-    expect(viewContentCalls()[1][2]).toMatchObject({ content_ids: ['CWB-1-46'], value: 3600 });
-    const ids = viewContentCalls().map((c: any[]) => c[3].eventID as string);
-    expect(ids[1]).not.toBe(ids[0]);
+    // allow any misbehaving effect to flush — count must stay exactly 1
+    await new Promise((r) => setTimeout(r, 50));
+    expect(viewContentCalls()).toHaveLength(1);
+    expect(viewContentMirrors()).toHaveLength(1);
   });
 
-  it('re-selecting the SAME variant → NO additional ViewContent', async () => {
+  it('variant re-selection A → B → A → NO additional ViewContent', async () => {
     renderDetail(variantProduct);
     await waitFor(() => expect(viewContentCalls()).toHaveLength(1));
     fireEvent.click(screen.getByRole('button', { name: '44' }));
     fireEvent.click(screen.getByRole('button', { name: '46' }));
+    fireEvent.click(screen.getByRole('button', { name: '44' }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(viewContentCalls()).toHaveLength(1);
+  });
+
+  it('client navigation variable A → variable B WITHOUT remount → 2 distinct events', async () => {
+    // Next.js reuses the page component across same-route param changes, so
+    // the trigger must key on product.id — not on mount alone.
+    const otherVariable = { ...variantProduct, id: 'p-var-2', sku: 'CWB-2', name: 'Classic Boot V2' };
+    const view = renderDetail(variantProduct);
+    await waitFor(() => expect(viewContentCalls()).toHaveLength(1));
+    expect(viewContentCalls()[0][2].content_ids).toEqual(['CWB-1']);
+    view.rerender(
+      <StorefrontConfigProvider initialConfig={CONFIG}>
+        <AuthProvider>
+          <CartProvider>
+            <WishlistProvider>
+              <ProductDetailClient product={otherVariable} />
+            </WishlistProvider>
+          </CartProvider>
+        </AuthProvider>
+      </StorefrontConfigProvider>,
+    );
     await waitFor(() => expect(viewContentCalls()).toHaveLength(2));
-    fireEvent.click(screen.getByRole('button', { name: '46' }));
-    expect(viewContentCalls()).toHaveLength(2);
+    expect(viewContentCalls()[1][2].content_ids).toEqual(['CWB-2']);
+    const ids = viewContentCalls().map((c: any[]) => c[3].eventID as string);
+    expect(ids[1]).not.toBe(ids[0]);
+  });
+
+  it('same-product prop update (price change) → NO new ViewContent', async () => {
+    const view = renderDetail(variantProduct);
+    await waitFor(() => expect(viewContentCalls()).toHaveLength(1));
+    view.rerender(
+      <StorefrontConfigProvider initialConfig={CONFIG}>
+        <AuthProvider>
+          <CartProvider>
+            <WishlistProvider>
+              <ProductDetailClient product={{ ...variantProduct, price: 4500 }} />
+            </WishlistProvider>
+          </CartProvider>
+        </AuthProvider>
+      </StorefrontConfigProvider>,
+    );
+    await new Promise((r) => setTimeout(r, 50));
+    expect(viewContentCalls()).toHaveLength(1);
+  });
+
+  it('variable PDP browser + CAPI share one event_id (dedup pair)', async () => {
+    renderDetail(variantProduct);
+    await waitFor(() => expect(viewContentCalls()).toHaveLength(1));
+    await waitFor(() => expect(viewContentMirrors()).toHaveLength(1));
+    const browserId = viewContentCalls()[0][3].eventID as string;
+    const mirrorBody = JSON.parse(String(viewContentMirrors()[0][1]?.body));
+    expect(mirrorBody.eventId).toBe(browserId);
+    expect(mirrorBody.eventName).toBe('view_content');
+    // Mirror customData parity: parent identity, single quantity-1 row.
+    expect(mirrorBody.customData).toMatchObject({
+      content_type: 'product',
+      content_ids: ['CWB-1'],
+      contents: [{ id: 'CWB-1', quantity: 1, item_price: 4000 }],
+    });
+    // TikTok pixel receives the translated shape exactly once (no double fire).
+    const tiktokVC = vi.mocked(window.ttq.track).mock.calls.filter((c: any[]) => c[0] === 'ViewContent');
+    expect(tiktokVC).toHaveLength(1);
+    expect(tiktokVC[0][1]).toMatchObject({
+      content_type: 'product',
+      contents: [{ content_id: 'CWB-1', quantity: 1, price: 4000 }],
+    });
+    expect(tiktokVC[0][1]).not.toHaveProperty('content_ids');
+  });
+
+  it('StrictMode double-mount → still ONE ViewContent (ref guard survives)', async () => {
+    render(
+      <React.StrictMode>
+        <StorefrontConfigProvider initialConfig={CONFIG}>
+          <AuthProvider>
+            <CartProvider>
+              <WishlistProvider>
+                <ProductDetailClient product={variantProduct} />
+              </WishlistProvider>
+            </CartProvider>
+          </AuthProvider>
+        </StorefrontConfigProvider>
+      </React.StrictMode>,
+    );
+    await waitFor(() => expect(viewContentCalls()).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(viewContentCalls()).toHaveLength(1);
   });
 
   it('product A → product B (different product mount) → 2 distinct logical events', async () => {
