@@ -472,6 +472,47 @@ export function trackPageView() {
   _lastPageViewUrl = url;
 }
 
+/**
+ * Translate the shared (Meta-shaped) event data into TikTok's expected shape.
+ * TikTok web events address products via `content_id` (single) or `contents`
+ * (multiple rows of {content_id, quantity, price, ...}) — the `content_ids`
+ * array and Meta-shaped rows ({id, item_price}) are silently ignored by
+ * TikTok, so events sent without translation report "Content ID missing".
+ * `content_type`/`value`/`currency` share names and pass through untouched.
+ */
+export function toTikTokData(data?: Record<string, any>): Record<string, any> | undefined {
+  if (!data) return data;
+  const out: Record<string, any> = { ...data };
+  const ids = Array.isArray(data.content_ids)
+    ? data.content_ids.map((id) => String(id)).filter(Boolean)
+    : [];
+  delete out.content_ids;
+  if (Array.isArray(data.contents) && data.contents.length) {
+    const contents = data.contents
+      .filter(
+        (c: any) =>
+          c &&
+          typeof (c.content_id ?? c.id) !== 'undefined' &&
+          String(c.content_id ?? c.id).length > 0 &&
+          (typeof c.quantity !== 'number' || c.quantity > 0),
+      )
+      .map((c: any) => ({
+        content_id: String(c.content_id ?? c.id),
+        quantity: c.quantity ?? 1,
+        ...(c.price ?? c.item_price !== undefined ? { price: c.price ?? c.item_price } : {}),
+        ...(c.content_name ?? data.content_name ? { content_name: c.content_name ?? data.content_name } : {}),
+        ...(c.content_category ?? data.content_category ? { content_category: c.content_category ?? data.content_category } : {}),
+      }));
+    if (contents.length) out.contents = contents;
+    else delete out.contents;
+  } else if (ids.length === 1) {
+    out.content_id = ids[0];
+  } else if (ids.length > 1) {
+    out.contents = ids.map((content_id) => ({ content_id, quantity: 1 }));
+  }
+  return out;
+}
+
 export function flushQueue() {
   if (typeof window === 'undefined') return;
 
@@ -503,7 +544,7 @@ export function flushQueue() {
       if (ttq && _tiktokCode && flushTiktok) {
         const tiktokEvent = event === 'Purchase' ? 'CompletePayment' : event;
         debug('Flushing queued TikTok event:', tiktokEvent, data);
-        ttq.track(tiktokEvent, data, { event_id: eventId });
+        ttq.track(tiktokEvent, toTikTokData(data), { event_id: eventId });
       }
     });
     _eventQueue = [];
@@ -709,7 +750,7 @@ export function trackEvent(event: EventName, data?: Record<string, any>, userDat
     if (ttq && _tiktokCode && fireTiktokPixel) {
       const tiktokEvent = event === 'Purchase' ? 'CompletePayment' : event;
       debug('Firing TikTok Pixel event:', tiktokEvent, data, { event_id: resolvedEventId });
-      ttq.track(tiktokEvent, data, { event_id: resolvedEventId });
+      ttq.track(tiktokEvent, toTikTokData(data), { event_id: resolvedEventId });
     }
     if (window.gtag) {
       const ga4Event = event === 'Purchase' ? 'purchase'

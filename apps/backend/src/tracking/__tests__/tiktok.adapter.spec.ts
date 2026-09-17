@@ -150,19 +150,68 @@ describe('TikTokAdapter (design §4.6 — TikTok Events API provider adapter)', 
       expect(payload.eventTime).toBe(1700000000);
     });
 
-    it('maps properties (value, currency, content_ids, contents, num_items, search_string, order_id)', () => {
+    it('maps properties to the TikTok wire shape (content_id/contents, quantity, search_string, order_id)', () => {
       const p = adapter.build(snapshot, ctx, normalizer)!.properties;
 
       expect(p.value).toBe(2500);
       expect(p.currency).toBe('BDT');
-      expect(p.content_ids).toEqual(['sku-1', 'sku-2']);
+      // TikTok has no `content_ids` array — multi-item events use `contents`
+      // with TikTok-shaped rows ({content_id, quantity, price}).
+      expect(p).not.toHaveProperty('content_ids');
       expect(p.contents).toEqual([
-        { id: 'sku-1', quantity: 2, item_price: 1000 },
-        { id: 'sku-2', quantity: 1, item_price: 500 },
+        { content_id: 'sku-1', quantity: 2, price: 1000 },
+        { content_id: 'sku-2', quantity: 1, price: 500 },
       ]);
-      expect(p.num_items).toBe(3);
+      expect(p.quantity).toBe(3);
+      expect(p).not.toHaveProperty('num_items');
       expect(p.search_string).toBe('organic rice');
       expect(p.order_id).toBe('ord-1001');
+    });
+
+    it('uses singular content_id for a single-item event without a contents array', () => {
+      const p = adapter.build(
+        { ...snapshot, content_ids: ['sku-1'], contents: undefined },
+        ctx,
+        normalizer,
+      )!.properties;
+
+      expect(p.content_id).toBe('sku-1');
+      expect(p).not.toHaveProperty('contents');
+      expect(p).not.toHaveProperty('content_ids');
+    });
+
+    it('builds contents rows from bare ids when only content_ids are present', () => {
+      const p = adapter.build(
+        { ...snapshot, contents: undefined },
+        ctx,
+        normalizer,
+      )!.properties;
+
+      expect(p.contents).toEqual([
+        { content_id: 'sku-1', quantity: 1 },
+        { content_id: 'sku-2', quantity: 1 },
+      ]);
+      expect(p).not.toHaveProperty('content_ids');
+    });
+
+    it('passes through content_type/name/category with TikTok field names', () => {
+      const p = adapter.build(
+        {
+          ...snapshot,
+          content_ids: ['sku-1'],
+          contents: undefined,
+          content_type: 'product',
+          content_name: 'Simple Toy',
+          content_category: 'Toys',
+        },
+        ctx,
+        normalizer,
+      )!.properties;
+
+      expect(p.content_type).toBe('product');
+      expect(p.content_name).toBe('Simple Toy');
+      expect(p.content_category).toBe('Toys');
+      expect(p.content_id).toBe('sku-1');
     });
 
     it('omits unset customer fields instead of hashing garbage', () => {

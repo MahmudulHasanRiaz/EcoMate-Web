@@ -105,9 +105,49 @@ export class TikTokAdapter implements TrackingProviderAdapter {
     const properties: Record<string, unknown> = {};
     if (value !== undefined) properties.value = value;
     if (snapshot.currency) properties.currency = snapshot.currency;
-    if (snapshot.content_ids?.length) properties.content_ids = snapshot.content_ids;
-    if (snapshot.contents?.length) properties.contents = snapshot.contents;
-    if (snapshot.num_items !== undefined) properties.num_items = snapshot.num_items;
+    // TikTok web events address products via `content_id` (single) or
+    // `contents` (multiple) — NOT Meta's `content_ids` array, which TikTok
+    // silently ignores (events then report "Content ID missing"). Item rows
+    // are TikTok-shaped ({content_id, quantity, price, ...}), not Meta-shaped
+    // ({id, item_price}). The canonical snapshot stays provider-agnostic; the
+    // translation happens here at the adapter boundary.
+    if (snapshot.content_type) properties.content_type = snapshot.content_type;
+    if (snapshot.content_name) properties.content_name = snapshot.content_name;
+    if (snapshot.content_category)
+      properties.content_category = snapshot.content_category;
+    const ids = (snapshot.content_ids ?? []).map(String).filter(Boolean);
+    if (snapshot.contents?.length) {
+      const contents = snapshot.contents
+        .filter(
+          (item) =>
+            item &&
+            typeof item.id === 'string' &&
+            item.id.length > 0 &&
+            typeof item.quantity === 'number' &&
+            item.quantity > 0,
+        )
+        .map((item) => ({
+          content_id: item.id,
+          quantity: item.quantity,
+          ...(item.item_price !== undefined ? { price: item.item_price } : {}),
+          ...(item.name ?? snapshot.content_name
+            ? { content_name: item.name ?? snapshot.content_name }
+            : {}),
+          ...(item.category ?? snapshot.content_category
+            ? { content_category: item.category ?? snapshot.content_category }
+            : {}),
+        }));
+      if (contents.length) properties.contents = contents;
+    } else if (ids.length === 1) {
+      properties.content_id = ids[0];
+    } else if (ids.length > 1) {
+      properties.contents = ids.map((content_id) => ({
+        content_id,
+        quantity: 1,
+      }));
+    }
+    // TikTok `quantity` = number of items in the event.
+    if (snapshot.num_items !== undefined) properties.quantity = snapshot.num_items;
     if (snapshot.search_string) properties.search_string = snapshot.search_string;
     if (snapshot.orderId) properties.order_id = snapshot.orderId;
 

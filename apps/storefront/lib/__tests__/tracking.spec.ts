@@ -1208,3 +1208,57 @@ describe('tracking', () => {
     });
   });
 });
+
+describe('tracking — TikTok content mapping (Content ID fix)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    document.cookie = '_fbp=fb.1.1.1; path=/';
+    document.cookie = '_fbc=fb.1.2.3; path=/';
+    document.cookie = 'ecomate_tracking_optout=; Max-Age=0; path=/';
+    document.cookie = 'ecomate_tracking_optout=; Max-Age=0;';
+    vi.restoreAllMocks();
+    setConsent(false, true);
+    window.fbq = vi.fn();
+    window.ttq = { track: vi.fn(), page: vi.fn() };
+    setPixelIds('TEST-META-ID', 'TEST-TIKTOK-CODE');
+    initMetaPixel();
+    vi.mocked(window.fbq).mockClear();
+    vi.mocked(window.ttq.track).mockClear();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true } as any);
+  });
+
+  it('sends singular content_id (not content_ids) to ttq for a single-item event', () => {
+    trackEvent('ViewContent', { content_ids: ['SKU-1'], content_type: 'product', value: 500, currency: 'BDT' });
+    expect(window.ttq.track).toHaveBeenCalledWith(
+      'ViewContent',
+      expect.objectContaining({ content_id: 'SKU-1', content_type: 'product' }),
+      expect.anything(),
+    );
+    const data = vi.mocked(window.ttq.track).mock.calls[0][1];
+    expect(data).not.toHaveProperty('content_ids');
+  });
+
+  it('translates Meta-shaped contents rows into TikTok rows for ttq', () => {
+    trackEvent('AddToCart', {
+      content_ids: ['SKU-1'],
+      contents: [{ id: 'SKU-1', quantity: 2, item_price: 500 }],
+      value: 1000,
+      currency: 'BDT',
+    });
+    const data = vi.mocked(window.ttq.track).mock.calls[0][1];
+    expect(data.contents).toEqual([{ content_id: 'SKU-1', quantity: 2, price: 500 }]);
+    expect(data).not.toHaveProperty('content_ids');
+    // Meta pixel keeps its own shape untouched.
+    expect(window.fbq).toHaveBeenCalledWith(
+      'track', 'AddToCart',
+      expect.objectContaining({ content_ids: ['SKU-1'] }),
+      expect.anything(),
+    );
+  });
+
+  it('toTikTokData passes content-free payloads through unchanged', async () => {
+    const { toTikTokData } = await import('../tracking');
+    expect(toTikTokData({ value: 100 })).toEqual({ value: 100 });
+    expect(toTikTokData(undefined)).toBeUndefined();
+  });
+});
