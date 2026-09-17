@@ -29,7 +29,7 @@ describe('tracking identity init — production-validation scenarios', () => {
     t.initMetaPixel();
 
     expect(fbq).toHaveBeenCalledWith('init', 'META', undefined);
-    expect(fbq).toHaveBeenCalledWith('track', 'PageView');
+    expect(fbq).toHaveBeenCalledWith('track', 'PageView', {}, { eventID: expect.any(String) });
   });
 
   it('authenticated at init: first PageView carries the correct external_id', async () => {
@@ -41,7 +41,7 @@ describe('tracking identity init — production-validation scenarios', () => {
     t.initMetaPixel();
 
     expect(fbq).toHaveBeenCalledWith('init', 'META', { external_id: 'ext-1' });
-    expect(fbq).toHaveBeenCalledWith('track', 'PageView');
+    expect(fbq).toHaveBeenCalledWith('track', 'PageView', {}, { eventID: expect.any(String) });
   });
 
   it('slow identity endpoint: events buffer (not sent early, not lost) and flush after init', async () => {
@@ -127,7 +127,7 @@ describe('tracking identity init — production-validation scenarios', () => {
     t.initMetaPixel();
 
     expect(fbq).toHaveBeenCalledWith('init', 'META', { external_id: 'ext-1', em: 'em-hash', ph: 'ph-hash' });
-    expect(fbq).toHaveBeenCalledWith('track', 'PageView');
+    expect(fbq).toHaveBeenCalledWith('track', 'PageView', {}, { eventID: expect.any(String) });
   });
 
   it('Wave-2.3: em/ph are optional — external_id alone keeps the legacy init shape', async () => {

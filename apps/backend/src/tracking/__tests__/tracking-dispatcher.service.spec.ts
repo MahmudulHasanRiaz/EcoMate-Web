@@ -337,6 +337,66 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
     );
   });
 
+  it('dispatches PageView CAPI to Meta only; TikTok records an observable SKIPPED', async () => {
+    const { MetaAdapter } = jest.requireActual('../adapters/meta.adapter') as typeof import('../adapters/meta.adapter');
+    const { TikTokAdapter } = jest.requireActual('../adapters/tiktok.adapter') as typeof import('../adapters/tiktok.adapter');
+    mockBuildAdapterRegistry.mockReturnValue([new MetaAdapter(), new TikTokAdapter()]);
+    // Real adapters hit the network — stub fetch as a Meta success.
+    const realFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => '{"success":true}',
+      json: async () => ({ success: true }),
+    }) as any;
+    try {
+      snapshotFindUnique.mockResolvedValue({
+        ...snapshot,
+        eventId: 'page_view_abc123',
+        eventType: 'PageView',
+        orderId: null,
+        payload: {},
+      });
+      // Meta needs pixel + token from live settings on PageView too.
+      settingsGet.mockImplementation((key: string) =>
+        Promise.resolve(key === 'tracking_meta_pixel_id' ? 'PIXEL-1' : null),
+      );
+      getMetaDestinations.mockResolvedValue([
+        {
+          id: 'default',
+          label: 'Default',
+          pixelId: 'PIXEL-1',
+          accessToken: 'TOKEN-1',
+          enabled: true,
+          browserPixelEnabled: true,
+          testEventCode: '',
+          testMode: false,
+          removedAt: null,
+        },
+      ]);
+      await service.process(job, 'job-1');
+
+      // Meta dispatched the SAME event_id the browser Pixel fired (dedup pair).
+      const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
+      expect(url).toContain('PIXEL-1/events');
+      expect(JSON.parse(init.body).data[0].event_id).toBe('page_view_abc123');
+      // TikTok has no PageView web event → observable SKIPPED, never a send.
+      expect(dispatchCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ provider: 'tiktok', status: 'SKIPPED' }),
+        }),
+      );
+      // Meta SENT + TikTok SKIPPED are both terminal → outbox SENT.
+      expect(outboxUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'SENT' }),
+        }),
+      );
+    } finally {
+      global.fetch = realFetch;
+    }
+  });
+
   it('marks the outbox DEAD (with lastError) when a required provider permanently fails under ALL_SENT', async () => {
     tiktokSend.mockResolvedValue({
       ok: false,

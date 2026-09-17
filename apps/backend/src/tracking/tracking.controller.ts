@@ -45,6 +45,7 @@ export class TrackingController {
   async trackEvent(
     @Body() body: TrackEventDto,
     @Req() req: fastify.FastifyRequest,
+    @CurrentUser() user?: any,
   ) {
     try {
       // Server-side opt-out guard (consent hardening): the storefront suppresses
@@ -55,10 +56,28 @@ export class TrackingController {
       if (optedOut) return { success: true };
 
       const eventType = this.mapEventType(body.eventName);
-      // page_view is deliberately excluded from CAPI (Pixel/analytics only, design §5);
+      // Server-side PageView CAPI (EMQ redundant setup, Meta-recommended):
+      // page_view now captures through the canonical pipeline and dispatches
+      // to Meta with the SAME event_id the browser Pixel fired, so each
+      // logical page view dedups. Other adapters skip it (observable SKIPPED).
       // any other unmapped name is unknown/typo'd and skipped best-effort, but logged
       // so silently-dropped events are visible.
       if (eventType) {
+        // Canonical mirror enrichment (EMQ): the browser caller only forwards
+        // the identity it was given (often just email+country), but a logged-in
+        // shopper's own CustomerProfile contact data legitimately exists
+        // server-side. Fill ONLY fields the caller did not supply — caller
+        // data (fresher, e.g. guest checkout typing) always wins, and absent
+        // stays absent (never fabricated). Best-effort; never fails capture.
+        // Trust boundary: like capture itself, this honors the opt-out cookie
+        // above and the browser's consent gate (which suppresses the POST);
+        // grant state lives client-side, so a stale tab post-revoke is treated
+        // the same as any other late mirror event — no new PII class is added.
+        const baUserId =
+          user?.betterAuthSession?.user?.id ?? user?.betterAuthUserId ?? null;
+        const profile = baUserId
+          ? await this.identityResolution.resolveRawCustomerProfile(baUserId)
+          : null;
         // Purchase mirrors carry the canonical deterministic eventId
         // (purchase_{order UUID}) and the business order id (displayId) so the
         // mirror dedups against the server capture instead of creating a
@@ -89,9 +108,12 @@ export class TrackingController {
               search_string: body.customData?.search_string,
               orderId: body.customData?.order_id,
               customer: {
-                email: body.userData?.email,
-                phone: body.userData?.phone,
-                firstName: body.userData?.firstName || body.userData?.name,
+                email: body.userData?.email || profile?.email,
+                phone: body.userData?.phone || profile?.phone,
+                firstName:
+                  body.userData?.firstName ||
+                  body.userData?.name ||
+                  profile?.name,
                 lastName: body.userData?.lastName,
                 city: body.userData?.city,
                 state: body.userData?.state,
@@ -118,7 +140,7 @@ export class TrackingController {
           },
           undefined,
         );
-      } else if (body.eventName !== 'page_view') {
+      } else {
         this.logger.warn(
           `Unknown tracking event dropped (no CAPI mapping): ${body.eventName}`,
         );
@@ -209,7 +231,7 @@ export class TrackingController {
 
   /**
    * Browser snake_case event names → canonical CAPI event types.
-   * page_view is deliberately excluded (Pixel/analytics only, design §5);
+   * page_view maps to PageView CAPI (redundant setup, deduped by event_id);
    * any other unmapped name yields undefined and is skipped.
    */
   /**
@@ -271,8 +293,9 @@ export class TrackingController {
     return { consentRequired, advancedMatching, externalIdEnabled };
   }
 
-  private mapEventType(name: string): TrackingEventType | undefined {
-    const map: Record<string, TrackingEventType> = {
+  private mapEventType(name: string): TrackingEventType | 'PageView' | undefined {
+    const map: Record<string, TrackingEventType | 'PageView'> = {
+      page_view: 'PageView',
       view_content: 'ViewContent',
       add_to_cart: 'AddToCart',
       add_to_wishlist: 'AddToWishlist',

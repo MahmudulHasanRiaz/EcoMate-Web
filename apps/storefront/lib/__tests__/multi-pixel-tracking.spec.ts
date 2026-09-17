@@ -132,8 +132,12 @@ describe('tracking — multi-pixel Meta fan-out (Step 3)', () => {
     tracking.initMetaPixel();
     tracking.trackEvent('Purchase', { value: 100 }, {}, 'purchase_ord-1');
 
-    const body = JSON.parse(fetchMock.mock.calls[0][1]!.body as string);
-    expect(body.eventId).toBe('purchase_ord-1');
+    // initMetaPixel now also mirrors its own PageView (shared event_id for
+    // CAPI dedup) — locate the Purchase mirror specifically.
+    const bodies = fetchMock.mock.calls.map((c: any) => JSON.parse(c[1]!.body as string));
+    const body = bodies.find((b: any) => b.eventId === 'purchase_ord-1');
+    expect(body).toBeDefined();
+    expect(body!.eventId).toBe('purchase_ord-1');
     // Destination fan-out is decided server-side; the browser must not carry a
     // destination/pixel identity (that is what prevents Pixel A → CAPI B pairing).
     expect(JSON.stringify(body)).not.toContain('PIXEL-A');

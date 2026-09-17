@@ -115,7 +115,7 @@ export class IdentityResolutionService {
    */
   async resolveAdvancedMatching(
     betterAuthUserId: string,
-  ): Promise<{ em?: string; ph?: string }> {
+  ): Promise<{ em?: string; ph?: string; fn?: string; ln?: string }> {
     const enabled = await this.settings.isEnabledOrDefault(
       ADVANCED_MATCHING_SETTING,
       false,
@@ -124,14 +124,50 @@ export class IdentityResolutionService {
     if (!enabled) return {};
     const profile = await this.prisma.customerProfile.findFirst({
       where: { betterAuthUserId },
-      select: { email: true, phone: true },
+      select: { email: true, phone: true, name: true },
     });
     if (!profile) return {};
     const normalizer = new TrackingNormalizer();
+    // First/last name from the customer's own profile name (same source the
+    // CAPI path hashes), so browser AM and CAPI agree on fn/ln.
+    const { firstName, lastName } = normalizer.resolveNameFields(
+      profile.name || undefined,
+      undefined,
+    );
     return {
       ...(profile.email ? { em: normalizer.hashEmail(profile.email) } : {}),
       ...(profile.phone ? { ph: normalizer.hashPhone(profile.phone, 'BD') } : {}),
+      ...(firstName ? { fn: normalizer.hashName(firstName) } : {}),
+      ...(lastName ? { ln: normalizer.hashName(lastName) } : {}),
     };
+  }
+
+  /**
+   * Raw customer contact fields for canonical mirror enrichment (EMQ upgrade).
+   * Returns the logged-in shopper's own CustomerProfile contact data — RAW
+   * (hashing happens later in the normalizer/adapter path, never here) — so
+   * the mirror can fill browse-event identity the browser caller did not
+   * supply. Best-effort: unknown user or no profile → null, never throws.
+   * Nothing is written; no values are invented (absent stays absent).
+   */
+  async resolveRawCustomerProfile(
+    betterAuthUserId: string,
+  ): Promise<{ email?: string; phone?: string; name?: string } | null> {
+    try {
+      if (!betterAuthUserId) return null;
+      const profile = await this.prisma.customerProfile.findFirst({
+        where: { betterAuthUserId },
+        select: { email: true, phone: true, name: true },
+      });
+      if (!profile) return null;
+      return {
+        ...(profile.email ? { email: profile.email } : {}),
+        ...(profile.phone ? { phone: profile.phone } : {}),
+        ...(profile.name ? { name: profile.name } : {}),
+      };
+    } catch {
+      return null;
+    }
   }
 
   /**

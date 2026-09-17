@@ -179,7 +179,7 @@ describe('tracking', () => {
     const initialUrl = window.location.href;
 
     trackPageView();
-    expect(window.fbq).toHaveBeenCalledWith('track', 'PageView');
+    expect(window.fbq).toHaveBeenCalledWith('track', 'PageView', {}, { eventID: expect.any(String) });
 
     vi.mocked(window.fbq).mockClear();
     trackPageView(); // same URL again → de-duped
@@ -189,7 +189,7 @@ describe('tracking', () => {
     // In-SPA navigation to a new URL fires again.
     window.history.pushState({}, '', '/my-second-route');
     trackPageView();
-    expect(window.fbq).toHaveBeenCalledWith('track', 'PageView');
+    expect(window.fbq).toHaveBeenCalledWith('track', 'PageView', {}, { eventID: expect.any(String) });
   });
 
   it('trackPageView is suppressed and fires nothing when tracking is not allowed', () => {
@@ -258,8 +258,11 @@ describe('tracking', () => {
     // FB-logged-in shopper: /tracking/identity resolved the FB user id.
     fresh.setPixelIdentity(null, undefined, undefined, 'fb-user-987654');
     fresh.trackEvent('Purchase', { value: 100 }, { email: 'buyer@example.com' }, 'purchase_ord-1');
-    const [, fbInit] = fetchSpy.mock.calls[0]!;
-    const fbBody = JSON.parse(fbInit!.body as string);
+    // initMetaPixel also mirrors its own PageView — locate the Purchase mirror.
+    const fbCall = fetchSpy.mock.calls.find((c: any) => {
+      try { return JSON.parse(c[1].body).eventId === 'purchase_ord-1'; } catch { return false; }
+    })!;
+    const fbBody = JSON.parse((fbCall as any)[1].body as string);
     expect(fbBody.userData.fbLoginId).toBe('fb-user-987654');
 
     // Guest: identity stayed null → the mirror must NOT fabricate the key.
@@ -1260,5 +1263,97 @@ describe('tracking — TikTok content mapping (Content ID fix)', () => {
     const { toTikTokData } = await import('../tracking');
     expect(toTikTokData({ value: 100 })).toEqual({ value: 100 });
     expect(toTikTokData(undefined)).toBeUndefined();
+  });
+});
+
+describe('tracking — PageView browser/CAPI pairing (EMQ redundant setup)', () => {
+  // Fresh module per test: _metaInited/_metaIds are sticky page-lifetime state.
+  async function freshFx() {
+    vi.resetModules();
+    document.cookie = '_fbp=fb.1.1.1; path=/';
+    document.cookie = '_fbc=fb.1.2.3; path=/';
+    document.cookie = 'ecomate_tracking_optout=; Max-Age=0; path=/';
+    document.cookie = 'ecomate_tracking_optout=; Max-Age=0;';
+    window.fbq = vi.fn();
+    window.ttq = { track: vi.fn(), page: vi.fn() };
+    const fx = await import('../tracking');
+    fx.setConsent(false, true);
+    fx.setPixelIds('TEST-META-ID', 'TEST-TIKTOK-CODE');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true } as any);
+    return fx;
+  }
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+  });
+
+  it('initMetaPixel fires PageView with an eventID and mirrors the same id (dedup pair)', async () => {
+    const fx = await freshFx();
+    fx.initMetaPixel();
+    const pvCalls = vi.mocked(window.fbq).mock.calls.filter((c: any) => c[0] === 'track' && c[1] === 'PageView');
+    expect(pvCalls).toHaveLength(1);
+    const eventID = (pvCalls[0][3] as any).eventID;
+    expect(typeof eventID).toBe('string');
+    expect(eventID.startsWith('page_view_')).toBe(true);
+    const bodies = (fetch as any).mock.calls.map((c: any) => JSON.parse(c[1].body));
+    const mirror = bodies.find((b: any) => b.eventName === 'page_view');
+    expect(mirror).toBeDefined();
+    expect(mirror.eventId).toBe(eventID);
+  });
+
+  it('each route-change PageView gets a fresh event_id (never reused across views)', async () => {
+    const fx = await freshFx();
+    fx.initMetaPixel();
+    (window.fbq as any).mockClear();
+    window.location.hash = '#a';
+    fx.trackPageView();
+    const first = (vi.mocked(window.fbq).mock.calls.find((c: any) => c[0] === 'track' && c[1] === 'PageView')?.[3] as any)?.eventID;
+    window.location.hash = '#b';
+    fx.trackPageView();
+    const ids = vi.mocked(window.fbq).mock.calls
+      .filter((c: any) => c[0] === 'track' && c[1] === 'PageView')
+      .map((c: any) => (c[3] as any).eventID);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).toBe(first);
+    expect(ids[1]).not.toBe(ids[0]);
+  });
+
+  it('Advanced Matching init carries fn/ln alongside em/ph/external_id', async () => {
+    const fx = await freshFx();
+    fx.setPixelIdentity('ext-1', 'em-hash', 'ph-hash', null, 'fn-hash', 'ln-hash');
+    fx.initMetaPixel();
+    const initCalls = vi.mocked(window.fbq).mock.calls.filter((c: any) => c[0] === 'init');
+    expect(initCalls).toHaveLength(1);
+    expect(initCalls[0][2]).toMatchObject({
+      external_id: 'ext-1', em: 'em-hash', ph: 'ph-hash', fn: 'fn-hash', ln: 'ln-hash',
+    });
+  });
+});
+
+describe('tracking — caller identity passthrough (EMQ enrichment)', () => {
+  beforeEach(() => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true } as any);
+  });
+
+  it('trackViewContent forwards phone/name to the mirror userData', () => {
+    trackViewContent({
+      contentId: 'SKU-1', value: 500, currency: 'BDT',
+      email: 'buyer@example.com', phone: '+8801711111111', name: 'Buyer Name', country: 'BD',
+    });
+    const bodies = (fetch as any).mock.calls.map((c: any) => JSON.parse(c[1].body));
+    const mirror = bodies.find((b: any) => b.eventName === 'view_content');
+    expect(mirror.userData).toMatchObject({
+      email: 'buyer@example.com', phone: '+8801711111111', name: 'Buyer Name', country: 'BD',
+    });
+  });
+
+  it('trackAddToCart forwards phone/name to the mirror userData', () => {
+    trackAddToCart({
+      contentId: 'SKU-1', unitPrice: 500, quantityAdded: 1, currency: 'BDT',
+      phone: '+8801711111111', name: 'Buyer Name', country: 'BD',
+    });
+    const bodies = (fetch as any).mock.calls.map((c: any) => JSON.parse(c[1].body));
+    const mirror = bodies.find((b: any) => b.eventName === 'add_to_cart');
+    expect(mirror.userData).toMatchObject({ phone: '+8801711111111', name: 'Buyer Name' });
   });
 });

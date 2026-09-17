@@ -480,6 +480,8 @@ export default function ProductDetailClient({ product, defaultColor }: { product
         value: selectedVariant?.price ?? product.price,
         currency: config.currency.code,
         email: user?.email,
+        phone: user?.phoneNumber || undefined,
+        name: [user?.firstName, user?.lastName].filter(Boolean).join(' ') || undefined,
         country: 'BD',
       });
       lastViewedRef.current = viewedCatalogId;
@@ -598,6 +600,8 @@ export default function ProductDetailClient({ product, defaultColor }: { product
         quantityAdded: qty,
         currency: config.currency.code,
         email: user?.email,
+        phone: user?.phoneNumber || undefined,
+        name: [user?.firstName, user?.lastName].filter(Boolean).join(' ') || undefined,
         country: 'BD',
       });
       setJustAdded(true);

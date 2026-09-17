@@ -91,9 +91,12 @@ describe('MetaAdapter (design §4.6 — Meta CAPI provider adapter)', () => {
     });
 
     it('returns false for non-web / unsupported event types', () => {
-      expect(adapter.supports('PageView')).toBe(false);
       expect(adapter.supports('Subscribe')).toBe(false);
       expect(adapter.supports('')).toBe(false);
+    });
+
+    it('supports PageView for server-side CAPI (redundant setup, deduped by event_id)', () => {
+      expect(adapter.supports('PageView')).toBe(true);
     });
   });
 
@@ -404,8 +407,21 @@ describe('MetaAdapter (design §4.6 — Meta CAPI provider adapter)', () => {
 
     it('returns null for unsupported event types', () => {
       expect(
-        adapter.build({ ...snapshot, eventType: 'PageView' }, ctx, normalizer),
+        adapter.build({ ...snapshot, eventType: 'Subscribe' }, ctx, normalizer),
       ).toBeNull();
+    });
+
+    it('builds a PageView payload with the shared event_id for browser/CAPI dedup', () => {
+      const payload = adapter.build(
+        { eventType: 'PageView', eventId: 'page_view_abc123' },
+        ctx,
+        normalizer,
+      )!;
+      expect(payload.eventName).toBe('PageView');
+      expect(payload.eventId).toBe('page_view_abc123');
+      // Anonymous PageView still carries cookie/network identity.
+      expect(payload.user_data.fbp).toBe(ctx.fbp);
+      expect(payload.user_data.client_ip_address).toBe(ctx.ip);
     });
 
     it('returns null when the event type is ambiguous (no eventType, no value)', () => {
@@ -788,5 +804,65 @@ describe('MetaAdapter — forensic remediation tests', () => {
       )!;
       expect(payload.eventTime).toBe(1700000000);
     });
+  });
+});
+
+describe('MetaAdapter canonical identity completeness (§19 static assertions)', () => {
+  const adapter = new MetaAdapter();
+
+  it('a fully-populated customer reaches user_data with every Meta-supported key', () => {
+    const payload = adapter.build(snapshot, ctx, normalizer)!;
+    const u = payload.user_data;
+    // Hashed PII (existence + exact normalizer agreement — no double hashing,
+    // no raw leakage).
+    expect(u.em).toBe(normalizer.hashEmail('John.Doe@Example.com'));
+    expect(u.ph).toBe(normalizer.hashPhone('01712345678', 'BD'));
+    expect(u.fn).toBe(normalizer.hashName('John'));
+    expect(u.ln).toBe(normalizer.hashName('Doe'));
+    expect(u.ct).toBe(normalizer.hashCity('Dhaka'));
+    expect(u.st).toBe(normalizer.hashState('Dhaka'));
+    expect(u.zp).toBe(normalizer.hashZip('1212'));
+    expect(u.country).toBe(normalizer.hashCountry('BD'));
+    expect(u.external_id).toBe(normalizer.hashExternalId('CUST-42'));
+    // Raw identifiers (Meta matches these verbatim — must NOT be hashed).
+    expect(u.fb_login_id).toBeUndefined(); // absent stays absent here
+    expect(u.fbp).toBe('fb.1.1699999999999.1234567890');
+    expect(u.fbc).toBe('fb.1.1699999999999.AwBxYz');
+    expect(u.client_ip_address).toBe('203.0.113.7');
+    expect(u.client_user_agent).toBe('Mozilla/5.0 (test)');
+    // Legacy wrong key must never reappear.
+    expect(u).not.toHaveProperty('cn');
+  });
+
+  it('Purchase with all 13 legitimate signals carries all 13 (incl. fb_login_id raw)', () => {
+    const payload = adapter.build(
+      {
+        ...snapshot,
+        customer: { ...snapshot.customer!, fbLoginId: '1234567890' },
+      },
+      ctx,
+      normalizer,
+    )!;
+    const u = payload.user_data;
+    const present = [
+      'em', 'ph', 'fn', 'ln', 'ct', 'st', 'zp', 'country', 'external_id',
+      'fb_login_id', 'fbp', 'fbc', 'client_ip_address', 'client_user_agent',
+    ];
+    for (const key of present) {
+      expect(u[key]).toBeDefined();
+    }
+    // fb_login_id is matched verbatim — raw, never hashed.
+    expect(u.fb_login_id).toBe('1234567890');
+    expect(u.fb_login_id).not.toBe(normalizer.hashExternalId('1234567890'));
+  });
+
+  it('absent source data stays absent (never fabricated)', () => {
+    const payload = adapter.build(
+      { eventType: 'ViewContent', eventId: 'vc-1', value: 10, currency: 'BDT' },
+      {},
+      normalizer,
+    );
+    // No identity at all → adapter refuses (skipReason) instead of inventing.
+    expect(payload.skipReason).toMatch(/no identity/);
   });
 });

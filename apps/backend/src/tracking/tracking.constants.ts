@@ -1,4 +1,9 @@
-/** Canonical snapshot event types. PageView is deliberately excluded (Pixel + analytics only). */
+/**
+ * Canonical snapshot event types. PageView is not a canonical funnel type
+ * (volume-conscious set) but IS dispatched server-side to Meta only, via the
+ * mirror's page_view mapping + MetaAdapter opt-in (redundant setup, deduped
+ * by the shared event_id). No other adapter supports it.
+ */
 export const TRACKING_EVENT_TYPES = Object.freeze([
   'Purchase',
   'Refund',

@@ -21,6 +21,14 @@ const MAX_RAW_RESPONSE_CHARS = 500;
 const SUPPORTED_EVENT_TYPES = TRACKING_EVENT_TYPES as readonly string[];
 
 /**
+ * PageView is not in TRACKING_EVENT_TYPES (volume-conscious canonical set)
+ * but IS a Meta standard web event: server-side PageView CAPI (redundant
+ * setup, Meta-recommended) dispatches through this adapter, deduped against
+ * the browser Pixel by the shared event_id. No other adapter opts in.
+ */
+const EXTRA_SUPPORTED_EVENT_TYPES = ['PageView'] as const;
+
+/**
  * Meta CAPI adapter (design §4.6). build() maps a canonical TrackingSnapshotPayload
  * onto the Meta `events` endpoint wire shape — hashing PII only through the injected
  * TrackingNormalizer, never inline. Refund is sent as a Meta `Purchase` with a
@@ -34,7 +42,10 @@ export class MetaAdapter implements TrackingProviderAdapter {
   readonly providerApiVersion = 'v22.0';
 
   supports(eventType: string): boolean {
-    return SUPPORTED_EVENT_TYPES.includes(eventType);
+    return (
+      SUPPORTED_EVENT_TYPES.includes(eventType) ||
+      (EXTRA_SUPPORTED_EVENT_TYPES as readonly string[]).includes(eventType)
+    );
   }
 
   build(

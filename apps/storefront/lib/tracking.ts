@@ -86,9 +86,11 @@ export function trackAddToCart(input: {
   quantityAdded: number;
   currency: string;
   email?: string;
+  phone?: string;
+  name?: string;
   country?: string;
 }): { eventId: string } {
-  const { contentId, contentName, contentCategory, unitPrice, quantityAdded, currency, email, country } = input;
+  const { contentId, contentName, contentCategory, unitPrice, quantityAdded, currency, email, phone, name, country } = input;
   const value = Math.round(unitPrice * quantityAdded * 100) / 100;
 
   _addToCartCounter = (_addToCartCounter + 1) % 1_000_000;
@@ -104,6 +106,8 @@ export function trackAddToCart(input: {
     contents: [{ id: contentId, quantity: quantityAdded, item_price: unitPrice }],
   }, {
     email: email,
+    phone: phone,
+    name: name,
     country: country,
   }, eventId);
 
@@ -141,9 +145,11 @@ export function trackViewContent(input: {
   value?: number;
   currency: string;
   email?: string;
+  phone?: string;
+  name?: string;
   country?: string;
 }): string | null {
-  const { contentId, items, contentName, contentCategory, value, currency, email, country } = input;
+  const { contentId, items, contentName, contentCategory, value, currency, email, phone, name, country } = input;
   // content_ids is the deduped set of catalog ids being viewed. Single-content
   // views keep the flat {id, quantity:1, item_price:value} shape; bundles use
   // one contents[] row per real catalog item (no invented ids — all resolved
@@ -171,6 +177,8 @@ export function trackViewContent(input: {
   if (contentCategory) data.content_category = contentCategory;
   trackEvent('ViewContent', data, {
     email,
+    phone,
+    name,
     country,
   });
   return `${eventNameToSnake('ViewContent')}_${contentIds.join('|')}_${hashShort(getOrCreateCtxId())}_${Math.floor(Date.now() / 5000)}`;
@@ -327,6 +335,9 @@ let _metaExternalId: string | null = null;
 /** Wave-2.3 — hashed email/phone for Meta Advanced Matching init fields (em/ph). */
 let _metaEm: string | undefined;
 let _metaPh: string | undefined;
+/** EMQ upgrade — hashed first/last name for the same init object (fn/ln). */
+let _metaFn: string | undefined;
+let _metaLn: string | undefined;
 /**
  * Wave-3 — the shopper's Facebook user id (fb_login_id) for the CAPI mirror.
  * Server-resolved via /tracking/identity (requires a real Better Auth facebook
@@ -401,11 +412,13 @@ export function setTrackingConfig(metaPurchaseMode: string, tiktokPurchaseMode: 
  * For an authenticated shopper, TrackingScripts waits for these before signaling
  * init readiness. Guests resolve to null (parameterless init).
  */
-export function setPixelIdentity(externalId?: string | null, em?: string, ph?: string, fbLoginId?: string | null) {
+export function setPixelIdentity(externalId?: string | null, em?: string, ph?: string, fbLoginId?: string | null, fn?: string, ln?: string) {
   _metaExternalId = externalId || null;
   _metaEm = em || undefined;
   _metaPh = ph || undefined;
   _metaFbLoginId = fbLoginId || null;
+  _metaFn = fn || undefined;
+  _metaLn = ln || undefined;
 }
 
 /**
@@ -429,6 +442,8 @@ export function initMetaPixel() {
   if (_metaExternalId) advancedMatching.external_id = _metaExternalId;
   if (_metaEm) advancedMatching.em = _metaEm;
   if (_metaPh) advancedMatching.ph = _metaPh;
+  if (_metaFn) advancedMatching.fn = _metaFn;
+  if (_metaLn) advancedMatching.ln = _metaLn;
   const am = Object.keys(advancedMatching).length ? advancedMatching : undefined;
   // Initialize every pixel BEFORE any event fires. All pixels receive the same
   // Advanced Matching object: identity is per shopper, not per destination, so a
@@ -436,9 +451,42 @@ export function initMetaPixel() {
   for (const id of _metaIds) {
     fbq('init', id, am);
   }
-  fbq('track', 'PageView');
+  // Initial PageView shares one logical event between browser + CAPI: the same
+  // event_id fans out to every pixel AND rides the server mirror, so Meta
+  // dedups the pair per dataset (redundant setup, Meta-recommended).
+  firePageView();
   _metaInited = true;
   flushQueue();
+}
+
+/**
+ * One logical PageView across browser + server. A fresh id per fire keeps the
+ * 1:1 browser:server pairing the CAPI dedup requires (never reuse an id across
+ * two different page views). The TikTok pixel call carries no event id —
+ * TikTok has no PageView server event, so there is nothing to dedup there.
+ */
+function firePageView() {
+  const eventId = `page_view_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+  if (window.fbq && _metaIds.length) {
+    window.fbq('track', 'PageView', {}, { eventID: eventId });
+  }
+  // Mirror only when a Meta pixel exists: TikTok/GA4 have no PageView server
+  // event, so a mirror without Meta configured would only write rows that
+  // every adapter SKIPs.
+  if (_metaIds.length) {
+    sendMirror(eventId, {
+      ctxId: getOrCreateCtxId(),
+      eventId,
+      eventName: 'page_view',
+      customData: {},
+      // No destination/pixel identity: fan-out is decided server-side.
+      userData: {},
+    });
+  }
+  // Arm the route-change de-dupe so a later mount-time trackPageView() for the
+  // same URL cannot double-count this landing view with a fresh (undedupable) id.
+  if (typeof window !== 'undefined') _lastPageViewUrl = window.location.href;
+  return eventId;
 }
 
 /** Last URL for which a client-side PageView already fired (SPA route-change de-dupe). */
@@ -461,7 +509,7 @@ export function trackPageView() {
   const tiktok = !!(window.ttq && _tiktokCode);
   const ga4 = !!window.gtag;
   if (!meta && !tiktok && !ga4) return; // nothing armed yet — don't mark as visited
-  if (meta) window.fbq('track', 'PageView');
+  if (meta) firePageView();
   if (tiktok && typeof window.ttq.page === 'function') window.ttq.page();
   if (ga4 && window.gtag) window.gtag('event', 'page_view', {
     // Privacy P0: same sanitization policy — sensitive query params never

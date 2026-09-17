@@ -35,6 +35,7 @@ describe('TrackingController', () => {
       resolveForShopper: jest.fn(),
       resolveAdvancedMatching: jest.fn().mockResolvedValue({}),
       resolveFbLoginIdForShopper: jest.fn().mockResolvedValue(null),
+      resolveRawCustomerProfile: jest.fn().mockResolvedValue(null),
       isEnabled: jest.fn().mockResolvedValue(false),
     };
     controller = new TrackingController(
@@ -162,14 +163,130 @@ describe('TrackingController', () => {
       }
     });
 
-    it('skips page_view (excluded from CAPI) without capturing', async () => {
+    it('captures page_view for server-side CAPI (redundant setup, deduped by event_id)', async () => {
       trackingCapture.capture.mockClear();
       const result = await controller.trackEvent(
-        { eventId: 'e-pv', eventName: 'page_view' },
+        { eventId: 'page_view_abc123', eventName: 'page_view', ctxId: 'ctx-1' },
         req,
       );
-      expect(trackingCapture.capture).not.toHaveBeenCalled();
+      expect(trackingCapture.capture).toHaveBeenCalledTimes(1);
+      const input = trackingCapture.capture.mock.calls[0][0];
+      expect(input.eventType).toBe('PageView');
+      // Same event_id the browser Pixel fired → Meta dedups the pair.
+      expect(input.eventId).toBe('page_view_abc123');
       expect(result).toEqual({ success: true });
+    });
+
+    it('enriches a logged-in mirror with profile contact the caller did not supply', async () => {
+      trackingCapture.capture.mockClear();
+      identityResolution.resolveRawCustomerProfile.mockResolvedValue({
+        email: 'profile@example.com',
+        phone: '+8801711111111',
+        name: 'Profile User',
+      });
+      const user = { betterAuthSession: { user: { id: 'ba-9' } } };
+      await controller.trackEvent(
+        {
+          eventId: 'e-enrich',
+          eventName: 'view_content',
+          ctxId: 'ctx-9',
+          customData: { value: 10, currency: 'BDT' },
+          userData: { country: 'BD' },
+        },
+        req,
+        user,
+      );
+      const input = trackingCapture.capture.mock.calls[0][0];
+      expect(
+        identityResolution.resolveRawCustomerProfile,
+      ).toHaveBeenCalledWith('ba-9');
+      expect(input.payload.customer).toMatchObject({
+        email: 'profile@example.com',
+        phone: '+8801711111111',
+        firstName: 'Profile User',
+        country: 'BD',
+      });
+    });
+
+    it('caller-supplied identity wins over profile enrichment (never overwrites)', async () => {
+      trackingCapture.capture.mockClear();
+      identityResolution.resolveRawCustomerProfile.mockResolvedValue({
+        email: 'profile@example.com',
+        phone: '+8801700000000',
+        name: 'Profile User',
+      });
+      const user = { betterAuthUserId: 'ba-9' };
+      await controller.trackEvent(
+        {
+          eventId: 'e-caller-wins',
+          eventName: 'view_content',
+          userData: { email: 'typed@example.com', country: 'BD' },
+        },
+        req,
+        user,
+      );
+      const input = trackingCapture.capture.mock.calls[0][0];
+      expect(input.payload.customer).toMatchObject({
+        email: 'typed@example.com',
+        phone: '+8801700000000',
+      });
+    });
+
+    it('caller firstName wins; profile full name is the fallback (lastName stays caller-only)', async () => {
+      trackingCapture.capture.mockClear();
+      identityResolution.resolveRawCustomerProfile.mockResolvedValue({
+        email: 'profile@example.com',
+        phone: null,
+        name: 'Profile Full Name',
+      });
+      const user = { betterAuthUserId: 'ba-9' };
+      // Caller-typed firstName beats the stored full name; lastName has no
+      // profile source by design (the adapter splits full firstName instead).
+      await controller.trackEvent(
+        {
+          eventId: 'e-fn-chain',
+          eventName: 'view_content',
+          userData: { firstName: 'Typed', country: 'BD' },
+        },
+        req,
+        user,
+      );
+      expect(
+        trackingCapture.capture.mock.calls[0][0].payload.customer,
+      ).toMatchObject({ firstName: 'Typed', email: 'profile@example.com' });
+
+      trackingCapture.capture.mockClear();
+      await controller.trackEvent(
+        {
+          eventId: 'e-fn-fallback',
+          eventName: 'view_content',
+          userData: { country: 'BD' },
+        },
+        req,
+        user,
+      );
+      expect(
+        trackingCapture.capture.mock.calls[0][0].payload.customer,
+      ).toMatchObject({ firstName: 'Profile Full Name' });
+    });
+
+    it('guest mirrors skip enrichment entirely (absent stays absent)', async () => {
+      trackingCapture.capture.mockClear();
+      await controller.trackEvent(
+        {
+          eventId: 'e-guest',
+          eventName: 'view_content',
+          userData: { country: 'BD' },
+        },
+        req,
+      );
+      expect(
+        identityResolution.resolveRawCustomerProfile,
+      ).not.toHaveBeenCalled();
+      const input = trackingCapture.capture.mock.calls[0][0];
+      expect(input.payload.customer.email).toBeUndefined();
+      expect(input.payload.customer.phone).toBeUndefined();
+      expect(input.payload.customer.firstName).toBeUndefined();
     });
 
     it('returns success even when capture throws (best-effort, never 500s)', async () => {
@@ -217,6 +334,22 @@ describe('TrackingController', () => {
         ph: 'hash-ph',
       });
       expect(identityResolution.resolveAdvancedMatching).toHaveBeenCalledWith('ba-3');
+    });
+
+    it('spreads fn/ln through to the browser Pixel init (EMQ name matching)', async () => {
+      identityResolution.resolveForShopper.mockResolvedValue('cust-ext-5');
+      identityResolution.resolveAdvancedMatching.mockResolvedValue({
+        em: 'hash-em',
+        fn: 'hash-fn',
+        ln: 'hash-ln',
+      });
+      const user = { betterAuthSession: { user: { id: 'ba-5' } } };
+      await expect(controller.identity(user)).resolves.toEqual({
+        externalId: 'cust-ext-5',
+        em: 'hash-em',
+        fn: 'hash-fn',
+        ln: 'hash-ln',
+      });
     });
 
     it('includes fbLoginId when the shopper is linked to a facebook account (Wave-3)', async () => {

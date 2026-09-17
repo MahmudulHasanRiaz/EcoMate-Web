@@ -38,7 +38,7 @@ export default function TrackingScripts() {
   // Wave-2.1 — shopper external_id resolution state; gates the Meta pixel init
   // so the external_id is present at fbq('init') (no re-init, no next-load dep).
   // Wave-3 — fbLoginId rides along (CAPI mirror key, never in the pixel init).
-  const [identity, setIdentity] = useState<{ ready: boolean; externalId: string | null; em?: string; ph?: string; fbLoginId?: string | null }>({
+  const [identity, setIdentity] = useState<{ ready: boolean; externalId: string | null; em?: string; ph?: string; fn?: string; ln?: string; fbLoginId?: string | null }>({
     ready: false,
     externalId: null,
     fbLoginId: null,
@@ -143,8 +143,8 @@ export default function TrackingScripts() {
       signal: controller.signal,
     })
       .then((r) => r.json())
-      .then((d: { externalId?: string | null; em?: string; ph?: string; fbLoginId?: string | null }) => {
-        if (!cancelled) setIdentity({ ready: true, externalId: d.externalId ?? null, em: d.em, ph: d.ph, fbLoginId: d.fbLoginId ?? null });
+      .then((d: { externalId?: string | null; em?: string; ph?: string; fn?: string; ln?: string; fbLoginId?: string | null }) => {
+        if (!cancelled) setIdentity({ ready: true, externalId: d.externalId ?? null, em: d.em, ph: d.ph, fn: d.fn, ln: d.ln, fbLoginId: d.fbLoginId ?? null });
       })
       .catch(() => {
         // timeout / network / abort → degrade to no external_id; the Meta init
@@ -163,11 +163,11 @@ export default function TrackingScripts() {
   // Meta init. Meta events buffer in initMetaPixel until this runs (init-first).
   useEffect(() => {
     if (!metaIds.length || !identity.ready) return;
-    setPixelIdentity(identity.externalId, identity.em, identity.ph, identity.fbLoginId);
+    setPixelIdentity(identity.externalId, identity.em, identity.ph, identity.fbLoginId, identity.fn, identity.ln);
     (window as any).__TRACKING_INIT_READY = true;
     if (window.__initMetaPixel) window.__initMetaPixel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [metaIdsKey, identity.ready, identity.externalId, identity.em, identity.ph, identity.fbLoginId]);
+  }, [metaIdsKey, identity.ready, identity.externalId, identity.em, identity.ph, identity.fn, identity.ln, identity.fbLoginId]);
 
   // B12: the orphaned public/scripts/tracking.js (deleted) is the only consumer
   // of __META_ID/__TIKTOK_CODE — dropped to close the latent double-fire hazard.

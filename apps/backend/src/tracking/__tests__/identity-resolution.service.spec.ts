@@ -1,5 +1,6 @@
 import { IdentityResolutionService } from '../identity-resolution.service';
 import { TrackingSettingsService } from '../tracking-settings.service';
+import { TrackingNormalizer } from '../tracking.normalizer';
 
 describe('IdentityResolutionService (Wave-2.1 — customer external_id, Candidate B)', () => {
   const findUnique = jest.fn();
@@ -123,8 +124,44 @@ describe('IdentityResolutionService (Wave-2.1 — customer external_id, Candidat
       expect(result.ph).not.toBe('01712345678');
       expect(findFirst).toHaveBeenCalledWith({
         where: { betterAuthUserId: 'ba-1' },
-        select: { email: true, phone: true },
+        select: { email: true, phone: true, name: true },
       });
+    });
+
+    it('returns hashed fn/ln from the profile name (browser AM agrees with CAPI)', async () => {
+      (settings.isEnabledOrDefault as jest.Mock).mockResolvedValue(true);
+      findFirst.mockResolvedValue({
+        email: null,
+        phone: null,
+        name: 'Md Rahim Uddin',
+      });
+      const result = await service.resolveAdvancedMatching('ba-1');
+      expect(result.em).toBeUndefined();
+      expect(result.ph).toBeUndefined();
+      // Exact normalizer agreement — a wrong split or wrong hash fails here.
+      const normalizer = new TrackingNormalizer();
+      expect(result.fn).toBe(normalizer.hashName('Md Rahim'));
+      expect(result.ln).toBe(normalizer.hashName('Uddin'));
+    });
+
+    it('returns {} with the flag off even when a profile exists', async () => {
+      (settings.isEnabledOrDefault as jest.Mock).mockResolvedValue(false);
+      const result = await service.resolveAdvancedMatching('ba-1');
+      expect(result).toEqual({});
+      expect(findFirst).not.toHaveBeenCalled();
+    });
+
+    it('omits fn/ln when the profile has no name', async () => {
+      (settings.isEnabledOrDefault as jest.Mock).mockResolvedValue(true);
+      findFirst.mockResolvedValue({
+        email: 'a@b.c',
+        phone: null,
+        name: null,
+      });
+      const result = await service.resolveAdvancedMatching('ba-1');
+      expect(result.em).toBeDefined();
+      expect(result.fn).toBeUndefined();
+      expect(result.ln).toBeUndefined();
     });
 
     it('omits em when the profile has no email but keeps ph', async () => {
@@ -185,6 +222,27 @@ describe('IdentityResolutionService (Wave-2.1 — customer external_id, Candidat
         where: { userId: 'ba-7', providerId: 'facebook' },
         select: { accountId: true },
       });
+    });
+  });
+
+  describe('resolveRawCustomerProfile (canonical mirror enrichment)', () => {
+    it('returns raw contact fields for a linked profile (hashing happens later)', async () => {
+      findFirst.mockResolvedValue({
+        email: 'Buyer@Example.com',
+        phone: '+8801711111111',
+        name: 'Buyer Name',
+      });
+      await expect(service.resolveRawCustomerProfile('ba-1')).resolves.toEqual({
+        email: 'Buyer@Example.com',
+        phone: '+8801711111111',
+        name: 'Buyer Name',
+      });
+    });
+
+    it('returns null for unknown users and empty ids (absent stays absent)', async () => {
+      findFirst.mockResolvedValue(null);
+      await expect(service.resolveRawCustomerProfile('ghost')).resolves.toBeNull();
+      await expect(service.resolveRawCustomerProfile('')).resolves.toBeNull();
     });
   });
 });

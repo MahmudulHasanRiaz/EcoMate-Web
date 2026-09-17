@@ -671,6 +671,9 @@ export default function CheckoutPage() {
       }, {
         phone: normalizedPhone || undefined,
         name: [user?.firstName, user?.lastName].filter(Boolean).join(' ') || undefined,
+        // District the shopper selected — legitimate city-level signal the
+        // form genuinely holds (no division/postcode fields exist to send).
+        city: district || undefined,
         country: 'BD',
         email: user?.email || (guestEmail && !isSyntheticEmail(guestEmail) ? guestEmail.trim() : undefined),
       }, cartAttemptId);
