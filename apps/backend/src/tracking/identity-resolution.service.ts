@@ -152,15 +152,16 @@ export class IdentityResolutionService {
    */
   async resolveRawCustomerProfile(
     betterAuthUserId: string,
-  ): Promise<{ email?: string; phone?: string; name?: string } | null> {
+  ): Promise<{ id: string; email?: string; phone?: string; name?: string } | null> {
     try {
       if (!betterAuthUserId) return null;
       const profile = await this.prisma.customerProfile.findFirst({
         where: { betterAuthUserId },
-        select: { email: true, phone: true, name: true },
+        select: { id: true, email: true, phone: true, name: true },
       });
       if (!profile) return null;
       return {
+        id: profile.id,
         ...(profile.email ? { email: profile.email } : {}),
         ...(profile.phone ? { phone: profile.phone } : {}),
         ...(profile.name ? { name: profile.name } : {}),

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Script from "next/script";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { useAuth } from "@/context/AuthContext";
-import { setPixelIds, setPixelIdentity, setTrackingConfig, setConsent, setTrackingConsent, isTrackingAllowed } from "@/lib/tracking";
+import { setPixelIds, setPixelIdentity, setTrackingConfig, setConsent, setTrackingConsent, isTrackingAllowed, trackingAuthHeaders } from "@/lib/tracking";
 import { getTrackingApiUrl, syncContext, captureMarketingSession } from "@/lib/tracking-client";
 import { captureLandingAttribution } from "@/lib/attribution";
 
@@ -138,8 +138,9 @@ export default function TrackingScripts() {
     const timeout = setTimeout(() => controller.abort(), 2500);
     fetch(`${getTrackingApiUrl()}/tracking/identity`, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...trackingAuthHeaders() },
       keepalive: true,
+      credentials: 'include',
       signal: controller.signal,
     })
       .then((r) => r.json())

@@ -88,9 +88,12 @@ export function trackAddToCart(input: {
   email?: string;
   phone?: string;
   name?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
   country?: string;
 }): { eventId: string } {
-  const { contentId, contentName, contentCategory, unitPrice, quantityAdded, currency, email, phone, name, country } = input;
+  const { contentId, contentName, contentCategory, unitPrice, quantityAdded, currency, email, phone, name, city, state, zip, country } = input;
   const value = Math.round(unitPrice * quantityAdded * 100) / 100;
 
   _addToCartCounter = (_addToCartCounter + 1) % 1_000_000;
@@ -108,6 +111,9 @@ export function trackAddToCart(input: {
     email: email,
     phone: phone,
     name: name,
+    city: city,
+    state: state,
+    zip: zip,
     country: country,
   }, eventId);
 
@@ -147,9 +153,12 @@ export function trackViewContent(input: {
   email?: string;
   phone?: string;
   name?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
   country?: string;
 }): string | null {
-  const { contentId, items, contentName, contentCategory, value, currency, email, phone, name, country } = input;
+  const { contentId, items, contentName, contentCategory, value, currency, email, phone, name, city, state, zip, country } = input;
   // content_ids is the deduped set of catalog ids being viewed. Single-content
   // views keep the flat {id, quantity:1, item_price:value} shape; bundles use
   // one contents[] row per real catalog item (no invented ids — all resolved
@@ -179,6 +188,9 @@ export function trackViewContent(input: {
     email,
     phone,
     name,
+    city,
+    state,
+    zip,
     country,
   });
   return `${eventNameToSnake('ViewContent')}_${contentIds.join('|')}_${hashShort(getOrCreateCtxId())}_${Math.floor(Date.now() / 5000)}`;
@@ -635,6 +647,27 @@ function writeMirrorQueue(entries: Array<{ eventId: string; body: unknown; at: n
 }
 
 /**
+ * Auth headers for tracking fetches. The shopper session (Better Auth cookie
+ * and/or legacy JWT) lets the public mirror route resolve the authenticated
+ * customer server-side for identity enrichment — the client NEVER selects a
+ * profile (no customer id is sent or trusted). Same-origin requests already
+ * carry cookies; `credentials: 'include'` additionally covers cross-origin
+ * dev/staging, and the Bearer token covers cookie-less contexts. Absent when
+ * logged out (anonymous tracking unchanged).
+ */
+export function trackingAuthHeaders(): Record<string, string> {
+  try {
+    const token =
+      typeof localStorage !== 'undefined'
+        ? localStorage.getItem('token')
+        : null;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
  * Reliable mirror send (B2): sendBeacon works during unload; fetch keepalive is
  * the fallback. On failure the event is enqueued (W25-3) and retried on a later
  * load with the SAME eventId — the server's `eventId UNIQUE` dedup makes the
@@ -643,19 +676,27 @@ function writeMirrorQueue(entries: Array<{ eventId: string; body: unknown; at: n
 function sendMirror(eventId: string, body: unknown) {
   const url = `${getTrackingApiUrl()}/tracking/events`;
   const text = JSON.stringify(body);
-  try {
-    const blob = new Blob([text], { type: 'application/json' });
-    if (navigator.sendBeacon && navigator.sendBeacon(url, blob)) {
-      return;
+  // sendBeacon carries no headers, so an authenticated shopper's session
+  // would be invisible to the server (enrichment + customer binding silently
+  // lost on exactly the events that need them). Logged-in events therefore go
+  // straight to the credentialed fetch below; anonymous events keep beacon.
+  const authed = Object.keys(trackingAuthHeaders()).length > 0;
+  if (!authed) {
+    try {
+      const blob = new Blob([text], { type: 'application/json' });
+      if (navigator.sendBeacon && navigator.sendBeacon(url, blob)) {
+        return;
+      }
+    } catch {
+      // sendBeacon unavailable or threw — fall through to fetch
     }
-  } catch {
-    // sendBeacon unavailable or threw — fall through to fetch
   }
   fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...trackingAuthHeaders() },
     body: text,
     keepalive: true,
+    credentials: 'include',
   }).catch(() => {
     const queue = readMirrorQueue();
     if (!queue.some((e) => e.eventId === eventId)) {
@@ -684,10 +725,12 @@ function flushPendingMirrors() {
  * mirror without them, and the context row without fbp/fbc. Create them here in
  * Meta's exact documented formats when absent, gated by isTrackingAllowed():
  *  - _fbp = fb.1.<unix ms>.<11-digit random>
- *  - _fbc = fb.1.<unix s>.<fbclid> (from the URL param; passed as-is when the
- *    param is already in fb.… format)
- * Values are never lowercased or re-wrapped. The cookie is read at send time
- * and included in the mirror userData + context identifiers.
+ *  - _fbc = fb.1.<first-observed unix ms>.<fbclid> (from the URL param;
+ *    passed as-is when the param is already in fb.… format)
+ * An existing _fbc is NEVER reconstructed or re-timestamped — the cookie is
+ * only written when absent, so its creationTime stays the first observation
+ * (Meta rejects second-based or rewritten creationTime values). The cookie is
+ * read at send time and included in the mirror userData + context identifiers.
  */
 function ensureMetaCookies() {
   if (typeof document === 'undefined') return;
@@ -704,7 +747,7 @@ function ensureMetaCookies() {
     if (fbclid) {
       const value = fbclid.startsWith('fb.')
         ? fbclid
-        : `fb.1.${Math.floor(Date.now() / 1000)}.${fbclid}`;
+        : `fb.1.${Date.now()}.${fbclid}`;
       document.cookie = `_fbc=${encodeURIComponent(value)}; ${fbcAttrs}`;
     }
   }

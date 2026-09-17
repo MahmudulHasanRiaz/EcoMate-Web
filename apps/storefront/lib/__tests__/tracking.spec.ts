@@ -1357,3 +1357,102 @@ describe('tracking — caller identity passthrough (EMQ enrichment)', () => {
     expect(mirror.userData).toMatchObject({ phone: '+8801711111111', name: 'Buyer Name' });
   });
 });
+
+describe('tracking — _fbc first-party seeding (Meta creationTime MUST be ms)', () => {
+  beforeEach(() => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true } as any);
+  });
+
+  function clearFbc() {
+    document.cookie = '_fbc=; Max-Age=0; path=/';
+    document.cookie = '_fbc=; Max-Age=0;';
+  }
+
+  function readFbc(): string {
+    const m = `; ${document.cookie}`.split('; _fbc=');
+    if (m.length < 2) return '';
+    return decodeURIComponent(m.pop()!.split(';').shift() || '');
+  }
+
+  it('seeds _fbc with MILLISECONDS creationTime for a fresh fbclid', () => {
+    clearFbc();
+    window.history.replaceState({}, '', '/landing?fbclid=ABC123XYZ');
+    try {
+      const before = Date.now();
+      trackEvent('ViewContent', { value: 10, currency: 'BDT' });
+      const fbc = readFbc();
+      const parts = fbc.split('.');
+      expect(fbc.startsWith('fb.1.')).toBe(true);
+      expect(parts.slice(3).join('.')).toBe('ABC123XYZ');
+      // 13-digit ms — never 10-digit seconds.
+      expect(parts[2]).toHaveLength(13);
+      const ts = Number(parts[2]);
+      expect(ts).toBeGreaterThanOrEqual(before);
+      expect(ts).toBeLessThanOrEqual(Date.now());
+    } finally {
+      window.history.replaceState({}, '', '/');
+      clearFbc();
+    }
+  });
+
+  it('never overwrites an existing _fbc with a new fbclid visit', () => {
+    document.cookie = '_fbc=fb.1.1111111111111.OLDCLID; path=/';
+    window.history.replaceState({}, '', '/landing?fbclid=NEWCLID');
+    try {
+      trackEvent('ViewContent', { value: 10, currency: 'BDT' });
+      expect(readFbc()).toBe('fb.1.1111111111111.OLDCLID');
+    } finally {
+      window.history.replaceState({}, '', '/');
+      clearFbc();
+    }
+  });
+
+  it('creates no _fbc when there is no fbclid and no cookie (never fabricated)', () => {
+    clearFbc();
+    window.history.replaceState({}, '', '/landing');
+    try {
+      trackEvent('ViewContent', { value: 10, currency: 'BDT' });
+      expect(readFbc()).toBe('');
+    } finally {
+      window.history.replaceState({}, '', '/');
+    }
+  });
+});
+
+describe('tracking — mirror auth transport (logged-in identity propagation)', () => {
+  beforeEach(() => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true } as any);
+  });
+
+  it('anonymous events keep the beacon path (no auth headers available)', () => {
+    localStorage.removeItem('token');
+    const beaconMock = vi.fn(() => true);
+    (navigator as any).sendBeacon = beaconMock;
+    try {
+      trackEvent('ViewContent', { value: 10, currency: 'BDT' });
+      expect(beaconMock).toHaveBeenCalledTimes(1);
+    } finally {
+      delete (navigator as any).sendBeacon;
+    }
+  });
+
+  it('logged-in events skip the beacon so the session rides the credentialed fetch', () => {
+    localStorage.setItem('token', 'jwt-test-token');
+    const beaconMock = vi.fn(() => true);
+    (navigator as any).sendBeacon = beaconMock;
+    try {
+      trackEvent('ViewContent', { value: 10, currency: 'BDT' });
+      expect(beaconMock).not.toHaveBeenCalled();
+      const calls = (fetch as any).mock.calls;
+      const mirror = calls
+        .map((c: any) => ({ init: c[1], body: JSON.parse(c[1].body) }))
+        .find((c: any) => c.body.eventName === 'view_content');
+      expect(mirror).toBeDefined();
+      expect(mirror.init.headers.Authorization).toBe('Bearer jwt-test-token');
+      expect(mirror.init.credentials).toBe('include');
+    } finally {
+      delete (navigator as any).sendBeacon;
+      localStorage.removeItem('token');
+    }
+  });
+});

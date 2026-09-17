@@ -6,7 +6,7 @@ import { TrackingSettingsService } from '../tracking-settings.service';
 describe('TrackingController', () => {
   const allPublicMethods = ['trackEvent', 'saveContext', 'trackPageView', 'trackingConfig'];
   let trackingCapture: { capture: jest.Mock };
-  let trackingContext: { upsertContext: jest.Mock };
+  let trackingContext: { upsertContext: jest.Mock; getByCtxId: jest.Mock };
   let pageViewBuffer: { push: jest.Mock };
   let trackingSettings: {
     buildConfigSnapshot: jest.Mock;
@@ -22,7 +22,7 @@ describe('TrackingController', () => {
 
   beforeEach(() => {
     trackingCapture = { capture: jest.fn() };
-    trackingContext = { upsertContext: jest.fn() };
+    trackingContext = { upsertContext: jest.fn(), getByCtxId: jest.fn().mockResolvedValue(null) };
     pageViewBuffer = { push: jest.fn() };
     trackingSettings = {
       buildConfigSnapshot: jest.fn().mockResolvedValue({
@@ -270,6 +270,48 @@ describe('TrackingController', () => {
       ).toMatchObject({ firstName: 'Profile Full Name' });
     });
 
+    it('legacy-JWT session user (no Better Auth session) still enriches via betterAuthUserId', async () => {
+      trackingCapture.capture.mockClear();
+      identityResolution.resolveRawCustomerProfile.mockResolvedValue({
+        id: 'cust-7',
+        email: 'jwt@example.com',
+        phone: null,
+        name: null,
+      });
+      // Guard legacy-JWT path: plain UserProfile with betterAuthUserId link.
+      const user = { id: 'up-1', betterAuthUserId: 'ba-jwt' };
+      await controller.trackEvent(
+        { eventId: 'e-jwt', eventName: 'view_content', userData: { country: 'BD' } },
+        req,
+        user,
+      );
+      expect(
+        identityResolution.resolveRawCustomerProfile,
+      ).toHaveBeenCalledWith('ba-jwt');
+      const input = trackingCapture.capture.mock.calls[0][0];
+      expect(input.payload.customer.email).toBe('jwt@example.com');
+      expect(input.payload.customerId).toBe('cust-7');
+    });
+
+    it('a client cannot select another customer: body carries no customer id', async () => {
+      trackingCapture.capture.mockClear();
+      await controller.trackEvent(
+        {
+          eventId: 'e-spoof',
+          eventName: 'view_content',
+          customData: { customerId: 'cust-victim', customer_id: 'cust-victim' },
+          userData: { customerId: 'cust-victim', country: 'BD' },
+        },
+        req,
+      );
+      const input = trackingCapture.capture.mock.calls[0][0];
+      // No session → no binding, regardless of what the client sent.
+      expect(input.payload.customerId).toBeUndefined();
+      expect(
+        identityResolution.resolveRawCustomerProfile,
+      ).not.toHaveBeenCalled();
+    });
+
     it('guest mirrors skip enrichment entirely (absent stays absent)', async () => {
       trackingCapture.capture.mockClear();
       await controller.trackEvent(
@@ -451,7 +493,7 @@ describe('TrackingController', () => {
       expect(trackingContext.upsertContext).not.toHaveBeenCalled();
     });
 
-    it('synthesizes fbc from fbclid when the _fbc cookie is absent (P1 fix)', async () => {
+    it('synthesizes fbc with MILLISECONDS when no cookie/context value exists (Meta creationTime)', async () => {
       trackingContext.upsertContext.mockClear();
       jest.useFakeTimers().setSystemTime(new Date('2026-08-10T12:00:00Z'));
       await controller.trackEvent(
@@ -463,18 +505,80 @@ describe('TrackingController', () => {
         },
         req,
       );
-      const nowSec = Math.floor(new Date('2026-08-10T12:00:00Z').getTime() / 1000);
+      // 13-digit milliseconds — never 10-digit seconds.
+      const nowMs = new Date('2026-08-10T12:00:00Z').getTime();
+      expect(String(nowMs)).toHaveLength(13);
       expect(trackingContext.upsertContext).toHaveBeenCalledWith(
         'ctx-clid',
         expect.objectContaining({
           identifiers: {
-            meta: { fbp: undefined, fbc: `fb.1.${nowSec}.AeBNw3Q8hVKzX2yU` },
+            meta: { fbp: undefined, fbc: `fb.1.${nowMs}.AeBNw3Q8hVKzX2yU` },
           },
         }),
         '203.0.113.7',
         'storefront-ua',
       );
       jest.useRealTimers();
+    });
+
+    it('keeps an existing browser _fbc verbatim even when fbclid differs', async () => {
+      trackingContext.upsertContext.mockClear();
+      trackingContext.getByCtxId.mockResolvedValueOnce(null);
+      await controller.trackEvent(
+        {
+          eventId: 'e-fbc-keep',
+          eventName: 'lead',
+          ctxId: 'ctx-keep',
+          userData: { fbc: 'fb.1.1111111111111.OLDCLID', fbclid: 'NEWCLID' },
+        },
+        req,
+      );
+      expect(trackingContext.upsertContext).toHaveBeenCalledWith(
+        'ctx-keep',
+        expect.objectContaining({
+          identifiers: { meta: expect.objectContaining({ fbc: 'fb.1.1111111111111.OLDCLID' }) },
+        }),
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
+    it('prefers the stored context fbc over synthesizing from a later fbclid', async () => {
+      trackingContext.upsertContext.mockClear();
+      trackingContext.getByCtxId.mockResolvedValueOnce({
+        identifiers: { meta: { fbc: { value: 'fb.1.2222222222222.FIRSTCLID' } } },
+      });
+      await controller.trackEvent(
+        {
+          eventId: 'e-fbc-stored',
+          eventName: 'lead',
+          ctxId: 'ctx-stored',
+          userData: { fbclid: 'SECONDCLID' },
+        },
+        req,
+      );
+      expect(trackingContext.upsertContext).toHaveBeenCalledWith(
+        'ctx-stored',
+        expect.objectContaining({
+          identifiers: { meta: expect.objectContaining({ fbc: 'fb.1.2222222222222.FIRSTCLID' }) },
+        }),
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
+    it('stores no fbc at all when neither cookie nor fbclid exists (never fabricated)', async () => {
+      trackingContext.upsertContext.mockClear();
+      await controller.trackEvent(
+        { eventId: 'e-nofbc', eventName: 'lead', ctxId: 'ctx-none', userData: {} },
+        req,
+      );
+      expect(trackingContext.upsertContext).toHaveBeenCalledWith(
+        'ctx-none',
+        expect.objectContaining({ identifiers: { meta: { fbp: undefined } } }),
+        expect.anything(),
+        expect.anything(),
+      );
     });
 
     it('folds url/referrer from the mirror userData into the context', async () => {

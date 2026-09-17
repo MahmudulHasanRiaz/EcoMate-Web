@@ -73,6 +73,14 @@ export class TrackingController {
         // above and the browser's consent gate (which suppresses the POST);
         // grant state lives client-side, so a stale tab post-revoke is treated
         // the same as any other late mirror event — no new PII class is added.
+        //
+        // Identity merge rule (deterministic, documented):
+        // 1. Event-specific browser data wins per field — it is the freshest
+        //    signal (e.g. guest checkout typing beats a stale stored number).
+        // 2. Server-resolved profile fills ONLY caller-absent fields.
+        // 3. Absent everywhere stays absent (never fabricated).
+        // external_id / fb_login_id are never taken from the client: they
+        // resolve at dispatch from the server-bound customerId above.
         const baUserId =
           user?.betterAuthSession?.user?.id ?? user?.betterAuthUserId ?? null;
         const profile = baUserId
@@ -97,6 +105,12 @@ export class TrackingController {
             actionSource: 'website',
             payload: {
               ...(eventType === 'Purchase' ? { triggerMode: 'browser' as const } : {}),
+              // Server-resolved customer binding (never client-supplied — the
+              // DTO carries no customer id). Lets dispatch-time resolution use
+              // the stable external_id + fb_login_id for this logged-in
+              // shopper's events, matching the browser AM identity. Guests:
+              // undefined → journey-uuid behavior unchanged.
+              customerId: profile?.id,
               value: body.customData?.value,
               currency: body.customData?.currency,
               content_ids: body.customData?.content_ids,
@@ -151,13 +165,32 @@ export class TrackingController {
       // place ip/ua/url/referrer/fbp/fbc reach the context when the beacon was
       // lost. Fold context on EVERY mirror event with ctxId — previously only
       // when fbp||fbc existed, so cookie-less early events kept a MISSING
-      // context → empty Meta user_data → 2804050 rejections. fbc is synthesized
-      // from the Meta click id (fbclid) when the _fbc cookie does not exist yet.
+      // context → empty Meta user_data → 2804050 rejections. fbc follows
+      // browser-cookie → stored-context → synthesize precedence (an existing
+      // value is never re-timestamped).
       // Best-effort: a context failure must never fail the event.
       if (body.ctxId) {
-        const fbc =
-          body.userData?.fbc ||
-          (body.userData?.fbclid ? synthesizeFbc(String(body.userData.fbclid)) : undefined);
+        // fbc precedence (Meta: never reconstruct an existing value):
+        // 1. browser _fbc cookie, verbatim; 2. already-stored context fbc,
+        // verbatim (a later fbclid-only event must not re-timestamp it);
+        // 3. synthesize from fbclid with first-observed ms as a last resort.
+        let fbc: string | undefined =
+          typeof body.userData?.fbc === 'string' && body.userData.fbc
+            ? body.userData.fbc
+            : undefined;
+        // Only consult stored context when synthesis is actually on the table
+        // (fbclid present) — otherwise the extra read buys nothing.
+        if (!fbc && body.userData?.fbclid) {
+          try {
+            const stored = await this.trackingContext.getByCtxId(body.ctxId);
+            const storedFbc = (stored?.identifiers as any)?.meta?.fbc?.value;
+            if (typeof storedFbc === 'string' && storedFbc) fbc = storedFbc;
+          } catch {
+            // best-effort read — fall through to synthesis below
+          }
+        }
+        if (!fbc && body.userData?.fbclid)
+          fbc = synthesizeFbc(String(body.userData.fbclid));
         void this.trackingContext
           .upsertContext(
             body.ctxId,

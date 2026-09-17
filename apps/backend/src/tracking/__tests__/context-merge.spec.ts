@@ -1,4 +1,4 @@
-import { mergeContext } from '../context-merge';
+import { mergeContext, synthesizeFbc } from '../context-merge';
 
 describe('mergeContext (design §4.1 enrichment rules)', () => {
   it('starts empty', () => {
@@ -63,5 +63,28 @@ describe('mergeContext (design §4.1 enrichment rules)', () => {
     });
     expect(r.identifiers.meta).toBeUndefined();
     expect(r.identifiers.google.gaClientId.value).toBe('G-1');
+  });
+});
+describe('synthesizeFbc (Meta creationTime MUST be milliseconds)', () => {
+  it('builds fb.1.<13-digit-ms>.<fbclid> for a fresh fbclid', () => {
+    const before = Date.now();
+    const fbc = synthesizeFbc('ABC123');
+    const after = Date.now();
+    const parts = fbc.split('.');
+    const ts = parts[2];
+    const id = parts.slice(3).join('.');
+    expect(fbc.startsWith('fb.1.')).toBe(true);
+    expect(id).toBe('ABC123');
+    expect(ts).toHaveLength(13);
+    expect(Number(ts)).toBeGreaterThanOrEqual(before);
+    expect(Number(ts)).toBeLessThanOrEqual(after);
+  });
+
+  it('passes an already-formed fb. value through untouched (never re-timestamped)', () => {
+    expect(synthesizeFbc('fb.1.1111111111111.OLD')).toBe('fb.1.1111111111111.OLD');
+  });
+
+  it('returns empty for blank input (never fabricates)', () => {
+    expect(synthesizeFbc('   ')).toBe('');
   });
 });

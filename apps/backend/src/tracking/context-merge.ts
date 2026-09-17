@@ -25,15 +25,23 @@ const ROTATING = new Set(['fbp', 'fbc', 'gclid', 'ttclid', '_ga', 'gaClientId', 
 
 /**
  * Synthesize a Meta `fbc` cookie value from a `fbclid` URL parameter (Meta's
- * documented format: `fb.1.<createdAt unix seconds>.<fbclid>`). A fbclid that
- * is already in `fb.…` format (Meta sometimes passes the full cookie value) is
- * passed through verbatim — never double-wrapped, never lowercased.
+ * documented format: `fb.1.<firstObservedAt milliseconds>.<fbclid>` — the
+ * creationTime is MILLISECONDS since epoch, matching Meta's own cookie
+ * writer; a seconds value triggers Meta's "do not modify creationTime"
+ * diagnostic). A fbclid that is already in `fb.…` format (Meta sometimes
+ * passes the full cookie value) is passed through verbatim — never
+ * double-wrapped, never lowercased, never re-timestamped.
+ *
+ * The timestamp should be when EcoMate FIRST observed the fbclid (the browser
+ * sets the cookie once at landing, so its Date.now() is first-observed by
+ * construction). Server-side synthesis is a last-resort fallback when no
+ * cookie/context value exists — callers must prefer an existing value first.
  */
-export function synthesizeFbc(fbclid: string, nowSec = Math.floor(Date.now() / 1000)): string {
+export function synthesizeFbc(fbclid: string, nowMs = Date.now()): string {
   const value = fbclid.trim();
   if (!value) return '';
   if (value.startsWith('fb.')) return value;
-  return `fb.1.${nowSec}.${value}`;
+  return `fb.1.${Math.floor(nowMs)}.${value}`;
 }
 
 export function mergeContext(

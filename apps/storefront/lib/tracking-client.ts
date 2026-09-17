@@ -1,4 +1,4 @@
-import { isTrackingAllowed } from './tracking';
+import { isTrackingAllowed, trackingAuthHeaders } from './tracking';
 import { sanitizeTrackingUrl } from './url-sanitize';
 
 const CTX_KEY = 'ecomate_ctx_id';
@@ -81,7 +81,7 @@ export async function syncContext(payload?: {
       const url = `${getTrackingApiUrl()}/tracking/context`;
       await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...trackingAuthHeaders() },
         body: JSON.stringify({
           ctxId: getOrCreateCtxId(),
           identifiers: payload?.identifiers ?? collectIdentifiers(),
@@ -91,6 +91,7 @@ export async function syncContext(payload?: {
           referrer: sanitizeTrackingUrl(payload?.referrer ?? document.referrer),
         }),
         keepalive: true,
+        credentials: 'include',
       });
     } catch {
       /* best-effort — never block the page */
