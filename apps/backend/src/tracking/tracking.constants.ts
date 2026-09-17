@@ -15,8 +15,32 @@ export const TRACKING_EVENT_TYPES = Object.freeze([
   'Search',
   'CompleteRegistration',
   'Lead',
+  // Server-side order-lifecycle custom events (Meta-only; TikTok explicitly
+  // opts out, GA4/GoogleAds have no mapping). Each is its own canonical type
+  // so the @@unique([orderId, eventType]) ledger holds one row per stage.
+  'OrderPlaced',
+  'OrderConfirmed',
+  'OrderCancelled',
+  'OrderDelivered',
+  'OrderReturned',
 ] as const);
 export type TrackingEventType = (typeof TRACKING_EVENT_TYPES)[number];
+
+/**
+ * Order-lifecycle custom events bound to order status names. Meta-only
+ * destination routing is enforced at the adapter boundary (Meta supports
+ * these names; TikTok explicitly excludes them; GA4/GoogleAds have no
+ * mapping), never in the order lifecycle itself.
+ */
+export const ORDER_LIFECYCLE_EVENT_TYPES = Object.freeze([
+  'OrderPlaced',
+  'OrderConfirmed',
+  'OrderCancelled',
+  'OrderDelivered',
+  'OrderReturned',
+] as const);
+export type OrderLifecycleEventType =
+  (typeof ORDER_LIFECYCLE_EVENT_TYPES)[number];
 
 /** TrackingOutbox.status — DB is source of truth. DEAD->PENDING only via ReplayService. */
 export const OUTBOX_STATUS = Object.freeze(['PENDING', 'CLAIMED', 'SENT', 'FAILED', 'DEAD'] as const);

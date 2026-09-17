@@ -28,6 +28,16 @@ export interface TrackingSnapshotPayload {
   triggerMode?: PurchaseTriggerMode;
   /** Caller-provided dedup id; adapters override for order events (purchase_/refund_). */
   eventId?: string;
+  /**
+   * Order-lifecycle custom events only (OrderPlaced/OrderConfirmed/
+   * OrderCancelled/OrderDelivered/OrderReturned): which lifecycle stage this
+   * snapshot represents and the status transition that produced it. Absent on
+   * every other event type; adapters ignore it (eventType drives the wire
+   * event_name), it exists for timeline readability and parity tests.
+   */
+  lifecycleStage?: string;
+  lifecycleFromStatus?: string;
+  lifecycleToStatus?: string;
   /** Capture-time action source ('website' | 'physical_store'); the dispatcher merges it for adapters. */
   actionSource?: string;
   /** Business event time (unix seconds). Adapters fall back to dispatch time when absent. */

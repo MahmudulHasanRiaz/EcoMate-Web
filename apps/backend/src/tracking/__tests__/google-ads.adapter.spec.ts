@@ -99,6 +99,18 @@ describe('GoogleAdsAdapter (design §4.6 — Google Ads offline conversion provi
       expect(adapter.supports('PageView')).toBe(false);
       expect(adapter.supports('')).toBe(false);
     });
+
+    it('skips Meta-only order-lifecycle custom events (no conversion mapping)', () => {
+      for (const eventType of [
+        'OrderPlaced',
+        'OrderConfirmed',
+        'OrderCancelled',
+        'OrderDelivered',
+        'OrderReturned',
+      ]) {
+        expect(adapter.supports(eventType)).toBe(false);
+      }
+    });
   });
 
   describe('build', () => {

@@ -2052,8 +2052,11 @@ describe('OrdersService', () => {
       await service.updateStatus('order-id-1', updateStatusDto, userId);
 
       const capture = trackingCapture.capture as jest.Mock;
-      expect(capture).toHaveBeenCalledTimes(1);
-      const [input, txArg] = capture.mock.calls[0];
+      const purchaseCalls = capture.mock.calls.filter(
+        ([input]: any[]) => input.eventType === 'Purchase',
+      );
+      expect(purchaseCalls).toHaveLength(1);
+      const [input, txArg] = purchaseCalls[0];
       expect(input.eventId).toBe('purchase_order-id-1');
       expect(input.eventType).toBe('Purchase');
       expect(input.ctxId).toBeUndefined(); // mockOrder has no trackingSessionId
@@ -2132,8 +2135,11 @@ describe('OrdersService', () => {
       await service.verifyPayment('order-id-1', true, 'note');
 
       const capture = trackingCapture.capture as jest.Mock;
-      expect(capture).toHaveBeenCalledTimes(1);
-      const [input] = capture.mock.calls[0];
+      const purchaseCalls = capture.mock.calls.filter(
+        ([input]: any[]) => input.eventType === 'Purchase',
+      );
+      expect(purchaseCalls).toHaveLength(1);
+      const [input] = purchaseCalls[0];
       expect(input.eventId).toBe('purchase_order-id-1');
       expect(input.eventType).toBe('Purchase');
       expect(input.actionSource).toBe('website');
@@ -2211,8 +2217,12 @@ describe('OrdersService', () => {
 
       const capture = trackingCapture.capture as jest.Mock;
       // One logical Purchase, one capture (same purchase_{orderId} event id).
-      expect(capture).toHaveBeenCalledTimes(1);
-      expect(capture.mock.calls[0][0].eventId).toBe('purchase_order-id-1');
+      // (The Confirmed transition also emits OrderConfirmed — filtered out.)
+      const purchaseCalls = capture.mock.calls.filter(
+        ([input]: any[]) => input.eventType === 'Purchase',
+      );
+      expect(purchaseCalls).toHaveLength(1);
+      expect(purchaseCalls[0][0].eventId).toBe('purchase_order-id-1');
     });
 
     it('does NOT add a second Purchase from payment verification in instant mode', async () => {
@@ -2343,7 +2353,10 @@ describe('OrdersService', () => {
         module.get<TrackingCaptureService>(TrackingCaptureService);
       await service.updateStatus('order-id-1', { statusId: 'status-delivered' }, userId);
 
-      expect(trackingCapture.capture).toHaveBeenCalledTimes(1);
+      const allCalls = (trackingCapture.capture as jest.Mock).mock.calls;
+      expect(
+        allCalls.filter(([input]: any[]) => input.eventType === 'Purchase'),
+      ).toHaveLength(1);
       expect(trackingCapture.capture).toHaveBeenCalledWith(
         expect.objectContaining({ eventType: 'Purchase' }),
         expect.anything(),
@@ -2371,8 +2384,13 @@ describe('OrdersService', () => {
         module.get<TrackingCaptureService>(TrackingCaptureService);
       await service.updateStatus('order-id-1', { statusId: 'status-confirmed' }, userId);
 
-      // Confirmed ≠ configured Delivered → no validated Purchase
-      expect(trackingCapture.capture).not.toHaveBeenCalled();
+      // Confirmed ≠ configured Delivered → no validated Purchase (the
+      // genuine Confirmed transition still emits its lifecycle event).
+      expect(
+        (trackingCapture.capture as jest.Mock).mock.calls.filter(
+          ([input]: any[]) => input.eventType === 'Purchase',
+        ),
+      ).toHaveLength(0);
     });
 
     it('fires only for the configured status, not for a different valid status', async () => {
@@ -2402,8 +2420,13 @@ describe('OrdersService', () => {
         module.get<TrackingCaptureService>(TrackingCaptureService);
       await service.updateStatus('order-id-1', { statusId: 'status-confirmed' }, userId);
 
-      // Confirmed ≠ configured Processing → no validated Purchase
-      expect(trackingCapture.capture).not.toHaveBeenCalled();
+      // Confirmed ≠ configured Processing → no validated Purchase (the
+      // genuine Confirmed transition still emits its lifecycle event).
+      expect(
+        (trackingCapture.capture as jest.Mock).mock.calls.filter(
+          ([input]: any[]) => input.eventType === 'Purchase',
+        ),
+      ).toHaveLength(0);
     });
 
     it('captures a refund snapshot inside the transaction for cancelled orders', async () => {
@@ -2445,10 +2468,13 @@ describe('OrdersService', () => {
       );
 
       const capture = trackingCapture.capture as jest.Mock;
-      expect(capture).toHaveBeenCalledTimes(1);
-      expect(capture.mock.calls[0][0].eventId).toBe('refund_order-id-1');
-      expect(capture.mock.calls[0][0].eventType).toBe('Refund');
-      expect(capture.mock.calls[0][0].payload.value).toBe(-2050);
+      const refundCalls = capture.mock.calls.filter(
+        ([input]: any[]) => input.eventType === 'Refund',
+      );
+      expect(refundCalls).toHaveLength(1);
+      expect(refundCalls[0][0].eventId).toBe('refund_order-id-1');
+      expect(refundCalls[0][0].eventType).toBe('Refund');
+      expect(refundCalls[0][0].payload.value).toBe(-2050);
     });
 
     it('reverses approved commissions when the order is Cancelled (G-01 hook)', async () => {
@@ -3192,8 +3218,11 @@ describe('OrdersService', () => {
       await service.bulkStatusChange(['order-1'], 'status-c', 'staff-123');
 
       const capture = trackingCapture.capture as jest.Mock;
-      expect(capture).toHaveBeenCalledTimes(1);
-      const [input] = capture.mock.calls[0];
+      const purchaseCalls = capture.mock.calls.filter(
+        ([input]: any[]) => input.eventType === 'Purchase',
+      );
+      expect(purchaseCalls).toHaveLength(1);
+      const [input] = purchaseCalls[0];
       expect(input.eventId).toBe('purchase_order-id-1');
       expect(input.eventType).toBe('Purchase');
     });
@@ -3218,8 +3247,13 @@ describe('OrdersService', () => {
         module.get<TrackingCaptureService>(TrackingCaptureService);
       await service.bulkStatusChange(['order-1'], 'status-c', 'staff-123');
 
-      // Confirmed ≠ configured Delivered → no validated Purchase
-      expect(trackingCapture.capture).not.toHaveBeenCalled();
+      // Confirmed ≠ configured Delivered → no validated Purchase (the
+      // genuine Confirmed transition still emits its lifecycle event).
+      expect(
+        (trackingCapture.capture as jest.Mock).mock.calls.filter(
+          ([input]: any[]) => input.eventType === 'Purchase',
+        ),
+      ).toHaveLength(0);
     });
   });
 
@@ -3390,7 +3424,16 @@ await service.bulkAssign(['order-1', 'trashed-1'], 'staff-1');
 
       const trackingCapture =
         module.get<TrackingCaptureService>(TrackingCaptureService);
-      expect(trackingCapture.capture).not.toHaveBeenCalled();
+      // No Refund without a Purchase — but the genuine Cancelled transition
+      // still emits its lifecycle event.
+      const refundCalls = (
+        trackingCapture.capture as jest.Mock
+      ).mock.calls.filter(([input]: any[]) => input.eventType === 'Refund');
+      expect(refundCalls).toHaveLength(0);
+      expect(trackingCapture.capture).toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'OrderCancelled' }),
+        expect.anything(),
+      );
     });
 
     it('throws ForbiddenException when no token is supplied', async () => {
@@ -4097,4 +4140,408 @@ await service.bulkAssign(['order-1', 'trashed-1'], 'staff-1');
       expect(order.guestPhone).toBe('+8801712345678');
     });
   });
+
+describe('order lifecycle custom events (OrderPlaced/OrderConfirmed/OrderCancelled/OrderDelivered/OrderReturned)', () => {
+  const lcStatuses: Record<string, any> = {
+    Pending: { id: 'status-pending', name: 'Pending', isInitial: true },
+    Confirmed: { id: 'status-confirmed', name: 'Confirmed' },
+    Cancelled: { id: 'status-cancelled', name: 'Cancelled' },
+    Shipping: { id: 'status-shipping', name: 'Shipping' },
+    Delivered: { id: 'status-delivered', name: 'Delivered' },
+    'Return Pending': { id: 'status-rp', name: 'Return Pending' },
+    Returned: { id: 'status-returned', name: 'Returned' },
+    Hold: { id: 'status-hold', name: 'Hold' },
+  };
+  const lcOrder = {
+    ...mockOrder,
+    id: 'order-lc-1',
+    displayId: 'ORD-LC-1',
+    trackingSessionId: 'ctx-lc-1',
+    shippingAddress: {
+      phone: '+8801711111111',
+      name: 'Lifecycle Buyer',
+      city: 'Dhaka',
+      state: 'Dhaka',
+      zip: '1212',
+      country: 'BD',
+    },
+    customer: {
+      id: 'customer-id-1',
+      name: 'Lifecycle Buyer',
+      email: 'lc@example.com',
+      phone: '+8801711111111',
+    },
+    items: [
+      {
+        id: 'item-lc-1',
+        orderId: 'order-lc-1',
+        productId: 'prod-1',
+        variantId: 'variant-1',
+        quantity: 2,
+        price: 1000,
+        product: {
+          id: 'prod-1',
+          name: 'Lifecycle Product',
+          sku: 'LC-SKU',
+          category: { name: 'Lifecycle Cat' },
+        },
+        variant: { id: 'variant-1', sku: 'LC-VAR' },
+      },
+    ],
+    payments: [],
+  };
+  const lcCapture = () =>
+    module.get<TrackingCaptureService>(TrackingCaptureService)
+      .capture as jest.Mock;
+  const callsOf = (eventType: string) =>
+    lcCapture().mock.calls
+      .map(([input]: any[]) => input)
+      .filter((input: any) => input.eventType === eventType);
+
+  const driveUpdateStatus = async (
+    fromName: string,
+    toName: string,
+    settings: Array<{ key: string; value: string }> = [],
+  ) => {
+    (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+      ...lcOrder,
+      status: { ...lcStatuses[fromName] },
+    });
+    (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue({
+      ...lcStatuses[toName],
+    });
+    (prisma.order.update as jest.Mock).mockResolvedValue({
+      ...lcOrder,
+      status: { ...lcStatuses[toName] },
+    });
+    (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue(settings);
+    (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+    (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+    (prisma.payment.findFirst as jest.Mock).mockResolvedValue({
+      id: 'pay-lc',
+      gatewayCode: 'cash',
+      status: 'UNPAID',
+    });
+    await service.updateStatus(
+      'order-lc-1',
+      { statusId: lcStatuses[toName].id },
+      'admin-1',
+    );
+  };
+
+  const validatedConfirmedSettings = [
+    { key: 'tracking_meta_purchase_mode', value: 'validated' },
+    { key: 'tracking_meta_validated_status', value: 'Confirmed' },
+    // Both providers validated: no instant Purchase anywhere, so receipt is
+    // signaled by OrderPlaced (an unset mode defaults to instant, which would
+    // fire a Purchase and suppress OrderPlaced — see the mixed-mode test).
+    { key: 'tracking_tiktok_purchase_mode', value: 'validated' },
+    { key: 'tracking_tiktok_validated_status', value: 'Confirmed' },
+  ];
+
+  it('Case B creation (validated mode): OrderPlaced fires, Purchase does not', async () => {
+    (prisma.$transaction as jest.Mock).mockImplementation(
+      async (cb: (tx: any) => Promise<any>) =>
+        cb({
+          ...prisma,
+          orderCounter: {
+            upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+          },
+        }),
+    );
+    (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+      mockInitialStatus,
+    );
+    (prisma.order.create as jest.Mock).mockResolvedValue({
+      ...lcOrder,
+      status: lcStatuses.Pending,
+    });
+    (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+      ...lcOrder,
+      status: lcStatuses.Pending,
+    });
+    (prisma.productVariant.update as jest.Mock).mockResolvedValue({});
+    (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue(
+      validatedConfirmedSettings,
+    );
+
+    await service.create({
+      customerId: 'customer-id-1',
+      items: [{ productId: 'prod-1', quantity: 1, price: 1000 }],
+      shippingCharge: 0,
+      shippingAddress: { address: 'x' },
+    } as any);
+
+    expect(callsOf('OrderPlaced')).toHaveLength(1);
+    expect(callsOf('OrderPlaced')[0].eventId).toBe('order_placed_order-lc-1');
+    expect(callsOf('Purchase')).toHaveLength(0);
+  });
+
+  it('Case A creation (instant mode): Purchase fires, OrderPlaced does not', async () => {
+    (prisma.$transaction as jest.Mock).mockImplementation(
+      async (cb: (tx: any) => Promise<any>) =>
+        cb({
+          ...prisma,
+          orderCounter: {
+            upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+          },
+        }),
+    );
+    (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+      mockInitialStatus,
+    );
+    (prisma.order.create as jest.Mock).mockResolvedValue({
+      ...lcOrder,
+      status: lcStatuses.Pending,
+    });
+    (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+      ...lcOrder,
+      status: lcStatuses.Pending,
+    });
+    (prisma.productVariant.update as jest.Mock).mockResolvedValue({});
+    (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([]);
+
+    await service.create({
+      customerId: 'customer-id-1',
+      items: [{ productId: 'prod-1', quantity: 1, price: 1000 }],
+      shippingCharge: 0,
+      shippingAddress: { address: 'x' },
+    } as any);
+
+    expect(callsOf('Purchase')).toHaveLength(1);
+    expect(callsOf('OrderPlaced')).toHaveLength(0);
+  });
+
+  it('Case B Confirmed: OrderConfirmed + Purchase fire together (validated on Confirmed)', async () => {
+    await driveUpdateStatus('Pending', 'Confirmed', validatedConfirmedSettings);
+    const confirmed = callsOf('OrderConfirmed');
+    expect(confirmed).toHaveLength(1);
+    expect(confirmed[0].eventId).toBe('order_confirmed_order-lc-1');
+    expect(confirmed[0].payload.lifecycleStage).toBe('confirmed');
+    expect(confirmed[0].payload.lifecycleFromStatus).toBe('Pending');
+    expect(confirmed[0].payload.lifecycleToStatus).toBe('Confirmed');
+    expect(callsOf('Purchase')).toHaveLength(1);
+  });
+
+  it('Case C Confirmed (Delivered-configured): OrderConfirmed fires, Purchase waits', async () => {
+    await driveUpdateStatus('Pending', 'Confirmed', [
+      { key: 'tracking_meta_purchase_mode', value: 'validated' },
+      { key: 'tracking_meta_validated_status', value: 'Delivered' },
+    ]);
+    expect(callsOf('OrderConfirmed')).toHaveLength(1);
+    expect(callsOf('Purchase')).toHaveLength(0);
+  });
+
+  it('Case C Delivered: OrderDelivered + Purchase fire together', async () => {
+    await driveUpdateStatus('Shipping', 'Delivered', [
+      { key: 'tracking_meta_purchase_mode', value: 'validated' },
+      { key: 'tracking_meta_validated_status', value: 'Delivered' },
+    ]);
+    const delivered = callsOf('OrderDelivered');
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0].eventId).toBe('order_delivered_order-lc-1');
+    expect(callsOf('Purchase')).toHaveLength(1);
+  });
+
+  it('mixed modes (meta validated, tiktok instant): Purchase fires, OrderPlaced does not', async () => {
+    (prisma.$transaction as jest.Mock).mockImplementation(
+      async (cb: (tx: any) => Promise<any>) =>
+        cb({
+          ...prisma,
+          orderCounter: {
+            upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+          },
+        }),
+    );
+    (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+      mockInitialStatus,
+    );
+    (prisma.order.create as jest.Mock).mockResolvedValue({
+      ...lcOrder,
+      status: lcStatuses.Pending,
+    });
+    (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+      ...lcOrder,
+      status: lcStatuses.Pending,
+    });
+    (prisma.productVariant.update as jest.Mock).mockResolvedValue({});
+    // Meta validated but TikTok unset (= instant default): the TikTok instant
+    // Purchase counts the receipt, so OrderPlaced stays silent.
+    (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([
+      { key: 'tracking_meta_purchase_mode', value: 'validated' },
+      { key: 'tracking_meta_validated_status', value: 'Confirmed' },
+    ]);
+
+    await service.create({
+      customerId: 'customer-id-1',
+      items: [{ productId: 'prod-1', quantity: 1, price: 1000 }],
+      shippingCharge: 0,
+      shippingAddress: { address: 'x' },
+    } as any);
+
+    expect(callsOf('Purchase')).toHaveLength(1);
+    expect(callsOf('OrderPlaced')).toHaveLength(0);
+  });
+
+  it('Case D cancelByCustomer: OrderCancelled fires once', async () => {
+    (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+      ...lcOrder,
+      viewToken: 'tok-lc',
+      status: { ...lcStatuses.Pending },
+    });
+    (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue({
+      ...lcStatuses.Cancelled,
+    });
+    (prisma.trackingSnapshot.findUnique as jest.Mock).mockResolvedValue(null);
+    (prisma.$transaction as jest.Mock).mockImplementation(
+      async (cb: (tx: any) => Promise<any>) => {
+        const txOrderUpdate = jest.fn().mockResolvedValue({
+          ...lcOrder,
+          status: { ...lcStatuses.Cancelled },
+        });
+        const tx = {
+          ...prisma,
+          order: {
+            ...prisma.order,
+            update: txOrderUpdate,
+            findUnique: jest.fn().mockResolvedValue({
+              ...lcOrder,
+              status: { ...lcStatuses.Cancelled },
+            }),
+          },
+        };
+        const out = await cb(tx);
+        return out ?? { ...lcOrder, status: { ...lcStatuses.Cancelled } };
+      },
+    );
+    await service.cancelByCustomer('order-lc-1', 'tok-lc');
+    const cancelled = callsOf('OrderCancelled');
+    expect(cancelled).toHaveLength(1);
+    expect(cancelled[0].eventId).toBe('order_cancelled_order-lc-1');
+    expect(cancelled[0].payload.lifecycleFromStatus).toBe('Pending');
+  });
+
+  it('Case E Return Pending → Returned: OrderReturned fires once', async () => {
+    await driveUpdateStatus('Return Pending', 'Returned', []);
+    const returned = callsOf('OrderReturned');
+    expect(returned).toHaveLength(1);
+    expect(returned[0].eventId).toBe('order_returned_order-lc-1');
+  });
+
+  it('unmapped statuses (Hold, Packed, Shipping) emit no lifecycle event', async () => {
+    await driveUpdateStatus('Pending', 'Hold', []);
+    expect(lcCapture()).not.toHaveBeenCalled();
+  });
+
+  it('same-status rewrite emits nothing (defense in depth)', async () => {
+    await (service as any).fireOrderStatusLifecycleEvent(
+      lcOrder,
+      'Confirmed',
+      'Confirmed',
+    );
+    expect(lcCapture()).not.toHaveBeenCalled();
+    await (service as any).fireOrderStatusLifecycleEvent(
+      lcOrder,
+      'Pending',
+      'Hold',
+    );
+    expect(lcCapture()).not.toHaveBeenCalled();
+  });
+
+  it('repeated transitions reuse the identical deterministic eventId (retry-safe)', async () => {
+    await (service as any).fireOrderStatusLifecycleEvent(
+      lcOrder,
+      'Pending',
+      'Confirmed',
+    );
+    await (service as any).fireOrderStatusLifecycleEvent(
+      lcOrder,
+      'Pending',
+      'Confirmed',
+    );
+    const confirmed = callsOf('OrderConfirmed');
+    expect(confirmed).toHaveLength(2);
+    // Same logical event → same id → snapshot UNIQUE collapses the retry
+    // (proven at the capture layer); the id must never vary per attempt.
+    expect(confirmed[0].eventId).toBe('order_confirmed_order-lc-1');
+    expect(confirmed[1].eventId).toBe('order_confirmed_order-lc-1');
+  });
+
+  it('verifyPayment Confirmed transition emits OrderConfirmed', async () => {
+    (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+      ...lcOrder,
+      salesChannel: 'WEBSITE',
+      paymentStatus: 'PAYMENT_VERIFYING',
+      status: { id: 'status-pp', name: 'Payment Pending' },
+    });
+    (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue({
+      ...lcStatuses.Confirmed,
+    });
+    (prisma.order.update as jest.Mock).mockResolvedValue({
+      ...lcOrder,
+      paymentStatus: 'PAID',
+      status: { ...lcStatuses.Confirmed },
+    });
+    (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+    (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+    await service.verifyPayment('order-lc-1', true, 'ok');
+    const confirmed = callsOf('OrderConfirmed');
+    expect(confirmed).toHaveLength(1);
+    expect(confirmed[0].payload.lifecycleFromStatus).toBe('Payment Pending');
+  });
+
+  it('lifecycle payload carries full Purchase parity (order/product/customer/attribution)', async () => {
+    await driveUpdateStatus('Pending', 'Confirmed', validatedConfirmedSettings);
+    const purchase = callsOf('Purchase')[0];
+    const confirmed = callsOf('OrderConfirmed')[0];
+    expect(purchase).toBeDefined();
+    // Business data identical wherever applicable.
+    for (const key of [
+      'value',
+      'currency',
+      'content_ids',
+      'content_type',
+      'content_name',
+      'content_category',
+      'contents',
+      'num_items',
+      'customerId',
+      'orderId',
+    ]) {
+      expect(confirmed.payload[key]).toEqual(purchase.payload[key]);
+    }
+    expect(confirmed.payload.customer).toEqual(purchase.payload.customer);
+    expect(confirmed.ctxId).toBe(purchase.ctxId);
+    expect(confirmed.orderId).toBe(purchase.orderId);
+    // Identity fields differ only by design.
+    expect(confirmed.eventId).toBe('order_confirmed_order-lc-1');
+    expect(confirmed.eventType).toBe('OrderConfirmed');
+    expect(confirmed.payload.triggerMode).toBeUndefined();
+    expect(purchase.payload.lifecycleStage).toBeUndefined();
+  });
+
+  it('bulk transitions emit per-order lifecycle events without skipping siblings', async () => {
+    const pendingA = { ...lcOrder, id: 'order-a', status: { name: 'Pending' } };
+    const pendingB = { ...lcOrder, id: 'order-b', status: { name: 'Pending' } };
+    (prisma.order.findMany as jest.Mock).mockResolvedValue([pendingA, pendingB]);
+    (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue({
+      ...lcStatuses.Confirmed,
+    });
+    (prisma.order.findUnique as jest.Mock).mockImplementation(
+      async (args: any) => ({ ...lcOrder, id: args.where.id }),
+    );
+    (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([]);
+    await service.bulkStatusChange(
+      ['order-a', 'order-b'],
+      'status-confirmed',
+      'admin-1',
+    );
+    const confirmed = callsOf('OrderConfirmed');
+    expect(confirmed.map((c: any) => c.eventId).sort()).toEqual([
+      'order_confirmed_order-a',
+      'order_confirmed_order-b',
+    ]);
+  });
+});
 });

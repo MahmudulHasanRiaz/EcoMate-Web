@@ -292,4 +292,35 @@ describe('TrackingCaptureService', () => {
       expect(result.destinations).toEqual(['meta:default']);
     });
   });
+
+describe('order-lifecycle idempotency (§30: concurrent same-stage captures)', () => {
+  const lifecycleInput: TrackingCaptureInput = {
+    eventId: 'order_confirmed_ord-9',
+    eventType: 'OrderConfirmed',
+    orderId: 'ORD-9',
+    eventTime: 1722585600,
+    actionSource: 'website',
+    payload: { value: 100, currency: 'BDT' },
+    configSnapshot: {},
+  };
+
+  it('two simultaneous same-stage captures yield one CAPTURED + one DEDUPED (unique-index serialization)', async () => {
+    // First writer wins the UNIQUE(eventId) insert; the loser conflicts.
+    snapshotCreateMany
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValue({ count: 0 });
+    snapshotFindUnique.mockResolvedValue({ id: 'snap-lc' });
+    outboxCreateMany.mockResolvedValue({ count: 1 });
+
+    const [first, second] = await Promise.all([
+      service.capture({ ...lifecycleInput }),
+      service.capture({ ...lifecycleInput }),
+    ]);
+
+    const statuses = [first.status, second.status].sort();
+    expect(statuses).toEqual(['CAPTURED', 'DEDUPED']);
+    // Exactly one outbox row for the logical event — the loser never enqueues.
+    expect(outboxCreateMany).toHaveBeenCalledTimes(1);
+  });
+});
 });

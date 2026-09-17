@@ -1470,5 +1470,42 @@ describe('TrackingDispatcherService (outbox -> adapters -> dispatch rows)', () =
       expect(capturedContextView.fbp).toBe('fb.1.old');
       expect(capturedContextView.fbc).toBe('fb.1.old.fbclid');
     });
+
+    it('uses the frozen transition-time identity for order-lifecycle events too', async () => {
+      let capturedContextView: any = null;
+      const spyMeta: TrackingProviderAdapter = {
+        provider: 'meta',
+        version: 1,
+        providerApiVersion: 'v22.0',
+        supports: () => true,
+        build: (_payload, ctx) => {
+          capturedContextView = ctx;
+          return buildPayload('OrderConfirmed');
+        },
+        send: metaSend,
+      };
+      mockBuildAdapterRegistry.mockReturnValue([spyMeta]);
+
+      snapshotFindUnique.mockResolvedValue({
+        ...snapshotWithIdentity,
+        eventId: 'order_confirmed_o-1',
+        eventType: 'OrderConfirmed',
+        payload: {
+          ...snapshotWithIdentity.payload,
+          eventType: 'OrderConfirmed',
+          eventId: 'order_confirmed_o-1',
+          lifecycleStage: 'confirmed',
+        },
+      });
+      outboxFindUnique.mockResolvedValue(outboxRow);
+
+      await service.process({ snapshotId: 'snap-1', outboxId: 'outbox-1', attemptCount: 0 }, 'job-1');
+
+      // Same frozen rule as Purchase: no live-context read, frozen values in.
+      expect(contextGetByCtxId).not.toHaveBeenCalled();
+      expect(capturedContextView.fbp).toBe('fb.1.old');
+      expect(capturedContextView.externalId).toBe('ext-old-123');
+      expect(metaSend).toHaveBeenCalled();
+    });
   });
 });

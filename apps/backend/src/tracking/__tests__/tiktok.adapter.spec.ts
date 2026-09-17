@@ -101,6 +101,18 @@ describe('TikTokAdapter (design §4.6 — TikTok Events API provider adapter)', 
       expect(adapter.supports('Subscribe')).toBe(false);
       expect(adapter.supports('')).toBe(false);
     });
+
+    it('excludes Meta-only order-lifecycle custom events (adapter-boundary routing)', () => {
+      for (const eventType of [
+        'OrderPlaced',
+        'OrderConfirmed',
+        'OrderCancelled',
+        'OrderDelivered',
+        'OrderReturned',
+      ]) {
+        expect(adapter.supports(eventType)).toBe(false);
+      }
+    });
   });
 
   describe('build', () => {

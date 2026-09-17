@@ -540,9 +540,49 @@ export class DispatchService {
       },
     });
 
+    // Order-lifecycle custom tracking event for this genuine system transition
+    // (forward-only guard above guarantees prev != new). Same idempotent
+    // eventId contract as updateStatus(); isolated so capture can never break
+    // the sync. This path bypasses OrdersService.updateStatus by design, so it
+    // calls the public fire method directly with a server-resolved re-read.
+    try {
+      const withItems = await this.prisma.order.findUnique({
+        where: { id: orderId },
+        include: {
+          items: {
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                  sku: true,
+                  category: { select: { name: true } },
+                },
+              },
+              combo: { select: { id: true, name: true } },
+              variant: { select: { id: true, sku: true } },
+            },
+          },
+          customer: true,
+        },
+      });
+      if (withItems) {
+        await this.ordersService.fireOrderStatusLifecycleEvent(
+          withItems as any,
+          order.status.name,
+          targetName,
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        `Failed to capture order lifecycle event for order ${orderId}:`,
+        err,
+      );
+    }
+
     // Business rule: 'Return Pending' holds the reservation/deduction. The
     // deduction consumed the reservation counter at HANDED_OVER, so re-establish
-    // the hold here (idempotent, ledged as RETURN_HOLD).
+    // the hold here (idempotent, RETURN_HOLD-ledged).
     if (targetName === 'Return Pending') {
       await this.cancelReturnStock.holdReservationForReturnPending(orderId);
     }

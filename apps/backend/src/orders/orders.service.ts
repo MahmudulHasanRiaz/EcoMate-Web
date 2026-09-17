@@ -67,6 +67,19 @@ const ORDER_TRANSITIONS: Record<string, string[]> = {
 };
 
 /**
+ * Order status name → lifecycle custom tracking event. Only genuinely
+ * transitioned-into statuses emit; every other status (Hold, Packed,
+ * Shipping, Payment *, Partial, Return Pending, Damaged, ...) emits nothing.
+ * Meta-only routing is enforced at the adapter boundary, not here.
+ */
+const ORDER_STATUS_LIFECYCLE_EVENT = {
+  Confirmed: { stage: 'confirmed', eventType: 'OrderConfirmed' },
+  Cancelled: { stage: 'cancelled', eventType: 'OrderCancelled' },
+  Delivered: { stage: 'delivered', eventType: 'OrderDelivered' },
+  Returned: { stage: 'returned', eventType: 'OrderReturned' },
+} as const;
+
+/**
  * Actors that represent automated processes (courier webhooks, sync jobs)
  * rather than a logged-in staff member. They must never:
  *  - take ownership of an order (auto-assignment),
@@ -1006,6 +1019,8 @@ export class OrdersService {
     // Pre-fetch tracking purchase-mode settings OUTSIDE the transaction so a
     // settings-table failure never rolls back the order. Passed to
     // firePurchaseInstant to avoid a non-transactional read inside the tx.
+    // Absent keys default to 'instant' on BOTH consumers below
+    // (firePurchaseInstant and the OrderPlaced gate), so they always agree.
     let preloadedPurchaseSettings: Record<string, string> = {};
     try {
       const purchaseSettings = await this.prisma.systemSetting.findMany({
@@ -1022,9 +1037,8 @@ export class OrdersService {
         purchaseSettings.map((s: any) => [s.key, s.value]),
       );
     } catch {
-      // Best-effort: if settings table is unreachable, purchase capture is
-      // skipped inside the transaction (both modes default to 'instant' but
-      // the lookup failure means we can't determine eligibility).
+      // Best-effort: unreachable settings table → preloaded stays {} → both
+      // consumers fall back to 'instant' (Purchase fires, OrderPlaced silent).
     }
 
     const order = await this.prisma.$transaction(async (tx) => {
@@ -1821,6 +1835,26 @@ export class OrdersService {
           tx,
           preloadedPurchaseSettings,
         );
+        // OrderPlaced fires at receipt ONLY when no instant Purchase fired —
+        // an instant Purchase already signals receipt (same modes gate as
+        // firePurchaseInstant). Validated-mode orders get OrderPlaced now and
+        // Purchase later at the configured status. Isolated: capture failure
+        // can never roll back the created order.
+        const instantFired =
+          (preloadedPurchaseSettings['tracking_meta_purchase_mode'] ||
+            'instant') === 'instant' ||
+          (preloadedPurchaseSettings['tracking_tiktok_purchase_mode'] ||
+            'instant') === 'instant';
+        if (!instantFired) {
+          try {
+            await this.fireOrderPlacedEvent(orderWithItems as any, tx);
+          } catch (err) {
+            this.logger.error(
+              `Failed to capture OrderPlaced snapshot for order ${created.id}:`,
+              err,
+            );
+          }
+        }
       }
 
       return created;
@@ -2734,6 +2768,15 @@ export class OrdersService {
             withItems as any,
             tx,
           );
+          // Order-lifecycle custom event for the genuine transition
+          // (prev != new is guaranteed by the transition map above; the fire
+          // method re-checks defensively). Unmapped statuses emit nothing.
+          await this.fireOrderStatusLifecycleEvent(
+            withItems as any,
+            order.status.name,
+            newStatus.name,
+            tx,
+          );
           if (
             ['Cancelled', 'Returned', 'Return Pending'].includes(newStatus.name)
           ) {
@@ -2891,10 +2934,12 @@ export class OrdersService {
                     select: {
                       id: true,
                       name: true,
+                      sku: true,
                       category: { select: { name: true } },
                     },
                   },
                   combo: { select: { id: true, name: true } },
+                  variant: { select: { id: true, sku: true } },
                 },
               },
               customer: true,
@@ -2905,6 +2950,13 @@ export class OrdersService {
             await this.firePurchaseValidated(
               targetStatus!.name,
               withItems as any,
+              tx,
+            );
+            // Verified-payment landing on Confirmed is a genuine transition.
+            await this.fireOrderStatusLifecycleEvent(
+              withItems as any,
+              order.status?.name,
+              targetStatus!.name,
               tx,
             );
           }
@@ -3265,10 +3317,12 @@ export class OrdersService {
                       select: {
                         id: true,
                         name: true,
+                        sku: true,
                         category: { select: { name: true } },
                       },
                     },
                     combo: { select: { id: true, name: true } },
+                    variant: { select: { id: true, sku: true } },
                   },
                 },
                 customer: true,
@@ -3279,6 +3333,14 @@ export class OrdersService {
             await this.firePurchaseValidated(
               targetStatus.name,
               withItems as any,
+              tx,
+            );
+            // Same lifecycle coverage as updateStatus(); old status comes from
+            // the pre-loaded order row in scope.
+            await this.fireOrderStatusLifecycleEvent(
+              withItems as any,
+              order.status?.name,
+              targetStatus.name,
               tx,
             );
             if (
@@ -3554,13 +3616,31 @@ export class OrdersService {
           where: { id: orderId },
           include: {
             items: {
-              include: { product: { select: { id: true, name: true } } },
+              include: {
+                product: {
+                  select: {
+                    id: true,
+                    name: true,
+                    sku: true,
+                    category: { select: { name: true } },
+                  },
+                },
+                combo: { select: { id: true, name: true } },
+                variant: { select: { id: true, sku: true } },
+              },
             },
             customer: true,
           },
         });
         if (refundOrder) {
           await this.fireRefundEvent(refundOrder as any, tx);
+          // Customer-initiated cancellation is a genuine Cancelled transition.
+          await this.fireOrderStatusLifecycleEvent(
+            refundOrder as any,
+            order.status?.name,
+            'Cancelled',
+            tx,
+          );
         }
       } catch (err) {
         this.logger.error(
@@ -3737,6 +3817,15 @@ export class OrdersService {
         where: { id: orderId },
         data: { statusId: targetStatus.id },
       });
+
+      // Lifecycle coverage for this (currently unused) transition path, so a
+      // future caller gets the same events as updateStatus().
+      await this.fireOrderStatusLifecycleEvent(
+        order as any,
+        currentStatus,
+        newStatus,
+        tx,
+      );
 
       await this.executeTransitionSideEffects(
         tx,
@@ -4335,11 +4424,28 @@ export class OrdersService {
     }
   }
 
-  private async buildAndSendPurchaseEvent(
+  /**
+   * Canonical order tracking data shared by Purchase and the five
+   * order-lifecycle custom events (OrderPlaced/OrderConfirmed/OrderCancelled/
+   * OrderDelivered/OrderReturned). Single source of truth for: customer
+   * identity precedence, SKU chain, state/zip/division resolution, currency,
+   * action source, and frozen capture-time tracking identity. Returns
+   * everything EXCEPT eventId/eventType/triggerMode — callers stamp their own
+   * deterministic identity on top. This is what keeps Purchase and custom
+   * events from drifting apart field by field.
+   */
+  private async buildCanonicalOrderTrackingData(
     order: any,
-    mode: 'instant' | 'validated',
-    tx?: Prisma.TransactionClient,
-  ): Promise<{ status: 'CAPTURED' | 'DEDUPED'; snapshotId?: string } | undefined> {
+    opts: { eventTimeSec: number },
+  ): Promise<{
+    businessOrderId: string;
+    orderIdColumn: string;
+    ctxId?: string;
+    eventTime: number;
+    actionSource: string;
+    configSnapshot: Record<string, unknown>;
+    payload: Record<string, unknown>;
+  }> {
     let email = '';
     let phone = '';
     let firstName = '';
@@ -4401,15 +4507,11 @@ export class OrdersService {
       : undefined;
     const contentCategory = firstItem?.product?.category?.name || undefined;
 
-    // Business event time: instant = order creation, validated = the actual
-    // qualifying status transition (now). A late validation must not backdate
-    // to checkout time.
-    const createdAt =
-      mode === 'validated'
-        ? Math.floor(Date.now() / 1000)
-        : order.createdAt
-          ? Math.floor(new Date(order.createdAt).getTime() / 1000)
-          : Math.floor(Date.now() / 1000);
+    // Business event time is caller-supplied: instant Purchase = order
+    // creation, validated Purchase = the actual qualifying status transition
+    // (now — a late validation must not backdate to checkout time), lifecycle
+    // events = their transition moment.
+    const createdAt = opts.eventTimeSec;
 
     const actionSource = resolveActionSource(order);
 
@@ -4448,16 +4550,14 @@ export class OrdersService {
       }
     }
 
-    const captureResult = await this.trackingCapture.capture(
-      {
-        eventId: `purchase_${order.id}`,
-        eventType: 'Purchase',
-        orderId: businessOrderId,
-        ctxId: order.trackingSessionId || undefined,
-        eventTime: createdAt,
-        actionSource,
-        payload: {
-          triggerMode: mode,
+    return {
+      businessOrderId,
+      orderIdColumn: businessOrderId,
+      ctxId: order.trackingSessionId || undefined,
+      eventTime: createdAt,
+      actionSource,
+      configSnapshot: configSnapshot as unknown as Record<string, unknown>,
+      payload: {
           value: totalValue,
           currency: (configSnapshot as any).currency || 'BDT',
           content_ids: itemsList
@@ -4484,12 +4584,136 @@ export class OrdersService {
             zip: zip || undefined,
             country: country || undefined,
           },
+      },
+    };
+  }
+
+  private async buildAndSendPurchaseEvent(
+    order: any,
+    mode: 'instant' | 'validated',
+    tx?: Prisma.TransactionClient,
+  ): Promise<{ status: 'CAPTURED' | 'DEDUPED'; snapshotId?: string } | undefined> {
+    const eventTimeSec =
+      mode === 'validated'
+        ? Math.floor(Date.now() / 1000)
+        : order.createdAt
+          ? Math.floor(new Date(order.createdAt).getTime() / 1000)
+          : Math.floor(Date.now() / 1000);
+    const base = await this.buildCanonicalOrderTrackingData(order, {
+      eventTimeSec,
+    });
+    return this.trackingCapture.capture(
+      {
+        eventId: `purchase_${order.id}`,
+        eventType: 'Purchase',
+        orderId: base.orderIdColumn,
+        ctxId: base.ctxId,
+        eventTime: base.eventTime,
+        actionSource: base.actionSource,
+        payload: {
+          triggerMode: mode,
+          ...base.payload,
         },
-        configSnapshot,
+        configSnapshot: base.configSnapshot as any,
       },
       tx,
     );
-    return captureResult;
+  }
+
+  /**
+   * Order status → lifecycle custom event. Emits at most one logical event per
+   * (order, target status): the deterministic `order_<stage>_<orderId>` id
+   * collapses repeats, retries, and concurrent writers through the snapshot
+   * eventId UNIQUE (second writer gets DEDUPED, no new snapshot/outbox).
+   * Self-contained: never throws, never rolls back the caller's transaction.
+   */
+  /**
+   * Public so DispatchService's courier-sync path (which writes statusId
+   * directly, bypassing updateStatus) can emit the same lifecycle events.
+   * Server-resolved order only — never accepts a client-supplied identity.
+   */
+  async fireOrderStatusLifecycleEvent(
+    order: any,
+    fromStatusName: string | null | undefined,
+    toStatusName: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    try {
+      const mapping =
+        ORDER_STATUS_LIFECYCLE_EVENT[
+          toStatusName as keyof typeof ORDER_STATUS_LIFECYCLE_EVENT
+        ];
+      // Unmapped statuses (Hold, Packed, Shipping, ...) emit nothing, and a
+      // same-status rewrite (prev === new) is never a transition.
+      if (!mapping) return;
+      if (fromStatusName && fromStatusName === toStatusName) return;
+      const base = await this.buildCanonicalOrderTrackingData(order, {
+        eventTimeSec: Math.floor(Date.now() / 1000),
+      });
+      await this.trackingCapture.capture(
+        {
+          eventId: `order_${mapping.stage}_${order.id}`,
+          eventType: mapping.eventType,
+          orderId: base.orderIdColumn,
+          ctxId: base.ctxId,
+          eventTime: base.eventTime,
+          actionSource: base.actionSource,
+          payload: {
+            lifecycleStage: mapping.stage,
+            lifecycleFromStatus: fromStatusName || undefined,
+            lifecycleToStatus: toStatusName,
+            ...base.payload,
+          },
+          configSnapshot: base.configSnapshot as any,
+        },
+        tx,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to capture order lifecycle event for order ${order?.id} (${fromStatusName} → ${toStatusName}):`,
+        err,
+      );
+    }
+  }
+
+  /**
+   * Order receipt lifecycle event. Fires ONLY when no instant Purchase fired
+   * at creation (instant Purchase already signals receipt). Validated-mode
+   * orders therefore get OrderPlaced at birth and Purchase later at the
+   * configured status. Idempotent via `order_placed_<orderId>`.
+   */
+  private async fireOrderPlacedEvent(
+    order: any,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    try {
+      const base = await this.buildCanonicalOrderTrackingData(order, {
+        eventTimeSec: order.createdAt
+          ? Math.floor(new Date(order.createdAt).getTime() / 1000)
+          : Math.floor(Date.now() / 1000),
+      });
+      await this.trackingCapture.capture(
+        {
+          eventId: `order_placed_${order.id}`,
+          eventType: 'OrderPlaced',
+          orderId: base.orderIdColumn,
+          ctxId: base.ctxId,
+          eventTime: base.eventTime,
+          actionSource: base.actionSource,
+          payload: {
+            lifecycleStage: 'placed',
+            ...base.payload,
+          },
+          configSnapshot: base.configSnapshot as any,
+        },
+        tx,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to capture OrderPlaced event for order ${order?.id}:`,
+        err,
+      );
+    }
   }
 
   private async fireRefundEvent(order: any, tx?: Prisma.TransactionClient) {

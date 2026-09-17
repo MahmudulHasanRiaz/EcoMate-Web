@@ -90,6 +90,27 @@ describe('MetaAdapter (design §4.6 — Meta CAPI provider adapter)', () => {
       }
     });
 
+    it('supports Meta order-lifecycle custom events (sent as custom event names)', () => {
+      for (const eventType of [
+        'OrderPlaced',
+        'OrderConfirmed',
+        'OrderCancelled',
+        'OrderDelivered',
+        'OrderReturned',
+      ]) {
+        expect(adapter.supports(eventType)).toBe(true);
+      }
+      // Custom names pass through verbatim (only Refund remaps to Purchase).
+      const payload = adapter.build(
+        { ...snapshot, eventType: 'OrderConfirmed', eventId: 'order_confirmed_x' },
+        ctx,
+        normalizer,
+      )!;
+      expect(payload.eventName).toBe('OrderConfirmed');
+      expect(payload.eventId).toBe('order_confirmed_x');
+      expect(payload.user_data.em).toBeDefined();
+    });
+
     it('returns false for non-web / unsupported event types', () => {
       expect(adapter.supports('Subscribe')).toBe(false);
       expect(adapter.supports('')).toBe(false);

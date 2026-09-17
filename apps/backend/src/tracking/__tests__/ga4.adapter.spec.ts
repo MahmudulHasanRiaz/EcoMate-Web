@@ -120,6 +120,19 @@ describe('Ga4Adapter (design §4.6 — GA4 Measurement Protocol provider adapter
       expect(adapter.supports('PageView', { serverOnly: true })).toBe(false);
       expect(adapter.supports('')).toBe(false);
     });
+
+    it('skips Meta-only order-lifecycle custom events (no EVENT_NAME_MAP entry)', () => {
+      for (const eventType of [
+        'OrderPlaced',
+        'OrderConfirmed',
+        'OrderCancelled',
+        'OrderDelivered',
+        'OrderReturned',
+      ]) {
+        expect(adapter.supports(eventType)).toBe(false);
+        expect(adapter.supports(eventType, { serverOnly: true })).toBe(false);
+      }
+    });
   });
 
   describe('build', () => {

@@ -51,6 +51,7 @@ describe('DispatchService', () => {
 
     ordersService = {
       updateStatus: jest.fn().mockResolvedValue({}),
+      fireOrderStatusLifecycleEvent: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -190,6 +191,60 @@ describe('DispatchService', () => {
           ]),
         }),
       }),
+    );
+  });
+
+  it('courier DELIVERED sync emits the OrderDelivered lifecycle event for the genuine transition', async () => {
+    prisma.dispatch.findUnique
+      .mockResolvedValueOnce({ id: 'd-1', status: 'ASSIGNED_TO_RIDER' })
+      .mockResolvedValueOnce({
+        id: 'd-1',
+        orderId: 'order-1',
+        status: 'DELIVERED',
+        courier: 'pathao',
+        consignmentId: 'CG-001',
+        productMapping: null,
+      });
+    prisma.dispatch.updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const withItems = {
+      id: 'order-1',
+      items: [],
+      customer: null,
+    };
+    prisma.order = {
+      findUnique: jest
+        .fn()
+        .mockResolvedValueOnce({
+          id: 'order-1',
+          trashedAt: null,
+          status: { name: 'Shipping' },
+          timeline: [],
+        })
+        .mockResolvedValueOnce(withItems),
+      update: jest.fn().mockResolvedValue({}),
+    };
+    prisma.orderStatus = {
+      findUnique: jest.fn().mockResolvedValue({
+        id: 'status-delivered',
+        name: 'Delivered',
+      }),
+    };
+    prisma.$transaction = jest.fn(async (cb: any) => cb(prisma));
+
+    await service.updateStatus('d-1', 'DELIVERED', 'staff-123');
+
+    expect(prisma.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'order-1' },
+        data: expect.objectContaining({ statusId: 'status-delivered' }),
+      }),
+    );
+    expect(
+      ordersService.fireOrderStatusLifecycleEvent,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'order-1' }),
+      'Shipping',
+      'Delivered',
     );
   });
 

@@ -19,7 +19,10 @@ import {
   TrackingContextView,
   TrackingSnapshotPayload,
 } from './tracking-snapshot.types';
-import { SCHEMA_VERSION } from './tracking.constants';
+import {
+  ORDER_LIFECYCLE_EVENT_TYPES,
+  SCHEMA_VERSION,
+} from './tracking.constants';
 import {
   CapturedDestinationRef,
   LEGACY_DESTINATION_ID,
@@ -222,9 +225,15 @@ export class TrackingDispatcherService {
     // (captured at Purchase creation) over the live TrackingContext row.
     // This ensures the dispatched payload carries the exact identity that
     // existed when the qualifying action occurred — not a mutated later state.
+    // Order-lifecycle custom events carry the same frozen shape (frozen at
+    // their transition moment), so they follow the identical rule.
     const frozenIdentity = basePayload.trackingIdentity;
     let contextView: TrackingContextView;
-    if (frozenIdentity && eventType === 'Purchase') {
+    if (
+      frozenIdentity &&
+      (eventType === 'Purchase' ||
+        (ORDER_LIFECYCLE_EVENT_TYPES as readonly string[]).includes(eventType))
+    ) {
       contextView = {
         externalId: frozenIdentity.externalId,
         ip: frozenIdentity.ip,

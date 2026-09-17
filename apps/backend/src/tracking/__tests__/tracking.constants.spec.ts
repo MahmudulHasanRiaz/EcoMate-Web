@@ -1,5 +1,6 @@
 import {
   TRACKING_EVENT_TYPES,
+  ORDER_LIFECYCLE_EVENT_TYPES,
   OUTBOX_STATUS,
   DISPATCH_STATUS,
   SUCCESS_POLICIES,
@@ -19,7 +20,27 @@ describe('tracking.constants', () => {
       'Search',
       'CompleteRegistration',
       'Lead',
+      // Server-side order-lifecycle custom events (Meta-only routing at the
+      // adapter boundary).
+      'OrderPlaced',
+      'OrderConfirmed',
+      'OrderCancelled',
+      'OrderDelivered',
+      'OrderReturned',
     ]);
+  });
+
+  it('exposes the order-lifecycle subset for adapter-boundary routing', () => {
+    expect(ORDER_LIFECYCLE_EVENT_TYPES).toEqual([
+      'OrderPlaced',
+      'OrderConfirmed',
+      'OrderCancelled',
+      'OrderDelivered',
+      'OrderReturned',
+    ]);
+    for (const t of ORDER_LIFECYCLE_EVENT_TYPES) {
+      expect(TRACKING_EVENT_TYPES).toContain(t);
+    }
   });
 
   it('exposes the outbox status machine', () => {

@@ -1,4 +1,7 @@
-import { TRACKING_EVENT_TYPES } from '../tracking.constants';
+import {
+  ORDER_LIFECYCLE_EVENT_TYPES,
+  TRACKING_EVENT_TYPES,
+} from '../tracking.constants';
 import { TrackingNormalizer } from '../tracking.normalizer';
 import {
   TrackingContextView,
@@ -25,6 +28,15 @@ const TRANSIENT_ERROR_CODES = new Set([40011, 40012]);
 
 /** TikTok's standard web events are exactly the canonical TRACKING_EVENT_TYPES. */
 const SUPPORTED_EVENT_TYPES = TRACKING_EVENT_TYPES as readonly string[];
+/**
+ * Order-lifecycle custom events are Meta-only: TikTok has no equivalent
+ * standard events and no product decision to map them, so they stay
+ * unsupported here (dispatcher records observable SKIPPED rows). This keeps
+ * destination routing at the adapter boundary — the order lifecycle itself
+ * stays provider-agnostic.
+ */
+const UNSUPPORTED_LIFECYCLE_TYPES: readonly string[] =
+  ORDER_LIFECYCLE_EVENT_TYPES as readonly string[];
 
 /**
  * TikTok Events API adapter (design §4.6). build() maps a canonical
@@ -50,6 +62,7 @@ export class TikTokAdapter implements TrackingProviderAdapter {
   readonly providerApiVersion = 'v1.3';
 
   supports(eventType: string): boolean {
+    if (UNSUPPORTED_LIFECYCLE_TYPES.includes(eventType)) return false;
     return SUPPORTED_EVENT_TYPES.includes(eventType);
   }
 
