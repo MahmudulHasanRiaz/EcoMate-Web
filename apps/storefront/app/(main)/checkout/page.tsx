@@ -756,6 +756,9 @@ export default function CheckoutPage() {
           ? guestEmail.trim()
           : undefined,
       paymentOptionType,
+      // Customer order note (90-char textarea below): must reach the backend
+      // `customerNotes` field or the note is silently lost (admin shows empty).
+      customerNotes: customerNotes.trim() || undefined,
       gatewayCode: paymentOptionType === 'CASH_ON_DELIVERY' ? 'cash' : undefined,
       district: district || undefined,
       thana: thana || undefined,
