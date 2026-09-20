@@ -18,6 +18,7 @@ import { apiClient } from '@/lib/api-client'
 import { variantLabel, variantThumbUrl } from '@/lib/product-variant'
 import { resolveOrderItemImages } from '@/lib/product-image'
 import { byExactMatchFirst } from '@/lib/search-products'
+import { getCustomerDisplayName, getCustomerPhone, getCustomerEmail } from '@/lib/order-display'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
@@ -904,22 +905,32 @@ function OrderDetailPage() {
                 <CardContent className='space-y-2 text-sm pt-0'>
                   <div>
                     <p className='font-medium'>
-                      {order.customer ? `${order.customer.firstName} ${order.customer.lastName}` : (order.guestName || 'Guest')}
+                      {order.customerId ? (
+                        <Link
+                          to='/op/customers/$id'
+                          params={{ id: order.customerId }}
+                          className='hover:text-primary hover:underline transition-colors'
+                        >
+                          {getCustomerDisplayName(order)}
+                        </Link>
+                      ) : (
+                        getCustomerDisplayName(order)
+                      )}
                     </p>
-                    {order.customer?.email && (
+                    {getCustomerEmail(order) && (
                       <p className='text-muted-foreground text-xs flex items-center gap-1 mt-0.5'>
-                        <Mail className='h-3 w-3' />{order.customer.email}
+                        <Mail className='h-3 w-3' />{getCustomerEmail(order)}
                       </p>
                     )}
-                    {(order.customer?.phoneNumber || order.guestPhone) && (
+                    {getCustomerPhone(order) && (
                       <p className='text-muted-foreground text-xs flex items-center gap-1 mt-0.5'>
-                        <a href={`tel:${order.customer?.phoneNumber || order.guestPhone}`} className='flex items-center gap-1 hover:text-primary transition-colors'>
-                          <Phone className='h-3 w-3' />{order.customer?.phoneNumber || order.guestPhone}
+                        <a href={`tel:${getCustomerPhone(order)}`} className='flex items-center gap-1 hover:text-primary transition-colors'>
+                          <Phone className='h-3 w-3' />{getCustomerPhone(order)}
                         </a>
-                        <CustomerContactActions phone={order.customer?.phoneNumber || order.guestPhone} />
-                        {(order.customer?.phoneNumber || order.guestPhone) && (
+                        <CustomerContactActions phone={getCustomerPhone(order)} />
+                        {getCustomerPhone(order) && (
                           <button
-                            onClick={() => setBlockPhones({ phones: [order.customer?.phoneNumber || order.guestPhone || ''], contextLabel: order.displayId })}
+                            onClick={() => setBlockPhones({ phones: [getCustomerPhone(order)], contextLabel: order.displayId })}
                             className='inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-destructive hover:bg-destructive/10 transition-colors'
                             title='Block this phone from ordering'
                           >

@@ -2496,6 +2496,27 @@ export class OrdersService {
             data: customerData,
           });
         }
+
+        // ALSO update the Order's snapshot fields so the order detail/list
+        // shows the corrected data immediately. This is a legitimate correction
+        // of the order record, not a CustomerProfile mutation affecting history.
+        const snapshotUpdate: Record<string, string | null> = {};
+        if (dto.customerInfo.firstName !== undefined || dto.customerInfo.lastName !== undefined) {
+          snapshotUpdate.customerFirstName = firstName || null;
+          snapshotUpdate.customerLastName = lastName || null;
+        }
+        if (dto.customerInfo.email !== undefined) {
+          snapshotUpdate.customerEmail = String(dto.customerInfo.email).trim() || null;
+        }
+        if (dto.customerInfo.phoneNumber !== undefined) {
+          snapshotUpdate.customerPhone = normalizePhone(dto.customerInfo.phoneNumber) || null;
+        }
+        if (Object.keys(snapshotUpdate).length > 0) {
+          data.customerFirstName = snapshotUpdate.customerFirstName ?? undefined;
+          data.customerLastName = snapshotUpdate.customerLastName ?? undefined;
+          data.customerEmail = snapshotUpdate.customerEmail ?? undefined;
+          data.customerPhone = snapshotUpdate.customerPhone ?? undefined;
+        }
       }
 
       // Payment editing — mirrors create() semantics so staff can switch
