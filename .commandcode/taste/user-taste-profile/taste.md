@@ -1,0 +1,58 @@
+# User Taste Profile
+- Prefers extremely detailed, phased task specifications with numbered phases, explicit requirements, and specific constraints. Confidence: 0.95
+- Uses explicit "Do NOT" directives to call out anti-patterns and boundaries. Confidence: 0.95
+- Requires a structured final report with specific deliverable sections (files changed, migrations, API changes, test results, build results, example walkthrough). Confidence: 0.9
+- Demands forensic root-cause investigation before making changes — "Do not make speculative fixes before proving the failing layer." Confidence: 0.95
+- Prefers explicit date-range contracts (from/to YYYY-MM-DD) over implicit "hours" windowing for monitoring APIs. Confidence: 0.9
+- Requires strict semantic layer separation: Business Order → Canonical Tracking Event → Provider Delivery — never present one layer's count as another. Confidence: 0.95
+- Prefers configuration-aware logic over hard-coded values (e.g., Expected Purchase must follow configured meta purchase mode/status, not assume Confirmed). Confidence: 0.95
+- Values exactly-once guarantees with UNIQUE constraints and expects them to be preserved across changes. Confidence: 0.9
+- Prefers reusing existing architecture and utilities (e.g., existing Dhaka timezone helpers) over creating new systems. Confidence: 0.9
+- Requires no destructive migrations — additive-only schema changes. Confidence: 0.9
+- Works in small verifiable phases internally but treats the directive as one cohesive task. Confidence: 0.9
+- Runs targeted tests first, then relevant full test suites/builds before declaring completion. Confidence: 0.9
+- Requires production-ready implementations — no partial migrations or half-finished API/UI contracts. Confidence: 0.95
+- Prefers "fix the smallest correct layer" when a production bug is found, not broad changes. Confidence: 0.9
+- Requires Business ↔ Tracking Reconciliation as a prominent dashboard section with three business metrics: New, Confirmed, Delivered. Confidence: 0.95
+- Requires runtime/current-state health metrics to be clearly labeled and separated from historical windowed metrics. Confidence: 0.9
+- All queries on a monitoring page must use the same selected date range — no independent hidden time windows. Confidence: 0.9
+- Prefers compact date selector with presets (Today, Yesterday, Last 7 Days) plus custom range near page header. Confidence: 0.85
+- No PII in monitoring responses. Confidence: 0.95
+- No provider access tokens in monitoring responses. Confidence: 0.95
+- No fake/sample production numbers. Confidence: 0.9
+- Requires tests for date-range parsing, Dhaka-day boundaries, configuration-aware semantics, and windowed reconciliation. Confidence: 0.9
+- Requires both backend and admin tests for monitoring features. Confidence: 0.9
+- Expects existing test suites to continue passing (regression safety). Confidence: 0.9
+- Expects clear semantic distinctions in language — never confuse metric layers (e.g., don't say "Purchase count" when meaning "dispatch row count"). Confidence: 0.95
+- Values thorough written analysis of root causes with evidence before proposing solutions. Confidence: 0.9
+- Demands proof from persisted records, not inference from aggregate counts. "Do not infer causality from aggregate dashboard counts" — requires deterministic code-path evidence. Confidence: 0.95
+- Requires full end-to-end data-flow tracing for any data loss investigation (Browser → storefront → order creation → persistence → snapshot → dispatch → provider payload). Confidence: 0.9
+- Insists on explicit semantic separation of all timestamps in a pipeline: orderCreatedAt, statusChangedAt, purchaseEventTime, snapshotCreatedAt, dispatchCreatedAt, providerSentAt — never allow one to silently substitute for another. Confidence: 0.95
+- Requires field-by-field evidence matrices when investigating data loss: field, source path, snapshot coverage, dispatch coverage, provider payload coverage, normalization, missing reason. Confidence: 0.9
+- Demands safe production remediation — test replay/fix on a controlled sample before bulk-operating on production data. Confidence: 0.9
+- Requires schema/type guards before provider dispatch to catch invalid payloads locally rather than generating provider-side DLQ noise. Confidence: 0.9
+- Expects consistent data normalization — no double-hashing, no hashing already-hashed values, no exposing raw PII. Confidence: 0.9
+- Requires metric semantic clarity — explicitly distinguish attempt-level metrics from final-state metrics; never mix retry-rate populations with current-status funnel counts. Confidence: 0.9
+- Requires provider-specific contract compliance: verify exact field types and formats (Unix seconds vs ISO string vs millisecond timestamps) per provider API, not generic "timestamp" handling. Confidence: 0.9
+- Requires numbered acceptance criteria checklist before declaring any task production-ready. Confidence: 0.9
+- Expects lettered-section final report format (A through N+) for complex investigations, with each section addressing a specific concern. Confidence: 0.85
+- Requires immutable order-time data snapshots: customer data captured at order creation must be preserved independently of later mutable state changes (e.g., CustomerProfile mutations). Mutable current state must never overwrite historical order-time records. Confidence: 0.95
+- Demands strict separation between mutable current state and immutable historical records in data models (e.g., CustomerProfile = mutable current state, Order customer snapshot = immutable historical). Confidence: 0.95
+- Requires clear field-level provenance hierarchy for all data pipelines: explicitly document the source chain (immutable snapshot → shipping JSON → CustomerProfile → guest fields) with fallback semantics. Confidence: 0.9
+- Prefers "smallest additive structure" when designing new persistence — do not create unnecessary duplicate storage if existing model already provides equivalent immutable semantics. Confidence: 0.9
+- Requires controlled deployment with explicit step-by-step verification before broad rollout: deploy to one environment → generate test data → inspect all layers → confirm no new failures → then deploy broadly. Confidence: 0.9
+- Distinguishes "available at order time" from "preserved through Purchase" — low field coverage is NOT inherently a bug; it's only a bug if data was available but lost. Do not force optional fields to be mandatory. Confidence: 0.95
+- Requires deterministic time-based test scenarios: create at T0, mutate at T1, generate event at T2, prove original T0 data is used — not just coverage but temporal data-flow proof. Confidence: 0.9
+- Communicates directives in Bengali (Bangla) with code and technical terms in English — expects the assistant to process Bengali instructions without issue. Confidence: 0.85
+- Explicitly forbids commit/push/deploy until every item in an implementation pass is complete — "এই pass শেষ না হওয়া পর্যন্ত নতুন কাজের commit/push/deployment করবে না." Confidence: 0.95
+- Requires centralized policy/resolver for business rules — explicitly rejects hard-coded branching scattered across services ("এগুলো hard-coded branching হিসেবে ছড়িয়ে দেবে না"). Confidence: 0.95
+- Requires safe migration defaults that cannot accidentally enable features for existing clients — runtime defaults when configuration is missing must match the conservative safe values. Confidence: 0.95
+- Requires cross-provider consistency in policy — if a rule says "skip," ALL providers (Meta, TikTok) must skip; no silent per-provider inconsistency. Confidence: 0.9
+- Requires full matrix testing, not just unit tests — every source×setting combination must have at least representative test coverage. Confidence: 0.9
+- Requires repository-wide audit of ALL creation and display paths when adding an architectural invariant — "Repository-wide search করে প্রত্যেকটি Order.create audit করো." Confidence: 0.95
+- Insists on mutation protection for immutable fields — if fields must not change after creation, structurally verify no update operation touches them and add explicit invariant documentation. Confidence: 0.9
+- Distinguishes "available at order time" from "preserved through pipeline" from "fabricated" — rejects heuristic derivations that produce false-positive data (e.g., splitting guestName into lastName). Confidence: 0.95
+- Requires monitoring observability for policy decisions — skipped-by-source events must be distinguishable from generic failures with metadata (sourceCategory, policy, policyValue). Confidence: 0.9
+- Requires end-of-pass structured report with explicit sections: FILES CHANGED, MIGRATIONS, TESTS, BUILD RESULTS, CONFIG DEFAULTS, SOURCE CLASSIFICATION, GATE LOCATION, KNOWN LIMITATIONS. Confidence: 0.9
+- Demands explicit answer to an acceptance question before declaring complete — e.g., "If the customer supplied this value at order creation, can a later Purchase event still recover it?" must be proven YES per field. Confidence: 0.95
+- Order-originated tracking policy must be conceptually separated from generic browser-event policy — pre-order browser events are not gated by order source. Confidence: 0.9

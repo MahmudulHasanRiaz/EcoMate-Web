@@ -364,6 +364,16 @@ export class CheckoutLeadsService {
           officeNotes: overrides?.officeNotes ?? null,
           guestName,
           guestPhone,
+          // Order-time customer snapshot: preserve customer data at lead
+          // conversion time for Purchase tracking events.
+          customerEmail: lead.email || null,
+          customerPhone: guestPhone || null,
+          customerFirstName: guestName?.split(' ')[0] || null,
+          customerLastName: guestName?.split(' ').slice(1).join(' ') || null,
+          customerCity: (typeof shippingAddress === 'object' && shippingAddress ? shippingAddress.city || shippingAddress.district : null) || null,
+          customerState: (typeof shippingAddress === 'object' && shippingAddress ? shippingAddress.state || shippingAddress.division : null) || null,
+          customerZip: (typeof shippingAddress === 'object' && shippingAddress ? shippingAddress.zip || shippingAddress.zipCode : null) || null,
+          customerCountry: (typeof shippingAddress === 'object' && shippingAddress ? shippingAddress.country : null) || 'BD',
           items: {
             create: items.map((i: any) => ({
               productId: i.productId,

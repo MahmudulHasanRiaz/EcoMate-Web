@@ -3,6 +3,7 @@ import { User, Phone, MapPin } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 import { mediaUrl } from '@/lib/utils'
+import { getCustomerDisplayName, getCustomerPhone } from '@/lib/order-display'
 
 const nm = (v: number | string) => Number(v)
 const fmt = (v: number | string) => nm(v).toFixed(0)
@@ -19,16 +20,8 @@ export function StickerTemplate({ order }: { order: any }) {
   if (!order) return null
 
   const sa = order.shippingAddress && typeof order.shippingAddress === 'object' ? order.shippingAddress : {}
-  const customerName =
-    order.customer?.firstName ||
-    order.guestName ||
-    order.shippingAddress?.name ||
-    ''
-  const customerPhone =
-    order.customer?.phoneNumber ||
-    order.guestPhone ||
-    order.shippingAddress?.phone ||
-    ''
+  const customerName = getCustomerDisplayName(order)
+  const customerPhone = getCustomerPhone(order)
   const customerAddress =
     sa.address || sa.addressLine || (typeof order.shippingAddress === 'string' ? order.shippingAddress : sa.district) || ''
 

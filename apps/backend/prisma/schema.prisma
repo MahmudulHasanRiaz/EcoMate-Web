@@ -648,6 +648,20 @@ model Order {
   updatedAt                DateTime           @updatedAt
   guestName                String?
   guestPhone               String?
+  // INVARIANT: The following customer snapshot fields are set ONCE at order
+  // creation time and MUST NEVER be updated after. They preserve the customer
+  // data that was available when the order was placed, independent of later
+  // CustomerProfile mutations. All historical order display, Purchase tracking
+  // events, and print templates MUST use these fields instead of the mutable
+  // CustomerProfile relation.
+  customerEmail            String?
+  customerPhone            String?
+  customerFirstName        String?
+  customerLastName         String?
+  customerCity             String?
+  customerState            String?
+  customerZip              String?
+  customerCountry          String?  @default("BD")
   paymentOptionType        PaymentOptionType? // FULL_PAYMENT | PARTIAL_PAYMENT | CASH_ON_DELIVERY
   paymentOption            PaymentOption?     @relation(fields: [paymentOptionType], references: [type])
   source                   OrderSource?       @default(ECOMMERCE)

@@ -18,6 +18,7 @@ import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
 import { OrderStockDeductService } from '../stock/order-stock-deduct.service';
 import { OrderEditLockService } from './order-edit-lock.service';
 import { CommissionsService } from '../commissions/commissions.service';
+import { TrackingEligibilityGate } from '../tracking/tracking-eligibility-gate';
 
 describe('OrdersService', () => {
   let service: OrdersService;
@@ -373,6 +374,28 @@ describe('OrdersService', () => {
             reverseForOrder: jest
               .fn()
               .mockResolvedValue({ reversed: 0, already: 0 }),
+          },
+        },
+        {
+          provide: TrackingEligibilityGate,
+          useValue: {
+            checkOrderEvent: jest.fn().mockResolvedValue({
+              eligible: true,
+              category: 'DIRECT_WEBSITE',
+              configKey: 'tracking_send_website_orders',
+              configValue: true,
+              reason: 'Order source "DIRECT_WEBSITE" is eligible for tracking',
+              metadata: {},
+            }),
+            isOrderEligible: jest.fn().mockResolvedValue(true),
+            requireEligible: jest.fn().mockResolvedValue({
+              eligible: true,
+              category: 'DIRECT_WEBSITE',
+              configKey: 'tracking_send_website_orders',
+              configValue: true,
+              reason: 'Order source "DIRECT_WEBSITE" is eligible for tracking',
+              metadata: {},
+            }),
           },
         },
       ],

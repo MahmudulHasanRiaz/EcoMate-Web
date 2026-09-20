@@ -10,6 +10,7 @@ import {
   RELAY_ENABLED_ENV_KEY,
   RELAY_ENABLED_SETTING_KEY,
 } from './outbox-relay.service';
+import { MonitoringDateRange } from './dto/monitoring.dto';
 
 export interface VolumeByEventTypeRow {
   eventType: string;
@@ -212,36 +213,46 @@ const MAX_ERROR_MSG_LENGTH = 300;
  * Purchase reconciliation (exactly-once observability): compares qualifying
  * orders vs canonical Purchase events vs destination delivery rows vs unique
  * event IDs. Every figure is traceable by orderId + eventId (see `timeline`).
- *
- * Step 3 — the CANONICAL counters (`orders`, `canonicalPurchases`,
- * `uniquePurchaseEventIds`, `browserOriginPurchases`, `orphanPurchases`) are all
- * snapshot/outbox-level and therefore remain exactly 1 per business order no
- * matter how many destinations fan out. Only the delivery breakdowns
- * (`byProvider`, `byDestination`) count dispatch rows, and they are labelled as
- * delivery counts so N destinations cannot be mistaken for N business events.
  */
 export interface PurchaseReconciliation {
-  /** Non-trashed orders (the eligibility base population). */
-  orders: number;
-  /** Canonical Purchase snapshots (exactly-once ledger). */
+  /** Business orders created in the range. */
+  newOrders: number;
+  /** Business orders that entered Confirmed in the range. */
+  confirmedOrders: number;
+  /** Business orders that entered Delivered in the range. */
+  deliveredOrders: number;
+  /** Expected Purchase count based on configured meta purchase mode/status. */
+  expectedPurchases: number;
+  /** Canonical Purchase snapshots captured in the range. */
   canonicalPurchases: number;
   /** Distinct Purchase eventIds (must equal canonicalPurchases). */
   uniquePurchaseEventIds: number;
-  /** Browser-origin Purchase snapshots (mirror fallback wins). */
+  /** Browser-origin Purchase snapshots (mirror fallback). */
   browserOriginPurchases: number;
-  /**
-   * Per-provider DELIVERY row counts (not business-event counts). With N Meta
-   * destinations a single delivered Purchase contributes N here.
-   */
+  /** Instant-mode Purchase captures in the range. */
+  instantPurchases: number;
+  /** Validated-mode Purchase captures in the range. */
+  validatedPurchases: number;
+  /** Offline-mode Purchase captures in the range (POS/checkout-leads). */
+  offlinePurchases: number;
+  /** Browser-mode Purchase captures in the range. */
+  browserPurchases: number;
+  /** Replay/recovery events in the range. */
+  replayedEvents: number;
+  /** Difference: canonicalPurchases - expectedPurchases. */
+  purchaseDiff: number;
+  /** Per-provider DELIVERY row counts (not business-event counts). */
   byProvider: Record<string, { sent: number; pending: number; failed: number; skipped: number }>;
-  /**
-   * Per-destination DELIVERY row counts, keyed `provider:destinationId` — the
-   * Step 3 granular view (answers "Order X → Meta dest A SENT, dest B FAILED"
-   * without touching the canonical counters).
-   */
+  /** Per-destination DELIVERY row counts. */
   byDestination: Record<string, { sent: number; pending: number; failed: number; skipped: number }>;
   /** Purchase snapshots with no retrievable outbox (pipeline gap). */
   orphanPurchases: number;
+  /** The configured meta purchase mode. */
+  metaPurchaseMode: string;
+  /** The configured meta validated status. */
+  metaValidatedStatus: string;
+  /** The date range used. */
+  range: { from: string; to: string };
 }
 
 /**
@@ -263,22 +274,22 @@ export class MonitoringService {
     @InjectQueue('tracking') private readonly trackingQueue: Queue,
   ) {}
 
-  /** Snapshot event volume by eventType over the last `hours` hours. */
-  async getVolumeByEventType(hours: number): Promise<VolumeByEventTypeRow[]> {
+  /** Snapshot event volume by eventType over the date range. */
+  async getVolumeByEventType(range: MonitoringDateRange): Promise<VolumeByEventTypeRow[]> {
     const rows = await this.prisma.trackingSnapshot.groupBy({
       by: ['eventType'],
       _count: true,
-      where: { createdAt: { gte: this.cutoff(hours) } },
+      where: { createdAt: { gte: range.from, lte: range.to } },
     });
     return rows.map((row) => ({ eventType: row.eventType, count: row._count }));
   }
 
-  /** Per-provider dispatch funnel over the window; every status defaulted to 0. */
-  async getDispatchFunnel(provider: string, hours: number): Promise<DispatchFunnel> {
+  /** Per-provider dispatch funnel over the date range; every status defaulted to 0. */
+  async getDispatchFunnel(provider: string, range: MonitoringDateRange): Promise<DispatchFunnel> {
     const rows = await this.prisma.trackingDispatch.groupBy({
       by: ['status'],
       _count: true,
-      where: { provider, createdAt: { gte: this.cutoff(hours) } },
+      where: { provider, createdAt: { gte: range.from, lte: range.to } },
     });
     const funnel: DispatchFunnel = { ...EMPTY_FUNNEL };
     for (const row of rows) {
@@ -294,11 +305,15 @@ export class MonitoringService {
   }
 
   /** Retry attempt distribution across all dispatches (attemptCount > 0), ascending. */
-  async getRetryHistogram(): Promise<RetryHistogramRow[]> {
+  async getRetryHistogram(range?: MonitoringDateRange): Promise<RetryHistogramRow[]> {
+    const where: any = { attemptCount: { gt: 0 } };
+    if (range) {
+      where.createdAt = { gte: range.from, lte: range.to };
+    }
     const rows = await this.prisma.trackingDispatch.groupBy({
       by: ['attemptCount'],
       _count: true,
-      where: { attemptCount: { gt: 0 } },
+      where,
     });
     return rows
       .map((row) => ({ attemptCount: row.attemptCount, count: row._count }))
@@ -306,14 +321,18 @@ export class MonitoringService {
   }
 
   /** Most common terminal failure messages, truncated to a safe display length. */
-  async getTopFailures(limit = 10): Promise<TopFailureRow[]> {
+  async getTopFailures(limit = 10, range?: MonitoringDateRange): Promise<TopFailureRow[]> {
+    const where: any = {
+      errorMsg: { not: null },
+      status: { in: ['FAILED', 'DEAD'] },
+    };
+    if (range) {
+      where.createdAt = { gte: range.from, lte: range.to };
+    }
     const rows = await this.prisma.trackingDispatch.groupBy({
       by: ['errorMsg'],
       _count: true,
-      where: {
-        errorMsg: { not: null },
-        status: { in: ['FAILED', 'DEAD'] },
-      },
+      where,
       orderBy: { _count: { errorMsg: 'desc' } },
       take: limit,
     });
@@ -328,11 +347,11 @@ export class MonitoringService {
    * the mean; p95 is the nearest-rank percentile of the sorted per-row deltas
    * (ceil(0.95 * n)-th value, 1-based). Zero-filled when no row qualifies.
    */
-  async getFreshness(hours: number): Promise<FreshnessStats> {
+  async getFreshness(range: MonitoringDateRange): Promise<FreshnessStats> {
     const rows = await this.prisma.trackingOutbox.findMany({
       where: {
         dispatchedAt: { not: null },
-        createdAt: { gte: this.cutoff(hours) },
+        createdAt: { gte: range.from, lte: range.to },
       },
       select: { createdAt: true, dispatchedAt: true },
     });
@@ -364,34 +383,28 @@ export class MonitoringService {
    * distinct context rows — an upper bound on events, not an exact event count,
    * since a context covers many snapshots.
    */
-  async getDedupKeyUsage(hours: number): Promise<DedupKeyUsageRow[]> {
-    const cutoff = this.cutoff(hours);
+  async getDedupKeyUsage(range: MonitoringDateRange): Promise<DedupKeyUsageRow[]> {
+    const dateFilter = { gte: range.from, lte: range.to };
     const [eventIdCount, externalIdCount, fbpCount, fbcCount] = await Promise.all([
-      this.prisma.trackingSnapshot.count({ where: { createdAt: { gte: cutoff } } }),
-      // external_id is server-generated on EVERY TrackingContext row (never in a
-      // snapshot payload), so the correct usage proxy is the context row count in
-      // the window — an upper bound on events, same approximation as fbp/fbc.
+      this.prisma.trackingSnapshot.count({ where: { createdAt: dateFilter } }),
       this.prisma.trackingContext.count({
-        where: { createdAt: { gte: cutoff } },
+        where: { createdAt: dateFilter },
       }),
       this.prisma.trackingContext.count({
         where: {
-          createdAt: { gte: cutoff },
+          createdAt: dateFilter,
           identifiers: { path: ['meta', 'fbp', 'value'], not: Prisma.DbNull },
         },
       }),
       this.prisma.trackingContext.count({
         where: {
-          createdAt: { gte: cutoff },
+          createdAt: dateFilter,
           identifiers: { path: ['meta', 'fbc', 'value'], not: Prisma.DbNull },
         },
       }),
     ]);
     return [
       { key: 'event_id', events: eventIdCount },
-      // context_external_id reflects TrackingContext AVAILABILITY, not Meta
-      // external_id dedup (external_id is assigned to every context row). Label
-      // reflects the actual semantics (Wave-1 correction #4).
       { key: 'context_external_id', events: externalIdCount },
       { key: 'fbp', events: fbpCount },
       { key: 'fbc', events: fbcCount },
@@ -443,16 +456,16 @@ export class MonitoringService {
    * arrived via the browser mirror — a proxy for mirror reliability, NOT Meta
    * coverage (Meta's ≥75% target is measured in Events Manager, the authoritative view).
    */
-  async getMirrorCapture(hours: number): Promise<MirrorCaptureStats> {
-    const cutoff = this.cutoff(hours);
+  async getMirrorCapture(range: MonitoringDateRange): Promise<MirrorCaptureStats> {
+    const dateFilter = { gte: range.from, lte: range.to };
     const [browserOrigin, total] = await Promise.all([
       this.prisma.trackingOutbox.count({
         where: {
-          createdAt: { gte: cutoff },
+          createdAt: dateFilter,
           configSnapshot: { path: ['source'], equals: 'browser' },
         },
       }),
-      this.prisma.trackingOutbox.count({ where: { createdAt: { gte: cutoff } } }),
+      this.prisma.trackingOutbox.count({ where: { createdAt: dateFilter } }),
     ]);
     return {
       totalSnapshots: total,
@@ -513,25 +526,18 @@ export class MonitoringService {
    * flagged by the adapter's `match-key quality:` event (NO_EM_PH / NO_IDENTITY).
    * Schema-less (counts TrackingDispatchEvent), an internal at-risk rate — the
    * authoritative EMQ score is Meta's Dataset Quality API (out-of-band reader).
-   *
-   * Step 3 — the denominator is the number of dispatch ROWS in the window, not the
-   * number of dispatch EVENTS. Each delivery emits several lifecycle events
-   * (PENDING/SENDING/terminal), so an event-based denominator was ~3x too large
-   * and the share was understated; it also drifted with destination fan-out
-   * because events-per-delivery is not constant across providers. A row is exactly
-   * one destination delivery, which is the unit the flag is emitted against.
    */
-  async getEmqProxy(hours: number): Promise<EmqProxy> {
-    const cutoff = this.cutoff(hours);
+  async getEmqProxy(range: MonitoringDateRange): Promise<EmqProxy> {
+    const dateFilter = { gte: range.from, lte: range.to };
     const [qualityFlagged, windowedDispatches] = await Promise.all([
       this.prisma.trackingDispatchEvent.count({
         where: {
-          createdAt: { gte: cutoff },
+          createdAt: dateFilter,
           message: { startsWith: 'match-key quality:' },
         },
       }),
       this.prisma.trackingDispatch.count({
-        where: { createdAt: { gte: cutoff } },
+        where: { createdAt: dateFilter },
       }),
     ]);
     return {
@@ -549,42 +555,32 @@ export class MonitoringService {
    * dispatch attempts that transitioned RETRY (0 = clean). Never throws; a
    * window with no dispatches returns zero-filled rates with the proxies.
    */
-  async getQualityRates(hours: number): Promise<QualityRates> {
-    const cutoff = this.cutoff(hours);
+  async getQualityRates(range: MonitoringDateRange): Promise<QualityRates> {
+    const dateFilter = { gte: range.from, lte: range.to };
     const [rows, retriedRows, windowedDispatches, replayed, emq, mirror] =
       await Promise.all([
         this.prisma.trackingDispatch.groupBy({
           by: ['status'],
           _count: true,
-          where: { createdAt: { gte: cutoff } },
+          where: { createdAt: dateFilter },
         }),
-        // Rows that needed at least one retry — the numerator for retryRate.
         this.prisma.trackingDispatch.count({
-          where: { createdAt: { gte: cutoff }, attemptCount: { gt: 0 } },
+          where: { createdAt: dateFilter, attemptCount: { gt: 0 } },
         }),
-        // Denominator = one row per destination delivery (matches the field's
-        // documented meaning). Step 3: an event-based denominator scaled with
-        // lifecycle events per delivery AND with destination fan-out, so a single
-        // failing destination among N reported 1/N of its true retry intensity.
-        // Row-based, the rate is fan-out invariant.
         this.prisma.trackingDispatch.count({
-          where: { createdAt: { gte: cutoff } },
+          where: { createdAt: dateFilter },
         }),
         this.prisma.trackingDispatchEvent.count({
-          where: { createdAt: { gte: cutoff }, message: 'replay' },
+          where: { createdAt: dateFilter, message: 'replay' },
         }),
-        this.getEmqProxy(hours),
-        this.getMirrorCapture(hours),
+        this.getEmqProxy(range),
+        this.getMirrorCapture(range),
       ]);
-    // Capture-level dedup + snapshot volume (Wave-2.4 MON-3 fix): duplicate
-    // attempts are skipped at capture (eventId UNIQUE), never at dispatch — the
-    // previous dedupRate read dispatch DEDUPED rows, which by construction stay
-    // at zero (dedup rate always 0.0% regardless of real duplicate volume).
     const [dedupedCaptures, capturedSnapshots] = await Promise.all([
       this.prisma.trackingDispatchEvent.count({
-        where: { createdAt: { gte: cutoff }, message: 'capture dedup' },
+        where: { createdAt: dateFilter, message: 'capture dedup' },
       }),
-      this.prisma.trackingSnapshot.count({ where: { createdAt: { gte: cutoff } } }),
+      this.prisma.trackingSnapshot.count({ where: { createdAt: dateFilter } }),
     ]);
     const counts: Partial<Record<DispatchStatus, number>> = {};
     for (const row of rows) counts[row.status as DispatchStatus] = row._count;
@@ -605,9 +601,6 @@ export class MonitoringService {
       capturedSnapshots,
       replayed,
       dedupRate: dedupTotal > 0 ? dedupedCaptures / dedupTotal : 0,
-      // Share of windowed destination deliveries that needed at least one retry.
-      // Fan-out invariant: both terms are dispatch rows, so N destinations count
-      // as N deliveries — exactly as they should.
       retryRate: windowedDispatches > 0 ? retriedRows / windowedDispatches : 0,
       emq,
       mirror,
@@ -617,88 +610,47 @@ export class MonitoringService {
   /**
    * Identity/context field coverage over the window (2026-08-10 incident
    * follow-up). Counts, per canonical field, the share of windowed captures
-   * carrying it: contact/geo fields are snapshot `payload.customer.*` JSON
-   * paths; ip/userAgent are TrackingContext columns; externalId coverage is
-   * 100% by construction (server-generated per journey). This mirrors the
-   * Meta-side coverage survey (IP/UA/fbp/fbc 55.56%, City 33.33%…) with
-   * server-side truth — the providers' dataset-quality view stays out-of-band.
+   * carrying it.
    */
-  async getIdentityCoverage(hours: number): Promise<IdentityCoverageRow[]> {
-    const cutoff = this.cutoff(hours);
-    const snapshotBase = {
-      createdAt: { gte: cutoff },
-    } as const;
+  async getIdentityCoverage(range: MonitoringDateRange): Promise<IdentityCoverageRow[]> {
+    const dateFilter = { gte: range.from, lte: range.to };
+    const snapshotBase = { createdAt: dateFilter } as const;
     const [em, ph, fn, ln, ct, st, zp, cn, ip, ua, base] = await Promise.all([
       this.prisma.trackingSnapshot.count({
-        where: {
-          ...snapshotBase,
-          payload: { path: ['customer', 'email'], not: Prisma.DbNull },
-        },
+        where: { ...snapshotBase, payload: { path: ['customer', 'email'], not: Prisma.DbNull } },
       }),
       this.prisma.trackingSnapshot.count({
-        where: {
-          ...snapshotBase,
-          payload: { path: ['customer', 'phone'], not: Prisma.DbNull },
-        },
+        where: { ...snapshotBase, payload: { path: ['customer', 'phone'], not: Prisma.DbNull } },
       }),
       this.prisma.trackingSnapshot.count({
-        where: {
-          ...snapshotBase,
-          payload: { path: ['customer', 'firstName'], not: Prisma.DbNull },
-        },
+        where: { ...snapshotBase, payload: { path: ['customer', 'firstName'], not: Prisma.DbNull } },
       }),
       this.prisma.trackingSnapshot.count({
-        where: {
-          ...snapshotBase,
-          payload: { path: ['customer', 'lastName'], not: Prisma.DbNull },
-        },
+        where: { ...snapshotBase, payload: { path: ['customer', 'lastName'], not: Prisma.DbNull } },
       }),
       this.prisma.trackingSnapshot.count({
-        where: {
-          ...snapshotBase,
-          payload: { path: ['customer', 'city'], not: Prisma.DbNull },
-        },
+        where: { ...snapshotBase, payload: { path: ['customer', 'city'], not: Prisma.DbNull } },
       }),
       this.prisma.trackingSnapshot.count({
-        where: {
-          ...snapshotBase,
-          payload: { path: ['customer', 'state'], not: Prisma.DbNull },
-        },
+        where: { ...snapshotBase, payload: { path: ['customer', 'state'], not: Prisma.DbNull } },
       }),
       this.prisma.trackingSnapshot.count({
-        where: {
-          ...snapshotBase,
-          payload: { path: ['customer', 'zip'], not: Prisma.DbNull },
-        },
+        where: { ...snapshotBase, payload: { path: ['customer', 'zip'], not: Prisma.DbNull } },
       }),
       this.prisma.trackingSnapshot.count({
-        where: {
-          ...snapshotBase,
-          payload: { path: ['customer', 'country'], not: Prisma.DbNull },
-        },
+        where: { ...snapshotBase, payload: { path: ['customer', 'country'], not: Prisma.DbNull } },
       }),
       this.prisma.trackingContext.count({
-        where: { createdAt: { gte: cutoff }, ip: { not: '' } },
+        where: { createdAt: dateFilter, ip: { not: '' } },
       }),
       this.prisma.trackingContext.count({
-        where: { createdAt: { gte: cutoff }, userAgent: { not: '' } },
+        where: { createdAt: dateFilter, userAgent: { not: '' } },
       }),
       this.prisma.trackingSnapshot.count({ where: snapshotBase }),
     ]);
     const rows: IdentityCoverageRow[] = [];
-    const push = (
-      field: string,
-      baseOf: 'snapshot' | 'context',
-      count: number,
-      total: number,
-    ) => {
-      rows.push({
-        field,
-        base: baseOf,
-        count,
-        total,
-        coverage: total > 0 ? count / total : 0,
-      });
+    const push = (field: string, baseOf: 'snapshot' | 'context', count: number, total: number) => {
+      rows.push({ field, base: baseOf, count, total, coverage: total > 0 ? count / total : 0 });
     };
     push('email', 'snapshot', em, base);
     push('phone', 'snapshot', ph, base);
@@ -708,9 +660,7 @@ export class MonitoringService {
     push('state', 'snapshot', st, base);
     push('zip', 'snapshot', zp, base);
     push('country', 'snapshot', cn, base);
-    const ctxBase = await this.prisma.trackingContext.count({
-      where: { createdAt: { gte: cutoff } },
-    });
+    const ctxBase = await this.prisma.trackingContext.count({ where: { createdAt: dateFilter } });
     push('ip', 'context', ip, ctxBase);
     push('userAgent', 'context', ua, ctxBase);
     return rows;
@@ -723,12 +673,12 @@ export class MonitoringService {
    * persistent EMQ match gap. `info` = configuration state (not an error),
    * `warning` = elevated but self-healing, `critical` = pipeline at risk.
    */
-  async getWatchdog(hours: number): Promise<WatchdogViolation[]> {
+  async getWatchdog(range: MonitoringDateRange): Promise<WatchdogViolation[]> {
     const [health, quality, dead, coverage] = await Promise.all([
       this.getRuntimeHealth(),
-      this.getQualityRates(hours),
+      this.getQualityRates(range),
       this.getDeadStats(),
-      this.getIdentityCoverage(hours),
+      this.getIdentityCoverage(range),
     ]);
     const { relay, redis, queue, dispatcher } = health;
     const violations: WatchdogViolation[] = [];
@@ -861,12 +811,12 @@ export class MonitoringService {
    * = 5); the score is clamped to [0,100] with an A–F grade. Ops should treat
    * the score as a single-page drift signal and the penalties as the drill-down.
    */
-  async getHealthScore(hours: number): Promise<HealthScore> {
+  async getHealthScore(range: MonitoringDateRange): Promise<HealthScore> {
     let score = 100;
     const penalties: HealthScore['penalties'] = [];
     const [violations, quality] = await Promise.all([
-      this.getWatchdog(hours),
-      this.getQualityRates(hours),
+      this.getWatchdog(range),
+      this.getQualityRates(range),
     ]);
     const penalize = (code: string, points: number, message: string) => {
       score -= points;
@@ -924,83 +874,183 @@ export class MonitoringService {
   }
 
   /**
-   * Purchase reconciliation summary. `orders` counts live (non-trashed) orders;
-   * per-order drill-down is the `timeline` endpoint (by eventId =
-   * purchase_{order UUID}). A healthy pipeline shows canonicalPurchases ==
-   * uniquePurchaseEventIds, and delivery counts matching the eligible
-   * destinations.
-   *
-   * Step 3: every canonical figure stays snapshot/outbox-level, so adding
-   * destinations never multiplies the canonical Purchase count. The delivery
-   * breakdown is exposed twice — `byProvider` (unchanged shape, now documented as
-   * delivery counts) and `byDestination` (per destination identity).
+   * Windowed Purchase reconciliation. Compares business orders against canonical
+   * Purchase events, expected Purchase count (based on configured meta mode/status),
+   * and provider delivery rows. All counts are windowed by the selected date range.
    */
-  async getPurchaseReconciliation(): Promise<PurchaseReconciliation> {
-    // No FKs exist between the tracking log tables by design, so the
-    // snapshot↔outbox joins below are raw SQL on the string columns.
-    const [orders, canonicalPurchases, uniqueIds, browserRows, outboxedRows, dispatchRows] =
-      await Promise.all([
-        this.prisma.order.count({ where: { trashedAt: null } }),
-        this.prisma.trackingSnapshot.count({ where: { eventType: 'Purchase' } }),
-        this.prisma.trackingSnapshot.groupBy({
-          by: ['eventId'],
-          where: { eventType: 'Purchase' },
-        }),
-        this.prisma.$queryRaw<{ count: bigint }[]>`
-          SELECT COUNT(*)::bigint AS count FROM "TrackingSnapshot" s
-          JOIN "TrackingOutbox" o ON o."snapshotId" = s.id
-          WHERE s."eventType" = 'Purchase'
-            AND o."configSnapshot"->>'source' = 'browser'`,
-        this.prisma.$queryRaw<{ count: bigint }[]>`
-          SELECT COUNT(DISTINCT o."snapshotId")::bigint AS count
-          FROM "TrackingOutbox" o
-          JOIN "TrackingSnapshot" s ON s.id = o."snapshotId"
-          WHERE s."eventType" = 'Purchase'`,
-        this.prisma.trackingDispatch.findMany({
-          where: { eventId: { startsWith: 'purchase_' } },
-          select: { provider: true, destinationId: true, status: true },
-        }),
-      ]);
+  async getPurchaseReconciliation(range: MonitoringDateRange): Promise<PurchaseReconciliation> {
+    const dateFilter = { gte: range.from, lte: range.to };
+
+    // Resolve configured meta purchase mode and validated status
+    const settings = await this.prisma.systemSetting.findMany({
+      where: {
+        key: {
+          in: [
+            'tracking_meta_purchase_mode',
+            'tracking_meta_validated_status',
+            'tracking_tiktok_purchase_mode',
+            'tracking_tiktok_validated_status',
+          ],
+        },
+      },
+    });
+    const settingMap = Object.fromEntries(settings.map((s: any) => [s.key, s.value]));
+    const metaMode = settingMap['tracking_meta_purchase_mode'] || 'instant';
+    const metaStatus = settingMap['tracking_meta_validated_status'] || '';
+
+    // Business metrics: New Orders (created in range), Confirmed (entered Confirmed in range),
+    // Delivered (entered Delivered in range)
+    const newOrders = await this.prisma.order.count({
+      where: { trashedAt: null, createdAt: dateFilter },
+    });
+
+    // For Confirmed/Delivered, we need to check the timeline JSON for status transitions
+    // that occurred within the range. The timeline is a JSON array of objects with
+    // { status, timestamp } entries for status changes.
+    const allOrdersInRange = await this.prisma.order.findMany({
+      where: { trashedAt: null },
+      select: { id: true, timeline: true, status: { select: { name: true } } },
+    });
+
+    let confirmedOrders = 0;
+    let deliveredOrders = 0;
+    for (const order of allOrdersInRange) {
+      const timeline = Array.isArray(order.timeline) ? order.timeline : [];
+      for (const entry of timeline) {
+        if (!entry || typeof entry !== 'object') continue;
+        const entryAny = entry as any;
+        if (!entryAny.timestamp || !entryAny.status) continue;
+        const entryTime = new Date(entryAny.timestamp);
+        if (entryTime < range.from || entryTime > range.to) continue;
+        if (entryAny.status === 'Confirmed') confirmedOrders++;
+        if (entryAny.status === 'Delivered') deliveredOrders++;
+      }
+    }
+
+    // Expected Purchase count depends on configured mode
+    let expectedPurchases: number;
+    if (metaMode === 'validated' && metaStatus) {
+      // Validated mode: expected = orders that entered the validated status in range
+      if (metaStatus === 'Confirmed') {
+        expectedPurchases = confirmedOrders;
+      } else if (metaStatus === 'Delivered') {
+        expectedPurchases = deliveredOrders;
+      } else {
+        // Count orders that entered the configured status in range
+        let count = 0;
+        for (const order of allOrdersInRange) {
+          const timeline = Array.isArray(order.timeline) ? order.timeline : [];
+          for (const entry of timeline) {
+            if (!entry || typeof entry !== 'object') continue;
+            const entryAny = entry as any;
+            if (!entryAny.timestamp || !entryAny.status) continue;
+            const entryTime = new Date(entryAny.timestamp);
+            if (entryTime < range.from || entryTime > range.to) continue;
+            if (entryAny.status === metaStatus) count++;
+          }
+        }
+        expectedPurchases = count;
+      }
+    } else {
+      // Instant mode: expected = eligible orders created in range
+      expectedPurchases = newOrders;
+    }
+
+    // Canonical Purchase snapshots captured in range
+    const [canonicalPurchases, uniqueIds, browserRows, outboxedRows] = await Promise.all([
+      this.prisma.trackingSnapshot.count({
+        where: { eventType: 'Purchase', createdAt: dateFilter },
+      }),
+      this.prisma.trackingSnapshot.groupBy({
+        by: ['eventId'],
+        where: { eventType: 'Purchase', createdAt: dateFilter },
+      }),
+      this.prisma.$queryRaw<{ count: bigint }[]>`
+        SELECT COUNT(*)::bigint AS count FROM "TrackingSnapshot" s
+        JOIN "TrackingOutbox" o ON o."snapshotId" = s.id
+        WHERE s."eventType" = 'Purchase'
+          AND o."configSnapshot"->>'source' = 'browser'
+          AND s."createdAt" >= ${range.from} AND s."createdAt" <= ${range.to}`,
+      this.prisma.$queryRaw<{ count: bigint }[]>`
+        SELECT COUNT(DISTINCT o."snapshotId")::bigint AS count
+        FROM "TrackingOutbox" o
+        JOIN "TrackingSnapshot" s ON s.id = o."snapshotId"
+        WHERE s."eventType" = 'Purchase'
+          AND s."createdAt" >= ${range.from} AND s."createdAt" <= ${range.to}`,
+    ]);
+
     const browserOriginPurchases = Number(browserRows[0]?.count ?? 0);
     const outboxed = Number(outboxedRows[0]?.count ?? 0);
+
+    // Classify Purchase snapshots by triggerMode from payload
+    const purchaseSnapshots = await this.prisma.trackingSnapshot.findMany({
+      where: { eventType: 'Purchase', createdAt: dateFilter },
+      select: { payload: true },
+    });
+
+    let instantPurchases = 0;
+    let validatedPurchases = 0;
+    let offlinePurchases = 0;
+    let browserPurchases = 0;
+    for (const snap of purchaseSnapshots) {
+      const payload = snap.payload as any;
+      const triggerMode = payload?.triggerMode;
+      if (triggerMode === 'instant') instantPurchases++;
+      else if (triggerMode === 'validated') validatedPurchases++;
+      else if (triggerMode === 'offline') offlinePurchases++;
+      else if (triggerMode === 'browser') browserPurchases++;
+    }
+
+    // Replay events in range
+    const replayedEvents = await this.prisma.trackingDispatchEvent.count({
+      where: { createdAt: dateFilter, message: 'replay' },
+    });
+
+    // Delivery breakdown for Purchase events in range
+    const dispatchRows = await this.prisma.trackingDispatch.findMany({
+      where: {
+        eventId: { startsWith: 'purchase_' },
+        createdAt: dateFilter,
+      },
+      select: { provider: true, destinationId: true, status: true },
+    });
+
     type DeliveryCounts = { sent: number; pending: number; failed: number; skipped: number };
     const byProvider: Record<string, DeliveryCounts> = {};
     const byDestination: Record<string, DeliveryCounts> = {};
     for (const row of dispatchRows) {
-      const providerEntry = (byProvider[row.provider] ??= {
-        sent: 0,
-        pending: 0,
-        failed: 0,
-        skipped: 0,
-      });
-      // Legacy rows (and providers without a destination model) carry the
-      // 'default' identity, so the key is stable for historical data too.
+      const providerEntry = (byProvider[row.provider] ??= { sent: 0, pending: 0, failed: 0, skipped: 0 });
       const key = `${row.provider}:${row.destinationId ?? 'default'}`;
-      const destEntry = (byDestination[key] ??= {
-        sent: 0,
-        pending: 0,
-        failed: 0,
-        skipped: 0,
-      });
+      const destEntry = (byDestination[key] ??= { sent: 0, pending: 0, failed: 0, skipped: 0 });
       const bucket =
-        row.status === 'SENT'
-          ? 'sent'
-          : row.status === 'SKIPPED'
-            ? 'skipped'
-            : row.status === 'FAILED' || row.status === 'DEAD'
-              ? 'failed'
+        row.status === 'SENT' ? 'sent'
+          : row.status === 'SKIPPED' ? 'skipped'
+            : row.status === 'FAILED' || row.status === 'DEAD' ? 'failed'
               : 'pending';
       providerEntry[bucket] += 1;
       destEntry[bucket] += 1;
     }
+
     return {
-      orders,
+      newOrders,
+      confirmedOrders,
+      deliveredOrders,
+      expectedPurchases,
       canonicalPurchases,
       uniquePurchaseEventIds: uniqueIds.length,
       browserOriginPurchases,
+      instantPurchases,
+      validatedPurchases,
+      offlinePurchases,
+      browserPurchases,
+      replayedEvents,
+      purchaseDiff: canonicalPurchases - expectedPurchases,
       byProvider,
       byDestination,
       orphanPurchases: Math.max(0, canonicalPurchases - outboxed),
+      metaPurchaseMode: metaMode,
+      metaValidatedStatus: metaStatus,
+      range: { from: range.fromStr, to: range.toStr },
     };
   }
 

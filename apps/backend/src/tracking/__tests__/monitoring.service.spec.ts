@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { MonitoringService } from '../monitoring.service';
 import { DlqService } from '../dlq.service';
+import { MonitoringDateRange, buildPresetRange } from '../dto/monitoring.dto';
 
 describe('MonitoringService — Phase 6 aggregate queries', () => {
   const snapshotGroupBy = jest.fn();
@@ -15,9 +16,12 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
   const dispatchFindMany = jest.fn();
   const orderCount = jest.fn();
   const queryRaw = jest.fn();
+  const systemSettingFindMany = jest.fn();
+  const orderFindMany = jest.fn();
+  const snapshotFindMany = jest.fn();
 
   const prisma = {
-    trackingSnapshot: { groupBy: snapshotGroupBy, count: snapshotCount },
+    trackingSnapshot: { groupBy: snapshotGroupBy, count: snapshotCount, findMany: snapshotFindMany },
     trackingDispatch: {
       groupBy: dispatchGroupBy,
       count: dispatchCount,
@@ -26,7 +30,8 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
     trackingContext: { count: contextCount },
     trackingOutbox: { findMany: outboxFindMany, count: outboxCount, findFirst: outboxFindFirst },
     trackingDispatchEvent: { count: dispatchEventCount },
-    order: { count: orderCount },
+    order: { count: orderCount, findMany: orderFindMany },
+    systemSetting: { findMany: systemSettingFindMany },
     $queryRaw: queryRaw,
   } as any;
 
@@ -35,8 +40,8 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
   const queue = { getJobCounts: jest.fn(), redisVersion: '7.2.0' } as any;
   const service = new MonitoringService(prisma, dlq, settings, queue);
 
-  const hours = 24;
-  const cutoff = expect.any(Date);
+  // Use a fixed date range for tests
+  const range: MonitoringDateRange = buildPresetRange('today');
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -52,6 +57,9 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
     dispatchFindMany.mockResolvedValue([]);
     orderCount.mockResolvedValue(0);
     queryRaw.mockResolvedValue([{ count: BigInt(0) }]);
+    systemSettingFindMany.mockResolvedValue([]);
+    orderFindMany.mockResolvedValue([]);
+    snapshotFindMany.mockResolvedValue([]);
     queue.getJobCounts.mockResolvedValue({
       waiting: 1, active: 2, delayed: 0, failed: 0, completed: 5,
     });
@@ -64,14 +72,14 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
       { eventType: 'AddToCart', _count: 34 },
     ]);
 
-    await expect(service.getVolumeByEventType(hours)).resolves.toEqual([
+    await expect(service.getVolumeByEventType(range)).resolves.toEqual([
       { eventType: 'Purchase', count: 12 },
       { eventType: 'AddToCart', count: 34 },
     ]);
     expect(snapshotGroupBy).toHaveBeenCalledWith({
       by: ['eventType'],
       _count: true,
-      where: { createdAt: { gte: cutoff } },
+      where: { createdAt: { gte: range.from, lte: range.to } },
     });
   });
 
@@ -82,7 +90,7 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
       { status: 'DEAD', _count: 1 },
     ]);
 
-    await expect(service.getDispatchFunnel('meta', hours)).resolves.toEqual({
+    await expect(service.getDispatchFunnel('meta', range)).resolves.toEqual({
       pending: 3,
       sending: 0,
       sent: 7,
@@ -95,7 +103,7 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
     expect(dispatchGroupBy).toHaveBeenCalledWith({
       by: ['status'],
       _count: true,
-      where: { provider: 'meta', createdAt: { gte: cutoff } },
+      where: { provider: 'meta', createdAt: { gte: range.from, lte: range.to } },
     });
   });
 
@@ -111,7 +119,7 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
       { status: 'DEDUPED', _count: 1 },
     ]);
 
-    const funnel = await service.getDispatchFunnel('meta', hours);
+    const funnel = await service.getDispatchFunnel('meta', range);
     expect(Object.values(funnel)).toEqual([1, 1, 1, 1, 1, 1, 1, 1]);
     expect(Object.keys(funnel).sort()).toEqual(
       ['dead', 'deduped', 'failed', 'pending', 'retry', 'sending', 'sent', 'skipped'].sort(),
@@ -178,19 +186,19 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
     }));
     outboxFindMany.mockResolvedValue(rows);
 
-    const stats = await service.getFreshness(hours);
+    const stats = await service.getFreshness(range);
     expect(stats.avgCaptureToDispatchSec).toBeCloseTo(10.5, 5);
     // nearest-rank p95: ceil(0.95 * 20) = 19th sorted value (1-based) => 19 sec
     expect(stats.p95CaptureToDispatchSec).toBeCloseTo(19, 5);
     expect(outboxFindMany).toHaveBeenCalledWith({
-      where: { dispatchedAt: { not: null }, createdAt: { gte: cutoff } },
+      where: { dispatchedAt: { not: null }, createdAt: { gte: range.from, lte: range.to } },
       select: { createdAt: true, dispatchedAt: true },
     });
   });
 
   it('getFreshness returns zeros when no dispatched outbox is in the window', async () => {
     outboxFindMany.mockResolvedValue([]);
-    await expect(service.getFreshness(hours)).resolves.toEqual({
+    await expect(service.getFreshness(range)).resolves.toEqual({
       avgCaptureToDispatchSec: 0,
       p95CaptureToDispatchSec: 0,
     });
@@ -203,7 +211,7 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
       .mockResolvedValueOnce(30) // fbp
       .mockResolvedValueOnce(12); // fbc
 
-    await expect(service.getDedupKeyUsage(hours)).resolves.toEqual([
+    await expect(service.getDedupKeyUsage(range)).resolves.toEqual([
       { key: 'event_id', events: 50 },
       { key: 'context_external_id', events: 40 },
       { key: 'fbp', events: 30 },
@@ -211,17 +219,17 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
     ]);
     expect(snapshotCount).toHaveBeenCalledTimes(1);
     expect(contextCount).toHaveBeenNthCalledWith(1, {
-      where: { createdAt: { gte: cutoff } },
+      where: { createdAt: { gte: range.from, lte: range.to } },
     });
     expect(contextCount).toHaveBeenNthCalledWith(2, {
       where: {
-        createdAt: { gte: cutoff },
+        createdAt: { gte: range.from, lte: range.to },
         identifiers: { path: ['meta', 'fbp', 'value'], not: Prisma.DbNull },
       },
     });
     expect(contextCount).toHaveBeenNthCalledWith(3, {
       where: {
-        createdAt: { gte: cutoff },
+        createdAt: { gte: range.from, lte: range.to },
         identifiers: { path: ['meta', 'fbc', 'value'], not: Prisma.DbNull },
       },
     });
@@ -257,7 +265,7 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
   it('getMirrorCapture computes the browser-origin share of captures', async () => {
     outboxCount.mockResolvedValueOnce(10).mockResolvedValueOnce(59); // browser, total
 
-    await expect(service.getMirrorCapture(hours)).resolves.toEqual({
+    await expect(service.getMirrorCapture(range)).resolves.toEqual({
       totalSnapshots: 59,
       browserOrigin: 10,
       serverOrigin: 49,
@@ -265,18 +273,18 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
     });
     expect(outboxCount).toHaveBeenNthCalledWith(1, {
       where: {
-        createdAt: { gte: cutoff },
+        createdAt: { gte: range.from, lte: range.to },
         configSnapshot: { path: ['source'], equals: 'browser' },
       },
     });
     expect(outboxCount).toHaveBeenNthCalledWith(2, {
-      where: { createdAt: { gte: cutoff } },
+      where: { createdAt: { gte: range.from, lte: range.to } },
     });
   });
 
   it('getMirrorCapture returns a zero ratio when there are no captures', async () => {
     outboxCount.mockResolvedValueOnce(0).mockResolvedValueOnce(0);
-    await expect(service.getMirrorCapture(hours)).resolves.toEqual({
+    await expect(service.getMirrorCapture(range)).resolves.toEqual({
       totalSnapshots: 0,
       browserOrigin: 0,
       serverOrigin: 0,
@@ -334,26 +342,26 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
     // fan-out.
     dispatchEventCount.mockResolvedValueOnce(3); // quality-flagged
     dispatchCount.mockResolvedValueOnce(10); // destination delivery rows
-    await expect(service.getEmqProxy(hours)).resolves.toEqual({
+    await expect(service.getEmqProxy(range)).resolves.toEqual({
       windowedDispatches: 10,
       qualityFlagged: 3,
       noEmPhShare: 0.3,
     });
     expect(dispatchEventCount).toHaveBeenNthCalledWith(1, {
       where: {
-        createdAt: { gte: cutoff },
+        createdAt: { gte: range.from, lte: range.to },
         message: { startsWith: 'match-key quality:' },
       },
     });
     expect(dispatchCount).toHaveBeenNthCalledWith(1, {
-      where: { createdAt: { gte: cutoff } },
+      where: { createdAt: { gte: range.from, lte: range.to } },
     });
   });
 
   it('getEmqProxy returns a zero share when there are no dispatches', async () => {
     dispatchEventCount.mockResolvedValueOnce(0);
     dispatchCount.mockResolvedValueOnce(0);
-    await expect(service.getEmqProxy(hours)).resolves.toEqual({
+    await expect(service.getEmqProxy(range)).resolves.toEqual({
       windowedDispatches: 0,
       qualityFlagged: 0,
       noEmPhShare: 0,
@@ -385,7 +393,7 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
       snapshotCount.mockResolvedValueOnce(100); // capturedSnapshots
       outboxCount.mockResolvedValueOnce(60).mockResolvedValueOnce(120);
 
-      const quality = await service.getQualityRates(hours);
+      const quality = await service.getQualityRates(range);
       expect(quality).toMatchObject({
         windowedDispatches: 120,
         sent: 40,
@@ -414,7 +422,7 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
 
     it('zero-fills the rated fields when nothing dispatched in the window', async () => {
       dispatchGroupBy.mockResolvedValue([]);
-      const quality = await service.getQualityRates(hours);
+      const quality = await service.getQualityRates(range);
       expect(quality).toMatchObject({
         windowedDispatches: 0,
         sent: 0,
@@ -441,7 +449,7 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
         .mockResolvedValueOnce(120); // getEmqProxy windowed rows
       dispatchEventCount.mockResolvedValue(0);
 
-      const quality = await service.getQualityRates(hours);
+      const quality = await service.getQualityRates(range);
 
       expect(quality.retryRate).toBeCloseTo(8 / 120);
       expect(dispatchCount).toHaveBeenCalledWith(
@@ -451,7 +459,7 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
       );
       // The denominator is a row count, never a lifecycle-event count.
       expect(dispatchCount).toHaveBeenCalledWith({
-        where: { createdAt: { gte: expect.any(Date) } },
+        where: { createdAt: { gte: range.from, lte: range.to } },
       });
     });
   });
@@ -463,7 +471,12 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
       snapshotGroupBy.mockResolvedValue([{ eventId: 'purchase_ord-1' }]);
       queryRaw.mockResolvedValue([{ count: BigInt(1) }]);
       dispatchFindMany.mockResolvedValue(dispatchRows);
-      return service.getPurchaseReconciliation();
+      orderFindMany.mockResolvedValue([]);
+      snapshotFindMany.mockResolvedValue([{ payload: { triggerMode: 'instant' } }]);
+      systemSettingFindMany.mockResolvedValue([
+        { key: 'tracking_meta_purchase_mode', value: 'instant' },
+      ]);
+      return service.getPurchaseReconciliation(range);
     };
 
     it('counts ONE business Purchase while delivery rows fan out per destination', async () => {
@@ -473,7 +486,7 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
       ]);
 
       // Canonical, snapshot/outbox-level — NOT multiplied by the destination count.
-      expect(result.orders).toBe(1);
+      expect(result.newOrders).toBe(1);
       expect(result.canonicalPurchases).toBe(1);
       expect(result.uniquePurchaseEventIds).toBe(1);
       expect(result.orphanPurchases).toBe(0);
@@ -551,7 +564,7 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
         .mockResolvedValueOnce(28) // userAgent
         .mockResolvedValueOnce(40); // context base
 
-      const rows = await service.getIdentityCoverage(hours);
+      const rows = await service.getIdentityCoverage(range);
 
       expect(rows).toEqual([
         { field: 'email', base: 'snapshot', count: 80, total: 100, coverage: 0.8 },
@@ -575,7 +588,7 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
     });
 
     it('returns zero-filled rows when nothing was captured', async () => {
-      const rows = await service.getIdentityCoverage(hours);
+      const rows = await service.getIdentityCoverage(range);
       expect(rows.every((r) => r.count === 0 && r.coverage === 0)).toBe(true);
     });
   });
@@ -601,7 +614,7 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
       dispatchGroupBy.mockResolvedValue([]);
       dispatchEventCount.mockResolvedValue(0);
 
-      await expect(service.getWatchdog(hours)).resolves.toEqual([]);
+      await expect(service.getWatchdog(range)).resolves.toEqual([]);
     });
 
     it('flags retry-rate-high from the destination-row retry rate (fan-out invariant)', async () => {
@@ -627,7 +640,7 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
         ),
       );
 
-      const violations = await service.getWatchdog(hours);
+      const violations = await service.getWatchdog(range);
 
       expect(violations).toEqual(
         expect.arrayContaining([
@@ -654,7 +667,7 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
         ),
       );
 
-      const violations = await service.getWatchdog(hours);
+      const violations = await service.getWatchdog(range);
 
       expect(
         violations.some((v) => v.code === 'retry-rate-high'),
@@ -672,7 +685,7 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
       dispatchGroupBy.mockResolvedValue([]);
       dispatchEventCount.mockResolvedValue(0);
 
-      const violations = await service.getWatchdog(hours);
+      const violations = await service.getWatchdog(range);
       expect(violations).toEqual([
         expect.objectContaining({
           severity: 'critical',
@@ -696,10 +709,10 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
       dispatchGroupBy.mockResolvedValue([]);
       dispatchEventCount.mockResolvedValue(0);
 
-      const codes = (await service.getWatchdog(hours)).map((v) => v.code);
+      const codes = (await service.getWatchdog(range)).map((v) => v.code);
       expect(codes).toEqual(expect.arrayContaining(['redis-down', 'queue-down', 'relay-disabled']));
       expect(
-        (await service.getWatchdog(hours)).filter((v) => v.severity === 'critical').map((v) => v.code),
+        (await service.getWatchdog(range)).filter((v) => v.severity === 'critical').map((v) => v.code),
       ).toEqual(expect.arrayContaining(['redis-down', 'queue-down']));
     });
 
@@ -737,7 +750,7 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
         return Promise.resolve(0);
       });
 
-      const violations = await service.getWatchdog(hours);
+      const violations = await service.getWatchdog(range);
       const codes = violations.map((v) => v.code);
       expect(codes).toEqual(
         expect.arrayContaining(['dead-failure-spike', 'retry-rate-high', 'emq-match-gap']),
@@ -776,7 +789,7 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
       dispatchGroupBy.mockResolvedValue([]);
       dispatchCount.mockResolvedValue(0);
 
-      const violations = await service.getWatchdog(hours);
+      const violations = await service.getWatchdog(range);
       const codes = violations.map((v) => v.code);
       expect(codes).toEqual(
         expect.arrayContaining(['dlq-depth-high', 'mirror-collapse', 'identity-coverage-low', 'context-coverage-low']),
@@ -804,7 +817,7 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
       dispatchGroupBy.mockResolvedValue([]);
       dispatchEventCount.mockResolvedValue(0);
 
-      await expect(service.getHealthScore(hours)).resolves.toEqual({
+      await expect(service.getHealthScore(range)).resolves.toEqual({
         score: 100,
         grade: 'A',
         penalties: [],
@@ -823,7 +836,7 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
       dispatchGroupBy.mockResolvedValue([]);
       dispatchEventCount.mockResolvedValue(0);
 
-      const result = await service.getHealthScore(hours);
+      const result = await service.getHealthScore(range);
       expect(result.score).toBe(60);
       expect(result.grade).toBe('D');
       expect(result.penalties).toEqual(
@@ -868,7 +881,7 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
       snapshotCount.mockResolvedValue(0);
       contextCount.mockResolvedValue(0);
 
-      const result = await service.getHealthScore(hours);
+      const result = await service.getHealthScore(range);
       expect(result.score).toBe(0);
       expect(result.grade).toBe('F');
     });

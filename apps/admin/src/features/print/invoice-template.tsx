@@ -2,6 +2,7 @@ import Barcode from 'react-barcode'
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 import { mediaUrl } from '@/lib/utils'
+import { getCustomerDisplayName, getCustomerPhone, getCustomerEmail } from '@/lib/order-display'
 
 const nm = (v: number | string) => Number(v)
 const fmt = (v: number | string) => nm(v).toFixed(2)
@@ -20,16 +21,9 @@ export function InvoiceTemplate({ order }: { order: any }) {
 
   const subtotal = order.items?.reduce((s: number, i: any) => s + nm(i.price) * i.quantity, 0) || 0
   const sa = order.shippingAddress && typeof order.shippingAddress === 'object' ? order.shippingAddress : {}
-  const customerName =
-    order.customer?.firstName ||
-    order.guestName ||
-    order.shippingAddress?.name ||
-    ''
-  const customerPhone =
-    order.customer?.phoneNumber ||
-    order.guestPhone ||
-    order.shippingAddress?.phone ||
-    ''
+  const customerName = getCustomerDisplayName(order)
+  const customerPhone = getCustomerPhone(order)
+  const customerEmail = getCustomerEmail(order)
   const customerAddress =
     sa.address || sa.addressLine || (typeof order.shippingAddress === 'string' ? order.shippingAddress : sa.district) || ''
 
@@ -69,7 +63,7 @@ export function InvoiceTemplate({ order }: { order: any }) {
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Bill To</p>
           <p className="font-semibold text-sm">{customerName || '—'}</p>
           {customerPhone && <p className="text-sm text-muted-foreground">{customerPhone}</p>}
-          {order.customer?.email && <p className="text-sm text-muted-foreground">{order.customer?.email}</p>}
+          {customerEmail && <p className="text-sm text-muted-foreground">{customerEmail}</p>}
           {customerAddress && <p className="text-sm text-muted-foreground mt-1">{customerAddress}</p>}
         </div>
         <div className="text-right">

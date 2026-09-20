@@ -13,6 +13,11 @@ vi.mock('@/features/settings/tracking/monitoring-api', () => ({
     dedup: vi.fn(),
     health: vi.fn(),
     mirrorCapture: vi.fn(),
+    quality: vi.fn(),
+    coverage: vi.fn(),
+    watchdog: vi.fn(),
+    healthScore: vi.fn(),
+    purchaseReconciliation: vi.fn(),
     timeline: vi.fn(),
   },
 }))
@@ -121,6 +126,15 @@ describe('TrackingMonitoring page', () => {
     vi.mocked(monitoringApi.dedup).mockResolvedValue(MOCK_DEDUP as any)
     vi.mocked(monitoringApi.health).mockResolvedValue(MOCK_HEALTH as any)
     vi.mocked(monitoringApi.mirrorCapture).mockResolvedValue(MOCK_MIRROR as any)
+    vi.mocked(monitoringApi.quality).mockResolvedValue({
+      quality: { windowedDispatches: 0, sent: 0, deduped: 0, failed: 0, dead: 0, retried: 0, replayed: 0, dedupRate: 0, retryRate: 0, dedupedCaptures: 0, capturedSnapshots: 0, emq: { windowedDispatches: 0, qualityFlagged: 0, noEmPhShare: 0 }, mirror: { totalSnapshots: 0, browserOrigin: 0, serverOrigin: 0, browserMirrorRatio: 0 } },
+    } as any)
+    vi.mocked(monitoringApi.coverage).mockResolvedValue({ identityCoverage: [] } as any)
+    vi.mocked(monitoringApi.watchdog).mockResolvedValue({ violations: [] } as any)
+    vi.mocked(monitoringApi.healthScore).mockResolvedValue({ healthScore: { score: 100, grade: 'A', penalties: [] } } as any)
+    vi.mocked(monitoringApi.purchaseReconciliation).mockResolvedValue({
+      reconciliation: { newOrders: 0, confirmedOrders: 0, deliveredOrders: 0, expectedPurchases: 0, canonicalPurchases: 0, uniquePurchaseEventIds: 0, browserOriginPurchases: 0, instantPurchases: 0, validatedPurchases: 0, offlinePurchases: 0, browserPurchases: 0, replayedEvents: 0, purchaseDiff: 0, byProvider: {}, byDestination: {}, orphanPurchases: 0, metaPurchaseMode: 'instant', metaValidatedStatus: '', range: { from: '2026-09-20', to: '2026-09-20' } },
+    } as any)
     vi.mocked(monitoringApi.timeline).mockResolvedValue(MOCK_TIMELINE as any)
   })
 
@@ -142,7 +156,8 @@ describe('TrackingMonitoring page', () => {
   it('renders volume by event type with counts', async () => {
     const screen = await renderPage()
 
-    await expect.element(screen.getByText('Purchase')).toBeInTheDocument()
+    // Use exact match to avoid matching "Purchase" in the reconciliation card description
+    await expect.element(screen.getByText('Purchase', { exact: true })).toBeInTheDocument()
     await expect.element(screen.getByText('42', { exact: true })).toBeInTheDocument()
     await expect.element(screen.getByText('AddToCart')).toBeInTheDocument()
     await expect.element(screen.getByText('17', { exact: true })).toBeInTheDocument()

@@ -4,6 +4,12 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { buildAdapterRegistry } from './adapters';
 import { DispatchFunnel, MonitoringService } from './monitoring.service';
+import {
+  MonitoringDateRange,
+  validateDateRange,
+  buildPresetRange,
+} from './dto/monitoring.dto';
+import { dhakaDateString } from '../common/utils/dhaka-time';
 
 /** Ops-dashboard window cap: a week back, anything more is a misconfigured query. */
 const MAX_HOURS = 168;
@@ -29,28 +35,71 @@ export class MonitoringController {
   ) {}
 
   /**
+   * Resolve the date range from query parameters.
+   * Supports both legacy `hours` parameter and new `from`/`to` or `preset` parameters.
+   * Returns a MonitoringDateRange with absolute UTC instants for Dhaka-day boundaries.
+   */
+  private resolveRange(
+    from?: string,
+    to?: string,
+    preset?: string,
+    hours?: string,
+  ): MonitoringDateRange {
+    // Priority: preset > from/to > hours > default (today)
+    if (preset) {
+      const validPresets = ['today', 'yesterday', 'last7days'];
+      if (!validPresets.includes(preset)) {
+        throw new BadRequestException(
+          `Invalid preset: "${preset}". Valid presets: ${validPresets.join(', ')}`,
+        );
+      }
+      return buildPresetRange(preset as 'today' | 'yesterday' | 'last7days');
+    }
+    if (from && to) {
+      return validateDateRange(from, to);
+    }
+    // Legacy hours support: convert to date range
+    if (hours) {
+      const h = this.hoursParam(hours);
+      const now = new Date();
+      const fromMs = now.getTime() - h * 60 * 60 * 1000;
+      const fromDate = new Date(fromMs);
+      const fromStr = dhakaDateString(fromDate);
+      const toStr = dhakaDateString(now);
+      return validateDateRange(fromStr, toStr);
+    }
+    // Default: today
+    return buildPresetRange('today');
+  }
+
+  /**
    * Snapshot volume by eventType + per-provider dispatch funnel + DEAD/DLQ stats.
    * The funnel is aggregated across every provider the adapter registry knows, so
    * a newly registered provider appears on the dashboard without a code change.
    */
   @Get('overview')
-  async overview(@Query('hours') hours?: string) {
-    const window = this.hoursParam(hours);
+  async overview(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('preset') preset?: string,
+    @Query('hours') hours?: string,
+  ) {
+    const range = this.resolveRange(from, to, preset, hours);
     const providers = buildAdapterRegistry().map((adapter) => adapter.provider);
     const [volumeByEventType, deadStats, relayHealth, ...funnels] =
       await Promise.all([
-        this.monitoring.getVolumeByEventType(window),
+        this.monitoring.getVolumeByEventType(range),
         this.monitoring.getDeadStats(),
         this.monitoring.getRelayHealth(),
         ...providers.map((provider) =>
-          this.monitoring.getDispatchFunnel(provider, window),
+          this.monitoring.getDispatchFunnel(provider, range),
         ),
       ]);
     const dispatchFunnel: Record<string, DispatchFunnel> = {};
     providers.forEach((provider, i) => {
       dispatchFunnel[provider] = funnels[i];
     });
-    return { volumeByEventType, dispatchFunnel, deadStats, relayHealth };
+    return { volumeByEventType, dispatchFunnel, deadStats, relayHealth, range: { from: range.fromStr, to: range.toStr } };
   }
 
   /**
@@ -75,9 +124,15 @@ export class MonitoringController {
    * coverage (that metric lives in Events Manager).
    */
   @Get('mirror-capture')
-  async mirrorCapture(@Query('hours') hours?: string) {
+  async mirrorCapture(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('preset') preset?: string,
+    @Query('hours') hours?: string,
+  ) {
+    const range = this.resolveRange(from, to, preset, hours);
     return {
-      mirrorCapture: await this.monitoring.getMirrorCapture(this.hoursParam(hours)),
+      mirrorCapture: await this.monitoring.getMirrorCapture(range),
     };
   }
 
@@ -87,8 +142,14 @@ export class MonitoringController {
    * authoritative EMQ score is Meta's Dataset Quality API.
    */
   @Get('emq')
-  async emq(@Query('hours') hours?: string) {
-    return { emq: await this.monitoring.getEmqProxy(this.hoursParam(hours)) };
+  async emq(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('preset') preset?: string,
+    @Query('hours') hours?: string,
+  ) {
+    const range = this.resolveRange(from, to, preset, hours);
+    return { emq: await this.monitoring.getEmqProxy(range) };
   }
 
   /**
@@ -96,9 +157,15 @@ export class MonitoringController {
    * replay volume, dedup/retry rates, EMQ + mirror proxies in one view.
    */
   @Get('quality')
-  async quality(@Query('hours') hours?: string) {
+  async quality(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('preset') preset?: string,
+    @Query('hours') hours?: string,
+  ) {
+    const range = this.resolveRange(from, to, preset, hours);
     return {
-      quality: await this.monitoring.getQualityRates(this.hoursParam(hours)),
+      quality: await this.monitoring.getQualityRates(range),
     };
   }
 
@@ -108,9 +175,15 @@ export class MonitoringController {
    * (configuration state). The alert source for the ops dashboard.
    */
   @Get('watchdog')
-  async watchdog(@Query('hours') hours?: string) {
+  async watchdog(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('preset') preset?: string,
+    @Query('hours') hours?: string,
+  ) {
+    const range = this.resolveRange(from, to, preset, hours);
     return {
-      violations: await this.monitoring.getWatchdog(this.hoursParam(hours)),
+      violations: await this.monitoring.getWatchdog(range),
     };
   }
 
@@ -119,9 +192,15 @@ export class MonitoringController {
    * watchdog penalties — a single-page drift signal with drill-down.
    */
   @Get('health-score')
-  async healthScore(@Query('hours') hours?: string) {
+  async healthScore(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('preset') preset?: string,
+    @Query('hours') hours?: string,
+  ) {
+    const range = this.resolveRange(from, to, preset, hours);
     return {
-      healthScore: await this.monitoring.getHealthScore(this.hoursParam(hours)),
+      healthScore: await this.monitoring.getHealthScore(range),
     };
   }
 
@@ -138,9 +217,15 @@ export class MonitoringController {
 
   /** Capture -> dispatch latency (avg + p95) over dispatched outboxes. */
   @Get('freshness')
-  async freshness(@Query('hours') hours?: string) {
+  async freshness(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('preset') preset?: string,
+    @Query('hours') hours?: string,
+  ) {
+    const range = this.resolveRange(from, to, preset, hours);
     const { avgCaptureToDispatchSec, p95CaptureToDispatchSec } =
-      await this.monitoring.getFreshness(this.hoursParam(hours));
+      await this.monitoring.getFreshness(range);
     return { avgCaptureToDispatchSec, p95CaptureToDispatchSec };
   }
 
@@ -148,18 +233,31 @@ export class MonitoringController {
    * Purchase reconciliation (exactly-once observability): qualifying orders vs
    * canonical Purchase events vs unique eventIds vs per-provider delivery rows.
    * Every Purchase is traceable by orderId + eventId via `timeline`.
+   * Now windowed by date range (Phase 5+10 upgrade).
    */
   @Get('purchase-reconciliation')
-  async purchaseReconciliation() {
+  async purchaseReconciliation(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('preset') preset?: string,
+    @Query('hours') hours?: string,
+  ) {
+    const range = this.resolveRange(from, to, preset, hours);
     return {
-      reconciliation: await this.monitoring.getPurchaseReconciliation(),
+      reconciliation: await this.monitoring.getPurchaseReconciliation(range),
     };
   }
 
   /** CAPI dedup-key usage over the window (event_id/external_id snapshots, fbp/fbc contexts). */
   @Get('dedup')
-  async dedup(@Query('hours') hours?: string) {
-    const keyUsage = await this.monitoring.getDedupKeyUsage(this.hoursParam(hours));
+  async dedup(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('preset') preset?: string,
+    @Query('hours') hours?: string,
+  ) {
+    const range = this.resolveRange(from, to, preset, hours);
+    const keyUsage = await this.monitoring.getDedupKeyUsage(range);
     return { keyUsage };
   }
 
@@ -170,9 +268,15 @@ export class MonitoringController {
    * the Meta-side coverage survey.
    */
   @Get('coverage')
-  async coverage(@Query('hours') hours?: string) {
+  async coverage(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('preset') preset?: string,
+    @Query('hours') hours?: string,
+  ) {
+    const range = this.resolveRange(from, to, preset, hours);
     return {
-      identityCoverage: await this.monitoring.getIdentityCoverage(this.hoursParam(hours)),
+      identityCoverage: await this.monitoring.getIdentityCoverage(range),
     };
   }
 

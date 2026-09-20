@@ -48,6 +48,7 @@ import { SecurityService } from '../security/security.service';
 import { OrderEditLockService } from './order-edit-lock.service';
 import { MarketingAttributionService } from '../marketing/marketing-attribution.service';
 import { CommissionsService } from '../commissions/commissions.service';
+import { TrackingEligibilityGate } from '../tracking/tracking-eligibility-gate';
 
 const ORDER_TRANSITIONS: Record<string, string[]> = {
   Pending: ['Payment Pending', 'Hold', 'Confirmed', 'Cancelled'],
@@ -211,6 +212,7 @@ export class OrdersService {
     private readonly orderStockDeduct: OrderStockDeductService,
     private readonly editLock: OrderEditLockService,
     private readonly commissionsService: CommissionsService,
+    private readonly eligibilityGate: TrackingEligibilityGate,
     @Optional()
     private readonly marketingAttribution?: MarketingAttributionService,
   ) {}
@@ -1465,6 +1467,22 @@ export class OrdersService {
       const resolvedSourceType =
         dto.sourceType || webAttribution?.sourceType || null;
 
+      // Order-time customer snapshot: capture customer data at order creation
+      // time so it's preserved independently of later CustomerProfile mutations.
+      // This is the immutable record of what was known about the customer when
+      // the order was placed.
+      const shippingAddrObj = typeof dto.shippingAddress === 'object' && dto.shippingAddress
+        ? dto.shippingAddress as Record<string, unknown>
+        : {};
+      const orderTimeEmail = dto.guestEmail || user?.email || null;
+      const orderTimePhone = dto.guestPhone || user?.phoneNumber || null;
+      const orderTimeFirstName = dto.guestName?.split(' ')[0] || user?.firstName || null;
+      const orderTimeLastName = dto.guestName?.split(' ').slice(1).join(' ') || user?.lastName || null;
+      const orderTimeCity = (shippingAddrObj.city as string) || (shippingAddrObj.district as string) || null;
+      const orderTimeState = (shippingAddrObj.state as string) || (shippingAddrObj.division as string) || resolveDivision(dto.district) || null;
+      const orderTimeZip = (shippingAddrObj.zip as string) || (shippingAddrObj.zipCode as string) || (shippingAddrObj.postalCode as string) || null;
+      const orderTimeCountry = (shippingAddrObj.country as string) || 'BD';
+
       const created = await tx.order.create({
         data: {
           displayId,
@@ -1495,6 +1513,16 @@ export class OrdersService {
           trackingSessionId: dto.trackingSessionId ?? null,
           guestName: dto.guestName,
           guestPhone: dto.guestPhone,
+          // Order-time customer snapshot: immutable record of customer data at
+          // order creation time. NEVER mutated after order creation.
+          customerEmail: orderTimeEmail,
+          customerPhone: orderTimePhone,
+          customerFirstName: orderTimeFirstName,
+          customerLastName: orderTimeLastName,
+          customerCity: orderTimeCity,
+          customerState: orderTimeState,
+          customerZip: orderTimeZip,
+          customerCountry: orderTimeCountry,
           paymentOptionType: dto.paymentOptionType,
           paymentStatus:
             dto.paymentOptionType === 'CASH_ON_DELIVERY'
@@ -4365,6 +4393,13 @@ export class OrdersService {
 
     if (!metaInstant && !tiktokInstant) return;
 
+    // Check order source eligibility before capturing
+    const eligibility = await this.eligibilityGate.checkOrderEvent('Purchase', order.id);
+    if (!eligibility.eligible) {
+      this.logger.log(`Skipping instant Purchase for order ${order.id}: ${eligibility.reason}`);
+      return;
+    }
+
     await this.buildAndSendPurchaseEvent(order, 'instant', tx);
   }
 
@@ -4404,6 +4439,13 @@ export class OrdersService {
         tiktokMode === 'validated' && tiktokStatus === statusName;
 
       if (!metaFires && !tiktokFires) return;
+
+      // Check order source eligibility before capturing
+      const eligibility = await this.eligibilityGate.checkOrderEvent('Purchase', order.id);
+      if (!eligibility.eligible) {
+        this.logger.log(`Skipping validated Purchase for order ${order.id}: ${eligibility.reason}`);
+        return;
+      }
 
       const result = await this.buildAndSendPurchaseEvent(order, 'validated', tx);
       // Instant capture already owns the canonical snapshot (same deterministic
@@ -4455,40 +4497,43 @@ export class OrdersService {
     let zip = '';
     let country = 'BD';
 
-    // Canonical customer identity: shipping address is the source of truth for
-    // the Purchase payload (customer-entered checkout data). CustomerProfile
-    // fields are fallback for registered users without shipping details.
+    // Order-time customer snapshot (PREFERRED): immutable record of customer
+    // data at order creation time. This is the authoritative source for Purchase
+    // tracking events because it preserves what was known when the order was
+    // placed, independent of later CustomerProfile mutations.
+    email = order.customerEmail || '';
+    phone = order.customerPhone || '';
+    firstName = order.customerFirstName || '';
+    lastName = order.customerLastName || '';
+    city = order.customerCity || '';
+    state = order.customerState || '';
+    zip = order.customerZip || '';
+    country = order.customerCountry || 'BD';
+
+    // Fallback to shippingAddress JSON for fields not in the snapshot
+    // (legacy orders created before the snapshot was added).
     const shippingAddr = order.shippingAddress || {};
     if (typeof shippingAddr === 'object') {
-      phone = shippingAddr.phone || '';
-      firstName = shippingAddr.name || '';
+      if (!phone) phone = shippingAddr.phone || '';
+      if (!firstName) firstName = shippingAddr.name || '';
+      if (!city) city = shippingAddr.city || shippingAddr.district || '';
+      if (!state) state = shippingAddr.state || shippingAddr.division || resolveDivision(shippingAddr.district) || '';
+      if (!zip) zip = shippingAddr.zip || shippingAddr.zipCode || shippingAddr.postalCode || '';
+      if (shippingAddr.country && !order.customerCountry) country = shippingAddr.country;
     }
 
+    // Fallback to CustomerProfile for fields not in the snapshot
+    // (legacy orders created before the snapshot was added).
     if (order.customer) {
-      email = order.customer.email || '';
+      if (!email) email = order.customer.email || '';
       if (!phone) phone = order.customer.phone || '';
       if (!firstName) firstName = order.customer.name || '';
-      lastName = order.customer.lastName || '';
+      if (!lastName) lastName = order.customer.lastName || '';
     }
 
+    // Fallback to guest fields for legacy orders.
     if (!phone) phone = order.guestPhone || '';
     if (!firstName) firstName = order.guestName || '';
-
-    if (typeof shippingAddr === 'object') {
-      city = shippingAddr.city || shippingAddr.district || '';
-      // Meta/GA4 match keys (Wave-2.5): state/zip are anonymous match fields —
-      // they lift EMQ without PII. Read both the Address model names (state,
-      // zipCode) and storefront aliases (division, postalCode, zip). Historical
-      // orders without a persisted division are lazily resolved here from the
-      // district via the canonical resolver (spec §21).
-      state =
-        shippingAddr.state ||
-        shippingAddr.division ||
-        resolveDivision(shippingAddr.district) ||
-        '';
-      zip = shippingAddr.zip || shippingAddr.zipCode || shippingAddr.postalCode || '';
-      if (shippingAddr.country) country = shippingAddr.country;
-    }
 
     const itemsList = (order.items as any[]) || [];
     const totalValue = Number(order.total || order.subtotal || 0);
@@ -4593,12 +4638,14 @@ export class OrdersService {
     mode: 'instant' | 'validated',
     tx?: Prisma.TransactionClient,
   ): Promise<{ status: 'CAPTURED' | 'DEDUPED'; snapshotId?: string } | undefined> {
-    const eventTimeSec =
-      mode === 'validated'
-        ? Math.floor(Date.now() / 1000)
-        : order.createdAt
-          ? Math.floor(new Date(order.createdAt).getTime() / 1000)
-          : Math.floor(Date.now() / 1000);
+    // CRITICAL: The business event_time MUST always represent the original order
+    // creation instant (T0), regardless of when the Purchase is triggered.
+    // For validated mode, the Purchase is DISPATCHED at T1 (confirmation time)
+    // but the event_time must still be T0 (order creation time).
+    // Using Date.now() here would incorrectly backdate the event to T1.
+    const eventTimeSec = order.createdAt
+      ? Math.floor(new Date(order.createdAt).getTime() / 1000)
+      : Math.floor(Date.now() / 1000);
     const base = await this.buildCanonicalOrderTrackingData(order, {
       eventTimeSec,
     });

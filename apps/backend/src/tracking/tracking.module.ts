@@ -18,6 +18,9 @@ import { MonitoringController } from './monitoring.controller';
 import { RetentionCleanupService } from './retention-cleanup.service';
 import { DeletionService } from './tracking-deletion.service';
 import { DeletionController } from './deletion.controller';
+import { OrderSourcePolicyService } from './order-source-policy';
+import { OrderSourcePolicyController } from './order-source-policy.controller';
+import { TrackingEligibilityGate } from './tracking-eligibility-gate';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
@@ -36,6 +39,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     ReplayController,
     MonitoringController,
     DeletionController,
+    OrderSourcePolicyController,
   ],
   providers: [
     TrackingContextService,
@@ -52,6 +56,8 @@ import { PrismaModule } from '../prisma/prisma.module';
     MonitoringService,
     RetentionCleanupService,
     DeletionService,
+    OrderSourcePolicyService,
+    TrackingEligibilityGate,
   ],
   exports: [
     TrackingContextService,
@@ -63,6 +69,8 @@ import { PrismaModule } from '../prisma/prisma.module';
     DlqService,
     ReplayService,
     MonitoringService,
+    OrderSourcePolicyService,
+    TrackingEligibilityGate,
   ],
 })
 export class TrackingModule {}

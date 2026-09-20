@@ -549,6 +549,12 @@ export class PosOrdersService {
           customerId: dto.customerId,
           guestName: dto.guestName,
           guestPhone: dto.guestPhone,
+          // Order-time customer snapshot: preserve customer data at POS order
+          // creation time for Purchase tracking events.
+          customerEmail: null,
+          customerPhone: dto.guestPhone || null,
+          customerFirstName: dto.guestName?.split(' ')[0] || null,
+          customerLastName: dto.guestName?.split(' ').slice(1).join(' ') || null,
           customerNotes: dto.notes,
           paymentStatus: 'PAID',
           timeline: [

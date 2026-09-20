@@ -174,29 +174,72 @@ export interface HealthScoreResponse {
   healthScore: HealthScore
 }
 
+export interface PurchaseReconciliation {
+  newOrders: number
+  confirmedOrders: number
+  deliveredOrders: number
+  expectedPurchases: number
+  canonicalPurchases: number
+  uniquePurchaseEventIds: number
+  browserOriginPurchases: number
+  instantPurchases: number
+  validatedPurchases: number
+  offlinePurchases: number
+  browserPurchases: number
+  replayedEvents: number
+  purchaseDiff: number
+  byProvider: Record<string, { sent: number; pending: number; failed: number; skipped: number }>
+  byDestination: Record<string, { sent: number; pending: number; failed: number; skipped: number }>
+  orphanPurchases: number
+  metaPurchaseMode: string
+  metaValidatedStatus: string
+  range: { from: string; to: string }
+}
+
+export interface PurchaseReconciliationResponse {
+  reconciliation: PurchaseReconciliation
+}
+
+/** Date range query parameters for monitoring endpoints. */
+export interface DateRangeParams {
+  from?: string
+  to?: string
+  preset?: 'today' | 'yesterday' | 'last7days'
+}
+
+/** Build query string from date range params. */
+function buildRangeQuery(params?: DateRangeParams): string {
+  if (!params) return 'preset=today'
+  if (params.preset) return `preset=${params.preset}`
+  if (params.from && params.to) return `from=${params.from}&to=${params.to}`
+  return 'preset=today'
+}
+
 export const monitoringApi = {
-  overview: (hours = 24) =>
-    apiClient.get<OverviewResponse>(`/tracking/admin/monitoring/overview?hours=${hours}`).then((r) => r.data),
+  overview: (params?: DateRangeParams) =>
+    apiClient.get<OverviewResponse>(`/tracking/admin/monitoring/overview?${buildRangeQuery(params)}`).then((r) => r.data),
   failures: (limit = 10) =>
     apiClient.get<FailuresResponse>(`/tracking/admin/monitoring/failures?limit=${limit}`).then((r) => r.data),
-  freshness: (hours = 24) =>
-    apiClient.get<FreshnessResponse>(`/tracking/admin/monitoring/freshness?hours=${hours}`).then((r) => r.data),
-  dedup: (hours = 24) =>
-    apiClient.get<DedupResponse>(`/tracking/admin/monitoring/dedup?hours=${hours}`).then((r) => r.data),
+  freshness: (params?: DateRangeParams) =>
+    apiClient.get<FreshnessResponse>(`/tracking/admin/monitoring/freshness?${buildRangeQuery(params)}`).then((r) => r.data),
+  dedup: (params?: DateRangeParams) =>
+    apiClient.get<DedupResponse>(`/tracking/admin/monitoring/dedup?${buildRangeQuery(params)}`).then((r) => r.data),
   health: () =>
     apiClient.get<HealthResponse>(`/tracking/admin/monitoring/health`).then((r) => r.data),
-  mirrorCapture: (hours = 24) =>
-    apiClient.get<{ mirrorCapture: MirrorCaptureStats }>(`/tracking/admin/monitoring/mirror-capture?hours=${hours}`).then((r) => r.data),
-  emq: (hours = 24) =>
-    apiClient.get<{ emq: EmqProxy }>(`/tracking/admin/monitoring/emq?hours=${hours}`).then((r) => r.data),
-  quality: (hours = 24) =>
-    apiClient.get<QualityResponse>(`/tracking/admin/monitoring/quality?hours=${hours}`).then((r) => r.data),
-  coverage: (hours = 24) =>
-    apiClient.get<CoverageResponse>(`/tracking/admin/monitoring/coverage?hours=${hours}`).then((r) => r.data),
-  watchdog: (hours = 24) =>
-    apiClient.get<WatchdogResponse>(`/tracking/admin/monitoring/watchdog?hours=${hours}`).then((r) => r.data),
-  healthScore: (hours = 24) =>
-    apiClient.get<HealthScoreResponse>(`/tracking/admin/monitoring/health-score?hours=${hours}`).then((r) => r.data),
+  mirrorCapture: (params?: DateRangeParams) =>
+    apiClient.get<{ mirrorCapture: MirrorCaptureStats }>(`/tracking/admin/monitoring/mirror-capture?${buildRangeQuery(params)}`).then((r) => r.data),
+  emq: (params?: DateRangeParams) =>
+    apiClient.get<{ emq: EmqProxy }>(`/tracking/admin/monitoring/emq?${buildRangeQuery(params)}`).then((r) => r.data),
+  quality: (params?: DateRangeParams) =>
+    apiClient.get<QualityResponse>(`/tracking/admin/monitoring/quality?${buildRangeQuery(params)}`).then((r) => r.data),
+  coverage: (params?: DateRangeParams) =>
+    apiClient.get<CoverageResponse>(`/tracking/admin/monitoring/coverage?${buildRangeQuery(params)}`).then((r) => r.data),
+  watchdog: (params?: DateRangeParams) =>
+    apiClient.get<WatchdogResponse>(`/tracking/admin/monitoring/watchdog?${buildRangeQuery(params)}`).then((r) => r.data),
+  healthScore: (params?: DateRangeParams) =>
+    apiClient.get<HealthScoreResponse>(`/tracking/admin/monitoring/health-score?${buildRangeQuery(params)}`).then((r) => r.data),
+  purchaseReconciliation: (params?: DateRangeParams) =>
+    apiClient.get<PurchaseReconciliationResponse>(`/tracking/admin/monitoring/purchase-reconciliation?${buildRangeQuery(params)}`).then((r) => r.data),
   timeline: (eventId: string) =>
     apiClient
       .get<TimelineResponse>(`/tracking/admin/monitoring/timeline?eventId=${encodeURIComponent(eventId)}`)

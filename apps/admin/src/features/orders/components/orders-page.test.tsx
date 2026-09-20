@@ -43,6 +43,13 @@ const mockOrder = {
   timeline: [],
   createdAt: '2024-01-01T00:00:00Z',
   updatedAt: '2024-01-01T00:00:00Z',
+  // Order-time customer snapshot (immutable)
+  customerFirstName: 'John',
+  customerLastName: 'Doe',
+  customerEmail: 'john@example.com',
+  customerPhone: '+1234567890',
+  guestName: null,
+  guestPhone: null,
   customer: {
     id: 'c1',
     firstName: 'John',
@@ -178,6 +185,13 @@ describe('Orders page', () => {
           id: '2',
           displayId: '#ORD-002',
           total: '150',
+          // Order-time customer snapshot
+          customerFirstName: 'Jane',
+          customerLastName: 'Smith',
+          customerEmail: 'jane@example.com',
+          customerPhone: '+9876543210',
+          guestName: null,
+          guestPhone: null,
           customer: {
             ...mockOrder.customer,
             firstName: 'Jane',

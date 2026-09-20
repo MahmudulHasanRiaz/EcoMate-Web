@@ -16,6 +16,7 @@ import { TrackingTabs } from './tracking-nav'
 import { MetaDestinationsCard, hasConfiguredDestinations } from './meta-destinations-card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ProviderHeader, PurchaseTimingFields } from './tracking-ui'
+import { OrderSourcePolicy } from './order-source-policy'
 
 export function TrackingSettings() {
   const queryClient = useQueryClient()
@@ -125,6 +126,7 @@ export function TrackingSettings() {
         </p>
       </div>
       <TrackingTabs />
+      <OrderSourcePolicy />
       <Separator className='my-6' />
 
       {/* Tracking pipeline relay — global kill switch for every provider. */}

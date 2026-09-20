@@ -11,6 +11,7 @@ import { useLicenseStore } from '@/stores/license-store'
 import { useOrdersFilterStore } from '@/stores/orders-filter-store'
 import { copyToClipboard } from '@/lib/clipboard'
 import { resolveOrderItemImages } from '@/lib/product-image'
+import { getCustomerDisplayName, getCustomerPhone, getCustomerEmail } from '@/lib/order-display'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -364,7 +365,7 @@ export function Orders() {
     const rows = (data?.data || []) as OrderResponse[]
     const phones = rows
       .filter(o => selected.includes(o.id))
-      .map(o => o.customer?.phoneNumber || o.guestPhone || '')
+      .map(o => getCustomerPhone(o))
       .filter(Boolean)
     return Array.from(new Set(phones))
   }, [data, selected])
@@ -614,10 +615,10 @@ export function Orders() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className='text-sm font-medium leading-tight'>{o.customer ? `${o.customer.firstName} ${o.customer.lastName}` : (o.guestName || 'Guest')}</div>
+                          <div className='text-sm font-medium leading-tight'>{getCustomerDisplayName(o)}</div>
                           <div className='flex items-center gap-1.5 mt-0.5'>
-                            <a href={`tel:${o.customer?.phoneNumber || o.guestPhone}`} onClick={e => e.stopPropagation()} className='text-[11px] text-muted-foreground hover:text-primary transition-colors'>{o.customer?.phoneNumber || o.guestPhone || '—'}</a>
-                            <CustomerContactActions phone={o.customer?.phoneNumber || o.guestPhone} showCopy />
+                            <a href={`tel:${getCustomerPhone(o)}`} onClick={e => e.stopPropagation()} className='text-[11px] text-muted-foreground hover:text-primary transition-colors'>{getCustomerPhone(o) || '—'}</a>
+                            <CustomerContactActions phone={getCustomerPhone(o)} showCopy />
                           </div>
                         </TableCell>
                         <TableCell onClick={e => e.stopPropagation()}>
@@ -782,7 +783,7 @@ export function Orders() {
                                   </div>
                                   <div className='rounded-lg border bg-background p-3.5 shadow-sm space-y-2.5'>
                                     <div className='font-medium text-sm'>
-                                      {addr.name || (o.customer ? `${o.customer.firstName} ${o.customer.lastName}` : o.guestName || 'Guest')}
+                                      {addr.name || getCustomerDisplayName(o)}
                                     </div>
                                     {(addr.line1 || addr.line2) && (
                                       <div className='text-sm leading-relaxed'>{[addr.line1, addr.line2].filter(Boolean).join(', ')}</div>
@@ -804,14 +805,14 @@ export function Orders() {
                                           <CustomerContactActions phone={o.customer?.phoneNumber || o.guestPhone} showCopy />
                                         </div>
                                       )}
-                                      {o.customer?.email && (
+                                      {getCustomerEmail(o) && (
                                         <div className='flex items-center gap-2 text-sm text-muted-foreground'>
                                           <Mail className='h-3.5 w-3.5 shrink-0' />
-                                          <span className='truncate'>{o.customer.email}</span>
+                                          <span className='truncate'>{getCustomerEmail(o)}</span>
                                         </div>
                                       )}
-                                      {(o.customer?.phoneNumber || o.guestPhone) && (
-                                        <CourierQuickView phone={(o.customer?.phoneNumber || o.guestPhone || '').replace(/[^\d]/g, '')} />
+                                      {getCustomerPhone(o) && (
+                                        <CourierQuickView phone={getCustomerPhone(o).replace(/[^\d]/g, '')} />
                                       )}
                                     </div>
                                   </div>

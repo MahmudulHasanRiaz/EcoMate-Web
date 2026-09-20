@@ -1,12 +1,12 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Loader2, Search } from 'lucide-react'
+import { Loader2, Search, Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Separator } from '@/components/ui/separator'
-import { monitoringApi, type DispatchFunnel } from './monitoring-api'
+import { monitoringApi, type DispatchFunnel, type DateRangeParams } from './monitoring-api'
 import { TrackingTabs } from './tracking-nav'
 
 const FUNNEL_COLUMNS: { key: keyof DispatchFunnel; label: string }[] = [
@@ -28,6 +28,13 @@ const DEDUP_KEY_LABELS: Record<string, string> = {
   fbc: 'fbc (contexts)',
 }
 
+/** Date range presets for the monitoring dashboard. */
+const PRESETS = [
+  { key: 'today' as const, label: 'Today' },
+  { key: 'yesterday' as const, label: 'Yesterday' },
+  { key: 'last7days' as const, label: 'Last 7 Days' },
+]
+
 /**
  * Tracking monitoring dashboard (Phase 6, design §14). Read-only aggregate views
  * over the CAPI tracking pipeline served by the backend monitoring endpoints.
@@ -35,21 +42,35 @@ const DEDUP_KEY_LABELS: Record<string, string> = {
  * search-driven query keyed on the submitted event/order ID.
  */
 export function TrackingMonitoring() {
+  // Date range state
+  const [dateRange, setDateRange] = useState<DateRangeParams>({ preset: 'today' })
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
+
+  const applyCustomRange = () => {
+    if (customFrom && customTo) {
+      setDateRange({ from: customFrom, to: customTo })
+    }
+  }
+
+  // Include date range in query keys for correct refetching
+  const rangeKey = dateRange.preset || `${dateRange.from}-${dateRange.to}`
+
   const overview = useQuery({
-    queryKey: ['tracking-monitoring', 'overview'],
-    queryFn: () => monitoringApi.overview(),
+    queryKey: ['tracking-monitoring', 'overview', rangeKey],
+    queryFn: () => monitoringApi.overview(dateRange),
   })
   const failures = useQuery({
     queryKey: ['tracking-monitoring', 'failures'],
     queryFn: () => monitoringApi.failures(),
   })
   const freshness = useQuery({
-    queryKey: ['tracking-monitoring', 'freshness'],
-    queryFn: () => monitoringApi.freshness(),
+    queryKey: ['tracking-monitoring', 'freshness', rangeKey],
+    queryFn: () => monitoringApi.freshness(dateRange),
   })
   const dedup = useQuery({
-    queryKey: ['tracking-monitoring', 'dedup'],
-    queryFn: () => monitoringApi.dedup(),
+    queryKey: ['tracking-monitoring', 'dedup', rangeKey],
+    queryFn: () => monitoringApi.dedup(dateRange),
   })
   const health = useQuery({
     queryKey: ['tracking-monitoring', 'health'],
@@ -57,26 +78,30 @@ export function TrackingMonitoring() {
     refetchInterval: 60_000,
   })
   const mirrorCapture = useQuery({
-    queryKey: ['tracking-monitoring', 'mirror-capture'],
-    queryFn: () => monitoringApi.mirrorCapture(),
+    queryKey: ['tracking-monitoring', 'mirror-capture', rangeKey],
+    queryFn: () => monitoringApi.mirrorCapture(dateRange),
   })
   const quality = useQuery({
-    queryKey: ['tracking-monitoring', 'quality'],
-    queryFn: () => monitoringApi.quality(),
+    queryKey: ['tracking-monitoring', 'quality', rangeKey],
+    queryFn: () => monitoringApi.quality(dateRange),
   })
   const coverage = useQuery({
-    queryKey: ['tracking-monitoring', 'coverage'],
-    queryFn: () => monitoringApi.coverage(),
+    queryKey: ['tracking-monitoring', 'coverage', rangeKey],
+    queryFn: () => monitoringApi.coverage(dateRange),
   })
   const watchdog = useQuery({
-    queryKey: ['tracking-monitoring', 'watchdog'],
-    queryFn: () => monitoringApi.watchdog(),
+    queryKey: ['tracking-monitoring', 'watchdog', rangeKey],
+    queryFn: () => monitoringApi.watchdog(dateRange),
     refetchInterval: 60_000,
   })
   const healthScore = useQuery({
-    queryKey: ['tracking-monitoring', 'health-score'],
-    queryFn: () => monitoringApi.healthScore(),
+    queryKey: ['tracking-monitoring', 'health-score', rangeKey],
+    queryFn: () => monitoringApi.healthScore(dateRange),
     refetchInterval: 60_000,
+  })
+  const reconciliation = useQuery({
+    queryKey: ['tracking-monitoring', 'reconciliation', rangeKey],
+    queryFn: () => monitoringApi.purchaseReconciliation(dateRange),
   })
 
   const [eventIdInput, setEventIdInput] = useState('')
@@ -86,6 +111,16 @@ export function TrackingMonitoring() {
     queryFn: () => monitoringApi.timeline(searchedEventId!),
     enabled: !!searchedEventId,
   })
+
+  const activeRangeLabel = useMemo(() => {
+    if (dateRange.preset) {
+      return PRESETS.find((p) => p.key === dateRange.preset)?.label ?? dateRange.preset
+    }
+    if (dateRange.from && dateRange.to) {
+      return dateRange.from === dateRange.to ? dateRange.from : `${dateRange.from} – ${dateRange.to}`
+    }
+    return 'Today'
+  }, [dateRange])
 
   if (overview.isLoading) {
     return (
@@ -97,21 +132,191 @@ export function TrackingMonitoring() {
 
   return (
     <div className='space-y-6 w-full pb-8'>
-      <div className='space-y-0.5'>
-        <h2 className='text-2xl font-bold tracking-tight'>Tracking Monitoring</h2>
-        <p className='text-muted-foreground'>
-          Aggregate views over the CAPI tracking pipeline (last 24 hours).
-        </p>
+      <div className='flex items-start justify-between gap-4'>
+        <div className='space-y-0.5'>
+          <h2 className='text-2xl font-bold tracking-tight'>Tracking Monitoring</h2>
+          <p className='text-muted-foreground'>
+            Aggregate views over the CAPI tracking pipeline.
+          </p>
+        </div>
       </div>
+
+      {/* Date range selector */}
+      <Card>
+        <CardContent className='pt-4'>
+          <div className='flex flex-wrap items-center gap-2'>
+            <Calendar className='h-4 w-4 text-muted-foreground' />
+            <span className='text-sm font-medium'>Date Range:</span>
+            {PRESETS.map((p) => (
+              <Button
+                key={p.key}
+                variant={dateRange.preset === p.key ? 'default' : 'outline'}
+                size='sm'
+                onClick={() => setDateRange({ preset: p.key })}
+              >
+                {p.label}
+              </Button>
+            ))}
+            <div className='flex items-center gap-1 ml-2'>
+              <Input
+                type='date'
+                value={customFrom}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                className='w-36 h-8 text-xs'
+                placeholder='Start date'
+              />
+              <span className='text-xs text-muted-foreground'>to</span>
+              <Input
+                type='date'
+                value={customTo}
+                onChange={(e) => setCustomTo(e.target.value)}
+                className='w-36 h-8 text-xs'
+                placeholder='End date'
+              />
+              <Button
+                variant='outline'
+                size='sm'
+                onClick={applyCustomRange}
+                disabled={!customFrom || !customTo}
+              >
+                Apply
+              </Button>
+            </div>
+            <span className='text-sm text-muted-foreground ml-2'>
+              Active: <span className='font-semibold'>{activeRangeLabel}</span>
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
       <TrackingTabs />
       <Separator className='my-6' />
+
+      {/* Business ↔ Tracking Reconciliation */}
+      <Card className='border-primary/20'>
+        <CardHeader className='pb-3'>
+          <CardTitle>Business ↔ Tracking Reconciliation</CardTitle>
+          <CardDescription>
+            Business orders vs canonical Purchase events for {activeRangeLabel}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {reconciliation.isLoading ? (
+            <Loader2 className='animate-spin h-5 w-5 text-primary' />
+          ) : reconciliation.data ? (
+            <div className='space-y-4'>
+              {/* Business metrics */}
+              <div className='grid grid-cols-3 gap-4'>
+                <div className='rounded-md border p-3'>
+                  <p className='text-sm text-muted-foreground'>New Orders</p>
+                  <p className='text-2xl font-bold'>{reconciliation.data.reconciliation.newOrders}</p>
+                </div>
+                <div className='rounded-md border p-3'>
+                  <p className='text-sm text-muted-foreground'>Confirmed</p>
+                  <p className='text-2xl font-bold'>{reconciliation.data.reconciliation.confirmedOrders}</p>
+                </div>
+                <div className='rounded-md border p-3'>
+                  <p className='text-sm text-muted-foreground'>Delivered</p>
+                  <p className='text-2xl font-bold'>{reconciliation.data.reconciliation.deliveredOrders}</p>
+                </div>
+              </div>
+
+              {/* Tracking metrics */}
+              <div className='grid grid-cols-2 gap-4 md:grid-cols-4'>
+                <div className='rounded-md border p-3'>
+                  <p className='text-sm text-muted-foreground'>Expected Purchase</p>
+                  <p className='text-2xl font-bold'>{reconciliation.data.reconciliation.expectedPurchases}</p>
+                  <p className='text-xs text-muted-foreground'>
+                    Mode: {reconciliation.data.reconciliation.metaPurchaseMode}
+                    {reconciliation.data.reconciliation.metaValidatedStatus
+                      ? ` (${reconciliation.data.reconciliation.metaValidatedStatus})`
+                      : ''}
+                  </p>
+                </div>
+                <div className='rounded-md border p-3'>
+                  <p className='text-sm text-muted-foreground'>Canonical Purchase</p>
+                  <p className='text-2xl font-bold'>{reconciliation.data.reconciliation.canonicalPurchases}</p>
+                </div>
+                <div className='rounded-md border p-3'>
+                  <p className='text-sm text-muted-foreground'>Browser/Mirror</p>
+                  <p className='text-2xl font-bold'>{reconciliation.data.reconciliation.browserOriginPurchases}</p>
+                </div>
+                <div className='rounded-md border p-3'>
+                  <p className='text-sm text-muted-foreground'>Difference</p>
+                  <p className={`text-2xl font-bold ${
+                    reconciliation.data.reconciliation.purchaseDiff !== 0 ? 'text-amber-600' : 'text-emerald-600'
+                  }`}>
+                    {reconciliation.data.reconciliation.purchaseDiff > 0 ? '+' : ''}
+                    {reconciliation.data.reconciliation.purchaseDiff}
+                  </p>
+                </div>
+              </div>
+
+              {/* Trigger mode breakdown */}
+              <div className='grid grid-cols-2 gap-4 md:grid-cols-5'>
+                <div className='rounded-md border p-2 text-center'>
+                  <p className='text-xs text-muted-foreground'>Instant</p>
+                  <p className='text-lg font-semibold'>{reconciliation.data.reconciliation.instantPurchases}</p>
+                </div>
+                <div className='rounded-md border p-2 text-center'>
+                  <p className='text-xs text-muted-foreground'>Validated</p>
+                  <p className='text-lg font-semibold'>{reconciliation.data.reconciliation.validatedPurchases}</p>
+                </div>
+                <div className='rounded-md border p-2 text-center'>
+                  <p className='text-xs text-muted-foreground'>Offline</p>
+                  <p className='text-lg font-semibold'>{reconciliation.data.reconciliation.offlinePurchases}</p>
+                </div>
+                <div className='rounded-md border p-2 text-center'>
+                  <p className='text-xs text-muted-foreground'>Browser</p>
+                  <p className='text-lg font-semibold'>{reconciliation.data.reconciliation.browserPurchases}</p>
+                </div>
+                <div className='rounded-md border p-2 text-center'>
+                  <p className='text-xs text-muted-foreground'>Replayed</p>
+                  <p className='text-lg font-semibold'>{reconciliation.data.reconciliation.replayedEvents}</p>
+                </div>
+              </div>
+
+              {/* Meta delivery breakdown */}
+              {Object.keys(reconciliation.data.reconciliation.byProvider).length > 0 && (
+                <div>
+                  <h4 className='text-sm font-semibold mb-2'>Provider Delivery</h4>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Provider</TableHead>
+                        <TableHead>SENT</TableHead>
+                        <TableHead>PENDING</TableHead>
+                        <TableHead>FAILED</TableHead>
+                        <TableHead>SKIPPED</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {Object.entries(reconciliation.data.reconciliation.byProvider).map(([provider, counts]) => (
+                        <TableRow key={provider}>
+                          <TableCell className='font-medium'>{provider}</TableCell>
+                          <TableCell>{counts.sent}</TableCell>
+                          <TableCell>{counts.pending}</TableCell>
+                          <TableCell>{counts.failed}</TableCell>
+                          <TableCell>{counts.skipped}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className='text-sm text-muted-foreground'>No reconciliation data available.</p>
+          )}
+        </CardContent>
+      </Card>
 
       <div className='grid gap-4 md:grid-cols-2'>
         {/* Volume by event type */}
         <Card>
           <CardHeader className='pb-3'>
             <CardTitle>Volume by Event Type</CardTitle>
-            <CardDescription>Snapshots captured in the last 24 hours</CardDescription>
+            <CardDescription>Snapshots captured in {activeRangeLabel}</CardDescription>
           </CardHeader>
           <CardContent>
             {(overview.data?.volumeByEventType ?? []).length === 0 ? (
@@ -155,7 +360,7 @@ export function TrackingMonitoring() {
         <Card>
           <CardHeader className='pb-3'>
             <CardTitle>Pipeline Health</CardTitle>
-            <CardDescription>Relay, Redis, BullMQ worker, dispatcher</CardDescription>
+            <CardDescription>Current runtime state (not windowed)</CardDescription>
           </CardHeader>
           <CardContent>
             <div className='grid grid-cols-2 gap-4'>
@@ -446,7 +651,7 @@ export function TrackingMonitoring() {
       <Card>
         <CardHeader className='pb-3'>
           <CardTitle>Dispatch Funnel</CardTitle>
-          <CardDescription>Per-provider dispatch state over the last 24 hours</CardDescription>
+          <CardDescription>Per-provider dispatch state for {activeRangeLabel}</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>

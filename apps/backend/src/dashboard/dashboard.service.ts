@@ -135,13 +135,6 @@ export class DashboardService {
         take: 20,
         include: {
           status: true,
-          customer: {
-            select: {
-              id: true,
-              name: true,
-              phone: true,
-            },
-          },
           _count: { select: { items: true } },
         },
       });
@@ -150,8 +143,9 @@ export class DashboardService {
         displayId: o.displayId,
         total: Number(o.total),
         status: o.status.name,
-        customerName: o.customer?.name || 'Unknown',
-        customerPhone: o.customer?.phone || '',
+        // Use order-time snapshot for historical customer data
+        customerName: [o.customerFirstName, o.customerLastName].filter(Boolean).join(' ') || o.guestName || 'Unknown',
+        customerPhone: o.customerPhone || o.guestPhone || '',
         itemCount: o._count.items,
         createdAt: o.createdAt,
       }));

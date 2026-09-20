@@ -4,6 +4,7 @@ import { ROLES_KEY } from '../../common/decorators/roles.decorator';
 import { MonitoringController } from '../monitoring.controller';
 import { MonitoringService } from '../monitoring.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { buildPresetRange } from '../dto/monitoring.dto';
 
 /** Zero-filled funnel shape the service returns for every provider. */
 const EMPTY_FUNNEL = {
@@ -130,7 +131,7 @@ describe('MonitoringController (admin monitoring endpoints)', () => {
       };
       monitoring.getDispatchFunnel.mockImplementation(async (provider: string) => funnels[provider]);
 
-      const result = await controller.overview(undefined);
+      const result = await controller.overview(undefined, undefined, undefined, undefined);
 
       expect(result.volumeByEventType).toEqual([{ eventType: 'Purchase', count: 5 }]);
       expect(result.deadStats).toEqual({ deadCount: 2, dlqDepth: 1 });
@@ -139,28 +140,31 @@ describe('MonitoringController (admin monitoring endpoints)', () => {
       expect(Object.keys(result.dispatchFunnel).sort()).toEqual(
         ['ga4', 'google_ads', 'meta', 'tiktok'],
       );
-      // default window
-      expect(monitoring.getVolumeByEventType).toHaveBeenCalledWith(24);
-      for (const provider of ['meta', 'tiktok', 'ga4', 'google_ads']) {
-        expect(monitoring.getDispatchFunnel).toHaveBeenCalledWith(provider, 24);
-      }
+      // Default is 'today' preset
+      expect(monitoring.getVolumeByEventType).toHaveBeenCalledWith(expect.objectContaining({
+        from: expect.any(Date),
+        to: expect.any(Date),
+      }));
     });
 
-    it('passes a valid hours window through to the service', async () => {
-      await controller.overview('6');
-      expect(monitoring.getVolumeByEventType).toHaveBeenCalledWith(6);
-      expect(monitoring.getDispatchFunnel).toHaveBeenCalledWith('meta', 6);
+    it('passes date range through to the service', async () => {
+      await controller.overview('2026-09-15', '2026-09-15', undefined, undefined);
+      expect(monitoring.getVolumeByEventType).toHaveBeenCalledWith(expect.objectContaining({
+        fromStr: '2026-09-15',
+        toStr: '2026-09-15',
+      }));
     });
 
-    it('caps hours at 168', async () => {
-      await controller.overview('200');
-      expect(monitoring.getVolumeByEventType).toHaveBeenCalledWith(168);
+    it('supports preset parameter', async () => {
+      await controller.overview(undefined, undefined, 'last7days', undefined);
+      expect(monitoring.getVolumeByEventType).toHaveBeenCalledWith(expect.objectContaining({
+        fromStr: expect.any(String),
+        toStr: expect.any(String),
+      }));
     });
 
-    it('rejects non-positive or non-integer hours with 400', async () => {
-      for (const bad of ['0', '-5', 'abc', '1.5']) {
-        await expect(controller.overview(bad)).rejects.toThrow(BadRequestException);
-      }
+    it('rejects invalid preset with 400', async () => {
+      await expect(controller.overview(undefined, undefined, 'invalid', undefined)).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -190,39 +194,45 @@ describe('MonitoringController (admin monitoring endpoints)', () => {
   });
 
   describe('GET /tracking/admin/monitoring/freshness', () => {
-    it('returns capture->dispatch latency stats, delegating to getFreshness(hours)', async () => {
+    it('returns capture->dispatch latency stats, delegating to getFreshness(range)', async () => {
       monitoring.getFreshness.mockResolvedValue({
         avgCaptureToDispatchSec: 12.5,
         p95CaptureToDispatchSec: 20,
       });
 
-      await expect(controller.freshness('12')).resolves.toEqual({
+      await expect(controller.freshness('2026-09-15', '2026-09-15', undefined, undefined)).resolves.toEqual({
         avgCaptureToDispatchSec: 12.5,
         p95CaptureToDispatchSec: 20,
       });
-      expect(monitoring.getFreshness).toHaveBeenCalledWith(12);
+      expect(monitoring.getFreshness).toHaveBeenCalledWith(expect.objectContaining({
+        fromStr: '2026-09-15',
+      }));
     });
 
-    it('defaults hours to 24', async () => {
-      await controller.freshness(undefined);
-      expect(monitoring.getFreshness).toHaveBeenCalledWith(24);
+    it('defaults to today preset', async () => {
+      await controller.freshness(undefined, undefined, undefined, undefined);
+      expect(monitoring.getFreshness).toHaveBeenCalledWith(expect.objectContaining({
+        fromStr: expect.any(String),
+      }));
     });
   });
 
   describe('GET /tracking/admin/monitoring/dedup', () => {
-    it('returns dedup-key usage, delegating to getDedupKeyUsage(hours)', async () => {
+    it('returns dedup-key usage, delegating to getDedupKeyUsage(range)', async () => {
       monitoring.getDedupKeyUsage.mockResolvedValue([
         { key: 'event_id', events: 50 },
         { key: 'external_id', events: 40 },
       ]);
 
-      await expect(controller.dedup('24')).resolves.toEqual({
+      await expect(controller.dedup('2026-09-15', '2026-09-15', undefined, undefined)).resolves.toEqual({
         keyUsage: [
           { key: 'event_id', events: 50 },
           { key: 'external_id', events: 40 },
         ],
       });
-      expect(monitoring.getDedupKeyUsage).toHaveBeenCalledWith(24);
+      expect(monitoring.getDedupKeyUsage).toHaveBeenCalledWith(expect.objectContaining({
+        fromStr: '2026-09-15',
+      }));
     });
   });
 
@@ -243,7 +253,7 @@ describe('MonitoringController (admin monitoring endpoints)', () => {
       });
     });
 
-    it('returns the browser-mirror capture ratio, delegating to getMirrorCapture(hours)', async () => {
+    it('returns the browser-mirror capture ratio, delegating to getMirrorCapture(range)', async () => {
       monitoring.getMirrorCapture.mockResolvedValue({
         totalSnapshots: 59,
         browserOrigin: 10,
@@ -251,7 +261,7 @@ describe('MonitoringController (admin monitoring endpoints)', () => {
         browserMirrorRatio: 10 / 59,
       });
 
-      await expect(controller.mirrorCapture('24')).resolves.toEqual({
+      await expect(controller.mirrorCapture('2026-09-15', '2026-09-15', undefined, undefined)).resolves.toEqual({
         mirrorCapture: {
           totalSnapshots: 59,
           browserOrigin: 10,
@@ -259,7 +269,9 @@ describe('MonitoringController (admin monitoring endpoints)', () => {
           browserMirrorRatio: 10 / 59,
         },
       });
-      expect(monitoring.getMirrorCapture).toHaveBeenCalledWith(24);
+      expect(monitoring.getMirrorCapture).toHaveBeenCalledWith(expect.objectContaining({
+        fromStr: '2026-09-15',
+      }));
     });
   });
 
@@ -350,15 +362,19 @@ describe('MonitoringController (admin monitoring endpoints)', () => {
         },
       });
 
-      const result = await controller.quality('6');
+      const result = await controller.quality('2026-09-15', '2026-09-15', undefined, undefined);
       expect(result.quality.windowedDispatches).toBe(120);
       expect(result.quality.dedupRate).toBe(0.2);
-      expect(monitoring.getQualityRates).toHaveBeenCalledWith(6);
+      expect(monitoring.getQualityRates).toHaveBeenCalledWith(expect.objectContaining({
+        fromStr: '2026-09-15',
+      }));
     });
 
-    it('defaults the window to 24 hours', async () => {
-      await controller.quality(undefined);
-      expect(monitoring.getQualityRates).toHaveBeenCalledWith(24);
+    it('defaults to today preset', async () => {
+      await controller.quality(undefined, undefined, undefined, undefined);
+      expect(monitoring.getQualityRates).toHaveBeenCalledWith(expect.objectContaining({
+        fromStr: expect.any(String),
+      }));
     });
   });
 
@@ -369,10 +385,12 @@ describe('MonitoringController (admin monitoring endpoints)', () => {
         { severity: 'warning', code: 'emq-match-gap', message: 'no em/ph' },
       ]);
 
-      const result = await controller.watchdog('6');
+      const result = await controller.watchdog('2026-09-15', '2026-09-15', undefined, undefined);
       expect(result.violations).toHaveLength(2);
       expect(result.violations[0].severity).toBe('critical');
-      expect(monitoring.getWatchdog).toHaveBeenCalledWith(6);
+      expect(monitoring.getWatchdog).toHaveBeenCalledWith(expect.objectContaining({
+        fromStr: '2026-09-15',
+      }));
     });
   });
 
@@ -384,10 +402,12 @@ describe('MonitoringController (admin monitoring endpoints)', () => {
         penalties: [{ code: 'retry-rate-high', points: 10, message: 'retry elevated' }],
       });
 
-      const result = await controller.healthScore('24');
+      const result = await controller.healthScore('2026-09-15', '2026-09-15', undefined, undefined);
       expect(result.healthScore.score).toBe(82);
       expect(result.healthScore.grade).toBe('B');
-      expect(monitoring.getHealthScore).toHaveBeenCalledWith(24);
+      expect(monitoring.getHealthScore).toHaveBeenCalledWith(expect.objectContaining({
+        fromStr: '2026-09-15',
+      }));
     });
   });
 });
