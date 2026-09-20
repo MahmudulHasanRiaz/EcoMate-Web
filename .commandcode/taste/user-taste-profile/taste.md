@@ -56,3 +56,6 @@
 - Requires end-of-pass structured report with explicit sections: FILES CHANGED, MIGRATIONS, TESTS, BUILD RESULTS, CONFIG DEFAULTS, SOURCE CLASSIFICATION, GATE LOCATION, KNOWN LIMITATIONS. Confidence: 0.9
 - Demands explicit answer to an acceptance question before declaring complete — e.g., "If the customer supplied this value at order creation, can a later Purchase event still recover it?" must be proven YES per field. Confidence: 0.95
 - Order-originated tracking policy must be conceptually separated from generic browser-event policy — pre-order browser events are not gated by order source. Confidence: 0.9
+- Distinguishes a "verification-only" pass from an "implementation" pass — during verification, the agent must audit and test without making code changes unless a blocking issue is found. If all gates pass, stop and report; do not continue expanding scope. Confidence: 0.9
+- Requires ALL event-dispatching functions in a gated pipeline to be individually audited for gate integration — not just the obvious ones (e.g., lifecycle events, refund events, order-placed events must all be checked, not just the primary Purchase event). Confidence: 0.9
+- Expects test failure investigation to go to root cause, not re-run — if a test times out or fails, identify and fix the cause; "rerun and it passes" is not acceptable evidence. Confidence: 0.9

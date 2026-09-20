@@ -4694,6 +4694,14 @@ export class OrdersService {
       // same-status rewrite (prev === new) is never a transition.
       if (!mapping) return;
       if (fromStatusName && fromStatusName === toStatusName) return;
+
+      // Check order source eligibility before capturing lifecycle event
+      const eligibility = await this.eligibilityGate.checkOrderEvent(mapping.eventType, order.id);
+      if (!eligibility.eligible) {
+        this.logger.log(`Skipping ${mapping.eventType} for order ${order.id}: ${eligibility.reason}`);
+        return;
+      }
+
       const base = await this.buildCanonicalOrderTrackingData(order, {
         eventTimeSec: Math.floor(Date.now() / 1000),
       });
@@ -4734,6 +4742,13 @@ export class OrdersService {
     tx?: Prisma.TransactionClient,
   ): Promise<void> {
     try {
+      // Check order source eligibility before capturing
+      const eligibility = await this.eligibilityGate.checkOrderEvent('OrderPlaced', order.id);
+      if (!eligibility.eligible) {
+        this.logger.log(`Skipping OrderPlaced for order ${order.id}: ${eligibility.reason}`);
+        return;
+      }
+
       const base = await this.buildCanonicalOrderTrackingData(order, {
         eventTimeSec: order.createdAt
           ? Math.floor(new Date(order.createdAt).getTime() / 1000)
@@ -4765,6 +4780,13 @@ export class OrdersService {
 
   private async fireRefundEvent(order: any, tx?: Prisma.TransactionClient) {
     try {
+      // Check order source eligibility before capturing
+      const eligibility = await this.eligibilityGate.checkOrderEvent('Refund', order.id);
+      if (!eligibility.eligible) {
+        this.logger.log(`Skipping Refund for order ${order.id}: ${eligibility.reason}`);
+        return;
+      }
+
       const setting = await this.prisma.systemSetting.findUnique({
         where: { key: 'tracking_refund_enabled' },
       });
