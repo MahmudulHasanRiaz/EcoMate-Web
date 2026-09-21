@@ -219,3 +219,27 @@ no-op in unit tests).
 the operational KPI tile is relabelled **"Cash collected"** with tooltip
 "payments received; Analytics reports accrual Net Sales recognised on
 delivery" — the figure is Σ PAID payments, so the label is now truthful.
+
+**Legacy delegation (§3.1, P10a decision — DEFERRED with reason):**
+`apps/backend/src/analytics/analytics.service.ts` `getSalesKpi` /
+`getRevenueTrend` do NOT delegate to the canonical services yet, and
+`getMarketingKpi` / `getTrafficSources` stay with the GA4 owners untouched.
+Delegation is not zero-risk, so §6 backward compatibility wins:
+- **Semantic mismatch.** Legacy is cash/intake basis: `totalRevenue` = Σ PAID
+  payments by `createdAt`, `totalOrders` = all non-trashed orders by
+  `createdAt`, `totalRefunds` = ALL completed refunds by `createdAt`
+  (including never-delivered orders). Canonical is Delivered-recognition
+  accrual — delegating changes the legacy numbers and breaks the preserved
+  `/analytics` contract.
+- **No canonical counterpart for the legacy refund scope.** Legacy
+  `totalRefunds`/`refundRate` cover every completed refund by `createdAt`;
+  canonical splits refunds into reversal (processedAt) + informational +
+  settlement leakage. Rebuilding the legacy figure from those parts is a NEW
+  formula — duplication, not removal.
+- **Partial delegation is worse.** Cash (`L3`) and the booked count could map,
+  but refunds would stay on the old path — coupling without removing the
+  duplicate, while risking cache-key/shape drift for live consumers.
+A future phase may delegate once a legacy-contract parity test (exact legacy
+figures from canonical lenses) exists and stays green. Until then the honest
+position: two coexisting bases, canonical `L3 cash` + `booked` lenses describe
+the same cash/intake basis side-by-side, and R3 guards canonical drift.

@@ -243,8 +243,29 @@ describe('attributed and allocated lines', () => {
     expect(p.fees + q.fees).toBeCloseTo(30, 8);
   });
 
-  it('counts only PAID payment fees (PAID→FAILED drops that fee)', () => {
-    const mk = (feeStatus: string) =>
+  it('equal-splits fulfillment and fees on a fully-discounted (zero-net) order so slices foot to order totals', () => {
+    const r = run([
+      order('o1', [line('P', 400, 1), line('Q', 200, 1)], {
+        discount: 600,
+        shippingCost: 90,
+        payments: [{ amount: 600, status: 'PAID', feeAmount: 30 }],
+      }),
+    ]);
+    const p = byKey(r, 'P', null);
+    const q = byKey(r, 'Q', null);
+    // Fully discounted: every line nets to zero, so weights fall back to 1/n.
+    expect(p.discount).toBeCloseTo(400, 8);
+    expect(q.discount).toBeCloseTo(200, 8);
+    expect(r.totals.net).toBeCloseTo(0, 8);
+    expect(p.fulfillment).toBeCloseTo(45, 8);
+    expect(q.fulfillment).toBeCloseTo(45, 8);
+    expect(p.fulfillment + q.fulfillment).toBeCloseTo(90, 8);
+    expect(p.fees).toBeCloseTo(15, 8);
+    expect(q.fees).toBeCloseTo(15, 8);
+    expect(p.fees + q.fees).toBeCloseTo(30, 8);
+  });
+
+  it('counts only PAID payment fees (PAID→FAILED drops that fee)', () => {    const mk = (feeStatus: string) =>
       run([
         order('o1', [line('P', 500, 1)], {
           payments: [

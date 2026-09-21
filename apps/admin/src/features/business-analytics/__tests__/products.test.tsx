@@ -14,6 +14,7 @@ import { ContributionFloor } from '../components/ContributionFloor'
 import { UncostedFixList } from '../components/UncostedFixList'
 import { BasisBadge } from '../components/ProductBasisBadge'
 import { buildProductsQuery, productsQueryKey, productDetailQueryKey } from '../api'
+import { productVariantOrdersHref } from '../product-detail'
 import {
   PRODUCT_CONTRIBUTION_FLOOR_STATEMENT,
   RETURN_INCIDENCE_LABEL,
@@ -182,6 +183,38 @@ describe('products filter → query-key → request-params', () => {
     const next = { ...base, salesChannel: 'WEBSITE', categoryId: 'c9' }
     expect(JSON.stringify(productsQueryKey(next))).not.toBe(JSON.stringify(productsQueryKey(base)))
     expect(buildProductsQuery(next)).toMatchObject({ salesChannel: 'WEBSITE', categoryId: 'c9' })
+  })
+})
+
+// ─── product-detail variant rows propagate filter params (§4.2) ─────────────
+
+describe('productVariantOrdersHref', () => {
+  it('propagates the current filters plus the row product scope — never a bare /op/orders', () => {
+    const f: ProductAnalyticsFilters = { preset: 'last_30_days', salesChannel: 'WEBSITE' }
+    const href = productVariantOrdersHref(f, { productId: 'p1', variantId: null })
+    expect(href).toMatch(/^\/op\/orders\?/)
+    expect(href).toContain('preset=last_30_days')
+    expect(href).toContain('salesChannel=WEBSITE')
+    expect(href).toContain('productId=p1')
+    expect(href).not.toContain('variantId')
+  })
+
+  it('carries the variant scope and the custom date window', () => {
+    const f: ProductAnalyticsFilters = { preset: 'custom', startDate: '2026-09-01', endDate: '2026-09-07' }
+    const href = productVariantOrdersHref(f, { productId: 'p1', variantId: 'v9' })
+    expect(href).toContain('productId=p1')
+    expect(href).toContain('variantId=v9')
+    expect(href).toContain('startDate=2026-09-01')
+    expect(href).toContain('endDate=2026-09-07')
+  })
+
+  it('drops product-list-only search/sort/dir from the orders drill', () => {
+    const f: ProductAnalyticsFilters = { preset: 'last_30_days', search: 'smoke', sort: 'margin', dir: 'asc' }
+    const href = productVariantOrdersHref(f, { productId: 'p1', variantId: null })
+    expect(href).toContain('productId=p1')
+    expect(href).not.toContain('search=')
+    expect(href).not.toMatch(/[?&]sort=/)
+    expect(href).not.toMatch(/[?&]dir=/)
   })
 })
 

@@ -14,6 +14,24 @@ import { TrendChart } from './components/TrendChart'
 import { ProductPnlTable } from './components/ProductPnlTable'
 import { ContributionFloor } from './components/ContributionFloor'
 import { UncostedFixList } from './components/UncostedFixList'
+import { buildOverviewQuery } from './api'
+
+/**
+ * Variant-row drill href (§4.2): the current filter params propagate onto the
+ * orders link together with the row's product/variant scope — never a bare
+ * /op/orders. Pure so params propagation is unit-testable.
+ */
+export function productVariantOrdersHref(
+  filters: ProductAnalyticsFilters,
+  row: { productId: string; variantId?: string | null },
+): string {
+  const qs = new URLSearchParams({
+    ...buildOverviewQuery(filters),
+    productId: row.productId,
+    ...(row.variantId ? { variantId: row.variantId } : {}),
+  }).toString()
+  return `/op/orders${qs ? `?${qs}` : ''}`
+}
 
 /**
  * Product detail (P4, §2.6 + §4.2): parent P&L with basis labels, variant P&L
@@ -105,7 +123,7 @@ export default function ProductAnalyticsDetail() {
               title="Variant P&L — parent = Σ variants (simple products show one implicit child)"
               rows={data.data.variants}
               showVariant
-              detailHref={() => '/op/orders'}
+              detailHref={(r) => productVariantOrdersHref(filters, r)}
             />
 
             <TrendChart points={data.data.trend.points} granularity={data.data.trend.granularity} requestedGranularity={data.data.trend.requestedGranularity} />
