@@ -1,10 +1,11 @@
 /**
  * Business analytics reconciliation service (§4.3).
  *
- * Registry of checks — P6/P7/P8/P9 extend it by pushing entries onto
+ * Registry of checks — P8/P9 extend it by pushing entries onto
  * CHECK_REGISTRY (no runner changes). R1/R2 are live (P4 product service);
- * deferred checks (R7/R8 need P7 attribution views; R13 needs an accounting
- * period mapping) return warn with explicit reasons — never a silent pass.
+ * R7/R8 are live (P7 marketing service); R13 stays deferred (needs an
+ * accounting period mapping) and returns warn with an explicit reason —
+ * never a silent pass.
  */
 import { Injectable } from '@nestjs/common';
 import { PaymentStatus, Prisma } from '@prisma/client';
@@ -123,6 +124,32 @@ export interface ReconciliationInput {
   };
   marketingIdentity: { allTimeCost: number; datedCost: number; undatedCost: number };
   marketingPeriodTotal: number;
+  /**
+   * R7 (P7): independent re-aggregation of the attribution basis —
+   * Σ MarketingCostAllocation.allocatedCost by calculatedAt in range over
+   * non-trashed orders. Compared against the ladder marketingCost (P&L
+   * spend-date basis); divergence is expected by design (§8.13), so a delta
+   * warns with cause, never fails.
+   */
+  marketingAllocationTotal: number;
+  /**
+   * R8 (P7): date-independent per-campaign identity —
+   * Σ ProductMarketingCost.marketingCost vs Σ MarketingConsumption
+   * .calculatedCost, all-time. Rounding dust is bounded per row (each
+   * Math.round to 2dp contributes ≤ half a cent), so the per-campaign
+   * tolerance is 0.005 × (allocRows + pmcRows) + 0.005 slack.
+   */
+  marketingCampaignIdentity: {
+    campaigns: {
+      campaignId: string;
+      name: string;
+      consumptionCost: number;
+      productCost: number;
+      allocRows: number;
+      pmcRows: number;
+    }[];
+    nullCampaignConsumption: number;
+  };
   codLeakOrders: string[];
   warnings: ReconciliationWarnings;
 }
@@ -145,7 +172,7 @@ function result(
   return { id, status, expected, actual, explanation };
 }
 
-/** R-checks with live implementations. R7/R8 stay deferred (P7). */
+/** R-checks with live implementations (R7/R8 live since P7; R13 deferred). */
 export const CHECK_REGISTRY: CheckDef[] = [
   {
     id: 'R1',
@@ -257,6 +284,66 @@ export const CHECK_REGISTRY: CheckDef[] = [
         p.total,
         parts,
         'booked == recognised + in-fulfilment + cancelled + returned-before-delivery + undatedDeliveries',
+      );
+    },
+  },
+  {
+    id: 'R7',
+    title: 'Marketing date-basis divergence: P&L (spend-date) vs attribution allocations, delta with cause',
+    run: (i) => {
+      const pnl = i.ladder.marketingCost;
+      const alloc = i.marketingAllocationTotal;
+      const delta = pnl - alloc;
+      if (eq(pnl, alloc)) {
+        return result(
+          'R7',
+          'pass',
+          pnl,
+          alloc,
+          'spend-date P&L and attribution allocations agree this period (agreement is coincidental — the bases differ by design)',
+        );
+      }
+      return result(
+        'R7',
+        'warn',
+        pnl,
+        alloc,
+        `Δ ৳${delta.toFixed(2)} (P&L ৳${pnl.toFixed(2)} vs allocations ৳${alloc.toFixed(2)}): ` +
+          'P&L is Σ consumptions by spendDate while allocations are Σ MarketingCostAllocation by calculatedAt — ' +
+          'different bases by design (§8.13). Undated consumptions sit in P&L coverage but never in the period total, ' +
+          'and spend without same-day attributed orders never allocates.',
+      );
+    },
+  },
+  {
+    id: 'R8',
+    title: 'Marketing identity (date-independent): Σ ProductMarketingCost == Σ consumptions by campaign, all-time',
+    run: (i) => {
+      const identity = i.marketingCampaignIdentity;
+      const bad = identity.campaigns
+        .filter(
+          (c) =>
+            Math.abs(c.consumptionCost - c.productCost) >
+            0.005 * (c.allocRows + c.pmcRows) + 0.005,
+        )
+        .map(
+          (c) =>
+            `${c.name} (${c.campaignId}): consumption ৳${c.consumptionCost.toFixed(2)} vs attributed ৳${c.productCost.toFixed(2)}`,
+        );
+      const nullLeak = identity.nullCampaignConsumption > 0.005;
+      if (nullLeak) {
+        bad.push(
+          `consumptions with no campaign: ৳${identity.nullCampaignConsumption.toFixed(2)} (no campaign identity to match)`,
+        );
+      }
+      return result(
+        'R8',
+        bad.length === 0 ? 'pass' : 'fail',
+        identity.campaigns.map((c) => c.consumptionCost),
+        identity.campaigns.map((c) => c.productCost),
+        bad.length === 0
+          ? 'every campaign foots all-time: attributed product cost ties to FIFO consumption cost within rounding dust'
+          : `campaigns not footing to consumptions: ${bad.join('; ')}`,
       );
     },
   },
@@ -395,11 +482,9 @@ export const CHECK_REGISTRY: CheckDef[] = [
  * exposes profitAndLoss(periodId) keyed by financial period, while analytics
  * ranges are Dhaka date windows with no period mapping — plus the F1 delta is
  * expected by construction (orders never post journals). P10 maps the delta
- * once a range→period correspondence exists.
+ * once a range→period correspondence exists. (R7/R8 went live in P7.)
  */
 export const DEFERRED_CHECKS: Record<string, string> = {
-  R7: 'deferred to P7: needs attribution views (spend-date P&L vs allocation basis)',
-  R8: 'deferred to P7: needs attribution views (ProductMarketingCost identity by campaign)',
   R13: 'deferred: accounting.profitAndLoss is keyed by financial periodId with no range mapping; the F1 delta (orders never post journals) is expected by construction and reported with cause',
 };
 
@@ -542,7 +627,7 @@ export class AnalyticsReconciliationService {
     // the checker to the checked and let a regression pass itself. The
     // dedicated R5 aggregate is its own query by the same principle (never
     // the lens value fed back to itself).
-    const [pnlRes, fulRes, productsAgg, candidates, expenseRows, consumptions, categories, paidAgg] =
+    const [pnlRes, fulRes, productsAgg, candidates, expenseRows, consumptions, categories, paidAgg, allocationTotalAgg, consumptionByCampaign, allocRowsByCampaign, pmcByAllocation, allocIdToCampaign, campaignNames] =
       await Promise.all([
         this.pnl.getPnl(query),
         this.fulfillment.getFulfillment(query),
@@ -571,6 +656,39 @@ export class AnalyticsReconciliationService {
             ...(filters.paymentMethod ? { gatewayCode: filters.paymentMethod } : {}),
             order: orderPart,
           },
+        }),
+        // R7: independent re-aggregation of the attribution basis
+        // (Σ allocatedCost by calculatedAt, non-trashed orders) — never the
+        // ladder value fed back to itself.
+        this.prisma.marketingCostAllocation.aggregate({
+          _sum: { allocatedCost: true },
+          where: {
+            calculatedAt: { gte: range.start, lte: range.end },
+            order: { trashedAt: null },
+          },
+        }),
+        // R8: date-independent per-campaign identity, all-time. Consumptions
+        // group by campaign (NULL campaignId groups separately — it has no
+        // campaign identity to match); product costs roll up via their
+        // allocation's campaign.
+        this.prisma.marketingConsumption.groupBy({
+          by: ['campaignId'],
+          _sum: { calculatedCost: true },
+        }),
+        this.prisma.marketingCostAllocation.groupBy({
+          by: ['campaignId'],
+          _count: { _all: true },
+        }),
+        this.prisma.productMarketingCost.groupBy({
+          by: ['allocationId'],
+          _sum: { marketingCost: true },
+          _count: { _all: true },
+        }),
+        this.prisma.marketingCostAllocation.findMany({
+          select: { id: true, campaignId: true },
+        }),
+        this.prisma.marketingCampaign.findMany({
+          select: { id: true, name: true },
         }),
       ]);
 
@@ -735,6 +853,70 @@ export class AnalyticsReconciliationService {
       )
       .map((c) => c.name);
 
+    // R8 join (all JS, over the independent reads above): campaignId →
+    // { consumptionCost, productCost, allocRows, pmcRows }.
+    const nameByCampaign = new Map(
+      (campaignNames as { id: string; name: string }[]).map((c) => [c.id, c.name]),
+    );
+    const allocCampaignById = new Map(
+      (allocIdToCampaign as { id: string; campaignId: string }[]).map((a) => [
+        a.id,
+        a.campaignId,
+      ]),
+    );
+    const r8ByCampaign = new Map<
+      string,
+      {
+        campaignId: string;
+        name: string;
+        consumptionCost: number;
+        productCost: number;
+        allocRows: number;
+        pmcRows: number;
+      }
+    >();
+    const r8entry = (campaignId: string) => {
+      let entry = r8ByCampaign.get(campaignId);
+      if (!entry) {
+        entry = {
+          campaignId,
+          name: nameByCampaign.get(campaignId) ?? campaignId,
+          consumptionCost: 0,
+          productCost: 0,
+          allocRows: 0,
+          pmcRows: 0,
+        };
+        r8ByCampaign.set(campaignId, entry);
+      }
+      return entry;
+    };
+    let nullCampaignConsumption = 0;
+    for (const row of consumptionByCampaign as {
+      campaignId: string | null;
+      _sum: { calculatedCost: unknown };
+    }[]) {
+      const amount = Number(row._sum.calculatedCost ?? 0);
+      if (row.campaignId === null) nullCampaignConsumption += amount;
+      else r8entry(row.campaignId).consumptionCost += amount;
+    }
+    for (const row of allocRowsByCampaign as {
+      campaignId: string;
+      _count: { _all: number };
+    }[]) {
+      r8entry(row.campaignId).allocRows += row._count._all;
+    }
+    for (const row of pmcByAllocation as {
+      allocationId: string;
+      _sum: { marketingCost: unknown };
+      _count: { _all: number };
+    }[]) {
+      const campaignId = allocCampaignById.get(row.allocationId);
+      if (!campaignId) continue;
+      const entry = r8entry(campaignId);
+      entry.productCost += Number(row._sum.marketingCost ?? 0);
+      entry.pmcRows += row._count._all;
+    }
+
     const ful = fulRes.data;
     const onlineRows = ful.rows.filter((r) => r.collection === 'online');
 
@@ -786,6 +968,11 @@ export class AnalyticsReconciliationService {
       },
       marketingIdentity: identity,
       marketingPeriodTotal: ladder.marketingCost,
+      marketingAllocationTotal: Number(allocationTotalAgg._sum.allocatedCost ?? 0),
+      marketingCampaignIdentity: {
+        campaigns: [...r8ByCampaign.values()],
+        nullCampaignConsumption,
+      },
       codLeakOrders,
       warnings: {
         cogsUnavailableUnits: coverage.cogs.unavailableUnits,

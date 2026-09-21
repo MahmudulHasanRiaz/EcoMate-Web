@@ -10,6 +10,9 @@ import type {
   CustomerCohortsResponse,
   CustomersListResponse,
   CustomersSummaryResponse,
+  MarketingCampaignsResponse,
+  MarketingSummaryResponse,
+  MarketingUndatedResponse,
   OverviewResponse,
   ProductAnalyticsFilters,
   ProductDetailResponse,
@@ -97,6 +100,18 @@ export const businessAnalyticsApi = {
     apiClient.get<CustomersListResponse>('/business-analytics/customers', {
       params: { ...buildOverviewQuery(filters), page: String(page), pageSize: String(pageSize), ...(segment ? { segment } : {}) },
     }),
+  getMarketingSummary: (filters: AnalyticsFilters) =>
+    apiClient.get<MarketingSummaryResponse>('/business-analytics/marketing/summary', {
+      params: buildOverviewQuery(filters),
+    }),
+  getMarketingCampaigns: (filters: AnalyticsFilters) =>
+    apiClient.get<MarketingCampaignsResponse>('/business-analytics/marketing/campaigns', {
+      params: buildOverviewQuery(filters),
+    }),
+  getMarketingUndated: (filters: AnalyticsFilters, page: number, pageSize: number) =>
+    apiClient.get<MarketingUndatedResponse>('/business-analytics/marketing/undated', {
+      params: { ...buildOverviewQuery(filters), page: String(page), pageSize: String(pageSize) },
+    }),
 }
 
 /** Product list/detail params: shared dimensions + list-only search/sort/dir. */
@@ -137,11 +152,23 @@ export function salesSettlementQueryKey(filters: AnalyticsFilters, page: number,
 export function customersSummaryQueryKey(filters: AnalyticsFilters) {
   return ['business-analytics-customers-summary', buildOverviewQuery(filters)] as const
 }
-
 export function customerCohortsQueryKey(filters: AnalyticsFilters) {
   return ['business-analytics-customers-cohorts', buildOverviewQuery(filters)] as const
 }
 
 export function customersListQueryKey(filters: AnalyticsFilters, page: number, pageSize: number, segment?: string) {
   return ['business-analytics-customers-list', buildOverviewQuery(filters), page, pageSize, segment ?? ''] as const
+}
+
+/** Stable marketing query keys — shared dims drive summary/campaigns; undated adds page/pageSize. */
+export function marketingSummaryQueryKey(filters: AnalyticsFilters) {
+  return ['business-analytics-marketing-summary', buildOverviewQuery(filters)] as const
+}
+
+export function marketingCampaignsQueryKey(filters: AnalyticsFilters) {
+  return ['business-analytics-marketing-campaigns', buildOverviewQuery(filters)] as const
+}
+
+export function marketingUndatedQueryKey(filters: AnalyticsFilters, page: number, pageSize: number) {
+  return ['business-analytics-marketing-undated', buildOverviewQuery(filters), page, pageSize] as const
 }

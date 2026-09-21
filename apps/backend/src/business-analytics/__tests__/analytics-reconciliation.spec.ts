@@ -1,10 +1,10 @@
 /**
  * P2 data-layer tests — reconciliation registry (§4.3).
  *
- * R3,R4,R5,R6,R9,R10,R11,R12,R14,R15,R16,R17,R18 + R1,R2 (P4) now.
- * R7,R8 (P7 attribution views), R13 (accounting
- * period delta) stay deferred with explicit reasons — each returns warn, never
- * a silent pass. The registry is designed for P4/P6/P7/P8/P9 extension.
+ * R3,R4,R5,R6,R9,R10,R11,R12,R14,R15,R16,R17,R18 + R1,R2 (P4) + R7,R8 (P7)
+ * now. R13 (accounting period delta) stays deferred with an explicit
+ * reason — returns warn, never a silent pass. The registry is designed for
+ * P4/P6/P7/P8/P9 extension.
  */
 import {
   evaluateChecks,
@@ -74,6 +74,22 @@ function baseInput(extra: Partial<ReconciliationInput> = {}): ReconciliationInpu
     },
     marketingIdentity: { allTimeCost: 800, datedCost: 500, undatedCost: 300 },
     marketingPeriodTotal: 500,
+    // R7 default: attribution basis agrees with the P&L marketing line.
+    marketingAllocationTotal: 100,
+    // R8 default: one campaign footing within rounding dust.
+    marketingCampaignIdentity: {
+      campaigns: [
+        {
+          campaignId: 'c1',
+          name: 'Camp One',
+          consumptionCost: 800,
+          productCost: 800,
+          allocRows: 2,
+          pmcRows: 3,
+        },
+      ],
+      nullCampaignConsumption: 0,
+    },
     codLeakOrders: [],
     warnings: {
       cogsUnavailableUnits: 0,
@@ -103,21 +119,21 @@ function byId(results: { id: string }[], id: string) {
 }
 
 describe('reconciliation registry', () => {
-  it('registers every live R check with deferred reasons for R7/R8/R13 only', () => {
+  it('registers every live R check with a deferred reason for R13 only', () => {
     const ids = CHECK_REGISTRY.map((c) => c.id);
     for (const id of [
-      'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R9', 'R10', 'R11', 'R12',
-      'R14', 'R15', 'R16', 'R17', 'R18',
+      'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8', 'R9', 'R10', 'R11',
+      'R12', 'R14', 'R15', 'R16', 'R17', 'R18',
     ]) {
       expect(ids).toContain(id);
     }
     expect(DEFERRED_CHECKS).toMatchObject({
-      R7: expect.stringContaining('P7'),
-      R8: expect.stringContaining('P7'),
       R13: expect.stringContaining('accounting'),
     });
     expect(DEFERRED_CHECKS).not.toHaveProperty('R1');
     expect(DEFERRED_CHECKS).not.toHaveProperty('R2');
+    expect(DEFERRED_CHECKS).not.toHaveProperty('R7');
+    expect(DEFERRED_CHECKS).not.toHaveProperty('R8');
   });
 
   it('is extensible (P4/P6/P7/P8/P9 push entries without touching the runner)', () => {
@@ -225,9 +241,67 @@ describe('implemented R checks', () => {
     ).toBe('fail');
   });
 
+  it('R7 passes on agreement, warns with delta + cause on divergence (never fails)', () => {
+    expect(byId(evaluateChecks(baseInput()), 'R7').status).toBe('pass');
+    const diverged = baseInput({ marketingAllocationTotal: 60 });
+    const check = byId(evaluateChecks(diverged), 'R7') as any;
+    expect(check.status).toBe('warn');
+    expect(check.expected).toBe(100);
+    expect(check.actual).toBe(60);
+    expect(check.explanation).toMatch(/Δ/);
+    expect(check.explanation).toMatch(/spendDate/);
+    expect(check.explanation).toMatch(/calculatedAt/);
+  });
+
+  it('R8 holds the date-independent campaign identity, failing with per-campaign cause', () => {
+    expect(byId(evaluateChecks(baseInput()), 'R8').status).toBe('pass');
+    const diverged = baseInput();
+    diverged.marketingCampaignIdentity = {
+      campaigns: [
+        {
+          campaignId: 'c1',
+          name: 'Camp One',
+          consumptionCost: 800,
+          productCost: 700,
+          allocRows: 2,
+          pmcRows: 3,
+        },
+      ],
+      nullCampaignConsumption: 0,
+    };
+    const check = byId(evaluateChecks(diverged), 'R8') as any;
+    expect(check.status).toBe('fail');
+    expect(check.explanation).toMatch(/Camp One/);
+    const nullLeak = baseInput();
+    nullLeak.marketingCampaignIdentity = {
+      campaigns: [],
+      nullCampaignConsumption: 50,
+    };
+    expect(byId(evaluateChecks(nullLeak), 'R8').status).toBe('fail');
+  });
+
+  it('R8 tolerates per-row rounding dust (half a cent per rounded row)', () => {
+    const dusty = baseInput();
+    dusty.marketingCampaignIdentity = {
+      campaigns: [
+        {
+          campaignId: 'c1',
+          name: 'Camp One',
+          consumptionCost: 800,
+          // 5 rounded rows × 0.005 + slack = 0.03 tolerance; 0.02 dust passes.
+          productCost: 799.98,
+          allocRows: 2,
+          pmcRows: 3,
+        },
+      ],
+      nullCampaignConsumption: 0,
+    };
+    expect(byId(evaluateChecks(dusty), 'R8').status).toBe('pass');
+  });
+
   it('deferred checks warn with reasons (never silent)', () => {
     const results = evaluateChecks(baseInput());
-    for (const id of ['R7', 'R8', 'R13']) {
+    for (const id of ['R13']) {
       const check = byId(results, id);
       expect(check.status).toBe('warn');
       expect(check.explanation.length).toBeGreaterThan(10);
@@ -381,11 +455,23 @@ describe('runReconciliation R5 wiring', () => {
     const mockPrisma: any = {
       order: { findMany: jest.fn().mockResolvedValue([]) },
       expense: { findMany: jest.fn().mockResolvedValue([]) },
-      marketingConsumption: { findMany: jest.fn().mockResolvedValue([]) },
+      marketingConsumption: {
+        findMany: jest.fn().mockResolvedValue([]),
+        groupBy: jest.fn().mockResolvedValue([]),
+      },
       expenseCategory: { findMany: jest.fn().mockResolvedValue(categories) },
       payment: {
         aggregate: jest.fn().mockResolvedValue({ _sum: { amount: paidSum } }),
       },
+      marketingCostAllocation: {
+        aggregate: jest.fn().mockResolvedValue({ _sum: { allocatedCost: 0 } }),
+        groupBy: jest.fn().mockResolvedValue([]),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      productMarketingCost: {
+        groupBy: jest.fn().mockResolvedValue([]),
+      },
+      marketingCampaign: { findMany: jest.fn().mockResolvedValue([]) },
     };
     const mockFilter: any = {
       resolveContext: jest.fn().mockReturnValue({ range, filters: {} }),
@@ -447,6 +533,19 @@ describe('runReconciliation R5 wiring', () => {
     const { res } = await runWith(500, 500);
     const r5 = res.data.checks.find((c: any) => c.id === 'R5');
     expect(r5.status).toBe('pass');
+  });
+
+  it('runs R7/R8 live in the wiring path (no deferred stub)', async () => {
+    const { res, mockPrisma } = await runWith(500, 500);
+    expect(mockPrisma.marketingCostAllocation.aggregate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ order: { trashedAt: null } }),
+      }),
+    );
+    const r7 = res.data.checks.find((c: any) => c.id === 'R7');
+    const r8 = res.data.checks.find((c: any) => c.id === 'R8');
+    expect(r7.status).toBe('pass');
+    expect(r8.status).toBe('pass');
   });
 
   it('derives R11 live: clean settlement rows pass', async () => {

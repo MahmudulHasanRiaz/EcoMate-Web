@@ -25,6 +25,8 @@ import { AnalyticsOverviewService } from './analytics-overview.service';
 import { AnalyticsProductsService } from './analytics-products.service';
 import { AnalyticsSalesService } from './analytics-sales.service';
 import { AnalyticsCustomersService } from './analytics-customers.service';
+import { AnalyticsMarketingService } from './analytics-marketing.service';
+import { MarketingQueryDto } from './analytics-marketing.dto';
 import { AnalyticsReconciliationService } from './analytics-reconciliation.service';
 
 @Controller('business-analytics')
@@ -39,6 +41,7 @@ export class BusinessAnalyticsController {
     private readonly productsService: AnalyticsProductsService,
     private readonly salesService: AnalyticsSalesService,
     private readonly customersService: AnalyticsCustomersService,
+    private readonly marketingService: AnalyticsMarketingService,
     private readonly reconciliationService: AnalyticsReconciliationService,
   ) {}
 
@@ -152,5 +155,26 @@ export class BusinessAnalyticsController {
   @Permissions('view_analytics', 'view_financial_summary')
   customersList(@Query() query: CustomersQueryDto) {
     return this.customersService.getCustomers(query);
+  }
+
+  /** Marketing P&L cost (spend-date) + attribution views (financial). */
+  @Get('marketing/summary')
+  @Permissions('view_analytics', 'view_financial_summary')
+  marketingSummary(@Query() query: AnalyticsFilterDto) {
+    return this.marketingService.getSummary(query);
+  }
+
+  /** Marketing campaign → ad set → ad tree over recorded rows (financial). */
+  @Get('marketing/campaigns')
+  @Permissions('view_analytics', 'view_financial_summary')
+  marketingCampaigns(@Query() query: AnalyticsFilterDto) {
+    return this.marketingService.getCampaigns(query);
+  }
+
+  /** Undated-spend coverage fix-list, paginated (financial). */
+  @Get('marketing/undated')
+  @Permissions('view_analytics', 'view_financial_summary')
+  marketingUndated(@Query() query: MarketingQueryDto) {
+    return this.marketingService.getUndated(query);
   }
 }

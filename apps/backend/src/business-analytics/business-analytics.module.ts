@@ -8,6 +8,7 @@ import { AnalyticsOverviewService } from './analytics-overview.service';
 import { AnalyticsProductsService } from './analytics-products.service';
 import { AnalyticsSalesService } from './analytics-sales.service';
 import { AnalyticsCustomersService } from './analytics-customers.service';
+import { AnalyticsMarketingService } from './analytics-marketing.service';
 import { AnalyticsReconciliationService } from './analytics-reconciliation.service';
 
 @Module({
@@ -21,6 +22,7 @@ import { AnalyticsReconciliationService } from './analytics-reconciliation.servi
     AnalyticsProductsService,
     AnalyticsSalesService,
     AnalyticsCustomersService,
+    AnalyticsMarketingService,
     AnalyticsReconciliationService,
   ],
   exports: [
@@ -31,6 +33,7 @@ import { AnalyticsReconciliationService } from './analytics-reconciliation.servi
     AnalyticsProductsService,
     AnalyticsSalesService,
     AnalyticsCustomersService,
+    AnalyticsMarketingService,
     AnalyticsReconciliationService,
   ],
 })

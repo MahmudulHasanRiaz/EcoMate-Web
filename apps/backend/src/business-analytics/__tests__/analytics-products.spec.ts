@@ -317,6 +317,22 @@ function reconInput(extra: Partial<ReconciliationInput['products']> = {}): Recon
     },
     marketingIdentity: { allTimeCost: 800, datedCost: 500, undatedCost: 300 },
     marketingPeriodTotal: 500,
+    // R7 default: attribution basis agrees with the P&L marketing line.
+    marketingAllocationTotal: 100,
+    // R8 default: one campaign footing within rounding dust.
+    marketingCampaignIdentity: {
+      campaigns: [
+        {
+          campaignId: 'c1',
+          name: 'Camp One',
+          consumptionCost: 800,
+          productCost: 800,
+          allocRows: 2,
+          pmcRows: 3,
+        },
+      ],
+      nullCampaignConsumption: 0,
+    },
     codLeakOrders: [],
     warnings: {
       cogsUnavailableUnits: 0,

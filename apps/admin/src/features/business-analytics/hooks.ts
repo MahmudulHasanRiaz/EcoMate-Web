@@ -4,6 +4,9 @@ import {
   customerCohortsQueryKey,
   customersListQueryKey,
   customersSummaryQueryKey,
+  marketingCampaignsQueryKey,
+  marketingSummaryQueryKey,
+  marketingUndatedQueryKey,
   overviewQueryKey,
   productDetailQueryKey,
   productsQueryKey,
@@ -82,6 +85,31 @@ export function useCustomersList(filters: AnalyticsFilters, page: number, pageSi
   return useQuery({
     queryKey: customersListQueryKey(filters, page, pageSize, segment),
     queryFn: () => businessAnalyticsApi.getCustomers(filters, page, pageSize, segment).then((r) => r.data),
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
+  })
+}
+
+export function useMarketingSummary(filters: AnalyticsFilters) {
+  return useQuery({
+    queryKey: marketingSummaryQueryKey(filters),
+    queryFn: () => businessAnalyticsApi.getMarketingSummary(filters).then((r) => r.data),
+    refetchInterval: 60_000,
+  })
+}
+
+export function useMarketingCampaigns(filters: AnalyticsFilters) {
+  return useQuery({
+    queryKey: marketingCampaignsQueryKey(filters),
+    queryFn: () => businessAnalyticsApi.getMarketingCampaigns(filters).then((r) => r.data),
+    refetchInterval: 60_000,
+  })
+}
+
+export function useMarketingUndated(filters: AnalyticsFilters, page: number, pageSize: number) {
+  return useQuery({
+    queryKey: marketingUndatedQueryKey(filters, page, pageSize),
+    queryFn: () => businessAnalyticsApi.getMarketingUndated(filters, page, pageSize).then((r) => r.data),
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,
   })

@@ -510,3 +510,163 @@ export const CLR_STATEMENT =
 /** Verbatim limitation-12 disclosure — phone-less guests are never merged. */
 export const UNATTRIBUTED_STATEMENT =
   'Phone-less guest orders cannot be linked to a customer. Each is counted singly and never merged.'
+
+// ─── P7 Marketing (§2.4 spend-date + §8.13/8.14 + §4.2 marketing rows) ────
+
+/** Verbatim §2.4 spend-date basis — stated on the cost panel and every cost KPI. */
+export const SPEND_DATE_BASIS_STATEMENT =
+  'P&L Marketing Cost counts Σ MarketingConsumption.calculatedCost dated by spendDate only. Rows with no spendDate are excluded from every period total.'
+
+/** Verbatim D10 — allocatedAt/calculatedAt are never financial dates. */
+export const ALLOCATED_AT_NOTE =
+  'allocatedAt and calculatedAt are never financial dates — shown as reference only, excluded from every total.'
+
+/** Verbatim §8.13 — attribution/P&L period mismatch is expected, never a defect. */
+export const ATTRIBUTION_MISMATCH_STATEMENT =
+  'Attribution views sit on their own date basis (insight date and attribution date), not the P&L spend-date basis. ' +
+  'A period-by-period mismatch against P&L Marketing Cost is expected by design; ' +
+  'agreement is verified date-independently (R8).'
+
+/** Verbatim §2.4 — spend on never-recognised orders is insight-only. */
+export const UNRECOGNISED_SPEND_NOTE =
+  'Spend allocated to orders that never recognised revenue (cancelled or undelivered). ' +
+  'An insight only — never folded into the P&L ladder.'
+
+/** Undated fix-list reference-column caption — allocatedAt is not a period date. */
+export const UNDATED_ALLOCATED_AT_CAPTION =
+  'allocatedAt reference only — not a financial period date'
+
+/** §4.2 undated-spend fix-list actions (sync/replay in the marketing module). */
+export const UNDATED_FIX_ACTIONS: { label: string; href: string }[] = [
+  { label: 'Resync spend', href: '/op/marketing/spend-snapshots' },
+  { label: 'Replay allocations', href: '/op/marketing/attribution' },
+]
+
+export interface MarketingSourceRow {
+  key: string
+  label: string
+  orders: number
+  revenue: number
+}
+
+export interface MarketingCostBlock {
+  total: KpiValue
+  datedRows: number
+  undatedRows: number
+  datedAmount: number
+  undatedAmount: number
+  estimatedReference: { label: string; excludedFromTotal: true } | null
+  basisStatement: string
+  allocatedAtNote: string
+}
+
+export interface MarketingUnrecognisedRow {
+  orderId: string
+  displayId: string
+  status: string
+  campaignId: string
+  campaignName: string
+  allocatedCost: number
+  calculatedAt: string
+}
+
+export interface MarketingSummaryData {
+  cost: MarketingCostBlock
+  sources: { rows: MarketingSourceRow[]; unattributed: { orders: number; revenue: number }; dateBasis: string }
+  channels: { rows: MarketingSourceRow[]; dateBasis: string }
+  segments: {
+    newOrders: number
+    newRevenue: number
+    returningOrders: number
+    returningRevenue: number
+    vipOrders: number
+    vipRevenue: number
+    dateBasis: string
+  }
+  unrecognisedSpend: {
+    amount: number
+    allocations: number
+    orders: number
+    rows: MarketingUnrecognisedRow[]
+    note: string
+    dateBasis: string
+  }
+  attributionDisclosure: string
+}
+
+export interface MarketingTreeAd {
+  adId: string
+  name: string
+  status: string
+  insights: { spend: number; impressions: number; clicks: number; purchases: number; purchaseValue: number }
+  store: { orders: number; revenue: number }
+}
+
+export interface MarketingTreeAdSet {
+  adSetId: string
+  name: string
+  status: string
+  insights: { spend: number; impressions: number; clicks: number; purchases: number; purchaseValue: number }
+  store: { orders: number; revenue: number }
+  ads: MarketingTreeAd[]
+}
+
+export interface MarketingTreeCampaign {
+  campaignId: string
+  name: string
+  status: string
+  adAccount: { id: string; name: string; currency: string } | null
+  platform: { slug: string; name: string } | null
+  insights: { spend: number; impressions: number; clicks: number; purchases: number; purchaseValue: number }
+  insightsDateBasis: string
+  store: { orders: number; revenue: number }
+  storeDateBasis: string
+  pnlCost: number
+  pnlDateBasis: string
+  undatedCost: { amount: number; rows: number }
+  adSets: MarketingTreeAdSet[]
+}
+
+export interface MarketingCampaignsData {
+  campaigns: MarketingTreeCampaign[]
+  disclosure: string
+}
+
+export interface MarketingUndatedRow {
+  id: string
+  campaignId: string | null
+  campaignName: string | null
+  calculatedCost: number
+  source: string
+  /** allocatedAt as a labelled reference — never a period date. */
+  allocatedAt: string | null
+  allocatedAtCaption: string
+  estimatedReference: { label: string; excludedFromTotal: true }
+}
+
+export interface MarketingUndatedData {
+  rows: MarketingUndatedRow[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+  totalAmount: number
+  undatedRows: number
+  fixActions: { label: string; href: string }[]
+  allocatedAtNote: string
+}
+
+export interface MarketingSummaryResponse {
+  data: MarketingSummaryData
+  meta: OverviewMeta
+}
+
+export interface MarketingCampaignsResponse {
+  data: MarketingCampaignsData
+  meta: OverviewMeta
+}
+
+export interface MarketingUndatedResponse {
+  data: MarketingUndatedData
+  meta: OverviewMeta
+}
