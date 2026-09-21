@@ -1,5 +1,6 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CacheService } from '../cache/cache.service';
 import { AccountingService } from '../accounting/accounting.service';
 import { AccountType } from '@prisma/client';
 import {
@@ -18,7 +19,21 @@ export class MarketingConsumptionService {
   constructor(
     private prisma: PrismaService,
     private accounting: AccountingService,
+    @Optional() private readonly cache?: CacheService,
   ) {}
+
+  /**
+   * Business analytics freshness (P2 §6): consumptions feed the P&L
+   * Marketing Cost line (spend-date basis), so every successful consume drops
+   * `analytics:*`. No-op without cache; resilient.
+   */
+  private async invalidateAnalytics(): Promise<void> {
+    try {
+      await this.cache?.invalidateByPrefix('analytics:');
+    } catch {
+      /* cache failure must not fail consumption */
+    }
+  }
 
   /**
    * FIFO consumption: spend is drawn from the oldest confirmed funding rows
@@ -125,6 +140,7 @@ export class MarketingConsumptionService {
       await this.createThresholdJournal(thresholdCost, spendDate ?? new Date(), campaignId);
     }
 
+    await this.invalidateAnalytics();
     return { consumedRows, shortfall };
   }
 

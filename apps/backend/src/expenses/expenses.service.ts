@@ -2,15 +2,32 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CacheService } from '../cache/cache.service';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { UpdateExpenseDto } from './dto/update-expense.dto';
 import { dhakaDateParts, dhakaDayRange } from '../common/utils/dhaka-time';
 
 @Injectable()
 export class ExpensesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Optional() private readonly cache?: CacheService,
+  ) {}
+
+  /**
+   * Business analytics freshness (P2 §6): expenses feed Operating Expenses
+   * and the R4 tie-out. No-op without cache; resilient.
+   */
+  private async invalidateAnalytics(): Promise<void> {
+    try {
+      await this.cache?.invalidateByPrefix('analytics:');
+    } catch {
+      /* cache failure must not fail expenses */
+    }
+  }
 
   private expenseInclude = {
     category: {
@@ -113,10 +130,12 @@ export class ExpensesService {
       return exp;
     });
 
-    return this.prisma.expense.findUnique({
+    const created = await this.prisma.expense.findUnique({
       where: { id: expense.id },
       include: this.expenseInclude,
     });
+    await this.invalidateAnalytics();
+    return created;
   }
 
   async findAll(
@@ -303,7 +322,9 @@ export class ExpensesService {
       }
     });
 
-    return this.findOne(id);
+    const reloaded = await this.findOne(id);
+    await this.invalidateAnalytics();
+    return reloaded;
   }
 
   async remove(id: string) {
@@ -322,6 +343,7 @@ export class ExpensesService {
       await tx.expense.delete({ where: { id } });
     });
 
+    await this.invalidateAnalytics();
     return { deleted: true };
   }
 

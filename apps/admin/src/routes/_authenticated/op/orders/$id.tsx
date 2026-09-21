@@ -308,6 +308,14 @@ function OrderDetailPage() {
     updateMut.mutate({ id, data: { discount: amount, discountType: type } })
   }
 
+  // Analytics fulfillment-cost capture (P2 §3.4): staff-entered actual cost.
+  function handleSaveFulfillmentCost(cost: number) {
+    updateMut.mutate({
+      id,
+      data: { shippingCost: cost, shippingCostSource: 'manual' },
+    })
+  }
+
   function handleSaveCustomer(data: {
     firstName: string; lastName: string; email: string; phone: string
     address: string; cityId: string; zoneId: string; customerNotes: string; officeNotes: string
@@ -889,6 +897,9 @@ function OrderDetailPage() {
                 shippingChargeOverridden={order.shippingChargeOverridden}
                 onSaveShipping={handleSaveShipping}
                 onSaveDiscount={handleSaveDiscount}
+                shippingCost={order.shippingCost ?? null}
+                shippingCostSource={order.shippingCostSource ?? null}
+                onSaveFulfillmentCost={handleSaveFulfillmentCost}
                 isSaving={updateMut.isPending}
               />
 

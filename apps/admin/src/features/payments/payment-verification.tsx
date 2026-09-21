@@ -11,6 +11,10 @@ import { Check, X, Loader2 } from 'lucide-react';
 export function PaymentVerificationPage() {
   const qc = useQueryClient();
   const [notes, setNotes] = useState<Record<string, string>>({});
+  // Optional per-order gateway fee (৳) recorded on the single PENDING payment
+  // row at verify time (P2 §3.4). Orders with several PENDING rows must use
+  // the per-row verify endpoint instead — the backend 400s with guidance.
+  const [fees, setFees] = useState<Record<string, string>>({});
 
   const { data: orders, isLoading } = useQuery({
     queryKey: ['orders-payment-verifying'],
@@ -19,8 +23,8 @@ export function PaymentVerificationPage() {
   });
 
   const verifyMut = useMutation({
-    mutationFn: ({ id, verified, note }: { id: string; verified: boolean; note?: string }) =>
-      paymentsApi.verify(id, verified, note),
+    mutationFn: ({ id, verified, note, feeAmount }: { id: string; verified: boolean; note?: string; feeAmount?: number }) =>
+      paymentsApi.verify(id, verified, note, feeAmount),
     onSuccess: () => {
       toast.success('Payment verification processed');
       qc.invalidateQueries({ queryKey: ['orders-payment-verifying'] });
@@ -93,6 +97,20 @@ export function PaymentVerificationPage() {
                   }
                 />
               </div>
+              <div className="w-36">
+                <p className="text-xs text-muted-foreground mb-1">Gateway fee (৳)</p>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  className="w-full h-9 rounded-md border border-input bg-background px-2 text-sm"
+                  value={fees[order.id] || ''}
+                  onChange={(e) =>
+                    setFees((prev) => ({ ...prev, [order.id]: e.target.value }))
+                  }
+                />
+              </div>
             </div>
             <div className="flex gap-2 pt-1">
               <Button
@@ -102,6 +120,7 @@ export function PaymentVerificationPage() {
                     id: order.id,
                     verified: true,
                     note: notes[order.id],
+                    feeAmount: fees[order.id] === '' || fees[order.id] === undefined ? undefined : parseFloat(fees[order.id]),
                   })
                 }
                 disabled={verifyMut.isPending}

@@ -19,6 +19,7 @@ import { OrderStockDeductService } from '../stock/order-stock-deduct.service';
 import { OrderEditLockService } from './order-edit-lock.service';
 import { CommissionsService } from '../commissions/commissions.service';
 import { TrackingEligibilityGate } from '../tracking/tracking-eligibility-gate';
+import { CacheService } from '../cache/cache.service';
 
 describe('OrdersService', () => {
   let service: OrdersService;
@@ -396,6 +397,12 @@ describe('OrdersService', () => {
               reason: 'Order source "DIRECT_WEBSITE" is eligible for tracking',
               metadata: {},
             }),
+          },
+        },
+        {
+          provide: CacheService,
+          useValue: {
+            invalidateByPrefix: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],
@@ -3596,6 +3603,32 @@ await service.bulkAssign(['order-1', 'trashed-1'], 'staff-1');
       await expect(
         service.removeItem('nonexistent-id', 'item-id-1'),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('analytics cache invalidation (P2 §6)', () => {
+    it('drops analytics:* after trash', async () => {
+      const cache = module.get<CacheService>(CacheService);
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        trashedAt: null,
+        timeline: [],
+      });
+      (prisma.order.update as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.trash('order-id-1');
+
+      expect(cache.invalidateByPrefix).toHaveBeenCalledWith('analytics:');
+    });
+
+    it('does not invalidate when the mutation fails', async () => {
+      const cache = module.get<CacheService>(CacheService);
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(null);
+
+      await expect(service.trash('missing-id')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(cache.invalidateByPrefix).not.toHaveBeenCalled();
     });
   });
 

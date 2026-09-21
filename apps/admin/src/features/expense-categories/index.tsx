@@ -41,7 +41,7 @@ export function ExpenseCategories() {
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<ExpenseCategoryResponse | null>(null)
-  const [form, setForm] = useState({ name: '', slug: '', description: '', color: '#6B7280', sortOrder: 0, accountId: '' })
+  const [form, setForm] = useState({ name: '', slug: '', description: '', color: '#6B7280', sortOrder: 0, accountId: '', expenseKind: 'unclassified' })
   const [deleteTarget, setDeleteTarget] = useState<ExpenseCategoryResponse | null>(null)
 
   const { data, isLoading } = useQuery({
@@ -76,7 +76,7 @@ export function ExpenseCategories() {
   })
 
   function resetForm() {
-    setForm({ name: '', slug: '', description: '', color: '#6B7280', sortOrder: 0, accountId: '' })
+    setForm({ name: '', slug: '', description: '', color: '#6B7280', sortOrder: 0, accountId: '', expenseKind: 'unclassified' })
   }
 
   function openCreate() {
@@ -94,6 +94,7 @@ export function ExpenseCategories() {
       color: cat.color || '#6B7280',
       sortOrder: cat.sortOrder,
       accountId: cat.accountId || '',
+      expenseKind: cat.expenseKind || 'unclassified',
     })
     setDialogOpen(true)
   }
@@ -106,6 +107,7 @@ export function ExpenseCategories() {
       color: form.color || undefined,
       sortOrder: form.sortOrder,
       accountId: form.accountId || undefined,
+      expenseKind: form.expenseKind || undefined,
     }
     if (editing) {
       updateMut.mutate({ id: editing.id, d: payload })
@@ -145,6 +147,7 @@ export function ExpenseCategories() {
                     <TableHead className='w-10'>#</TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>Slug</TableHead>
+                    <TableHead>Kind</TableHead>
                     <TableHead>Account</TableHead>
                     <TableHead>Color</TableHead>
                     <TableHead className='text-center'>Expenses</TableHead>
@@ -163,6 +166,11 @@ export function ExpenseCategories() {
                         </div>
                       </TableCell>
                       <TableCell className='text-sm text-muted-foreground font-mono'>{cat.slug}</TableCell>
+                      <TableCell>
+                        <span className='text-[11px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground capitalize'>
+                          {cat.expenseKind || 'unclassified'}
+                        </span>
+                      </TableCell>
                       <TableCell>
                         {cat.account
                           ? <span className='text-xs font-mono bg-muted px-1.5 py-0.5 rounded'>{cat.account.code} - {cat.account.name}</span>
@@ -251,6 +259,23 @@ export function ExpenseCategories() {
                   onChange={e => setForm(f => ({ ...f, sortOrder: parseInt(e.target.value) || 0 }))}
                 />
               </div>
+            </div>
+            <div className='grid gap-2'>
+              <Label>Cost Behavior</Label>
+              <Select
+                value={form.expenseKind}
+                onValueChange={v => setForm(f => ({ ...f, expenseKind: v }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder='Select cost behavior' />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value='fixed'>Fixed</SelectItem>
+                  <SelectItem value='variable'>Variable</SelectItem>
+                  <SelectItem value='unclassified'>Unclassified</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className='text-xs text-muted-foreground'>Staff-classified only — never inferred. Analytics groups expenses by this.</p>
             </div>
             <div className='grid gap-2'>
               <Label>Chart of Accounts Mapping (optional)</Label>

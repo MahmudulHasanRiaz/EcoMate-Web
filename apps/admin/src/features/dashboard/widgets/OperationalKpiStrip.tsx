@@ -26,6 +26,8 @@ interface KpiTile {
   bgClass: string
   borderClass: string
   link: string
+  /** Native hover tooltip (title attr) — used where the label needs a basis note. */
+  tooltip?: string
 }
 
 /** Human label of the selected period, shown so no number is ambiguous. */
@@ -144,9 +146,12 @@ export function OperationalKpiStrip({ dateRange, preset }: WidgetProps) {
       link: '/op/refunds',
     },
     {
-      label: 'Revenue',
+      // §3.5: dashboard revenue is Σ PAID payments (cash basis) — labelled
+      // as such. Accrual Net Sales recognised on delivery lives in Analytics.
+      label: 'Cash collected',
       value: kpi ? formatCurrency(kpi.revenue) : '—',
       subtext: periodLabel,
+      tooltip: 'Payments received; Analytics reports accrual Net Sales recognised on delivery',
       icon: <Coins className="h-4 w-4 text-fuchsia-500" />,
       bgClass: 'bg-fuchsia-500/10',
       borderClass: 'border-fuchsia-500/20',
@@ -185,6 +190,7 @@ export function OperationalKpiStrip({ dateRange, preset }: WidgetProps) {
         {tiles.map((tile) => (
           <Link key={tile.label} to={tile.link as any} className="block h-full">
             <div
+              title={tile.tooltip}
               className={`flex flex-col h-[104px] overflow-hidden rounded-xl border bg-card p-2.5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${tile.borderClass} ${isLoading ? 'opacity-75' : ''}`}
             >
               <div className="flex items-start justify-between gap-2">

@@ -185,8 +185,9 @@ export class OrdersController {
     @Param('id') id: string,
     @Body('verified') verified: boolean,
     @Body('note') note?: string,
+    @Body('feeAmount') feeAmount?: number,
   ) {
-    return this.svc.verifyPayment(id, verified, note);
+    return this.svc.verifyPayment(id, verified, note, feeAmount);
   }
 
   @Public()

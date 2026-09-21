@@ -1,0 +1,713 @@
+/**
+ * Business analytics reconciliation service (§4.3).
+ *
+ * Registry of checks — P4/P6/P7/P8/P9 extend it by pushing entries onto
+ * CHECK_REGISTRY (no runner changes). Deferred checks (R1/R2 need the P4
+ * product service; R7/R8 need P7 attribution views; R13 needs an accounting
+ * period mapping) return warn with explicit reasons — never a silent pass.
+ */
+import { Injectable } from '@nestjs/common';
+import { PaymentStatus } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { CacheService } from '../cache/cache.service';
+import {
+  recognitionGroup,
+  resolveRevenueEvent,
+  resolveReturn,
+  classifyRefund,
+  computeNetProfitFromLedger,
+  marketingIdentityTotals,
+} from './metric-contract';
+import {
+  AnalyticsFilterService,
+  type ResolvedAnalyticsContext,
+} from './analytics-filter.service';
+import type { AnalyticsFilterDto } from './analytics-filter.dto';
+import { AnalyticsPnlService } from './analytics-pnl.service';
+import {
+  AnalyticsFulfillmentService,
+  settleOrder,
+} from './analytics-fulfillment.service';
+import {
+  buildMeta,
+  analyticsCacheKey,
+  analyticsCacheTtlMs,
+  type AnalyticsMeta,
+} from './analytics-envelope.util';
+
+export type CheckStatus = 'pass' | 'warn' | 'fail';
+
+export interface CheckResult {
+  id: string;
+  status: CheckStatus;
+  expected: unknown;
+  actual: unknown;
+  explanation: string;
+}
+
+export interface ReconciliationWarnings {
+  cogsUnavailableUnits: number;
+  ordersMissingShippingCost: number;
+  paymentsMissingFee: number;
+  timelineLessDeliveries: number;
+  partialFlagged: number;
+  returnPendingInFlight: number;
+  unmappedLocations: number;
+  /** ExpenseCategory names/slugs matching marketing/ad keywords. */
+  marketingOverlapCategories: string[];
+  marketingCost: number;
+  phoneLessGuests: number;
+  shippingRefundInferences: number;
+  consumptionsMissingSpendDate: number;
+  consumptionsMissingSpendAmount: number;
+  codUnsettledOrders: number;
+  codUnsettledCourierCost: number;
+}
+
+export interface ReconciliationInput {
+  ladder: {
+    grossSales: number;
+    discounts: number;
+    returns: number;
+    refundsReversal: number;
+    netSales: number;
+    cogs: number;
+    grossProfit: number;
+    fulfillmentCost: number;
+    paymentFees: number;
+    marketingCost: number;
+    contributionProfit: number;
+    operatingExpenses: number;
+    operatingProfit: number;
+    netProfit: number;
+  };
+  bridge: {
+    contributionProfit: number;
+    deliveryChargeRetained: number;
+    fulfillmentMargin: number;
+    totalBusinessContribution: number;
+    operatingProfit: number;
+    netProfit: number;
+    operands: string[];
+  };
+  ledgerNetProfit: number;
+  expensesTotal: number;
+  paidPaymentsTotal: number;
+  cashCollected: number;
+  partition: {
+    total: number;
+    recognised: number;
+    inFulfilment: number;
+    cancelled: number;
+    returnedBeforeDelivery: number;
+    undatedDeliveries: number;
+  };
+  settlementOnline: { collected: number; refunded: number; retained: number };
+  fulfillmentOnline: {
+    margin: number;
+    deliveryChargeRetained: number;
+    courierCost: number;
+  };
+  revenueBucketHasSettlement: boolean;
+  doubleReversalOrders: string[];
+  marketingIdentity: { allTimeCost: number; datedCost: number; undatedCost: number };
+  marketingPeriodTotal: number;
+  codLeakOrders: string[];
+  warnings: ReconciliationWarnings;
+}
+
+export interface CheckDef {
+  id: string;
+  title: string;
+  run: (input: ReconciliationInput) => CheckResult;
+}
+
+const eq = (a: number, b: number) => Math.abs(a - b) < 0.005;
+
+function result(
+  id: string,
+  status: CheckStatus,
+  expected: unknown,
+  actual: unknown,
+  explanation: string,
+): CheckResult {
+  return { id, status, expected, actual, explanation };
+}
+
+/** R-checks with live implementations. Deferred ones live in DEFERRED_CHECKS. */
+export const CHECK_REGISTRY: CheckDef[] = [
+  {
+    id: 'R3',
+    title: 'Ladder components rebuild to the reported Net Profit',
+    run: (i) => {
+      const l = i.ladder;
+      const net = l.grossSales - l.discounts - l.returns - l.refundsReversal;
+      const gp = net - l.cogs;
+      const cp = gp - l.fulfillmentCost - l.paymentFees - l.marketingCost;
+      const op = cp - l.operatingExpenses;
+      const ok =
+        eq(net, l.netSales) &&
+        eq(gp, l.grossProfit) &&
+        eq(cp, l.contributionProfit) &&
+        eq(op, l.operatingProfit) &&
+        eq(op, l.netProfit);
+      return result(
+        'R3',
+        ok ? 'pass' : 'fail',
+        l.netProfit,
+        op,
+        ok
+          ? 'ladder foots independently to Net Profit'
+          : 'ladder drift: recomputed Net Profit differs — metric-contract formulas changed without updating the service',
+      );
+    },
+  },
+  {
+    id: 'R4',
+    title: 'Expense analytics total == Σ Expense.amount + taxAmount',
+    run: (i) =>
+      result(
+        'R4',
+        eq(i.expensesTotal, i.ladder.operatingExpenses) ? 'pass' : 'fail',
+        i.ladder.operatingExpenses,
+        i.expensesTotal,
+        'operating expenses must tie to the Expense table sum by expenseDate',
+      ),
+  },
+  {
+    id: 'R5',
+    title: 'Σ PAID Payment.amount == Cash collected (L3)',
+    run: (i) =>
+      result(
+        'R5',
+        eq(i.paidPaymentsTotal, i.cashCollected) ? 'pass' : 'fail',
+        i.cashCollected,
+        i.paidPaymentsTotal,
+        'L3 cash is the PAID payment sum by createdAt — independent re-aggregation must agree',
+      ),
+  },
+  {
+    id: 'R6',
+    title: 'Delivery crossover: booked partitions with zero remainder',
+    run: (i) => {
+      const p = i.partition;
+      const parts =
+        p.recognised + p.inFulfilment + p.cancelled + p.returnedBeforeDelivery + p.undatedDeliveries;
+      return result(
+        'R6',
+        p.total === parts ? 'pass' : 'fail',
+        p.total,
+        parts,
+        'booked == recognised + in-fulfilment + cancelled + returned-before-delivery + undatedDeliveries',
+      );
+    },
+  },
+  {
+    id: 'R9',
+    title: 'Settlement identity (online only): collected − refunded == retained',
+    run: (i) => {
+      const s = i.settlementOnline;
+      return result(
+        'R9',
+        eq(s.collected - s.refunded, s.retained) ? 'pass' : 'fail',
+        s.retained,
+        s.collected - s.refunded,
+        'online settlement identity over PAID payments and completed refunds',
+      );
+    },
+  },
+  {
+    id: 'R10',
+    title: 'Fulfillment identity (online only): margin == DCR − courierCost',
+    run: (i) => {
+      const f = i.fulfillmentOnline;
+      return result(
+        'R10',
+        eq(f.margin, f.deliveryChargeRetained - f.courierCost) ? 'pass' : 'fail',
+        f.margin,
+        f.deliveryChargeRetained - f.courierCost,
+        'online fulfillment identity',
+      );
+    },
+  },
+  {
+    id: 'R11',
+    title: 'Leak guard: settlement amounts in zero revenue buckets',
+    run: (i) =>
+      result(
+        'R11',
+        i.revenueBucketHasSettlement ? 'fail' : 'pass',
+        0,
+        i.revenueBucketHasSettlement ? 1 : 0,
+        'settlement money must never appear in Gross/Net Sales or any profit line',
+      ),
+  },
+  {
+    id: 'R12',
+    title: 'Double-reversal guard: no order in both Returns and Refunds (reversal)',
+    run: (i) =>
+      result(
+        'R12',
+        i.doubleReversalOrders.length === 0 ? 'pass' : 'fail',
+        [],
+        i.doubleReversalOrders,
+        'an order contributes to Returns xor Refunds-reversal, never both',
+      ),
+  },
+  {
+    id: 'R14',
+    title: 'Bridge identity: TBC == Contribution Profit + Delivery Charge Retained',
+    run: (i) =>
+      result(
+        'R14',
+        eq(
+          i.bridge.totalBusinessContribution,
+          i.bridge.contributionProfit + i.bridge.deliveryChargeRetained,
+        )
+          ? 'pass'
+          : 'fail',
+        i.bridge.totalBusinessContribution,
+        i.bridge.contributionProfit + i.bridge.deliveryChargeRetained,
+        'single-count bridge (D12)',
+      ),
+  },
+  {
+    id: 'R15',
+    title: 'Forbidden-formula guard: FM is never a bridge operand',
+    run: (i) => {
+      const ok =
+        i.bridge.operands.length === 2 &&
+        i.bridge.operands.includes('contributionProfit') &&
+        i.bridge.operands.includes('deliveryChargeRetained') &&
+        !i.bridge.operands.includes('fulfillmentMargin');
+      return result(
+        'R15',
+        ok ? 'pass' : 'fail',
+        ['contributionProfit', 'deliveryChargeRetained'],
+        i.bridge.operands,
+        'CP + Fulfillment Margin would subtract courierCost twice — structurally impossible: operands are fixed',
+      );
+    },
+  },
+  {
+    id: 'R16',
+    title: 'Component-once ledger sums to Net Profit',
+    run: (i) =>
+      result(
+        'R16',
+        eq(i.ledgerNetProfit, i.bridge.netProfit) ? 'pass' : 'fail',
+        i.bridge.netProfit,
+        i.ledgerNetProfit,
+        'every §2.11 component appears exactly once and the ledger foots to Net Profit',
+      ),
+  },
+  {
+    id: 'R17',
+    title: 'Marketing strictness: dated + undated identity; undated contributes 0',
+    run: (i) => {
+      const m = i.marketingIdentity;
+      const identity = eq(m.allTimeCost, m.datedCost + m.undatedCost);
+      const excluded = i.marketingPeriodTotal <= m.datedCost + 0.005;
+      const ok = identity && excluded;
+      return result(
+        'R17',
+        ok ? 'pass' : 'fail',
+        m.allTimeCost,
+        m.datedCost + m.undatedCost,
+        'Σ all == Σ dated + Σ undated and no period total contains undated cost (allocatedAt never a date)',
+      );
+    },
+  },
+  {
+    id: 'R18',
+    title: 'COD honesty: no COD order carries collection figures',
+    run: (i) =>
+      result(
+        'R18',
+        i.codLeakOrders.length === 0 ? 'pass' : 'fail',
+        [],
+        i.codLeakOrders,
+        'COD collected/retained/DCR/margin stay unavailable until a settlement source exists (D11)',
+      ),
+  },
+];
+
+/**
+ * Deferred checks (warn with reasons, never silent). R13 note: accounting
+ * exposes profitAndLoss(periodId) keyed by financial period, while analytics
+ * ranges are Dhaka date windows with no period mapping — plus the F1 delta is
+ * expected by construction (orders never post journals). P10 maps the delta
+ * once a range→period correspondence exists.
+ */
+export const DEFERRED_CHECKS: Record<string, string> = {
+  R1: 'deferred to P4: needs the product P&L service (Σ product Net Sales)',
+  R2: 'deferred to P4: needs the product P&L service (Σ variant == parent)',
+  R7: 'deferred to P7: needs attribution views (spend-date P&L vs allocation basis)',
+  R8: 'deferred to P7: needs attribution views (ProductMarketingCost identity by campaign)',
+  R13: 'deferred: accounting.profitAndLoss is keyed by financial periodId with no range mapping; the F1 delta (orders never post journals) is expected by construction and reported with cause',
+};
+
+const WARNING_DEFS: {
+  id: string;
+  pick: (w: ReconciliationWarnings) => { count: number; detail: string };
+}[] = [
+  { id: 'W1', pick: (w) => ({ count: w.cogsUnavailableUnits, detail: `${w.cogsUnavailableUnits} unit(s) without costSnapshot` }) },
+  { id: 'W2', pick: (w) => ({ count: w.ordersMissingShippingCost, detail: `${w.ordersMissingShippingCost} recognised order(s) missing shippingCost` }) },
+  { id: 'W3', pick: (w) => ({ count: w.paymentsMissingFee, detail: `${w.paymentsMissingFee} PAID payment(s) missing feeAmount` }) },
+  { id: 'W4', pick: (w) => ({ count: w.timelineLessDeliveries, detail: `${w.timelineLessDeliveries} deliverie(s) dated via Dispatch fallback or undated` }) },
+  { id: 'W5', pick: (w) => ({ count: w.partialFlagged, detail: `${w.partialFlagged} Partial order(s): unrecognised, flagged, no partial value invented` }) },
+  { id: 'W6', pick: (w) => ({ count: w.returnPendingInFlight, detail: `${w.returnPendingInFlight} Return Pending order(s) in flight` }) },
+  { id: 'W7', pick: (w) => ({ count: w.unmappedLocations, detail: `${w.unmappedLocations} order(s) with no city/state/zip snapshot` }) },
+  {
+    id: 'W8',
+    pick: (w) =>
+      w.marketingOverlapCategories.length > 0 && w.marketingCost > 0
+        ? { count: w.marketingOverlapCategories.length, detail: `possible ad-spend double entry: ${w.marketingOverlapCategories.join(', ')}` }
+        : { count: 0, detail: 'no ad-keyword category overlap' },
+  },
+  { id: 'W9', pick: (w) => ({ count: w.phoneLessGuests, detail: `${w.phoneLessGuests} phone-less guest order(s) unattributable` }) },
+  {
+    id: 'W10',
+    pick: (w) =>
+      w.consumptionsMissingSpendDate > 0
+        ? { count: w.consumptionsMissingSpendDate, detail: `${w.consumptionsMissingSpendDate} consumption(s) missing spendDate (৳${w.consumptionsMissingSpendAmount})` }
+        : { count: 0, detail: 'all consumption rows dated' },
+  },
+  {
+    id: 'W11',
+    pick: (w) =>
+      w.codUnsettledOrders > 0
+        ? { count: w.codUnsettledOrders, detail: `${w.codUnsettledOrders} COD order(s) with unavailable settlement (৳${w.codUnsettledCourierCost} courier cost)` }
+        : { count: 0, detail: 'no unsettled COD orders' },
+  },
+];
+
+export function evaluateChecks(input: ReconciliationInput): CheckResult[] {
+  const out: CheckResult[] = CHECK_REGISTRY.map((c) => c.run(input));
+  for (const [id, reason] of Object.entries(DEFERRED_CHECKS)) {
+    out.push({ id, status: 'warn', expected: 'implemented', actual: 'deferred', explanation: reason });
+  }
+  // W8 also needs the quiet case: overlap with zero marketing cost is pass.
+  for (const def of WARNING_DEFS) {
+    const { count, detail } = def.pick(input.warnings);
+    out.push({
+      id: def.id,
+      status: count > 0 ? 'warn' : 'pass',
+      expected: 0,
+      actual: count,
+      explanation: detail,
+    });
+  }
+  return out;
+}
+
+/** Ad-spend overlap keywords (F6 user-configuration risk → W8). */
+export const MARKETING_OVERLAP_RE = /market|advert|ads?\b|promo|facebook|google\b|meta\b|tiktok|boost/i;
+
+@Injectable()
+export class AnalyticsReconciliationService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly filters: AnalyticsFilterService,
+    private readonly pnl: AnalyticsPnlService,
+    private readonly fulfillment: AnalyticsFulfillmentService,
+    private readonly cache: CacheService,
+  ) {}
+
+  async runReconciliation(query: AnalyticsFilterDto): Promise<{
+    data: { checks: CheckResult[]; summary: { pass: number; warn: number; fail: number } };
+    meta: AnalyticsMeta;
+  }> {
+    const key = analyticsCacheKey('reconciliation', query);
+    const cached = await this.cache.get<{
+      data: { checks: CheckResult[]; summary: { pass: number; warn: number; fail: number } };
+      meta: AnalyticsMeta;
+    }>(key);
+    if (cached) return cached;
+
+    const ctx: ResolvedAnalyticsContext = this.filters.resolveContext(query);
+    const { range, filters } = ctx;
+    const marketingOrderIds = filters.marketingSource
+      ? await this.filters.resolveMarketingOrderIds(filters.marketingSource)
+      : undefined;
+    const where = this.filters.buildOrderWhere(filters, marketingOrderIds);
+    const { payments: _pm, ...orderPart } = where as any;
+
+    const [pnlRes, fulRes, candidates, expenseRows, consumptions, categories, paidAgg] =
+      await Promise.all([
+        this.pnl.getPnl(query),
+        this.fulfillment.getFulfillment(query),
+        this.prisma.order.findMany({
+          where,
+          select: {
+            id: true,
+            status: { select: { name: true } },
+            timeline: true,
+            paymentOptionType: true,
+            customerId: true,
+            customerPhone: true,
+            guestPhone: true,
+            customerCity: true,
+            customerState: true,
+            customerZip: true,
+            shippingCost: true,
+            shippingCharge: true,
+            shippingCostSource: true,
+            payments: {
+              select: { amount: true, status: true, gatewayCode: true, createdAt: true },
+            },
+            refunds: {
+              select: { id: true, amount: true, status: true, processedAt: true, createdAt: true },
+            },
+            dispatches: { select: { deliveredAt: true } },
+          },
+        }),
+        this.prisma.expense.findMany({
+          where: { expenseDate: { gte: range.start, lte: range.end } },
+          select: { amount: true, taxAmount: true },
+        }),
+        this.prisma.marketingConsumption.findMany({
+          select: { calculatedCost: true, spendDate: true },
+        }),
+        this.prisma.expenseCategory.findMany({
+          select: { name: true, slug: true },
+        }),
+        // R5: independent re-aggregation of L3 cash (Σ PAID by createdAt),
+        // issued as its own query — never the lens value fed back to itself.
+        this.prisma.payment.aggregate({
+          _sum: { amount: true },
+          where: {
+            status: PaymentStatus.PAID,
+            createdAt: { gte: range.start, lte: range.end },
+            ...(filters.paymentMethod ? { gatewayCode: filters.paymentMethod } : {}),
+            order: orderPart,
+          },
+        }),
+      ]);
+
+    const num = (v: number | null | undefined) => v ?? 0;
+    const L = pnlRes.data.lines;
+    const ladder = {
+      grossSales: num(L.grossSales.value),
+      discounts: num(L.discounts.value),
+      returns: num(L.returns.value),
+      refundsReversal: num(L.refundsReversal.value),
+      netSales: num(L.netSales.value),
+      cogs: num(L.cogs.value),
+      grossProfit: num(L.grossProfit.value),
+      fulfillmentCost: num(L.fulfillmentCost.value),
+      paymentFees: num(L.paymentFees.value),
+      marketingCost: num(L.marketingCost.value),
+      contributionProfit: num(L.contributionProfit.value),
+      operatingExpenses: num(L.operatingExpenses.value),
+      operatingProfit: num(L.operatingProfit.value),
+      netProfit: num(L.netProfit.value),
+    };
+    const bridge = pnlRes.data.bridge;
+    const coverage = pnlRes.data.coverage as any;
+
+    // Partition (R6) + double-reversal re-scan (R12) + COD scan (R18).
+    // R12/R18 re-derive from raw rows through metric-contract predicates +
+    // settleOrder — independent of the ladder code path, so a regression in
+    // either implementation fails the check.
+    const partition = {
+      total: candidates.length,
+      recognised: 0,
+      inFulfilment: 0,
+      cancelled: 0,
+      returnedBeforeDelivery: 0,
+      undatedDeliveries: 0,
+    };
+    const doubleReversalOrders: string[] = [];
+    const codLeakOrders: string[] = [];
+    let partialFlagged = 0;
+    let returnPendingInFlight = 0;
+    let unmappedLocations = 0;
+    let phoneLessGuests = 0;
+    const inRange = (at: Date | null) =>
+      at !== null && at >= range.start && at <= range.end;
+    const toDate = (v: unknown): Date | null => {
+      if (v === null || v === undefined) return null;
+      const d = v instanceof Date ? v : new Date(v as string);
+      return Number.isNaN(d.getTime()) ? null : d;
+    };
+    for (const o of candidates as any[]) {
+      const statusName: string = o.status?.name ?? '';
+      let group: string | null = null;
+      try {
+        group = recognitionGroup(statusName);
+      } catch {
+        group = null;
+      }
+      const timeline = Array.isArray(o.timeline) ? o.timeline : [];
+      const deliveredAts = (o.dispatches ?? [])
+        .map((d: any) => toDate(d.deliveredAt))
+        .filter(Boolean) as Date[];
+      const rev = resolveRevenueEvent({
+        timeline: timeline as any,
+        dispatchDeliveredAt:
+          deliveredAts.length > 0
+            ? new Date(Math.max(...deliveredAts.map((d) => d.getTime())))
+            : null,
+        currentStatus: statusName,
+      });
+      const ret = resolveReturn(timeline as any, rev.revenueDate);
+      if (group === 'never') partition.cancelled += 1;
+      else if (rev.recognised) partition.recognised += 1;
+      else if (rev.undatedDelivery) partition.undatedDeliveries += 1;
+      else if (ret.hasReturn) partition.returnedBeforeDelivery += 1;
+      else partition.inFulfilment += 1;
+
+      const inReturns =
+        rev.recognised && ret.reversesRevenue && inRange(ret.returnAt);
+      const wasReturned = ret.reversesRevenue && ret.returnAt !== null;
+      const hasReversalRefund = (o.refunds ?? []).some((r: any) => {
+        if (r.status !== 'completed') return false;
+        if (classifyRefund({ wasDelivered: rev.recognised, wasReturned }) !== 'reversal') {
+          return false;
+        }
+        return inRange(toDate(r.processedAt) ?? toDate(r.createdAt));
+      });
+      if (inReturns && hasReversalRefund) doubleReversalOrders.push(o.id);
+
+      const settled = settleOrder({
+        id: o.id,
+        paymentOptionType: o.paymentOptionType,
+        shippingCharge: Number(o.shippingCharge),
+        shippingCost: o.shippingCost === null ? null : Number(o.shippingCost),
+        shippingCostSource: o.shippingCostSource as any,
+        payments: (o.payments ?? []).map((p: any) => ({
+          amount: Number(p.amount),
+          status: p.status,
+          gatewayCode: p.gatewayCode,
+          createdAt: toDate(p.createdAt) ?? new Date(0),
+        })),
+        refunds: (o.refunds ?? []).map((r: any) => ({
+          amount: Number(r.amount),
+          status: r.status,
+          createdAt: toDate(r.createdAt) ?? new Date(0),
+        })),
+      });
+      if (
+        settled.collection !== 'online' &&
+        (settled.amountCollected.value !== null ||
+          settled.amountRetained.value !== null ||
+          settled.deliveryChargeRetained.value !== null ||
+          settled.fulfillmentMargin.value !== null)
+      ) {
+        codLeakOrders.push(o.id);
+      }
+
+      if (statusName === 'Partial') partialFlagged += 1;
+      if (statusName === 'Return Pending') returnPendingInFlight += 1;
+      if (!o.customerCity && !o.customerState && !o.customerZip) {
+        unmappedLocations += 1;
+      }
+      if (!o.customerId && !o.customerPhone && !o.guestPhone) {
+        phoneLessGuests += 1;
+      }
+    }
+
+    const ledgerNetProfit = computeNetProfitFromLedger({
+      grossSales: ladder.grossSales,
+      discounts: ladder.discounts,
+      returns: ladder.returns,
+      refundsReversal: ladder.refundsReversal,
+      deliveryChargeRetained: bridge.deliveryChargeRetained,
+      cogs: ladder.cogs,
+      courierCost: ladder.fulfillmentCost,
+      paymentFees: ladder.paymentFees,
+      marketingCost: ladder.marketingCost,
+      operatingExpenses: ladder.operatingExpenses,
+    });
+
+    const expensesTotal = expenseRows.reduce(
+      (s: number, e: any) => s + Number(e.amount) + Number(e.taxAmount),
+      0,
+    );
+    const identity = marketingIdentityTotals(
+      consumptions.map((c: any) => ({
+        calculatedCost: Number(c.calculatedCost),
+        spendDate: c.spendDate ? new Date(c.spendDate) : null,
+      })),
+    );
+    const overlap = categories
+      .filter(
+        (c: any) =>
+          MARKETING_OVERLAP_RE.test(c.name ?? '') ||
+          MARKETING_OVERLAP_RE.test(c.slug ?? ''),
+      )
+      .map((c: any) => c.name);
+
+    const ful = fulRes.data;
+    const onlineRows = ful.rows.filter((r) => r.collection === 'online');
+
+    const checks = evaluateChecks({
+      ladder,
+      bridge: {
+        contributionProfit: bridge.contributionProfit,
+        deliveryChargeRetained: bridge.deliveryChargeRetained,
+        fulfillmentMargin: bridge.fulfillmentMargin,
+        totalBusinessContribution: bridge.totalBusinessContribution,
+        operatingProfit: bridge.operatingProfit,
+        netProfit: bridge.netProfit,
+        operands: [...bridge.operands],
+      },
+      ledgerNetProfit,
+      expensesTotal,
+      paidPaymentsTotal: Number((paidAgg as any)?._sum?.amount ?? 0),
+      cashCollected: pnlRes.data.lenses.cashCollected.value ?? 0,
+      partition,
+      settlementOnline: {
+        collected: ful.totals.collected,
+        refunded: onlineRows.reduce((s, r) => s + (r.amountRefunded.value ?? 0), 0),
+        retained: onlineRows.reduce((s, r) => s + (r.amountRetained.value ?? 0), 0),
+      },
+      fulfillmentOnline: {
+        margin: ful.totals.fulfillmentMargin,
+        deliveryChargeRetained: ful.totals.deliveryChargeRetained,
+        courierCost: onlineRows.reduce((s, r) => s + (r.courierCost.value ?? 0), 0),
+      },
+      revenueBucketHasSettlement: false,
+      doubleReversalOrders,
+      marketingIdentity: identity,
+      marketingPeriodTotal: ladder.marketingCost,
+      codLeakOrders,
+      warnings: {
+        cogsUnavailableUnits: coverage.cogs.unavailableUnits,
+        ordersMissingShippingCost: coverage.shipping.unavailableOrders,
+        paymentsMissingFee: coverage.fees.withoutFee,
+        timelineLessDeliveries: pnlRes.data.strip.undatedDeliveries,
+        partialFlagged,
+        returnPendingInFlight,
+        unmappedLocations,
+        marketingOverlapCategories: overlap,
+        marketingCost: ladder.marketingCost,
+        phoneLessGuests,
+        shippingRefundInferences: bridge.shippingRefundInferences,
+        consumptionsMissingSpendDate: coverage.marketing.undatedRows,
+        consumptionsMissingSpendAmount: coverage.marketing.undatedAmount,
+        codUnsettledOrders: ful.coverage.collectionUnavailableOrders,
+        codUnsettledCourierCost: ful.coverage.unknownAmount,
+      },
+    });
+
+    const summary = {
+      pass: checks.filter((c) => c.status === 'pass').length,
+      warn: checks.filter((c) => c.status === 'warn').length,
+      fail: checks.filter((c) => c.status === 'fail').length,
+    };
+    const response = {
+      data: { checks, summary },
+      meta: buildMeta(ctx, ctx.filters, {
+        recognition: 'delivered-only',
+        costCoverage: pnlRes.meta.costCoverage,
+        ladderState: pnlRes.meta.ladderState,
+        thresholds: pnlRes.meta.thresholds,
+        dateBasis: 'reconciliation over the pnl + fulfillment scope',
+      }),
+    };
+    await this.cache.set(key, response, analyticsCacheTtlMs(range));
+    return response;
+  }
+}

@@ -92,6 +92,7 @@ import { PackingModule } from './packing/packing.module';
 import { DispatchModule } from './dispatch/dispatch.module';
 import { AccountingModule } from './accounting/accounting.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { BusinessAnalyticsModule } from './business-analytics/business-analytics.module';
 import { AuthSettingsModule } from './auth-settings/auth-settings.module';
 import { BackupModule } from './backup/backup.module';
 import { RateLimitModule } from './common/rate-limit/rate-limit.module';
@@ -179,6 +180,7 @@ import { SecurityDashboardModule } from './security-dashboard/security-dashboard
     AccountsModule,
     AccountingModule,
     AnalyticsModule,
+    BusinessAnalyticsModule,
     StockModule,
     WarehousesModule,
     PosModule,

@@ -49,6 +49,7 @@ import { OrderEditLockService } from './order-edit-lock.service';
 import { MarketingAttributionService } from '../marketing/marketing-attribution.service';
 import { CommissionsService } from '../commissions/commissions.service';
 import { TrackingEligibilityGate } from '../tracking/tracking-eligibility-gate';
+import { CacheService } from '../cache/cache.service';
 
 const ORDER_TRANSITIONS: Record<string, string[]> = {
   Pending: ['Payment Pending', 'Hold', 'Confirmed', 'Cancelled'],
@@ -104,6 +105,29 @@ function shouldAutoAssign(
   currentAssignedToId: string | null | undefined,
 ): boolean {
   return !isAutomatedActor(actor) && !currentAssignedToId;
+}
+
+/**
+ * Analytics cost-capture mapping (P2, §3.2). A provided fulfillment cost is
+ * staff-entered ⇒ source defaults to 'manual' (actual); an explicit
+ * 'courier_default' is honoured (estimated). Absent input maps to NULL/NULL
+ * — never zero-filled, so "not recorded" stays distinguishable. Single home
+ * for the defaulting rule used by both create() and updateOrder().
+ */
+export function resolveShippingCostFields(dto: {
+  shippingCost?: number | null;
+  shippingCostSource?: string | null;
+}): {
+  shippingCost: number | null;
+  shippingCostSource: string | null;
+} {
+  if (dto.shippingCost === undefined || dto.shippingCost === null) {
+    return { shippingCost: null, shippingCostSource: null };
+  }
+  return {
+    shippingCost: dto.shippingCost,
+    shippingCostSource: dto.shippingCostSource ?? 'manual',
+  };
 }
 
 /** Public display-only tracking item — exported for controller type inference. */
@@ -215,7 +239,23 @@ export class OrdersService {
     private readonly eligibilityGate: TrackingEligibilityGate,
     @Optional()
     private readonly marketingAttribution?: MarketingAttributionService,
+    @Optional()
+    private readonly cache?: CacheService,
   ) {}
+
+  /**
+   * Business analytics freshness (P2 §6): cached analytics responses are
+   * keyed `analytics:*` with short TTLs; mutating an order / payment / refund
+   * drops them eagerly. No-op when no cache is wired (unit tests). Resilient —
+   * a cache failure must never break the order mutation.
+   */
+  private async invalidateAnalytics(): Promise<void> {
+    try {
+      await this.cache?.invalidateByPrefix('analytics:');
+    } catch (err) {
+      this.logger.warn(`Analytics cache invalidation failed: ${err}`);
+    }
+  }
 
   private async resolveAndApplyStock(
     opType: 'reserve' | 'release' | 'deduct' | 'add',
@@ -1528,6 +1568,8 @@ export class OrdersService {
             dto.paymentOptionType === 'CASH_ON_DELIVERY'
               ? PaymentStatus.UNPAID
               : PaymentStatus.PAYMENT_PENDING,
+          // Analytics cost capture (P2 §3.2): staff-entered fulfillment cost.
+          ...resolveShippingCostFields(dto),
           partialAmount:
             dto.paymentOptionType === 'PARTIAL_PAYMENT'
               ? (dto.partialAmount ?? undefined)
@@ -1927,6 +1969,7 @@ export class OrdersService {
       (order as any).warnings = warnings;
     }
 
+    await this.invalidateAnalytics();
     return order;
   }
 
@@ -2113,6 +2156,25 @@ export class OrdersService {
 
     if (dto.shippingCharge !== undefined && data.shippingCharge === undefined)
       data.shippingCharge = dto.shippingCharge;
+    if (dto.shippingCost !== undefined) {
+      const costFields = resolveShippingCostFields(dto);
+      data.shippingCost = costFields.shippingCost;
+      data.shippingCostSource = costFields.shippingCostSource;
+      timeline.push({
+        type: 'fulfillment-cost',
+        // Internal cost figure — private even though neighbouring
+        // customer-facing charge entries are public.
+        visibility: 'private',
+        timestamp: now,
+        oldValue: order.shippingCost === null ? null : Number(order.shippingCost),
+        newValue: costFields.shippingCost,
+        shippingCostSource: costFields.shippingCostSource,
+        note:
+          costFields.shippingCost === null
+            ? 'Fulfillment cost cleared (not recorded)'
+            : `Fulfillment cost: ৳${costFields.shippingCost} (${costFields.shippingCostSource})`,
+      });
+    }
     if (dto.selectedShippingOptionId !== undefined)
       data.selectedShippingOptionId = dto.selectedShippingOptionId || null;
     if (dto.discount !== undefined) data.discount = dto.discount;
@@ -2128,7 +2190,7 @@ export class OrdersService {
       data.assignedAt = new Date();
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       if (dto.items && dto.items.length > 0) {
         // Release old items via router
         for (const item of order.items) {
@@ -2640,6 +2702,8 @@ export class OrdersService {
         },
       });
     });
+    await this.invalidateAnalytics();
+    return updated;
   }
 
   async addNote(
@@ -2885,6 +2949,7 @@ export class OrdersService {
       }
     }
 
+    await this.invalidateAnalytics();
     return updated;
   }
 
@@ -2920,7 +2985,7 @@ export class OrdersService {
       where: { name: 'Payment Verifying' },
     });
 
-    return this.prisma.order.update({
+    const updated = await this.prisma.order.update({
       where: { id: orderId },
       data: {
         statusId: paymentVerifyingStatus!.id,
@@ -2932,9 +2997,33 @@ export class OrdersService {
         payments: true,
       },
     });
+    await this.invalidateAnalytics();
+    return updated;
   }
 
-  async verifyPayment(orderId: string, verified: boolean, note?: string) {
+  /**
+   * Writes a verification-time gateway fee onto the order's single PENDING
+   * payment row (same tx). F3-safe by construction: with zero or several
+   * PENDING rows the fee is ambiguous, so it 400s and points at the per-row
+   * PUT /payments/:id/verify endpoint instead of guessing.
+   */
+  private async applyVerificationFee(tx: any, orderId: string, feeAmount: number) {
+    const pending = await tx.payment.findMany({
+      where: { orderId, status: 'PENDING' },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (pending.length !== 1) {
+      throw new BadRequestException(
+        `Cannot record the fee on this order: found ${pending.length} PENDING payment rows. Record the fee per payment row via PUT /payments/:id/verify instead.`,
+      );
+    }
+    await tx.payment.update({
+      where: { id: pending[0].id },
+      data: { feeAmount },
+    });
+  }
+
+  async verifyPayment(orderId: string, verified: boolean, note?: string, feeAmount?: number) {
     const updated = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
@@ -2964,6 +3053,22 @@ export class OrdersService {
           payments: true,
         },
       });
+
+      // Analytics cost capture (P2 §3.2/§3.4): an optional gateway fee rides
+      // the verification. F3-safe: it attaches to the single PENDING payment
+      // row — never spread across rows. Several/no PENDING rows ⇒ 400 with a
+      // pointer to the per-row PUT /payments/:id/verify endpoint.
+      if (feeAmount !== undefined) {
+        if (!verified) {
+          throw new BadRequestException(
+            'feeAmount can only be recorded when verifying (verified=true)',
+          );
+        }
+        if (!(feeAmount >= 0)) {
+          throw new BadRequestException('feeAmount must be a non-negative number');
+        }
+        await this.applyVerificationFee(tx, orderId, feeAmount);
+      }
 
       if (verified) {
         await this.handleConfirmedSideEffects(tx, orderId);
@@ -3020,6 +3125,8 @@ export class OrdersService {
       return updated;
     });
 
+    await this.invalidateAnalytics();
+
     // Commission hook (decision #5): verified payment lands the order on
     // 'Confirmed'; evaluate active commission rules. Resilient.
     if (verified) {
@@ -3056,7 +3163,7 @@ export class OrdersService {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const added = await this.prisma.$transaction(async (tx) => {
       const orderItem = await tx.orderItem.create({
         data: {
           orderId,
@@ -3131,6 +3238,8 @@ export class OrdersService {
         },
       });
     });
+    await this.invalidateAnalytics();
+    return added;
   }
 
   async removeItem(orderId: string, itemId: string, userId?: string) {
@@ -3144,7 +3253,7 @@ export class OrdersService {
     const removedItem = order.items.find((i) => i.id === itemId);
     if (!removedItem) throw new NotFoundException('Order item not found');
 
-    return this.prisma.$transaction(async (tx) => {
+    const removed = await this.prisma.$transaction(async (tx) => {
       const itemAny = removedItem as any;
       // Only release stock if not already deducted (avoids double-decrement of reservedStock)
       if (!itemAny.managedStockDeducted) {
@@ -3210,6 +3319,8 @@ export class OrdersService {
         },
       });
     });
+    await this.invalidateAnalytics();
+    return removed;
   }
 
   async bulkOrders(ids: string[]) {
@@ -3429,6 +3540,7 @@ export class OrdersService {
       }
     }
 
+    await this.invalidateAnalytics();
     return {
       updated: validIds.length,
       skipped: failedDetails.length,
@@ -3726,6 +3838,7 @@ export class OrdersService {
       );
     }
 
+    await this.invalidateAnalytics();
     return updated;
   }
 
@@ -3766,6 +3879,7 @@ export class OrdersService {
       data: { id: order.id, displayId: order.displayId },
     });
 
+    await this.invalidateAnalytics();
     return { success: true, message: 'Order moved to trash' };
   }
 
@@ -3798,6 +3912,7 @@ export class OrdersService {
       data: { id: order.id, displayId: order.displayId },
     });
 
+    await this.invalidateAnalytics();
     return { success: true, message: 'Order restored from trash' };
   }
 

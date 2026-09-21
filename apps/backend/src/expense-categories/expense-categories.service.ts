@@ -3,8 +3,10 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CacheService } from '../cache/cache.service';
 import {
   CreateExpenseCategoryDto,
   UpdateExpenseCategoryDto,
@@ -12,7 +14,22 @@ import {
 
 @Injectable()
 export class ExpenseCategoriesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Optional() private readonly cache?: CacheService,
+  ) {}
+
+  /**
+   * Business analytics freshness (P2 §6): the expenses summary groups by
+   * category kind, so kind changes drop `analytics:*`. No-op without cache.
+   */
+  private async invalidateAnalytics(): Promise<void> {
+    try {
+      await this.cache?.invalidateByPrefix('analytics:');
+    } catch {
+      /* cache failure must not fail category writes */
+    }
+  }
 
   private include = {
     _count: { select: { expenses: true } },
@@ -41,10 +58,12 @@ export class ExpenseCategoriesService {
       }
     }
 
-    return this.prisma.expenseCategory.create({
+    const created = await this.prisma.expenseCategory.create({
       data: dto,
       include: this.include,
     });
+    await this.invalidateAnalytics();
+    return created;
   }
 
   async findAll() {
@@ -90,11 +109,13 @@ export class ExpenseCategoriesService {
         );
       }
     }
-    return this.prisma.expenseCategory.update({
+    const updated = await this.prisma.expenseCategory.update({
       where: { id },
       data: dto,
       include: this.include,
     });
+    await this.invalidateAnalytics();
+    return updated;
   }
 
   async remove(id: string) {
@@ -107,6 +128,8 @@ export class ExpenseCategoriesService {
         `Cannot delete: ${count} expense(s) use this category`,
       );
     }
-    return this.prisma.expenseCategory.delete({ where: { id } });
+    const deleted = await this.prisma.expenseCategory.delete({ where: { id } });
+    await this.invalidateAnalytics();
+    return deleted;
   }
 }

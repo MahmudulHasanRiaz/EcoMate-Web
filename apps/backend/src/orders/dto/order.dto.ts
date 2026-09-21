@@ -42,6 +42,10 @@ export class CreateOrderDto {
   @IsOptional() @IsString() guestPhone?: string;
   @IsOptional() @IsEmail() guestEmail?: string;
   @IsOptional() @IsString() couponCode?: string;
+  /** Actual fulfillment/courier cost (BDT). Absent = not recorded (NULL). */
+  @IsOptional() @IsNumber() @Min(0) shippingCost?: number;
+  /** 'manual' (staff-entered, actual) | 'courier_default' (estimated). */
+  @IsOptional() @IsIn(['manual', 'courier_default']) shippingCostSource?: string;
 
   // Checkout enhancements
   @IsOptional()
@@ -110,6 +114,10 @@ export class UpdateOrderDto {
   paymentOptionType?: 'FULL_PAYMENT' | 'PARTIAL_PAYMENT' | 'CASH_ON_DELIVERY';
   @IsOptional() @IsString() gatewayCode?: string;
   @IsOptional() @IsNumber() partialAmount?: number;
+  /** Actual fulfillment/courier cost (BDT). Absent = not recorded (NULL). */
+  @IsOptional() @IsNumber() @Min(0) shippingCost?: number;
+  /** 'manual' (staff-entered, actual) | 'courier_default' (estimated). */
+  @IsOptional() @IsIn(['manual', 'courier_default']) shippingCostSource?: string;
 }
 
 export class UpdateOrderItemDto {
@@ -131,6 +139,8 @@ export class CreatePaymentDto {
 export class VerifyPaymentDto {
   @IsEnum(PaymentStatus) status: PaymentStatus;
   @IsOptional() @IsString() notes?: string;
+  /** Gateway/processing fee for THIS payment row (BDT). Absent = not recorded. */
+  @IsOptional() @IsNumber() @Min(0) feeAmount?: number;
 }
 
 export class CancelOrderDto {

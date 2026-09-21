@@ -2,14 +2,32 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PaymentStatus } from '@prisma/client';
 import { CreatePaymentDto, VerifyPaymentDto } from '../orders/dto/order.dto';
+import { CacheService } from '../cache/cache.service';
 
 @Injectable()
 export class PaymentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly cache?: CacheService,
+  ) {}
+
+  /**
+   * Business analytics freshness (P2 §6): payment rows feed L3 cash and the
+   * gateway-fee line, so every payment mutation drops `analytics:*` eagerly.
+   * No-op when no cache is wired. Resilient — never breaks the mutation.
+   */
+  private async invalidateAnalytics(): Promise<void> {
+    try {
+      await this.cache?.invalidateByPrefix('analytics:');
+    } catch {
+      /* cache failure must not fail payments */
+    }
+  }
 
   async findAll(query: {
     page?: number;
@@ -48,7 +66,7 @@ export class PaymentsService {
     dto: CreatePaymentDto,
     opts?: { userId?: string; token?: string },
   ) {
-    return this.prisma.$transaction(async (tx) => {
+    const created = await this.prisma.$transaction(async (tx) => {
       // Lock the order row first — prevents concurrent payment insert races
       await tx.$queryRawUnsafe(
         'SELECT id FROM "Order" WHERE id = $1 FOR UPDATE',
@@ -118,10 +136,12 @@ export class PaymentsService {
         },
       });
     });
+    await this.invalidateAnalytics();
+    return created;
   }
 
   async verify(id: string, dto: VerifyPaymentDto, userId: string) {
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       const payment = await tx.payment.findUnique({ where: { id } });
       if (!payment) throw new NotFoundException('Payment not found');
 
@@ -138,6 +158,10 @@ export class PaymentsService {
           verifiedBy: userId,
           verifiedAt: new Date(),
           notes: dto.notes ?? payment.notes,
+          // Analytics cost capture (P2 §3.2): gateway fee for THIS payment
+          // row. P&L counts it only while the row is PAID, so PAID→FAILED
+          // drops it structurally (F3-safe).
+          ...(dto.feeAmount !== undefined ? { feeAmount: dto.feeAmount } : {}),
         },
       });
 
@@ -172,5 +196,7 @@ export class PaymentsService {
 
       return updated;
     });
+    await this.invalidateAnalytics();
+    return updated;
   }
 }

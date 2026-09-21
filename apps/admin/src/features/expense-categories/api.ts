@@ -7,6 +7,8 @@ export interface ExpenseCategoryResponse {
   description?: string | null
   icon?: string | null
   color?: string | null
+  /** fixed | variable | unclassified — staff-classified, never inferred (P2 §2.9). */
+  expenseKind?: string | null
   isActive: boolean
   sortOrder: number
   createdAt: string
@@ -19,9 +21,9 @@ export interface ExpenseCategoryResponse {
 export const expenseCategoriesApi = {
   list: () => apiClient.get<ExpenseCategoryResponse[]>('/expense-categories'),
   get: (id: string) => apiClient.get<ExpenseCategoryResponse>(`/expense-categories/${id}`),
-  create: (data: { name: string; slug: string; description?: string; icon?: string; color?: string; isActive?: boolean; sortOrder?: number; accountId?: string }) =>
+  create: (data: { name: string; slug: string; description?: string; icon?: string; color?: string; expenseKind?: string; isActive?: boolean; sortOrder?: number; accountId?: string }) =>
     apiClient.post<ExpenseCategoryResponse>('/expense-categories', data),
-  update: (id: string, data: { name?: string; slug?: string; description?: string; icon?: string; color?: string; isActive?: boolean; sortOrder?: number; accountId?: string }) =>
+  update: (id: string, data: { name?: string; slug?: string; description?: string; icon?: string; color?: string; expenseKind?: string; isActive?: boolean; sortOrder?: number; accountId?: string }) =>
     apiClient.put<ExpenseCategoryResponse>(`/expense-categories/${id}`, data),
   delete: (id: string) => apiClient.delete(`/expense-categories/${id}`),
 }

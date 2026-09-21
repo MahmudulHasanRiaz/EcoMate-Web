@@ -85,13 +85,27 @@ describe('OperationalKpiStrip', () => {
       'Delivered',
       'Pending Payments',
       'Pending Refunds',
-      'Revenue',
+      'Cash collected',
       'Low Stock',
     ]) {
       await expect
         .element(view.getByText(label, { exact: true }))
         .toBeInTheDocument()
     }
+  })
+
+  it('labels dashboard revenue as cash collected with the accrual note (§3.5)', async () => {
+    const view = await wrap(makeClient(), RANGE_TODAY, 'today')
+
+    const label = view.getByText('Cash collected', { exact: true })
+    await expect.element(label).toBeInTheDocument()
+    const tile = label.locator('xpath=ancestor::div[@title]')
+    await expect
+      .element(tile)
+      .toHaveAttribute(
+        'title',
+        'Payments received; Analytics reports accrual Net Sales recognised on delivery',
+      )
   })
 
   it('never uses Today-specific labelling', async () => {

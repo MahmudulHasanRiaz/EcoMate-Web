@@ -16,6 +16,6 @@ export const paymentsApi = {
     apiClient.get<{ data: PaymentVerificationOrder[] }>('/orders', {
       params: { paymentStatus: 'PAYMENT_VERIFYING' },
     }).then(r => r.data.data),
-  verify: (id: string, verified: boolean, note?: string) =>
-    apiClient.post(`/orders/${id}/verify-payment`, { verified, note }),
+  verify: (id: string, verified: boolean, note?: string, feeAmount?: number) =>
+    apiClient.post(`/orders/${id}/verify-payment`, { verified, note, feeAmount }),
 };

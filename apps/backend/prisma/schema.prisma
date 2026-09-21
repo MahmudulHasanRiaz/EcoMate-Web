@@ -679,6 +679,10 @@ model Order {
   trackingSessionId        String?
   selectedShippingOptionId String?
   shippingChargeOverridden Boolean            @default(false)
+  /// Actual fulfillment/courier cost (BDT). NULL = not recorded.
+  shippingCost       Decimal? @db.Decimal(10, 2)
+  /// 'manual' | 'courier_default' — drives the actual/estimated cost state.
+  shippingCostSource String?
   trashedAt                DateTime?
 
   customer       CustomerProfile?     @relation(fields: [customerId], references: [id])
@@ -757,6 +761,8 @@ model Payment {
   verifiedBy        String?
   verifiedAt        DateTime?
   notes             String?
+  /// Gateway/processing fee for THIS payment (BDT). NULL = not recorded.
+  feeAmount         Decimal? @db.Decimal(10, 2)
   createdAt         DateTime      @default(now())
 
   order    Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -1676,6 +1682,8 @@ model ExpenseCategory {
   description String?   @db.Text
   icon        String?
   color       String?
+  /// fixed | variable | unclassified. Never inferred — staff-classified only.
+  expenseKind String @default("unclassified")
   isActive    Boolean   @default(true)
   sortOrder   Int       @default(0)
   createdAt   DateTime  @default(now())

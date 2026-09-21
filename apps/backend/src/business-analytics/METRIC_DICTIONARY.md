@@ -163,3 +163,59 @@ inferred. "Store" is not a dimension.
 R1–R18 + W1–W11 per plan §4.3. P1 locks the pure predicates behind R12
 (double-reversal), R14 (bridge identity), R15 (forbidden-formula guard),
 R16 (component-once), R17 (marketing strictness), R18 (COD honesty).
+
+## 11. P2 data layer — registry, cost capture, deferred checks
+
+**Check registry** (`analytics-reconciliation.service.ts` `CHECK_REGISTRY` /
+`evaluateChecks`): R3, R4, R5, R6, R9, R10, R11, R12, R14, R15, R16, R17, R18
+run live; R1, R2, R7, R8, R13 return `warn` with explicit reasons (never a
+silent pass). **Extension rule for P4/P6/P7/P8/P9:** push a `CheckDef` onto
+`CHECK_REGISTRY` (or move an id out of `DEFERRED_CHECKS`) — the runner,
+summary counts and response shape do not change.
+
+**R5 independence:** `paidPaymentsTotal` comes from its own
+`payment.aggregate` (Σ PAID by `createdAt`, same scope as the L3 query) —
+never the lens value fed back to itself. A lens/DB drift fails R5.
+
+**Deferred checks (explicit):**
+- R1/R2 → P4 product P&L service (Σ product Net Sales; Σ variant == parent).
+- R7/R8 → P7 attribution views (spend-date P&L vs allocation basis;
+  `ProductMarketingCost` identity by campaign, date-independent).
+- R13 → deferred: `accounting.profitAndLoss` is keyed by financial `periodId`
+  with no Dhaka-range mapping, and the F1 delta (orders never post journals)
+  is expected by construction. Reported with cause once mapped (P10).
+
+**Cost-capture fields (migration `20260921000000_analytics_cost_capture`):**
+- `Order.shippingCost` (Decimal 10,2, NULL = not recorded) +
+  `shippingCostSource` (`'manual'` → actual, `'courier_default'` →
+  estimated). Staff-entered costs default to `'manual'`; update path writes a
+  private `fulfillment-cost` timeline entry. Dispatch `create` accepts an
+  optional staff cost (fills missing / overrides `courier_default`; existing
+  `manual` always wins). Courier auto-fill from a per-courier default is
+  deferred — no rate source exists anywhere in the system.
+- `Payment.feeAmount` (Decimal 10,2, NULL = not recorded) per payment row:
+  order-level verify attaches to the single PENDING row (several/none ⇒ 400
+  pointing at per-row `PUT /payments/:id/verify`); per-row verify writes the
+  row directly. P&L sums fees over `status='PAID'` rows only (F3-safe).
+- `ExpenseCategory.expenseKind` (`fixed | variable | unclassified`, default
+  `unclassified`, staff-classified in the category form — never inferred).
+  The expenses summary groups by kind; W8 scans names/slugs for ad keywords.
+
+**Financial RBAC:** class `@RequiresFeature('admin_analytics')` +
+`@Roles('superadmin','admin','manager')` + `@Permissions('view_analytics')`;
+financial handlers (`pnl`, `expenses`, `fulfillment`, `reconciliation`)
+re-declare the FULL grant `@Permissions('view_analytics',
+'view_financial_summary')` because `PermissionsGuard.getAllAndOverride`
+replaces class metadata. General handler (`lenses`) declares
+`view_analytics` explicitly.
+
+**Freshness:** analytics reads go through `CacheService` (60s live / 15min
+closed, keyed on the filter signature); order / payment / refund / expense /
+expense-category / marketing-consumption / dispatch mutations call
+`invalidateByPrefix('analytics:')` via an `@Optional` cache (resilient,
+no-op in unit tests).
+
+**Dashboard boundary (§3.5, done in P2):** `dashboard.service.ts` untouched;
+the operational KPI tile is relabelled **"Cash collected"** with tooltip
+"payments received; Analytics reports accrual Net Sales recognised on
+delivery" — the figure is Σ PAID payments, so the label is now truthful.

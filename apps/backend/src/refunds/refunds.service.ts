@@ -2,8 +2,10 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CacheService } from '../cache/cache.service';
 
 import { Prisma } from '@prisma/client';
 import { CreateRefundDto, UpdateRefundStatusDto } from './dto/refund.dto';
@@ -19,7 +21,20 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
 export class RefundsService {
   constructor(
     private readonly prisma: PrismaService,
+    @Optional() private readonly cache?: CacheService,
   ) {}
+
+  /**
+   * Business analytics freshness (P2 §6): refunds feed the reversal line,
+   * the informational total and settlement. No-op without cache; resilient.
+   */
+  private async invalidateAnalytics(): Promise<void> {
+    try {
+      await this.cache?.invalidateByPrefix('analytics:');
+    } catch {
+      /* cache failure must not fail refunds */
+    }
+  }
 
   async findAll(query: {
     page?: number;
@@ -129,6 +144,7 @@ export class RefundsService {
       });
     }
 
+    await this.invalidateAnalytics();
     return refund;
   }
 
@@ -163,7 +179,7 @@ export class RefundsService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.refund.update({
         where: { id },
         data: {
@@ -204,5 +220,7 @@ export class RefundsService {
 
       return updated;
     });
+    await this.invalidateAnalytics();
+    return updated;
   }
 }

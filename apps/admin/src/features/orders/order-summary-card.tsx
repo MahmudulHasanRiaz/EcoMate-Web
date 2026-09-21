@@ -28,6 +28,10 @@ interface OrderSummaryCardProps {
   shippingChargeOverridden?: boolean
   onSaveShipping: (charge: number, optionId?: string) => void
   onSaveDiscount: (amount: number, type: 'flat' | 'percentage') => void
+  // analytics fulfillment-cost capture (P2 §3.4): actual courier cost, NULL = not recorded
+  shippingCost?: number | string | null
+  shippingCostSource?: string | null
+  onSaveFulfillmentCost?: (cost: number) => void
   isSaving?: boolean
 }
 
@@ -43,12 +47,21 @@ export function OrderSummaryCard({
   shippingChargeOverridden,
   onSaveShipping,
   onSaveDiscount,
+  shippingCost,
+  shippingCostSource,
+  onSaveFulfillmentCost,
   isSaving,
 }: OrderSummaryCardProps) {
   // Shipping inline edit state
   const [editShipping, setEditShipping] = useState(false)
   const [draftShipping, setDraftShipping] = useState(String(shippingCharge))
   const [draftShippingOptionId, setDraftShippingOptionId] = useState(selectedShippingOptionId || '')
+
+  // Fulfillment-cost inline edit state (actual courier cost — analytics, P2 §3.4)
+  const [editFulfillmentCost, setEditFulfillmentCost] = useState(false)
+  const [draftFulfillmentCost, setDraftFulfillmentCost] = useState(
+    shippingCost === null || shippingCost === undefined ? '' : String(shippingCost),
+  )
 
   // Discount inline edit state
   const [editDiscount, setEditDiscount] = useState(false)
@@ -59,6 +72,9 @@ export function OrderSummaryCard({
   useEffect(() => { setDraftShippingOptionId(selectedShippingOptionId || '') }, [selectedShippingOptionId])
   useEffect(() => { setDraftDiscount(String(discount)) }, [discount])
   useEffect(() => { setDraftDiscountType(discountType) }, [discountType])
+  useEffect(() => {
+    setDraftFulfillmentCost(shippingCost === null || shippingCost === undefined ? '' : String(shippingCost))
+  }, [shippingCost])
 
   const effectiveDiscount = draftDiscountType === 'percentage'
     ? subtotal * ((parseFloat(draftDiscount) || 0) / 100)
@@ -74,6 +90,14 @@ export function OrderSummaryCard({
   function saveShipping() {
     onSaveShipping(parseFloat(draftShipping) || 0, draftShippingOptionId || undefined)
     setEditShipping(false)
+  }
+  function cancelFulfillmentCost() {
+    setDraftFulfillmentCost(shippingCost === null || shippingCost === undefined ? '' : String(shippingCost))
+    setEditFulfillmentCost(false)
+  }
+  function saveFulfillmentCost() {
+    onSaveFulfillmentCost?.(parseFloat(draftFulfillmentCost) || 0)
+    setEditFulfillmentCost(false)
   }
   function cancelDiscount() {
     setDraftDiscount(String(discount))
@@ -159,6 +183,66 @@ export function OrderSummaryCard({
                 <div className='flex gap-1.5 justify-end'>
                   <Button variant='ghost' size='sm' className='h-7 text-xs' onClick={cancelShipping}><X className='h-3 w-3 mr-1' />Cancel</Button>
                   <Button size='sm' className='h-7 text-xs' onClick={saveShipping} disabled={isSaving}><Check className='h-3 w-3 mr-1' />Save</Button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Fulfillment Cost Row (actual courier cost — analytics, P2 §3.4) */}
+          <div className='py-1.5 space-y-2'>
+            <div className='flex items-center justify-between'>
+              <div className='flex items-center gap-1.5 text-muted-foreground'>
+                <Truck className='h-3.5 w-3.5' />
+                <span>Fulfillment Cost</span>
+                {/* Provenance badge: manual = actual, courier_default = estimated */}
+                {shippingCost !== null && shippingCost !== undefined ? (
+                  <span
+                    className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                      shippingCostSource === 'manual'
+                        ? 'bg-emerald-500/10 text-emerald-600'
+                        : 'bg-amber-500/10 text-amber-600'
+                    }`}
+                    title={shippingCostSource === 'manual' ? 'Staff-entered actual cost' : 'Courier-default estimate'}
+                  >
+                    {shippingCostSource === 'manual' ? 'Manual' : 'Estimate'}
+                  </span>
+                ) : (
+                  <span
+                    className='text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground'
+                    title='Not recorded — analytics treats this as unavailable, never zero'
+                  >
+                    Not recorded
+                  </span>
+                )}
+              </div>
+              <div className='flex items-center gap-1'>
+                {!editFulfillmentCost && onSaveFulfillmentCost && (
+                  <>
+                    <span className='font-medium'>
+                      {shippingCost === null || shippingCost === undefined ? '—' : `৳${fmt(shippingCost)}`}
+                    </span>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant='ghost' size='icon' className='h-6 w-6 text-muted-foreground hover:text-foreground' onClick={() => setEditFulfillmentCost(true)}>
+                          <Pencil className='h-3 w-3' />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Edit fulfillment cost</TooltipContent>
+                    </Tooltip>
+                  </>
+                )}
+              </div>
+            </div>
+            {editFulfillmentCost && (
+              <div className='space-y-2 rounded-lg bg-muted/40 p-2.5 border'>
+                <div className='space-y-1'>
+                  <p className='text-xs text-muted-foreground'>Actual courier cost (৳)</p>
+                  <Input type='number' step='0.01' min='0' value={draftFulfillmentCost} onChange={e => setDraftFulfillmentCost(e.target.value)} placeholder='0.00' className='h-8 text-sm' autoFocus />
+                  <p className='text-[10px] text-muted-foreground'>Saved as staff-entered (actual). Never auto-overwritten.</p>
+                </div>
+                <div className='flex gap-1.5 justify-end'>
+                  <Button variant='ghost' size='sm' className='h-7 text-xs' onClick={cancelFulfillmentCost}><X className='h-3 w-3 mr-1' />Cancel</Button>
+                  <Button size='sm' className='h-7 text-xs' onClick={saveFulfillmentCost} disabled={isSaving}><Check className='h-3 w-3 mr-1' />Save</Button>
                 </div>
               </div>
             )}

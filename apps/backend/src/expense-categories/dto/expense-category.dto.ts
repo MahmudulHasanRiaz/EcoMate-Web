@@ -4,6 +4,7 @@ import {
   IsOptional,
   IsBoolean,
   IsNumber,
+  IsIn,
   Min,
   MinLength,
   MaxLength,
@@ -56,6 +57,14 @@ export class CreateExpenseCategoryDto {
   @IsOptional()
   @IsString()
   accountId?: string;
+
+  /**
+   * fixed | variable | unclassified (P2 §2.9). Staff-classified only — never
+   * inferred. Absent on create ⇒ DB default 'unclassified'.
+   */
+  @IsOptional()
+  @IsIn(['fixed', 'variable', 'unclassified'])
+  expenseKind?: string;
 }
 
 export class UpdateExpenseCategoryDto {
@@ -104,4 +113,12 @@ export class UpdateExpenseCategoryDto {
   @IsOptional()
   @IsString()
   accountId?: string;
+
+  /**
+   * fixed | variable | unclassified (P2 §2.9). Staff-classified only — never
+   * inferred.
+   */
+  @IsOptional()
+  @IsIn(['fixed', 'variable', 'unclassified'])
+  expenseKind?: string;
 }

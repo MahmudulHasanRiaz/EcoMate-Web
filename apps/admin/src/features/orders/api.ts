@@ -38,6 +38,10 @@ export interface OrderResponse {
   }[];
   selectedShippingOptionId?: string | null;
   shippingChargeOverridden?: boolean;
+  /** Actual fulfillment/courier cost (BDT). null = not recorded. */
+  shippingCost?: number | string | null;
+  /** 'manual' (actual) | 'courier_default' (estimated). */
+  shippingCostSource?: string | null;
   salesChannel?: string | null;
   sourcePlatform?: string | null;
   sourceType?: string | null;

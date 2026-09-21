@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsArray, ValidateNested } from 'class-validator';
+import { IsString, IsOptional, IsArray, IsNumber, Min, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class ProductMappingItem {
@@ -31,4 +31,14 @@ export class CreateDispatchDto {
   @IsOptional()
   @IsString()
   notes?: string;
+  /**
+   * Staff-provided fulfillment cost at dispatch time (BDT, P2 §3.4). Fills a
+   * missing Order.shippingCost as 'manual'; never overwrites an existing
+   * manual cost. Courier auto-fill from a per-courier default is deferred
+   * (no rate source exists) — see DispatchService.maybeRecordShippingCost.
+   */
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  shippingCost?: number;
 }

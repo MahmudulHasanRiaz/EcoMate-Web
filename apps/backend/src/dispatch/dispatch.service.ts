@@ -3,8 +3,10 @@ import {
   NotFoundException,
   BadRequestException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CacheService } from '../cache/cache.service';
 import { OrderStockDeductService } from '../stock/order-stock-deduct.service';
 import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
 import { OrdersService } from '../orders/orders.service';
@@ -130,7 +132,21 @@ export class DispatchService {
     private readonly cancelReturnStock: CancelReturnStockService,
     private readonly tracking: CourierTrackingService,
     private readonly ordersService: OrdersService,
+    @Optional() private readonly cache?: CacheService,
   ) {}
+
+  /**
+   * Business analytics freshness (P2 §6): dispatches capture the fulfillment
+   * cost and feed the Delivered-date fallback, so creation drops
+   * `analytics:*`. No-op without cache; resilient.
+   */
+  private async invalidateAnalytics(): Promise<void> {
+    try {
+      await this.cache?.invalidateByPrefix('analytics:');
+    } catch {
+      /* cache failure must not fail dispatch creation */
+    }
+  }
 
   async findAll(query: DispatchQueryDto) {
     const where: Prisma.DispatchWhereInput = {};
@@ -245,6 +261,43 @@ export class DispatchService {
     return dispatch;
   }
 
+  /**
+   * Analytics cost capture, manual-write path (P2 §3.4). A staff-provided
+   * dispatch cost fills a missing Order.shippingCost as 'manual' and
+   * overrides a 'courier_default' estimate; an existing 'manual' cost always
+   * wins and is never overwritten.
+   *
+   * Courier auto-fill (source 'courier_default' from a per-courier default)
+   * is DEFERRED: no per-courier rate source exists anywhere in the system
+   * (no settings model, no seed), so there is nothing truthful to auto-fill
+   * from. When a rate source lands, it calls this same helper with an
+   * explicit source — the manual-wins rule already holds.
+   */
+  private async maybeRecordShippingCost(
+    orderId: string,
+    dto: CreateDispatchDto,
+  ): Promise<void> {
+    if (dto.shippingCost === undefined || dto.shippingCost === null) return;
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { shippingCost: true, shippingCostSource: true },
+    });
+    if (!order || order.shippingCost === null || order.shippingCost === undefined) {
+      await this.prisma.order.updateMany({
+        where: { id: orderId, shippingCost: null },
+        data: { shippingCost: dto.shippingCost, shippingCostSource: 'manual' },
+      });
+      return;
+    }
+    if (order.shippingCostSource === 'courier_default') {
+      await this.prisma.order.updateMany({
+        where: { id: orderId },
+        data: { shippingCost: dto.shippingCost, shippingCostSource: 'manual' },
+      });
+    }
+    // Existing 'manual' (or any other recorded) cost wins — never overwrite.
+  }
+
   async create(dto: CreateDispatchDto) {
     const existing = await this.prisma.dispatch.findUnique({
       where: {
@@ -295,6 +348,8 @@ export class DispatchService {
       // Link the order regardless of the duplicate flag: the created row must
       // be resolvable by webhooks and manual sync keyed on courier+consignment.
       await this.linkOrderToConsignment(dto);
+      await this.maybeRecordShippingCost(dto.orderId, dto);
+      await this.invalidateAnalytics();
 
       return {
         duplicate: true,
@@ -332,6 +387,8 @@ export class DispatchService {
     // coupon consignment miss manual dispatch-list rows entirely. The OR
     // guard keeps an order claimed by a DIFFERENT consignment untouched.
     await this.linkOrderToConsignment(dto);
+    await this.maybeRecordShippingCost(dto.orderId, dto);
+    await this.invalidateAnalytics();
 
     return created;
   }
