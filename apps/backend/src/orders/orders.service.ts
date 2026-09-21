@@ -4099,29 +4099,35 @@ export class OrdersService {
   ) {
     // COD cash payment verification on delivery — a single path for manual,
     // bulk, and courier-sync deliveries (idempotent: only UNPAID → PAID).
-    try {
-      const codPayment = await tx.payment.findFirst({
-        where: {
-          orderId: order.id,
-          gatewayCode: 'cash',
-          status: PaymentStatus.UNPAID,
+    //
+    // verifiedBy is a FK to UserProfile(id), but the status endpoints receive
+    // the acting staff member's EMAIL as performedBy (see
+    // OrdersController.updateStatus) — writing it raw violates
+    // Payment_verifiedBy_fkey. Resolve to the staff user id the way the
+    // verify path does (PaymentsService.verify writes the user id, never an
+    // email).
+    //
+    // Errors here MUST propagate: a failed statement swallowed inside this
+    // Postgres transaction poisons it into a silent rollback — the API would
+    // return the in-transaction Delivered object with HTTP 200 while the DB
+    // still holds Shipping. Never catch around these writes.
+    const codPayment = await tx.payment.findFirst({
+      where: {
+        orderId: order.id,
+        gatewayCode: 'cash',
+        status: PaymentStatus.UNPAID,
+      },
+    });
+    if (codPayment) {
+      const verifierId = await this.resolvePaymentVerifierId(tx, performedBy);
+      await tx.payment.update({
+        where: { id: codPayment.id },
+        data: {
+          status: PaymentStatus.PAID,
+          verifiedBy: verifierId,
+          verifiedAt: new Date(),
         },
       });
-      if (codPayment) {
-        await tx.payment.update({
-          where: { id: codPayment.id },
-          data: {
-            status: PaymentStatus.PAID,
-            verifiedBy: performedBy,
-            verifiedAt: new Date(),
-          },
-        });
-      }
-    } catch (err) {
-      this.logger.error(
-        `Failed to verify COD payment for order ${order.id}:`,
-        err,
-      );
     }
 
     // Final stock deduction on delivery.
@@ -4142,6 +4148,28 @@ export class OrdersService {
         err,
       );
     }
+  }
+
+  /**
+   * Resolve a status-actor string to a UserProfile id for Payment.verifiedBy.
+   * Staff endpoints pass the user EMAIL as performedBy — look it up so the FK
+   * holds. Automated actors ('system', webhooks, reconcile) and unknown emails
+   * have no user row; the column is nullable so they resolve to null.
+   * A raw user id passes through untouched (verify-path pattern).
+   */
+  private async resolvePaymentVerifierId(
+    tx: Prisma.TransactionClient,
+    actor?: string,
+  ): Promise<string | null> {
+    if (!actor || isAutomatedActor(actor)) return null;
+    if (actor.includes('@')) {
+      const user = await tx.userProfile.findUnique({
+        where: { email: actor },
+        select: { id: true },
+      });
+      return user?.id ?? null;
+    }
+    return actor;
   }
 
   private async takeCostSnapshot(

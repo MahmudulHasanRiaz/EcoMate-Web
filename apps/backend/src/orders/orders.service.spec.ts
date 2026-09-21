@@ -2060,6 +2060,114 @@ describe('OrdersService', () => {
       });
     });
 
+    describe('Delivered COD verification (delivery-tx regression)', () => {
+      const shippingOrder = {
+        ...mockOrder,
+        statusId: 'status-shipping',
+        status: { id: 'status-shipping', name: 'Shipping' },
+      };
+      const deliveredStatus = {
+        id: 'status-delivered',
+        name: 'Delivered',
+        isInitial: false,
+        nextStatuses: [],
+      };
+      const staffUserId = 'staff-user-id';
+      const staffEmail = 'staff@example.com';
+      const codPayment = {
+        id: 'pay-cod-1',
+        orderId: 'order-id-1',
+        gatewayCode: 'cash',
+        status: 'UNPAID',
+      };
+
+      function mockDeliveredTx() {
+        (prisma.order.findUnique as jest.Mock).mockResolvedValue(shippingOrder);
+        (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+          deliveredStatus,
+        );
+        (prisma.order.update as jest.Mock).mockResolvedValue({
+          ...shippingOrder,
+          statusId: 'status-delivered',
+          status: deliveredStatus,
+          payments: [],
+        });
+        (prisma.payment.findFirst as jest.Mock).mockResolvedValue(codPayment);
+        (prisma.payment.update as jest.Mock).mockResolvedValue({
+          ...codPayment,
+          status: 'PAID',
+          verifiedBy: staffUserId,
+        });
+        (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+          id: staffUserId,
+          email: staffEmail,
+          status: 'active',
+        });
+        (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([]);
+      }
+
+      it('verifies COD cash as PAID with the staff user id (not the email) on Shipping→Delivered', async () => {
+        mockDeliveredTx();
+
+        const result = await service.updateStatus(
+          'order-id-1',
+          { statusId: 'status-delivered' },
+          staffUserId,
+          staffEmail,
+        );
+
+        expect(result.status.name).toBe('Delivered');
+        expect(prisma.userProfile.findUnique).toHaveBeenCalledWith({
+          where: { email: staffEmail },
+          select: { id: true },
+        });
+        expect(prisma.payment.update).toHaveBeenCalledWith({
+          where: { id: 'pay-cod-1' },
+          data: {
+            status: 'PAID',
+            verifiedBy: staffUserId,
+            verifiedAt: expect.any(Date),
+          },
+        });
+      });
+
+      it('propagates a delivery-tx failure instead of returning an unpersisted Delivered body', async () => {
+        mockDeliveredTx();
+        (prisma.payment.update as jest.Mock).mockRejectedValue(
+          new Error('FK violation: Payment_verifiedBy_fkey'),
+        );
+
+        await expect(
+          service.updateStatus(
+            'order-id-1',
+            { statusId: 'status-delivered' },
+            staffUserId,
+            staffEmail,
+          ),
+        ).rejects.toThrow('FK violation');
+      });
+
+      it('resolves automated actors to a null verifier on Shipping→Delivered', async () => {
+        mockDeliveredTx();
+
+        const result = await service.updateStatus(
+          'order-id-1',
+          { statusId: 'status-delivered' },
+          'system',
+        );
+
+        expect(result.status.name).toBe('Delivered');
+        expect(prisma.payment.update).toHaveBeenCalledWith({
+          where: { id: 'pay-cod-1' },
+          data: {
+            status: 'PAID',
+            verifiedBy: null,
+            verifiedAt: expect.any(Date),
+          },
+        });
+      });
+    });
+
     it('captures a validated purchase snapshot inside the status transaction', async () => {
       (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
       (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
