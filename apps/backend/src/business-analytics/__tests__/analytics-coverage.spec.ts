@@ -44,6 +44,12 @@ describe('ladderState propagation (§2.3)', () => {
     expect(OTHER_COSTS_STATE).toBe('not_applicable');
     expect(ladderState(['actual', OTHER_COSTS_STATE])).toBe('actual');
   });
+
+  it('unknown state throws instead of silently mapping to actual', () => {
+    expect(() =>
+      ladderState(['actual', 'bogus' as unknown as never as 'actual']),
+    ).toThrow('Unknown coverage state: bogus');
+  });
 });
 
 describe('coverage summary', () => {
@@ -85,5 +91,11 @@ describe('profit labelling (§2.5 guarantees)', () => {
     expect(describeLadderState('estimated')).toBe('estimated — see coverage');
     expect(describeLadderState('unavailable')).toBe('partial — inputs missing');
     expect(describeLadderState('not_applicable')).toBe('not applicable');
+  });
+
+  it('unknown ladder state throws instead of returning undefined', () => {
+    expect(() =>
+      describeLadderState('bogus' as unknown as never as 'actual'),
+    ).toThrow('Unknown coverage state: bogus');
   });
 });

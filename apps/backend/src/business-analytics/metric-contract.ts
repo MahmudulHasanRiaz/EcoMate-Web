@@ -57,6 +57,11 @@ export const STATUS_META: Readonly<
   Cancelled: { isFinal: true, group: 'never' },
 });
 
+// Deep-freeze: the outer Object.freeze alone leaves nested entries mutable.
+for (const key of Object.keys(STATUS_META) as OrderStatusName[]) {
+  Object.freeze(STATUS_META[key]);
+}
+
 function lookupStatus(status: string): OrderStatusName | null {
   return (ORDER_STATUSES as readonly string[]).includes(status)
     ? (status as OrderStatusName)

@@ -28,6 +28,12 @@ export interface CoverageSummary {
 export function ladderState(states: CostState[]): CostState {
   const contributing = states.filter((s) => s !== 'not_applicable');
   if (contributing.length === 0) return 'actual';
+  const unknown = contributing.find(
+    (s) => s !== 'actual' && s !== 'estimated' && s !== 'unavailable',
+  );
+  if (unknown !== undefined) {
+    throw new Error(`Unknown coverage state: ${String(unknown)}`);
+  }
   if (contributing.includes('unavailable')) return 'unavailable';
   if (contributing.includes('estimated')) return 'estimated';
   return 'actual';
@@ -81,5 +87,9 @@ export function describeLadderState(state: CostState): string {
       return 'partial — inputs missing';
     case 'not_applicable':
       return 'not applicable';
+    default: {
+      const exhaustive: never = state;
+      throw new Error(`Unknown coverage state: ${String(exhaustive)}`);
+    }
   }
 }

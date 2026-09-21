@@ -84,6 +84,16 @@ describe('lifecycle vocabulary (§1.3)', () => {
     expect(Object.isFrozen(STATUS_META)).toBe(true);
   });
 
+  it('STATUS_META entries are deep-frozen (nested mutation throws)', () => {
+    for (const s of ORDER_STATUSES) {
+      expect(Object.isFrozen(STATUS_META[s])).toBe(true);
+    }
+    expect(() => {
+      (STATUS_META.Pending as { group: string }).group = 'recognised';
+    }).toThrow();
+    expect(STATUS_META.Pending.group).toBe('pre_fulfilment');
+  });
+
   it.each([
     ['Pending', false],
     ['Payment Pending', false],
