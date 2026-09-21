@@ -14,8 +14,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
 import {
   inferDeliveryChargeRetained,
+  resolveRevenueEvent,
   type CostState,
   type ShippingRefundInference,
+  type TimelineEntry,
 } from './metric-contract';
 import {
   collectionKindOf,
@@ -74,7 +76,6 @@ export interface FulfillmentResult {
     courierCost: number;
     deliveryChargeRetained: number;
     fulfillmentMargin: number;
-    returnLoss: number;
   };
   coverage: {
     onlineOrders: number;
@@ -93,7 +94,7 @@ const PANEL_NOTE =
   'Fulfillment Cost line.';
 
 /** R11 structural guard: settlement rows must carry zero revenue fields. */
-export function assertNoRevenueLeak(rows: Record<string, unknown>[]): void {
+export function assertNoRevenueLeak(rows: readonly object[]): void {
   const forbidden = ['grossSales', 'netSales', 'grossProfit', 'contributionProfit', 'netProfit'];
   for (const row of rows) {
     for (const key of forbidden) {
@@ -260,7 +261,6 @@ export function computeFulfillment(orders: FulfillmentOrderInput[]): Fulfillment
       courierCost,
       deliveryChargeRetained: dcr,
       fulfillmentMargin: margin,
-      returnLoss: 0,
     },
     coverage: {
       onlineOrders,
@@ -308,14 +308,54 @@ export class AnalyticsFulfillmentService {
         shippingCharge: true,
         shippingCost: true,
         shippingCostSource: true,
+        status: { select: { name: true } },
+        timeline: true,
         payments: {
           select: { amount: true, status: true, gatewayCode: true, createdAt: true },
         },
         refunds: { select: { amount: true, status: true, createdAt: true } },
+        dispatches: {
+          select: { deliveredAt: true },
+          orderBy: { deliveredAt: 'desc' },
+        },
       },
     });
+    // Range scoping (chosen over dropping the range from the cache key):
+    // settlement follows the RECOGNISED revenue cohort — the same
+    // Delivered-date basis (timeline, Dispatch.deliveredAt fallback) the P&L
+    // uses, so the range-keyed cache matches a range-scoped query. The
+    // recognition date lives in timeline JSONB and cannot be a SQL
+    // predicate, hence in-JS cohort filtering after the column-filter fetch.
+    // Residual: per-row payment/refund sums are per-order lifetime sums for
+    // cohort orders (consistent with the bridge DCR cohort semantics), not
+    // event-dated sums. Undated deliveries stay out of the cohort until
+    // dated — they remain visible via the P&L strip + W4.
+    const { start, end } = ctx.range;
+    const cohort = orders.filter((o: any) => {
+      const timeline: TimelineEntry[] = Array.isArray(o.timeline)
+        ? (o.timeline as unknown as TimelineEntry[])
+        : [];
+      const deliveredAts = (o.dispatches ?? [])
+        .map((d: any) => d.deliveredAt)
+        .filter(Boolean)
+        .map((d: any) => new Date(d));
+      const rev = resolveRevenueEvent({
+        timeline,
+        dispatchDeliveredAt:
+          deliveredAts.length > 0
+            ? new Date(Math.max(...deliveredAts.map((d: Date) => d.getTime())))
+            : null,
+        currentStatus: o.status?.name ?? '',
+      });
+      return (
+        rev.recognised &&
+        rev.revenueDate !== null &&
+        rev.revenueDate >= start &&
+        rev.revenueDate <= end
+      );
+    });
     const result = computeFulfillment(
-      orders.map((o: any): FulfillmentOrderInput => ({
+      cohort.map((o: any): FulfillmentOrderInput => ({
         id: o.id,
         paymentOptionType: o.paymentOptionType,
         shippingCharge: Number(o.shippingCharge),
@@ -342,10 +382,22 @@ export class AnalyticsFulfillmentService {
         ladderState:
           result.coverage.collectionUnavailableOrders > 0 ? 'unavailable' : 'actual',
         thresholds: {},
-        dateBasis: 'Payment.createdAt (collected); refund createdAt (refunded)',
+        dateBasis: 'recognised order cohort (Delivered transition; dispatch fallback); per-row sums are per-order lifetime',
       }),
     };
-    await this.cache.set(key, response, analyticsCacheTtlMs(ctx.range));
+    await this.cacheSet(key, response, analyticsCacheTtlMs(ctx.range));
     return response;
+  }
+
+  /**
+   * Read-path cache write: a cache blip serves the computed response anyway
+   * (the next read simply recomputes) — it must never fail the request.
+   */
+  private async cacheSet(key: string, value: unknown, ttlMs: number): Promise<void> {
+    try {
+      await this.cache.set(key, value, ttlMs);
+    } catch {
+      /* computed response is served regardless */
+    }
   }
 }

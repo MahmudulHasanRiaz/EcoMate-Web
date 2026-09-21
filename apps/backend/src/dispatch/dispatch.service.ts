@@ -521,6 +521,9 @@ export class DispatchService {
         result.dispatch.courier,
         performedBy,
       );
+      // deliveredAt (Delivered-date fallback) and the synced order status are
+      // recognition inputs — drop cached analytics like create() does.
+      await this.invalidateAnalytics();
     }
 
     return result.dispatch;
@@ -758,6 +761,10 @@ export class DispatchService {
 
     const fetchedByConsignment = new Map<string, any | null>();
     const seenConsignments = new Set<string>();
+    // Any branch below that writes (dispatch row, order row, timeline) flips
+    // this — recognition inputs changed, so cached analytics must drop once
+    // at the end. Failed-only runs write nothing and invalidate nothing.
+    let mutated = false;
 
     for (const id of uniqueIds) {
       const dispatch = byId.get(id);
@@ -852,6 +859,7 @@ export class DispatchService {
             where: { id: dispatch.id },
             data: { lastSyncedAt: new Date() },
           });
+          mutated = true;
           await this.applySyncOrderAdvancement(dispatch, rawStatus);
           await this.logSync(dispatch, 'SYNC_UNCHANGED', rawStatus, {
             performedBy,
@@ -909,6 +917,7 @@ export class DispatchService {
             courierService: dispatch.courier,
           },
         });
+        mutated = true;
 
         await this.addCourierSyncTimelineEntry(
           dispatch.orderId,
@@ -955,6 +964,11 @@ export class DispatchService {
         });
       }
     }
+
+    // Recognition inputs may have changed on any branch above (deliveredAt
+    // stamps, order advancement, sync timeline entries) — drop cached
+    // analytics once. Failed-only runs flipped nothing and skip this.
+    if (mutated) await this.invalidateAnalytics();
 
     return summary;
   }
@@ -1227,7 +1241,11 @@ export class DispatchService {
   }
 
   async remove(id: string) {
-    return this.prisma.dispatch.delete({ where: { id } });
+    const deleted = await this.prisma.dispatch.delete({ where: { id } });
+    // Dispatch rows feed the Delivered-date fallback — dropping one changes
+    // recognition inputs, so drop cached analytics too.
+    await this.invalidateAnalytics();
+    return deleted;
   }
 
   async getMetrics() {

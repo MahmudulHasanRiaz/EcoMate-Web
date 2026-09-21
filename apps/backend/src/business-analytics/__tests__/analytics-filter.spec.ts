@@ -162,7 +162,8 @@ describe('AnalyticsFilterService.buildOrderWhere', () => {
       dtoOf({ collectionStatus: 'cod-unavailable' }),
     ) as any;
     // COD plus NULL (unknown collection) — D11-strict, both unavailable.
-    expect(JSON.stringify(cod.OR)).toContain('CASH_ON_DELIVERY');
+    expect(JSON.stringify(cod.AND)).toContain('CASH_ON_DELIVERY');
+    expect(cod).not.toHaveProperty('OR');
     const online = svc.buildOrderWhere(
       dtoOf({ collectionStatus: 'online-collected' }),
     ) as any;
@@ -170,6 +171,43 @@ describe('AnalyticsFilterService.buildOrderWhere', () => {
       expect.arrayContaining(['FULL_PAYMENT', 'PARTIAL_PAYMENT']),
     );
     expect(online.paymentOptionType.in).not.toContain('CASH_ON_DELIVERY');
+  });
+
+  it('narrows when location and collection status combine (AND of per-dimension ORs)', () => {
+    const where = svc.buildOrderWhere(
+      dtoOf({ location: 'Dhaka', collectionStatus: 'cod-unavailable' }),
+    ) as any;
+    // No shared top-level OR: each dimension nests its alternatives in AND.
+    expect(where).not.toHaveProperty('OR');
+    expect(where.AND).toHaveLength(2);
+    const [locationOr, collectionOr] = where.AND;
+    expect(JSON.stringify(locationOr)).toContain('customerCity');
+    expect(JSON.stringify(collectionOr)).toContain('CASH_ON_DELIVERY');
+    // Behavioural: a location-matching online order fails the collection
+    // branch, and a COD order elsewhere fails the location branch — only an
+    // order matching BOTH dimensions passes.
+    const matches = (order: {
+      city?: string | null;
+      paymentOptionType?: string | null;
+    }) => {
+      const locationHit = [order.city].some(
+        (v) => v?.toLowerCase().includes('dhaka'),
+      );
+      const collectionHit =
+        order.paymentOptionType === 'CASH_ON_DELIVERY' ||
+        order.paymentOptionType === null ||
+        order.paymentOptionType === undefined;
+      return locationHit && collectionHit;
+    };
+    expect(
+      matches({ city: 'Dhaka', paymentOptionType: 'FULL_PAYMENT' }),
+    ).toBe(false);
+    expect(
+      matches({ city: 'Chattogram', paymentOptionType: 'CASH_ON_DELIVERY' }),
+    ).toBe(false);
+    expect(
+      matches({ city: 'Dhaka', paymentOptionType: 'CASH_ON_DELIVERY' }),
+    ).toBe(true);
   });
 
   it('constrains marketing source to resolved order ids (DB-side)', () => {

@@ -5,6 +5,7 @@ import {
   IsArray,
   ValidateNested,
   IsInt,
+  IsBoolean,
   Min,
   IsObject,
   IsIn,
@@ -140,6 +141,19 @@ export class VerifyPaymentDto {
   @IsEnum(PaymentStatus) status: PaymentStatus;
   @IsOptional() @IsString() notes?: string;
   /** Gateway/processing fee for THIS payment row (BDT). Absent = not recorded. */
+  @IsOptional() @IsNumber() @Min(0) feeAmount?: number;
+}
+
+/**
+ * POST /orders/:id/verify-payment body. Same wire shape as the previous
+ * loose @Body('…') params ({ verified, note, feeAmount }) — now validated:
+ * feeAmount is @IsNumber (rejects NaN/Infinity by default) + @Min(0), so a
+ * non-finite or negative fee is a 400 before reaching the service (which
+ * keeps its own `!(feeAmount >= 0)` guard as defense in depth).
+ */
+export class VerifyOrderPaymentDto {
+  @IsBoolean() verified: boolean;
+  @IsOptional() @IsString() note?: string;
   @IsOptional() @IsNumber() @Min(0) feeAmount?: number;
 }
 

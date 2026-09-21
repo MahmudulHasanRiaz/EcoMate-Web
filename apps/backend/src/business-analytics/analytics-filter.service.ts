@@ -202,14 +202,21 @@ export class AnalyticsFilterService {
       }
     }
 
+    // Each dimension's alternatives widen WITHIN that dimension only: the
+    // per-dimension ORs nest inside a top-level AND so that combining
+    // dimensions (location × collection status × …) always narrows. A shared
+    // where.OR across dimensions would widen instead (an order matching ANY
+    // dimension would pass).
+    const and: Prisma.OrderWhereInput[] = [];
     if (filters.location) {
       const q = filters.location;
-      where.OR = [
-        ...(Array.isArray(where.OR) ? where.OR : []),
-        { customerCity: { contains: q, mode: 'insensitive' } },
-        { customerState: { contains: q, mode: 'insensitive' } },
-        { customerZip: { contains: q, mode: 'insensitive' } },
-      ];
+      and.push({
+        OR: [
+          { customerCity: { contains: q, mode: 'insensitive' } },
+          { customerState: { contains: q, mode: 'insensitive' } },
+          { customerZip: { contains: q, mode: 'insensitive' } },
+        ],
+      });
     }
 
     if (filters.deliveryOutcome) {
@@ -223,11 +230,21 @@ export class AnalyticsFilterService {
     } else if (filters.collectionStatus === 'cod-unavailable') {
       // COD plus unknown (NULL paymentOptionType): collection unconfirmed
       // either way, so both sit in the unavailable bucket (D11-strict).
-      where.OR = [
-        ...(Array.isArray(where.OR) ? where.OR : []),
-        { paymentOptionType: 'CASH_ON_DELIVERY' as any },
-        { paymentOptionType: null as any },
-      ];
+      and.push({
+        OR: [
+          { paymentOptionType: 'CASH_ON_DELIVERY' as any },
+          { paymentOptionType: null as any },
+        ],
+      });
+    }
+
+    if (and.length > 0) {
+      const existing = Array.isArray(where.AND)
+        ? where.AND
+        : where.AND
+          ? [where.AND]
+          : [];
+      where.AND = [...existing, ...and];
     }
 
     if (marketingOrderIds !== undefined) {
@@ -250,18 +267,23 @@ export class AnalyticsFilterService {
       });
       return rows.map((r) => r.id);
     }
-    const attributed = await this.prisma.orderAttribution.findMany({
-      where: {
-        campaign: {
-          adAccount: { connection: { platform: { slug: source as any } } },
-        },
-      } as any,
-      select: { orderId: true },
-    });
-    const sessions = await this.prisma.marketingSession.findMany({
-      where: { utmSource: source },
-      select: { sessionToken: true },
-    });
+    // The attribution-chain and session lookups are independent reads —
+    // issue them together (the session-token → order lookup below still
+    // depends on the session rows, so it stays sequential).
+    const [attributed, sessions] = await Promise.all([
+      this.prisma.orderAttribution.findMany({
+        where: {
+          campaign: {
+            adAccount: { connection: { platform: { slug: source as any } } },
+          },
+        } as any,
+        select: { orderId: true },
+      }),
+      this.prisma.marketingSession.findMany({
+        where: { utmSource: source },
+        select: { sessionToken: true },
+      }),
+    ]);
     const tokens = sessions.map((s) => s.sessionToken).filter(Boolean);
     const viaSessions =
       tokens.length > 0

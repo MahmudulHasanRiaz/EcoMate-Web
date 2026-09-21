@@ -112,7 +112,8 @@ export interface PnlInput {
   bookedOrders: { createdAt: Date; total: number }[];
   /** PAID payments by createdAt (L3). */
   cashPayments: PnlPaymentInput[];
-  consumptions: (MarketingConsumptionRow & { allocatedAt?: Date })[];
+  /** spendDate-only contract: allocatedAt is never a financial date. */
+  consumptions: MarketingConsumptionRow[];
   expenses: { amount: number; taxAmount: number; expenseDate: Date }[];
 }
 
@@ -215,7 +216,6 @@ export function computePnl(input: PnlInput): PnlResult {
   let excludedCodShipping = 0;
   let inferences = 0;
   let onlineRecognised = 0;
-  let codRecognisedDelivery = 0;
   let dateTimeline = 0;
   let dateDispatch = 0;
   let undated = 0;
@@ -340,7 +340,6 @@ export function computePnl(input: PnlInput): PnlResult {
         cogsUnavailableUnits += item.quantity;
         cogsUnavailableItems += 1;
       }
-      void lineNets;
     }
 
     const shipState = fulfillmentCostState({
@@ -379,10 +378,8 @@ export function computePnl(input: PnlInput): PnlResult {
       if (outcome.inference !== 'none') inferences += 1;
     } else {
       codRecognised += 1;
-      codRecognisedDelivery += 1;
       excludedCodShipping += order.shippingCharge;
     }
-    void codRecognisedDelivery;
   }
 
   const netSales = gross - discounts - returns - refundsReversal;
@@ -639,19 +636,38 @@ export class AnalyticsPnlService {
     private readonly cache: CacheService,
   ) {}
 
+  // Non-ok states require a reason at the type level (overloads): a future
+  // caller cannot add an unavailable/estimated line without labelling it.
+  // The union overload still demands the reason — only a static 'actual'
+  // may omit it.
+  private money(
+    amount: number,
+    state: 'actual',
+    opts: { dateBasis: string; empty: boolean; reason?: string },
+  ): KpiValue;
+  private money(
+    amount: number,
+    state: CostState,
+    opts: { dateBasis: string; empty: boolean; reason: string },
+  ): KpiValue;
   private money(
     amount: number,
     state: CostState,
     opts: { dateBasis: string; empty: boolean; reason?: string },
   ): KpiValue {
     if (opts.empty) return kpiNoData('no recognised orders in range');
-    if (amount === 0) return kpiZero(opts.reason ?? 'measured zero');
+    // State before zero: a zero with missing inputs is unavailable, not an
+    // ok-zero. The value stays 0 — only the state (and its reason) changes.
     if (state === 'unavailable') {
-      return { value: amount, state: 'unavailable', reason: opts.reason, dateBasis: opts.dateBasis };
+      return { value: amount, state: 'unavailable', reason: opts.reason ?? 'unavailable — see coverage', dateBasis: opts.dateBasis };
     }
     if (state === 'estimated') {
-      return { value: amount, state: 'estimated', reason: opts.reason, dateBasis: opts.dateBasis };
+      return { value: amount, state: 'estimated', reason: opts.reason ?? 'estimated — see coverage', dateBasis: opts.dateBasis };
     }
+    if (state === 'not_applicable') {
+      return kpiNotApplicable(opts.reason ?? 'no data source exists');
+    }
+    if (amount === 0) return kpiZero(opts.reason ?? 'measured zero');
     return kpiOk(amount, { dateBasis: opts.dateBasis });
   }
 
@@ -664,11 +680,21 @@ export class AnalyticsPnlService {
       ? await this.filters.resolveMarketingOrderIds(filters.marketingSource)
       : undefined;
     const where = this.filters.buildOrderWhere(filters, marketingOrderIds);
-    const { payments: _pm, ...orderPart } = where as any;
+    // Strip the payments relation filter: valid on Order, but the cash query
+    // below filters Payment rows with `order` as the relation filter, where
+    // a payments sub-filter would be invalid.
+    const { payments: _strippedPaymentsFilter, ...orderPart } = where;
+    void _strippedPaymentsFilter;
 
     const [orders, booked, cash, consumptions, expenses] = await Promise.all([
       this.prisma.order.findMany({
-        where,
+        // Wider-window bound only: recognition dates live in timeline JSONB
+        // and cannot be SQL predicates. createdAt <= range.end is safe (an
+        // order created after the range cannot deliver inside it, short of
+        // backdated timelines); no lower bound is safe (old orders deliver
+        // in range), so precise recognition filtering stays in JS
+        // (computePnl inCohort).
+        where: { ...where, createdAt: { lte: range.end } },
         select: {
           id: true,
           total: true,
@@ -725,7 +751,19 @@ export class AnalyticsPnlService {
         select: { amount: true, status: true, gatewayCode: true, createdAt: true },
       }),
       this.prisma.marketingConsumption.findMany({
-        select: { calculatedCost: true, spendDate: true, allocatedAt: true },
+        // Range pushed into SQL without losing the undated fix-list: dated
+        // rows outside the range never enter any P&L sum
+        // (marketingPeriodCost ignores them), while NULL-spendDate rows must
+        // stay visible to quantify W10 and the unavailable state. The
+        // all-time R17 identity reads the reconciliation service's own
+        // unfiltered fetch, not this one.
+        where: {
+          OR: [
+            { spendDate: { gte: range.start, lte: range.end } },
+            { spendDate: null },
+          ],
+        },
+        select: { calculatedCost: true, spendDate: true },
       }),
       this.prisma.expense.findMany({
         where: { expenseDate: { gte: range.start, lte: range.end } },
@@ -817,7 +855,6 @@ export class AnalyticsPnlService {
       consumptions: consumptions.map((c: any) => ({
         calculatedCost: Number(c.calculatedCost),
         spendDate: c.spendDate ? new Date(c.spendDate) : null,
-        allocatedAt: c.allocatedAt ? new Date(c.allocatedAt) : undefined,
       })),
       expenses: expenses.map((e: any) => ({
         amount: Number(e.amount),
@@ -831,12 +868,19 @@ export class AnalyticsPnlService {
   private envelop(result: PnlResult, ctx: ResolvedAnalyticsContext): PnlResponse {
     const empty = result.recognisedOrders === 0;
     const marketing = result.marketingCost.state;
-    const money = (
-      amount: number,
-      state: CostState,
-      dateBasis: string,
-      reason?: string,
-    ) => this.money(amount, state, { dateBasis, empty, reason });
+    const money: {
+      (amount: number, state: 'actual', dateBasis: string, reason?: string): KpiValue;
+      (amount: number, state: CostState, dateBasis: string, reason: string): KpiValue;
+    } = (amount: number, state: CostState, dateBasis: string, reason?: string): KpiValue => {
+      if (state === 'actual') {
+        return this.money(amount, state, { dateBasis, empty, reason });
+      }
+      return this.money(amount, state, {
+        dateBasis,
+        empty,
+        reason: reason ?? 'see coverage',
+      });
+    };
     const ladder = ladderState([
       'actual',
       result.cogs.state,
@@ -859,15 +903,15 @@ export class AnalyticsPnlService {
             : kpiZero('no reversal refunds in range'),
           netSales: money(result.netSales.amount, 'actual', 'Delivered transition'),
           cogs: money(result.cogs.amount, result.cogs.state, 'Delivered transition', 'costSnapshot coverage'),
-          grossProfit: money(result.grossProfit.amount, ladder === 'actual' ? 'actual' : ladder === 'estimated' ? 'estimated' : 'unavailable', 'Delivered transition'),
-          fulfillmentCost: money(result.fulfillmentCost.amount, result.fulfillmentCost.state, 'recognised order cohort'),
-          paymentFees: money(result.paymentFees.amount, result.paymentFees.state, 'recognised order cohort'),
+          grossProfit: money(result.grossProfit.amount, ladder === 'actual' ? 'actual' : ladder === 'estimated' ? 'estimated' : 'unavailable', 'Delivered transition', 'ladder inputs incomplete — see coverage'),
+          fulfillmentCost: money(result.fulfillmentCost.amount, result.fulfillmentCost.state, 'recognised order cohort', 'shippingCost source coverage'),
+          paymentFees: money(result.paymentFees.amount, result.paymentFees.state, 'recognised order cohort', 'feeAmount coverage'),
           marketingCost: result.marketingCost.state === 'unavailable'
             ? { value: result.marketingCost.amount, state: 'unavailable', reason: `${result.coverage.marketing.undatedRows} consumption(s) missing spendDate (৳${result.coverage.marketing.undatedAmount})`, dateBasis: 'spendDate only' }
             : money(result.marketingCost.amount, 'actual', 'spendDate only'),
-          contributionProfit: money(result.contributionProfit.amount, ladder === 'actual' ? 'actual' : ladder === 'estimated' ? 'estimated' : 'unavailable', 'Delivered transition'),
+          contributionProfit: money(result.contributionProfit.amount, ladder === 'actual' ? 'actual' : ladder === 'estimated' ? 'estimated' : 'unavailable', 'Delivered transition', 'ladder inputs incomplete — see coverage'),
           operatingExpenses: money(result.operatingExpenses.amount, 'actual', 'expenseDate'),
-          operatingProfit: money(result.operatingProfit.amount, ladder === 'actual' ? 'actual' : ladder === 'estimated' ? 'estimated' : 'unavailable', 'Delivered transition'),
+          operatingProfit: money(result.operatingProfit.amount, ladder === 'actual' ? 'actual' : ladder === 'estimated' ? 'estimated' : 'unavailable', 'Delivered transition', 'ladder inputs incomplete — see coverage'),
           otherCosts: kpiNotApplicable('no data source exists'),
           netProfit: empty
             ? kpiNoData('no recognised orders in range')
@@ -927,8 +971,20 @@ export class AnalyticsPnlService {
     if (cached) return cached;
     const { result, ctx } = await this.buildReport(query);
     const response = this.envelop(result, ctx);
-    await this.cache.set(key, response, analyticsCacheTtlMs(ctx.range));
+    await this.cacheSet(key, response, analyticsCacheTtlMs(ctx.range));
     return response;
+  }
+
+  /**
+   * Read-path cache write: a cache blip serves the computed response anyway
+   * (the next read simply recomputes) — it must never fail the request.
+   */
+  private async cacheSet(key: string, value: unknown, ttlMs: number): Promise<void> {
+    try {
+      await this.cache.set(key, value, ttlMs);
+    } catch {
+      /* computed response is served regardless */
+    }
   }
 
   async getLenses(query: AnalyticsFilterDto) {
@@ -941,7 +997,7 @@ export class AnalyticsPnlService {
       data: { lenses: full.data.lenses, strip: full.data.strip },
       meta: full.meta,
     };
-    await this.cache.set(key, response, analyticsCacheTtlMs(ctx.range));
+    await this.cacheSet(key, response, analyticsCacheTtlMs(ctx.range));
     return response;
   }
 
@@ -983,7 +1039,7 @@ export class AnalyticsPnlService {
         dateBasis: 'expenseDate',
       }),
     };
-    await this.cache.set(key, response, analyticsCacheTtlMs(range));
+    await this.cacheSet(key, response, analyticsCacheTtlMs(range));
     return response;
   }
 }

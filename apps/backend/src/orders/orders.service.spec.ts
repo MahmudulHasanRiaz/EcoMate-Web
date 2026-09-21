@@ -3630,6 +3630,40 @@ await service.bulkAssign(['order-1', 'trashed-1'], 'staff-1');
       );
       expect(cache.invalidateByPrefix).not.toHaveBeenCalled();
     });
+
+    it('drops analytics:* after transitionOrderStatus (statusId drives recognition)', async () => {
+      const cache = module.get<CacheService>(CacheService);
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        trashedAt: null,
+        status: { id: 'status-confirmed', name: 'Confirmed' },
+        items: [],
+      });
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue({
+        id: 'status-packed',
+        name: 'Packed',
+      });
+      (prisma.order.update as jest.Mock).mockResolvedValue({});
+
+      const result = await service.transitionOrderStatus(
+        'order-id-1',
+        'Packed',
+        'staff@example.com',
+      );
+
+      expect(result).toMatchObject({ from: 'Confirmed', to: 'Packed' });
+      expect(cache.invalidateByPrefix).toHaveBeenCalledWith('analytics:');
+    });
+
+    it('does not invalidate when transitionOrderStatus rejects', async () => {
+      const cache = module.get<CacheService>(CacheService);
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(null);
+
+      await expect(
+        service.transitionOrderStatus('missing-id', 'Packed'),
+      ).rejects.toThrow(NotFoundException);
+      expect(cache.invalidateByPrefix).not.toHaveBeenCalled();
+    });
   });
 
   describe('handleReturnedSideEffects', () => {

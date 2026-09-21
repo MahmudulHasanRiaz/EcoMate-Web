@@ -5,11 +5,16 @@
  * (behavioural guard); courierCost stays present for COD; R11 leak guard.
  */
 import { PaymentStatus } from '@prisma/client';
+import { Test } from '@nestjs/testing';
 import {
   computeFulfillment,
   assertNoRevenueLeak,
+  AnalyticsFulfillmentService,
   type FulfillmentOrderInput,
 } from '../analytics-fulfillment.service';
+import { AnalyticsFilterService } from '../analytics-filter.service';
+import { PrismaService } from '../../prisma/prisma.service';
+import { CacheService } from '../../cache/cache.service';
 import {
   UnavailableSettlementSource,
   collectionKindOf,
@@ -243,5 +248,83 @@ describe('R11 leak guard', () => {
     expect(() => assertNoRevenueLeak(r.rows)).not.toThrow();
     expect(r.panelNote).toContain('Not part of recognised revenue');
     expect(r.rows[0]).not.toHaveProperty('grossSales');
+  });
+});
+
+describe('AnalyticsFulfillmentService.getFulfillment range scoping', () => {
+  const sepRange = {
+    start: new Date('2026-09-01T00:00:00+06:00'),
+    end: new Date('2026-09-30T17:59:59.999Z'),
+    periodDays: 30,
+    granularity: 'day',
+    comparison: { prevStart: new Date(), prevEnd: new Date() },
+  };
+  const augRange = {
+    ...sepRange,
+    start: new Date('2026-08-01T00:00:00+06:00'),
+    end: new Date('2026-08-31T17:59:59.999Z'),
+  };
+
+  function row(
+    id: string,
+    timeline: { status: string; timestamp: string }[],
+    status = 'Delivered',
+  ) {
+    return {
+      id,
+      paymentOptionType: 'FULL_PAYMENT',
+      shippingCharge: 80,
+      shippingCost: 60,
+      shippingCostSource: 'manual',
+      status: { name: status },
+      timeline,
+      payments: [],
+      refunds: [],
+      dispatches: [],
+    };
+  }
+
+  const rows = () => [
+    row('sep-order', [{ status: 'Delivered', timestamp: '2026-09-10T10:00:00+06:00' }]),
+    row('aug-order', [{ status: 'Delivered', timestamp: '2026-08-10T10:00:00+06:00' }]),
+    row(
+      'unrecognised',
+      [{ status: 'Confirmed', timestamp: '2026-09-10T10:00:00+06:00' }],
+      'Confirmed',
+    ),
+  ];
+
+  async function serviceFor(range: typeof sepRange) {
+    const mockPrisma: any = {
+      order: { findMany: jest.fn().mockResolvedValue(rows()) },
+    };
+    const mockFilter: any = {
+      resolveContext: jest.fn().mockReturnValue({ range, filters: {} }),
+      buildOrderWhere: jest.fn().mockReturnValue({ trashedAt: null }),
+      resolveMarketingOrderIds: jest.fn(),
+    };
+    const cache: any = { get: jest.fn().mockResolvedValue(undefined), set: jest.fn() };
+    const module = await Test.createTestingModule({
+      providers: [
+        AnalyticsFulfillmentService,
+        { provide: PrismaService, useValue: mockPrisma },
+        { provide: AnalyticsFilterService, useValue: mockFilter },
+        { provide: CacheService, useValue: cache },
+      ],
+    }).compile();
+    return module.get(AnalyticsFulfillmentService);
+  }
+
+  it('scopes rows to the recognised-in-range cohort', async () => {
+    const svc = await serviceFor(sepRange as any);
+    const res = await svc.getFulfillment({} as any);
+    expect(res.data.rows.map((r: any) => r.orderId)).toEqual(['sep-order']);
+  });
+
+  it('serves different payloads for different ranges (no cross-range cache bleed)', async () => {
+    const sep = await (await serviceFor(sepRange as any)).getFulfillment({} as any);
+    const aug = await (await serviceFor(augRange as any)).getFulfillment({} as any);
+    expect(sep.data.rows.map((r: any) => r.orderId)).toEqual(['sep-order']);
+    expect(aug.data.rows.map((r: any) => r.orderId)).toEqual(['aug-order']);
   });
 });

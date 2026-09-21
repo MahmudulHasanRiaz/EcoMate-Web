@@ -21,6 +21,7 @@ import {
   UpdateOrderDto,
   UpdateOrderItemDto,
   CancelOrderDto,
+  VerifyOrderPaymentDto,
 } from './dto/order.dto';
 import {
   BulkOrdersDto,
@@ -183,11 +184,9 @@ export class OrdersController {
   @Post(':id/verify-payment')
   async verifyPayment(
     @Param('id') id: string,
-    @Body('verified') verified: boolean,
-    @Body('note') note?: string,
-    @Body('feeAmount') feeAmount?: number,
+    @Body() dto: VerifyOrderPaymentDto,
   ) {
-    return this.svc.verifyPayment(id, verified, note, feeAmount);
+    return this.svc.verifyPayment(id, dto.verified, dto.note, dto.feeAmount);
   }
 
   @Public()

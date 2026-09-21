@@ -75,15 +75,30 @@ describe('AnalyticsPnlService fetch wiring', () => {
     );
   });
 
-  it('fetches consumptions unfiltered (undated rows must be quantifiable)', async () => {
+  it('fetches consumptions with an exact shape: spendDate range OR NULL (undated rows stay quantifiable)', async () => {
     await service.getPnl({} as any);
     expect(
       mockPrisma.marketingConsumption.findMany,
-    ).toHaveBeenCalledWith(
-      expect.objectContaining({ select: expect.anything() }),
-    );
-    const args = mockPrisma.marketingConsumption.findMany.mock.calls[0][0];
-    expect(args.where ?? {}).not.toHaveProperty('spendDate');
+    ).toHaveBeenCalledWith({
+      where: {
+        OR: [
+          { spendDate: { gte: range.start, lte: range.end } },
+          { spendDate: null },
+        ],
+      },
+      select: { calculatedCost: true, spendDate: true },
+    });
+  });
+
+  it('bounds the candidate fetch with a wider-window createdAt predicate (precise recognition stays in JS)', async () => {
+    await service.getPnl({} as any);
+    const candidatesCall = mockPrisma.order.findMany.mock.calls[0][0];
+    expect(candidatesCall.where).toMatchObject({
+      trashedAt: null,
+      createdAt: { lte: range.end },
+    });
+    // No lower bound: old orders deliver in range (cross-period cohort).
+    expect(candidatesCall.where.createdAt.gte).toBeUndefined();
   });
 
   it('resolves marketing source ids DB-side before constraining', async () => {
@@ -117,5 +132,73 @@ describe('AnalyticsPnlService fetch wiring', () => {
     expect(res.data.lines.netSales.value).toBeNull();
     expect(res.meta.formulaVersion).toBeDefined();
     expect(res.meta.ladderState).toBeDefined();
+  });
+
+  it('serves the computed response when the cache write blips', async () => {
+    cache.set.mockRejectedValueOnce(new Error('redis down'));
+    const res = await service.getPnl({} as any);
+    expect(res.data.lines.netSales.state).toBe('no_data');
+    expect(res.meta.formulaVersion).toBeDefined();
+  });
+
+  it('marks zero with missing inputs unavailable (not ok-zero); measured zeroes stay zero', async () => {
+    mockPrisma.order.findMany.mockImplementation(async (args: any) => {
+      // Candidates (unfiltered select) vs booked (createdAt select).
+      if (args.select?.timeline) {
+        return [
+          {
+            id: 'o1',
+            total: 1000,
+            subtotal: 1000,
+            shippingCharge: 80,
+            discount: 0,
+            discountType: 'flat',
+            status: { name: 'Delivered' },
+            timeline: [
+              { status: 'Delivered', timestamp: '2026-09-10T10:00:00+06:00' },
+            ],
+            createdAt: new Date('2026-09-01T00:00:00+06:00'),
+            paymentOptionType: 'FULL_PAYMENT',
+            customerId: null,
+            customerPhone: null,
+            guestPhone: null,
+            shippingCost: 60,
+            shippingCostSource: 'manual',
+            items: [
+              {
+                price: 500,
+                quantity: 2,
+                costSnapshot: 60,
+                costType: 'actual',
+              },
+            ],
+            payments: [
+              {
+                amount: 1000,
+                status: PaymentStatus.PAID,
+                gatewayCode: 'bkash',
+                feeAmount: null,
+                createdAt: new Date('2026-09-11T10:00:00+06:00'),
+              },
+            ],
+            refunds: [],
+            dispatches: [],
+          },
+        ];
+      }
+      return [];
+    });
+    const res = await service.getPnl({} as any);
+    // Zero fees with a missing feeAmount: unavailable, not ok-zero.
+    expect(res.data.lines.paymentFees).toMatchObject({
+      value: 0,
+      state: 'unavailable',
+    });
+    expect(res.data.lines.paymentFees.reason).toBeTruthy();
+    // Measured zero with full inputs: discounts are actually 0 → zero.
+    expect(res.data.lines.discounts).toMatchObject({
+      value: 0,
+      state: 'zero',
+    });
   });
 });

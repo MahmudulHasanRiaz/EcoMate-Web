@@ -7,7 +7,7 @@
  * period mapping) return warn with explicit reasons — never a silent pass.
  */
 import { Injectable } from '@nestjs/common';
-import { PaymentStatus } from '@prisma/client';
+import { PaymentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
 import {
@@ -17,6 +17,7 @@ import {
   classifyRefund,
   computeNetProfitFromLedger,
   marketingIdentityTotals,
+  type TimelineEntry,
 } from './metric-contract';
 import {
   AnalyticsFilterService,
@@ -26,6 +27,7 @@ import type { AnalyticsFilterDto } from './analytics-filter.dto';
 import { AnalyticsPnlService } from './analytics-pnl.service';
 import {
   AnalyticsFulfillmentService,
+  assertNoRevenueLeak,
   settleOrder,
 } from './analytics-fulfillment.service';
 import {
@@ -401,8 +403,47 @@ export function evaluateChecks(input: ReconciliationInput): CheckResult[] {
   return out;
 }
 
-/** Ad-spend overlap keywords (F6 user-configuration risk → W8). */
-export const MARKETING_OVERLAP_RE = /market|advert|ads?\b|promo|facebook|google\b|meta\b|tiktok|boost/i;
+/** Ad-spend overlap keywords (F6 user-configuration risk → W8). Word-bounded
+ * on both sides so 'leads' never matches the ads alternative. */
+export const MARKETING_OVERLAP_RE =
+  /\b(marketing|market|advert|ads?|promo|facebook|google|meta|tiktok|boost)\b/i;
+
+/**
+ * Candidate-order projection for the partition / double-reversal / COD-leak
+ * re-derivation. Typed via the Prisma select payload — no `any` rows.
+ */
+const reconciliationCandidateSelect = {
+  id: true,
+  status: { select: { name: true } },
+  timeline: true,
+  paymentOptionType: true,
+  customerId: true,
+  customerPhone: true,
+  guestPhone: true,
+  customerCity: true,
+  customerState: true,
+  customerZip: true,
+  shippingCost: true,
+  shippingCharge: true,
+  shippingCostSource: true,
+  payments: {
+    select: { amount: true, status: true, gatewayCode: true, createdAt: true },
+  },
+  refunds: {
+    select: {
+      id: true,
+      amount: true,
+      status: true,
+      processedAt: true,
+      createdAt: true,
+    },
+  },
+  dispatches: { select: { deliveredAt: true } },
+} satisfies Prisma.OrderSelect;
+
+export type ReconciliationCandidate = Prisma.OrderGetPayload<{
+  select: typeof reconciliationCandidateSelect;
+}>;
 
 @Injectable()
 export class AnalyticsReconciliationService {
@@ -431,36 +472,28 @@ export class AnalyticsReconciliationService {
       ? await this.filters.resolveMarketingOrderIds(filters.marketingSource)
       : undefined;
     const where = this.filters.buildOrderWhere(filters, marketingOrderIds);
-    const { payments: _pm, ...orderPart } = where as any;
+    // Strip the payments relation filter: valid on Order, but the R5
+    // aggregate below filters Payment rows with `order` as the relation
+    // filter, where a payments sub-filter would be invalid.
+    const { payments: _strippedPaymentsFilter, ...orderPart } = where;
+    void _strippedPaymentsFilter;
 
+    // Three overlapping reads, deliberately separate (not one shared fetch):
+    // pnl.getPnl and fulfillment.getFulfillment each own their projections
+    // and date bases (recognition-dated revenue vs cohort settlement), and
+    // the candidates/expenses/consumptions/categories/aggregate reads below
+    // re-derive the partition, R12, R18, R4, R5 and R17 checks INDEPENDENTLY
+    // of the ladder/settlement code paths — sharing row objects would couple
+    // the checker to the checked and let a regression pass itself. The
+    // dedicated R5 aggregate is its own query by the same principle (never
+    // the lens value fed back to itself).
     const [pnlRes, fulRes, candidates, expenseRows, consumptions, categories, paidAgg] =
       await Promise.all([
         this.pnl.getPnl(query),
         this.fulfillment.getFulfillment(query),
         this.prisma.order.findMany({
           where,
-          select: {
-            id: true,
-            status: { select: { name: true } },
-            timeline: true,
-            paymentOptionType: true,
-            customerId: true,
-            customerPhone: true,
-            guestPhone: true,
-            customerCity: true,
-            customerState: true,
-            customerZip: true,
-            shippingCost: true,
-            shippingCharge: true,
-            shippingCostSource: true,
-            payments: {
-              select: { amount: true, status: true, gatewayCode: true, createdAt: true },
-            },
-            refunds: {
-              select: { id: true, amount: true, status: true, processedAt: true, createdAt: true },
-            },
-            dispatches: { select: { deliveredAt: true } },
-          },
+          select: reconciliationCandidateSelect,
         }),
         this.prisma.expense.findMany({
           where: { expenseDate: { gte: range.start, lte: range.end } },
@@ -504,7 +537,7 @@ export class AnalyticsReconciliationService {
       netProfit: num(L.netProfit.value),
     };
     const bridge = pnlRes.data.bridge;
-    const coverage = pnlRes.data.coverage as any;
+    const coverage = pnlRes.data.coverage;
 
     // Partition (R6) + double-reversal re-scan (R12) + COD scan (R18).
     // R12/R18 re-derive from raw rows through metric-contract predicates +
@@ -531,7 +564,7 @@ export class AnalyticsReconciliationService {
       const d = v instanceof Date ? v : new Date(v as string);
       return Number.isNaN(d.getTime()) ? null : d;
     };
-    for (const o of candidates as any[]) {
+    for (const o of candidates) {
       const statusName: string = o.status?.name ?? '';
       let group: string | null = null;
       try {
@@ -539,19 +572,22 @@ export class AnalyticsReconciliationService {
       } catch {
         group = null;
       }
-      const timeline = Array.isArray(o.timeline) ? o.timeline : [];
-      const deliveredAts = (o.dispatches ?? [])
-        .map((d: any) => toDate(d.deliveredAt))
-        .filter(Boolean) as Date[];
+      // Timeline is our own JSONB write-shape; guard the array, then narrow.
+      const timeline: TimelineEntry[] = Array.isArray(o.timeline)
+        ? (o.timeline as unknown as TimelineEntry[])
+        : [];
+      const deliveredAts = o.dispatches
+        .map((d) => toDate(d.deliveredAt))
+        .filter((d): d is Date => d !== null);
       const rev = resolveRevenueEvent({
-        timeline: timeline as any,
+        timeline,
         dispatchDeliveredAt:
           deliveredAts.length > 0
             ? new Date(Math.max(...deliveredAts.map((d) => d.getTime())))
             : null,
         currentStatus: statusName,
       });
-      const ret = resolveReturn(timeline as any, rev.revenueDate);
+      const ret = resolveReturn(timeline, rev.revenueDate);
       if (group === 'never') partition.cancelled += 1;
       else if (rev.recognised) partition.recognised += 1;
       else if (rev.undatedDelivery) partition.undatedDeliveries += 1;
@@ -561,7 +597,7 @@ export class AnalyticsReconciliationService {
       const inReturns =
         rev.recognised && ret.reversesRevenue && inRange(ret.returnAt);
       const wasReturned = ret.reversesRevenue && ret.returnAt !== null;
-      const hasReversalRefund = (o.refunds ?? []).some((r: any) => {
+      const hasReversalRefund = o.refunds.some((r) => {
         if (r.status !== 'completed') return false;
         if (classifyRefund({ wasDelivered: rev.recognised, wasReturned }) !== 'reversal') {
           return false;
@@ -575,14 +611,18 @@ export class AnalyticsReconciliationService {
         paymentOptionType: o.paymentOptionType,
         shippingCharge: Number(o.shippingCharge),
         shippingCost: o.shippingCost === null ? null : Number(o.shippingCost),
-        shippingCostSource: o.shippingCostSource as any,
-        payments: (o.payments ?? []).map((p: any) => ({
+        shippingCostSource:
+          o.shippingCostSource === 'manual' ||
+          o.shippingCostSource === 'courier_default'
+            ? o.shippingCostSource
+            : null,
+        payments: o.payments.map((p) => ({
           amount: Number(p.amount),
           status: p.status,
           gatewayCode: p.gatewayCode,
           createdAt: toDate(p.createdAt) ?? new Date(0),
         })),
-        refunds: (o.refunds ?? []).map((r: any) => ({
+        refunds: o.refunds.map((r) => ({
           amount: Number(r.amount),
           status: r.status,
           createdAt: toDate(r.createdAt) ?? new Date(0),
@@ -622,25 +662,38 @@ export class AnalyticsReconciliationService {
     });
 
     const expensesTotal = expenseRows.reduce(
-      (s: number, e: any) => s + Number(e.amount) + Number(e.taxAmount),
+      (s, e) => s + Number(e.amount) + Number(e.taxAmount),
       0,
     );
     const identity = marketingIdentityTotals(
-      consumptions.map((c: any) => ({
+      consumptions.map((c) => ({
         calculatedCost: Number(c.calculatedCost),
         spendDate: c.spendDate ? new Date(c.spendDate) : null,
       })),
     );
     const overlap = categories
       .filter(
-        (c: any) =>
+        (c) =>
           MARKETING_OVERLAP_RE.test(c.name ?? '') ||
           MARKETING_OVERLAP_RE.test(c.slug ?? ''),
       )
-      .map((c: any) => c.name);
+      .map((c) => c.name);
 
     const ful = fulRes.data;
     const onlineRows = ful.rows.filter((r) => r.collection === 'online');
+
+    // R11 is measured live, never hardcoded: the range fulfillment payload
+    // must carry zero revenue-bucket keys (structural guard from the
+    // fulfillment path, enforced here over the computed rows). A leak fails
+    // the check with the guard's message — never a silent pass.
+    let revenueBucketHasSettlement = false;
+    try {
+      assertNoRevenueLeak(
+        ful.rows as unknown as Record<string, unknown>[],
+      );
+    } catch {
+      revenueBucketHasSettlement = true;
+    }
 
     const checks = evaluateChecks({
       ladder,
@@ -655,7 +708,7 @@ export class AnalyticsReconciliationService {
       },
       ledgerNetProfit,
       expensesTotal,
-      paidPaymentsTotal: Number((paidAgg as any)?._sum?.amount ?? 0),
+      paidPaymentsTotal: Number(paidAgg._sum.amount ?? 0),
       cashCollected: pnlRes.data.lenses.cashCollected.value ?? 0,
       partition,
       settlementOnline: {
@@ -668,7 +721,7 @@ export class AnalyticsReconciliationService {
         deliveryChargeRetained: ful.totals.deliveryChargeRetained,
         courierCost: onlineRows.reduce((s, r) => s + (r.courierCost.value ?? 0), 0),
       },
-      revenueBucketHasSettlement: false,
+      revenueBucketHasSettlement,
       doubleReversalOrders,
       marketingIdentity: identity,
       marketingPeriodTotal: ladder.marketingCost,
@@ -707,7 +760,19 @@ export class AnalyticsReconciliationService {
         dateBasis: 'reconciliation over the pnl + fulfillment scope',
       }),
     };
-    await this.cache.set(key, response, analyticsCacheTtlMs(range));
+    await this.cacheSet(key, response, analyticsCacheTtlMs(range));
     return response;
+  }
+
+  /**
+   * Read-path cache write: a cache blip serves the computed response anyway
+   * (the next read simply recomputes) — it must never fail the request.
+   */
+  private async cacheSet(key: string, value: unknown, ttlMs: number): Promise<void> {
+    try {
+      await this.cache.set(key, value, ttlMs);
+    } catch {
+      /* computed response is served regardless */
+    }
   }
 }

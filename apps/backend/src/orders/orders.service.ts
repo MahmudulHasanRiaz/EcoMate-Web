@@ -4020,6 +4020,10 @@ export class OrdersService {
       }
     }
 
+    // Recognition input changed (statusId drives delivered-only revenue) —
+    // drop cached analytics like updateStatus/cancelByCustomer do.
+    await this.invalidateAnalytics();
+
     return result;
   }
 
