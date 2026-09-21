@@ -1,5 +1,5 @@
 import { Badge } from '@/components/ui/badge'
-import type { CostState } from './types'
+import type { CostState } from '../types'
 
 const COST_STATE_STYLE: Record<CostState, string> = {
   actual: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
