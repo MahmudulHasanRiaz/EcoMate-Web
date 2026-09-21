@@ -229,11 +229,17 @@ export const CHECK_REGISTRY: CheckDef[] = [
       const net = l.grossSales - l.discounts - l.returns - l.refundsReversal;
       const gp = net - l.cogs;
       const cp = gp - l.fulfillmentCost - l.paymentFees - l.marketingCost;
-      const op = cp - l.operatingExpenses;
+      // §2.11: delivery income joins through the bridge — Operating Profit
+      // and Net Profit are TBC − OE, i.e. CP + DCR − OE. A DCR-blind
+      // recompute (cp − opex) drifts the moment any online order retains a
+      // delivery charge.
+      const tbc = cp + i.bridge.deliveryChargeRetained;
+      const op = tbc - l.operatingExpenses;
       const ok =
         eq(net, l.netSales) &&
         eq(gp, l.grossProfit) &&
         eq(cp, l.contributionProfit) &&
+        eq(tbc, i.bridge.totalBusinessContribution) &&
         eq(op, l.operatingProfit) &&
         eq(op, l.netProfit);
       return result(

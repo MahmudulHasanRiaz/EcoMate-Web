@@ -37,8 +37,9 @@ function baseInput(extra: Partial<ReconciliationInput> = {}): ReconciliationInpu
     marketingCost: 100,
     contributionProfit: 360,
     operatingExpenses: 60,
-    operatingProfit: 300,
-    netProfit: 300,
+    // §2.11: Operating/Net Profit are TBC − OE = (360 + 80) − 60 = 380.
+    operatingProfit: 380,
+    netProfit: 380,
   };
   return {
     ladder,
@@ -161,6 +162,34 @@ describe('implemented R checks', () => {
     const broken = baseInput();
     broken.ladder = { ...broken.ladder, netSales: 1 };
     expect(byId(evaluateChecks(broken), 'R3').status).toBe('fail');
+  });
+
+  it('R3 counts Delivery Charge Retained toward Operating/Net Profit (§2.11)', () => {
+    // Fixture carries DCR = 80: the DCR-blind ladder (op = cp − opex) must fail.
+    const dcrBlind = baseInput();
+    dcrBlind.ladder = {
+      ...dcrBlind.ladder,
+      operatingProfit: 300,
+      netProfit: 300,
+    };
+    expect(byId(evaluateChecks(dcrBlind), 'R3').status).toBe('fail');
+    // Zero-DCR ladders still foot exactly.
+    const noDcr = baseInput();
+    noDcr.ladder = {
+      ...noDcr.ladder,
+      operatingProfit: 300,
+      netProfit: 300,
+    };
+    noDcr.bridge = {
+      ...noDcr.bridge,
+      deliveryChargeRetained: 0,
+      fulfillmentMargin: -60,
+      totalBusinessContribution: 360,
+      operatingProfit: 300,
+      netProfit: 300,
+    };
+    noDcr.ledgerNetProfit = 300;
+    expect(byId(evaluateChecks(noDcr), 'R3').status).toBe('pass');
   });
 
   it('R4 ties expense analytics to Expense.amount + taxAmount', () => {
