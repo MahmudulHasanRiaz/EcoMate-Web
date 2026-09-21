@@ -339,4 +339,25 @@ describe('AnalyticsFilterBar', () => {
     expect(seen.marketingSource).toBe('facebook')
     expect(seen.preset).toBe('last_30_days')
   })
+
+  it('populates categories from the bare-array GET /categories response', async () => {
+    // P10b live find: the backend returns Category[] (no paginated envelope);
+    // the filter bar must normalize instead of failing the query with
+    // undefined data (which left the Category dimension empty).
+    const { categoriesApi } = await import('@/features/categories/api')
+    vi.mocked(categoriesApi.list).mockResolvedValueOnce({
+      data: [
+        { id: 'c1', name: 'Beverages' },
+        { id: 'c2', name: 'Snacks' },
+      ],
+    } as any)
+    const { getByText } = await renderWithClient(
+      <AnalyticsFilterBar value={{ preset: 'last_30_days' }} onChange={() => {}} />,
+    )
+    // Category dimension trigger renders (query resolved instead of failing
+    // with undefined data); opening it shows the normalized options.
+    await expect.element(getByText('All categories')).toBeInTheDocument()
+    await userEvent.click(getByText('All categories'))
+    await expect.element(getByText('Beverages')).toBeInTheDocument()
+  })
 })
