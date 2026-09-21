@@ -282,3 +282,141 @@ export function formatDeltaPct(v: number | null): string {
   const sign = v > 0 ? '+' : v < 0 ? '-' : ''
   return `${sign}${Math.abs(v).toFixed(1)}%`
 }
+
+// ─── P5 Sales & Orders (§2.1 lenses + §2.2 + §2.10 full panel + §4.2 rows) ────
+
+/** Funnel stage: instrumented stages carry counts; unsupported render "Not instrumented", never zeros. */
+export interface SalesFunnelStage {
+  key: string
+  label: string
+  instrumented: boolean
+  orders: number | null
+  value: number | null
+  shareOfBooked: number | null
+  conversionFromPrev: number | null
+  dateBasis?: string
+  reason?: string
+}
+
+export interface SalesPipelineStage {
+  key: string
+  label: string
+  orders: number
+  value: number
+  note: string
+}
+
+export interface SalesPaymentMethod {
+  gateway: string
+  orders: number
+  amount: number
+  note: string
+}
+
+export interface SalesTrendPoint {
+  bucketStart: string
+  label: string
+  amount: number
+  orders: number
+}
+
+export interface SettlementAmount {
+  value: number | null
+  state: CostState
+  reason?: string
+  dateBasis?: string
+}
+
+export interface SalesSettlementRow {
+  orderId: string
+  displayId: string
+  status: string
+  createdAt: string | null
+  collection: 'online' | 'cod' | 'unknown'
+  amountCollected: SettlementAmount
+  amountRefunded: SettlementAmount
+  amountRetained: SettlementAmount
+  deliveryChargeRetained: SettlementAmount & { inference: 'covered' | 'below' | 'none' }
+  courierCost: SettlementAmount
+  fulfillmentMargin: SettlementAmount
+  disclosure: string | null
+}
+
+export interface SalesSummaryData {
+  lenses: { booked: KpiValue; recognised: KpiValue; cashCollected: KpiValue }
+  strip: RecognitionStripData
+  orderMetrics: {
+    bookedOrders: KpiValue
+    bookedValue: KpiValue
+    recognisedOrders: KpiValue
+    recognisedValue: KpiValue
+    aovRecognised: KpiValue
+    unitsRecognised: KpiValue
+    cashCollected: KpiValue
+  }
+  funnel: SalesFunnelStage[]
+  pipeline: { stages: SalesPipelineStage[]; totalOrders: number; totalValue: number }
+  paymentBreakdown: {
+    methods: SalesPaymentMethod[]
+    unpaid: { orders: number; bookedValue: number; note: string }
+  }
+  cancellations: {
+    total: number
+    totalValue: number
+    undated: number
+    dateBasis: string
+    byPriorStage: { stage: string; orders: number; value: number }[]
+    bySalesChannel: BreakdownRow[]
+  }
+  returns: {
+    events: number
+    value: number
+    units: number
+    cogsReversal: number
+    cogsUnavailableUnits: number
+    rate: number | null
+    rateBasis: string
+    dateBasis: string
+  }
+  refunds: {
+    reversal: { orders: number; amount: number }
+    informational: { orders: number; amount: number }
+    not_a_reversal: { orders: number; amount: number }
+    dateBasis: string
+    crossoverNote: string
+  }
+  trends: {
+    requestedGranularity: string
+    granularity: string
+    booked: SalesTrendPoint[]
+    recognised: SalesTrendPoint[]
+    cash: SalesTrendPoint[]
+  }
+  economics: {
+    fulfillment: FulfillmentCompact
+    returnLoss: { amount: number; events: number; unavailableEvents: number; note: string }
+    refundLeakage: { amount: number; refunds: number; orders: number; note: string }
+    coverage: FulfillmentCompact['coverage']
+  }
+}
+
+export interface SalesSettlementData {
+  rows: SalesSettlementRow[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+  coverage: FulfillmentCompact['coverage']
+  gapBanner: FulfillmentCompact['gapBanner']
+  panelNote: string
+}
+
+export interface SalesSummaryResponse {
+  data: SalesSummaryData
+  meta: OverviewMeta
+}
+
+export interface SalesSettlementResponse {
+  data: SalesSettlementData
+  meta: OverviewMeta
+}

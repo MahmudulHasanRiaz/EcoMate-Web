@@ -83,6 +83,7 @@ export const sidebarData: SidebarData = {
           items: [
             { title: 'Overview', url: '/op/analytics/overview' },
             { title: 'Products', url: '/op/analytics/products' },
+            { title: 'Sales & Orders', url: '/op/analytics/sales' },
           ],
         },
         { title: 'Payments', url: '/op/payments', icon: Coins, feature: 'admin_payments' },

@@ -11,6 +11,8 @@ import type {
   ProductAnalyticsFilters,
   ProductDetailResponse,
   ProductsResponse,
+  SalesSettlementResponse,
+  SalesSummaryResponse,
   UncostedResponse,
 } from './types'
 
@@ -64,6 +66,22 @@ export const businessAnalyticsApi = {
     apiClient.get<UncostedResponse>('/business-analytics/products/uncosted', {
       params: buildProductsQuery(filters),
     }),
+  getSalesSummary: (filters: AnalyticsFilters) =>
+    apiClient.get<SalesSummaryResponse>('/business-analytics/sales/summary', {
+      params: buildOverviewQuery(filters),
+    }),
+  getSalesFunnel: (filters: AnalyticsFilters) =>
+    apiClient.get<{ data: { stages: SalesSummaryResponse['data']['funnel'] } }>('/business-analytics/sales/funnel', {
+      params: buildOverviewQuery(filters),
+    }),
+  getSalesPipeline: (filters: AnalyticsFilters) =>
+    apiClient.get<{ data: SalesSummaryResponse['data']['pipeline'] }>('/business-analytics/sales/pipeline', {
+      params: buildOverviewQuery(filters),
+    }),
+  getSalesSettlement: (filters: AnalyticsFilters, page: number, pageSize: number) =>
+    apiClient.get<SalesSettlementResponse>('/business-analytics/sales/settlement', {
+      params: { ...buildOverviewQuery(filters), page: String(page), pageSize: String(pageSize) },
+    }),
 }
 
 /** Product list/detail params: shared dimensions + list-only search/sort/dir. */
@@ -89,4 +107,13 @@ export function productDetailQueryKey(id: string, filters: ProductAnalyticsFilte
 
 export function uncostedProductsQueryKey(filters: ProductAnalyticsFilters) {
   return ['business-analytics-products-uncosted', buildProductsQuery(filters)] as const
+}
+
+/** Stable sales query keys — shared dims drive summary/funnel/pipeline; settlement adds page/pageSize. */
+export function salesSummaryQueryKey(filters: AnalyticsFilters) {
+  return ['business-analytics-sales-summary', buildOverviewQuery(filters)] as const
+}
+
+export function salesSettlementQueryKey(filters: AnalyticsFilters, page: number, pageSize: number) {
+  return ['business-analytics-sales-settlement', buildOverviewQuery(filters), page, pageSize] as const
 }

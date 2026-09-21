@@ -17,10 +17,12 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { Permissions } from '../common/decorators/permissions.decorator';
 import { AnalyticsFilterDto } from './analytics-filter.dto';
 import { ProductsQueryDto } from './analytics-products.dto';
+import { SalesQueryDto } from './analytics-sales.dto';
 import { AnalyticsPnlService } from './analytics-pnl.service';
 import { AnalyticsFulfillmentService } from './analytics-fulfillment.service';
 import { AnalyticsOverviewService } from './analytics-overview.service';
 import { AnalyticsProductsService } from './analytics-products.service';
+import { AnalyticsSalesService } from './analytics-sales.service';
 import { AnalyticsReconciliationService } from './analytics-reconciliation.service';
 
 @Controller('business-analytics')
@@ -33,6 +35,7 @@ export class BusinessAnalyticsController {
     private readonly fulfillmentService: AnalyticsFulfillmentService,
     private readonly overviewService: AnalyticsOverviewService,
     private readonly productsService: AnalyticsProductsService,
+    private readonly salesService: AnalyticsSalesService,
     private readonly reconciliationService: AnalyticsReconciliationService,
   ) {}
 
@@ -90,6 +93,34 @@ export class BusinessAnalyticsController {
   @Permissions('view_analytics', 'view_financial_summary')
   reconciliation(@Query() query: AnalyticsFilterDto) {
     return this.reconciliationService.runReconciliation(query);
+  }
+
+  /** Sales & Orders summary: lenses + order metrics + funnel + pipeline + breakdowns + economics (financial). */
+  @Get('sales/summary')
+  @Permissions('view_analytics', 'view_financial_summary')
+  salesSummary(@Query() query: AnalyticsFilterDto) {
+    return this.salesService.getSummary(query);
+  }
+
+  /** Sales funnel over the intake cohort — supported stages only (financial). */
+  @Get('sales/funnel')
+  @Permissions('view_analytics', 'view_financial_summary')
+  salesFunnel(@Query() query: AnalyticsFilterDto) {
+    return this.salesService.getFunnel(query);
+  }
+
+  /** Pre-delivery pipeline by stage — never revenue (financial). */
+  @Get('sales/pipeline')
+  @Permissions('view_analytics', 'view_financial_summary')
+  salesPipeline(@Query() query: AnalyticsFilterDto) {
+    return this.salesService.getPipeline(query);
+  }
+
+  /** Per-order settlement table, paginated, with inference disclosure (financial). */
+  @Get('sales/settlement')
+  @Permissions('view_analytics', 'view_financial_summary')
+  salesSettlement(@Query() query: SalesQueryDto) {
+    return this.salesService.getSettlement(query);
   }
 
   /** L1/L2/L3 lenses + recognition strip (general analytics). */

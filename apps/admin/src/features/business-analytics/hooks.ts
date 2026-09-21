@@ -4,6 +4,8 @@ import {
   overviewQueryKey,
   productDetailQueryKey,
   productsQueryKey,
+  salesSettlementQueryKey,
+  salesSummaryQueryKey,
   uncostedProductsQueryKey,
 } from './api'
 import type { AnalyticsFilters, ProductAnalyticsFilters } from './types'
@@ -37,5 +39,22 @@ export function useUncostedProducts(filters: ProductAnalyticsFilters) {
     queryKey: uncostedProductsQueryKey(filters),
     queryFn: () => businessAnalyticsApi.getUncostedProducts(filters).then((r) => r.data),
     refetchInterval: 60_000,
+  })
+}
+
+export function useSalesSummary(filters: AnalyticsFilters) {
+  return useQuery({
+    queryKey: salesSummaryQueryKey(filters),
+    queryFn: () => businessAnalyticsApi.getSalesSummary(filters).then((r) => r.data),
+    refetchInterval: 60_000,
+  })
+}
+
+export function useSalesSettlement(filters: AnalyticsFilters, page: number, pageSize: number) {
+  return useQuery({
+    queryKey: salesSettlementQueryKey(filters, page, pageSize),
+    queryFn: () => businessAnalyticsApi.getSalesSettlement(filters, page, pageSize).then((r) => r.data),
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
   })
 }

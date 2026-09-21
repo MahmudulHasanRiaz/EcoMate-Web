@@ -13,13 +13,13 @@ export interface DrilldownItem {
 }
 
 /** §4.2 overview drill paths — every link propagates the current filter params. */
-export function DrilldownPanel({ filters }: { filters: AnalyticsFilters }) {
+export function DrilldownPanel({ filters, items }: { filters: AnalyticsFilters; items?: DrilldownItem[] }) {
   const base = buildOverviewQuery(filters)
   const href = (to: string, params?: Record<string, string>) => {
     const qs = new URLSearchParams({ ...base, ...(params ?? {}) }).toString()
     return `${to}${qs ? `?${qs}` : ''}`
   }
-  const items: DrilldownItem[] = [
+  const rows: DrilldownItem[] = items ?? [
     { label: 'Net Profit → P&L ladder → cost line → orders', description: 'Trace profit into its cost inputs', to: '/op/analytics/overview', params: { view: 'ladder' } },
     { label: 'Contribution → bridge → Delivery Charge Retained', description: 'Single-count bridge operands', to: '/op/analytics/overview', params: { view: 'bridge' } },
     { label: 'Not-yet-recognised pipeline', description: 'Pre-delivery orders by stage', to: '/op/orders', params: { deliveryOutcome: 'in_fulfilment' } },
@@ -35,7 +35,7 @@ export function DrilldownPanel({ filters }: { filters: AnalyticsFilters }) {
       </CardHeader>
       <CardContent>
         <div className="divide-y divide-border/50">
-          {items.map((i) => (
+          {rows.map((i) => (
             <a key={i.label} href={href(i.to, i.params)} className="flex items-center justify-between py-2 hover:opacity-80">
               <span>
                 <span className="block text-sm font-medium">{i.label}</span>
