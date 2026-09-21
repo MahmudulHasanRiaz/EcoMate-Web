@@ -333,6 +333,23 @@ export class CourierWebhookService {
         lastSyncedAt: new Date(),
       },
     });
+
+    // Stamp the pickup/delivery event timestamps. These columns are the
+    // authoritative event times for KPI/reporting queries; only the manual
+    // dispatch board used to set them, so courier-driven progression left
+    // them NULL. First write wins (a repeated webhook for the same event
+    // must not move the original timestamp).
+    if (status === 'PICKED_UP') {
+      await this.prisma.dispatch.updateMany({
+        where: { courier: courier as any, consignmentId, pickedUpAt: null },
+        data: { pickedUpAt: new Date() },
+      });
+    } else if (status === 'DELIVERED') {
+      await this.prisma.dispatch.updateMany({
+        where: { courier: courier as any, consignmentId, deliveredAt: null },
+        data: { deliveredAt: new Date() },
+      });
+    }
   }
 
   private async tryAdvanceOrderStatus(orderId: string, targetName: string) {

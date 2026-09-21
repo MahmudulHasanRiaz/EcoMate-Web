@@ -12,10 +12,11 @@ import {
   RotateCcw,
   Coins,
   AlertTriangle,
+  CircleAlert,
 } from 'lucide-react'
 import { dashboardApi } from '../api'
 import { formatCurrency, formatNumber } from '../utils'
-import type { WidgetProps } from '../types'
+import type { DatePresetKey, WidgetProps } from '../types'
 
 interface KpiTile {
   label: string
@@ -27,36 +28,62 @@ interface KpiTile {
   link: string
 }
 
+/** Human label of the selected period, shown so no number is ambiguous. */
+export const PERIOD_LABELS: Record<DatePresetKey, string> = {
+  today: 'Today',
+  yesterday: 'Yesterday',
+  last_7_days: 'Last 7 days',
+  last_30_days: 'Last 30 days',
+  this_month: 'This month',
+  last_month: 'Last month',
+  this_quarter: 'This quarter',
+  this_year: 'This year',
+  all_time: 'All time',
+  custom: 'Custom range',
+}
+
+/** Shown on snapshot metrics, whose numbers carry no period. */
+const SNAPSHOT_LABEL = 'Backlog'
+
 export function OperationalKpiStrip({ dateRange, preset }: WidgetProps) {
   const startStr = dateRange.start.toISOString()
   const endStr = dateRange.end.toISOString()
 
-  const { data: kpiRes, isLoading: kpiLoading } = useQuery({
+  // Period-aware KPI query. The date range is part of the query key so a
+  // filter change always produces a fresh request — never a stale cache hit.
+  const {
+    data: kpiRes,
+    isLoading: kpiLoading,
+    isError: kpiError,
+  } = useQuery({
     queryKey: ['operational-kpis', startStr, endStr],
     queryFn: () => dashboardApi.getOperationalKpis(startStr, endStr),
     refetchInterval: 30_000,
   })
 
-  const { data: stockRes, isLoading: stockLoading } = useQuery({
+  // Low stock is a CURRENT-STATE snapshot: stock on hand is not a period
+  // metric, so this query intentionally has no date range in its key.
+  const {
+    data: stockRes,
+    isLoading: stockLoading,
+    isError: stockError,
+  } = useQuery({
     queryKey: ['dashboard-low-stock-kpi'],
     queryFn: () => dashboardApi.getLowStockProducts(),
     refetchInterval: 60_000,
   })
 
   const kpi = kpiRes?.data
-  const stockCount = stockRes?.data?.count ?? 0
+  const stockCount = stockRes?.data?.count
   const isLoading = kpiLoading || stockLoading
-
-  const periodLabel = (() => {
-    const p = preset.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
-    return p
-  })()
+  const hasError = kpiError || stockError
+  const periodLabel = PERIOD_LABELS[preset] ?? PERIOD_LABELS.last_30_days
 
   const tiles: KpiTile[] = [
     {
       label: 'New Orders',
       value: kpi ? formatNumber(kpi.newOrders) : '—',
-      subtext: `${periodLabel} range`,
+      subtext: periodLabel,
       icon: <ShoppingCart className="h-4 w-4 text-blue-500" />,
       bgClass: 'bg-blue-500/10',
       borderClass: 'border-blue-500/20',
@@ -65,7 +92,7 @@ export function OperationalKpiStrip({ dateRange, preset }: WidgetProps) {
     {
       label: 'Confirmed',
       value: kpi ? formatNumber(kpi.confirmed) : '—',
-      subtext: `${periodLabel} range`,
+      subtext: periodLabel,
       icon: <PackageCheck className="h-4 w-4 text-indigo-500" />,
       bgClass: 'bg-indigo-500/10',
       borderClass: 'border-indigo-500/20',
@@ -74,7 +101,7 @@ export function OperationalKpiStrip({ dateRange, preset }: WidgetProps) {
     {
       label: 'Packed',
       value: kpi ? formatNumber(kpi.packed) : '—',
-      subtext: `${periodLabel} range`,
+      subtext: periodLabel,
       icon: <Package className="h-4 w-4 text-cyan-500" />,
       bgClass: 'bg-cyan-500/10',
       borderClass: 'border-cyan-500/20',
@@ -83,7 +110,7 @@ export function OperationalKpiStrip({ dateRange, preset }: WidgetProps) {
     {
       label: 'Picked Up',
       value: kpi ? formatNumber(kpi.pickedUp) : '—',
-      subtext: `${periodLabel} range`,
+      subtext: periodLabel,
       icon: <Truck className="h-4 w-4 text-violet-500" />,
       bgClass: 'bg-violet-500/10',
       borderClass: 'border-violet-500/20',
@@ -92,7 +119,7 @@ export function OperationalKpiStrip({ dateRange, preset }: WidgetProps) {
     {
       label: 'Delivered',
       value: kpi ? formatNumber(kpi.delivered) : '—',
-      subtext: `${periodLabel} range`,
+      subtext: periodLabel,
       icon: <TruckIcon className="h-4 w-4 text-emerald-500" />,
       bgClass: 'bg-emerald-500/10',
       borderClass: 'border-emerald-500/20',
@@ -101,7 +128,7 @@ export function OperationalKpiStrip({ dateRange, preset }: WidgetProps) {
     {
       label: 'Pending Payments',
       value: kpi ? formatNumber(kpi.pendingPayments) : '—',
-      subtext: 'Current backlog',
+      subtext: SNAPSHOT_LABEL,
       icon: <Wallet className="h-4 w-4 text-amber-500" />,
       bgClass: 'bg-amber-500/10',
       borderClass: 'border-amber-500/20',
@@ -110,7 +137,7 @@ export function OperationalKpiStrip({ dateRange, preset }: WidgetProps) {
     {
       label: 'Pending Refunds',
       value: kpi ? formatNumber(kpi.pendingRefunds) : '—',
-      subtext: 'Current backlog',
+      subtext: SNAPSHOT_LABEL,
       icon: <RotateCcw className="h-4 w-4 text-rose-500" />,
       bgClass: 'bg-rose-500/10',
       borderClass: 'border-rose-500/20',
@@ -119,7 +146,7 @@ export function OperationalKpiStrip({ dateRange, preset }: WidgetProps) {
     {
       label: 'Revenue',
       value: kpi ? formatCurrency(kpi.revenue) : '—',
-      subtext: `${periodLabel} range`,
+      subtext: periodLabel,
       icon: <Coins className="h-4 w-4 text-fuchsia-500" />,
       bgClass: 'bg-fuchsia-500/10',
       borderClass: 'border-fuchsia-500/20',
@@ -127,46 +154,59 @@ export function OperationalKpiStrip({ dateRange, preset }: WidgetProps) {
     },
     {
       label: 'Low Stock',
-      value: formatNumber(stockCount),
-      subtext: 'Items below limit',
+      value: stockCount !== undefined ? formatNumber(stockCount) : '—',
+      subtext: 'In stock',
       icon: (
         <AlertTriangle
-          className={`h-4 w-4 ${stockCount > 0 ? 'text-destructive' : 'text-gray-400'}`}
+          className={`h-4 w-4 ${stockCount ? 'text-destructive' : 'text-gray-400'}`}
         />
       ),
-      bgClass: stockCount > 0 ? 'bg-destructive/10' : 'bg-muted',
-      borderClass:
-        stockCount > 0 ? 'border-destructive/20' : 'border-gray-500/20',
+      bgClass: stockCount ? 'bg-destructive/10' : 'bg-muted',
+      borderClass: stockCount ? 'border-destructive/20' : 'border-gray-500/20',
       link: '/op/inventory',
     },
   ]
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-9 gap-3">
-      {tiles.map((tile) => (
-        <Link key={tile.label} to={tile.link as any} className="block h-full">
-          <div
-            className={`group relative flex flex-col h-full min-h-[110px] rounded-xl border bg-card p-3 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${tile.borderClass} ${isLoading ? 'opacity-75' : ''}`}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                {tile.label}
-              </span>
-              <div className={`p-1.5 rounded-md ${tile.bgClass}`}>
-                {tile.icon}
+    <div className="space-y-2">
+      {hasError && (
+        <p
+          role="alert"
+          className="flex items-center gap-1.5 text-[11px] font-medium text-destructive"
+        >
+          <CircleAlert className="h-3.5 w-3.5" />
+          Some KPIs could not be loaded — showing values where available.
+        </p>
+      )}
+      {/* 5 columns at lg+: row 1 is the order pipeline (New → Confirmed →
+          Packed → Picked Up → Delivered), row 2 is the operational backlog.
+          Wide enough that no label clips; uniform fixed-height tiles. */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        {tiles.map((tile) => (
+          <Link key={tile.label} to={tile.link as any} className="block h-full">
+            <div
+              className={`flex flex-col h-[104px] overflow-hidden rounded-xl border bg-card p-2.5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${tile.borderClass} ${isLoading ? 'opacity-75' : ''}`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground leading-tight line-clamp-2">
+                  {tile.label}
+                </span>
+                <div className={`shrink-0 p-1.5 rounded-md ${tile.bgClass}`}>
+                  {tile.icon}
+                </div>
+              </div>
+              <div className="mt-auto space-y-0.5">
+                <span className="block text-xl font-extrabold text-foreground tabular-nums leading-tight">
+                  {tile.value}
+                </span>
+                <p className="text-[10px] text-muted-foreground font-medium leading-tight truncate">
+                  {tile.subtext}
+                </p>
               </div>
             </div>
-            <div className="mt-1.5 space-y-0.5 flex-1">
-              <span className="block text-xl font-extrabold text-foreground tabular-nums">
-                {tile.value}
-              </span>
-              <p className="text-[10px] text-muted-foreground font-medium leading-tight">
-                {tile.subtext}
-              </p>
-            </div>
-          </div>
-        </Link>
-      ))}
+          </Link>
+        ))}
+      </div>
     </div>
   )
 }

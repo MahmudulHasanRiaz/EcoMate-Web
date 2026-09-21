@@ -362,7 +362,13 @@ export class DispatchService {
     // Validate transition BEFORE transaction
     const current = await this.prisma.dispatch.findUnique({
       where: { id },
-      select: { status: true },
+      select: {
+        status: true,
+        orderId: true,
+        courier: true,
+        pickedUpAt: true,
+        deliveredAt: true,
+      },
     });
     if (!current) throw new NotFoundException('Dispatch not found');
     const allowed = DISPATCH_TRANSITIONS[current.status] || [];
@@ -372,16 +378,21 @@ export class DispatchService {
       );
     }
 
+    // Event timestamps. These columns are the authoritative event times for
+    // KPI/reporting, so the transition that defines them MUST persist them.
+    // Pickup/delivery are stamped once (first write wins) — re-entering a
+    // status later must never move the original event time. Only a RETURNED
+    // parcel retracts its delivery claim.
     const data: any = { status: status as any };
     switch (status) {
       case 'HANDED_OVER':
         data.handedOverAt = new Date();
         break;
       case 'PICKED_UP':
-        data.pickedUpAt = new Date();
+        if (!current.pickedUpAt) data.pickedUpAt = new Date();
         break;
       case 'DELIVERED':
-        data.deliveredAt = new Date();
+        if (!current.deliveredAt) data.deliveredAt = new Date();
         break;
       case 'RETURNED':
         data.deliveredAt = null;
@@ -393,19 +404,17 @@ export class DispatchService {
       // Atomic conditional update: only one request wins
       const updateResult = await tx.dispatch.updateMany({
         where: { id, status: current.status as any },
-        data: {
-          status: status as any,
-          handedOverAt: data.handedOverAt || null,
-        },
+        data,
       });
 
       if (updateResult.count === 0) {
         return { claimed: false, dispatch: await this.findOne(id) };
       }
 
-      // Stock operations — only if we won the claim
-      const dispatch = await this.findOne(id);
-      const productMapping = dispatch.productMapping as any[] | null;
+      // Read the row INSIDE the transaction: a client outside it would not see
+      // the update above and would hand a stale status to the order sync.
+      const dispatch = await tx.dispatch.findUnique({ where: { id } });
+      if (!dispatch) return { claimed: false, dispatch: null };
 
       if (
         status === 'HANDED_OVER' ||
@@ -445,10 +454,13 @@ export class DispatchService {
       return { claimed: true, dispatch };
     });
 
-    if (result.claimed) {
+    if (result.claimed && result.dispatch) {
+      // Sync the ORDER from the status this transition actually applied — not
+      // from a re-read, and not one step behind (which silently dropped the
+      // final Delivered advance).
       await this.syncOrderStatus(
         result.dispatch.orderId,
-        result.dispatch.status,
+        status,
         result.dispatch.courier,
         performedBy,
       );
@@ -819,6 +831,15 @@ export class DispatchService {
               : undefined,
             ...(result.trackingUrl
               ? { trackingUrl: result.trackingUrl }
+              : {}),
+            // Stamp the pickup/delivery event time (authoritative for KPI and
+            // reporting queries). First write wins: a later sync must not move
+            // the original event timestamp.
+            ...(mappedStatus === 'PICKED_UP' && !dispatch.pickedUpAt
+              ? { pickedUpAt: statusAt ?? new Date() }
+              : {}),
+            ...(mappedStatus === 'DELIVERED' && !dispatch.deliveredAt
+              ? { deliveredAt: statusAt ?? new Date() }
               : {}),
           },
         });

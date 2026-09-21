@@ -225,8 +225,8 @@ export class DashboardService {
          INNER JOIN "Order" o ON o.id = oi."orderId" AND o."trashedAt" IS NULL
          INNER JOIN "Product" p ON p.id = oi."productId"
          WHERE oi."productId" IS NOT NULL
-           AND ($1::timestamptz IS NULL OR o."createdAt" >= $1)
-           AND ($2::timestamptz IS NULL OR o."createdAt" <= $2)
+           AND ($1::timestamp IS NULL OR (o."createdAt" AT TIME ZONE 'UTC') >= ($1::timestamp AT TIME ZONE 'UTC'))
+           AND ($2::timestamp IS NULL OR (o."createdAt" AT TIME ZONE 'UTC') <= ($2::timestamp AT TIME ZONE 'UTC'))
          GROUP BY oi."productId", p.name, p.images
          ORDER BY quantity DESC
          LIMIT $3::int`,
@@ -282,8 +282,8 @@ export class DashboardService {
                 SUM(amount)::text AS revenue
          FROM "Payment"
          WHERE status = 'PAID'
-           AND ($1::timestamptz IS NULL OR "createdAt" >= $1)
-           AND ($2::timestamptz IS NULL OR "createdAt" <= $2)
+           AND ($1::timestamp IS NULL OR ("createdAt" AT TIME ZONE 'UTC') >= ($1::timestamp AT TIME ZONE 'UTC'))
+           AND ($2::timestamp IS NULL OR ("createdAt" AT TIME ZONE 'UTC') <= ($2::timestamp AT TIME ZONE 'UTC'))
          GROUP BY "gatewayCode"`,
         start,
         end,
@@ -400,87 +400,110 @@ export class DashboardService {
       const periodEnd = end ?? new Date();
       const dateFilter = { gte: periodStart, lte: periodEnd };
 
-      // Resolve status IDs once (avoid N+1 per query).
-      const [confirmedStatus, packedStatus, deliveredStatus] =
-        await Promise.all([
-          this.prisma.orderStatus.findUnique({ where: { name: 'Confirmed' } }),
-          this.prisma.orderStatus.findUnique({ where: { name: 'Packed' } }),
-          this.prisma.orderStatus.findUnique({ where: { name: 'Delivered' } }),
-        ]);
-
-      const confirmedId = confirmedStatus?.id;
-      const packedId = packedStatus?.id;
-
-      // New Orders: orders created in the selected period (not trashed).
+      // ── New Orders ─────────────────────────────────────────────────────
+      // Creation EVENT: orders created within the period (not trashed).
+      // Uses the canonical indexed `createdAt` column.
       const newOrders = await this.prisma.order.count({
         where: { createdAt: dateFilter, trashedAt: null },
       });
 
-      // Confirmed: orders currently in Confirmed status whose createdAt
-      // falls in the selected period.
-      let confirmedCount = 0;
-      if (confirmedId) {
-        confirmedCount = await this.prisma.order.count({
-          where: {
-            statusId: confirmedId,
-            createdAt: dateFilter,
-            trashedAt: null,
-          },
-        });
-      }
+      // ── Lifecycle events (Confirmed / Packed / Picked Up / Delivered) ──
+      // These are TRANSITION counts, not "current status" counts: an order
+      // created last month but delivered today counts in today's range, and
+      // an order confirmed in range still counts after it later ships.
+      //
+      // Authoritative event sources (audited, see report):
+      //  1. `Order.timeline` JSONB — every order-status transition written by
+      //     OrdersService.updateStatus (manual staff, courier webhook advance,
+      //     bulk transitions) as {status, oldStatus, timestamp, ...}, plus
+      //     courier events from webhooks as {type:'courier', status:'PICKED_UP'
+      //     |'DELIVERED', timestamp}. This is the only record that covers both
+      //     manual and courier-driven progression.
+      //  2. `Dispatch.pickedUpAt` / `Dispatch.deliveredAt` — set by the manual
+      //     dispatch board. (The courier webhook/sync paths also populate them
+      //     now; historical rows may still be NULL, which the timeline covers.)
+      //
+      // DISTINCT order_id across BOTH sources guarantees an order is counted
+      // once even when it has multiple dispatches or repeated transitions
+      // (e.g. Confirmed → Hold → Confirmed).
+      type LifecycleRow = {
+        confirmed: number;
+        packed: number;
+        picked_up: number;
+        delivered: number;
+      };
+      const [lifecycle] = await this.prisma.$queryRawUnsafe<LifecycleRow[]>(
+        `WITH period AS (
+           -- Params arrive as timezone-less UTC wall clock (Prisma sends
+           -- DateTime params that way). Casting them straight to timestamptz
+           -- would make Postgres read them in the session timezone, shifting
+           -- every boundary by the session offset. Pin them to UTC first.
+           SELECT ($1::timestamp AT TIME ZONE 'UTC') AS range_start,
+                  ($2::timestamp AT TIME ZONE 'UTC') AS range_end
+         ),
+         events AS (
+           -- 1. Order lifecycle transitions recorded in the order timeline
+           SELECT o.id AS order_id, e->>'status' AS status
+           FROM "Order" o
+           CROSS JOIN LATERAL jsonb_array_elements(COALESCE(o.timeline::jsonb, '[]'::jsonb)) e
+           CROSS JOIN period p
+           WHERE o."trashedAt" IS NULL
+             AND e ? 'timestamp'
+             AND e->>'timestamp' ~ '^\\d{4}-\\d{2}-\\d{2}'
+             AND (e->>'timestamp')::timestamptz BETWEEN p.range_start AND p.range_end
+           UNION ALL
+           -- 2a. Pickup event (manual dispatch board)
+           --     Dispatch timestamp columns are timestamp-without-time-zone
+           --     holding UTC wall clock (Prisma's DateTime convention), so they
+           --     MUST be pinned to UTC before comparing against the timestamptz
+           --     period bounds. Without this the comparison silently shifts by
+           --     the session offset and disagrees with the timeline branch.
+           SELECT d."orderId", 'PICKED_UP'
+           FROM "Dispatch" d
+           JOIN "Order" o ON o.id = d."orderId" AND o."trashedAt" IS NULL
+           CROSS JOIN period p
+           WHERE (d."pickedUpAt" AT TIME ZONE 'UTC') BETWEEN p.range_start AND p.range_end
+           UNION ALL
+           -- 2b. Delivery event (manual dispatch board)
+           SELECT d."orderId", 'DELIVERED'
+           FROM "Dispatch" d
+           JOIN "Order" o ON o.id = d."orderId" AND o."trashedAt" IS NULL
+           CROSS JOIN period p
+           WHERE (d."deliveredAt" AT TIME ZONE 'UTC') BETWEEN p.range_start AND p.range_end
+         )
+         SELECT
+           COUNT(DISTINCT order_id) FILTER (WHERE status = 'Confirmed')::int AS confirmed,
+           COUNT(DISTINCT order_id) FILTER (WHERE status = 'Packed')::int AS packed,
+           COUNT(DISTINCT order_id) FILTER (WHERE status = 'PICKED_UP')::int AS picked_up,
+           COUNT(DISTINCT order_id) FILTER (WHERE status IN ('Delivered', 'DELIVERED'))::int AS delivered
+         FROM events`,
+        periodStart,
+        periodEnd,
+      );
 
-      // Packed: orders currently in Packed status within selected period.
-      let packedCount = 0;
-      if (packedId) {
-        packedCount = await this.prisma.order.count({
-          where: {
-            statusId: packedId,
-            createdAt: dateFilter,
-            trashedAt: null,
-          },
-        });
-      }
-
-      // Picked Up: distinct orders with a dispatch in PICKED_UP state,
-      // measured by pickedUpAt timestamp (not order createdAt).
-      // distinct: ['orderId'] prevents double-counting.
-      const pickedUpDispatches = await this.prisma.dispatch.findMany({
-        where: {
-          status: 'PICKED_UP',
-          pickedUpAt: dateFilter,
-        },
-        select: { orderId: true },
-        distinct: ['orderId'],
-      });
-      const pickedUpCount = pickedUpDispatches.length;
-
-      // Delivered: distinct orders with a dispatch in DELIVERED state,
-      // measured by deliveredAt timestamp.
-      const deliveredDispatches = await this.prisma.dispatch.findMany({
-        where: {
-          status: 'DELIVERED',
-          deliveredAt: dateFilter,
-        },
-        select: { orderId: true },
-        distinct: ['orderId'],
-      });
-      const deliveredCount = deliveredDispatches.length;
-
-      // Pending Payments: current outstanding PENDING payments (snapshot,
-      // NOT period-filtered — this is an actionable backlog metric).
+      // ── Pending Payments ───────────────────────────────────────────────
+      // SEMANTICS: current outstanding backlog (NOT period-filtered).
+      // Payment rows in PENDING status = online payments recorded but not yet
+      // verified/completed — the actionable verification backlog. This mirrors
+      // the existing pending-payments widget so both show the same number.
+      // Deliberately excludes UNPAID (COD cash expected on delivery — not an
+      // actionable pending item) and terminal states (PAID/FAILED/...).
       const pendingPayments = await this.prisma.payment.count({
         where: { status: 'PENDING' },
       });
 
-      // Pending Refunds: current pending refund backlog (snapshot).
+      // ── Pending Refunds ────────────────────────────────────────────────
+      // SEMANTICS: current outstanding backlog (NOT period-filtered).
+      // 'pending' is the state the refunds board shows Approve/Reject for.
       const pendingRefunds = await this.prisma.refund.count({
         where: { status: 'pending' },
       });
 
-      // Revenue: sum of PAID payment amounts within selected period.
-      // Payment date (not order date) is the authoritative business date
-      // for revenue recognition. Cancelled/refunded payments excluded
-      // by the PAID status gate.
+      // ── Revenue ────────────────────────────────────────────────────────
+      // Payment EVENT within the period: PAID payment rows dated by the
+      // payment's own `createdAt` (payment date), never the order date.
+      // The PAID gate excludes FAILED/CANCELLED and unpaid COD rows; a
+      // reversed/refunded payment leaves PAID, so it drops out of revenue.
       const revenueAgg = await this.prisma.payment.aggregate({
         _sum: { amount: true },
         where: {
@@ -491,10 +514,10 @@ export class DashboardService {
 
       return {
         newOrders,
-        confirmed: confirmedCount,
-        packed: packedCount,
-        pickedUp: pickedUpCount,
-        delivered: deliveredCount,
+        confirmed: lifecycle?.confirmed ?? 0,
+        packed: lifecycle?.packed ?? 0,
+        pickedUp: lifecycle?.picked_up ?? 0,
+        delivered: lifecycle?.delivered ?? 0,
         pendingPayments,
         pendingRefunds,
         revenue: Number(revenueAgg?._sum?.amount || 0),

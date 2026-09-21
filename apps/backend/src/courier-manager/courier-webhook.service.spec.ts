@@ -41,6 +41,7 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       dispatch: {
         upsert: jest.fn().mockResolvedValue({}),
         findFirst: jest.fn().mockResolvedValue(null),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       courierDispatchLog: {
         create: jest.fn().mockResolvedValue({}),
@@ -526,6 +527,37 @@ describe('CourierWebhookService — PARTIAL rules', () => {
         'order-1',
         expect.objectContaining({ statusId: 'status-shipping' }),
         'system',
+      );
+    });
+
+    it('order.picked stamps dispatch.pickedUpAt so pickup KPIs have an event time', async () => {
+      await service.handlePathao({
+        event: 'order.picked',
+        consignment_id: 'CG-1',
+      });
+
+      // First write wins: only stamped while still null.
+      expect(prisma.dispatch.updateMany).toHaveBeenCalledWith({
+        where: {
+          courier: 'pathao',
+          consignmentId: 'CG-1',
+          pickedUpAt: null,
+        },
+        data: { pickedUpAt: expect.any(Date) },
+      });
+    });
+
+    it('does not re-stamp pickedUpAt on a repeated pickup webhook', async () => {
+      // A later event maps to IN_TRANSIT (not PICKED_UP) → no pickup stamp.
+      await service.handlePathao({
+        event: 'order.in-transit',
+        consignment_id: 'CG-1',
+      });
+
+      expect(prisma.dispatch.updateMany).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ pickedUpAt: expect.any(Date) }),
+        }),
       );
     });
 

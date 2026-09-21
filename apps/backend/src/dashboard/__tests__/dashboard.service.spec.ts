@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { InternalServerErrorException } from '@nestjs/common';
 import { DashboardService } from '../dashboard.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -6,25 +7,11 @@ describe('DashboardService', () => {
   let service: DashboardService;
   let prisma: any;
 
-  const now = new Date('2025-06-15T10:30:00.000Z');
-
   const mockPrisma = {
-    orderStatus: {
-      findUnique: jest.fn(),
-    },
-    order: {
-      count: jest.fn(),
-    },
-    dispatch: {
-      findMany: jest.fn(),
-    },
-    payment: {
-      count: jest.fn(),
-      aggregate: jest.fn(),
-    },
-    refund: {
-      count: jest.fn(),
-    },
+    order: { count: jest.fn() },
+    payment: { count: jest.fn(), aggregate: jest.fn() },
+    refund: { count: jest.fn() },
+    $queryRawUnsafe: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -42,25 +29,8 @@ describe('DashboardService', () => {
   });
 
   describe('getOperationalKpis', () => {
-    const confirmedId = 'status-confirmed-id';
-    const packedId = 'status-packed-id';
-    const deliveredId = 'status-delivered-id';
-
-    beforeEach(() => {
-      prisma.orderStatus.findUnique.mockImplementation(
-        (where: { where: { name: string } }) => {
-          const name = where.where.name;
-          const map: Record<string, string> = {
-            Confirmed: confirmedId,
-            Packed: packedId,
-            Delivered: deliveredId,
-          };
-          return Promise.resolve({ id: map[name], name });
-        },
-      );
-    });
-
-    function mockCounts(counts: {
+    /** Default happy-path mocks: order count, lifecycle query, snapshots. */
+    function mockAll(overrides: {
       newOrders?: number;
       confirmed?: number;
       packed?: number;
@@ -68,53 +38,34 @@ describe('DashboardService', () => {
       delivered?: number;
       pendingPayments?: number;
       pendingRefunds?: number;
-      revenueSum?: number | null;
+      revenue?: number | null;
     }) {
-      // order.count is called 3 times: newOrders, confirmed, packed
-      const orderCountCalls: any[] = [];
-      if (counts.newOrders !== undefined) orderCountCalls.push(counts.newOrders);
-      if (counts.confirmed !== undefined) orderCountCalls.push(counts.confirmed);
-      if (counts.packed !== undefined) orderCountCalls.push(counts.packed);
-      prisma.order.count.mockImplementation(() =>
-        Promise.resolve(orderCountCalls.shift() || 0),
-      );
-
-      prisma.dispatch.findMany.mockImplementation((args: any) => {
-        const status = args.where?.status;
-        if (status === 'PICKED_UP') {
-          return Promise.resolve(
-            Array.from({ length: counts.pickedUp || 0 }, (_, i) => ({
-              orderId: `order-pickup-${i}`,
-            })),
-          );
-        }
-        if (status === 'DELIVERED') {
-          return Promise.resolve(
-            Array.from({ length: counts.delivered || 0 }, (_, i) => ({
-              orderId: `order-delivered-${i}`,
-            })),
-          );
-        }
-        return Promise.resolve([]);
-      });
-
-      prisma.payment.count.mockResolvedValue(counts.pendingPayments || 0);
-      prisma.refund.count.mockResolvedValue(counts.pendingRefunds || 0);
+      prisma.order.count.mockResolvedValue(overrides.newOrders ?? 0);
+      prisma.$queryRawUnsafe.mockResolvedValue([
+        {
+          confirmed: overrides.confirmed ?? 0,
+          packed: overrides.packed ?? 0,
+          picked_up: overrides.pickedUp ?? 0,
+          delivered: overrides.delivered ?? 0,
+        },
+      ]);
+      prisma.payment.count.mockResolvedValue(overrides.pendingPayments ?? 0);
+      prisma.refund.count.mockResolvedValue(overrides.pendingRefunds ?? 0);
       prisma.payment.aggregate.mockResolvedValue({
-        _sum: { amount: counts.revenueSum },
+        _sum: { amount: overrides.revenue ?? 0 },
       });
     }
 
-    it('should return all KPIs with correct values when date range provided', async () => {
-      mockCounts({
+    it('returns the full operational KPI payload with view-friendly names', async () => {
+      mockAll({
         newOrders: 42,
         confirmed: 30,
         packed: 25,
         pickedUp: 20,
         delivered: 18,
-        pendingPayments: 3,
+        pendingPayments: 7,
         pendingRefunds: 2,
-        revenueSum: 125000,
+        revenue: 125000,
       });
 
       const result = await service.getOperationalKpis(
@@ -128,75 +79,102 @@ describe('DashboardService', () => {
         packed: 25,
         pickedUp: 20,
         delivered: 18,
-        pendingPayments: 3,
+        pendingPayments: 7,
         pendingRefunds: 2,
         revenue: 125000,
       });
     });
 
-    it('should filter order-based metrics by the selected date range with createdAt', async () => {
-      mockCounts({ newOrders: 5, confirmed: 3, packed: 2 });
+    // ── New Orders: creation event on the canonical column ──────────────
+    it('counts New Orders by order createdAt within the period, excluding trashed', async () => {
+      mockAll({});
+      const start = new Date('2025-06-01T00:00:00.000Z');
+      const end = new Date('2025-06-15T23:59:59.999Z');
 
-      await service.getOperationalKpis('2025-06-01', '2025-06-15');
-
-      // newOrders query uses createdAt filter
-      expect(prisma.order.count).toHaveBeenCalledWith({
-        where: {
-          createdAt: { gte: expect.any(Date), lte: expect.any(Date) },
-          trashedAt: null,
-        },
-      });
-
-      // confirmed query uses statusId + createdAt filter
-      const confirmedCall = (prisma.order.count as jest.Mock).mock.calls[1];
-      expect(confirmedCall[0].where.statusId).toBe(confirmedId);
-
-      // packed query uses statusId + createdAt filter
-      const packedCall = (prisma.order.count as jest.Mock).mock.calls[2];
-      expect(packedCall[0].where.statusId).toBe(packedId);
-    });
-
-    it('should filter Picked Up by dispatch.pickedUpAt, not order.createdAt', async () => {
-      mockCounts({ pickedUp: 7 });
-
-      await service.getOperationalKpis('2025-06-01', '2025-06-15');
-
-      const dispatchCall = (prisma.dispatch.findMany as jest.Mock).mock.calls[0];
-      expect(dispatchCall[0].where.status).toBe('PICKED_UP');
-      expect(dispatchCall[0].where.pickedUpAt).toEqual({
-        gte: expect.any(Date),
-        lte: expect.any(Date),
-      });
-    });
-
-    it('should filter Delivered by dispatch.deliveredAt, not order.createdAt', async () => {
-      mockCounts({ delivered: 4 });
-
-      await service.getOperationalKpis('2025-06-01', '2025-06-15');
-
-      const deliveredCall = (prisma.dispatch.findMany as jest.Mock).mock.calls[1];
-      expect(deliveredCall[0].where.status).toBe('DELIVERED');
-      expect(deliveredCall[0].where.deliveredAt).toEqual({
-        gte: expect.any(Date),
-        lte: expect.any(Date),
-      });
-    });
-
-    it('should exclude trashed orders from New Orders count', async () => {
-      mockCounts({ newOrders: 10 });
-
-      await service.getOperationalKpis('2025-06-01', '2025-06-15');
+      await service.getOperationalKpis(start.toISOString(), end.toISOString());
 
       expect(prisma.order.count).toHaveBeenCalledWith({
-        where: {
-          createdAt: { gte: expect.any(Date), lte: expect.any(Date) },
-          trashedAt: null,
-        },
+        where: { createdAt: { gte: start, lte: end }, trashedAt: null },
       });
     });
 
-    it('should NOT date-filter pending payments (current backlog snapshot)', async () => {
-      mockCounts({ pendingPayments: 5 });
+    // ── Lifecycle events: transition-based, not current-status based ─────
+    it('derives Confirmed/Packed/Picked Up/Delivered from lifecycle events, not current order status', async () => {
+      mockAll({ confirmed: 11, packed: 4, pickedUp: 3, delivered: 9 });
+
+      const result = await service.getOperationalKpis(
+        '2025-06-01',
+        '2025-06-15',
+      );
+
+      // The lifecycle query is a raw event aggregation — an order delivered
+      // in the period still counts after it later moves on, so this can never
+      // be expressed as a current-status count.
+      expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(1);
+      expect(prisma.order.count).toHaveBeenCalledTimes(1); // New Orders only
+      expect(result.confirmed).toBe(11);
+      expect(result.packed).toBe(4);
+      expect(result.pickedUp).toBe(3);
+      expect(result.delivered).toBe(9);
+    });
+
+    it('passes the selected period to the lifecycle query as bound parameters', async () => {
+      mockAll({});
+      const start = new Date('2025-06-01T00:00:00.000Z');
+      const end = new Date('2025-06-15T23:59:59.999Z');
+
+      await service.getOperationalKpis(start.toISOString(), end.toISOString());
+
+      const params = prisma.$queryRawUnsafe.mock.calls[0].slice(1);
+      expect(params).toEqual([start, end]);
+    });
+
+    it('lifecycle query deduplicates orders across sources and repeated transitions', async () => {
+      mockAll({});
+
+      await service.getOperationalKpis('2025-06-01', '2025-06-15');
+
+      const sql: string = prisma.$queryRawUnsafe.mock.calls[0][0];
+      // DISTINCT order_id for every metric → no double counting from
+      // multiple dispatches or Confirmed→Hold→Confirmed cycles.
+      expect(sql).toContain('COUNT(DISTINCT order_id) FILTER');
+      expect(sql).toMatch(/status = 'Confirmed'/);
+      expect(sql).toMatch(/status = 'Packed'/);
+      expect(sql).toMatch(/status = 'PICKED_UP'/);
+      expect(sql).toMatch(/status IN \('Delivered', 'DELIVERED'\)/);
+    });
+
+    it('lifecycle query unions the order timeline with dispatch event timestamps', async () => {
+      mockAll({});
+
+      await service.getOperationalKpis('2025-06-01', '2025-06-15');
+
+      const sql: string = prisma.$queryRawUnsafe.mock.calls[0][0];
+      // Source 1: order timeline transitions (manual + courier-driven).
+      expect(sql).toContain('jsonb_array_elements');
+      expect(sql).toContain('timeline');
+      // Source 2: dispatch pickup/delivery event columns.
+      expect(sql).toContain('"pickedUpAt"');
+      expect(sql).toContain('"deliveredAt"');
+    });
+
+    it('lifecycle query excludes trashed orders and guards malformed timestamps', async () => {
+      mockAll({});
+
+      await service.getOperationalKpis('2025-06-01', '2025-06-15');
+
+      const sql: string = prisma.$queryRawUnsafe.mock.calls[0][0];
+      // Trashed orders can never contribute to a KPI.
+      expect(sql).toMatch(/"trashedAt" IS NULL/g);
+      // Defensive guards so a malformed/incomplete timeline entry can never
+      // crash the aggregate (missing timestamp / non-ISO value).
+      expect(sql).toContain("e ? 'timestamp'");
+      expect(sql).toContain("e->>'timestamp' ~");
+    });
+
+    // ── Pending Payments / Refunds: explicit current-state snapshots ─────
+    it('reports Pending Payments as a current backlog snapshot (not period-filtered)', async () => {
+      mockAll({ pendingPayments: 7 });
 
       await service.getOperationalKpis('2025-06-01', '2025-06-15');
 
@@ -205,8 +183,8 @@ describe('DashboardService', () => {
       });
     });
 
-    it('should NOT date-filter pending refunds (current backlog snapshot)', async () => {
-      mockCounts({ pendingRefunds: 3 });
+    it('reports Pending Refunds as a current backlog snapshot (not period-filtered)', async () => {
+      mockAll({ pendingRefunds: 2 });
 
       await service.getOperationalKpis('2025-06-01', '2025-06-15');
 
@@ -215,86 +193,130 @@ describe('DashboardService', () => {
       });
     });
 
-    it('should filter revenue by PAID payment dates in the selected period', async () => {
-      mockCounts({ revenueSum: 75000 });
+    // ── Revenue: payment event on the payment date ──────────────────────
+    it('sums Revenue from PAID payments dated by the payment createdAt', async () => {
+      mockAll({ revenue: 75000 });
+      const start = new Date('2025-06-01T00:00:00.000Z');
+      const end = new Date('2025-06-15T23:59:59.999Z');
 
-      await service.getOperationalKpis('2025-06-01', '2025-06-15');
+      await service.getOperationalKpis(start.toISOString(), end.toISOString());
 
       expect(prisma.payment.aggregate).toHaveBeenCalledWith({
         _sum: { amount: true },
         where: {
           status: 'PAID',
-          createdAt: { gte: expect.any(Date), lte: expect.any(Date) },
+          createdAt: { gte: start, lte: end },
         },
       });
     });
 
-    it('should use DISTINCT orderId for dispatch counts to prevent double counting', async () => {
-      // Simulate a dispatch returning 3 entries for the same order
-      prisma.dispatch.findMany.mockResolvedValueOnce([
-        { orderId: 'order-1' },
-        { orderId: 'order-1' },
-        { orderId: 'order-2' },
-      ]);
-      mockCounts({ delivered: 0, pendingPayments: 0, pendingRefunds: 0, revenueSum: 0 });
-      // Override the dispatched counts manually for this test
-      prisma.order.count.mockImplementation(() => Promise.resolve(0));
+    it('returns 0 revenue when the aggregate sum is null', async () => {
+      mockAll({ revenue: null });
 
-      const result = await service.getOperationalKpis('2025-06-01', '2025-06-15');
+      const result = await service.getOperationalKpis(
+        '2025-06-01',
+        '2025-06-15',
+      );
 
-      // Should return 3 (distinct dispatch rows, not deduplicated at SQL level
-      // but distinct: ['orderId'] would handle that; the service counts rows)
-      expect(result.pickedUp).toBe(3);
-    });
-
-    it('should return zero values on empty period when no date range given', async () => {
-      mockCounts({});
-
-      const result = await service.getOperationalKpis();
-
-      expect(result.newOrders).toBe(0);
-      expect(result.confirmed).toBe(0);
-      expect(result.packed).toBe(0);
-      expect(result.pickedUp).toBe(0);
-      expect(result.delivered).toBe(0);
-      expect(result.pendingPayments).toBe(0);
-      expect(result.pendingRefunds).toBe(0);
       expect(result.revenue).toBe(0);
     });
 
-    it('should use today range as fallback for revenue when no end given', async () => {
-      mockCounts({ revenueSum: 1000 });
-      jest.spyOn(service as any, 'getDateRange').mockReturnValue({
-        start: new Date('2025-06-15T00:00:00Z'),
-        end: new Date(),
-      });
+    // ── Period boundaries ──────────────────────────────────────────────
+    it('defaults the period end to now and the start to epoch when no range is given', async () => {
+      mockAll({});
+      const before = Date.now();
 
-      await service.getOperationalKpis('2025-06-01');
+      await service.getOperationalKpis();
 
-      expect(prisma.payment.aggregate).toHaveBeenCalled();
+      const [start, end] = prisma.$queryRawUnsafe.mock.calls[0].slice(1);
+      expect((start as Date).getTime()).toBe(0);
+      expect((end as Date).getTime()).toBeGreaterThanOrEqual(before);
+    });
+
+    it('applies an inclusive Dhaka-day range for a date-only custom range', async () => {
+      mockAll({});
+
+      await service.getOperationalKpis('2025-06-01', '2025-06-15');
+
+      const [start, end] = prisma.$queryRawUnsafe.mock.calls[0].slice(1) as Date[];
+      // Dhaka midnight = 18:00Z the previous day.
+      expect(start.toISOString()).toBe('2025-05-31T18:00:00.000Z');
+      // End of the Dhaka day = 17:59:59.999Z on the selected day.
+      expect(end.toISOString()).toBe('2025-06-15T17:59:59.999Z');
+    });
+
+    it('wraps database failures in an InternalServerErrorException', async () => {
+      prisma.order.count.mockRejectedValue(new Error('db down'));
+
+      await expect(
+        service.getOperationalKpis('2025-06-01', '2025-06-15'),
+      ).rejects.toThrow(InternalServerErrorException);
+    });
+
+    // ── Timezone pinning ───────────────────────────────────────────────
+    // Dispatch/Payment timestamp columns are `timestamp without time zone`
+    // holding UTC wall clock. Comparing them bare against a timestamptz bound
+    // silently shifts by the session offset (Asia/Dhaka = +6h), which made the
+    // dispatch events disagree with the timeline events for the same period.
+    it('pins dispatch event columns to UTC before comparing with period bounds', async () => {
+      mockAll({});
+
+      await service.getOperationalKpis('2025-06-01', '2025-06-15');
+
+      const sql: string = prisma.$queryRawUnsafe.mock.calls[0][0];
+      expect(sql).toContain(`(d."pickedUpAt" AT TIME ZONE 'UTC')`);
+      expect(sql).toContain(`(d."deliveredAt" AT TIME ZONE 'UTC')`);
+    });
+
+    it('pins the period parameters to UTC so the session timezone cannot shift them', async () => {
+      mockAll({});
+
+      await service.getOperationalKpis('2025-06-01', '2025-06-15');
+
+      const sql: string = prisma.$queryRawUnsafe.mock.calls[0][0];
+      // DateTime params arrive as timezone-less UTC wall clock; casting them
+      // straight to timestamptz would re-interpret them in the session zone.
+      expect(sql).toContain(`($1::timestamp AT TIME ZONE 'UTC') AS range_start`);
+      expect(sql).toContain(`($2::timestamp AT TIME ZONE 'UTC') AS range_end`);
     });
   });
 
-  describe('getTodayKpi (backward compat)', () => {
-    it('should delegate to getOperationalKpis with today Dhaka range', async () => {
-      const spy = jest.spyOn(service, 'getOperationalKpis');
+  describe('UTC pinning in other period-filtered raw queries', () => {
+    it('getTopProducts pins order createdAt to UTC', async () => {
+      prisma.$queryRawUnsafe.mockResolvedValue([]);
 
-      // Mock the orderStatus lookups
-      prisma.orderStatus.findUnique.mockResolvedValue({
-        id: 'status-id',
-        name: 'Confirmed',
-      });
-      prisma.order.count.mockResolvedValue(0);
-      prisma.dispatch.findMany.mockResolvedValue([]);
-      prisma.payment.count.mockResolvedValue(0);
-      prisma.refund.count.mockResolvedValue(0);
-      prisma.payment.aggregate.mockResolvedValue({ _sum: { amount: 0 } });
+      await service.getTopProducts('2025-06-01', '2025-06-15');
+
+      const sql: string = prisma.$queryRawUnsafe.mock.calls[0][0];
+      expect(sql).toContain(`(o."createdAt" AT TIME ZONE 'UTC')`);
+    });
+
+    it('getRevenueByPaymentMethod pins payment createdAt to UTC', async () => {
+      prisma.$queryRawUnsafe.mockResolvedValue([]);
+
+      await service.getRevenueByPaymentMethod('2025-06-01', '2025-06-15');
+
+      const sql: string = prisma.$queryRawUnsafe.mock.calls[0][0];
+      expect(sql).toContain(`("createdAt" AT TIME ZONE 'UTC')`);
+    });
+  });
+
+  describe('getTodayKpi (backward compatibility)', () => {
+    it('delegates to getOperationalKpis with the current Dhaka day range', async () => {
+      const spy = jest
+        .spyOn(service, 'getOperationalKpis')
+        .mockResolvedValue({} as any);
 
       await service.getTodayKpi();
 
-      expect(spy).toHaveBeenCalled();
-      expect(spy.mock.calls[0][0]).toBeDefined();
-      expect(spy.mock.calls[0][1]).toBeDefined();
+      expect(spy).toHaveBeenCalledTimes(1);
+      const [startArg, endArg] = spy.mock.calls[0] as unknown as string[];
+      const start = new Date(startArg);
+      const end = new Date(endArg);
+      // Dhaka day: exactly 24h minus 1ms, ending at ...:59:59.999Z.
+      expect(end.getTime() - start.getTime()).toBe(86_399_999);
+      expect(end.getUTCMinutes()).toBe(59);
+      expect(start.getUTCHours()).toBe(18); // 18:00Z = 00:00 Dhaka
       spy.mockRestore();
     });
   });
