@@ -16,11 +16,13 @@ import { toast } from 'sonner'
 
 export function PendingOrders({ dateRange }: WidgetProps) {
   const queryClient = useQueryClient()
+  const startStr = dateRange.start.toISOString()
+  const endStr = dateRange.end.toISOString()
 
   // Fetch pending orders
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['dashboard-pending-orders', dateRange.start.toISOString(), dateRange.end.toISOString()],
-    queryFn: () => dashboardApi.getPendingOrders(dateRange.start.toISOString(), dateRange.end.toISOString()),
+    queryKey: ['dashboard-pending-orders', startStr, endStr],
+    queryFn: () => dashboardApi.getPendingOrders(startStr, endStr),
     refetchInterval: 30_000,
   })
 
@@ -41,9 +43,9 @@ export function PendingOrders({ dateRange }: WidgetProps) {
       ordersApi.updateStatus(orderId, statusId, `Transitioned to ${statusName} from Operations Dashboard`),
     onSuccess: (_, variables) => {
       toast.success(`Order status updated to ${variables.statusName}`)
-      queryClient.invalidateQueries({ queryKey: ['dashboard-pending-orders'] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard-today-kpi'] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard-stats-kpi'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-pending-orders', startStr, endStr] })
+      queryClient.invalidateQueries({ queryKey: ['operational-kpis', startStr, endStr] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats-kpi', startStr, endStr] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-activity'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-pending-payments-alerts'] })
     },

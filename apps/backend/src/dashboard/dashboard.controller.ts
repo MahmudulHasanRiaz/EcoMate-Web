@@ -107,6 +107,15 @@ export class DashboardController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @Get('operational-kpis')
+  async getOperationalKpis(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    return this.dashboardService.getOperationalKpis(startDate, endDate);
+  }
+
+  @Roles('superadmin', 'admin', 'manager')
   @Get('activity-log')
   async getActivityLog() {
     return this.dashboardService.getActivityLog();

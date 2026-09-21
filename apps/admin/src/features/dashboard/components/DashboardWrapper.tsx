@@ -16,7 +16,7 @@ import { ProfileDropdown } from '@/components/profile-dropdown'
 import type { RoleKey } from '../types'
 
 // Import widgets for custom Operations layout
-import { TodayKpiRow } from '../widgets/TodayKpiRow'
+import { OperationalKpiStrip } from '../widgets/OperationalKpiStrip'
 import { PendingOrders } from '../widgets/PendingOrders'
 import { RecentOrders } from '../widgets/RecentOrders'
 import { SystemAlerts } from '../widgets/SystemAlerts'
@@ -69,7 +69,7 @@ export function DashboardWrapper({ route }: DashboardWrapperProps) {
           </div>
 
           {/* Level 1: Executive KPI Overview */}
-          <TodayKpiRow
+          <OperationalKpiStrip
             dateRange={dateRange}
             preset={preset}
             userRole={userRole}

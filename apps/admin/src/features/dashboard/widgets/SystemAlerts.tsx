@@ -12,6 +12,11 @@ import { formatCurrency } from '../utils'
 import type { WidgetProps } from '../types'
 
 export function SystemAlerts(_props: WidgetProps) {
+  // NOTE: SystemAlerts is a current-state alert panel, not period-filtered:
+  // pending payments, pending refunds, and low stock are all actionable
+  // backlogs that must always show the current situation regardless of the
+  // date filter. Only period-based metrics (KPIs, pending orders, recent
+  // orders) respect the global date range.
   const { data: imEnabled = true } = useInventoryManagement()
   const { data: paymentsRes, isLoading: paymentsLoading } = useQuery({
     queryKey: ['dashboard-pending-payments-alerts'],

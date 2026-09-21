@@ -382,30 +382,129 @@ export class DashboardService {
   }
 
   async getTodayKpi() {
+    // Backward-compatible alias: delegates to period-aware implementation
+    // using today's Dhaka range so existing consumers keep working.
+    const todayStart = startOfDhakaDay();
+    const todayEnd = endOfDhakaDay();
+    return this.getOperationalKpis(
+      todayStart.toISOString(),
+      todayEnd.toISOString(),
+    );
+  }
+
+  async getOperationalKpis(startDate?: string, endDate?: string) {
     try {
-      const todayStart = startOfDhakaDay();
-      const todayEnd = endOfDhakaDay();
-      const dateFilter = { createdAt: { gte: todayStart, lte: todayEnd } };
-      const [orders, delivered, pendingPayments, pendingRefunds] =
+      const { start, end } = this.getDateRange(startDate, endDate);
+      // Resolve to non-null Date values (end falls back to now if no end).
+      const periodStart = start ?? new Date(0);
+      const periodEnd = end ?? new Date();
+      const dateFilter = { gte: periodStart, lte: periodEnd };
+
+      // Resolve status IDs once (avoid N+1 per query).
+      const [confirmedStatus, packedStatus, deliveredStatus] =
         await Promise.all([
-          this.prisma.order.count({ where: { ...dateFilter, trashedAt: null } }),
-          this.prisma.order.count({
-            where: { ...dateFilter, status: { name: 'Delivered' }, trashedAt: null },
-          }),
-          this.prisma.payment.count({
-            where: { createdAt: { gte: todayStart }, status: 'PENDING' },
-          }),
-          this.prisma.refund.count({
-            where: { createdAt: { gte: todayStart }, status: 'pending' },
-          }),
+          this.prisma.orderStatus.findUnique({ where: { name: 'Confirmed' } }),
+          this.prisma.orderStatus.findUnique({ where: { name: 'Packed' } }),
+          this.prisma.orderStatus.findUnique({ where: { name: 'Delivered' } }),
         ]);
-      return { orders, delivered, pendingPayments, pendingRefunds };
+
+      const confirmedId = confirmedStatus?.id;
+      const packedId = packedStatus?.id;
+
+      // New Orders: orders created in the selected period (not trashed).
+      const newOrders = await this.prisma.order.count({
+        where: { createdAt: dateFilter, trashedAt: null },
+      });
+
+      // Confirmed: orders currently in Confirmed status whose createdAt
+      // falls in the selected period.
+      let confirmedCount = 0;
+      if (confirmedId) {
+        confirmedCount = await this.prisma.order.count({
+          where: {
+            statusId: confirmedId,
+            createdAt: dateFilter,
+            trashedAt: null,
+          },
+        });
+      }
+
+      // Packed: orders currently in Packed status within selected period.
+      let packedCount = 0;
+      if (packedId) {
+        packedCount = await this.prisma.order.count({
+          where: {
+            statusId: packedId,
+            createdAt: dateFilter,
+            trashedAt: null,
+          },
+        });
+      }
+
+      // Picked Up: distinct orders with a dispatch in PICKED_UP state,
+      // measured by pickedUpAt timestamp (not order createdAt).
+      // distinct: ['orderId'] prevents double-counting.
+      const pickedUpDispatches = await this.prisma.dispatch.findMany({
+        where: {
+          status: 'PICKED_UP',
+          pickedUpAt: dateFilter,
+        },
+        select: { orderId: true },
+        distinct: ['orderId'],
+      });
+      const pickedUpCount = pickedUpDispatches.length;
+
+      // Delivered: distinct orders with a dispatch in DELIVERED state,
+      // measured by deliveredAt timestamp.
+      const deliveredDispatches = await this.prisma.dispatch.findMany({
+        where: {
+          status: 'DELIVERED',
+          deliveredAt: dateFilter,
+        },
+        select: { orderId: true },
+        distinct: ['orderId'],
+      });
+      const deliveredCount = deliveredDispatches.length;
+
+      // Pending Payments: current outstanding PENDING payments (snapshot,
+      // NOT period-filtered — this is an actionable backlog metric).
+      const pendingPayments = await this.prisma.payment.count({
+        where: { status: 'PENDING' },
+      });
+
+      // Pending Refunds: current pending refund backlog (snapshot).
+      const pendingRefunds = await this.prisma.refund.count({
+        where: { status: 'pending' },
+      });
+
+      // Revenue: sum of PAID payment amounts within selected period.
+      // Payment date (not order date) is the authoritative business date
+      // for revenue recognition. Cancelled/refunded payments excluded
+      // by the PAID status gate.
+      const revenueAgg = await this.prisma.payment.aggregate({
+        _sum: { amount: true },
+        where: {
+          status: 'PAID',
+          createdAt: dateFilter,
+        },
+      });
+
+      return {
+        newOrders,
+        confirmed: confirmedCount,
+        packed: packedCount,
+        pickedUp: pickedUpCount,
+        delivered: deliveredCount,
+        pendingPayments,
+        pendingRefunds,
+        revenue: Number(revenueAgg?._sum?.amount || 0),
+      };
     } catch (error) {
       this.logger.error(
-        `getTodayKpi failed: ${(error as Error).message}`,
+        `getOperationalKpis failed: ${(error as Error).message}`,
         (error as Error).stack,
       );
-      throw new InternalServerErrorException('Failed to fetch today KPI');
+      throw new InternalServerErrorException('Failed to fetch operational KPIs');
     }
   }
 

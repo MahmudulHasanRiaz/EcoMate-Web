@@ -1,5 +1,5 @@
 import { apiClient } from '@/lib/api-client'
-import type { OrderSummary, LowStockItem, TopProduct, StatusCount, RevenueByMethod, NewCustomer, PendingRefund, TodayKpi, ActivityEntry } from './types'
+import type { OrderSummary, LowStockItem, TopProduct, StatusCount, RevenueByMethod, NewCustomer, PendingRefund, OperationalKpi, ActivityEntry } from './types'
 
 export interface DashboardStats {
   totalRevenue: number
@@ -37,6 +37,7 @@ export const dashboardApi = {
   getPendingRefunds: () => apiClient.get<PendingRefund[]>('/dashboard/pending-refunds'),
   getPendingDispatch: () => apiClient.get<OrderSummary[]>('/dashboard/pending-dispatch'),
   getPendingPayments: () => apiClient.get<any[]>('/dashboard/pending-payments'),
-  getTodayKpi: () => apiClient.get<TodayKpi>('/dashboard/today-kpi'),
+  getTodayKpi: () => apiClient.get<OperationalKpi>('/dashboard/today-kpi'),
+  getOperationalKpis: (startDate?: string, endDate?: string) => apiClient.get<OperationalKpi>(`/dashboard/operational-kpis${dateParams(startDate, endDate)}`),
   getActivityLog: () => apiClient.get<ActivityEntry[]>('/dashboard/activity-log'),
 }

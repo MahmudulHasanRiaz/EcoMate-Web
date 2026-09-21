@@ -112,9 +112,13 @@ export interface ActivityEntry {
   updatedAt: string
 }
 
-export interface TodayKpi {
-  orders: number
+export interface OperationalKpi {
+  newOrders: number
+  confirmed: number
+  packed: number
+  pickedUp: number
   delivered: number
   pendingPayments: number
   pendingRefunds: number
+  revenue: number
 }

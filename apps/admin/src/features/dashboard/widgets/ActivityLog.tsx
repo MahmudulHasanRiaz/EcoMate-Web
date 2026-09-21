@@ -9,6 +9,10 @@ import { timeAgo } from '../utils'
 import type { WidgetProps } from '../types'
 
 export function ActivityLog(_props: WidgetProps) {
+  // NOTE: ActivityLog is a current-state "recent activity" snapshot, not a
+  // period-filtered metric. It always shows the 20 most-recently-updated
+  // orders regardless of the date filter — this is intentional: operators
+  // need to see the latest activity even outside the selected range.
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['dashboard-activity'],
     queryFn: () => dashboardApi.getActivityLog(),
