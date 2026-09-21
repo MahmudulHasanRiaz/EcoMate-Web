@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
+import { InventoryModule } from '../inventory/inventory.module';
 import { BusinessAnalyticsController } from './business-analytics.controller';
 import { AnalyticsFilterService } from './analytics-filter.service';
 import { AnalyticsPnlService } from './analytics-pnl.service';
@@ -9,10 +10,11 @@ import { AnalyticsProductsService } from './analytics-products.service';
 import { AnalyticsSalesService } from './analytics-sales.service';
 import { AnalyticsCustomersService } from './analytics-customers.service';
 import { AnalyticsMarketingService } from './analytics-marketing.service';
+import { AnalyticsInventoryService } from './analytics-inventory.service';
 import { AnalyticsReconciliationService } from './analytics-reconciliation.service';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, InventoryModule],
   controllers: [BusinessAnalyticsController],
   providers: [
     AnalyticsFilterService,
@@ -23,6 +25,7 @@ import { AnalyticsReconciliationService } from './analytics-reconciliation.servi
     AnalyticsSalesService,
     AnalyticsCustomersService,
     AnalyticsMarketingService,
+    AnalyticsInventoryService,
     AnalyticsReconciliationService,
   ],
   exports: [
@@ -30,10 +33,10 @@ import { AnalyticsReconciliationService } from './analytics-reconciliation.servi
     AnalyticsPnlService,
     AnalyticsFulfillmentService,
     AnalyticsOverviewService,
-    AnalyticsProductsService,
     AnalyticsSalesService,
     AnalyticsCustomersService,
     AnalyticsMarketingService,
+    AnalyticsInventoryService,
     AnalyticsReconciliationService,
   ],
 })

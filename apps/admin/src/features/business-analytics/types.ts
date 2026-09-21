@@ -168,6 +168,8 @@ export interface AnalyticsFilters {
   customerSegment?: string
   deliveryOutcome?: string
   collectionStatus?: string
+  /** Fulfillment location — inventory-scoped pages (OrderItem.sourceWarehouseId). */
+  warehouseId?: string
 }
 
 export const DEFAULT_FILTERS: AnalyticsFilters = { preset: 'last_30_days' }
@@ -668,5 +670,148 @@ export interface MarketingCampaignsResponse {
 
 export interface MarketingUndatedResponse {
   data: MarketingUndatedData
+  meta: OverviewMeta
+}
+
+// ─── P8 Inventory (§2.8 defined period semantics + §4.2 inventory rows) ───────
+
+/** §2.8 reconstruction formula — stated on the value panel. */
+export const INVENTORY_VALUE_BASIS_STATEMENT =
+  'Inventory Value is reconstructed from CostingLot history: ' +
+  'Σ over lots received on or before the valuation date of ' +
+  '(quantity − consumed + restored) × unitCost.'
+
+/** Incomplete history is disclosed, never papered over. */
+export const INVENTORY_CLOSING_ONLY_NOTE =
+  'Lot history is incomplete — value is shown on a closing-only basis from ' +
+  'the current FIFO valuation. Opening, average, turnover and days of ' +
+  'inventory are unavailable.'
+
+/** Movement is a default policy, not a universal truth. */
+export const MOVEMENT_POLICY_LABEL = 'classified by our default 30/90-day policy'
+
+/** Lost sales need a stock-out day plus measurable demand — else unavailable. */
+export const LOST_SALES_NOTE =
+  'Lost sales are reported only for days with stock ≤ 0 where demand is ' +
+  'measurable (recognised sales in the period); otherwise unavailable — ' +
+  'never zero-filled.'
+
+/** §4.2 drill path for the inventory page. */
+export const INVENTORY_DRILL_LABEL =
+  'Inventory value → movement class → product/variant → stock ledger'
+
+export type InventoryValueBasis = 'reconstructed' | 'closing_only'
+
+export interface InventoryAgingBucket {
+  label: string
+  minDays: number
+  maxDays: number | null
+  units: number
+  value: number
+}
+
+export interface InventoryValueData {
+  periodDays: number
+  reconstructedAt: string
+  basis: InventoryValueBasis
+  basisNote: string
+  basisStatement: string
+  value: { opening: KpiValue; closing: KpiValue; average: KpiValue }
+  turnover: KpiValue
+  doi: KpiValue
+  cogs: { amount: number; dateBasis: string }
+  aging: { buckets: InventoryAgingBucket[]; dateBasis: string }
+  coverage: { lots: number; products: number; inactiveExcluded: number }
+}
+
+export interface InventoryMovementRow {
+  productId: string
+  variantId: string | null
+  name: string
+  unitsSold: number
+  closingUnits: number
+  doi: number | null
+  movementClass: MovementClass
+  policyLabel: string
+  sellThrough: number | null
+  stockoutDays: number
+}
+
+export interface InventoryMovementData {
+  periodDays: number
+  reconstructedAt: string
+  policyLabel: string
+  policyRationale: string
+  rows: InventoryMovementRow[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+}
+
+export interface InventoryStockoutRow {
+  productId: string
+  variantId: string | null
+  name: string
+  stockoutDays: number
+  coveredDays: number
+}
+
+export interface InventoryStockoutsData {
+  periodDays: number
+  reconstructedAt: string
+  stockoutDays: KpiValue
+  productsAffected: number
+  lostSales: KpiValue & { lostUnits?: number | null }
+  lostSalesNote: string
+  rows: InventoryStockoutRow[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+}
+
+export interface InventoryLedgerRow {
+  id: string
+  source: 'physical' | 'managed'
+  productId: string | null
+  variantId: string | null
+  warehouseId: string | null
+  quantity: number
+  direction: string | null
+  stockBefore: number | null
+  stockAfter: number | null
+  type: string | null
+  reason: string | null
+  createdAt: string
+}
+
+export interface InventoryLedgerData {
+  periodDays: number
+  rows: InventoryLedgerRow[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+  dateBasis: string
+}
+
+export interface InventoryValueResponse {
+  data: InventoryValueData
+  meta: OverviewMeta
+}
+
+export interface InventoryMovementResponse {
+  data: InventoryMovementData
+  meta: OverviewMeta
+}
+
+export interface InventoryStockoutsResponse {
+  data: InventoryStockoutsData
+  meta: OverviewMeta
+}
+
+export interface InventoryLedgerResponse {
+  data: InventoryLedgerData
   meta: OverviewMeta
 }

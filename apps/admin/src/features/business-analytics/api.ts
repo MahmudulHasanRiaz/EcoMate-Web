@@ -10,6 +10,10 @@ import type {
   CustomerCohortsResponse,
   CustomersListResponse,
   CustomersSummaryResponse,
+  InventoryLedgerResponse,
+  InventoryMovementResponse,
+  InventoryStockoutsResponse,
+  InventoryValueResponse,
   MarketingCampaignsResponse,
   MarketingSummaryResponse,
   MarketingUndatedResponse,
@@ -112,6 +116,22 @@ export const businessAnalyticsApi = {
     apiClient.get<MarketingUndatedResponse>('/business-analytics/marketing/undated', {
       params: { ...buildOverviewQuery(filters), page: String(page), pageSize: String(pageSize) },
     }),
+  getInventoryValue: (filters: AnalyticsFilters) =>
+    apiClient.get<InventoryValueResponse>('/business-analytics/inventory/value', {
+      params: buildInventoryQuery(filters),
+    }),
+  getInventoryMovement: (filters: AnalyticsFilters, page: number, pageSize: number) =>
+    apiClient.get<InventoryMovementResponse>('/business-analytics/inventory/movement', {
+      params: { ...buildInventoryQuery(filters), page: String(page), pageSize: String(pageSize) },
+    }),
+  getInventoryStockouts: (filters: AnalyticsFilters, page: number, pageSize: number) =>
+    apiClient.get<InventoryStockoutsResponse>('/business-analytics/inventory/stockouts', {
+      params: { ...buildInventoryQuery(filters), page: String(page), pageSize: String(pageSize) },
+    }),
+  getInventoryLedger: (filters: AnalyticsFilters, page: number, pageSize: number) =>
+    apiClient.get<InventoryLedgerResponse>('/business-analytics/inventory/ledger', {
+      params: { ...buildInventoryQuery(filters), page: String(page), pageSize: String(pageSize) },
+    }),
 }
 
 /** Product list/detail params: shared dimensions + list-only search/sort/dir. */
@@ -171,4 +191,51 @@ export function marketingCampaignsQueryKey(filters: AnalyticsFilters) {
 
 export function marketingUndatedQueryKey(filters: AnalyticsFilters, page: number, pageSize: number) {
   return ['business-analytics-marketing-undated', buildOverviewQuery(filters), page, pageSize] as const
+}
+
+/** Inventory pages add the warehouse scope (§4.1 — fulfillment location). */
+const INVENTORY_FILTER_KEYS: (keyof AnalyticsFilters)[] = [
+  'preset',
+  'startDate',
+  'endDate',
+  'granularity',
+  'source',
+  'salesChannel',
+  'marketingSource',
+  'paymentMethod',
+  'categoryId',
+  'location',
+  'customerSegment',
+  'deliveryOutcome',
+  'collectionStatus',
+  'warehouseId',
+]
+
+/** Inventory filters → backend query params. Empty values are dropped, never sent. */
+export function buildInventoryQuery(filters: AnalyticsFilters): Record<string, string> {
+  const params: Record<string, string> = {}
+  for (const key of INVENTORY_FILTER_KEYS) {
+    const v = filters[key]
+    if (v !== undefined && v !== null && v !== '') {
+      params[key] = v
+    }
+  }
+  return params
+}
+
+/** Stable inventory query keys — warehouse scope participates, so it changes the request. */
+export function inventoryValueQueryKey(filters: AnalyticsFilters) {
+  return ['business-analytics-inventory-value', buildInventoryQuery(filters)] as const
+}
+
+export function inventoryMovementQueryKey(filters: AnalyticsFilters, page: number, pageSize: number) {
+  return ['business-analytics-inventory-movement', buildInventoryQuery(filters), page, pageSize] as const
+}
+
+export function inventoryStockoutsQueryKey(filters: AnalyticsFilters, page: number, pageSize: number) {
+  return ['business-analytics-inventory-stockouts', buildInventoryQuery(filters), page, pageSize] as const
+}
+
+export function inventoryLedgerQueryKey(filters: AnalyticsFilters, page: number, pageSize: number) {
+  return ['business-analytics-inventory-ledger', buildInventoryQuery(filters), page, pageSize] as const
 }

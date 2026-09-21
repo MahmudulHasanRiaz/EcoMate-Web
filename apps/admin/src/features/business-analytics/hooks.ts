@@ -4,6 +4,10 @@ import {
   customerCohortsQueryKey,
   customersListQueryKey,
   customersSummaryQueryKey,
+  inventoryLedgerQueryKey,
+  inventoryMovementQueryKey,
+  inventoryStockoutsQueryKey,
+  inventoryValueQueryKey,
   marketingCampaignsQueryKey,
   marketingSummaryQueryKey,
   marketingUndatedQueryKey,
@@ -110,6 +114,41 @@ export function useMarketingUndated(filters: AnalyticsFilters, page: number, pag
   return useQuery({
     queryKey: marketingUndatedQueryKey(filters, page, pageSize),
     queryFn: () => businessAnalyticsApi.getMarketingUndated(filters, page, pageSize).then((r) => r.data),
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
+  })
+}
+
+export function useInventoryValue(filters: AnalyticsFilters) {
+  return useQuery({
+    queryKey: inventoryValueQueryKey(filters),
+    queryFn: () => businessAnalyticsApi.getInventoryValue(filters).then((r) => r.data),
+    refetchInterval: 60_000,
+  })
+}
+
+export function useInventoryMovement(filters: AnalyticsFilters, page: number, pageSize: number) {
+  return useQuery({
+    queryKey: inventoryMovementQueryKey(filters, page, pageSize),
+    queryFn: () => businessAnalyticsApi.getInventoryMovement(filters, page, pageSize).then((r) => r.data),
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
+  })
+}
+
+export function useInventoryStockouts(filters: AnalyticsFilters, page: number, pageSize: number) {
+  return useQuery({
+    queryKey: inventoryStockoutsQueryKey(filters, page, pageSize),
+    queryFn: () => businessAnalyticsApi.getInventoryStockouts(filters, page, pageSize).then((r) => r.data),
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
+  })
+}
+
+export function useInventoryLedger(filters: AnalyticsFilters, page: number, pageSize: number) {
+  return useQuery({
+    queryKey: inventoryLedgerQueryKey(filters, page, pageSize),
+    queryFn: () => businessAnalyticsApi.getInventoryLedger(filters, page, pageSize).then((r) => r.data),
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,
   })

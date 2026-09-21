@@ -27,6 +27,8 @@ import { AnalyticsSalesService } from './analytics-sales.service';
 import { AnalyticsCustomersService } from './analytics-customers.service';
 import { AnalyticsMarketingService } from './analytics-marketing.service';
 import { MarketingQueryDto } from './analytics-marketing.dto';
+import { AnalyticsInventoryService } from './analytics-inventory.service';
+import { InventoryQueryDto } from './analytics-inventory.dto';
 import { AnalyticsReconciliationService } from './analytics-reconciliation.service';
 
 @Controller('business-analytics')
@@ -42,6 +44,7 @@ export class BusinessAnalyticsController {
     private readonly salesService: AnalyticsSalesService,
     private readonly customersService: AnalyticsCustomersService,
     private readonly marketingService: AnalyticsMarketingService,
+    private readonly inventoryService: AnalyticsInventoryService,
     private readonly reconciliationService: AnalyticsReconciliationService,
   ) {}
 
@@ -176,5 +179,33 @@ export class BusinessAnalyticsController {
   @Permissions('view_analytics', 'view_financial_summary')
   marketingUndated(@Query() query: MarketingQueryDto) {
     return this.marketingService.getUndated(query);
+  }
+
+  /** Inventory value: delegated close + reconstructed open + turnover (financial). */
+  @Get('inventory/value')
+  @Permissions('view_analytics', 'view_financial_summary')
+  inventoryValue(@Query() query: InventoryQueryDto) {
+    return this.inventoryService.getValue(query);
+  }
+
+  /** Movement classes per product/variant + default-policy label (general). */
+  @Get('inventory/movement')
+  @Permissions('view_analytics')
+  inventoryMovement(@Query() query: InventoryQueryDto) {
+    return this.inventoryService.getMovement(query);
+  }
+
+  /** Stock-out frequency + lost-sales honesty (general). */
+  @Get('inventory/stockouts')
+  @Permissions('view_analytics')
+  inventoryStockouts(@Query() query: InventoryQueryDto) {
+    return this.inventoryService.getStockouts(query);
+  }
+
+  /** Stock ledger drill-down: quantities only, never unitCost (general). */
+  @Get('inventory/ledger')
+  @Permissions('view_analytics')
+  inventoryLedger(@Query() query: InventoryQueryDto) {
+    return this.inventoryService.getLedger(query);
   }
 }

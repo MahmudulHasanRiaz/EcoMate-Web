@@ -13,8 +13,17 @@ export interface DrilldownItem {
 }
 
 /** §4.2 overview drill paths — every link propagates the current filter params. */
-export function DrilldownPanel({ filters, items }: { filters: AnalyticsFilters; items?: DrilldownItem[] }) {
-  const base = buildOverviewQuery(filters)
+export function DrilldownPanel({
+  filters,
+  items,
+  queryBuilder = buildOverviewQuery,
+}: {
+  filters: AnalyticsFilters
+  items?: DrilldownItem[]
+  /** Inventory pages pass buildInventoryQuery so the warehouse scope propagates. */
+  queryBuilder?: (filters: AnalyticsFilters) => Record<string, string>
+}) {
+  const base = queryBuilder(filters)
   const href = (to: string, params?: Record<string, string>) => {
     const qs = new URLSearchParams({ ...base, ...(params ?? {}) }).toString()
     return `${to}${qs ? `?${qs}` : ''}`
