@@ -41,7 +41,8 @@ export function StickerTemplate({ order }: { order: any }) {
         .sticker-container .row { display: flex; justify-content: space-between; }
         .sticker-container .product-list { max-height: 28px; overflow: hidden; }
         .sticker-container .divider { border-top: 1px dashed #ccc; margin: 2mm 0; }
-        .sticker-logo { max-height: 6mm; max-width: 30mm; object-fit: contain; margin: 0 auto; display: block; }
+         .sticker-logo { max-height: 6mm; max-width: 30mm; object-fit: contain; margin: 0 auto; display: block; }
+         .sticker-favicon { max-height: 4mm; max-width: 8mm; object-fit: contain; }
       `}</style>
 
       <div className="text-center mb-1">
@@ -52,9 +53,9 @@ export function StickerTemplate({ order }: { order: any }) {
             <div className="font-bold text-xs">{storeName}</div>
           )
         ) : display === 'name+logo' ? (
-          <div className="flex items-center justify-center gap-1.5">
+          <div className="flex items-center justify-center gap-1">
             {storefrontFavicon ? (
-              <img src={mediaUrl(storefrontFavicon)} alt="" className="sticker-logo" />
+              <img src={mediaUrl(storefrontFavicon)} alt="" className="sticker-favicon" />
             ) : null}
             <span className="font-bold text-xs">{storeName || '—'}</span>
           </div>
