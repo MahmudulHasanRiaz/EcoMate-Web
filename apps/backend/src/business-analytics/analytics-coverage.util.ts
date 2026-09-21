@@ -56,6 +56,10 @@ export function summariseCoverage(lines: CoverageLine[]): CoverageSummary {
       case 'not_applicable':
         summary.notApplicable.push(line.name);
         break;
+      default: {
+        const exhaustive: never = line.state;
+        throw new Error(`Unknown coverage state: ${String(exhaustive)}`);
+      }
     }
   }
   return summary;

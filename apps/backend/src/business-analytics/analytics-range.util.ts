@@ -3,7 +3,11 @@
  *
  * Dhaka calendar-day ranges, inclusive. Comparison = immediately preceding
  * window of identical length (prevEnd = start − 1ms). periodDays is inclusive
- * and always returned. All day math delegates to dhaka-time — never hand-rolled.
+ * and always returned. Day/month/quarter boundaries come from dhaka-time
+ * (startOfDhakaDay, endOfDhakaDay, dhakaDayRange, dhakaDateParts);
+ * whole-day stepping uses fixed 24h-ms offsets (safe: Dhaka is fixed +6, no
+ * DST — no calendar math is hand-rolled) and the comparison window is pure-ms
+ * arithmetic off the resolved start/end.
  */
 import {
   DHAKA_OFFSET_MS,
@@ -46,11 +50,16 @@ export interface AnalyticsRange {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** Auto-granularity policy bounds (§5 P3 trend): hour ≤2d, day ≤62d, week ≤185d. */
+export const GRANULARITY_HOUR_MAX = 2;
+export const GRANULARITY_DAY_MAX = 62;
+export const GRANULARITY_WEEK_MAX = 185;
+
 /** Default auto-granularity policy (§5 P3 trend). */
 export function autoGranularity(periodDays: number): Granularity {
-  if (periodDays <= 2) return 'hour';
-  if (periodDays <= 62) return 'day';
-  if (periodDays <= 185) return 'week';
+  if (periodDays <= GRANULARITY_HOUR_MAX) return 'hour';
+  if (periodDays <= GRANULARITY_DAY_MAX) return 'day';
+  if (periodDays <= GRANULARITY_WEEK_MAX) return 'week';
   return 'month';
 }
 
@@ -107,22 +116,33 @@ export function resolveAnalyticsRange(
     case 'custom': {
       if (!input.startDate || !input.endDate) {
         throw new Error(
-          'custom preset requires both startDate and endDate (YYYY-MM-DD)',
+          `custom preset requires both startDate and endDate (YYYY-MM-DD); ` +
+            `received startDate=${input.startDate ?? 'missing'} ` +
+            `endDate=${input.endDate ?? 'missing'}`,
         );
       }
       const s = dhakaDayRange(input.startDate);
       const e = dhakaDayRange(input.endDate);
-      if (!s.start || !e.end) {
-        throw new Error('unresolvable custom range dates');
+      const pair = [s.start, s.end, e.start, e.end];
+      if (
+        pair.some((d) => !(d instanceof Date) || Number.isNaN(d.getTime()))
+      ) {
+        throw new Error(
+          `unresolvable custom range dates: startDate=${input.startDate} ` +
+            `endDate=${input.endDate}`,
+        );
       }
-      start = s.start;
-      end = e.end;
+      start = s.start as Date;
+      end = e.end as Date;
       break;
     }
   }
 
   if (end < start) {
-    throw new Error('range end precedes range start');
+    throw new Error(
+      `range end precedes range start: start=${start.toISOString()} ` +
+        `end=${end.toISOString()}`,
+    );
   }
 
   const periodDays = Math.round((end.getTime() - start.getTime() + 1) / DAY_MS);

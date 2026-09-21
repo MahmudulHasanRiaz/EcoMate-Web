@@ -55,10 +55,20 @@ describe('coverage summary', () => {
       { name: 'Fulfillment Cost', state: 'actual' },
     ]);
     expect(s.state).toBe('unavailable');
-    expect(s.estimated).toEqual(['COGS']);
-    expect(s.unavailable).toEqual(['Marketing Cost']);
-    expect(s.notApplicable).toEqual(['Other Costs']);
-    expect(s.actual).toEqual(['Fulfillment Cost']);
+    expect(s.estimated).toStrictEqual(['COGS']);
+    expect(s.unavailable).toStrictEqual(['Marketing Cost']);
+    expect(s.notApplicable).toStrictEqual(['Other Costs']);
+    expect(s.actual).toStrictEqual(['Fulfillment Cost']);
+  });
+
+  it('empty input is all-actual with empty groups', () => {
+    expect(summariseCoverage([])).toStrictEqual({
+      state: 'actual',
+      actual: [],
+      estimated: [],
+      unavailable: [],
+      notApplicable: [],
+    });
   });
 });
 
@@ -71,8 +81,9 @@ describe('profit labelling (§2.5 guarantees)', () => {
   });
 
   it('labels distinguish estimated from partial', () => {
-    expect(describeLadderState('actual')).toContain('exact');
-    expect(describeLadderState('estimated')).toContain('estimated');
-    expect(describeLadderState('unavailable')).toContain('partial');
+    expect(describeLadderState('actual')).toBe('exact — all inputs actual');
+    expect(describeLadderState('estimated')).toBe('estimated — see coverage');
+    expect(describeLadderState('unavailable')).toBe('partial — inputs missing');
+    expect(describeLadderState('not_applicable')).toBe('not applicable');
   });
 });

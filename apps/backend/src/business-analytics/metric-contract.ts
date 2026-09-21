@@ -38,10 +38,9 @@ export type RecognitionGroup =
   | 'conditional'
   | 'never';
 
-export const STATUS_META: Record<
-  OrderStatusName,
-  { isFinal: boolean; group: RecognitionGroup }
-> = {
+export const STATUS_META: Readonly<
+  Record<OrderStatusName, { isFinal: boolean; group: RecognitionGroup }>
+> = Object.freeze({
   Pending: { isFinal: false, group: 'pre_fulfilment' },
   'Payment Pending': { isFinal: false, group: 'pre_fulfilment' },
   'Payment Verifying': { isFinal: false, group: 'pre_fulfilment' },
@@ -56,7 +55,7 @@ export const STATUS_META: Record<
   Returned: { isFinal: true, group: 'conditional' },
   Damaged: { isFinal: true, group: 'conditional' },
   Cancelled: { isFinal: true, group: 'never' },
-};
+});
 
 function lookupStatus(status: string): OrderStatusName | null {
   return (ORDER_STATUSES as readonly string[]).includes(status)
@@ -66,7 +65,8 @@ function lookupStatus(status: string): OrderStatusName | null {
 
 export function isFinalStatus(status: string): boolean {
   const known = lookupStatus(status);
-  return known ? STATUS_META[known].isFinal : false;
+  if (!known) throw new Error(`Unknown order status: ${status}`);
+  return STATUS_META[known].isFinal;
 }
 
 export function recognitionGroup(status: string): RecognitionGroup {
@@ -98,7 +98,7 @@ export function isRevenueRecognised(
   hasPriorDelivery = false,
 ): boolean {
   const known = lookupStatus(status);
-  if (!known) return false;
+  if (!known) throw new Error(`Unknown order status: ${status}`);
   const group = STATUS_META[known].group;
   if (group === 'recognised') return true;
   if (group === 'conditional') {
@@ -112,6 +112,10 @@ export function isRevenueRecognised(
 // ---------------------------------------------------------------------------
 // Revenue event (§2.1): Delivered transition date, Dispatch fallback, undated.
 // Canonical timeline entry shape mirrors Order.timeline ({ status, timestamp }).
+//
+// Date-input policy: row/event dates accept Date|string|null — unparseable
+// strings and Invalid Dates coerce to null (undated), never Invalid Date.
+// Range/period bounds accept Date only.
 // ---------------------------------------------------------------------------
 
 export interface TimelineEntry {
@@ -120,23 +124,47 @@ export interface TimelineEntry {
   note?: string;
 }
 
-function entryDate(e: TimelineEntry): Date {
-  return e.timestamp instanceof Date ? e.timestamp : new Date(e.timestamp);
+/** Parse an event timestamp; null when missing or unparseable (never Invalid Date). */
+function validTime(e: TimelineEntry): number | null {
+  const d = e.timestamp instanceof Date ? e.timestamp : new Date(e.timestamp);
+  const t = d.getTime();
+  return Number.isNaN(t) ? null : t;
 }
 
+/**
+ * Latest-timestamp-wins among matching transitions; ties break toward the
+ * later timeline entry. Entries with unparseable timestamps are ignored.
+ */
+function latestTransition(
+  timeline: TimelineEntry[],
+  statuses: readonly string[],
+): TimelineEntry | null {
+  let best: TimelineEntry | null = null;
+  let bestTime = -Infinity;
+  for (const e of timeline) {
+    if (!statuses.includes(e.status)) continue;
+    const t = validTime(e);
+    if (t === null) continue;
+    if (t >= bestTime) {
+      best = e;
+      bestTime = t;
+    }
+  }
+  return best;
+}
+
+/** Revenue event date = the LATEST Delivered transition timestamp. */
 export function findDeliveredTransition(
   timeline: TimelineEntry[],
 ): TimelineEntry | null {
-  return timeline.find((e) => e.status === 'Delivered') ?? null;
+  return latestTransition(timeline, ['Delivered']);
 }
 
+/** Return transition = the LATEST Returned/Damaged transition. */
 export function findReturnTransition(
   timeline: TimelineEntry[],
 ): TimelineEntry | null {
-  return (
-    timeline.find((e) => e.status === 'Returned' || e.status === 'Damaged') ??
-    null
-  );
+  return latestTransition(timeline, ['Returned', 'Damaged']);
 }
 
 /** Statuses whose presence claims a delivery happened (undated if no date). */
@@ -158,26 +186,29 @@ export interface RevenueEvent {
 export interface RevenueEventInput {
   timeline?: TimelineEntry[];
   dispatchDeliveredAt?: Date | string | null;
-  /** Accepted for context only — createdAt is NEVER a revenue date. */
-  createdAt?: Date | string;
   currentStatus?: string;
 }
 
 function toDateOrNull(value: Date | string | null | undefined): Date | null {
   if (value === null || value === undefined) return null;
-  return value instanceof Date ? value : new Date(value);
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 export function resolveRevenueEvent(input: RevenueEventInput): RevenueEvent {
   const timeline = input.timeline ?? [];
   const viaTimeline = findDeliveredTransition(timeline);
   if (viaTimeline) {
-    return {
-      recognised: true,
-      revenueDate: entryDate(viaTimeline),
-      revenueDateSource: 'timeline',
-      undatedDelivery: false,
-    };
+    // findDeliveredTransition only returns entries with parseable timestamps.
+    const at = toDateOrNull(viaTimeline.timestamp);
+    if (at) {
+      return {
+        recognised: true,
+        revenueDate: at,
+        revenueDateSource: 'timeline',
+        undatedDelivery: false,
+      };
+    }
   }
   const viaDispatch = toDateOrNull(input.dispatchDeliveredAt);
   if (viaDispatch) {
@@ -189,8 +220,9 @@ export function resolveRevenueEvent(input: RevenueEventInput): RevenueEvent {
     };
   }
   const claimsDelivery =
-    input.currentStatus !== undefined &&
-    DELIVERY_CLAIMING_STATUSES.includes(input.currentStatus);
+    (input.currentStatus !== undefined &&
+      DELIVERY_CLAIMING_STATUSES.includes(input.currentStatus)) ||
+    timeline.some((e) => DELIVERY_CLAIMING_STATUSES.includes(e.status));
   return {
     recognised: false,
     revenueDate: null,
@@ -211,18 +243,25 @@ export interface ReturnResolution {
 
 export function resolveReturn(
   timeline: TimelineEntry[],
-  deliveredAt: Date | string | null,
+  deliveredAt: Date | string | null | undefined,
 ): ReturnResolution {
   const transition = findReturnTransition(timeline);
   if (!transition) {
-    return { hasReturn: false, returnAt: null, reversesRevenue: false };
+    // A Returned/Damaged entry with an unparseable timestamp still claims
+    // the return (undated) — counted, never dated, never a reversal.
+    const claimsReturn = timeline.some(
+      (e) => e.status === 'Returned' || e.status === 'Damaged',
+    );
+    return { hasReturn: claimsReturn, returnAt: null, reversesRevenue: false };
   }
-  const returnAt = entryDate(transition);
+  // Unparseable return timestamps coerce to null (undated): no reversal.
+  const returnAt = toDateOrNull(transition.timestamp);
   const delivered = toDateOrNull(deliveredAt);
   return {
     hasReturn: true,
     returnAt,
-    reversesRevenue: delivered !== null && returnAt >= delivered,
+    reversesRevenue:
+      delivered !== null && returnAt !== null && returnAt >= delivered,
   };
 }
 
@@ -241,10 +280,14 @@ export function classifyRefund(input: {
   return 'not_a_reversal';
 }
 
-/** Each refund on an order classifies independently (multi/partial refunds). */
+/**
+ * Each refund on an order classifies independently (multi/partial refunds).
+ * Length-only contract: refund elements are never inspected — only the array
+ * length determines the output length. Callers pass the order's refund rows.
+ */
 export function classifyRefunds(
   orderCase: { wasDelivered: boolean; wasReturned: boolean },
-  refunds: unknown[],
+  refunds: readonly unknown[],
 ): RefundTreatment[] {
   return refunds.map(() => classifyRefund(orderCase));
 }
@@ -266,19 +309,55 @@ export interface AllocatedLine {
   net: number;
 }
 
+/**
+ * Discount allocation (§2 single definition).
+ *
+ * Rounding policy: proportional shares round to 2dp (paisa); leftover cents
+ * distribute largest-remainder, so Σ allocated == min(discount, Σ gross) to
+ * the cent. Per-line clamp to lineGross (discount overflow allocates full
+ * gross to every line). Negative/non-finite grosses count as 0.
+ */
 export function allocateDiscount(
   lineGrosses: number[],
   discount: number,
 ): AllocatedLine[] {
-  const grossSum = lineGrosses.reduce((s, g) => s + g, 0);
-  if (!(grossSum > 0) || !(discount > 0)) {
-    return lineGrosses.map((g) => ({ allocated: 0, net: g }));
+  const grosses = lineGrosses.map((g) =>
+    Number.isFinite(g) && g > 0 ? g : 0,
+  );
+  const grossCents = grosses.map((g) => Math.round(g * 100));
+  const grossSumCents = grossCents.reduce((s, c) => s + c, 0);
+  if (!(grossSumCents > 0) || !(discount > 0)) {
+    return grosses.map((g) => ({ allocated: 0, net: Math.round(g * 100) / 100 }));
   }
-  return lineGrosses.map((gross) => {
-    const share = (gross * discount) / grossSum;
-    const allocated = Math.min(share, gross);
-    const net = Math.max(gross - allocated, 0);
-    return { allocated, net };
+  // +Infinity discount (finite guard): every line allocates in full.
+  const discountCents = Number.isFinite(discount)
+    ? Math.round(discount * 100)
+    : grossSumCents;
+  if (discountCents >= grossSumCents) {
+    return grossCents.map((c) => ({ allocated: c / 100, net: 0 }));
+  }
+  const raws = grossCents.map((c) => (c * discountCents) / grossSumCents);
+  const floors = raws.map((r) => Math.floor(r + 1e-9));
+  const order = raws
+    .map((r, i) => ({ i, frac: r - Math.floor(r + 1e-9) }))
+    .sort((a, b) => b.frac - a.frac);
+  let leftover = discountCents - floors.reduce((s, f) => s + f, 0);
+  const bonus = new Array<number>(grossCents.length).fill(0);
+  // Cycle largest-remainder-first; capped so float dust can't loop forever.
+  for (let k = 0; leftover > 0 && k < order.length * 2; k++) {
+    const { i } = order[k % order.length];
+    // discountCents < grossSumCents ⇒ raw < gross ⇒ floor+1 never exceeds gross.
+    if (floors[i] + bonus[i] < grossCents[i]) {
+      bonus[i] += 1;
+      leftover -= 1;
+    }
+  }
+  return grossCents.map((c, i) => {
+    const allocatedCents = Math.min(floors[i] + bonus[i], c);
+    return {
+      allocated: allocatedCents / 100,
+      net: (c - allocatedCents) / 100,
+    };
   });
 }
 
@@ -293,9 +372,16 @@ export type CostState =
   | 'unavailable'
   | 'not_applicable';
 
+export const COGS_COST_TYPES = ['actual', 'estimated'] as const;
+export type CogsCostType = (typeof COGS_COST_TYPES)[number];
+
+export const FULFILLMENT_COST_SOURCES = ['manual', 'courier_default'] as const;
+export type FulfillmentCostSource =
+  (typeof FULFILLMENT_COST_SOURCES)[number];
+
 export function cogsLineState(input: {
   costSnapshot: number | null | undefined;
-  costType: string | null | undefined;
+  costType: CogsCostType | null | undefined;
 }): CostState {
   if (input.costSnapshot === null || input.costSnapshot === undefined) {
     return 'unavailable';
@@ -307,7 +393,7 @@ export function cogsLineState(input: {
 
 export function fulfillmentCostState(input: {
   shippingCost: number | null | undefined;
-  shippingCostSource: string | null | undefined;
+  shippingCostSource: FulfillmentCostSource | null | undefined;
 }): CostState {
   if (input.shippingCost === null || input.shippingCost === undefined) {
     return 'unavailable';
@@ -361,6 +447,12 @@ export function marketingPeriodCost(
   periodStart: Date,
   periodEnd: Date,
 ): MarketingPeriodCost {
+  if (periodEnd < periodStart) {
+    throw new Error(
+      `marketing period end precedes period start: ` +
+        `periodStart=${periodStart.toISOString()} periodEnd=${periodEnd.toISOString()}`,
+    );
+  }
   let datedAmount = 0;
   let datedRows = 0;
   let undatedAmount = 0;
@@ -371,7 +463,13 @@ export function marketingPeriodCost(
       undatedAmount += row.calculatedCost;
       continue;
     }
-    const at = row.spendDate instanceof Date ? row.spendDate : new Date(row.spendDate);
+    const at = toDateOrNull(row.spendDate);
+    if (at === null) {
+      // Invalid spendDate strings are undated: counted, contribute 0 to total.
+      undatedRows += 1;
+      undatedAmount += row.calculatedCost;
+      continue;
+    }
     if (at >= periodStart && at <= periodEnd) {
       datedRows += 1;
       datedAmount += row.calculatedCost;
@@ -401,7 +499,11 @@ export function marketingIdentityTotals(
   let datedCost = 0;
   let undatedCost = 0;
   for (const row of rows) {
-    if (row.spendDate === null || row.spendDate === undefined) {
+    if (
+      row.spendDate === null ||
+      row.spendDate === undefined ||
+      toDateOrNull(row.spendDate) === null
+    ) {
       undatedCost += row.calculatedCost;
     } else {
       datedCost += row.calculatedCost;
@@ -424,14 +526,52 @@ export const MOVEMENT_RATIONALE =
 
 export type MovementClass = 'Dead' | 'Fast' | 'Slow' | 'Normal';
 
+/**
+ * Days of inventory: closing stock ÷ average daily sales over the period.
+ * Zero sales ⇒ +Infinity (infinite cover; the Dead rule handles display).
+ * Throws on negative or non-finite inputs. Default period is 30 days
+ * (monthly-sales basis, matching the 30/90 default policy).
+ */
+export function computeDOI(input: {
+  unitsSold: number;
+  closingStock: number;
+  periodDays?: number;
+}): number {
+  const periodDays = input.periodDays ?? 30;
+  const fields = {
+    unitsSold: input.unitsSold,
+    closingStock: input.closingStock,
+    periodDays,
+  } as const;
+  for (const [name, value] of Object.entries(fields)) {
+    if (!Number.isFinite(value) || value < 0) {
+      throw new Error(
+        `computeDOI: ${name} must be a finite non-negative number (received ${value})`,
+      );
+    }
+  }
+  if (input.unitsSold === 0) return Number.POSITIVE_INFINITY;
+  return (input.closingStock * periodDays) / input.unitsSold;
+}
+
 export function classifyMovement(input: {
   unitsSold: number;
   closingStock: number;
-  doi: number;
+  /** Days of inventory; defaults to computeDOI({ unitsSold, closingStock }). */
+  doi?: number;
+  periodDays?: number;
 }): MovementClass {
   if (input.unitsSold === 0 && input.closingStock > 0) return 'Dead';
-  if (input.doi <= MOVEMENT_FAST_DOI_MAX) return 'Fast';
-  if (input.doi > MOVEMENT_SLOW_DOI_MIN) return 'Slow';
+  const doi =
+    input.doi ?? computeDOI({ unitsSold: input.unitsSold, closingStock: input.closingStock, periodDays: input.periodDays });
+  if (!Number.isFinite(doi) && doi !== Number.POSITIVE_INFINITY) {
+    throw new Error(`classifyMovement: doi must be a finite number or +Infinity (received ${doi})`);
+  }
+  if (doi < 0) {
+    throw new Error(`classifyMovement: doi must be non-negative (received ${doi})`);
+  }
+  if (doi <= MOVEMENT_FAST_DOI_MAX) return 'Fast';
+  if (doi > MOVEMENT_SLOW_DOI_MIN) return 'Slow';
   return 'Normal';
 }
 
@@ -439,13 +579,17 @@ export function classifyMovement(input: {
 // Shipping-refund inference (§2.10.2, online-collected orders only).
 // ---------------------------------------------------------------------------
 
+export const NO_COURIER_SETTLEMENT_SOURCE =
+  'no_courier_settlement_source' as const;
+export type NoSettlementReason = typeof NO_COURIER_SETTLEMENT_SOURCE;
+
 export type ShippingRefundInference = 'covered' | 'below' | 'none';
 
 export interface DeliveryChargeOutcome {
   state: CostState;
   retained: number | null;
   inference: ShippingRefundInference;
-  reason?: string;
+  reason?: NoSettlementReason;
 }
 
 export function inferDeliveryChargeRetained(input: {
@@ -458,7 +602,7 @@ export function inferDeliveryChargeRetained(input: {
       state: 'unavailable',
       retained: null,
       inference: 'none',
-      reason: 'no_courier_settlement_source',
+      reason: NO_COURIER_SETTLEMENT_SOURCE,
     };
   }
   if (input.refundAmount <= 0) {
@@ -476,23 +620,22 @@ export function inferDeliveryChargeRetained(input: {
 
 export interface CodSettlement {
   state: 'unavailable';
-  reason: 'no_courier_settlement_source';
+  reason: NoSettlementReason;
   amountCollected: null;
   amountRetained: null;
   deliveryChargeRetained: null;
   fulfillmentMargin: null;
 }
 
-export function codSettlement(): CodSettlement {
-  return {
-    state: 'unavailable',
-    reason: 'no_courier_settlement_source',
-    amountCollected: null,
-    amountRetained: null,
-    deliveryChargeRetained: null,
-    fulfillmentMargin: null,
-  };
-}
+/** Frozen — COD honesty is a constant until a settlement source exists (D11). */
+export const COD_SETTLEMENT: Readonly<CodSettlement> = Object.freeze({
+  state: 'unavailable',
+  reason: NO_COURIER_SETTLEMENT_SOURCE,
+  amountCollected: null,
+  amountRetained: null,
+  deliveryChargeRetained: null,
+  fulfillmentMargin: null,
+});
 
 // ---------------------------------------------------------------------------
 // Single-count contribution bridge (D12, §2.11).
@@ -531,6 +674,17 @@ export function computeTotalBusinessContribution(input: {
 }
 
 export function computeNetProfit(input: {
+  totalBusinessContribution: number;
+  operatingExpenses: number;
+}): number {
+  return input.totalBusinessContribution - input.operatingExpenses;
+}
+
+/**
+ * Operating Profit = TBC − OE. Numerically equal to Net Profit while Other
+ * Costs is not_applicable (no source, §2.5 limitation 5) — locked by test.
+ */
+export function computeOperatingProfit(input: {
   totalBusinessContribution: number;
   operatingExpenses: number;
 }): number {

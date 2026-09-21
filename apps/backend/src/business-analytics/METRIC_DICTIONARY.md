@@ -14,16 +14,22 @@ Dhaka calendar day, inclusive: `startDate` → 00:00:00.000, `endDate` →
 `common/utils/dhaka-time.ts`, never hand-rolled). Comparison = immediately
 preceding window of identical length (`prevEnd = start − 1ms`,
 `prevStart = prevEnd − (end − start)`). `periodDays` is inclusive and always
-returned. Auto-granularity: ≤2d hour, ≤62d day, ≤185d week, else month.
+returned. Auto-granularity: ≤2d hour, ≤62d day, ≤185d week, else month
+(bounds exported as `GRANULARITY_HOUR_MAX/_DAY_MAX/_WEEK_MAX`).
+
+Date-input policy (single rule): row/event dates accept `Date | string |
+null` — unparseable strings and Invalid Dates coerce to null (undated, never
+an Invalid Date); range/period bounds accept `Date` only.
 
 ## 2. Revenue recognition — Delivered only (D4)
 
 Recognised cohort = orders with a `Delivered` transition in range. Revenue
-event date = the `Delivered` transition timestamp from `Order.timeline`
-(`revenueDateSource: 'timeline'`); fallback `Dispatch.deliveredAt`
-(`'dispatch'`); neither → not recognised, counted in
+event date = the latest `Delivered` transition timestamp from
+`Order.timeline` (latest-wins; ties break toward the later entry; unparseable
+timestamps ignored — `findDeliveredTransition`); fallback
+`Dispatch.deliveredAt` (`'dispatch'`); neither → not recognised, counted in
 `recognition.undatedDeliveries` — never guessed. `createdAt` is never a
-revenue date. Everything before `Delivered` is never Sales/Net Revenue.
+revenue date (not even accepted as input). Everything before `Delivered` is never Sales/Net Revenue.
 
 Lifecycle groups: Pending / Payment Pending / Payment Verifying / Hold =
 pre-fulfilment (never recognised); Confirmed / Packed / Packing Hold /
@@ -64,14 +70,20 @@ R12: no order contributes to both `Returns` and `Refunds (reversal)`.
 `lineGross = price × qty`; `allocatedDiscount = order.discount × (lineGross /
 Σ lineGross)` clamped to `lineGross`; `lineNet = lineGross −
 allocatedDiscount`. Zero gross ⇒ zero allocation (never NaN).
+Rounding: shares round to 2dp with largest-remainder, so Σ allocated ==
+`min(discount, Σ gross)` to the cent; negative/non-finite grosses count as 0.
 
 ## 5. Cost states — actual | estimated | unavailable | not_applicable
 
-COGS: `actual` (FIFO `costType='actual'` + snapshot) / `estimated`
-/ `unavailable` (snapshot NULL — never back-filled from current
+COGS line state (`cogsLineState({ costSnapshot, costType })`):
+`costType: 'actual' | 'estimated' | null` — `actual` (FIFO snapshot) /
+`estimated` / `unavailable` (snapshot NULL — never back-filled from current
 `standardCost`; unavailable units counted, never summed as zero).
-Fulfillment: `manual` → actual, `courier_default` → estimated, NULL →
-unavailable. Payment Fee: present (PAID row) → actual, NULL → unavailable.
+Fulfillment line state
+(`fulfillmentCostState({ shippingCost, shippingCostSource })`):
+`shippingCostSource: 'manual' | 'courier_default' | null` — `manual` →
+actual, `courier_default` → estimated, NULL → unavailable. Payment Fee:
+present (PAID row) → actual, NULL → unavailable.
 Marketing: every row has `spendDate` → actual; any row NULL →
 `unavailable` (D10). Operating Expenses: always actual. Other Costs: no
 source → `not_applicable` (renders "—", never downgrades the ladder).
@@ -85,8 +97,10 @@ only when `ladderState = 'actual'`.
 P&L Marketing Cost = `Σ MarketingConsumption.calculatedCost` dated by
 `spendDate`. NULL-`spendDate` rows contribute 0 to every period, are
 quantified (`undatedRows` / `undatedAmount`) and listed in a fix-list.
-`allocatedAt` is never a financial event date, not even as a fallback — only
-a labelled `estimatedReference`, excluded from every total. R17:
+Invalid `spendDate` strings count as undated (counted, contribute 0); an
+inverted period (`periodStart > periodEnd`) throws. `allocatedAt` is never a
+financial event date, not even as a fallback — only a labelled
+`estimatedReference`, excluded from every total. R17:
 `Σ all == Σ dated + Σ undated` (date-independent).
 
 ## 7. Profit ladder (§2.5) + single-count bridge (D12)
@@ -95,7 +109,9 @@ Gross Sales − Discounts − Returns − Refunds(reversal) = Net Sales (weakest
 state of the four) − COGS = Gross Profit − Fulfillment Cost − Payment
 Gateway Cost − Marketing Cost = Contribution Profit − Operating Expenses =
 Operating Profit − Other Costs (n/a) = Net Profit. Operating Profit and Net
-Profit are numerically equal — the UI states this. Margins: Net Sales ≤ 0
+Profit are numerically equal — `computeOperatingProfit` locks the claim
+(test asserts it equals `computeNetProfit` for identical inputs) and the UI
+states this. Margins: Net Sales ≤ 0
 or missing ⇒ null ⇒ "N/A" (never 0%, never Infinity).
 
 Bridge: `Total Business Contribution = Contribution Profit + Delivery Charge
@@ -136,7 +152,10 @@ direct (sales/discounts/returns/COGS) · attributed (marketing via
 CLR is observed cumulative revenue ("LTV" never appears). Inventory value
 reconstructs from `CostingLot` history; movement classes are the default
 30/90-day policy (Fast DOI ≤ 30, Slow DOI > 90, Dead = 0 sold + stock on
-hand), labelled as policy. Expense kinds default `unclassified`, never
+hand), labelled as policy. `computeDOI({ unitsSold, closingStock,
+periodDays = 30 })` is the single DOI definition (throws on negative or
+non-finite inputs; zero sales ⇒ +Infinity); `classifyMovement` defaults its
+`doi` through it. Expense kinds default `unclassified`, never
 inferred. "Store" is not a dimension.
 
 ## 10. Reconciliation & warnings

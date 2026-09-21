@@ -9,15 +9,22 @@ import {
   resolveAnalyticsRange,
   autoGranularity,
   containsInstant,
+  GRANULARITY_HOUR_MAX,
+  GRANULARITY_DAY_MAX,
+  GRANULARITY_WEEK_MAX,
+  type AnalyticsRange,
 } from '../analytics-range.util';
 
 const D = (iso: string): Date => new Date(iso);
 
 describe('Dhaka day boundaries (via dhaka-time, never hand-rolled)', () => {
-  const day = resolveAnalyticsRange({
-    preset: 'custom',
-    startDate: '2026-09-20',
-    endDate: '2026-09-20',
+  let day: AnalyticsRange;
+  beforeAll(() => {
+    day = resolveAnalyticsRange({
+      preset: 'custom',
+      startDate: '2026-09-20',
+      endDate: '2026-09-20',
+    });
   });
 
   it('single Dhaka day maps to 18:00Z(prev) … 17:59:59.999Z', () => {
@@ -94,24 +101,47 @@ describe('presets + custom', () => {
     expect(r.end.toISOString()).toBe('2026-09-03T17:59:59.999Z');
   });
 
-  it('custom without both dates throws', () => {
+  it('custom without both dates throws with the received inputs echoed', () => {
     expect(() =>
       resolveAnalyticsRange({ preset: 'custom', startDate: '2026-09-01' }),
-    ).toThrow();
+    ).toThrow(/startDate.*endDate/);
+  });
+
+  it('custom with unresolvable dates throws with the inputs echoed', () => {
+    expect(() =>
+      resolveAnalyticsRange({
+        preset: 'custom',
+        startDate: 'not-a-date',
+        endDate: '2026-09-03',
+      }),
+    ).toThrow(/unresolvable custom range dates: startDate=not-a-date/);
+  });
+
+  it('custom with end before start throws', () => {
+    expect(() =>
+      resolveAnalyticsRange({
+        preset: 'custom',
+        startDate: '2026-09-03',
+        endDate: '2026-09-01',
+      }),
+    ).toThrow(/precedes/);
   });
 });
 
 describe('comparison windows', () => {
-  it('prevEnd = start − 1ms and prevStart = prevEnd − length', () => {
+  it('prevEnd = start − 1ms and prevStart = prevEnd − length (absolute)', () => {
     const r = resolveAnalyticsRange({
       preset: 'custom',
       startDate: '2026-09-01',
       endDate: '2026-09-03',
     });
-    const length = r.end.getTime() - r.start.getTime();
-    expect(r.comparison.prevEnd.getTime()).toBe(r.start.getTime() - 1);
-    expect(r.comparison.prevStart.getTime()).toBe(
-      r.comparison.prevEnd.getTime() - length,
+    expect(r.start.toISOString()).toBe('2026-08-31T18:00:00.000Z');
+    expect(r.end.toISOString()).toBe('2026-09-03T17:59:59.999Z');
+    expect(r.comparison.prevEnd.toISOString()).toBe(
+      '2026-08-31T17:59:59.999Z',
+    );
+    expect(r.comparison.prevStart.toISOString()).toBe(
+      '2026-08-28T18:00:00.000Z',
     );
   });
 
@@ -127,13 +157,16 @@ describe('comparison windows', () => {
 
 describe('granularity + periodDays', () => {
   it('auto-granularity follows the default policy', () => {
+    expect(GRANULARITY_HOUR_MAX).toBe(2);
+    expect(GRANULARITY_DAY_MAX).toBe(62);
+    expect(GRANULARITY_WEEK_MAX).toBe(185);
     expect(autoGranularity(1)).toBe('hour');
-    expect(autoGranularity(2)).toBe('hour');
-    expect(autoGranularity(3)).toBe('day');
-    expect(autoGranularity(62)).toBe('day');
-    expect(autoGranularity(63)).toBe('week');
-    expect(autoGranularity(185)).toBe('week');
-    expect(autoGranularity(186)).toBe('month');
+    expect(autoGranularity(GRANULARITY_HOUR_MAX)).toBe('hour');
+    expect(autoGranularity(GRANULARITY_HOUR_MAX + 1)).toBe('day');
+    expect(autoGranularity(GRANULARITY_DAY_MAX)).toBe('day');
+    expect(autoGranularity(GRANULARITY_DAY_MAX + 1)).toBe('week');
+    expect(autoGranularity(GRANULARITY_WEEK_MAX)).toBe('week');
+    expect(autoGranularity(GRANULARITY_WEEK_MAX + 1)).toBe('month');
   });
 
   it('resolved ranges always carry periodDays and granularity', () => {
