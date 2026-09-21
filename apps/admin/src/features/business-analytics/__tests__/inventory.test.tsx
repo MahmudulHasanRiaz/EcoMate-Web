@@ -6,7 +6,7 @@
  * (movement rows carry productId/variantId) · lost-sales honesty
  * (unavailable ≠ ৳0, estimated badge) · query keys carry the warehouse scope.
  */
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render } from 'vitest-browser-react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
@@ -15,7 +15,11 @@ import {
   MovementTable,
   TurnoverCards,
   ValueBasisBanner,
+  inventoryLedgerHref,
+  resolveInventoryDrill,
 } from '../inventory'
+import InventoryAnalytics from '../inventory'
+import { businessAnalyticsApi } from '../api'
 import { KpiCard } from '../components/KpiCard'
 import { DrilldownPanel } from '../components/DrilldownPanel'
 import {
@@ -31,11 +35,16 @@ import {
 } from '../types'
 import type {
   AnalyticsFilters,
+  InventoryLedgerData,
   InventoryMovementData,
   InventoryStockoutsData,
   InventoryValueData,
   KpiValue,
 } from '../types'
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 function renderWithClient(ui: React.ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -272,6 +281,110 @@ describe('inventory drill-down', () => {
   })
 })
 
+// ─── drill landing: params → ledger filtered (effect, not href shape) ───────
+
+describe('resolveInventoryDrill', () => {
+  it('focuses the ledger on view=ledger', () => {
+    expect(resolveInventoryDrill({ view: 'ledger' })).toEqual({
+      focusLedger: true,
+      productId: undefined,
+      variantId: undefined,
+    })
+  })
+
+  it('focuses the ledger on bare product params without an explicit view', () => {
+    expect(resolveInventoryDrill({ productId: 'p1' }).focusLedger).toBe(true)
+    expect(resolveInventoryDrill({ variantId: 'v1' }).focusLedger).toBe(true)
+  })
+
+  it('does not focus without drill params', () => {
+    expect(resolveInventoryDrill(undefined).focusLedger).toBe(false)
+    expect(resolveInventoryDrill({}).focusLedger).toBe(false)
+    expect(resolveInventoryDrill({ view: 'movement' }).focusLedger).toBe(false)
+  })
+
+  it('movement drill hrefs round-trip through the landing resolver', () => {
+    const href = inventoryLedgerHref('p1', 'v1')
+    const search = Object.fromEntries(new URLSearchParams(href.split('?')[1]))
+    expect(resolveInventoryDrill(search)).toEqual({ focusLedger: true, productId: 'p1', variantId: 'v1' })
+    expect(inventoryLedgerHref('p9', null)).toBe('/op/analytics/inventory?view=ledger&productId=p9')
+  })
+})
+
+describe('inventory drill landing effect', () => {
+  function ledgerData(): InventoryLedgerData {
+    return {
+      periodDays: 30,
+      rows: [],
+      total: 0,
+      page: 1,
+      pageSize: 20,
+      totalPages: 1,
+      dateBasis: 'Ledger entry date',
+    }
+  }
+
+  function stubInventoryApi() {
+    const meta = {
+      formulaVersion: 'analytics-p2/1.0',
+      dataAsOf: '2026-09-21T00:00:00.000Z',
+      range: { periodDays: 30 },
+      dateBasis: 'test',
+    } as any
+    vi.spyOn(businessAnalyticsApi, 'getInventoryValue').mockResolvedValue({
+      data: { data: valueData(), meta },
+    } as any)
+    vi.spyOn(businessAnalyticsApi, 'getInventoryMovement').mockResolvedValue({
+      data: { data: movementData(), meta },
+    } as any)
+    vi.spyOn(businessAnalyticsApi, 'getInventoryStockouts').mockResolvedValue({
+      data: { data: stockoutsData(), meta },
+    } as any)
+    const ledger = vi.spyOn(businessAnalyticsApi, 'getInventoryLedger').mockResolvedValue({
+      data: { data: ledgerData(), meta },
+    } as any)
+    return { ledger }
+  }
+
+  it('view=ledger filters the ledger request by product and marks the section', async () => {
+    const { ledger } = stubInventoryApi()
+    const { container } = await renderWithClient(
+      <InventoryAnalytics initialSearch={{ view: 'ledger', productId: 'p1', variantId: 'v1' }} />,
+    )
+    await vi.waitFor(() => expect(ledger).toHaveBeenCalled())
+    expect(ledger.mock.calls[0][0]).toMatchObject({ productId: 'p1', variantId: 'v1' })
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="ledger-section"]')).not.toBeNull(),
+    )
+    const section = container.querySelector('[data-testid="ledger-section"]')
+    expect(section?.getAttribute('data-focus')).toBe('true')
+    expect(container.querySelector('[data-testid="ledger-focus-note"]')?.textContent).toContain('p1')
+  })
+
+  it('bare product params focus and filter the ledger without an explicit view', async () => {
+    const { ledger } = stubInventoryApi()
+    const { container } = await renderWithClient(<InventoryAnalytics initialSearch={{ productId: 'p1' }} />)
+    await vi.waitFor(() => expect(ledger).toHaveBeenCalled())
+    expect(ledger.mock.calls[0][0]).toMatchObject({ productId: 'p1' })
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="ledger-section"]')).not.toBeNull(),
+    )
+    expect(container.querySelector('[data-testid="ledger-section"]')?.getAttribute('data-focus')).toBe('true')
+  })
+
+  it('no drill params leave the ledger unfocused and unfiltered', async () => {
+    const { ledger } = stubInventoryApi()
+    const { container } = await renderWithClient(<InventoryAnalytics initialSearch={{}} />)
+    await vi.waitFor(() => expect(ledger).toHaveBeenCalled())
+    expect(ledger.mock.calls[0][0]).not.toHaveProperty('productId')
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="ledger-section"]')).not.toBeNull(),
+    )
+    expect(container.querySelector('[data-testid="ledger-section"]')?.getAttribute('data-focus')).toBe('false')
+    expect(container.querySelector('[data-testid="ledger-focus-note"]')).toBeNull()
+  })
+})
+
 // ─── query keys: warehouse scope participates ────────────────────────────────
 
 describe('inventory query keys', () => {
@@ -291,6 +404,22 @@ describe('inventory query keys', () => {
     expect(
       buildInventoryQuery({ preset: 'last_30_days', warehouseId: 'w1' }),
     ).toEqual({ preset: 'last_30_days', warehouseId: 'w1' })
+  })
+
+  it('buildInventoryQuery carries the drill narrow and drops empties', () => {
+    expect(
+      buildInventoryQuery({ preset: 'last_30_days', productId: 'p1', variantId: 'v1' }),
+    ).toEqual({ preset: 'last_30_days', productId: 'p1', variantId: 'v1' })
+    expect(buildInventoryQuery({ preset: 'last_30_days', productId: '' })).toEqual({
+      preset: 'last_30_days',
+    })
+  })
+
+  it('ledger query key changes with the drill narrow', () => {
+    const base: AnalyticsFilters = { preset: 'last_30_days' }
+    expect(inventoryLedgerQueryKey({ ...base, productId: 'p1' }, 1, 20)).not.toEqual(
+      inventoryLedgerQueryKey(base, 1, 20),
+    )
   })
 
   it('filters constant carries the default preset', () => {

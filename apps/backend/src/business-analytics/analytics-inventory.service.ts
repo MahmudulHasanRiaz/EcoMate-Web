@@ -22,8 +22,9 @@
  *
  * value/* is financial (FULL perms); movement / stockouts / ledger are
  * general view_analytics (ledger carries quantities only, never unitCost).
- * Reconstruction is the heaviest analytics query — fixed 15-min cache TTL
- * with an explicit reconstructedAt on every payload.
+ * Cache TTL is 60s for live ranges / 15min for closed ranges via
+ * analyticsCacheTtlMs, like every sibling service — with an explicit
+ * reconstructedAt on every payload.
  */
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -47,7 +48,7 @@ import type { ResolvedAnalyticsContext } from './analytics-filter.service';
 import {
   buildMeta,
   analyticsCacheKey,
-  CLOSED_TTL_MS,
+  analyticsCacheTtlMs,
   kpiOk,
   kpiZero,
   kpiNoData,
@@ -419,12 +420,40 @@ export class AnalyticsInventoryService {
     };
   }
 
-  private async cacheSet(key: string, value: unknown): Promise<void> {
+  private async cacheSet(key: string, value: unknown, ttlMs: number): Promise<void> {
     try {
-      await this.cache.set(key, value, CLOSED_TTL_MS);
+      await this.cache.set(key, value, ttlMs);
     } catch {
       /* computed response is served regardless */
     }
+  }
+
+  /**
+   * Product ids of the delegated valuation() cohort — mirrors
+   * InventoryService.valuation() scoping (active products, categoryId exact
+   * match, search over name/sku case-insensitive) so a filtered page
+   * reconstructs the same cohort the closing value is delegated for.
+   * Agreement — never a forced closing_only.
+   */
+  private async resolveValuationProductIds(filters: {
+    categoryId?: string;
+    search?: string;
+  }): Promise<string[]> {
+    const and: any[] = [{ isActive: true }];
+    if (filters.categoryId) and.push({ categoryId: filters.categoryId });
+    if (filters.search) {
+      and.push({
+        OR: [
+          { name: { contains: filters.search, mode: 'insensitive' } },
+          { sku: { contains: filters.search, mode: 'insensitive' } },
+        ],
+      });
+    }
+    const rows: any[] = await this.prisma.product.findMany({
+      where: { AND: and },
+      select: { id: true },
+    });
+    return rows.map((r) => r.id);
   }
 
   // ── scoped lot history (active products; FIFO consumptions + restorations)
@@ -433,10 +462,23 @@ export class AnalyticsInventoryService {
     inactiveExcluded: number;
   }> {
     const { filters } = ctx;
+    const search = (filters as InventoryQueryDto).search;
     const where: any = {};
     if (filters.warehouseId) where.warehouseId = filters.warehouseId;
     if (filters.productId) where.productId = filters.productId;
     if (filters.variantId !== undefined) where.variantId = filters.variantId ?? null;
+    if (filters.categoryId || search) {
+      const scopedIds = await this.resolveValuationProductIds({
+        categoryId: filters.categoryId,
+        search,
+      });
+      if (where.productId !== undefined) {
+        // Product narrow ∩ valuation cohort — outside the cohort ⇒ no lots.
+        if (!scopedIds.includes(where.productId)) return { lots: [], inactiveExcluded: 0 };
+      } else {
+        where.productId = { in: scopedIds };
+      }
+    }
     const rows: any[] = await this.prisma.costingLot.findMany({
       where,
       select: {
@@ -753,7 +795,7 @@ export class AnalyticsInventoryService {
       recognisedOrders: cohort.recognisedOrders,
       cogs: cohort.cogs,
     });
-    await this.cacheSet(key, response);
+    await this.cacheSet(key, response, analyticsCacheTtlMs(ctx.range));
     return response;
   }
 
@@ -849,7 +891,7 @@ export class AnalyticsInventoryService {
       totalPages,
     };
     const response = this.respond(data, ctx, { rows: total });
-    await this.cacheSet(key, response);
+    await this.cacheSet(key, response, analyticsCacheTtlMs(ctx.range));
     return response;
   }
 
@@ -934,7 +976,7 @@ export class AnalyticsInventoryService {
       totalPages,
     };
     const response = this.respond(data, ctx, { stockoutDays, productsAffected });
-    await this.cacheSet(key, response);
+    await this.cacheSet(key, response, analyticsCacheTtlMs(ctx.range));
     return response;
   }
 
@@ -1035,7 +1077,7 @@ export class AnalyticsInventoryService {
       dateBasis: DATE_BASIS_LEDGER,
     };
     const response = this.respond(data, ctx, { entries: total });
-    await this.cacheSet(key, response);
+    await this.cacheSet(key, response, analyticsCacheTtlMs(ctx.range));
     return response;
   }
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState, type Ref } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -47,6 +47,50 @@ const INVENTORY_DRILLDOWN: DrilldownItem[] = [
   { label: 'Product/variant → stock ledger', description: 'Ledger entries behind the closing stock', to: '/op/analytics/inventory', params: { view: 'ledger' } },
   { label: 'Stock-out → lost sales evidence', description: 'Days at stock ≤ 0 with measurable demand only', to: '/op/analytics/inventory', params: { view: 'stockouts' } },
 ]
+
+/** Router search params for the §4.2 inventory drill landing (query objects). */
+export interface InventoryDrillSearch {
+  view?: string
+  productId?: string
+  variantId?: string
+}
+
+/**
+ * Resolve the drill landing: view=ledger — or bare product params — focuses
+ * the ledger section pre-filtered by productId/variantId. Pure so the
+ * params → filtered-ledger effect is unit-testable.
+ */
+export function resolveInventoryDrill(search: InventoryDrillSearch | undefined): {
+  focusLedger: boolean
+  productId?: string
+  variantId?: string
+} {
+  const productId = search?.productId || undefined
+  const variantId = search?.variantId || undefined
+  const focusLedger = search?.view === 'ledger' || productId !== undefined || variantId !== undefined
+  return { focusLedger, productId, variantId }
+}
+
+/** Drill href built from query objects — the landing above honours it. */
+export function inventoryLedgerHref(productId: string, variantId: string | null): string {
+  const qs = new URLSearchParams({
+    view: 'ledger',
+    productId,
+    ...(variantId ? { variantId } : {}),
+  }).toString()
+  return `/op/analytics/inventory?${qs}`
+}
+
+/** Falls back to the live URL when no router search is passed (plain <a> landings). */
+export function readInventoryDrillSearch(): InventoryDrillSearch {
+  if (typeof window === 'undefined') return {}
+  const qs = new URLSearchParams(window.location.search)
+  return {
+    view: qs.get('view') ?? undefined,
+    productId: qs.get('productId') ?? undefined,
+    variantId: qs.get('variantId') ?? undefined,
+  }
+}
 
 interface WarehouseOption {
   id: string
@@ -179,7 +223,7 @@ export function MovementTable({ data }: { data: InventoryMovementData }) {
                     <td className="py-2 pr-3 font-medium">
                       <a
                         className="underline underline-offset-2"
-                        href={`/op/analytics/inventory?view=ledger&productId=${r.productId}${r.variantId ? `&variantId=${r.variantId}` : ''}`}
+                        href={inventoryLedgerHref(r.productId, r.variantId)}
                         data-testid={`movement-drill-${r.productId}`}
                       >
                         {r.name}
@@ -326,15 +370,69 @@ export function LedgerTable({ data }: { data: InventoryLedgerData }) {
 }
 
 /**
+ * Ledger section: when a drill landing focuses it, the section is marked,
+ * announced, and pre-filtered by the drill product — the params → filtered
+ * ledger effect lives here (not in the href shape).
+ */
+export function InventoryLedgerSection({
+  data,
+  focus,
+  productId,
+  variantId,
+  sectionRef,
+}: {
+  data: InventoryLedgerData
+  focus: boolean
+  productId?: string
+  variantId?: string
+  sectionRef?: Ref<HTMLElement>
+}) {
+  return (
+    <section
+      ref={sectionRef}
+      data-testid="ledger-section"
+      data-focus={focus ? 'true' : 'false'}
+      tabIndex={focus ? 0 : -1}
+      aria-label={focus ? 'Stock ledger (drill-down filtered)' : 'Stock ledger'}
+    >
+      {focus ? (
+        <p className="mb-2 text-xs text-muted-foreground" data-testid="ledger-focus-note">
+          Ledger pre-filtered by drill-down
+          {productId ? ` · product ${productId}` : ''}
+          {variantId ? ` · variant ${variantId}` : ''}
+        </p>
+      ) : null}
+      <LedgerTable data={data} />
+    </section>
+  )
+}
+
+/**
  * Inventory Analytics (P8, §2.8): reconstructed value with closing_only
  * disclosure + reconstructedAt; turnover/DOI/sell-through/stock-out;
  * aging; movement classes under the default 30/90-day policy;
  * lost-sales honesty; drill-down value → movement → product/variant → ledger.
+ *
+ * Drill landing: ?view=ledger&productId=&variantId= (router search, or the
+ * live URL fallback) focuses the ledger section pre-filtered by the drill
+ * product — every ledger request carries the narrow via buildInventoryQuery.
  */
-export default function InventoryAnalytics() {
-  const [filters, setFilters] = useState<AnalyticsFilters>(DEFAULT_FILTERS)
+export default function InventoryAnalytics({ initialSearch }: { initialSearch?: InventoryDrillSearch } = {}) {
+  const [drill] = useState(() => resolveInventoryDrill(initialSearch ?? readInventoryDrillSearch()))
+  const [filters, setFilters] = useState<AnalyticsFilters>(() => ({
+    ...DEFAULT_FILTERS,
+    ...(drill.productId ? { productId: drill.productId } : {}),
+    ...(drill.variantId ? { variantId: drill.variantId } : {}),
+  }))
   const [page, setPage] = useState(1)
   const pageSize = 20
+  const ledgerRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (drill.focusLedger) {
+      ledgerRef.current?.focus?.()
+      ledgerRef.current?.scrollIntoView?.({ block: 'start' })
+    }
+  }, [drill.focusLedger])
   const { data, isLoading, error, refetch } = useInventoryValue(filters)
   const movement = useInventoryMovement(filters, page, pageSize)
   const stockouts = useInventoryStockouts(filters, page, pageSize)
@@ -389,7 +487,13 @@ export default function InventoryAnalytics() {
             )}
 
             {ledger.data ? (
-              <LedgerTable data={ledger.data.data} />
+              <InventoryLedgerSection
+                data={ledger.data.data}
+                focus={drill.focusLedger}
+                productId={drill.productId}
+                variantId={drill.variantId}
+                sectionRef={ledgerRef}
+              />
             ) : ledger.isLoading ? (
               <Skeleton className="h-[200px] w-full rounded-lg" />
             ) : (

@@ -170,6 +170,9 @@ export interface AnalyticsFilters {
   collectionStatus?: string
   /** Fulfillment location — inventory-scoped pages (OrderItem.sourceWarehouseId). */
   warehouseId?: string
+  /** Inventory drill-down narrow (P8 §4.2: movement row → ledger). */
+  productId?: string
+  variantId?: string
 }
 
 export const DEFAULT_FILTERS: AnalyticsFilters = { preset: 'last_30_days' }

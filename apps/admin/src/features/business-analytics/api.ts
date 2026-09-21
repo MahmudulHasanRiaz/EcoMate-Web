@@ -193,7 +193,7 @@ export function marketingUndatedQueryKey(filters: AnalyticsFilters, page: number
   return ['business-analytics-marketing-undated', buildOverviewQuery(filters), page, pageSize] as const
 }
 
-/** Inventory pages add the warehouse scope (§4.1 — fulfillment location). */
+/** Inventory pages add the warehouse scope + the P8 drill narrow (§4.1/§4.2). */
 const INVENTORY_FILTER_KEYS: (keyof AnalyticsFilters)[] = [
   'preset',
   'startDate',
@@ -209,6 +209,8 @@ const INVENTORY_FILTER_KEYS: (keyof AnalyticsFilters)[] = [
   'deliveryOutcome',
   'collectionStatus',
   'warehouseId',
+  'productId',
+  'variantId',
 ]
 
 /** Inventory filters → backend query params. Empty values are dropped, never sent. */

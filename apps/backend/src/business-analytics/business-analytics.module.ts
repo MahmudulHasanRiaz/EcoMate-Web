@@ -33,6 +33,7 @@ import { AnalyticsReconciliationService } from './analytics-reconciliation.servi
     AnalyticsPnlService,
     AnalyticsFulfillmentService,
     AnalyticsOverviewService,
+    AnalyticsProductsService,
     AnalyticsSalesService,
     AnalyticsCustomersService,
     AnalyticsMarketingService,

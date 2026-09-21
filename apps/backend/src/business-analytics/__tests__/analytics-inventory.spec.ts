@@ -27,6 +27,7 @@ import {
 } from '../analytics-inventory.service';
 import { AnalyticsInventoryService } from '../analytics-inventory.service';
 import { AnalyticsFilterService } from '../analytics-filter.service';
+import { LIVE_TTL_MS, CLOSED_TTL_MS } from '../analytics-envelope.util';
 import { classifyMovement } from '../metric-contract';
 
 const T0 = new Date('2026-08-01T00:00:00Z');
@@ -289,7 +290,7 @@ describe('AnalyticsInventoryService delegation', () => {
     const cache: any = { get: jest.fn().mockResolvedValue(null), set: jest.fn().mockResolvedValue(undefined) };
     const inventory: any = { valuation: jest.fn().mockResolvedValue({ totalValue: delegatedTotal, items: [] }) };
     const service = new AnalyticsInventoryService(prisma, filterService, cache, inventory);
-    return { service, prisma, inventory };
+    return { service, prisma, inventory, cache };
   }
 
   const QUERY: any = { preset: 'last_30_days' };
@@ -345,5 +346,146 @@ describe('AnalyticsInventoryService delegation', () => {
       expect(res.data.periodDays).toBe(res.meta.range.periodDays);
       expect(res.data.periodDays).toBeGreaterThan(0);
     }
+  });
+});
+
+// ─── cache TTL: 60s live / 15min closed (like siblings) ─────────────────────
+
+describe('AnalyticsInventoryService cache TTL', () => {
+  function serviceWithCache() {
+    const prisma: any = {
+      costingLot: { findMany: jest.fn().mockResolvedValue([]) },
+      product: { findMany: jest.fn().mockResolvedValue([]) },
+      order: { findMany: jest.fn().mockResolvedValue([]) },
+      physicalInventoryLedger: { findMany: jest.fn().mockResolvedValue([]) },
+      managedStockLedger: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const filterService = new AnalyticsFilterService(prisma);
+    const cache: any = { get: jest.fn().mockResolvedValue(null), set: jest.fn().mockResolvedValue(undefined) };
+    const inventory: any = { valuation: jest.fn().mockResolvedValue({ totalValue: 0, items: [] }) };
+    const service = new AnalyticsInventoryService(prisma, filterService, cache, inventory);
+    return { service, cache };
+  }
+
+  it('caches a live range for 60s', async () => {
+    const { service, cache } = serviceWithCache();
+    await service.getValue({ preset: 'last_30_days' } as any);
+    expect(cache.set).toHaveBeenCalled();
+    expect(cache.set.mock.calls[0][2]).toBe(LIVE_TTL_MS);
+    expect(LIVE_TTL_MS).toBe(60_000);
+  });
+
+  it('caches a closed range for 15min', async () => {
+    const { service, cache } = serviceWithCache();
+    await service.getValue({ preset: 'custom', startDate: '2020-01-01', endDate: '2020-01-31' } as any);
+    expect(cache.set).toHaveBeenCalled();
+    expect(cache.set.mock.calls[0][2]).toBe(CLOSED_TTL_MS);
+    expect(CLOSED_TTL_MS).toBe(15 * 60_000);
+  });
+
+  it('caches the ledger on a closed range for 15min', async () => {
+    const { service, cache } = serviceWithCache();
+    await service.getLedger({ preset: 'custom', startDate: '2020-01-01', endDate: '2020-01-31' } as any);
+    expect(cache.set).toHaveBeenCalled();
+    expect(cache.set.mock.calls[0][2]).toBe(CLOSED_TTL_MS);
+  });
+});
+
+// ─── fetchLots category/search scoping (mirrors delegated valuation) ─────────
+
+describe('fetchLots category/search scoping', () => {
+  const LOT = (productId: string, quantity = 10, unitCost = 5) => ({
+    quantity,
+    unitCost,
+    receivedAt: new Date('2026-01-01T00:00:00Z'),
+    productId,
+    variantId: null,
+    warehouseId: 'w1',
+    consumptions: [],
+  });
+
+  const PRODUCTS = [
+    { id: 'p1', name: 'Jar', sku: 'JAR-1', isActive: true, categoryId: 'c1' },
+    { id: 'p2', name: 'Box', sku: 'BOX-1', isActive: true, categoryId: 'c2' },
+  ];
+
+  /**
+   * Where-aware prisma double: the scoping read resolves the valuation
+   * cohort (active + category + name/sku contains), the isActive read serves
+   * id-in lookups, and the lot read honours productId narrows — the DB
+   * filtering the real queries rely on.
+   */
+  function serviceWithLots(lots: any[], delegatedTotal: number) {
+    const prisma: any = {
+      costingLot: {
+        findMany: jest.fn().mockImplementation(({ where }: any = {}) => {
+          let out = lots;
+          if (where?.warehouseId) out = out.filter((l) => l.warehouseId === where.warehouseId);
+          if (where?.productId !== undefined) {
+            out =
+              typeof where.productId === 'string'
+                ? out.filter((l) => l.productId === where.productId)
+                : out.filter((l) => where.productId.in.includes(l.productId));
+          }
+          return Promise.resolve(out);
+        }),
+      },
+      product: {
+        findMany: jest.fn().mockImplementation(({ where }: any = {}) => {
+          if (where?.id?.in) {
+            return Promise.resolve(PRODUCTS.filter((p) => where.id.in.includes(p.id)));
+          }
+          const and: any[] = where?.AND ?? [];
+          return Promise.resolve(
+            PRODUCTS.filter((p) =>
+              and.every((c: any) => {
+                if (c.isActive !== undefined) return p.isActive === c.isActive;
+                if (c.categoryId) return p.categoryId === c.categoryId;
+                if (c.OR) {
+                  return c.OR.some((o: any) => {
+                    if (o.name) return p.name.toLowerCase().includes(String(o.name.contains).toLowerCase());
+                    if (o.sku) return p.sku.toLowerCase().includes(String(o.sku.contains).toLowerCase());
+                    return false;
+                  });
+                }
+                return true;
+              }),
+            ),
+          );
+        }),
+      },
+      order: { findMany: jest.fn().mockResolvedValue([]) },
+      physicalInventoryLedger: { findMany: jest.fn().mockResolvedValue([]) },
+      managedStockLedger: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const filterService = new AnalyticsFilterService(prisma);
+    const cache: any = { get: jest.fn().mockResolvedValue(null), set: jest.fn().mockResolvedValue(undefined) };
+    const inventory: any = { valuation: jest.fn().mockResolvedValue({ totalValue: delegatedTotal, items: [] }) };
+    const service = new AnalyticsInventoryService(prisma, filterService, cache, inventory);
+    return { service, prisma, inventory };
+  }
+
+  it('category-filtered reconstruction matches the filtered delegation (no forced closing_only)', async () => {
+    const { service, prisma, inventory } = serviceWithLots([LOT('p1'), LOT('p2')], 50);
+    const res = await service.getValue({ preset: 'last_30_days', categoryId: 'c1' } as any);
+    // The delegation carries the category narrow …
+    expect(inventory.valuation).toHaveBeenCalledWith(expect.objectContaining({ categoryId: 'c1' }));
+    // … and the lot read is narrowed to the same cohort …
+    expect(prisma.costingLot.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ productId: { in: ['p1'] } }) }),
+    );
+    // … so the filtered reconstruction (৳50) agrees — reconstructed, not closing_only.
+    expect(res.data.basis).toBe('reconstructed');
+    expect(res.data.value.closing.value).toBe(50);
+    expect(res.data.coverage.lots).toBe(1);
+  });
+
+  it('search-filtered reconstruction matches the filtered delegation', async () => {
+    const { service, inventory } = serviceWithLots([LOT('p1'), LOT('p2')], 50);
+    const res = await service.getValue({ preset: 'last_30_days', search: 'jar' } as any);
+    expect(inventory.valuation).toHaveBeenCalledWith(expect.objectContaining({ search: 'jar' }));
+    expect(res.data.basis).toBe('reconstructed');
+    expect(res.data.value.closing.value).toBe(50);
+    expect(res.data.coverage.lots).toBe(1);
   });
 });
