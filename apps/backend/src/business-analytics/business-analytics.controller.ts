@@ -18,6 +18,7 @@ import { Permissions } from '../common/decorators/permissions.decorator';
 import { AnalyticsFilterDto } from './analytics-filter.dto';
 import { AnalyticsPnlService } from './analytics-pnl.service';
 import { AnalyticsFulfillmentService } from './analytics-fulfillment.service';
+import { AnalyticsOverviewService } from './analytics-overview.service';
 import { AnalyticsReconciliationService } from './analytics-reconciliation.service';
 
 @Controller('business-analytics')
@@ -28,8 +29,16 @@ export class BusinessAnalyticsController {
   constructor(
     private readonly pnlService: AnalyticsPnlService,
     private readonly fulfillmentService: AnalyticsFulfillmentService,
+    private readonly overviewService: AnalyticsOverviewService,
     private readonly reconciliationService: AnalyticsReconciliationService,
   ) {}
+
+  /** Composed Business Overview payload: pnl + fulfillment + trend + breakdowns + comparison (financial). */
+  @Get('overview')
+  @Permissions('view_analytics', 'view_financial_summary')
+  overview(@Query() query: AnalyticsFilterDto) {
+    return this.overviewService.getOverview(query);
+  }
 
   /** Full P&L ladder + single-count bridge + lenses (financial). */
   @Get('pnl')

@@ -61,6 +61,7 @@ import { Route as AuthenticatedMonUsersPresetsRouteImport } from './routes/_auth
 import { Route as AuthenticatedOpAccountingIndexRouteImport } from './routes/_authenticated/op/accounting/index'
 import { Route as AuthenticatedOpAccountingJournalEntriesRouteImport } from './routes/_authenticated/op/accounting/journal-entries'
 import { Route as AuthenticatedOpAccountingReportsRouteImport } from './routes/_authenticated/op/accounting/reports'
+import { Route as AuthenticatedOpAnalyticsOverviewRouteImport } from './routes/_authenticated/op/analytics/overview'
 import { Route as AuthenticatedOpAppsIndexRouteImport } from './routes/_authenticated/op/apps/index'
 import { Route as AuthenticatedOpAttributesIndexRouteImport } from './routes/_authenticated/op/attributes/index'
 import { Route as AuthenticatedOpBlockedIndexRouteImport } from './routes/_authenticated/op/blocked/index'
@@ -442,6 +443,12 @@ const AuthenticatedOpAccountingReportsRoute =
   AuthenticatedOpAccountingReportsRouteImport.update({
     id: '/op/accounting/reports',
     path: '/op/accounting/reports',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpAnalyticsOverviewRoute =
+  AuthenticatedOpAnalyticsOverviewRouteImport.update({
+    id: '/op/analytics/overview',
+    path: '/op/analytics/overview',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedOpAppsIndexRoute =
@@ -1054,6 +1061,7 @@ export interface FileRoutesByFullPath {
   '/mon/users/presets': typeof AuthenticatedMonUsersPresetsRoute
   '/op/accounting/journal-entries': typeof AuthenticatedOpAccountingJournalEntriesRoute
   '/op/accounting/reports': typeof AuthenticatedOpAccountingReportsRoute
+  '/op/analytics/overview': typeof AuthenticatedOpAnalyticsOverviewRoute
   '/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/op/employees/create': typeof AuthenticatedOpEmployeesCreateRoute
   '/op/employees/departments': typeof AuthenticatedOpEmployeesDepartmentsRoute
@@ -1202,6 +1210,7 @@ export interface FileRoutesByTo {
   '/mon/users/presets': typeof AuthenticatedMonUsersPresetsRoute
   '/op/accounting/journal-entries': typeof AuthenticatedOpAccountingJournalEntriesRoute
   '/op/accounting/reports': typeof AuthenticatedOpAccountingReportsRoute
+  '/op/analytics/overview': typeof AuthenticatedOpAnalyticsOverviewRoute
   '/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/op/employees/create': typeof AuthenticatedOpEmployeesCreateRoute
   '/op/employees/departments': typeof AuthenticatedOpEmployeesDepartmentsRoute
@@ -1352,6 +1361,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/users/presets': typeof AuthenticatedMonUsersPresetsRoute
   '/_authenticated/op/accounting/journal-entries': typeof AuthenticatedOpAccountingJournalEntriesRoute
   '/_authenticated/op/accounting/reports': typeof AuthenticatedOpAccountingReportsRoute
+  '/_authenticated/op/analytics/overview': typeof AuthenticatedOpAnalyticsOverviewRoute
   '/_authenticated/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/_authenticated/op/employees/create': typeof AuthenticatedOpEmployeesCreateRoute
   '/_authenticated/op/employees/departments': typeof AuthenticatedOpEmployeesDepartmentsRoute
@@ -1502,6 +1512,7 @@ export interface FileRouteTypes {
     | '/mon/users/presets'
     | '/op/accounting/journal-entries'
     | '/op/accounting/reports'
+    | '/op/analytics/overview'
     | '/op/customers/$id'
     | '/op/employees/create'
     | '/op/employees/departments'
@@ -1650,6 +1661,7 @@ export interface FileRouteTypes {
     | '/mon/users/presets'
     | '/op/accounting/journal-entries'
     | '/op/accounting/reports'
+    | '/op/analytics/overview'
     | '/op/customers/$id'
     | '/op/employees/create'
     | '/op/employees/departments'
@@ -1799,6 +1811,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/users/presets'
     | '/_authenticated/op/accounting/journal-entries'
     | '/_authenticated/op/accounting/reports'
+    | '/_authenticated/op/analytics/overview'
     | '/_authenticated/op/customers/$id'
     | '/_authenticated/op/employees/create'
     | '/_authenticated/op/employees/departments'
@@ -2288,6 +2301,13 @@ declare module '@tanstack/react-router' {
       path: '/op/accounting/reports'
       fullPath: '/op/accounting/reports'
       preLoaderRoute: typeof AuthenticatedOpAccountingReportsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/analytics/overview': {
+      id: '/_authenticated/op/analytics/overview'
+      path: '/op/analytics/overview'
+      fullPath: '/op/analytics/overview'
+      preLoaderRoute: typeof AuthenticatedOpAnalyticsOverviewRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/op/apps/': {
@@ -3091,6 +3111,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMonUsersPresetsRoute: typeof AuthenticatedMonUsersPresetsRoute
   AuthenticatedOpAccountingJournalEntriesRoute: typeof AuthenticatedOpAccountingJournalEntriesRoute
   AuthenticatedOpAccountingReportsRoute: typeof AuthenticatedOpAccountingReportsRoute
+  AuthenticatedOpAnalyticsOverviewRoute: typeof AuthenticatedOpAnalyticsOverviewRoute
   AuthenticatedOpCustomersIdRoute: typeof AuthenticatedOpCustomersIdRoute
   AuthenticatedOpEmployeesCreateRoute: typeof AuthenticatedOpEmployeesCreateRoute
   AuthenticatedOpEmployeesDepartmentsRoute: typeof AuthenticatedOpEmployeesDepartmentsRoute
@@ -3209,6 +3230,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpAccountingJournalEntriesRoute:
     AuthenticatedOpAccountingJournalEntriesRoute,
   AuthenticatedOpAccountingReportsRoute: AuthenticatedOpAccountingReportsRoute,
+  AuthenticatedOpAnalyticsOverviewRoute: AuthenticatedOpAnalyticsOverviewRoute,
   AuthenticatedOpCustomersIdRoute: AuthenticatedOpCustomersIdRoute,
   AuthenticatedOpEmployeesCreateRoute: AuthenticatedOpEmployeesCreateRoute,
   AuthenticatedOpEmployeesDepartmentsRoute:

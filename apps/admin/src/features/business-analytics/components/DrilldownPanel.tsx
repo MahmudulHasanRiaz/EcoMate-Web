@@ -1,0 +1,50 @@
+import { ArrowUpRight } from 'lucide-react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import type { AnalyticsFilters } from '../types'
+import { buildOverviewQuery } from '../api'
+
+export interface DrilldownItem {
+  label: string
+  description: string
+  /** Route path (without query). Current filters propagate as params. */
+  to: string
+  /** Extra dimension params for this drill step. */
+  params?: Record<string, string>
+}
+
+/** §4.2 overview drill paths — every link propagates the current filter params. */
+export function DrilldownPanel({ filters }: { filters: AnalyticsFilters }) {
+  const base = buildOverviewQuery(filters)
+  const href = (to: string, params?: Record<string, string>) => {
+    const qs = new URLSearchParams({ ...base, ...(params ?? {}) }).toString()
+    return `${to}${qs ? `?${qs}` : ''}`
+  }
+  const items: DrilldownItem[] = [
+    { label: 'Net Profit → P&L ladder → cost line → orders', description: 'Trace profit into its cost inputs', to: '/op/analytics/overview', params: { view: 'ladder' } },
+    { label: 'Contribution → bridge → Delivery Charge Retained', description: 'Single-count bridge operands', to: '/op/analytics/overview', params: { view: 'bridge' } },
+    { label: 'Not-yet-recognised pipeline', description: 'Pre-delivery orders by stage', to: '/op/orders', params: { deliveryOutcome: 'in_fulfilment' } },
+    { label: 'Fulfillment Margin → per-order settlement', description: 'Full panel lands in P5 (Sales & Orders)', to: '/op/analytics/overview', params: { view: 'fulfillment' } },
+    { label: 'Settlement gap → COD orders pending settlement', description: 'Dispatch list for collection-unavailable orders', to: '/op/dispatch', params: { collectionStatus: 'cod-unavailable' } },
+    { label: 'Marketing spend → undated-spend fix-list', description: 'Consumptions missing spendDate (P7 full view)', to: '/op/analytics/overview', params: { view: 'coverage' } },
+  ]
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium">Drill Down</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="divide-y divide-border/50">
+          {items.map((i) => (
+            <a key={i.label} href={href(i.to, i.params)} className="flex items-center justify-between py-2 hover:opacity-80">
+              <span>
+                <span className="block text-sm font-medium">{i.label}</span>
+                <span className="block text-xs text-muted-foreground">{i.description}</span>
+              </span>
+              <ArrowUpRight className="h-4 w-4 text-muted-foreground shrink-0" />
+            </a>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}

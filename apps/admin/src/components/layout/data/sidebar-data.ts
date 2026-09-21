@@ -76,6 +76,14 @@ export const sidebarData: SidebarData = {
           ],
         },
         { title: 'Customers', url: '/op/customers', icon: Users, feature: 'admin_customers' },
+        {
+          title: 'Business Analytics',
+          icon: BarChart3,
+          feature: 'admin_analytics',
+          items: [
+            { title: 'Overview', url: '/op/analytics/overview' },
+          ],
+        },
         { title: 'Payments', url: '/op/payments', icon: Coins, feature: 'admin_payments' },
         { title: 'Refunds', url: '/op/refunds', icon: RefreshCw, feature: 'admin_refunds' },
         { title: 'Coupons', url: '/op/coupons', icon: Percent, feature: 'admin_coupons' },

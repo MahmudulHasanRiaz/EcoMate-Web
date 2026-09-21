@@ -4,6 +4,7 @@ import { BusinessAnalyticsController } from './business-analytics.controller';
 import { AnalyticsFilterService } from './analytics-filter.service';
 import { AnalyticsPnlService } from './analytics-pnl.service';
 import { AnalyticsFulfillmentService } from './analytics-fulfillment.service';
+import { AnalyticsOverviewService } from './analytics-overview.service';
 import { AnalyticsReconciliationService } from './analytics-reconciliation.service';
 
 @Module({
@@ -13,12 +14,14 @@ import { AnalyticsReconciliationService } from './analytics-reconciliation.servi
     AnalyticsFilterService,
     AnalyticsPnlService,
     AnalyticsFulfillmentService,
+    AnalyticsOverviewService,
     AnalyticsReconciliationService,
   ],
   exports: [
     AnalyticsFilterService,
     AnalyticsPnlService,
     AnalyticsFulfillmentService,
+    AnalyticsOverviewService,
     AnalyticsReconciliationService,
   ],
 })
