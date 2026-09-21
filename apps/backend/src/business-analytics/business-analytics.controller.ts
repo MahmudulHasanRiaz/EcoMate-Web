@@ -11,14 +11,16 @@
  * reconciliation) therefore re-declares its FULL requirement explicitly —
  * view_analytics AND view_financial_summary. Frontend hiding is cosmetic only.
  */
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Permissions } from '../common/decorators/permissions.decorator';
 import { AnalyticsFilterDto } from './analytics-filter.dto';
+import { ProductsQueryDto } from './analytics-products.dto';
 import { AnalyticsPnlService } from './analytics-pnl.service';
 import { AnalyticsFulfillmentService } from './analytics-fulfillment.service';
 import { AnalyticsOverviewService } from './analytics-overview.service';
+import { AnalyticsProductsService } from './analytics-products.service';
 import { AnalyticsReconciliationService } from './analytics-reconciliation.service';
 
 @Controller('business-analytics')
@@ -30,6 +32,7 @@ export class BusinessAnalyticsController {
     private readonly pnlService: AnalyticsPnlService,
     private readonly fulfillmentService: AnalyticsFulfillmentService,
     private readonly overviewService: AnalyticsOverviewService,
+    private readonly productsService: AnalyticsProductsService,
     private readonly reconciliationService: AnalyticsReconciliationService,
   ) {}
 
@@ -59,6 +62,27 @@ export class BusinessAnalyticsController {
   @Permissions('view_analytics', 'view_financial_summary')
   fulfillment(@Query() query: AnalyticsFilterDto) {
     return this.fulfillmentService.getFulfillment(query);
+  }
+
+  /** Product P&L list: parent/variant rows with basis labels (financial). */
+  @Get('products/uncosted')
+  @Permissions('view_analytics', 'view_financial_summary')
+  uncostedProducts(@Query() query: ProductsQueryDto) {
+    return this.productsService.getUncosted(query);
+  }
+
+  /** Product P&L list: parent rows with basis labels (financial). */
+  @Get('products')
+  @Permissions('view_analytics', 'view_financial_summary')
+  products(@Query() query: ProductsQueryDto) {
+    return this.productsService.getProducts(query);
+  }
+
+  /** Product detail: parent + variant P&L rows with performance trend (financial). */
+  @Get('products/:id')
+  @Permissions('view_analytics', 'view_financial_summary')
+  productDetail(@Param('id') id: string, @Query() query: ProductsQueryDto) {
+    return this.productsService.getProductDetail(id, query);
   }
 
   /** Reconciliation matrix + warnings (financial). */

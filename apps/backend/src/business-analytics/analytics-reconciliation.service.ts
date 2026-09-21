@@ -1,9 +1,9 @@
 /**
  * Business analytics reconciliation service (§4.3).
  *
- * Registry of checks — P4/P6/P7/P8/P9 extend it by pushing entries onto
- * CHECK_REGISTRY (no runner changes). Deferred checks (R1/R2 need the P4
- * product service; R7/R8 need P7 attribution views; R13 needs an accounting
+ * Registry of checks — P6/P7/P8/P9 extend it by pushing entries onto
+ * CHECK_REGISTRY (no runner changes). R1/R2 are live (P4 product service);
+ * deferred checks (R7/R8 need P7 attribution views; R13 needs an accounting
  * period mapping) return warn with explicit reasons — never a silent pass.
  */
 import { Injectable } from '@nestjs/common';
@@ -25,7 +25,7 @@ import {
 } from './analytics-filter.service';
 import type { AnalyticsFilterDto } from './analytics-filter.dto';
 import { AnalyticsPnlService } from './analytics-pnl.service';
-import {
+import { AnalyticsProductsService } from './analytics-products.service';import {
   AnalyticsFulfillmentService,
   assertNoRevenueLeak,
   settleOrder,
@@ -112,6 +112,15 @@ export interface ReconciliationInput {
   };
   revenueBucketHasSettlement: boolean;
   doubleReversalOrders: string[];
+  /** P4 product aggregates: R1 compares productNetSum to the ladder on the
+   * pre-refund basis; R2 checks every parent against its variants. */
+  products: {
+    productNetSum: number;
+    /** A product line-scope (product/variant/category/warehouse/search) is
+     * active — R1 warns because the identity holds on the unscoped scope. */
+    scoped: boolean;
+    parents: { productId: string; parentNet: number; variantNetSum: number }[];
+  };
   marketingIdentity: { allTimeCost: number; datedCost: number; undatedCost: number };
   marketingPeriodTotal: number;
   codLeakOrders: string[];
@@ -136,8 +145,55 @@ function result(
   return { id, status, expected, actual, explanation };
 }
 
-/** R-checks with live implementations. Deferred ones live in DEFERRED_CHECKS. */
+/** R-checks with live implementations. R7/R8 stay deferred (P7). */
 export const CHECK_REGISTRY: CheckDef[] = [
+  {
+    id: 'R1',
+    title: 'Σ product Net Sales == Business Net Sales (pre-refund basis)',
+    run: (i) => {
+      if (i.products.scoped) {
+        return result(
+          'R1',
+          'warn',
+          'unscoped identity',
+          'scoped',
+          'a product line-scope (product/variant/category/warehouse/search) is active — the R1 identity holds on the unscoped scope only',
+        );
+      }
+      // Refunds are order-level and are never allocated to products
+      // (limitation 3), so the product universe nets to gross − discounts −
+      // returns: the ladder net plus the refund reversal back.
+      const expected = i.ladder.netSales + i.ladder.refundsReversal;
+      const ok = eq(i.products.productNetSum, expected);
+      return result(
+        'R1',
+        ok ? 'pass' : 'fail',
+        expected,
+        i.products.productNetSum,
+        ok
+          ? 'product Net Sales sum to the ladder net on the pre-refund basis (refunds unallocated by design)'
+          : 'product/ladder drift: Σ product Net Sales differs from net + refundsReversal — recognition or discount logic diverged between the product and ladder paths',
+      );
+    },
+  },
+  {
+    id: 'R2',
+    title: 'Σ variant Net Sales == parent product Net Sales',
+    run: (i) => {
+      const bad = i.products.parents
+        .filter((p) => !eq(p.parentNet, p.variantNetSum))
+        .map((p) => p.productId);
+      return result(
+        'R2',
+        bad.length === 0 ? 'pass' : 'fail',
+        [],
+        bad,
+        bad.length === 0
+          ? 'every parent foots to its variants (parent = Σ children, derived never stored)'
+          : `parents not footing to variants: ${bad.join(', ')}`,
+      );
+    },
+  },
   {
     id: 'R3',
     title: 'Ladder components rebuild to the reported Net Profit',
@@ -342,8 +398,6 @@ export const CHECK_REGISTRY: CheckDef[] = [
  * once a range→period correspondence exists.
  */
 export const DEFERRED_CHECKS: Record<string, string> = {
-  R1: 'deferred to P4: needs the product P&L service (Σ product Net Sales)',
-  R2: 'deferred to P4: needs the product P&L service (Σ variant == parent)',
   R7: 'deferred to P7: needs attribution views (spend-date P&L vs allocation basis)',
   R8: 'deferred to P7: needs attribution views (ProductMarketingCost identity by campaign)',
   R13: 'deferred: accounting.profitAndLoss is keyed by financial periodId with no range mapping; the F1 delta (orders never post journals) is expected by construction and reported with cause',
@@ -452,6 +506,7 @@ export class AnalyticsReconciliationService {
     private readonly filters: AnalyticsFilterService,
     private readonly pnl: AnalyticsPnlService,
     private readonly fulfillment: AnalyticsFulfillmentService,
+    private readonly products: AnalyticsProductsService,
     private readonly cache: CacheService,
   ) {}
 
@@ -478,19 +533,20 @@ export class AnalyticsReconciliationService {
     const { payments: _strippedPaymentsFilter, ...orderPart } = where;
     void _strippedPaymentsFilter;
 
-    // Three overlapping reads, deliberately separate (not one shared fetch):
-    // pnl.getPnl and fulfillment.getFulfillment each own their projections
-    // and date bases (recognition-dated revenue vs cohort settlement), and
+    // Four overlapping reads, deliberately separate (not one shared fetch):
+    // pnl.getPnl, fulfillment.getFulfillment and products.getAggregates each
+    // own their projections and date bases (recognition-dated revenue vs
     // the candidates/expenses/consumptions/categories/aggregate reads below
     // re-derive the partition, R12, R18, R4, R5 and R17 checks INDEPENDENTLY
     // of the ladder/settlement code paths — sharing row objects would couple
     // the checker to the checked and let a regression pass itself. The
     // dedicated R5 aggregate is its own query by the same principle (never
     // the lens value fed back to itself).
-    const [pnlRes, fulRes, candidates, expenseRows, consumptions, categories, paidAgg] =
+    const [pnlRes, fulRes, productsAgg, candidates, expenseRows, consumptions, categories, paidAgg] =
       await Promise.all([
         this.pnl.getPnl(query),
         this.fulfillment.getFulfillment(query),
+        this.products.getAggregates(query),
         this.prisma.order.findMany({
           where,
           select: reconciliationCandidateSelect,
@@ -723,6 +779,11 @@ export class AnalyticsReconciliationService {
       },
       revenueBucketHasSettlement,
       doubleReversalOrders,
+      products: {
+        productNetSum: productsAgg.productNetSum,
+        scoped: productsAgg.scoped,
+        parents: productsAgg.parents,
+      },
       marketingIdentity: identity,
       marketingPeriodTotal: ladder.marketingCost,
       codLeakOrders,

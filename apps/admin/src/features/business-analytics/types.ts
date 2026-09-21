@@ -172,6 +172,93 @@ export interface AnalyticsFilters {
 
 export const DEFAULT_FILTERS: AnalyticsFilters = { preset: 'last_30_days' }
 
+/** P4 product list/detail filters: shared dimensions + list-only search/sort. */
+export interface ProductAnalyticsFilters extends AnalyticsFilters {
+  search?: string
+  sort?: 'netSales' | 'units' | 'contribution' | 'margin' | 'returnRate'
+  dir?: 'asc' | 'desc'
+}
+
+/** Verbatim §2.6 floor — the product P&L bottom line, stated on every product view. */
+export const PRODUCT_CONTRIBUTION_FLOOR_STATEMENT =
+  'Product P&L stops at Contribution. Company operating expenses are not allocated to products.'
+
+/** Verbatim §2.2/F2 label — product/variant return rates are order-level incidence. */
+export const RETURN_INCIDENCE_LABEL = 'order-level incidence — never fractional'
+
+export type MovementClass = 'Dead' | 'Fast' | 'Slow' | 'Normal'
+
+/** Parent row: every metric is a KpiValue with its §2.6 basis (direct/allocated/attributed). */
+export interface ProductPnlRow {
+  productId: string
+  name: string
+  stock: number
+  movementClass: MovementClass
+  doi: number | null
+  lowMargin: boolean
+  gross: KpiValue
+  discounts: KpiValue
+  returns: KpiValue
+  netSales: KpiValue
+  units: KpiValue
+  cogs: KpiValue
+  marketing: KpiValue
+  fulfillment: KpiValue
+  fees: KpiValue
+  contribution: KpiValue
+  contributionMargin: number | null
+  recognisedOrders: number
+  returnOrders: number
+  returnRate: KpiValue
+  uncostedUnits: number
+  uncostedLines: number
+}
+
+export interface ProductVariantRow extends ProductPnlRow {
+  variantId: string | null
+  variantLabel: string
+}
+
+export interface ProductsData {
+  rows: ProductPnlRow[]
+  totals: { netSales: number; contribution: number; units: number }
+  uncosted: { units: number; lines: number }
+  contributionFloor: string
+}
+
+export interface ProductDetailData {
+  product: { id: string; name: string; stock: number; movementClass: MovementClass; doi: number | null }
+  parent: ProductPnlRow
+  variants: ProductVariantRow[]
+  trend: { requestedGranularity: string; granularity: string; points: TrendPoint[] }
+  uncosted: {
+    units: number
+    lines: number
+    rows: { orderId: string; orderItemId: string; productId: string; variantId: string | null; quantity: number; lineNet: number }[]
+  }
+  contributionFloor: string
+}
+
+export interface UncostedData {
+  rows: { orderId: string; orderItemId: string; productId: string; variantId: string | null; quantity: number; lineNet: number; productName: string; variantLabel: string }[]
+  totals: { units: number; lines: number }
+}
+
+export interface ProductsResponse {
+  data: ProductsData
+  meta: OverviewMeta
+}
+
+export interface ProductDetailResponse {
+  data: ProductDetailData
+  meta: OverviewMeta
+}
+
+export interface UncostedResponse {
+  data: UncostedData
+  meta: OverviewMeta
+}
+
 /** ৳ formatting — never called with null (states render first). */
 export function formatBDT(v: number): string {
   const sign = v < 0 ? '-' : ''

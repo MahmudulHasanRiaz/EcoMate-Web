@@ -62,6 +62,7 @@ import { Route as AuthenticatedOpAccountingIndexRouteImport } from './routes/_au
 import { Route as AuthenticatedOpAccountingJournalEntriesRouteImport } from './routes/_authenticated/op/accounting/journal-entries'
 import { Route as AuthenticatedOpAccountingReportsRouteImport } from './routes/_authenticated/op/accounting/reports'
 import { Route as AuthenticatedOpAnalyticsOverviewRouteImport } from './routes/_authenticated/op/analytics/overview'
+import { Route as AuthenticatedOpAnalyticsProductsRouteImport } from './routes/_authenticated/op/analytics/products'
 import { Route as AuthenticatedOpAppsIndexRouteImport } from './routes/_authenticated/op/apps/index'
 import { Route as AuthenticatedOpAttributesIndexRouteImport } from './routes/_authenticated/op/attributes/index'
 import { Route as AuthenticatedOpBlockedIndexRouteImport } from './routes/_authenticated/op/blocked/index'
@@ -136,6 +137,7 @@ import { Route as AuthenticatedMonSettingsStorefrontIndexRouteImport } from './r
 import { Route as AuthenticatedMonSettingsSystemIndexRouteImport } from './routes/_authenticated/mon/settings/system/index'
 import { Route as AuthenticatedMonSettingsTrackingIndexRouteImport } from './routes/_authenticated/mon/settings/tracking/index'
 import { Route as AuthenticatedMonSettingsTrackingMonitoringRouteImport } from './routes/_authenticated/mon/settings/tracking/monitoring'
+import { Route as AuthenticatedOpAnalyticsProductsIdRouteImport } from './routes/_authenticated/op/analytics/products.$id'
 import { Route as AuthenticatedOpDispatchDuplicateReviewIndexRouteImport } from './routes/_authenticated/op/dispatch/duplicate-review/index'
 import { Route as AuthenticatedOpInventoryPhysicalIndexRouteImport } from './routes/_authenticated/op/inventory/physical/index'
 import { Route as AuthenticatedOpInventoryPhysicalReservationsRouteImport } from './routes/_authenticated/op/inventory/physical/reservations'
@@ -449,6 +451,12 @@ const AuthenticatedOpAnalyticsOverviewRoute =
   AuthenticatedOpAnalyticsOverviewRouteImport.update({
     id: '/op/analytics/overview',
     path: '/op/analytics/overview',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpAnalyticsProductsRoute =
+  AuthenticatedOpAnalyticsProductsRouteImport.update({
+    id: '/op/analytics/products',
+    path: '/op/analytics/products',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedOpAppsIndexRoute =
@@ -894,6 +902,12 @@ const AuthenticatedMonSettingsTrackingMonitoringRoute =
     path: '/tracking/monitoring',
     getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
+const AuthenticatedOpAnalyticsProductsIdRoute =
+  AuthenticatedOpAnalyticsProductsIdRouteImport.update({
+    id: '/$id',
+    path: '/$id',
+    getParentRoute: () => AuthenticatedOpAnalyticsProductsRoute,
+  } as any)
 const AuthenticatedOpDispatchDuplicateReviewIndexRoute =
   AuthenticatedOpDispatchDuplicateReviewIndexRouteImport.update({
     id: '/op/dispatch/duplicate-review/',
@@ -1062,6 +1076,7 @@ export interface FileRoutesByFullPath {
   '/op/accounting/journal-entries': typeof AuthenticatedOpAccountingJournalEntriesRoute
   '/op/accounting/reports': typeof AuthenticatedOpAccountingReportsRoute
   '/op/analytics/overview': typeof AuthenticatedOpAnalyticsOverviewRoute
+  '/op/analytics/products': typeof AuthenticatedOpAnalyticsProductsRouteWithChildren
   '/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/op/employees/create': typeof AuthenticatedOpEmployeesCreateRoute
   '/op/employees/departments': typeof AuthenticatedOpEmployeesDepartmentsRoute
@@ -1129,6 +1144,7 @@ export interface FileRoutesByFullPath {
   '/op/tasks/': typeof AuthenticatedOpTasksIndexRoute
   '/op/transactions/': typeof AuthenticatedOpTransactionsIndexRoute
   '/mon/settings/tracking/monitoring': typeof AuthenticatedMonSettingsTrackingMonitoringRoute
+  '/op/analytics/products/$id': typeof AuthenticatedOpAnalyticsProductsIdRoute
   '/op/inventory/physical/reservations': typeof AuthenticatedOpInventoryPhysicalReservationsRoute
   '/op/marketing/campaigns/$id': typeof AuthenticatedOpMarketingCampaignsIdRoute
   '/op/print/invoice/$id': typeof AuthenticatedOpPrintInvoiceIdRoute
@@ -1211,6 +1227,7 @@ export interface FileRoutesByTo {
   '/op/accounting/journal-entries': typeof AuthenticatedOpAccountingJournalEntriesRoute
   '/op/accounting/reports': typeof AuthenticatedOpAccountingReportsRoute
   '/op/analytics/overview': typeof AuthenticatedOpAnalyticsOverviewRoute
+  '/op/analytics/products': typeof AuthenticatedOpAnalyticsProductsRouteWithChildren
   '/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/op/employees/create': typeof AuthenticatedOpEmployeesCreateRoute
   '/op/employees/departments': typeof AuthenticatedOpEmployeesDepartmentsRoute
@@ -1278,6 +1295,7 @@ export interface FileRoutesByTo {
   '/op/tasks': typeof AuthenticatedOpTasksIndexRoute
   '/op/transactions': typeof AuthenticatedOpTransactionsIndexRoute
   '/mon/settings/tracking/monitoring': typeof AuthenticatedMonSettingsTrackingMonitoringRoute
+  '/op/analytics/products/$id': typeof AuthenticatedOpAnalyticsProductsIdRoute
   '/op/inventory/physical/reservations': typeof AuthenticatedOpInventoryPhysicalReservationsRoute
   '/op/marketing/campaigns/$id': typeof AuthenticatedOpMarketingCampaignsIdRoute
   '/op/print/invoice/$id': typeof AuthenticatedOpPrintInvoiceIdRoute
@@ -1362,6 +1380,7 @@ export interface FileRoutesById {
   '/_authenticated/op/accounting/journal-entries': typeof AuthenticatedOpAccountingJournalEntriesRoute
   '/_authenticated/op/accounting/reports': typeof AuthenticatedOpAccountingReportsRoute
   '/_authenticated/op/analytics/overview': typeof AuthenticatedOpAnalyticsOverviewRoute
+  '/_authenticated/op/analytics/products': typeof AuthenticatedOpAnalyticsProductsRouteWithChildren
   '/_authenticated/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/_authenticated/op/employees/create': typeof AuthenticatedOpEmployeesCreateRoute
   '/_authenticated/op/employees/departments': typeof AuthenticatedOpEmployeesDepartmentsRoute
@@ -1429,6 +1448,7 @@ export interface FileRoutesById {
   '/_authenticated/op/tasks/': typeof AuthenticatedOpTasksIndexRoute
   '/_authenticated/op/transactions/': typeof AuthenticatedOpTransactionsIndexRoute
   '/_authenticated/mon/settings/tracking/monitoring': typeof AuthenticatedMonSettingsTrackingMonitoringRoute
+  '/_authenticated/op/analytics/products/$id': typeof AuthenticatedOpAnalyticsProductsIdRoute
   '/_authenticated/op/inventory/physical/reservations': typeof AuthenticatedOpInventoryPhysicalReservationsRoute
   '/_authenticated/op/marketing/campaigns/$id': typeof AuthenticatedOpMarketingCampaignsIdRoute
   '/_authenticated/op/print/invoice/$id': typeof AuthenticatedOpPrintInvoiceIdRoute
@@ -1513,6 +1533,7 @@ export interface FileRouteTypes {
     | '/op/accounting/journal-entries'
     | '/op/accounting/reports'
     | '/op/analytics/overview'
+    | '/op/analytics/products'
     | '/op/customers/$id'
     | '/op/employees/create'
     | '/op/employees/departments'
@@ -1580,6 +1601,7 @@ export interface FileRouteTypes {
     | '/op/tasks/'
     | '/op/transactions/'
     | '/mon/settings/tracking/monitoring'
+    | '/op/analytics/products/$id'
     | '/op/inventory/physical/reservations'
     | '/op/marketing/campaigns/$id'
     | '/op/print/invoice/$id'
@@ -1662,6 +1684,7 @@ export interface FileRouteTypes {
     | '/op/accounting/journal-entries'
     | '/op/accounting/reports'
     | '/op/analytics/overview'
+    | '/op/analytics/products'
     | '/op/customers/$id'
     | '/op/employees/create'
     | '/op/employees/departments'
@@ -1729,6 +1752,7 @@ export interface FileRouteTypes {
     | '/op/tasks'
     | '/op/transactions'
     | '/mon/settings/tracking/monitoring'
+    | '/op/analytics/products/$id'
     | '/op/inventory/physical/reservations'
     | '/op/marketing/campaigns/$id'
     | '/op/print/invoice/$id'
@@ -1812,6 +1836,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/accounting/journal-entries'
     | '/_authenticated/op/accounting/reports'
     | '/_authenticated/op/analytics/overview'
+    | '/_authenticated/op/analytics/products'
     | '/_authenticated/op/customers/$id'
     | '/_authenticated/op/employees/create'
     | '/_authenticated/op/employees/departments'
@@ -1879,6 +1904,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/tasks/'
     | '/_authenticated/op/transactions/'
     | '/_authenticated/mon/settings/tracking/monitoring'
+    | '/_authenticated/op/analytics/products/$id'
     | '/_authenticated/op/inventory/physical/reservations'
     | '/_authenticated/op/marketing/campaigns/$id'
     | '/_authenticated/op/print/invoice/$id'
@@ -2308,6 +2334,13 @@ declare module '@tanstack/react-router' {
       path: '/op/analytics/overview'
       fullPath: '/op/analytics/overview'
       preLoaderRoute: typeof AuthenticatedOpAnalyticsOverviewRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/analytics/products': {
+      id: '/_authenticated/op/analytics/products'
+      path: '/op/analytics/products'
+      fullPath: '/op/analytics/products'
+      preLoaderRoute: typeof AuthenticatedOpAnalyticsProductsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/op/apps/': {
@@ -2828,6 +2861,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonSettingsTrackingMonitoringRouteImport
       parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
+    '/_authenticated/op/analytics/products/$id': {
+      id: '/_authenticated/op/analytics/products/$id'
+      path: '/$id'
+      fullPath: '/op/analytics/products/$id'
+      preLoaderRoute: typeof AuthenticatedOpAnalyticsProductsIdRouteImport
+      parentRoute: typeof AuthenticatedOpAnalyticsProductsRoute
+    }
     '/_authenticated/op/dispatch/duplicate-review/': {
       id: '/_authenticated/op/dispatch/duplicate-review/'
       path: '/op/dispatch/duplicate-review'
@@ -3083,6 +3123,21 @@ const AuthenticatedOpSettingsRouteRouteWithChildren =
     AuthenticatedOpSettingsRouteRouteChildren,
   )
 
+interface AuthenticatedOpAnalyticsProductsRouteChildren {
+  AuthenticatedOpAnalyticsProductsIdRoute: typeof AuthenticatedOpAnalyticsProductsIdRoute
+}
+
+const AuthenticatedOpAnalyticsProductsRouteChildren: AuthenticatedOpAnalyticsProductsRouteChildren =
+  {
+    AuthenticatedOpAnalyticsProductsIdRoute:
+      AuthenticatedOpAnalyticsProductsIdRoute,
+  }
+
+const AuthenticatedOpAnalyticsProductsRouteWithChildren =
+  AuthenticatedOpAnalyticsProductsRoute._addFileChildren(
+    AuthenticatedOpAnalyticsProductsRouteChildren,
+  )
+
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedMonSettingsRouteRoute: typeof AuthenticatedMonSettingsRouteRouteWithChildren
@@ -3112,6 +3167,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpAccountingJournalEntriesRoute: typeof AuthenticatedOpAccountingJournalEntriesRoute
   AuthenticatedOpAccountingReportsRoute: typeof AuthenticatedOpAccountingReportsRoute
   AuthenticatedOpAnalyticsOverviewRoute: typeof AuthenticatedOpAnalyticsOverviewRoute
+  AuthenticatedOpAnalyticsProductsRoute: typeof AuthenticatedOpAnalyticsProductsRouteWithChildren
   AuthenticatedOpCustomersIdRoute: typeof AuthenticatedOpCustomersIdRoute
   AuthenticatedOpEmployeesCreateRoute: typeof AuthenticatedOpEmployeesCreateRoute
   AuthenticatedOpEmployeesDepartmentsRoute: typeof AuthenticatedOpEmployeesDepartmentsRoute
@@ -3231,6 +3287,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
     AuthenticatedOpAccountingJournalEntriesRoute,
   AuthenticatedOpAccountingReportsRoute: AuthenticatedOpAccountingReportsRoute,
   AuthenticatedOpAnalyticsOverviewRoute: AuthenticatedOpAnalyticsOverviewRoute,
+  AuthenticatedOpAnalyticsProductsRoute:
+    AuthenticatedOpAnalyticsProductsRouteWithChildren,
   AuthenticatedOpCustomersIdRoute: AuthenticatedOpCustomersIdRoute,
   AuthenticatedOpEmployeesCreateRoute: AuthenticatedOpEmployeesCreateRoute,
   AuthenticatedOpEmployeesDepartmentsRoute:

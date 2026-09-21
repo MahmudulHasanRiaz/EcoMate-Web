@@ -26,6 +26,7 @@ export function DrilldownPanel({ filters }: { filters: AnalyticsFilters }) {
     { label: 'Fulfillment Margin → per-order settlement', description: 'Full panel lands in P5 (Sales & Orders)', to: '/op/analytics/overview', params: { view: 'fulfillment' } },
     { label: 'Settlement gap → COD orders pending settlement', description: 'Dispatch list for collection-unavailable orders', to: '/op/dispatch', params: { collectionStatus: 'cod-unavailable' } },
     { label: 'Marketing spend → undated-spend fix-list', description: 'Consumptions missing spendDate (P7 full view)', to: '/op/analytics/overview', params: { view: 'coverage' } },
+    { label: 'Low product margin → Products → product → variant → orders', description: 'Parent/variant P&L down to Contribution', to: '/op/analytics/products' },
   ]
   return (
     <Card>

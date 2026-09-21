@@ -16,7 +16,7 @@ import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
 import { ROLES_KEY } from '../../common/decorators/roles.decorator';
 import { BusinessAnalyticsController } from '../business-analytics.controller';
 
-const FINANCIAL = ['pnl', 'expenses', 'fulfillment', 'reconciliation', 'overview'];
+const FINANCIAL = ['pnl', 'expenses', 'fulfillment', 'reconciliation', 'overview', 'products', 'productDetail', 'uncostedProducts'];
 const GENERAL = ['lenses'];
 
 function contextFor(

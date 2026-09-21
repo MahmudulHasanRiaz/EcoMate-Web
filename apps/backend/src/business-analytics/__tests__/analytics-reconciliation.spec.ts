@@ -1,8 +1,8 @@
 /**
  * P2 data-layer tests — reconciliation registry (§4.3).
  *
- * R3,R4,R5,R6,R9,R10,R11,R12,R14,R15,R16,R17,R18 + W1–W11 now.
- * R1,R2 (P4 product service), R7,R8 (P7 attribution views), R13 (accounting
+ * R3,R4,R5,R6,R9,R10,R11,R12,R14,R15,R16,R17,R18 + R1,R2 (P4) now.
+ * R7,R8 (P7 attribution views), R13 (accounting
  * period delta) stay deferred with explicit reasons — each returns warn, never
  * a silent pass. The registry is designed for P4/P6/P7/P8/P9 extension.
  */
@@ -20,6 +20,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AnalyticsFilterService } from '../analytics-filter.service';
 import { AnalyticsPnlService } from '../analytics-pnl.service';
 import { AnalyticsFulfillmentService } from '../analytics-fulfillment.service';
+import { AnalyticsProductsService } from '../analytics-products.service';
 import { CacheService } from '../../cache/cache.service';
 
 function baseInput(extra: Partial<ReconciliationInput> = {}): ReconciliationInput {
@@ -66,6 +67,11 @@ function baseInput(extra: Partial<ReconciliationInput> = {}): ReconciliationInpu
     fulfillmentOnline: { margin: 20, deliveryChargeRetained: 80, courierCost: 60 },
     revenueBucketHasSettlement: false,
     doubleReversalOrders: [],
+    products: {
+      productNetSum: 900,
+      scoped: false,
+      parents: [],
+    },
     marketingIdentity: { allTimeCost: 800, datedCost: 500, undatedCost: 300 },
     marketingPeriodTotal: 500,
     codLeakOrders: [],
@@ -97,21 +103,21 @@ function byId(results: { id: string }[], id: string) {
 }
 
 describe('reconciliation registry', () => {
-  it('registers every R check with deferred reasons for R1/R2/R7/R8/R13', () => {
+  it('registers every live R check with deferred reasons for R7/R8/R13 only', () => {
     const ids = CHECK_REGISTRY.map((c) => c.id);
     for (const id of [
-      'R3', 'R4', 'R5', 'R6', 'R9', 'R10', 'R11', 'R12',
+      'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R9', 'R10', 'R11', 'R12',
       'R14', 'R15', 'R16', 'R17', 'R18',
     ]) {
       expect(ids).toContain(id);
     }
     expect(DEFERRED_CHECKS).toMatchObject({
-      R1: expect.stringContaining('P4'),
-      R2: expect.stringContaining('P4'),
       R7: expect.stringContaining('P7'),
       R8: expect.stringContaining('P7'),
       R13: expect.stringContaining('accounting'),
     });
+    expect(DEFERRED_CHECKS).not.toHaveProperty('R1');
+    expect(DEFERRED_CHECKS).not.toHaveProperty('R2');
   });
 
   it('is extensible (P4/P6/P7/P8/P9 push entries without touching the runner)', () => {
@@ -221,11 +227,17 @@ describe('implemented R checks', () => {
 
   it('deferred checks warn with reasons (never silent)', () => {
     const results = evaluateChecks(baseInput());
-    for (const id of ['R1', 'R2', 'R7', 'R8', 'R13']) {
+    for (const id of ['R7', 'R8', 'R13']) {
       const check = byId(results, id);
       expect(check.status).toBe('warn');
       expect(check.explanation.length).toBeGreaterThan(10);
     }
+  });
+
+  it('R1 passes on the pre-refund basis and R2 on empty parents', () => {
+    const results = evaluateChecks(baseInput());
+    expect(byId(results, 'R1')).toMatchObject({ status: 'pass' });
+    expect(byId(results, 'R2')).toMatchObject({ status: 'pass' });
   });
 });
 
@@ -391,6 +403,9 @@ describe('runReconciliation R5 wiring', () => {
         meta: {},
       }),
     };
+    const mockProductsSvc: any = {
+      getAggregates: jest.fn().mockResolvedValue({ productNetSum: 0, scoped: false, parents: [] }),
+    };
     const cache: any = { get: jest.fn().mockResolvedValue(undefined), set: jest.fn() };
     const module = await Test.createTestingModule({
       providers: [
@@ -399,6 +414,7 @@ describe('runReconciliation R5 wiring', () => {
         { provide: AnalyticsFilterService, useValue: mockFilter },
         { provide: AnalyticsPnlService, useValue: mockPnlSvc },
         { provide: AnalyticsFulfillmentService, useValue: mockFulSvc },
+        { provide: AnalyticsProductsService, useValue: mockProductsSvc },
         { provide: CacheService, useValue: cache },
       ],
     }).compile();
