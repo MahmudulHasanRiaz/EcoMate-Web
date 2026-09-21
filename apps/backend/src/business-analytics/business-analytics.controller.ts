@@ -29,6 +29,8 @@ import { AnalyticsMarketingService } from './analytics-marketing.service';
 import { MarketingQueryDto } from './analytics-marketing.dto';
 import { AnalyticsInventoryService } from './analytics-inventory.service';
 import { InventoryQueryDto } from './analytics-inventory.dto';
+import { AnalyticsExpensesService } from './analytics-expenses.service';
+import { ExpensesQueryDto } from './analytics-expenses.dto';
 import { AnalyticsReconciliationService } from './analytics-reconciliation.service';
 
 @Controller('business-analytics')
@@ -45,6 +47,7 @@ export class BusinessAnalyticsController {
     private readonly customersService: AnalyticsCustomersService,
     private readonly marketingService: AnalyticsMarketingService,
     private readonly inventoryService: AnalyticsInventoryService,
+    private readonly expensesService: AnalyticsExpensesService,
     private readonly reconciliationService: AnalyticsReconciliationService,
   ) {}
 
@@ -179,6 +182,34 @@ export class BusinessAnalyticsController {
   @Permissions('view_analytics', 'view_financial_summary')
   marketingUndated(@Query() query: MarketingQueryDto) {
     return this.marketingService.getUndated(query);
+  }
+
+  /** Expense overview: total + kind split + ratios + growth + budget honesty (financial). */
+  @Get('expenses/summary')
+  @Permissions('view_analytics', 'view_financial_summary')
+  expensesSummary(@Query() query: ExpensesQueryDto) {
+    return this.expensesService.getSummary(query);
+  }
+
+  /** Expense trend on Dhaka buckets (financial). */
+  @Get('expenses/trend')
+  @Permissions('view_analytics', 'view_financial_summary')
+  expensesTrend(@Query() query: ExpensesQueryDto) {
+    return this.expensesService.getTrend(query);
+  }
+
+  /** Expense category table with kind grouping (financial). */
+  @Get('expenses/categories')
+  @Permissions('view_analytics', 'view_financial_summary')
+  expensesCategories(@Query() query: ExpensesQueryDto) {
+    return this.expensesService.getCategories(query);
+  }
+
+  /** Expense-row drill list: line → category → expense (financial). */
+  @Get('expenses/list')
+  @Permissions('view_analytics', 'view_financial_summary')
+  expensesList(@Query() query: ExpensesQueryDto) {
+    return this.expensesService.getExpenses(query);
   }
 
   /** Inventory value: delegated close + reconstructed open + turnover (financial). */

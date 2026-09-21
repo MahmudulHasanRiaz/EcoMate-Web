@@ -4,6 +4,10 @@ import {
   customerCohortsQueryKey,
   customersListQueryKey,
   customersSummaryQueryKey,
+  expensesCategoriesQueryKey,
+  expensesListQueryKey,
+  expensesSummaryQueryKey,
+  expensesTrendQueryKey,
   inventoryLedgerQueryKey,
   inventoryMovementQueryKey,
   inventoryStockoutsQueryKey,
@@ -18,7 +22,7 @@ import {
   salesSummaryQueryKey,
   uncostedProductsQueryKey,
 } from './api'
-import type { AnalyticsFilters, ProductAnalyticsFilters } from './types'
+import type { AnalyticsFilters, ExpenseAnalyticsFilters, ProductAnalyticsFilters } from './types'
 
 export function useBusinessOverview(filters: AnalyticsFilters) {
   return useQuery({
@@ -149,6 +153,40 @@ export function useInventoryLedger(filters: AnalyticsFilters, page: number, page
   return useQuery({
     queryKey: inventoryLedgerQueryKey(filters, page, pageSize),
     queryFn: () => businessAnalyticsApi.getInventoryLedger(filters, page, pageSize).then((r) => r.data),
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
+  })
+}
+
+export function useExpensesSummary(filters: ExpenseAnalyticsFilters) {
+  return useQuery({
+    queryKey: expensesSummaryQueryKey(filters),
+    queryFn: () => businessAnalyticsApi.getExpensesSummary(filters).then((r) => r.data),
+    refetchInterval: 60_000,
+  })
+}
+
+export function useExpensesTrend(filters: ExpenseAnalyticsFilters) {
+  return useQuery({
+    queryKey: expensesTrendQueryKey(filters),
+    queryFn: () => businessAnalyticsApi.getExpensesTrend(filters).then((r) => r.data),
+    refetchInterval: 60_000,
+  })
+}
+
+export function useExpensesCategories(filters: ExpenseAnalyticsFilters, page: number, pageSize: number) {
+  return useQuery({
+    queryKey: expensesCategoriesQueryKey(filters, page, pageSize),
+    queryFn: () => businessAnalyticsApi.getExpensesCategories(filters, page, pageSize).then((r) => r.data),
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
+  })
+}
+
+export function useExpensesList(filters: ExpenseAnalyticsFilters, page: number, pageSize: number) {
+  return useQuery({
+    queryKey: expensesListQueryKey(filters, page, pageSize),
+    queryFn: () => businessAnalyticsApi.getExpensesList(filters, page, pageSize).then((r) => r.data),
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,
   })

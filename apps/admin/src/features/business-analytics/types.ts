@@ -173,6 +173,17 @@ export interface AnalyticsFilters {
   /** Inventory drill-down narrow (P8 §4.2: movement row → ledger). */
   productId?: string
   variantId?: string
+  /** Expenses narrow (P9 §4.2: category → expense list). */
+  expenseCategoryId?: string
+  expenseKind?: 'fixed' | 'variable' | 'unclassified'
+  /** Expense description substring (case-insensitive, DB-side). */
+  search?: string
+  dir?: 'asc' | 'desc'
+}
+
+/** P9 expenses filters: shared dimensions + list-only sort. */
+export interface ExpenseAnalyticsFilters extends AnalyticsFilters {
+  sort?: 'total' | 'name' | 'expenseDate'
 }
 
 export const DEFAULT_FILTERS: AnalyticsFilters = { preset: 'last_30_days' }
@@ -816,5 +827,125 @@ export interface InventoryStockoutsResponse {
 
 export interface InventoryLedgerResponse {
   data: InventoryLedgerData
+  meta: OverviewMeta
+}
+
+// ─── P9 Expenses (§2.9 + §4.2 expense rows + §8.6) ────────────────────────────
+
+/** Verbatim §2.9 kind policy — the split is staff-classified, never derived. */
+export const EXPENSE_KIND_NOTE =
+  'Fixed / Variable / Unclassified comes from the staff-classified ' +
+  'ExpenseCategory.expenseKind (default unclassified) — never inferred. ' +
+  'Unknown values fold to unclassified.'
+
+/** Verbatim §2.3 date basis — amount + tax by the expense date. */
+export const EXPENSE_DATE_BASIS_STATEMENT =
+  'Σ Expense.amount + taxAmount by Expense.expenseDate (Dhaka day-inclusive)'
+
+/** Verbatim §8.6 — no budget model exists, so the comparison is unavailable, never zero. */
+export const BUDGET_VS_ACTUAL_NOTE =
+  'No budget model exists — Budget vs Actual is unavailable for every ' +
+  'period, never zero.'
+
+/** §4.2 drill path for the expenses page. */
+export const EXPENSE_DRILL_LABEL =
+  'Expense line → Expenses → category → expense list'
+
+/** §2.9 — order dimensions shape the recognised-revenue denominator only. */
+export const EXPENSE_REVENUE_SCOPE_NOTE =
+  'Order dimensions in the filter shape the recognised-revenue denominator ' +
+  '(reused P2 Net Sales); expense lines stay company-wide by expenseDate.'
+
+export type ExpenseKind = 'fixed' | 'variable' | 'unclassified'
+
+export interface ExpenseCategoryRow {
+  categoryId: string
+  name: string
+  expenseKind: ExpenseKind
+  total: number
+  expenses: number
+}
+
+export interface ExpenseListRow {
+  id: string
+  description: string
+  amount: number
+  taxAmount: number
+  total: number
+  expenseDate: string
+  referenceNo: string | null
+  category: { id: string; name: string; expenseKind: ExpenseKind }
+}
+
+export interface ExpenseTrendPoint {
+  bucketStart: string
+  label: string
+  amount: number
+  expenses: number
+}
+
+export interface ExpensesSummaryData {
+  periodDays: number
+  total: KpiValue
+  byKind: { fixed: KpiValue; variable: KpiValue; unclassified: KpiValue }
+  kindNote: string
+  expenseRevenue: KpiValue
+  perOrder: KpiValue
+  revenue: { netSales: number; recognisedOrders: number; dateBasis: string }
+  growth: {
+    prevTotal: number
+    delta: number
+    deltaPct: number | null
+    comparison: { prevStart: string; prevEnd: string }
+  }
+  budgetVsActual: KpiValue
+  dateBasis: string
+}
+
+export interface ExpensesTrendData {
+  periodDays: number
+  requestedGranularity: string
+  granularity: string
+  points: ExpenseTrendPoint[]
+  dateBasis: string
+}
+
+export interface ExpensesCategoriesData {
+  periodDays: number
+  rows: ExpenseCategoryRow[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+  dateBasis: string
+}
+
+export interface ExpensesListData {
+  periodDays: number
+  rows: ExpenseListRow[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+  dateBasis: string
+}
+
+export interface ExpensesSummaryResponse {
+  data: ExpensesSummaryData
+  meta: OverviewMeta
+}
+
+export interface ExpensesTrendResponse {
+  data: ExpensesTrendData
+  meta: OverviewMeta
+}
+
+export interface ExpensesCategoriesResponse {
+  data: ExpensesCategoriesData
+  meta: OverviewMeta
+}
+
+export interface ExpensesListResponse {
+  data: ExpensesListData
   meta: OverviewMeta
 }

@@ -10,6 +10,11 @@ import type {
   CustomerCohortsResponse,
   CustomersListResponse,
   CustomersSummaryResponse,
+  ExpenseAnalyticsFilters,
+  ExpensesCategoriesResponse,
+  ExpensesListResponse,
+  ExpensesSummaryResponse,
+  ExpensesTrendResponse,
   InventoryLedgerResponse,
   InventoryMovementResponse,
   InventoryStockoutsResponse,
@@ -132,6 +137,22 @@ export const businessAnalyticsApi = {
     apiClient.get<InventoryLedgerResponse>('/business-analytics/inventory/ledger', {
       params: { ...buildInventoryQuery(filters), page: String(page), pageSize: String(pageSize) },
     }),
+  getExpensesSummary: (filters: ExpenseAnalyticsFilters) =>
+    apiClient.get<ExpensesSummaryResponse>('/business-analytics/expenses/summary', {
+      params: buildExpensesQuery(filters),
+    }),
+  getExpensesTrend: (filters: ExpenseAnalyticsFilters) =>
+    apiClient.get<ExpensesTrendResponse>('/business-analytics/expenses/trend', {
+      params: buildExpensesQuery(filters),
+    }),
+  getExpensesCategories: (filters: ExpenseAnalyticsFilters, page: number, pageSize: number) =>
+    apiClient.get<ExpensesCategoriesResponse>('/business-analytics/expenses/categories', {
+      params: { ...buildExpensesQuery(filters), page: String(page), pageSize: String(pageSize) },
+    }),
+  getExpensesList: (filters: ExpenseAnalyticsFilters, page: number, pageSize: number) =>
+    apiClient.get<ExpensesListResponse>('/business-analytics/expenses/list', {
+      params: { ...buildExpensesQuery(filters), page: String(page), pageSize: String(pageSize) },
+    }),
 }
 
 /** Product list/detail params: shared dimensions + list-only search/sort/dir. */
@@ -240,4 +261,60 @@ export function inventoryStockoutsQueryKey(filters: AnalyticsFilters, page: numb
 
 export function inventoryLedgerQueryKey(filters: AnalyticsFilters, page: number, pageSize: number) {
   return ['business-analytics-inventory-ledger', buildInventoryQuery(filters), page, pageSize] as const
+}
+
+/** Expenses pages: shared dims (range + revenue-denominator scope) + the P9 narrow. */
+const EXPENSES_FILTER_KEYS: (keyof AnalyticsFilters)[] = [
+  'preset',
+  'startDate',
+  'endDate',
+  'granularity',
+  'source',
+  'salesChannel',
+  'marketingSource',
+  'paymentMethod',
+  'categoryId',
+  'location',
+  'customerSegment',
+  'deliveryOutcome',
+  'collectionStatus',
+  'expenseCategoryId',
+  'expenseKind',
+  'search',
+  'dir',
+]
+
+/** Expense filters → backend query params. Empty values are dropped, never sent. */
+export function buildExpensesQuery(filters: AnalyticsFilters): Record<string, string> {
+  const params: Record<string, string> = {}
+  for (const key of EXPENSES_FILTER_KEYS) {
+    const v = filters[key]
+    if (v !== undefined && v !== null && v !== '') {
+      params[key] = v
+    }
+  }
+  // P9 list-only sort lives on ExpenseAnalyticsFilters (the shared base must
+  // not widen `sort` — product pages type it as their own union).
+  const sort = (filters as ExpenseAnalyticsFilters).sort
+  if (sort !== undefined && sort !== null) {
+    params.sort = sort
+  }
+  return params
+}
+
+/** Stable expenses query keys — the category/kind narrow participates, so it changes the request. */
+export function expensesSummaryQueryKey(filters: AnalyticsFilters) {
+  return ['business-analytics-expenses-summary', buildExpensesQuery(filters)] as const
+}
+
+export function expensesTrendQueryKey(filters: AnalyticsFilters) {
+  return ['business-analytics-expenses-trend', buildExpensesQuery(filters)] as const
+}
+
+export function expensesCategoriesQueryKey(filters: AnalyticsFilters, page: number, pageSize: number) {
+  return ['business-analytics-expenses-categories', buildExpensesQuery(filters), page, pageSize] as const
+}
+
+export function expensesListQueryKey(filters: AnalyticsFilters, page: number, pageSize: number) {
+  return ['business-analytics-expenses-list', buildExpensesQuery(filters), page, pageSize] as const
 }
