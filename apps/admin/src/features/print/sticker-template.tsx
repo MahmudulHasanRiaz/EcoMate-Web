@@ -16,6 +16,8 @@ export function StickerTemplate({ order }: { order: any }) {
   const storeName = settings?.store?.name || ''
   const storePhone = settings?.store?.phone || ''
   const storeLogo = settings?.branding?.storeLogo || ''
+  const storefrontFavicon = settings?.branding?.storefrontFavicon || ''
+  const display = settings?.systems?.[0]?.display || 'name'
   const currencySymbol = settings?.currency?.symbol || '৳'
   if (!order) return null
 
@@ -43,10 +45,21 @@ export function StickerTemplate({ order }: { order: any }) {
       `}</style>
 
       <div className="text-center mb-1">
-        {storeLogo ? (
-          <img src={mediaUrl(storeLogo)} alt={storeName || 'store'} className="sticker-logo" />
+        {display === 'logo' ? (
+          storeLogo ? (
+            <img src={mediaUrl(storeLogo)} alt={storeName || 'store'} className="sticker-logo" />
+          ) : (
+            <div className="font-bold text-xs">{storeName}</div>
+          )
+        ) : display === 'name+logo' ? (
+          <div className="flex items-center justify-center gap-1.5">
+            {storefrontFavicon ? (
+              <img src={mediaUrl(storefrontFavicon)} alt="" className="sticker-logo" />
+            ) : null}
+            <span className="font-bold text-xs">{storeName || '—'}</span>
+          </div>
         ) : (
-          <div className="font-bold text-xs">{storeName}</div>
+          <div className="font-bold text-xs">{storeName || '—'}</div>
         )}
       </div>
       {storePhone && <div className="text-[8px] text-center text-muted-foreground mb-1">{storePhone}</div>}
