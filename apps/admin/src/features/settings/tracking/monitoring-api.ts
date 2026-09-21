@@ -175,22 +175,54 @@ export interface HealthScoreResponse {
 }
 
 export interface PurchaseReconciliation {
+  // Business lifecycle
   newOrders: number
   confirmedOrders: number
   deliveredOrders: number
+  // Source classification
+  confirmedBySource: {
+    DIRECT_WEBSITE: number
+    POS: number
+    INCOMPLETE_CONVERSION: number
+    MANUAL: number
+  }
+  // Configuration waterfall
+  eligibleConfirmed: number
+  configExcludedConfirmed: number
+  configExcludedBreakdown: Array<{
+    sourceCategory: string
+    configKey: string
+    configValue: boolean
+    count: number
+  }>
   expectedPurchases: number
+  // Canonical tracking result
   canonicalPurchases: number
-  uniquePurchaseEventIds: number
-  browserOriginPurchases: number
+  matchedPurchases: number
+  missingEligiblePurchases: number
+  unexpectedPurchases: number
+  dedupedPurchases: number
+  // Trigger mode breakdown
   instantPurchases: number
   validatedPurchases: number
   offlinePurchases: number
   browserPurchases: number
   replayedEvents: number
-  purchaseDiff: number
-  byProvider: Record<string, { sent: number; pending: number; failed: number; skipped: number }>
-  byDestination: Record<string, { sent: number; pending: number; failed: number; skipped: number }>
-  orphanPurchases: number
+  // Provider delivery
+  providerReconciliation: Array<{
+    provider: string
+    expected: number
+    sent: number
+    pending: number
+    failed: number
+    skipped: number
+    missing: number
+  }>
+  // Drill-down
+  missingOrderIds: string[]
+  unexpectedOrderIds: string[]
+  configExcludedOrderIds: Array<{ orderId: string; source: string; configKey: string }>
+  // Metadata
   metaPurchaseMode: string
   metaValidatedStatus: string
   range: { from: string; to: string }

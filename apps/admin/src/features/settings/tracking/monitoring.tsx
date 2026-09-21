@@ -197,111 +197,219 @@ export function TrackingMonitoring() {
         <CardHeader className='pb-3'>
           <CardTitle>Business ↔ Tracking Reconciliation</CardTitle>
           <CardDescription>
-            Business orders vs canonical Purchase events for {activeRangeLabel}
+            Configuration-aware waterfall for {activeRangeLabel}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {reconciliation.isLoading ? (
             <Loader2 className='animate-spin h-5 w-5 text-primary' />
           ) : reconciliation.data ? (
-            <div className='space-y-4'>
-              {/* Business metrics */}
-              <div className='grid grid-cols-3 gap-4'>
-                <div className='rounded-md border p-3'>
-                  <p className='text-sm text-muted-foreground'>New Orders</p>
-                  <p className='text-2xl font-bold'>{reconciliation.data.reconciliation.newOrders}</p>
-                </div>
-                <div className='rounded-md border p-3'>
-                  <p className='text-sm text-muted-foreground'>Confirmed</p>
-                  <p className='text-2xl font-bold'>{reconciliation.data.reconciliation.confirmedOrders}</p>
-                </div>
-                <div className='rounded-md border p-3'>
-                  <p className='text-sm text-muted-foreground'>Delivered</p>
-                  <p className='text-2xl font-bold'>{reconciliation.data.reconciliation.deliveredOrders}</p>
-                </div>
-              </div>
-
-              {/* Tracking metrics */}
-              <div className='grid grid-cols-2 gap-4 md:grid-cols-4'>
-                <div className='rounded-md border p-3'>
-                  <p className='text-sm text-muted-foreground'>Expected Purchase</p>
-                  <p className='text-2xl font-bold'>{reconciliation.data.reconciliation.expectedPurchases}</p>
-                  <p className='text-xs text-muted-foreground'>
-                    Mode: {reconciliation.data.reconciliation.metaPurchaseMode}
-                    {reconciliation.data.reconciliation.metaValidatedStatus
-                      ? ` (${reconciliation.data.reconciliation.metaValidatedStatus})`
-                      : ''}
-                  </p>
-                </div>
-                <div className='rounded-md border p-3'>
-                  <p className='text-sm text-muted-foreground'>Canonical Purchase</p>
-                  <p className='text-2xl font-bold'>{reconciliation.data.reconciliation.canonicalPurchases}</p>
-                </div>
-                <div className='rounded-md border p-3'>
-                  <p className='text-sm text-muted-foreground'>Browser/Mirror</p>
-                  <p className='text-2xl font-bold'>{reconciliation.data.reconciliation.browserOriginPurchases}</p>
-                </div>
-                <div className='rounded-md border p-3'>
-                  <p className='text-sm text-muted-foreground'>Difference</p>
-                  <p className={`text-2xl font-bold ${
-                    reconciliation.data.reconciliation.purchaseDiff !== 0 ? 'text-amber-600' : 'text-emerald-600'
-                  }`}>
-                    {reconciliation.data.reconciliation.purchaseDiff > 0 ? '+' : ''}
-                    {reconciliation.data.reconciliation.purchaseDiff}
-                  </p>
+            <div className='space-y-6'>
+              {/* Business Orders */}
+              <div>
+                <h4 className='text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3'>Business Orders</h4>
+                <div className='grid grid-cols-3 gap-4'>
+                  <div className='rounded-md border p-3'>
+                    <p className='text-sm text-muted-foreground'>New</p>
+                    <p className='text-2xl font-bold'>{reconciliation.data.reconciliation.newOrders}</p>
+                  </div>
+                  <div className='rounded-md border p-3'>
+                    <p className='text-sm text-muted-foreground'>Confirmed</p>
+                    <p className='text-2xl font-bold'>{reconciliation.data.reconciliation.confirmedOrders}</p>
+                  </div>
+                  <div className='rounded-md border p-3'>
+                    <p className='text-sm text-muted-foreground'>Delivered</p>
+                    <p className='text-2xl font-bold'>{reconciliation.data.reconciliation.deliveredOrders}</p>
+                  </div>
                 </div>
               </div>
 
-              {/* Trigger mode breakdown */}
-              <div className='grid grid-cols-2 gap-4 md:grid-cols-5'>
-                <div className='rounded-md border p-2 text-center'>
-                  <p className='text-xs text-muted-foreground'>Instant</p>
-                  <p className='text-lg font-semibold'>{reconciliation.data.reconciliation.instantPurchases}</p>
+              {/* Source / Configuration */}
+              <div>
+                <h4 className='text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3'>Source / Configuration</h4>
+                <div className='grid grid-cols-2 gap-4 md:grid-cols-4 mb-3'>
+                  <div className='rounded-md border p-3'>
+                    <p className='text-sm text-muted-foreground'>Website</p>
+                    <p className='text-xl font-bold'>{reconciliation.data.reconciliation.confirmedBySource.DIRECT_WEBSITE}</p>
+                    <p className='text-xs text-emerald-600'>ON</p>
+                  </div>
+                  <div className='rounded-md border p-3'>
+                    <p className='text-sm text-muted-foreground'>POS</p>
+                    <p className='text-xl font-bold'>{reconciliation.data.reconciliation.confirmedBySource.POS}</p>
+                    <p className='text-xs text-red-600'>OFF</p>
+                  </div>
+                  <div className='rounded-md border p-3'>
+                    <p className='text-sm text-muted-foreground'>Incomplete</p>
+                    <p className='text-xl font-bold'>{reconciliation.data.reconciliation.confirmedBySource.INCOMPLETE_CONVERSION}</p>
+                    <p className='text-xs text-red-600'>OFF</p>
+                  </div>
+                  <div className='rounded-md border p-3'>
+                    <p className='text-sm text-muted-foreground'>Manual</p>
+                    <p className='text-xl font-bold'>{reconciliation.data.reconciliation.confirmedBySource.MANUAL}</p>
+                    <p className='text-xs text-red-600'>OFF</p>
+                  </div>
                 </div>
-                <div className='rounded-md border p-2 text-center'>
-                  <p className='text-xs text-muted-foreground'>Validated</p>
-                  <p className='text-lg font-semibold'>{reconciliation.data.reconciliation.validatedPurchases}</p>
-                </div>
-                <div className='rounded-md border p-2 text-center'>
-                  <p className='text-xs text-muted-foreground'>Offline</p>
-                  <p className='text-lg font-semibold'>{reconciliation.data.reconciliation.offlinePurchases}</p>
-                </div>
-                <div className='rounded-md border p-2 text-center'>
-                  <p className='text-xs text-muted-foreground'>Browser</p>
-                  <p className='text-lg font-semibold'>{reconciliation.data.reconciliation.browserPurchases}</p>
-                </div>
-                <div className='rounded-md border p-2 text-center'>
-                  <p className='text-xs text-muted-foreground'>Replayed</p>
-                  <p className='text-lg font-semibold'>{reconciliation.data.reconciliation.replayedEvents}</p>
+                <div className='grid grid-cols-3 gap-4'>
+                  <div className='rounded-md border border-emerald-200 bg-emerald-50 p-3'>
+                    <p className='text-sm text-emerald-700'>Eligible for Tracking</p>
+                    <p className='text-2xl font-bold text-emerald-700'>{reconciliation.data.reconciliation.eligibleConfirmed}</p>
+                  </div>
+                  <div className='rounded-md border border-muted p-3'>
+                    <p className='text-sm text-muted-foreground'>Configuration Excluded</p>
+                    <p className='text-2xl font-bold'>{reconciliation.data.reconciliation.configExcludedConfirmed}</p>
+                    <p className='text-xs text-muted-foreground'>Intentional skip</p>
+                  </div>
+                  <div className='rounded-md border border-primary/30 p-3'>
+                    <p className='text-sm font-medium'>Expected Purchase</p>
+                    <p className='text-2xl font-bold'>{reconciliation.data.reconciliation.expectedPurchases}</p>
+                    <p className='text-xs text-muted-foreground'>
+                      Mode: {reconciliation.data.reconciliation.metaPurchaseMode}
+                      {reconciliation.data.reconciliation.metaValidatedStatus
+                        ? ` (${reconciliation.data.reconciliation.metaValidatedStatus})`
+                        : ''}
+                    </p>
+                  </div>
                 </div>
               </div>
 
-              {/* Meta delivery breakdown */}
-              {Object.keys(reconciliation.data.reconciliation.byProvider).length > 0 && (
+              {/* Tracking Result */}
+              <div>
+                <h4 className='text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3'>Tracking Result</h4>
+                <div className='grid grid-cols-2 gap-4 md:grid-cols-5'>
+                  <div className='rounded-md border p-3'>
+                    <p className='text-sm text-muted-foreground'>Canonical Purchase</p>
+                    <p className='text-2xl font-bold'>{reconciliation.data.reconciliation.canonicalPurchases}</p>
+                  </div>
+                  <div className='rounded-md border border-emerald-200 bg-emerald-50 p-3'>
+                    <p className='text-sm text-emerald-700'>Matched</p>
+                    <p className='text-2xl font-bold text-emerald-700'>{reconciliation.data.reconciliation.matchedPurchases}</p>
+                  </div>
+                  {(() => {
+                    const hasUnexpected = reconciliation.data.reconciliation.unexpectedPurchases > 0
+                    return (
+                      <div className={hasUnexpected ? 'rounded-md border border-amber-300 bg-amber-50 p-3' : 'rounded-md border p-3'}>
+                        <p className={hasUnexpected ? 'text-sm text-amber-700 font-semibold' : 'text-sm text-muted-foreground'}>Unexpected</p>
+                        <p className={hasUnexpected ? 'text-2xl font-bold text-amber-700' : 'text-2xl font-bold'}>{reconciliation.data.reconciliation.unexpectedPurchases}</p>
+                        {hasUnexpected && <p className='text-xs text-amber-600 font-semibold'>ANOMALY</p>}
+                      </div>
+                    )
+                  })()}
+                  <div className='rounded-md border p-3'>
+                    <p className='text-sm text-muted-foreground'>Deduped</p>
+                    <p className='text-2xl font-bold'>{reconciliation.data.reconciliation.dedupedPurchases}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Provider Delivery */}
+              {reconciliation.data.reconciliation.providerReconciliation.length > 0 && (
                 <div>
-                  <h4 className='text-sm font-semibold mb-2'>Provider Delivery</h4>
+                  <h4 className='text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3'>Provider Delivery</h4>
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Provider</TableHead>
-                        <TableHead>SENT</TableHead>
-                        <TableHead>PENDING</TableHead>
-                        <TableHead>FAILED</TableHead>
-                        <TableHead>SKIPPED</TableHead>
+                        <TableHead>Expected</TableHead>
+                        <TableHead>Sent</TableHead>
+                        <TableHead>Pending</TableHead>
+                        <TableHead>Failed</TableHead>
+                        <TableHead>Skipped</TableHead>
+                        <TableHead>Missing</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {Object.entries(reconciliation.data.reconciliation.byProvider).map(([provider, counts]) => (
-                        <TableRow key={provider}>
-                          <TableCell className='font-medium'>{provider}</TableCell>
-                          <TableCell>{counts.sent}</TableCell>
-                          <TableCell>{counts.pending}</TableCell>
-                          <TableCell>{counts.failed}</TableCell>
-                          <TableCell>{counts.skipped}</TableCell>
+                      {reconciliation.data.reconciliation.providerReconciliation.map((p) => (
+                        <TableRow key={p.provider}>
+                          <TableCell className='font-medium'>{p.provider}</TableCell>
+                          <TableCell>{p.expected}</TableCell>
+                          <TableCell>{p.sent}</TableCell>
+                          <TableCell>{p.pending}</TableCell>
+                          <TableCell>{p.failed}</TableCell>
+                          <TableCell>{p.skipped}</TableCell>
+                          <TableCell className={p.missing > 0 ? 'text-red-600 font-semibold' : ''}>{p.missing}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
+                </div>
+              )}
+
+              {/* Trigger Mode Breakdown */}
+              <div>
+                <h4 className='text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3'>Trigger Mode</h4>
+                <div className='grid grid-cols-2 gap-4 md:grid-cols-5'>
+                  <div className='rounded-md border p-2 text-center'>
+                    <p className='text-xs text-muted-foreground'>Instant</p>
+                    <p className='text-lg font-semibold'>{reconciliation.data.reconciliation.instantPurchases}</p>
+                  </div>
+                  <div className='rounded-md border p-2 text-center'>
+                    <p className='text-xs text-muted-foreground'>Validated</p>
+                    <p className='text-lg font-semibold'>{reconciliation.data.reconciliation.validatedPurchases}</p>
+                  </div>
+                  <div className='rounded-md border p-2 text-center'>
+                    <p className='text-xs text-muted-foreground'>Offline</p>
+                    <p className='text-lg font-semibold'>{reconciliation.data.reconciliation.offlinePurchases}</p>
+                  </div>
+                  <div className='rounded-md border p-2 text-center'>
+                    <p className='text-xs text-muted-foreground'>Browser</p>
+                    <p className='text-lg font-semibold'>{reconciliation.data.reconciliation.browserPurchases}</p>
+                  </div>
+                  <div className='rounded-md border p-2 text-center'>
+                    <p className='text-xs text-muted-foreground'>Replayed</p>
+                    <p className='text-lg font-semibold'>{reconciliation.data.reconciliation.replayedEvents}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Anomaly Drill-down */}
+              {(reconciliation.data.reconciliation.missingOrderIds.length > 0 ||
+                reconciliation.data.reconciliation.unexpectedOrderIds.length > 0 ||
+                reconciliation.data.reconciliation.configExcludedOrderIds.length > 0) && (
+                <div>
+                  <h4 className='text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3'>Drill-down</h4>
+                  <div className='space-y-3'>
+                    {reconciliation.data.reconciliation.missingOrderIds.length > 0 && (
+                      <div className='rounded-md border border-red-200 bg-red-50 p-3'>
+                        <p className='text-sm font-semibold text-red-700 mb-2'>
+                          Missing Eligible Purchase ({reconciliation.data.reconciliation.missingOrderIds.length})
+                        </p>
+                        <div className='flex flex-wrap gap-1'>
+                          {reconciliation.data.reconciliation.missingOrderIds.slice(0, 20).map((id) => (
+                            <code key={id} className='text-xs bg-red-100 px-1.5 py-0.5 rounded'>{id}</code>
+                          ))}
+                          {reconciliation.data.reconciliation.missingOrderIds.length > 20 && (
+                            <span className='text-xs text-red-600'>+{reconciliation.data.reconciliation.missingOrderIds.length - 20} more</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {reconciliation.data.reconciliation.unexpectedOrderIds.length > 0 && (
+                      <div className='rounded-md border border-amber-200 bg-amber-50 p-3'>
+                        <p className='text-sm font-semibold text-amber-700 mb-2'>
+                          Unexpected Purchase ({reconciliation.data.reconciliation.unexpectedOrderIds.length})
+                        </p>
+                        <div className='flex flex-wrap gap-1'>
+                          {reconciliation.data.reconciliation.unexpectedOrderIds.slice(0, 20).map((id) => (
+                            <code key={id} className='text-xs bg-amber-100 px-1.5 py-0.5 rounded'>{id}</code>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {reconciliation.data.reconciliation.configExcludedOrderIds.length > 0 && (
+                      <div className='rounded-md border p-3'>
+                        <p className='text-sm font-semibold text-muted-foreground mb-2'>
+                          Configuration Excluded ({reconciliation.data.reconciliation.configExcludedOrderIds.length})
+                        </p>
+                        <div className='flex flex-wrap gap-1'>
+                          {reconciliation.data.reconciliation.configExcludedOrderIds.slice(0, 20).map((item) => (
+                            <code key={item.orderId} className='text-xs bg-muted px-1.5 py-0.5 rounded'>
+                              {item.orderId} ({item.source})
+                            </code>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

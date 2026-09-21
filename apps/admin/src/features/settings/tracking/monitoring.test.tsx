@@ -133,7 +133,17 @@ describe('TrackingMonitoring page', () => {
     vi.mocked(monitoringApi.watchdog).mockResolvedValue({ violations: [] } as any)
     vi.mocked(monitoringApi.healthScore).mockResolvedValue({ healthScore: { score: 100, grade: 'A', penalties: [] } } as any)
     vi.mocked(monitoringApi.purchaseReconciliation).mockResolvedValue({
-      reconciliation: { newOrders: 0, confirmedOrders: 0, deliveredOrders: 0, expectedPurchases: 0, canonicalPurchases: 0, uniquePurchaseEventIds: 0, browserOriginPurchases: 0, instantPurchases: 0, validatedPurchases: 0, offlinePurchases: 0, browserPurchases: 0, replayedEvents: 0, purchaseDiff: 0, byProvider: {}, byDestination: {}, orphanPurchases: 0, metaPurchaseMode: 'instant', metaValidatedStatus: '', range: { from: '2026-09-20', to: '2026-09-20' } },
+      reconciliation: {
+        newOrders: 0, confirmedOrders: 0, deliveredOrders: 0,
+        confirmedBySource: { DIRECT_WEBSITE: 0, POS: 0, INCOMPLETE_CONVERSION: 0, MANUAL: 0 },
+        eligibleConfirmed: 0, configExcludedConfirmed: 0, configExcludedBreakdown: [],
+        expectedPurchases: 0, canonicalPurchases: 0, matchedPurchases: 0,
+        missingEligiblePurchases: 0, unexpectedPurchases: 0, dedupedPurchases: 0,
+        instantPurchases: 0, validatedPurchases: 0, offlinePurchases: 0, browserPurchases: 0, replayedEvents: 0,
+        providerReconciliation: [],
+        missingOrderIds: [], unexpectedOrderIds: [], configExcludedOrderIds: [],
+        metaPurchaseMode: 'instant', metaValidatedStatus: '', range: { from: '2026-09-20', to: '2026-09-20' },
+      },
     } as any)
     vi.mocked(monitoringApi.timeline).mockResolvedValue(MOCK_TIMELINE as any)
   })
@@ -170,7 +180,8 @@ describe('TrackingMonitoring page', () => {
     await expect.element(screen.getByRole('cell', { name: 'tiktok' })).toBeInTheDocument()
     await expect.element(screen.getByText('Dead', { exact: true })).toBeInTheDocument()
     await expect.element(screen.getByText('Skipped', { exact: true })).toBeInTheDocument()
-    await expect.element(screen.getByText('Deduped', { exact: true })).toBeInTheDocument()
+    // Check dispatch funnel table headers exist
+    await expect.element(screen.getByText('Dispatch Funnel')).toBeInTheDocument()
     // DEAD count + DLQ depth
     await expect.element(screen.getByText('DEAD events')).toBeInTheDocument()
     await expect.element(screen.getByText('DLQ depth')).toBeInTheDocument()

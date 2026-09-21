@@ -210,48 +210,67 @@ const EMPTY_FUNNEL: DispatchFunnel = Object.freeze({
 const MAX_ERROR_MSG_LENGTH = 300;
 
 /**
- * Purchase reconciliation (exactly-once observability): compares qualifying
- * orders vs canonical Purchase events vs destination delivery rows vs unique
- * event IDs. Every figure is traceable by orderId + eventId (see `timeline`).
+ * Purchase reconciliation waterfall (configuration-aware):
+ * Business Confirmed → Source Classification → Eligible/Excluded → Expected → Canonical → Matched/Missing/Unexpected
  */
 export interface PurchaseReconciliation {
-  /** Business orders created in the range. */
+  // === BUSINESS LIFECYCLE ===
   newOrders: number;
-  /** Business orders that entered Confirmed in the range. */
   confirmedOrders: number;
-  /** Business orders that entered Delivered in the range. */
   deliveredOrders: number;
-  /** Expected Purchase count based on configured meta purchase mode/status. */
+
+  // === SOURCE CLASSIFICATION (Confirmed orders by source) ===
+  confirmedBySource: {
+    DIRECT_WEBSITE: number;
+    POS: number;
+    INCOMPLETE_CONVERSION: number;
+    MANUAL: number;
+  };
+
+  // === CONFIGURATION WATERFALL ===
+  eligibleConfirmed: number;
+  configExcludedConfirmed: number;
+  configExcludedBreakdown: Array<{
+    sourceCategory: string;
+    configKey: string;
+    configValue: boolean;
+    count: number;
+  }>;
   expectedPurchases: number;
-  /** Canonical Purchase snapshots captured in the range. */
+
+  // === CANONICAL TRACKING RESULT ===
   canonicalPurchases: number;
-  /** Distinct Purchase eventIds (must equal canonicalPurchases). */
-  uniquePurchaseEventIds: number;
-  /** Browser-origin Purchase snapshots (mirror fallback). */
-  browserOriginPurchases: number;
-  /** Instant-mode Purchase captures in the range. */
+  matchedPurchases: number;
+  missingEligiblePurchases: number;
+  unexpectedPurchases: number;
+  dedupedPurchases: number;
+
+  // === TRIGGER MODE BREAKDOWN ===
   instantPurchases: number;
-  /** Validated-mode Purchase captures in the range. */
   validatedPurchases: number;
-  /** Offline-mode Purchase captures in the range (POS/checkout-leads). */
   offlinePurchases: number;
-  /** Browser-mode Purchase captures in the range. */
   browserPurchases: number;
-  /** Replay/recovery events in the range. */
   replayedEvents: number;
-  /** Difference: canonicalPurchases - expectedPurchases. */
-  purchaseDiff: number;
-  /** Per-provider DELIVERY row counts (not business-event counts). */
-  byProvider: Record<string, { sent: number; pending: number; failed: number; skipped: number }>;
-  /** Per-destination DELIVERY row counts. */
-  byDestination: Record<string, { sent: number; pending: number; failed: number; skipped: number }>;
-  /** Purchase snapshots with no retrievable outbox (pipeline gap). */
-  orphanPurchases: number;
-  /** The configured meta purchase mode. */
+
+  // === PROVIDER DELIVERY ===
+  providerReconciliation: Array<{
+    provider: string;
+    expected: number;
+    sent: number;
+    pending: number;
+    failed: number;
+    skipped: number;
+    missing: number;
+  }>;
+
+  // === DRILL-DOWN (order IDs for anomalies) ===
+  missingOrderIds: string[];
+  unexpectedOrderIds: string[];
+  configExcludedOrderIds: Array<{ orderId: string; source: string; configKey: string }>;
+
+  // === METADATA ===
   metaPurchaseMode: string;
-  /** The configured meta validated status. */
   metaValidatedStatus: string;
-  /** The date range used. */
   range: { from: string; to: string };
 }
 
@@ -874,120 +893,220 @@ export class MonitoringService {
   }
 
   /**
-   * Windowed Purchase reconciliation. Compares business orders against canonical
-   * Purchase events, expected Purchase count (based on configured meta mode/status),
-   * and provider delivery rows. All counts are windowed by the selected date range.
+   * Windowed Purchase reconciliation waterfall (configuration-aware).
+   *
+   * Waterfall:
+   *   Business Confirmed → Source Classification → Eligible/Excluded → Expected → Canonical → Matched/Missing/Unexpected
+   *
+   * Every number is traceable to order IDs via the drill-down arrays.
    */
   async getPurchaseReconciliation(range: MonitoringDateRange): Promise<PurchaseReconciliation> {
     const dateFilter = { gte: range.from, lte: range.to };
 
-    // Resolve configured meta purchase mode and validated status
-    const settings = await this.prisma.systemSetting.findMany({
-      where: {
-        key: {
-          in: [
-            'tracking_meta_purchase_mode',
-            'tracking_meta_validated_status',
-            'tracking_tiktok_purchase_mode',
-            'tracking_tiktok_validated_status',
-          ],
+    // === STEP 1: Resolve configuration ===
+    const [settings, sourceSettings] = await Promise.all([
+      this.prisma.systemSetting.findMany({
+        where: {
+          key: {
+            in: [
+              'tracking_meta_purchase_mode',
+              'tracking_meta_validated_status',
+              'tracking_tiktok_purchase_mode',
+              'tracking_tiktok_validated_status',
+            ],
+          },
         },
-      },
-    });
+      }),
+      this.prisma.systemSetting.findMany({
+        where: {
+          key: {
+            in: [
+              'tracking_send_website_orders',
+              'tracking_send_pos_orders',
+              'tracking_send_incomplete_conversion_orders',
+              'tracking_send_manual_orders',
+            ],
+          },
+        },
+      }),
+    ]);
+
     const settingMap = Object.fromEntries(settings.map((s: any) => [s.key, s.value]));
+    const sourceSettingMap = Object.fromEntries(sourceSettings.map((s: any) => [s.key, s.value]));
     const metaMode = settingMap['tracking_meta_purchase_mode'] || 'instant';
     const metaStatus = settingMap['tracking_meta_validated_status'] || '';
 
-    // Business metrics: New Orders (created in range), Confirmed (entered Confirmed in range),
-    // Delivered (entered Delivered in range)
+    // Source eligibility defaults
+    const sourceEligibility: Record<string, boolean> = {
+      DIRECT_WEBSITE: sourceSettingMap['tracking_send_website_orders'] !== 'false',
+      POS: sourceSettingMap['tracking_send_pos_orders'] === 'true',
+      INCOMPLETE_CONVERSION: sourceSettingMap['tracking_send_incomplete_conversion_orders'] === 'true',
+      MANUAL: sourceSettingMap['tracking_send_manual_orders'] === 'true',
+    };
+
+    // === STEP 2: Business lifecycle metrics ===
     const newOrders = await this.prisma.order.count({
       where: { trashedAt: null, createdAt: dateFilter },
     });
 
-    // For Confirmed/Delivered, we need to check the timeline JSON for status transitions
-    // that occurred within the range. The timeline is a JSON array of objects with
-    // { status, timestamp } entries for status changes.
-    const allOrdersInRange = await this.prisma.order.findMany({
+    // Get all non-trashed orders and scan timeline for status transitions in range
+    const allOrders = await this.prisma.order.findMany({
       where: { trashedAt: null },
-      select: { id: true, timeline: true, status: { select: { name: true } } },
+      select: {
+        id: true,
+        timeline: true,
+        source: true,
+        salesChannel: true,
+        sourcePlatform: true,
+        sourceType: true,
+        posSessionId: true,
+        status: { select: { name: true } },
+      },
     });
 
+    // Classify each order's source
+    function classifySource(order: any): string {
+      if (order.posSessionId || order.source === 'POS') return 'POS';
+      if (order.sourcePlatform === 'PHONE' || order.sourceType === 'CALL' || order.sourcePlatform === 'LEAD') return 'INCOMPLETE_CONVERSION';
+      if (order.salesChannel && order.salesChannel !== 'WEBSITE' && order.salesChannel !== 'POS') return 'MANUAL';
+      if (order.source && order.source !== 'ECOMMERCE' && order.source !== 'POS') return 'MANUAL';
+      return 'DIRECT_WEBSITE';
+    }
+
+    // Scan timelines for Confirmed/Delivered transitions in range
     let confirmedOrders = 0;
     let deliveredOrders = 0;
-    for (const order of allOrdersInRange) {
+    const confirmedBySource = { DIRECT_WEBSITE: 0, POS: 0, INCOMPLETE_CONVERSION: 0, MANUAL: 0 };
+    const confirmedOrderDetails: Array<{ id: string; source: string; eligible: boolean; configKey: string; configValue: boolean }> = [];
+
+    for (const order of allOrders) {
       const timeline = Array.isArray(order.timeline) ? order.timeline : [];
+      let enteredConfirmed = false;
+      let enteredDelivered = false;
       for (const entry of timeline) {
         if (!entry || typeof entry !== 'object') continue;
-        const entryAny = entry as any;
-        if (!entryAny.timestamp || !entryAny.status) continue;
-        const entryTime = new Date(entryAny.timestamp);
-        if (entryTime < range.from || entryTime > range.to) continue;
-        if (entryAny.status === 'Confirmed') confirmedOrders++;
-        if (entryAny.status === 'Delivered') deliveredOrders++;
+        const e = entry as any;
+        if (!e.timestamp || !e.status) continue;
+        const t = new Date(e.timestamp);
+        if (t < range.from || t > range.to) continue;
+        if (e.status === 'Confirmed') enteredConfirmed = true;
+        if (e.status === 'Delivered') enteredDelivered = true;
       }
+      if (enteredConfirmed) {
+        confirmedOrders++;
+        const source = classifySource(order) as keyof typeof confirmedBySource;
+        confirmedBySource[source]++;
+        const eligible = sourceEligibility[source] ?? false;
+        const configKey = source === 'DIRECT_WEBSITE' ? 'tracking_send_website_orders'
+          : source === 'POS' ? 'tracking_send_pos_orders'
+            : source === 'INCOMPLETE_CONVERSION' ? 'tracking_send_incomplete_conversion_orders'
+              : 'tracking_send_manual_orders';
+        confirmedOrderDetails.push({ id: order.id, source, eligible, configKey, configValue: eligible });
+      }
+      if (enteredDelivered) deliveredOrders++;
     }
 
-    // Expected Purchase count depends on configured mode
-    let expectedPurchases: number;
-    if (metaMode === 'validated' && metaStatus) {
-      // Validated mode: expected = orders that entered the validated status in range
-      if (metaStatus === 'Confirmed') {
-        expectedPurchases = confirmedOrders;
-      } else if (metaStatus === 'Delivered') {
-        expectedPurchases = deliveredOrders;
-      } else {
-        // Count orders that entered the configured status in range
-        let count = 0;
-        for (const order of allOrdersInRange) {
-          const timeline = Array.isArray(order.timeline) ? order.timeline : [];
-          for (const entry of timeline) {
-            if (!entry || typeof entry !== 'object') continue;
-            const entryAny = entry as any;
-            if (!entryAny.timestamp || !entryAny.status) continue;
-            const entryTime = new Date(entryAny.timestamp);
-            if (entryTime < range.from || entryTime > range.to) continue;
-            if (entryAny.status === metaStatus) count++;
-          }
+    // === STEP 3: Configuration waterfall ===
+    const eligibleConfirmed = confirmedOrderDetails.filter((d) => d.eligible).length;
+    const configExcludedConfirmed = confirmedOrderDetails.filter((d) => !d.eligible).length;
+    const configExcludedOrderIds = confirmedOrderDetails
+      .filter((d) => !d.eligible)
+      .map((d) => ({ orderId: d.id, source: d.source, configKey: d.configKey }));
+
+    // Build exclusion breakdown by source category
+    const exclusionCounts: Record<string, { configKey: string; configValue: boolean; count: number }> = {};
+    for (const d of confirmedOrderDetails) {
+      if (!d.eligible) {
+        if (!exclusionCounts[d.source]) {
+          exclusionCounts[d.source] = { configKey: d.configKey, configValue: false, count: 0 };
         }
-        expectedPurchases = count;
+        exclusionCounts[d.source].count++;
       }
+    }
+    const configExcludedBreakdown = Object.entries(exclusionCounts).map(([source, data]) => ({
+      sourceCategory: source,
+      ...data,
+    }));
+
+    // Expected Purchase = eligible confirmed orders (for validated/Confirmed mode)
+    // or eligible new orders (for instant mode)
+    let expectedPurchases: number;
+    if (metaMode === 'validated' && metaStatus === 'Confirmed') {
+      expectedPurchases = eligibleConfirmed;
+    } else if (metaMode === 'validated' && metaStatus === 'Delivered') {
+      // For validated/Delivered, count eligible orders that entered Delivered
+      const eligibleDelivered = allOrders.filter((order) => {
+        const source = classifySource(order);
+        if (!sourceEligibility[source]) return false;
+        const timeline = Array.isArray(order.timeline) ? order.timeline : [];
+        return timeline.some((e: any) => {
+          if (!e?.timestamp || !e?.status) return false;
+          const t = new Date(e.timestamp);
+          return t >= range.from && t <= range.to && e.status === 'Delivered';
+        });
+      }).length;
+      expectedPurchases = eligibleDelivered;
     } else {
       // Instant mode: expected = eligible orders created in range
-      expectedPurchases = newOrders;
+      const eligibleNewOrders = allOrders.filter((order) => {
+        const source = classifySource(order);
+        return sourceEligibility[source];
+      }).length;
+      expectedPurchases = eligibleNewOrders;
     }
 
-    // Canonical Purchase snapshots captured in range
-    const [canonicalPurchases, uniqueIds, browserRows, outboxedRows] = await Promise.all([
-      this.prisma.trackingSnapshot.count({
-        where: { eventType: 'Purchase', createdAt: dateFilter },
-      }),
-      this.prisma.trackingSnapshot.groupBy({
-        by: ['eventId'],
-        where: { eventType: 'Purchase', createdAt: dateFilter },
-      }),
-      this.prisma.$queryRaw<{ count: bigint }[]>`
-        SELECT COUNT(*)::bigint AS count FROM "TrackingSnapshot" s
-        JOIN "TrackingOutbox" o ON o."snapshotId" = s.id
-        WHERE s."eventType" = 'Purchase'
-          AND o."configSnapshot"->>'source' = 'browser'
-          AND s."createdAt" >= ${range.from} AND s."createdAt" <= ${range.to}`,
-      this.prisma.$queryRaw<{ count: bigint }[]>`
-        SELECT COUNT(DISTINCT o."snapshotId")::bigint AS count
-        FROM "TrackingOutbox" o
-        JOIN "TrackingSnapshot" s ON s.id = o."snapshotId"
-        WHERE s."eventType" = 'Purchase'
-          AND s."createdAt" >= ${range.from} AND s."createdAt" <= ${range.to}`,
-    ]);
-
-    const browserOriginPurchases = Number(browserRows[0]?.count ?? 0);
-    const outboxed = Number(outboxedRows[0]?.count ?? 0);
-
-    // Classify Purchase snapshots by triggerMode from payload
+    // === STEP 4: Canonical Purchase snapshots ===
     const purchaseSnapshots = await this.prisma.trackingSnapshot.findMany({
       where: { eventType: 'Purchase', createdAt: dateFilter },
-      select: { payload: true },
+      select: { id: true, eventId: true, orderId: true, payload: true, createdAt: true },
     });
 
+    const canonicalPurchases = purchaseSnapshots.length;
+    const purchaseOrderIds = new Set(purchaseSnapshots.map((s) => s.orderId).filter(Boolean) as string[]);
+    const eligibleOrderIds = new Set(confirmedOrderDetails.filter((d) => d.eligible).map((d) => d.id));
+
+    // For instant mode, eligible = all orders created in range (not just confirmed)
+    // We need to check which orders have Purchase snapshots
+    const allEligibleOrderIds = new Set<string>();
+    for (const order of allOrders) {
+      const source = classifySource(order);
+      if (sourceEligibility[source]) {
+        allEligibleOrderIds.add(order.id);
+      }
+    }
+
+    // Matched = Purchase snapshots that correspond to eligible orders
+    let matchedPurchases = 0;
+    let unexpectedPurchases = 0;
+    const missingOrderIds: string[] = [];
+    const unexpectedOrderIds: string[] = [];
+
+    // Check which eligible orders have Purchase snapshots
+    const expectedOrderIds = metaMode === 'validated' && metaStatus ? eligibleOrderIds : allEligibleOrderIds;
+    for (const orderId of expectedOrderIds) {
+      if (purchaseOrderIds.has(orderId)) {
+        matchedPurchases++;
+      } else {
+        missingOrderIds.push(orderId);
+      }
+    }
+
+    // Check which Purchase snapshots don't correspond to eligible orders
+    for (const snap of purchaseSnapshots) {
+      if (snap.orderId && !expectedOrderIds.has(snap.orderId)) {
+        unexpectedPurchases++;
+        unexpectedOrderIds.push(snap.orderId);
+      }
+    }
+
+    const missingEligiblePurchases = missingOrderIds.length;
+
+    // Deduped = capture-level duplicates in range
+    const dedupedCaptures = await this.prisma.trackingDispatchEvent.count({
+      where: { createdAt: dateFilter, message: 'capture dedup' },
+    });
+
+    // Trigger mode breakdown
     let instantPurchases = 0;
     let validatedPurchases = 0;
     let offlinePurchases = 0;
@@ -1001,53 +1120,60 @@ export class MonitoringService {
       else if (triggerMode === 'browser') browserPurchases++;
     }
 
-    // Replay events in range
     const replayedEvents = await this.prisma.trackingDispatchEvent.count({
       where: { createdAt: dateFilter, message: 'replay' },
     });
 
-    // Delivery breakdown for Purchase events in range
+    // === STEP 5: Provider delivery reconciliation ===
     const dispatchRows = await this.prisma.trackingDispatch.findMany({
       where: {
         eventId: { startsWith: 'purchase_' },
         createdAt: dateFilter,
       },
-      select: { provider: true, destinationId: true, status: true },
+      select: { provider: true, destinationId: true, status: true, orderId: true },
     });
 
-    type DeliveryCounts = { sent: number; pending: number; failed: number; skipped: number };
-    const byProvider: Record<string, DeliveryCounts> = {};
-    const byDestination: Record<string, DeliveryCounts> = {};
+    const providerMap: Record<string, { expected: number; sent: number; pending: number; failed: number; skipped: number }> = {};
     for (const row of dispatchRows) {
-      const providerEntry = (byProvider[row.provider] ??= { sent: 0, pending: 0, failed: 0, skipped: 0 });
-      const key = `${row.provider}:${row.destinationId ?? 'default'}`;
-      const destEntry = (byDestination[key] ??= { sent: 0, pending: 0, failed: 0, skipped: 0 });
-      const bucket =
-        row.status === 'SENT' ? 'sent'
-          : row.status === 'SKIPPED' ? 'skipped'
-            : row.status === 'FAILED' || row.status === 'DEAD' ? 'failed'
-              : 'pending';
-      providerEntry[bucket] += 1;
-      destEntry[bucket] += 1;
+      if (!providerMap[row.provider]) {
+        providerMap[row.provider] = { expected: canonicalPurchases, sent: 0, pending: 0, failed: 0, skipped: 0 };
+      }
+      const p = providerMap[row.provider];
+      if (row.status === 'SENT') p.sent++;
+      else if (row.status === 'SKIPPED') p.skipped++;
+      else if (row.status === 'FAILED' || row.status === 'DEAD') p.failed++;
+      else p.pending++;
     }
+
+    const providerReconciliation = Object.entries(providerMap).map(([provider, data]) => ({
+      provider,
+      ...data,
+      missing: Math.max(0, data.expected - data.sent - data.pending - data.failed),
+    }));
 
     return {
       newOrders,
       confirmedOrders,
       deliveredOrders,
+      confirmedBySource,
+      eligibleConfirmed,
+      configExcludedConfirmed,
+      configExcludedBreakdown,
       expectedPurchases,
       canonicalPurchases,
-      uniquePurchaseEventIds: uniqueIds.length,
-      browserOriginPurchases,
+      matchedPurchases,
+      missingEligiblePurchases,
+      unexpectedPurchases,
+      dedupedPurchases: dedupedCaptures,
       instantPurchases,
       validatedPurchases,
       offlinePurchases,
       browserPurchases,
       replayedEvents,
-      purchaseDiff: canonicalPurchases - expectedPurchases,
-      byProvider,
-      byDestination,
-      orphanPurchases: Math.max(0, canonicalPurchases - outboxed),
+      providerReconciliation,
+      missingOrderIds,
+      unexpectedOrderIds,
+      configExcludedOrderIds,
       metaPurchaseMode: metaMode,
       metaValidatedStatus: metaStatus,
       range: { from: range.fromStr, to: range.toStr },

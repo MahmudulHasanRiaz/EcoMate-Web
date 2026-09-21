@@ -472,78 +472,64 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
       queryRaw.mockResolvedValue([{ count: BigInt(1) }]);
       dispatchFindMany.mockResolvedValue(dispatchRows);
       orderFindMany.mockResolvedValue([]);
-      snapshotFindMany.mockResolvedValue([{ payload: { triggerMode: 'instant' } }]);
+      snapshotFindMany.mockResolvedValue([{ payload: { triggerMode: 'instant' }, id: 's1', eventId: 'purchase_ord-1', orderId: 'ord-1', createdAt: new Date() }]);
       systemSettingFindMany.mockResolvedValue([
         { key: 'tracking_meta_purchase_mode', value: 'instant' },
+        { key: 'tracking_send_website_orders', value: 'true' },
       ]);
+      dispatchEventCount.mockResolvedValue(0);
       return service.getPurchaseReconciliation(range);
     };
 
     it('counts ONE business Purchase while delivery rows fan out per destination', async () => {
       const result = await reconcile([
-        { provider: 'meta', destinationId: 'primary', status: 'SENT' },
-        { provider: 'meta', destinationId: 'secondary', status: 'SENT' },
+        { provider: 'meta', destinationId: 'primary', status: 'SENT', orderId: 'ord-1' },
+        { provider: 'meta', destinationId: 'secondary', status: 'SENT', orderId: 'ord-1' },
       ]);
 
       // Canonical, snapshot/outbox-level — NOT multiplied by the destination count.
       expect(result.newOrders).toBe(1);
       expect(result.canonicalPurchases).toBe(1);
-      expect(result.uniquePurchaseEventIds).toBe(1);
-      expect(result.orphanPurchases).toBe(0);
 
-      // Delivery counts ARE per destination.
-      expect(result.byDestination).toEqual({
-        'meta:primary': { sent: 1, pending: 0, failed: 0, skipped: 0 },
-        'meta:secondary': { sent: 1, pending: 0, failed: 0, skipped: 0 },
-      });
-      expect(result.byProvider.meta).toEqual({
-        sent: 2,
-        pending: 0,
-        failed: 0,
-        skipped: 0,
-      });
+      // Provider delivery counts ARE per destination.
+      const metaProvider = result.providerReconciliation.find((p: any) => p.provider === 'meta');
+      expect(metaProvider).toBeDefined();
+      expect(metaProvider!.sent).toBe(2);
+      expect(metaProvider!.pending).toBe(0);
+      expect(metaProvider!.failed).toBe(0);
+      expect(metaProvider!.skipped).toBe(0);
     });
 
     it('keys a destination-less legacy row as provider:default', async () => {
       const result = await reconcile([
-        { provider: 'meta', destinationId: null, status: 'FAILED' },
-        { provider: 'tiktok', destinationId: 'default', status: 'SKIPPED' },
+        { provider: 'meta', destinationId: null, status: 'FAILED', orderId: 'ord-1' },
+        { provider: 'tiktok', destinationId: 'default', status: 'SKIPPED', orderId: 'ord-1' },
       ]);
 
-      expect(result.byDestination['meta:default']).toEqual({
-        sent: 0,
-        pending: 0,
-        failed: 1,
-        skipped: 0,
-      });
-      expect(result.byDestination['tiktok:default']).toEqual({
-        sent: 0,
-        pending: 0,
-        failed: 0,
-        skipped: 1,
-      });
-      // Still one canonical business event despite three delivery states.
+      const metaProvider = result.providerReconciliation.find((p: any) => p.provider === 'meta');
+      const tiktokProvider = result.providerReconciliation.find((p: any) => p.provider === 'tiktok');
+      expect(metaProvider).toBeDefined();
+      expect(tiktokProvider).toBeDefined();
+      expect(metaProvider!.failed).toBe(1);
+      expect(tiktokProvider!.skipped).toBe(1);
+      // Still one canonical business event despite multiple delivery states.
       expect(result.canonicalPurchases).toBe(1);
     });
 
     it('buckets DEAD and FAILED together, and PENDING/RETRY as pending', async () => {
       const result = await reconcile([
-        { provider: 'meta', destinationId: 'a', status: 'DEAD' },
-        { provider: 'meta', destinationId: 'b', status: 'PENDING' },
-        { provider: 'meta', destinationId: 'c', status: 'RETRY' },
-        { provider: 'meta', destinationId: 'd', status: 'SENT' },
+        { provider: 'meta', destinationId: 'a', status: 'DEAD', orderId: 'ord-1' },
+        { provider: 'meta', destinationId: 'b', status: 'PENDING', orderId: 'ord-1' },
+        { provider: 'meta', destinationId: 'c', status: 'RETRY', orderId: 'ord-1' },
+        { provider: 'meta', destinationId: 'd', status: 'SENT', orderId: 'ord-1' },
       ]);
 
-      expect(result.byDestination['meta:a'].failed).toBe(1);
-      expect(result.byDestination['meta:b'].pending).toBe(1);
-      expect(result.byDestination['meta:c'].pending).toBe(1);
-      expect(result.byDestination['meta:d'].sent).toBe(1);
-      expect(result.byProvider.meta).toEqual({
-        sent: 1,
-        pending: 2,
-        failed: 1,
-        skipped: 0,
-      });
+      const metaProvider = result.providerReconciliation.find((p: any) => p.provider === 'meta');
+      expect(metaProvider).toBeDefined();
+      expect(metaProvider!.sent).toBe(1);
+      expect(metaProvider!.pending).toBe(2);
+      expect(metaProvider!.failed).toBe(1);
+      expect(metaProvider!.skipped).toBe(0);
     });
   });
 
