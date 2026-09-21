@@ -1,6 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import {
   businessAnalyticsApi,
+  customerCohortsQueryKey,
+  customersListQueryKey,
+  customersSummaryQueryKey,
   overviewQueryKey,
   productDetailQueryKey,
   productsQueryKey,
@@ -54,6 +57,31 @@ export function useSalesSettlement(filters: AnalyticsFilters, page: number, page
   return useQuery({
     queryKey: salesSettlementQueryKey(filters, page, pageSize),
     queryFn: () => businessAnalyticsApi.getSalesSettlement(filters, page, pageSize).then((r) => r.data),
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
+  })
+}
+
+export function useCustomersSummary(filters: AnalyticsFilters) {
+  return useQuery({
+    queryKey: customersSummaryQueryKey(filters),
+    queryFn: () => businessAnalyticsApi.getCustomersSummary(filters).then((r) => r.data),
+    refetchInterval: 60_000,
+  })
+}
+
+export function useCustomerCohorts(filters: AnalyticsFilters) {
+  return useQuery({
+    queryKey: customerCohortsQueryKey(filters),
+    queryFn: () => businessAnalyticsApi.getCustomerCohorts(filters).then((r) => r.data),
+    refetchInterval: 60_000,
+  })
+}
+
+export function useCustomersList(filters: AnalyticsFilters, page: number, pageSize: number, segment?: string) {
+  return useQuery({
+    queryKey: customersListQueryKey(filters, page, pageSize, segment),
+    queryFn: () => businessAnalyticsApi.getCustomers(filters, page, pageSize, segment).then((r) => r.data),
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,
   })

@@ -61,6 +61,7 @@ import { Route as AuthenticatedMonUsersPresetsRouteImport } from './routes/_auth
 import { Route as AuthenticatedOpAccountingIndexRouteImport } from './routes/_authenticated/op/accounting/index'
 import { Route as AuthenticatedOpAccountingJournalEntriesRouteImport } from './routes/_authenticated/op/accounting/journal-entries'
 import { Route as AuthenticatedOpAccountingReportsRouteImport } from './routes/_authenticated/op/accounting/reports'
+import { Route as AuthenticatedOpAnalyticsCustomersRouteImport } from './routes/_authenticated/op/analytics/customers'
 import { Route as AuthenticatedOpAnalyticsOverviewRouteImport } from './routes/_authenticated/op/analytics/overview'
 import { Route as AuthenticatedOpAnalyticsProductsRouteImport } from './routes/_authenticated/op/analytics/products'
 import { Route as AuthenticatedOpAnalyticsSalesRouteImport } from './routes/_authenticated/op/analytics/sales'
@@ -446,6 +447,12 @@ const AuthenticatedOpAccountingReportsRoute =
   AuthenticatedOpAccountingReportsRouteImport.update({
     id: '/op/accounting/reports',
     path: '/op/accounting/reports',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpAnalyticsCustomersRoute =
+  AuthenticatedOpAnalyticsCustomersRouteImport.update({
+    id: '/op/analytics/customers',
+    path: '/op/analytics/customers',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedOpAnalyticsOverviewRoute =
@@ -1082,6 +1089,7 @@ export interface FileRoutesByFullPath {
   '/mon/users/presets': typeof AuthenticatedMonUsersPresetsRoute
   '/op/accounting/journal-entries': typeof AuthenticatedOpAccountingJournalEntriesRoute
   '/op/accounting/reports': typeof AuthenticatedOpAccountingReportsRoute
+  '/op/analytics/customers': typeof AuthenticatedOpAnalyticsCustomersRoute
   '/op/analytics/overview': typeof AuthenticatedOpAnalyticsOverviewRoute
   '/op/analytics/products': typeof AuthenticatedOpAnalyticsProductsRouteWithChildren
   '/op/analytics/sales': typeof AuthenticatedOpAnalyticsSalesRoute
@@ -1234,6 +1242,7 @@ export interface FileRoutesByTo {
   '/mon/users/presets': typeof AuthenticatedMonUsersPresetsRoute
   '/op/accounting/journal-entries': typeof AuthenticatedOpAccountingJournalEntriesRoute
   '/op/accounting/reports': typeof AuthenticatedOpAccountingReportsRoute
+  '/op/analytics/customers': typeof AuthenticatedOpAnalyticsCustomersRoute
   '/op/analytics/overview': typeof AuthenticatedOpAnalyticsOverviewRoute
   '/op/analytics/products': typeof AuthenticatedOpAnalyticsProductsRouteWithChildren
   '/op/analytics/sales': typeof AuthenticatedOpAnalyticsSalesRoute
@@ -1388,6 +1397,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/users/presets': typeof AuthenticatedMonUsersPresetsRoute
   '/_authenticated/op/accounting/journal-entries': typeof AuthenticatedOpAccountingJournalEntriesRoute
   '/_authenticated/op/accounting/reports': typeof AuthenticatedOpAccountingReportsRoute
+  '/_authenticated/op/analytics/customers': typeof AuthenticatedOpAnalyticsCustomersRoute
   '/_authenticated/op/analytics/overview': typeof AuthenticatedOpAnalyticsOverviewRoute
   '/_authenticated/op/analytics/products': typeof AuthenticatedOpAnalyticsProductsRouteWithChildren
   '/_authenticated/op/analytics/sales': typeof AuthenticatedOpAnalyticsSalesRoute
@@ -1542,6 +1552,7 @@ export interface FileRouteTypes {
     | '/mon/users/presets'
     | '/op/accounting/journal-entries'
     | '/op/accounting/reports'
+    | '/op/analytics/customers'
     | '/op/analytics/overview'
     | '/op/analytics/products'
     | '/op/analytics/sales'
@@ -1694,6 +1705,7 @@ export interface FileRouteTypes {
     | '/mon/users/presets'
     | '/op/accounting/journal-entries'
     | '/op/accounting/reports'
+    | '/op/analytics/customers'
     | '/op/analytics/overview'
     | '/op/analytics/products'
     | '/op/analytics/sales'
@@ -1847,6 +1859,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/users/presets'
     | '/_authenticated/op/accounting/journal-entries'
     | '/_authenticated/op/accounting/reports'
+    | '/_authenticated/op/analytics/customers'
     | '/_authenticated/op/analytics/overview'
     | '/_authenticated/op/analytics/products'
     | '/_authenticated/op/analytics/sales'
@@ -2340,6 +2353,13 @@ declare module '@tanstack/react-router' {
       path: '/op/accounting/reports'
       fullPath: '/op/accounting/reports'
       preLoaderRoute: typeof AuthenticatedOpAccountingReportsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/analytics/customers': {
+      id: '/_authenticated/op/analytics/customers'
+      path: '/op/analytics/customers'
+      fullPath: '/op/analytics/customers'
+      preLoaderRoute: typeof AuthenticatedOpAnalyticsCustomersRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/op/analytics/overview': {
@@ -3186,6 +3206,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMonUsersPresetsRoute: typeof AuthenticatedMonUsersPresetsRoute
   AuthenticatedOpAccountingJournalEntriesRoute: typeof AuthenticatedOpAccountingJournalEntriesRoute
   AuthenticatedOpAccountingReportsRoute: typeof AuthenticatedOpAccountingReportsRoute
+  AuthenticatedOpAnalyticsCustomersRoute: typeof AuthenticatedOpAnalyticsCustomersRoute
   AuthenticatedOpAnalyticsOverviewRoute: typeof AuthenticatedOpAnalyticsOverviewRoute
   AuthenticatedOpAnalyticsProductsRoute: typeof AuthenticatedOpAnalyticsProductsRouteWithChildren
   AuthenticatedOpAnalyticsSalesRoute: typeof AuthenticatedOpAnalyticsSalesRoute
@@ -3307,6 +3328,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpAccountingJournalEntriesRoute:
     AuthenticatedOpAccountingJournalEntriesRoute,
   AuthenticatedOpAccountingReportsRoute: AuthenticatedOpAccountingReportsRoute,
+  AuthenticatedOpAnalyticsCustomersRoute:
+    AuthenticatedOpAnalyticsCustomersRoute,
   AuthenticatedOpAnalyticsOverviewRoute: AuthenticatedOpAnalyticsOverviewRoute,
   AuthenticatedOpAnalyticsProductsRoute:
     AuthenticatedOpAnalyticsProductsRouteWithChildren,

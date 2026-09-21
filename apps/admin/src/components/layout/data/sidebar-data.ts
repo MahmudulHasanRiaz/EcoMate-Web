@@ -84,6 +84,7 @@ export const sidebarData: SidebarData = {
             { title: 'Overview', url: '/op/analytics/overview' },
             { title: 'Products', url: '/op/analytics/products' },
             { title: 'Sales & Orders', url: '/op/analytics/sales' },
+            { title: 'Customers', url: '/op/analytics/customers' },
           ],
         },
         { title: 'Payments', url: '/op/payments', icon: Coins, feature: 'admin_payments' },

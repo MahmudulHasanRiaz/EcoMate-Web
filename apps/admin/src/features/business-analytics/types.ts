@@ -420,3 +420,93 @@ export interface SalesSettlementResponse {
   data: SalesSettlementData
   meta: OverviewMeta
 }
+
+// ─── P6 Customers (§2.7 + §4.2 customer rows + §8.11/8.12) ────
+
+export type CustomerSegmentLabel = 'new' | 'returning' | 'vip'
+
+/** One attributed customer: segment → customer → order history (§4.2). */
+export interface CustomerRow {
+  key: string
+  kind: 'profile' | 'guest'
+  profileId: string | null
+  phone: string | null
+  name: string | null
+  segment: CustomerSegmentLabel
+  firstRecognisedAt: string
+  lifetimeOrders: number
+  /** Observed cumulative revenue for this customer — never a prediction. */
+  lifetimeRevenue: number
+  rangeOrders: number
+  rangeRevenue: number
+}
+
+export interface CustomerUnattributed {
+  orders: number
+  customers: number
+  revenue: number
+  statement: string
+}
+
+export interface CustomersSummaryData {
+  acquisition: { newCustomers: KpiValue; returningCustomers: KpiValue; totalCustomers: KpiValue }
+  repeat: { rate: KpiValue }
+  value: { revenuePerCustomer: KpiValue; ordersPerCustomer: KpiValue; averageCustomerOrderValue: KpiValue }
+  /** Observed cumulative revenue — the predictive-model word appears nowhere. */
+  clr: { total: KpiValue; statement: string }
+  unattributed: CustomerUnattributed
+}
+
+export interface CustomerCohortRetention {
+  month: string
+  offset: number
+  active: number
+  rate: number | null
+}
+
+export interface CustomerCohort {
+  acquisitionMonth: string
+  size: number
+  retention: CustomerCohortRetention[]
+  cumulativeClr: number
+  rangeRevenue: number
+}
+
+export interface CustomerCohortsData {
+  state: 'ok' | 'insufficient_history'
+  months: string[]
+  cohorts: CustomerCohort[]
+  insufficientReason: string | null
+}
+
+export interface CustomersListData {
+  rows: CustomerRow[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+  unattributed: CustomerUnattributed
+}
+
+export interface CustomersSummaryResponse {
+  data: CustomersSummaryData
+  meta: OverviewMeta
+}
+
+export interface CustomerCohortsResponse {
+  data: CustomerCohortsData
+  meta: OverviewMeta
+}
+
+export interface CustomersListResponse {
+  data: CustomersListData
+  meta: OverviewMeta
+}
+
+/** Verbatim §2.7 CLR disclosure — observed, never predictive. */
+export const CLR_STATEMENT =
+  'Customer Lifetime Revenue (CLR) is observed cumulative revenue over delivery-recognised orders. No predictive model exists.'
+
+/** Verbatim limitation-12 disclosure — phone-less guests are never merged. */
+export const UNATTRIBUTED_STATEMENT =
+  'Phone-less guest orders cannot be linked to a customer. Each is counted singly and never merged.'

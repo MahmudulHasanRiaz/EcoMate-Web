@@ -18,11 +18,13 @@ import { Permissions } from '../common/decorators/permissions.decorator';
 import { AnalyticsFilterDto } from './analytics-filter.dto';
 import { ProductsQueryDto } from './analytics-products.dto';
 import { SalesQueryDto } from './analytics-sales.dto';
+import { CustomersQueryDto } from './analytics-customers.dto';
 import { AnalyticsPnlService } from './analytics-pnl.service';
 import { AnalyticsFulfillmentService } from './analytics-fulfillment.service';
 import { AnalyticsOverviewService } from './analytics-overview.service';
 import { AnalyticsProductsService } from './analytics-products.service';
 import { AnalyticsSalesService } from './analytics-sales.service';
+import { AnalyticsCustomersService } from './analytics-customers.service';
 import { AnalyticsReconciliationService } from './analytics-reconciliation.service';
 
 @Controller('business-analytics')
@@ -36,6 +38,7 @@ export class BusinessAnalyticsController {
     private readonly overviewService: AnalyticsOverviewService,
     private readonly productsService: AnalyticsProductsService,
     private readonly salesService: AnalyticsSalesService,
+    private readonly customersService: AnalyticsCustomersService,
     private readonly reconciliationService: AnalyticsReconciliationService,
   ) {}
 
@@ -128,5 +131,26 @@ export class BusinessAnalyticsController {
   @Permissions('view_analytics')
   lenses(@Query() query: AnalyticsFilterDto) {
     return this.pnlService.getLenses(query);
+  }
+
+  /** Customer acquisition + repeat + CLR summary (financial — revenue shown). */
+  @Get('customers/summary')
+  @Permissions('view_analytics', 'view_financial_summary')
+  customersSummary(@Query() query: CustomersQueryDto) {
+    return this.customersService.getSummary(query);
+  }
+
+  /** Acquisition-month × retention × cumulative CLR cohorts (financial). */
+  @Get('customers/cohorts')
+  @Permissions('view_analytics', 'view_financial_summary')
+  customersCohorts(@Query() query: CustomersQueryDto) {
+    return this.customersService.getCohorts(query);
+  }
+
+  /** Paginated customer rows for the §4.2 drill (financial — revenue shown). */
+  @Get('customers')
+  @Permissions('view_analytics', 'view_financial_summary')
+  customersList(@Query() query: CustomersQueryDto) {
+    return this.customersService.getCustomers(query);
   }
 }

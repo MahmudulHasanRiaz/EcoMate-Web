@@ -7,6 +7,9 @@
 import { apiClient } from '@/lib/api-client'
 import type {
   AnalyticsFilters,
+  CustomerCohortsResponse,
+  CustomersListResponse,
+  CustomersSummaryResponse,
   OverviewResponse,
   ProductAnalyticsFilters,
   ProductDetailResponse,
@@ -82,6 +85,18 @@ export const businessAnalyticsApi = {
     apiClient.get<SalesSettlementResponse>('/business-analytics/sales/settlement', {
       params: { ...buildOverviewQuery(filters), page: String(page), pageSize: String(pageSize) },
     }),
+  getCustomersSummary: (filters: AnalyticsFilters) =>
+    apiClient.get<CustomersSummaryResponse>('/business-analytics/customers/summary', {
+      params: buildOverviewQuery(filters),
+    }),
+  getCustomerCohorts: (filters: AnalyticsFilters) =>
+    apiClient.get<CustomerCohortsResponse>('/business-analytics/customers/cohorts', {
+      params: buildOverviewQuery(filters),
+    }),
+  getCustomers: (filters: AnalyticsFilters, page: number, pageSize: number, segment?: string) =>
+    apiClient.get<CustomersListResponse>('/business-analytics/customers', {
+      params: { ...buildOverviewQuery(filters), page: String(page), pageSize: String(pageSize), ...(segment ? { segment } : {}) },
+    }),
 }
 
 /** Product list/detail params: shared dimensions + list-only search/sort/dir. */
@@ -116,4 +131,17 @@ export function salesSummaryQueryKey(filters: AnalyticsFilters) {
 
 export function salesSettlementQueryKey(filters: AnalyticsFilters, page: number, pageSize: number) {
   return ['business-analytics-sales-settlement', buildOverviewQuery(filters), page, pageSize] as const
+}
+
+/** Stable customer query keys — shared dims drive summary/cohorts; list adds page/pageSize/segment. */
+export function customersSummaryQueryKey(filters: AnalyticsFilters) {
+  return ['business-analytics-customers-summary', buildOverviewQuery(filters)] as const
+}
+
+export function customerCohortsQueryKey(filters: AnalyticsFilters) {
+  return ['business-analytics-customers-cohorts', buildOverviewQuery(filters)] as const
+}
+
+export function customersListQueryKey(filters: AnalyticsFilters, page: number, pageSize: number, segment?: string) {
+  return ['business-analytics-customers-list', buildOverviewQuery(filters), page, pageSize, segment ?? ''] as const
 }
