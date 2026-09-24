@@ -350,6 +350,37 @@ describe('DispatchService', () => {
       ).toBeUndefined();
     });
 
+    it('stamps pickedUpAt when HOLD → IN_TRANSIT skips PICKED_UP', async () => {
+      mockClaim({ status: 'HOLD', pickedUpAt: null });
+
+      await service.updateStatus('d-1', 'IN_TRANSIT', 'staff-123');
+
+      const data = prisma.dispatch.updateMany.mock.calls[0][0].data;
+      expect(data.status).toBe('IN_TRANSIT');
+      expect(data.pickedUpAt).toBeInstanceOf(Date);
+    });
+
+    it('stamps pickedUpAt when HOLD → DELIVERED skips PICKED_UP', async () => {
+      mockClaim({ status: 'HOLD', pickedUpAt: null, deliveredAt: null });
+
+      await service.updateStatus('d-1', 'DELIVERED', 'staff-123');
+
+      const data = prisma.dispatch.updateMany.mock.calls[0][0].data;
+      expect(data.deliveredAt).toBeInstanceOf(Date);
+      expect(data.pickedUpAt).toBeInstanceOf(Date);
+    });
+
+    it('never overwrites pickedUpAt on a skipped-pickup transition', async () => {
+      const first = new Date('2025-01-01T00:00:00.000Z');
+      mockClaim({ status: 'HOLD', pickedUpAt: first });
+
+      await service.updateStatus('d-1', 'IN_TRANSIT', 'staff-123');
+
+      expect(
+        prisma.dispatch.updateMany.mock.calls[0][0].data.pickedUpAt,
+      ).toBeUndefined();
+    });
+
     it('advances the order from the status that was applied, not a stale read', async () => {
       // The in-transaction dispatch read reports the OLD status; the order
       // sync must still use the status this transition applied.
@@ -668,6 +699,86 @@ describe('DispatchService', () => {
         expect.objectContaining({ statusId: 'status-shipping' }),
         'system',
       );
+    });
+
+    it('fresh in-transit sync with null pickedUpAt stamps the pickup KPI timestamp', async () => {
+      prisma.dispatch.findMany.mockResolvedValue([
+        { ...dispatchRow, courier: 'pathao', pickedUpAt: null },
+      ]);
+      tracking.getDispatchTracking.mockResolvedValue(
+        trackingResult({ currentStatus: 'in transit' }),
+      );
+      prisma.order.findUnique.mockResolvedValue({
+        id: 'order-1',
+        trashedAt: null,
+        status: { name: 'Packed' },
+      });
+      prisma.order.findFirst.mockResolvedValue({
+        id: 'order-1',
+        trashedAt: null,
+        timeline: [],
+      });
+      prisma.orderStatus.findUnique.mockResolvedValue({
+        id: 'status-shipping',
+        name: 'Shipping',
+      });
+
+      await service.syncStatusFromCourier(['d-1']);
+
+      const dispatchUpdate = prisma.dispatch.update.mock.calls[0][0];
+      expect(dispatchUpdate.data.pickedUpAt).toBeInstanceOf(Date);
+    });
+
+    it('fresh delivered sync with null pickedUpAt stamps pickup and delivery timestamps', async () => {
+      prisma.dispatch.findMany.mockResolvedValue([
+        { ...dispatchRow, pickedUpAt: null, deliveredAt: null },
+      ]);
+      tracking.getDispatchTracking.mockResolvedValue(trackingResult());
+      prisma.order.findUnique.mockResolvedValue({
+        id: 'order-1',
+        trashedAt: null,
+        status: { name: 'Shipping' },
+      });
+      prisma.order.findFirst.mockResolvedValue({
+        id: 'order-1',
+        trashedAt: null,
+        timeline: [],
+      });
+      prisma.orderStatus.findUnique.mockResolvedValue({
+        id: 'status-delivered',
+        name: 'Delivered',
+      });
+
+      await service.syncStatusFromCourier(['d-1']);
+
+      const dispatchUpdate = prisma.dispatch.update.mock.calls[0][0];
+      expect(dispatchUpdate.data.pickedUpAt).toBeInstanceOf(Date);
+      expect(dispatchUpdate.data.deliveredAt).toBeInstanceOf(Date);
+    });
+
+    it('unchanged in-transit courier status with null pickedUpAt heals the pickup stamp', async () => {
+      prisma.dispatch.findMany.mockResolvedValue([
+        {
+          ...dispatchRow,
+          courier: 'pathao',
+          courierStatus: 'order.in-transit',
+          pickedUpAt: null,
+        },
+      ]);
+      tracking.getDispatchTracking.mockResolvedValue(
+        trackingResult({ currentStatus: 'order.in-transit' }),
+      );
+      prisma.order.findUnique.mockResolvedValue({
+        id: 'order-1',
+        trashedAt: null,
+        status: { name: 'Shipping' },
+      });
+
+      const summary = await service.syncStatusFromCourier(['d-1']);
+
+      expect(summary.unchanged).toHaveLength(1);
+      const update = prisma.dispatch.update.mock.calls[0][0];
+      expect(update.data.pickedUpAt).toBeInstanceOf(Date);
     });
 
     it('handles courier API failure safely without touching the dispatch', async () => {

@@ -18,6 +18,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { CreateDispatchDto } from './dto/create-dispatch.dto';
 import { DispatchQueryDto } from './dto/dispatch-query.dto';
+import { impliesPickup } from './dispatch-timestamps';
 
 // Actors that represent automated processes rather than a logged-in staff
 // member. They must never move an order that is already 'Partial'.
@@ -445,15 +446,18 @@ export class DispatchService {
       case 'HANDED_OVER':
         data.handedOverAt = new Date();
         break;
-      case 'PICKED_UP':
-        if (!current.pickedUpAt) data.pickedUpAt = new Date();
-        break;
       case 'DELIVERED':
         if (!current.deliveredAt) data.deliveredAt = new Date();
         break;
       case 'RETURNED':
         data.deliveredAt = null;
         break;
+    }
+    // Any status at-or-past physical possession counts as pickup for the
+    // dashboard KPI — e.g. HOLD → IN_TRANSIT / DELIVERED never hits the
+    // explicit PICKED_UP case above.
+    if (impliesPickup(status) && !current.pickedUpAt) {
+      data.pickedUpAt = new Date();
     }
 
     // ALL-OR-NOTHING: status claim + stock side effects in single transaction
@@ -855,9 +859,20 @@ export class DispatchService {
         // workflow (e.g. Pathao `in-transit` recorded, order still Packed).
         // Sync is the healing path for that race.
         if (dispatch.courierStatus === rawStatus) {
+          const unchangedMapped = mapCourierStatusToDispatchStatus(
+            courier,
+            rawStatus,
+          );
           await this.prisma.dispatch.update({
             where: { id: dispatch.id },
-            data: { lastSyncedAt: new Date() },
+            data: {
+              lastSyncedAt: new Date(),
+              // Heal a missed pickup stamp: courier already reports a
+              // post-pickup state but pickedUpAt was never written.
+              ...(impliesPickup(unchangedMapped) && !dispatch.pickedUpAt
+                ? { pickedUpAt: new Date() }
+                : {}),
+            },
           });
           mutated = true;
           await this.applySyncOrderAdvancement(dispatch, rawStatus);
@@ -885,6 +900,7 @@ export class DispatchService {
         }
 
         const statusAt = this.parseStatusAt(result);
+        const effectiveStatus = nextDispatchStatus ?? mappedStatus;
         await this.prisma.dispatch.update({
           where: { id: dispatch.id },
           data: {
@@ -899,11 +915,13 @@ export class DispatchService {
               : {}),
             // Stamp the pickup/delivery event time (authoritative for KPI and
             // reporting queries). First write wins: a later sync must not move
-            // the original event timestamp.
-            ...(mappedStatus === 'PICKED_UP' && !dispatch.pickedUpAt
+            // the original event timestamp. Any post-pickup status counts —
+            // courier sync often maps straight to IN_TRANSIT/DELIVERED
+            // without ever reporting PICKED_UP.
+            ...(impliesPickup(effectiveStatus) && !dispatch.pickedUpAt
               ? { pickedUpAt: statusAt ?? new Date() }
               : {}),
-            ...(mappedStatus === 'DELIVERED' && !dispatch.deliveredAt
+            ...(effectiveStatus === 'DELIVERED' && !dispatch.deliveredAt
               ? { deliveredAt: statusAt ?? new Date() }
               : {}),
           },

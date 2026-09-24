@@ -2,6 +2,7 @@ import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { OrdersService } from '../orders/orders.service';
+import { impliesPickup } from '../dispatch/dispatch-timestamps';
 
 const ORDER_TRANSITIONS: Record<string, string[]> = {
   'Pending': ['Payment Pending', 'Hold', 'Confirmed', 'Cancelled'],
@@ -338,13 +339,16 @@ export class CourierWebhookService {
     // authoritative event times for KPI/reporting queries; only the manual
     // dispatch board used to set them, so courier-driven progression left
     // them NULL. First write wins (a repeated webhook for the same event
-    // must not move the original timestamp).
-    if (status === 'PICKED_UP') {
+    // must not move the original timestamp). Any post-pickup status counts
+    // as pickup — webhooks often skip order.picked entirely
+    // (order.in-transit / order.delivered with no prior pickup event).
+    if (impliesPickup(status)) {
       await this.prisma.dispatch.updateMany({
         where: { courier: courier as any, consignmentId, pickedUpAt: null },
         data: { pickedUpAt: new Date() },
       });
-    } else if (status === 'DELIVERED') {
+    }
+    if (status === 'DELIVERED') {
       await this.prisma.dispatch.updateMany({
         where: { courier: courier as any, consignmentId, deliveredAt: null },
         data: { deliveredAt: new Date() },

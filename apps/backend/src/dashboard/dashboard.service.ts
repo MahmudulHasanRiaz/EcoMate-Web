@@ -420,8 +420,11 @@ export class DashboardService {
       //     |'DELIVERED', timestamp}. This is the only record that covers both
       //     manual and courier-driven progression.
       //  2. `Dispatch.pickedUpAt` / `Dispatch.deliveredAt` — set by the manual
-      //     dispatch board. (The courier webhook/sync paths also populate them
-      //     now; historical rows may still be NULL, which the timeline covers.)
+      //     dispatch board, courier webhooks, AND courier sync. Any post-pickup
+      //     dispatch status (IN_TRANSIT / ASSIGNED_TO_RIDER / DELIVERED /
+      //     PARTIAL) stamps pickedUpAt when still null — courier paths often
+      //     skip the explicit PICKED_UP transition. Historical nulls are
+      //     backfilled by migration 20260924070009_backfill_picked_up_at.
       //
       // DISTINCT order_id across BOTH sources guarantees an order is counted
       // once even when it has multiple dispatches or repeated transitions

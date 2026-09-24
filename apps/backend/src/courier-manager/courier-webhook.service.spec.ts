@@ -547,18 +547,61 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       });
     });
 
-    it('does not re-stamp pickedUpAt on a repeated pickup webhook', async () => {
-      // A later event maps to IN_TRANSIT (not PICKED_UP) → no pickup stamp.
+    it('order.in-transit with null pickedUpAt stamps the pickup KPI timestamp (skipped pickup webhook)', async () => {
       await service.handlePathao({
         event: 'order.in-transit',
         consignment_id: 'CG-1',
       });
 
-      expect(prisma.dispatch.updateMany).not.toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ pickedUpAt: expect.any(Date) }),
-        }),
+      expect(prisma.dispatch.updateMany).toHaveBeenCalledWith({
+        where: {
+          courier: 'pathao',
+          consignmentId: 'CG-1',
+          pickedUpAt: null,
+        },
+        data: { pickedUpAt: expect.any(Date) },
+      });
+    });
+
+    it('never overwrites an existing pickedUpAt (first write wins via null guard)', async () => {
+      await service.handlePathao({
+        event: 'order.in-transit',
+        consignment_id: 'CG-1',
+      });
+
+      // The where clause must require pickedUpAt: null so a repeated
+      // post-pickup event cannot move the original KPI event time.
+      const calls = prisma.dispatch.updateMany.mock.calls.filter((c: any) =>
+        c[0]?.data && 'pickedUpAt' in c[0].data,
       );
+      expect(calls.length).toBeGreaterThan(0);
+      for (const c of calls) {
+        expect(c[0].where.pickedUpAt).toBeNull();
+      }
+    });
+
+    it('order.delivered stamps both pickedUpAt and deliveredAt when null', async () => {
+      await service.handlePathao({
+        event: 'order.delivered',
+        consignment_id: 'CG-1',
+      });
+
+      expect(prisma.dispatch.updateMany).toHaveBeenCalledWith({
+        where: {
+          courier: 'pathao',
+          consignmentId: 'CG-1',
+          pickedUpAt: null,
+        },
+        data: { pickedUpAt: expect.any(Date) },
+      });
+      expect(prisma.dispatch.updateMany).toHaveBeenCalledWith({
+        where: {
+          courier: 'pathao',
+          consignmentId: 'CG-1',
+          deliveredAt: null,
+        },
+        data: { deliveredAt: expect.any(Date) },
+      });
     });
 
     it('order.in-transit → dispatch IN_TRANSIT → order advances Packed → Shipping (missed picked webhook)', async () => {
