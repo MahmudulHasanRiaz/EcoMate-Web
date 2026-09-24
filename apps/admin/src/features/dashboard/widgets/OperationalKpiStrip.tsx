@@ -13,6 +13,7 @@ import {
   Coins,
   AlertTriangle,
   CircleAlert,
+  Info,
 } from 'lucide-react'
 import { dashboardApi } from '../api'
 import { formatCurrency, formatNumber } from '../utils'
@@ -48,19 +49,23 @@ export const PERIOD_LABELS: Record<DatePresetKey, string> = {
 /** Shown on snapshot metrics, whose numbers carry no period. */
 const SNAPSHOT_LABEL = 'Backlog'
 
-export function OperationalKpiStrip({ dateRange, preset }: WidgetProps) {
+export function OperationalKpiStrip({ dateRange, preset, view = 'activity' }: WidgetProps) {
   const startStr = dateRange.start.toISOString()
   const endStr = dateRange.end.toISOString()
+  const isPipeline = view === 'pipeline'
 
-  // Period-aware KPI query. The date range is part of the query key so a
-  // filter change always produces a fresh request — never a stale cache hit.
+  // View-aware KPI query. View is part of the key so Activity (event counts
+  // in period) and Pipeline (cohort current-state) never share a cache entry.
   const {
     data: kpiRes,
     isLoading: kpiLoading,
     isError: kpiError,
   } = useQuery({
-    queryKey: ['operational-kpis', startStr, endStr],
-    queryFn: () => dashboardApi.getOperationalKpis(startStr, endStr),
+    queryKey: ['operational-kpis', view, startStr, endStr],
+    queryFn: () =>
+      isPipeline
+        ? dashboardApi.getOperationalPipelineKpis(startStr, endStr)
+        : dashboardApi.getOperationalKpis(startStr, endStr),
     refetchInterval: 30_000,
   })
 
@@ -81,12 +86,18 @@ export function OperationalKpiStrip({ dateRange, preset }: WidgetProps) {
   const isLoading = kpiLoading || stockLoading
   const hasError = kpiError || stockError
   const periodLabel = PERIOD_LABELS[preset] ?? PERIOD_LABELS.last_30_days
+  // Pipeline lifecycle tiles show CURRENT state of the period cohort, never
+  // period events — the subtext must say so on every tile.
+  const cohortLabel = `Now · ${periodLabel} cohort`
 
   const tiles: KpiTile[] = [
     {
-      label: 'New Orders',
+      // Pipeline: the same cohort-total value, but "New Orders" would imply a
+      // current "new" status — label it for what it is (no new metric).
+      label: isPipeline ? 'Order Cohort' : 'New Orders',
       value: kpi ? formatNumber(kpi.newOrders) : '—',
-      subtext: periodLabel,
+      subtext: isPipeline ? cohortLabel : periodLabel,
+      tooltip: isPipeline ? 'Total orders created in the selected period' : undefined,
       icon: <ShoppingCart className="h-4 w-4 text-info" />,
       bgClass: 'bg-info-soft',
       borderClass: 'border-info/20',
@@ -95,7 +106,7 @@ export function OperationalKpiStrip({ dateRange, preset }: WidgetProps) {
     {
       label: 'Confirmed',
       value: kpi ? formatNumber(kpi.confirmed) : '—',
-      subtext: periodLabel,
+      subtext: isPipeline ? cohortLabel : periodLabel,
       icon: <PackageCheck className="h-4 w-4 text-accent-violet" />,
       bgClass: 'bg-accent-violet-soft',
       borderClass: 'border-accent-violet/20',
@@ -104,16 +115,22 @@ export function OperationalKpiStrip({ dateRange, preset }: WidgetProps) {
     {
       label: 'Packed',
       value: kpi ? formatNumber(kpi.packed) : '—',
-      subtext: periodLabel,
+      subtext: isPipeline ? cohortLabel : periodLabel,
       icon: <Package className="h-4 w-4 text-accent-cyan" />,
       bgClass: 'bg-accent-cyan-soft',
       borderClass: 'border-accent-cyan/20',
       link: '/op/orders',
     },
     {
-      label: 'Picked Up',
+      // Semantics differ by view: Activity "Picked Up" = pickup EVENTS in the
+      // period; Pipeline "Shipping" = cohort orders CURRENTLY in Shipping
+      // status. Different labels keep the two from being confused.
+      label: isPipeline ? 'Shipping' : 'Picked Up',
       value: kpi ? formatNumber(kpi.pickedUp) : '—',
-      subtext: periodLabel,
+      subtext: isPipeline ? cohortLabel : periodLabel,
+      tooltip: isPipeline
+        ? 'Orders created in the selected period, currently in Shipping status'
+        : undefined,
       icon: <Truck className="h-4 w-4 text-accent-pink" />,
       bgClass: 'bg-accent-pink-soft',
       borderClass: 'border-accent-pink/20',
@@ -122,7 +139,7 @@ export function OperationalKpiStrip({ dateRange, preset }: WidgetProps) {
     {
       label: 'Delivered',
       value: kpi ? formatNumber(kpi.delivered) : '—',
-      subtext: periodLabel,
+      subtext: isPipeline ? cohortLabel : periodLabel,
       icon: <TruckIcon className="h-4 w-4 text-success" />,
       bgClass: 'bg-success-soft',
       borderClass: 'border-success/20',
@@ -182,6 +199,12 @@ export function OperationalKpiStrip({ dateRange, preset }: WidgetProps) {
         >
           <CircleAlert className="h-3.5 w-3.5" />
           Some KPIs could not be loaded — showing values where available.
+        </p>
+      )}
+      {isPipeline && (
+        <p className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+          <Info className="h-3.5 w-3.5 shrink-0" />
+          Cohort total includes orders in other current statuses not shown as separate tiles yet.
         </p>
       )}
       {/* 5 columns at lg+: row 1 is the order pipeline (New → Confirmed →

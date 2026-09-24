@@ -4,6 +4,10 @@ export type RoleKey = 'superadmin' | 'admin' | 'manager' | 'moderator' | 'sales_
 
 export type DatePresetKey = 'today' | 'yesterday' | 'last_7_days' | 'last_30_days' | 'this_month' | 'last_month' | 'this_quarter' | 'this_year' | 'all_time' | 'custom'
 
+/** Operations Dashboard reporting view: Activity (what happened in the period)
+ * vs Pipeline (where the period-created cohort stands now). */
+export type DashboardView = 'activity' | 'pipeline'
+
 export interface DateRange {
   start: Date
   end: Date
@@ -15,6 +19,9 @@ export interface WidgetProps {
   userRole: RoleKey
   isLoading: boolean
   error?: Error
+  /** Reporting view. Optional (defaults to 'activity') so non-op surfaces
+   * and existing callers keep working unchanged. */
+  view?: DashboardView
 }
 
 export interface WidgetConfig {

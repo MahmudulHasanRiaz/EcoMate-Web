@@ -39,5 +39,6 @@ export const dashboardApi = {
   getPendingPayments: () => apiClient.get<any[]>('/dashboard/pending-payments'),
   getTodayKpi: () => apiClient.get<OperationalKpi>('/dashboard/today-kpi'),
   getOperationalKpis: (startDate?: string, endDate?: string) => apiClient.get<OperationalKpi>(`/dashboard/operational-kpis${dateParams(startDate, endDate)}`),
+  getOperationalPipelineKpis: (startDate?: string, endDate?: string) => apiClient.get<OperationalKpi>(`/dashboard/operational-pipeline-kpis${dateParams(startDate, endDate)}`),
   getActivityLog: () => apiClient.get<ActivityEntry[]>('/dashboard/activity-log'),
 }

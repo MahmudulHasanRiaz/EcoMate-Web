@@ -14,7 +14,7 @@ import { formatCurrency, formatDate } from '../utils'
 import type { WidgetProps } from '../types'
 import { toast } from 'sonner'
 
-export function PendingOrders({ dateRange }: WidgetProps) {
+export function PendingOrders({ dateRange, view = 'activity' }: WidgetProps) {
   const queryClient = useQueryClient()
   const startStr = dateRange.start.toISOString()
   const endStr = dateRange.end.toISOString()
@@ -43,8 +43,8 @@ export function PendingOrders({ dateRange }: WidgetProps) {
       ordersApi.updateStatus(orderId, statusId, `Transitioned to ${statusName} from Operations Dashboard`),
     onSuccess: (_, variables) => {
       toast.success(`Order status updated to ${variables.statusName}`)
-      queryClient.invalidateQueries({ queryKey: ['dashboard-pending-orders', startStr, endStr] })
-      queryClient.invalidateQueries({ queryKey: ['operational-kpis', startStr, endStr] })
+      // Prefix invalidation: covers both activity and pipeline KPI entries.
+      queryClient.invalidateQueries({ queryKey: ['operational-kpis'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats-kpi', startStr, endStr] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-activity'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-pending-payments-alerts'] })
@@ -73,7 +73,11 @@ export function PendingOrders({ dateRange }: WidgetProps) {
   return (
     <WidgetShell
       title="Pending Orders"
-      description="Orders needing immediate processing"
+      description={
+        view === 'pipeline'
+          ? 'Cohort orders still awaiting processing · current status'
+          : 'Orders needing immediate processing'
+      }
       isLoading={isLoading}
       error={error ?? undefined}
       onRetry={() => refetch()}

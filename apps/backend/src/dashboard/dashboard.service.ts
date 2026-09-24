@@ -534,6 +534,87 @@ export class DashboardService {
     }
   }
 
+  async getOperationalPipelineKpis(startDate?: string, endDate?: string) {
+    try {
+      const { start, end } = this.getDateRange(startDate, endDate);
+      // Same period resolution as Activity: start falls back to epoch,
+      // end falls back to now.
+      const periodStart = start ?? new Date(0);
+      const periodEnd = end ?? new Date();
+      const dateFilter = { gte: periodStart, lte: periodEnd };
+
+      // ── Order Cohort ───────────────────────────────────────────────────
+      // Total orders CREATED within the period (not trashed). The frontend
+      // labels this "Order Cohort" — never "New Orders" — because it is a
+      // cohort total, not a current "new" status.
+      const newOrders = await this.prisma.order.count({
+        where: { createdAt: dateFilter, trashedAt: null },
+      });
+
+      // ── Current-status distribution of the cohort ──────────────────────
+      // Where the period-created orders stand NOW (single current status per
+      // order). Exact status-name match only: 'Shipping' feeds the `pickedUp`
+      // field (frontend labels it "Shipping" in Pipeline view — distinct from
+      // Activity's pickup EVENT). Non-lifecycle statuses (Pending, Hold,
+      // Packing Hold, Cancelled, Returned, …) stay in `newOrders` only, so the
+      // tile sum is deliberately allowed to be smaller than the cohort total.
+      const groups = await this.prisma.order.groupBy({
+        by: ['statusId'],
+        _count: true,
+        where: { createdAt: dateFilter, trashedAt: null },
+      });
+      const statuses = await this.prisma.orderStatus.findMany();
+      const statusMap = new Map(statuses.map((s) => [s.id, s.name]));
+      let confirmed = 0;
+      let packed = 0;
+      let pickedUp = 0;
+      let delivered = 0;
+      for (const g of groups) {
+        const name = statusMap.get(g.statusId);
+        if (name === 'Confirmed') confirmed += g._count;
+        else if (name === 'Packed') packed += g._count;
+        else if (name === 'Shipping') pickedUp += g._count;
+        else if (name === 'Delivered') delivered += g._count;
+      }
+
+      // ── Snapshots: identical semantics to Activity ─────────────────────
+      // Pending Payments / Pending Refunds are global backlogs; revenue is
+      // the PAID payment event within the period. Unchanged by design.
+      const pendingPayments = await this.prisma.payment.count({
+        where: { status: 'PENDING' },
+      });
+      const pendingRefunds = await this.prisma.refund.count({
+        where: { status: 'pending' },
+      });
+      const revenueAgg = await this.prisma.payment.aggregate({
+        _sum: { amount: true },
+        where: {
+          status: 'PAID',
+          createdAt: dateFilter,
+        },
+      });
+
+      return {
+        newOrders,
+        confirmed,
+        packed,
+        pickedUp,
+        delivered,
+        pendingPayments,
+        pendingRefunds,
+        revenue: Number(revenueAgg?._sum?.amount || 0),
+      };
+    } catch (error) {
+      this.logger.error(
+        `getOperationalPipelineKpis failed: ${(error as Error).message}`,
+        (error as Error).stack,
+      );
+      throw new InternalServerErrorException(
+        'Failed to fetch operational pipeline KPIs',
+      );
+    }
+  }
+
   async getActivityLog() {
     try {
       const activities = await this.prisma.order.findMany({

@@ -12,7 +12,7 @@ import { dashboardApi } from '../api'
 import { formatCurrency, formatDate } from '../utils'
 import type { WidgetProps } from '../types'
 
-export function RecentOrders({ dateRange }: WidgetProps) {
+export function RecentOrders({ dateRange, view = 'activity' }: WidgetProps) {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['dashboard-recent-orders-list', dateRange.start.toISOString(), dateRange.end.toISOString()],
     queryFn: () => dashboardApi.getStats(dateRange.start.toISOString(), dateRange.end.toISOString()),
@@ -42,7 +42,11 @@ export function RecentOrders({ dateRange }: WidgetProps) {
   return (
     <WidgetShell
       title="Recent Orders"
-      description="Latest orders across the store"
+      description={
+        view === 'pipeline'
+          ? 'Cohort orders with their current status'
+          : 'Latest orders across the store'
+      }
       isLoading={isLoading}
       error={error ?? undefined}
       onRetry={() => refetch()}

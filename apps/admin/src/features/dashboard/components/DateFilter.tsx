@@ -15,10 +15,12 @@ interface PresetOption {
 
 const DISPLAY_PRESETS: PresetOption[] = [
   { key: 'today', label: 'Today' },
+  { key: 'yesterday', label: 'Yesterday' },
   { key: 'last_7_days', label: '7D' },
   { key: 'last_30_days', label: '30D' },
   { key: 'this_month', label: 'Month' },
   { key: 'this_quarter', label: 'Quarter' },
+  { key: 'all_time', label: 'All' },
 ]
 
 export function DateFilter() {

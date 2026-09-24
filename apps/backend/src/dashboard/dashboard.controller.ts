@@ -116,6 +116,15 @@ export class DashboardController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @Get('operational-pipeline-kpis')
+  async getOperationalPipelineKpis(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    return this.dashboardService.getOperationalPipelineKpis(startDate, endDate);
+  }
+
+  @Roles('superadmin', 'admin', 'manager')
   @Get('activity-log')
   async getActivityLog() {
     return this.dashboardService.getActivityLog();

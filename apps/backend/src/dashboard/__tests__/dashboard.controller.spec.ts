@@ -15,4 +15,16 @@ describe('DashboardController', () => {
     // Verified via integration test or route listing at runtime.
     expect(DashboardController).toBeDefined();
   });
+
+  it('exposes operational-pipeline-kpis endpoint delegating to the service', async () => {
+    const service = {
+      getOperationalPipelineKpis: jest.fn().mockResolvedValue({ newOrders: 1 }),
+    };
+    const controller = new DashboardController(service as any);
+
+    const result = await controller.getOperationalPipelineKpis('s', 'e');
+
+    expect(service.getOperationalPipelineKpis).toHaveBeenCalledWith('s', 'e');
+    expect(result).toEqual({ newOrders: 1 });
+  });
 });

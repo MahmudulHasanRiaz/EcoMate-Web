@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { useDateFilter } from '../use-date-filter'
 import { DateFilter } from './DateFilter'
+import { ViewSwitch } from './ViewSwitch'
 import { DashboardGrid } from './DashboardGrid'
 import { monWidgets } from '../config/mon-widgets'
 import { opWidgets } from '../config/op-widgets'
@@ -30,7 +31,7 @@ interface DashboardWrapperProps {
 }
 
 export function DashboardWrapper({ route }: DashboardWrapperProps) {
-  const { preset, dateRange } = useDateFilter()
+  const { preset, dateRange, view, setView } = useDateFilter()
   const userRole = (useAuthStore(s => s.auth.user?.role) || 'cashier') as RoleKey
 
   const configs = useMemo(() => {
@@ -73,10 +74,17 @@ export function DashboardWrapper({ route }: DashboardWrapperProps) {
                 </span>
                 <div>
                   <h1 className="text-2xl font-extrabold tracking-tight">Operations Dashboard</h1>
-                  <p className="text-xs text-muted-foreground font-medium">Business Summary</p>
+                  <p className="text-xs text-muted-foreground font-medium">
+                    {view === 'pipeline'
+                      ? 'Where orders created in the selected period stand now'
+                      : 'What happened in the selected period'}
+                  </p>
                 </div>
               </div>
-              <DateFilter />
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                <ViewSwitch view={view} onChange={setView} />
+                <DateFilter />
+              </div>
             </div>
           </div>
 
@@ -86,6 +94,7 @@ export function DashboardWrapper({ route }: DashboardWrapperProps) {
             preset={preset}
             userRole={userRole}
             isLoading={false}
+            view={view}
           />
 
           {/* Level 2: Main Workspace */}
@@ -97,12 +106,14 @@ export function DashboardWrapper({ route }: DashboardWrapperProps) {
                 preset={preset}
                 userRole={userRole}
                 isLoading={false}
+                view={view}
               />
               <RecentOrders
                 dateRange={dateRange}
                 preset={preset}
                 userRole={userRole}
                 isLoading={false}
+                view={view}
               />
             </div>
 
@@ -113,18 +124,21 @@ export function DashboardWrapper({ route }: DashboardWrapperProps) {
                 preset={preset}
                 userRole={userRole}
                 isLoading={false}
+                view={view}
               />
               <ActivityLog
                 dateRange={dateRange}
                 preset={preset}
                 userRole={userRole}
                 isLoading={false}
+                view={view}
               />
               <LowStockAlert
                 dateRange={dateRange}
                 preset={preset}
                 userRole={userRole}
                 isLoading={false}
+                view={view}
               />
             </div>
           </div>

@@ -14,6 +14,7 @@ vi.mock('@tanstack/react-router', () => ({
 vi.mock('@/features/dashboard/api', () => ({
   dashboardApi: {
     getOperationalKpis: vi.fn(),
+    getOperationalPipelineKpis: vi.fn(),
     getLowStockProducts: vi.fn(),
   },
 }))
@@ -50,6 +51,7 @@ function wrap(
   client: QueryClient,
   dateRange: { start: Date; end: Date },
   preset: 'today' | 'last_7_days',
+  view: 'activity' | 'pipeline' = 'activity',
 ) {
   return render(
     <QueryClientProvider client={client}>
@@ -58,6 +60,7 @@ function wrap(
         preset={preset}
         userRole='admin'
         isLoading={false}
+        view={view}
       />
     </QueryClientProvider>,
   )
@@ -66,6 +69,9 @@ function wrap(
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(dashboardApi.getOperationalKpis).mockResolvedValue({
+    data: KPIS,
+  } as any)
+  vi.mocked(dashboardApi.getOperationalPipelineKpis).mockResolvedValue({
     data: KPIS,
   } as any)
   vi.mocked(dashboardApi.getLowStockProducts).mockResolvedValue({
@@ -169,6 +175,7 @@ describe('OperationalKpiStrip', () => {
       expect(
         client.getQueryData([
           'operational-kpis',
+          'activity',
           RANGE_TODAY.start.toISOString(),
           RANGE_TODAY.end.toISOString(),
         ]),
@@ -179,6 +186,7 @@ describe('OperationalKpiStrip', () => {
     expect(
       client.getQueryData([
         'operational-kpis',
+        'activity',
         RANGE_7D.start.toISOString(),
         RANGE_7D.end.toISOString(),
       ]),
@@ -268,8 +276,7 @@ describe('OperationalKpiStrip', () => {
     })
   })
 
-  it('lays out responsively with a consistent tile height', async () => {
-    const view = await wrap(makeClient(), RANGE_TODAY, 'today')
+  it('lays out responsively with a consistent tile height', async () => {    const view = await wrap(makeClient(), RANGE_TODAY, 'today')
 
     await vi.waitFor(() => {
       const grid = view.container.querySelector('.grid') as HTMLElement
@@ -286,6 +293,89 @@ describe('OperationalKpiStrip', () => {
         Array.from(tiles).map((t) => (t as HTMLElement).className.includes('h-[104px]')),
       )
       expect(heights).toEqual(new Set([true]))
+    })
+  })
+
+  describe('pipeline view', () => {
+    it('fetches the pipeline endpoint (never the activity one) with the same range', async () => {
+      await wrap(makeClient(), RANGE_7D, 'last_7_days', 'pipeline')
+
+      await vi.waitFor(() => {
+        expect(dashboardApi.getOperationalPipelineKpis).toHaveBeenCalledWith(
+          RANGE_7D.start.toISOString(),
+          RANGE_7D.end.toISOString(),
+        )
+      })
+      expect(dashboardApi.getOperationalKpis).not.toHaveBeenCalled()
+    })
+
+    it('labels the cohort total unambiguously and Shipping by its status name', async () => {
+      const view = await wrap(makeClient(), RANGE_TODAY, 'today', 'pipeline')
+
+      // "New Orders" would lie in Pipeline view — the cohort total is not a
+      // current "new" status. Same for "Picked Up" (an activity event).
+      await expect.element(view.getByText('Order Cohort', { exact: true })).toBeInTheDocument()
+      await expect.element(view.getByText('Shipping', { exact: true })).toBeInTheDocument()
+      await expect.element(view.getByText('New Orders', { exact: true })).not.toBeInTheDocument()
+      await expect.element(view.getByText('Picked Up', { exact: true })).not.toBeInTheDocument()
+      // Untouched tiles keep their labels.
+      await expect.element(view.getByText('Confirmed', { exact: true })).toBeInTheDocument()
+      await expect.element(view.getByText('Delivered', { exact: true })).toBeInTheDocument()
+    })
+
+    it('marks lifecycle tiles as current-state-of-cohort, snapshots unchanged', async () => {
+      const view = await wrap(makeClient(), RANGE_TODAY, 'today', 'pipeline')
+
+      await vi.waitFor(() => {
+        // 5 lifecycle tiles carry the Now-cohort subtext…
+        expect(view.getByText('Now · Today cohort').elements().length).toBe(5)
+        // …while backlog/inventory snapshots keep theirs.
+        expect(view.getByText('Backlog').elements().length).toBe(2)
+        expect(view.getByText('In stock').elements().length).toBe(1)
+      })
+    })
+
+    it('discloses that other cohort statuses have no tile yet', async () => {
+      const view = await wrap(makeClient(), RANGE_TODAY, 'today', 'pipeline')
+
+      await expect
+        .element(view.getByText(/other current statuses.*not.*separate tiles/i))
+        .toBeInTheDocument()
+    })
+
+    it('tooltips distinguish cohort total from Shipping current-state', async () => {
+      const view = await wrap(makeClient(), RANGE_TODAY, 'today', 'pipeline')
+
+      const cohortTile = view.getByText('Order Cohort', { exact: true }).locator('xpath=ancestor::div[@title]')
+      await expect.element(cohortTile).toHaveAttribute('title', 'Total orders created in the selected period')
+      const shippingTile = view.getByText('Shipping', { exact: true }).locator('xpath=ancestor::div[@title]')
+      await expect
+        .element(shippingTile)
+        .toHaveAttribute('title', 'Orders created in the selected period, currently in Shipping status')
+    })
+
+    it('caches pipeline separately from activity for the same range', async () => {
+      const client = makeClient()
+      await wrap(client, RANGE_TODAY, 'today', 'pipeline')
+
+      await vi.waitFor(() => {
+        expect(
+          client.getQueryData([
+            'operational-kpis',
+            'pipeline',
+            RANGE_TODAY.start.toISOString(),
+            RANGE_TODAY.end.toISOString(),
+          ]),
+        ).toBeDefined()
+      })
+      expect(
+        client.getQueryData([
+          'operational-kpis',
+          'activity',
+          RANGE_TODAY.start.toISOString(),
+          RANGE_TODAY.end.toISOString(),
+        ]),
+      ).toBeUndefined()
     })
   })
 })

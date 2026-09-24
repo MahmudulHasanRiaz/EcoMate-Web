@@ -8,7 +8,8 @@ describe('DashboardService', () => {
   let prisma: any;
 
   const mockPrisma = {
-    order: { count: jest.fn() },
+    order: { count: jest.fn(), groupBy: jest.fn() },
+    orderStatus: { findMany: jest.fn() },
     payment: { count: jest.fn(), aggregate: jest.fn() },
     refund: { count: jest.fn() },
     $queryRawUnsafe: jest.fn(),
@@ -298,6 +299,150 @@ describe('DashboardService', () => {
 
       const sql: string = prisma.$queryRawUnsafe.mock.calls[0][0];
       expect(sql).toContain(`("createdAt" AT TIME ZONE 'UTC')`);
+    });
+  });
+
+  describe('getOperationalPipelineKpis', () => {
+    const STATUSES = [
+      { id: 'st-confirmed', name: 'Confirmed' },
+      { id: 'st-packed', name: 'Packed' },
+      { id: 'st-shipping', name: 'Shipping' },
+      { id: 'st-delivered', name: 'Delivered' },
+      { id: 'st-hold', name: 'Hold' },
+      { id: 'st-cancelled', name: 'Cancelled' },
+      { id: 'st-pending', name: 'Pending' },
+      { id: 'st-packing-hold', name: 'Packing Hold' },
+    ];
+
+    /** Cohort: 20 orders created in period, mixed current statuses. */
+    function mockPipeline() {
+      prisma.order.count.mockResolvedValue(20);
+      prisma.order.groupBy.mockResolvedValue([
+        { statusId: 'st-confirmed', _count: 5 },
+        { statusId: 'st-packed', _count: 3 },
+        { statusId: 'st-shipping', _count: 4 },
+        { statusId: 'st-delivered', _count: 6 },
+        { statusId: 'st-hold', _count: 1 },
+        { statusId: 'st-cancelled', _count: 1 },
+      ]);
+      prisma.orderStatus.findMany.mockResolvedValue(STATUSES);
+      prisma.payment.count.mockResolvedValue(7);
+      prisma.refund.count.mockResolvedValue(2);
+      prisma.payment.aggregate.mockResolvedValue({ _sum: { amount: 75000 } });
+    }
+
+    it('returns cohort current-status distribution in the OperationalKpi shape', async () => {
+      mockPipeline();
+
+      const result = await service.getOperationalPipelineKpis(
+        '2025-06-01',
+        '2025-06-15',
+      );
+
+      expect(result).toEqual({
+        newOrders: 20,
+        confirmed: 5,
+        packed: 3,
+        pickedUp: 4, // currently in Shipping
+        delivered: 6,
+        pendingPayments: 7,
+        pendingRefunds: 2,
+        revenue: 75000,
+      });
+    });
+
+    it('counts New Orders by cohort createdAt within the period, excluding trashed', async () => {
+      mockPipeline();
+      const start = new Date('2025-05-31T18:00:00.000Z');
+      const end = new Date('2025-06-15T17:59:59.999Z');
+
+      await service.getOperationalPipelineKpis(
+        start.toISOString(),
+        end.toISOString(),
+      );
+
+      expect(prisma.order.count).toHaveBeenCalledWith({
+        where: { createdAt: { gte: start, lte: end }, trashedAt: null },
+      });
+    });
+
+    it('scopes the status group-by to the same cohort (createdAt + non-trashed)', async () => {
+      mockPipeline();
+      const start = new Date('2025-05-31T18:00:00.000Z');
+      const end = new Date('2025-06-15T17:59:59.999Z');
+
+      await service.getOperationalPipelineKpis(
+        start.toISOString(),
+        end.toISOString(),
+      );
+
+      expect(prisma.order.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          by: ['statusId'],
+          where: { createdAt: { gte: start, lte: end }, trashedAt: null },
+        }),
+      );
+    });
+
+    it('maps Shipping to pickedUp and excludes non-lifecycle statuses from tiles', async () => {
+      mockPipeline();
+
+      const result = await service.getOperationalPipelineKpis(
+        '2025-06-01',
+        '2025-06-15',
+      );
+
+      // Hold (1) + Cancelled (1) counted in newOrders (20) but in no tile:
+      // tile sum (18) < cohort total is expected, not a bug.
+      expect(result.pickedUp).toBe(4);
+      expect(result.confirmed + result.packed + result.pickedUp + result.delivered).toBe(18);
+      expect(result.newOrders).toBe(20);
+    });
+
+    it('does not count Packing Hold as Packed (exact status-name match)', async () => {
+      mockPipeline();
+      prisma.order.groupBy.mockResolvedValue([
+        { statusId: 'st-packing-hold', _count: 2 },
+        { statusId: 'st-pending', _count: 3 },
+      ]);
+
+      const result = await service.getOperationalPipelineKpis(
+        '2025-06-01',
+        '2025-06-15',
+      );
+
+      expect(result.packed).toBe(0);
+      expect(result.confirmed).toBe(0);
+    });
+
+    it('keeps snapshot semantics identical to Activity (backlog + payment-event revenue)', async () => {
+      mockPipeline();
+      const start = new Date('2025-05-31T18:00:00.000Z');
+      const end = new Date('2025-06-15T17:59:59.999Z');
+
+      await service.getOperationalPipelineKpis(
+        start.toISOString(),
+        end.toISOString(),
+      );
+
+      expect(prisma.payment.count).toHaveBeenCalledWith({
+        where: { status: 'PENDING' },
+      });
+      expect(prisma.refund.count).toHaveBeenCalledWith({
+        where: { status: 'pending' },
+      });
+      expect(prisma.payment.aggregate).toHaveBeenCalledWith({
+        _sum: { amount: true },
+        where: { status: 'PAID', createdAt: { gte: start, lte: end } },
+      });
+    });
+
+    it('wraps database failures in an InternalServerErrorException', async () => {
+      prisma.order.count.mockRejectedValue(new Error('db down'));
+
+      await expect(
+        service.getOperationalPipelineKpis('2025-06-01', '2025-06-15'),
+      ).rejects.toThrow(InternalServerErrorException);
     });
   });
 

@@ -1,8 +1,10 @@
 import { useCallback, useMemo } from 'react'
 import { useNavigate, useLocation } from '@tanstack/react-router'
-import type { DatePresetKey, DateRange } from './types'
+import type { DatePresetKey, DateRange, DashboardView } from './types'
 import { DATE_PRESETS } from './constants'
 import { toDhakaDateString } from '@/lib/dhaka-time'
+
+export const DASHBOARD_VIEWS: DashboardView[] = ['activity', 'pipeline']
 
 export function useDateFilter() {
   const location = useLocation()
@@ -13,6 +15,8 @@ export function useDateFilter() {
   const preset = (params.get('preset') as DatePresetKey) || 'last_30_days'
   const customStart = params.get('start') || undefined
   const customEnd = params.get('end') || undefined
+  const rawView = params.get('view') as DashboardView | null
+  const view: DashboardView = rawView === 'pipeline' ? 'pipeline' : 'activity'
 
   const dateRange: DateRange = useMemo(() => {
     if (preset === 'custom' && customStart && customEnd) {
@@ -48,7 +52,14 @@ export function useDateFilter() {
     })
   }, [navigate])
 
+  const setView = useCallback((next: DashboardView) => {
+    navigate({
+      search: ((prev: any) => ({ ...prev, view: next })) as any,
+      replace: true,
+    })
+  }, [navigate])
+
   const formatParam = useCallback((d: Date) => toDhakaDateString(d), [])
 
-  return { preset, dateRange, setPreset, setCustomRange, formatParam }
+  return { preset, dateRange, view, setPreset, setCustomRange, setView, formatParam }
 }

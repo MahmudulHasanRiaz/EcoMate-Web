@@ -51,10 +51,16 @@ New service method `DashboardService.getOperationalPipelineKpis(startDate?, endD
 Semantics:
 
 - Cohort: `Order` where `createdAt` in [periodStart, periodEnd], `trashedAt` null.
-- `newOrders` = cohort count.
+- `newOrders` = cohort count (same value, no new metric; frontend labels it
+  "Order Cohort" in Pipeline view — see §5).
 - Lifecycle tiles = single `groupBy statusId` over the cohort, mapped via status-name
   lookup (same `orderStatus.findMany` pattern as `getOrderStatusDistribution`):
-  confirmed / packed / pickedUp (status 'Shipping') / delivered.
+  confirmed / packed / pickedUp (status 'Shipping') / delivered. Backend field names
+  stay `OperationalKpi`-identical; the Shipping-vs-Picked-Up distinction is a
+  frontend label concern only.
+- Non-lifecycle current statuses (Pending / Payment-* / Hold / Packing Hold /
+  Partial / Return-* / Returned / Damaged / Cancelled) are counted in `newOrders`
+  only. Cohort total == tile sum is NOT required in this phase.
 - `pendingPayments` = `payment.count({status:'PENDING'})` (same as Activity).
 - `pendingRefunds` = `refund.count({status:'pending'})` (same as Activity).
 - `revenue` = PAID payments with `createdAt` in period (same as Activity).
@@ -81,10 +87,16 @@ a separate method keeps it untouched and gives distinct React-Query cache keys.
   Pipeline → "Where orders created in the selected period stand now".
   Mobile: header already `flex-col`; switch wraps below DateFilter naturally.
 - `OperationalKpiStrip({ view, ... })`: query key `['operational-kpis', view, start, end]`;
-  fetcher `getOperationalKpis` vs `getOperationalPipelineKpis`. Tile subtexts:
-  Activity = existing `PERIOD_LABELS[preset]` / `SNAPSHOT_LABEL`; Pipeline lifecycle
-  tiles = `Now · {periodLabel} cohort` (e.g. "Now · Today cohort"); snapshot tiles
-  unchanged. Picked Up tile gets tooltip "Orders currently in Shipping status".
+  fetcher `getOperationalKpis` vs `getOperationalPipelineKpis`. Pipeline tile labels:
+  New Orders → "Order Cohort"; Confirmed / Packed / Delivered unchanged; Picked Up →
+  "Shipping" (Activity "Picked Up" = pickup EVENT in period; Pipeline "Shipping" =
+  orders CURRENTLY in Shipping status — different semantics, different labels).
+  Tile subtexts: Activity = existing `PERIOD_LABELS[preset]` / `SNAPSHOT_LABEL`;
+  Pipeline lifecycle tiles = `Now · {periodLabel} cohort` (e.g. "Now · Today cohort");
+  snapshot tiles unchanged. Tooltips: Order Cohort → "Total orders created in the
+  selected period"; Shipping → "Orders created in the selected period, currently in
+  Shipping status"; plus a strip-level note that other current statuses of the cohort
+  are not yet shown as separate tiles.
 - `DateFilter`: add Yesterday (`Yesterday`) + All Time (`All`) buttons to
   `DISPLAY_PRESETS` (overflow-x-auto already handles width).
 - `PendingOrders` / `RecentOrders`: queries unchanged; `WidgetShell description`
