@@ -36,14 +36,14 @@ export function DateFilter() {
 
   return (
     <div className="flex items-center gap-1.5 w-full md:w-auto overflow-x-auto whitespace-nowrap scrollbar-none py-1">
-      <div className="inline-flex h-8 items-center rounded-lg bg-muted p-1 text-muted-foreground border border-border/50">
+      <div className="inline-flex min-h-10 items-center rounded-xl bg-muted p-1 text-muted-foreground border border-border/50">
         {DISPLAY_PRESETS.map(p => {
           const isActive = preset === p.key
           return (
             <button
               key={p.key}
               onClick={() => setPreset(p.key)}
-              className={`rounded-md px-3 py-1 text-xs font-bold transition-all ${
+              className={`rounded-lg px-3 py-1.5 min-h-8 text-xs font-bold transition-all duration-200 ${
                 isActive
                   ? 'bg-background text-foreground shadow-sm'
                   : 'hover:bg-background/40 hover:text-foreground/90'
@@ -57,7 +57,7 @@ export function DateFilter() {
         <Popover open={customOpen} onOpenChange={setCustomOpen}>
           <PopoverTrigger asChild>
             <button
-              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-bold transition-all ${
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 min-h-8 text-xs font-bold transition-all duration-200 ${
                 preset === 'custom'
                   ? 'bg-background text-foreground shadow-sm'
                   : 'hover:bg-background/40 hover:text-foreground/90'
@@ -97,7 +97,7 @@ export function DateFilter() {
                 </div>
               </div>
               <div className="flex justify-end gap-2 border-t pt-3 border-border/50">
-                <Button variant="outline" size="sm" onClick={() => setCustomOpen(false)} className="text-xs">
+                <Button variant="outline" size="sm" onClick={() => setCustomOpen(false)} className="text-xs tap-h">
                   Cancel
                 </Button>
                 <Button
@@ -109,7 +109,7 @@ export function DateFilter() {
                       setCustomOpen(false)
                     }
                   }}
-                  className="text-xs"
+                  className="text-xs tap-h"
                 >
                   Apply Range
                 </Button>

@@ -551,7 +551,7 @@ export function PackingWorkspace() {
           <div className={selectedOrderId ? "relative z-50 pointer-events-none" : "flex-1 flex flex-col p-4 space-y-4 max-w-lg mx-auto w-full"}>
             {/* Live Camera Frame box */}
             <div className={selectedOrderId
-              ? "fixed bottom-24 right-4 z-50 w-28 h-28 md:w-36 md:h-36 rounded-full border-2 border-emerald-500 bg-zinc-900 shadow-2xl overflow-hidden flex flex-col items-center justify-center transition-all duration-300 transform scale-100 hover:scale-105 active:scale-95 pointer-events-auto"
+              ? "fixed bottom-24 right-4 z-50 w-28 h-28 md:w-36 md:h-36 rounded-full border-2 border-success bg-zinc-900 shadow-2xl overflow-hidden flex flex-col items-center justify-center transition-all duration-300 transform scale-100 hover:scale-105 active:scale-95 pointer-events-auto"
               : "relative w-full aspect-square rounded-3xl border-2 border-zinc-800 bg-zinc-900 overflow-hidden flex flex-col items-center justify-center shadow-2xl"
             }>
               {scannerActive && !scannerError ? (
@@ -570,22 +570,22 @@ export function PackingWorkspace() {
 
               {/* Animated scanning laser line overlay */}
               {scannerActive && !selectedOrderId && (
-                <div className="absolute inset-x-0 top-0 h-1 bg-red-500 opacity-60 shadow-lg shadow-red-500 animate-scan-laser pointer-events-none"></div>
+                <div className="absolute inset-x-0 top-0 h-1 bg-danger opacity-60 shadow-lg shadow-danger animate-scan-laser pointer-events-none"></div>
               )}
 
               {/* Picture-in-picture scan indicator laser */}
               {scannerActive && selectedOrderId && (
-                <div className="absolute inset-x-0 top-0 h-0.5 bg-emerald-500 shadow-[0_0_8px_#10b981] animate-scan-laser pointer-events-none z-10"></div>
+                <div className="absolute inset-x-0 top-0 h-0.5 bg-success shadow-[0_0_8px_var(--success)] animate-scan-laser pointer-events-none z-10"></div>
               )}
 
               {/* Scanner Frame Guide Overlay */}
               {scannerActive && !selectedOrderId && (
                 <div className="absolute inset-0 border-[24px] border-black/35 flex items-center justify-center pointer-events-none">
-                  <div className="h-48 w-48 border border-blue-500/50 rounded-2xl relative shadow-md">
-                    <div className="absolute -left-1 -top-1 h-4 w-4 border-l-2 border-t-2 border-blue-500"></div>
-                    <div className="absolute -right-1 -top-1 h-4 w-4 border-r-2 border-t-2 border-blue-500"></div>
-                    <div className="absolute -left-1 -bottom-1 h-4 w-4 border-l-2 border-b-2 border-blue-500"></div>
-                    <div className="absolute -right-1 -bottom-1 h-4 w-4 border-r-2 border-b-2 border-blue-500"></div>
+                  <div className="h-48 w-48 border border-info/50 rounded-2xl relative shadow-md">
+                    <div className="absolute -left-1 -top-1 h-4 w-4 border-l-2 border-t-2 border-info"></div>
+                    <div className="absolute -right-1 -top-1 h-4 w-4 border-r-2 border-t-2 border-info"></div>
+                    <div className="absolute -left-1 -bottom-1 h-4 w-4 border-l-2 border-b-2 border-info"></div>
+                    <div className="absolute -right-1 -bottom-1 h-4 w-4 border-r-2 border-b-2 border-info"></div>
                   </div>
                 </div>
               )}
@@ -595,7 +595,7 @@ export function PackingWorkspace() {
               <>
                 {/* Error logs */}
                 {scannerError && (
-                  <div className="p-3 bg-red-950/20 border border-red-900/30 rounded-xl text-xs text-red-400 font-semibold text-center select-text">
+                  <div className="p-3 bg-danger-soft border border-danger/30 rounded-xl text-xs text-danger font-semibold text-center select-text">
                     {scannerError}
                   </div>
                 )}
@@ -757,13 +757,13 @@ export function PackingWorkspace() {
                   >
                     <div className="flex flex-col text-start">
                       <span className="font-mono text-sm font-bold text-white">{order.displayId}</span>
-                      <span className="text-[10px] text-amber-500/80 font-medium mt-0.5 flex items-center gap-1">
+                      <span className="text-[10px] text-warning/80 font-medium mt-0.5 flex items-center gap-1">
                         <Clock className="h-3 w-3" />
                         On hold ({order.totalItems} items)
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-400 uppercase tracking-wider">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-warning-soft border border-warning/25 text-warning uppercase tracking-wider">
                         Held
                       </span>
                       <ExternalLink className="h-3.5 w-3.5 text-zinc-650" />
@@ -810,8 +810,8 @@ export function PackingWorkspace() {
               
               {/* Locked Warning */}
               {activeOrder.packingLock && activeOrder.packingLock.packerId !== currentPackerId && (
-                <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs font-semibold flex items-center gap-2 select-none">
-                  <Lock className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                <div className="p-3.5 rounded-xl bg-warning-soft border border-warning/25 text-warning text-xs font-semibold flex items-center gap-2 select-none">
+                  <Lock className="h-3.5 w-3.5 shrink-0 text-warning" />
                   Locked by {activeOrder.packingLock.packerName}. Actions disabled.
                 </div>
               )}
@@ -888,16 +888,16 @@ export function PackingWorkspace() {
 
                         {/* Multiple Quantity warning blinks */}
                         {isMultiple && !isVerified && (
-                          <div className="py-2.5 px-4 rounded-xl bg-red-600/20 border border-red-500/30 text-red-400 font-extrabold text-xs flex items-center justify-center gap-1.5 animate-pulse select-none">
-                            <AlertTriangle className="h-4 w-4 shrink-0 text-red-500" />
+                          <div className="py-2.5 px-4 rounded-xl bg-danger-soft border border-danger/30 text-danger font-extrabold text-xs flex items-center justify-center gap-1.5 animate-pulse select-none">
+                            <AlertTriangle className="h-4 w-4 shrink-0 text-danger" />
                             PACK {item.quantity} ITEMS! MULTIPLE QUANTITY DETECTED.
                           </div>
                         )}
 
                         {/* Strict Scan Guide banner */}
                         {!isVerified && (
-                          <div className="py-2.5 px-4 rounded-xl bg-emerald-600/20 border border-emerald-500/30 text-emerald-400 font-extrabold text-xs flex items-center justify-center gap-1.5 animate-pulse select-none">
-                            <Scan className="h-4.5 w-4.5 shrink-0 text-emerald-400" />
+                          <div className="py-2.5 px-4 rounded-xl bg-success-soft border border-success/30 text-success font-extrabold text-xs flex items-center justify-center gap-1.5 animate-pulse select-none">
+                            <Scan className="h-4.5 w-4.5 shrink-0 text-success" />
                             {verificationMode === 'strict_scan' 
                               ? "SCAN PRODUCT SKU BARCODE TO PACK" 
                               : "SCAN BARCODE OR TAP BUTTON TO PACK"

@@ -8,6 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { ShieldAlert } from 'lucide-react'
 import type { TopOffender } from '../types'
 
 interface TopOffendersProps {
@@ -18,21 +19,26 @@ interface TopOffendersProps {
 
 export function TopOffenders({ data, isLoading, window }: TopOffendersProps) {
   return (
-    <Card>
+    <Card className="chart-card rounded-2xl">
       <CardHeader>
-        <CardTitle className="text-lg">Top Offenders ({window})</CardTitle>
+        <div className="flex items-center gap-2.5">
+          <span className="chart-card-header-icon bg-danger-soft text-danger border border-danger/25">
+            <ShieldAlert className="h-4 w-4" />
+          </span>
+          <CardTitle className="text-lg">Top Offenders ({window})</CardTitle>
+        </div>
       </CardHeader>
       <CardContent>
         {isLoading ? (
           <div className="space-y-2">
             {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="h-8 animate-pulse rounded bg-muted" />
+              <div key={i} className="h-8 skeleton-shimmer rounded bg-muted" />
             ))}
           </div>
         ) : !data || data.length === 0 ? (
           <p className="text-sm text-muted-foreground">No offenders in this window.</p>
         ) : (
-          <Table>
+          <Table className="dash-table">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-12">#</TableHead>

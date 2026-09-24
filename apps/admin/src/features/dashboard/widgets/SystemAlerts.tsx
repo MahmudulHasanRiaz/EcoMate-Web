@@ -140,7 +140,7 @@ export function SystemAlerts(_props: WidgetProps) {
                 </div>
                 <p className="text-[10px] text-muted-foreground mt-1 leading-normal">{alert.description}</p>
                 <Link to={alert.link as any} className="inline-block mt-1.5">
-                  <Button variant="link" className="p-0 h-auto text-[10px] font-bold text-primary flex items-center gap-0.5">
+                  <Button variant="link" className="p-0 h-auto min-h-10 text-[10px] font-bold text-primary inline-flex items-center gap-0.5">
                     Resolve Alert <ChevronRight className="h-3 w-3" />
                   </Button>
                 </Link>

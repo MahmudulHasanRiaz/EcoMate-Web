@@ -118,8 +118,8 @@ export function PendingOrders({ dateRange }: WidgetProps) {
                     <TableCell>
                       <div className="flex items-center justify-end gap-1.5">
                         <Link to="/op/orders/$id" params={{ id: order.id }}>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" title="View details">
-                            <Eye className="h-3.5 w-3.5" />
+                          <Button variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground hover:text-foreground" title="View details" aria-label="View order details">
+                            <Eye className="h-4 w-4" />
                           </Button>
                         </Link>
                         <Button
@@ -127,20 +127,20 @@ export function PendingOrders({ dateRange }: WidgetProps) {
                           size="icon"
                           onClick={() => handleProcess(order.id)}
                           disabled={updateStatusMut.isPending}
-                          className="h-7 w-7 text-info hover:text-info hover:bg-info-soft"
+                          className="h-10 w-10 text-info hover:text-info hover:bg-info-soft"
                           title="Confirm & Process Order"
                         >
-                          <Play className="h-3.5 w-3.5 fill-info" />
+                          <Play className="h-4 w-4 fill-info" />
                         </Button>
                         <Button
                           variant="outline"
                           size="icon"
                           onClick={() => handleShip(order.id)}
                           disabled={updateStatusMut.isPending}
-                          className="h-7 w-7 text-success hover:text-success hover:bg-success-soft"
+                          className="h-10 w-10 text-success hover:text-success hover:bg-success-soft"
                           title="Ship Order"
                         >
-                          <Truck className="h-3.5 w-3.5" />
+                          <Truck className="h-4 w-4" />
                         </Button>
                       </div>
                     </TableCell>

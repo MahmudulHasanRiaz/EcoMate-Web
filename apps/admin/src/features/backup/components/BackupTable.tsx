@@ -11,11 +11,11 @@ import type { BackupJob } from '../types'
 import { RestoreConfirmDialog } from './RestoreConfirmDialog'
 
 const STATUS_COLORS: Record<string, string> = {
-  pending: 'bg-yellow-500',
-  running: 'bg-blue-500',
-  completed: 'bg-green-500',
-  failed: 'bg-red-500',
-  restoring: 'bg-orange-500',
+  pending: 'bg-warning',
+  running: 'bg-info',
+  completed: 'bg-success',
+  failed: 'bg-danger',
+  restoring: 'bg-accent-violet',
 }
 
 const SCOPE_LABELS: Record<string, string> = {
@@ -43,12 +43,12 @@ export function BackupTable({
   if (isLoading) return <div className="p-4 text-muted-foreground">Loading...</div>
 
   return (
-    <Card>
+    <Card className="chart-card rounded-2xl">
       <CardHeader>
         <CardTitle>Backups</CardTitle>
       </CardHeader>
       <CardContent>
-        <Table>
+        <Table className="dash-table">
           <TableHeader>
             <TableRow>
               <TableHead>Created</TableHead>
@@ -83,7 +83,7 @@ export function BackupTable({
                         {b.status}
                       </Badge>
                       {b.errorMessage && (
-                        <p className="max-w-48 truncate text-[10px] text-red-600" title={b.errorMessage}>
+                        <p className="max-w-48 truncate text-[10px] text-danger" title={b.errorMessage}>
                           {b.errorMessage}
                         </p>
                       )}
@@ -96,7 +96,7 @@ export function BackupTable({
                     <div className="flex gap-1">
                       {b.status === 'completed' && b.fileKey && (
                         <>
-                          <Button size="icon" variant="ghost" onClick={() => onDownload(b.id)}
+                          <Button size="icon" variant="ghost" className="h-10 w-10" onClick={() => onDownload(b.id)}
                             title="Download">
                             <Download className="h-4 w-4" />
                           </Button>
@@ -104,18 +104,18 @@ export function BackupTable({
                             onConfirm={() => onRestore(b.id)}
                             isPending={restorePending}
                             trigger={
-                              <Button size="icon" variant="ghost" title="Restore">
+                              <Button size="icon" variant="ghost" className="h-10 w-10" title="Restore">
                                 <RotateCcw className="h-4 w-4" />
                               </Button>
                             }
                           />
                         </>
                       )}
-                      <Button size="icon" variant="ghost" onClick={() => onToggleLock(b.id, !b.locked)}
+                      <Button size="icon" variant="ghost" className="h-10 w-10" onClick={() => onToggleLock(b.id, !b.locked)}
                         title={b.locked ? 'Unlock' : 'Lock'}>
                         {b.locked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
                       </Button>
-                      <Button size="icon" variant="ghost" onClick={() => onDelete(b.id)}
+                      <Button size="icon" variant="ghost" className="h-10 w-10" onClick={() => onDelete(b.id)}
                         title="Delete">
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -128,14 +128,14 @@ export function BackupTable({
         </Table>
         {totalPages > 1 && (
           <div className="flex justify-center gap-2 mt-4">
-            <Button variant="outline" size="sm"
+            <Button variant="outline" size="sm" className="tap-h"
               disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
               Previous
             </Button>
             <span className="flex items-center text-sm text-muted-foreground">
               {page} / {totalPages}
             </span>
-            <Button variant="outline" size="sm"
+            <Button variant="outline" size="sm" className="tap-h"
               disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
               Next
             </Button>

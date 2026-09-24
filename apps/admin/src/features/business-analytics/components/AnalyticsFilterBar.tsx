@@ -125,7 +125,7 @@ export function AnalyticsFilterBar({ value, onChange }: Props) {
                   </div>
                 </div>
                 <div className="flex justify-end gap-2 border-t pt-3 border-border/50">
-                  <Button variant="outline" size="sm" onClick={() => setCustomOpen(false)} className="text-xs">
+                  <Button variant="outline" size="sm" onClick={() => setCustomOpen(false)} className="text-xs tap-h">
                     Cancel
                   </Button>
                   <Button
@@ -137,7 +137,7 @@ export function AnalyticsFilterBar({ value, onChange }: Props) {
                         setCustomOpen(false)
                       }
                     }}
-                    className="text-xs"
+                    className="text-xs tap-h"
                   >
                     Apply Range
                   </Button>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
+import { Globe } from 'lucide-react'
 import { WidgetShell } from '../../dashboard/components/WidgetShell'
 import { analyticsApi } from '../api'
 import type { DateRangeParams } from '../types'
@@ -23,12 +24,12 @@ export function MarketingKpiWidget({ dateRange }: Props) {
   ]
 
   return (
-    <WidgetShell title="Marketing KPIs" isLoading={isLoading} error={error ?? undefined} onRetry={() => refetch()}>
+    <WidgetShell title="Marketing KPIs" isLoading={isLoading} error={error ?? undefined} onRetry={() => refetch()} icon={<Globe className="h-4 w-4" />} iconTone="cyan">
       <div className="grid grid-cols-2 gap-4 p-2">
         {stats.map(s => (
-          <div key={s.label}>
+          <div key={s.label} className="rounded-xl border border-border/50 bg-muted/20 px-3 py-2.5 transition-colors duration-200 hover:bg-accent-cyan-soft/40">
             <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider">{s.label}</p>
-            <p className="text-xl font-bold text-foreground mt-0.5">
+            <p className="kpi-value text-foreground mt-0.5">
               {isLoading ? '...' : s.value}
             </p>
           </div>

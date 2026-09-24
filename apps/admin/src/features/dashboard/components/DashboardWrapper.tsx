@@ -8,6 +8,7 @@ import { DashboardGrid } from './DashboardGrid'
 import { monWidgets } from '../config/mon-widgets'
 import { opWidgets } from '../config/op-widgets'
 import { LayoutGrid } from 'lucide-react'
+import { riseStyle } from '@/components/ui/dashboard'
 import { canAccess } from '../constants'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -90,7 +91,7 @@ export function DashboardWrapper({ route }: DashboardWrapperProps) {
           {/* Level 2: Main Workspace */}
           <div className="grid grid-cols-1 lg:grid-cols-10 gap-6">
             {/* Left 70% Column */}
-            <div className="lg:col-span-7 space-y-6">
+            <div className="lg:col-span-7 space-y-6 animate-rise" style={riseStyle(1)}>
               <PendingOrders
                 dateRange={dateRange}
                 preset={preset}
@@ -104,9 +105,9 @@ export function DashboardWrapper({ route }: DashboardWrapperProps) {
                 isLoading={false}
               />
             </div>
-            
+
             {/* Right 30% Column */}
-            <div className="lg:col-span-3 space-y-6">
+            <div className="lg:col-span-3 space-y-6 animate-rise" style={riseStyle(2)}>
               <SystemAlerts
                 dateRange={dateRange}
                 preset={preset}

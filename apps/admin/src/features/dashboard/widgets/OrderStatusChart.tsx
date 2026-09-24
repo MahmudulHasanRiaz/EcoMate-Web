@@ -49,7 +49,7 @@ export function OrderStatusChart({ dateRange, userRole }: WidgetProps) {
         iconTone="info"
         action={
           chartData.length > 0 ? (
-            <Button variant="outline" size="sm" onClick={() => setIsModalOpen(true)}>
+            <Button variant="outline" size="sm" className="tap-h" onClick={() => setIsModalOpen(true)}>
               View All
             </Button>
           ) : null

@@ -32,7 +32,7 @@ export function LowStockAlert(_props: WidgetProps) {
       iconTone="violet"
       action={
         <Link to="/op/inventory">
-          <Button variant="ghost" size="sm" className="h-7 text-xs font-semibold px-2 hover:bg-muted text-primary">
+          <Button variant="ghost" size="sm" className="tap-h text-xs font-semibold px-2 hover:bg-muted text-primary">
             View Inventory
             <ChevronRight className="ml-1 h-3.5 w-3.5" />
           </Button>

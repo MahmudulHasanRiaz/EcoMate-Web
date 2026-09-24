@@ -33,7 +33,7 @@ export function WidgetShell({ title, description, isLoading, error, onRetry, chi
             <AlertCircle className="h-8 w-8 text-destructive mb-2" />
             <p className="text-sm text-muted-foreground mb-3">{error.message || 'Failed to load data'}</p>
             {onRetry && (
-              <Button variant="outline" size="sm" onClick={onRetry}>
+              <Button variant="outline" size="sm" className="tap-h" onClick={onRetry}>
                 <RefreshCw className="h-3 w-3 mr-1" /> Retry
               </Button>
             )}
