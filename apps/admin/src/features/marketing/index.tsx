@@ -19,7 +19,7 @@ function deltaBadge(d: number | null) {
   if (d === null) return <span className="text-muted-foreground text-xs">—</span>
   const up = d >= 0
   return (
-    <span className={`inline-flex items-center gap-1 text-xs font-medium ${up ? 'text-emerald-600' : 'text-red-600'}`}>
+    <span className={`inline-flex items-center gap-1 text-xs font-medium ${up ? 'text-success' : 'text-danger'}`}>
       {up ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
       {Math.abs(d).toFixed(1)}%
     </span>
@@ -31,12 +31,12 @@ function verdictBadge(verdict: string | undefined) {
     return <Badge variant="outline" className="text-muted-foreground">Insufficient data</Badge>
   }
   if (verdict === 'profitable') {
-    return <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Profitable</Badge>
+    return <Badge variant="success">Profitable</Badge>
   }
   if (verdict === 'near_break_even') {
-    return <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100">Near break-even</Badge>
+    return <Badge variant="warning">Near break-even</Badge>
   }
-  return <Badge className="bg-red-100 text-red-700 hover:bg-red-100">Loss-making</Badge>
+  return <Badge variant="danger">Loss-making</Badge>
 }
 
 function StatCard({ title, value, sub, icon: Icon, delta }: {
@@ -216,7 +216,7 @@ export function MarketingDashboard() {
                         return (
                           <div key={d.date} className="flex flex-1 items-end">
                             <div
-                              className={`w-full rounded-t ${roi >= 0 ? 'bg-emerald-400/80' : 'bg-red-400/70'}`}
+                              className={`w-full rounded-t ${roi >= 0 ? 'bg-success/80' : 'bg-danger/70'}`}
                               style={{ height: `${(Math.abs(roi) / maxAbsRoi) * 100}%`, minHeight: 2 }}
                               title={`${d.date} · ROI ${d.roi === null ? 'N/A' : `${d.roi.toFixed(2)}x`} · cost ${money(d.cost)}`}
                             />
@@ -252,7 +252,7 @@ export function MarketingDashboard() {
                         title={`${r.date} · revenue ${money(r.revenue)}`}
                       />
                       <div
-                        className="w-full rounded-t bg-red-400/60"
+                        className="w-full rounded-t bg-danger/60"
                         style={{ height: `${Math.max(1, (r.spend / Math.max(...rows.map(x => x.revenue), 1)) * 160)}px` }}
                         title={`${r.date} · spend ${money(r.spend)}`}
                       />

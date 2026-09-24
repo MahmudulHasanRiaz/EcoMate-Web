@@ -1,3 +1,4 @@
+import { ListChecks } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatBDT, type OverviewData } from '../types'
@@ -23,12 +24,17 @@ export function ComponentOnceLedger({ pnl }: { pnl: OverviewData['pnl'] }) {
     { component: 'Other Costs', sign: 'n/a', appearsIn: 'Ladder (—)', amount: null },
   ]
   return (
-    <Card>
+    <Card className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">Where Each Amount Appears</CardTitle>
+        <div className="flex items-center gap-2.5">
+          <span className="chart-card-header-icon bg-accent-violet-soft text-accent-violet border border-accent-violet/25">
+            <ListChecks className="h-4 w-4" />
+          </span>
+          <CardTitle className="text-sm font-medium">Where Each Amount Appears</CardTitle>
+        </div>
       </CardHeader>
       <CardContent>
-        <Table>
+        <Table className="dash-table">
           <TableHeader>
             <TableRow>
               <TableHead>Component</TableHead>

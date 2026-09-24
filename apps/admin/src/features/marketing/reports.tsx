@@ -120,7 +120,7 @@ export function MarketingReports() {
                   <div className="flex w-full flex-1 items-end gap-0.5">
                     <div className="w-1/2 rounded-t bg-primary/70" style={{ height: `${(Number(d.spend) / maxSpend) * 100}%`, minHeight: 2 }}
                       title={`spend ${money(Number(d.spend))}`} />
-                    <div className="w-1/2 rounded-t bg-emerald-400/80" style={{ height: `${Math.min(100, (Number(d.revenue) / Math.max(1, maxSpend)) * 100)}%`, minHeight: 2 }}
+                    <div className="w-1/2 rounded-t bg-success/80" style={{ height: `${Math.min(100, (Number(d.revenue) / Math.max(1, maxSpend)) * 100)}%`, minHeight: 2 }}
                       title={`revenue ${money(Number(d.revenue))}`} />
                   </div>
                   <span className="text-[9px] text-muted-foreground">{tick(String(d.label ?? d.date))}</span>
@@ -234,8 +234,8 @@ export function MarketingReports() {
         </div>
 
         <div className="mt-4 flex items-center gap-3 text-xs text-muted-foreground">
-          <TrendingUp className="h-3.5 w-3.5 text-emerald-500" /> Positive net
-          <TrendingDown className="h-3.5 w-3.5 text-red-500" /> Negative net
+          <TrendingUp className="h-3.5 w-3.5 text-success" /> Positive net
+          <TrendingDown className="h-3.5 w-3.5 text-danger" /> Negative net
           <span className="ml-auto">Period {fmtDate(overview?.series?.[0]?.date)} — {fmtDate(overview?.series?.[overview?.series?.length - 1]?.date)}</span>
         </div>
       </Main>

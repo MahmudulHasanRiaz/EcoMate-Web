@@ -1,3 +1,4 @@
+import { CheckCircle2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatBDT, formatPct, type RecognitionStripData } from '../types'
 
@@ -12,9 +13,14 @@ export function RecognitionStrip({ strip }: { strip: RecognitionStripData }) {
     { label: 'Recognition Rate', value: formatPct(strip.recognitionRate) },
   ]
   return (
-    <Card>
+    <Card className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">Revenue Recognition</CardTitle>
+        <div className="flex items-center gap-2.5">
+          <span className="chart-card-header-icon bg-success-soft text-success border border-success/25">
+            <CheckCircle2 className="h-4 w-4" />
+          </span>
+          <CardTitle className="text-sm font-medium">Revenue Recognition</CardTitle>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">

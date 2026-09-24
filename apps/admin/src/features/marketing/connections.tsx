@@ -98,7 +98,7 @@ export function MarketingConnections() {
                     <TableCell className="text-sm font-medium">{c.platform.name}</TableCell>
                     <TableCell>
                       {c.status === 'connected'
-                        ? <Badge className="bg-emerald-50 text-emerald-700" variant="outline">connected</Badge>
+                        ? <Badge variant="success">connected</Badge>
                         : <Badge variant="outline">disconnected</Badge>}
                     </TableCell>
                     <TableCell className="text-sm">{fmtDate(c.createdAt)}</TableCell>

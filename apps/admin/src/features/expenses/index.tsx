@@ -276,7 +276,7 @@ export function Expenses() {
                       <TableCell className='text-right font-mono'>{formatCurrency(expense.amount)}</TableCell>
                       <TableCell className='text-center'>
                         {expense.journalEntry ? (
-                          <Badge variant='outline' className='text-xs gap-1 border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400'>
+                          <Badge variant='info' className='text-xs gap-1'>
                             <BookOpen className='h-3 w-3' />
                             JE
                           </Badge>

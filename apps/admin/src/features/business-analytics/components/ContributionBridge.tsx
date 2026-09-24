@@ -1,3 +1,4 @@
+import { GitBranch } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatBDT, type BridgeData } from '../types'
 
@@ -12,9 +13,14 @@ import { formatBDT, type BridgeData } from '../types'
 export function ContributionBridge({ bridge }: { bridge: BridgeData }) {
   const dcrUnavailable = bridge.deliveryChargeRetainedState === 'unavailable'
   return (
-    <Card>
+    <Card className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">Contribution Bridge</CardTitle>
+        <div className="flex items-center gap-2.5">
+          <span className="chart-card-header-icon bg-accent-violet-soft text-accent-violet border border-accent-violet/25">
+            <GitBranch className="h-4 w-4" />
+          </span>
+          <CardTitle className="text-sm font-medium">Contribution Bridge</CardTitle>
+        </div>
       </CardHeader>
       <CardContent>
         <div data-testid="bridge-operands" className="divide-y divide-border/50">

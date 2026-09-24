@@ -1,3 +1,4 @@
+import { ListOrdered } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatBDT, type CostCoverage, type CostState, type OverviewData } from '../types'
 import { CostStateBadge, DataCoverageBadge } from './badges'
@@ -57,10 +58,15 @@ export function PnlWaterfall({ pnl }: { pnl: OverviewData['pnl'] }) {
         : `Net Profit (partial — ${missing} inputs missing)`
 
   return (
-    <Card>
+    <Card className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between flex-wrap gap-2">
-          <CardTitle className="text-sm font-medium">Profit & Loss Waterfall</CardTitle>
+          <div className="flex items-center gap-2.5">
+            <span className="chart-card-header-icon bg-success-soft text-success border border-success/25">
+              <ListOrdered className="h-4 w-4" />
+            </span>
+            <CardTitle className="text-sm font-medium">Profit & Loss Waterfall</CardTitle>
+          </div>
           <div className="flex gap-1.5 flex-wrap">
             <DataCoverageBadge missing={coverage.cogs.unavailableItems} label="COGS" title="Order items with no costSnapshot" />
             <DataCoverageBadge missing={coverage.shipping.unavailableOrders} label="Shipping cost" title="Recognised orders with shippingCost NULL" />
@@ -70,7 +76,7 @@ export function PnlWaterfall({ pnl }: { pnl: OverviewData['pnl'] }) {
           </div>
         </div>
         {banner ? (
-          <p className="text-xs font-bold text-amber-600" role="status">
+          <p className="text-xs font-bold text-warning" role="status">
             {banner}
           </p>
         ) : null}

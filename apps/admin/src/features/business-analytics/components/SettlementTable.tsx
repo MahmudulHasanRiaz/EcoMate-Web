@@ -9,7 +9,7 @@ function Money({ amount, compact }: { amount: SettlementAmount; compact?: boolea
   if (amount.value === null || amount.state !== 'actual') {
     return (
       <span className={compact ? 'text-xs text-muted-foreground' : 'text-sm text-muted-foreground'} title={amount.reason}>
-        <span className="font-medium text-red-600/80">Unavailable</span>
+        <span className="font-medium text-danger/90">Unavailable</span>
       </span>
     )
   }
@@ -19,7 +19,7 @@ function Money({ amount, compact }: { amount: SettlementAmount; compact?: boolea
 function InferenceBadge({ inference }: { inference: 'covered' | 'below' | 'none' }) {
   if (inference === 'none') return <span className="text-[11px] text-muted-foreground">measured</span>
   return (
-    <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20" title="Shipping-refund inference — labelled, not measured (online orders only)">
+    <Badge variant="warning" title="Shipping-refund inference — labelled, not measured (online orders only)">
       inference: {inference}
     </Badge>
   )
@@ -54,7 +54,7 @@ export function SettlementTable({
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1
   const to = Math.min(total, page * pageSize)
   return (
-    <Card>
+    <Card className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium">Fulfillment Economics — Per-Order Settlement</CardTitle>
         <p className="text-[11px] text-muted-foreground">

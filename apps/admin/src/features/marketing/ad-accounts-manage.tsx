@@ -112,7 +112,7 @@ export function MarketingAdAccountsManage() {
                   <label className="mb-1 block text-sm font-medium">Currency</label>
                   <Input value={currency} onChange={(e) => setCurrency(e.target.value)} />
                 </div>
-                {addError && <p className="text-sm text-red-600">{addError}</p>}
+                {addError && <p className="text-sm text-danger">{addError}</p>}
                 <Button className="w-full" disabled={adding} onClick={addAccount}>
                   {adding ? 'Adding…' : 'Add account'}
                 </Button>

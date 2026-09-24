@@ -1,5 +1,6 @@
 'use client'
 
+import { TriangleAlert } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatBDT, type UncostedData } from '../types'
@@ -11,20 +12,27 @@ import { formatBDT, type UncostedData } from '../types'
  */
 export function UncostedFixList({ uncosted }: { uncosted: UncostedData }) {
   return (
-    <Card>
+    <Card className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">
-          Uncosted lines fix-list — {uncosted.totals.lines} line(s), {uncosted.totals.units} unit(s) without costSnapshot
-        </CardTitle>
-        <p className="text-[11px] text-muted-foreground">
-          COGS uses costSnapshot only — the current standardCost is never a fallback. Cost these lines to restore actual coverage.
-        </p>
+        <div className="flex items-center gap-2.5">
+          <span className="chart-card-header-icon bg-warning-soft text-warning border border-warning/25">
+            <TriangleAlert className="h-4 w-4" />
+          </span>
+          <div>
+            <CardTitle className="text-sm font-medium">
+              Uncosted lines fix-list — {uncosted.totals.lines} line(s), {uncosted.totals.units} unit(s) without costSnapshot
+            </CardTitle>
+            <p className="text-[11px] text-muted-foreground">
+              COGS uses costSnapshot only — the current standardCost is never a fallback. Cost these lines to restore actual coverage.
+            </p>
+          </div>
+        </div>
       </CardHeader>
       <CardContent className="overflow-x-auto">
         {uncosted.rows.length === 0 ? (
           <div className="flex items-center justify-center py-6 text-muted-foreground text-sm">No uncosted lines</div>
         ) : (
-          <Table>
+          <Table className="dash-table">
             <TableHeader>
               <TableRow>
                 <TableHead>Product</TableHead>

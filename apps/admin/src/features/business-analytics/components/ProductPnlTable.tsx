@@ -17,7 +17,7 @@ export function PnlCell({ kpi, format }: { kpi: KpiValue; format?: (v: number) =
         <span className="tabular-nums">
           {fmt(kpi.value as number)}
           {kpi.state === 'estimated' ? (
-            <Badge variant="outline" className="ml-1 bg-amber-500/10 text-amber-600 border-amber-500/20">
+            <Badge variant="warning" className="ml-1">
               Est
             </Badge>
           ) : null}
@@ -60,7 +60,7 @@ export function ProductPnlTable({
   showVariant?: boolean
 }) {
   return (
-    <Card>
+    <Card className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium">{title}</CardTitle>
       </CardHeader>
@@ -68,7 +68,7 @@ export function ProductPnlTable({
         {rows.length === 0 ? (
           <div className="flex items-center justify-center py-6 text-muted-foreground text-sm">No data</div>
         ) : (
-          <Table>
+          <Table className="dash-table">
             <TableHeader>
               <TableRow>
                 <TableHead>{showVariant ? 'Variant' : 'Product'}</TableHead>
@@ -98,7 +98,7 @@ export function ProductPnlTable({
                     </a>
                     {r.lowMargin ? (
                       <a href={detailHref(r)} title="Contribution margin below the 10% default policy — drill to product">
-                        <Badge variant="outline" className="ml-2 bg-amber-500/10 text-amber-600 border-amber-500/20">
+                        <Badge variant="warning" className="ml-2">
                           Low margin
                         </Badge>
                       </a>

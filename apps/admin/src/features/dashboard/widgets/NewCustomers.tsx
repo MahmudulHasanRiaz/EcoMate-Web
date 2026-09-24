@@ -16,7 +16,7 @@ export function NewCustomers({ dateRange }: WidgetProps) {
   const customers = data?.data || []
 
   return (
-    <WidgetShell title="New Customers" isLoading={isLoading} error={error ?? undefined} onRetry={() => refetch()}>
+    <WidgetShell title="New Customers" isLoading={isLoading} error={error ?? undefined} onRetry={() => refetch()} icon={<UserPlus className="h-4 w-4" />} iconTone="cyan">
       {customers.length === 0 ? (
         <div className="flex flex-col items-center py-6 text-center">
           <UserPlus className="h-8 w-8 text-muted-foreground mb-2" />
@@ -25,7 +25,7 @@ export function NewCustomers({ dateRange }: WidgetProps) {
       ) : (
         <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
           {customers.map(c => (
-            <div key={c.id} className="flex items-center justify-between p-2 rounded-lg border border-border/55 bg-muted/20">
+            <div key={c.id} className="flex items-center justify-between p-2 rounded-xl border border-border/55 bg-muted/20 transition-colors duration-200 hover:bg-accent-cyan-soft/40">
               <div>
                 <p className="text-xs font-semibold text-foreground">{c.firstName} {c.lastName}</p>
                 <p className="text-[10px] text-muted-foreground">{c.email}</p>

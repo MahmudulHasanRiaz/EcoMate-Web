@@ -187,22 +187,22 @@ function CreditDueCards({ creditDue }: { creditDue?: CreditDueResponse[] }) {
 
   return (
     <div className="grid gap-4 sm:grid-cols-3">
-      <Card>
+      <Card className="kpi-card kpi-accent-success">
         <CardContent className="p-4">
           <p className="text-xs text-muted-foreground">Total Prepaid Credit</p>
-          <p className="mt-1 text-xl font-semibold tabular-nums text-emerald-600">{money(totals.totalCredit)}</p>
+          <p className="mt-1 text-xl font-semibold tabular-nums text-success">{money(totals.totalCredit)}</p>
         </CardContent>
       </Card>
-      <Card>
+      <Card className="kpi-card kpi-accent-danger">
         <CardContent className="p-4">
           <p className="text-xs text-muted-foreground">Amount Due</p>
-          <p className="mt-1 text-xl font-semibold tabular-nums text-red-600">{money(totals.due)}</p>
+          <p className="mt-1 text-xl font-semibold tabular-nums text-danger">{money(totals.due)}</p>
         </CardContent>
       </Card>
-      <Card>
+      <Card className={totals.netPosition >= 0 ? 'kpi-card kpi-accent-success' : 'kpi-card kpi-accent-danger'}>
         <CardContent className="p-4">
           <p className="text-xs text-muted-foreground">Net Position</p>
-          <p className={`mt-1 text-xl font-semibold tabular-nums ${totals.netPosition >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+          <p className={`mt-1 text-xl font-semibold tabular-nums ${totals.netPosition >= 0 ? 'text-success' : 'text-danger'}`}>
             {totals.netPosition >= 0 ? '+' : ''}{money(totals.netPosition)}
           </p>
         </CardContent>

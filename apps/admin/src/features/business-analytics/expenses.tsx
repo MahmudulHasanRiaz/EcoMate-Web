@@ -4,7 +4,9 @@ import { useEffect, useRef, useState, type Ref } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
+import { Area, ComposedChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
+import { Receipt, TrendingDown } from 'lucide-react'
+import { riseStyle } from '@/components/ui/dashboard'
 import { WidgetShell } from '../dashboard/components/WidgetShell'
 import {
   useExpensesCategories,
@@ -40,10 +42,10 @@ import { buildExpensesQuery } from './api'
 const COUNT_FORMAT = (v: number) => v.toLocaleString('en-US')
 const RATIO_FORMAT = (v: number) => formatPct(v)
 
-const KIND_BADGE: Record<ExpenseKind, string> = {
-  fixed: 'bg-sky-500/10 text-sky-600 border-sky-500/20',
-  variable: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
-  unclassified: 'bg-muted text-muted-foreground border-border',
+const KIND_BADGE: Record<ExpenseKind, 'info' | 'success' | 'outline'> = {
+  fixed: 'info',
+  variable: 'success',
+  unclassified: 'outline',
 }
 
 const EXPENSES_DRILLDOWN: DrilldownItem[] = [
@@ -93,7 +95,7 @@ export function readExpensesDrillSearch(): ExpensesDrillSearch {
 export function ExpensesOverviewCards({ summary }: { summary: ExpensesSummaryData }) {
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="expenses-overview">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-rise" style={riseStyle(0)} data-testid="expenses-overview">
         <KpiCard title="Total expense" kpi={summary.total} />
         <KpiCard title="Fixed" kpi={summary.byKind.fixed} />
         <KpiCard title="Variable" kpi={summary.byKind.variable} />
@@ -102,15 +104,15 @@ export function ExpensesOverviewCards({ summary }: { summary: ExpensesSummaryDat
       <p className="text-[11px] text-muted-foreground" data-testid="kind-note">
         {summary.kindNote || EXPENSE_KIND_NOTE}
       </p>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 animate-rise" style={riseStyle(1)}>
         <KpiCard title="Expense / revenue" kpi={summary.expenseRevenue} format={RATIO_FORMAT} />
         <KpiCard title="Expense per order" kpi={summary.perOrder} />
-        <Card data-testid="expenses-growth">
+        <Card data-testid="expenses-growth" className="kpi-card kpi-accent-danger">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Growth vs previous period</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold tabular-nums">{formatDelta(summary.growth.delta)}</p>
+            <p className="kpi-value tabular-nums">{formatDelta(summary.growth.delta)}</p>
             <p className="text-xs text-muted-foreground mt-1 tabular-nums">
               {formatDeltaPct(summary.growth.deltaPct)} vs {formatBDT(summary.growth.prevTotal)} ·{' '}
               {summary.periodDays} day(s)
@@ -129,7 +131,7 @@ export function ExpensesOverviewCards({ summary }: { summary: ExpensesSummaryDat
 /** §8.6 — no budget model: the card renders Unavailable, never ৳0. */
 export function BudgetVsActualCard({ kpi }: { kpi: KpiValue }) {
   return (
-    <Card data-testid="budget-vs-actual">
+    <Card data-testid="budget-vs-actual" className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium">Budget vs Actual</CardTitle>
       </CardHeader>
@@ -144,22 +146,35 @@ export function BudgetVsActualCard({ kpi }: { kpi: KpiValue }) {
 /** Expense trend on Dhaka buckets at the backend's auto-granularity. */
 export function ExpenseTrendChart({ trend }: { trend: ExpensesTrendData }) {
   return (
-    <Card data-testid="expenses-trend">
+    <Card data-testid="expenses-trend" className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">Expense Trend</CardTitle>
-        <p className="text-[11px] text-muted-foreground">
-          Auto-granularity: {trend.granularity}
-          {trend.granularity !== trend.requestedGranularity ? ` (requested ${trend.requestedGranularity}, stepped up past the bucket cap)` : ''} ·{' '}
-          {trend.dateBasis || EXPENSE_DATE_BASIS_STATEMENT}
-        </p>
+        <div className="flex items-center gap-2.5">
+          <span className="chart-card-header-icon bg-danger-soft text-danger border border-danger/25">
+            <TrendingDown className="h-4 w-4" />
+          </span>
+          <div>
+            <CardTitle className="text-sm font-medium">Expense Trend</CardTitle>
+            <p className="text-[11px] text-muted-foreground">
+              Auto-granularity: {trend.granularity}
+              {trend.granularity !== trend.requestedGranularity ? ` (requested ${trend.requestedGranularity}, stepped up past the bucket cap)` : ''} ·{' '}
+              {trend.dateBasis || EXPENSE_DATE_BASIS_STATEMENT}
+            </p>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         {trend.points.length === 0 ? (
           <div className="flex items-center justify-center h-[250px] text-muted-foreground text-sm">No data</div>
         ) : (
           <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={trend.points} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(156,163,175,0.1)" />
+            <ComposedChart data={trend.points} margin={{ top: 10, right: 10, left: -10, bottom: 0 }} className="chart-draw">
+              <defs>
+                <linearGradient id="expenseTrend" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--danger)" stopOpacity={0.3} />
+                  <stop offset="100%" stopColor="var(--danger)" stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" strokeOpacity={0.6} />
               <XAxis dataKey="label" stroke="#9ca3af" fontSize={11} tickLine={false} axisLine={false} dy={10} />
               <YAxis stroke="#9ca3af" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `৳${v}`} dx={-5} />
               <Tooltip
@@ -178,8 +193,9 @@ export function ExpenseTrendChart({ trend }: { trend: ExpensesTrendData }) {
                   return null
                 }}
               />
-              <Line type="monotone" dataKey="amount" stroke="#f59e0b" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-            </LineChart>
+              <Area type="monotone" dataKey="amount" fill="url(#expenseTrend)" stroke="none" />
+              <Line type="monotone" dataKey="amount" stroke="var(--danger)" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+            </ComposedChart>
           </ResponsiveContainer>
         )}
       </CardContent>
@@ -190,7 +206,7 @@ export function ExpenseTrendChart({ trend }: { trend: ExpensesTrendData }) {
 /** Category table with the kind grouping — rows drill to the expense list. */
 export function ExpenseCategoryTable({ data }: { data: ExpensesCategoriesData }) {
   return (
-    <Card data-testid="expenses-categories">
+    <Card data-testid="expenses-categories" className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium">By Category</CardTitle>
         <p className="text-[11px] text-muted-foreground">{data.dateBasis || EXPENSE_DATE_BASIS_STATEMENT}</p>
@@ -200,7 +216,7 @@ export function ExpenseCategoryTable({ data }: { data: ExpensesCategoriesData })
           <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">No data</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="dash-table w-full text-sm">
               <thead>
                 <tr className="text-left text-xs text-muted-foreground">
                   <th className="py-2 pr-3 font-medium">Category</th>
@@ -211,7 +227,7 @@ export function ExpenseCategoryTable({ data }: { data: ExpensesCategoriesData })
               </thead>
               <tbody>
                 {data.rows.map((r) => (
-                  <tr key={r.categoryId} className="border-t border-border/50" data-testid={`category-row-${r.categoryId}`}>
+                  <tr key={r.categoryId} className="border-t border-border/50 transition-colors hover:bg-muted/40" data-testid={`category-row-${r.categoryId}`}>
                     <td className="py-2 pr-3 font-medium">
                       <a
                         className="underline underline-offset-2"
@@ -222,7 +238,7 @@ export function ExpenseCategoryTable({ data }: { data: ExpensesCategoriesData })
                       </a>
                     </td>
                     <td className="py-2 pr-3">
-                      <Badge variant="outline" className={KIND_BADGE[r.expenseKind]}>
+                      <Badge variant={KIND_BADGE[r.expenseKind]}>
                         {r.expenseKind}
                       </Badge>
                     </td>
@@ -245,7 +261,7 @@ export function ExpenseCategoryTable({ data }: { data: ExpensesCategoriesData })
 /** Expense-row drill list: line → category → expense (§4.2). */
 export function ExpenseListTable({ data }: { data: ExpensesListData }) {
   return (
-    <Card data-testid="expenses-list">
+    <Card data-testid="expenses-list" className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium">Expenses</CardTitle>
         <p className="text-[11px] text-muted-foreground">{data.dateBasis || EXPENSE_DATE_BASIS_STATEMENT} · incl. tax</p>
@@ -255,7 +271,7 @@ export function ExpenseListTable({ data }: { data: ExpensesListData }) {
           <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">No data</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="dash-table w-full text-sm">
               <thead>
                 <tr className="text-left text-xs text-muted-foreground">
                   <th className="py-2 pr-3 font-medium">Date</th>
@@ -275,7 +291,7 @@ export function ExpenseListTable({ data }: { data: ExpensesListData }) {
                       {r.referenceNo ? <span className="block text-[11px] text-muted-foreground">{r.referenceNo}</span> : null}
                     </td>
                     <td className="py-2 pr-3">
-                      <Badge variant="outline" className={KIND_BADGE[r.category.expenseKind]} title={r.category.expenseKind}>
+                      <Badge variant={KIND_BADGE[r.category.expenseKind]} title={r.category.expenseKind}>
                         {r.category.name}
                       </Badge>
                     </td>
@@ -368,9 +384,14 @@ export default function ExpensesAnalytics({ initialSearch }: { initialSearch?: E
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <div>
-          <h1 className="text-2xl font-bold">Expenses Analytics</h1>
-          <p className="text-xs text-muted-foreground">{EXPENSE_DRILL_LABEL}. {EXPENSE_DATE_BASIS_STATEMENT}.</p>
+        <div className="flex items-center gap-3">
+          <span className="chart-card-header-icon bg-danger-soft text-danger border border-danger/25">
+            <Receipt className="h-5 w-5" />
+          </span>
+          <div>
+            <h1 className="text-2xl font-bold">Expenses Analytics</h1>
+            <p className="text-xs text-muted-foreground">{EXPENSE_DRILL_LABEL}. {EXPENSE_DATE_BASIS_STATEMENT}.</p>
+          </div>
         </div>
       </div>
 

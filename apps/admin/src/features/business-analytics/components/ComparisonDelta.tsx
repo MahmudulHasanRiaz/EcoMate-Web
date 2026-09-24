@@ -1,3 +1,4 @@
+import { TrendChip } from '@/components/ui/dashboard'
 import { formatDelta, formatDeltaPct } from '../types'
 
 /** Signed delta vs the previous window — explicit +/- so negative-friendly metrics read correctly. */
@@ -18,12 +19,12 @@ export function ComparisonDelta({
   const delta = current - previous
   const pct = previous !== 0 ? (delta / Math.abs(previous)) * 100 : null
   const good = delta === 0 ? null : (delta > 0) !== Boolean(invert)
-  const cls = good === null ? 'text-muted-foreground' : good ? 'text-emerald-600' : 'text-red-600'
+  const direction = good === null ? 'flat' : good ? 'up' : 'down'
   return (
     <div className="flex items-baseline gap-2 text-xs" aria-label={`${label} change vs previous period`}>
-      <span className={`font-bold ${cls}`}>
+      <TrendChip direction={direction}>
         {format ? `${delta > 0 ? '+' : delta < 0 ? '-' : ''}${format(Math.abs(delta))}` : formatDelta(delta)}
-      </span>
+      </TrendChip>
       <span className="text-muted-foreground">({formatDeltaPct(pct)} vs prev)</span>
     </div>
   )

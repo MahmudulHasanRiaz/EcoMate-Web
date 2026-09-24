@@ -378,7 +378,7 @@ export function JournalEntries() {
                 </div>
                 <div>
                   {isBalanced ? (
-                    <Badge variant='outline' className='text-green-600 border-green-300'>Balanced</Badge>
+                    <Badge variant='success'>Balanced</Badge>
                   ) : form.lines.length > 0 ? (
                     <Badge variant='outline' className='text-destructive border-destructive/50'>Unbalanced</Badge>
                   ) : null}

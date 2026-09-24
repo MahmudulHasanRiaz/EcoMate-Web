@@ -3,10 +3,10 @@
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Eye, ChevronRight, RefreshCw } from 'lucide-react'
+import { Eye, ChevronRight, RefreshCw, ShoppingBag } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { StatusBadge, orderStatusTone } from '@/components/ui/dashboard'
 import { WidgetShell } from '../components/WidgetShell'
 import { dashboardApi } from '../api'
 import { formatCurrency, formatDate } from '../utils'
@@ -39,26 +39,6 @@ export function RecentOrders({ dateRange }: WidgetProps) {
     setLimit(prev => Math.min(prev + 5, orders.length))
   }
 
-  const getStatusBadgeStyle = (statusName: string) => {
-    const normalized = statusName.toLowerCase()
-    if (normalized.includes('pending') || normalized.includes('awaiting')) {
-      return 'bg-amber-500/10 text-amber-600 border-amber-500/20'
-    }
-    if (normalized.includes('delivered') || normalized === 'paid') {
-      return 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
-    }
-    if (normalized.includes('refund') || normalized.includes('cancelled') || normalized.includes('fail') || normalized.includes('damage') || normalized === 'returned') {
-      return 'bg-rose-500/10 text-rose-600 border-rose-500/20'
-    }
-    if (normalized.includes('process')) {
-      return 'bg-blue-500/10 text-blue-600 border-blue-500/20'
-    }
-    if (normalized.includes('confirm')) {
-      return 'bg-indigo-500/10 text-indigo-600 border-indigo-500/20'
-    }
-    return 'bg-muted text-muted-foreground border-border'
-  }
-
   return (
     <WidgetShell
       title="Recent Orders"
@@ -66,6 +46,8 @@ export function RecentOrders({ dateRange }: WidgetProps) {
       isLoading={isLoading}
       error={error ?? undefined}
       onRetry={() => refetch()}
+      icon={<ShoppingBag className="h-4 w-4" />}
+      iconTone="info"
     >
       {orders.length === 0 ? (
         <p className="text-sm text-muted-foreground py-6 text-center">No recent orders</p>
@@ -73,7 +55,7 @@ export function RecentOrders({ dateRange }: WidgetProps) {
         <>
           {/* Desktop/Tablet Table view */}
           <div className="hidden md:block overflow-x-auto">
-            <Table>
+            <Table className="dash-table">
               <TableHeader>
                 <TableRow>
                   <TableHead className="text-xs font-bold uppercase tracking-wider">Order ID</TableHead>
@@ -91,9 +73,9 @@ export function RecentOrders({ dateRange }: WidgetProps) {
                     <TableCell className="text-xs font-medium text-foreground text-right">{order.itemCount}</TableCell>
                     <TableCell className="text-xs font-bold text-foreground text-right">{formatCurrency(order.total)}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={`text-[10px] font-bold border capitalize ${getStatusBadgeStyle(order.status)}`}>
+                      <StatusBadge tone={orderStatusTone(order.status)} className="text-[10px] font-bold capitalize">
                         {order.status}
-                      </Badge>
+                      </StatusBadge>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">{formatDate(order.createdAt)}</TableCell>
                     <TableCell className="text-right">
@@ -112,12 +94,12 @@ export function RecentOrders({ dateRange }: WidgetProps) {
           {/* Mobile Card View (<768px) */}
           <div className="block md:hidden space-y-3">
             {visibleOrders.map(order => (
-              <div key={order.id} className="rounded-lg border border-border bg-card p-4 space-y-3 shadow-sm">
+              <div key={order.id} className="rounded-2xl border border-border bg-card p-4 space-y-3 shadow-sm">
                 <div className="flex items-center justify-between">
                   <span className="font-mono text-xs font-bold text-foreground">{order.displayId}</span>
-                  <Badge variant="outline" className={`text-[10px] font-bold border capitalize ${getStatusBadgeStyle(order.status)}`}>
+                  <StatusBadge tone={orderStatusTone(order.status)} className="text-[10px] font-bold capitalize">
                     {order.status}
-                  </Badge>
+                  </StatusBadge>
                 </div>
 
                 <div className="grid grid-cols-2 gap-y-2 text-xs">

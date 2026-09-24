@@ -1,15 +1,15 @@
 export const DISPATCH_STATUSES = [
   { value: 'DISPATCHED', label: 'Dispatched', color: 'bg-gray-500' },
-  { value: 'HANDED_OVER', label: 'Handed Over', color: 'bg-blue-500' },
-  { value: 'PICKED_UP', label: 'Picked Up', color: 'bg-cyan-500' },
-  { value: 'IN_TRANSIT', label: 'In Transit', color: 'bg-indigo-500' },
-  { value: 'ASSIGNED_TO_RIDER', label: 'Assigned to Rider', color: 'bg-purple-500' },
-  { value: 'HOLD', label: 'Hold', color: 'bg-amber-500' },
-  { value: 'DELIVERED', label: 'Delivered', color: 'bg-green-500' },
-  { value: 'PARTIAL', label: 'Partial', color: 'bg-yellow-500' },
-  { value: 'RETURN_PENDING', label: 'Return Pending', color: 'bg-orange-500' },
-  { value: 'RETURNED', label: 'Returned', color: 'bg-red-500' },
-  { value: 'CANCELLED', label: 'Cancelled', color: 'bg-gray-700' },
+  { value: 'HANDED_OVER', label: 'Handed Over', color: 'bg-info' },
+  { value: 'PICKED_UP', label: 'Picked Up', color: 'bg-accent-cyan' },
+  { value: 'IN_TRANSIT', label: 'In Transit', color: 'bg-accent-violet' },
+  { value: 'ASSIGNED_TO_RIDER', label: 'Assigned to Rider', color: 'bg-accent-pink' },
+  { value: 'HOLD', label: 'Hold', color: 'bg-warning' },
+  { value: 'DELIVERED', label: 'Delivered', color: 'bg-success' },
+  { value: 'PARTIAL', label: 'Partial', color: 'bg-warning' },
+  { value: 'RETURN_PENDING', label: 'Return Pending', color: 'bg-warning' },
+  { value: 'RETURNED', label: 'Returned', color: 'bg-danger' },
+  { value: 'CANCELLED', label: 'Cancelled', color: 'bg-danger' },
 ] as const
 
 export const ALL_COURIERS = [

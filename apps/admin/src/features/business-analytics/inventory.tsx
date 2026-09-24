@@ -5,7 +5,8 @@ import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Info } from 'lucide-react'
+import { Info, Package } from 'lucide-react'
+import { riseStyle, type StatusTone } from '@/components/ui/dashboard'
 import { apiClient } from '@/lib/api-client'
 import { WidgetShell } from '../dashboard/components/WidgetShell'
 import {
@@ -40,6 +41,13 @@ import { buildInventoryQuery } from './api'
 const COUNT_FORMAT = (v: number) => v.toLocaleString('en-US')
 const RATIO_FORMAT = (v: number) => `${v.toFixed(2)}×`
 const DAYS_FORMAT = (v: number) => `${v.toFixed(1)} days`
+
+const MOVEMENT_TONE: Record<string, Exclude<StatusTone, 'neutral'>> = {
+  Fast: 'success',
+  Normal: 'info',
+  Slow: 'warning',
+  Dead: 'danger',
+}
 
 const INVENTORY_DRILLDOWN: DrilldownItem[] = [
   { label: 'Inventory value → movement class', description: 'Reconstructed value down to per-product movement', to: '/op/analytics/inventory', params: { view: 'movement' } },
@@ -116,7 +124,7 @@ export function InventoryWarehouseScope({
       Warehouse
       <select
         aria-label="Warehouse scope"
-        className="h-8 rounded-lg border border-border/50 bg-background px-2 text-xs"
+        className="tap-h rounded-lg border border-border/50 bg-background px-2 text-xs"
         value={value.warehouseId ?? ''}
         onChange={(e) => onChange({ ...value, warehouseId: e.target.value || undefined })}
         data-testid="warehouse-scope"
@@ -136,7 +144,7 @@ export function InventoryWarehouseScope({
 export function ValueBasisBanner({ value }: { value: InventoryValueData }) {
   const closingOnly = value.basis === 'closing_only'
   return (
-    <Card data-testid="value-basis">
+    <Card data-testid="value-basis" className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <CardTitle className="text-sm font-medium">Inventory Value — reconstructed</CardTitle>
@@ -146,18 +154,18 @@ export function ValueBasisBanner({ value }: { value: InventoryValueData }) {
               label="History gap"
               title="Reconstruction diverged from the FIFO valuation — closing-only basis"
             />
-            <Badge variant="outline">{value.basis === 'closing_only' ? 'closing_only' : 'reconstructed'}</Badge>
+            <Badge variant="info">{value.basis === 'closing_only' ? 'closing_only' : 'reconstructed'}</Badge>
           </span>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="text-xs text-muted-foreground">{value.basisStatement || INVENTORY_VALUE_BASIS_STATEMENT}</p>
         {closingOnly ? (
-          <p className="text-xs text-amber-600 border border-amber-500/30 bg-amber-500/5 rounded-md px-2 py-1.5" data-testid="closing-only-note">
+          <p className="text-xs text-warning border border-warning/30 bg-warning-soft rounded-md px-2 py-1.5" data-testid="closing-only-note">
             {value.basisNote || INVENTORY_CLOSING_ONLY_NOTE}
           </p>
         ) : null}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 animate-rise" style={riseStyle(0)}>
           <KpiCard title="Opening value" kpi={value.value.opening} />
           <KpiCard title="Closing value" kpi={value.value.closing} />
           <KpiCard title="Average value" kpi={value.value.average} />
@@ -176,7 +184,7 @@ export function ValueBasisBanner({ value }: { value: InventoryValueData }) {
 /** Turnover / DOI / sell-through summary (COGS from the P2 recognised cohort). */
 export function TurnoverCards({ value }: { value: InventoryValueData }) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" data-testid="turnover-cards">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-rise" style={riseStyle(1)} data-testid="turnover-cards">
       <KpiCard title="Stock turnover (COGS ÷ avg)" kpi={value.turnover} format={RATIO_FORMAT} />
       <KpiCard title="Days of inventory" kpi={value.doi} format={DAYS_FORMAT} />
     </div>
@@ -186,7 +194,7 @@ export function TurnoverCards({ value }: { value: InventoryValueData }) {
 /** Movement table with the default-policy label + rationale tooltip. */
 export function MovementTable({ data }: { data: InventoryMovementData }) {
   return (
-    <Card data-testid="movement-table">
+    <Card data-testid="movement-table" className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <CardTitle className="text-sm font-medium">Movement Classes</CardTitle>
@@ -205,7 +213,7 @@ export function MovementTable({ data }: { data: InventoryMovementData }) {
           <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">No data</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="dash-table w-full text-sm">
               <thead>
                 <tr className="text-left text-xs text-muted-foreground">
                   <th className="py-2 pr-3 font-medium">Product</th>
@@ -231,7 +239,7 @@ export function MovementTable({ data }: { data: InventoryMovementData }) {
                       {r.variantId ? <span className="block text-[11px] text-muted-foreground">{r.variantId}</span> : null}
                     </td>
                     <td className="py-2 pr-3">
-                      <Badge variant="outline" title={r.policyLabel}>
+                      <Badge variant={MOVEMENT_TONE[r.movementClass] ?? 'info'} title={r.policyLabel}>
                         {r.movementClass}
                       </Badge>
                     </td>
@@ -258,11 +266,11 @@ export function MovementTable({ data }: { data: InventoryMovementData }) {
 export function LostSalesCard({ data }: { data: InventoryStockoutsData }) {
   const kpi: KpiValue = data.lostSales
   return (
-    <Card data-testid="lost-sales">
+    <Card data-testid="lost-sales" className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <CardTitle className="text-sm font-medium">Lost Sales</CardTitle>
-          <Badge variant="outline" className="bg-sky-500/10 text-sky-600 border-sky-500/20">
+          <Badge variant="info">
             {kpi.state === 'estimated' ? 'Estimated' : 'Honesty'}
           </Badge>
         </div>
@@ -288,7 +296,7 @@ export function LostSalesCard({ data }: { data: InventoryStockoutsData }) {
 /** Age buckets of the reconstructed remainder. */
 export function AgingTable({ value }: { value: InventoryValueData }) {
   return (
-    <Card data-testid="aging-table">
+    <Card data-testid="aging-table" className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium">Aging</CardTitle>
         <p className="text-[11px] text-muted-foreground">{value.aging.dateBasis}</p>
@@ -322,7 +330,7 @@ export function AgingTable({ value }: { value: InventoryValueData }) {
 /** Ledger drill-down: quantities only, never unitCost. */
 export function LedgerTable({ data }: { data: InventoryLedgerData }) {
   return (
-    <Card data-testid="ledger-table">
+    <Card data-testid="ledger-table" className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium">Stock Ledger</CardTitle>
         <p className="text-[11px] text-muted-foreground">{data.dateBasis} · quantities only</p>
@@ -332,7 +340,7 @@ export function LedgerTable({ data }: { data: InventoryLedgerData }) {
           <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">No data</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="dash-table w-full text-sm">
               <thead>
                 <tr className="text-left text-xs text-muted-foreground">
                   <th className="py-2 pr-3 font-medium">Date</th>
@@ -446,9 +454,14 @@ export default function InventoryAnalytics({ initialSearch }: { initialSearch?: 
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <div>
-          <h1 className="text-2xl font-bold">Inventory Analytics</h1>
-          <p className="text-xs text-muted-foreground">{INVENTORY_DRILL_LABEL}. Movement {MOVEMENT_POLICY_LABEL}.</p>
+        <div className="flex items-center gap-3">
+          <span className="chart-card-header-icon bg-accent-violet-soft text-accent-violet border border-accent-violet/25">
+            <Package className="h-5 w-5" />
+          </span>
+          <div>
+            <h1 className="text-2xl font-bold">Inventory Analytics</h1>
+            <p className="text-xs text-muted-foreground">{INVENTORY_DRILL_LABEL}. Movement {MOVEMENT_POLICY_LABEL}.</p>
+          </div>
         </div>
         <InventoryWarehouseScope value={filters} onChange={onFilters} />
       </div>

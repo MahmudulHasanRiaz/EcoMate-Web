@@ -1,6 +1,8 @@
 import { Info } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { CountUp, kpiAccentForTitle, kpiIconForTitle } from '@/components/ui/dashboard'
+import { cn } from '@/lib/utils'
 import { formatBDT, type KpiValue } from '../types'
 import { MetricUnavailable } from './badges'
 
@@ -21,6 +23,8 @@ interface KpiCardProps {
  */
 export function KpiCard({ title, kpi, format, formulaVersion, drilldownHref }: KpiCardProps) {
   const fmt = format ?? formatBDT
+  const accent = kpiAccentForTitle(title)
+  const Icon = kpiIconForTitle(title)
   const meta = [kpi.dateBasis ? `Date basis: ${kpi.dateBasis}` : null, formulaVersion ? `Formula: ${formulaVersion}` : null]
     .filter(Boolean)
     .join(' · ')
@@ -28,25 +32,31 @@ export function KpiCard({ title, kpi, format, formulaVersion, drilldownHref }: K
   const body = (() => {
     switch (kpi.state) {
       case 'ok':
-        return <p className="text-2xl font-bold">{fmt(kpi.value as number)}</p>
+        return (
+          <p className="kpi-value">
+            <CountUp value={kpi.value as number} format={fmt} />
+          </p>
+        )
       case 'zero':
         return (
           <>
-            <p className="text-2xl font-bold">{fmt(0)}</p>
+            <p className="kpi-value">
+              <CountUp value={0} format={fmt} />
+            </p>
             {kpi.reason ? <p className="text-xs text-muted-foreground mt-1">{kpi.reason}</p> : null}
           </>
         )
       case 'no_data':
         return (
           <>
-            <p className="text-2xl font-bold text-muted-foreground">No data</p>
+            <p className="kpi-value text-muted-foreground">No data</p>
             {kpi.reason ? <p className="text-xs text-muted-foreground mt-1">{kpi.reason}</p> : null}
           </>
         )
       case 'not_applicable':
         return (
           <>
-            <p className="text-2xl font-bold text-muted-foreground/60">—</p>
+            <p className="kpi-value text-muted-foreground/60">—</p>
             {kpi.reason ? <p className="text-xs text-muted-foreground mt-1">{kpi.reason}</p> : null}
           </>
         )
@@ -56,10 +66,10 @@ export function KpiCard({ title, kpi, format, formulaVersion, drilldownHref }: K
         return (
           <>
             <div className="flex items-center gap-2">
-              <p className="text-2xl font-bold">{fmt(kpi.value as number)}</p>
-              <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20">
-                Estimated
-              </Badge>
+              <p className="kpi-value">
+                <CountUp value={kpi.value as number} format={fmt} />
+              </p>
+              <Badge variant="warning">Estimated</Badge>
             </div>
             {kpi.estimatedReference ? (
               <p className="text-xs text-muted-foreground mt-1 border-t border-dashed pt-1">
@@ -73,9 +83,14 @@ export function KpiCard({ title, kpi, format, formulaVersion, drilldownHref }: K
   })()
 
   const card = (
-    <Card>
+    <Card className={cn('kpi-card', `kpi-accent-${accent}`)}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="kpi-icon-badge shrink-0" aria-hidden>
+            <Icon className="h-4 w-4" />
+          </span>
+          <CardTitle className="text-sm font-medium truncate">{title}</CardTitle>
+        </div>
         {meta ? (
           <span title={meta} aria-label={meta}>
             <Info className="h-3.5 w-3.5 text-muted-foreground" />
@@ -91,7 +106,7 @@ export function KpiCard({ title, kpi, format, formulaVersion, drilldownHref }: K
 
   if (drilldownHref) {
     return (
-      <a href={drilldownHref} className="block transition-opacity hover:opacity-90">
+      <a href={drilldownHref} className="block transition-all duration-200 hover:-translate-y-0.5 hover:opacity-95">
         {card}
       </a>
     )

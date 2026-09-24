@@ -18,11 +18,32 @@
   --border: oklch(0.929 0.013 255.508);
   --input: oklch(0.929 0.013 255.508);
   --ring: oklch(0.704 0.04 256.788);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
+  /* Chart palette = semantic tokens (income green, cost red, same everywhere). */
+  --chart-1: var(--success);
+  --chart-2: var(--danger);
+  --chart-3: var(--info);
+  --chart-4: var(--warning);
+  --chart-5: var(--accent-violet);
+  --chart-6: var(--accent-cyan);
+
+  /* Semantic dashboard tokens — single-tenant palette shared by every admin
+     dashboard. Base theme (primary / background / card / border / sidebar)
+     is untouched. Solids are text-safe on card surfaces (WCAG AA); softs are
+     tint backgrounds. Never use client brand colors here (storefront only). */
+  --success: oklch(0.505 0.153 166.5);
+  --success-soft: oklch(0.962 0.022 166.5);
+  --danger: oklch(0.51 0.22 29);
+  --danger-soft: oklch(0.958 0.024 29);
+  --warning: oklch(0.52 0.14 75);
+  --warning-soft: oklch(0.968 0.035 90);
+  --info: oklch(0.5 0.15 252);
+  --info-soft: oklch(0.95 0.025 252);
+  --accent-violet: oklch(0.5 0.21 292);
+  --accent-violet-soft: oklch(0.95 0.03 292);
+  --accent-cyan: oklch(0.5 0.12 205);
+  --accent-cyan-soft: oklch(0.95 0.03 205);
+  --accent-pink: oklch(0.545 0.21 353);
+  --accent-pink-soft: oklch(0.958 0.028 353);
 
   --sidebar: var(--background);
   --sidebar-foreground: var(--foreground);
@@ -53,16 +74,35 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.551 0.027 264.364);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
+  /* Chart palette = semantic tokens (resolves per color-scheme). */
+  --chart-1: var(--success);
+  --chart-2: var(--danger);
+  --chart-3: var(--info);
+  --chart-4: var(--warning);
+  --chart-5: var(--accent-violet);
+  --chart-6: var(--accent-cyan);
+
+  /* Dark-mode semantic tokens: solids are brightened for contrast on the dark
+     card surface; softs are low-opacity tints (never light-mode -50 shades). */
+  --success: oklch(0.765 0.16 166.5);
+  --success-soft: oklch(0.765 0.16 166.5 / 12%);
+  --danger: oklch(0.71 0.19 27);
+  --danger-soft: oklch(0.71 0.19 27 / 12%);
+  --warning: oklch(0.8 0.15 80);
+  --warning-soft: oklch(0.8 0.15 80 / 12%);
+  --info: oklch(0.73 0.14 252);
+  --info-soft: oklch(0.73 0.14 252 / 12%);
+  --accent-violet: oklch(0.73 0.19 292);
+  --accent-violet-soft: oklch(0.73 0.19 292 / 12%);
+  --accent-cyan: oklch(0.76 0.14 205);
+  --accent-cyan-soft: oklch(0.76 0.14 205 / 12%);
+  --accent-pink: oklch(0.74 0.18 353);
+  --accent-pink-soft: oklch(0.74 0.18 353 / 12%);
 }
 
 @theme inline {
-  --font-inter: 'Inter', 'sans-serif';
-  --font-manrope: 'Manrope', 'sans-serif';
+  --font-inter: 'Inter', 'Hind Siliguri', 'Noto Sans Bengali', 'sans-serif';
+  --font-manrope: 'Manrope', 'Hind Siliguri', 'Noto Sans Bengali', 'sans-serif';
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -91,6 +131,21 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-accent-violet: var(--accent-violet);
+  --color-accent-violet-soft: var(--accent-violet-soft);
+  --color-accent-cyan: var(--accent-cyan);
+  --color-accent-cyan-soft: var(--accent-cyan-soft);
+  --color-accent-pink: var(--accent-pink);
+  --color-accent-pink-soft: var(--accent-pink-soft);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);

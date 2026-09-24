@@ -35,7 +35,7 @@ export const PackingCard = forwardRef<HTMLDivElement, Props>(
         data-selected={isSelected}
         className={`group relative overflow-hidden select-none border-2 rounded-xl p-4 transition-all duration-150 cursor-pointer
           ${isSelected 
-            ? 'border-blue-600 bg-blue-50/10 dark:bg-blue-950/20' 
+            ? 'border-info bg-info-soft dark:bg-info-soft' 
             : isFocused 
               ? 'border-zinc-400 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900/50' 
               : 'border-zinc-200 bg-white hover:border-zinc-350 dark:border-zinc-800 dark:bg-zinc-900 hover:dark:border-zinc-700'}
@@ -44,7 +44,7 @@ export const PackingCard = forwardRef<HTMLDivElement, Props>(
       >
         <div className="flex justify-between items-start mb-2.5">
           <div className="flex flex-col">
-            <span className="font-mono text-base font-bold text-zinc-900 dark:text-zinc-50 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+            <span className="font-mono text-base font-bold text-zinc-900 dark:text-zinc-50 group-hover:text-info transition-colors duration-200">
               {item.displayId}
             </span>
             <span className="text-[10px] font-medium text-zinc-405 dark:text-zinc-500 mt-0.5">
@@ -86,7 +86,7 @@ export const PackingCard = forwardRef<HTMLDivElement, Props>(
 
         {/* Lock warning */}
         {item.packingLock && (
-          <div className="mt-2.5 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 font-semibold bg-amber-50/50 dark:bg-amber-950/10 p-2 rounded-lg">
+            <div className="mt-2.5 flex items-center gap-1.5 text-xs text-warning font-semibold bg-warning-soft p-2 rounded-xl border border-warning/25">
             <Lock className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">Packed by {item.packingLock.packerName}</span>
           </div>

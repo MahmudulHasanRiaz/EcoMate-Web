@@ -1,6 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
+import { Trophy } from 'lucide-react'
 import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
 import { WidgetShell } from '../components/WidgetShell'
 import { dashboardApi } from '../api'
@@ -27,19 +28,19 @@ export function TopProducts({ dateRange }: WidgetProps) {
   const chartData = (data?.data || []).map(p => ({ name: p.name.length > 18 ? p.name.slice(0, 18) + '…' : p.name, quantity: p.quantity }))
 
   return (
-    <WidgetShell title="Top Products" isLoading={isLoading} error={error ?? undefined} onRetry={() => refetch()}>
+    <WidgetShell title="Top Products" isLoading={isLoading} error={error ?? undefined} onRetry={() => refetch()} icon={<Trophy className="h-4 w-4" />} iconTone="success">
       {chartData.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-[250px] text-muted-foreground text-sm">
           No product sales recorded in this period
         </div>
       ) : (
         <ResponsiveContainer width="100%" height={250}>
-          <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 10, left: -25, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(156, 163, 175, 0.1)" />
+          <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 10, left: -25, bottom: 5 }} className="chart-draw">
+            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border)" strokeOpacity={0.6} />
             <XAxis type="number" stroke="#9ca3af" fontSize={11} tickLine={false} axisLine={false} />
             <YAxis type="category" dataKey="name" stroke="#9ca3af" fontSize={11} tickLine={false} axisLine={false} width={120} />
-            <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255, 255, 255, 0.03)', radius: 4 }} />
-            <Bar dataKey="quantity" fill="#10b981" radius={[0, 4, 4, 0]} maxBarSize={30} />
+            <Tooltip content={<CustomTooltip />} cursor={{ fill: 'var(--muted)', radius: 4, opacity: 0.4 }} />
+            <Bar dataKey="quantity" fill="var(--success)" radius={[0, 6, 6, 0]} maxBarSize={30} />
           </BarChart>
         </ResponsiveContainer>
       )}

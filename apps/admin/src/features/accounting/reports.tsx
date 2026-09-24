@@ -62,9 +62,9 @@ function TrialBalanceTab({ periodId }: { periodId: string }) {
 
   return (
     <div className='space-y-4'>
-      <Card>
+      <Card className='chart-card rounded-2xl'>
         <CardContent className='p-0'>
-          <Table>
+          <Table className='dash-table'>
             <TableHeader>
               <TableRow>
                 <TableHead>Account Code</TableHead>
@@ -102,7 +102,7 @@ function TrialBalanceTab({ periodId }: { periodId: string }) {
         </CardContent>
       </Card>
       {totalDebit === totalCredit ? (
-        <p className='text-sm text-green-600 text-center'>Trial balance is balanced.</p>
+        <p className='text-sm text-success text-center'>Trial balance is balanced.</p>
       ) : (
         <p className='text-sm text-destructive text-center'>Trial balance is unbalanced!</p>
       )}
@@ -138,10 +138,10 @@ function ProfitLossTab({ periodId }: { periodId: string }) {
 
   return (
     <div className='space-y-4'>
-      <Card>
+      <Card className='chart-card rounded-2xl'>
         <CardHeader><CardTitle className='text-base'>Income</CardTitle></CardHeader>
         <CardContent className='p-0'>
-          <Table>
+          <Table className='dash-table'>
             <TableHeader>
               <TableRow>
                 <TableHead>Account</TableHead>
@@ -168,10 +168,10 @@ function ProfitLossTab({ periodId }: { periodId: string }) {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className='chart-card rounded-2xl'>
         <CardHeader><CardTitle className='text-base'>Expenses</CardTitle></CardHeader>
         <CardContent className='p-0'>
-          <Table>
+          <Table className='dash-table'>
             <TableHeader>
               <TableRow>
                 <TableHead>Account</TableHead>
@@ -198,11 +198,11 @@ function ProfitLossTab({ periodId }: { periodId: string }) {
         </CardContent>
       </Card>
 
-      <Card className={netProfit >= 0 ? 'border-green-200 dark:border-green-800' : 'border-red-200 dark:border-red-800'}>
+      <Card className={netProfit >= 0 ? 'chart-card rounded-2xl border-success/30' : 'chart-card rounded-2xl border-danger/30'}>
         <CardContent className='py-4'>
           <div className='flex justify-between items-center'>
             <span className='font-semibold text-lg'>Net {netProfit >= 0 ? 'Profit' : 'Loss'}</span>
-            <span className={`font-bold text-lg font-mono ${netProfit >= 0 ? 'text-green-600' : 'text-destructive'}`}>
+            <span className={`font-bold text-lg font-mono ${netProfit >= 0 ? 'text-success' : 'text-destructive'}`}>
               {formatCurrency(netProfit)}
             </span>
           </div>
@@ -241,10 +241,10 @@ function BalanceSheetTab({ periodId }: { periodId: string }) {
 
   return (
     <div className='space-y-4'>
-      <Card>
+      <Card className='chart-card rounded-2xl'>
         <CardHeader><CardTitle className='text-base'>Assets</CardTitle></CardHeader>
         <CardContent className='p-0'>
-          <Table>
+          <Table className='dash-table'>
             <TableHeader>
               <TableRow>
                 <TableHead>Account</TableHead>
@@ -271,10 +271,10 @@ function BalanceSheetTab({ periodId }: { periodId: string }) {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className='chart-card rounded-2xl'>
         <CardHeader><CardTitle className='text-base'>Liabilities</CardTitle></CardHeader>
         <CardContent className='p-0'>
-          <Table>
+          <Table className='dash-table'>
             <TableHeader>
               <TableRow>
                 <TableHead>Account</TableHead>
@@ -301,10 +301,10 @@ function BalanceSheetTab({ periodId }: { periodId: string }) {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className='chart-card rounded-2xl'>
         <CardHeader><CardTitle className='text-base'>Equity</CardTitle></CardHeader>
         <CardContent className='p-0'>
-          <Table>
+          <Table className='dash-table'>
             <TableHeader>
               <TableRow>
                 <TableHead>Account</TableHead>
@@ -331,7 +331,7 @@ function BalanceSheetTab({ periodId }: { periodId: string }) {
         </CardContent>
       </Card>
 
-      <Card className='border-green-200 dark:border-green-800'>
+      <Card className='chart-card rounded-2xl border-success/30'>
         <CardContent className='py-4'>
           <div className='flex justify-between items-center'>
             <span className='font-semibold'>Total Liabilities & Equity</span>
@@ -339,7 +339,7 @@ function BalanceSheetTab({ periodId }: { periodId: string }) {
           </div>
           <div className='flex justify-between items-center mt-1 text-sm text-muted-foreground'>
             <span>Assets must equal Liabilities + Equity</span>
-            <span className={totalAssets === totalLiabilities + totalEquity ? 'text-green-600' : 'text-destructive'}>
+            <span className={totalAssets === totalLiabilities + totalEquity ? 'text-success' : 'text-destructive'}>
               {totalAssets === totalLiabilities + totalEquity ? 'Balanced' : 'Unbalanced'}
             </span>
           </div>
@@ -382,9 +382,9 @@ function AccountLedgerTab({ periodId, accountId: selectedAccountId }: { periodId
         <Badge variant='secondary' className='ml-2'>{data?.account?.type}</Badge>
       </div>
 
-      <Card>
+      <Card className='chart-card rounded-2xl'>
         <CardContent className='p-0'>
-          <Table>
+          <Table className='dash-table'>
             <TableHeader>
               <TableRow>
                 <TableHead>Date</TableHead>

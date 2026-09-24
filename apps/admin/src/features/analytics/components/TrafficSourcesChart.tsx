@@ -1,6 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
+import { Globe } from 'lucide-react'
 import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
 import { WidgetShell } from '../../dashboard/components/WidgetShell'
 import { analyticsApi } from '../api'
@@ -18,18 +19,18 @@ export function TrafficSourcesChart({ dateRange }: Props) {
   const chartData = (data?.data?.sources || []).map(s => ({ name: s.source, visits: s.visits, pct: s.percentage }))
 
   return (
-    <WidgetShell title="Traffic Sources" isLoading={isLoading} error={error ?? undefined} onRetry={() => refetch()}>
+    <WidgetShell title="Traffic Sources" isLoading={isLoading} error={error ?? undefined} onRetry={() => refetch()} icon={<Globe className="h-4 w-4" />} iconTone="cyan">
       {chartData.length === 0 ? (
         <div className="flex items-center justify-center h-[250px] text-muted-foreground text-sm">No data</div>
       ) : (
-        <div>
+        <div className="chart-draw">
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(156,163,175,0.1)" />
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border)" strokeOpacity={0.6} />
               <XAxis type="number" stroke="#9ca3af" fontSize={11} tickLine={false} axisLine={false} />
               <YAxis dataKey="name" type="category" stroke="#9ca3af" fontSize={11} tickLine={false} axisLine={false} width={70} />
               <Tooltip formatter={(value: any, name: any) => [value?.toLocaleString?.() ?? value, name === 'visits' ? 'Visits' : '']} />
-              <Bar dataKey="visits" fill="#3b82f6" radius={[0, 4, 4, 0]} maxBarSize={20} />
+              <Bar dataKey="visits" fill="var(--accent-cyan)" radius={[0, 6, 6, 0]} maxBarSize={20} />
             </BarChart>
           </ResponsiveContainer>
           <div className="mt-2 space-y-1">

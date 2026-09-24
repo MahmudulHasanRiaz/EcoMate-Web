@@ -1,0 +1,193 @@
+/* Admin dashboard design layer — styling only (no logic).
+   Single-tenant palette: every color below resolves to the semantic tokens in
+   theme.css. Client brand colors must never appear here (storefront only). */
+
+@keyframes dash-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes dash-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes dash-draw {
+  from {
+    opacity: 0;
+    transform: scaleY(0.96) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1) translateY(0);
+  }
+}
+
+@layer components {
+  /* Page-load entrance: fade + slight rise, staggered via --rise-delay (50-80ms steps). */
+  .animate-rise {
+    opacity: 0;
+    animation: dash-rise 0.45s ease-out forwards;
+    animation-delay: var(--rise-delay, 0ms);
+  }
+
+  /* Slow chart entrance (draw/grow feel without loops). */
+  .chart-draw {
+    transform-origin: bottom;
+    animation: dash-draw 0.6s ease-out both;
+  }
+
+  /* Data-loading shimmer (used by Skeleton). */
+  .skeleton-shimmer {
+    background: linear-gradient(
+      100deg,
+      var(--muted) 30%,
+      color-mix(in oklch, var(--muted) 45%, var(--card)) 45%,
+      var(--muted) 60%
+    );
+    background-size: 200% 100%;
+    animation: dash-shimmer 1.6s linear infinite;
+  }
+
+  /* KPI card: soft gradient tint, rounded-2xl, soft shadow, 3px accent top
+     border, hover lift. Accent comes from .kpi-accent-* (token only). */
+  .kpi-card {
+    --kpi-accent: var(--border);
+    --kpi-accent-soft: transparent;
+    position: relative;
+    border-radius: 1rem;
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--kpi-accent);
+    background:
+      linear-gradient(135deg, var(--kpi-accent-soft), transparent 60%),
+      var(--card);
+    box-shadow:
+      0 1px 2px rgb(0 0 0 / 0.04),
+      0 8px 24px -12px rgb(0 0 0 / 0.12);
+    transition:
+      transform 200ms ease-out,
+      box-shadow 200ms ease-out;
+  }
+  .kpi-card:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 2px 4px rgb(0 0 0 / 0.05),
+      0 16px 32px -12px rgb(0 0 0 / 0.18);
+  }
+  .kpi-accent-success {
+    --kpi-accent: var(--success);
+    --kpi-accent-soft: var(--success-soft);
+  }
+  .kpi-accent-danger {
+    --kpi-accent: var(--danger);
+    --kpi-accent-soft: var(--danger-soft);
+  }
+  .kpi-accent-warning {
+    --kpi-accent: var(--warning);
+    --kpi-accent-soft: var(--warning-soft);
+  }
+  .kpi-accent-info {
+    --kpi-accent: var(--info);
+    --kpi-accent-soft: var(--info-soft);
+  }
+  .kpi-accent-violet {
+    --kpi-accent: var(--accent-violet);
+    --kpi-accent-soft: var(--accent-violet-soft);
+  }
+  .kpi-accent-cyan {
+    --kpi-accent: var(--accent-cyan);
+    --kpi-accent-soft: var(--accent-cyan-soft);
+  }
+  .kpi-accent-pink {
+    --kpi-accent: var(--accent-pink);
+    --kpi-accent-soft: var(--accent-pink-soft);
+  }
+
+  /* Big bold KPI number (28-32px), tabular so ৳ amounts don't jitter. */
+  .kpi-value {
+    font-size: 1.875rem;
+    line-height: 2.25rem;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Topic icon in a tinted rounded badge (colors via --kpi-accent). */
+  .kpi-icon-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.75rem;
+    padding: 0.5rem;
+    color: var(--kpi-accent);
+    background: var(--kpi-accent-soft);
+    border: 1px solid color-mix(in oklch, var(--kpi-accent) 25%, transparent);
+  }
+
+  /* Chart card: rounded-2xl + soft shadow + icon-ready header. */
+  .chart-card {
+    border-radius: 1rem;
+    box-shadow:
+      0 1px 2px rgb(0 0 0 / 0.04),
+      0 8px 24px -12px rgb(0 0 0 / 0.12);
+  }
+  .chart-card-header-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.625rem;
+    padding: 0.375rem;
+  }
+
+  /* Dashboard tables: sticky header, light zebra, hover highlight. Apply the
+     class to the shadcn <Table> (lands on the <table> element). */
+  .dash-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--card);
+  }
+  .dash-table tbody tr:nth-child(even) {
+    background: color-mix(in oklch, var(--muted) 38%, transparent);
+  }
+  .dash-table tbody tr {
+    transition: background-color 150ms ease-out;
+  }
+  .dash-table tbody tr:hover {
+    background: color-mix(in oklch, var(--muted) 60%, transparent);
+  }
+
+  /* Section heading with icon. */
+  .dash-section-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  /* Minimum 40px tap height for dashboard controls. */
+  .tap-h {
+    min-height: 2.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-rise,
+  .chart-draw,
+  .skeleton-shimmer {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

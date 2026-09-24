@@ -7,6 +7,7 @@ import { DateFilter } from './DateFilter'
 import { DashboardGrid } from './DashboardGrid'
 import { monWidgets } from '../config/mon-widgets'
 import { opWidgets } from '../config/op-widgets'
+import { LayoutGrid } from 'lucide-react'
 import { canAccess } from '../constants'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -47,7 +48,12 @@ export function DashboardWrapper({ route }: DashboardWrapperProps) {
       {route === 'mon' ? (
         <Main>
           <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <h1 className="text-2xl font-bold tracking-tight">Management Dashboard</h1>
+            <div className="flex items-center gap-3">
+              <span className="chart-card-header-icon bg-info-soft text-info border border-info/25">
+                <LayoutGrid className="h-5 w-5" />
+              </span>
+              <h1 className="text-2xl font-bold tracking-tight">Management Dashboard</h1>
+            </div>
             <DateFilter />
           </div>
           <DashboardGrid
@@ -60,9 +66,14 @@ export function DashboardWrapper({ route }: DashboardWrapperProps) {
           {/* Header section (Sticky) */}
           <div className="sticky top-0 z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 pb-4 border-b border-border/50">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-2">
-              <div>
-                <h1 className="text-2xl font-extrabold tracking-tight">Operations Dashboard</h1>
-                <p className="text-xs text-muted-foreground font-medium">Business Summary</p>
+              <div className="flex items-center gap-3">
+                <span className="chart-card-header-icon bg-info-soft text-info border border-info/25">
+                  <LayoutGrid className="h-5 w-5" />
+                </span>
+                <div>
+                  <h1 className="text-2xl font-extrabold tracking-tight">Operations Dashboard</h1>
+                  <p className="text-xs text-muted-foreground font-medium">Business Summary</p>
+                </div>
               </div>
               <DateFilter />
             </div>

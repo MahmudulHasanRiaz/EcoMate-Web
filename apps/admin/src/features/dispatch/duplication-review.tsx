@@ -36,7 +36,7 @@ export function DuplicationReviewPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2">
-        <AlertTriangle className="h-5 w-5 text-orange-500" />
+        <AlertTriangle className="h-5 w-5 text-warning" />
         <h2 className="text-2xl font-semibold tracking-tight">Duplication Review</h2>
         <Badge variant="outline" className="ml-2">{flagged?.length || 0} flagged</Badge>
       </div>
@@ -46,7 +46,7 @@ export function DuplicationReviewPage() {
       )}
 
       {flagged?.map((d: any) => (
-        <Card key={d.id} className="border-orange-200">
+        <Card key={d.id} className="chart-card rounded-2xl border-warning/30">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base flex items-center gap-2">
@@ -57,9 +57,9 @@ export function DuplicationReviewPage() {
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
-            <Alert variant="default" className="bg-orange-50 border-orange-200">
-              <AlertTriangle className="h-4 w-4 text-orange-600" />
-              <AlertDescription className="text-sm text-orange-800">
+            <Alert variant="default" className="bg-warning-soft border-warning/30">
+              <AlertTriangle className="h-4 w-4 text-warning" />
+              <AlertDescription className="text-sm text-warning">
                 Order already has an active dispatch. Review and resolve this duplicate.
               </AlertDescription>
             </Alert>

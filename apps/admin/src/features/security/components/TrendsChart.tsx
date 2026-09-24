@@ -16,30 +16,37 @@ interface TrendsChartProps {
   interval: string
 }
 
-const severityColors: Record<string, string> = {
-  CRITICAL: '#ef4444',
-  HIGH: '#f97316',
-  MEDIUM: '#eab308',
-  LOW: '#22c55e',
-  INFO: '#3b82f6',
+/** Severity → semantic chart fill (shared token palette). */
+export const severityColors: Record<string, string> = {
+  CRITICAL: 'var(--danger)',
+  HIGH: 'var(--warning)',
+  MEDIUM: 'var(--warning)',
+  LOW: 'var(--success)',
+  INFO: 'var(--info)',
 }
 
 export function TrendsChart({ data, isLoading, interval }: TrendsChartProps) {
   return (
-    <Card>
+    <Card className="chart-card rounded-2xl">
       <CardHeader>
         <CardTitle className="text-lg">Event Trends ({interval})</CardTitle>
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <div className="h-64 animate-pulse rounded bg-muted" />
+          <div className="h-64 skeleton-shimmer rounded bg-muted" />
         ) : !data || data.length === 0 ? (
           <p className="text-sm text-muted-foreground">No trend data available.</p>
         ) : (
-          <div className="h-64">
+          <div className="h-64 chart-draw">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={data}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <defs>
+                  <linearGradient id="securityTrend" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--info)" stopOpacity={0.3} />
+                    <stop offset="100%" stopColor="var(--info)" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" strokeOpacity={0.6} />
                 <XAxis
                   dataKey="bucket"
                   tick={{ fontSize: 11 }}
@@ -57,8 +64,8 @@ export function TrendsChart({ data, isLoading, interval }: TrendsChartProps) {
                 <Area
                   type="monotone"
                   dataKey="count"
-                  stroke="#3b82f6"
-                  fill="#93c5fd"
+                  stroke="var(--info)"
+                  fill="url(#securityTrend)"
                   strokeWidth={2}
                 />
               </AreaChart>

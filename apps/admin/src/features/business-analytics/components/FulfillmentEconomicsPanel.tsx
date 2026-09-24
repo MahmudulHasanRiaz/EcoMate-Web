@@ -1,4 +1,4 @@
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, Truck } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatBDT, type FulfillmentCompact } from '../types'
 import { MetricUnavailable } from './badges'
@@ -7,7 +7,7 @@ import { MetricUnavailable } from './badges'
 export function SettlementGapBanner({ gapBanner }: { gapBanner: FulfillmentCompact['gapBanner'] }) {
   if (gapBanner.codOrders <= 0) return null
   return (
-    <div role="alert" className="flex gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
+    <div role="alert" className="flex gap-2 rounded-xl border border-warning/30 bg-warning-soft p-3 text-xs text-warning">
       <AlertTriangle className="h-4 w-4 shrink-0" />
       <span>{gapBanner.message}</span>
     </div>
@@ -33,10 +33,17 @@ export function FulfillmentEconomicsPanel({ fulfillment }: { fulfillment: Fulfil
     </div>
   )
   return (
-    <Card>
+    <Card className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">Fulfillment & Returns Economics</CardTitle>
-        <p className="text-[11px] text-muted-foreground">{fulfillment.panelNote || 'Not part of recognised revenue.'}</p>
+        <div className="flex items-center gap-2.5">
+          <span className="chart-card-header-icon bg-info-soft text-info border border-info/25">
+            <Truck className="h-4 w-4" />
+          </span>
+          <div>
+            <CardTitle className="text-sm font-medium">Fulfillment & Returns Economics</CardTitle>
+            <p className="text-[11px] text-muted-foreground">{fulfillment.panelNote || 'Not part of recognised revenue.'}</p>
+          </div>
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
         <SettlementGapBanner gapBanner={fulfillment.gapBanner} />

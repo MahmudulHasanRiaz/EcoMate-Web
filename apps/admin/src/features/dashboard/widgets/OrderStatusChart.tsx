@@ -2,15 +2,15 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { PieChart as PieIcon } from 'lucide-react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts'
 import { WidgetShell } from '../components/WidgetShell'
+import { chartFillForName } from '@/components/ui/dashboard'
 import { dashboardApi } from '../api'
 import type { WidgetProps } from '../types'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-
-const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#eab308', '#ec4899', '#f43f5e', '#a855f7']
 
 const CustomTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
@@ -45,6 +45,8 @@ export function OrderStatusChart({ dateRange, userRole }: WidgetProps) {
         isLoading={isLoading}
         error={error ?? undefined}
         onRetry={() => refetch()}
+        icon={<PieIcon className="h-4 w-4" />}
+        iconTone="info"
         action={
           chartData.length > 0 ? (
             <Button variant="outline" size="sm" onClick={() => setIsModalOpen(true)}>
@@ -69,11 +71,11 @@ export function OrderStatusChart({ dateRange, userRole }: WidgetProps) {
                 outerRadius={80}
                 label={({ name, value }) => `${name}: ${value}`}
               >
-                {chartData.map((_, i) => (
-                  <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                {chartData.map((row: any, i: number) => (
+                  <Cell key={i} fill={chartFillForName(row.status ?? '', i)} />
                 ))}
               </Pie>
-              <Legend />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
               <Tooltip content={<CustomTooltip />} />
             </PieChart>
           </ResponsiveContainer>
@@ -86,7 +88,7 @@ export function OrderStatusChart({ dateRange, userRole }: WidgetProps) {
             <DialogTitle>Order Status Distribution Report</DialogTitle>
           </DialogHeader>
           <div className="overflow-hidden border rounded-xl mt-4">
-            <Table>
+            <Table className="dash-table">
               <TableHeader>
                 <TableRow>
                   <TableHead>Status</TableHead>
@@ -100,7 +102,7 @@ export function OrderStatusChart({ dateRange, userRole }: WidgetProps) {
                     <TableCell className="font-semibold">{row.status}</TableCell>
                     <TableCell className="text-right font-medium">{row.count}</TableCell>
                     {isAdmin && (
-                      <TableCell className="text-right font-bold text-blue-600 dark:text-blue-400">
+                      <TableCell className="text-right font-bold text-info">
                         {formatBDT(row.totalAmount || 0)}
                       </TableCell>
                     )}
@@ -112,7 +114,7 @@ export function OrderStatusChart({ dateRange, userRole }: WidgetProps) {
                     {chartData.reduce((sum, item) => sum + item.count, 0)}
                   </TableCell>
                   {isAdmin && (
-                    <TableCell className="text-right text-blue-600 dark:text-blue-400">
+                    <TableCell className="text-right text-info">
                       {formatBDT(chartData.reduce((sum, item) => sum + (item.totalAmount || 0), 0))}
                     </TableCell>
                   )}

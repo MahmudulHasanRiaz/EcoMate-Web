@@ -43,7 +43,7 @@ function DimSelect({
     <label className="flex flex-col gap-1 text-xs text-muted-foreground">
       {label}
       <Select value={value ?? '__all'} onValueChange={(v) => onPick(v === '__all' ? undefined : v)}>
-        <SelectTrigger className="h-8 w-36 text-xs">
+        <SelectTrigger className="tap-h w-36 text-xs">
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>
@@ -89,12 +89,12 @@ export function AnalyticsFilterBar({ value, onChange }: Props) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-1.5 flex-wrap">
-        <div className="inline-flex h-8 items-center rounded-lg bg-muted p-1 text-muted-foreground border border-border/50">
+        <div className="inline-flex min-h-10 items-center rounded-xl bg-muted p-1 text-muted-foreground border border-border/50">
           {presets.map((p) => (
             <button
               key={p.key}
               onClick={() => set({ preset: p.key, startDate: undefined, endDate: undefined })}
-              className={`rounded-md px-3 py-1 text-xs font-bold transition-all ${
+              className={`rounded-lg px-3 py-1.5 min-h-8 text-xs font-bold transition-all duration-200 ${
                 value.preset === p.key ? 'bg-background text-foreground shadow-sm' : 'hover:bg-background/40 hover:text-foreground/90'
               }`}
             >
@@ -104,7 +104,7 @@ export function AnalyticsFilterBar({ value, onChange }: Props) {
           <Popover open={customOpen} onOpenChange={setCustomOpen}>
             <PopoverTrigger asChild>
               <button
-                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-bold transition-all ${
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 min-h-8 text-xs font-bold transition-all duration-200 ${
                   value.preset === 'custom' ? 'bg-background text-foreground shadow-sm' : 'hover:bg-background/40 hover:text-foreground/90'
                 }`}
               >
@@ -150,7 +150,7 @@ export function AnalyticsFilterBar({ value, onChange }: Props) {
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 text-xs"
+            className="tap-h text-xs"
             onClick={() => onChange({ preset: value.preset, startDate: value.startDate, endDate: value.endDate, granularity: value.granularity })}
           >
             <X className="h-3 w-3 mr-1" /> Clear ({activeCount})
@@ -176,7 +176,7 @@ export function AnalyticsFilterBar({ value, onChange }: Props) {
             value={value.marketingSource ?? ''}
             onChange={(e) => set({ marketingSource: e.target.value || undefined })}
             placeholder="slug / utm_source"
-            className="h-8 w-36 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+            className="tap-h w-36 rounded-md border border-input bg-background px-2 text-xs text-foreground"
           />
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -185,7 +185,7 @@ export function AnalyticsFilterBar({ value, onChange }: Props) {
             value={value.paymentMethod ?? ''}
             onChange={(e) => set({ paymentMethod: e.target.value || undefined })}
             placeholder="gateway code"
-            className="h-8 w-32 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+            className="tap-h w-32 rounded-md border border-input bg-background px-2 text-xs text-foreground"
           />
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -194,7 +194,7 @@ export function AnalyticsFilterBar({ value, onChange }: Props) {
             value={value.location ?? ''}
             onChange={(e) => set({ location: e.target.value || undefined })}
             placeholder="city / state / zip"
-            className="h-8 w-32 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+            className="tap-h w-32 rounded-md border border-input bg-background px-2 text-xs text-foreground"
           />
         </label>
       </div>

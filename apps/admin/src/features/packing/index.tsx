@@ -507,7 +507,7 @@ export function PackingWorkspace() {
         {/* Left: Brand/Logo */}
         <div className="flex flex-col text-start justify-center min-w-0">
           <h1 className="text-xs sm:text-sm font-black text-white tracking-tight flex items-center gap-1 sm:gap-1.5 truncate">
-            <Package className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+            <Package className="h-3.5 w-3.5 text-info shrink-0" />
             <span className="truncate">EcoMate Pack</span>
           </h1>
           <span className="text-[9px] text-zinc-500 truncate max-w-[90px] sm:max-w-[180px]">
@@ -613,12 +613,12 @@ export function PackingWorkspace() {
                   >
                     {scannerActive ? (
                       <>
-                        <Pause className="h-4 w-4 text-amber-500" />
+                        <Pause className="h-4 w-4 text-warning" />
                         Pause Scanner
                       </>
                     ) : (
                       <>
-                        <Play className="h-4 w-4 text-green-500" />
+                        <Play className="h-4 w-4 text-success" />
                         Start Camera
                       </>
                     )}
@@ -677,16 +677,16 @@ export function PackingWorkspace() {
                     Desk Packing stats today
                   </span>
                   <div className="grid grid-cols-3 gap-2">
-                    <div className="flex flex-col p-2.5 rounded-xl bg-green-950/10 border border-green-900/25 text-center">
-                      <span className="text-green-400 text-lg font-black">{stats?.packed ?? 0}</span>
+                    <div className="flex flex-col p-2.5 rounded-xl bg-success-soft border border-success/25 text-center">
+                      <span className="text-success text-lg font-black">{stats?.packed ?? 0}</span>
                       <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Packed</span>
                     </div>
-                    <div className="flex flex-col p-2.5 rounded-xl bg-amber-950/10 border border-amber-900/25 text-center">
-                      <span className="text-amber-400 text-lg font-black">{stats?.held ?? 0}</span>
+                    <div className="flex flex-col p-2.5 rounded-xl bg-warning-soft border border-warning/25 text-center">
+                      <span className="text-warning text-lg font-black">{stats?.held ?? 0}</span>
                       <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Held</span>
                     </div>
-                    <div className="flex flex-col p-2.5 rounded-xl bg-blue-950/10 border border-blue-900/25 text-center">
-                      <span className="text-blue-400 text-lg font-black">{stats?.pending ?? 0}</span>
+                    <div className="flex flex-col p-2.5 rounded-xl bg-info-soft border border-info/25 text-center">
+                      <span className="text-info text-lg font-black">{stats?.pending ?? 0}</span>
                       <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Queue</span>
                     </div>
                   </div>
@@ -723,7 +723,7 @@ export function PackingWorkspace() {
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-green-500/10 border border-green-500/20 text-green-400 uppercase tracking-wider">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-success-soft border border-success/25 text-success uppercase tracking-wider">
                         Packed
                       </span>
                       <ExternalLink className="h-3.5 w-3.5 text-zinc-650" />

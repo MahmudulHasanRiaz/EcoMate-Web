@@ -21,12 +21,12 @@ function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
-const typeBadgeClass: Record<string, string> = {
-  asset: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
-  liability: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300',
-  equity: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',
-  income: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
-  expense: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
+const typeBadgeClass: Record<string, 'info' | 'warning' | 'violet' | 'success' | 'danger'> = {
+  asset: 'info',
+  liability: 'warning',
+  equity: 'violet',
+  income: 'success',
+  expense: 'danger',
 }
 
 function AccountTreeRow({
@@ -65,13 +65,13 @@ function AccountTreeRow({
           </div>
         </td>
         <td className='py-2 px-4'>
-          <Badge variant='secondary' className={typeBadgeClass[account.type] || ''}>
+          <Badge variant={typeBadgeClass[account.type] ?? 'secondary'}>
             {account.type.charAt(0).toUpperCase() + account.type.slice(1)}
           </Badge>
         </td>
         <td className='py-2 px-4'>
           {account.isActive ? (
-            <Badge variant='outline' className='text-green-600 border-green-300 dark:border-green-700'>Active</Badge>
+            <Badge variant='success'>Active</Badge>
           ) : (
             <Badge variant='outline' className='text-muted-foreground'>Inactive</Badge>
           )}
@@ -300,9 +300,9 @@ export function ChartOfAccounts() {
                     <div className='flex items-center justify-between'>
                       <span className='font-medium text-sm'>{period.name}</span>
                       {period.isClosed ? (
-                        <Badge variant='outline' className='text-amber-600 border-amber-300 dark:border-amber-700'>Closed</Badge>
+                        <Badge variant='warning'>Closed</Badge>
                       ) : (
-                        <Badge variant='outline' className='text-green-600 border-green-300 dark:border-green-700'>Open</Badge>
+                        <Badge variant='success'>Open</Badge>
                       )}
                     </div>
                     <div className='text-xs text-muted-foreground'>

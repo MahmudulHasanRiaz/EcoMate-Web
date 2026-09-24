@@ -1,4 +1,4 @@
-import { ArrowUpRight } from 'lucide-react'
+import { ArrowUpRight, ListTree } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { AnalyticsFilters } from '../types'
 import { buildOverviewQuery } from '../api'
@@ -38,14 +38,19 @@ export function DrilldownPanel({
     { label: 'Low product margin → Products → product → variant → orders', description: 'Parent/variant P&L down to Contribution', to: '/op/analytics/products' },
   ]
   return (
-    <Card>
+    <Card className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">Drill Down</CardTitle>
+        <div className="flex items-center gap-2.5">
+          <span className="chart-card-header-icon bg-info-soft text-info border border-info/25">
+            <ListTree className="h-4 w-4" />
+          </span>
+          <CardTitle className="text-sm font-medium">Drill Down</CardTitle>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="divide-y divide-border/50">
           {rows.map((i) => (
-            <a key={i.label} href={href(i.to, i.params)} className="flex items-center justify-between py-2 hover:opacity-80">
+            <a key={i.label} href={href(i.to, i.params)} className="flex items-center justify-between py-2 transition-all duration-200 hover:bg-muted/40 hover:opacity-95 rounded-lg px-2 -mx-2 min-h-10">
               <span>
                 <span className="block text-sm font-medium">{i.label}</span>
                 <span className="block text-xs text-muted-foreground">{i.description}</span>

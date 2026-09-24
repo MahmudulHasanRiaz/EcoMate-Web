@@ -23,14 +23,14 @@ import {
 const ALLOCATION_MODES = ['product_value', 'equal', 'quantity'] as const
 type AllocationMode = (typeof ALLOCATION_MODES)[number]
 
-const METHOD_BADGE: Record<string, string> = {
-  session: 'bg-blue-50 text-blue-700',
-  click_id: 'bg-emerald-50 text-emerald-700',
-  fbclid: 'bg-emerald-50 text-emerald-700', // legacy records
-  utm: 'bg-amber-50 text-amber-700',
-  pixel: 'bg-violet-50 text-violet-700',
-  conversion_api: 'bg-violet-50 text-violet-700',
-  manual: 'bg-slate-100 text-slate-700',
+const METHOD_BADGE: Record<string, 'info' | 'success' | 'warning' | 'violet' | 'outline'> = {
+  session: 'info',
+  click_id: 'success',
+  fbclid: 'success', // legacy records
+  utm: 'warning',
+  pixel: 'violet',
+  conversion_api: 'violet',
+  manual: 'outline',
 }
 
 export function MarketingAttribution() {
@@ -164,7 +164,7 @@ export function MarketingAttribution() {
                         </TableCell>
                         <TableCell className="text-sm">{a.campaign?.name ?? '—'}</TableCell>
                         <TableCell>
-                          <Badge className={METHOD_BADGE[a.method] ?? ''} variant="outline">{a.method}</Badge>
+                          <Badge variant={METHOD_BADGE[a.method] ?? 'outline'}>{a.method}</Badge>
                         </TableCell>
                         <TableCell className="text-right tabular-nums">{a.confidence}%</TableCell>
                         <TableCell className="text-right tabular-nums">{money(Number(a.order.total))}</TableCell>

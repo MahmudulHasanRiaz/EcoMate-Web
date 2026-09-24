@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Info } from 'lucide-react'
+import { Info, Megaphone } from 'lucide-react'
 import { WidgetShell } from '../dashboard/components/WidgetShell'
 import { useMarketingCampaigns, useMarketingSummary, useMarketingUndated } from './hooks'
 import {
@@ -38,7 +38,7 @@ const MARKETING_DRILLDOWN: DrilldownItem[] = [
 /** §2.4 spend-date basis banner: P&L cost, coverage, allocatedAt honesty. */
 export function SpendDateBasisBanner({ cost }: { cost: MarketingCostBlock }) {
   return (
-    <Card data-testid="spend-date-basis">
+    <Card data-testid="spend-date-basis" className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <CardTitle className="text-sm font-medium">P&L Marketing Cost — spend-date basis</CardTitle>
@@ -66,9 +66,9 @@ export function SpendDateBasisBanner({ cost }: { cost: MarketingCostBlock }) {
 /** §8.13 — attribution/P&L period mismatch is expected, never a defect. */
 export function AttributionMismatchNotice({ disclosure }: { disclosure: string }) {
   return (
-    <Card className="border-sky-500/30 bg-sky-500/5" data-testid="attribution-mismatch">
+    <Card className="chart-card rounded-2xl border-info/30 bg-info-soft" data-testid="attribution-mismatch">
       <CardContent className="pt-4 flex items-start gap-3">
-        <Info className="h-4 w-4 text-sky-600 shrink-0 mt-0.5" />
+        <Info className="h-4 w-4 text-info shrink-0 mt-0.5" />
         <p className="text-xs text-muted-foreground">{disclosure || ATTRIBUTION_MISMATCH_STATEMENT}</p>
       </CardContent>
     </Card>
@@ -83,7 +83,7 @@ export function CampaignTree({ campaigns }: { campaigns: MarketingTreeCampaign[]
   return (
     <div className="space-y-4" data-testid="campaign-tree">
       {campaigns.map((c) => (
-        <Card key={c.campaignId} data-testid={`campaign-node-${c.campaignId}`}>
+        <Card key={c.campaignId} data-testid={`campaign-node-${c.campaignId}`} className="chart-card rounded-2xl">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <CardTitle className="text-sm font-medium">{c.name}</CardTitle>
@@ -171,7 +171,7 @@ export function UndatedFixList({
         <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">No data</div>
       ) : (
         <div className="overflow-x-auto mt-2">
-          <table className="w-full text-sm">
+          <table className="dash-table w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-muted-foreground">
                 <th className="py-2 pr-3 font-medium">Campaign</th>
@@ -182,7 +182,7 @@ export function UndatedFixList({
             </thead>
             <tbody>
               {data.rows.map((r) => (
-                <tr key={r.id} className="border-t border-border/50" data-testid={`undated-row-${r.id}`}>
+                <tr key={r.id} className="border-t border-border/50 transition-colors hover:bg-muted/40" data-testid={`undated-row-${r.id}`}>
                   <td className="py-2 pr-3 font-medium">{r.campaignName ?? '—'}</td>
                   <td className="py-2 pr-3 tabular-nums">{formatBDT(r.calculatedCost)}</td>
                   <td className="py-2 pr-3 text-xs text-muted-foreground">{r.source}</td>
@@ -248,9 +248,14 @@ export default function MarketingAnalytics() {
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <div>
-          <h1 className="text-2xl font-bold">Marketing Analytics</h1>
-          <p className="text-xs text-muted-foreground">P&L cost on the spend-date basis. Attribution views sit on their own basis — a period mismatch vs P&L is expected.</p>
+        <div className="flex items-center gap-3">
+          <span className="chart-card-header-icon bg-accent-pink-soft text-accent-pink border border-accent-pink/25">
+            <Megaphone className="h-5 w-5" />
+          </span>
+          <div>
+            <h1 className="text-2xl font-bold">Marketing Analytics</h1>
+            <p className="text-xs text-muted-foreground">P&L cost on the spend-date basis. Attribution views sit on their own basis — a period mismatch vs P&L is expected.</p>
+          </div>
         </div>
       </div>
 
@@ -270,7 +275,7 @@ export default function MarketingAnalytics() {
             <AttributionMismatchNotice disclosure={data.data.attributionDisclosure} />
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <Card>
+              <Card className="chart-card rounded-2xl">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium">Revenue by Marketing Source</CardTitle>
                   <p className="text-[11px] text-muted-foreground">{data.data.sources.dateBasis}</p>
@@ -280,7 +285,7 @@ export default function MarketingAnalytics() {
                     <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">No data</div>
                   ) : (
                     <div className="overflow-x-auto" data-testid="source-table">
-                      <table className="w-full text-sm">
+                      <table className="dash-table w-full text-sm">
                         <thead>
                           <tr className="text-left text-xs text-muted-foreground">
                             <th className="py-2 pr-3 font-medium">Source</th>
@@ -290,7 +295,7 @@ export default function MarketingAnalytics() {
                         </thead>
                         <tbody>
                           {data.data.sources.rows.map((r) => (
-                            <tr key={r.key} className="border-t border-border/50" data-testid={`source-row-${r.key}`}>
+                            <tr key={r.key} className="border-t border-border/50 transition-colors hover:bg-muted/40" data-testid={`source-row-${r.key}`}>
                               <td className="py-2 pr-3 font-medium">{r.label}</td>
                               <td className="py-2 pr-3 tabular-nums">{COUNT_FORMAT(r.orders)}</td>
                               <td className="py-2 pr-3 tabular-nums font-medium">{formatBDT(r.revenue)}</td>
@@ -303,7 +308,7 @@ export default function MarketingAnalytics() {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="chart-card rounded-2xl">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium">Revenue by Sales Channel</CardTitle>
                   <p className="text-[11px] text-muted-foreground">{data.data.channels.dateBasis}</p>
@@ -313,7 +318,7 @@ export default function MarketingAnalytics() {
                     <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">No data</div>
                   ) : (
                     <div className="overflow-x-auto" data-testid="channel-table">
-                      <table className="w-full text-sm">
+                      <table className="dash-table w-full text-sm">
                         <thead>
                           <tr className="text-left text-xs text-muted-foreground">
                             <th className="py-2 pr-3 font-medium">Channel</th>
@@ -323,7 +328,7 @@ export default function MarketingAnalytics() {
                         </thead>
                         <tbody>
                           {data.data.channels.rows.map((r) => (
-                            <tr key={r.key} className="border-t border-border/50" data-testid={`channel-row-${r.key}`}>
+                            <tr key={r.key} className="border-t border-border/50 transition-colors hover:bg-muted/40" data-testid={`channel-row-${r.key}`}>
                               <td className="py-2 pr-3 font-medium">{r.label}</td>
                               <td className="py-2 pr-3 tabular-nums">{COUNT_FORMAT(r.orders)}</td>
                               <td className="py-2 pr-3 tabular-nums font-medium">{formatBDT(r.revenue)}</td>
@@ -337,7 +342,7 @@ export default function MarketingAnalytics() {
               </Card>
             </div>
 
-            <Card data-testid="segment-split">
+            <Card data-testid="segment-split" className="chart-card rounded-2xl">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">New vs Returning Revenue</CardTitle>
                 <p className="text-[11px] text-muted-foreground">{data.data.segments.dateBasis} · VIP is an of-which subset of returning</p>
@@ -363,11 +368,11 @@ export default function MarketingAnalytics() {
               </CardContent>
             </Card>
 
-            <Card data-testid="unrecognised-spend">
+            <Card data-testid="unrecognised-spend" className="chart-card rounded-2xl">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <CardTitle className="text-sm font-medium">Spend on Orders That Never Recognised Revenue</CardTitle>
-                  <Badge variant="outline" className="bg-sky-500/10 text-sky-600 border-sky-500/20">Insight only</Badge>
+                  <Badge variant="info">Insight only</Badge>
                 </div>
                 <p className="text-[11px] text-muted-foreground">{data.data.unrecognisedSpend.dateBasis}</p>
               </CardHeader>
@@ -379,7 +384,7 @@ export default function MarketingAnalytics() {
                 <p className="text-xs text-muted-foreground">{data.data.unrecognisedSpend.note || UNRECOGNISED_SPEND_NOTE}</p>
                 {data.data.unrecognisedSpend.rows.length > 0 ? (
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
+                    <table className="dash-table w-full text-sm">
                       <thead>
                         <tr className="text-left text-xs text-muted-foreground">
                           <th className="py-2 pr-3 font-medium">Order</th>
@@ -390,7 +395,7 @@ export default function MarketingAnalytics() {
                       </thead>
                       <tbody>
                         {data.data.unrecognisedSpend.rows.map((r) => (
-                          <tr key={`${r.orderId}-${r.campaignId}`} className="border-t border-border/50">
+                          <tr key={`${r.orderId}-${r.campaignId}`} className="border-t border-border/50 transition-colors hover:bg-muted/40">
                             <td className="py-2 pr-3 font-medium">{r.displayId}</td>
                             <td className="py-2 pr-3">{r.status}</td>
                             <td className="py-2 pr-3 text-muted-foreground">{r.campaignName}</td>
@@ -404,7 +409,7 @@ export default function MarketingAnalytics() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="chart-card rounded-2xl">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">Campaign → Ad Set → Ad</CardTitle>
                 <p className="text-[11px] text-muted-foreground">Recorded platform snapshots plus intake attributions — never recomputed. {campaigns.data?.data.disclosure}</p>
@@ -420,7 +425,7 @@ export default function MarketingAnalytics() {
               </CardContent>
             </Card>
 
-            <Card id="marketing-undated-fixlist">
+            <Card id="marketing-undated-fixlist" className="chart-card rounded-2xl">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <CardTitle className="text-sm font-medium">Undated-Spend Fix-List</CardTitle>

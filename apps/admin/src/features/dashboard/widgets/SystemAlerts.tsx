@@ -2,9 +2,9 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { CreditCard, RotateCcw, AlertTriangle, ShieldCheck, ChevronRight } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
+import { CreditCard, RotateCcw, AlertTriangle, ShieldCheck, ChevronRight, BellRing } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { StatusBadge } from '@/components/ui/dashboard'
 import { WidgetShell } from '../components/WidgetShell'
 import { dashboardApi } from '../api'
 import { useInventoryManagement } from '@/features/inventory/hooks/use-inventory-management'
@@ -89,9 +89,9 @@ export function SystemAlerts(_props: WidgetProps) {
   }
 
   const iconMap = {
-    payment: <CreditCard className="h-3.5 w-3.5 text-amber-500" />,
-    refund: <RotateCcw className="h-3.5 w-3.5 text-destructive" />,
-    inventory: <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />,
+    payment: <CreditCard className="h-3.5 w-3.5 text-warning" />,
+    refund: <RotateCcw className="h-3.5 w-3.5 text-danger" />,
+    inventory: <AlertTriangle className="h-3.5 w-3.5 text-warning" />,
   }
 
   return (
@@ -100,11 +100,13 @@ export function SystemAlerts(_props: WidgetProps) {
       description="Payment, refund & inventory status"
       isLoading={isLoading}
       error={undefined}
+      icon={<BellRing className="h-4 w-4" />}
+      iconTone="warning"
     >
       {alerts.length === 0 ? (
         <div className="flex flex-col items-center py-6 text-center">
-          <div className="h-9 w-9 rounded-full bg-emerald-500/10 flex items-center justify-center mb-2">
-            <ShieldCheck className="h-5 w-5 text-emerald-500" />
+          <div className="h-9 w-9 rounded-full bg-success-soft border border-success/25 flex items-center justify-center mb-2">
+            <ShieldCheck className="h-5 w-5 text-success" />
           </div>
           <p className="text-xs font-semibold text-foreground">System Healthy</p>
           <p className="text-[10px] text-muted-foreground mt-0.5">All processes operating normally</p>
@@ -114,28 +116,27 @@ export function SystemAlerts(_props: WidgetProps) {
           {alerts.slice(0, 10).map((alert) => (
             <div
               key={alert.id}
-              className={`flex items-start gap-2.5 p-2 rounded-lg border text-left transition-all ${
+              className={`flex items-start gap-2.5 p-2 rounded-xl border text-left transition-colors duration-200 ${
                 alert.severity === 'critical'
-                  ? 'bg-destructive/5 border-destructive/15'
-                  : 'bg-amber-500/5 border-amber-500/15'
+                  ? 'bg-danger-soft border-danger/20'
+                  : 'bg-warning-soft border-warning/20'
               }`}
             >
-              <div className={`p-1.5 rounded-md mt-0.5 ${
-                alert.severity === 'critical' ? 'bg-destructive/10' : 'bg-amber-500/10'
+              <div className={`p-1.5 rounded-md mt-0.5 border ${
+                alert.severity === 'critical' ? 'bg-danger-soft border-danger/25' : 'bg-warning-soft border-warning/25'
               }`}>
                 {iconMap[alert.type]}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-bold text-foreground leading-none">{alert.title}</span>
-                  <Badge
-                    variant={alert.severity === 'critical' ? 'destructive' : 'outline'}
-                    className={`h-4 px-1 text-[9px] font-bold uppercase tracking-wider ${
-                      alert.severity === 'warning' ? 'text-amber-600 bg-amber-500/10 border-amber-500/20' : ''
-                    }`}
+                  <StatusBadge
+                    tone={alert.severity === 'critical' ? 'danger' : 'warning'}
+                    icon={null}
+                    className="text-[9px] font-bold uppercase"
                   >
                     {alert.severity}
-                  </Badge>
+                  </StatusBadge>
                 </div>
                 <p className="text-[10px] text-muted-foreground mt-1 leading-normal">{alert.description}</p>
                 <Link to={alert.link as any} className="inline-block mt-1.5">

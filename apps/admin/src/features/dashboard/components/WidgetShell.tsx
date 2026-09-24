@@ -3,6 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Skeleton } from '@/components/ui/skeleton'
 import { AlertCircle, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+import { TONE_SOFT_BADGE, type StatusTone } from '@/components/ui/dashboard'
 
 interface WidgetShellProps {
   title: string
@@ -13,9 +15,13 @@ interface WidgetShellProps {
   children: ReactNode
   className?: string
   action?: ReactNode
+  /** Colored header icon badge (chart-card identity). Purely presentational. */
+  icon?: ReactNode
+  /** Badge tone for the header icon (default info). */
+  iconTone?: StatusTone
 }
 
-export function WidgetShell({ title, description, isLoading, error, onRetry, children, className = '', action }: WidgetShellProps) {
+export function WidgetShell({ title, description, isLoading, error, onRetry, children, className = '', action, icon, iconTone = 'info' }: WidgetShellProps) {
   if (error) {
     return (
       <Card className={className}>
@@ -52,11 +58,14 @@ export function WidgetShell({ title, description, isLoading, error, onRetry, chi
   }
 
   return (
-    <Card className={className}>
+    <Card className={cn('chart-card', className)}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-        <div>
-          <CardTitle className="text-sm font-medium">{title}</CardTitle>
-          {description && <CardDescription className="text-xs mt-0.5">{description}</CardDescription>}
+        <div className="flex items-center gap-2.5">
+          {icon ? <span className={cn('chart-card-header-icon border', TONE_SOFT_BADGE[iconTone])}>{icon}</span> : null}
+          <div>
+            <CardTitle className="text-sm font-medium">{title}</CardTitle>
+            {description && <CardDescription className="text-xs mt-0.5">{description}</CardDescription>}
+          </div>
         </div>
         {action && <div className="flex items-center gap-2">{action}</div>}
       </CardHeader>

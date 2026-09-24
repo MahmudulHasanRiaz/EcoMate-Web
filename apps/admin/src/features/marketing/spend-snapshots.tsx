@@ -137,7 +137,7 @@ export function SpendSnapshots() {
                       <TableCell className="text-right tabular-nums">{fmtUSD(s.spend)}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtBDT(s.revenue)}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtBDT(s.cost)}</TableCell>
-                      <TableCell className={`text-right tabular-nums ${s.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                      <TableCell className={`text-right tabular-nums ${s.profit >= 0 ? 'text-success' : 'text-danger'}`}>
                         {fmtBDT(s.profit)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{s.orders}</TableCell>

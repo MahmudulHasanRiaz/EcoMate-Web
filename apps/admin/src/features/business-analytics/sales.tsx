@@ -1,9 +1,11 @@
 'use client'
 
 import { useState } from 'react'
+import { ShoppingCart } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { riseStyle } from '@/components/ui/dashboard'
 import { WidgetShell } from '../dashboard/components/WidgetShell'
 import { useSalesSettlement, useSalesSummary } from './hooks'
 import { DEFAULT_FILTERS, formatBDT, formatPct, type AnalyticsFilters } from './types'
@@ -51,9 +53,14 @@ export default function SalesAnalytics() {
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <div>
-          <h1 className="text-2xl font-bold">Sales & Orders</h1>
-          <p className="text-xs text-muted-foreground">Booked (intake) · Recognised (Delivered — the P&L basis) · Cash collected — three bases, never mixed.</p>
+        <div className="flex items-center gap-3">
+          <span className="chart-card-header-icon bg-success-soft text-success border border-success/25">
+            <ShoppingCart className="h-5 w-5" />
+          </span>
+          <div>
+            <h1 className="text-2xl font-bold">Sales & Orders</h1>
+            <p className="text-xs text-muted-foreground">Booked (intake) · Recognised (Delivered — the P&L basis) · Cash collected — three bases, never mixed.</p>
+          </div>
         </div>
       </div>
 
@@ -70,13 +77,13 @@ export default function SalesAnalytics() {
           <div className="space-y-6">
             <RecognitionStrip strip={data.data.strip} />
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4" data-testid="lens-trio">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 animate-rise" style={riseStyle(0)} data-testid="lens-trio">
               <KpiCard title="Booked (L1)" kpi={data.data.lenses.booked} formulaVersion={data.meta.formulaVersion} />
               <KpiCard title="Recognised (L2)" kpi={data.data.lenses.recognised} formulaVersion={data.meta.formulaVersion} />
               <KpiCard title="Cash Collected (L3)" kpi={data.data.lenses.cashCollected} formulaVersion={data.meta.formulaVersion} />
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 animate-rise" style={riseStyle(1)}>
               <KpiCard title="Booked Orders" kpi={data.data.orderMetrics.bookedOrders} format={COUNT_FORMAT} formulaVersion={data.meta.formulaVersion} />
               <KpiCard title="Booked Value" kpi={data.data.orderMetrics.bookedValue} formulaVersion={data.meta.formulaVersion} />
               <KpiCard title="Recognised Orders" kpi={data.data.orderMetrics.recognisedOrders} format={COUNT_FORMAT} formulaVersion={data.meta.formulaVersion} />
@@ -93,17 +100,17 @@ export default function SalesAnalytics() {
               requestedGranularity={data.data.trends.requestedGranularity}
             />
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-rise" style={riseStyle(2)}>
               <FunnelPanel stages={data.data.funnel} />
               <PipelinePanel stages={data.data.pipeline.stages} totalOrders={data.data.pipeline.totalOrders} totalValue={data.data.pipeline.totalValue} />
             </div>
 
-            <Tabs defaultValue="payment">
-              <TabsList>
-                <TabsTrigger value="payment">Payment Methods</TabsTrigger>
-                <TabsTrigger value="cancel">Cancellations</TabsTrigger>
-                <TabsTrigger value="return">Returns</TabsTrigger>
-                <TabsTrigger value="refund">Refunds</TabsTrigger>
+            <Tabs defaultValue="payment" className="animate-rise" style={riseStyle(3)}>
+              <TabsList className="tap-h">
+                <TabsTrigger value="payment" className="tap-h">Payment Methods</TabsTrigger>
+                <TabsTrigger value="cancel" className="tap-h">Cancellations</TabsTrigger>
+                <TabsTrigger value="return" className="tap-h">Returns</TabsTrigger>
+                <TabsTrigger value="refund" className="tap-h">Refunds</TabsTrigger>
               </TabsList>
               <TabsContent value="payment">
                 <BreakdownTable
@@ -126,23 +133,23 @@ export default function SalesAnalytics() {
                 </p>
               </TabsContent>
               <TabsContent value="return">
-                <Card>
+                <Card className="chart-card rounded-2xl">
                   <CardContent className="pt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div>
                       <p className="text-[11px] text-muted-foreground">Return Events</p>
-                      <p className="text-lg font-bold tabular-nums">{data.data.returns.events}</p>
+                      <p className="text-lg font-bold tabular-nums text-danger">{data.data.returns.events}</p>
                     </div>
                     <div>
                       <p className="text-[11px] text-muted-foreground">Returned Value</p>
-                      <p className="text-lg font-bold tabular-nums">{formatBDT(data.data.returns.value)}</p>
+                      <p className="text-lg font-bold tabular-nums text-danger">{formatBDT(data.data.returns.value)}</p>
                     </div>
                     <div>
                       <p className="text-[11px] text-muted-foreground">Returned Units</p>
-                      <p className="text-lg font-bold tabular-nums">{data.data.returns.units.toLocaleString('en-US')}</p>
+                      <p className="text-lg font-bold tabular-nums text-danger">{data.data.returns.units.toLocaleString('en-US')}</p>
                     </div>
                     <div>
                       <p className="text-[11px] text-muted-foreground">Return Rate (order-level)</p>
-                      <p className="text-lg font-bold tabular-nums">{formatPct(data.data.returns.rate)}</p>
+                      <p className="text-lg font-bold tabular-nums text-danger">{formatPct(data.data.returns.rate)}</p>
                     </div>
                   </CardContent>
                 </Card>
@@ -167,11 +174,11 @@ export default function SalesAnalytics() {
 
             <FulfillmentEconomicsPanel fulfillment={data.data.economics.fulfillment} />
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Card>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-rise" style={riseStyle(4)}>
+              <Card className="kpi-card kpi-accent-danger">
                 <CardContent className="pt-4">
                   <p className="text-xs text-muted-foreground">Return Loss (online return events)</p>
-                  <p className="text-2xl font-bold">{formatBDT(data.data.economics.returnLoss.amount)}</p>
+                  <p className="kpi-value">{formatBDT(data.data.economics.returnLoss.amount)}</p>
                   <p className="text-[11px] text-muted-foreground mt-1">
                     Σ(courierCost − deliveryChargeRetained) over {data.data.economics.returnLoss.events} event(s)
                     {data.data.economics.returnLoss.unavailableEvents > 0 ? ` · ${data.data.economics.returnLoss.unavailableEvents} event(s) unavailable` : ''}.{' '}
@@ -179,10 +186,10 @@ export default function SalesAnalytics() {
                   </p>
                 </CardContent>
               </Card>
-              <Card>
+              <Card className="kpi-card kpi-accent-warning">
                 <CardContent className="pt-4">
                   <p className="text-xs text-muted-foreground">Refund Leakage (never-delivered)</p>
-                  <p className="text-2xl font-bold">{formatBDT(data.data.economics.refundLeakage.amount)}</p>
+                  <p className="kpi-value">{formatBDT(data.data.economics.refundLeakage.amount)}</p>
                   <p className="text-[11px] text-muted-foreground mt-1">
                     {data.data.economics.refundLeakage.refunds} refund(s) on {data.data.economics.refundLeakage.orders} order(s).{' '}
                     {data.data.economics.refundLeakage.note}

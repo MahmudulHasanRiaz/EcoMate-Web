@@ -35,7 +35,7 @@ export function HoldModal({ orderId, onClose, onSubmit, isSubmitting }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-5 flex items-center justify-between border-b pb-3 dark:border-zinc-800">
-          <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+          <div className="flex items-center gap-2 text-warning">
             <AlertTriangle className="h-5 w-5" />
             <h2 className="text-lg font-bold">Put Order on Hold</h2>
           </div>
@@ -46,7 +46,7 @@ export function HoldModal({ orderId, onClose, onSubmit, isSubmitting }: Props) {
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div className="space-y-2">
-            <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Select Reason <span className="text-red-500">*</span></p>
+            <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Select Reason <span className="text-danger">*</span></p>
             <div className="grid grid-cols-2 gap-2.5">
               {HOLD_REASONS.map((r) => {
                 const isSelected = reason === r;
@@ -57,12 +57,12 @@ export function HoldModal({ orderId, onClose, onSubmit, isSubmitting }: Props) {
                     onClick={() => setReason(r)}
                     className={`flex items-center justify-between text-start p-4 rounded-xl border-2 transition-all cursor-pointer font-medium text-sm
                       ${isSelected 
-                        ? 'border-amber-500 bg-amber-50/50 text-amber-900 dark:bg-amber-950/20 dark:text-amber-300' 
+                        ? 'border-warning bg-warning-soft text-warning' 
                         : 'border-zinc-200 hover:border-zinc-300 bg-zinc-50/50 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950/30 dark:text-zinc-300 dark:hover:border-zinc-700'
                       }`}
                   >
                     <span>{r}</span>
-                    {isSelected && <Check className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />}
+                    {isSelected && <Check className="h-4 w-4 text-warning shrink-0" />}
                   </button>
                 )
               })}
@@ -91,7 +91,7 @@ export function HoldModal({ orderId, onClose, onSubmit, isSubmitting }: Props) {
             <button
               type="submit"
               disabled={!reason || isSubmitting}
-              className="flex-1 rounded-xl bg-amber-500 py-3 text-sm font-semibold text-white hover:bg-amber-600 active:bg-amber-700 transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1.5"
+              className="flex-1 rounded-xl bg-warning py-3 text-sm font-semibold text-white hover:opacity-90 active:opacity-80 transition-all duration-200 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1.5"
             >
               {isSubmitting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

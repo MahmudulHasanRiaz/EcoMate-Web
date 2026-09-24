@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { Activity } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
+import { StatusBadge, orderStatusTone } from '@/components/ui/dashboard'
 import { WidgetShell } from '../components/WidgetShell'
 import { dashboardApi } from '../api'
 import { timeAgo } from '../utils'
@@ -21,26 +21,6 @@ export function ActivityLog(_props: WidgetProps) {
 
   const activities = data?.data || []
 
-  const getStatusBadgeStyle = (statusName: string) => {
-    const normalized = statusName.toLowerCase()
-    if (normalized.includes('pending') || normalized.includes('awaiting')) {
-      return 'bg-amber-500/10 text-amber-600 border-amber-500/20'
-    }
-    if (normalized.includes('delivered') || normalized === 'paid') {
-      return 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
-    }
-    if (normalized.includes('refund') || normalized.includes('cancelled') || normalized.includes('fail') || normalized.includes('damage') || normalized === 'returned') {
-      return 'bg-rose-500/10 text-rose-600 border-rose-500/20'
-    }
-    if (normalized.includes('process')) {
-      return 'bg-blue-500/10 text-blue-600 border-blue-500/20'
-    }
-    if (normalized.includes('confirm')) {
-      return 'bg-indigo-500/10 text-indigo-600 border-indigo-500/20'
-    }
-    return 'bg-muted text-muted-foreground border-border'
-  }
-
   return (
     <WidgetShell
       title="Activity Log"
@@ -48,6 +28,8 @@ export function ActivityLog(_props: WidgetProps) {
       isLoading={isLoading}
       error={error ?? undefined}
       onRetry={() => refetch()}
+      icon={<Activity className="h-4 w-4" />}
+      iconTone="violet"
     >
       {activities.length === 0 ? (
         <div className="flex flex-col items-center py-6 text-center">
@@ -57,7 +39,6 @@ export function ActivityLog(_props: WidgetProps) {
       ) : (
         <div className="relative pl-3 space-y-4 before:absolute before:left-[5px] before:top-2 before:bottom-2 before:w-[1.5px] before:bg-border/60 max-h-[260px] overflow-y-auto pr-1">
           {activities.map(a => {
-            const badgeStyle = getStatusBadgeStyle(a.status)
             return (
               <div key={a.id} className="relative flex gap-3.5 items-start text-left">
                 {/* Timeline Dot */}
@@ -72,9 +53,9 @@ export function ActivityLog(_props: WidgetProps) {
                     <p className="text-[10px] text-muted-foreground truncate">
                       {a.customerName}
                     </p>
-                    <Badge variant="outline" className={`text-[8px] h-3.5 px-1 font-bold border capitalize leading-none ${badgeStyle}`}>
+                    <StatusBadge tone={orderStatusTone(a.status)} className="text-[8px] px-1 capitalize">
                       {a.status}
-                    </Badge>
+                    </StatusBadge>
                   </div>
                 </div>
               </div>

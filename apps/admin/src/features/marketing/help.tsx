@@ -71,7 +71,7 @@ function TokenGuide({ open, onToggle }: { open: boolean; onToggle: () => void })
           <Step n={6} title="Token copy করে Connections পেজে দিন">
             <p>তৈরি হওয়া token copy করুন (লম্বা string, যেমন <code className="font-mono text-xs bg-muted px-1 rounded">EAAGm0P...</code>)।</p>
             <p>এখন EcoMate-এ <strong className="text-foreground">Connections</strong> পেজে গিয়ে "Add connection" এ এই token paste করুন।</p>
-            <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-700 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300">
+            <div className="flex items-start gap-2 rounded-xl border border-warning/30 bg-warning-soft p-2 text-xs text-warning">
               <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
               <div>
                 <p><strong>গুরুত্বপূর্ণ:</strong> Token default ১-২ দিনে expire হয়। দীর্ঘমেয়াদী token পেতে:</p>
@@ -156,19 +156,19 @@ export function MarketingHelp() {
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground space-y-2">
               <div className="flex items-start gap-2">
-                <CheckCircle2 className="h-4 w-4 mt-0.5 text-emerald-500 shrink-0" />
+                <CheckCircle2 className="h-4 w-4 mt-0.5 text-success shrink-0" />
                 <p><strong className="text-foreground">Step 1:</strong> Customer আপনার ad দেখে website-এ আসে। Click ID (fbclid/ttclid), UTM/tracking data EcoMate-তে store হয়।</p>
               </div>
               <div className="flex items-start gap-2">
-                <CheckCircle2 className="h-4 w-4 mt-0.5 text-emerald-500 shrink-0" />
+                <CheckCircle2 className="h-4 w-4 mt-0.5 text-success shrink-0" />
                 <p><strong className="text-foreground">Step 2:</strong> Customer order দেখান। Order confirm হলে system automatically campaign match করে (session → click ID → UTM — প্রথম match জিতে)।</p>
               </div>
               <div className="flex items-start gap-2">
-                <CheckCircle2 className="h-4 w-4 mt-0.5 text-emerald-500 shrink-0" />
+                <CheckCircle2 className="h-4 w-4 mt-0.5 text-success shrink-0" />
                 <p><strong className="text-foreground">Step 3:</strong> Campaign spending + attributed revenue মিলিয়ে profit, gross margin এবং break-even CPA calculate হয়।</p>
               </div>
               <div className="flex items-start gap-2">
-                <CheckCircle2 className="h-4 w-4 mt-0.5 text-emerald-500 shrink-0" />
+                <CheckCircle2 className="h-4 w-4 mt-0.5 text-success shrink-0" />
                 <p><strong className="text-foreground">Step 4:</strong> Dashboard-এ verdict badge (Profitable / Near break-even / Loss-making), ROI, CAC সহ সব analytics দেখুন।</p>
               </div>
             </CardContent>

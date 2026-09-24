@@ -2,10 +2,10 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Eye, Play, Truck, CheckCircle2 } from 'lucide-react'
+import { Eye, Play, Truck, CheckCircle2, Hourglass } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { StatusBadge, orderStatusTone } from '@/components/ui/dashboard'
 import { WidgetShell } from '../components/WidgetShell'
 import { dashboardApi } from '../api'
 import { ordersApi } from '@/features/orders/api'
@@ -70,26 +70,6 @@ export function PendingOrders({ dateRange }: WidgetProps) {
     updateStatusMut.mutate({ orderId, statusId: shippedStatus.id, statusName: 'Shipped' })
   }
 
-  const getStatusBadgeStyle = (statusName: string) => {
-    const normalized = statusName.toLowerCase()
-    if (normalized.includes('pending') || normalized.includes('awaiting')) {
-      return 'bg-amber-500/10 text-amber-600 border-amber-500/20'
-    }
-    if (normalized.includes('delivered') || normalized === 'paid') {
-      return 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
-    }
-    if (normalized.includes('refund') || normalized.includes('cancelled') || normalized.includes('fail') || normalized.includes('damage') || normalized === 'returned') {
-      return 'bg-rose-500/10 text-rose-600 border-rose-500/20'
-    }
-    if (normalized.includes('process')) {
-      return 'bg-blue-500/10 text-blue-600 border-blue-500/20'
-    }
-    if (normalized.includes('confirm')) {
-      return 'bg-indigo-500/10 text-indigo-600 border-indigo-500/20'
-    }
-    return 'bg-muted text-muted-foreground border-border'
-  }
-
   return (
     <WidgetShell
       title="Pending Orders"
@@ -97,11 +77,13 @@ export function PendingOrders({ dateRange }: WidgetProps) {
       isLoading={isLoading}
       error={error ?? undefined}
       onRetry={() => refetch()}
+      icon={<Hourglass className="h-4 w-4" />}
+      iconTone="warning"
     >
       {orders.length === 0 ? (
         <div className="flex flex-col items-center py-10 text-center">
-          <div className="h-10 w-10 rounded-full bg-emerald-500/10 flex items-center justify-center mb-3">
-            <CheckCircle2 className="h-6 w-6 text-emerald-500" />
+          <div className="h-10 w-10 rounded-full bg-success-soft border border-success/25 flex items-center justify-center mb-3">
+            <CheckCircle2 className="h-6 w-6 text-success" />
           </div>
           <p className="text-sm font-semibold text-foreground">All orders processed successfully</p>
           <p className="text-xs text-muted-foreground mt-1">Excellent job! No pending orders remaining.</p>
@@ -110,7 +92,7 @@ export function PendingOrders({ dateRange }: WidgetProps) {
         <>
           {/* Desktop/Tablet Table View */}
           <div className="hidden md:block overflow-x-auto">
-            <Table>
+            <Table className="dash-table">
               <TableHeader>
                 <TableRow>
                   <TableHead className="text-xs font-bold uppercase tracking-wider">Order ID</TableHead>
@@ -129,9 +111,9 @@ export function PendingOrders({ dateRange }: WidgetProps) {
                     <TableCell className="text-xs text-muted-foreground">{formatDate(order.createdAt)}</TableCell>
                     <TableCell className="text-xs font-bold text-foreground text-right">{formatCurrency(order.total)}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={`text-[10px] font-bold border capitalize ${getStatusBadgeStyle(order.status)}`}>
+                      <StatusBadge tone={orderStatusTone(order.status)} className="text-[10px] font-bold capitalize">
                         {order.status}
-                      </Badge>
+                      </StatusBadge>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center justify-end gap-1.5">
@@ -145,17 +127,17 @@ export function PendingOrders({ dateRange }: WidgetProps) {
                           size="icon"
                           onClick={() => handleProcess(order.id)}
                           disabled={updateStatusMut.isPending}
-                          className="h-7 w-7 text-blue-600 hover:text-blue-700 hover:bg-blue-50/50"
+                          className="h-7 w-7 text-info hover:text-info hover:bg-info-soft"
                           title="Confirm & Process Order"
                         >
-                          <Play className="h-3.5 w-3.5 fill-blue-600" />
+                          <Play className="h-3.5 w-3.5 fill-info" />
                         </Button>
                         <Button
                           variant="outline"
                           size="icon"
                           onClick={() => handleShip(order.id)}
                           disabled={updateStatusMut.isPending}
-                          className="h-7 w-7 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50/50"
+                          className="h-7 w-7 text-success hover:text-success hover:bg-success-soft"
                           title="Ship Order"
                         >
                           <Truck className="h-3.5 w-3.5" />
@@ -171,12 +153,12 @@ export function PendingOrders({ dateRange }: WidgetProps) {
           {/* Mobile Card Layout (<768px) */}
           <div className="block md:hidden space-y-3">
             {orders.map(order => (
-              <div key={order.id} className="rounded-lg border border-border bg-card p-4 space-y-3 shadow-sm">
+              <div key={order.id} className="rounded-2xl border border-border bg-card p-4 space-y-3 shadow-sm">
                 <div className="flex items-center justify-between">
                   <span className="font-mono text-xs font-bold text-foreground">{order.displayId}</span>
-                  <Badge variant="outline" className={`text-[10px] font-bold border capitalize ${getStatusBadgeStyle(order.status)}`}>
+                  <StatusBadge tone={orderStatusTone(order.status)} className="text-[10px] font-bold capitalize">
                     {order.status}
-                  </Badge>
+                  </StatusBadge>
                 </div>
 
                 <div className="grid grid-cols-2 gap-y-2 text-xs">
@@ -206,16 +188,16 @@ export function PendingOrders({ dateRange }: WidgetProps) {
                     variant="outline"
                     onClick={() => handleProcess(order.id)}
                     disabled={updateStatusMut.isPending}
-                    className="flex-1 h-11 text-xs gap-1.5 font-bold text-blue-600 hover:text-blue-700 hover:bg-blue-50/50"
+                    className="flex-1 h-11 text-xs gap-1.5 font-bold text-info hover:text-info hover:bg-info-soft"
                   >
-                    <Play className="h-4 w-4 fill-blue-600" />
+                    <Play className="h-4 w-4 fill-info" />
                     Process
                   </Button>
                   <Button
                     variant="outline"
                     onClick={() => handleShip(order.id)}
                     disabled={updateStatusMut.isPending}
-                    className="flex-1 h-11 text-xs gap-1.5 font-bold text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50/50"
+                    className="flex-1 h-11 text-xs gap-1.5 font-bold text-success hover:text-success hover:bg-success-soft"
                   >
                     <Truck className="h-4 w-4" />
                     Ship
