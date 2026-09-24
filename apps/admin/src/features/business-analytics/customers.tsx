@@ -218,7 +218,7 @@ export default function CustomerAnalytics() {
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <CardTitle className="text-sm font-medium">Customers — segment → customer → order history</CardTitle>
                   <Tabs value={segment || 'all'} onValueChange={onSegment}>
-                    <TabsList className="tap-h max-w-full overflow-x-auto">
+                    <TabsList className="tap-h max-w-full overflow-x-auto no-scrollbar">
                       <TabsTrigger value="all" className="tap-h">All</TabsTrigger>
                       <TabsTrigger value="new" className="tap-h">New</TabsTrigger>
                       <TabsTrigger value="returning" className="tap-h">Returning</TabsTrigger>
@@ -272,7 +272,7 @@ export default function CustomerAnalytics() {
                           </tbody>
                         </table>
                       </div>
-                      <div className="flex items-center justify-between mt-3 text-xs text-muted-foreground">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mt-3 text-xs text-muted-foreground">
                         <span>Page {list.data.data.page} of {list.data.data.totalPages} · {list.data.data.total} customer(s)</span>
                         <span className="flex gap-2">
                           <button

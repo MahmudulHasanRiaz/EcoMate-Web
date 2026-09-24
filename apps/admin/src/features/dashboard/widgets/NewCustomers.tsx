@@ -25,12 +25,12 @@ export function NewCustomers({ dateRange }: WidgetProps) {
       ) : (
         <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
           {customers.map(c => (
-            <div key={c.id} className="flex items-center justify-between p-2 rounded-xl border border-border/55 bg-muted/20 transition-colors duration-200 hover:bg-accent-cyan-soft/40">
-              <div>
-                <p className="text-xs font-semibold text-foreground">{c.firstName} {c.lastName}</p>
-                <p className="text-[10px] text-muted-foreground">{c.email}</p>
+            <div key={c.id} className="flex items-center justify-between gap-2 p-2 rounded-xl border border-border/55 bg-muted/20 transition-colors duration-200 hover:bg-accent-cyan-soft/40">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-foreground truncate">{c.firstName} {c.lastName}</p>
+                <p className="text-[10px] text-muted-foreground truncate">{c.email}</p>
               </div>
-              <span className="text-[10px] text-muted-foreground font-medium">{formatDate(c.createdAt)}</span>
+              <span className="shrink-0 text-[10px] text-muted-foreground font-medium">{formatDate(c.createdAt)}</span>
             </div>
           ))}
         </div>

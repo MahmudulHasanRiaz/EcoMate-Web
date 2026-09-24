@@ -39,7 +39,7 @@ export function BackupStats({ backups, isLoading }: Props) {
         <Card key={s.label} className={`kpi-card ${s.accent}`}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">{s.label}</CardTitle>
-            <span className="kpi-icon-badge" aria-hidden>
+            <span className="kpi-icon-badge shrink-0" aria-hidden>
               <s.icon className="h-4 w-4" />
             </span>
           </CardHeader>

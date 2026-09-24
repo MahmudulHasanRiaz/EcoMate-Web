@@ -123,18 +123,18 @@ export function SettlementTable({
             </Table>
           </div>
         )}
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
           <span>
             Showing {from}–{to} of {total} order(s)
           </span>
           <span className="flex items-center gap-2">
-            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
+            <Button variant="outline" size="sm" className="tap-h" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
               Prev
             </Button>
             <span>
               Page {page} of {totalPages}
             </span>
-            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
+            <Button variant="outline" size="sm" className="tap-h" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
               Next
             </Button>
           </span>

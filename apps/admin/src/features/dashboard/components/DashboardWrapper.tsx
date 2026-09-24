@@ -50,7 +50,7 @@ export function DashboardWrapper({ route }: DashboardWrapperProps) {
       
       {route === 'mon' ? (
         <Main>
-          <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="mb-4 flex flex-col flex-wrap sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <span className="chart-card-header-icon bg-info-soft text-info border border-info/25">
                 <LayoutGrid className="h-5 w-5" />
@@ -91,7 +91,7 @@ export function DashboardWrapper({ route }: DashboardWrapperProps) {
                   </p>
                 </div>
               </div>
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <div className="flex flex-col flex-wrap sm:flex-row sm:items-center gap-2">
                 <ViewSwitch view={view} onChange={setView} />
                 <DateFilter />
               </div>

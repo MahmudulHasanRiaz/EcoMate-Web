@@ -112,7 +112,7 @@ export function AnalyticsFilterBar({ value, onChange }: Props) {
                 <span>{value.preset === 'custom' && value.startDate && value.endDate ? `${value.startDate} – ${value.endDate}` : 'Custom'}</span>
               </button>
             </PopoverTrigger>
-            <PopoverContent className="w-auto p-4" align="start">
+            <PopoverContent className="w-auto max-w-[calc(100vw-2rem)] p-4" align="start">
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col sm:flex-row gap-4">
                   <div className="space-y-1">

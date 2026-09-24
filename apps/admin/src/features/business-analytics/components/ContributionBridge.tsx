@@ -24,19 +24,19 @@ export function ContributionBridge({ bridge }: { bridge: BridgeData }) {
       </CardHeader>
       <CardContent>
         <div data-testid="bridge-operands" className="divide-y divide-border/50">
-          <div className="flex items-center justify-between py-1.5">
+          <div className="flex items-center justify-between gap-2 py-1.5">
             <span className="text-sm text-muted-foreground">Contribution Profit</span>
-            <span className="text-sm tabular-nums font-medium">{formatBDT(bridge.contributionProfit)}</span>
+            <span className="text-sm tabular-nums font-medium shrink-0">{formatBDT(bridge.contributionProfit)}</span>
           </div>
-          <div className="flex items-center justify-between py-1.5">
+          <div className="flex items-center justify-between gap-2 py-1.5">
             <span className="text-sm text-muted-foreground">+ Delivery Charge Retained</span>
-            <span className="text-sm tabular-nums font-medium">
+            <span className="text-sm tabular-nums font-medium shrink-0">
               {dcrUnavailable ? 'Unavailable' : formatBDT(bridge.deliveryChargeRetained)}
             </span>
           </div>
-          <div className="flex items-center justify-between py-1.5">
+          <div className="flex items-center justify-between gap-2 py-1.5">
             <span className="text-sm font-bold">= Total Business Contribution</span>
-            <span className="text-sm tabular-nums font-bold">{formatBDT(bridge.totalBusinessContribution)}</span>
+            <span className="text-sm tabular-nums font-bold shrink-0">{formatBDT(bridge.totalBusinessContribution)}</span>
           </div>
         </div>
         <p data-testid="bridge-fm-diagnostic" className="text-[11px] text-muted-foreground mt-2 border-t border-dashed pt-2">

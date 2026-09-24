@@ -67,10 +67,10 @@ export function BackupPage() {
   }, [trigger])
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold">Backup & Restore</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <UploadRestoreDialog onUpload={handleUploadBackup} isPending={uploadBackup.isPending} />
           <RunBackupDialog onRun={handleRunBackup} isPending={trigger.isPending} />
         </div>

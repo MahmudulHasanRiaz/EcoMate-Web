@@ -85,8 +85,8 @@ export function PnlWaterfall({ pnl }: { pnl: OverviewData['pnl'] }) {
         <div className="divide-y divide-border/50">
           {rows.map((r) => (
             <div key={r.label} className={`flex items-center justify-between gap-2 py-1.5 ${r.indent ? 'pl-4' : ''}`}>
-              <span className={`text-sm ${r.result ? 'font-bold' : 'text-muted-foreground'}`}>{r.label}</span>
-              <span className="flex items-center gap-2">
+              <span className={`text-sm min-w-0 ${r.result ? 'font-bold' : 'text-muted-foreground'}`}>{r.label}</span>
+              <span className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 shrink-0">
                 <span className={`text-sm tabular-nums ${r.result ? 'font-bold' : ''} ${r.kpi.state === 'not_applicable' ? 'text-muted-foreground/60' : ''}`}>
                   {r.kpi.state === 'not_applicable' ? '—' : r.kpi.value === null ? 'Unavailable' : formatBDT(r.kpi.value)}
                 </span>

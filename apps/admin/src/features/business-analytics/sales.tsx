@@ -106,7 +106,7 @@ export default function SalesAnalytics() {
             </div>
 
             <Tabs defaultValue="payment" className="animate-rise" style={riseStyle(3)}>
-              <TabsList className="tap-h max-w-full overflow-x-auto">
+              <TabsList className="tap-h max-w-full overflow-x-auto no-scrollbar">
                 <TabsTrigger value="payment" className="tap-h">Payment Methods</TabsTrigger>
                 <TabsTrigger value="cancel" className="tap-h">Cancellations</TabsTrigger>
                 <TabsTrigger value="return" className="tap-h">Returns</TabsTrigger>

@@ -85,7 +85,7 @@ export function SummaryCards({ data, isLoading }: SummaryCardsProps) {
             <CardTitle className="text-sm font-medium text-muted-foreground">{c.label}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className={`kpi-value inline-block rounded-lg px-2 py-0.5 ${c.bg} ${c.color}`}>{c.get(data)}</div>
+            <div className={`kpi-value inline-block max-w-full break-all rounded-lg px-2 py-0.5 ${c.bg} ${c.color}`}>{c.get(data)}</div>
           </CardContent>
         </Card>
       ))}

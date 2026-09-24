@@ -46,7 +46,7 @@ function StatCard({
           <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
             {title}
           </p>
-          <p className="kpi-value mt-1.5 truncate">
+          <p className="kpi-value mt-1.5 truncate" title={String(value)}>
             {value}
           </p>
           {sub ? (

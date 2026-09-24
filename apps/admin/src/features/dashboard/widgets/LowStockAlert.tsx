@@ -51,7 +51,7 @@ export function LowStockAlert(_props: WidgetProps) {
             return (
               <div
                 key={item.id}
-                className={`flex items-center justify-between p-2 rounded-xl border transition-colors duration-200 ${
+                className={`flex items-center justify-between gap-2 p-2 rounded-xl border transition-colors duration-200 ${
                   isCritical
                     ? 'bg-danger-soft border-danger/20 hover:bg-danger-soft'
                     : 'bg-muted/30 border-border/50 hover:bg-muted/50'

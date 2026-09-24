@@ -84,7 +84,7 @@ export function KpiCard({ title, kpi, format, formulaVersion, drilldownHref }: K
 
   const card = (
     <Card className={cn('kpi-card', `kpi-accent-${accent}`)}>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <div className="flex items-center gap-2 min-w-0">
           <span className="kpi-icon-badge shrink-0" aria-hidden>
             <Icon className="h-4 w-4" />
@@ -92,7 +92,7 @@ export function KpiCard({ title, kpi, format, formulaVersion, drilldownHref }: K
           <CardTitle className="text-sm font-medium truncate">{title}</CardTitle>
         </div>
         {meta ? (
-          <span title={meta} aria-label={meta}>
+          <span title={meta} aria-label={meta} className="shrink-0">
             <Info className="h-3.5 w-3.5 text-muted-foreground" />
           </span>
         ) : null}

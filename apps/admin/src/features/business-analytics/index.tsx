@@ -98,7 +98,7 @@ export default function BusinessOverview() {
             <FulfillmentEconomicsPanel fulfillment={data.data.fulfillment} />
 
             <Tabs defaultValue="channel">
-              <TabsList className="tap-h max-w-full overflow-x-auto">
+              <TabsList className="tap-h max-w-full overflow-x-auto no-scrollbar">
                 <TabsTrigger value="channel" className="tap-h">Sales Channel</TabsTrigger>
                 <TabsTrigger value="source" className="tap-h">Source System</TabsTrigger>
                 <TabsTrigger value="category" className="tap-h">Category</TabsTrigger>

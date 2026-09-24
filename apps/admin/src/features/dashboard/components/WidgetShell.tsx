@@ -59,15 +59,15 @@ export function WidgetShell({ title, description, isLoading, error, onRetry, chi
 
   return (
     <Card className={cn('chart-card', className)}>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-        <div className="flex items-center gap-2.5">
-          {icon ? <span className={cn('chart-card-header-icon border', TONE_SOFT_BADGE[iconTone])}>{icon}</span> : null}
-          <div>
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          {icon ? <span className={cn('chart-card-header-icon shrink-0 border', TONE_SOFT_BADGE[iconTone])}>{icon}</span> : null}
+          <div className="min-w-0">
             <CardTitle className="text-sm font-medium">{title}</CardTitle>
             {description && <CardDescription className="text-xs mt-0.5">{description}</CardDescription>}
           </div>
         </div>
-        {action && <div className="flex items-center gap-2">{action}</div>}
+        {action && <div className="flex shrink-0 items-center gap-2">{action}</div>}
       </CardHeader>
       <CardContent>{children}</CardContent>
     </Card>

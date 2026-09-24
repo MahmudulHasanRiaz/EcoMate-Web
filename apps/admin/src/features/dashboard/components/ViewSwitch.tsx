@@ -23,7 +23,7 @@ export function ViewSwitch({ view, onChange }: ViewSwitchProps) {
     <div
       role="group"
       aria-label="Dashboard view"
-      className="inline-flex min-h-10 items-center rounded-xl bg-muted p-1 text-muted-foreground border border-border/50"
+      className="inline-flex min-h-10 shrink-0 items-center rounded-xl bg-muted p-1 text-muted-foreground border border-border/50"
     >
       {OPTIONS.map(({ key, label, title, Icon }) => {
         const isActive = view === key

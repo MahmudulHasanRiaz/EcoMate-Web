@@ -208,14 +208,14 @@ export function UndatedFixList({
             </a>
           ))}
           <button
-            className="underline underline-offset-2 disabled:opacity-40"
+            className="tap-h px-1 underline underline-offset-2 disabled:opacity-40"
             disabled={page <= 1}
             onClick={() => onPage(Math.max(1, page - 1))}
           >
             Prev
           </button>
           <button
-            className="underline underline-offset-2 disabled:opacity-40"
+            className="tap-h px-1 underline underline-offset-2 disabled:opacity-40"
             disabled={page >= data.totalPages}
             onClick={() => onPage(page + 1)}
           >

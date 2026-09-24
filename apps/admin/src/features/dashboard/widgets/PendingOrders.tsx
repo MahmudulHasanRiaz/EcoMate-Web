@@ -158,9 +158,9 @@ export function PendingOrders({ dateRange, view = 'activity' }: WidgetProps) {
           <div className="block md:hidden space-y-3">
             {orders.map(order => (
               <div key={order.id} className="rounded-2xl border border-border bg-card p-4 space-y-3 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-xs font-bold text-foreground">{order.displayId}</span>
-                  <StatusBadge tone={orderStatusTone(order.status)} className="text-[10px] font-bold capitalize">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs font-bold text-foreground truncate min-w-0">{order.displayId}</span>
+                  <StatusBadge tone={orderStatusTone(order.status)} className="text-[10px] font-bold capitalize shrink-0">
                     {order.status}
                   </StatusBadge>
                 </div>

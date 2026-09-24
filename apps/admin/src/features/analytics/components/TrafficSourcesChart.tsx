@@ -35,7 +35,7 @@ export function TrafficSourcesChart({ dateRange }: Props) {
           </ResponsiveContainer>
           <div className="mt-2 space-y-1">
             {chartData.map(s => (
-              <div key={s.name} className="flex justify-between text-xs px-1">
+              <div key={s.name} className="flex justify-between gap-2 text-xs px-1">
                 <span className="capitalize text-muted-foreground">{s.name}</span>
                 <span className="font-medium">{s.pct}%</span>
               </div>

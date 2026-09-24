@@ -37,8 +37,8 @@ export function DateFilter() {
   }, [customOpen])
 
   return (
-    <div className="flex items-center gap-1.5 w-full md:w-auto overflow-x-auto whitespace-nowrap no-scrollbar py-1">
-      <div className="inline-flex min-h-10 items-center rounded-xl bg-muted p-1 text-muted-foreground border border-border/50">
+    <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto whitespace-nowrap no-scrollbar py-1 md:w-auto md:flex-none">
+      <div className="inline-flex min-h-10 shrink-0 items-center rounded-xl bg-muted p-1 text-muted-foreground border border-border/50">
         {DISPLAY_PRESETS.map(p => {
           const isActive = preset === p.key
           return (
@@ -74,7 +74,7 @@ export function DateFilter() {
               <ChevronDown className="h-3 w-3 opacity-50" />
             </button>
           </PopoverTrigger>
-          <PopoverContent className="w-auto p-4" align="end">
+            <PopoverContent className="w-auto max-w-[calc(100vw-2rem)] p-4" align="end">
             <div className="flex flex-col gap-3">
               <div className="flex flex-col sm:flex-row gap-4">
                 <div className="space-y-1">
