@@ -17,16 +17,17 @@ import {
 } from 'lucide-react'
 import { dashboardApi } from '../api'
 import { formatCurrency, formatNumber } from '../utils'
-import { riseStyle } from '@/components/ui/dashboard'
+import { CountUp, riseStyle, type KpiAccent } from '@/components/ui/dashboard'
 import type { DatePresetKey, WidgetProps } from '../types'
 
 interface KpiTile {
   label: string
-  value: string | number
+  /** Null while loading — renders "—", never a misleading 0. */
+  raw: number | null
+  format: (v: number) => string
   subtext: string
   icon: React.ReactNode
-  bgClass: string
-  borderClass: string
+  accent: KpiAccent
   link: string
   /** Native hover tooltip (title attr) — used where the label needs a basis note. */
   tooltip?: string
@@ -92,100 +93,96 @@ export function OperationalKpiStrip({ dateRange, preset, view = 'activity' }: Wi
 
   const tiles: KpiTile[] = [
     {
-      // Pipeline: the same cohort-total value, but "New Orders" would imply a
-      // current "new" status — label it for what it is (no new metric).
-      label: isPipeline ? 'Order Cohort' : 'New Orders',
-      value: kpi ? formatNumber(kpi.newOrders) : '—',
+      // Same label in both views (two names for one thing confused users).
+      // View meaning lives in the subtext + tooltip, never in the label.
+      label: 'New Orders',
+      raw: kpi ? kpi.newOrders : null,
+      format: formatNumber,
       subtext: isPipeline ? cohortLabel : periodLabel,
       tooltip: isPipeline ? 'Total orders created in the selected period' : undefined,
-      icon: <ShoppingCart className="h-4 w-4 text-info" />,
-      bgClass: 'bg-info-soft',
-      borderClass: 'border-info/20',
+      icon: <ShoppingCart className="h-4 w-4" />,
+      accent: 'info',
       link: '/op/orders',
     },
     {
       label: 'Confirmed',
-      value: kpi ? formatNumber(kpi.confirmed) : '—',
+      raw: kpi ? kpi.confirmed : null,
+      format: formatNumber,
       subtext: isPipeline ? cohortLabel : periodLabel,
-      icon: <PackageCheck className="h-4 w-4 text-accent-violet" />,
-      bgClass: 'bg-accent-violet-soft',
-      borderClass: 'border-accent-violet/20',
+      icon: <PackageCheck className="h-4 w-4" />,
+      accent: 'violet',
       link: '/op/orders',
     },
     {
       label: 'Packed',
-      value: kpi ? formatNumber(kpi.packed) : '—',
+      raw: kpi ? kpi.packed : null,
+      format: formatNumber,
       subtext: isPipeline ? cohortLabel : periodLabel,
-      icon: <Package className="h-4 w-4 text-accent-cyan" />,
-      bgClass: 'bg-accent-cyan-soft',
-      borderClass: 'border-accent-cyan/20',
+      icon: <Package className="h-4 w-4" />,
+      accent: 'cyan',
       link: '/op/orders',
     },
     {
-      // Semantics differ by view: Activity "Picked Up" = pickup EVENTS in the
-      // period; Pipeline "Shipping" = cohort orders CURRENTLY in Shipping
-      // status. Different labels keep the two from being confused.
-      label: isPipeline ? 'Shipping' : 'Picked Up',
-      value: kpi ? formatNumber(kpi.pickedUp) : '—',
+      // Same label in both views: Activity counts pickup events in the period,
+      // Pipeline counts cohort orders currently in Shipping status. Subtext +
+      // tooltip carry that distinction.
+      label: 'Shipping',
+      raw: kpi ? kpi.pickedUp : null,
+      format: formatNumber,
       subtext: isPipeline ? cohortLabel : periodLabel,
       tooltip: isPipeline
         ? 'Orders created in the selected period, currently in Shipping status'
         : undefined,
-      icon: <Truck className="h-4 w-4 text-accent-pink" />,
-      bgClass: 'bg-accent-pink-soft',
-      borderClass: 'border-accent-pink/20',
+      icon: <Truck className="h-4 w-4" />,
+      accent: 'pink',
       link: '/op/orders',
     },
     {
       label: 'Delivered',
-      value: kpi ? formatNumber(kpi.delivered) : '—',
+      raw: kpi ? kpi.delivered : null,
+      format: formatNumber,
       subtext: isPipeline ? cohortLabel : periodLabel,
-      icon: <TruckIcon className="h-4 w-4 text-success" />,
-      bgClass: 'bg-success-soft',
-      borderClass: 'border-success/20',
+      icon: <TruckIcon className="h-4 w-4" />,
+      accent: 'success',
       link: '/op/orders',
     },
     {
       label: 'Pending Payments',
-      value: kpi ? formatNumber(kpi.pendingPayments) : '—',
+      raw: kpi ? kpi.pendingPayments : null,
+      format: formatNumber,
       subtext: SNAPSHOT_LABEL,
-      icon: <Wallet className="h-4 w-4 text-warning" />,
-      bgClass: 'bg-warning-soft',
-      borderClass: 'border-warning/20',
+      icon: <Wallet className="h-4 w-4" />,
+      accent: 'warning',
       link: '/op/payments',
     },
     {
       label: 'Pending Refunds',
-      value: kpi ? formatNumber(kpi.pendingRefunds) : '—',
+      raw: kpi ? kpi.pendingRefunds : null,
+      format: formatNumber,
       subtext: SNAPSHOT_LABEL,
-      icon: <RotateCcw className="h-4 w-4 text-danger" />,
-      bgClass: 'bg-danger-soft',
-      borderClass: 'border-danger/20',
+      icon: <RotateCcw className="h-4 w-4" />,
+      accent: 'danger',
       link: '/op/refunds',
     },
     {
       // §3.5: dashboard revenue is Σ PAID payments (cash basis) — labelled
       // as such. Accrual Net Sales recognised on delivery lives in Analytics.
       label: 'Cash collected',
-      value: kpi ? formatCurrency(kpi.revenue) : '—',
+      raw: kpi ? kpi.revenue : null,
+      format: formatCurrency,
       subtext: periodLabel,
       tooltip: 'Payments received; Analytics reports accrual Net Sales recognised on delivery',
-      icon: <Coins className="h-4 w-4 text-success" />,
-      bgClass: 'bg-success-soft',
-      borderClass: 'border-success/20',
+      icon: <Coins className="h-4 w-4" />,
+      accent: 'success',
       link: '/op/payments',
     },
     {
       label: 'Low Stock',
-      value: stockCount !== undefined ? formatNumber(stockCount) : '—',
+      raw: stockCount ?? null,
+      format: formatNumber,
       subtext: 'In stock',
-      icon: (
-        <AlertTriangle
-          className={`h-4 w-4 ${stockCount ? 'text-danger' : 'text-muted-foreground'}`}
-        />
-      ),
-      bgClass: stockCount ? 'bg-danger-soft' : 'bg-muted',
-      borderClass: stockCount ? 'border-danger/20' : 'border-border',
+      icon: <AlertTriangle className="h-4 w-4" />,
+      accent: stockCount ? 'danger' : 'success',
       link: '/op/inventory',
     },
   ]
@@ -208,26 +205,28 @@ export function OperationalKpiStrip({ dateRange, preset, view = 'activity' }: Wi
         </p>
       )}
       {/* 5 columns at lg+: row 1 is the order pipeline (New → Confirmed →
-          Packed → Picked Up → Delivered), row 2 is the operational backlog.
-          Wide enough that no label clips; uniform fixed-height tiles. */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          Packed → Shipping → Delivered), row 2 is the operational backlog.
+          Analytics-style kpi-cards with per-tile accent, animated numbers,
+          and staggered rise. Re-mounted per view so switching views replays
+          the entrance smoothly. */}
+      <div key={view} className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {tiles.map((tile, i) => (
           <Link key={tile.label} to={tile.link as any} className="block h-full animate-rise" style={riseStyle(i)}>
             <div
               title={tile.tooltip}
-              className={`flex flex-col h-[104px] overflow-hidden rounded-2xl border bg-card p-2.5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${tile.borderClass} ${isLoading ? 'opacity-75' : ''}`}
+              className={`kpi-card kpi-accent-${tile.accent} flex flex-col h-full p-3 ${isLoading ? 'opacity-75' : ''}`}
             >
               <div className="flex items-start justify-between gap-2">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground leading-tight line-clamp-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground leading-tight line-clamp-2">
                   {tile.label}
                 </span>
-                <div className={`shrink-0 p-1.5 rounded-md ${tile.bgClass}`}>
+                <span className="kpi-icon-badge shrink-0" aria-hidden>
                   {tile.icon}
-                </div>
+                </span>
               </div>
-              <div className="mt-auto space-y-0.5">
-                <span className="block text-xl font-extrabold text-foreground tabular-nums leading-tight">
-                  {tile.value}
+              <div className="mt-auto space-y-0.5 pt-2">
+                <span className="kpi-value block leading-tight">
+                  {tile.raw === null ? '—' : <CountUp value={tile.raw} format={tile.format} />}
                 </span>
                 <p className="text-[10px] text-muted-foreground font-medium leading-tight truncate">
                   {tile.subtext}

@@ -87,7 +87,7 @@ describe('OperationalKpiStrip', () => {
       'New Orders',
       'Confirmed',
       'Packed',
-      'Picked Up',
+      'Shipping',
       'Delivered',
       'Pending Payments',
       'Pending Refunds',
@@ -275,8 +275,8 @@ describe('OperationalKpiStrip', () => {
       expect(view.getByText('0').elements().length).toBe(0)
     })
   })
-
-  it('lays out responsively with a consistent tile height', async () => {    const view = await wrap(makeClient(), RANGE_TODAY, 'today')
+  it('lays out responsively with uniform analytics-style cards', async () => {
+    const view = await wrap(makeClient(), RANGE_TODAY, 'today')
 
     await vi.waitFor(() => {
       const grid = view.container.querySelector('.grid') as HTMLElement
@@ -285,14 +285,15 @@ describe('OperationalKpiStrip', () => {
       expect(grid.className).toContain('sm:grid-cols-3')
       expect(grid.className).toContain('lg:grid-cols-5')
 
-      // Every tile is exactly the same height: a fixed height (not min-height)
-      // keeps rows uniform regardless of label/subtext length.
-      const tiles = view.container.querySelectorAll('.h-\\[104px\\]')
+      // Every tile is the same analytics-style card: same class, uniform shape
+      // regardless of label/subtext length.
+      const tiles = view.container.querySelectorAll('.kpi-card')
       expect(tiles.length).toBe(9)
-      const heights = new Set(
-        Array.from(tiles).map((t) => (t as HTMLElement).className.includes('h-[104px]')),
+      const accents = Array.from(tiles).map((t) =>
+        Array.from((t as HTMLElement).classList).filter((c) => c.startsWith('kpi-accent-')),
       )
-      expect(heights).toEqual(new Set([true]))
+      // Each tile carries exactly one accent — no unaccented/double-accent cards.
+      expect(accents.every((a) => a.length === 1)).toBe(true)
     })
   })
 
@@ -309,14 +310,14 @@ describe('OperationalKpiStrip', () => {
       expect(dashboardApi.getOperationalKpis).not.toHaveBeenCalled()
     })
 
-    it('labels the cohort total unambiguously and Shipping by its status name', async () => {
+    it('uses identical labels in both views — subtext carries the distinction', async () => {
       const view = await wrap(makeClient(), RANGE_TODAY, 'today', 'pipeline')
 
-      // "New Orders" would lie in Pipeline view — the cohort total is not a
-      // current "new" status. Same for "Picked Up" (an activity event).
-      await expect.element(view.getByText('Order Cohort', { exact: true })).toBeInTheDocument()
+      // Same names everywhere: two names for one thing confused users.
+      // View meaning lives in the subtext ("Now · Today cohort"), not labels.
+      await expect.element(view.getByText('New Orders', { exact: true })).toBeInTheDocument()
       await expect.element(view.getByText('Shipping', { exact: true })).toBeInTheDocument()
-      await expect.element(view.getByText('New Orders', { exact: true })).not.toBeInTheDocument()
+      await expect.element(view.getByText('Order Cohort', { exact: true })).not.toBeInTheDocument()
       await expect.element(view.getByText('Picked Up', { exact: true })).not.toBeInTheDocument()
       // Untouched tiles keep their labels.
       await expect.element(view.getByText('Confirmed', { exact: true })).toBeInTheDocument()
@@ -346,7 +347,7 @@ describe('OperationalKpiStrip', () => {
     it('tooltips distinguish cohort total from Shipping current-state', async () => {
       const view = await wrap(makeClient(), RANGE_TODAY, 'today', 'pipeline')
 
-      const cohortTile = view.getByText('Order Cohort', { exact: true }).locator('xpath=ancestor::div[@title]')
+      const cohortTile = view.getByText('New Orders', { exact: true }).locator('xpath=ancestor::div[@title]')
       await expect.element(cohortTile).toHaveAttribute('title', 'Total orders created in the selected period')
       const shippingTile = view.getByText('Shipping', { exact: true }).locator('xpath=ancestor::div[@title]')
       await expect

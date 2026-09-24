@@ -87,16 +87,20 @@ a separate method keeps it untouched and gives distinct React-Query cache keys.
   Pipeline → "Where orders created in the selected period stand now".
   Mobile: header already `flex-col`; switch wraps below DateFilter naturally.
 - `OperationalKpiStrip({ view, ... })`: query key `['operational-kpis', view, start, end]`;
-  fetcher `getOperationalKpis` vs `getOperationalPipelineKpis`. Pipeline tile labels:
-  New Orders → "Order Cohort"; Confirmed / Packed / Delivered unchanged; Picked Up →
-  "Shipping" (Activity "Picked Up" = pickup EVENT in period; Pipeline "Shipping" =
-  orders CURRENTLY in Shipping status — different semantics, different labels).
-  Tile subtexts: Activity = existing `PERIOD_LABELS[preset]` / `SNAPSHOT_LABEL`;
-  Pipeline lifecycle tiles = `Now · {periodLabel} cohort` (e.g. "Now · Today cohort");
-  snapshot tiles unchanged. Tooltips: Order Cohort → "Total orders created in the
-  selected period"; Shipping → "Orders created in the selected period, currently in
-  Shipping status"; plus a strip-level note that other current statuses of the cohort
-  are not yet shown as separate tiles.
+  fetcher `getOperationalKpis` vs `getOperationalPipelineKpis`. Tile labels are
+  IDENTICAL in both views ("New Orders", "Confirmed", "Packed", "Shipping",
+  "Delivered" — user-confirmed 2026-09-24: two names for one thing confused
+  users). View meaning lives in the subtext + tooltip, never in the label:
+  Activity lifecycle tiles = `PERIOD_LABELS[preset]`; Pipeline lifecycle tiles
+  = `Now · {periodLabel} cohort` (e.g. "Now · Today cohort"); snapshot tiles
+  unchanged. Tooltips: New Orders (pipeline) → "Total orders created in the
+  selected period"; Shipping (pipeline) → "Orders created in the selected
+  period, currently in Shipping status"; plus a strip-level note that other
+  current statuses of the cohort are not yet shown as separate tiles.
+- Tile visuals follow Business Analytics: shared `kpi-card` + `kpi-accent-*` +
+  `kpi-icon-badge` + `kpi-value` classes, `CountUp` animated numbers
+  (reduced-motion/test safe), staggered `animate-rise`; grid re-mounts per view
+  (`key={view}`) so switching replays the entrance.
 - `DateFilter`: add Yesterday (`Yesterday`) + All Time (`All`) buttons to
   `DISPLAY_PRESETS` (overflow-x-auto already handles width).
 - `PendingOrders` / `RecentOrders`: queries unchanged; `WidgetShell description`
