@@ -74,7 +74,7 @@ export function DashboardWrapper({ route }: DashboardWrapperProps) {
           />
         </Main>
       ) : (
-        <Main className="space-y-6">
+        <Main className="space-y-4 sm:space-y-6">
           {/* Header section (Sticky) */}
           <div className="sticky top-0 z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 pb-4 border-b border-border/50">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-2">

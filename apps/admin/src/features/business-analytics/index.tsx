@@ -33,7 +33,7 @@ export default function BusinessOverview() {
   const { data, isLoading, error, refetch } = useBusinessOverview(filters)
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <span className="chart-card-header-icon bg-success-soft text-success border border-success/25">
@@ -98,7 +98,7 @@ export default function BusinessOverview() {
             <FulfillmentEconomicsPanel fulfillment={data.data.fulfillment} />
 
             <Tabs defaultValue="channel">
-              <TabsList className="tap-h">
+              <TabsList className="tap-h max-w-full overflow-x-auto">
                 <TabsTrigger value="channel" className="tap-h">Sales Channel</TabsTrigger>
                 <TabsTrigger value="source" className="tap-h">Source System</TabsTrigger>
                 <TabsTrigger value="category" className="tap-h">Category</TabsTrigger>

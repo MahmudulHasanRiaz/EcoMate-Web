@@ -135,7 +135,7 @@ export default function CustomerAnalytics() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <span className="chart-card-header-icon bg-accent-cyan-soft text-accent-cyan border border-accent-cyan/25">
@@ -218,7 +218,7 @@ export default function CustomerAnalytics() {
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <CardTitle className="text-sm font-medium">Customers — segment → customer → order history</CardTitle>
                   <Tabs value={segment || 'all'} onValueChange={onSegment}>
-                    <TabsList className="tap-h">
+                    <TabsList className="tap-h max-w-full overflow-x-auto">
                       <TabsTrigger value="all" className="tap-h">All</TabsTrigger>
                       <TabsTrigger value="new" className="tap-h">New</TabsTrigger>
                       <TabsTrigger value="returning" className="tap-h">Returning</TabsTrigger>

@@ -84,7 +84,7 @@ export function PnlWaterfall({ pnl }: { pnl: OverviewData['pnl'] }) {
       <CardContent>
         <div className="divide-y divide-border/50">
           {rows.map((r) => (
-            <div key={r.label} className={`flex items-center justify-between py-1.5 ${r.indent ? 'pl-4' : ''}`}>
+            <div key={r.label} className={`flex items-center justify-between gap-2 py-1.5 ${r.indent ? 'pl-4' : ''}`}>
               <span className={`text-sm ${r.result ? 'font-bold' : 'text-muted-foreground'}`}>{r.label}</span>
               <span className="flex items-center gap-2">
                 <span className={`text-sm tabular-nums ${r.result ? 'font-bold' : ''} ${r.kpi.state === 'not_applicable' ? 'text-muted-foreground/60' : ''}`}>

@@ -29,9 +29,9 @@ export function FunnelPanel({ stages }: { stages: SalesFunnelStage[] }) {
           {stages.map((s) => (
             <div key={s.key} title={s.dateBasis ?? s.reason} data-testid={`funnel-stage-${s.key}`}>
               <div className="flex items-center justify-between gap-2 text-sm">
-                <span className="font-medium">{s.label}</span>
+                <span className="font-medium min-w-0">{s.label}</span>
                 {s.instrumented ? (
-                  <span className="tabular-nums text-muted-foreground">
+                  <span className="tabular-nums text-muted-foreground text-right shrink-0">
                     {s.orders} · {formatBDT(s.value ?? 0)}
                     {s.conversionFromPrev !== null && s.conversionFromPrev !== undefined ? (
                       <span className="ml-2 text-xs">({formatPct(s.conversionFromPrev)} conv.)</span>

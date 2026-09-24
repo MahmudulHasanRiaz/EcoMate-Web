@@ -175,7 +175,7 @@ export function ExpenseTrendChart({ trend }: { trend: ExpensesTrendData }) {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" strokeOpacity={0.6} />
-              <XAxis dataKey="label" stroke="#9ca3af" fontSize={11} tickLine={false} axisLine={false} dy={10} />
+              <XAxis dataKey="label" stroke="#9ca3af" fontSize={11} tickLine={false} axisLine={false} dy={10} minTickGap={24} />
               <YAxis stroke="#9ca3af" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `৳${v}`} dx={-5} />
               <Tooltip
                 content={({ active, payload, label }: any) => {
@@ -382,7 +382,7 @@ export default function ExpensesAnalytics({ initialSearch }: { initialSearch?: E
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <span className="chart-card-header-icon bg-danger-soft text-danger border border-danger/25">

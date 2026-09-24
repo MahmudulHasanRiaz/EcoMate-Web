@@ -225,7 +225,10 @@ export function OperationalKpiStrip({ dateRange, preset, view = 'activity' }: Wi
                 </span>
               </div>
               <div className="mt-auto space-y-0.5 pt-2">
-                <span className="kpi-value block leading-tight">
+                <span
+                  className="kpi-value block leading-tight truncate"
+                  title={tile.raw === null ? '—' : tile.format(tile.raw)}
+                >
                   {tile.raw === null ? '—' : <CountUp value={tile.raw} format={tile.format} />}
                 </span>
                 <p className="text-[10px] text-muted-foreground font-medium leading-tight truncate">

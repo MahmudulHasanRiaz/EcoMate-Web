@@ -70,13 +70,15 @@ export function OrderStatusChart({ dateRange, userRole }: WidgetProps) {
                 cx="50%"
                 cy="50%"
                 outerRadius={80}
-                label={({ name, value }) => `${name}: ${value}`}
               >
                 {chartData.map((row: any, i: number) => (
                   <Cell key={i} fill={chartFillForName(row.status ?? '', i)} />
                 ))}
               </Pie>
-              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Legend
+                wrapperStyle={{ fontSize: 11 }}
+                formatter={(value: any, entry: any) => `${value}: ${entry?.payload?.count ?? ''}`}
+              />
               <Tooltip content={<CustomTooltip />} />
             </PieChart>
           </ResponsiveContainer>

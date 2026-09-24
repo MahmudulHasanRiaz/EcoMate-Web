@@ -21,7 +21,7 @@ export function ComparisonDelta({
   const good = delta === 0 ? null : (delta > 0) !== Boolean(invert)
   const direction = good === null ? 'flat' : good ? 'up' : 'down'
   return (
-    <div className="flex items-baseline gap-2 text-xs" aria-label={`${label} change vs previous period`}>
+    <div className="flex items-baseline flex-wrap gap-2 text-xs" aria-label={`${label} change vs previous period`}>
       <TrendChip direction={direction}>
         {format ? `${delta > 0 ? '+' : delta < 0 ? '-' : ''}${format(Math.abs(delta))}` : formatDelta(delta)}
       </TrendChip>

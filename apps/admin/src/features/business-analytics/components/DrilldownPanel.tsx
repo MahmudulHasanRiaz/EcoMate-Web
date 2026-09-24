@@ -50,8 +50,8 @@ export function DrilldownPanel({
       <CardContent>
         <div className="divide-y divide-border/50">
           {rows.map((i) => (
-            <a key={i.label} href={href(i.to, i.params)} className="flex items-center justify-between py-2 transition-all duration-200 hover:bg-muted/40 hover:opacity-95 rounded-lg px-2 -mx-2 min-h-10">
-              <span>
+            <a key={i.label} href={href(i.to, i.params)} className="flex items-center justify-between gap-2 py-2 transition-all duration-200 hover:bg-muted/40 hover:opacity-95 rounded-lg px-2 -mx-2 min-h-10">
+              <span className="min-w-0">
                 <span className="block text-sm font-medium">{i.label}</span>
                 <span className="block text-xs text-muted-foreground">{i.description}</span>
               </span>

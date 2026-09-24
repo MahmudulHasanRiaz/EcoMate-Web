@@ -113,13 +113,33 @@
     --kpi-accent-soft: var(--accent-pink-soft);
   }
 
-  /* Big bold KPI number (28-32px), tabular so ৳ amounts don't jitter. */
+  /* Big bold KPI number (28-32px on desktop, fluid down on phones so long
+     ৳ amounts never overflow narrow tiles), tabular so digits don't jitter. */
   .kpi-value {
-    font-size: 1.875rem;
-    line-height: 2.25rem;
+    font-size: clamp(1.375rem, 1.1rem + 1.4vw, 1.875rem);
+    line-height: 1.2;
     font-weight: 800;
     letter-spacing: -0.01em;
     font-variant-numeric: tabular-nums;
+  }
+
+  /* Dashboard cards breathe tighter on phones (48px gutters would eat 15%
+     of a 320px screen); full padding returns at sm+. */
+  .kpi-card [data-slot='card-header'],
+  .chart-card [data-slot='card-header'] {
+    padding-inline: 1rem;
+  }
+  .kpi-card [data-slot='card-content'],
+  .chart-card [data-slot='card-content'] {
+    padding-inline: 1rem;
+  }
+  @media (min-width: 640px) {
+    .kpi-card [data-slot='card-header'],
+    .chart-card [data-slot='card-header'],
+    .kpi-card [data-slot='card-content'],
+    .chart-card [data-slot='card-content'] {
+      padding-inline: 1.5rem;
+    }
   }
 
   /* Topic icon in a tinted rounded badge (colors via --kpi-accent). */
