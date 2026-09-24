@@ -48,11 +48,11 @@ const KIND_BADGE: Record<ExpenseKind, 'info' | 'success' | 'outline'> = {
   unclassified: 'outline',
 }
 
-const EXPENSES_DRILLDOWN: DrilldownItem[] = [
+export const EXPENSES_DRILLDOWN: DrilldownItem[] = [
   { label: 'Expense line → category → expense list', description: 'Category totals down to the booked expense rows', to: '/mon/analytics/expenses', params: { view: 'list' } },
   { label: 'Category → expense module', description: 'Manage categories and their fixed/variable classification', to: '/op/expense-categories' },
-  { label: 'Expense/revenue → P&L ladder', description: 'Recognised Net Sales denominator on the Business Overview', to: '/mon/analytics/overview', params: { view: 'ladder' } },
-  { label: 'Expense total → reconciliation', description: 'R4 ties the analytics total to Σ Expense.amount + taxAmount', to: '/mon/analytics/overview', params: { view: 'reconciliation' } },
+  { label: 'Expense/revenue → P&L ladder', description: 'Recognised Net Sales denominator on the Business Overview', to: '/mon/analytics', params: { view: 'ladder' } },
+  { label: 'Expense total → reconciliation', description: 'R4 ties the analytics total to Σ Expense.amount + taxAmount', to: '/mon/analytics', params: { view: 'reconciliation' } },
 ]
 
 /** Router search params for the §4.2 expenses drill landing (query objects). */

@@ -59,7 +59,7 @@ export function SettlementTable({
         <CardTitle className="text-sm font-medium">Fulfillment Economics — Per-Order Settlement</CardTitle>
         <p className="text-[11px] text-muted-foreground">
           {panelNote || 'Not part of recognised revenue.'} Courier cost is the{' '}
-          <a href="/mon/analytics/overview" className="underline underline-offset-2">
+          <a href="/mon/analytics" className="underline underline-offset-2">
             same underlying cost, shown once in the ladder
           </a>
           .

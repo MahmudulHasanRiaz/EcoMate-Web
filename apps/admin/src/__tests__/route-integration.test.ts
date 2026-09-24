@@ -25,6 +25,18 @@ function expectRedirect(fn: ((ctx: any) => unknown) | undefined) {
   }
 }
 
+function redirectOptions(fn: ((ctx: any) => unknown) | undefined, ctx: any = {}) {
+  expect(fn).toBeDefined()
+  try {
+    fn!({ ...({} as any), ...ctx })
+    expect.unreachable('should have thrown')
+  } catch (e) {
+    expect(isRedirect(e)).toBe(true)
+    return (e as unknown as { options: { to?: string; search?: unknown; params?: unknown } }).options
+  }
+  throw new Error('unreachable')
+}
+
 describe('Access Preset Route Integration', () => {
   it('hr/presets route uses AccessPresetsPage component', () => {
     expect(HrPresetsRoute.options.component).toBe(AccessPresetsPage)
@@ -43,22 +55,18 @@ describe('Analytics consolidation redirects (/op/analytics/* → /mon/analytics/
     expect(MonAnalyticsLandingRoute.options.component).toBe(BusinessOverview)
   })
   it.each([
-    ['overview → Business Overview landing', OpAnalyticsOverviewRoute, {}],
-    ['sales → Sales & Orders', OpAnalyticsSalesRoute, {}],
-    ['products → Products', OpAnalyticsProductsRoute, {}],
-    ['products/$id → product detail (params preserved)', OpAnalyticsProductsIdRoute, { params: { id: 'p1' } }],
-    ['customers → Customers', OpAnalyticsCustomersRoute, {}],
-    ['marketing → Marketing', OpAnalyticsMarketingRoute, {}],
-    ['inventory → Inventory (search preserved)', OpAnalyticsInventoryRoute, { search: { view: 'ledger', productId: 'p1' } }],
-    ['expenses → Expenses (search preserved)', OpAnalyticsExpensesRoute, { search: { view: 'list', categoryId: 'c1' } }],
-  ])('%s', (_label, route, ctx) => {
-    const fn = route.options.beforeLoad
-    expect(fn).toBeDefined()
-    try {
-      fn!({ ...({} as any), ...ctx })
-      expect.unreachable('should have thrown')
-    } catch (e) {
-      expect(isRedirect(e)).toBe(true)
-    }
+    ['overview → Business Overview landing', OpAnalyticsOverviewRoute, {}, { to: '/mon/analytics' }],
+    ['sales → Sales & Orders', OpAnalyticsSalesRoute, {}, { to: '/mon/analytics/sales' }],
+    ['products → Products', OpAnalyticsProductsRoute, {}, { to: '/mon/analytics/products' }],
+    ['products/$id → product detail (params preserved)', OpAnalyticsProductsIdRoute, { params: { id: 'p1' } }, { to: '/mon/analytics/products/$id', params: { id: 'p1' } }],
+    ['customers → Customers', OpAnalyticsCustomersRoute, {}, { to: '/mon/analytics/customers' }],
+    ['marketing → Marketing', OpAnalyticsMarketingRoute, {}, { to: '/mon/analytics/marketing' }],
+    ['inventory → Inventory (search preserved)', OpAnalyticsInventoryRoute, { search: { view: 'ledger', productId: 'p1' } }, { to: '/mon/analytics/inventory', search: { view: 'ledger', productId: 'p1' } }],
+    ['expenses → Expenses (search preserved)', OpAnalyticsExpensesRoute, { search: { view: 'list', categoryId: 'c1' } }, { to: '/mon/analytics/expenses', search: { view: 'list', categoryId: 'c1' } }],
+  ])('%s', (_label, route, ctx, expected) => {
+    const options = redirectOptions(route.options.beforeLoad, ctx)
+    expect(options.to).toBe(expected.to)
+    if (expected.params !== undefined) expect(options.params).toEqual(expected.params)
+    if (expected.search !== undefined) expect(options.search).toEqual(expected.search)
   })
 })

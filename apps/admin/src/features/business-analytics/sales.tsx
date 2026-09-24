@@ -20,12 +20,12 @@ import { FulfillmentEconomicsPanel } from './components/FulfillmentEconomicsPane
 import { BreakdownTable } from './components/BreakdownTable'
 import { DrilldownPanel, type DrilldownItem } from './components/DrilldownPanel'
 
-const SALES_DRILLDOWN: DrilldownItem[] = [
+export const SALES_DRILLDOWN: DrilldownItem[] = [
   { label: 'Gross Sales → Net Sales → breakdown → orders', description: 'Recognised cohort down to contributing orders', to: '/op/orders', params: { deliveryOutcome: 'delivered' } },
   { label: 'Not-yet-recognised pipeline → pre-delivery orders', description: 'Pipeline stages down to orders', to: '/op/orders', params: { deliveryOutcome: 'in_fulfilment' } },
   { label: 'Return Loss → return events → order → courier cost', description: 'Delivered-then-returned orders with inference disclosure', to: '/op/orders', params: { deliveryOutcome: 'returned' } },
   { label: 'Settlement gap → COD orders pending settlement', description: 'Dispatch list for collection-unavailable orders', to: '/op/dispatch', params: { collectionStatus: 'cod-unavailable' } },
-  { label: 'Fulfillment Margin → recognised-revenue ladder', description: 'Courier cost appears once in the P&L Fulfillment Cost line', to: '/mon/analytics/overview', params: { view: 'ladder' } },
+  { label: 'Fulfillment Margin → recognised-revenue ladder', description: 'Courier cost appears once in the P&L Fulfillment Cost line', to: '/mon/analytics', params: { view: 'ladder' } },
 ]
 
 const COUNT_FORMAT = (v: number) => v.toLocaleString('en-US')

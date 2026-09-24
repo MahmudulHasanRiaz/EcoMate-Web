@@ -10,6 +10,11 @@ import { render } from 'vitest-browser-react'
 import { monWidgets } from '@/features/dashboard/config/mon-widgets'
 import { sidebarData } from '@/components/layout/data/sidebar-data'
 import AnalyticsHelp from '@/features/business-analytics/help'
+import { DrilldownPanel } from '@/features/business-analytics/components/DrilldownPanel'
+import { SettlementTable } from '@/features/business-analytics/components/SettlementTable'
+import { SALES_DRILLDOWN } from '@/features/business-analytics/sales'
+import { EXPENSES_DRILLDOWN } from '@/features/business-analytics/expenses'
+import { DEFAULT_FILTERS } from '@/features/business-analytics/types'
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
@@ -49,6 +54,67 @@ describe('analytics consolidation', () => {
     expect(ids).toEqual(
       expect.arrayContaining(['today-kpi', 'order-status', 'new-customers', 'low-stock', 'recent-orders', 'activity']),
     )
+  })
+})
+
+describe('drill hrefs resolve to existing canonical routes', () => {
+  // Canonical analytics landing + per-page paths come from the sidebar (the
+  // source of truth asserted above); op drill targets are real routes.
+  function canonicalPaths(): Set<string> {
+    const monitoringGroup = sidebarData.navGroups.find(g => g.panel === 'monitoring')!
+    const analytics = monitoringGroup.items.find(i => i.title === 'Analytics')!
+    const urls = ('items' in analytics && analytics.items ? analytics.items : []).map(s => s.url)
+    return new Set([...urls, '/op/orders', '/op/dispatch', '/op/expense-categories'])
+  }
+
+  function expectResolves(hrefs: string[]) {
+    const canonical = canonicalPaths()
+    expect(hrefs.length).toBeGreaterThan(0)
+    for (const href of hrefs) {
+      expect(href.startsWith('/mon/analytics/overview'), `dead link ${href}`).toBe(false)
+      const path = href.split('?')[0]
+      expect(canonical.has(path), `drill href ${href} resolves to a canonical route`).toBe(true)
+    }
+  }
+
+  it('default DrilldownPanel rows land on canonical routes and keep query params', async () => {
+    const { container } = await wrap(<DrilldownPanel filters={DEFAULT_FILTERS} />)
+    const hrefs = [...container.querySelectorAll('a')].map(a => a.getAttribute('href') ?? '')
+    expectResolves(hrefs)
+    // The Business Overview renders directly at /mon/analytics — the drill
+    // dimensions survive as query params on the canonical landing.
+    expect(hrefs.some(h => h.startsWith('/mon/analytics?') && h.includes('view=ladder'))).toBe(true)
+    expect(hrefs.some(h => h.includes('view=bridge'))).toBe(true)
+    expect(hrefs.some(h => h.includes('view=fulfillment'))).toBe(true)
+    expect(hrefs.some(h => h.includes('view=coverage'))).toBe(true)
+  })
+
+  it('sales + expenses drill rows land on canonical routes and keep query params', async () => {
+    const { container } = await wrap(
+      <DrilldownPanel filters={DEFAULT_FILTERS} items={[...SALES_DRILLDOWN, ...EXPENSES_DRILLDOWN]} />,
+    )
+    const hrefs = [...container.querySelectorAll('a')].map(a => a.getAttribute('href') ?? '')
+    expectResolves(hrefs)
+    expect(hrefs.some(h => h.startsWith('/mon/analytics?') && h.includes('view=ladder'))).toBe(true)
+    expect(hrefs.some(h => h.includes('view=reconciliation'))).toBe(true)
+    expect(hrefs.some(h => h.includes('/mon/analytics/expenses?') && h.includes('view=list'))).toBe(true)
+  })
+
+  it('SettlementTable header link lands on the canonical overview landing', async () => {
+    const { container } = await wrap(
+      <SettlementTable
+        rows={[]}
+        total={0}
+        page={1}
+        pageSize={20}
+        totalPages={0}
+        gapBanner={{ codOrders: 0, courierCost: 0, message: '' }}
+        panelNote=""
+        onPageChange={() => {}}
+      />,
+    )
+    const href = container.querySelector('a')?.getAttribute('href') ?? ''
+    expect(href).toBe('/mon/analytics')
   })
 })
 
