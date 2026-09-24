@@ -1,5 +1,5 @@
 import { apiClient } from '@/lib/api-client'
-import type { OrderSummary, LowStockItem, TopProduct, StatusCount, RevenueByMethod, NewCustomer, PendingRefund, OperationalKpi, ActivityEntry } from './types'
+import type { OrderSummary, LowStockItem, StatusCount, NewCustomer, PendingRefund, OperationalKpi, ActivityEntry } from './types'
 
 export interface DashboardStats {
   totalRevenue: number
@@ -30,9 +30,7 @@ export const dashboardApi = {
   getAnalytics: (startDate?: string, endDate?: string) => apiClient.get<AnalyticsData>(`/dashboard/analytics${dateParams(startDate, endDate)}`),
   getPendingOrders: (startDate?: string, endDate?: string) => apiClient.get<OrderSummary[]>(`/dashboard/pending-orders${dateParams(startDate, endDate)}`),
   getLowStockProducts: () => apiClient.get<{ count: number; products: LowStockItem[] }>('/dashboard/low-stock'),
-  getTopProducts: (startDate?: string, endDate?: string) => apiClient.get<TopProduct[]>(`/dashboard/top-products${dateParams(startDate, endDate)}`),
   getOrderStatusDistribution: (startDate?: string, endDate?: string) => apiClient.get<StatusCount[]>(`/dashboard/order-status-distribution${dateParams(startDate, endDate)}`),
-  getRevenueByPaymentMethod: (startDate?: string, endDate?: string) => apiClient.get<RevenueByMethod[]>(`/dashboard/revenue-by-payment${dateParams(startDate, endDate)}`),
   getNewCustomers: (startDate?: string, endDate?: string) => apiClient.get<NewCustomer[]>(`/dashboard/new-customers${dateParams(startDate, endDate)}`),
   getPendingRefunds: () => apiClient.get<PendingRefund[]>('/dashboard/pending-refunds'),
   getPendingDispatch: () => apiClient.get<OrderSummary[]>('/dashboard/pending-dispatch'),
