@@ -24,12 +24,15 @@ import { AnalyticsFilterBar } from './components/AnalyticsFilterBar'
 import { KpiCard } from './components/KpiCard'
 import { DataCoverageBadge } from './components/badges'
 import { DrilldownPanel, type DrilldownItem } from './components/DrilldownPanel'
+import { MarketingKpiWidget } from '../analytics/components/MarketingKpiWidget'
+import { TrafficSourcesChart } from '../analytics/components/TrafficSourcesChart'
+import { useLicenseStore } from '../../stores/license-store'
 
 const COUNT_FORMAT = (v: number) => v.toLocaleString('en-US')
 
 const MARKETING_DRILLDOWN: DrilldownItem[] = [
-  { label: 'Marketing spend → undated-spend fix-list', description: 'Consumptions missing spendDate → sync/replay', to: '/op/analytics/marketing', params: { view: 'undated' } },
-  { label: 'Campaign → ad set → ad → orders', description: 'Recorded insights plus intake attributions down to orders', to: '/op/analytics/marketing', params: { view: 'campaigns' } },
+  { label: 'Marketing spend → undated-spend fix-list', description: 'Consumptions missing spendDate → sync/replay', to: '/mon/analytics/marketing', params: { view: 'undated' } },
+  { label: 'Campaign → ad set → ad → orders', description: 'Recorded insights plus intake attributions down to orders', to: '/mon/analytics/marketing', params: { view: 'campaigns' } },
   { label: 'Source revenue → recognised orders', description: 'Marketing-source dimension down to the P&L cohort', to: '/op/orders' },
   { label: 'Never-recognised spend → orders', description: 'Allocations on cancelled or undelivered orders (insight only)', to: '/op/orders' },
   { label: 'Undated row → resync spend', description: 'Spend Snapshots replays the platform sync', to: '/op/marketing/spend-snapshots' },
@@ -239,6 +242,10 @@ export default function MarketingAnalytics() {
   const { data, isLoading, error, refetch } = useMarketingSummary(filters)
   const campaigns = useMarketingCampaigns(filters)
   const undated = useMarketingUndated(filters, page, pageSize)
+  const showGa4 = useLicenseStore((s) => s.hasFeature('integration_ga4'))
+  // GA4 web-traffic sits on a session basis — never mixed with the spend-date
+  // P&L cost or the recognised-revenue attribution above.
+  const ga4Range = { startDate: filters.startDate, endDate: filters.endDate }
 
   const onFilters = (n: AnalyticsFilters) => {
     setFilters(n)
@@ -448,6 +455,19 @@ export default function MarketingAnalytics() {
                 )}
               </CardContent>
             </Card>
+
+            {showGa4 ? (
+              <section aria-label="Web traffic (GA4)">
+                <p className="text-sm font-medium">Web Traffic (GA4)</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5 mb-3">
+                  Session-based web traffic — a separate basis from P&L cost and recognised-revenue attribution. Never mixed into totals.
+                </p>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <MarketingKpiWidget dateRange={ga4Range} />
+                  <TrafficSourcesChart dateRange={ga4Range} />
+                </div>
+              </section>
+            ) : null}
 
             <DrilldownPanel filters={filters} items={MARKETING_DRILLDOWN} />
 

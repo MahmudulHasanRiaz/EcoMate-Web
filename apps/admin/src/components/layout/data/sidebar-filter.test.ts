@@ -207,4 +207,76 @@ describe('filterNavItems', () => {
     const result = filterNavItems(monitoringGroup.items, ['admin_users'])
     expect(result.length).toBeGreaterThanOrEqual(1)
   })
+
+  /* ── Monitoring Dashboard & Analytics consolidation ── */
+
+  const opGroup = sidebarData.navGroups.find(g => g.panel === 'operational')!
+  const monitoringGroup = sidebarData.navGroups.find(g => g.panel === 'monitoring')!
+
+  it('operational panel has no Business Analytics group', () => {
+    expect(opGroup.items.some(i => i.title === 'Business Analytics')).toBe(false)
+  })
+
+  it('no sidebar url points at legacy /op/analytics', () => {
+    const urls: string[] = []
+    for (const g of sidebarData.navGroups) {
+      for (const item of g.items) {
+        if ('url' in item && item.url) urls.push(item.url as string)
+        if ('items' in item && item.items) {
+          for (const sub of item.items) {
+            if (sub.url) urls.push(sub.url as string)
+          }
+        }
+      }
+    }
+    expect(urls.filter(u => u.startsWith('/op/analytics'))).toEqual([])
+  })
+
+  it('monitoring panel is the Dashboard & Analytics group', () => {
+    expect(monitoringGroup.title).toBe('Dashboard & Analytics')
+  })
+
+  it('monitoring panel keeps Dashboard entry first', () => {
+    expect(monitoringGroup.items[0].title).toBe('Dashboard')
+    expect('url' in monitoringGroup.items[0] && monitoringGroup.items[0].url).toBe('/mon/overview')
+  })
+
+  it('monitoring Analytics entry is canonical-named with 8 children', () => {
+    const analytics = monitoringGroup.items.find(i => i.title === 'Analytics')!
+    expect(analytics).toBeDefined()
+    expect('items' in analytics && analytics.items).toHaveLength(8)
+    const urls = ('items' in analytics && analytics.items ? analytics.items : []).map(s => s.url)
+    expect(urls).toEqual([
+      '/mon/analytics',
+      '/mon/analytics/sales',
+      '/mon/analytics/products',
+      '/mon/analytics/customers',
+      '/mon/analytics/marketing',
+      '/mon/analytics/inventory',
+      '/mon/analytics/expenses',
+      '/mon/analytics/help',
+    ])
+  })
+
+  it('monitoring Analytics gate preserves admin_analytics with no child permissions', () => {
+    const analytics = monitoringGroup.items.find(i => i.title === 'Analytics')!
+    expect(analytics.feature).toBe('admin_analytics')
+    expect(analytics.permissions).toBeUndefined()
+    const children = 'items' in analytics && analytics.items ? analytics.items : []
+    for (const child of children) {
+      expect(child.permissions).toBeUndefined()
+    }
+  })
+
+  it('monitoring Analytics shows all children when admin_analytics present', () => {
+    const analytics = monitoringGroup.items.find(i => i.title === 'Analytics')!
+    const result = filterNavItems([analytics], ['admin_analytics'])
+    expect(result).toHaveLength(1)
+    expect('items' in result[0] && result[0].items).toHaveLength(8)
+  })
+
+  it('monitoring Analytics hides completely without admin_analytics', () => {
+    const analytics = monitoringGroup.items.find(i => i.title === 'Analytics')!
+    expect(filterNavItems([analytics], [])).toHaveLength(0)
+  })
 })

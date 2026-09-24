@@ -204,7 +204,7 @@ describe('MovementTable', () => {
     const { container } = await renderWithClient(<MovementTable data={movementData()} />)
     const link = container.querySelector('[data-testid="movement-drill-p1"]')
     expect(link?.getAttribute('href')).toBe(
-      '/op/analytics/inventory?view=ledger&productId=p1&variantId=v1',
+      '/mon/analytics/inventory?view=ledger&productId=p1&variantId=v1',
     )
   })
 
@@ -270,8 +270,8 @@ describe('inventory drill-down', () => {
         filters={{ preset: 'last_30_days', warehouseId: 'w1' }}
         queryBuilder={buildInventoryQuery}
         items={[
-          { label: 'Movement class → product/variant', description: 'x', to: '/op/analytics/products' },
-          { label: 'Product/variant → stock ledger', description: 'x', to: '/op/analytics/inventory', params: { view: 'ledger' } },
+          { label: 'Movement class → product/variant', description: 'x', to: '/mon/analytics/products' },
+          { label: 'Product/variant → stock ledger', description: 'x', to: '/mon/analytics/inventory', params: { view: 'ledger' } },
         ]}
       />,
     )
@@ -307,7 +307,7 @@ describe('resolveInventoryDrill', () => {
     const href = inventoryLedgerHref('p1', 'v1')
     const search = Object.fromEntries(new URLSearchParams(href.split('?')[1]))
     expect(resolveInventoryDrill(search)).toEqual({ focusLedger: true, productId: 'p1', variantId: 'v1' })
-    expect(inventoryLedgerHref('p9', null)).toBe('/op/analytics/inventory?view=ledger&productId=p9')
+    expect(inventoryLedgerHref('p9', null)).toBe('/mon/analytics/inventory?view=ledger&productId=p9')
   })
 })
 

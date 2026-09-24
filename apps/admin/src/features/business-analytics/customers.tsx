@@ -26,9 +26,9 @@ import { DrilldownPanel, type DrilldownItem } from './components/DrilldownPanel'
 const COUNT_FORMAT = (v: number) => v.toLocaleString('en-US')
 
 const CUSTOMER_DRILLDOWN: DrilldownItem[] = [
-  { label: 'New segment → customers → order history', description: 'First-ever recognised in range, down to contributing orders', to: '/op/analytics/customers', params: { segment: 'new' } },
-  { label: 'Returning segment → customers → order history', description: 'Recognised before the range, down to contributing orders', to: '/op/analytics/customers', params: { segment: 'returning' } },
-  { label: 'VIP segment → customers → order history', description: 'Returning plus ≥5 lifetime recognised orders (default policy)', to: '/op/analytics/customers', params: { segment: 'vip' } },
+  { label: 'New segment → customers → order history', description: 'First-ever recognised in range, down to contributing orders', to: '/mon/analytics/customers', params: { segment: 'new' } },
+  { label: 'Returning segment → customers → order history', description: 'Recognised before the range, down to contributing orders', to: '/mon/analytics/customers', params: { segment: 'returning' } },
+  { label: 'VIP segment → customers → order history', description: 'Returning plus ≥5 lifetime recognised orders (default policy)', to: '/mon/analytics/customers', params: { segment: 'vip' } },
   { label: 'Customer → order history', description: 'Profile customers open their record; guests open phone-filtered orders', to: '/op/customers' },
   { label: 'Unattributed → phone-less guest orders', description: 'Orders that cannot be linked — fix by capturing a phone', to: '/op/orders' },
 ]
@@ -160,8 +160,8 @@ export default function CustomerAnalytics() {
         {data ? (
           <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 animate-rise" style={riseStyle(0)} data-testid="acquisition-band">
-              <KpiCard title="New Customers" kpi={data.data.acquisition.newCustomers} format={COUNT_FORMAT} formulaVersion={data.meta.formulaVersion} drilldownHref="/op/analytics/customers?segment=new" />
-              <KpiCard title="Returning Customers" kpi={data.data.acquisition.returningCustomers} format={COUNT_FORMAT} formulaVersion={data.meta.formulaVersion} drilldownHref="/op/analytics/customers?segment=returning" />
+              <KpiCard title="New Customers" kpi={data.data.acquisition.newCustomers} format={COUNT_FORMAT} formulaVersion={data.meta.formulaVersion} drilldownHref="/mon/analytics/customers?segment=new" />
+              <KpiCard title="Returning Customers" kpi={data.data.acquisition.returningCustomers} format={COUNT_FORMAT} formulaVersion={data.meta.formulaVersion} drilldownHref="/mon/analytics/customers?segment=returning" />
               <KpiCard title="Total Customers" kpi={data.data.acquisition.totalCustomers} format={COUNT_FORMAT} formulaVersion={data.meta.formulaVersion} />
             </div>
 

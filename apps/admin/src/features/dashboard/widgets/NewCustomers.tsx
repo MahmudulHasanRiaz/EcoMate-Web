@@ -16,7 +16,7 @@ export function NewCustomers({ dateRange }: WidgetProps) {
   const customers = data?.data || []
 
   return (
-    <WidgetShell title="New Customers" isLoading={isLoading} error={error ?? undefined} onRetry={() => refetch()} icon={<UserPlus className="h-4 w-4" />} iconTone="cyan">
+    <WidgetShell title="New Customers" description="Latest sign-ups — acquisition analysis lives in Analytics → Customers" isLoading={isLoading} error={error ?? undefined} onRetry={() => refetch()} icon={<UserPlus className="h-4 w-4" />} iconTone="cyan">
       {customers.length === 0 ? (
         <div className="flex flex-col items-center py-6 text-center">
           <UserPlus className="h-8 w-8 text-muted-foreground mb-2" />

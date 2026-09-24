@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
+import { Link } from '@tanstack/react-router'
 import { useAuthStore } from '@/stores/auth-store'
 import { useDateFilter } from '../use-date-filter'
 import { DateFilter } from './DateFilter'
@@ -54,7 +55,16 @@ export function DashboardWrapper({ route }: DashboardWrapperProps) {
               <span className="chart-card-header-icon bg-info-soft text-info border border-info/25">
                 <LayoutGrid className="h-5 w-5" />
               </span>
-              <h1 className="text-2xl font-bold tracking-tight">Management Dashboard</h1>
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight">Management Dashboard</h1>
+                <p className="text-xs text-muted-foreground font-medium">
+                  Now · what needs attention — trends, profit and comparisons live in{' '}
+                  <Link to="/mon/analytics" className="underline underline-offset-2">
+                    Analytics
+                  </Link>
+                  .
+                </p>
+              </div>
             </div>
             <DateFilter />
           </div>

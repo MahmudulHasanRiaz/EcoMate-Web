@@ -1,6 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router'
-import BusinessOverview from '@/features/business-analytics'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_authenticated/op/analytics/overview')({
-  component: BusinessOverview,
+  beforeLoad: () => {
+    throw redirect({ to: '/mon/analytics' })
+  },
 })

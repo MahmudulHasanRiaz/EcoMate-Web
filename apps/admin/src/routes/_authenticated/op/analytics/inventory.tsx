@@ -1,16 +1,12 @@
-import { createFileRoute } from '@tanstack/react-router'
-import InventoryAnalytics from '@/features/business-analytics/inventory'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_authenticated/op/analytics/inventory')({
-  component: InventoryRoute,
   validateSearch: (search: Record<string, unknown>) => ({
     view: (search.view as string) || undefined,
     productId: (search.productId as string) || undefined,
     variantId: (search.variantId as string) || undefined,
   }),
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: '/mon/analytics/inventory', search })
+  },
 })
-
-function InventoryRoute() {
-  const search = Route.useSearch()
-  return <InventoryAnalytics initialSearch={search} />
-}

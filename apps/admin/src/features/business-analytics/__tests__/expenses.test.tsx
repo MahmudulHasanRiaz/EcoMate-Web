@@ -230,7 +230,7 @@ describe('ExpenseListTable', () => {
 
 describe('expenses drill landing', () => {
   it('builds list hrefs with view=list and the category narrow', () => {
-    expect(expensesListHref('c1')).toBe('/op/analytics/expenses?view=list&categoryId=c1')
+    expect(expensesListHref('c1')).toBe('/mon/analytics/expenses?view=list&categoryId=c1')
   })
 
   it('focuses the list on view=list or a bare categoryId', () => {

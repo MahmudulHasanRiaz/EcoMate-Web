@@ -29,13 +29,13 @@ export function DrilldownPanel({
     return `${to}${qs ? `?${qs}` : ''}`
   }
   const rows: DrilldownItem[] = items ?? [
-    { label: 'Net Profit → P&L ladder → cost line → orders', description: 'Trace profit into its cost inputs', to: '/op/analytics/overview', params: { view: 'ladder' } },
-    { label: 'Contribution → bridge → Delivery Charge Retained', description: 'Single-count bridge operands', to: '/op/analytics/overview', params: { view: 'bridge' } },
+    { label: 'Net Profit → P&L ladder → cost line → orders', description: 'Trace profit into its cost inputs', to: '/mon/analytics/overview', params: { view: 'ladder' } },
+    { label: 'Contribution → bridge → Delivery Charge Retained', description: 'Single-count bridge operands', to: '/mon/analytics/overview', params: { view: 'bridge' } },
     { label: 'Not-yet-recognised pipeline', description: 'Pre-delivery orders by stage', to: '/op/orders', params: { deliveryOutcome: 'in_fulfilment' } },
-    { label: 'Fulfillment Margin → per-order settlement', description: 'Full panel lands in P5 (Sales & Orders)', to: '/op/analytics/overview', params: { view: 'fulfillment' } },
+    { label: 'Fulfillment Margin → per-order settlement', description: 'Full panel lands in P5 (Sales & Orders)', to: '/mon/analytics/overview', params: { view: 'fulfillment' } },
     { label: 'Settlement gap → COD orders pending settlement', description: 'Dispatch list for collection-unavailable orders', to: '/op/dispatch', params: { collectionStatus: 'cod-unavailable' } },
-    { label: 'Marketing spend → undated-spend fix-list', description: 'Consumptions missing spendDate (P7 full view)', to: '/op/analytics/overview', params: { view: 'coverage' } },
-    { label: 'Low product margin → Products → product → variant → orders', description: 'Parent/variant P&L down to Contribution', to: '/op/analytics/products' },
+    { label: 'Marketing spend → undated-spend fix-list', description: 'Consumptions missing spendDate (P7 full view)', to: '/mon/analytics/overview', params: { view: 'coverage' } },
+    { label: 'Low product margin → Products → product → variant → orders', description: 'Parent/variant P&L down to Contribution', to: '/mon/analytics/products' },
   ]
   return (
     <Card className="chart-card rounded-2xl">

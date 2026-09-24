@@ -49,10 +49,10 @@ const KIND_BADGE: Record<ExpenseKind, 'info' | 'success' | 'outline'> = {
 }
 
 const EXPENSES_DRILLDOWN: DrilldownItem[] = [
-  { label: 'Expense line → category → expense list', description: 'Category totals down to the booked expense rows', to: '/op/analytics/expenses', params: { view: 'list' } },
+  { label: 'Expense line → category → expense list', description: 'Category totals down to the booked expense rows', to: '/mon/analytics/expenses', params: { view: 'list' } },
   { label: 'Category → expense module', description: 'Manage categories and their fixed/variable classification', to: '/op/expense-categories' },
-  { label: 'Expense/revenue → P&L ladder', description: 'Recognised Net Sales denominator on the Business Overview', to: '/op/analytics/overview', params: { view: 'ladder' } },
-  { label: 'Expense total → reconciliation', description: 'R4 ties the analytics total to Σ Expense.amount + taxAmount', to: '/op/analytics/overview', params: { view: 'reconciliation' } },
+  { label: 'Expense/revenue → P&L ladder', description: 'Recognised Net Sales denominator on the Business Overview', to: '/mon/analytics/overview', params: { view: 'ladder' } },
+  { label: 'Expense total → reconciliation', description: 'R4 ties the analytics total to Σ Expense.amount + taxAmount', to: '/mon/analytics/overview', params: { view: 'reconciliation' } },
 ]
 
 /** Router search params for the §4.2 expenses drill landing (query objects). */
@@ -78,7 +78,7 @@ export function resolveExpensesDrill(search: ExpensesDrillSearch | undefined): {
 /** Drill href built from query objects — the landing above honours it. */
 export function expensesListHref(categoryId: string): string {
   const qs = new URLSearchParams({ view: 'list', categoryId }).toString()
-  return `/op/analytics/expenses?${qs}`
+  return `/mon/analytics/expenses?${qs}`
 }
 
 /** Falls back to the live URL when no router search is passed (plain <a> landings). */

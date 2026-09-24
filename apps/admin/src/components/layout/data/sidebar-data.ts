@@ -76,20 +76,6 @@ export const sidebarData: SidebarData = {
           ],
         },
         { title: 'Customers', url: '/op/customers', icon: Users, feature: 'admin_customers' },
-        {
-          title: 'Business Analytics',
-          icon: BarChart3,
-          feature: 'admin_analytics',
-          items: [
-            { title: 'Overview', url: '/op/analytics/overview' },
-            { title: 'Products', url: '/op/analytics/products' },
-            { title: 'Sales & Orders', url: '/op/analytics/sales' },
-            { title: 'Customers', url: '/op/analytics/customers' },
-            { title: 'Inventory', url: '/op/analytics/inventory' },
-            { title: 'Marketing', url: '/op/analytics/marketing' },
-            { title: 'Expenses', url: '/op/analytics/expenses' },
-          ],
-        },
         { title: 'Payments', url: '/op/payments', icon: Coins, feature: 'admin_payments' },
         { title: 'Refunds', url: '/op/refunds', icon: RefreshCw, feature: 'admin_refunds' },
         { title: 'Coupons', url: '/op/coupons', icon: Percent, feature: 'admin_coupons' },
@@ -188,11 +174,25 @@ export const sidebarData: SidebarData = {
     },
     // ===== MONITORING / ADMIN PANEL =====
     {
-      title: '',
+      title: 'Dashboard & Analytics',
       panel: 'monitoring',
       items: [
         { title: 'Dashboard', url: '/mon/overview', icon: LayoutDashboard },
-        { title: 'Analytics', url: '/mon/analytics', icon: Monitor, feature: 'admin_analytics' },
+        {
+          title: 'Analytics',
+          icon: BarChart3,
+          feature: 'admin_analytics',
+          items: [
+            { title: 'Business Overview', url: '/mon/analytics' },
+            { title: 'Sales & Orders', url: '/mon/analytics/sales' },
+            { title: 'Products', url: '/mon/analytics/products' },
+            { title: 'Customers', url: '/mon/analytics/customers' },
+            { title: 'Marketing', url: '/mon/analytics/marketing' },
+            { title: 'Inventory', url: '/mon/analytics/inventory' },
+            { title: 'Expenses', url: '/mon/analytics/expenses' },
+            { title: 'Help', url: '/mon/analytics/help' },
+          ],
+        },
         { title: 'Security Dashboard', url: '/mon/security', icon: ShieldAlert },
         { title: 'Backup & Restore', url: '/mon/backup', icon: HardDrive },
         { title: 'Pages', url: '/mon/pages', icon: FileText, feature: 'admin_cms_pages' },

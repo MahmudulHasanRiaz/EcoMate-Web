@@ -50,10 +50,10 @@ const MOVEMENT_TONE: Record<string, Exclude<StatusTone, 'neutral'>> = {
 }
 
 const INVENTORY_DRILLDOWN: DrilldownItem[] = [
-  { label: 'Inventory value → movement class', description: 'Reconstructed value down to per-product movement', to: '/op/analytics/inventory', params: { view: 'movement' } },
-  { label: 'Movement class → product/variant', description: 'Dead / Fast / Slow / Normal down to the sold entity', to: '/op/analytics/products' },
-  { label: 'Product/variant → stock ledger', description: 'Ledger entries behind the closing stock', to: '/op/analytics/inventory', params: { view: 'ledger' } },
-  { label: 'Stock-out → lost sales evidence', description: 'Days at stock ≤ 0 with measurable demand only', to: '/op/analytics/inventory', params: { view: 'stockouts' } },
+  { label: 'Inventory value → movement class', description: 'Reconstructed value down to per-product movement', to: '/mon/analytics/inventory', params: { view: 'movement' } },
+  { label: 'Movement class → product/variant', description: 'Dead / Fast / Slow / Normal down to the sold entity', to: '/mon/analytics/products' },
+  { label: 'Product/variant → stock ledger', description: 'Ledger entries behind the closing stock', to: '/mon/analytics/inventory', params: { view: 'ledger' } },
+  { label: 'Stock-out → lost sales evidence', description: 'Days at stock ≤ 0 with measurable demand only', to: '/mon/analytics/inventory', params: { view: 'stockouts' } },
 ]
 
 /** Router search params for the §4.2 inventory drill landing (query objects). */
@@ -86,7 +86,7 @@ export function inventoryLedgerHref(productId: string, variantId: string | null)
     productId,
     ...(variantId ? { variantId } : {}),
   }).toString()
-  return `/op/analytics/inventory?${qs}`
+  return `/mon/analytics/inventory?${qs}`
 }
 
 /** Falls back to the live URL when no router search is passed (plain <a> landings). */

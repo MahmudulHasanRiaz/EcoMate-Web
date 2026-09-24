@@ -1,18 +1,21 @@
 import type { WidgetConfig } from '../types'
 import { OperationalKpiStrip } from '../widgets/OperationalKpiStrip'
-import { RevenueChart } from '../widgets/RevenueChart'
 import { OrderStatusChart } from '../widgets/OrderStatusChart'
-import { TopProducts } from '../widgets/TopProducts'
 import { NewCustomers } from '../widgets/NewCustomers'
 import { LowStockAlert } from '../widgets/LowStockAlert'
 import { RecentOrders } from '../widgets/RecentOrders'
 import { ActivityLog } from '../widgets/ActivityLog'
 
+/**
+ * Monitoring Dashboard = now / what needs attention (operational health,
+ * in-flight orders, exceptions, recent activity). Historical financial
+ * analysis — revenue trends, payment-method revenue, product P&L/margins —
+ * lives canonically in Analytics (/mon/analytics) and is intentionally
+ * absent here, so no metric is kept twice.
+ */
 export const monWidgets: WidgetConfig[] = [
   { id: 'today-kpi', component: OperationalKpiStrip, minRole: 'manager', defaultSpan: 4, sizes: { xl: 4 }, title: 'Operational KPIs' },
-  { id: 'revenue', component: RevenueChart, minRole: 'admin', defaultSpan: 2, sizes: { xl: 2 }, title: 'Revenue' },
   { id: 'order-status', component: OrderStatusChart, minRole: 'manager', defaultSpan: 1, sizes: { xl: 1 }, title: 'Order Status' },
-  { id: 'top-products', component: TopProducts, minRole: 'manager', defaultSpan: 1, sizes: { xl: 1 }, title: 'Top Products' },
   { id: 'new-customers', component: NewCustomers, minRole: 'manager', defaultSpan: 1, sizes: { xl: 1 }, title: 'New Customers' },
   { id: 'low-stock', component: LowStockAlert, minRole: 'manager', defaultSpan: 1, sizes: { xl: 1 }, title: 'Low Stock' },
   { id: 'recent-orders', component: RecentOrders, minRole: 'manager', defaultSpan: 2, sizes: { xl: 2 }, title: 'Recent Orders' },

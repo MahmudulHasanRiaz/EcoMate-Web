@@ -40,7 +40,7 @@ export function productVariantOrdersHref(
  * link, and the product-scoped uncosted fix-list drilling to orders.
  */
 export default function ProductAnalyticsDetail() {
-  const { id } = useParams({ from: '/_authenticated/op/analytics/products/$id' })
+  const { id } = useParams({ from: '/_authenticated/mon/analytics/products/$id' })
   const [filters, setFilters] = useState<ProductAnalyticsFilters>(DEFAULT_FILTERS)
   const { data, isLoading, error, refetch } = useAnalyticsProductDetail(id, filters)
 

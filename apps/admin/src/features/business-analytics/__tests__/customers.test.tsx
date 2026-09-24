@@ -128,12 +128,12 @@ describe('customer drill-down params', () => {
       <DrilldownPanel
         filters={{ ...FILTERS, customerSegment: 'returning' }}
         items={[
-          { label: 'Returning segment → customers', description: 'd', to: '/op/analytics/customers', params: { segment: 'returning' } },
+          { label: 'Returning segment → customers', description: 'd', to: '/mon/analytics/customers', params: { segment: 'returning' } },
         ]}
       />,
     )
     const href = container.querySelector('a')?.getAttribute('href') ?? ''
-    expect(href).toMatch(/\/op\/analytics\/customers\?/)
+    expect(href).toMatch(/\/mon\/analytics\/customers\?/)
     expect(href).toMatch(/segment=returning/)
     expect(href).toMatch(/customerSegment=returning/)
     expect(href).toMatch(/preset=last_30_days/)

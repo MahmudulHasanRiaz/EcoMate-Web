@@ -66,7 +66,7 @@ function row(over: Partial<ProductPnlRow> = {}): ProductPnlRow {
 describe('ProductPnlTable basis labels', () => {
   it('labels every line direct / attributed / allocated (§2.6)', async () => {
     const { container, getByText } = await renderWithClient(
-      <ProductPnlTable title="T" rows={[row()]} detailHref={(r) => `/op/analytics/products/${r.productId}`} />,
+      <ProductPnlTable title="T" rows={[row()]} detailHref={(r) => `/mon/analytics/products/${r.productId}`} />,
     )
     const text = container.textContent ?? ''
     expect(text).toMatch(/direct/)
@@ -105,13 +105,13 @@ describe('low-margin drill-down', () => {
       <ProductPnlTable
         title="T"
         rows={[row({ productId: 'p-low', lowMargin: true, contributionMargin: 0.04 }), row({ productId: 'p-ok' })]}
-        detailHref={(r) => `/op/analytics/products/${r.productId}`}
+        detailHref={(r) => `/mon/analytics/products/${r.productId}`}
       />,
     )
-    const lowLinks = [...container.querySelectorAll('a[href="/op/analytics/products/p-low"]')]
+    const lowLinks = [...container.querySelectorAll('a[href="/mon/analytics/products/p-low"]')]
     expect(lowLinks.length).toBeGreaterThan(0)
     expect(lowLinks.some((a) => (a.textContent ?? '').includes('Low margin'))).toBe(true)
-    const okRowLow = container.querySelector('a[href="/op/analytics/products/p-ok"]')
+    const okRowLow = container.querySelector('a[href="/mon/analytics/products/p-ok"]')
     expect(okRowLow).not.toBeNull()
     expect(okRowLow?.textContent ?? '').not.toMatch(/Low margin/)
   })
@@ -122,7 +122,7 @@ describe('low-margin drill-down', () => {
 describe('return-rate incidence', () => {
   it('labels the rate as order-level incidence, never fractional', async () => {
     const { container, getByText } = await renderWithClient(
-      <ProductPnlTable title="T" rows={[row()]} detailHref={(r) => `/op/analytics/products/${r.productId}`} />,
+      <ProductPnlTable title="T" rows={[row()]} detailHref={(r) => `/mon/analytics/products/${r.productId}`} />,
     )
     await expect.element(getByText('(incidence)', { exact: false }).first()).toBeInTheDocument()
     const cell = container.querySelector(`td[title="${RETURN_INCIDENCE_LABEL}"]`)
@@ -135,7 +135,7 @@ describe('return-rate incidence', () => {
       <ProductPnlTable
         title="T"
         rows={[row({ returnRate: { value: null, state: 'no_data', reason: 'no recognised orders containing this product' } })]}
-        detailHref={(r) => `/op/analytics/products/${r.productId}`}
+        detailHref={(r) => `/mon/analytics/products/${r.productId}`}
       />,
     )
     expect(container.textContent ?? '').toMatch(/N\/A/)

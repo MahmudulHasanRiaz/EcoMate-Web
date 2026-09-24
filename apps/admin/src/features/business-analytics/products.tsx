@@ -31,7 +31,7 @@ export default function ProductAnalytics() {
 
   const detailHref = (row: { productId: string }) => {
     const qs = new URLSearchParams(buildProductsQuery(filters)).toString()
-    return `/op/analytics/products/${row.productId}${qs ? `?${qs}` : ''}`
+    return `/mon/analytics/products/${row.productId}${qs ? `?${qs}` : ''}`
   }
 
   return (

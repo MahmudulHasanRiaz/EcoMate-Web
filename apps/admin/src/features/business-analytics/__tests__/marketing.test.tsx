@@ -230,12 +230,12 @@ describe('marketing drill-down params', () => {
       <DrilldownPanel
         filters={{ ...FILTERS, marketingSource: 'facebook' }}
         items={[
-          { label: 'Marketing spend → undated-spend fix-list', description: 'd', to: '/op/analytics/marketing', params: { view: 'undated' } },
+          { label: 'Marketing spend → undated-spend fix-list', description: 'd', to: '/mon/analytics/marketing', params: { view: 'undated' } },
         ]}
       />,
     )
     const href = container.querySelector('a')?.getAttribute('href') ?? ''
-    expect(href).toMatch(/\/op\/analytics\/marketing\?/)
+    expect(href).toMatch(/\/mon\/analytics\/marketing\?/)
     expect(href).toMatch(/view=undated/)
     expect(href).toMatch(/marketingSource=facebook/)
     expect(href).toMatch(/preset=last_30_days/)
