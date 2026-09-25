@@ -277,10 +277,16 @@ describe('P6 reconcile — 3-day window + widening bounds (BR-10)', () => {
   it('ingests fixture orders that fall inside the window', async () => {
     const { svc, ingest } = buildReconcile();
     // Opt-in widening: master flags + widening flag on, recorded reason.
-    process.env.THIRD_PARTY_STORES_ENABLED = 'true';
-    process.env.store_sync_enabled = 'true';
-    process.env.store_reconcile_enabled = 'true';
-    process.env.store_reconcile_widening_enabled = 'true';
+    const saved: Record<string, string | undefined> = {};
+    for (const k of [
+      'THIRD_PARTY_STORES_ENABLED',
+      'store_sync_enabled',
+      'store_reconcile_enabled',
+      'store_reconcile_widening_enabled',
+    ]) {
+      saved[k] = process.env[k];
+      process.env[k] = 'true';
+    }
     try {
       const counts = await svc.runStore('s1', 'run-1', {
         requestedDays: 30,
@@ -295,26 +301,39 @@ describe('P6 reconcile — 3-day window + widening bounds (BR-10)', () => {
       expect(counts.failed).toBe(0);
       expect(ingest.ingest).toHaveBeenCalled();
     } finally {
-      delete process.env.THIRD_PARTY_STORES_ENABLED;
-      delete process.env.store_sync_enabled;
-      delete process.env.store_reconcile_enabled;
-      delete process.env.store_reconcile_widening_enabled;
+      for (const [k, v] of Object.entries(saved)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
     }
   });
 
   it('widening without flag/reason or beyond 30 days is clamped', async () => {
     const { svc } = buildReconcile();
-    // Fail-closed: widening flag off → default 3 days even when requested.
-    await svc.runStore('s1', 'run-1', { requestedDays: 90, wideningReason: 'x' });
-    const data = (svc as any).prisma.syncRun.update.mock.calls[0][0].data;
-    expect(data.windowDays).toBe(3);
-    expect(data.wideningReason).toBeNull();
+    // Kill-switch semantics: widening flag explicitly off → default 3 days.
+    const savedWidening = process.env.store_reconcile_widening_enabled;
+    process.env.store_reconcile_widening_enabled = 'false';
+    try {
+      await svc.runStore('s1', 'run-1', { requestedDays: 90, wideningReason: 'x' });
+      const data = (svc as any).prisma.syncRun.update.mock.calls[0][0].data;
+      expect(data.windowDays).toBe(3);
+      expect(data.wideningReason).toBeNull();
+    } finally {
+      if (savedWidening === undefined) delete process.env.store_reconcile_widening_enabled;
+      else process.env.store_reconcile_widening_enabled = savedWidening;
+    }
 
     // Flag on but absurd request → hard-capped at 30.
-    process.env.THIRD_PARTY_STORES_ENABLED = 'true';
-    process.env.store_sync_enabled = 'true';
-    process.env.store_reconcile_enabled = 'true';
-    process.env.store_reconcile_widening_enabled = 'true';
+    const saved2: Record<string, string | undefined> = {};
+    for (const k of [
+      'THIRD_PARTY_STORES_ENABLED',
+      'store_sync_enabled',
+      'store_reconcile_enabled',
+      'store_reconcile_widening_enabled',
+    ]) {
+      saved2[k] = process.env[k];
+      process.env[k] = 'true';
+    }
     try {
       const svc2 = buildReconcile().svc;
       await svc2.runStore('s1', 'run-2', { requestedDays: 90, wideningReason: 'outage' });
@@ -322,10 +341,10 @@ describe('P6 reconcile — 3-day window + widening bounds (BR-10)', () => {
       expect(data2.windowDays).toBe(30);
       expect(data2.wideningReason).toBe('outage');
     } finally {
-      delete process.env.THIRD_PARTY_STORES_ENABLED;
-      delete process.env.store_sync_enabled;
-      delete process.env.store_reconcile_enabled;
-      delete process.env.store_reconcile_widening_enabled;
+      for (const [k, v] of Object.entries(saved2)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
     }
   });
 });

@@ -151,7 +151,7 @@ describe('P7 notify — post-commit enqueue, non-propagating', () => {
   });
 
   it('flag off → no enqueue, no throw', async () => {
-    delete process.env.store_order_push_enabled;
+    process.env.store_order_push_enabled = 'false';
     const prisma = mockPrisma();
     const { svc, queues } = buildPush(prisma, new FakeProvider());
     await expect(svc.notifyOrderStatusChanged('o1')).resolves.toBeUndefined();

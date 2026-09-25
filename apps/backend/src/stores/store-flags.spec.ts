@@ -12,37 +12,40 @@ import {
   STORE_WEBHOOK_MAX_BODY_BYTES_DEFAULT,
 } from './store-flags';
 
-describe('store runtime flags (P0, fail-closed)', () => {
-  it('everything is off when env is empty', () => {
+describe('store runtime flags (kill-switch: only explicit false disables)', () => {
+  it('everything is ON when env is empty (licensed install works out of the box)', () => {
     const env = {};
-    expect(storesEnabled(env)).toBe(false);
-    expect(productSyncEnabled(env)).toBe(false);
-    expect(orderSyncEnabled(env)).toBe(false);
-    expect(stockSyncEnabled(env)).toBe(false);
-    expect(reconcileEnabled(env)).toBe(false);
-    expect(reconcileWideningEnabled(env)).toBe(false);
-    expect(stockAuditEnabled(env)).toBe(false);
+    expect(storesEnabled(env)).toBe(true);
+    expect(productSyncEnabled(env)).toBe(true);
+    expect(orderSyncEnabled(env)).toBe(true);
+    expect(orderPushEnabled(env)).toBe(true);
+    expect(stockSyncEnabled(env)).toBe(true);
+    expect(reconcileEnabled(env)).toBe(true);
+    expect(reconcileWideningEnabled(env)).toBe(true);
+    expect(stockAuditEnabled(env)).toBe(true);
+    // BR-24 exception: tracking dispatch stays fail-closed.
     expect(externalStoreTrackingEnabled(env)).toBe(false);
   });
 
-  it('master switch requires BOTH top-level flags', () => {
+  it('explicit false on either master flag disables the master', () => {
     expect(
       storesEnabled({
-        THIRD_PARTY_STORES_ENABLED: 'true',
+        THIRD_PARTY_STORES_ENABLED: 'false',
         store_sync_enabled: 'true',
       }),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       storesEnabled({
         THIRD_PARTY_STORES_ENABLED: 'true',
         store_sync_enabled: 'false',
       }),
     ).toBe(false);
-    expect(storesEnabled({ THIRD_PARTY_STORES_ENABLED: 'true' })).toBe(false);
+    expect(storesEnabled({ store_sync_enabled: 'false' })).toBe(false);
   });
 
   it('child flags cannot bypass a disabled master', () => {
     const env = {
+      THIRD_PARTY_STORES_ENABLED: 'false',
       store_product_sync_enabled: 'true',
       store_order_sync_enabled: 'true',
       store_order_push_enabled: 'true',
@@ -58,59 +61,37 @@ describe('store runtime flags (P0, fail-closed)', () => {
     expect(stockAuditEnabled(env)).toBe(false);
   });
 
-  it('child flags turn on individually under an enabled master', () => {
-    const master = {
-      THIRD_PARTY_STORES_ENABLED: 'true',
-      store_sync_enabled: 'true',
-    };
-    expect(productSyncEnabled({ ...master })).toBe(false);
+  it('an explicit false child disables only that child', () => {
+    expect(productSyncEnabled({ store_product_sync_enabled: 'false' })).toBe(false);
+    expect(orderSyncEnabled({ store_product_sync_enabled: 'false' })).toBe(true);
     expect(
-      productSyncEnabled({ ...master, store_product_sync_enabled: 'true' }),
-    ).toBe(true);
-    expect(
-      reconcileWideningEnabled({
-        ...master,
-        store_reconcile_enabled: 'true',
-        store_reconcile_widening_enabled: 'true',
-      }),
-    ).toBe(true);
-    expect(
-      reconcileWideningEnabled({
-        ...master,
-        store_reconcile_widening_enabled: 'true',
-      }),
+      reconcileWideningEnabled({ store_reconcile_widening_enabled: 'false' }),
     ).toBe(false);
+    expect(reconcileEnabled({ store_reconcile_widening_enabled: 'false' })).toBe(true);
   });
 
-  it('P7: order push is nested under order sync (fail-closed, no bypass)', () => {
-    const master = {
-      THIRD_PARTY_STORES_ENABLED: 'true',
-      store_sync_enabled: 'true',
-    };
-    // Off by default even with order sync on.
-    expect(orderPushEnabled({ ...master, store_order_sync_enabled: 'true' })).toBe(false);
-    // On only with both order sync AND the push flag.
-    expect(
-      orderPushEnabled({
-        ...master,
-        store_order_sync_enabled: 'true',
-        store_order_push_enabled: 'true',
-      }),
-    ).toBe(true);
+  it('P7: order push stays nested under order sync', () => {
     // Push flag alone cannot bypass a disabled order sync.
-    expect(orderPushEnabled({ ...master, store_order_push_enabled: 'true' })).toBe(false);
+    expect(
+      orderPushEnabled({ store_order_sync_enabled: 'false' }),
+    ).toBe(false);
+    expect(orderPushEnabled({})).toBe(true);
   });
 
-  it('only the exact string "true" enables (fail-closed on garbage)', () => {
+  it('garbage values resolve to ON (a typo can never silently kill sync)', () => {
     expect(
       storesEnabled({
         THIRD_PARTY_STORES_ENABLED: 'TRUE',
         store_sync_enabled: '1',
       }),
-    ).toBe(false);
+    ).toBe(true);
+    // BR-24 stays fail-closed: only exact 'true' enables tracking dispatch.
     expect(externalStoreTrackingEnabled({ tracking_send_external_store_orders: 'yes' })).toBe(
       false,
     );
+    expect(
+      externalStoreTrackingEnabled({ tracking_send_external_store_orders: 'true' }),
+    ).toBe(true);
   });
 
   it('webhook body cap defaults to 256 KiB and rejects garbage', () => {

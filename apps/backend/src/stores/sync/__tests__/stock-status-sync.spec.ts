@@ -47,7 +47,7 @@ function flagsOn() {
   for (const k of ENV_KEYS) process.env[k] = 'true';
 }
 function flagsOff() {
-  for (const k of ENV_KEYS) delete process.env[k];
+  for (const k of ENV_KEYS) process.env[k] = 'false';
 }
 
 interface MockCtx {

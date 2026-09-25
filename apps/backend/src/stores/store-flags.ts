@@ -1,8 +1,20 @@
 /**
  * Store runtime flags — P0 foundation for central-commerce §12 (BR-25).
  *
- * Every new surface is double-gated: license feature AND a fail-closed
- * runtime flag. Missing ⇒ off. The string 'true' ⇒ on; anything else ⇒ off.
+ * Double-gate model (license AND runtime flag), aligned with every other
+ * feature: the LICENSE decides whether the feature exists for this
+ * install (FeatureGuard, incl. '*' wildcard). The runtime flags below are
+ * an operator kill-switch, not a second setup step:
+ *
+ * - Enablement flags default ON — only an explicit 'false' disables.
+ *   A licensed install therefore works out of the box, exactly like all
+ *   other features. Rollback = set the flag explicitly to 'false'.
+ * - Anything else (missing, garbage, 'TRUE', '1') counts as ON; this is
+ *   deliberate so a typo can never silently kill sync in production.
+ * - Exception: `tracking_send_external_store_orders` stays fail-closed
+ *   (explicit 'true' required) per BR-24 — dispatching tracking pixels to
+ *   ad platforms must never happen by accident.
+ *
  * Pure functions over an explicit env record so they are unit-testable
  * without a database.
  */
@@ -30,7 +42,10 @@ export function isFlagOn(
   env: Record<string, string | undefined>,
   flag: StoreRuntimeFlag,
 ): boolean {
-  return env[flag] === 'true';
+  // Kill-switch semantics: only an explicit 'false' disables. Missing or
+  // garbage values resolve to ON so a licensed install works like every
+  // other feature, and a typo can never silently stop sync.
+  return env[flag] !== 'false';
 }
 
 /** Master kill-switch: no store sync work of any kind runs when off. */

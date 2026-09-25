@@ -102,9 +102,10 @@ without touching the others) criteria.
 Per FINAL-REPORT §8 (drilled live 2026-09-25: OFF 15/15 → ON → OFF 15/15,
 zero data loss):
 
-1. Set all `store_*` runtime flags + `THIRD_PARTY_STORES_ENABLED` off/unset
-   (fail-closed — all sync HTTP surfaces 403, stock/reconcile workers
-   self-skip).
+1. Set all `store_*` runtime flags + `THIRD_PARTY_STORES_ENABLED` explicitly
+   to `'false'` (kill-switch semantics: only explicit `'false'` disables —
+   unsetting NO LONGER stops sync; all sync HTTP surfaces 403,
+   stock/reconcile workers self-skip).
 2. Pause the six queues (covers in-flight jobs the flags cannot stop — the
    product-sync worker itself has no flag check, FINAL-REPORT G-4).
 3. Mappings, credentials, history, field-ownership state stay untouched.

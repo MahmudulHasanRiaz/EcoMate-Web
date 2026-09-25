@@ -121,7 +121,7 @@ describe('P3 native isolation (BR-20)', () => {
   });
 
   it('endpoints are double-gated: flags off → 403 without touching the service', async () => {
-    delete process.env.THIRD_PARTY_STORES_ENABLED;
+    process.env.THIRD_PARTY_STORES_ENABLED = 'false';
     // assertEnabled() throws synchronously before any service call.
     expect(() => availability.getAvailability(PROD_ID)).toThrow(ForbiddenException);
     expect(prisma.product.findUnique).not.toHaveBeenCalled();
