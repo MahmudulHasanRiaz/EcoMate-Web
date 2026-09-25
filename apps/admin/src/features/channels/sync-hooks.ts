@@ -31,6 +31,32 @@ export function useSyncIssues(status?: string) {
   return useQuery({ queryKey: SYNC_KEYS.issues(status), queryFn: () => syncApi.issues(status ? { status } : {}) })
 }
 
+export function useSyncAttempts(params?: { storeId?: string; status?: string }) {
+  return useQuery({
+    queryKey: ['sync', 'attempts', params?.storeId ?? 'all', params?.status ?? 'all'] as const,
+    queryFn: () =>
+      syncApi.attempts({
+        ...(params?.storeId ? { storeId: params.storeId } : {}),
+        ...(params?.status ? { status: params.status } : {}),
+      }),
+  })
+}
+
+export function useStoreHealthGrid() {
+  return useQuery({ queryKey: ['sync', 'health'] as const, queryFn: () => syncApi.healthGrid() })
+}
+
+export function useOverridesHistory(storeId?: string) {
+  return useQuery({
+    queryKey: ['sync', 'overrides', 'history', storeId ?? 'all'] as const,
+    queryFn: () => syncApi.overridesHistory(storeId),
+  })
+}
+
+export function useRetentionStatus() {
+  return useQuery({ queryKey: ['sync', 'retention'] as const, queryFn: () => syncApi.retentionStatus() })
+}
+
 export function useSyncOverrides(storeId?: string) {
   return useQuery({ queryKey: SYNC_KEYS.overrides(storeId), queryFn: () => syncApi.overrides(storeId) })
 }
@@ -88,6 +114,46 @@ export function useResolveIssue() {
   return useMutation({
     mutationFn: ({ id, note, ignore }: { id: string; note?: string; ignore?: boolean }) =>
       ignore ? syncApi.ignoreIssue(id, note) : syncApi.resolveIssue(id, note),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sync'] }),
+  })
+}
+
+export function useRetryAttempt() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => syncApi.retryAttempt(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sync'] }),
+  })
+}
+
+export function useRetryAttempts() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (attemptIds: string[]) => syncApi.retryAttempts(attemptIds),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sync'] }),
+  })
+}
+
+export function useRetryAllAttempts() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (storeId?: string) => syncApi.retryAllAttempts(storeId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sync'] }),
+  })
+}
+
+export function useIgnoreAttempt() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, note }: { id: string; note?: string }) => syncApi.ignoreAttempt(id, note),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sync'] }),
+  })
+}
+
+export function useTriggerRetentionPurge() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => syncApi.triggerRetentionPurge(),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sync'] }),
   })
 }

@@ -13,8 +13,31 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { handleServerError } from '@/lib/handle-server-error'
 import { capabilityNotices } from './api'
 import { useStores } from './hooks'
-import { runStatusTone, failureSummary, syncApi, type SyncRunResponse } from './sync-api'
-import { useSyncRuns, useSyncRunDetail, useSyncIssues, useSyncOverrides, useSyncAll } from './sync-hooks'
+import {
+  runStatusTone,
+  failureSummary,
+  isAttemptEligibleUi,
+  syncApi,
+  type SyncRunResponse,
+  type SyncAttemptResponse,
+} from './sync-api'
+import {
+  useSyncRuns,
+  useSyncRunDetail,
+  useSyncIssues,
+  useSyncOverrides,
+  useSyncAll,
+  useSyncAttempts,
+  useStoreHealthGrid,
+  useOverridesHistory,
+  useRetentionStatus,
+  useRetryAttempt,
+  useRetryAttempts,
+  useRetryAllAttempts,
+  useIgnoreAttempt,
+  useResolveIssue,
+  useTriggerRetentionPurge,
+} from './sync-hooks'
 import { SyncOverrides } from './overrides'
 
 function formatDuration(run: SyncRunResponse): string {
@@ -25,11 +48,14 @@ function formatDuration(run: SyncRunResponse): string {
 }
 
 /**
- * Sync Center (§11): Overview | History | Product Sync | Failed & Retry |
- * Issues | Overrides. Default History view shows only Status | Store | Type
- * | Trigger | Started | Duration; failures lead with a business sentence +
- * primary action; technical detail is expandable; capability limitations
- * render as informational rows, never failures.
+ * Sync Center (§11 + P11 operations): Overview | History | Product Sync |
+ * Failed & Retry | Issues | Overrides | Audit. Default History view shows
+ * only Status | Store | Type | Trigger | Started | Duration; failures lead
+ * with a business sentence + primary action; technical detail is
+ * expandable; capability limitations render as informational rows, never
+ * failures. P11 adds: attempt-level retry now/selected/all-eligible +
+ * ignore-with-note, issue resolve/ignore with notes, store health grid,
+ * override audit history, retention status, widened-window visibility.
  */
 export function SyncCenter() {
   const [tab, setTab] = useState('history')
@@ -69,13 +95,14 @@ export function SyncCenter() {
       </Header>
       <Main>
         <Tabs value={tab} onValueChange={setTab}>
-          <TabsList>
+          <TabsList className="flex-wrap">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="history">History</TabsTrigger>
             <TabsTrigger value="product">Product Sync</TabsTrigger>
             <TabsTrigger value="retry">Failed &amp; Retry</TabsTrigger>
             <TabsTrigger value="issues">Issues{(issues?.length ?? 0) > 0 ? ` (${issues?.length})` : ''}</TabsTrigger>
             <TabsTrigger value="overrides">Overrides{(overrides?.length ?? 0) > 0 ? ` (${overrides?.length})` : ''}</TabsTrigger>
+            <TabsTrigger value="audit">Audit</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview">
@@ -95,6 +122,8 @@ export function SyncCenter() {
                 <CardContent className="text-2xl font-semibold">{overrides?.length ?? 0}</CardContent>
               </Card>
             </div>
+            <StoreHealthGrid />
+            <RetentionCard />
             <Card className="mt-4">
               <CardHeader>
                 <CardTitle className="text-base">Capability notices</CardTitle>
@@ -126,6 +155,12 @@ export function SyncCenter() {
                       <span className="text-sm text-muted-foreground">{run.triggerType}</span>
                       <span className="text-sm text-muted-foreground">{new Date(run.startedAt).toLocaleString()}</span>
                       <span className="text-sm text-muted-foreground">{formatDuration(run)}</span>
+                      {(run.widenedWindow ?? (run.windowDays != null ? { days: run.windowDays, reason: run.wideningReason } : null)) && (
+                        <span className="text-xs text-muted-foreground">
+                          window {(run.widenedWindow?.days ?? run.windowDays)}d
+                          {(run.widenedWindow?.reason ?? run.wideningReason) ? ` — ${run.widenedWindow?.reason ?? run.wideningReason}` : ''}
+                        </span>
+                      )}
                       {summary && <span className="w-full text-sm">{summary.sentence} </span>}
                       <Button size="sm" variant="outline" onClick={() => setDetailId(run.id)}>Detail</Button>
                     </div>
@@ -180,6 +215,10 @@ export function SyncCenter() {
           <TabsContent value="overrides">
             <SyncOverrides />
           </TabsContent>
+
+          <TabsContent value="audit">
+            <OverrideAudit />
+          </TabsContent>
         </Tabs>
 
         <Sheet open={!!detailId} onOpenChange={(open) => { if (!open) setDetailId(null) }}>
@@ -193,27 +232,28 @@ export function SyncCenter() {
   )
 }
 
-function FailedRetry({ onDone }: { onDone: () => void }) {
-  const { data: runs } = useSyncRuns()
-  const failed = (runs ?? []).filter((r) => r.status === 'FAILED' || r.status === 'PARTIAL')
-  if (failed.length === 0) return <p className="text-sm text-muted-foreground">No failed runs.</p>
+function StoreHealthGrid() {
+  const { data: grid } = useStoreHealthGrid()
+  if (!grid || grid.length === 0) return null
   return (
-    <Card>
-      <CardContent className="space-y-2 pt-4">
-        {failed.map((run) => (
-          <div key={run.id} className="flex flex-wrap items-center gap-2 border-b py-2 last:border-0">
-            <Badge variant="destructive">{run.status}</Badge>
-            <span className="text-sm">{run.scope} · {new Date(run.startedAt).toLocaleString()}</span>
-            <span className="text-sm text-muted-foreground">failed {run.failedCount}/{run.totalCount}</span>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                syncApi.cancelRun(run.id).then(() => { toast.success('Run cancelled'); onDone() }).catch(handleServerError)
-              }
-            >
-              Cancel run
-            </Button>
+    <Card className="mt-4">
+      <CardHeader>
+        <CardTitle className="text-base">Store health</CardTitle>
+        <CardDescription>Probe state, open issues and active runs per store (§12).</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {grid.map((row) => (
+          <div key={row.storeId} className="flex flex-wrap items-center gap-2 border-b py-2 text-sm last:border-0">
+            <Badge variant={row.healthState === 'HEALTHY' ? 'success' as never : row.healthState === 'ERROR' ? 'destructive' : 'warning' as never}>
+              {row.healthState}
+            </Badge>
+            <span className="font-medium">{row.name}</span>
+            <span className="text-muted-foreground">{row.provider}</span>
+            <span className="text-muted-foreground">open issues {row.openIssues}</span>
+            <span className="text-muted-foreground">active runs {row.activeRuns}</span>
+            <span className="text-xs text-muted-foreground">
+              checked {row.lastHealthCheckAt ? new Date(row.lastHealthCheckAt).toLocaleString() : '—'}
+            </span>
           </div>
         ))}
       </CardContent>
@@ -221,28 +261,207 @@ function FailedRetry({ onDone }: { onDone: () => void }) {
   )
 }
 
-function IssueRow({ issue }: { issue: { id: string; code: string; message: string; occurrences: number; field?: string | null } }) {
+function RetentionCard() {
+  const { data: status } = useRetentionStatus()
+  const purgeMut = useTriggerRetentionPurge()
+  if (!status) return null
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b py-2 last:border-0">
-      <Badge variant="outline">{issue.code}</Badge>
-      {issue.field && <Badge variant="secondary">{issue.field}</Badge>}
-      <span className="text-sm">{issue.message}</span>
-      <span className="text-sm text-muted-foreground">×{issue.occurrences}</span>
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={() => syncApi.resolveIssue(issue.id).then(() => toast.success('Issue resolved')).catch(handleServerError)}
-      >
-        Resolve
-      </Button>
-      <Button
-        size="sm"
-        variant="ghost"
-        onClick={() => syncApi.ignoreIssue(issue.id).then(() => toast.success('Issue ignored')).catch(handleServerError)}
-      >
-        Ignore
-      </Button>
+    <Card className="mt-4">
+      <CardHeader>
+        <CardTitle className="text-base">Retention (BR-19)</CardTitle>
+        <CardDescription>
+          Runs/items {status.policy.syncRunsDays}d · attempts {status.policy.syncAttemptsDays}d · resolved/ignored issues{' '}
+          {status.policy.resolvedIgnoredIssuesDays}d · open issues kept compact · deliveries {status.policy.webhookDeliveriesDays}d ·
+          health checks {status.policy.healthChecksDays}d.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-muted-foreground">
+          Last purge: {status.lastPurgeRun ? `${status.lastPurgeRun.status} · ${new Date(status.lastPurgeRun.startedAt).toLocaleString()}` : '—'}
+        </span>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={purgeMut.isPending}
+          onClick={() =>
+            purgeMut.mutate(undefined, {
+              onSuccess: () => toast.success('Retention purge enqueued'),
+              onError: handleServerError,
+            })
+          }
+        >
+          Purge now
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
+function FailedRetry({ onDone }: { onDone: () => void }) {
+  const { data: attempts, refetch } = useSyncAttempts()
+  const retryOne = useRetryAttempt()
+  const retrySel = useRetryAttempts()
+  const retryAll = useRetryAllAttempts()
+  const ignoreMut = useIgnoreAttempt()
+  const [selected, setSelected] = useState<string[]>([])
+  const [note, setNote] = useState('')
+
+  const eligible = (attempts ?? []).filter((a) => isAttemptEligibleUi(a as SyncAttemptResponse))
+  const toggle = (id: string) =>
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+
+  const after = (msg: string) => {
+    toast.success(msg)
+    setSelected([])
+    void refetch()
+    onDone()
+  }
+
+  return (
+    <Card>
+      <CardContent className="space-y-3 pt-4">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={selected.length === 0 || retrySel.isPending}
+            onClick={() =>
+              retrySel.mutate(selected, {
+                onSuccess: (res: unknown) => after(`Retried ${(res as { retried: number }).retried} attempts`),
+                onError: handleServerError,
+              })
+            }
+          >
+            Retry selected ({selected.length})
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={eligible.length === 0 || retryAll.isPending}
+            onClick={() =>
+              retryAll.mutate(undefined, {
+                onSuccess: (res: unknown) => after(`Retried ${(res as { retried: number }).retried} eligible attempts`),
+                onError: handleServerError,
+              })
+            }
+          >
+            Retry all eligible ({eligible.length})
+          </Button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            className="min-w-52 flex-1 rounded border px-2 py-1 text-sm"
+            placeholder="Ignore note (recorded on the attempt)…"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+          />
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={selected.length === 0 || ignoreMut.isPending}
+            onClick={async () => {
+              for (const id of selected) {
+                await ignoreMut.mutateAsync({ id, note: note || undefined }).catch(handleServerError)
+              }
+              after(`Ignored ${selected.length} attempts`)
+              setNote('')
+            }}
+          >
+            Ignore selected with note
+          </Button>
+        </div>
+        {(attempts ?? []).slice(0, 100).map((a) => {
+          const ok = isAttemptEligibleUi(a as SyncAttemptResponse)
+          return (
+            <div key={a.id} className="flex flex-wrap items-center gap-2 border-b py-2 text-sm last:border-0">
+              <input type="checkbox" checked={selected.includes(a.id)} onChange={() => toggle(a.id)} aria-label={`select ${a.id}`} />
+              <Badge variant={a.status === 'FAILED' || a.status === 'DEAD' ? 'destructive' : 'outline'}>{a.status}</Badge>
+              <span className="text-muted-foreground">{a.objectType} · {a.objectKey.slice(0, 48)}</span>
+              {a.errorCategory && <span className="text-xs text-muted-foreground">{a.errorCategory}</span>}
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!ok || retryOne.isPending}
+                title={ok ? 'Retry now' : 'Not eligible (waiting, terminal or already handled)'}
+                onClick={() =>
+                  retryOne.mutate(a.id, {
+                    onSuccess: () => after('Retry enqueued'),
+                    onError: handleServerError,
+                  })
+                }
+              >
+                Retry now
+              </Button>
+            </div>
+          )
+        })}
+        {(attempts ?? []).length === 0 && <p className="text-sm text-muted-foreground">No attempts in the 90-day window.</p>}
+      </CardContent>
+    </Card>
+  )
+}
+
+function IssueRow({ issue }: { issue: { id: string; code: string; message: string; occurrences: number; field?: string | null } }) {
+  const mut = useResolveIssue()
+  const [note, setNote] = useState('')
+  const act = (ignore: boolean) =>
+    mut.mutate(
+      { id: issue.id, note: note || undefined, ignore },
+      {
+        onSuccess: () => {
+          toast.success(ignore ? 'Issue ignored' : 'Issue resolved')
+          setNote('')
+        },
+        onError: handleServerError,
+      },
+    )
+  return (
+    <div className="border-b py-2 last:border-0">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="outline">{issue.code}</Badge>
+        {issue.field && <Badge variant="secondary">{issue.field}</Badge>}
+        <span className="text-sm">{issue.message}</span>
+        <span className="text-sm text-muted-foreground">×{issue.occurrences}</span>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <input
+          className="min-w-52 flex-1 rounded border px-2 py-1 text-sm"
+          placeholder="Resolution note (audited)…"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+        />
+        <Button size="sm" variant="outline" disabled={mut.isPending} onClick={() => act(false)}>
+          Resolve with note
+        </Button>
+        <Button size="sm" variant="ghost" disabled={mut.isPending} onClick={() => act(true)}>
+          Ignore with note
+        </Button>
+      </div>
     </div>
+  )
+}
+
+function OverrideAudit() {
+  const { data: rows } = useOverridesHistory()
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Override audit history</CardTitle>
+        <CardDescription>Every Force EcoMate Value / Keep External Value with actor and previous state (BR-04).</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-1">
+        {(rows ?? []).map((row) => (
+          <details key={row.id} className="border-b py-1 text-sm last:border-0">
+            <summary className="cursor-pointer">
+              <Badge variant="outline" className="mr-2">{row.status}</Badge>
+              {row.field ?? row.objectType} · {row.createdAt ? new Date(row.createdAt).toLocaleString() : '—'}
+            </summary>
+            <p className="mt-1 break-words text-muted-foreground">{row.reason ?? '—'}</p>
+          </details>
+        ))}
+        {(rows ?? []).length === 0 && <p className="text-sm text-muted-foreground">No override actions recorded yet.</p>}
+      </CardContent>
+    </Card>
   )
 }
 
@@ -250,16 +469,21 @@ function IssueRow({ issue }: { issue: { id: string; code: string; message: strin
 export function SyncRunDetail({ runId }: { runId: string }) {
   const { data: run } = useSyncRunDetail(runId)
   if (!run) return <p className="text-sm text-muted-foreground">Loading…</p>
+  const widened = run.widenedWindow ?? (run.windowDays != null ? { days: run.windowDays, reason: run.wideningReason } : null)
   return (
     <div className="space-y-3 pt-4">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Badge variant={runStatusTone(run.status) as never}>{run.status}</Badge>
         <span className="text-sm">{run.scope} · {run.triggerType}</span>
+        {run.provider && <Badge variant="secondary">{run.provider}</Badge>}
       </div>
-      {run.windowDays != null && (
+      {widened && (
         <p className="text-sm text-muted-foreground">
-          Window: {run.windowDays} days{run.wideningReason ? ` — ${run.wideningReason}` : ''}
+          Window: {widened.days} days{widened.reason ? ` — ${widened.reason}` : ''}
         </p>
+      )}
+      {run.correlationId && (
+        <p className="break-all text-xs text-muted-foreground">correlation {run.correlationId}</p>
       )}
       <div className="grid grid-cols-4 gap-2 text-center">
         {([['Created', run.createdCount], ['Updated', run.updatedCount], ['Skipped', run.skippedCount], ['Failed', run.failedCount]] as const).map(([label, n]) => (

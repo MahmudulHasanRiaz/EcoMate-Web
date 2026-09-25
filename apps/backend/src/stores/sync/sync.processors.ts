@@ -12,6 +12,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ProductSyncService, SYNC_FANOUT_CONCURRENCY_DEFAULT } from './product-sync.service';
 import { StockStatusSyncService } from './stock-status-sync.service';
 import { SyncRunService } from './sync-run.service';
+import { SyncRetentionService } from './sync-retention.service';
 import { SyncQueuesService, fanoutConcurrency } from './sync-queues.service';
 import { StoreCircuitBreaker } from './sync-circuit';
 import { StoreOrderIngestService } from '../orders/store-order-ingest.service';
@@ -323,15 +324,23 @@ export class StoreReconcileProcessor extends WorkerHost {
 
 @Processor('store-maintenance', { concurrency: 1, limiter: { max: 2, duration: 1000 } })
 export class StoreMaintenanceProcessor extends WorkerHost {
-  constructor(private readonly runs: SyncRunService) { super(); }
+  private readonly logger = new Logger(StoreMaintenanceProcessor.name);
+  constructor(
+    private readonly runs: SyncRunService,
+    private readonly retention: SyncRetentionService,
+  ) { super(); }
   async process(job: Job): Promise<unknown> {
-    // Retention lifecycle lands in P11; the queue exists with bounds now.
+    // P11 BR-19: daily bounded retention purge (additive; the queue bounds
+    // predate P11). Heavy work runs here, never in the HTTP request (BR-21).
+    if (job.name === 'retention-purge') {
+      return this.retention.purge(new Date());
+    }
     const { runId } = (job.data ?? {}) as { runId?: string };
     if (runId) {
       await this.runs.recordItem(runId, {
-        objectType: 'PRODUCT', status: 'SKIPPED', reason: 'RETENTION_DEFERRED_TO_P11', auditLevel: 'G',
+        objectType: 'PRODUCT', status: 'SKIPPED', reason: 'UNKNOWN_MAINTENANCE_JOB: ignored', auditLevel: 'G',
       });
     }
-    return { deferred: 'P11' };
+    return { ignored: job.name };
   }
 }

@@ -1,9 +1,14 @@
 /**
- * Sync operations API — central-commerce §10 (P4).
+ * Sync operations API — central-commerce §10 (P4) + P11 operations.
  *
  * Runs/items/attempts/issues/product-history + overrides queue + retry.
  * Manual triggers return `{ runId }` immediately; heavy work never runs in
  * the HTTP request (BR-21). Double-gated: license feature + runtime flags.
+ *
+ * P11 (additive): provider + initiator run filters, `widenedWindow` alias
+ * on run payloads, retry-now/selected/all-eligible + attempt ignore with
+ * notes, store health grid, override audit history, retention status +
+ * manual purge trigger.
  */
 import {
   Body,
@@ -22,6 +27,14 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SyncRunService } from './sync-run.service';
 import { SyncQueuesService } from './sync-queues.service';
+import { SyncRetryService } from './sync-retry.service';
+import {
+  HEALTH_CHECK_RETENTION_DAYS,
+  SYNC_ATTEMPT_RETENTION_DAYS,
+  SYNC_ISSUE_RESOLVED_RETENTION_DAYS,
+  SYNC_RUN_RETENTION_DAYS,
+  WEBHOOK_DELIVERY_RETENTION_DAYS,
+} from './sync-retention.service';
 import { productSyncEnabled, storesEnabled } from '../store-flags';
 
 export class TriggerSyncDto {
@@ -42,6 +55,24 @@ export class ResolveIssueDto {
   note?: string;
 }
 
+export class RetryAttemptsDto {
+  @IsArray()
+  @IsUUID('4', { each: true })
+  attemptIds!: string[];
+}
+
+export class RetryAllDto {
+  @IsOptional()
+  @IsUUID('4')
+  storeId?: string;
+}
+
+export class IgnoreAttemptDto {
+  @IsOptional()
+  @IsString()
+  note?: string;
+}
+
 function gate(): void {
   if (!storesEnabled() || !productSyncEnabled()) {
     throw new ForbiddenException('Product sync is disabled');
@@ -56,6 +87,7 @@ export class SyncOpsController {
     private readonly prisma: PrismaService,
     private readonly runs: SyncRunService,
     private readonly queues: SyncQueuesService,
+    private readonly retry: SyncRetryService,
   ) {}
 
   @Post('stores/sync-all')
@@ -100,6 +132,8 @@ export class SyncOpsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('take') take?: string,
+    @Query('provider') provider?: string,
+    @Query('initiatedBy') initiatedBy?: string,
   ) {
     gate();
     const where: any = {};
@@ -107,25 +141,45 @@ export class SyncOpsController {
     if (scope) where.scope = scope;
     if (status) where.status = status;
     if (trigger) where.triggerType = trigger;
+    if (initiatedBy) where.initiatedById = initiatedBy;
+    // Provider filter (§10): SyncRun has no provider column (additive-only —
+    // no migration in P11), so filter through the store relation's kind.
+    if (provider) where.store = { kind: provider };
     if (from || to) {
       where.startedAt = {};
       if (from) where.startedAt.gte = new Date(from);
       if (to) where.startedAt.lte = new Date(to);
     }
-    return this.prisma.syncRun.findMany({
+    const rows = await this.prisma.syncRun.findMany({
       where,
       orderBy: { startedAt: 'desc' },
       take: Math.min(Number(take ?? 50), 200),
-      include: { _count: { select: { items: true } } },
+      include: { _count: { select: { items: true } }, store: { select: { id: true, kind: true, name: true } } },
     });
+    // Additive alias: widenedWindow alongside the raw columns.
+    return (rows as any[]).map((r) => ({
+      ...r,
+      provider: (r as any).store?.kind ?? null,
+      widenedWindow: r.windowDays != null ? { days: r.windowDays, reason: (r as any).wideningReason ?? null } : null,
+    }));
   }
 
   @Get('sync/runs/:id')
   async runDetail(@Param('id', ParseUUIDPipe) id: string) {
     gate();
-    const run = await this.prisma.syncRun.findUnique({ where: { id }, include: { items: { take: 200, orderBy: { createdAt: 'desc' } } } });
+    const run = await this.prisma.syncRun.findUnique({
+      where: { id },
+      include: { items: { take: 200, orderBy: { createdAt: 'desc' } }, store: { select: { id: true, kind: true, name: true } } },
+    });
     if (!run) return null;
-    return run;
+    return {
+      ...run,
+      provider: (run as any).store?.kind ?? null,
+      widenedWindow:
+        (run as any).windowDays != null
+          ? { days: (run as any).windowDays, reason: (run as any).wideningReason ?? null }
+          : null,
+    };
   }
 
   @Get('sync/runs/:id/items')
@@ -146,18 +200,6 @@ export class SyncOpsController {
   async cancelRun(@Param('id', ParseUUIDPipe) id: string) {
     gate();
     return this.runs.cancel(id);
-  }
-
-  @Get('sync/attempts')
-  async attempts(@Query('storeId') storeId?: string, @Query('take') take?: string) {
-    gate();
-    // 90-day window (BR-19).
-    const since = new Date(Date.now() - 90 * 24 * 3600 * 1000);
-    return this.prisma.syncAttempt.findMany({
-      where: { ...(storeId ? { storeId } : {}), createdAt: { gte: since } },
-      orderBy: { createdAt: 'desc' },
-      take: Math.min(Number(take ?? 100), 500),
-    });
   }
 
   @Get('sync/issues')
@@ -236,5 +278,147 @@ export class SyncOpsController {
       });
     }
     return { requeued, resolved: 0 };
+  }
+
+  // ── P11 retry center (provider-independent) ──────────────────────────
+
+  @Get('sync/attempts')
+  async attempts(
+    @Query('storeId') storeId?: string,
+    @Query('take') take?: string,
+    @Query('status') status?: string,
+    @Query('objectType') objectType?: string,
+  ) {
+    gate();
+    // 90-day window (BR-19).
+    const since = new Date(Date.now() - 90 * 24 * 3600 * 1000);
+    return this.prisma.syncAttempt.findMany({
+      where: {
+        ...(storeId ? { storeId } : {}),
+        ...(status ? { status: status as any } : {}),
+        ...(objectType ? { objectType: objectType as any } : {}),
+        createdAt: { gte: since },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(Number(take ?? 100), 500),
+    });
+  }
+
+  @Post('sync/attempts/:id/retry')
+  @Roles('superadmin', 'admin')
+  async retryAttempt(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user?: any) {
+    gate();
+    return this.retry.retryOne(id, user?.sub);
+  }
+
+  @Post('sync/attempts/retry')
+  @Roles('superadmin', 'admin')
+  async retryAttempts(@Body() dto: RetryAttemptsDto, @CurrentUser() user?: any) {
+    gate();
+    return this.retry.retryByIds(dto.attemptIds, user?.sub);
+  }
+
+  @Post('sync/attempts/retry-all')
+  @Roles('superadmin', 'admin')
+  async retryAll(@Body() dto: RetryAllDto, @CurrentUser() user?: any) {
+    gate();
+    return this.retry.retryAllEligible(dto.storeId, user?.sub);
+  }
+
+  @Post('sync/attempts/:id/ignore')
+  @Roles('superadmin', 'admin')
+  async ignoreAttempt(@Param('id', ParseUUIDPipe) id: string, @Body() dto: IgnoreAttemptDto) {
+    gate();
+    return this.retry.ignoreAttempt(id, dto.note);
+  }
+
+  // ── P11 health grid (§12 observability) ──────────────────────────────
+
+  @Get('sync/health')
+  async healthGrid(@Query('kind') kind?: string) {
+    gate();
+    const stores = await this.prisma.store.findMany({
+      where: { ...(kind ? { kind: kind as any } : {}) },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true, kind: true, name: true, status: true, healthState: true,
+        lastSyncAt: true, lastHealthCheckAt: true, lastError: true,
+      },
+      take: 200,
+    });
+    const rows: any[] = [];
+    for (const s of stores as any[]) {
+      const [check, openIssues, activeRuns] = await Promise.all([
+        this.prisma.storeHealthCheck.findFirst({ where: { storeId: s.id }, orderBy: { checkedAt: 'desc' } }),
+        (this.prisma as any).storeSyncIssue.count({ where: { storeId: s.id, status: 'OPEN' } }).catch(() => 0),
+        this.prisma.syncRun.count({ where: { storeId: s.id, status: 'RUNNING' } }).catch(() => 0),
+      ]);
+      rows.push({
+        storeId: s.id,
+        name: s.name,
+        kind: s.kind,
+        provider: s.kind,
+        status: s.status,
+        healthState: s.healthState,
+        lastSyncAt: s.lastSyncAt,
+        lastHealthCheckAt: s.lastHealthCheckAt,
+        lastError: s.lastError,
+        latestCheck: check,
+        openIssues,
+        activeRuns,
+      });
+    }
+    return rows;
+  }
+
+  // ── P11 override audit history (BR-04 trail) ─────────────────────────
+
+  @Get('sync/overrides/history')
+  async overridesHistory(@Query('storeId') storeId?: string, @Query('take') take?: string) {
+    gate();
+    // Every Force/Keep writes a SyncRunItem with reason `override:<action>
+    // actor=… prevExternal=… prevBaseline=…` (P4 auditOverride) — this view
+    // surfaces that trail. Additive: no new table.
+    return this.prisma.syncRunItem.findMany({
+      where: {
+        ...(storeId ? { storeId } : {}),
+        reason: { startsWith: 'override:' },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(Number(take ?? 100), 500),
+    });
+  }
+
+  // ── P11 retention observability (BR-19) ──────────────────────────────
+
+  @Get('sync/retention/status')
+  async retentionStatus() {
+    gate();
+    const lastPurge = await this.prisma.syncRun.findFirst({
+      where: { scope: 'MAINTENANCE' as any },
+      orderBy: { startedAt: 'desc' },
+    });
+    return {
+      policy: {
+        syncRunsDays: SYNC_RUN_RETENTION_DAYS,
+        syncRunItemsDays: SYNC_RUN_RETENTION_DAYS,
+        syncAttemptsDays: SYNC_ATTEMPT_RETENTION_DAYS,
+        resolvedIgnoredIssuesDays: SYNC_ISSUE_RESOLVED_RETENTION_DAYS,
+        openIssues: 'kept-compact-never-purged',
+        webhookDeliveriesDays: WEBHOOK_DELIVERY_RETENTION_DAYS,
+        healthChecksDays: HEALTH_CHECK_RETENTION_DAYS,
+      },
+      lastPurgeRun: lastPurge,
+    };
+  }
+
+  @Post('sync/retention/purge')
+  @Roles('superadmin', 'admin')
+  async triggerPurge(@CurrentUser() user?: any) {
+    gate();
+    // BR-21: enqueue only — the bounded purge runs in the worker.
+    void user;
+    await this.queues.enqueue('store-maintenance', 'retention-purge', { triggeredAt: new Date().toISOString() }, `retention-purge:${Date.now()}`);
+    return { enqueued: true };
   }
 }

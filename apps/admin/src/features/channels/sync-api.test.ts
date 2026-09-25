@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { runStatusTone, syncPollInterval, failureSummary, shortHash } from './sync-api'
+import { runStatusTone, syncPollInterval, failureSummary, shortHash, isAttemptEligibleUi } from './sync-api'
 
 describe('sync-api helpers (P4 Sync Center)', () => {
   it('runStatusTone maps run status to badge tones', () => {
@@ -36,5 +36,16 @@ describe('sync-api helpers (P4 Sync Center)', () => {
     expect(shortHash(null)).toBe('—')
     expect(shortHash('abc')).toBe('abc')
     expect(shortHash('a'.repeat(64))).toBe(`${'a'.repeat(8)}…aaaa`)
+  })
+
+  it('isAttemptEligibleUi mirrors the backend retry gate (P11)', () => {
+    const now = new Date('2026-09-25T12:00:00.000Z')
+    expect(isAttemptEligibleUi({ status: 'PENDING' } as never, now)).toBe(true)
+    expect(isAttemptEligibleUi({ status: 'FAILED' } as never, now)).toBe(true)
+    expect(isAttemptEligibleUi({ status: 'PENDING', nextRetryAt: '2026-09-25T11:00:00.000Z' } as never, now)).toBe(true)
+    expect(isAttemptEligibleUi({ status: 'PENDING', nextRetryAt: '2026-09-25T13:00:00.000Z' } as never, now)).toBe(false)
+    expect(isAttemptEligibleUi({ status: 'DEAD' } as never, now)).toBe(false)
+    expect(isAttemptEligibleUi({ status: 'SUCCESS' } as never, now)).toBe(false)
+    expect(isAttemptEligibleUi({ status: 'SKIPPED' } as never, now)).toBe(false)
   })
 })

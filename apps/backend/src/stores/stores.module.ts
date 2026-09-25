@@ -33,6 +33,10 @@ import {
   StoreAvailabilityRulesController,
 } from './distribution/distribution.controller';
 import { SyncRunService } from './sync/sync-run.service';
+import { SyncNotifyService } from './sync/sync-notify.service';
+import { SyncRetentionService } from './sync/sync-retention.service';
+import { SyncRetentionScheduler } from './sync/sync-retention.scheduler';
+import { SyncRetryService } from './sync/sync-retry.service';
 import { CategorySyncService } from './sync/category-sync.service';
 import { ProductSyncService } from './sync/product-sync.service';
 import { StockStatusSyncService } from './sync/stock-status-sync.service';
@@ -95,6 +99,10 @@ const SYNC_QUEUE_DEFAULTS = { removeOnComplete: 100, removeOnFail: 50, attempts:
     FieldOwnershipService,
     DistributionService,
     SyncRunService,
+    SyncNotifyService,
+    SyncRetentionService,
+    SyncRetentionScheduler,
+    SyncRetryService,
     CategorySyncService,
     ProductSyncService,
     StockStatusSyncService,
@@ -119,6 +127,9 @@ const SYNC_QUEUE_DEFAULTS = { removeOnComplete: 100, removeOnFail: 50, attempts:
     StoreAvailabilityService,
     DistributionService,
     SyncRunService,
+    SyncNotifyService,
+    SyncRetentionService,
+    SyncRetryService,
     ProductSyncService,
     SyncQueuesService,
     StockStatusSyncService,
