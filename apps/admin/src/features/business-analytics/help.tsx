@@ -2,123 +2,118 @@
 
 import { HelpCircle } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
-import { Header } from '@/components/layout/header'
-import { Main } from '@/components/layout/main'
-import { ProfileDropdown } from '@/components/profile-dropdown'
-import { ThemeSwitch } from '@/components/theme-switch'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { AnalyticsPageHeader, AnalyticsSection } from './components/analytics-ui'
 
-function HelpSection({ title, to, linkLabel, children }: { title: string; to?: string; linkLabel?: string; children: React.ReactNode }) {
-  return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <CardTitle className="text-base">{title}</CardTitle>
-          {to && linkLabel ? (
-            <Link to={to as any}>
-              <Badge variant="outline" className="cursor-pointer hover:bg-muted">{linkLabel}</Badge>
-            </Link>
-          ) : null}
-        </div>
-      </CardHeader>
-      <CardContent className="text-sm text-muted-foreground space-y-1.5">
-        <ul className="list-disc pl-5 space-y-1.5 leading-relaxed">{children}</ul>
-      </CardContent>
-    </Card>
-  )
-}
+/** Question → page rows for the "which page" table. Destinations are canonical sidebar routes. */
+const QUESTION_ROWS: { q: string; page: string; to: string; note?: string }[] = [
+  { q: 'Business কেমন করেছে?', page: 'Business Overview', to: '/mon/analytics' },
+  { q: 'Sales/Return/Refund?', page: 'Sales & Orders', to: '/mon/analytics/sales' },
+  { q: 'কোন Product লাভ?', page: 'Products', to: '/mon/analytics/products' },
+  { q: 'Customer performance?', page: 'Customers', to: '/mon/analytics/customers' },
+  { q: 'Marketing spend কাজ?', page: 'Marketing', to: '/mon/analytics/marketing', note: 'ROAS, CAC, CPA' },
+  { q: 'Stock situation?', page: 'Inventory', to: '/mon/analytics/inventory' },
+  { q: 'কোথায় খরচ?', page: 'Expenses', to: '/mon/analytics/expenses' },
+]
+
+const bodyClass = 'text-sm text-muted-foreground space-y-1.5 leading-relaxed'
+const listClass = 'space-y-1.5'
 
 /**
- * Analytics Help (Bengali, practical): where to look, in which order, and
- * which numbers to trust. No formulas, no implementation details.
+ * Analytics Help (Bengali onboarding guide): what Analytics is, where to
+ * start, which page answers which question, how to trace a problem, what the
+ * data states mean, and the Dashboard-vs-Analytics rule. Names only real
+ * badges and links — never promises every number is clickable.
  */
 export default function AnalyticsHelp() {
   return (
-    <>
-      <Header fixed>
-        <div className="flex items-center gap-2">
-          <HelpCircle className="h-5 w-5" />
-          <h1 className="text-lg font-semibold">Analytics — সাহায্য</h1>
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          <Link to="/mon/analytics">
-            <Badge variant="outline" className="cursor-pointer hover:bg-muted">Business Overview-এ ফিরুন</Badge>
-          </Link>
-          <ThemeSwitch />
-          <ProfileDropdown />
-        </div>
-      </Header>
-      <Main>
-        <div className="mx-auto max-w-3xl space-y-6" data-testid="analytics-help">
-          <Card>
-            <CardContent className="pt-6 text-sm text-muted-foreground space-y-2 leading-relaxed">
-              <p>এই Analytics পেজগুলোতে আপনার ব্যবসার আসল ছবি দেখবেন — কত বিক্রি হলো, কত লাভ হলো, কোথায় খরচ হলো।</p>
-              <p>মনে রাখবেন: শুধু <strong className="text-foreground">ডেলিভারি হওয়া অর্ডারই</strong> বিক্রি হিসেবে ধরা হয়। ডেলিভারির আগের অর্ডার এখনো বিক্রি নয়।</p>
-            </CardContent>
-          </Card>
+    <div className="p-4 sm:p-6">
+      <div className="mx-auto max-w-3xl space-y-6" data-testid="analytics-help">
+        <AnalyticsPageHeader
+          icon={HelpCircle}
+          title="Analytics — সাহায্য"
+          subtitle="কোন সংখ্যা কোথায় পাবেন, আর কোনটা কতটা বিশ্বাস করবেন।"
+        />
 
-          <HelpSection title="১. সবার আগে: Business Overview" to="/mon/analytics" linkLabel="পেজটি খুলুন">
-            <li>প্রথমে সবসময় Business Overview দেখুন — এখানে মোট বিক্রি, মোট লাভ আর টাকা আদায়ের সারসংক্ষেপ থাকে।</li>
-            <li>উপরের ফিল্টার দিয়ে সময় বাছুন (যেমন: গত ৭ দিন, এই মাস)।</li>
-            <li>কোনো সংখ্যায় ক্লিক করলে নিচে বিস্তারিত (Drill Down) পাবেন।</li>
-          </HelpSection>
+        <AnalyticsSection title="Analytics কী?">
+          <div className={bodyClass}>
+            <p>Analytics মানে এ পর্যন্ত কী হলো তার হিসাব — কত বিক্রি, কত লাভ, কোথায় খরচ।</p>
+            <p>শুধু Delivered অর্ডারই Revenue; ডেলিভারির আগের অর্ডার এখনো বিক্রি নয়।</p>
+            <p>Net Sales থেকে Net Profit পর্যন্ত পুরো পথ Business Overview-এ দেখুন।</p>
+          </div>
+        </AnalyticsSection>
 
-          <HelpSection title="২. বিক্রি: Sales & Orders" to="/mon/analytics/sales" linkLabel="পেজটি খুলুন">
-            <li>কত অর্ডার এলো, কত ডেলিভারি হলো, কত টাকা আদায় হলো — তিনটা আলাদা করে দেখুন।</li>
-            <li>কোন মাধ্যমে টাকা এলো (বিকাশ/নগদ/ক্যাশ) তা Payment Methods ট্যাবে দেখুন।</li>
-            <li>বাতিল, ফেরত আর রিফান্ড আলাদা ট্যাবে থাকে — ক্ষতির কারণ এখানেই খুঁজুন।</li>
-          </HelpSection>
+        <AnalyticsSection title="কোথা থেকে শুরু করবেন">
+          <ol className={`${bodyClass} ${listClass} list-decimal pl-5`}>
+            <li>Date Range ঠিক করুন — আজ, গত ৭ দিন, এই মাস, বা custom তারিখ।</li>
+            <li>Business Overview খুলুন — Net Sales, লাভ আর আদায়ের সারসংক্ষেপ দেখুন।</li>
+            <li>পরিবর্তন চিহ্নিত করুন — আগের period-এর সাথে তুলনা করে বদলের জায়গাটা ধরুন।</li>
+            <li>নিচের টেবিল থেকে প্রশ্ন অনুযায়ী page বেছে নিন (Inventory-তে warehouse scope দিতে পারেন)।</li>
+            <li>Drill Down ধরে সংখ্যা থেকে আসল অর্ডার পর্যন্ত যান।</li>
+          </ol>
+        </AnalyticsSection>
 
-          <HelpSection title="৩. পণ্য: Products" to="/mon/analytics/products" linkLabel="পেজটি খুলুন">
-            <li>কোন পণ্যে কত বিক্রি আর কত লাভ — পণ্য অনুযায়ী তালিকা দেখুন।</li>
-            <li>কম লাভের পণ্যে ক্লিক করলে সেই পণ্যের বিস্তারিত পেজ খুলবে।</li>
-            <li>সার্চ দিয়ে নির্দিষ্ট পণ্য খুঁজুন; Net Sales, Units বা Margin অনুযায়ী সাজান।</li>
-          </HelpSection>
+        <AnalyticsSection title="কোন প্রশ্নের জন্য কোন page?">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-muted-foreground">
+                <th className="pb-2 pr-3 font-medium">প্রশ্ন</th>
+                <th className="pb-2 font-medium">Page</th>
+              </tr>
+            </thead>
+            <tbody>
+              {QUESTION_ROWS.map((r) => (
+                <tr key={r.to} className="border-t border-border">
+                  <td className="py-2 pr-3 text-muted-foreground">{r.q}</td>
+                  <td className="py-2">
+                    <Link to={r.to}>
+                      <Badge variant="outline" className="cursor-pointer hover:bg-muted">
+                        {r.page}
+                      </Badge>
+                    </Link>
+                    {r.note ? <span className="ml-2 text-xs text-muted-foreground">{r.note}</span> : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </AnalyticsSection>
 
-          <HelpSection title="৪. কাস্টমার: Customers" to="/mon/analytics/customers" linkLabel="পেজটি খুলুন">
-            <li>নতুন কাস্টমার কত এলো, পুরনো কাস্টমার কত ফিরে এলো — আলাদা করে দেখুন।</li>
-            <li>নিয়মিত বড় অর্ডার করা কাস্টমারদের VIP হিসেবে চিনুন।</li>
-            <li>ফোন নম্বর ছাড়া অর্ডার কাস্টমারের সাথে যুক্ত হয় না — ফোন নম্বর নেওয়ার অভ্যাস করুন।</li>
-          </HelpSection>
+        <AnalyticsSection title="সমস্যা খোঁজার workflow">
+          <ol className={`${bodyClass} ${listClass} list-decimal pl-5`}>
+            <li>Business Overview-এ অস্বাভাবিক সংখ্যাটা ধরুন।</li>
+            <li>Breakdown-এ ভাগ করে দেখুন সমস্যা কোন অংশে।</li>
+            <li>সংশ্লিষ্ট section-এ গিয়ে Entity — Product, Customer বা campaign — নির্দিষ্ট করুন।</li>
+            <li>Drill Down link ধরে অর্ডার পর্যন্ত যান।</li>
+            <li>fix-list পেলে আগে সেটা ঠিক করুন — fix-list মানে পূরণ করার মতো তথ্য-ঘাটতির তালিকা।</li>
+          </ol>
+        </AnalyticsSection>
 
-          <HelpSection title="৫. মার্কেটিং: Marketing" to="/mon/analytics/marketing" linkLabel="পেজটি খুলুন">
-            <li>বিজ্ঞাপনে কত খরচ হলো আর সেই খরচে কত বিক্রি এলো — পাশাপাশি দেখুন।</li>
-            <li>কোনো খরচের তারিখ না থাকলে সেটা মোট হিসাবে ধরা হয় না — নিচের fix-list থেকে ঠিক করুন।</li>
-            <li>খরচ আর বিক্রির সময়কাল না মিললে ঘাবড়াবেন না — এটা স্বাভাবিক, ভুল নয়।</li>
-          </HelpSection>
+        <AnalyticsSection title="Data status কী বোঝায়?">
+          <div className={bodyClass}>
+            <ul className={`${listClass} list-disc pl-5`}>
+              <li>Actual — যাচাই করা তথ্যের হিসাব।</li>
+              <li>Estimated — আংশিক তথ্যে আনুমানিক হিসাব; badge-এ চিহ্নিত থাকে।</li>
+              <li>Unavailable — এই scope-এ তথ্য নেই; শূন্য নয়।</li>
+              <li>No Data — এই period-এ রেকর্ড নেই; ফাঁকাও শূন্য নয়।</li>
+            </ul>
+            <p>তারিখহীন খরচ মোটে ধরা হয় না — fix-list থেকে তারিখ ঠিক করুন। Inventory-তে closing-only basis মানে শুধু সমাপনী স্থিতি।</p>
+          </div>
+        </AnalyticsSection>
 
-          <HelpSection title="৬. ইনভেন্টরি: Inventory" to="/mon/analytics/inventory" linkLabel="পেজটি খুলুন">
-            <li>মজুদের মোট মূল্য আর কোন পণ্য দ্রুত/ধীরে বিক্রি হচ্ছে — এখানে দেখুন।</li>
-            <li>স্টক শেষ হয়ে বিক্রি হারাচ্ছেন কি না, stock-out তালিকায় দেখুন।</li>
-            <li>যেকোনো সংখ্যায় ক্লিক করলে স্টকের লেনদেনের খতিয়ান (ledger) পাবেন।</li>
-          </HelpSection>
+        <AnalyticsSection title="Dashboard বনাম Analytics">
+          <div className={bodyClass}>
+            <p>Dashboard মানে এখন কী করা দরকার — বাকি অর্ডার, কম Stock, সতর্কতা।</p>
+            <p>লাভ-ক্ষতির সব প্রশ্ন Analytics-এ দেখুন; আজকের কাজের জন্য Dashboard দেখুন।</p>
+          </div>
+        </AnalyticsSection>
 
-          <HelpSection title="৭. খরচ: Expenses" to="/mon/analytics/expenses" linkLabel="পেজটি খুলুন">
-            <li>খরচের খাত (ভাড়া, বেতন, কুরিয়ার) অনুযায়ী মোট খরচ দেখুন।</li>
-            <li>কোনো খাতে ক্লিক করলে সেই খাতের প্রতিটি খরচের তালিকা পাবেন।</li>
-            <li>মোট খরচ Business Overview-এর লাভের হিসাবে প্রতিফলিত হয়।</li>
-          </HelpSection>
-
-          <HelpSection title="৮. ড্রিল-ডাউন: সংখ্যা থেকে অর্ডার পর্যন্ত">
-            <li>প্রতিটি পেজের নিচে Drill Down বক্স থাকে — সংখ্যা থেকে ধাপে ধাপে আসল অর্ডার পর্যন্ত যান।</li>
-            <li>লাভ → খরচের খাত → অর্ডার: কোথায় টাকা গেল, এই পথে খুঁজুন।</li>
-            <li>সময়ের ফিল্টার প্রতিটি ধাপে একই থাকে — ফলে সংখ্যা মিলে যায়।</li>
-          </HelpSection>
-
-          <HelpSection title="৯. খরচ ও কভারেজ: যা নেই তা শূন্য নয়">
-            <li>কোনো পণ্যের কেনা-দাম (cost) না থাকলে সেই অংশের লাভ হিসাব হয় না — শূন্য ধরে নেওয়া হয় না।</li>
-            <li>এমন পণ্য থাকলে পেজে সতর্কতা (badge) দেখায় — সেখানে ক্লিক করে তালিকা দেখুন ও দাম বসান।</li>
-            <li>তথ্য না থাকলে সংখ্যার পাশে কারণ লেখা থাকে — ফাঁকা বা শূন্য দেখে ভুল সিদ্ধান্ত নেবেন না।</li>
-          </HelpSection>
-
-          <HelpSection title="১০. নিয়ম: Dashboard বনাম Analytics" to="/mon/overview" linkLabel="Dashboard খুলুন">
-            <li>Dashboard মানে <strong className="text-foreground">এখন কী করা দরকার</strong> — বাকি অর্ডার, কম স্টক, সতর্কতা, সাম্প্রতিক কাজ।</li>
-            <li>Analytics মানে <strong className="text-foreground">এ পর্যন্ত কী হলো</strong> — বিক্রি, লাভ, তুলনা, কারণ বিশ্লেষণ।</li>
-            <li>লাভ-ক্ষতির প্রশ্ন সবসময় Analytics-এ দেখুন; আজকের কাজের জন্য Dashboard দেখুন।</li>
-          </HelpSection>
-        </div>
-      </Main>
-    </>
+        <AnalyticsSection title="শেষ কথা">
+          <div className={bodyClass}>
+            <p>ⓘ কোনো সংখ্যা নিয়ে সন্দেহ হলে Drill Down link, Low margin badge, uncosted badge বা coverage badge ধরে উৎস পর্যন্ত যান।</p>
+          </div>
+        </AnalyticsSection>
+      </div>
+    </div>
   )
 }

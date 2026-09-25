@@ -17,7 +17,7 @@ import { EXPENSES_DRILLDOWN } from '@/features/business-analytics/expenses'
 import { DEFAULT_FILTERS } from '@/features/business-analytics/types'
 
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+  Link: ({ children, to }: { children: React.ReactNode; to: string }) => <a href={to}>{children}</a>,
   // Minimal stub so route modules under test can be imported in browser mode.
   createFileRoute: (_path: string) => (opts: { component: unknown }) => ({ options: opts }),
 }))
@@ -119,28 +119,88 @@ describe('drill hrefs resolve to existing canonical routes', () => {
 })
 
 describe('AnalyticsHelp', () => {
-  it('renders the intro plus all 10 Bengali sections', async () => {
+  const HEADINGS = [
+    'Analytics কী?',
+    'কোথা থেকে শুরু করবেন',
+    'কোন প্রশ্নের জন্য কোন page?',
+    'সমস্যা খোঁজার workflow',
+    'Data status কী বোঝায়?',
+    'Dashboard বনাম Analytics',
+    'শেষ কথা',
+  ]
+
+  const HELP_LINKS: [question: string, page: string, href: string][] = [
+    ['Business কেমন করেছে?', 'Business Overview', '/mon/analytics'],
+    ['Sales/Return/Refund?', 'Sales & Orders', '/mon/analytics/sales'],
+    ['কোন Product লাভ?', 'Products', '/mon/analytics/products'],
+    ['Customer performance?', 'Customers', '/mon/analytics/customers'],
+    ['Marketing spend কাজ?', 'Marketing', '/mon/analytics/marketing'],
+    ['Stock situation?', 'Inventory', '/mon/analytics/inventory'],
+    ['কোথায় খরচ?', 'Expenses', '/mon/analytics/expenses'],
+  ]
+
+  it('renders all 7 onboarding sections', async () => {
     const { getByText, getByTestId } = await wrap(<AnalyticsHelp />)
 
     await expect.element(getByTestId('analytics-help')).toBeInTheDocument()
-    await expect.element(getByText(/শুধু.*ডেলিভারি হওয়া অর্ডারই.*বিক্রি হিসেবে ধরা হয়/)).toBeInTheDocument()
-    await expect.element(getByText('১. সবার আগে: Business Overview')).toBeInTheDocument()
-    await expect.element(getByText('২. বিক্রি: Sales & Orders')).toBeInTheDocument()
-    await expect.element(getByText('৩. পণ্য: Products')).toBeInTheDocument()
-    await expect.element(getByText('৪. কাস্টমার: Customers')).toBeInTheDocument()
-    await expect.element(getByText('৫. মার্কেটিং: Marketing')).toBeInTheDocument()
-    await expect.element(getByText('৬. ইনভেন্টরি: Inventory')).toBeInTheDocument()
-    await expect.element(getByText('৭. খরচ: Expenses')).toBeInTheDocument()
-    await expect.element(getByText('৮. ড্রিল-ডাউন: সংখ্যা থেকে অর্ডার পর্যন্ত')).toBeInTheDocument()
-    await expect.element(getByText('৯. খরচ ও কভারেজ: যা নেই তা শূন্য নয়')).toBeInTheDocument()
-    await expect.element(getByText('১০. নিয়ম: Dashboard বনাম Analytics')).toBeInTheDocument()
+    for (const h of HEADINGS) {
+      await expect.element(getByText(h, { exact: true })).toBeInTheDocument()
+    }
   })
 
-  it('states missing cost is never silently zero and the Dashboard-vs-Analytics rule', async () => {
-    const { getByText } = await wrap(<AnalyticsHelp />)
+  it('numbers the starter as exactly 5 steps', async () => {
+    const { container } = await wrap(<AnalyticsHelp />)
+    const starter = container.querySelector('section[aria-label="কোথা থেকে শুরু করবেন"]')
+    expect(starter?.querySelectorAll('li')).toHaveLength(5)
+    expect(starter?.textContent ?? '').toContain('Date Range')
+  })
 
-    await expect.element(getByText(/শূন্য ধরে নেওয়া হয় না/)).toBeInTheDocument()
-    await expect.element(getByText(/Dashboard মানে/)).toBeInTheDocument()
-    await expect.element(getByText(/Analytics মানে/)).toBeInTheDocument()
+  it('links every question row to its canonical route', async () => {
+    const { container } = await wrap(<AnalyticsHelp />)
+    const anchors = [...container.querySelectorAll('[data-testid="analytics-help"] a')]
+    const byHref = new Map(anchors.map((a) => [a.getAttribute('href'), a.textContent ?? '']))
+    for (const [question, page, href] of HELP_LINKS) {
+      expect(byHref.has(href), `missing help link ${href}`).toBe(true)
+      expect(byHref.get(href) ?? '').toContain(page)
+      expect(container.textContent ?? '').toContain(question)
+    }
+  })
+
+  it('keeps English terminology and avoids forced translations', async () => {
+    const { container } = await wrap(<AnalyticsHelp />)
+    const text = container.textContent ?? ''
+    for (const term of ['Net Sales', 'Drill Down', 'ROAS', 'Business Overview', 'Date Range']) {
+      expect(text).toContain(term)
+    }
+    expect(text).not.toContain('নিট বিক্রয়')
+  })
+
+  it('names real badges and links instead of overpromising clicks', async () => {
+    const { container } = await wrap(<AnalyticsHelp />)
+    const text = container.textContent ?? ''
+    expect(text).not.toContain('যেকোনো সংখ্যায় ক্লিক')
+    expect(text).not.toContain('দেখতে পাবেন')
+    for (const honest of ['Low margin badge', 'uncosted badge', 'coverage badge', 'Drill Down link']) {
+      expect(text).toContain(honest)
+    }
+  })
+
+  it('states the delivered-only rule and keeps the Dashboard closer un-numbered', async () => {
+    const { container, getByText } = await wrap(<AnalyticsHelp />)
+
+    await expect.element(getByText(/ডেলিভারির আগের অর্ডার এখনো বিক্রি নয়/)).toBeInTheDocument()
+    await expect.element(getByText(/লাভ-ক্ষতির সব প্রশ্ন Analytics-এ/)).toBeInTheDocument()
+    const closer = container.querySelector('section[aria-label="Dashboard বনাম Analytics"]')
+    expect(closer?.querySelector('ol')).toBeNull()
+    expect(closer?.querySelectorAll('p')).toHaveLength(2)
+  })
+
+  it('keeps every section body under 600 characters', async () => {
+    const { container } = await wrap(<AnalyticsHelp />)
+    const sections = [...container.querySelectorAll('section[aria-label]')]
+    expect(sections).toHaveLength(7)
+    for (const s of sections) {
+      expect((s.textContent ?? '').length).toBeLessThanOrEqual(600)
+    }
   })
 })
