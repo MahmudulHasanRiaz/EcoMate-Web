@@ -150,8 +150,8 @@ describe('ExpensesOverviewCards', () => {
     expect(container.querySelector('[data-testid="kind-note"]')).toBeNull()
     expect(container.querySelector('[data-testid="revenue-scope"]')).toBeNull()
     await userEvent.click(getByRole('button', { name: 'About expense kinds and revenue scope' }))
-    await expect.element(getByTestId('expenses-scope-notes')).toHaveTextContent(/never inferred/i)
-    await expect.element(getByTestId('expenses-scope-notes')).toHaveTextContent(/Recognised Net Sales/)
+    await expect.element(getByTestId('expenses-scope-notes')).toHaveTextContent(/stays Unclassified/)
+    await expect.element(getByTestId('expenses-scope-notes')).toHaveTextContent(/Delivered sales/)
   })
 
   it('renders expense/revenue, per-order and growth with N/A-safe pct', async () => {
@@ -219,23 +219,23 @@ describe('ExpenseTrendChart', () => {
   it('renders buckets at the backend granularity', async () => {
     const { container } = await renderWithClient(<ExpenseTrendChart trend={trendData()} />)
     expect(container.querySelector('[data-testid="expenses-trend"]')).not.toBeNull()
-    expect(container.textContent).toMatch(/Auto-granularity: day/)
+    expect(container.textContent).toMatch(/Grouped by day/)
   })
 })
 
 describe('expense date basis (single source)', () => {
   it('states the date basis once — trend keeps it, tables disclose it', async () => {
     const trend = await renderWithClient(<ExpenseTrendChart trend={trendData()} />)
-    expect(trend.container.textContent).toMatch(/expenseDate/)
+    expect(trend.container.textContent).toMatch(/expense date/)
     const cats = await renderWithClient(<ExpenseCategoryTable data={categoriesData()} />)
     expect(cats.container.textContent).not.toMatch(/expenseDate/)
     await userEvent.click(cats.getByRole('button', { name: 'About category basis' }))
-    await expect.element(cats.getByTestId('category-basis')).toHaveTextContent(/expenseDate/)
+    await expect.element(cats.getByTestId('category-basis')).toHaveTextContent(/expense date/)
     const list = await renderWithClient(<ExpenseListTable data={listData()} />)
     expect(list.container.textContent).not.toMatch(/expenseDate/)
     expect(list.container.textContent).toMatch(/incl\. tax/)
     await userEvent.click(list.getByRole('button', { name: 'About expense date basis' }))
-    await expect.element(list.getByTestId('expense-list-basis')).toHaveTextContent(/expenseDate/)
+    await expect.element(list.getByTestId('expense-list-basis')).toHaveTextContent(/expense date/)
   })
 })
 
@@ -322,7 +322,7 @@ describe('expenses drill landing', () => {
     await vi.waitFor(() =>
       expect(container.querySelector('[data-testid="expenses-list-section"]')).not.toBeNull(),
     )
-    expect(container.textContent?.match(/Formula /g) ?? []).toHaveLength(1)
+    expect(container.textContent?.match(/Worked out as .*· Data up to/g) ?? []).toHaveLength(1)
   })
 })
 

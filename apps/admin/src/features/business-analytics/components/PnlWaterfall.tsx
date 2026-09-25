@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { formatBDT, type CostCoverage, type CostState, type OverviewData } from '../types'
 import { CostStateBadge, DataCoverageBadge } from './badges'
 import { SectionHeader } from './analytics-ui'
+import { INFO_MISSING_COST_ACTION, INFO_UNDATED_SPEND_ACTION, infoCodUnavailable } from './info-copy'
 
 interface LadderRow {
   label: string
@@ -109,8 +110,8 @@ export function PnlWaterfall({ pnl }: { pnl: OverviewData['pnl'] }) {
     netState === 'ok' || netState === 'zero' || netState === 'no_data'
       ? null
       : netState === 'estimated'
-        ? 'Net Profit (estimated — see coverage)'
-        : `Net Profit (partial — ${missing} inputs missing)`
+        ? 'Net Profit is estimated — some costs are missing. See missing items above.'
+        : `Net Profit is partial — ${missing} cost(s) are missing. See missing items above.`
 
   return (
     <Card className="chart-card rounded-2xl">
@@ -124,31 +125,31 @@ export function PnlWaterfall({ pnl }: { pnl: OverviewData['pnl'] }) {
               <DataCoverageBadge
                 missing={coverage.cogs.unavailableItems}
                 label="COGS"
-                title="Order items with no costSnapshot"
+                title={INFO_MISSING_COST_ACTION}
                 href="/mon/analytics/products"
               />
               <DataCoverageBadge
                 missing={coverage.shipping.unavailableOrders}
                 label="Shipping cost"
-                title="Recognised orders with shippingCost NULL"
+                title="No delivery cost was entered for these orders. Add it on the order to complete this number."
                 href="/mon/analytics/sales"
               />
               <DataCoverageBadge
                 missing={coverage.fees.withoutFee}
                 label="Gateway fees"
-                title="PAID payments with feeAmount NULL"
+                title="No gateway fee was entered for these paid orders. Add it on the payment to complete this number."
                 href="/mon/analytics/sales"
               />
               <DataCoverageBadge
                 missing={coverage.marketing.undatedRows}
                 label="Undated marketing spend"
-                title="Consumptions with spendDate NULL — excluded from every period total"
+                title={INFO_UNDATED_SPEND_ACTION}
                 href="/mon/analytics/marketing#marketing-undated-fixlist"
               />
               <DataCoverageBadge
                 missing={coverage.delivery.collectionUnavailableOrders}
                 label="COD settlement"
-                title="COD orders with unavailable collection"
+                title={infoCodUnavailable(coverage.delivery.collectionUnavailableOrders)}
                 href="/mon/analytics/sales"
               />
             </>
@@ -176,7 +177,7 @@ export function PnlWaterfall({ pnl }: { pnl: OverviewData['pnl'] }) {
           ))}
         </div>
         <p className="mt-2 text-[11px] text-muted-foreground">
-          Operating Profit equals Net Profit — Other Costs has no data source and renders "—".
+          Operating Profit equals Net Profit. There is no Other Costs list, so it shows —.
         </p>
       </CardContent>
     </Card>

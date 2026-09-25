@@ -67,7 +67,7 @@ function row(over: Partial<ProductPnlRow> = {}): ProductPnlRow {
 // ─── basis labels ────────────────────────────────────────────────────────────
 
 describe('ProductPnlTable basis labels', () => {
-  it('labels every line direct / attributed / allocated (§2.6)', async () => {
+  it('labels every line direct / attributed / allocated', async () => {
     const { container, getByText } = await renderWithClient(
       <ProductPnlTable title="T" rows={[row()]} detailHref={(r) => `/mon/analytics/products/${r.productId}`} />,
     )
@@ -76,7 +76,7 @@ describe('ProductPnlTable basis labels', () => {
     expect(text).toMatch(/attributed/)
     expect(text).toMatch(/allocated/)
     await expect.element(getByText('Marketing', { exact: false }).first()).toBeInTheDocument()
-    const badges = [...container.querySelectorAll('[title*="order’s own lines"]')]
+    const badges = [...container.querySelectorAll('[title*="Combo packs are split"]')]
     expect(badges.length).toBeGreaterThan(0)
   })
 
@@ -123,7 +123,7 @@ describe('low-margin drill-down', () => {
 // ─── return-rate incidence labelling ─────────────────────────────────────────
 
 describe('return-rate incidence', () => {
-  it('labels the rate as order-level incidence, never fractional', async () => {
+  it('labels the rate as incidence — one order counts once', async () => {
     const { container, getByText } = await renderWithClient(
       <ProductPnlTable title="T" rows={[row()]} detailHref={(r) => `/mon/analytics/products/${r.productId}`} />,
     )
@@ -150,11 +150,13 @@ describe('return-rate incidence', () => {
 
 describe('PnlCell states', () => {
   it('renders unavailable as words with the reason — never ৳0', async () => {
-    const { getByText } = await renderWithClient(
+    const { container, getByText } = await renderWithClient(
       <PnlCell kpi={kpi(4210, 'unavailable', { reason: '2 unit(s) without costSnapshot — see uncosted fix-list' })} />,
     )
     await expect.element(getByText('Unavailable', { exact: true })).toBeInTheDocument()
     await expect.element(getByText('৳0', { exact: true })).not.toBeInTheDocument()
+    // Plain words, same truth: the saved cost is missing.
+    expect(container.textContent ?? '').toMatch(/without saved cost/)
   })
 
   it('renders not_applicable as "—", no_data and zero distinctly', async () => {
@@ -231,9 +233,10 @@ const uncosted: UncostedData = {
 }
 
 describe('UncostedFixList', () => {
-  it('states the no-fallback rule and drills each line to its order', async () => {
+  it('states the saved-cost rule and drills each line to its order', async () => {
     const { container, getByText } = await renderWithClient(<UncostedFixList uncosted={uncosted} />)
-    await expect.element(getByText(/never a fallback/)).toBeInTheDocument()
+    await expect.element(getByText(/current product cost is not used instead/)).toBeInTheDocument()
+    await expect.element(getByText(/Add the cost on the order/)).toBeInTheDocument()
     const link = container.querySelector('a[href="/op/orders/o1"]')
     expect(link).not.toBeNull()
   })
@@ -301,10 +304,10 @@ describe('ProductTotalsBand (W2 KpiCard idiom)', () => {
     await expect.element(getByText('৳9,000', { exact: true })).toBeInTheDocument()
     await expect.element(getByText('Contribution (Σ products)', { exact: true })).toBeInTheDocument()
     await expect.element(getByText('Units recognised', { exact: true })).toBeInTheDocument()
-    // Formula disclosure restored on every card.
+    // Worked-out-as disclosure restored on every card.
     await userEvent.click(getByRole('button', { name: 'About Net Sales (Σ products)' }))
     const text = container.textContent ?? ''
-    expect(text).toMatch(/Formula: v9/)
+    expect(text).toMatch(/Worked out as v9/)
   })
 })
 
@@ -318,7 +321,7 @@ describe('ProductPnlTable basis legend + sticky column (W2)', () => {
     expect(legend).toMatch(/attributed/)
     expect(legend).toMatch(/allocated/)
     expect(legend).toMatch(/Marketing/)
-    expect(legend).toMatch(/Fulfillment/)
+    expect(legend).toMatch(/Delivery/)
     // Headers carry no per-column badges anymore.
     const thead = container.querySelector('thead')?.textContent ?? ''
     expect(thead).not.toMatch(/direct/)
@@ -361,7 +364,7 @@ describe('products page (W2)', () => {
     expect(html.indexOf('product-table-controls')).toBeLessThan(html.indexOf('product-totals'))
     expect(html.indexOf('product-totals')).toBeLessThan(html.indexOf('pnl-basis-legend'))
     const text = container.textContent ?? ''
-    expect((text.match(/Formula v9 ·/g) ?? []).length).toBe(1)
+    expect((text.match(/Worked out as v9 · Data up to/g) ?? []).length).toBe(1)
   })
 
   it('keeps search/sort controls visible during loading', async () => {

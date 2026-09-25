@@ -44,11 +44,11 @@ export function productVariantOrdersHref(
  */
 export function InventoryRelationBand({ product }: { product: ProductDetailData['product'] }) {
   return (
-    <AnalyticsSection title="Inventory relation" subtext="Stock, movement and cover — never revenue.">
+    <AnalyticsSection title="Inventory relation" subtext="Stock, sales speed and cover. Not sales.">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4" data-testid="inventory-relation">
         <KpiCard
           title="Stock on hand"
-          kpi={{ value: product.stock, state: 'ok', reason: 'On-hand quantity across warehouses' }}
+          kpi={{ value: product.stock, state: 'ok', reason: 'Stock you have now in all warehouses.' }}
           format={COUNT_FORMAT}
           animate={false}
         />
@@ -60,19 +60,19 @@ export function InventoryRelationBand({ product }: { product: ProductDetailData[
               </span>
               <CardTitle className="truncate text-sm font-medium">Movement class</CardTitle>
             </div>
-            <InfoDisclosure label="About movement class" lines={['Default 30/90-day policy']} contentTestId="movement-class-detail" />
+            <InfoDisclosure label="About movement class" lines={['Grouped by sales in the last 30 and 90 days.']} contentTestId="movement-class-detail" />
           </CardHeader>
           <CardContent>
             <p className="kpi-value">{product.movementClass}</p>
-            <span className="sr-only" data-testid="movement-class-sr">Default 30/90-day policy</span>
+            <span className="sr-only" data-testid="movement-class-sr">Grouped by sales in the last 30 and 90 days.</span>
           </CardContent>
         </Card>
         <KpiCard
           title="Days of inventory"
           kpi={
             product.doi === null
-              ? { value: null, state: 'not_applicable', reason: 'No recognised movement in range — days of inventory not computable' }
-              : { value: product.doi, state: 'ok', reason: 'Stock ÷ average daily recognised units' }
+              ? { value: null, state: 'not_applicable', reason: 'No sales in this period, so cover days cannot be worked out.' }
+              : { value: product.doi, state: 'ok', reason: 'Stock divided by average daily sales.' }
           }
           format={(v) => v.toFixed(1)}
           animate={false}
@@ -100,11 +100,11 @@ export default function ProductAnalyticsDetail() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-2xl font-bold">{data ? data.data.product.name : 'Product'}</h1>
-          <p className="text-xs text-muted-foreground">Parent P&L with variant drill-down — delivery-recognised orders only.</p>
+          <p className="text-xs text-muted-foreground">Parent profit with size breakdown. Delivered orders only.</p>
         </div>
         {data ? (
           <div className="flex gap-2">
-            <a href={`/op/inventory${inventoryQs ? `?${inventoryQs}` : ''}`} title="Inventory relation: movement class, days of inventory and stock below">
+            <a href={`/op/inventory${inventoryQs ? `?${inventoryQs}` : ''}`} title="Stock check: sales speed, cover days and stock below">
               <Badge variant="outline">View in inventory →</Badge>
             </a>
             <a href={`/op/products/${data.data.product.id}`} title="Open this product in the catalog">
@@ -134,8 +134,8 @@ export default function ProductAnalyticsDetail() {
                 kpi={{
                   value: data.data.parent.contributionMargin,
                   state: data.data.parent.contributionMargin === null ? 'no_data' : 'ok',
-                  reason: 'Contribution ÷ Net Sales — the product bottom line',
-                  dateBasis: 'Delivered transition',
+                  reason: 'Profit left per 100 taka of sales.',
+                  dateBasis: 'Delivery date',
                 }}
                 format={(v) => formatPct(v)}
                 formulaVersion={data.meta.formulaVersion}
@@ -169,12 +169,12 @@ export default function ProductAnalyticsDetail() {
                 }}
               />
             ) : (
-              <EmptyState message="No uncosted lines — every recognised line carries a costSnapshot." />
+              <EmptyState message="No lines missing cost. Every Delivered line has a saved cost." />
             )}
 
             <div className="space-y-1">
               <p className="text-[11px] text-muted-foreground">
-                Recognised orders: {data.data.parent.recognisedOrders} · Return orders: {data.data.parent.returnOrders} · Uncosted:{' '}
+                Delivered orders: {data.data.parent.recognisedOrders} · Return orders: {data.data.parent.returnOrders} · Missing cost:{' '}
                 {data.data.uncosted.units} unit(s)
               </p>
               <MetricMetaFooter

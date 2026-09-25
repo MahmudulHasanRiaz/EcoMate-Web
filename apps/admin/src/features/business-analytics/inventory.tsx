@@ -36,6 +36,7 @@ import {
 import { AnalyticsFilterBar } from './components/AnalyticsFilterBar'
 import { AnalyticsPageHeader, EmptyState, InfoDisclosure, MetricMetaFooter } from './components/analytics-ui'
 import { KpiCard } from './components/KpiCard'
+import { plainLine } from './components/info-copy'
 import { DataCoverageBadge } from './components/badges'
 import { DrilldownPanel, type DrilldownItem } from './components/DrilldownPanel'
 import { buildInventoryQuery } from './api'
@@ -52,10 +53,10 @@ const MOVEMENT_TONE: Record<string, Exclude<StatusTone, 'neutral'>> = {
 }
 
 const INVENTORY_DRILLDOWN: DrilldownItem[] = [
-  { label: 'Inventory value → movement class', description: 'Reconstructed value down to per-product movement', to: '/mon/analytics/inventory', params: { view: 'movement' } },
-  { label: 'Movement class → product/variant', description: 'Dead / Fast / Slow / Normal down to the sold entity', to: '/mon/analytics/products' },
-  { label: 'Product/variant → stock ledger', description: 'Ledger entries behind the closing stock', to: '/mon/analytics/inventory', params: { view: 'ledger' } },
-  { label: 'Stock-out → lost sales evidence', description: 'Days at stock ≤ 0 with measurable demand only', to: '/mon/analytics/inventory', params: { view: 'stockouts' } },
+  { label: 'Inventory value → movement class', description: 'Stock value down to sales speed per product', to: '/mon/analytics/inventory', params: { view: 'movement' } },
+  { label: 'Movement class → product/variant', description: 'Slow and fast sellers down to each product', to: '/mon/analytics/products' },
+  { label: 'Product/variant → stock ledger', description: "Stock history behind today's stock", to: '/mon/analytics/inventory', params: { view: 'ledger' } },
+  { label: 'Stock-out → lost sales evidence', description: 'Days with no stock where demand can be measured', to: '/mon/analytics/inventory', params: { view: 'stockouts' } },
 ]
 
 /** Router search params for the §4.2 inventory drill landing (query objects). */
@@ -173,23 +174,23 @@ export function InventoryWarehouseScope({
 export function ValueBasisBanner({ value, formulaVersion }: { value: InventoryValueData; formulaVersion?: string }) {
   const closingOnly = value.basis === 'closing_only'
   return (
-    <section aria-label="Inventory Value — reconstructed" data-testid="value-basis" className="space-y-3">
+    <section aria-label="Stock value" data-testid="value-basis" className="space-y-3">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h2 className="text-sm font-semibold">Inventory Value — reconstructed</h2>
+        <h2 className="text-sm font-semibold">Stock Value</h2>
         <span className="flex gap-2">
           <DataCoverageBadge
             missing={closingOnly ? 1 : 0}
             label="History gap"
-            title="Reconstruction diverged from the FIFO valuation — closing-only basis"
+            title="Past records don't match today's count. Showing today's stock only."
           />
-          <Badge variant="info">{value.basis === 'closing_only' ? 'closing_only' : 'reconstructed'}</Badge>
+          <Badge variant="info">{value.basis === 'closing_only' ? "Today's stock only" : 'Full history'}</Badge>
         </span>
       </div>
-      <p className="text-xs text-muted-foreground">{value.basisStatement || INVENTORY_VALUE_BASIS_STATEMENT}</p>
+      <p className="text-xs text-muted-foreground">{value.basisStatement ? plainLine(value.basisStatement) : INVENTORY_VALUE_BASIS_STATEMENT}</p>
       {closingOnly ? (
         <div role="alert" className="flex gap-2 rounded-xl border border-warning/30 bg-warning-soft p-3 text-xs text-warning" data-testid="closing-only-note">
           <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
-          <span>{value.basisNote || INVENTORY_CLOSING_ONLY_NOTE}</span>
+          <span>{value.basisNote ? plainLine(value.basisNote) : INVENTORY_CLOSING_ONLY_NOTE}</span>
         </div>
       ) : null}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 animate-rise" style={riseStyle(0)}>
@@ -200,9 +201,9 @@ export function ValueBasisBanner({ value, formulaVersion }: { value: InventoryVa
       <InfoDisclosure
         label="About inventory coverage"
         lines={[
-          `Reconstructed at ${value.reconstructedAt}`,
-          `${COUNT_FORMAT(value.coverage.lots)} lot(s) · ${COUNT_FORMAT(value.coverage.products)} product(s)${value.coverage.inactiveExcluded > 0 ? ` · ${value.coverage.inactiveExcluded} inactive lot(s) excluded` : ''}`,
-          `Period ${value.periodDays} day(s)`,
+          `Worked out on ${value.reconstructedAt}`,
+          `${COUNT_FORMAT(value.coverage.lots)} stock batch(es). ${COUNT_FORMAT(value.coverage.products)} product(s)${value.coverage.inactiveExcluded > 0 ? `. ${value.coverage.inactiveExcluded} old batch(es) left out.` : '.'}`,
+          `Last ${value.periodDays} day(s)`,
         ]}
         contentTestId="value-coverage"
       />
@@ -214,7 +215,7 @@ export function ValueBasisBanner({ value, formulaVersion }: { value: InventoryVa
 export function TurnoverCards({ value, formulaVersion }: { value: InventoryValueData; formulaVersion?: string }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-rise" style={riseStyle(1)} data-testid="turnover-cards">
-      <KpiCard title="Stock turnover (COGS ÷ avg)" kpi={value.turnover} format={RATIO_FORMAT} formulaVersion={formulaVersion} animate={false} />
+      <KpiCard title="Stock turnover" kpi={value.turnover} format={RATIO_FORMAT} formulaVersion={formulaVersion} animate={false} />
       <KpiCard title="Days of inventory" kpi={value.doi} format={DAYS_FORMAT} formulaVersion={formulaVersion} animate={false} />
     </div>
   )
@@ -233,10 +234,10 @@ export function MovementTable({ data }: { data: InventoryMovementData }) {
         <div className="flex items-center justify-between flex-wrap gap-2">
           <CardTitle className="text-sm font-medium">Movement Classes</CardTitle>
           <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground" data-testid="movement-policy">
-            {data.policyLabel || MOVEMENT_POLICY_LABEL}
+            {data.policyLabel ? plainLine(data.policyLabel) : MOVEMENT_POLICY_LABEL}
             <InfoDisclosure
               label="About movement policy"
-              lines={[data.policyLabel || MOVEMENT_POLICY_LABEL, data.policyRationale]}
+              lines={[data.policyLabel ? plainLine(data.policyLabel) : MOVEMENT_POLICY_LABEL, data.policyRationale ? plainLine(data.policyRationale) : null]}
               contentTestId="movement-policy-notes"
               compact
             />
@@ -306,10 +307,10 @@ export function LostSalesCard({ data, formulaVersion }: { data: InventoryStockou
         <div className="flex items-center justify-between flex-wrap gap-2">
           <CardTitle className="text-sm font-medium">Lost Sales</CardTitle>
           <Badge variant="info">
-            {kpi.state === 'estimated' ? 'Estimated' : 'Honesty'}
+            {kpi.state === 'estimated' ? 'Estimated' : 'Note'}
           </Badge>
         </div>
-        <p className="text-[11px] text-muted-foreground">{data.lostSalesNote || LOST_SALES_NOTE}</p>
+        <p className="text-[11px] text-muted-foreground">{data.lostSalesNote ? plainLine(data.lostSalesNote) : LOST_SALES_NOTE}</p>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -334,7 +335,7 @@ export function AgingTable({ value }: { value: InventoryValueData }) {
     <Card data-testid="aging-table" className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium">Aging</CardTitle>
-        <p className="text-[11px] text-muted-foreground">{value.aging.dateBasis}</p>
+        <p className="text-[11px] text-muted-foreground">{plainLine(value.aging.dateBasis)}</p>
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">
@@ -368,7 +369,7 @@ export function LedgerTable({ data }: { data: InventoryLedgerData }) {
     <Card data-testid="ledger-table" className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium">Stock Ledger</CardTitle>
-        <p className="text-[11px] text-muted-foreground">{data.dateBasis} · quantities only</p>
+        <p className="text-[11px] text-muted-foreground">{plainLine(data.dateBasis)}. Counts only, no money.</p>
       </CardHeader>
       <CardContent>
         {data.rows.length === 0 ? (
@@ -437,7 +438,7 @@ export function InventoryLedgerSection({
   const productName = productId
     ? (names?.[`${productId}|${variantId ?? ''}`] ?? names?.[`${productId}|`])
     : undefined
-  const focusNote = `Ledger pre-filtered by drill-down${productId ? ` · product ${productName ?? productId}` : ''}${variantId ? ` · variant ${variantId}` : ''}`
+  const focusNote = `Stock history filtered by your tap${productId ? ` · product ${productName ?? productId}` : ''}${variantId ? ` · size ${variantId}` : ''}`
   return (
     <section
       ref={sectionRef}

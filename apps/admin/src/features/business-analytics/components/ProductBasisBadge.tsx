@@ -7,9 +7,9 @@ const BASIS_VARIANT = {
 } as const
 
 const BASIS_TITLE: Record<'direct' | 'allocated' | 'attributed', string> = {
-  direct: 'Direct — the order’s own lines (combos expanded, never double-counted)',
-  allocated: 'Allocated — order totals × lineNet ÷ orderNet',
-  attributed: 'Attributed — ProductMarketingCost per orderItemId (analytical dimension)',
+  direct: 'From the order itself. Combo packs are split, counted once.',
+  allocated: 'Split from the order total by each line share.',
+  attributed: 'Ad cost linked to this product. For insight only.',
 }
 
 /** §2.6 basis label: every product P&L line states direct / allocated / attributed. */

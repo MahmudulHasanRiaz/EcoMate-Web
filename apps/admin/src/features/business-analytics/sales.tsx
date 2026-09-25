@@ -11,6 +11,7 @@ import { DEFAULT_FILTERS, formatBDT, formatPct, type AnalyticsFilters, type Sale
 import { AnalyticsFilterBar } from './components/AnalyticsFilterBar'
 import { AnalyticsPageHeader, AnalyticsSection, InfoDisclosure, MetricMetaFooter } from './components/analytics-ui'
 import { KpiCard } from './components/KpiCard'
+import { plainLine } from './components/info-copy'
 import { RecognitionStrip } from './components/RecognitionStrip'
 import { SalesTrendChart } from './components/SalesTrendChart'
 import { FunnelPanel } from './components/FunnelPanel'
@@ -21,11 +22,11 @@ import { BreakdownTable } from './components/BreakdownTable'
 import { DrilldownPanel, type DrilldownItem } from './components/DrilldownPanel'
 
 export const SALES_DRILLDOWN: DrilldownItem[] = [
-  { label: 'Gross Sales → Net Sales → breakdown → orders', description: 'Recognised cohort down to contributing orders', to: '/op/orders', params: { deliveryOutcome: 'delivered' } },
-  { label: 'Not-yet-recognised pipeline → pre-delivery orders', description: 'Pipeline stages down to orders', to: '/op/orders', params: { deliveryOutcome: 'in_fulfilment' } },
-  { label: 'Return Loss → return events → order → courier cost', description: 'Delivered-then-returned orders with inference disclosure', to: '/op/orders', params: { deliveryOutcome: 'returned' } },
-  { label: 'Settlement gap → COD orders pending settlement', description: 'Dispatch list for collection-unavailable orders', to: '/op/dispatch', params: { collectionStatus: 'cod-unavailable' } },
-  { label: 'Fulfillment Margin → recognised-revenue ladder', description: 'Courier cost appears once in the P&L Fulfillment Cost line', to: '/mon/analytics', params: { view: 'ladder' } },
+  { label: 'Gross Sales → Net Sales → breakdown → orders', description: 'Delivered orders down to the orders behind them', to: '/op/orders', params: { deliveryOutcome: 'delivered' } },
+  { label: 'Not-yet-recognised pipeline → pre-delivery orders', description: 'Orders not yet delivered, down to each order', to: '/op/orders', params: { deliveryOutcome: 'in_fulfilment' } },
+  { label: 'Return Loss → return events → order → courier cost', description: 'Delivered orders sent back, with estimates marked', to: '/op/orders', params: { deliveryOutcome: 'returned' } },
+  { label: 'Settlement gap → COD orders pending settlement', description: 'Cash-on-delivery orders waiting for courier money', to: '/op/dispatch', params: { collectionStatus: 'cod-unavailable' } },
+  { label: 'Fulfillment Margin → recognised-revenue ladder', description: 'Courier cost appears once under Fulfillment Cost', to: '/mon/analytics', params: { view: 'ladder' } },
 ]
 
 const COUNT_FORMAT = (v: number) => v.toLocaleString('en-US')
@@ -42,7 +43,7 @@ export function OrderCountsBand({
   formulaVersion: string
 }) {
   return (
-    <AnalyticsSection title="Order volume in range" subtext="Counts and average — money lives in the lens cards above.">
+    <AnalyticsSection title="Order volume in range" subtext="Counts and averages. Money totals are in the three cards above.">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="order-counts">
         <KpiCard title="Booked Orders" kpi={orderMetrics.bookedOrders} format={COUNT_FORMAT} formulaVersion={formulaVersion} animate={false} />
         <KpiCard title="Recognised Orders" kpi={orderMetrics.recognisedOrders} format={COUNT_FORMAT} formulaVersion={formulaVersion} animate={false} />
@@ -60,18 +61,18 @@ export function ReturnsBand({ returns }: { returns: SalesSummaryData['returns'] 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4" data-testid="returns-band">
         <KpiCard
           title="Return Events"
-          kpi={{ value: returns.events, state: 'ok', reason: 'Delivered-then-returned order events in range', dateBasis: returns.dateBasis }}
+          kpi={{ value: returns.events, state: 'ok', reason: 'Orders delivered then sent back in this period.', dateBasis: returns.dateBasis }}
           format={COUNT_FORMAT}
           animate={false}
         />
         <KpiCard
           title="Returned Value"
-          kpi={{ value: returns.value, state: 'ok', reason: 'Returned intake value', dateBasis: returns.dateBasis }}
+          kpi={{ value: returns.value, state: 'ok', reason: 'Value of returned orders.', dateBasis: returns.dateBasis }}
           animate={false}
         />
         <KpiCard
           title="Returned Units"
-          kpi={{ value: returns.units, state: 'ok', reason: 'Returned units in range', dateBasis: returns.dateBasis }}
+          kpi={{ value: returns.units, state: 'ok', reason: 'Items sent back in this period.', dateBasis: returns.dateBasis }}
           format={COUNT_FORMAT}
           animate={false}
         />
@@ -85,9 +86,9 @@ export function ReturnsBand({ returns }: { returns: SalesSummaryData['returns'] 
       <InfoDisclosure
         label="About returns"
         lines={[
-          returns.rateBasis,
-          returns.dateBasis,
-          `COGS reversal ${formatBDT(returns.cogsReversal)}${returns.cogsUnavailableUnits > 0 ? ` · ${returns.cogsUnavailableUnits} unit(s) without costSnapshot (never back-filled)` : ''}`,
+          returns.rateBasis ? plainLine(returns.rateBasis) : null,
+          returns.dateBasis ? plainLine(returns.dateBasis) : null,
+          `Cost returned to stock ${formatBDT(returns.cogsReversal)}${returns.cogsUnavailableUnits > 0 ? `. ${returns.cogsUnavailableUnits} unit(s) had no saved cost. Add the cost on the order to complete this number.` : '.'}`,
         ]}
         contentTestId="returns-notes"
       />
@@ -103,7 +104,7 @@ export function ReturnsBand({ returns }: { returns: SalesSummaryData['returns'] 
 export function EconAftermath({ economics }: { economics: SalesSummaryData['economics'] }) {
   const { returnLoss, refundLeakage } = economics
   return (
-    <AnalyticsSection title="Supporting economics" subtext="Delivery-axis diagnostics — not part of recognised revenue.">
+    <AnalyticsSection title="Supporting economics" subtext="Delivery checks. Not counted as sales.">
       <div className="space-y-4">
         <FulfillmentEconomicsPanel fulfillment={economics.fulfillment} />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" data-testid="econ-aftermath">
@@ -112,7 +113,7 @@ export function EconAftermath({ economics }: { economics: SalesSummaryData['econ
             kpi={{
               value: returnLoss.amount,
               state: 'ok',
-              reason: `Σ(courierCost − deliveryChargeRetained) over ${returnLoss.events} event(s)${returnLoss.unavailableEvents > 0 ? ` · ${returnLoss.unavailableEvents} event(s) unavailable` : ''}. ${returnLoss.note}`,
+              reason: `Delivery cost minus delivery fee kept, added over ${returnLoss.events} return(s)${returnLoss.unavailableEvents > 0 ? `. ${returnLoss.unavailableEvents} return(s) are missing costs.` : '.'} ${plainLine(returnLoss.note)}`,
             }}
             animate={false}
           />
@@ -121,7 +122,7 @@ export function EconAftermath({ economics }: { economics: SalesSummaryData['econ
             kpi={{
               value: refundLeakage.amount,
               state: 'ok',
-              reason: `${refundLeakage.refunds} refund(s) on ${refundLeakage.orders} order(s). ${refundLeakage.note}`,
+              reason: `${refundLeakage.refunds} refund(s) on ${refundLeakage.orders} order(s). ${plainLine(refundLeakage.note)}`,
             }}
             animate={false}
           />
@@ -156,7 +157,7 @@ export default function SalesAnalytics() {
       <AnalyticsPageHeader
         icon={ShoppingCart}
         title="Sales & Orders"
-        subtitle="Booked (intake) · Recognised (Delivered — the P&L basis) · Cash collected — three bases, never mixed."
+        subtitle="Booked (when placed). Recognised (when delivered, counts as sales). Cash (when paid). Three lines, never mixed."
         tileClassName="bg-success-soft text-success border-success/25"
       />
 
@@ -190,14 +191,14 @@ export default function SalesAnalytics() {
               requestedGranularity={data.data.trends.requestedGranularity}
             />
 
-            <AnalyticsSection title="Where booked intake goes" subtext="Intake cohort reaching each stage — pipeline is not revenue.">
+            <AnalyticsSection title="Where booked intake goes" subtext="Orders placed and how far each one reached. Not sales yet.">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 animate-rise" style={riseStyle(2)}>
                 <FunnelPanel stages={data.data.funnel} />
                 <PipelinePanel stages={data.data.pipeline.stages} totalOrders={data.data.pipeline.totalOrders} totalValue={data.data.pipeline.totalValue} />
               </div>
             </AnalyticsSection>
 
-            <AnalyticsSection title="How orders end" subtext="Cash, cancellations, returns and refunds — same intake cohort, different endings.">
+            <AnalyticsSection title="How orders end" subtext="Cash, cancellations, returns and refunds. Same placed orders, different endings.">
               <Tabs defaultValue="payment" className="animate-rise" style={riseStyle(3)}>
                 <TabsList className="tap-h max-w-full overflow-x-auto no-scrollbar">
                   <TabsTrigger value="payment" className="tap-h">Payment Methods</TabsTrigger>
@@ -210,13 +211,13 @@ export default function SalesAnalytics() {
                     <BreakdownTable
                       title="Cash by Payment Method (PAID only)"
                       rows={data.data.paymentBreakdown.methods.map((m) => ({ key: m.gateway, label: m.gateway, netSales: m.amount, orders: m.orders }))}
-                      hint="Orders with ≥1 PAID payment of this method — multi-payment orders match multiple methods. Unpaid intake orders are excluded from the rows."
+                      hint="Orders paid at least once with this method. Orders paid twice count twice. Unpaid orders are not in the rows."
                     />
                     <InfoDisclosure
                       label="About unpaid intake"
                       lines={[
-                        `No PAID payment: ${data.data.paymentBreakdown.unpaid.orders} order(s) · ${formatBDT(data.data.paymentBreakdown.unpaid.bookedValue)} intake value.`,
-                        data.data.paymentBreakdown.unpaid.note,
+                        `No paid payment yet: ${data.data.paymentBreakdown.unpaid.orders} order(s). ${formatBDT(data.data.paymentBreakdown.unpaid.bookedValue)} placed-order value.`,
+                        plainLine(data.data.paymentBreakdown.unpaid.note),
                       ]}
                       contentTestId="unpaid-notes"
                     />
@@ -227,12 +228,12 @@ export default function SalesAnalytics() {
                     <BreakdownTable
                       title="Cancellations by Prior Stage"
                       rows={data.data.cancellations.byPriorStage.map((s) => ({ key: s.stage, label: s.stage, netSales: s.value, orders: s.orders }))}
-                      hint={data.data.cancellations.dateBasis}
+                      hint={plainLine(data.data.cancellations.dateBasis)}
                     />
                     <InfoDisclosure
                       label="About cancellations"
                       lines={[
-                        `${data.data.cancellations.total} cancelled · ${formatBDT(data.data.cancellations.totalValue)} intake value · ${data.data.cancellations.undated} undated (counted, never dated).`,
+                        `${data.data.cancellations.total} cancelled. ${formatBDT(data.data.cancellations.totalValue)} placed-order value. ${data.data.cancellations.undated} have no date but are counted. Add the date to place them.`,
                       ]}
                       contentTestId="cancel-notes"
                     />
@@ -244,17 +245,17 @@ export default function SalesAnalytics() {
                 <TabsContent value="refund">
                   <div className="space-y-2">
                     <BreakdownTable
-                      title="Refunds by Crossover Class (D7)"
+                      title="Refunds by Type"
                       rows={[
-                        { key: 'reversal', label: 'Revenue reversal (delivered, not returned)', netSales: data.data.refunds.reversal.amount, orders: data.data.refunds.reversal.orders },
-                        { key: 'informational', label: 'Informational (delivered + returned)', netSales: data.data.refunds.informational.amount, orders: data.data.refunds.informational.orders },
-                        { key: 'not_a_reversal', label: 'Not a reversal (never delivered)', netSales: data.data.refunds.not_a_reversal.amount, orders: data.data.refunds.not_a_reversal.orders },
+                        { key: 'reversal', label: 'Money back (delivered, not returned)', netSales: data.data.refunds.reversal.amount, orders: data.data.refunds.reversal.orders },
+                        { key: 'informational', label: 'For info (delivered and returned)', netSales: data.data.refunds.informational.amount, orders: data.data.refunds.informational.orders },
+                        { key: 'not_a_reversal', label: 'Not money back (never delivered)', netSales: data.data.refunds.not_a_reversal.amount, orders: data.data.refunds.not_a_reversal.orders },
                       ]}
-                      hint={data.data.refunds.dateBasis}
+                      hint={plainLine(data.data.refunds.dateBasis)}
                     />
                     <InfoDisclosure
                       label="About refunds"
-                      lines={[data.data.refunds.crossoverNote]}
+                      lines={[plainLine(data.data.refunds.crossoverNote)]}
                       contentTestId="refund-notes"
                     />
                   </div>

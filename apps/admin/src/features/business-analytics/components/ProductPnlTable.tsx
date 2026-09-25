@@ -64,8 +64,8 @@ export function ProductPnlTable({
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium">{title}</CardTitle>
         <p className="text-[11px] text-muted-foreground" data-testid="pnl-basis-legend">
-          Basis — <BasisBadge basis="direct" /> Gross, Discounts, Returns, Net Sales, Units, COGS ·{' '}
-          <BasisBadge basis="attributed" /> Marketing · <BasisBadge basis="allocated" /> Fulfillment, Gateway Fees
+          How each number is worked out — <BasisBadge basis="direct" /> Sales and cost lines ·{' '}
+          <BasisBadge basis="attributed" /> Marketing · <BasisBadge basis="allocated" /> Delivery and gateway fees
         </p>
       </CardHeader>
       <CardContent className="overflow-x-auto">
@@ -101,14 +101,14 @@ export function ProductPnlTable({
                       {showVariant && isVariantRow(r) ? r.variantLabel : r.name}
                     </a>
                     {r.lowMargin ? (
-                      <a href={detailHref(r)} title="Contribution margin below the 10% default policy — drill to product">
+                      <a href={detailHref(r)} title="Profit margin below 10%. Open the product to see why.">
                         <Badge variant="warning" className="ml-2">
                           Low margin
                         </Badge>
                       </a>
                     ) : null}
                     {r.uncostedLines > 0 ? (
-                      <span className="block text-[11px] text-muted-foreground" title="Lines without costSnapshot — see the uncosted fix-list">
+                      <span className="block text-[11px] text-muted-foreground" title="Lines with no saved cost. See the fix-list below.">
                         {r.uncostedUnits} uncosted unit(s)
                       </span>
                     ) : null}

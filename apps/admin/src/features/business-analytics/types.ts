@@ -195,12 +195,12 @@ export interface ProductAnalyticsFilters extends AnalyticsFilters {
   dir?: 'asc' | 'desc'
 }
 
-/** Verbatim §2.6 floor — the product P&L bottom line, stated on every product view. */
+/** Product profit stops at Contribution — office and staff costs are never split into products. */
 export const PRODUCT_CONTRIBUTION_FLOOR_STATEMENT =
-  'Product P&L stops at Contribution. Company operating expenses are not allocated to products.'
+  'Product profit stops at Contribution. Office and staff costs are not split across products.'
 
-/** Verbatim §2.2/F2 label — product/variant return rates are order-level incidence. */
-export const RETURN_INCIDENCE_LABEL = 'order-level incidence — never fractional'
+/** Return rates count orders with a return — one order counts once. */
+export const RETURN_INCIDENCE_LABEL = 'Counts orders with a return. One order counts once.'
 
 export type MovementClass = 'Dead' | 'Fast' | 'Slow' | 'Normal'
 
@@ -519,38 +519,35 @@ export interface CustomersListResponse {
   meta: OverviewMeta
 }
 
-/** Verbatim §2.7 CLR disclosure — observed, never predictive. */
+/** CLR is observed sales so far — never a forecast. */
 export const CLR_STATEMENT =
-  'Customer Lifetime Revenue (CLR) is observed cumulative revenue over delivery-recognised orders. No predictive model exists.'
+  'Total sales from each customer so far, from Delivered orders only. Not a forecast.'
 
-/** Verbatim limitation-12 disclosure — phone-less guests are never merged. */
+/** Phone-less guests are counted on their own, never merged. */
 export const UNATTRIBUTED_STATEMENT =
-  'Phone-less guest orders cannot be linked to a customer. Each is counted singly and never merged.'
+  'Some guest orders have no phone number, so they cannot be linked to a customer. Each one is counted on its own.'
 
 // ─── P7 Marketing (§2.4 spend-date + §8.13/8.14 + §4.2 marketing rows) ────
 
-/** Verbatim §2.4 spend-date basis — stated on the cost panel and every cost KPI. */
+/** Marketing Cost counts spend dated in this period only. */
 export const SPEND_DATE_BASIS_STATEMENT =
-  'P&L Marketing Cost counts Σ MarketingConsumption.calculatedCost dated by spendDate only. Rows with no spendDate are excluded from every period total.'
+  'Marketing Cost counts spend dated in this period only. Spend with no date is left out — add the date to include it.'
 
-/** Verbatim D10 — allocatedAt/calculatedAt are never financial dates. */
+/** Allocated and worked-out times are reference only. */
 export const ALLOCATED_AT_NOTE =
-  'allocatedAt and calculatedAt are never financial dates — shown as reference only, excluded from every total.'
+  'The allocated time is for reference only. It never decides which period the spend belongs to.'
 
-/** Verbatim §8.13 — attribution/P&L period mismatch is expected, never a defect. */
+/** Ad reports and profit group spend by different dates — a gap in one period is normal. */
 export const ATTRIBUTION_MISMATCH_STATEMENT =
-  'Attribution views sit on their own date basis (insight date and attribution date), not the P&L spend-date basis. ' +
-  'A period-by-period mismatch against P&L Marketing Cost is expected by design; ' +
-  'agreement is verified date-independently (R8).'
+  'Ad reports and profit group spend by different dates. A gap between them in one period is normal.'
 
-/** Verbatim §2.4 — spend on never-recognised orders is insight-only. */
+/** Spend on orders that never delivered is insight only. */
 export const UNRECOGNISED_SPEND_NOTE =
-  'Spend allocated to orders that never recognised revenue (cancelled or undelivered). ' +
-  'An insight only — never folded into the P&L ladder.'
+  'Ad spend on orders that were cancelled or never delivered. Shown for insight only, not counted in profit.'
 
-/** Undated fix-list reference-column caption — allocatedAt is not a period date. */
+/** Undated fix-list reference-column caption — the allocated time is not a period date. */
 export const UNDATED_ALLOCATED_AT_CAPTION =
-  'allocatedAt reference only — not a financial period date'
+  'Allocated time shown for reference only'
 
 /** §4.2 undated-spend fix-list actions (sync/replay in the marketing module). */
 export const UNDATED_FIX_ACTIONS: { label: string; href: string }[] = [
@@ -689,30 +686,26 @@ export interface MarketingUndatedResponse {
 
 // ─── P8 Inventory (§2.8 defined period semantics + §4.2 inventory rows) ───────
 
-/** §2.8 reconstruction formula — stated on the value panel. */
+/** Stock value is worked out from past stock records. */
 export const INVENTORY_VALUE_BASIS_STATEMENT =
-  'Inventory Value is reconstructed from CostingLot history: ' +
-  'Σ over lots received on or before the valuation date of ' +
-  '(quantity − consumed + restored) × unitCost.'
+  'Stock value is worked out from past stock records up to the count date. Only stock received by that date is counted.'
 
 /** Incomplete history is disclosed, never papered over. */
 export const INVENTORY_CLOSING_ONLY_NOTE =
-  'Lot history is incomplete — value is shown on a closing-only basis from ' +
-  'the current FIFO valuation. Opening, average, turnover and days of ' +
-  'inventory are unavailable.'
+  "Past stock records are incomplete, so only today's stock value can be shown. " +
+  'Opening, average, turnover and cover days are missing — they need full history.'
 
 /** Movement is a default policy, not a universal truth. */
-export const MOVEMENT_POLICY_LABEL = 'classified by our default 30/90-day policy'
+export const MOVEMENT_POLICY_LABEL = 'Grouped by sales in the last 30 and 90 days'
 
 /** Lost sales need a stock-out day plus measurable demand — else unavailable. */
 export const LOST_SALES_NOTE =
-  'Lost sales are reported only for days with stock ≤ 0 where demand is ' +
-  'measurable (recognised sales in the period); otherwise unavailable — ' +
-  'never zero-filled.'
+  'Lost sales show only for days with no stock where demand can be measured. ' +
+  'Otherwise this number stays empty — never 0.'
 
 /** §4.2 drill path for the inventory page. */
 export const INVENTORY_DRILL_LABEL =
-  'Inventory value → movement class → product/variant → stock ledger'
+  'Stock value → sales speed → product → stock history'
 
 export type InventoryValueBasis = 'reconstructed' | 'closing_only'
 
@@ -832,29 +825,25 @@ export interface InventoryLedgerResponse {
 
 // ─── P9 Expenses (§2.9 + §4.2 expense rows + §8.6) ────────────────────────────
 
-/** Verbatim §2.9 kind policy — the split is staff-classified, never derived. */
+/** Fixed / Variable / Unclassified comes from your staff's category setting. */
 export const EXPENSE_KIND_NOTE =
-  'Fixed / Variable / Unclassified comes from the staff-classified ' +
-  'ExpenseCategory.expenseKind (default unclassified) — never inferred. ' +
-  'Unknown values fold to unclassified.'
+  "Fixed, Variable and Unclassified come from your staff's category setting. Anything unset stays Unclassified."
 
-/** Verbatim §2.3 date basis — amount + tax by the expense date. */
+/** Expenses add amount + tax by the expense date. */
 export const EXPENSE_DATE_BASIS_STATEMENT =
-  'Σ Expense.amount + taxAmount by Expense.expenseDate (Dhaka day-inclusive)'
+  'Adds each expense plus tax by its expense date.'
 
-/** Verbatim §8.6 — no budget model exists, so the comparison is unavailable, never zero. */
+/** No budget is set, so Budget vs Actual cannot be shown — never zero. */
 export const BUDGET_VS_ACTUAL_NOTE =
-  'No budget model exists — Budget vs Actual is unavailable for every ' +
-  'period, never zero.'
+  'No budget is set, so Budget vs Actual cannot be shown. It is not 0.'
 
 /** §4.2 drill path for the expenses page. */
 export const EXPENSE_DRILL_LABEL =
-  'Expense line → Expenses → category → expense list'
+  'Expense → category → expense list'
 
-/** §2.9 — order dimensions shape the recognised-revenue denominator only. */
+/** Filters change the sales number used for comparison; expenses stay company-wide. */
 export const EXPENSE_REVENUE_SCOPE_NOTE =
-  'Order dimensions in the filter shape the recognised-revenue denominator ' +
-  '(reused P2 Net Sales); expense lines stay company-wide by expenseDate.'
+  'Filters change the sales number used for comparison. Expense lines always cover the whole business by expense date.'
 
 export type ExpenseKind = 'fixed' | 'variable' | 'unclassified'
 

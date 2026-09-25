@@ -42,19 +42,19 @@ function kpi(over: Partial<KpiValue>): KpiValue {
 // ─── Trio: three bases, distinctly ───────────────────────────────────────────
 
 describe('lens trio', () => {
-  it('renders Booked / Recognised / Cash with distinct date bases', async () => {
+  it('renders Booked / Recognised / Cash with distinct plain meanings', async () => {
     const booked = kpi({ value: 50000, dateBasis: 'Order.createdAt — intake only, never in the ladder' })
     const recognised = kpi({ value: 42000, dateBasis: 'Delivered transition — the P&L basis' })
     const cash = kpi({ value: 38000, dateBasis: 'Payment.createdAt (PAID only)' })
     const b = await renderWithClient(<KpiCard title="Booked (L1)" kpi={booked} />)
     await expect.element(b.getByText('৳50,000', { exact: true })).toBeInTheDocument()
-    await expect.element(b.getByText(/intake only/)).toBeInTheDocument()
+    await expect.element(b.getByText(/placed orders only/)).toBeInTheDocument()
     const r = await renderWithClient(<KpiCard title="Recognised (L2)" kpi={recognised} />)
     await expect.element(r.getByText('৳42,000', { exact: true })).toBeInTheDocument()
-    await expect.element(r.getByText(/the P&L basis/)).toBeInTheDocument()
+    await expect.element(r.getByText(/the profit basis/)).toBeInTheDocument()
     const c = await renderWithClient(<KpiCard title="Cash Collected (L3)" kpi={cash} />)
     await expect.element(c.getByText('৳38,000', { exact: true })).toBeInTheDocument()
-    await expect.element(c.getByText(/PAID only/)).toBeInTheDocument()
+    await expect.element(c.getByText(/paid only/)).toBeInTheDocument()
   })
 
   it('renders AOV with no_data (never ৳0) when nothing recognised', async () => {
@@ -105,7 +105,7 @@ function point(label: string, amount: number, orders: number): SalesTrendPoint {
 }
 
 describe('SalesTrendChart', () => {
-  it('legends all three bases with their date basis', async () => {
+  it('legends all three lines in plain words', async () => {
     const { getByText } = await renderWithClient(
       <SalesTrendChart
         booked={[point('Sep 1', 10000, 1), point('Sep 2', 12000, 2)]}
@@ -115,9 +115,9 @@ describe('SalesTrendChart', () => {
         requestedGranularity="day"
       />,
     )
-    await expect.element(getByText('Booked (Order.createdAt)', { exact: true })).toBeInTheDocument()
-    await expect.element(getByText('Recognised (Delivered)', { exact: true })).toBeInTheDocument()
-    await expect.element(getByText('Cash (Payment.createdAt)', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText('Booked (when placed)', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText('Recognised (when delivered)', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText('Cash (when paid)', { exact: true })).toBeInTheDocument()
     await expect.element(getByText(/never mixed/)).toBeInTheDocument()
   })
 })
@@ -153,7 +153,6 @@ const COD_ROW = settlementRow({
   fulfillmentMargin: { value: null, state: 'unavailable', reason: 'no_courier_settlement_source' },
   disclosure: 'no_courier_settlement_source',
 })
-
 const GAP = {
   codOrders: 1,
   courierCost: 50,
@@ -177,7 +176,8 @@ describe('SettlementTable', () => {
     await expect.element(getByRole('alert')).toHaveTextContent(/COD settlement data is not captured/)
     const codRow = container.querySelector('[data-testid="settlement-row-cod1"]')?.textContent ?? ''
     expect(codRow).toMatch(/Unavailable/)
-    expect(codRow).toMatch(/no_courier_settlement_source/)
+    expect(codRow).toMatch(/no courier settlement yet/)
+    expect(codRow).toMatch(/Add a courier settlement to complete this number/)
     expect(codRow).not.toMatch(/৳1,060/)
     await expect.element(getByText('ORD-260901-0002', { exact: true })).toBeInTheDocument()
   })
@@ -203,8 +203,8 @@ describe('SettlementTable', () => {
     )
     await expect.element(getByText('inference: covered', { exact: true })).toBeInTheDocument()
     const note = container.textContent ?? ''
-    expect(note).toMatch(/same underlying cost, shown once in the ladder/)
-    expect(note).toMatch(/Not part of recognised revenue/)
+    expect(note).toMatch(/same cost, shown once in profit/)
+    expect(note).toMatch(/Delivery money only\. Not counted as sales/)
   })
 
   it('renders no banner when every row is online', async () => {
@@ -247,7 +247,7 @@ describe('PipelinePanel', () => {
       />,
     )
     const text = container.textContent ?? ''
-    expect(text).toMatch(/pipeline, never revenue/)
+    expect(text).toMatch(/Not sales yet/)
     expect(text).toMatch(/৳14,000/)
     expect(text).toMatch(/Intake/)
     expect(text).toMatch(/pipeline — not revenue \(recognised only at Delivered\)/)
@@ -537,18 +537,18 @@ describe('sales page (W2)', () => {
     expect(text).not.toMatch(/Recognised Value/)
     // Lens trio keeps the money values.
     await expect.element(getByText('৳80,000', { exact: true })).toBeInTheDocument()
-    // Single footer: exactly one "Formula v9 ·" line, no WidgetShell description dup.
-    expect((text.match(/Formula v9 ·/g) ?? []).length).toBe(1)
-    expect(text).toMatch(/Ladder state: actual/)
+    // Single footer: exactly one "Worked out as v9 ·" line, no WidgetShell description dup.
+    expect((text.match(/Worked out as v9 ·/g) ?? []).length).toBe(1)
+    expect(text).toMatch(/Costs: complete/)
   })
 
   it('moves the unpaid footnote into disclosure and reaches returns via tabs', async () => {
     salesMocks.summary = salesFixture()
     const { container, getByText, getByRole, getByTestId } = await renderWithClient(<SalesAnalytics />)
     await expect.element(getByText('Cash by Payment Method (PAID only)', { exact: true })).toBeInTheDocument()
-    expect(container.textContent ?? '').not.toMatch(/No PAID payment: 1 order/)
+    expect(container.textContent ?? '').not.toMatch(/No paid payment yet: 1 order/)
     await userEvent.click(getByRole('button', { name: 'About unpaid intake' }))
-    await expect.element(getByTestId('unpaid-notes')).toHaveTextContent(/No PAID payment: 1 order/)
+    await expect.element(getByTestId('unpaid-notes')).toHaveTextContent(/No paid payment yet: 1 order/)
     await userEvent.click(getByRole('tab', { name: 'Returns' }))
     await expect.element(getByText('Return Events', { exact: true })).toBeInTheDocument()
   })

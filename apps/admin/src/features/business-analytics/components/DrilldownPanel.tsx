@@ -48,12 +48,12 @@ export function DrilldownPanel({
   }
   const all: DrilldownItem[] = items ?? [
     { label: 'Net Profit → P&L ladder → cost line → orders', description: 'Trace profit into its cost inputs', to: '/mon/analytics', params: { view: 'ladder' } },
-    { label: 'Contribution → bridge → Delivery Charge Retained', description: 'Single-count bridge operands', to: '/mon/analytics', params: { view: 'bridge' } },
-    { label: 'Not-yet-recognised pipeline', description: 'Pre-delivery orders by stage', to: '/op/orders', params: { deliveryOutcome: 'in_fulfilment' } },
-    { label: 'Fulfillment Margin → per-order settlement', description: 'Full panel lands in P5 (Sales & Orders)', to: '/mon/analytics', params: { view: 'fulfillment' } },
-    { label: 'Settlement gap → COD orders pending settlement', description: 'Dispatch list for collection-unavailable orders', to: '/op/dispatch', params: { collectionStatus: 'cod-unavailable' } },
-    { label: 'Marketing spend → undated-spend fix-list', description: 'Consumptions missing spendDate (P7 full view)', to: '/mon/analytics', params: { view: 'coverage' } },
-    { label: 'Low product margin → Products → product → variant → orders', description: 'Parent/variant P&L down to Contribution', to: '/mon/analytics/products' },
+    { label: 'Contribution → bridge → Delivery Charge Retained', description: 'Profit bridge, each cost counted once', to: '/mon/analytics', params: { view: 'bridge' } },
+    { label: 'Not-yet-recognised pipeline', description: 'Orders not yet delivered, by stage', to: '/op/orders', params: { deliveryOutcome: 'in_fulfilment' } },
+    { label: 'Fulfillment Margin → per-order settlement', description: 'Full table is on Sales & Orders', to: '/mon/analytics', params: { view: 'fulfillment' } },
+    { label: 'Settlement gap → COD orders pending settlement', description: 'Cash-on-delivery orders waiting for courier money', to: '/op/dispatch', params: { collectionStatus: 'cod-unavailable' } },
+    { label: 'Marketing spend → undated-spend fix-list', description: 'Ad spend with no date. Full list on Marketing', to: '/mon/analytics', params: { view: 'coverage' } },
+    { label: 'Low product margin → Products → product → variant → orders', description: 'Product profit down to Contribution', to: '/mon/analytics/products' },
   ]
   // Exact-match self-cut. Two forms:
   // - currentPath + currentParams: compare `to` + serialized dimension

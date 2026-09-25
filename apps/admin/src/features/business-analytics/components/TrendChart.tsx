@@ -25,7 +25,7 @@ export function TrendChart({ points, granularity, requestedGranularity }: { poin
   return (
     <WidgetShell
       title="Net Sales Trend"
-      description={`Auto-granularity: ${granularity}${granularity !== requestedGranularity ? ` (requested ${requestedGranularity}, stepped up past the bucket cap)` : ''} · recognised revenue only`}
+      description={`Grouped by ${granularity}${granularity !== requestedGranularity ? ` (asked for ${requestedGranularity}, grouped wider to fit)` : ''} · Delivered orders only`}
       isLoading={false}
       icon={<TrendingUp className="h-4 w-4" />}
       iconTone="success"

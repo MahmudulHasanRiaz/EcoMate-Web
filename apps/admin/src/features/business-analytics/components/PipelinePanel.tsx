@@ -2,6 +2,7 @@ import { ArrowRightLeft } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatBDT, type SalesPipelineStage } from '../types'
+import { plainLine } from './info-copy'
 
 /**
  * Pre-delivery pipeline (P5, §2.1): not-yet-recognised orders by stage with
@@ -26,7 +27,7 @@ export function PipelinePanel({
           <div>
             <CardTitle className="text-sm font-medium">Pre-Delivery Pipeline</CardTitle>
             <p className="text-[11px] text-muted-foreground">
-              Not-yet-recognised orders by stage — pipeline, never revenue. {totalOrders} order(s) · {formatBDT(totalValue)} intake value.
+              Orders not yet delivered, by stage. Not sales yet. {totalOrders} order(s) · {formatBDT(totalValue)} placed-order value.
             </p>
           </div>
         </div>
@@ -48,7 +49,7 @@ export function PipelinePanel({
                 <TableRow key={s.key}>
                   <TableCell className="text-sm">
                     {s.label}
-                    <span className="block text-[11px] text-muted-foreground">{s.note}</span>
+                    <span className="block text-[11px] text-muted-foreground">{plainLine(s.note)}</span>
                   </TableCell>
                   <TableCell className="text-sm text-right tabular-nums">{s.orders}</TableCell>
                   <TableCell className="text-sm text-right tabular-nums">{formatBDT(s.value)}</TableCell>

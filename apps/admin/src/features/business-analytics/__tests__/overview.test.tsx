@@ -113,8 +113,8 @@ describe('KpiCard states', () => {
     )
     await expect.element(getByText('Estimated', { exact: true })).toBeInTheDocument()
     await userEvent.click(getByRole('button', { name: 'About Net Profit' }))
-    await expect.element(getByTestId('kpi-meta-detail')).toHaveTextContent(/Reference: undated spend/)
-    await expect.element(getByTestId('kpi-meta-detail')).toHaveTextContent(/excluded from total/)
+    await expect.element(getByTestId('kpi-meta-detail')).toHaveTextContent(/Note: undated spend/)
+    await expect.element(getByTestId('kpi-meta-detail')).toHaveTextContent(/Not counted in the total/)
   })
 
   it('renders unavailable as words — never ৳0', async () => {
@@ -167,10 +167,10 @@ describe('KpiCard info disclosure', () => {
     expect(container.querySelector('[data-testid="kpi-meta-sr"]')?.textContent).toContain(
       'Delivered-transition-basis-xyz',
     )
-    // Reason + dateBasis + formula open on tap (popover path — 3 lines).
+    // Reason + counted-by + worked-out-as open on tap (popover path — 3 lines).
     await userEvent.click(getByRole('button', { name: 'About Net Sales' }))
-    await expect.element(getByTestId('kpi-meta-detail')).toHaveTextContent(/Date basis: Delivered-transition-basis-xyz/)
-    await expect.element(getByTestId('kpi-meta-detail')).toHaveTextContent(/Formula: v9/)
+    await expect.element(getByTestId('kpi-meta-detail')).toHaveTextContent(/Counted by: Delivered-transition-basis-xyz/)
+    await expect.element(getByTestId('kpi-meta-detail')).toHaveTextContent(/Worked out as v9/)
   })
 
   it('renders no info control when there is nothing to disclose', async () => {
@@ -200,7 +200,7 @@ describe('ContributionBridge', () => {
     )
     await expect.element(getByText(/Fulfillment Margin ৳1,000/)).toBeInTheDocument()
     await userEvent.click(getByRole('button', { name: 'About Fulfillment Margin' }))
-    await expect.element(getByTestId('bridge-fm-diagnostic')).toHaveTextContent(/not an additive component/)
+    await expect.element(getByTestId('bridge-fm-diagnostic')).toHaveTextContent(/Not added to Total Business Contribution/)
   })
 })
 
@@ -226,7 +226,7 @@ describe('FulfillmentEconomicsPanel (compact)', () => {
   it('marks collection figures unavailable for COD with online-only labelling', async () => {
     const { container, getByText } = await renderWithClient(<FulfillmentEconomicsPanel fulfillment={codFulfillment} />)
     const note = container.querySelector('[data-testid="cod-unavailable-note"]')?.textContent ?? ''
-    expect(note).toMatch(/unavailable for 4 COD order/)
+    expect(note).toMatch(/Delivery money is missing for 4 cash-on-delivery/)
     await expect.element(getByText('online orders only', { exact: false }).first()).toBeInTheDocument()
   })
 
@@ -378,7 +378,7 @@ describe('RecognitionStrip', () => {
     await expect.element(getByText('20', { exact: true })).toBeInTheDocument()
     await expect.element(getByText('90', { exact: true })).toBeInTheDocument()
     await expect.element(getByText('75.0%', { exact: true })).toBeInTheDocument()
-    await expect.element(getByText(/timeline: 85 · dispatch: 5 · undated deliveries: 2/)).toBeInTheDocument()
+    await expect.element(getByText(/order history: 85.*2 deliveries have no date/)).toBeInTheDocument()
   })
 
   it('discloses the date-source mix through the info control', async () => {
@@ -398,8 +398,8 @@ describe('RecognitionStrip', () => {
       />,
     )
     await userEvent.click(getByRole('button', { name: 'About date sources' }))
-    await expect.element(getByTestId('strip-date-sources')).toHaveTextContent(/timeline: 85/)
-    await expect.element(getByTestId('strip-date-sources')).toHaveTextContent(/undated deliveries: 2/)
+    await expect.element(getByTestId('strip-date-sources')).toHaveTextContent(/Order history: 85/)
+    await expect.element(getByTestId('strip-date-sources')).toHaveTextContent(/2 deliveries have no date/)
   })
 })
 
@@ -451,14 +451,14 @@ function waterfallPnl(netState: KpiValue['state']): OverviewData['pnl'] {
 describe('PnlWaterfall', () => {
   it('states the partial banner with the missing-input count unless actual', async () => {
     const { getByText } = await renderWithClient(<PnlWaterfall pnl={waterfallPnl('unavailable')} />)
-    await expect.element(getByText(/Net Profit \(partial — \d+ inputs missing\)/)).toBeInTheDocument()
+    await expect.element(getByText(/Net Profit is partial — \d+ cost\(s\) are missing/)).toBeInTheDocument()
     await expect.element(getByText(/Operating Profit equals Net Profit/)).toBeInTheDocument()
   })
 
   it('shows no banner when the ladder is fully actual', async () => {
     const { container } = await renderWithClient(<PnlWaterfall pnl={waterfallPnl('ok')} />)
     await new Promise((r) => setTimeout(r, 200))
-    expect(container.textContent ?? '').not.toMatch(/Net Profit \((partial|estimated)/)
+    expect(container.textContent ?? '').not.toMatch(/Net Profit is (partial|estimated)/)
   })
 
   it('keeps every result row visible as an open collapsible summary', async () => {
@@ -504,7 +504,7 @@ describe('MetricMetaFooter', () => {
       <MetricMetaFooter formulaVersion="v9" dataAsOf="2026-01-01" dateBasis="Delivered" ladderState="actual" periodDays={30} />,
     )
     expect(container.querySelectorAll('p')).toHaveLength(1)
-    await expect.element(getByText(/Formula v9 · Data as of 2026-01-01/)).toBeInTheDocument()
+    await expect.element(getByText(/Worked out as v9 · Data up to 2026-01-01/)).toBeInTheDocument()
   })
 })
 
@@ -619,7 +619,7 @@ describe('no nested interactives', () => {
     // No legacy span[tabindex] trigger.
     expect(container.querySelector('span[tabindex]')).toBeNull()
     await userEvent.click(btn)
-    await expect.element(getByText('Consumptions missing spendDate')).toBeInTheDocument()
+    await expect.element(getByText('Consumptions missing a spend date')).toBeInTheDocument()
   })
 })
 
@@ -687,7 +687,7 @@ describe('overview H1 terminology', () => {
   it('renders the canonical "Business Overview" H1', async () => {
     const { container, getByRole, getByText } = await renderWithClient(<BusinessOverview />)
     await expect.element(getByRole('heading', { level: 1, name: 'Business Overview' })).toBeInTheDocument()
-    await expect.element(getByText('Recognised revenue only — Delivered is the recognition event.')).toBeInTheDocument()
+    await expect.element(getByText('Only Delivered orders count as sales.')).toBeInTheDocument()
     expect(container.textContent).not.toContain('Business Performance')
   })
 })

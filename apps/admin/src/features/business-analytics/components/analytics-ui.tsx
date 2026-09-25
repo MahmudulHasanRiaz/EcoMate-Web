@@ -6,6 +6,7 @@ import { CardTitle } from '@/components/ui/card'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { plainLadderState, plainLine } from './info-copy'
 
 /**
  * Wave-1 shared analytics primitives.
@@ -209,8 +210,8 @@ export function MetricMetaFooter({
 }) {
   return (
     <p className="text-[11px] text-muted-foreground">
-      Formula {formulaVersion} · Data as of {dataAsOf} · {dateBasis} · Ladder state: {ladderState} · Period{' '}
-      {periodDays} day(s)
+      Worked out as {formulaVersion} · Data up to {dataAsOf} · {plainLine(dateBasis)} · Costs:{' '}
+      {plainLadderState(ladderState)} · Last {periodDays} day(s)
     </p>
   )
 }

@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatBDT, formatPct, type SalesFunnelStage } from '../types'
 import { HintTooltip } from './analytics-ui'
+import { plainLine } from './info-copy'
 
 /**
  * Sales funnel (P5, §8.7): supported stages mapped from real statuses carry
@@ -33,14 +34,14 @@ export function FunnelPanel({ stages }: { stages: SalesFunnelStage[] }) {
           </span>
           <div>
             <CardTitle className="text-sm font-medium">Order Funnel</CardTitle>
-            <p className="text-[11px] text-muted-foreground">Intake cohort (booked in range) reaching each supported stage.</p>
+            <p className="text-[11px] text-muted-foreground">Orders placed in this period, and how far each one reached.</p>
           </div>
         </div>
       </CardHeader>
       <CardContent>
         <div className="space-y-2.5">
           {stages.map((s) => {
-            const hint = s.dateBasis ?? s.reason
+            const hint = s.dateBasis ? plainLine(s.dateBasis) : s.reason ? plainLine(s.reason) : undefined
             return (
             <div key={s.key} data-testid={`funnel-stage-${s.key}`}>
               <div className="flex items-center justify-between gap-2 text-sm">
@@ -67,7 +68,7 @@ export function FunnelPanel({ stages }: { stages: SalesFunnelStage[] }) {
                   />
                 </div>
               ) : (
-                <p className="mt-0.5 text-[11px] text-muted-foreground">{s.reason}</p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">{s.reason ? plainLine(s.reason) : null}</p>
               )}
             </div>
             )

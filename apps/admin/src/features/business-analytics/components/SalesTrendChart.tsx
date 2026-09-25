@@ -54,7 +54,7 @@ export function SalesTrendChart({
   return (
     <WidgetShell
       title="Booked vs Recognised vs Cash"
-      description={`Auto-granularity: ${granularity}${granularity !== requestedGranularity ? ` (requested ${requestedGranularity}, stepped up past the bucket cap)` : ''}`}
+      description={`Grouped by ${granularity}${granularity !== requestedGranularity ? ` (asked for ${requestedGranularity}, grouped wider to fit)` : ''}`}
       isLoading={false}
       icon={<TrendingUp className="h-4 w-4" />}
       iconTone="info"
@@ -75,15 +75,15 @@ export function SalesTrendChart({
             <YAxis stroke="#9ca3af" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `৳${v}`} dx={-5} />
             <Tooltip content={<CustomTooltip />} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Area type="monotone" dataKey="recognised" name="Recognised (Delivered)" fill="url(#salesRecognised)" stroke="none" legendType="none" />
-            <Line type="monotone" dataKey="booked" name="Booked (Order.createdAt)" stroke="var(--info)" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-            <Line type="monotone" dataKey="recognised" name="Recognised (Delivered)" stroke="var(--success)" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-            <Line type="monotone" dataKey="cash" name="Cash (Payment.createdAt)" stroke="var(--warning)" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+            <Area type="monotone" dataKey="recognised" name="Recognised (when delivered)" fill="url(#salesRecognised)" stroke="none" legendType="none" />
+            <Line type="monotone" dataKey="booked" name="Booked (when placed)" stroke="var(--info)" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+            <Line type="monotone" dataKey="recognised" name="Recognised (when delivered)" stroke="var(--success)" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+            <Line type="monotone" dataKey="cash" name="Cash (when paid)" stroke="var(--warning)" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
           </ComposedChart>
         </ResponsiveContainer>
       )}
       <p className="text-[11px] text-muted-foreground mt-2">
-        Three bases, never mixed — Booked is intake only (never in the ladder); Recognised is the P&L basis; Cash is PAID payments.
+        Three lines, never mixed. Booked counts orders when placed. Recognised counts Delivered orders. Cash counts paid orders.
       </p>
     </WidgetShell>
   )

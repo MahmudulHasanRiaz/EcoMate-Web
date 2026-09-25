@@ -24,16 +24,17 @@ import {
 import { AnalyticsFilterBar } from './components/AnalyticsFilterBar'
 import { AnalyticsPageHeader, AnalyticsSection, InfoDisclosure, MetricMetaFooter } from './components/analytics-ui'
 import { KpiCard } from './components/KpiCard'
+import { plainLine } from './components/info-copy'
 import { DrilldownPanel, type DrilldownItem } from './components/DrilldownPanel'
 
 const COUNT_FORMAT = (v: number) => v.toLocaleString('en-US')
 
 const CUSTOMER_DRILLDOWN: DrilldownItem[] = [
-  { label: 'New segment → customers → order history', description: 'First-ever recognised in range, down to contributing orders', to: '/mon/analytics/customers', params: { segment: 'new' } },
-  { label: 'Returning segment → customers → order history', description: 'Recognised before the range, down to contributing orders', to: '/mon/analytics/customers', params: { segment: 'returning' } },
-  { label: 'VIP segment → customers → order history', description: 'Returning plus ≥5 lifetime recognised orders (default policy)', to: '/mon/analytics/customers', params: { segment: 'vip' } },
-  { label: 'Customer → order history', description: 'Profile customers open their record; guests open phone-filtered orders', to: '/op/customers' },
-  { label: 'Unattributed → phone-less guest orders', description: 'Orders that cannot be linked — fix by capturing a phone', to: '/op/orders' },
+  { label: 'New segment → customers → order history', description: 'First-time buyers in this period, down to their orders', to: '/mon/analytics/customers', params: { segment: 'new' } },
+  { label: 'Returning segment → customers → order history', description: 'Buyers from before this period, down to their orders', to: '/mon/analytics/customers', params: { segment: 'returning' } },
+  { label: 'VIP segment → customers → order history', description: 'Returning buyers with 5 or more lifetime Delivered orders', to: '/mon/analytics/customers', params: { segment: 'vip' } },
+  { label: 'Customer → order history', description: 'Saved customers open their record. Guests open orders by phone', to: '/op/customers' },
+  { label: 'Unattributed → phone-less guest orders', description: 'Orders with no phone. Add a phone number to link them', to: '/op/orders' },
 ]
 
 /**
@@ -49,12 +50,12 @@ export function ClrSection({
   formulaVersion: string
 }) {
   return (
-    <AnalyticsSection title="Customer Lifetime Revenue (observed)" subtext="Observed cumulative revenue — never a prediction.">
+    <AnalyticsSection title="Customer Lifetime Revenue (observed)" subtext="Total sales so far. Not a forecast.">
       <div className="space-y-2" data-testid="clr-section">
         <KpiCard title="Cumulative CLR" kpi={clr.total} formulaVersion={formulaVersion} animate={false} />
         <InfoDisclosure
           label="About CLR"
-          lines={[clr.statement || CLR_STATEMENT]}
+          lines={[clr.statement ? plainLine(clr.statement) : CLR_STATEMENT]}
           contentTestId="clr-statement"
         />
       </div>
@@ -105,7 +106,7 @@ export function UnattributedBanner({ unattributed }: { unattributed: CustomerUna
           </p>
           <InfoDisclosure
             label="About unattributed orders"
-            lines={[unattributed.statement || UNATTRIBUTED_STATEMENT]}
+            lines={[unattributed.statement ? plainLine(unattributed.statement) : UNATTRIBUTED_STATEMENT]}
             contentTestId="unattributed-statement"
           />
         </div>
@@ -121,12 +122,12 @@ export function CohortTable({ cohorts, months }: { cohorts: CustomerCohort[]; mo
       <table className="dash-table w-full text-sm">
         <thead>
           <tr className="text-left text-xs text-muted-foreground">
-            <th className="py-2 pr-3 font-medium sticky left-0 bg-card z-10">Acquired</th>
-            <th className="py-2 pr-3 font-medium text-right">Customers</th>
+            <th className="py-2 pr-3 font-medium sticky left-0 bg-card z-10">First buy</th>
+            <th className="py-2 pr-3 font-medium text-right">Buyers</th>
             {months.map((m) => (
               <th key={m} className="py-2 pr-3 font-medium text-right">{m}</th>
             ))}
-            <th className="py-2 pr-3 font-medium text-right">Cumulative CLR</th>
+            <th className="py-2 pr-3 font-medium text-right">Total sales</th>
           </tr>
         </thead>
         <tbody>
@@ -201,7 +202,7 @@ export default function CustomerAnalytics() {
       <AnalyticsPageHeader
         icon={Users}
         title="Customer Analytics"
-        subtitle="Recognised customers only — Delivered is the recognition event. CLR is observed revenue, never a prediction."
+        subtitle="Delivered buyers only. Total sales so far, not a forecast."
         tileClassName="bg-accent-cyan-soft text-accent-cyan border-accent-cyan/25"
       />
 
@@ -238,15 +239,15 @@ export default function CustomerAnalytics() {
                   <span className="chart-card-header-icon bg-accent-cyan-soft text-accent-cyan border border-accent-cyan/25">
                     <Users className="h-4 w-4" />
                   </span>
-                  <CardTitle className="text-sm font-medium">Cohorts — acquisition month × retention × cumulative CLR</CardTitle>
+                  <CardTitle className="text-sm font-medium">Repeat buyers — by first-buy month × return rate × total sales</CardTitle>
                 </div>
               </CardHeader>
               <CardContent>
                 {cohorts.data ? (
                   cohorts.data.data.state === 'insufficient_history' ? (
                     <div data-testid="cohort-insufficient">
-                      <p className="text-sm font-medium">Insufficient history</p>
-                      <p className="text-xs text-muted-foreground mt-1">{cohorts.data.data.insufficientReason}</p>
+                      <p className="text-sm font-medium">Not enough history yet</p>
+                      <p className="text-xs text-muted-foreground mt-1">{cohorts.data.data.insufficientReason ? plainLine(cohorts.data.data.insufficientReason) : null}</p>
                     </div>
                   ) : cohorts.data.data.cohorts.length === 0 ? (
                     <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">No data</div>
@@ -293,8 +294,8 @@ export default function CustomerAnalytics() {
                               <th className="py-2 pr-3 font-medium sticky left-0 bg-card z-10">Customer</th>
                               <th className="py-2 pr-3 font-medium">Segment</th>
                               <th className="py-2 pr-3 font-medium text-right">Lifetime Orders</th>
-                              <th className="py-2 pr-3 font-medium text-right">Lifetime Revenue (CLR)</th>
-                              <th className="py-2 pr-3 font-medium text-right">In Range</th>
+                              <th className="py-2 pr-3 font-medium text-right">Lifetime Revenue</th>
+                              <th className="py-2 pr-3 font-medium text-right">In This Period</th>
                               <th className="py-2 pr-3 font-medium">History</th>
                             </tr>
                           </thead>

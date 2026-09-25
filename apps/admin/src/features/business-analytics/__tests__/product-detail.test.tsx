@@ -72,7 +72,7 @@ function detailFixture(): ProductDetailResponse {
       variants: [],
       trend: { requestedGranularity: 'day', granularity: 'day', points: [] },
       uncosted: { units: 0, lines: 0, rows: [] },
-      contributionFloor: 'Product P&L stops at Contribution. Company operating expenses are not allocated to products.',
+      contributionFloor: 'Product profit stops at Contribution. Office and staff costs are not split across products.',
     },
     meta: {
       range: { start: '2026-09-01', end: '2026-09-07', periodDays: 7 },
@@ -127,16 +127,16 @@ describe('product detail page (W2)', () => {
     await expect.element(getByText('Smoke Product', { exact: true })).toBeInTheDocument()
     // Inventory drill carries the current filter params — never a bare link.
     const inventory = [...container.querySelectorAll('a')].find((a) =>
-      (a.getAttribute('title') ?? '').startsWith('Inventory relation'),
+      (a.getAttribute('title') ?? '').startsWith('Stock check'),
     )
     expect(inventory).not.toBeUndefined()
     expect(inventory?.getAttribute('href')).toContain('/op/inventory?')
     expect(inventory?.getAttribute('href')).toContain('preset=last_30_days')
     // Empty uncosted: compact empty state, no full fix-list card.
-    await expect.element(getByText(/No uncosted lines/)).toBeInTheDocument()
-    expect(container.textContent ?? '').not.toMatch(/Uncosted lines fix-list/)
+    await expect.element(getByText(/No lines missing cost/)).toBeInTheDocument()
+    expect(container.textContent ?? '').not.toMatch(/Lines missing cost —/)
     // Counts stay as a compact line above the single meta footer.
-    expect(container.textContent ?? '').toMatch(/Recognised orders: 9 · Return orders: 1/)
-    expect((container.textContent?.match(/Formula v9 ·/g) ?? []).length).toBe(1)
+    expect(container.textContent ?? '').toMatch(/Delivered orders: 9 · Return orders: 1/)
+    expect((container.textContent?.match(/Worked out as v9 ·/g) ?? []).length).toBe(1)
   })
 })

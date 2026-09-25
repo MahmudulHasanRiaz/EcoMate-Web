@@ -2,6 +2,7 @@ import { GitBranch } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { formatBDT, type BridgeData } from '../types'
 import { InfoDisclosure, SectionHeader } from './analytics-ui'
+import { INFO_FM_DIAGNOSTIC } from './info-copy'
 
 /**
  * Single-count contribution bridge (§2.11, D12).
@@ -45,16 +46,14 @@ export function ContributionBridge({ bridge }: { bridge: BridgeData }) {
           </span>
           <InfoDisclosure
             label="About Fulfillment Margin"
-            lines={[
-              'A diagnostic of the delivery axis — not an additive component of Total Business Contribution.',
-            ]}
+            lines={[INFO_FM_DIAGNOSTIC]}
             contentTestId="bridge-fm-diagnostic"
           />
         </div>
         {dcrUnavailable ? (
           <p className="text-[11px] text-muted-foreground mt-1">
-            Delivery Charge Retained is unavailable for {bridge.codRecognisedOrders} COD recognised order(s) — no
-            courier settlement source yet.
+            Delivery fee kept is missing for {bridge.codRecognisedOrders} cash-on-delivery order(s). Add a
+            courier settlement to complete this number.
           </p>
         ) : null}
       </CardContent>

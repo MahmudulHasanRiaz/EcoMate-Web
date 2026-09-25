@@ -133,13 +133,13 @@ function stockoutsData(over: Partial<InventoryStockoutsData> = {}): InventorySto
 // ─── closing_only disclosure ─────────────────────────────────────────────────
 
 describe('ValueBasisBanner', () => {
-  it('states the reconstruction basis with coverage in disclosure', async () => {
+  it('states the stock-value basis with coverage in disclosure', async () => {
     const { container, getByText, getByRole, getByTestId } = await renderWithClient(<ValueBasisBanner value={valueData()} />)
     expect(container.querySelector('[data-testid="value-basis"]')).not.toBeNull()
-    await expect.element(getByText('reconstructed', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText(/worked out from past records/)).toBeInTheDocument()
     await userEvent.click(getByRole('button', { name: 'About inventory coverage' }))
-    await expect.element(getByTestId('value-coverage')).toHaveTextContent(/Reconstructed at 2026-09-21/)
-    await expect.element(getByTestId('value-coverage')).toHaveTextContent(/Period 30 day\(s\)/)
+    await expect.element(getByTestId('value-coverage')).toHaveTextContent(/Worked out on 2026-09-21/)
+    await expect.element(getByTestId('value-coverage')).toHaveTextContent(/Last 30 day\(s\)/)
   })
 
   it('is a flattened section — no nested Card around the value KpiCards', async () => {
@@ -156,7 +156,7 @@ describe('ValueBasisBanner', () => {
       />,
     )
     expect(container.querySelector('[data-testid="closing-only-note"]')?.getAttribute('role')).toBe('alert')
-    expect(container.textContent).toMatch(/closing-only basis/)
+    expect(container.textContent).toMatch(/today's stock value/)
     const clean = await renderWithClient(<ValueBasisBanner value={valueData()} />)
     expect(clean.container.querySelector('[data-testid="closing-only-note"]')).toBeNull()
   })
@@ -244,7 +244,7 @@ describe('LostSalesCard', () => {
   it('states the honesty note and renders unavailable (never ৳0)', async () => {
     const { container } = await renderWithClient(<LostSalesCard data={stockoutsData()} />)
     expect(container.querySelector('[data-testid="lost-sales"]')).not.toBeNull()
-    expect(container.textContent).toMatch(/only for days with stock/)
+    expect(container.textContent).toMatch(/days with no stock/)
     expect(container.textContent).not.toMatch(/৳0/)
   })
 
@@ -458,7 +458,7 @@ describe('inventory drill landing effect', () => {
     await vi.waitFor(() =>
       expect(container.querySelector('[data-testid="ledger-section"]')).not.toBeNull(),
     )
-    expect(container.textContent?.match(/Formula /g) ?? []).toHaveLength(1)
+    expect(container.textContent?.match(/Worked out as .*· Data up to/g) ?? []).toHaveLength(1)
   })
 })
 

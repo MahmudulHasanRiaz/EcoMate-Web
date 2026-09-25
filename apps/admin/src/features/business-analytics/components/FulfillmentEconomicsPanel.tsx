@@ -2,14 +2,16 @@ import { AlertTriangle, Truck } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatBDT, type FulfillmentCompact } from '../types'
 import { MetricUnavailable } from './badges'
+import { INFO_COURIER_COST_ONCE, INFO_FULFILLMENT_NOT_SALES, infoCodUnavailable } from './info-copy'
+import { plainLine } from './info-copy'
 
-/** Verbatim COD gap banner (§2.10.2): rendered exactly when codOrders > 0. */
+/** COD gap banner: rendered exactly when codOrders > 0. */
 export function SettlementGapBanner({ gapBanner }: { gapBanner: FulfillmentCompact['gapBanner'] }) {
   if (gapBanner.codOrders <= 0) return null
   return (
     <div role="alert" className="flex gap-2 rounded-xl border border-warning/30 bg-warning-soft p-3 text-xs text-warning">
       <AlertTriangle className="h-4 w-4 shrink-0" />
-      <span>{gapBanner.message}</span>
+      <span>{plainLine(gapBanner.message)}</span>
     </div>
   )
 }
@@ -41,7 +43,7 @@ export function FulfillmentEconomicsPanel({ fulfillment }: { fulfillment: Fulfil
           </span>
           <div>
             <CardTitle className="text-sm font-medium">Fulfillment & Returns Economics</CardTitle>
-            <p className="text-[11px] text-muted-foreground">{fulfillment.panelNote || 'Not part of recognised revenue.'}</p>
+            <p className="text-[11px] text-muted-foreground">{fulfillment.panelNote ? plainLine(fulfillment.panelNote) : INFO_FULFILLMENT_NOT_SALES}</p>
           </div>
         </div>
       </CardHeader>
@@ -49,7 +51,7 @@ export function FulfillmentEconomicsPanel({ fulfillment }: { fulfillment: Fulfil
         <SettlementGapBanner gapBanner={fulfillment.gapBanner} />
         {hasCodGap ? (
           <div data-testid="cod-unavailable-note">
-            <MetricUnavailable reason={`Collection, retained amount and fulfillment margin are unavailable for ${coverage.codOrders} COD order(s). A courier settlement import will supply this.`} compact />
+            <MetricUnavailable reason={infoCodUnavailable(coverage.codOrders)} compact />
           </div>
         ) : null}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -61,8 +63,8 @@ export function FulfillmentEconomicsPanel({ fulfillment }: { fulfillment: Fulfil
           {stat('Fulfillment Margin', totals.fulfillmentMargin, hasCodGap)}
         </div>
         <p className="text-[11px] text-muted-foreground">
-          Courier cost is the same underlying cost shown once in the P&L Fulfillment Cost line. Coverage — online:{' '}
-          {coverage.onlineOrders} · COD: {coverage.codOrders}
+          {INFO_COURIER_COST_ONCE} Online: {coverage.onlineOrders} · Cash on delivery:{' '}
+          {coverage.codOrders}
         </p>
       </CardContent>
     </Card>

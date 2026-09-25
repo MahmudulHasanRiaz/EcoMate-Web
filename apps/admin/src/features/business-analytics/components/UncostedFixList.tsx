@@ -20,10 +20,10 @@ export function UncostedFixList({ uncosted }: { uncosted: UncostedData }) {
           </span>
           <div>
             <CardTitle className="text-sm font-medium">
-              Uncosted lines fix-list — {uncosted.totals.lines} line(s), {uncosted.totals.units} unit(s) without costSnapshot
+              Lines missing cost — {uncosted.totals.lines} line(s), {uncosted.totals.units} unit(s) need a cost
             </CardTitle>
             <p className="text-[11px] text-muted-foreground">
-              COGS uses costSnapshot only — the current standardCost is never a fallback. Cost these lines to restore actual coverage.
+              Profit uses the cost saved on the order. The current product cost is not used instead. Add the cost on the order to complete this number.
             </p>
           </div>
         </div>

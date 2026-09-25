@@ -39,7 +39,7 @@ export default function BusinessOverview() {
       <AnalyticsPageHeader
         icon={Scale}
         title="Business Overview"
-        subtitle="Recognised revenue only — Delivered is the recognition event."
+        subtitle="Only Delivered orders count as sales."
         tileClassName="bg-success-soft text-success border-success/25"
       />
 
@@ -65,8 +65,8 @@ export default function BusinessOverview() {
                 kpi={{
                   value: data.data.pnl.strip.recognitionRate,
                   state: data.data.pnl.strip.recognitionRate === null ? 'no_data' : 'ok',
-                  reason: 'Recognised ÷ booked orders',
-                  dateBasis: 'Delivered transition vs Order.createdAt',
+                  reason: 'Delivered orders divided by all placed orders.',
+                  dateBasis: 'Delivery dates compared with order dates',
                 }}
                 format={(v) => formatPct(v)}
                 formulaVersion={data.meta.formulaVersion}
@@ -104,7 +104,7 @@ export default function BusinessOverview() {
               </div>
             </AnalyticsSection>
 
-            <AnalyticsSection title="Supporting economics" subtext="Delivery-axis diagnostics — not part of recognised revenue.">
+            <AnalyticsSection title="Supporting economics" subtext="Delivery checks. Not counted as sales.">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <ContributionBridge bridge={data.data.pnl.bridge} />
                 <FulfillmentEconomicsPanel fulfillment={data.data.fulfillment} />
@@ -119,13 +119,13 @@ export default function BusinessOverview() {
                   <TabsTrigger value="category" className="tap-h">Category</TabsTrigger>
                 </TabsList>
                 <TabsContent value="channel">
-                  <BreakdownTable title="Net Sales by Sales Channel" rows={data.data.breakdowns.bySalesChannel} hint="Where the sale came from — never merged with Source System." />
+                  <BreakdownTable title="Net Sales by Sales Channel" rows={data.data.breakdowns.bySalesChannel} hint="Where the sale came from. Kept apart from how the order was placed." />
                 </TabsContent>
                 <TabsContent value="source">
-                  <BreakdownTable title="Net Sales by Source System" rows={data.data.breakdowns.bySource} hint="How the order was created (POS / ECOMMERCE / MANUAL)." />
+                  <BreakdownTable title="Net Sales by Source System" rows={data.data.breakdowns.bySource} hint="How the order was placed (shop, online, or by staff)." />
                 </TabsContent>
                 <TabsContent value="category">
-                  <BreakdownTable title="Net Sales by Category (Top 8)" rows={data.data.breakdowns.byCategory} hint="Primary-category attribution — every taka counted once; combo lines expand to components." />
+                  <BreakdownTable title="Net Sales by Category (Top 8)" rows={data.data.breakdowns.byCategory} hint="By main category. Every taka counted once. Combo packs are split." />
                 </TabsContent>
               </Tabs>
             </AnalyticsSection>

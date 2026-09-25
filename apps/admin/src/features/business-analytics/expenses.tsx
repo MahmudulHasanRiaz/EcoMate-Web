@@ -37,6 +37,7 @@ import {
 import { AnalyticsFilterBar } from './components/AnalyticsFilterBar'
 import { AnalyticsPageHeader, EmptyState, InfoDisclosure, MetricMetaFooter } from './components/analytics-ui'
 import { KpiCard } from './components/KpiCard'
+import { plainLine } from './components/info-copy'
 import { MetricUnavailable } from './components/badges'
 import { DrilldownPanel, type DrilldownItem } from './components/DrilldownPanel'
 import { buildExpensesQuery } from './api'
@@ -51,10 +52,10 @@ const KIND_BADGE: Record<ExpenseKind, 'info' | 'success' | 'outline'> = {
 }
 
 export const EXPENSES_DRILLDOWN: DrilldownItem[] = [
-  { label: 'Expense line → category → expense list', description: 'Category totals down to the booked expense rows', to: '/mon/analytics/expenses', params: { view: 'list' } },
-  { label: 'Category → expense module', description: 'Manage categories and their fixed/variable classification', to: '/op/expense-categories' },
-  { label: 'Expense/revenue → P&L ladder', description: 'Recognised Net Sales denominator on the Business Overview', to: '/mon/analytics', params: { view: 'ladder' } },
-  { label: 'Expense total → reconciliation', description: 'R4 ties the analytics total to Σ Expense.amount + taxAmount', to: '/mon/analytics', params: { view: 'reconciliation' } },
+  { label: 'Expense line → category → expense list', description: 'Category totals down to each expense', to: '/mon/analytics/expenses', params: { view: 'list' } },
+  { label: 'Category → expense module', description: 'Manage categories and their Fixed or Variable setting', to: '/op/expense-categories' },
+  { label: 'Expense/revenue → P&L ladder', description: 'Delivered sales number on the Business Overview', to: '/mon/analytics', params: { view: 'ladder' } },
+  { label: 'Expense total → reconciliation', description: 'Ties this total to each expense plus tax, added', to: '/mon/analytics', params: { view: 'reconciliation' } },
 ]
 
 /** Router search params for the §4.2 expenses drill landing (query objects). */
@@ -117,7 +118,7 @@ export function ExpensesOverviewCards({ summary, formulaVersion }: { summary: Ex
             kpi={{
               value: summary.growth.delta,
               state: 'ok',
-              reason: `${formatDeltaPct(summary.growth.deltaPct)} vs ${formatBDT(summary.growth.prevTotal)} · ${summary.periodDays} day(s)`,
+              reason: `${formatDeltaPct(summary.growth.deltaPct)} vs ${formatBDT(summary.growth.prevTotal)}. Last ${summary.periodDays} days.`,
               dateBasis: summary.dateBasis,
             }}
             format={() => growthLabel}
@@ -129,8 +130,8 @@ export function ExpensesOverviewCards({ summary, formulaVersion }: { summary: Ex
       <InfoDisclosure
         label="About expense kinds and revenue scope"
         lines={[
-          summary.kindNote || EXPENSE_KIND_NOTE,
-          `Recognised Net Sales ${formatBDT(summary.revenue.netSales)} · ${COUNT_FORMAT(summary.revenue.recognisedOrders)} recognised order(s).`,
+          summary.kindNote ? plainLine(summary.kindNote) : EXPENSE_KIND_NOTE,
+          `Delivered sales ${formatBDT(summary.revenue.netSales)}. ${COUNT_FORMAT(summary.revenue.recognisedOrders)} Delivered order(s).`,
           EXPENSE_REVENUE_SCOPE_NOTE,
         ]}
         contentTestId="expenses-scope-notes"
@@ -170,9 +171,9 @@ export function ExpenseTrendChart({ trend }: { trend: ExpensesTrendData }) {
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium">Expense Trend</CardTitle>
         <p className="text-[11px] text-muted-foreground">
-          Auto-granularity: {trend.granularity}
-          {trend.granularity !== trend.requestedGranularity ? ` (requested ${trend.requestedGranularity}, stepped up past the bucket cap)` : ''} ·{' '}
-          {trend.dateBasis || EXPENSE_DATE_BASIS_STATEMENT}
+          Grouped by {trend.granularity}
+          {trend.granularity !== trend.requestedGranularity ? ` (asked for ${trend.requestedGranularity}, grouped wider to fit)` : ''}.{' '}
+          {plainLine(trend.dateBasis) || EXPENSE_DATE_BASIS_STATEMENT}
         </p>
       </CardHeader>
       <CardContent>
@@ -225,7 +226,7 @@ export function ExpenseCategoryTable({ data }: { data: ExpensesCategoriesData })
           <CardTitle className="text-sm font-medium">By Category</CardTitle>
           <InfoDisclosure
             label="About category basis"
-            lines={[data.dateBasis || EXPENSE_DATE_BASIS_STATEMENT]}
+            lines={[plainLine(data.dateBasis) || EXPENSE_DATE_BASIS_STATEMENT]}
             contentTestId="category-basis"
             compact
           />
@@ -294,7 +295,7 @@ export function ExpenseListTable({ data }: { data: ExpensesListData }) {
             incl. tax
             <InfoDisclosure
               label="About expense date basis"
-              lines={[data.dateBasis || EXPENSE_DATE_BASIS_STATEMENT]}
+              lines={[plainLine(data.dateBasis) || EXPENSE_DATE_BASIS_STATEMENT]}
               contentTestId="expense-list-basis"
               compact
             />

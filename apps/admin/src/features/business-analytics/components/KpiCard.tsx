@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { formatBDT, type KpiValue } from '../types'
 import { MetricUnavailable } from './badges'
 import { InfoDisclosure } from './analytics-ui'
+import { plainDateBasis, plainFormulaLabel, plainReason, plainReference } from './info-copy'
 
 interface KpiCardProps {
   title: string
@@ -39,10 +40,10 @@ export function KpiCard({ title, kpi, format, formulaVersion, drilldownHref, ani
   // Unavailable renders its reason inline (MetricUnavailable) — keep it out
   // of the disclosure so screen readers don't hear it twice.
   const infoLines = [
-    kpi.state === 'unavailable' ? null : kpi.reason,
-    kpi.dateBasis ? `Date basis: ${kpi.dateBasis}` : null,
-    formulaVersion ? `Formula: ${formulaVersion}` : null,
-    kpi.estimatedReference ? `Reference: ${kpi.estimatedReference.label} — excluded from total.` : null,
+    kpi.state === 'unavailable' ? null : plainReason(kpi.reason),
+    plainDateBasis(kpi.dateBasis),
+    plainFormulaLabel(formulaVersion),
+    kpi.estimatedReference ? plainReference(kpi.estimatedReference.label) : null,
   ]
   const infoText = infoLines.filter(Boolean).join(' · ')
 

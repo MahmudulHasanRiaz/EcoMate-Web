@@ -16,17 +16,17 @@ export function ComponentOnceLedger({ pnl }: { pnl: OverviewData['pnl'] }) {
   const num = (v: number | null) => (v === null ? '—' : formatBDT(v))
   const netProfit = lines.netProfit.value === null ? 'Unavailable' : formatBDT(lines.netProfit.value)
   const rows: { component: string; sign: string; appearsIn: string; amount: number | null }[] = [
-    { component: 'Gross Sales', sign: '+', appearsIn: 'Ladder', amount: lines.grossSales.value },
-    { component: 'Discounts', sign: '−', appearsIn: 'Ladder', amount: lines.discounts.value },
-    { component: 'Returns', sign: '−', appearsIn: 'Ladder', amount: lines.returns.value },
-    { component: 'Refunds (reversal)', sign: '−', appearsIn: 'Ladder', amount: lines.refundsReversal.value },
+    { component: 'Gross Sales', sign: '+', appearsIn: 'Profit steps', amount: lines.grossSales.value },
+    { component: 'Discounts', sign: '−', appearsIn: 'Profit steps', amount: lines.discounts.value },
+    { component: 'Returns', sign: '−', appearsIn: 'Profit steps', amount: lines.returns.value },
+    { component: 'Refunds (reversal)', sign: '−', appearsIn: 'Profit steps', amount: lines.refundsReversal.value },
     { component: 'Delivery Charge Retained', sign: '+', appearsIn: 'Bridge only', amount: bridge.deliveryChargeRetainedState === 'unavailable' ? null : bridge.deliveryChargeRetained },
-    { component: 'COGS', sign: '−', appearsIn: 'Ladder', amount: lines.cogs.value },
-    { component: 'Courier Cost', sign: '−', appearsIn: 'Ladder once (Fulfillment Cost line)', amount: lines.fulfillmentCost.value },
-    { component: 'Payment Gateway Cost', sign: '−', appearsIn: 'Ladder', amount: lines.paymentFees.value },
-    { component: 'Marketing Cost', sign: '−', appearsIn: 'Ladder', amount: lines.marketingCost.value },
-    { component: 'Operating Expenses', sign: '−', appearsIn: 'Ladder', amount: lines.operatingExpenses.value },
-    { component: 'Other Costs', sign: 'n/a', appearsIn: 'Ladder (—)', amount: null },
+    { component: 'COGS', sign: '−', appearsIn: 'Profit steps', amount: lines.cogs.value },
+    { component: 'Courier Cost', sign: '−', appearsIn: 'Profit steps once (Delivery Cost line)', amount: lines.fulfillmentCost.value },
+    { component: 'Payment Gateway Cost', sign: '−', appearsIn: 'Profit steps', amount: lines.paymentFees.value },
+    { component: 'Marketing Cost', sign: '−', appearsIn: 'Profit steps', amount: lines.marketingCost.value },
+    { component: 'Operating Expenses', sign: '−', appearsIn: 'Profit steps', amount: lines.operatingExpenses.value },
+    { component: 'Other Costs', sign: 'n/a', appearsIn: 'Profit steps (—)', amount: null },
   ]
   return (
     <Card className="chart-card rounded-2xl">

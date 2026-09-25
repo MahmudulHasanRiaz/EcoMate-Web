@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { CostState } from '../types'
+import { plainLine } from './info-copy'
 
 const COST_STATE_VARIANT = {
   actual: 'success',
@@ -28,19 +29,20 @@ export function CostStateBadge({ state, reason }: { state: CostState; reason?: s
   const [open, setOpen] = useState(false)
   const badge = <Badge variant={COST_STATE_VARIANT[state]}>{COST_STATE_LABEL[state]}</Badge>
   if (!reason) return badge
+  const plain = plainLine(reason)
   return (
     <Tooltip open={open} onOpenChange={setOpen}>
       <TooltipTrigger asChild>
         <button
           type="button"
-          aria-label={`${COST_STATE_LABEL[state]}: ${reason}`}
+          aria-label={`${COST_STATE_LABEL[state]}: ${plain}`}
           onClick={() => setOpen((v) => !v)}
           className="cursor-pointer rounded-full transition-opacity duration-150 hover:opacity-85 focus-visible:outline-2 focus-visible:outline-offset-2"
         >
           {badge}
         </button>
       </TooltipTrigger>
-      <TooltipContent className="max-w-[240px] text-xs">{reason}</TooltipContent>
+      <TooltipContent className="max-w-[240px] text-xs">{plain}</TooltipContent>
     </Tooltip>
   )
 }
@@ -112,7 +114,7 @@ function CoverageHint({
         {trigger ?? (
           <button
             type="button"
-            aria-label={a11y}
+            aria-label={plainLine(a11y)}
             onClick={() => setOpen((v) => !v)}
             className="inline-flex cursor-pointer rounded-full transition-opacity duration-150 hover:opacity-85 focus-visible:outline-2 focus-visible:outline-offset-2"
           >
@@ -120,7 +122,7 @@ function CoverageHint({
           </button>
         )}
       </TooltipTrigger>
-      <TooltipContent className="max-w-[240px] text-xs">{title}</TooltipContent>
+      <TooltipContent className="max-w-[240px] text-xs">{plainLine(title)}</TooltipContent>
     </Tooltip>
   )
 }
@@ -130,7 +132,7 @@ export function MetricUnavailable({ reason, compact }: { reason?: string; compac
   return (
     <div className={compact ? 'text-xs text-muted-foreground' : 'text-sm text-muted-foreground'}>
       <span className="font-medium text-danger/90">Unavailable</span>
-      {reason ? <span className="block text-xs mt-0.5">{reason}</span> : null}
+      {reason ? <span className="block text-xs mt-0.5">{plainLine(reason)}</span> : null}
     </div>
   )
 }

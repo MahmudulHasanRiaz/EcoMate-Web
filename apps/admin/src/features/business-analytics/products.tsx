@@ -35,19 +35,19 @@ export function ProductTotalsBand({
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 animate-rise" style={riseStyle(0)} data-testid="product-totals">
       <KpiCard
         title="Net Sales (Σ products)"
-        kpi={{ value: totals.netSales, state: 'ok', reason: 'Σ over product rows — delivery-recognised', dateBasis: 'Delivered transition' }}
+        kpi={{ value: totals.netSales, state: 'ok', reason: 'Total across products. Only Delivered orders.', dateBasis: 'Delivery date' }}
         formulaVersion={formulaVersion}
         animate={false}
       />
       <KpiCard
         title="Contribution (Σ products)"
-        kpi={{ value: totals.contribution, state: 'ok', reason: 'Σ over product rows — the product bottom line', dateBasis: 'Delivered transition' }}
+        kpi={{ value: totals.contribution, state: 'ok', reason: 'Total profit left across products.', dateBasis: 'Delivery date' }}
         formulaVersion={formulaVersion}
         animate={false}
       />
       <KpiCard
         title="Units recognised"
-        kpi={{ value: totals.units, state: 'ok', reason: 'Σ recognised units over product rows', dateBasis: 'Delivered transition' }}
+        kpi={{ value: totals.units, state: 'ok', reason: 'Total items sold across products.', dateBasis: 'Delivery date' }}
         format={COUNT_FORMAT}
         formulaVersion={formulaVersion}
         animate={false}
@@ -79,11 +79,11 @@ export default function ProductAnalytics() {
         <AnalyticsPageHeader
           icon={Package}
           title="Product Analytics"
-          subtitle="Delivery-recognised orders only — Delivered is the recognition event."
+          subtitle="Only Delivered orders. Orders still in delivery are not sales yet."
           tileClassName="bg-success-soft text-success border-success/25"
         />
         {data && data.data.uncosted.lines > 0 ? (
-          <button onClick={() => setShowUncosted((v) => !v)} title="Lines without costSnapshot — COGS is never back-filled from standardCost" className="tap-h cursor-pointer rounded-lg">
+          <button onClick={() => setShowUncosted((v) => !v)} title="Lines with no saved cost. The current product cost is not used instead." className="tap-h cursor-pointer rounded-lg">
             <Badge variant="warning">
               Uncosted: {data.data.uncosted.lines} line(s) missing
             </Badge>

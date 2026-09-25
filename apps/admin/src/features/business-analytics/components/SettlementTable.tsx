@@ -7,6 +7,7 @@ import { formatBDT, type SalesSettlementRow, type SettlementAmount } from '../ty
 import { SettlementGapBanner } from './FulfillmentEconomicsPanel'
 import { MetricUnavailable } from './badges'
 import { EmptyState } from './analytics-ui'
+import { INFO_FULFILLMENT_NOT_SALES, plainLine } from './info-copy'
 
 function Money({ amount }: { amount: SettlementAmount }) {
   if (amount.value === null || amount.state !== 'actual') {
@@ -15,7 +16,7 @@ function Money({ amount }: { amount: SettlementAmount }) {
   return <span className="tabular-nums">{formatBDT(amount.value)}</span>
 }
 
-const INFERENCE_HINT = 'Shipping-refund inference — labelled, not measured (online orders only)'
+const INFERENCE_HINT = 'Estimated delivery refund. Marked as estimate, online orders only.'
 
 function InferenceBadge({ inference }: { inference: 'covered' | 'below' | 'none' }) {
   if (inference === 'none') return <span className="text-[11px] text-muted-foreground">measured</span>
@@ -68,9 +69,9 @@ export function SettlementTable({
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium">Fulfillment Economics — Per-Order Settlement</CardTitle>
         <p className="text-[11px] text-muted-foreground">
-          {panelNote || 'Not part of recognised revenue.'} Courier cost is the{' '}
+          {panelNote ? plainLine(panelNote) : INFO_FULFILLMENT_NOT_SALES} Courier cost is the{' '}
           <a href="/mon/analytics" className="underline underline-offset-2">
-            same underlying cost, shown once in the ladder
+            same cost, shown once in profit
           </a>
           .
         </p>
@@ -125,7 +126,7 @@ export function SettlementTable({
                       <Money amount={r.fulfillmentMargin} />
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground max-w-[220px]">
-                      {r.disclosure ?? '—'}
+                      {r.disclosure ? plainLine(r.disclosure) : '—'}
                     </TableCell>
                   </TableRow>
                 ))}

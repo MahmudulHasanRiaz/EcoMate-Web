@@ -12,14 +12,14 @@ import { HintTooltip, InfoDisclosure, SectionHeader } from './analytics-ui'
  */
 export function RecognitionStrip({ strip }: { strip: RecognitionStripData }) {
   const items: { label: string; value: string; hint?: string; prominent?: boolean }[] = [
-    { label: 'Booked', value: `${strip.bookedOrders} · ${formatBDT(strip.bookedAmount)}`, hint: 'Σ Order.total by createdAt — intake only' },
-    { label: 'In Fulfilment', value: String(strip.inFulfilment), hint: 'pre-delivery orders' },
+    { label: 'Booked', value: `${strip.bookedOrders} · ${formatBDT(strip.bookedAmount)}`, hint: 'Orders placed, before delivery.' },
+    { label: 'In Fulfilment', value: String(strip.inFulfilment), hint: 'Orders not yet delivered.' },
     { label: 'Delivered', value: String(strip.delivered) },
-    { label: 'Recognised', value: String(strip.recognised), hint: 'the P&L basis', prominent: true },
+    { label: 'Recognised', value: String(strip.recognised), hint: 'Counts as sales.', prominent: true },
     { label: 'Not Yet Recognised', value: String(strip.notYetRecognised) },
     { label: 'Recognition Rate', value: formatPct(strip.recognitionRate), prominent: true },
   ]
-  const mixSr = `Date sources — timeline: ${strip.dateSourceMix.timeline} · dispatch: ${strip.dateSourceMix.dispatch} · undated deliveries: ${strip.undatedDeliveries}`
+  const mixSr = `Delivery dates — order history: ${strip.dateSourceMix.timeline}. Courier: ${strip.dateSourceMix.dispatch}. ${strip.undatedDeliveries} deliveries have no date.`
   return (
     <Card className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
@@ -48,8 +48,8 @@ export function RecognitionStrip({ strip }: { strip: RecognitionStripData }) {
           <InfoDisclosure
             label="About date sources"
             lines={[
-              `timeline: ${strip.dateSourceMix.timeline} · dispatch: ${strip.dateSourceMix.dispatch}`,
-              `undated deliveries: ${strip.undatedDeliveries}`,
+              `Order history: ${strip.dateSourceMix.timeline} dates. Courier: ${strip.dateSourceMix.dispatch} dates.`,
+              `${strip.undatedDeliveries} deliveries have no date. Add the date to place them.`,
             ]}
             contentTestId="strip-date-sources"
           />

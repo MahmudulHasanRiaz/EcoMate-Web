@@ -273,7 +273,7 @@ describe('ClrSection (W2 flatten)', () => {
     expect(section?.querySelector('.chart-card')).toBeNull()
     expect(container.querySelector('[data-testid="clr-card"]')).toBeNull()
     await userEvent.click(getByRole('button', { name: 'About CLR' }))
-    await expect.element(getByTestId('clr-statement')).toHaveTextContent(/observed cumulative revenue/)
+    await expect.element(getByTestId('clr-statement')).toHaveTextContent(/Not a forecast/)
   })
 })
 
@@ -310,6 +310,6 @@ describe('customers page (W2)', () => {
     expect(container.querySelector('[data-testid="cohort-table"] thead th.sticky')).not.toBeNull()
     // Single footer.
     const text = container.textContent ?? ''
-    expect((text.match(/Formula v9 ·/g) ?? []).length).toBe(1)
+    expect((text.match(/Worked out as v9 · Data up to/g) ?? []).length).toBe(1)
   })
 })

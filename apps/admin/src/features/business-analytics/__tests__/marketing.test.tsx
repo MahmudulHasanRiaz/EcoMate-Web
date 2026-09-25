@@ -67,7 +67,7 @@ const COST: MarketingCostBlock = {
 describe('SpendDateBasisBanner', () => {
   it('states the spend-date basis with the period summary', async () => {
     const { container, getByText } = await renderWithClient(<SpendDateBasisBanner cost={COST} />)
-    await expect.element(getByText(/dated by spendDate only/)).toBeInTheDocument()
+    await expect.element(getByText(/dated by spend date only/)).toBeInTheDocument()
     await expect.element(getByText('৳500', { exact: true })).toBeInTheDocument()
     expect(container.querySelector('[data-testid="spend-date-basis"]')).not.toBeNull()
   })
@@ -153,8 +153,8 @@ describe('UndatedFixList', () => {
       <UndatedFixList data={UNDATED} page={1} onPage={() => {}} />,
     )
     await expect.element(getByText('Camp One', { exact: true })).toBeInTheDocument()
-    await expect.element(getByText(/reference only — not a financial period date/)).toBeInTheDocument()
-    await expect.element(getByText(/reference only — excluded from total/)).toBeInTheDocument()
+    await expect.element(getByText(/Allocated time shown for reference only/)).toBeInTheDocument()
+    await expect.element(getByText(/For reference only\. Not counted/)).toBeInTheDocument()
     const resync = container.querySelector('[data-testid="fix-action-Resync spend"]')
     const replay = container.querySelector('[data-testid="fix-action-Replay allocations"]')
     expect(resync?.getAttribute('href')).toBe('/op/marketing/spend-snapshots')
@@ -169,11 +169,12 @@ describe('UndatedFixList', () => {
     await expect.element(getByText(/Page 1 of 3 · 41 row\(s\)/)).toBeInTheDocument()
   })
 
-  it('states the allocatedAt honesty note exactly once (fix-list caption)', async () => {
+  it('states the reference-only honesty note in plain words (no raw field names)', async () => {
     const { container } = await renderWithClient(
       <UndatedFixList data={UNDATED} page={1} onPage={() => {}} />,
     )
-    expect(container.textContent?.match(/allocatedAt/g) ?? []).toHaveLength(1)
+    expect(container.textContent).not.toMatch(/allocatedAt/)
+    expect(container.textContent?.match(/for reference only/gi) ?? []).toHaveLength(2)
   })
 
   it('pages with real Buttons, never text-buttons', async () => {
@@ -189,14 +190,14 @@ describe('UndatedFixList', () => {
 // ─── expected-mismatch disclosure (§8.13) ────────────────────────────────────
 
 describe('AttributionMismatchNotice', () => {
-  it('explains that a period mismatch vs P&L is expected by design', async () => {
+  it('explains that a period mismatch vs profit is normal', async () => {
     const { container, getByText } = await renderWithClient(
       <AttributionMismatchNotice
         disclosure="Attribution views sit on their own date basis (insight date and attribution date), not the P&L spend-date basis. A period-by-period mismatch against P&L Marketing Cost is expected by design; agreement is verified date-independently (R8)."
       />,
     )
     await expect.element(getByText(/expected by design/)).toBeInTheDocument()
-    await expect.element(getByText(/date-independently \(R8\)/)).toBeInTheDocument()
+    await expect.element(getByText(/profit spend-date basis/)).toBeInTheDocument()
     expect(container.querySelector('[data-testid="attribution-mismatch"]')).not.toBeNull()
   })
 })
@@ -248,9 +249,9 @@ describe('CampaignTree', () => {
     expect(container.querySelector('[data-testid="campaign-node-c1"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="adset-node-s1"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="ad-node-ad1"]')).not.toBeNull()
-    expect(container.textContent).toMatch(/insight date/)
-    expect(container.textContent).toMatch(/attribution intake basis/)
-    expect(container.textContent).toMatch(/spendDate only/)
+    expect(container.textContent).toMatch(/ad-report date/)
+    expect(container.textContent).toMatch(/order date for ad sales/)
+    expect(container.textContent).toMatch(/spend date only/)
     expect(container.querySelector('[data-testid="platform-facebook"]')).not.toBeNull()
   })
 
@@ -357,19 +358,19 @@ describe('marketing page story', () => {
     await vi.waitFor(() =>
       expect(container.querySelector('[data-testid="undated-fixlist"]')).not.toBeNull(),
     )
-    expect(container.textContent?.match(/Formula /g) ?? []).toHaveLength(1)
+    expect(container.textContent?.match(/Worked out as .*· Data up to/g) ?? []).toHaveLength(1)
     expect(
       container.querySelectorAll('[data-testid^="fix-action-"]'),
     ).toHaveLength(UNDATED.fixActions.length)
   })
 
-  it('states allocatedAt exactly once on the full page (fix-list caption only)', async () => {
+  it('states the reference-only note in plain words on the full page (no raw field names)', async () => {
     stubMarketingApi()
     const { container } = await renderWithClient(<MarketingAnalytics />)
     await vi.waitFor(() =>
       expect(container.querySelector('[data-testid="undated-fixlist"]')).not.toBeNull(),
     )
-    expect(container.textContent?.match(/allocatedAt/g) ?? []).toHaveLength(1)
+    expect(container.textContent).not.toMatch(/allocatedAt/)
   })
 })
 
