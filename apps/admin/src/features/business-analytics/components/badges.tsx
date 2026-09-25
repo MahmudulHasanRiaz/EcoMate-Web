@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { CostState } from '../types'
@@ -70,16 +70,9 @@ export function DataCoverageBadge({
   const a11y = title ? `${label}: ${missing} missing. ${title}` : `${label}: ${missing} missing`
   if (!href) {
     if (!title) return badge
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span tabIndex={0} aria-label={a11y} className="inline-flex rounded-full focus-visible:outline-2 focus-visible:outline-offset-2">
-            {badge}
-          </span>
-        </TooltipTrigger>
-        <TooltipContent className="max-w-[240px] text-xs">{title}</TooltipContent>
-      </Tooltip>
-    )
+    // Tap-friendly like CostStateBadge: controlled tooltip on a real button —
+    // hover/focus shows, tap/click toggles, Escape closes. Never hover-only.
+    return <CoverageHint a11y={a11y} title={title} badge={badge} />
   }
   const link = (
     <a
@@ -91,9 +84,42 @@ export function DataCoverageBadge({
     </a>
   )
   if (!title) return link
+  // Link target navigates on tap (the desired action there); the tooltip is
+  // still controlled so hover/focus/Escape behave like every other hint.
+  return <CoverageHint a11y={a11y} title={title} trigger={link} />
+}
+
+/**
+ * Controlled tap-friendly tooltip shared by both DataCoverageBadge shapes.
+ * Button triggers toggle on click; link triggers keep navigation on click
+ * and use hover/focus for the hint.
+ */
+function CoverageHint({
+  a11y,
+  title,
+  badge,
+  trigger,
+}: {
+  a11y: string
+  title: string
+  badge?: ReactNode
+  trigger?: ReactNode
+}) {
+  const [open, setOpen] = useState(false)
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>{link}</TooltipTrigger>
+    <Tooltip open={open} onOpenChange={setOpen}>
+      <TooltipTrigger asChild>
+        {trigger ?? (
+          <button
+            type="button"
+            aria-label={a11y}
+            onClick={() => setOpen((v) => !v)}
+            className="inline-flex cursor-pointer rounded-full transition-opacity duration-150 hover:opacity-85 focus-visible:outline-2 focus-visible:outline-offset-2"
+          >
+            {badge}
+          </button>
+        )}
+      </TooltipTrigger>
       <TooltipContent className="max-w-[240px] text-xs">{title}</TooltipContent>
     </Tooltip>
   )

@@ -23,7 +23,7 @@ import { BreakdownTable } from './components/BreakdownTable'
 import { DrilldownPanel } from './components/DrilldownPanel'
 
 /**
- * Business Performance (P3): header → filters → recognition strip → primary
+ * Business Overview (P3): header → filters → recognition strip → primary
  * health KPIs (single staggered rise; per-card CountUp off) → comparison vs
  * previous period → sales trend → P&L (waterfall + component-once ledger) →
  * supporting economics (bridge + fulfillment, subordinate) → sales
@@ -38,7 +38,7 @@ export default function BusinessOverview() {
     <div className="p-4 sm:p-6 space-y-6">
       <AnalyticsPageHeader
         icon={Scale}
-        title="Business Performance"
+        title="Business Overview"
         subtitle="Recognised revenue only — Delivered is the recognition event."
         tileClassName="bg-success-soft text-success border-success/25"
       />

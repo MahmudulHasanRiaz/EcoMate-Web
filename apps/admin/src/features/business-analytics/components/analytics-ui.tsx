@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type ReactNode } from 'react'
+import { forwardRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { Info, type LucideIcon } from 'lucide-react'
 import { CardTitle } from '@/components/ui/card'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -18,26 +18,59 @@ import { cn } from '@/lib/utils'
 const INFO_BUTTON_CLASS =
   'inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md p-0 text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2'
 
-function InfoButton({ label, onClick }: { label: string; onClick?: () => void }) {
+const INFO_BUTTON_COMPACT_CLASS =
+  'inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md p-0 text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2'
+
+type InfoButtonProps = {
+  label: string
+  /** Compact 24px hit-area for dense 2-col cells (375px) — default is 32px. */
+  compact?: boolean
+} & ButtonHTMLAttributes<HTMLButtonElement>
+
+/**
+ * Direct Radix asChild trigger — forwards ref + trigger props straight to the
+ * button. Never wrap in a span: a span>button nesting creates a nested
+ * interactive with a focus mismatch (Radix focuses the span, keyboard lands
+ * on the button).
+ */
+const InfoButton = forwardRef<HTMLButtonElement, InfoButtonProps>(function InfoButton(
+  { label, compact, className, onClick, ...rest },
+  ref,
+) {
   return (
-    <button type="button" aria-label={label} onClick={onClick} className={INFO_BUTTON_CLASS}>
-      <Info className="h-3.5 w-3.5" aria-hidden />
+    <button
+      ref={ref}
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      className={cn(compact ? INFO_BUTTON_COMPACT_CLASS : INFO_BUTTON_CLASS, className)}
+      {...rest}
+    >
+      <Info className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} aria-hidden />
     </button>
   )
-}
+})
 
 /**
  * Tap-friendly short hint (≤2 lines): controlled tooltip — hover/focus shows,
  * tap/click toggles, Escape closes. Never hover-only, never native title=.
  */
-export function HintTooltip({ label, text, contentTestId }: { label: string; text: string; contentTestId?: string }) {
+export function HintTooltip({
+  label,
+  text,
+  contentTestId,
+  compact,
+}: {
+  label: string
+  text: string
+  contentTestId?: string
+  compact?: boolean
+}) {
   const [open, setOpen] = useState(false)
   return (
     <Tooltip open={open} onOpenChange={setOpen}>
       <TooltipTrigger asChild>
-        <span className="inline-flex shrink-0">
-          <InfoButton label={label} onClick={() => setOpen((v) => !v)} />
-        </span>
+        <InfoButton label={label} compact={compact} onClick={() => setOpen((v) => !v)} />
       </TooltipTrigger>
       <TooltipContent data-testid={contentTestId} className="max-w-[240px] text-xs">
         {text}
@@ -55,22 +88,22 @@ export function InfoDisclosure({
   label,
   lines,
   contentTestId,
+  compact,
 }: {
   label: string
   lines: (string | null | undefined | false)[]
   contentTestId?: string
+  compact?: boolean
 }) {
   const items = lines.filter((l): l is string => Boolean(l))
   if (items.length === 0) return null
   if (items.length <= 2 && items.join(' · ').length <= 140) {
-    return <HintTooltip label={label} text={items.join(' · ')} contentTestId={contentTestId} />
+    return <HintTooltip label={label} text={items.join(' · ')} contentTestId={contentTestId} compact={compact} />
   }
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <span className="inline-flex shrink-0">
-          <InfoButton label={label} />
-        </span>
+        <InfoButton label={label} compact={compact} />
       </PopoverTrigger>
       <PopoverContent data-testid={contentTestId} className="max-w-[280px] text-xs" align="end">
         <p className="mb-1 font-medium text-foreground">{label}</p>

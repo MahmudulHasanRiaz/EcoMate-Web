@@ -13,7 +13,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { KpiCard } from '../components/KpiCard'
 import { ContributionBridge } from '../components/ContributionBridge'
 import { ComponentOnceLedger } from '../components/ComponentOnceLedger'
-import { MetricMetaFooter } from '../components/analytics-ui'
+import { HintTooltip, InfoDisclosure, MetricMetaFooter } from '../components/analytics-ui'
+import { DataCoverageBadge } from '../components/badges'
 import { FulfillmentEconomicsPanel, SettlementGapBanner } from '../components/FulfillmentEconomicsPanel'
 import { DrilldownPanel } from '../components/DrilldownPanel'
 import { ComparisonDelta } from '../components/ComparisonDelta'
@@ -21,10 +22,15 @@ import { RecognitionStrip } from '../components/RecognitionStrip'
 import { PnlWaterfall } from '../components/PnlWaterfall'
 import { AnalyticsFilterBar } from '../components/AnalyticsFilterBar'
 import { buildOverviewQuery, overviewQueryKey } from '../api'
+import BusinessOverview from '../index'
 import type { AnalyticsFilters, BridgeData, FulfillmentCompact, KpiValue, OverviewData } from '../types'
 
 vi.mock('@/features/categories/api', () => ({
   categoriesApi: { list: vi.fn().mockResolvedValue({ data: { data: [] } }) },
+}))
+
+vi.mock('../hooks', () => ({
+  useBusinessOverview: () => ({ data: null, isLoading: true, error: undefined, refetch: () => {} }),
 }))
 
 function kpi(over: Partial<KpiValue>): KpiValue {
@@ -267,11 +273,58 @@ describe('DrilldownPanel', () => {
     )
     const hrefs = [...container.querySelectorAll('a')].map((a) => a.getAttribute('href') ?? '')
     expect(hrefs.length).toBeGreaterThan(0)
-    for (const h of hrefs) {
-      expect(h.split('?')[0]).not.toBe('/mon/analytics')
-    }
+    // Exact-match self-cut: same-path rows with different dimension params
+    // (ladder/bridge/fulfillment/coverage) are different drill steps — keep.
+    expect(hrefs.some((h) => h.includes('view=ladder'))).toBe(true)
+    expect(hrefs.some((h) => h.includes('view=bridge'))).toBe(true)
+    expect(hrefs.some((h) => h.includes('view=fulfillment'))).toBe(true)
+    expect(hrefs.some((h) => h.includes('view=coverage'))).toBe(true)
     expect(hrefs.some((h) => h.includes('/op/dispatch'))).toBe(true)
     expect(hrefs.some((h) => h.includes('/mon/analytics/products'))).toBe(true)
+  })
+
+  it('cuts only the exact (path + params) duplicate', async () => {
+    const { container } = await renderWithClient(
+      <DrilldownPanel
+        filters={{ preset: 'last_30_days' }}
+        currentPath="/mon/analytics"
+        currentParams={{ view: 'ladder' }}
+      />,
+    )
+    const hrefs = [...container.querySelectorAll('a')].map((a) => a.getAttribute('href') ?? '')
+    expect(hrefs.some((h) => h.includes('view=ladder'))).toBe(false)
+    expect(hrefs.some((h) => h.includes('view=bridge'))).toBe(true)
+    expect(hrefs.some((h) => h.includes('view=fulfillment'))).toBe(true)
+    expect(hrefs.some((h) => h.includes('view=coverage'))).toBe(true)
+    expect(hrefs.some((h) => h.includes('/op/dispatch'))).toBe(true)
+  })
+
+  it('cuts a paramless exact duplicate but keeps parameterized same-path rows', async () => {
+    const items = [
+      { label: 'Self', description: 'same page', to: '/mon/analytics/products' },
+      { label: 'Other', description: 'drill', to: '/op/orders', params: { deliveryOutcome: 'in_fulfilment' } },
+    ]
+    const { container } = await renderWithClient(
+      <DrilldownPanel filters={{ preset: 'last_30_days' }} items={items} currentPath="/mon/analytics/products" />,
+    )
+    const hrefs = [...container.querySelectorAll('a')].map((a) => a.getAttribute('href') ?? '')
+    expect(hrefs.some((h) => h.split('?')[0] === '/mon/analytics/products')).toBe(false)
+    expect(hrefs.some((h) => h.includes('/op/orders'))).toBe(true)
+  })
+
+  it('cuts only the byte-equal row for a full currentHref', async () => {
+    const filters: AnalyticsFilters = { preset: 'last_30_days' }
+    const probe = await renderWithClient(<DrilldownPanel filters={filters} />)
+    const bridgeHref =
+      [...probe.container.querySelectorAll('a')]
+        .map((a) => a.getAttribute('href') ?? '')
+        .find((h) => h.includes('view=bridge')) ?? ''
+    expect(bridgeHref).not.toBe('')
+    const { container } = await renderWithClient(<DrilldownPanel filters={filters} currentHref={bridgeHref} />)
+    const hrefs = [...container.querySelectorAll('a')].map((a) => a.getAttribute('href') ?? '')
+    expect(hrefs).not.toContain(bridgeHref)
+    expect(hrefs.some((h) => h.includes('view=ladder'))).toBe(true)
+    expect(hrefs.some((h) => h.includes('view=coverage'))).toBe(true)
   })
 })
 
@@ -510,5 +563,131 @@ describe('AnalyticsFilterBar', () => {
     await expect.element(getByText('All categories')).toBeInTheDocument()
     await userEvent.click(getByText('All categories'))
     await expect.element(getByText('Beverages')).toBeInTheDocument()
+  })
+})
+
+// ─── No nested interactives (W1 review) ─────────────────────────────────────
+
+describe('no nested interactives', () => {
+  it('KpiCard drilldownHref wraps the value only — the info button is never inside the anchor', async () => {
+    const { container, getByRole } = await renderWithClient(
+      <KpiCard
+        title="New Customers"
+        kpi={kpi({ reason: 'measured' })}
+        format={(v) => String(v)}
+        drilldownHref="/mon/analytics/customers?segment=new"
+      />,
+    )
+    const link = container.querySelector('a[href="/mon/analytics/customers?segment=new"]')
+    expect(link).not.toBeNull()
+    // Info control exists and sits outside the link.
+    await expect.element(getByRole('button', { name: 'About New Customers' })).toBeInTheDocument()
+    expect(container.querySelector('a button')).toBeNull()
+  })
+
+  it('HintTooltip renders the info button as the direct trigger (no span>button)', async () => {
+    const { container, getByRole } = await renderWithClient(
+      <HintTooltip label="About Booked" text="intake only" />,
+    )
+    await expect.element(getByRole('button', { name: 'About Booked' })).toBeInTheDocument()
+    const trigger = container.querySelector('[data-slot="tooltip-trigger"]')
+    // asChild: the trigger IS the button — no wrapping span.
+    expect(trigger?.tagName).toBe('BUTTON')
+    expect(container.querySelectorAll('button')).toHaveLength(1)
+  })
+
+  it('InfoDisclosure popover path renders the info button as the direct trigger', async () => {
+    const { container, getByRole } = await renderWithClient(
+      <InfoDisclosure
+        label="About Net Profit"
+        lines={['reason line one', 'reason line two', 'reason line three — forces the popover path']}
+      />,
+    )
+    await expect.element(getByRole('button', { name: 'About Net Profit' })).toBeInTheDocument()
+    const trigger = container.querySelector('[data-slot="popover-trigger"]')
+    // asChild: the trigger IS the button — no wrapping span.
+    expect(trigger?.tagName).toBe('BUTTON')
+    expect(container.querySelector('a button')).toBeNull()
+  })
+
+  it('DataCoverageBadge hint is a controlled tap toggle on a real button', async () => {
+    const { container, getByRole, getByText } = await renderWithClient(
+      <DataCoverageBadge missing={3} label="Undated spend" title="Consumptions missing spendDate" />,
+    )
+    const btn = getByRole('button', { name: /Undated spend: 3 missing/ })
+    await expect.element(btn).toBeInTheDocument()
+    // No legacy span[tabindex] trigger.
+    expect(container.querySelector('span[tabindex]')).toBeNull()
+    await userEvent.click(btn)
+    await expect.element(getByText('Consumptions missing spendDate')).toBeInTheDocument()
+  })
+})
+
+// ─── Coverage fix-list hrefs unchanged (W1 review) ───────────────────────────
+
+describe('PnlWaterfall coverage hrefs', () => {
+  function fullCoveragePnl(): OverviewData['pnl'] {
+    const pnl = waterfallPnl('unavailable')
+    return {
+      ...pnl,
+      coverage: {
+        cogs: { actualPct: 50, estimatedPct: 0, unavailableUnits: 1, unavailableItems: 2 },
+        shipping: { actualOrders: 80, estimatedOrders: 0, unavailableOrders: 3 },
+        fees: { paidPayments: 90, withFee: 80, withoutFee: 10 },
+        marketing: { datedRows: 5, undatedRows: 4, datedAmount: 5000, undatedAmount: 400 },
+        delivery: { onlineOrders: 80, codOrders: 5, collectionUnavailableOrders: 5 },
+      },
+    }
+  }
+
+  it('wires every coverage badge to its canonical fix-list page', async () => {
+    const { container } = await renderWithClient(<PnlWaterfall pnl={fullCoveragePnl()} />)
+    const byLabel = (prefix: string) =>
+      [...container.querySelectorAll('a')].find((a) => (a.getAttribute('aria-label') ?? '').startsWith(prefix))
+    expect(byLabel('COGS')?.getAttribute('href')).toBe('/mon/analytics/products')
+    expect(byLabel('Shipping cost')?.getAttribute('href')).toBe('/mon/analytics/sales')
+    expect(byLabel('Gateway fees')?.getAttribute('href')).toBe('/mon/analytics/sales')
+    expect(byLabel('Undated marketing spend')?.getAttribute('href')).toBe(
+      '/mon/analytics/marketing#marketing-undated-fixlist',
+    )
+    expect(byLabel('COD settlement')?.getAttribute('href')).toBe('/mon/analytics/sales')
+  })
+})
+
+// ─── RecognitionStrip dense cells + overview H1 terminology (W1 review) ──────
+
+describe('RecognitionStrip dense cells', () => {
+  const strip = {
+    bookedOrders: 120,
+    bookedAmount: 250000,
+    recognised: 90,
+    inFulfilment: 20,
+    delivered: 95,
+    notYetRecognised: 25,
+    recognitionRate: 0.75,
+    dateSourceMix: { timeline: 85, dispatch: 5 },
+    undatedDeliveries: 2,
+  }
+
+  it('truncates dense labels and uses the compact info button', async () => {
+    const { container } = await renderWithClient(<RecognitionStrip strip={strip} />)
+    // Labels truncate inside min-w-0 cells so the 32px control never crowds 375px 2-col cells.
+    const labels = [...container.querySelectorAll('span.truncate')]
+    expect(labels.length).toBeGreaterThan(0)
+    const compactBtns = [...container.querySelectorAll('button[aria-label^="About"]')].filter((b) =>
+      b.className.includes('h-6'),
+    )
+    expect(compactBtns.length).toBeGreaterThan(0)
+  })
+})
+
+// ─── Overview H1 canonical terminology (W1 review) ───────────────────────────
+
+describe('overview H1 terminology', () => {
+  it('renders the canonical "Business Overview" H1', async () => {
+    const { container, getByRole, getByText } = await renderWithClient(<BusinessOverview />)
+    await expect.element(getByRole('heading', { level: 1, name: 'Business Overview' })).toBeInTheDocument()
+    await expect.element(getByText('Recognised revenue only — Delivered is the recognition event.')).toBeInTheDocument()
+    expect(container.textContent).not.toContain('Business Performance')
   })
 })

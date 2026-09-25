@@ -78,8 +78,23 @@ export function KpiCard({ title, kpi, format, formulaVersion, drilldownHref, ani
     }
   })()
 
-  const card = (
-    <Card className={cn('kpi-card', `kpi-accent-${accent}`)}>
+  // drilldownHref wraps the VALUE area only — the InfoDisclosure button stays
+  // a sibling of the anchor, never nested inside it (button-in-link is an
+  // invalid nested interactive). The Card keeps the hover lift as the affordance.
+  const valueNode = drilldownHref ? (
+    <a
+      href={drilldownHref}
+      aria-label={`Drill down into ${title}`}
+      className="block rounded-md focus-visible:outline-2 focus-visible:outline-offset-2"
+    >
+      {body}
+    </a>
+  ) : (
+    body
+  )
+
+  return (
+    <Card className={cn('kpi-card', `kpi-accent-${accent}`, drilldownHref && 'transition-all duration-200 hover:-translate-y-0.5 hover:opacity-95')}>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <span className="kpi-icon-badge shrink-0" aria-hidden>
@@ -90,7 +105,7 @@ export function KpiCard({ title, kpi, format, formulaVersion, drilldownHref, ani
         <InfoDisclosure label={`About ${title}`} lines={infoLines} contentTestId="kpi-meta-detail" />
       </CardHeader>
       <CardContent>
-        {body}
+        {valueNode}
         {infoText ? (
           <span className="sr-only" data-testid="kpi-meta-sr">
             {infoText}
@@ -99,13 +114,4 @@ export function KpiCard({ title, kpi, format, formulaVersion, drilldownHref, ani
       </CardContent>
     </Card>
   )
-
-  if (drilldownHref) {
-    return (
-      <a href={drilldownHref} className="block transition-all duration-200 hover:-translate-y-0.5 hover:opacity-95">
-        {card}
-      </a>
-    )
-  }
-  return card
 }

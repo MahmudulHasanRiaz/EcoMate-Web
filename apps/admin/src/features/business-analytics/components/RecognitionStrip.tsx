@@ -32,10 +32,10 @@ export function RecognitionStrip({ strip }: { strip: RecognitionStripData }) {
       <CardContent>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {items.map((i) => (
-            <div key={i.label}>
-              <p className="-my-1 flex items-center gap-0.5 text-[11px] text-muted-foreground">
-                <span>{i.label}</span>
-                {i.hint ? <HintTooltip label={`About ${i.label}`} text={i.hint} /> : null}
+            <div key={i.label} className="min-w-0">
+              <p className="-my-1 flex min-w-0 items-center gap-0.5 text-[11px] text-muted-foreground">
+                <span className="min-w-0 truncate">{i.label}</span>
+                {i.hint ? <HintTooltip label={`About ${i.label}`} text={i.hint} compact /> : null}
               </p>
               <p className={cn('tabular-nums', i.prominent ? 'text-lg font-bold' : 'text-base font-semibold')}>
                 {i.value}
