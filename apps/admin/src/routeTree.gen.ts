@@ -54,7 +54,6 @@ import { Route as AuthenticatedMonAnalyticsExpensesRouteImport } from './routes/
 import { Route as AuthenticatedMonAnalyticsHelpRouteImport } from './routes/_authenticated/mon/analytics/help'
 import { Route as AuthenticatedMonAnalyticsInventoryRouteImport } from './routes/_authenticated/mon/analytics/inventory'
 import { Route as AuthenticatedMonAnalyticsMarketingRouteImport } from './routes/_authenticated/mon/analytics/marketing'
-import { Route as AuthenticatedMonAnalyticsProductsRouteImport } from './routes/_authenticated/mon/analytics/products'
 import { Route as AuthenticatedMonAnalyticsSalesRouteImport } from './routes/_authenticated/mon/analytics/sales'
 import { Route as AuthenticatedMonBackupIndexRouteImport } from './routes/_authenticated/mon/backup/index'
 import { Route as AuthenticatedMonBackupSettingsRouteImport } from './routes/_authenticated/mon/backup/settings'
@@ -129,7 +128,8 @@ import { Route as AuthenticatedOpSuppliersIndexRouteImport } from './routes/_aut
 import { Route as AuthenticatedOpTagsIndexRouteImport } from './routes/_authenticated/op/tags/index'
 import { Route as AuthenticatedOpTasksIndexRouteImport } from './routes/_authenticated/op/tasks/index'
 import { Route as AuthenticatedOpTransactionsIndexRouteImport } from './routes/_authenticated/op/transactions/index'
-import { Route as AuthenticatedMonAnalyticsProductsIdRouteImport } from './routes/_authenticated/mon/analytics/products.$id'
+import { Route as AuthenticatedMonAnalyticsProductsIndexRouteImport } from './routes/_authenticated/mon/analytics/products/index'
+import { Route as AuthenticatedMonAnalyticsProductsIdRouteImport } from './routes/_authenticated/mon/analytics/products/$id'
 import { Route as AuthenticatedMonMarketingCatalogIndexRouteImport } from './routes/_authenticated/mon/marketing/catalog/index'
 import { Route as AuthenticatedMonSettingsAuthIndexRouteImport } from './routes/_authenticated/mon/settings/auth/index'
 import { Route as AuthenticatedMonSettingsBrandingIndexRouteImport } from './routes/_authenticated/mon/settings/branding/index'
@@ -417,12 +417,6 @@ const AuthenticatedMonAnalyticsMarketingRoute =
   AuthenticatedMonAnalyticsMarketingRouteImport.update({
     id: '/mon/analytics/marketing',
     path: '/mon/analytics/marketing',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedMonAnalyticsProductsRoute =
-  AuthenticatedMonAnalyticsProductsRouteImport.update({
-    id: '/mon/analytics/products',
-    path: '/mon/analytics/products',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedMonAnalyticsSalesRoute =
@@ -867,11 +861,17 @@ const AuthenticatedOpTransactionsIndexRoute =
     path: '/op/transactions/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedMonAnalyticsProductsIndexRoute =
+  AuthenticatedMonAnalyticsProductsIndexRouteImport.update({
+    id: '/mon/analytics/products/',
+    path: '/mon/analytics/products/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedMonAnalyticsProductsIdRoute =
   AuthenticatedMonAnalyticsProductsIdRouteImport.update({
-    id: '/$id',
-    path: '/$id',
-    getParentRoute: () => AuthenticatedMonAnalyticsProductsRoute,
+    id: '/mon/analytics/products/$id',
+    path: '/mon/analytics/products/$id',
+    getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedMonMarketingCatalogIndexRoute =
   AuthenticatedMonMarketingCatalogIndexRouteImport.update({
@@ -1166,7 +1166,6 @@ export interface FileRoutesByFullPath {
   '/mon/analytics/help': typeof AuthenticatedMonAnalyticsHelpRoute
   '/mon/analytics/inventory': typeof AuthenticatedMonAnalyticsInventoryRoute
   '/mon/analytics/marketing': typeof AuthenticatedMonAnalyticsMarketingRoute
-  '/mon/analytics/products': typeof AuthenticatedMonAnalyticsProductsRouteWithChildren
   '/mon/analytics/sales': typeof AuthenticatedMonAnalyticsSalesRoute
   '/mon/backup/settings': typeof AuthenticatedMonBackupSettingsRoute
   '/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
@@ -1253,6 +1252,7 @@ export interface FileRoutesByFullPath {
   '/op/marketing/campaigns/$id': typeof AuthenticatedOpMarketingCampaignsIdRoute
   '/op/print/invoice/$id': typeof AuthenticatedOpPrintInvoiceIdRoute
   '/op/print/sticker/$id': typeof AuthenticatedOpPrintStickerIdRoute
+  '/mon/analytics/products/': typeof AuthenticatedMonAnalyticsProductsIndexRoute
   '/mon/marketing/catalog/': typeof AuthenticatedMonMarketingCatalogIndexRoute
   '/mon/settings/auth/': typeof AuthenticatedMonSettingsAuthIndexRoute
   '/mon/settings/branding/': typeof AuthenticatedMonSettingsBrandingIndexRoute
@@ -1330,7 +1330,6 @@ export interface FileRoutesByTo {
   '/mon/analytics/help': typeof AuthenticatedMonAnalyticsHelpRoute
   '/mon/analytics/inventory': typeof AuthenticatedMonAnalyticsInventoryRoute
   '/mon/analytics/marketing': typeof AuthenticatedMonAnalyticsMarketingRoute
-  '/mon/analytics/products': typeof AuthenticatedMonAnalyticsProductsRouteWithChildren
   '/mon/analytics/sales': typeof AuthenticatedMonAnalyticsSalesRoute
   '/mon/backup/settings': typeof AuthenticatedMonBackupSettingsRoute
   '/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
@@ -1417,6 +1416,7 @@ export interface FileRoutesByTo {
   '/op/marketing/campaigns/$id': typeof AuthenticatedOpMarketingCampaignsIdRoute
   '/op/print/invoice/$id': typeof AuthenticatedOpPrintInvoiceIdRoute
   '/op/print/sticker/$id': typeof AuthenticatedOpPrintStickerIdRoute
+  '/mon/analytics/products': typeof AuthenticatedMonAnalyticsProductsIndexRoute
   '/mon/marketing/catalog': typeof AuthenticatedMonMarketingCatalogIndexRoute
   '/mon/settings/auth': typeof AuthenticatedMonSettingsAuthIndexRoute
   '/mon/settings/branding': typeof AuthenticatedMonSettingsBrandingIndexRoute
@@ -1496,7 +1496,6 @@ export interface FileRoutesById {
   '/_authenticated/mon/analytics/help': typeof AuthenticatedMonAnalyticsHelpRoute
   '/_authenticated/mon/analytics/inventory': typeof AuthenticatedMonAnalyticsInventoryRoute
   '/_authenticated/mon/analytics/marketing': typeof AuthenticatedMonAnalyticsMarketingRoute
-  '/_authenticated/mon/analytics/products': typeof AuthenticatedMonAnalyticsProductsRouteWithChildren
   '/_authenticated/mon/analytics/sales': typeof AuthenticatedMonAnalyticsSalesRoute
   '/_authenticated/mon/backup/settings': typeof AuthenticatedMonBackupSettingsRoute
   '/_authenticated/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
@@ -1583,6 +1582,7 @@ export interface FileRoutesById {
   '/_authenticated/op/marketing/campaigns/$id': typeof AuthenticatedOpMarketingCampaignsIdRoute
   '/_authenticated/op/print/invoice/$id': typeof AuthenticatedOpPrintInvoiceIdRoute
   '/_authenticated/op/print/sticker/$id': typeof AuthenticatedOpPrintStickerIdRoute
+  '/_authenticated/mon/analytics/products/': typeof AuthenticatedMonAnalyticsProductsIndexRoute
   '/_authenticated/mon/marketing/catalog/': typeof AuthenticatedMonMarketingCatalogIndexRoute
   '/_authenticated/mon/settings/auth/': typeof AuthenticatedMonSettingsAuthIndexRoute
   '/_authenticated/mon/settings/branding/': typeof AuthenticatedMonSettingsBrandingIndexRoute
@@ -1662,7 +1662,6 @@ export interface FileRouteTypes {
     | '/mon/analytics/help'
     | '/mon/analytics/inventory'
     | '/mon/analytics/marketing'
-    | '/mon/analytics/products'
     | '/mon/analytics/sales'
     | '/mon/backup/settings'
     | '/mon/users/$id'
@@ -1749,6 +1748,7 @@ export interface FileRouteTypes {
     | '/op/marketing/campaigns/$id'
     | '/op/print/invoice/$id'
     | '/op/print/sticker/$id'
+    | '/mon/analytics/products/'
     | '/mon/marketing/catalog/'
     | '/mon/settings/auth/'
     | '/mon/settings/branding/'
@@ -1826,7 +1826,6 @@ export interface FileRouteTypes {
     | '/mon/analytics/help'
     | '/mon/analytics/inventory'
     | '/mon/analytics/marketing'
-    | '/mon/analytics/products'
     | '/mon/analytics/sales'
     | '/mon/backup/settings'
     | '/mon/users/$id'
@@ -1913,6 +1912,7 @@ export interface FileRouteTypes {
     | '/op/marketing/campaigns/$id'
     | '/op/print/invoice/$id'
     | '/op/print/sticker/$id'
+    | '/mon/analytics/products'
     | '/mon/marketing/catalog'
     | '/mon/settings/auth'
     | '/mon/settings/branding'
@@ -1991,7 +1991,6 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/analytics/help'
     | '/_authenticated/mon/analytics/inventory'
     | '/_authenticated/mon/analytics/marketing'
-    | '/_authenticated/mon/analytics/products'
     | '/_authenticated/mon/analytics/sales'
     | '/_authenticated/mon/backup/settings'
     | '/_authenticated/mon/users/$id'
@@ -2078,6 +2077,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/marketing/campaigns/$id'
     | '/_authenticated/op/print/invoice/$id'
     | '/_authenticated/op/print/sticker/$id'
+    | '/_authenticated/mon/analytics/products/'
     | '/_authenticated/mon/marketing/catalog/'
     | '/_authenticated/mon/settings/auth/'
     | '/_authenticated/mon/settings/branding/'
@@ -2447,13 +2447,6 @@ declare module '@tanstack/react-router' {
       path: '/mon/analytics/marketing'
       fullPath: '/mon/analytics/marketing'
       preLoaderRoute: typeof AuthenticatedMonAnalyticsMarketingRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/mon/analytics/products': {
-      id: '/_authenticated/mon/analytics/products'
-      path: '/mon/analytics/products'
-      fullPath: '/mon/analytics/products'
-      preLoaderRoute: typeof AuthenticatedMonAnalyticsProductsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/mon/analytics/sales': {
@@ -2974,12 +2967,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpTransactionsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/mon/analytics/products/': {
+      id: '/_authenticated/mon/analytics/products/'
+      path: '/mon/analytics/products'
+      fullPath: '/mon/analytics/products/'
+      preLoaderRoute: typeof AuthenticatedMonAnalyticsProductsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/mon/analytics/products/$id': {
       id: '/_authenticated/mon/analytics/products/$id'
-      path: '/$id'
+      path: '/mon/analytics/products/$id'
       fullPath: '/mon/analytics/products/$id'
       preLoaderRoute: typeof AuthenticatedMonAnalyticsProductsIdRouteImport
-      parentRoute: typeof AuthenticatedMonAnalyticsProductsRoute
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/mon/marketing/catalog/': {
       id: '/_authenticated/mon/marketing/catalog/'
@@ -3383,21 +3383,6 @@ const AuthenticatedOpSettingsRouteRouteWithChildren =
     AuthenticatedOpSettingsRouteRouteChildren,
   )
 
-interface AuthenticatedMonAnalyticsProductsRouteChildren {
-  AuthenticatedMonAnalyticsProductsIdRoute: typeof AuthenticatedMonAnalyticsProductsIdRoute
-}
-
-const AuthenticatedMonAnalyticsProductsRouteChildren: AuthenticatedMonAnalyticsProductsRouteChildren =
-  {
-    AuthenticatedMonAnalyticsProductsIdRoute:
-      AuthenticatedMonAnalyticsProductsIdRoute,
-  }
-
-const AuthenticatedMonAnalyticsProductsRouteWithChildren =
-  AuthenticatedMonAnalyticsProductsRoute._addFileChildren(
-    AuthenticatedMonAnalyticsProductsRouteChildren,
-  )
-
 interface AuthenticatedOpAnalyticsProductsRouteChildren {
   AuthenticatedOpAnalyticsProductsIdRoute: typeof AuthenticatedOpAnalyticsProductsIdRoute
 }
@@ -3441,7 +3426,6 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMonAnalyticsHelpRoute: typeof AuthenticatedMonAnalyticsHelpRoute
   AuthenticatedMonAnalyticsInventoryRoute: typeof AuthenticatedMonAnalyticsInventoryRoute
   AuthenticatedMonAnalyticsMarketingRoute: typeof AuthenticatedMonAnalyticsMarketingRoute
-  AuthenticatedMonAnalyticsProductsRoute: typeof AuthenticatedMonAnalyticsProductsRouteWithChildren
   AuthenticatedMonAnalyticsSalesRoute: typeof AuthenticatedMonAnalyticsSalesRoute
   AuthenticatedMonBackupSettingsRoute: typeof AuthenticatedMonBackupSettingsRoute
   AuthenticatedMonUsersIdRoute: typeof AuthenticatedMonUsersIdRoute
@@ -3521,8 +3505,10 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpTagsIndexRoute: typeof AuthenticatedOpTagsIndexRoute
   AuthenticatedOpTasksIndexRoute: typeof AuthenticatedOpTasksIndexRoute
   AuthenticatedOpTransactionsIndexRoute: typeof AuthenticatedOpTransactionsIndexRoute
+  AuthenticatedMonAnalyticsProductsIdRoute: typeof AuthenticatedMonAnalyticsProductsIdRoute
   AuthenticatedOpInventoryPhysicalReservationsRoute: typeof AuthenticatedOpInventoryPhysicalReservationsRoute
   AuthenticatedOpMarketingCampaignsIdRoute: typeof AuthenticatedOpMarketingCampaignsIdRoute
+  AuthenticatedMonAnalyticsProductsIndexRoute: typeof AuthenticatedMonAnalyticsProductsIndexRoute
   AuthenticatedMonMarketingCatalogIndexRoute: typeof AuthenticatedMonMarketingCatalogIndexRoute
   AuthenticatedOpDispatchDuplicateReviewIndexRoute: typeof AuthenticatedOpDispatchDuplicateReviewIndexRoute
   AuthenticatedOpInventoryPhysicalIndexRoute: typeof AuthenticatedOpInventoryPhysicalIndexRoute
@@ -3576,8 +3562,6 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
     AuthenticatedMonAnalyticsInventoryRoute,
   AuthenticatedMonAnalyticsMarketingRoute:
     AuthenticatedMonAnalyticsMarketingRoute,
-  AuthenticatedMonAnalyticsProductsRoute:
-    AuthenticatedMonAnalyticsProductsRouteWithChildren,
   AuthenticatedMonAnalyticsSalesRoute: AuthenticatedMonAnalyticsSalesRoute,
   AuthenticatedMonBackupSettingsRoute: AuthenticatedMonBackupSettingsRoute,
   AuthenticatedMonUsersIdRoute: AuthenticatedMonUsersIdRoute,
@@ -3674,10 +3658,14 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpTagsIndexRoute: AuthenticatedOpTagsIndexRoute,
   AuthenticatedOpTasksIndexRoute: AuthenticatedOpTasksIndexRoute,
   AuthenticatedOpTransactionsIndexRoute: AuthenticatedOpTransactionsIndexRoute,
+  AuthenticatedMonAnalyticsProductsIdRoute:
+    AuthenticatedMonAnalyticsProductsIdRoute,
   AuthenticatedOpInventoryPhysicalReservationsRoute:
     AuthenticatedOpInventoryPhysicalReservationsRoute,
   AuthenticatedOpMarketingCampaignsIdRoute:
     AuthenticatedOpMarketingCampaignsIdRoute,
+  AuthenticatedMonAnalyticsProductsIndexRoute:
+    AuthenticatedMonAnalyticsProductsIndexRoute,
   AuthenticatedMonMarketingCatalogIndexRoute:
     AuthenticatedMonMarketingCatalogIndexRoute,
   AuthenticatedOpDispatchDuplicateReviewIndexRoute:

@@ -13,6 +13,10 @@ import { Route as OpAnalyticsInventoryRoute } from '../routes/_authenticated/op/
 import { Route as OpAnalyticsExpensesRoute } from '../routes/_authenticated/op/analytics/expenses'
 import { Route as MonAnalyticsLandingRoute } from '../routes/_authenticated/mon/analytics/index'
 import BusinessOverview from '../features/business-analytics'
+import { Route as MonAnalyticsProductsRoute } from '../routes/_authenticated/mon/analytics/products/index'
+import { Route as MonAnalyticsProductsIdRoute } from '../routes/_authenticated/mon/analytics/products/$id'
+import ProductAnalytics from '../features/business-analytics/products'
+import ProductAnalyticsDetail from '../features/business-analytics/product-detail'
 import { isRedirect } from '@tanstack/react-router'
 
 function expectRedirect(fn: ((ctx: any) => unknown) | undefined) {
@@ -68,5 +72,29 @@ describe('Analytics consolidation redirects (/op/analytics/* → /mon/analytics/
     expect(options.to).toBe(expected.to)
     if (expected.params !== undefined) expect(options.params).toEqual(expected.params)
     if (expected.search !== undefined) expect(options.search).toEqual(expected.search)
+  })
+})
+
+describe('Product analytics detail route (nested-outlet regression)', () => {
+  // TanStack file routing nests `products.$id.tsx` under `products.tsx`, and the
+  // list parent renders no <Outlet/>, so the detail child was silently dropped:
+  // `/mon/analytics/products/:id` rendered the PRODUCTS LIST. The established
+  // repo pattern (op/products, op/orders) is sibling routes via
+  // `products/index.tsx` + `products/$id.tsx`. These imports pin that convention:
+  // re-nesting the files deletes these modules and fails this suite.
+  it('list route renders the products LIST', () => {
+    expect(MonAnalyticsProductsRoute.options.component).toBe(ProductAnalytics)
+  })
+
+  it('detail route renders the product DETAIL, not the list', () => {
+    expect(MonAnalyticsProductsIdRoute.options.component).toBe(ProductAnalyticsDetail)
+  })
+
+  it('detail and list routes never resolve to the same component (detail URL must not render the list)', () => {
+    // The reported symptom: `/mon/analytics/products/:id` rendered the LIST.
+    // Distinct sibling route modules with distinct components pin the fix.
+    // (Drill-href shape `/mon/analytics/products/${id}` is pinned by
+    // products.test.tsx; detail rendering by product-detail.test.tsx.)
+    expect(MonAnalyticsProductsIdRoute.options.component).not.toBe(MonAnalyticsProductsRoute.options.component)
   })
 })
