@@ -68,6 +68,13 @@ export interface TestConnectionResult {
   existingStoreConflict?: { storeId: string; storeName: string };
   plugin?: { installed: boolean; version?: string };
   capabilities: ProviderCapabilities;
+  /**
+   * API-version negotiation evidence. `served` comes from the
+   * `X-Shopify-API-Version`-style response header; `fallForward` is true
+   * when the platform served an older/newer version than requested (the
+   * request was silently reinterpreted — never assumed identical).
+   */
+  apiVersion?: { requested: string; served?: string; fallForward: boolean };
 }
 
 /** Field keys are owned by the §8.11 matrix (P3/P4). P1 reserves the type. */

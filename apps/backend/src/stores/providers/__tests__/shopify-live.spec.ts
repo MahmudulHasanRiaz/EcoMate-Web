@@ -46,7 +46,7 @@ import {
 } from './fixtures';
 
 const STORE = () => buildStoreUnit('SHOPIFY');
-const BASE = 'https://test-shop.myshopify.com/admin/api/2024-01';
+const BASE = 'https://test-shop.myshopify.com/admin/api/2026-07';
 
 function shopifyProductFixture(overrides: Record<string, unknown> = {}) {
   return {
@@ -80,8 +80,8 @@ function shopifyProductFixture(overrides: Record<string, unknown> = {}) {
 describe('ShopifyProvider live HTTP (P9)', () => {
   // ── Pure mapping units (§8.11 Table A, Shopify target column) ──────────
   describe('payload mapping (pure)', () => {
-    it('pins the Admin API version', () => {
-      expect(SHOPIFY_API_VERSION).toBe('2024-01');
+    it('pins the Admin API version (2026-07, dashboard-aligned)', () => {
+      expect(SHOPIFY_API_VERSION).toBe('2026-07');
     });
 
     it('maps name/description/vendor/tags/handle/publication, never cost/dims/quantity', () => {
@@ -191,6 +191,33 @@ describe('ShopifyProvider live HTTP (P9)', () => {
       mock.onAll(() => jsonResponse(200, { shop: { id: 424242 } }));
       const res = await new ShopifyProvider(mock.fetch).testConnection(STORE());
       expect(res.providerStoreId).toBe('shop:424242');
+    });
+
+    it('reports served API version; flags silent fall-forward loudly', async () => {
+      const same = new MockFetch();
+      same.onAll(() =>
+        jsonResponse(
+          200,
+          { shop: { myshopify_domain: 'test-shop.myshopify.com' } },
+          { 'x-shopify-api-version': '2026-07' },
+        ),
+      );
+      await expect(new ShopifyProvider(same.fetch).testConnection(STORE())).resolves.toMatchObject({
+        apiVersion: { requested: '2026-07', served: '2026-07', fallForward: false },
+      });
+      const drifted = new MockFetch();
+      drifted.onAll(() =>
+        jsonResponse(
+          200,
+          { shop: { myshopify_domain: 'test-shop.myshopify.com' } },
+          { 'x-shopify-api-version': '2025-10' },
+        ),
+      );
+      await expect(
+        new ShopifyProvider(drifted.fetch).testConnection(STORE()),
+      ).resolves.toMatchObject({
+        apiVersion: { requested: '2026-07', served: '2025-10', fallForward: true },
+      });
     });
 
     it('401 → reachable but not authenticated; 403 → permissions fail (never throws)', async () => {
@@ -468,6 +495,28 @@ describe('ShopifyProvider live HTTP (P9)', () => {
         String(mock.calls.find((c) => c.init?.method === 'POST')?.init?.body ?? '{}'),
       );
       expect(postBody.variant).toMatchObject({ price: '300', compare_at_price: '350', weight: 0.2 });
+    });
+
+    it('rejects >100 variants with zero HTTP (deprecated REST ceiling)', async () => {
+      const mock = new MockFetch();
+      mock.onAll(() => jsonResponse(200, { variants: [] }));
+      const variants = Array.from({ length: 101 }, (_, i) => ({ sku: `OVER-${i}` }));
+      await expect(
+        new ShopifyProvider(mock.fetch).upsertVariants(STORE(), { providerId: '9001' }, variants as any),
+      ).rejects.toThrow('VARIANT_LIMIT_EXCEEDED');
+      expect(mock.calls).toHaveLength(0);
+    });
+
+    it('rejects >3 options with zero HTTP (deprecated REST ceiling)', async () => {
+      const mock = new MockFetch();
+      mock.onAll(() => jsonResponse(200, { variants: [] }));
+      const variants = [
+        { sku: 'OPT-1', attributes: { Size: 'M', Color: 'Red', Material: 'Cotton', Fit: 'Slim' } },
+      ];
+      await expect(
+        new ShopifyProvider(mock.fetch).upsertVariants(STORE(), { providerId: '9001' }, variants as any),
+      ).rejects.toThrow('VARIANT_LIMIT_EXCEEDED');
+      expect(mock.calls).toHaveLength(0);
     });
   });
 
@@ -798,6 +847,10 @@ describe('ShopifyProvider live HTTP (P9)', () => {
       expect(JSON.stringify(created)).toMatch(/orders\/updated/);
       expect(JSON.stringify(created)).toMatch(/products\/update/);
       expect(JSON.stringify(created)).toMatch(/\/api\/webhooks\/stores\/shopify/);
+      // Payload serialization pinned to the code's version (not the default).
+      for (const body of created) {
+        expect(body).toMatchObject({ webhook: { api_version: '2026-07' } });
+      }
     });
   });
 });

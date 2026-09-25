@@ -56,6 +56,8 @@ export interface ProbeHttpResponse {
   ok: boolean;
   json(): Promise<unknown>;
   text(): Promise<string>;
+  /** Present on real fetch Responses; mock builders may supply test headers. */
+  headers?: { get(name: string): string | null };
 }
 
 export interface ProbeHttpInit {
@@ -99,7 +101,7 @@ export abstract class BaseCommerceProvider implements CommerceProvider {
   protected async probeJson(
     url: string,
     init?: ProbeHttpInit,
-  ): Promise<{ status: number; body: unknown }> {
+  ): Promise<{ status: number; body: unknown; headers?: { get(name: string): string | null } }> {
     let res: ProbeHttpResponse;
     try {
       res = await this.fetchFn(url, init);
@@ -117,7 +119,7 @@ export abstract class BaseCommerceProvider implements CommerceProvider {
     } catch {
       body = null;
     }
-    return { status: res.status, body };
+    return { status: res.status, body, headers: res.headers ?? undefined };
   }
 
   /**
@@ -129,7 +131,7 @@ export abstract class BaseCommerceProvider implements CommerceProvider {
   protected async tryProbe(
     url: string,
     init?: ProbeHttpInit,
-  ): Promise<{ status: number; body: unknown } | null> {
+  ): Promise<{ status: number; body: unknown; headers?: { get(name: string): string | null } } | null> {
     try {
       return await this.probeJson(url, init);
     } catch {
@@ -147,6 +149,7 @@ export abstract class BaseCommerceProvider implements CommerceProvider {
     providerStoreId: string | undefined,
     capabilities: ProviderCapabilities,
     mediaReachable?: boolean,
+    apiVersion?: { requested: string; served?: string; fallForward: boolean },
   ): TestConnectionResult {
     if (status === 200) {
       return {
@@ -156,6 +159,7 @@ export abstract class BaseCommerceProvider implements CommerceProvider {
         mediaReachable,
         providerStoreId,
         capabilities,
+        ...(apiVersion ? { apiVersion } : {}),
       };
     }
     if (status === 403) {

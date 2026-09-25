@@ -81,8 +81,28 @@ import { snapshotField } from './field-snapshot';
 import { classifyHttpStatus } from './retry-classifier';
 import { isAllowedCustomField } from '../sync/field-matrix';
 
-/** Shopify Admin API version pinned for phase 1. */
-export const SHOPIFY_API_VERSION = '2024-01';
+/**
+ * Shopify Admin API version pinned for all REST + GraphQL calls and for
+ * webhook `api_version`.
+ *
+ * - `2026-07` is the latest stable (supported until 2026-07-16 … 2027-07-16
+ *   per Shopify's 12-month window — re-pin quarterly). It MUST match the
+ *   version set in the Dev Dashboard app config; a mismatch means webhooks
+ *   serialize payloads under a different version than the code expects.
+ * - The previous pin (`2024-01`) is unsupported: Shopify fall-forwards such
+ *   requests to the oldest accessible stable, silently changing behavior.
+ *   testConnection now reports the served version so fall-forward is loud.
+ * - REST Admin API is legacy/maintenance-mode since 2024-10 and the
+ *   products/variants endpoints are deprecated (functional for custom apps
+ *   within the 100-variant / 3-option cap — enforced below via
+ *   assertRestVariantLimit; over-cap products raise an explicit issue
+ *   instead of a half-written remote product).
+ */
+export const SHOPIFY_API_VERSION = '2026-07';
+
+/** REST variant/option ceiling for deprecated products/variants endpoints. */
+export const SHOPIFY_REST_VARIANT_LIMIT = 100;
+export const SHOPIFY_REST_OPTION_LIMIT = 3;
 
 /** Webhook topics provisioned by ensureWebhooks (order + product update). */
 export const SHOPIFY_WEBHOOK_TOPICS = ['orders/create', 'orders/updated', 'products/update'];
@@ -136,6 +156,28 @@ function stripHtml(html: unknown): string {
     .replace(/<[^>]*>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * REST products/variants endpoints are deprecated (maintenance mode) and
+ * refuse more than 100 variants / 3 options per product. Fail loudly with
+ * an explicit issue instead of a half-written remote product.
+ */
+function assertRestVariantLimit(variants: Record<string, unknown>[]): void {
+  if (variants.length > SHOPIFY_REST_VARIANT_LIMIT) {
+    throw new ProviderError(
+      `[shopify] VARIANT_LIMIT_EXCEEDED: product has ${variants.length} variants, REST supports ${SHOPIFY_REST_VARIANT_LIMIT} (GraphQL migration required)`,
+      ProviderErrorCategory.INVALID_REQUEST,
+      'shopify',
+    );
+  }
+  if (uniqueOptionNames(variants).length > SHOPIFY_REST_OPTION_LIMIT) {
+    throw new ProviderError(
+      `[shopify] VARIANT_LIMIT_EXCEEDED: product has more than ${SHOPIFY_REST_OPTION_LIMIT} options (GraphQL migration required)`,
+      ProviderErrorCategory.INVALID_REQUEST,
+      'shopify',
+    );
+  }
 }
 
 /** Composed excerpt (not native on Shopify): plain-text head of body_html. */
@@ -445,7 +487,7 @@ export class ShopifyProvider extends BaseCommerceProvider {
         capabilities: this.declaredCapabilities,
       };
     }
-    const { status, body } = probed;
+    const { status, body, headers } = probed;
     const shopNode = (body as any)?.shop as Record<string, unknown> | undefined;
     const providerStoreId =
       shopNode?.myshopify_domain !== undefined
@@ -453,12 +495,21 @@ export class ShopifyProvider extends BaseCommerceProvider {
         : shopNode?.id !== undefined && shopNode?.id !== null
           ? `shop:${String(shopNode.id)}`
           : undefined;
+    // Fall-forward detection: an unsupported pin is silently served by the
+    // oldest accessible stable. The wizard surfaces served !== requested.
+    const served = headers?.get('x-shopify-api-version') ?? undefined;
+    const apiVersion = {
+      requested: SHOPIFY_API_VERSION,
+      ...(served ? { served } : {}),
+      fallForward: served !== undefined && served !== SHOPIFY_API_VERSION,
+    };
     return this.connectionFromProbe(
       status,
       body,
       providerStoreId,
       this.declaredCapabilities,
       await this.mediaPreflight(settings as Record<string, unknown>),
+      apiVersion,
     );
   }
 
@@ -621,6 +672,7 @@ export class ShopifyProvider extends BaseCommerceProvider {
     // semantics); standalone variant syncs land in upsertVariants.
     const variantsInput = Array.isArray(rec.variants) ? (rec.variants as Record<string, unknown>[]) : null;
     if (!externalId && variantsInput && variantsInput.length > 0) {
+      assertRestVariantLimit(variantsInput);
       payload.variants = variantsInput.map((v) => shopifyVariantToPayload(v));
       const names = uniqueOptionNames(variantsInput);
       if (names.length > 0) {
@@ -753,6 +805,9 @@ export class ShopifyProvider extends BaseCommerceProvider {
     ref: RemoteRef,
     variants: NormalizedVariant[],
   ): Promise<Map<string, RemoteRef>> {
+    assertRestVariantLimit(
+      (variants as unknown[]).map((v) => ({ ...(v as Record<string, unknown>) })),
+    );
     const out = new Map<string, RemoteRef>();
     const remote = await this.rest<{ variants?: any[] }>(
       store,
@@ -935,6 +990,9 @@ export class ShopifyProvider extends BaseCommerceProvider {
           topic,
           address: `${callbackBaseUrl.replace(/\/+$/, '')}/api/webhooks/stores/shopify`,
           format: 'json',
+          // Pin payload serialization to the code's version: without this,
+          // deliveries may serialize under the dashboard default instead.
+          api_version: SHOPIFY_API_VERSION,
         },
       });
     }

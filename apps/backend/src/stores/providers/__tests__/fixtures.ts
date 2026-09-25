@@ -232,12 +232,19 @@ export interface MockCall {
   init?: ProbeHttpInit;
 }
 
-export function jsonResponse(status: number, body: unknown): ProbeHttpResponse {
+export function jsonResponse(
+  status: number,
+  body: unknown,
+  headers?: Record<string, string>,
+): ProbeHttpResponse {
+  const lower: Record<string, string> = {};
+  for (const [k, v] of Object.entries(headers ?? {})) lower[k.toLowerCase()] = v;
   return {
     status,
     ok: status >= 200 && status < 300,
     json: async () => body,
     text: async () => JSON.stringify(body),
+    headers: { get: (name: string) => lower[name.toLowerCase()] ?? null },
   };
 }
 

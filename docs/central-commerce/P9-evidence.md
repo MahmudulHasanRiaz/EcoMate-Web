@@ -205,9 +205,34 @@ replay (`StoreWebhookService` timestamp headers incl.
    pushes CANCELLED/FULFILLED with read-back verification.
 
 ## 8. DEFERRED (explicitly NOT in P9)
-
 - P10 Custom provider (Bridge v1): protocol spec, manifest discovery,
   conformance suite. The `CustomBridgeProvider` stub and its
   contract-suite loud vectors are untouched.
 - Live dev-store smoke (blocked on operator credentials — §6).
 - Storefront work (none required by P9).
+
+## 9. API version alignment 2024-01 → 2026-07 (post-P9 fix-forward)
+
+Finding: `SHOPIFY_API_VERSION` was pinned to `2024-01`, which is
+unsupported — Shopify fall-forwards such requests to the oldest
+accessible stable, silently changing behavior, and the pin mismatched
+the Dev Dashboard app version (2026-07). Verified against the live
+2026-07 release notes + versioning docs (Sep 2026).
+
+Endpoint-by-endpoint safety (all calls flow through the one constant):
+- products/variants REST: deprecated since 2024-04 but functional for
+  custom apps within 100 variants / 3 options → enforced client-side
+  (`VARIANT_LIMIT_EXCEEDED`, zero HTTP, explicit issue).
+- orders GET / cancel.json, fulfillments.json, collects/custom_collections,
+  metafields, inventory_items (cost), shop.json: current under 2026-07.
+- GraphQL productUpdate (SEO-only) + productDelete: current.
+- Events payload/subscription change: Events (developer preview) only —
+  classic HTTPS webhooks unaffected.
+- Webhook POST now pins `api_version: 2026-07` (was dashboard-default).
+- testConnection reports served `X-Shopify-API-Version` with a
+  `fallForward` flag — silent reinterpretation is now loud.
+- 2026-07 `FULFILLMENT_NOT_REQUIRED` status value flows through as a raw
+  string (no wrong mapping); variant-level publishing untouched.
+
+Tests: version pin, webhook api_version body, cap-guard zero-call ×2,
+fall-forward flagged/clean. Backend 3568/3568, build clean.
