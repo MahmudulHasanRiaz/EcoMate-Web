@@ -2,26 +2,36 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatBDT, type SalesSettlementRow, type SettlementAmount } from '../types'
 import { SettlementGapBanner } from './FulfillmentEconomicsPanel'
+import { MetricUnavailable } from './badges'
+import { EmptyState } from './analytics-ui'
 
-function Money({ amount, compact }: { amount: SettlementAmount; compact?: boolean }) {
+function Money({ amount }: { amount: SettlementAmount }) {
   if (amount.value === null || amount.state !== 'actual') {
-    return (
-      <span className={compact ? 'text-xs text-muted-foreground' : 'text-sm text-muted-foreground'} title={amount.reason}>
-        <span className="font-medium text-danger/90">Unavailable</span>
-      </span>
-    )
+    return <MetricUnavailable reason={amount.reason} compact />
   }
   return <span className="tabular-nums">{formatBDT(amount.value)}</span>
 }
 
+const INFERENCE_HINT = 'Shipping-refund inference — labelled, not measured (online orders only)'
+
 function InferenceBadge({ inference }: { inference: 'covered' | 'below' | 'none' }) {
   if (inference === 'none') return <span className="text-[11px] text-muted-foreground">measured</span>
   return (
-    <Badge variant="warning" title="Shipping-refund inference — labelled, not measured (online orders only)">
-      inference: {inference}
-    </Badge>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          tabIndex={0}
+          aria-label={`inference: ${inference}. ${INFERENCE_HINT}`}
+          className="inline-flex rounded-full focus-visible:outline-2 focus-visible:outline-offset-2"
+        >
+          <Badge variant="warning">inference: {inference}</Badge>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-[240px] text-xs">{INFERENCE_HINT}</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -68,7 +78,7 @@ export function SettlementTable({
       <CardContent className="space-y-3">
         <SettlementGapBanner gapBanner={gapBanner} />
         {rows.length === 0 ? (
-          <div className="flex items-center justify-center py-6 text-muted-foreground text-sm">No data</div>
+          <EmptyState message="No data" />
         ) : (
           <div className="overflow-x-auto">
             <Table>

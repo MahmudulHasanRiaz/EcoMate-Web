@@ -2,6 +2,7 @@ import { BarChart3 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatBDT, type BreakdownRow } from '../types'
+import { EmptyState } from './analytics-ui'
 
 /** Top-N breakdown rows (backend folds the remainder into "Other"). */
 export function BreakdownTable({ title, rows, hint }: { title: string; rows: BreakdownRow[]; hint?: string }) {
@@ -20,7 +21,7 @@ export function BreakdownTable({ title, rows, hint }: { title: string; rows: Bre
       </CardHeader>
       <CardContent>
         {rows.length === 0 ? (
-          <div className="flex items-center justify-center py-6 text-muted-foreground text-sm">No data</div>
+          <EmptyState message="No data" />
         ) : (
           <Table className="dash-table">
             <TableHeader>

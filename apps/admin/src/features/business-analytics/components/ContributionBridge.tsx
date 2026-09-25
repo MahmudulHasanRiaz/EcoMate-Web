@@ -1,26 +1,26 @@
 import { GitBranch } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { formatBDT, type BridgeData } from '../types'
+import { InfoDisclosure, SectionHeader } from './analytics-ui'
 
 /**
  * Single-count contribution bridge (§2.11, D12).
  *
  * Operands are EXACTLY Contribution Profit + Delivery Charge Retained.
- * Fulfillment Margin is a delivery-axis diagnostic — rendered as a caption,
- * never as an operand (Contribution Profit + FM would subtract courierCost
- * twice — mathematically forbidden, R15).
+ * Fulfillment Margin is a delivery-axis diagnostic — disclosed through the
+ * info control, never rendered as an operand (Contribution Profit + FM would
+ * subtract courierCost twice — mathematically forbidden, R15).
  */
 export function ContributionBridge({ bridge }: { bridge: BridgeData }) {
   const dcrUnavailable = bridge.deliveryChargeRetainedState === 'unavailable'
   return (
     <Card className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
-        <div className="flex items-center gap-2.5">
-          <span className="chart-card-header-icon bg-accent-violet-soft text-accent-violet border border-accent-violet/25">
-            <GitBranch className="h-4 w-4" />
-          </span>
-          <CardTitle className="text-sm font-medium">Contribution Bridge</CardTitle>
-        </div>
+        <SectionHeader
+          icon={GitBranch}
+          title="Contribution Bridge"
+          tileClassName="bg-accent-violet-soft text-accent-violet border-accent-violet/25"
+        />
       </CardHeader>
       <CardContent>
         <div data-testid="bridge-operands" className="divide-y divide-border/50">
@@ -39,10 +39,18 @@ export function ContributionBridge({ bridge }: { bridge: BridgeData }) {
             <span className="text-sm tabular-nums font-bold shrink-0">{formatBDT(bridge.totalBusinessContribution)}</span>
           </div>
         </div>
-        <p data-testid="bridge-fm-diagnostic" className="text-[11px] text-muted-foreground mt-2 border-t border-dashed pt-2">
-          Fulfillment Margin {formatBDT(bridge.fulfillmentMargin)} is a diagnostic of the delivery axis — not an
-          additive component of Total Business Contribution.
-        </p>
+        <div className="mt-2 flex items-center justify-between gap-2 border-t border-dashed pt-2">
+          <span className="text-[11px] text-muted-foreground">
+            Fulfillment Margin {formatBDT(bridge.fulfillmentMargin)}
+          </span>
+          <InfoDisclosure
+            label="About Fulfillment Margin"
+            lines={[
+              'A diagnostic of the delivery axis — not an additive component of Total Business Contribution.',
+            ]}
+            contentTestId="bridge-fm-diagnostic"
+          />
+        </div>
         {dcrUnavailable ? (
           <p className="text-[11px] text-muted-foreground mt-1">
             Delivery Charge Retained is unavailable for {bridge.codRecognisedOrders} COD recognised order(s) — no

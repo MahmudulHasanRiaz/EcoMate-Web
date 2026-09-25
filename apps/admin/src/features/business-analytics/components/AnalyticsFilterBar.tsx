@@ -2,8 +2,9 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Calendar as CalendarIcon, X } from 'lucide-react'
+import { Calendar as CalendarIcon, ChevronDown, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar as CalendarComponent } from '@/components/ui/calendar'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -32,22 +33,27 @@ function DimSelect({
   options,
   onPick,
   placeholder,
+  loading,
+  disabled,
 }: {
   label: string
   value?: string
   options: { value: string; label: string }[]
   onPick: (v: string | undefined) => void
   placeholder: string
+  /** Async options still loading — trigger shows "Loading…" instead of a silent "All". */
+  loading?: boolean
+  disabled?: boolean
 }) {
   return (
     <label className="flex flex-col gap-1 text-xs text-muted-foreground">
       {label}
-      <Select value={value ?? '__all'} onValueChange={(v) => onPick(v === '__all' ? undefined : v)}>
-        <SelectTrigger className="tap-h w-36 text-xs">
-          <SelectValue placeholder={placeholder} />
+      <Select value={value ?? '__all'} disabled={disabled || loading} onValueChange={(v) => onPick(v === '__all' ? undefined : v)}>
+        <SelectTrigger className="tap-h h-10 w-36 cursor-pointer text-xs">
+          <SelectValue placeholder={loading ? 'Loading…' : placeholder} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="__all">{placeholder}</SelectItem>
+          <SelectItem value="__all">{loading ? 'Loading…' : placeholder}</SelectItem>
           {options.map((o) => (
             <SelectItem key={o.value} value={o.value}>
               {o.label}
@@ -55,6 +61,30 @@ function DimSelect({
           ))}
         </SelectContent>
       </Select>
+    </label>
+  )
+}
+
+function FreeInput({
+  label,
+  value,
+  onPick,
+  placeholder,
+}: {
+  label: string
+  value?: string
+  onPick: (v: string | undefined) => void
+  placeholder: string
+}) {
+  return (
+    <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+      {label}
+      <input
+        value={value ?? ''}
+        onChange={(e) => onPick(e.target.value || undefined)}
+        placeholder={placeholder}
+        className="tap-h h-10 w-36 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+      />
     </label>
   )
 }
@@ -71,7 +101,7 @@ export function AnalyticsFilterBar({ value, onChange }: Props) {
   const [startDate, setStartDate] = useState<Date | undefined>(undefined)
   const [endDate, setEndDate] = useState<Date | undefined>(undefined)
 
-  const { data: categories } = useQuery({
+  const { data: categories, isPending: categoriesPending } = useQuery({
     queryKey: ['filter-bar-categories'],
     // GET /categories returns a bare array (not a paginated envelope) —
     // normalize like the categories index page so the Category dimension
@@ -85,6 +115,8 @@ export function AnalyticsFilterBar({ value, onChange }: Props) {
 
   const presets = DATE_PRESETS.filter((p) => (PRESET_KEYS as readonly string[]).includes(p.key) && p.key !== 'custom')
   const activeCount = [value.source, value.salesChannel, value.marketingSource, value.paymentMethod, value.categoryId, value.location, value.customerSegment, value.deliveryOutcome, value.collectionStatus].filter(Boolean).length
+  // Secondary dims live behind "More filters" — their active count badges the trigger.
+  const hiddenActive = [value.collectionStatus, value.categoryId, value.marketingSource, value.paymentMethod, value.location].filter(Boolean).length
 
   return (
     <div className="flex flex-col gap-2">
@@ -94,7 +126,7 @@ export function AnalyticsFilterBar({ value, onChange }: Props) {
             <button
               key={p.key}
               onClick={() => set({ preset: p.key, startDate: undefined, endDate: undefined })}
-              className={`rounded-lg px-3 py-1.5 min-h-8 text-xs font-bold transition-all duration-200 ${
+              className={`rounded-lg px-3 py-1.5 min-h-8 cursor-pointer text-xs font-bold transition-all duration-200 ${
                 value.preset === p.key ? 'bg-background text-foreground shadow-sm' : 'hover:bg-background/40 hover:text-foreground/90'
               }`}
             >
@@ -104,7 +136,7 @@ export function AnalyticsFilterBar({ value, onChange }: Props) {
           <Popover open={customOpen} onOpenChange={setCustomOpen}>
             <PopoverTrigger asChild>
               <button
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 min-h-8 text-xs font-bold transition-all duration-200 ${
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 min-h-8 cursor-pointer text-xs font-bold transition-all duration-200 ${
                   value.preset === 'custom' ? 'bg-background text-foreground shadow-sm' : 'hover:bg-background/40 hover:text-foreground/90'
                 }`}
               >
@@ -157,47 +189,34 @@ export function AnalyticsFilterBar({ value, onChange }: Props) {
           </Button>
         ) : null}
       </div>
-      <div className="flex items-end gap-2 flex-wrap">
-        <DimSelect label="Source System" value={value.source} placeholder="All sources" options={SOURCES.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ source: v })} />
-        <DimSelect label="Sales Channel" value={value.salesChannel} placeholder="All channels" options={SALES_CHANNELS.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ salesChannel: v })} />
-        <DimSelect label="Segment" value={value.customerSegment} placeholder="All segments" options={SEGMENTS.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ customerSegment: v })} />
-        <DimSelect label="Delivery Outcome" value={value.deliveryOutcome} placeholder="All outcomes" options={OUTCOMES.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ deliveryOutcome: v })} />
-        <DimSelect label="Collection" value={value.collectionStatus} placeholder="All" options={COLLECTION.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ collectionStatus: v })} />
-        <DimSelect
-          label="Category"
-          value={value.categoryId}
-          placeholder="All categories"
-          options={(categories ?? []).map((c) => ({ value: c.id, label: c.name }))}
-          onPick={(v) => set({ categoryId: v })}
-        />
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Marketing Source
-          <input
-            value={value.marketingSource ?? ''}
-            onChange={(e) => set({ marketingSource: e.target.value || undefined })}
-            placeholder="slug / utm_source"
-            className="tap-h w-36 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+      <Collapsible className="flex flex-col gap-2">
+        <div className="flex items-end gap-2 flex-wrap">
+          <DimSelect label="Source System" value={value.source} placeholder="All sources" options={SOURCES.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ source: v })} />
+          <DimSelect label="Sales Channel" value={value.salesChannel} placeholder="All channels" options={SALES_CHANNELS.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ salesChannel: v })} />
+          <DimSelect label="Segment" value={value.customerSegment} placeholder="All segments" options={SEGMENTS.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ customerSegment: v })} />
+          <DimSelect label="Delivery Outcome" value={value.deliveryOutcome} placeholder="All outcomes" options={OUTCOMES.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ deliveryOutcome: v })} />
+          <CollapsibleTrigger asChild>
+            <Button variant="outline" size="sm" className="tap-h h-10 cursor-pointer text-xs">
+              More filters{hiddenActive > 0 ? ` (${hiddenActive})` : ''}
+              <ChevronDown className="h-3.5 w-3.5" aria-hidden />
+            </Button>
+          </CollapsibleTrigger>
+        </div>
+        <CollapsibleContent className="flex items-end gap-2 flex-wrap">
+          <DimSelect label="Collection" value={value.collectionStatus} placeholder="All" options={COLLECTION.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ collectionStatus: v })} />
+          <DimSelect
+            label="Category"
+            value={value.categoryId}
+            placeholder="All categories"
+            loading={categoriesPending && !categories}
+            options={(categories ?? []).map((c) => ({ value: c.id, label: c.name }))}
+            onPick={(v) => set({ categoryId: v })}
           />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Payment Method
-          <input
-            value={value.paymentMethod ?? ''}
-            onChange={(e) => set({ paymentMethod: e.target.value || undefined })}
-            placeholder="gateway code"
-            className="tap-h w-32 rounded-md border border-input bg-background px-2 text-xs text-foreground"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Location
-          <input
-            value={value.location ?? ''}
-            onChange={(e) => set({ location: e.target.value || undefined })}
-            placeholder="city / state / zip"
-            className="tap-h w-32 rounded-md border border-input bg-background px-2 text-xs text-foreground"
-          />
-        </label>
-      </div>
+          <FreeInput label="Marketing Source" value={value.marketingSource} onPick={(v) => set({ marketingSource: v })} placeholder="slug / utm_source" />
+          <FreeInput label="Payment Method" value={value.paymentMethod} onPick={(v) => set({ paymentMethod: v })} placeholder="gateway code" />
+          <FreeInput label="Location" value={value.location} onPick={(v) => set({ location: v })} placeholder="city / state / zip" />
+        </CollapsibleContent>
+      </Collapsible>
     </div>
   )
 }

@@ -10,6 +10,7 @@ import { WidgetShell } from '../dashboard/components/WidgetShell'
 import { useBusinessOverview } from './hooks'
 import { DEFAULT_FILTERS, formatPct, type AnalyticsFilters } from './types'
 import { AnalyticsFilterBar } from './components/AnalyticsFilterBar'
+import { AnalyticsPageHeader, AnalyticsSection, MetricMetaFooter } from './components/analytics-ui'
 import { KpiCard } from './components/KpiCard'
 import { RecognitionStrip } from './components/RecognitionStrip'
 import { ComparisonDelta } from './components/ComparisonDelta'
@@ -22,35 +23,30 @@ import { BreakdownTable } from './components/BreakdownTable'
 import { DrilldownPanel } from './components/DrilldownPanel'
 
 /**
- * Business Overview (P3): filters → RecognitionStrip → KPI band → comparison
- * deltas → auto-granularity trend → P&L waterfall → bridge + ledger → compact
- * Fulfillment & Returns Economics card → breakdowns → drill-down. Footer
- * carries meta (formulaVersion, dataAsOf, dateBasis); every number traces to
- * backend meta (§6 auditability), empty-vs-zero honored everywhere (§6).
+ * Business Performance (P3): header → filters → recognition strip → primary
+ * health KPIs (single staggered rise; per-card CountUp off) → comparison vs
+ * previous period → sales trend → P&L (waterfall + component-once ledger) →
+ * supporting economics (bridge + fulfillment, subordinate) → sales
+ * breakdowns → drill-down → one meta footer. Every number traces to backend
+ * meta (§6 auditability), empty-vs-zero honored everywhere (§6).
  */
 export default function BusinessOverview() {
   const [filters, setFilters] = useState<AnalyticsFilters>(DEFAULT_FILTERS)
   const { data, isLoading, error, refetch } = useBusinessOverview(filters)
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-3">
-          <span className="chart-card-header-icon bg-success-soft text-success border border-success/25">
-            <Scale className="h-5 w-5" />
-          </span>
-          <div>
-            <h1 className="text-2xl font-bold">Business Overview</h1>
-            <p className="text-xs text-muted-foreground">Recognised revenue only — Delivered is the recognition event.</p>
-          </div>
-        </div>
-      </div>
+    <div className="p-4 sm:p-6 space-y-6">
+      <AnalyticsPageHeader
+        icon={Scale}
+        title="Business Performance"
+        subtitle="Recognised revenue only — Delivered is the recognition event."
+        tileClassName="bg-success-soft text-success border-success/25"
+      />
 
       <AnalyticsFilterBar value={filters} onChange={setFilters} />
 
       <WidgetShell
         title="Overview"
-        description={data ? `Formula ${data.meta.formulaVersion} · data as of ${data.meta.dataAsOf}` : undefined}
         isLoading={isLoading}
         error={error as Error | undefined}
         onRetry={() => refetch()}
@@ -60,10 +56,10 @@ export default function BusinessOverview() {
             <RecognitionStrip strip={data.data.pnl.strip} />
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 animate-rise" style={riseStyle(0)}>
-              <KpiCard title="Net Sales" kpi={data.data.pnl.lines.netSales} formulaVersion={data.meta.formulaVersion} />
-              <KpiCard title="Gross Profit" kpi={data.data.pnl.lines.grossProfit} formulaVersion={data.meta.formulaVersion} />
-              <KpiCard title="Contribution Profit" kpi={data.data.pnl.lines.contributionProfit} formulaVersion={data.meta.formulaVersion} />
-              <KpiCard title="Net Profit" kpi={data.data.pnl.lines.netProfit} formulaVersion={data.meta.formulaVersion} />
+              <KpiCard title="Net Sales" kpi={data.data.pnl.lines.netSales} formulaVersion={data.meta.formulaVersion} animate={false} />
+              <KpiCard title="Gross Profit" kpi={data.data.pnl.lines.grossProfit} formulaVersion={data.meta.formulaVersion} animate={false} />
+              <KpiCard title="Contribution Profit" kpi={data.data.pnl.lines.contributionProfit} formulaVersion={data.meta.formulaVersion} animate={false} />
+              <KpiCard title="Net Profit" kpi={data.data.pnl.lines.netProfit} formulaVersion={data.meta.formulaVersion} animate={false} />
               <KpiCard
                 title="Recognition Rate"
                 kpi={{
@@ -74,52 +70,75 @@ export default function BusinessOverview() {
                 }}
                 format={(v) => formatPct(v)}
                 formulaVersion={data.meta.formulaVersion}
+                animate={false}
               />
-              <KpiCard title="Cash Collected" kpi={data.data.pnl.lenses.cashCollected} formulaVersion={data.meta.formulaVersion} />
+              <KpiCard title="Cash Collected" kpi={data.data.pnl.lenses.cashCollected} formulaVersion={data.meta.formulaVersion} animate={false} />
             </div>
 
-            <Card className="kpi-card kpi-accent-info animate-rise" style={riseStyle(1)}>
-              <CardContent className="pt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <ComparisonDelta label="Net Sales" current={data.data.pnl.lines.netSales.value ?? 0} previous={data.data.comparison.prevNetSales} />
-                <ComparisonDelta label="Recognised orders" current={data.data.pnl.strip.recognised} previous={data.data.comparison.prevRecognisedOrders} format={(v) => String(v)} />
-                <ComparisonDelta label="Cash collected" current={data.data.pnl.lenses.cashCollected.value ?? 0} previous={data.data.comparison.prevCashCollected} />
-              </CardContent>
-            </Card>
+            <AnalyticsSection title="How this period compares" subtext="Versus the previous period.">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <Card className="kpi-card kpi-accent-info">
+                  <CardContent className="pt-4">
+                    <ComparisonDelta label="Net Sales" current={data.data.pnl.lines.netSales.value ?? 0} previous={data.data.comparison.prevNetSales} />
+                  </CardContent>
+                </Card>
+                <Card className="kpi-card kpi-accent-info">
+                  <CardContent className="pt-4">
+                    <ComparisonDelta label="Recognised orders" current={data.data.pnl.strip.recognised} previous={data.data.comparison.prevRecognisedOrders} format={(v) => String(v)} />
+                  </CardContent>
+                </Card>
+                <Card className="kpi-card kpi-accent-info">
+                  <CardContent className="pt-4">
+                    <ComparisonDelta label="Cash collected" current={data.data.pnl.lenses.cashCollected.value ?? 0} previous={data.data.comparison.prevCashCollected} />
+                  </CardContent>
+                </Card>
+              </div>
+            </AnalyticsSection>
 
             <TrendChart points={data.data.trend.points} granularity={data.data.trend.granularity} requestedGranularity={data.data.trend.requestedGranularity} />
 
-            <PnlWaterfall pnl={data.data.pnl} />
+            <AnalyticsSection title="From recognised revenue to Net Profit">
+              <div className="space-y-4">
+                <PnlWaterfall pnl={data.data.pnl} />
+                <ComponentOnceLedger pnl={data.data.pnl} />
+              </div>
+            </AnalyticsSection>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-rise" style={riseStyle(2)}>
-              <ContributionBridge bridge={data.data.pnl.bridge} />
-              <ComponentOnceLedger pnl={data.data.pnl} />
-            </div>
+            <AnalyticsSection title="Supporting economics" subtext="Delivery-axis diagnostics — not part of recognised revenue.">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <ContributionBridge bridge={data.data.pnl.bridge} />
+                <FulfillmentEconomicsPanel fulfillment={data.data.fulfillment} />
+              </div>
+            </AnalyticsSection>
 
-            <FulfillmentEconomicsPanel fulfillment={data.data.fulfillment} />
+            <AnalyticsSection title="Where sales come from">
+              <Tabs defaultValue="channel">
+                <TabsList className="tap-h max-w-full overflow-x-auto no-scrollbar">
+                  <TabsTrigger value="channel" className="tap-h">Sales Channel</TabsTrigger>
+                  <TabsTrigger value="source" className="tap-h">Source System</TabsTrigger>
+                  <TabsTrigger value="category" className="tap-h">Category</TabsTrigger>
+                </TabsList>
+                <TabsContent value="channel">
+                  <BreakdownTable title="Net Sales by Sales Channel" rows={data.data.breakdowns.bySalesChannel} hint="Where the sale came from — never merged with Source System." />
+                </TabsContent>
+                <TabsContent value="source">
+                  <BreakdownTable title="Net Sales by Source System" rows={data.data.breakdowns.bySource} hint="How the order was created (POS / ECOMMERCE / MANUAL)." />
+                </TabsContent>
+                <TabsContent value="category">
+                  <BreakdownTable title="Net Sales by Category (Top 8)" rows={data.data.breakdowns.byCategory} hint="Primary-category attribution — every taka counted once; combo lines expand to components." />
+                </TabsContent>
+              </Tabs>
+            </AnalyticsSection>
 
-            <Tabs defaultValue="channel">
-              <TabsList className="tap-h max-w-full overflow-x-auto no-scrollbar">
-                <TabsTrigger value="channel" className="tap-h">Sales Channel</TabsTrigger>
-                <TabsTrigger value="source" className="tap-h">Source System</TabsTrigger>
-                <TabsTrigger value="category" className="tap-h">Category</TabsTrigger>
-              </TabsList>
-              <TabsContent value="channel">
-                <BreakdownTable title="Net Sales by Sales Channel" rows={data.data.breakdowns.bySalesChannel} hint="Where the sale came from — never merged with Source System." />
-              </TabsContent>
-              <TabsContent value="source">
-                <BreakdownTable title="Net Sales by Source System" rows={data.data.breakdowns.bySource} hint="How the order was created (POS / ECOMMERCE / MANUAL)." />
-              </TabsContent>
-              <TabsContent value="category">
-                <BreakdownTable title="Net Sales by Category (Top 8)" rows={data.data.breakdowns.byCategory} hint="Primary-category attribution — every taka counted once; combo lines expand to components." />
-              </TabsContent>
-            </Tabs>
+            <DrilldownPanel filters={filters} currentPath="/mon/analytics" />
 
-            <DrilldownPanel filters={filters} />
-
-            <p className="text-[11px] text-muted-foreground">
-              Formula {data.meta.formulaVersion} · Data as of {data.meta.dataAsOf} · {data.meta.dateBasis} · Ladder state:{' '}
-              {data.meta.ladderState} · Period {data.meta.range.periodDays} day(s)
-            </p>
+            <MetricMetaFooter
+              formulaVersion={data.meta.formulaVersion}
+              dataAsOf={data.meta.dataAsOf}
+              dateBasis={data.meta.dateBasis}
+              ladderState={data.meta.ladderState}
+              periodDays={data.meta.range.periodDays}
+            />
           </div>
         ) : isLoading ? (
           <Skeleton className="h-[400px] w-full rounded-lg" />

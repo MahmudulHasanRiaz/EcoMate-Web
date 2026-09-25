@@ -12,6 +12,8 @@ import { userEvent } from 'vitest/browser'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { KpiCard } from '../components/KpiCard'
 import { ContributionBridge } from '../components/ContributionBridge'
+import { ComponentOnceLedger } from '../components/ComponentOnceLedger'
+import { MetricMetaFooter } from '../components/analytics-ui'
 import { FulfillmentEconomicsPanel, SettlementGapBanner } from '../components/FulfillmentEconomicsPanel'
 import { DrilldownPanel } from '../components/DrilldownPanel'
 import { ComparisonDelta } from '../components/ComparisonDelta'
@@ -96,16 +98,17 @@ describe('KpiCard states', () => {
     await expect.element(getByText('৳12,500', { exact: true })).toBeInTheDocument()
   })
 
-  it('renders estimated with badge + separated reference excluded from total', async () => {
-    const { getByText } = await renderWithClient(
+  it('renders estimated with badge; reference + reason live in the info disclosure', async () => {
+    const { getByText, getByRole, getByTestId } = await renderWithClient(
       <KpiCard
         title="Net Profit"
         kpi={kpi({ state: 'estimated', reason: 'estimated — see coverage', estimatedReference: { label: 'undated spend', excludedFromTotal: true } })}
       />,
     )
     await expect.element(getByText('Estimated', { exact: true })).toBeInTheDocument()
-    await expect.element(getByText(/excluded from total/)).toBeInTheDocument()
-    await expect.element(getByText(/Reference: undated spend/)).toBeInTheDocument()
+    await userEvent.click(getByRole('button', { name: 'About Net Profit' }))
+    await expect.element(getByTestId('kpi-meta-detail')).toHaveTextContent(/Reference: undated spend/)
+    await expect.element(getByTestId('kpi-meta-detail')).toHaveTextContent(/excluded from total/)
   })
 
   it('renders unavailable as words — never ৳0', async () => {
@@ -131,6 +134,44 @@ describe('KpiCard states', () => {
     const zero = await renderWithClient(<KpiCard title="B" kpi={{ value: 0, state: 'zero', reason: 'measured zero' }} />)
     await expect.element(zero.getByText('৳0', { exact: true })).toBeInTheDocument()
   })
+
+  it('renders the settled value with the CountUp animation opted out', async () => {
+    const { getByText } = await renderWithClient(<KpiCard title="Net Sales" kpi={kpi({})} animate={false} />)
+    await expect.element(getByText('৳12,500', { exact: true })).toBeInTheDocument()
+  })
+})
+
+// ─── KpiCard info disclosure ─────────────────────────────────────────────────
+
+describe('KpiCard info disclosure', () => {
+  it('kills the visible dateBasis caption; meta lives in the info interaction', async () => {
+    const { container, getByRole, getByTestId } = await renderWithClient(
+      <KpiCard
+        title="Net Sales"
+        kpi={kpi({ reason: 'measured', dateBasis: 'Delivered-transition-basis-xyz' })}
+        formulaVersion="v9"
+      />,
+    )
+    // No visible caption duplicates the tooltip.
+    const dups = [...container.querySelectorAll('p')].filter((p) =>
+      p.textContent?.includes('Delivered-transition-basis-xyz'),
+    )
+    expect(dups).toHaveLength(0)
+    // sr-only audit trail keeps the meta for assistive tech.
+    expect(container.querySelector('[data-testid="kpi-meta-sr"]')?.textContent).toContain(
+      'Delivered-transition-basis-xyz',
+    )
+    // Reason + dateBasis + formula open on tap (popover path — 3 lines).
+    await userEvent.click(getByRole('button', { name: 'About Net Sales' }))
+    await expect.element(getByTestId('kpi-meta-detail')).toHaveTextContent(/Date basis: Delivered-transition-basis-xyz/)
+    await expect.element(getByTestId('kpi-meta-detail')).toHaveTextContent(/Formula: v9/)
+  })
+
+  it('renders no info control when there is nothing to disclose', async () => {
+    const { container } = await renderWithClient(<KpiCard title="Net Sales" kpi={kpi({ reason: undefined })} />)
+    expect(container.querySelector('button[aria-label^="About"]')).toBeNull()
+    expect(container.querySelector('[data-testid="kpi-meta-sr"]')).toBeNull()
+  })
 })
 
 // ─── Bridge: FM never an operand ─────────────────────────────────────────────
@@ -147,10 +188,13 @@ describe('ContributionBridge', () => {
     expect(operands).not.toMatch(/Fulfillment Margin/)
   })
 
-  it('keeps Fulfillment Margin as a diagnostic caption only', async () => {
-    const { container } = await renderWithClient(<ContributionBridge bridge={bridge} />)
-    const diag = container.querySelector('[data-testid="bridge-fm-diagnostic"]')?.textContent ?? ''
-    expect(diag).toMatch(/not an additive component/)
+  it('keeps Fulfillment Margin as a diagnostic behind the info control only', async () => {
+    const { getByText, getByRole, getByTestId } = await renderWithClient(
+      <ContributionBridge bridge={bridge} />,
+    )
+    await expect.element(getByText(/Fulfillment Margin ৳1,000/)).toBeInTheDocument()
+    await userEvent.click(getByRole('button', { name: 'About Fulfillment Margin' }))
+    await expect.element(getByTestId('bridge-fm-diagnostic')).toHaveTextContent(/not an additive component/)
   })
 })
 
@@ -216,6 +260,19 @@ describe('DrilldownPanel', () => {
     const dispatch = container.querySelector('a[href*="/op/dispatch"]')?.getAttribute('href') ?? ''
     expect(dispatch).toContain('/op/dispatch')
   })
+
+  it('cuts self-links on the overview page but keeps cross-page ones', async () => {
+    const { container } = await renderWithClient(
+      <DrilldownPanel filters={{ preset: 'last_30_days' }} currentPath="/mon/analytics" />,
+    )
+    const hrefs = [...container.querySelectorAll('a')].map((a) => a.getAttribute('href') ?? '')
+    expect(hrefs.length).toBeGreaterThan(0)
+    for (const h of hrefs) {
+      expect(h.split('?')[0]).not.toBe('/mon/analytics')
+    }
+    expect(hrefs.some((h) => h.includes('/op/dispatch'))).toBe(true)
+    expect(hrefs.some((h) => h.includes('/mon/analytics/products'))).toBe(true)
+  })
 })
 
 // ─── Delta sign/format ───────────────────────────────────────────────────────
@@ -237,6 +294,11 @@ describe('ComparisonDelta', () => {
   it('keeps the sign truthful for negative-friendly metrics (loss deepening)', async () => {
     const { getByText } = await renderWithClient(<ComparisonDelta label="Net Profit" current={-8000} previous={-5000} />)
     await expect.element(getByText('-৳3,000', { exact: true })).toBeInTheDocument()
+  })
+
+  it('renders a visible per-delta label (never an anonymous chip)', async () => {
+    const { getByText } = await renderWithClient(<ComparisonDelta label="Cash collected" current={88000} previous={80000} />)
+    await expect.element(getByText('Cash collected', { exact: true })).toBeInTheDocument()
   })
 })
 
@@ -264,6 +326,27 @@ describe('RecognitionStrip', () => {
     await expect.element(getByText('90', { exact: true })).toBeInTheDocument()
     await expect.element(getByText('75.0%', { exact: true })).toBeInTheDocument()
     await expect.element(getByText(/timeline: 85 · dispatch: 5 · undated deliveries: 2/)).toBeInTheDocument()
+  })
+
+  it('discloses the date-source mix through the info control', async () => {
+    const { getByRole, getByTestId } = await renderWithClient(
+      <RecognitionStrip
+        strip={{
+          bookedOrders: 120,
+          bookedAmount: 250000,
+          recognised: 90,
+          inFulfilment: 20,
+          delivered: 95,
+          notYetRecognised: 25,
+          recognitionRate: 0.75,
+          dateSourceMix: { timeline: 85, dispatch: 5 },
+          undatedDeliveries: 2,
+        }}
+      />,
+    )
+    await userEvent.click(getByRole('button', { name: 'About date sources' }))
+    await expect.element(getByTestId('strip-date-sources')).toHaveTextContent(/timeline: 85/)
+    await expect.element(getByTestId('strip-date-sources')).toHaveTextContent(/undated deliveries: 2/)
   })
 })
 
@@ -324,6 +407,52 @@ describe('PnlWaterfall', () => {
     await new Promise((r) => setTimeout(r, 200))
     expect(container.textContent ?? '').not.toMatch(/Net Profit \((partial|estimated)/)
   })
+
+  it('keeps every result row visible as an open collapsible summary', async () => {
+    const { container, getByText } = await renderWithClient(<PnlWaterfall pnl={waterfallPnl('unavailable')} />)
+    for (const label of ['= Net Sales', '= Gross Profit', '= Contribution Profit', '= Operating Profit', '= Net Profit']) {
+      const group = container.querySelector(`[data-testid="pnl-group-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}"]`)
+      expect(group?.hasAttribute('open')).toBe(true)
+      expect(group?.querySelector('summary')?.textContent).toContain(label)
+    }
+    await expect.element(getByText('− COGS', { exact: true })).toBeInTheDocument()
+  })
+
+  it('wires coverage badges to their fix-list pages', async () => {
+    const { container } = await renderWithClient(
+      <PnlWaterfall pnl={waterfallPnl('unavailable')} />,
+    )
+    // fees.withoutFee = 10 in the fixture → the Gateway fees badge links out.
+    const feeBadge = [...container.querySelectorAll('a')].find((a) =>
+      (a.getAttribute('aria-label') ?? '').startsWith('Gateway fees'),
+    )
+    expect(feeBadge?.getAttribute('href')).toBe('/mon/analytics/sales')
+  })
+})
+
+// ─── Component-once ledger: collapsed by default ─────────────────────────────
+
+describe('ComponentOnceLedger', () => {
+  it('renders collapsed with the Net Profit row as summary', async () => {
+    const { container } = await renderWithClient(<ComponentOnceLedger pnl={waterfallPnl('unavailable')} />)
+    const details = container.querySelector('[data-testid="component-ledger"]')
+    expect(details?.hasAttribute('open')).toBe(false)
+    const summary = details?.querySelector('summary')?.textContent ?? ''
+    expect(summary).toContain('= Net Profit')
+    expect(summary).toContain('৳28,100')
+  })
+})
+
+// ─── Single meta footer ──────────────────────────────────────────────────────
+
+describe('MetricMetaFooter', () => {
+  it('renders the whole meta as one line', async () => {
+    const { container, getByText } = await renderWithClient(
+      <MetricMetaFooter formulaVersion="v9" dataAsOf="2026-01-01" dateBasis="Delivered" ladderState="actual" periodDays={30} />,
+    )
+    expect(container.querySelectorAll('p')).toHaveLength(1)
+    await expect.element(getByText(/Formula v9 · Data as of 2026-01-01/)).toBeInTheDocument()
+  })
 })
 
 // ─── Filter bar: dimension changes propagate to onChange ─────────────────────
@@ -335,9 +464,30 @@ describe('AnalyticsFilterBar', () => {
       <AnalyticsFilterBar value={{ preset: 'last_30_days' }} onChange={(n) => { seen = n }} />,
     )
     await expect.element(getByText('Today', { exact: true })).toBeInTheDocument()
+    await userEvent.click(getByText(/More filters/))
     await userEvent.fill(getByPlaceholder('slug / utm_source'), 'facebook')
     expect(seen.marketingSource).toBe('facebook')
     expect(seen.preset).toBe('last_30_days')
+  })
+
+  it('collapses secondary dims behind More filters with an active count', async () => {
+    const { container, getByText } = await renderWithClient(
+      <AnalyticsFilterBar value={{ preset: 'last_30_days', location: 'Dhaka' }} onChange={() => {}} />,
+    )
+    await expect.element(getByText('More filters (1)', { exact: true })).toBeInTheDocument()
+    expect(container.querySelector('input[placeholder="slug / utm_source"]')).toBeNull()
+    await userEvent.click(getByText('More filters (1)', { exact: true }))
+    expect(container.querySelector('input[placeholder="slug / utm_source"]')).not.toBeNull()
+  })
+
+  it('shows a Category loading state instead of a silent All', async () => {
+    const { categoriesApi } = await import('@/features/categories/api')
+    vi.mocked(categoriesApi.list).mockReturnValueOnce(new Promise(() => {}))
+    const { getByText } = await renderWithClient(
+      <AnalyticsFilterBar value={{ preset: 'last_30_days' }} onChange={() => {}} />,
+    )
+    await userEvent.click(getByText(/More filters/))
+    await expect.element(getByText('Loading…', { exact: true })).toBeInTheDocument()
   })
 
   it('populates categories from the bare-array GET /categories response', async () => {
@@ -356,6 +506,7 @@ describe('AnalyticsFilterBar', () => {
     )
     // Category dimension trigger renders (query resolved instead of failing
     // with undefined data); opening it shows the normalized options.
+    await userEvent.click(getByText(/More filters/))
     await expect.element(getByText('All categories')).toBeInTheDocument()
     await userEvent.click(getByText('All categories'))
     await expect.element(getByText('Beverages')).toBeInTheDocument()

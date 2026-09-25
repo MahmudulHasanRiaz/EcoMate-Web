@@ -1,10 +1,10 @@
-import { Info } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { CountUp, kpiAccentForTitle, kpiIconForTitle } from '@/components/ui/dashboard'
 import { cn } from '@/lib/utils'
 import { formatBDT, type KpiValue } from '../types'
 import { MetricUnavailable } from './badges'
+import { InfoDisclosure } from './analytics-ui'
 
 interface KpiCardProps {
   title: string
@@ -13,71 +13,67 @@ interface KpiCardProps {
   format?: (v: number) => string
   formulaVersion?: string
   drilldownHref?: string
+  /**
+   * Disable the per-card CountUp animation. Pages pass band-level motion
+   * instead (a single staggered rise) so N cards never animate simultaneously.
+   * Defaults to true.
+   */
+  animate?: boolean
 }
 
 /**
- * Every number traceable to backend meta (§6 auditability): footer carries
- * formulaVersion + dateBasis. Empty-vs-zero (§6): null never renders ৳0;
- * not_applicable "—" is visually distinct from unavailable; estimated shows a
- * badge plus the estimatedReference visually separated and excluded-from-total.
+ * [small icon] name [info] / dominant value / compact state.
+ *
+ * Reason + dateBasis + formula + estimatedReference live in the info
+ * interaction (tap-friendly tooltip ≤2 lines, else popover) plus an sr-only
+ * audit span — never a visible caption. Every number traceable to backend
+ * meta (§6 auditability): null never renders ৳0; not_applicable "—" is
+ * visually distinct from unavailable; estimated shows a badge.
  */
-export function KpiCard({ title, kpi, format, formulaVersion, drilldownHref }: KpiCardProps) {
+export function KpiCard({ title, kpi, format, formulaVersion, drilldownHref, animate = true }: KpiCardProps) {
   const fmt = format ?? formatBDT
   const accent = kpiAccentForTitle(title)
   const Icon = kpiIconForTitle(title)
-  const meta = [kpi.dateBasis ? `Date basis: ${kpi.dateBasis}` : null, formulaVersion ? `Formula: ${formulaVersion}` : null]
-    .filter(Boolean)
-    .join(' · ')
+  const value = (v: number) =>
+    animate ? <CountUp value={v} format={fmt} /> : <span className="tabular-nums">{fmt(v)}</span>
+  // Unavailable renders its reason inline (MetricUnavailable) — keep it out
+  // of the disclosure so screen readers don't hear it twice.
+  const infoLines = [
+    kpi.state === 'unavailable' ? null : kpi.reason,
+    kpi.dateBasis ? `Date basis: ${kpi.dateBasis}` : null,
+    formulaVersion ? `Formula: ${formulaVersion}` : null,
+    kpi.estimatedReference ? `Reference: ${kpi.estimatedReference.label} — excluded from total.` : null,
+  ]
+  const infoText = infoLines.filter(Boolean).join(' · ')
 
   const body = (() => {
     switch (kpi.state) {
       case 'ok':
         return (
           <p className="kpi-value">
-            <CountUp value={kpi.value as number} format={fmt} />
+            {value(kpi.value as number)}
           </p>
         )
       case 'zero':
         return (
-          <>
-            <p className="kpi-value">
-              <CountUp value={0} format={fmt} />
-            </p>
-            {kpi.reason ? <p className="text-xs text-muted-foreground mt-1">{kpi.reason}</p> : null}
-          </>
+          <p className="kpi-value">
+            {value(0)}
+          </p>
         )
       case 'no_data':
-        return (
-          <>
-            <p className="kpi-value text-muted-foreground">No data</p>
-            {kpi.reason ? <p className="text-xs text-muted-foreground mt-1">{kpi.reason}</p> : null}
-          </>
-        )
+        return <p className="kpi-value text-muted-foreground">No data</p>
       case 'not_applicable':
-        return (
-          <>
-            <p className="kpi-value text-muted-foreground/60">—</p>
-            {kpi.reason ? <p className="text-xs text-muted-foreground mt-1">{kpi.reason}</p> : null}
-          </>
-        )
+        return <p className="kpi-value text-muted-foreground/60">—</p>
       case 'unavailable':
         return <MetricUnavailable reason={kpi.reason} />
       case 'estimated':
         return (
-          <>
-            <div className="flex items-center gap-2">
-              <p className="kpi-value">
-                <CountUp value={kpi.value as number} format={fmt} />
-              </p>
-              <Badge variant="warning">Estimated</Badge>
-            </div>
-            {kpi.estimatedReference ? (
-              <p className="text-xs text-muted-foreground mt-1 border-t border-dashed pt-1">
-                Reference: {kpi.estimatedReference.label} — excluded from total.
-              </p>
-            ) : null}
-            {kpi.reason ? <p className="text-xs text-muted-foreground mt-1">{kpi.reason}</p> : null}
-          </>
+          <div className="flex items-center gap-2">
+            <p className="kpi-value">
+              {value(kpi.value as number)}
+            </p>
+            <Badge variant="warning">Estimated</Badge>
+          </div>
         )
     }
   })()
@@ -85,21 +81,21 @@ export function KpiCard({ title, kpi, format, formulaVersion, drilldownHref }: K
   const card = (
     <Card className={cn('kpi-card', `kpi-accent-${accent}`)}>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           <span className="kpi-icon-badge shrink-0" aria-hidden>
             <Icon className="h-4 w-4" />
           </span>
-          <CardTitle className="text-sm font-medium truncate">{title}</CardTitle>
+          <CardTitle className="truncate text-sm font-medium">{title}</CardTitle>
         </div>
-        {meta ? (
-          <span title={meta} aria-label={meta} className="shrink-0">
-            <Info className="h-3.5 w-3.5 text-muted-foreground" />
-          </span>
-        ) : null}
+        <InfoDisclosure label={`About ${title}`} lines={infoLines} contentTestId="kpi-meta-detail" />
       </CardHeader>
       <CardContent>
         {body}
-        {kpi.dateBasis ? <p className="text-[11px] text-muted-foreground mt-2">{kpi.dateBasis}</p> : null}
+        {infoText ? (
+          <span className="sr-only" data-testid="kpi-meta-sr">
+            {infoText}
+          </span>
+        ) : null}
       </CardContent>
     </Card>
   )
