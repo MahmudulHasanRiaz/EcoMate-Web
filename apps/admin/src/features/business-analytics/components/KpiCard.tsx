@@ -100,7 +100,7 @@ export function KpiCard({ title, kpi, format, formulaVersion, drilldownHref, ani
           <span className="kpi-icon-badge shrink-0" aria-hidden>
             <Icon className="h-4 w-4" />
           </span>
-          <CardTitle className="truncate text-sm font-medium">{title}</CardTitle>
+          <CardTitle className="line-clamp-2 text-sm font-medium leading-snug">{title}</CardTitle>
         </div>
         <InfoDisclosure label={`About ${title}`} lines={infoLines} contentTestId="kpi-meta-detail" />
       </CardHeader>
