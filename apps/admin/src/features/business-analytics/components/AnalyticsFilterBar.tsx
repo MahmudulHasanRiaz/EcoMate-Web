@@ -89,7 +89,7 @@ export function AnalyticsFilterBar({ value, onChange }: Props) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-1.5 flex-wrap">
-        <div className="inline-flex min-h-10 items-center rounded-xl bg-muted p-1 text-muted-foreground border border-border/50">
+        <div className="inline-flex min-h-10 flex-wrap items-center gap-1 rounded-xl bg-muted p-1 text-muted-foreground border border-border/50 sm:flex-nowrap sm:gap-0">
           {presets.map((p) => (
             <button
               key={p.key}

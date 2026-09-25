@@ -23,7 +23,7 @@ export function ViewSwitch({ view, onChange }: ViewSwitchProps) {
     <div
       role="group"
       aria-label="Dashboard view"
-      className="inline-flex min-h-10 shrink-0 items-center rounded-xl bg-muted p-1 text-muted-foreground border border-border/50"
+      className="inline-flex min-h-10 w-full shrink-0 items-center rounded-xl bg-muted p-1 text-muted-foreground border border-border/50 sm:w-auto"
     >
       {OPTIONS.map(({ key, label, title, Icon }) => {
         const isActive = view === key
@@ -35,7 +35,7 @@ export function ViewSwitch({ view, onChange }: ViewSwitchProps) {
             aria-pressed={isActive}
             title={title}
             onClick={() => onChange(key)}
-            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 min-h-8 text-xs font-bold transition-all duration-200 ${
+            className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 min-h-8 text-xs font-bold transition-all duration-200 sm:flex-none ${
               isActive
                 ? 'bg-background text-foreground shadow-sm'
                 : 'hover:bg-background/40 hover:text-foreground/90'
