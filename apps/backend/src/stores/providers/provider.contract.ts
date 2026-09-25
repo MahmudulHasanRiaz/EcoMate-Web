@@ -110,6 +110,13 @@ export interface WebhookVerification {
 export interface CommerceProvider {
   readonly slug: ProviderSlug;
   readonly declaredCapabilities: ProviderCapabilities;
+  /**
+   * P2: the §8.11 Table A field keys this adapter can sync. MUST be a
+   * subset of the matrix (asserted by the contract suite); the full
+   * per-field behaviour matrix lands in P4. Optional on the interface so
+   * the contract stays backward-compatible; required by BaseCommerceProvider.
+   */
+  readonly syncedFields?: FieldKey[];
   resolveCapabilities(store: StoreWithSecrets): Promise<ProviderCapabilities>;
   testConnection(store: StoreWithSecrets): Promise<TestConnectionResult>;
   ensureCategories(
