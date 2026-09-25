@@ -511,7 +511,7 @@ export class ShopifyProvider extends BaseCommerceProvider {
       client_id: clientId,
       client_secret: clientSecret,
     }).toString();
-    let res: { status: number; ok: boolean; json(): Promise<unknown> };
+    let res: { status: number; ok: boolean; json(): Promise<unknown>; text(): Promise<string> };
     try {
       res = await this.fetchFn(`https://${ctx.shop}${SHOPIFY_TOKEN_PATH}`, {
         method: 'POST',
@@ -526,9 +526,18 @@ export class ShopifyProvider extends BaseCommerceProvider {
         err,
       );
     }
+    // NOTE: fetch bodies are single-use — read text ONCE, then JSON-parse
+    // manually. Calling res.json() first consumes the stream; a later
+    // res.text() throws, which hid HTML OAuth refusals as TEMPORARY.
+    let rawText = '';
+    try {
+      rawText = await res.text();
+    } catch {
+      rawText = '';
+    }
     let parsed: any = null;
     try {
-      parsed = await res.json();
+      parsed = rawText ? JSON.parse(rawText) : null;
     } catch {
       parsed = null;
     }
@@ -537,6 +546,18 @@ export class ShopifyProvider extends BaseCommerceProvider {
       if (/invalid_client|shop_not_permitted/i.test(detail)) {
         throw new ProviderError(
           `[shopify] token exchange failed (org mismatch): ${SHOPIFY_ORG_MISMATCH_HINT} — ${detail}`,
+          ProviderErrorCategory.INVALID_REQUEST,
+          'shopify',
+        );
+      }
+      // Shopify renders some OAuth refusals (e.g. app_not_installed) as an
+      // HTML error page with `Oauth error <code>` in the <title> — sniff the
+      // code so the wizard shows an actionable message instead of a retry.
+      // (rawText was read once above; the stream is already consumed.)
+      const oauthCode = /Oauth error ([A-Za-z0-9_]+)/.exec(rawText)?.[1];
+      if (oauthCode) {
+        throw new ProviderError(
+          `[shopify] token exchange refused: ${oauthCode} — install the app on the store (same Dev Dashboard organization) and approve the app version, then retry`,
           ProviderErrorCategory.INVALID_REQUEST,
           'shopify',
         );

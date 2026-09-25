@@ -16,6 +16,10 @@ import { StoresService } from './stores.service';
 import { WooCommerceProvider } from './providers/woocommerce.provider';
 import { ShopifyProvider } from './providers/shopify.provider';
 import { CustomBridgeProvider } from './providers/custom-bridge.provider';
+import {
+  ProviderError,
+  ProviderErrorCategory,
+} from '../marketing/ad-provider.adapter';
 
 const FAKE = {
   consumerKey: 'test-token-consumer-key',
@@ -282,8 +286,28 @@ describe('P9 secret-leak audit', () => {
       expect(prisma.storeCredential.create).not.toHaveBeenCalled();
     });
 
-    it('provider missing-credential probes return data (no throw, no echo)', async () => {
-      const woo = new WooCommerceProvider();
+    it('adapter INVALID_REQUEST refusal surfaces as 400 with the actionable message (no secret echo)', async () => {
+      const refusal = new ProviderError(
+        '[shopify] token exchange refused: app_not_installed — install the app on the store',
+        ProviderErrorCategory.INVALID_REQUEST,
+        'shopify',
+      );
+      const mockProvider: any = { testConnection: jest.fn().mockRejectedValue(refusal) };
+      const prisma: any = {
+        store: { findUnique: jest.fn().mockResolvedValue(baseStore()) },
+        storeCredential: { findFirst: jest.fn().mockResolvedValue(null) },
+        storeHealthCheck: { create: jest.fn().mockResolvedValue({}) },
+      };
+      const { svc } = buildService(prisma, mockProvider);
+      const err = await svc
+        .testConnection('store-p9-audit', { credentials: {} })
+        .catch((e) => e);
+      expect(err?.constructor?.name).toBe('BadRequestException');
+      expect(String(err?.message)).toMatch(/app_not_installed/);
+      expect(secretKeysPresent(err?.response ?? {})).toEqual([]);
+    });
+
+    it('provider missing-credential probes return data (no throw, no echo)', async () => {      const woo = new WooCommerceProvider();
       const shopify = new ShopifyProvider();
       const custom = new CustomBridgeProvider();
       const results = await Promise.all([

@@ -23,7 +23,11 @@ import { Prisma } from '@prisma/client';
 import { EncryptionService } from '../common/utils/encryption';
 import { identityFingerprint, normaliseDomain } from './store-identity';
 import { NATIVE_STORE_KIND, ProviderRegistryService } from './providers/provider-registry.service';
-import type { StoreWithSecrets } from './providers/provider.contract';
+import type { StoreWithSecrets, TestConnectionResult } from './providers/provider.contract';
+import {
+  ProviderError,
+  ProviderErrorCategory,
+} from '../marketing/ad-provider.adapter';
 import {
   CreateStoreDto,
   RotateStoreCredentialsDto,
@@ -200,12 +204,26 @@ export class StoresService {
     const provider = this.registry.providerFor({ kind: store.kind });
     const secrets =
       dto?.credentials ?? ((await this.loadSecrets(id)) as Record<string, unknown> | null) ?? {};
-    const result = await provider.testConnection({
-      id: store.id,
-      kind: store.kind,
-      settings: (store.settings as Record<string, unknown> | null) ?? {},
-      secrets,
-    });
+    let result: TestConnectionResult;
+    try {
+      result = await provider.testConnection({
+        id: store.id,
+        kind: store.kind,
+        settings: (store.settings as Record<string, unknown> | null) ?? {},
+        secrets,
+      });
+    } catch (err) {
+      // Adapter-refused connections (bad credentials shape, org mismatch,
+      // app not installed) surface as 400 with the actionable message.
+      // Messages never carry secrets (stores-secret-leak.spec.ts).
+      if (
+        err instanceof ProviderError &&
+        err.category === ProviderErrorCategory.INVALID_REQUEST
+      ) {
+        throw new BadRequestException(err.message);
+      }
+      throw err;
+    }
     await this.recordHealthCheck(id, {
       state: result.authenticated ? 'HEALTHY' : result.reachable ? 'ATTENTION_REQUIRED' : 'ERROR',
       reason: result.authenticated ? 'ok' : result.reachable ? 'auth_error' : 'store_down',

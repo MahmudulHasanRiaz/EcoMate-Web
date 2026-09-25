@@ -166,8 +166,41 @@ describe('Shopify Client Credentials Grant (Issue 2)', () => {
     expect(String(err.message)).not.toContain('test-client-secret-fake');
   });
 
-  it('exchange 500 is TEMPORARY (retryable); testConnection maps it to unreachable data, never a throw', async () => {
+  it('HTML OAuth refusal (app_not_installed) is PERMANENT with an install action, never a silent retry', async () => {
     const mock = new MockFetch();
+    mock.onPrefix(TOKEN_URL, () => {
+      // Real fetch bodies are single-use: whichever of json()/text() runs
+      // second throws. The adapter must read text ONCE, then JSON-parse.
+      let consumed = false;
+      const html =
+        '<!DOCTYPE html><html><head><title>400 - Oauth error app_not_installed</title></head></html>';
+      const once = () => {
+        if (consumed) throw new Error('Body already consumed');
+        consumed = true;
+        return html;
+      };
+      return {
+        status: 400,
+        ok: false,
+        json: async () => JSON.parse(once()),
+        text: async () => once(),
+      };
+    });
+    mock.onAll(() => jsonResponse(200, {}));
+    const shopify = new ShopifyProvider(mock.fetch);
+    const err = await shopify
+      .readStockState(STORE(), { providerId: '9001' })
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect(err.category).toBe(ProviderErrorCategory.INVALID_REQUEST);
+    expect(String(err.message)).toMatch(/app_not_installed/);
+    expect(String(err.message)).toMatch(/install the app on the store/);
+    expect(classifyProviderError(err).retryable).toBe(false);
+    expect(tokenCalls(mock)).toHaveLength(1); // no retry loop
+    expect(String(err.message)).not.toContain('test-client-secret-fake');
+  });
+
+  it('exchange 500 is TEMPORARY (retryable); testConnection maps it to unreachable data, never a throw', async () => {    const mock = new MockFetch();
     mockShopifyTokenEndpoint(mock, { status: 500, body: { error: 'server_error' } });
     mock.onAll(() => jsonResponse(200, { shop: {} }));
     const shopify = new ShopifyProvider(mock.fetch);
