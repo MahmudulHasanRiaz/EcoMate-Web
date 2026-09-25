@@ -229,9 +229,13 @@ describe('expense date basis (single source)', () => {
     expect(trend.container.textContent).toMatch(/expenseDate/)
     const cats = await renderWithClient(<ExpenseCategoryTable data={categoriesData()} />)
     expect(cats.container.textContent).not.toMatch(/expenseDate/)
+    await userEvent.click(cats.getByRole('button', { name: 'About category basis' }))
+    await expect.element(cats.getByTestId('category-basis')).toHaveTextContent(/expenseDate/)
     const list = await renderWithClient(<ExpenseListTable data={listData()} />)
     expect(list.container.textContent).not.toMatch(/expenseDate/)
     expect(list.container.textContent).toMatch(/incl\. tax/)
+    await userEvent.click(list.getByRole('button', { name: 'About expense date basis' }))
+    await expect.element(list.getByTestId('expense-list-basis')).toHaveTextContent(/expenseDate/)
   })
 })
 

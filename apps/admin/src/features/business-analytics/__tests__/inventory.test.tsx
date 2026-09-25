@@ -13,6 +13,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   AgingTable,
   InventoryLedgerSection,
+  InventoryWarehouseScope,
   LostSalesCard,
   MovementTable,
   TurnoverCards,
@@ -22,6 +23,7 @@ import {
   resolveLedgerNames,
 } from '../inventory'
 import InventoryAnalytics from '../inventory'
+import { apiClient } from '@/lib/api-client'
 import { businessAnalyticsApi } from '../api'
 import { KpiCard } from '../components/KpiCard'
 import { DrilldownPanel } from '../components/DrilldownPanel'
@@ -461,6 +463,47 @@ describe('inventory drill landing effect', () => {
 })
 
 // ─── query keys: warehouse scope participates ────────────────────────────────
+
+describe('InventoryWarehouseScope', () => {
+  it('selects a warehouse and propagates the scope', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue({ data: [{ id: 'w1', name: 'Dhaka' }] } as any)
+    const onChange = vi.fn()
+    const first = await renderWithClient(
+      <InventoryWarehouseScope value={{ preset: 'last_30_days' }} onChange={onChange} />,
+    )
+    await userEvent.click(first.getByTestId('warehouse-scope'))
+    await vi.waitFor(() => {
+      expect(document.querySelectorAll('[role="option"]').length).toBeGreaterThan(0)
+    })
+    const dhaka = Array.from(document.querySelectorAll('[role="option"]')).find(
+      (o) => o.textContent === 'Dhaka',
+    )
+    expect(dhaka).toBeDefined()
+    await userEvent.click(dhaka!)
+    expect(onChange).toHaveBeenCalledWith({ preset: 'last_30_days', warehouseId: 'w1' })
+  })
+
+  it('maps All warehouses back to an undefined scope', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue({ data: [{ id: 'w1', name: 'Dhaka' }] } as any)
+    const onAll = vi.fn()
+    const second = await renderWithClient(
+      <InventoryWarehouseScope value={{ preset: 'last_30_days', warehouseId: 'w1' }} onChange={onAll} />,
+    )
+    await userEvent.click(second.getByTestId('warehouse-scope'))
+    await vi.waitFor(() => {
+      expect(
+        Array.from(document.querySelectorAll('[role="option"]')).some(
+          (o) => o.textContent === 'All warehouses',
+        ),
+      ).toBe(true)
+    })
+    const all = Array.from(document.querySelectorAll('[role="option"]')).find(
+      (o) => o.textContent === 'All warehouses',
+    )
+    await userEvent.click(all!)
+    expect(onAll).toHaveBeenCalledWith({ preset: 'last_30_days', warehouseId: undefined })
+  })
+})
 
 describe('inventory query keys', () => {
   it('warehouse scope changes every inventory request key', () => {

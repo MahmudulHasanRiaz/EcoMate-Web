@@ -437,6 +437,7 @@ export function InventoryLedgerSection({
   const productName = productId
     ? (names?.[`${productId}|${variantId ?? ''}`] ?? names?.[`${productId}|`])
     : undefined
+  const focusNote = `Ledger pre-filtered by drill-down${productId ? ` · product ${productName ?? productId}` : ''}${variantId ? ` · variant ${variantId}` : ''}`
   return (
     <section
       ref={sectionRef}
@@ -446,10 +447,8 @@ export function InventoryLedgerSection({
       aria-label={focus ? 'Stock ledger (drill-down filtered)' : 'Stock ledger'}
     >
       {focus ? (
-        <p className="mb-2 max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground" data-testid="ledger-focus-note">
-          Ledger pre-filtered by drill-down
-          {productId ? ` · product ${productName ?? productId}` : ''}
-          {variantId ? ` · variant ${variantId}` : ''}
+        <p title={focusNote} className="mb-2 max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground" data-testid="ledger-focus-note">
+          {focusNote}
         </p>
       ) : null}
       <LedgerTable data={data} />
@@ -537,7 +536,7 @@ export default function InventoryAnalytics({ initialSearch }: { initialSearch?: 
             )}
 
             {stockouts.data ? (
-              <LostSalesCard data={stockouts.data.data} formulaVersion={data.meta.formulaVersion} />
+              <LostSalesCard data={stockouts.data.data} formulaVersion={stockouts.data.meta.formulaVersion} />
             ) : stockouts.isLoading ? (
               <Skeleton className="h-[200px] w-full rounded-lg" />
             ) : (

@@ -370,6 +370,7 @@ export function ExpensesListSection({
   const categoryName = categoryId
     ? data.rows.find((r) => r.category.id === categoryId)?.category.name
     : undefined
+  const focusNote = `Expenses pre-filtered by drill-down${categoryId ? ` · category ${categoryName ?? categoryId}` : ''}`
   return (
     <section
       ref={sectionRef}
@@ -379,9 +380,8 @@ export function ExpensesListSection({
       aria-label={focus ? 'Expenses (drill-down filtered)' : 'Expenses'}
     >
       {focus ? (
-        <p className="mb-2 max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground" data-testid="expenses-list-focus-note">
-          Expenses pre-filtered by drill-down
-          {categoryId ? ` · category ${categoryName ?? categoryId}` : ''}
+        <p title={focusNote} className="mb-2 max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground" data-testid="expenses-list-focus-note">
+          {focusNote}
         </p>
       ) : null}
       <ExpenseListTable data={data} />

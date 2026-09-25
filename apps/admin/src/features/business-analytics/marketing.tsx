@@ -123,7 +123,7 @@ export function CampaignTree({ campaigns }: { campaigns: MarketingTreeCampaign[]
             <div className="space-y-1.5 pt-1">
               {c.adSets.map((s) => (
                 <details key={s.adSetId} className="rounded-md border border-border/50 px-3 py-1" data-testid={`adset-node-${s.adSetId}`}>
-                  <summary className="flex cursor-pointer items-center justify-between flex-wrap gap-1 py-1.5 text-xs">
+                  <summary className="flex cursor-pointer items-center justify-between flex-wrap gap-1 py-1.5 text-xs rounded focus-visible:outline-2 focus-visible:outline-offset-2">
                     <span className="font-medium">{s.name}</span>
                     <span className="tabular-nums text-muted-foreground">
                       {formatBDT(s.insights.spend)} spend · {formatBDT(s.store.revenue)} attributed · {s.store.orders} order(s)
@@ -205,7 +205,7 @@ export function UndatedFixList({
         <span>Page {data.page} of {data.totalPages} · {data.total} row(s)</span>
         <span className="flex gap-2 flex-wrap items-center">
           {data.fixActions.map((a) => (
-            <a key={a.href} href={a.href} className="underline underline-offset-2 px-1 py-2" data-testid={`fix-action-${a.label}`}>
+            <a key={a.href} href={a.href} className="underline underline-offset-2 px-1 py-2 min-h-[44px] inline-flex items-center" data-testid={`fix-action-${a.label}`}>
               {a.label}
             </a>
           ))}

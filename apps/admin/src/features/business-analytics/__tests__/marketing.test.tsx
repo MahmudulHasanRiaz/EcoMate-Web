@@ -362,6 +362,15 @@ describe('marketing page story', () => {
       container.querySelectorAll('[data-testid^="fix-action-"]'),
     ).toHaveLength(UNDATED.fixActions.length)
   })
+
+  it('states allocatedAt exactly once on the full page (fix-list caption only)', async () => {
+    stubMarketingApi()
+    const { container } = await renderWithClient(<MarketingAnalytics />)
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="undated-fixlist"]')).not.toBeNull(),
+    )
+    expect(container.textContent?.match(/allocatedAt/g) ?? []).toHaveLength(1)
+  })
 })
 
 
