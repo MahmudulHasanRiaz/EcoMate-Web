@@ -3,10 +3,10 @@
  *
  * The multi-provider guarantee: the gate every provider must satisfy. Run
  * against the in-memory deterministic `FakeProvider` (full contract) and
- * each real adapter with an injected `MockFetch` (live seams where they
- * exist in P2: testConnection, verifyWebhook, the BR-08 fidelity gate;
- * stubbed P4/P9/P10 methods must fail LOUD via the named notImplemented
- * error, never silently).
+ * each real adapter with an injected `MockFetch` (live seams:
+ * testConnection, verifyWebhook, the BR-08 fidelity gate; P4/P9/P10 live
+ * methods run against MockFetch, and any still-stubbed method must fail
+ * LOUD via the named notImplemented error, never silently).
  *
  * Vectors (§13): capability completeness, connection-failure taxonomy,
  * idempotent upsert, media reuse, publication transitions, stock fidelity
@@ -35,6 +35,7 @@ import {
   classifyProviderError,
 } from '../retry-classifier';
 import { FakeProvider } from './fake.provider';
+import { ReferenceBridge } from './reference-bridge';
 import {
   MockFetch,
   buildCategoryPathsFixture,
@@ -220,17 +221,31 @@ describe('provider contract suite (P2 §13)', () => {
       expect(caps).not.toBe(fake.declaredCapabilities);
     });
 
-    it('returns the static declaration for each real adapter (P4+ negotiates live)', async () => {
+    it('WooCommerce/Shopify return the static declaration (P4+ negotiates live for plugin/app specifics)', async () => {
       const store = buildStoreUnit('WOOCOMMERCE');
-      for (const provider of [
-        new WooCommerceProvider(),
-        new ShopifyProvider(),
-        new CustomBridgeProvider(),
-      ]) {
+      for (const provider of [new WooCommerceProvider(), new ShopifyProvider()]) {
         await expect(provider.resolveCapabilities(store)).resolves.toEqual(
           provider.declaredCapabilities,
         );
       }
+    });
+
+    it('Custom resolves the live manifest; unreachable falls back to declared (never throws)', async () => {
+      const bridge = new ReferenceBridge();
+      const mock = new MockFetch();
+      mock.onPrefix(bridge.baseUrl, bridge.handle);
+      const live = await new CustomBridgeProvider(mock.fetch).resolveCapabilities(
+        buildStoreUnit('CUSTOM'),
+      );
+      expect(live.stockStatusFidelity).toBe('faithful');
+      expect(live.combos).toBe(false);
+      const down = new MockFetch();
+      down.onAll(() => {
+        throw networkError('ECONNREFUSED');
+      });
+      await expect(
+        new CustomBridgeProvider(down.fetch).resolveCapabilities(buildStoreUnit('CUSTOM')),
+      ).resolves.toEqual(new CustomBridgeProvider().declaredCapabilities);
     });
   });
 
@@ -566,14 +581,36 @@ describe('provider contract suite (P2 §13)', () => {
       expect(JSON.stringify(body)).not.toMatch(/quantity/i);
     });
 
-    it('Custom stub still rejects loud (P10 owns the bridge)', async () => {
-      await expect(
-        new CustomBridgeProvider().publishStockState(
-          buildStoreUnit('CUSTOM'),
-          { providerId: 'bridge-prod-1' },
-          'OUT_OF_STOCK',
-        ),
-      ).rejects.toThrow(/not implemented in P1/);
+    it('Custom bridge P10: faithful publishes status-only; unsupported receives ZERO writes', async () => {
+      const bridge = new ReferenceBridge();
+      const mock = new MockFetch();
+      mock.onPrefix(bridge.baseUrl, bridge.handle);
+      const custom = new CustomBridgeProvider(mock.fetch);
+      const store = buildStoreUnit('CUSTOM');
+      const ref = await custom.upsertProduct(store, { sku: 'SKU-CT-001', name: 'T' } as any, [
+        'name',
+        'sku',
+      ]);
+      mock.calls.length = 0;
+      await custom.publishStockState(store, ref, 'OUT_OF_STOCK');
+      await expect(custom.readStockState(store, ref)).resolves.toBe('OUT_OF_STOCK');
+      const puts = mock.calls.filter((c) => c.init?.method === 'PUT');
+      expect(puts).toHaveLength(1);
+      expect(JSON.parse(String(puts[0]?.init?.body ?? '{}'))).toEqual({
+        status: 'out_of_stock',
+      });
+
+      const narrowBridge = new ReferenceBridge({ stockStatusFidelity: 'unsupported' });
+      const narrowMock = new MockFetch();
+      narrowMock.onPrefix(narrowBridge.baseUrl, narrowBridge.handle);
+      const narrow = new CustomBridgeProvider(narrowMock.fetch);
+      const err = await narrow
+        .publishStockState(store, { providerId: 'bridge-prod-1' }, 'OUT_OF_STOCK')
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(ProviderError);
+      expect(err.category).toBe(ProviderErrorCategory.INVALID_REQUEST);
+      expect(String(err.message)).toMatch(/zero writes/);
+      expect(narrowMock.calls.filter((c) => (c.init?.method ?? 'GET') !== 'GET')).toHaveLength(0);
     });
 
     it('BaseCommerceProvider exposes the fetch seam for P4/P9/P10 reuse', () => {
@@ -675,15 +712,21 @@ describe('provider contract suite (P2 §13)', () => {
       expect(mock.urls()[0]).toMatch(/\/orders\.json\?/);
     });
 
-    it('Custom adapter still stubs fetchOrders loud in P2 (P10 owns the bridge)', async () => {
-      const store = buildStoreUnit('CUSTOM');
-      await expect(
-        new CustomBridgeProvider().fetchOrders(store, {
-          ...window,
-          page: 1,
-          pageSize: 10,
-        }),
-      ).rejects.toThrow(/not implemented in P1/);
+    it('Custom bridge P10: fetchOrders pages live over /bridge/v1/orders (P6 owns ingest worker)', async () => {
+      const bridge = new ReferenceBridge();
+      const mock = new MockFetch();
+      mock.onPrefix(bridge.baseUrl, bridge.handle);
+      const custom = new CustomBridgeProvider(mock.fetch);
+      const res = await custom.fetchOrders(buildStoreUnit('CUSTOM'), {
+        ...window,
+        page: 1,
+        pageSize: 2,
+      });
+      expect(res.orders).toHaveLength(2);
+      expect(res.hasMore).toBe(true);
+      expect(mock.urls().find((u) => u.includes('/bridge/v1/orders?'))).toMatch(
+        /\/bridge\/v1\/orders\?/,
+      );
     });
   });
 
