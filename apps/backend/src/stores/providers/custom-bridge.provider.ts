@@ -1197,7 +1197,7 @@ export class CustomBridgeProvider extends BaseCommerceProvider {
         'custom',
       );
     }
-    const address = `${callbackBaseUrl.replace(/\/+$/, '')}/api/webhooks/stores/custom`;
+    const address = `${callbackBaseUrl.replace(/\/+$/, '')}/api/webhooks/stores/custom/${store.id}`;
     const existing = await this.bridge<{ webhooks?: any[] }>(
       store,
       'GET',

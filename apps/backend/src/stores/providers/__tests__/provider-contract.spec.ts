@@ -47,6 +47,7 @@ import {
   buildVariantFixture,
   buildWooDelivery,
   jsonResponse,
+  mockShopifyTokenEndpoint,
   networkError,
   seedFakeProvider,
 } from './fixtures';
@@ -276,7 +277,11 @@ describe('provider contract suite (P2 §13)', () => {
         store: () => buildStoreUnit('SHOPIFY'),
         okBody: { shop: { myshopify_domain: 'test-shop.myshopify.com' } },
         okId: 'test-shop.myshopify.com',
-        missingSecrets: { accessToken: '' },
+        missingSecrets: { clientId: '', clientSecret: '' },
+        // Client Credentials Grant: the Admin API bearer comes from the
+        // per-store token exchange — register that mock before any generic.
+        tokenSetup: (mock: MockFetch) => mockShopifyTokenEndpoint(mock),
+        probeCalls: 2,
       },
       {
         slug: 'custom',
@@ -286,9 +291,10 @@ describe('provider contract suite (P2 §13)', () => {
         okId: 'bridge-store-1',
         missingSecrets: { bridgeKey: '' },
       },
-    ])('$slug', ({ make, store, okBody, okId, missingSecrets }) => {
+    ])('$slug', ({ make, store, okBody, okId, missingSecrets, tokenSetup, probeCalls }: any) => {
       it('200 → reachable + authenticated + permissionsOk + providerStoreId', async () => {
         const mock = new MockFetch();
+        tokenSetup?.(mock);
         mock.onAll(() => jsonResponse(200, okBody));
         const res = await make(mock.fetch).testConnection(store());
         expect(res).toMatchObject({
@@ -297,11 +303,13 @@ describe('provider contract suite (P2 §13)', () => {
           permissionsOk: true,
           providerStoreId: okId,
         });
-        expect(mock.calls).toHaveLength(1);
+        // Shopify probes twice (token exchange + shop.json); others once.
+        expect(mock.calls).toHaveLength(probeCalls ?? 1);
       });
 
       it('401 → reachable but not authenticated (never a throw)', async () => {
         const mock = new MockFetch();
+        tokenSetup?.(mock);
         mock.onAll(() => jsonResponse(401, { message: 'unauthorized' }));
         const res = await make(mock.fetch).testConnection(store());
         expect(res.reachable).toBe(true);
@@ -311,6 +319,7 @@ describe('provider contract suite (P2 §13)', () => {
 
       it('403 → authenticated but not permissionsOk', async () => {
         const mock = new MockFetch();
+        tokenSetup?.(mock);
         mock.onAll(() => jsonResponse(403, { message: 'forbidden' }));
         const res = await make(mock.fetch).testConnection(store());
         expect(res.reachable).toBe(true);
@@ -320,6 +329,7 @@ describe('provider contract suite (P2 §13)', () => {
 
       it('500 → reachable but not authenticated', async () => {
         const mock = new MockFetch();
+        tokenSetup?.(mock);
         mock.onAll(() => jsonResponse(500, { message: 'boom' }));
         const res = await make(mock.fetch).testConnection(store());
         expect(res.reachable).toBe(true);
@@ -329,6 +339,7 @@ describe('provider contract suite (P2 §13)', () => {
 
       it('network failure → unreachable as data, never a throw', async () => {
         const mock = new MockFetch();
+        tokenSetup?.(mock);
         mock.onAll(() => {
           throw networkError('ECONNREFUSED');
         });
@@ -701,6 +712,7 @@ describe('provider contract suite (P2 §13)', () => {
 
     it('Shopify P9: fetchOrders pages live over REST (P6 owns ingest worker)', async () => {
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
       mock.onAll(() => jsonResponse(200, { orders: [{ id: 5001, financial_status: 'pending' }] }));
       const shopify = new ShopifyProvider(mock.fetch);
       const res = await shopify.fetchOrders(buildStoreUnit('SHOPIFY'), {
@@ -709,7 +721,7 @@ describe('provider contract suite (P2 §13)', () => {
         pageSize: 10,
       });
       expect(res.orders).toHaveLength(1);
-      expect(mock.urls()[0]).toMatch(/\/orders\.json\?/);
+      expect(mock.urls().find((u) => u.includes('/orders.json?'))).toMatch(/\/orders\.json\?/);
     });
 
     it('Custom bridge P10: fetchOrders pages live over /bridge/v1/orders (P6 owns ingest worker)', async () => {
@@ -786,7 +798,9 @@ describe('provider contract suite (P2 §13)', () => {
     describe('shopify (HMAC + delivery id + topic)', () => {
       const provider = new ShopifyProvider();
       const store = () => buildStoreUnit('SHOPIFY');
-      const secret = 'wh_shopify_secret';
+      // No separate webhookSecret in the fixture: HMAC falls back to the
+      // OAuth client secret (`webhookSecret ?? clientSecret`).
+      const secret = 'test-client-secret-fake';
 
       it('accepts a correctly signed delivery with topic', () => {
         const delivery = buildShopifyDelivery(secret, payload);

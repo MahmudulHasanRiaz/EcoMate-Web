@@ -39,9 +39,11 @@ import {
 import { snapshotField } from '../field-snapshot';
 import {
   MockFetch,
+  SHOPIFY_FAKE_ACCESS_TOKEN,
   buildShopifyDelivery,
   buildStoreUnit,
   jsonResponse,
+  mockShopifyTokenEndpoint,
   networkError,
 } from './fixtures';
 
@@ -174,6 +176,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
   describe('testConnection', () => {
     it('200 with myshopify_domain → providerStoreId for identityFingerprint', async () => {
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
       mock.onAll(() => jsonResponse(200, { shop: { id: 123, myshopify_domain: 'test-shop.myshopify.com' } }));
       const res = await new ShopifyProvider(mock.fetch).testConnection(STORE());
       expect(res).toMatchObject({
@@ -182,12 +185,16 @@ describe('ShopifyProvider live HTTP (P9)', () => {
         permissionsOk: true,
         providerStoreId: 'test-shop.myshopify.com',
       });
-      expect(mock.calls[0]?.url).toBe(`${BASE}/shop.json`);
-      expect(mock.calls[0]?.init?.headers).toMatchObject({ 'X-Shopify-Access-Token': 'shpat_test_token' });
+      // Client Credentials Grant: token exchange first, then the probe.
+      expect(mock.calls[0]?.url).toBe('https://test-shop.myshopify.com/admin/oauth/access_token');
+      const probe = mock.calls.find((c) => c.url === `${BASE}/shop.json`);
+      expect(probe?.url).toBe(`${BASE}/shop.json`);
+      expect(probe?.init?.headers).toMatchObject({ 'X-Shopify-Access-Token': SHOPIFY_FAKE_ACCESS_TOKEN });
     });
 
     it('200 with id only → shop:{id} fallback (never undefined when identified)', async () => {
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
       mock.onAll(() => jsonResponse(200, { shop: { id: 424242 } }));
       const res = await new ShopifyProvider(mock.fetch).testConnection(STORE());
       expect(res.providerStoreId).toBe('shop:424242');
@@ -195,6 +202,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
 
     it('reports served API version; flags silent fall-forward loudly', async () => {
       const same = new MockFetch();
+      mockShopifyTokenEndpoint(same);
       same.onAll(() =>
         jsonResponse(
           200,
@@ -206,6 +214,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
         apiVersion: { requested: '2026-07', served: '2026-07', fallForward: false },
       });
       const drifted = new MockFetch();
+      mockShopifyTokenEndpoint(drifted);
       drifted.onAll(() =>
         jsonResponse(
           200,
@@ -222,6 +231,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
 
     it('401 → reachable but not authenticated; 403 → permissions fail (never throws)', async () => {
       const unauth = new MockFetch();
+      mockShopifyTokenEndpoint(unauth);
       unauth.onAll(() => jsonResponse(401, { errors: 'unauthorized' }));
       await expect(new ShopifyProvider(unauth.fetch).testConnection(STORE())).resolves.toMatchObject({
         reachable: true,
@@ -229,6 +239,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
         permissionsOk: false,
       });
       const forbidden = new MockFetch();
+      mockShopifyTokenEndpoint(forbidden);
       forbidden.onAll(() => jsonResponse(403, { errors: 'forbidden' }));
       await expect(new ShopifyProvider(forbidden.fetch).testConnection(STORE())).resolves.toMatchObject({
         reachable: true,
@@ -237,7 +248,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
       });
     });
 
-    it('network failure → unreachable as data; missing token → zero HTTP calls', async () => {
+    it('network failure → unreachable as data; missing credentials → zero HTTP calls', async () => {
       const down = new MockFetch();
       down.onAll(() => {
         throw networkError('ECONNREFUSED');
@@ -248,7 +259,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
       });
       const mock = new MockFetch();
       mock.onAll(() => jsonResponse(200, { shop: {} }));
-      const bare = buildStoreUnit('SHOPIFY', { secrets: { accessToken: '' } });
+      const bare = buildStoreUnit('SHOPIFY', { secrets: { clientId: '', clientSecret: '' } });
       const res = await new ShopifyProvider(mock.fetch).testConnection(bare);
       expect(res.authenticated).toBe(false);
       expect(mock.calls).toHaveLength(0);
@@ -257,12 +268,14 @@ describe('ShopifyProvider live HTTP (P9)', () => {
     it('media preflight: HEAD ok → true, failing → false, unset → undefined', async () => {
       const settings = { mediaProbeUrl: 'https://cdn.example.test/probe.jpg' };
       const ok = new MockFetch();
+      mockShopifyTokenEndpoint(ok);
       ok.onPrefix(`${BASE}/shop.json`, () => jsonResponse(200, { shop: { myshopify_domain: 'x.myshopify.com' } }))
         .onPrefix('https://cdn.example.test', () => jsonResponse(200, {}));
       await expect(
         new ShopifyProvider(ok.fetch).testConnection(buildStoreUnit('SHOPIFY', { settings })).then((r) => r.mediaReachable),
       ).resolves.toBe(true);
       const fail = new MockFetch();
+      mockShopifyTokenEndpoint(fail);
       fail
         .onPrefix(`${BASE}/shop.json`, () => jsonResponse(200, { shop: { myshopify_domain: 'x.myshopify.com' } }))
         .onPrefix('https://cdn.example.test', () => {
@@ -272,6 +285,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
         new ShopifyProvider(fail.fetch).testConnection(buildStoreUnit('SHOPIFY', { settings })).then((r) => r.mediaReachable),
       ).resolves.toBe(false);
       const plain = new MockFetch();
+      mockShopifyTokenEndpoint(plain);
       plain.onAll(() => jsonResponse(200, { shop: {} }));
       await expect(
         new ShopifyProvider(plain.fetch).testConnection(STORE()).then((r) => r.mediaReachable),
@@ -307,6 +321,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
 
     it('creates when no SKU match; payload carries title/handle/status/images, never cost/quantity/dims', async () => {
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
       const seen = { bodies: [] as unknown[], graphql: [] as unknown[] };
       mock.setFallback(createRouter(seen));
       const shopify = new ShopifyProvider(mock.fetch);
@@ -336,6 +351,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
 
     it('cost travels ONLY via inventory_items PUT (BR-23, never customer-facing)', async () => {
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
       const puts: { url: string; body: unknown }[] = [];
       mock.setFallback((url, init) => {
         const method = init?.method ?? 'GET';
@@ -361,6 +377,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
 
     it('seo travels via GraphQL productUpdate (seo.title/description)', async () => {
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
       const seen = { bodies: [] as unknown[], graphql: [] as unknown[] };
       mock.setFallback(createRouter(seen));
       await new ShopifyProvider(mock.fetch).upsertProduct(
@@ -375,6 +392,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
 
     it('updates idempotently on SKU match (PUT, no POST /products.json)', async () => {
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
       mock.setFallback((url, init) => {
         const method = init?.method ?? 'GET';
         if (method === 'GET' && url.includes('/products.json')) {
@@ -398,6 +416,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
 
     it('collection membership attaches via collects for numeric ids only (adapter-internal)', async () => {
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
       const collects: unknown[] = [];
       mock.setFallback((url, init) => {
         const method = init?.method ?? 'GET';
@@ -422,6 +441,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
 
     it('customFields allowlist: material sent, secrets never leave (BR-23-adjacent)', async () => {
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
       const metafields: unknown[] = [];
       mock.setFallback((url, init) => {
         const method = init?.method ?? 'GET';
@@ -447,6 +467,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
 
     it('missing connection settings throw INVALID_REQUEST with zero HTTP calls', async () => {
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
       await expect(
         new ShopifyProvider(mock.fetch).upsertProduct(
           { id: 's', kind: 'SHOPIFY', settings: {}, secrets: {} },
@@ -462,6 +483,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
   describe('upsertVariants', () => {
     it('creates missing + updates matched by SKU; options/price/weight on the wire', async () => {
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
       mock.setFallback((url, init) => {
         const method = init?.method ?? 'GET';
         if (method === 'GET' && url.includes('/variants.json')) {
@@ -492,13 +514,17 @@ describe('ShopifyProvider live HTTP (P9)', () => {
       );
       expect(putBody.variant.price).toBe('400');
       const postBody = JSON.parse(
-        String(mock.calls.find((c) => c.init?.method === 'POST')?.init?.body ?? '{}'),
+        String(
+          mock.calls.find((c) => c.init?.method === 'POST' && !c.url.includes('/oauth/access_token'))
+            ?.init?.body ?? '{}',
+        ),
       );
       expect(postBody.variant).toMatchObject({ price: '300', compare_at_price: '350', weight: 0.2 });
     });
 
     it('rejects >100 variants with zero HTTP (deprecated REST ceiling)', async () => {
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
       mock.onAll(() => jsonResponse(200, { variants: [] }));
       const variants = Array.from({ length: 101 }, (_, i) => ({ sku: `OVER-${i}` }));
       await expect(
@@ -509,6 +535,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
 
     it('rejects >3 options with zero HTTP (deprecated REST ceiling)', async () => {
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
       mock.onAll(() => jsonResponse(200, { variants: [] }));
       const variants = [
         { sku: 'OPT-1', attributes: { Size: 'M', Color: 'Red', Material: 'Cotton', Fit: 'Slim' } },
@@ -524,6 +551,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
   describe('ensureCategories', () => {
     it('looks up handle before creating; second ensure issues zero POSTs', async () => {
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
       let created = 0;
       mock.setFallback((url, init) => {
         if ((init?.method ?? 'GET') === 'POST') {
@@ -537,6 +565,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
       expect(created).toBe(2);
 
       const mock2 = new MockFetch();
+      mockShopifyTokenEndpoint(mock2);
       let created2 = 0;
       mock2.setFallback((url, init) => {
         if ((init?.method ?? 'GET') === 'POST') {
@@ -555,6 +584,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
 
     it('renameCategory PUTs the mapped collection; moveCategory is a loud flat-model skip (zero HTTP)', async () => {
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
       mock.onAll(() => jsonResponse(200, { custom_collection: { id: 6 } }));
       const renamed = await new ShopifyProvider(mock.fetch).renameCategory(
         STORE(),
@@ -562,7 +592,9 @@ describe('ShopifyProvider live HTTP (P9)', () => {
         { name: 'Tees', slug: 'tees' },
       );
       expect(renamed.ok).toBe(true);
-      expect(JSON.parse(String(mock.calls[0]?.init?.body ?? '{}'))).toMatchObject({
+      // calls[0] is the token exchange; the Admin API PUT follows.
+      const renamePut = mock.calls.find((c) => c.url.includes('/custom_collections/6.json'));
+      expect(JSON.parse(String(renamePut?.init?.body ?? '{}'))).toMatchObject({
         custom_collection: { title: 'Tees', handle: 'tees' },
       });
 
@@ -578,6 +610,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
   describe('media + publication + delete', () => {
     it('ensureMedia resolves stored-id refs with zero HTTP (never re-upload mapped)', async () => {
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
       const out = await new ShopifyProvider(mock.fetch).ensureMedia(STORE(), [
         { src: 'https://cdn/1.jpg', hash: 'abc' },
       ] as any);
@@ -587,28 +620,34 @@ describe('ShopifyProvider live HTTP (P9)', () => {
 
     it('setPublication maps published/draft to active/draft', async () => {
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
       mock.onAll(() => jsonResponse(200, { product: { id: 9001 } }));
       const shopify = new ShopifyProvider(mock.fetch);
       await shopify.setPublication(STORE(), { providerId: '9001' }, 'draft');
-      expect(JSON.parse(String(mock.calls[0]?.init?.body ?? '{}'))).toEqual({
+      // calls[0] is the token exchange; the Admin API PUTs follow.
+      const puts = mock.calls.filter((c) => !c.url.includes('/oauth/access_token'));
+      expect(JSON.parse(String(puts[0]?.init?.body ?? '{}'))).toEqual({
         product: { id: '9001', status: 'draft' },
       });
       await shopify.setPublication(STORE(), { providerId: '9001' }, 'published');
-      expect(JSON.parse(String(mock.calls[1]?.init?.body ?? '{}'))).toEqual({
+      const putsAfter = mock.calls.filter((c) => !c.url.includes('/oauth/access_token'));
+      expect(JSON.parse(String(putsAfter[1]?.init?.body ?? '{}'))).toEqual({
         product: { id: '9001', status: 'active' },
       });
     });
 
     it('deleteProduct uses the GraphQL productDelete mutation (BR-09)', async () => {
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
       mock.onAll(() =>
         jsonResponse(200, { data: { productDelete: { deletedProductId: 'gid://shopify/Product/9001', userErrors: [] } } }),
       );
       const res = await new ShopifyProvider(mock.fetch).deleteProduct(STORE(), { providerId: '9001' });
       expect(res.ok).toBe(true);
-      expect(mock.calls[0]?.url).toMatch(/\/graphql\.json$/);
-      expect(JSON.stringify(mock.calls[0]?.init?.body)).toMatch(/productDelete/);
-      expect(JSON.stringify(mock.calls[0]?.init?.body)).toMatch(/gid:\/\/shopify\/Product\/9001/);
+      const gql = mock.calls.find((c) => c.url.endsWith('/graphql.json'));
+      expect(gql?.url).toMatch(/\/graphql\.json$/);
+      expect(JSON.stringify(gql?.init?.body)).toMatch(/productDelete/);
+      expect(JSON.stringify(gql?.init?.body)).toMatch(/gid:\/\/shopify\/Product\/9001/);
     });
   });
 
@@ -616,6 +655,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
   describe('stock fidelity (BR-06/BR-08)', () => {
     it('readStockState derives IN/OUT from inventory_quantity with exactly one GET (zero writes)', async () => {
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
       mock.onAll(() =>
         jsonResponse(200, {
           product: { id: 9001, variants: [{ inventory_quantity: 3 }, { inventory_quantity: 0 }] },
@@ -624,10 +664,14 @@ describe('ShopifyProvider live HTTP (P9)', () => {
       await expect(new ShopifyProvider(mock.fetch).readStockState(STORE(), { providerId: '9001' })).resolves.toBe(
         'IN_STOCK',
       );
-      expect(mock.calls).toHaveLength(1);
-      expect(mock.calls[0]?.init?.method ?? 'GET').not.toBe('PUT');
+      // Token exchange + exactly one Admin API GET (zero writes).
+      expect(mock.calls).toHaveLength(2);
+      const api = mock.calls.filter((c) => !c.url.includes('/oauth/access_token'));
+      expect(api).toHaveLength(1);
+      expect(api[0]?.init?.method ?? 'GET').not.toBe('PUT');
 
       const empty = new MockFetch();
+      mockShopifyTokenEndpoint(empty);
       empty.onAll(() => jsonResponse(200, { product: { id: 9001, variants: [{ inventory_quantity: 0 }] } }));
       await expect(new ShopifyProvider(empty.fetch).readStockState(STORE(), { providerId: '9001' })).resolves.toBe(
         'OUT_OF_STOCK',
@@ -637,6 +681,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
     it('publishStockState + publishVariantStockState throw BEFORE any HTTP write (zero writes)', async () => {
       for (const variant of [false, true]) {
         const mock = new MockFetch();
+        mockShopifyTokenEndpoint(mock);
         mock.onAll(() => jsonResponse(200, {}));
         const shopify = new ShopifyProvider(mock.fetch);
         const err = variant
@@ -653,6 +698,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
 
     it('full product + stock + order flow yields zero stock-quantity writes', async () => {
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
       mock.setFallback((url, init) => {
         const method = init?.method ?? 'GET';
         if (url.includes('/graphql.json')) {
@@ -714,6 +760,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
   describe('orders', () => {
     it('fetchOrders passes the window + pagination over REST', async () => {
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
       mock.onAll(() =>
         jsonResponse(200, {
           orders: [
@@ -730,26 +777,30 @@ describe('ShopifyProvider live HTTP (P9)', () => {
       });
       expect(res.orders).toHaveLength(2);
       expect(res.hasMore).toBe(true);
-      expect(mock.calls[0]?.url).toMatch(/created_at_min=.*09-20/);
-      expect(mock.calls[0]?.url).toMatch(/page=2/);
-      expect(mock.calls[0]?.url).toMatch(/status=any/);
+      const ordersCall = mock.calls.find((c) => c.url.includes('/orders.json?'));
+      expect(ordersCall?.url).toMatch(/created_at_min=.*09-20/);
+      expect(ordersCall?.url).toMatch(/page=2/);
+      expect(ordersCall?.url).toMatch(/status=any/);
     });
 
     it('pushOrderStatus: cancelled → cancel.json, completed → fulfillments.json (CANCELLED/FULFILLED)', async () => {
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
       mock.onAll(() => jsonResponse(200, {}));
       const shopify = new ShopifyProvider(mock.fetch);
       await shopify.pushOrderStatus(STORE(), { providerId: '5001' }, 'cancelled');
-      expect(mock.calls[0]?.url).toMatch(/\/orders\/5001\/cancel\.json$/);
-      expect(mock.calls[0]?.init?.method).toBe('POST');
+      const api = () => mock.calls.filter((c) => !c.url.includes('/oauth/access_token'));
+      expect(api()[0]?.url).toMatch(/\/orders\/5001\/cancel\.json$/);
+      expect(api()[0]?.init?.method).toBe('POST');
       await shopify.pushOrderStatus(STORE(), { providerId: '5001' }, 'completed');
-      expect(mock.calls[1]?.url).toMatch(/\/orders\/5001\/fulfillments\.json$/);
-      expect(mock.calls[1]?.init?.method).toBe('POST');
+      expect(api()[1]?.url).toMatch(/\/orders\/5001\/fulfillments\.json$/);
+      expect(api()[1]?.init?.method).toBe('POST');
     });
 
     it('push → read-back round-trip (CANCELLED then FULFILLED)', async () => {
       let remote: any = { id: 5001, financial_status: 'pending', fulfillment_status: null, cancelled_at: null };
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
       mock.setFallback((url, init) => {
         if (url.endsWith('/cancel.json')) {
           remote = { ...remote, cancelled_at: '2026-09-21T10:00:00Z' };
@@ -776,6 +827,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
 
     it('readOrderStatus maps fulfilled → FULFILLED', async () => {
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
       mock.onAll(() =>
         jsonResponse(200, { order: { id: 5001, financial_status: 'paid', fulfillment_status: 'fulfilled' } }),
       );
@@ -787,7 +839,9 @@ describe('ShopifyProvider live HTTP (P9)', () => {
 
   // ── Webhooks: HMAC + delivery id + topic + replay ─────────────────────
   describe('verifyWebhook + ensureWebhooks', () => {
-    const secret = 'wh_shopify_secret';
+    // No separate webhookSecret in the fixture: HMAC falls back to the
+    // OAuth client secret (`webhookSecret ?? clientSecret`).
+    const secret = 'test-client-secret-fake';
     const store = () => buildStoreUnit('SHOPIFY');
     const provider = () => new ShopifyProvider();
 
@@ -833,6 +887,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
 
     it('ensureWebhooks registers missing topics only (idempotent)', async () => {
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
       const created: unknown[] = [];
       mock.setFallback((url, init) => {
         if ((init?.method ?? 'GET') === 'GET') {
@@ -846,7 +901,17 @@ describe('ShopifyProvider live HTTP (P9)', () => {
       expect(created).toHaveLength(2);
       expect(JSON.stringify(created)).toMatch(/orders\/updated/);
       expect(JSON.stringify(created)).toMatch(/products\/update/);
-      expect(JSON.stringify(created)).toMatch(/\/api\/webhooks\/stores\/shopify/);
+      // Keyed receiver URL: the canonical public storeKey (store.id) is part
+      // of the registered address (receivers REQUIRE :storeKey).
+      expect(JSON.stringify(created)).toMatch(/\/api\/webhooks\/stores\/shopify\/store-shopify-1/);
+      for (const body of created) {
+        expect(body).toMatchObject({
+          webhook: {
+            address: 'https://api.example.test/api/webhooks/stores/shopify/store-shopify-1',
+            format: 'json',
+          },
+        });
+      }
       // Payload serialization pinned to the code's version (not the default).
       for (const body of created) {
         expect(body).toMatchObject({ webhook: { api_version: '2026-07' } });

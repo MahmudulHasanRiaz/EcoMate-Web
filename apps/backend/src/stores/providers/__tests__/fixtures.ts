@@ -196,8 +196,13 @@ export function buildStoreUnit(
       settings: { shop: 'test-shop.myshopify.com' },
       secrets: {
         shop: 'test-shop.myshopify.com',
-        accessToken: 'shpat_test_token',
-        webhookSecret: 'wh_shopify_secret',
+        // Client Credentials Grant shape (per current Shopify docs; the
+        // legacy static `accessToken` is no longer creatable and is never
+        // accepted — see ShopifyProvider.ctxOf). No separate webhookSecret:
+        // HMAC falls back to `clientSecret` (webhookSecret ?? clientSecret).
+        // All values are obviously-fake placeholders.
+        clientId: 'test-client-id-fake',
+        clientSecret: 'test-client-secret-fake',
       },
     },
     CUSTOM: {
@@ -291,6 +296,43 @@ export class MockFetch {
   private wrap(handle: MockHandler): MockHandler {
     return (url, init) => handle(url, init);
   }
+}
+
+// ── Shopify Client Credentials token-endpoint mock ────────────────────
+
+/** Obviously-fake OAuth bearer minted by the token-endpoint mock. */
+export const SHOPIFY_FAKE_ACCESS_TOKEN = 'test-shopify-access-token-fake';
+
+/**
+ * Register the `POST https://{shop}/admin/oauth/access_token` mock FIRST
+ * (MockFetch matches handlers in registration order, so this prefix must
+ * precede any `onAll` generic). Returns the canned token response so tests
+ * can assert the exact bearer sent on Admin API calls.
+ */
+export function mockShopifyTokenEndpoint(
+  mock: MockFetch,
+  opts?: {
+    shop?: string;
+    accessToken?: string;
+    expiresIn?: number;
+    scope?: string;
+    status?: number;
+    body?: unknown;
+    onCall?: () => void;
+  },
+): void {
+  const shop = opts?.shop ?? 'test-shop.myshopify.com';
+  mock.onPrefix(`https://${shop}/admin/oauth/access_token`, () => {
+    opts?.onCall?.();
+    if (opts?.status !== undefined && (opts.status < 200 || opts.status >= 300)) {
+      return jsonResponse(opts.status, opts.body ?? { error: 'server_error' });
+    }
+    return jsonResponse(200, {
+      access_token: opts?.accessToken ?? SHOPIFY_FAKE_ACCESS_TOKEN,
+      expires_in: opts?.expiresIn ?? 86399,
+      scope: opts?.scope ?? 'write_products,write_inventory,write_orders',
+    });
+  });
 }
 
 // ── Webhook delivery builders ─────────────────────────────────────────

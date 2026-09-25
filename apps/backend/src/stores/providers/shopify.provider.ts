@@ -1,12 +1,22 @@
 /**
  * Shopify live adapter — central-commerce P9 (§7.1, P9 row).
  *
- * Admin API over a custom-app access token (`X-Shopify-Access-Token`;
- * OAuth-ready shape — the token field also carries an OAuth token in a later
- * phase — but the custom-app token is the phase-1 mechanism):
+ * Admin API over Client Credentials Grant (`X-Shopify-Access-Token`;
+ * per current Shopify docs the legacy admin-created custom-app static token
+ * is no longer creatable — auth is per-store {shop, clientId, clientSecret}
+ * → POST https://{shop}/admin/oauth/access_token (form-urlencoded
+ * `grant_type=client_credentials`) → short-lived access token, cached per
+ * store with 60s early refresh):
  * products/variants/collections(status, publication, delete)/orders fetch +
  * HMAC webhooks (verifyWebhook was P2, extended here with the 5-minute
- * replay check where a timestamp is supplied).
+ * replay check where a timestamp is supplied). Webhook HMAC secret =
+ * `secrets.webhookSecret ?? secrets.clientSecret` (Shopify signs with the
+ * app's client secret when no separate webhook secret is configured).
+ *
+ * Token exchange works ONLY when the app and the store share the same
+ * Shopify Dev Dashboard organization — an org mismatch surfaces as a
+ * PERMANENT (never-retried) `shop_not_permitted`/`invalid_client` error;
+ * this constraint is surfaced in error text, never worked around in code.
  *
  * Field mapping (§8.11 Table A, Shopify target column):
  * name→title, shortDescription→composed excerpt (not native — derived from
@@ -110,28 +120,61 @@ export const SHOPIFY_WEBHOOK_TOPICS = ['orders/create', 'orders/updated', 'produ
 /** Default weight unit when EcoMate carries no unit (Shopify requires one). */
 export const SHOPIFY_DEFAULT_WEIGHT_UNIT = 'kg';
 
+/** OAuth token endpoint path (Client Credentials Grant). */
+export const SHOPIFY_TOKEN_PATH = '/admin/oauth/access_token';
+
+/** Fallback token lifetime (the endpoint always returns `expires_in: 86399`). */
+export const SHOPIFY_TOKEN_EXPIRY_SECONDS = 86399;
+
+/** Cached tokens refresh this far before expiry (stale tokens never ship). */
+const SHOPIFY_TOKEN_EARLY_REFRESH_MS = 60_000;
+
+/**
+ * Org-mismatch constraint (authoritative per current Shopify docs): Client
+ * Credentials tokens issue ONLY when the app and the store share a Dev
+ * Dashboard organization. Surfaced in error text, never worked around.
+ */
+const SHOPIFY_ORG_MISMATCH_HINT =
+  'the app and the store must belong to the same Shopify Dev Dashboard organization ' +
+  '(verify the Client ID/Secret belong to an app in the store\u2019s org)';
+
 interface ShopifyContext {
   shop: string;
-  accessToken: string;
   baseUrl: string;
+}
+
+interface ShopifyTokenEntry {
+  token: string;
+  expiresAtMs: number;
+  scope?: string;
 }
 
 function ctxOf(store: StoreWithSecrets): ShopifyContext {
   const secrets = store.secrets ?? {};
   const settings = store.settings ?? {};
-  const rawShop = String(secrets.shop ?? settings.shop ?? '').trim();
-  // Accept `shop.myshopify.com`, `https://shop.myshopify.com/` or a custom
-  // domain — strip protocol and trailing slashes only.
-  const shop = rawShop.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
-  const accessToken = String(secrets.accessToken ?? '');
-  if (!shop || !accessToken) {
+  // Legacy static custom-app tokens are no longer creatable and are never
+  // silently used: a stored accessToken is an explicit reconnect signal.
+  if (String(secrets.accessToken ?? '').trim()) {
     throw new ProviderError(
-      '[shopify] missing connection settings (shop/accessToken)',
+      '[shopify] client credentials required: reconnect with Client ID + Client Secret (Client Credentials Grant)',
       ProviderErrorCategory.INVALID_REQUEST,
       'shopify',
     );
   }
-  return { shop, accessToken, baseUrl: `https://${shop}/admin/api/${SHOPIFY_API_VERSION}` };
+  const rawShop = String(secrets.shop ?? settings.shop ?? '').trim();
+  // Accept `shop.myshopify.com`, `https://shop.myshopify.com/` or a custom
+  // domain — strip protocol and trailing slashes only.
+  const shop = rawShop.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  const clientId = String(secrets.clientId ?? '').trim();
+  const clientSecret = String(secrets.clientSecret ?? '').trim();
+  if (!shop || !clientId || !clientSecret) {
+    throw new ProviderError(
+      '[shopify] missing connection settings (shop/clientId/clientSecret)',
+      ProviderErrorCategory.INVALID_REQUEST,
+      'shopify',
+    );
+  }
+  return { shop, baseUrl: `https://${shop}/admin/api/${SHOPIFY_API_VERSION}` };
 }
 
 function toProviderError(slug: string, status: number, body: unknown, path: string): ProviderError {
@@ -407,7 +450,122 @@ export class ShopifyProvider extends BaseCommerceProvider {
     'customFields',
   ];
 
-  // ── HTTP seams (REST + GraphQL, custom-app token) ────────────────────
+  // ── Client Credentials token acquisition (per-store cache) ──────────
+
+  /**
+   * Short-lived Admin API tokens, cached per store id with 60s early
+   * refresh. Maps are instance-scoped (each test constructs its own
+   * provider, so token state never leaks between tests or stores).
+   */
+  private readonly tokenCache = new Map<string, ShopifyTokenEntry>();
+  private readonly tokenInflight = new Map<string, Promise<string>>();
+
+  /**
+   * Resolve the bearer for one store. Concurrent callers coalesce onto a
+   * single in-flight exchange (single flight); `forceRefresh` bypasses a
+   * fresh cache entry (the 401 retry path) but still joins an in-flight
+   * exchange rather than opening a second one.
+   */
+  private async resolveAccessToken(
+    store: StoreWithSecrets,
+    opts?: { forceRefresh?: boolean },
+  ): Promise<string> {
+    const secrets = store.secrets ?? {};
+    if (String(secrets.accessToken ?? '').trim()) {
+      throw new ProviderError(
+        '[shopify] client credentials required: reconnect with Client ID + Client Secret (Client Credentials Grant)',
+        ProviderErrorCategory.INVALID_REQUEST,
+        'shopify',
+      );
+    }
+    const inflight = this.tokenInflight.get(store.id);
+    if (inflight) return inflight;
+    if (!opts?.forceRefresh) {
+      const cached = this.tokenCache.get(store.id);
+      if (cached && Date.now() < cached.expiresAtMs - SHOPIFY_TOKEN_EARLY_REFRESH_MS) {
+        return cached.token;
+      }
+    }
+    const exchange = this.exchangeToken(store).finally(() => {
+      this.tokenInflight.delete(store.id);
+    });
+    this.tokenInflight.set(store.id, exchange);
+    return exchange;
+  }
+
+  /**
+   * POST https://{shop}/admin/oauth/access_token (form-urlencoded
+   * `grant_type=client_credentials`) → `{access_token, expires_in
+   * (always 86399), scope}`. Exchange failure is TEMPORARY (retryable)
+   * EXCEPT `shop_not_permitted`/`invalid_client`, which is PERMANENT
+   * (org mismatch — no retry loop). The request body carries the client
+   * secret and is never echoed in any error.
+   */
+  private async exchangeToken(store: StoreWithSecrets): Promise<string> {
+    const ctx = ctxOf(store);
+    const secrets = store.secrets ?? {};
+    const clientId = String(secrets.clientId ?? '').trim();
+    const clientSecret = String(secrets.clientSecret ?? '').trim();
+    const body = new URLSearchParams({
+      grant_type: 'client_credentials',
+      client_id: clientId,
+      client_secret: clientSecret,
+    }).toString();
+    let res: { status: number; ok: boolean; json(): Promise<unknown> };
+    try {
+      res = await this.fetchFn(`https://${ctx.shop}${SHOPIFY_TOKEN_PATH}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      });
+    } catch (err) {
+      throw new ProviderError(
+        `[shopify] token exchange failed: ${err instanceof Error ? err.message : String(err)}`,
+        ProviderErrorCategory.TEMPORARY_FAILURE,
+        'shopify',
+        err,
+      );
+    }
+    let parsed: any = null;
+    try {
+      parsed = await res.json();
+    } catch {
+      parsed = null;
+    }
+    if (!res.ok) {
+      const detail = JSON.stringify(parsed ?? null).slice(0, 300);
+      if (/invalid_client|shop_not_permitted/i.test(detail)) {
+        throw new ProviderError(
+          `[shopify] token exchange failed (org mismatch): ${SHOPIFY_ORG_MISMATCH_HINT} — ${detail}`,
+          ProviderErrorCategory.INVALID_REQUEST,
+          'shopify',
+        );
+      }
+      throw new ProviderError(
+        `[shopify] token exchange → http-${res.status}: ${detail}`,
+        ProviderErrorCategory.TEMPORARY_FAILURE,
+        'shopify',
+      );
+    }
+    const token = typeof parsed?.access_token === 'string' ? parsed.access_token : '';
+    if (!token) {
+      throw new ProviderError(
+        '[shopify] token exchange returned no access_token',
+        ProviderErrorCategory.TEMPORARY_FAILURE,
+        'shopify',
+      );
+    }
+    const ttl = Number(parsed?.expires_in);
+    const expiresIn = Number.isFinite(ttl) && ttl > 0 ? ttl : SHOPIFY_TOKEN_EXPIRY_SECONDS;
+    this.tokenCache.set(store.id, {
+      token,
+      expiresAtMs: Date.now() + expiresIn * 1000,
+      ...(typeof parsed?.scope === 'string' ? { scope: parsed.scope } : {}),
+    });
+    return token;
+  }
+
+  // ── HTTP seams (REST + GraphQL, Client Credentials bearer) ─────────────
 
   private async rest<T>(
     store: StoreWithSecrets,
@@ -416,16 +574,27 @@ export class ShopifyProvider extends BaseCommerceProvider {
     body?: unknown,
   ): Promise<T> {
     const ctx = ctxOf(store);
-    const res = await this.fetchFn(`${ctx.baseUrl}${path}`, {
-      method,
-      headers: { 'X-Shopify-Access-Token': ctx.accessToken, 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    let parsed: unknown = null;
-    try {
-      parsed = await res.json();
-    } catch {
-      parsed = null;
+    const call = async (token: string) => {
+      const res = await this.fetchFn(`${ctx.baseUrl}${path}`, {
+        method,
+        headers: { 'X-Shopify-Access-Token': token, 'Content-Type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      let parsed: unknown = null;
+      try {
+        parsed = await res.json();
+      } catch {
+        parsed = null;
+      }
+      return { res, parsed };
+    };
+    let token = await this.resolveAccessToken(store);
+    let { res, parsed } = await call(token);
+    if (res.status === 401) {
+      // Stale/revoked bearer → ONE re-exchange + retry, then classify.
+      this.tokenCache.delete(store.id);
+      token = await this.resolveAccessToken(store, { forceRefresh: true });
+      ({ res, parsed } = await call(token));
     }
     if (!res.ok) throw toProviderError(this.slug, res.status, parsed, `${method} ${path}`);
     return parsed as T;
@@ -433,16 +602,26 @@ export class ShopifyProvider extends BaseCommerceProvider {
 
   private async graphql<T>(store: StoreWithSecrets, query: string, variables?: unknown): Promise<T> {
     const ctx = ctxOf(store);
-    const res = await this.fetchFn(`${ctx.baseUrl}/graphql.json`, {
-      method: 'POST',
-      headers: { 'X-Shopify-Access-Token': ctx.accessToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, variables }),
-    });
-    let parsed: any = null;
-    try {
-      parsed = await res.json();
-    } catch {
-      parsed = null;
+    const call = async (token: string) => {
+      const res = await this.fetchFn(`${ctx.baseUrl}/graphql.json`, {
+        method: 'POST',
+        headers: { 'X-Shopify-Access-Token': token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, variables }),
+      });
+      let parsed: any = null;
+      try {
+        parsed = await res.json();
+      } catch {
+        parsed = null;
+      }
+      return { res, parsed };
+    };
+    let token = await this.resolveAccessToken(store);
+    let { res, parsed } = await call(token);
+    if (res.status === 401) {
+      this.tokenCache.delete(store.id);
+      token = await this.resolveAccessToken(store, { forceRefresh: true });
+      ({ res, parsed } = await call(token));
     }
     if (!res.ok) throw toProviderError(this.slug, res.status, parsed, 'POST /graphql.json');
     if (parsed?.errors?.length) {
@@ -458,15 +637,28 @@ export class ShopifyProvider extends BaseCommerceProvider {
   // ── testConnection (reachability, auth, permissions, media preflight) ─
 
   /**
-   * Probe `GET shop.json` (custom-app token). providerStoreId prefers
+   * Probe `GET shop.json` (Client Credentials bearer). providerStoreId prefers
    * `myshopify_domain`, falling back to `shop:{id}` — either feeds
    * Store.identityFingerprint (§8.10 duplicate protection).
+   *
+   * A stored legacy static `accessToken` throws INVALID_REQUEST (reconnect
+   * with Client ID + Client Secret) instead of probing — it is never
+   * silently used. A failed token exchange maps to unreachable data when
+   * TEMPORARY, but a PERMANENT org mismatch rethrows loud (the wizard must
+   * surface the Dev Dashboard constraint).
    */
   async testConnection(store: StoreWithSecrets): Promise<TestConnectionResult> {
     const secrets = store.secrets ?? {};
     const settings = store.settings ?? {};
+    if (String(secrets.accessToken ?? '').trim()) {
+      throw new ProviderError(
+        '[shopify] client credentials required: reconnect with Client ID + Client Secret (Client Credentials Grant)',
+        ProviderErrorCategory.INVALID_REQUEST,
+        'shopify',
+      );
+    }
     const rawShop = String(secrets.shop ?? settings.shop ?? '').trim();
-    if (!rawShop || !secrets.accessToken) {
+    if (!rawShop || !secrets.clientId || !secrets.clientSecret) {
       return {
         reachable: false,
         authenticated: false,
@@ -475,8 +667,22 @@ export class ShopifyProvider extends BaseCommerceProvider {
       };
     }
     const shop = rawShop.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+    let token: string;
+    try {
+      token = await this.resolveAccessToken(store);
+    } catch (err) {
+      if (err instanceof ProviderError && err.category === ProviderErrorCategory.INVALID_REQUEST) {
+        throw err;
+      }
+      return {
+        reachable: false,
+        authenticated: false,
+        permissionsOk: false,
+        capabilities: this.declaredCapabilities,
+      };
+    }
     const probed = await this.tryProbe(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/shop.json`, {
-      headers: { 'X-Shopify-Access-Token': String(secrets.accessToken) },
+      headers: { 'X-Shopify-Access-Token': token },
     });
     // Network failure → unreachable as data, never a throw (see WooCommerce).
     if (!probed) {
@@ -530,16 +736,19 @@ export class ShopifyProvider extends BaseCommerceProvider {
   /**
    * `X-Shopify-Hmac-Sha256` (base64 HMAC-SHA256 over the raw body) +
    * delivery id (`X-Shopify-Webhook-Id`) + topic (`X-Shopify-Topic`).
-   * Where a timestamp is supplied (`X-Shopify-Timestamp`, e.g. via an app
-   * proxy) the 5-minute replay window applies; absent timestamps rely on the
-   * authoritative `deliveryKey` dedupe in StoreWebhookService (§8.7).
+   * The HMAC secret is `secrets.webhookSecret ?? secrets.clientSecret`
+   * (Shopify signs with the app's client secret when no separate webhook
+   * secret is configured). Where a timestamp is supplied
+   * (`X-Shopify-Timestamp`, e.g. via an app proxy) the 5-minute replay
+   * window applies; absent timestamps rely on the authoritative
+   * `deliveryKey` dedupe in StoreWebhookService (§8.7).
    */
   verifyWebhook(
     store: StoreWithSecrets,
     headers: Record<string, string | string[] | undefined>,
     rawBody: Buffer,
   ): WebhookVerification {
-    const secret = String(store.secrets?.webhookSecret ?? '');
+    const secret = String(store.secrets?.webhookSecret ?? store.secrets?.clientSecret ?? '');
     if (!secret) return { valid: false, reason: 'no-secret-configured' };
     const signature = getHeader(headers, 'X-Shopify-Hmac-Sha256');
     if (!signature) return { valid: false, reason: 'missing-signature' };
@@ -988,7 +1197,7 @@ export class ShopifyProvider extends BaseCommerceProvider {
       await this.rest(store, 'POST', '/webhooks.json', {
         webhook: {
           topic,
-          address: `${callbackBaseUrl.replace(/\/+$/, '')}/api/webhooks/stores/shopify`,
+          address: `${callbackBaseUrl.replace(/\/+$/, '')}/api/webhooks/stores/shopify/${store.id}`,
           format: 'json',
           // Pin payload serialization to the code's version: without this,
           // deliveries may serialize under the dashboard default instead.

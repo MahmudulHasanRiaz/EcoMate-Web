@@ -47,8 +47,9 @@ interface Props {
  * The middle auth step is per-provider; the dialog, steps and flow are
  * identical — only the auth fields/labels switch by platform:
  * - WooCommerce: store URL + consumer key/secret (Basic auth).
- * - Shopify: shop domain + Admin API access token (custom-app token is the
- *   phase-1 mechanism; the field shape is OAuth-ready for a later phase).
+ * - Shopify: shop domain + Client ID + Client Secret (Client Credentials
+ *   Grant — the app and the store must share a Dev Dashboard org; webhook
+ *   HMAC uses the client secret).
  * - Custom: bridge endpoint URL + bridge key (bearer).
  * Connection, availability and sync states stay separate (no merging).
  */
@@ -81,8 +82,8 @@ export function StoreConnectDialog({ open, onOpenChange, onCreated }: Props) {
     if (provider === 'SHOPIFY') {
       return {
         shop: domain.trim(),
-        accessToken: consumerKey,
-        ...(consumerSecret ? { webhookSecret: consumerSecret } : {}),
+        clientId: consumerKey,
+        clientSecret: consumerSecret,
       }
     }
     if (provider === 'CUSTOM') {
@@ -100,11 +101,11 @@ export function StoreConnectDialog({ open, onOpenChange, onCreated }: Props) {
       ? {
           domainLabel: 'Shop domain',
           domainPlaceholder: 'my-shop.myshopify.com',
-          keyLabel: 'Admin API access token',
-          keyPlaceholder: 'shpat_… (custom-app token)',
-          secretLabel: 'Webhook secret (optional)',
-          secretPlaceholder: 'Leave blank until webhooks are registered',
-          note: 'Custom-app token is the phase-1 mechanism. Stock on Shopify is monitor-only (BR-08) — EcoMate never writes stock there.',
+          keyLabel: 'Client ID',
+          keyPlaceholder: 'Client ID from the Dev Dashboard app',
+          secretLabel: 'Client Secret',
+          secretPlaceholder: 'Client secret (also signs webhooks)',
+          note: 'Client Credentials Grant: the app and the store must share a Dev Dashboard org. Webhook HMAC uses the client secret. Stock on Shopify is monitor-only (BR-08) — EcoMate never writes stock there.',
         }
       : provider === 'CUSTOM'
         ? {

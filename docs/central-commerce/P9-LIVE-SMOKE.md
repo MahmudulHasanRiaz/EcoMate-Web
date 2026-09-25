@@ -2,21 +2,25 @@
 
 Branch: `feature/central-commerce-p0` · HEAD `1c377c35` · **NOT committed** (per instruction).
 Plan: `central-commerce-multistore-integration.md` P9 row (live dev-store smoke = P9 acceptance prerequisite; P10 follows P9).
-Harness: workspace-root `.tmp-e2e/shopify-live-smoke.js` (env-driven only: `SHOPIFY_TEST_SHOP`, `SHOPIFY_TEST_TOKEN`; untracked; **deleted after the attempt**).
+Harness: workspace-root `.tmp-e2e/shopify-live-smoke.js` (env-driven only: `SHOPIFY_TEST_SHOP`, `SHOPIFY_TEST_CLIENT_ID`,
+`SHOPIFY_TEST_CLIENT_SECRET`; untracked; **deleted after the attempt**). Auth is Client Credentials Grant (per current Shopify
+docs — no static access-token var; webhook HMAC uses the client secret, no separate webhook-secret var). Required scopes (unchanged):
+`write_products`, `write_inventory`, `write_orders`.
 Backend during attempt: local `:4000` healthy (probe `/api/health` → `healthy`, DB ok); env left as found.
 No secrets appear in this report, the harness output, or any doc (token masked last-4-only in harness stdout; token never written to disk).
 
 ## Verdict: BLOCKED (no credentials — zero network calls, nothing created, nothing mutated)
 
-No Shopify credentials exist in this environment (verified: env shows no `SHOPIFY*`/`SHOP_*` entries). The harness asserted both
-`SHOPIFY_TEST_SHOP` and `SHOPIFY_TEST_TOKEN`, found both unset, recorded BLOCKED for all 12 steps, and exited 0 — never fail-open,
+No Shopify credentials exist in this environment (verified: env shows no `SHOPIFY*`/`SHOP_*` entries). The harness asserted
+`SHOPIFY_TEST_SHOP`, `SHOPIFY_TEST_CLIENT_ID` and `SHOPIFY_TEST_CLIENT_SECRET`, found them unset, recorded BLOCKED for all
+12 steps, and exited 0 — never fail-open,
 never called a real store. This matches the standing P9-evidence position (`LIVE-SMOKE-PENDING`, the single operator prerequisite).
 
 ## 12-step table (attempt of 2026-09-25)
 
 | # | Step | Verdict | Detail |
 |---|---|---|---|
-| 1 | testConnection (`GET shop.json`, Admin API `2024-01`) | BLOCKED | `SHOPIFY_TEST_SHOP`/`SHOPIFY_TEST_TOKEN` unset — no call made |
+| 1 | testConnection (token exchange + `GET shop.json`, Admin API `2026-07`) | BLOCKED | `SHOPIFY_TEST_SHOP`/`SHOPIFY_TEST_CLIENT_ID`/`SHOPIFY_TEST_CLIENT_SECRET` unset — no call made |
 | 2 | Product push (`TEST-` prefix, status draft) | BLOCKED | same — no artifact created |
 | 3 | SKU idempotency (client-side scan → PUT, never duplicate POST) | BLOCKED | same |
 | 4 | Media (image attach on TEST- product only) | BLOCKED | same |
@@ -49,7 +53,8 @@ on smoke PASS per the directive. Smoke is BLOCKED → vectors recorded **NOT-YET
 
 ## What unblocks this
 
-Operator supplies (out of band, never in docs/chat/logs): a Shopify **dev store** domain + a **custom-app Admin API token**
-(products read/write, orders read, fulfils as needed for step 9) → re-run `node .tmp-e2e/shopify-live-smoke.js` with
-`SHOPIFY_TEST_SHOP` / `SHOPIFY_TEST_TOKEN` set → expected PASS (or SKIP with reason on steps 5/9 if scopes are read-only) →
+Operator supplies (out of band, never in docs/chat/logs): a Shopify **dev store** domain + the Dev Dashboard app's **Client ID**
+and **Client Secret** (Client Credentials Grant; scopes `write_products`, `write_inventory`, `write_orders`; webhook HMAC uses the
+client secret) → re-run `node .tmp-e2e/shopify-live-smoke.js` with
+`SHOPIFY_TEST_SHOP` / `SHOPIFY_TEST_CLIENT_ID` / `SHOPIFY_TEST_CLIENT_SECRET` set → expected PASS (or SKIP with reason on steps 5/9 if scopes are read-only) →
 then P11-live-vectors RUN. Re-delete the script after the attempt; do not commit it.

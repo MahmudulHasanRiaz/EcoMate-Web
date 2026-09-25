@@ -651,7 +651,7 @@ describe('Bridge v1 conformance (P10)', () => {
       const posts = mock.calls.filter((c) => c.init?.method === 'POST');
       expect(posts).toHaveLength(1);
       expect(JSON.parse(String(posts[0]?.init?.body ?? '{}'))).toMatchObject({
-        url: 'https://api.example.test/api/webhooks/stores/custom',
+        url: 'https://api.example.test/api/webhooks/stores/custom/store-custom-1',
         topics: BRIDGE_WEBHOOK_TOPICS,
       });
       mock.calls.length = 0;

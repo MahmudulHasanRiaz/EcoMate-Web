@@ -467,7 +467,7 @@ export class WooCommerceProvider extends BaseCommerceProvider {
       await this.woo(store, 'POST', '/webhooks', {
         name: `EcoMate ${topic}`,
         topic,
-        delivery_url: `${callbackBaseUrl.replace(/\/+$/, '')}/api/webhooks/stores/woocommerce`,
+        delivery_url: `${callbackBaseUrl.replace(/\/+$/, '')}/api/webhooks/stores/woocommerce/${store.id}`,
       });
     }
     return { ok: true, topics };
