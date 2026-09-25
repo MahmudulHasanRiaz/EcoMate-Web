@@ -3844,6 +3844,14 @@ model Store {
   assignments ProductStoreAssignment[]
   availabilityRules StoreAvailabilityRule[]
   fieldStates ProductStoreFieldState[]
+  syncRuns SyncRun[]
+  issues StoreSyncIssue[]
+  webhookDeliveries StoreWebhookDelivery[]
+  productMappings StoreProductMapping[]
+  variantMappings StoreVariantMapping[]
+  categoryMappings StoreCategoryMapping[]
+  skuMappings StoreSkuMapping[]
+  mediaMappings StoreMediaMapping[]
 
   // §8.10: duplicate protection — one row per logical store.
   @@unique([kind, domainNormalised])
@@ -3968,4 +3976,239 @@ model ProductStoreFieldState {
 
   @@unique([storeId, productId, field])
   @@index([storeId, productId])
+}
+
+// ---------- Central Commerce — P4 Product sync (§8.1, §8.3, §8.8, §8.9, §8.11, §10) ----------
+// Additive only. Every external identity is store-scoped UNIQUE; every write
+// carries SyncRun + SyncRunItem/SyncAttempt; no automatic resolution (BR-26).
+
+enum SyncRunScope {
+  PRODUCT
+  STOCK
+  ORDER_INGEST
+  ORDER_PUSH
+  RECONCILE
+  MAINTENANCE
+  PUBLISH
+}
+
+enum SyncRunStatus {
+  RUNNING
+  SUCCESS
+  PARTIAL
+  FAILED
+  CANCELLED
+}
+
+enum SyncTriggerType {
+  MANUAL
+  SCHEDULED
+  WEBHOOK
+  RETRY
+  SYSTEM
+}
+
+enum SyncItemStatus {
+  PENDING
+  SUCCESS
+  SKIPPED
+  FAILED
+  DEAD
+}
+
+enum SyncObjectType {
+  PRODUCT
+  VARIANT
+  CATEGORY
+  MEDIA
+  ORDER
+  PUBLICATION
+  DELETION
+}
+
+enum SyncIssueStatus {
+  OPEN
+  RESOLVED
+  IGNORED
+}
+
+model SyncRun {
+  id             String         @id @default(uuid())
+  scope          SyncRunScope
+  status         SyncRunStatus  @default(RUNNING)
+  triggerType    SyncTriggerType @default(MANUAL)
+  storeId        String?
+  store          Store?         @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  initiatedById  String?
+  windowDays     Int?
+  wideningReason String?        @db.Text
+  createdCount   Int            @default(0)
+  updatedCount   Int            @default(0)
+  skippedCount   Int            @default(0)
+  failedCount    Int            @default(0)
+  totalCount     Int            @default(0)
+  correlationId  String?
+  errorCategory  String?
+  startedAt      DateTime       @default(now())
+  finishedAt     DateTime?
+  createdAt      DateTime       @default(now())
+
+  items    SyncRunItem[]
+  attempts SyncAttempt[]
+
+  @@index([storeId])
+  @@index([scope])
+  @@index([status])
+  @@index([startedAt])
+}
+
+model SyncRunItem {
+  id               String         @id @default(uuid())
+  runId            String
+  run              SyncRun        @relation(fields: [runId], references: [id], onDelete: Cascade)
+  storeId          String?
+  productId        String?
+  objectType       SyncObjectType
+  externalObjectId String?
+  status           SyncItemStatus @default(PENDING)
+  reason           String?        @db.Text
+  field            String?
+  auditLevel       String?        // F = field-level, G = group-level (§8.11)
+  durationMs       Int?
+  errorCategory    String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([runId])
+  @@index([storeId, productId])
+  @@index([status])
+}
+
+model SyncAttempt {
+  id            String         @id @default(uuid())
+  runId         String?
+  run           SyncRun?       @relation(fields: [runId], references: [id], onDelete: SetNull)
+  storeId       String?
+  objectType    SyncObjectType
+  objectKey     String         // store-scoped object identity (e.g. store:product:field)
+  productId     String?
+  field         String?
+  attemptNo     Int            @default(1)
+  status        SyncItemStatus @default(PENDING)
+  errorCategory String?
+  errorMessage  String?        @db.Text
+  nextRetryAt   DateTime?
+  createdAt     DateTime       @default(now())
+
+  @@index([storeId, objectKey])
+  @@index([runId])
+  @@index([createdAt])
+}
+
+/// Compact current-state row per broken object (BR-19: OPEN rows persist as
+/// state, never as retained attempt history).
+model StoreSyncIssue {
+  id            String          @id @default(uuid())
+  storeId       String
+  store         Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  code          String          // MISSING_SKU | SKU_MISMATCH | STOCK_VERIFY_FAILED | CATEGORY_UNSUPPORTED | MANUAL_ACTION_REQUIRED | EXTERNAL_DELETE_FAILED | STRUCTURAL_CHANGE_REQUIRES_ACTION | UNMATCHED_SKU | CAPABILITY_UNSUPPORTED | DEAD_LETTER | ...
+  objectType    SyncObjectType
+  objectKey     String
+  productId     String?
+  field         String?
+  message       String          @db.Text
+  status        SyncIssueStatus @default(OPEN)
+  occurrences   Int             @default(1)
+  firstSeenAt   DateTime        @default(now())
+  lastSeenAt    DateTime        @updatedAt
+  resolvedAt    DateTime?
+  resolveNote   String?         @db.Text
+
+  @@unique([storeId, code, objectKey])
+  @@index([storeId, status])
+  @@index([status])
+}
+
+model StoreWebhookDelivery {
+  id           String   @id @default(uuid())
+  storeId      String
+  store        Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  deliveryKey  String   @unique // sha256(storeId + provider delivery id) — §4.1
+  retryKey     String?  // separate execution identity for manual retries
+  topic        String?
+  occurrences  Int      @default(1)
+  firstSeenAt  DateTime @default(now())
+  lastSeenAt   DateTime @updatedAt
+
+  @@index([storeId])
+}
+
+model StoreProductMapping {
+  id         String   @id @default(uuid())
+  storeId    String
+  store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  productId  String
+  externalId String
+  externalUrl String?
+  lastEvaluatedVersion String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([storeId, productId])
+  @@index([storeId, externalId])
+  @@index([productId])
+}
+
+model StoreVariantMapping {
+  id         String   @id @default(uuid())
+  storeId    String
+  store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  productId  String
+  variantId  String
+  externalId String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([storeId, variantId])
+  @@index([storeId, productId])
+}
+
+model StoreCategoryMapping {
+  id            String   @id @default(uuid())
+  storeId       String
+  store         Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  categoryId    String
+  externalTermId String
+  externalPath  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([storeId, categoryId])
+  @@index([storeId, externalTermId])
+}
+
+model StoreSkuMapping {
+  id        String   @id @default(uuid())
+  storeId   String
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  sku       String
+  productId String?
+  variantId String?
+  lastVerifiedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([storeId, sku])
+  @@index([productId])
+}
+
+model StoreMediaMapping {
+  id         String   @id @default(uuid())
+  storeId    String
+  store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  mediaKey   String   // sourceUrl or content hash (ingest + hash/id reuse)
+  externalId String
+  createdAt  DateTime @default(now())
+
+  @@unique([storeId, mediaKey])
 }

@@ -14,6 +14,8 @@ export { ChannelStoreDetail } from './store-detail'
 export { StoreConnectDialog, StoreConnectPage } from './store-connect-dialog'
 export { ProductAvailability } from './product-availability'
 export { AvailabilityRules } from './availability-rules'
+export { SyncCenter, SyncRunDetail } from './sync-center'
+export { SyncOverrides } from './overrides'
 
 /**
  * Sales Channels overview (§11): health grid, last sync, active runs,

@@ -25,7 +25,9 @@ import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { StoresService } from './stores.service';
-import { storesEnabled } from './store-flags';
+import { SyncQueuesService } from './sync/sync-queues.service';
+import { ProviderRegistryService } from './providers/provider-registry.service';
+import { productSyncEnabled, storesEnabled } from './store-flags';
 import {
   CreateStoreDto,
   RotateStoreCredentialsDto,
@@ -37,7 +39,11 @@ import {
 @Controller('stores')
 @RequiresFeature('admin_stores')
 export class StoresController {
-  constructor(private readonly stores: StoresService) {}
+  constructor(
+    private readonly stores: StoresService,
+    private readonly queues: SyncQueuesService,
+    private readonly registry: ProviderRegistryService,
+  ) {}
 
   private assertEnabled(): void {
     if (!storesEnabled()) {
@@ -118,27 +124,32 @@ export class StoresController {
     return this.stores.health(id);
   }
 
-  /** P4: provider hook registration. P1 answers 501 explicitly. */
+  /** Provider hook registration (P4 live). */
   @Post(':id/webhooks/ensure')
   @Roles('superadmin', 'admin')
-  ensureWebhooks(@Param('id', ParseUUIDPipe) id: string) {
+  async ensureWebhooks(@Param('id', ParseUUIDPipe) id: string) {
     this.assertEnabled();
-    void id;
-    throw new ForbiddenException(
-      'Webhook provisioning lands with the sync engine (P4)',
-    );
+    const store = await this.stores.detail(id);
+    const provider = this.registry.providerFor({ kind: (store as any).kind });
+    const full = await this.stores.storeWithSecrets(id);
+    const base = String(process.env.PUBLIC_API_BASE_URL ?? '').replace(/\/+$/, '');
+    return provider.ensureWebhooks(full, base);
   }
 
-  /** P4: manual sync trigger (`{ scope } → { runId }`). P1: explicit 501. */
+  /** Manual sync trigger (`{ scope } → { runId }`, BR-21: returns now). */
   @Post(':id/sync')
   @Roles('superadmin', 'admin')
-  triggerSync(
+  async triggerSync(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { scope?: string },
+    @CurrentUser() user?: any,
   ) {
     this.assertEnabled();
-    void id;
-    void body;
-    throw new ForbiddenException('Manual sync lands with the sync engine (P4)');
+    if (!productSyncEnabled()) {
+      throw new ForbiddenException('Product sync is disabled');
+    }
+    await this.stores.detail(id);
+    const scope = (body.scope ?? 'PRODUCT') as 'PRODUCT' | 'PUBLISH';
+    return this.queues.triggerStoreSync(id, scope, user?.sub);
   }
 }

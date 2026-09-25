@@ -133,6 +133,7 @@ export const sidebarData: SidebarData = {
           items: [
             { title: 'Overview', url: '/op/channels', icon: LayoutDashboard },
             { title: 'Stores', url: '/op/channels/stores', icon: Store },
+            { title: 'Sync Center', url: '/op/channels/sync-center', icon: RefreshCw },
           ],
         },
         { title: 'Landing Pages', url: '/op/landing-pages', icon: FileText, feature: 'admin_landing_pages' },

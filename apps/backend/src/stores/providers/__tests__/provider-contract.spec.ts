@@ -553,15 +553,20 @@ describe('provider contract suite (P2 §13)', () => {
       expect(mock.calls).toHaveLength(0);
     });
 
-    it('faithful WooCommerce/Custom stubs reject loud (gate does not fire for faithful)', async () => {
+    it('WooCommerce P4: faithful publishStockState writes status-only (BR-06)', async () => {
+      const mock = new MockFetch();
+      mock.onAll(() => jsonResponse(200, { id: 55, stock_status: 'outofstock' }));
+      const woo = new WooCommerceProvider(mock.fetch);
       const store = buildStoreUnit('WOOCOMMERCE');
-      await expect(
-        new WooCommerceProvider().publishStockState(
-          store,
-          { providerId: 'woo-prod-1' },
-          'OUT_OF_STOCK',
-        ),
-      ).rejects.toThrow(/not implemented in P1/);
+      const res = await woo.publishStockState(store, { providerId: '55' }, 'OUT_OF_STOCK');
+      expect(res.ok).toBe(true);
+      expect(mock.calls).toHaveLength(1);
+      const body = JSON.parse(String(mock.calls[0]?.init?.body ?? '{}'));
+      expect(body).toEqual({ stock_status: 'outofstock' });
+      expect(JSON.stringify(body)).not.toMatch(/quantity/i);
+    });
+
+    it('Custom stub still rejects loud (P10 owns the bridge)', async () => {
       await expect(
         new CustomBridgeProvider().publishStockState(
           buildStoreUnit('CUSTOM'),
@@ -644,10 +649,23 @@ describe('provider contract suite (P2 §13)', () => {
       expect(empty.hasMore).toBe(false);
     });
 
-    it('real adapters stub fetchOrders loud in P2 (P6 owns ingest)', async () => {
-      const store = buildStoreUnit('WOOCOMMERCE');
+    it('WooCommerce P4: fetchOrders pages live (P6 owns ingest worker)', async () => {
+      const mock = new MockFetch();
+      mock.onAll(() => jsonResponse(200, [{ id: 1, status: 'processing' }]));
+      const woo = new WooCommerceProvider(mock.fetch);
+      const res = await woo.fetchOrders(buildStoreUnit('WOOCOMMERCE'), {
+        ...window,
+        page: 1,
+        pageSize: 10,
+      });
+      expect(res.orders).toHaveLength(1);
+      expect(mock.urls()[0]).toMatch(/\/orders\?/);
+    });
+
+    it('Shopify/Custom adapters stub fetchOrders loud in P2 (P6/P10 own ingest)', async () => {
+      const store = buildStoreUnit('SHOPIFY');
       await expect(
-        new WooCommerceProvider().fetchOrders(store, {
+        new ShopifyProvider().fetchOrders(store, {
           ...window,
           page: 1,
           pageSize: 10,
