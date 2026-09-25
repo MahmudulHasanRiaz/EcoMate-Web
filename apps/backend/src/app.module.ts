@@ -56,6 +56,7 @@ import { IpBlockMiddleware } from './common/middleware/ip-block.middleware';
 import { BlockedEntriesModule } from './blocked-entries/blocked-entries.module';
 import { BlockSettingsModule } from './block-settings/block-settings.module';
 import { MarketingModule } from './marketing/marketing.module';
+import { StoresModule } from './stores/stores.module';
 import { SecurityModule } from './security/security.module';
 import { SearchModule } from './search/search.module';
 import { LandingPagesModule } from './landing-pages/landing-pages.module';
@@ -148,6 +149,7 @@ import { SecurityDashboardModule } from './security-dashboard/security-dashboard
     BlockedEntriesModule,
     BlockSettingsModule,
     MarketingModule,
+    StoresModule,
     SecurityModule,
     SearchModule,
     LandingPagesModule,

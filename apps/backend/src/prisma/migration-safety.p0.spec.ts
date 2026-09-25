@@ -43,15 +43,16 @@ describe('P0 migration safety — additive migrations only (§16.1, §16.6)', ()
 
   it('no post-P0 migration rewrites a table (no DROP+CREATE pair)', () => {
     const dir = path.resolve(__dirname, '..', '..', 'prisma', 'migrations');
+    // NOTE (P1): jest `expect` takes one argument — the two-arg form threw
+    // unconditionally once a first gated migration existed. Collect-then-assert.
+    const offenders: string[] = [];
     for (const f of postP0Migrations(dir)) {
       const sql = fs.readFileSync(f, 'utf8');
       const drops = /DROP\s+TABLE/i.test(sql);
       const creates = /CREATE\s+TABLE/i.test(sql);
-      expect(
-        drops && creates,
-        `${f}: table rewrite detected`,
-      ).toBe(false);
+      if (drops && creates) offenders.push(f);
     }
+    expect(offenders).toEqual([]);
   });
 });
 

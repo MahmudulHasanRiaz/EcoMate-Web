@@ -3790,3 +3790,90 @@ model CommissionReversal {
   // Partial-unique (orderId non-null only) created in migration SQL.
   @@index([commissionEarningId])
 }
+
+// ---------- Central Commerce / Multi-Store — P1 Store foundation (§7, P1) ----------
+// BR-20: NATIVE is the native website surface, never a provider target.
+// BR-25: every new surface is double-gated (license feature + runtime flag).
+
+enum StoreKind {
+  NATIVE
+  WOOCOMMERCE
+  SHOPIFY
+  CUSTOM
+}
+
+enum StoreStatus {
+  PENDING
+  CONNECTED
+  DISCONNECTED
+  AUTH_FAILED
+  ATTENTION_REQUIRED
+}
+
+enum StoreHealthState {
+  HEALTHY
+  ATTENTION_REQUIRED
+  ERROR
+  DISCONNECTED
+}
+
+model Store {
+  id                  String       @id @default(uuid())
+  kind                StoreKind
+  name                String
+  domainNormalised    String?
+  identityFingerprint String?      @unique
+  providerStoreId     String?
+  status              StoreStatus  @default(PENDING)
+  healthState         StoreHealthState @default(DISCONNECTED)
+  autoSyncEnabled     Boolean      @default(true)
+  settings            Json?        @default("{}")
+  pluginVersion       String?
+  capabilities        Json?
+  lastSyncAt          DateTime?
+  lastHealthCheckAt   DateTime?
+  lastError           String?      @db.Text
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  credentials StoreCredential[]
+  healthChecks StoreHealthCheck[]
+
+  // §8.10: duplicate protection — one row per logical store.
+  @@unique([kind, domainNormalised])
+  @@index([kind])
+  @@index([status])
+}
+
+model StoreCredential {
+  id           String   @id @default(uuid())
+  storeId      String
+  store        Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  // AES-256-GCM ciphertext (EncryptionService). Write-only: never returned by any read.
+  credentialsEnc String  @db.Text
+  keyFingerprint String?
+  rotatedAt    DateTime @default(now())
+  rotatedById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([storeId])
+}
+
+model StoreHealthCheck {
+  id          String           @id @default(uuid())
+  storeId     String
+  store       Store            @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  state       StoreHealthState
+  // Probe reasons: ok | pending | hooks_broken | auth_error | store_down | unknown | disabled (§12).
+  reason      String?
+  reachable   Boolean          @default(false)
+  authenticated Boolean        @default(false)
+  permissionsOk Boolean        @default(false)
+  mediaReachable Boolean?
+  detail      Json?
+  checkedAt   DateTime         @default(now())
+
+  @@index([storeId])
+  @@index([checkedAt])
+}

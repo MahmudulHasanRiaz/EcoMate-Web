@@ -125,6 +125,15 @@ export const sidebarData: SidebarData = {
           ],
         },
         { title: 'Referrals', url: '/op/referrals', icon: UserPlus, feature: 'admin_referrals' },
+        {
+          title: 'Sales Channels',
+          icon: Store,
+          feature: 'admin_stores',
+          items: [
+            { title: 'Overview', url: '/op/channels', icon: LayoutDashboard },
+            { title: 'Stores', url: '/op/channels/stores', icon: Store },
+          ],
+        },
         { title: 'Landing Pages', url: '/op/landing-pages', icon: FileText, feature: 'admin_landing_pages' },
         { title: 'POS Terminal', url: '/pos', icon: Store, feature: 'pos_system' },
         { title: 'Blocked', url: '/op/blocked', icon: ShieldCheck, feature: 'admin_blocking' },
