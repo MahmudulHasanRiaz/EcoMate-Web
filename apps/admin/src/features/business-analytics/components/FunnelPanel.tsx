@@ -2,6 +2,7 @@ import { Filter } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatBDT, formatPct, type SalesFunnelStage } from '../types'
+import { HintTooltip } from './analytics-ui'
 
 /**
  * Sales funnel (P5, §8.7): supported stages mapped from real statuses carry
@@ -38,10 +39,15 @@ export function FunnelPanel({ stages }: { stages: SalesFunnelStage[] }) {
       </CardHeader>
       <CardContent>
         <div className="space-y-2.5">
-          {stages.map((s) => (
-            <div key={s.key} title={s.dateBasis ?? s.reason} data-testid={`funnel-stage-${s.key}`}>
+          {stages.map((s) => {
+            const hint = s.dateBasis ?? s.reason
+            return (
+            <div key={s.key} data-testid={`funnel-stage-${s.key}`}>
               <div className="flex items-center justify-between gap-2 text-sm">
-                <span className="font-medium min-w-0">{s.label}</span>
+                <span className="flex min-w-0 items-center gap-1">
+                  <span className="font-medium min-w-0">{s.label}</span>
+                  {hint ? <HintTooltip label={`About ${s.label}`} text={hint} compact /> : null}
+                </span>
                 {s.instrumented ? (
                   <span className="tabular-nums text-muted-foreground text-right shrink-0">
                     {s.orders} · {formatBDT(s.value ?? 0)}
@@ -64,7 +70,8 @@ export function FunnelPanel({ stages }: { stages: SalesFunnelStage[] }) {
                 <p className="mt-0.5 text-[11px] text-muted-foreground">{s.reason}</p>
               )}
             </div>
-          ))}
+            )
+          })}
         </div>
       </CardContent>
     </Card>

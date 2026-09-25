@@ -248,10 +248,11 @@ describe('UncostedFixList', () => {
 
 const productsMocks = vi.hoisted(() => ({
   products: undefined as unknown as ProductsResponse,
+  isLoading: false,
 }))
 
 vi.mock('@/features/business-analytics/hooks', () => ({
-  useAnalyticsProducts: () => ({ data: productsMocks.products, isLoading: false, error: undefined, refetch: () => {} }),
+  useAnalyticsProducts: () => ({ data: productsMocks.products, isLoading: productsMocks.isLoading, error: undefined, refetch: () => {} }),
   useAnalyticsProductDetail: () => ({ data: null, isLoading: false, error: undefined, refetch: () => {} }),
   useUncostedProducts: () => ({ data: null, isLoading: false, error: undefined }),
 }))
@@ -347,17 +348,28 @@ describe('PnlCell estimated wording (W2)', () => {
 })
 
 describe('products page (W2)', () => {
-  it('bands totals, controls, table in order with a single meta footer', async () => {
+  it('renders controls above the widget with totals and table inside, single meta footer', async () => {
     productsMocks.products = productsFixture()
+    productsMocks.isLoading = false
     const { container, getByText, getByTestId } = await renderWithClient(<ProductAnalytics />)
     await expect.element(getByText('Product Analytics', { exact: true })).toBeInTheDocument()
     await expect.element(getByTestId('product-totals')).toBeInTheDocument()
     await expect.element(getByTestId('product-table-controls')).toBeInTheDocument()
-    // Table-header-adjacent controls: totals → controls → table.
+    // Controls hoisted above WidgetShell (visible during loading/error):
+    // controls → totals → table.
     const html = container.innerHTML
-    expect(html.indexOf('product-totals')).toBeLessThan(html.indexOf('product-table-controls'))
-    expect(html.indexOf('product-table-controls')).toBeLessThan(html.indexOf('pnl-basis-legend'))
+    expect(html.indexOf('product-table-controls')).toBeLessThan(html.indexOf('product-totals'))
+    expect(html.indexOf('product-totals')).toBeLessThan(html.indexOf('pnl-basis-legend'))
     const text = container.textContent ?? ''
     expect((text.match(/Formula v9 ·/g) ?? []).length).toBe(1)
+  })
+
+  it('keeps search/sort controls visible during loading', async () => {
+    productsMocks.products = undefined as unknown as ProductsResponse
+    productsMocks.isLoading = true
+    const { getByTestId, getByRole } = await renderWithClient(<ProductAnalytics />)
+    await expect.element(getByTestId('product-table-controls')).toBeInTheDocument()
+    await expect.element(getByRole('textbox', { name: 'Search products' })).toBeInTheDocument()
+    productsMocks.isLoading = false
   })
 })

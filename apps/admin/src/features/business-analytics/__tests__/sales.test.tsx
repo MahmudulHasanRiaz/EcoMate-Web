@@ -89,6 +89,13 @@ describe('FunnelPanel', () => {
     await expect.element(getByText(/40 · ৳80,000/)).toBeInTheDocument()
     await expect.element(getByText(/75\.0% conv\./)).toBeInTheDocument()
   })
+
+  it('uses HintTooltip for date basis — never a native title', async () => {
+    const { container, getByRole } = await renderWithClient(<FunnelPanel stages={FUNNEL} />)
+    await expect.element(getByRole('button', { name: 'About Booked' })).toBeInTheDocument()
+    expect(container.querySelector('[data-testid^="funnel-stage-"][title]')).toBeNull()
+    expect(container.querySelector('[title]')).toBeNull()
+  })
 })
 
 // ─── Trend: three bases on one axis ──────────────────────────────────────────

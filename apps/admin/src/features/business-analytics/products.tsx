@@ -95,6 +95,37 @@ export default function ProductAnalytics() {
 
       <AnalyticsFilterBar value={filters} onChange={(n) => setFilters((f) => ({ ...f, ...n }))} />
 
+      <div className="flex flex-wrap gap-2" data-testid="product-table-controls">
+        <Input
+          placeholder="Search products…"
+          aria-label="Search products"
+          className="max-w-xs"
+          value={filters.search ?? ''}
+          onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value || undefined }))}
+        />
+        <Select value={filters.sort ?? 'netSales'} onValueChange={(v) => setFilters((f) => ({ ...f, sort: v as ProductAnalyticsFilters['sort'] }))}>
+          <SelectTrigger className="w-[180px] tap-h" aria-label="Sort products by">
+            <SelectValue placeholder="Sort by" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="netSales">Net Sales</SelectItem>
+            <SelectItem value="units">Units</SelectItem>
+            <SelectItem value="contribution">Contribution</SelectItem>
+            <SelectItem value="margin">Margin</SelectItem>
+            <SelectItem value="returnRate">Return Rate</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={filters.dir ?? 'desc'} onValueChange={(v) => setFilters((f) => ({ ...f, dir: v as 'asc' | 'desc' }))}>
+          <SelectTrigger className="w-[120px] tap-h" aria-label="Sort direction">
+            <SelectValue placeholder="Direction" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="desc">Desc</SelectItem>
+            <SelectItem value="asc">Asc</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
       <WidgetShell
         title="Products"
         isLoading={isLoading}
@@ -105,40 +136,7 @@ export default function ProductAnalytics() {
           <div className="space-y-6">
             <ProductTotalsBand totals={data.data.totals} formulaVersion={data.meta.formulaVersion} />
 
-            <div className="space-y-3">
-              <div className="flex flex-wrap gap-2" data-testid="product-table-controls">
-                <Input
-                  placeholder="Search products…"
-                  aria-label="Search products"
-                  className="max-w-xs"
-                  value={filters.search ?? ''}
-                  onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value || undefined }))}
-                />
-                <Select value={filters.sort ?? 'netSales'} onValueChange={(v) => setFilters((f) => ({ ...f, sort: v as ProductAnalyticsFilters['sort'] }))}>
-                  <SelectTrigger className="w-[180px] tap-h" aria-label="Sort products by">
-                    <SelectValue placeholder="Sort by" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="netSales">Net Sales</SelectItem>
-                    <SelectItem value="units">Units</SelectItem>
-                    <SelectItem value="contribution">Contribution</SelectItem>
-                    <SelectItem value="margin">Margin</SelectItem>
-                    <SelectItem value="returnRate">Return Rate</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select value={filters.dir ?? 'desc'} onValueChange={(v) => setFilters((f) => ({ ...f, dir: v as 'asc' | 'desc' }))}>
-                  <SelectTrigger className="w-[120px] tap-h" aria-label="Sort direction">
-                    <SelectValue placeholder="Direction" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="desc">Desc</SelectItem>
-                    <SelectItem value="asc">Asc</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <ProductPnlTable title="Product P&L — parent rows (parent = Σ variants)" rows={data.data.rows} detailHref={detailHref} />
-            </div>
+            <ProductPnlTable title="Product P&L — parent rows (parent = Σ variants)" rows={data.data.rows} detailHref={detailHref} />
 
             {showUncosted ? (
               uncosted.data ? (

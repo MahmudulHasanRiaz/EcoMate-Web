@@ -314,7 +314,7 @@ export default function CustomerAnalytics() {
                                 </td>
                                 <td className="py-2 pr-3 tabular-nums text-right">{r.lifetimeOrders}</td>
                                 <td className="py-2 pr-3 tabular-nums font-medium text-right">{formatBDT(r.lifetimeRevenue)}</td>
-                                <td className="py-2 pr-3 tabular-nums text-right text-xs text-muted-foreground">{r.rangeOrders} order(s) · {formatBDT(r.rangeRevenue)}</td>
+                                <td className="py-2 pr-3 tabular-nums text-right">{r.rangeOrders} order(s) · {formatBDT(r.rangeRevenue)}</td>
                                 <td className="py-2 pr-3">
                                   <a href={customerHistoryHref(r)} className="text-xs underline underline-offset-2">
                                     Order history
