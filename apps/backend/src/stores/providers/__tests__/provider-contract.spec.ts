@@ -662,10 +662,23 @@ describe('provider contract suite (P2 §13)', () => {
       expect(mock.urls()[0]).toMatch(/\/orders\?/);
     });
 
-    it('Shopify/Custom adapters stub fetchOrders loud in P2 (P6/P10 own ingest)', async () => {
-      const store = buildStoreUnit('SHOPIFY');
+    it('Shopify P9: fetchOrders pages live over REST (P6 owns ingest worker)', async () => {
+      const mock = new MockFetch();
+      mock.onAll(() => jsonResponse(200, { orders: [{ id: 5001, financial_status: 'pending' }] }));
+      const shopify = new ShopifyProvider(mock.fetch);
+      const res = await shopify.fetchOrders(buildStoreUnit('SHOPIFY'), {
+        ...window,
+        page: 1,
+        pageSize: 10,
+      });
+      expect(res.orders).toHaveLength(1);
+      expect(mock.urls()[0]).toMatch(/\/orders\.json\?/);
+    });
+
+    it('Custom adapter still stubs fetchOrders loud in P2 (P10 owns the bridge)', async () => {
+      const store = buildStoreUnit('CUSTOM');
       await expect(
-        new ShopifyProvider().fetchOrders(store, {
+        new CustomBridgeProvider().fetchOrders(store, {
           ...window,
           page: 1,
           pageSize: 10,

@@ -32,6 +32,14 @@ interface Props {
  * summary including stock fidelity and contact-check exposure,
  * duplicate-store warning) → initial sync policy (`adopt_existing`
  * default per BR-05) → scope.
+ *
+ * The middle auth step is per-provider; the dialog, steps and flow are
+ * identical — only the auth fields/labels switch by platform:
+ * - WooCommerce: store URL + consumer key/secret (Basic auth).
+ * - Shopify: shop domain + Admin API access token (custom-app token is the
+ *   phase-1 mechanism; the field shape is OAuth-ready for a later phase).
+ * - Custom: bridge endpoint URL + bridge key (bearer).
+ * Connection, availability and sync states stay separate (no merging).
  */
 export function StoreConnectDialog({ open, onOpenChange, onCreated }: Props) {
   const queryClient = useQueryClient()
@@ -50,7 +58,54 @@ export function StoreConnectDialog({ open, onOpenChange, onCreated }: Props) {
     setProbe(null); setCreatedId(null)
   }
 
-  const credentials = () => ({ consumerKey, consumerSecret });
+  const credentials = () => {
+    if (provider === 'SHOPIFY') {
+      return {
+        shop: domain.trim(),
+        accessToken: consumerKey,
+        ...(consumerSecret ? { webhookSecret: consumerSecret } : {}),
+      }
+    }
+    if (provider === 'CUSTOM') {
+      return {
+        baseUrl: domain.trim(),
+        bridgeKey: consumerKey,
+        ...(consumerSecret ? { webhookSecret: consumerSecret } : {}),
+      }
+    }
+    return { baseUrl: domain.trim(), consumerKey, consumerSecret }
+  };
+
+  const authCopy =
+    provider === 'SHOPIFY'
+      ? {
+          domainLabel: 'Shop domain',
+          domainPlaceholder: 'my-shop.myshopify.com',
+          keyLabel: 'Admin API access token',
+          keyPlaceholder: 'shpat_… (custom-app token)',
+          secretLabel: 'Webhook secret (optional)',
+          secretPlaceholder: 'Leave blank until webhooks are registered',
+          note: 'Custom-app token is the phase-1 mechanism. Stock on Shopify is monitor-only (BR-08) — EcoMate never writes stock there.',
+        }
+      : provider === 'CUSTOM'
+        ? {
+            domainLabel: 'Bridge endpoint URL',
+            domainPlaceholder: 'https://store.example.com',
+            keyLabel: 'Bridge key',
+            keyPlaceholder: 'Bearer key from the bridge manifest',
+            secretLabel: 'Webhook secret (optional)',
+            secretPlaceholder: 'Shared HMAC secret',
+            note: 'The bridge reports its capabilities via manifest (P10); status-only stock is the tested default path.',
+          }
+        : {
+            domainLabel: 'Store URL',
+            domainPlaceholder: 'https://shop.example.com',
+            keyLabel: 'Consumer key',
+            keyPlaceholder: '',
+            secretLabel: 'Consumer secret',
+            secretPlaceholder: '',
+            note: 'Credentials are encrypted at rest and write-only — they are never returned by any read.',
+          }
 
   async function handleCreate() {
     if (!name.trim()) { toast.error('Store name is required'); return }
@@ -119,24 +174,24 @@ export function StoreConnectDialog({ open, onOpenChange, onCreated }: Props) {
           </div>
           <div className="grid gap-2">
             <Label htmlFor="store-name">Store name</Label>
-            <Input id="store-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Dhaka flagship WooCommerce" />
+            <Input id="store-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Dhaka flagship store" />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="store-domain">Store URL or domain</Label>
-            <Input id="store-domain" value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="https://shop.example.com" />
+            <Label htmlFor="store-domain">{authCopy.domainLabel}</Label>
+            <Input id="store-domain" value={domain} onChange={(e) => setDomain(e.target.value)} placeholder={authCopy.domainPlaceholder} />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div className="grid gap-2">
-              <Label htmlFor="store-key">API key</Label>
-              <Input id="store-key" type="password" value={consumerKey} onChange={(e) => setConsumerKey(e.target.value)} autoComplete="off" />
+              <Label htmlFor="store-key">{authCopy.keyLabel}</Label>
+              <Input id="store-key" type="password" value={consumerKey} onChange={(e) => setConsumerKey(e.target.value)} autoComplete="off" placeholder={authCopy.keyPlaceholder} />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="store-secret">API secret</Label>
-              <Input id="store-secret" type="password" value={consumerSecret} onChange={(e) => setConsumerSecret(e.target.value)} autoComplete="off" />
+              <Label htmlFor="store-secret">{authCopy.secretLabel}</Label>
+              <Input id="store-secret" type="password" value={consumerSecret} onChange={(e) => setConsumerSecret(e.target.value)} autoComplete="off" placeholder={authCopy.secretPlaceholder} />
             </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            Credentials are encrypted at rest and write-only — they are never returned by any read.
+            {authCopy.note}
           </p>
 
           {probe && (

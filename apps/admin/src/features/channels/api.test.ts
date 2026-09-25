@@ -39,6 +39,28 @@ describe('channels API helpers (P1)', () => {
       expect(rows.some(r => r.includes('Dimensions'))).toBe(true)
     })
 
+    it('renders the Shopify P9 fidelity notice (monitor-only stock + dimensions, no cost row)', () => {
+      const shopifyCaps: ProviderCapabilities = {
+        ...baseCaps,
+        stockStatusFidelity: 'unsupported',
+        costPrice: true,
+        seo: true,
+        dimensions: false,
+        categoryModel: 'collection',
+        externalEditsDetectable: 'inferred',
+      }
+      const rows = capabilityNotices(shopifyCaps)
+      expect(rows.some(r => r.includes('monitor-only'))).toBe(true)
+      expect(rows.some(r => r.includes('BR-22'))).toBe(true)
+      expect(rows.some(r => r.includes('Dimensions'))).toBe(true)
+      // Cost HAS a native field on Shopify (inventory_item.cost) — no BR-23 row.
+      expect(rows.some(r => r.includes('Cost price'))).toBe(false)
+      // SEO is native on Shopify — no SEO plugin row (the inferred-provenance
+      // row may still mention the companion plugin).
+      expect(rows.some(r => r.includes('SEO fields need'))).toBe(false)
+      expect(rows.some(r => r.toLowerCase().includes('fail'))).toBe(false)
+    })
+
     it('handles null capabilities', () => {
       expect(capabilityNotices(null)).toEqual([])
       expect(capabilityNotices(undefined)).toEqual([])

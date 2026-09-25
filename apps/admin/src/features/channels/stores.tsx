@@ -63,7 +63,8 @@ export function ChannelsStores() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
-                  <TableHead>Provider</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Domain</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Health</TableHead>
                   <TableHead>Last sync</TableHead>
@@ -72,7 +73,7 @@ export function ChannelsStores() {
               </TableHeader>
               <TableBody>
                 {isLoading && (
-                  <TableRow><TableCell colSpan={6}><Loader2 className="h-4 w-4 animate-spin" /></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7}><Loader2 className="h-4 w-4 animate-spin" /></TableCell></TableRow>
                 )}
                 {(stores ?? []).filter(s => s.kind !== 'NATIVE').map((store) => (
                   <TableRow key={store.id}>
@@ -82,6 +83,7 @@ export function ChannelsStores() {
                       </Link>
                     </TableCell>
                     <TableCell>{store.kind}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{store.domainNormalised ?? '—'}</TableCell>
                     <TableCell><Badge>{store.status}</Badge></TableCell>
                     <TableCell><Badge variant={healthTone(store.healthState) as any}>{store.healthState}</Badge></TableCell>
                     <TableCell className="text-sm text-muted-foreground">{store.lastSyncAt ?? '—'}</TableCell>
@@ -91,7 +93,7 @@ export function ChannelsStores() {
                   </TableRow>
                 ))}
                 {!isLoading && (stores ?? []).filter(s => s.kind !== 'NATIVE').length === 0 && (
-                  <TableRow><TableCell colSpan={6} className="text-center text-sm text-muted-foreground">No external stores yet — connect the first one.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} className="text-center text-sm text-muted-foreground">No external stores yet — connect the first one.</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>
