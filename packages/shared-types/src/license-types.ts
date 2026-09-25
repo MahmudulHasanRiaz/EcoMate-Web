@@ -147,6 +147,13 @@ export const FEATURES: Record<string, FeatureFlag> = {
   s3_storage: { key: 's3_storage', enabled: true },
   db_backup: { key: 'db_backup', enabled: true },
   custom_domain: { key: 'custom_domain', enabled: true },
+
+  // ── P: Central Commerce / Multi-Store (5) — P0 foundation ──
+  admin_stores: { key: 'admin_stores', enabled: true, dependencies: ['admin_products', 'admin_orders'] },
+  store_product_sync: { key: 'store_product_sync', enabled: true, dependencies: ['admin_stores'] },
+  store_order_sync: { key: 'store_order_sync', enabled: true, dependencies: ['admin_stores'] },
+  store_stock_sync: { key: 'store_stock_sync', enabled: true, dependencies: ['admin_stores'] },
+  admin_sync_center: { key: 'admin_sync_center', enabled: true, dependencies: ['admin_stores'] },
 };
 
 export const FEATURE_KEYS = Object.keys(FEATURES);
@@ -178,4 +185,9 @@ export const DEPENDENCY_MAP: Record<string, string[]> = {
   mobile_distribution_pos: ['mobile_distribution'],
   admin_barcode_search: ['pos_system'],
   admin_order_import: ['admin_orders'],
+  admin_stores: ['admin_products', 'admin_orders'],
+  store_product_sync: ['admin_stores'],
+  store_order_sync: ['admin_stores'],
+  store_stock_sync: ['admin_stores'],
+  admin_sync_center: ['admin_stores'],
 };

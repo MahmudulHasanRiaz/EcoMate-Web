@@ -4,8 +4,8 @@ import { ClientConfig } from '../client-config';
 
 describe('shared-types', () => {
   describe('FEATURES', () => {
-    it('has 80 features', () => {
-      expect(Object.keys(FEATURES).length).toBe(80);
+    it('has 85 features (80 + 5 central-commerce P0)', () => {
+      expect(Object.keys(FEATURES).length).toBe(85);
     });
 
     it('has storefront and admin features', () => {
