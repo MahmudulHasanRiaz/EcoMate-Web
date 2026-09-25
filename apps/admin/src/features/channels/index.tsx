@@ -12,6 +12,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 export { ChannelsStores } from './stores'
 export { ChannelStoreDetail } from './store-detail'
 export { StoreConnectDialog, StoreConnectPage } from './store-connect-dialog'
+export { ProductAvailability } from './product-availability'
+export { AvailabilityRules } from './availability-rules'
 
 /**
  * Sales Channels overview (§11): health grid, last sync, active runs,

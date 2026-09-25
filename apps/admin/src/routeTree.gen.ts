@@ -119,6 +119,7 @@ import { Route as AuthenticatedOpPaymentsIndexRouteImport } from './routes/_auth
 import { Route as AuthenticatedOpPayrollIndexRouteImport } from './routes/_authenticated/op/payroll/index'
 import { Route as AuthenticatedOpProductsIndexRouteImport } from './routes/_authenticated/op/products/index'
 import { Route as AuthenticatedOpProductsIdRouteImport } from './routes/_authenticated/op/products/$id'
+import { Route as AuthenticatedOpProductsStoreAvailabilityRouteImport } from './routes/_authenticated/op/products/store-availability'
 import { Route as AuthenticatedOpPurchasesIndexRouteImport } from './routes/_authenticated/op/purchases/index'
 import { Route as AuthenticatedOpReferralsIndexRouteImport } from './routes/_authenticated/op/referrals/index'
 import { Route as AuthenticatedOpRefundsIndexRouteImport } from './routes/_authenticated/op/refunds/index'
@@ -147,6 +148,7 @@ import { Route as AuthenticatedMonSettingsPriceLabelIndexRouteImport } from './r
 import { Route as AuthenticatedMonSettingsShippingIndexRouteImport } from './routes/_authenticated/mon/settings/shipping/index'
 import { Route as AuthenticatedMonSettingsSmtpIndexRouteImport } from './routes/_authenticated/mon/settings/smtp/index'
 import { Route as AuthenticatedMonSettingsStorageIndexRouteImport } from './routes/_authenticated/mon/settings/storage/index'
+import { Route as AuthenticatedMonSettingsStoreAvailabilityIndexRouteImport } from './routes/_authenticated/mon/settings/store-availability/index'
 import { Route as AuthenticatedMonSettingsStorefrontIndexRouteImport } from './routes/_authenticated/mon/settings/storefront/index'
 import { Route as AuthenticatedMonSettingsSystemIndexRouteImport } from './routes/_authenticated/mon/settings/system/index'
 import { Route as AuthenticatedMonSettingsTrackingIndexRouteImport } from './routes/_authenticated/mon/settings/tracking/index'
@@ -811,6 +813,12 @@ const AuthenticatedOpProductsIdRoute =
     path: '/op/products/$id',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOpProductsStoreAvailabilityRoute =
+  AuthenticatedOpProductsStoreAvailabilityRouteImport.update({
+    id: '/op/products/store-availability',
+    path: '/op/products/store-availability',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpPurchasesIndexRoute =
   AuthenticatedOpPurchasesIndexRouteImport.update({
     id: '/op/purchases/',
@@ -977,6 +985,12 @@ const AuthenticatedMonSettingsStorageIndexRoute =
   AuthenticatedMonSettingsStorageIndexRouteImport.update({
     id: '/storage/',
     path: '/storage/',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
+const AuthenticatedMonSettingsStoreAvailabilityIndexRoute =
+  AuthenticatedMonSettingsStoreAvailabilityIndexRouteImport.update({
+    id: '/store-availability/',
+    path: '/store-availability/',
     getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
 const AuthenticatedMonSettingsStorefrontIndexRoute =
@@ -1225,6 +1239,7 @@ export interface FileRoutesByFullPath {
   '/op/orders/$id': typeof AuthenticatedOpOrdersIdRoute
   '/op/orders/create': typeof AuthenticatedOpOrdersCreateRoute
   '/op/products/$id': typeof AuthenticatedOpProductsIdRoute
+  '/op/products/store-availability': typeof AuthenticatedOpProductsStoreAvailabilityRoute
   '/hr/employees/': typeof AuthenticatedHrEmployeesIndexRoute
   '/hr/payroll/': typeof AuthenticatedHrPayrollIndexRoute
   '/hr/users/': typeof AuthenticatedHrUsersIndexRoute
@@ -1299,6 +1314,7 @@ export interface FileRoutesByFullPath {
   '/mon/settings/shipping/': typeof AuthenticatedMonSettingsShippingIndexRoute
   '/mon/settings/smtp/': typeof AuthenticatedMonSettingsSmtpIndexRoute
   '/mon/settings/storage/': typeof AuthenticatedMonSettingsStorageIndexRoute
+  '/mon/settings/store-availability/': typeof AuthenticatedMonSettingsStoreAvailabilityIndexRoute
   '/mon/settings/storefront/': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
   '/mon/settings/tracking/': typeof AuthenticatedMonSettingsTrackingIndexRoute
@@ -1393,6 +1409,7 @@ export interface FileRoutesByTo {
   '/op/orders/$id': typeof AuthenticatedOpOrdersIdRoute
   '/op/orders/create': typeof AuthenticatedOpOrdersCreateRoute
   '/op/products/$id': typeof AuthenticatedOpProductsIdRoute
+  '/op/products/store-availability': typeof AuthenticatedOpProductsStoreAvailabilityRoute
   '/hr/employees': typeof AuthenticatedHrEmployeesIndexRoute
   '/hr/payroll': typeof AuthenticatedHrPayrollIndexRoute
   '/hr/users': typeof AuthenticatedHrUsersIndexRoute
@@ -1467,6 +1484,7 @@ export interface FileRoutesByTo {
   '/mon/settings/shipping': typeof AuthenticatedMonSettingsShippingIndexRoute
   '/mon/settings/smtp': typeof AuthenticatedMonSettingsSmtpIndexRoute
   '/mon/settings/storage': typeof AuthenticatedMonSettingsStorageIndexRoute
+  '/mon/settings/store-availability': typeof AuthenticatedMonSettingsStoreAvailabilityIndexRoute
   '/mon/settings/storefront': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/mon/settings/system': typeof AuthenticatedMonSettingsSystemIndexRoute
   '/mon/settings/tracking': typeof AuthenticatedMonSettingsTrackingIndexRoute
@@ -1563,6 +1581,7 @@ export interface FileRoutesById {
   '/_authenticated/op/orders/$id': typeof AuthenticatedOpOrdersIdRoute
   '/_authenticated/op/orders/create': typeof AuthenticatedOpOrdersCreateRoute
   '/_authenticated/op/products/$id': typeof AuthenticatedOpProductsIdRoute
+  '/_authenticated/op/products/store-availability': typeof AuthenticatedOpProductsStoreAvailabilityRoute
   '/_authenticated/hr/employees/': typeof AuthenticatedHrEmployeesIndexRoute
   '/_authenticated/hr/payroll/': typeof AuthenticatedHrPayrollIndexRoute
   '/_authenticated/hr/users/': typeof AuthenticatedHrUsersIndexRoute
@@ -1637,6 +1656,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/settings/shipping/': typeof AuthenticatedMonSettingsShippingIndexRoute
   '/_authenticated/mon/settings/smtp/': typeof AuthenticatedMonSettingsSmtpIndexRoute
   '/_authenticated/mon/settings/storage/': typeof AuthenticatedMonSettingsStorageIndexRoute
+  '/_authenticated/mon/settings/store-availability/': typeof AuthenticatedMonSettingsStoreAvailabilityIndexRoute
   '/_authenticated/mon/settings/storefront/': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/_authenticated/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
   '/_authenticated/mon/settings/tracking/': typeof AuthenticatedMonSettingsTrackingIndexRoute
@@ -1733,6 +1753,7 @@ export interface FileRouteTypes {
     | '/op/orders/$id'
     | '/op/orders/create'
     | '/op/products/$id'
+    | '/op/products/store-availability'
     | '/hr/employees/'
     | '/hr/payroll/'
     | '/hr/users/'
@@ -1807,6 +1828,7 @@ export interface FileRouteTypes {
     | '/mon/settings/shipping/'
     | '/mon/settings/smtp/'
     | '/mon/settings/storage/'
+    | '/mon/settings/store-availability/'
     | '/mon/settings/storefront/'
     | '/mon/settings/system/'
     | '/mon/settings/tracking/'
@@ -1901,6 +1923,7 @@ export interface FileRouteTypes {
     | '/op/orders/$id'
     | '/op/orders/create'
     | '/op/products/$id'
+    | '/op/products/store-availability'
     | '/hr/employees'
     | '/hr/payroll'
     | '/hr/users'
@@ -1975,6 +1998,7 @@ export interface FileRouteTypes {
     | '/mon/settings/shipping'
     | '/mon/settings/smtp'
     | '/mon/settings/storage'
+    | '/mon/settings/store-availability'
     | '/mon/settings/storefront'
     | '/mon/settings/system'
     | '/mon/settings/tracking'
@@ -2070,6 +2094,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/orders/$id'
     | '/_authenticated/op/orders/create'
     | '/_authenticated/op/products/$id'
+    | '/_authenticated/op/products/store-availability'
     | '/_authenticated/hr/employees/'
     | '/_authenticated/hr/payroll/'
     | '/_authenticated/hr/users/'
@@ -2144,6 +2169,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/settings/shipping/'
     | '/_authenticated/mon/settings/smtp/'
     | '/_authenticated/mon/settings/storage/'
+    | '/_authenticated/mon/settings/store-availability/'
     | '/_authenticated/mon/settings/storefront/'
     | '/_authenticated/mon/settings/system/'
     | '/_authenticated/mon/settings/tracking/'
@@ -2956,6 +2982,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpProductsIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/op/products/store-availability': {
+      id: '/_authenticated/op/products/store-availability'
+      path: '/op/products/store-availability'
+      fullPath: '/op/products/store-availability'
+      preLoaderRoute: typeof AuthenticatedOpProductsStoreAvailabilityRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/purchases/': {
       id: '/_authenticated/op/purchases/'
       path: '/op/purchases'
@@ -3150,6 +3183,13 @@ declare module '@tanstack/react-router' {
       path: '/storage'
       fullPath: '/mon/settings/storage/'
       preLoaderRoute: typeof AuthenticatedMonSettingsStorageIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
+    '/_authenticated/mon/settings/store-availability/': {
+      id: '/_authenticated/mon/settings/store-availability/'
+      path: '/store-availability'
+      fullPath: '/mon/settings/store-availability/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsStoreAvailabilityIndexRouteImport
       parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
     '/_authenticated/mon/settings/storefront/': {
@@ -3375,6 +3415,7 @@ interface AuthenticatedMonSettingsRouteRouteChildren {
   AuthenticatedMonSettingsShippingIndexRoute: typeof AuthenticatedMonSettingsShippingIndexRoute
   AuthenticatedMonSettingsSmtpIndexRoute: typeof AuthenticatedMonSettingsSmtpIndexRoute
   AuthenticatedMonSettingsStorageIndexRoute: typeof AuthenticatedMonSettingsStorageIndexRoute
+  AuthenticatedMonSettingsStoreAvailabilityIndexRoute: typeof AuthenticatedMonSettingsStoreAvailabilityIndexRoute
   AuthenticatedMonSettingsStorefrontIndexRoute: typeof AuthenticatedMonSettingsStorefrontIndexRoute
   AuthenticatedMonSettingsSystemIndexRoute: typeof AuthenticatedMonSettingsSystemIndexRoute
   AuthenticatedMonSettingsTrackingIndexRoute: typeof AuthenticatedMonSettingsTrackingIndexRoute
@@ -3414,6 +3455,8 @@ const AuthenticatedMonSettingsRouteRouteChildren: AuthenticatedMonSettingsRouteR
       AuthenticatedMonSettingsSmtpIndexRoute,
     AuthenticatedMonSettingsStorageIndexRoute:
       AuthenticatedMonSettingsStorageIndexRoute,
+    AuthenticatedMonSettingsStoreAvailabilityIndexRoute:
+      AuthenticatedMonSettingsStoreAvailabilityIndexRoute,
     AuthenticatedMonSettingsStorefrontIndexRoute:
       AuthenticatedMonSettingsStorefrontIndexRoute,
     AuthenticatedMonSettingsSystemIndexRoute:
@@ -3537,6 +3580,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpOrdersIdRoute: typeof AuthenticatedOpOrdersIdRoute
   AuthenticatedOpOrdersCreateRoute: typeof AuthenticatedOpOrdersCreateRoute
   AuthenticatedOpProductsIdRoute: typeof AuthenticatedOpProductsIdRoute
+  AuthenticatedOpProductsStoreAvailabilityRoute: typeof AuthenticatedOpProductsStoreAvailabilityRoute
   AuthenticatedHrEmployeesIndexRoute: typeof AuthenticatedHrEmployeesIndexRoute
   AuthenticatedHrPayrollIndexRoute: typeof AuthenticatedHrPayrollIndexRoute
   AuthenticatedHrUsersIndexRoute: typeof AuthenticatedHrUsersIndexRoute
@@ -3690,6 +3734,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpOrdersIdRoute: AuthenticatedOpOrdersIdRoute,
   AuthenticatedOpOrdersCreateRoute: AuthenticatedOpOrdersCreateRoute,
   AuthenticatedOpProductsIdRoute: AuthenticatedOpProductsIdRoute,
+  AuthenticatedOpProductsStoreAvailabilityRoute:
+    AuthenticatedOpProductsStoreAvailabilityRoute,
   AuthenticatedHrEmployeesIndexRoute: AuthenticatedHrEmployeesIndexRoute,
   AuthenticatedHrPayrollIndexRoute: AuthenticatedHrPayrollIndexRoute,
   AuthenticatedHrUsersIndexRoute: AuthenticatedHrUsersIndexRoute,

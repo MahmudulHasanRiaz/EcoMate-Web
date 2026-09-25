@@ -361,6 +361,7 @@ model Category {
   children          Category[]        @relation("CategoryTree")
   products          Product[]         @relation("ProductCategory")
   productCategories ProductCategory[]
+  storeAvailabilityRules StoreAvailabilityRule[]
   combos            Combo[]
   sizeChartId       String?
   sizeChart         SizeChart?        @relation(fields: [sizeChartId], references: [id], onDelete: SetNull)
@@ -454,6 +455,8 @@ model Product {
   physicalLedgers          PhysicalInventoryLedger[]
   physicalReservations     PhysicalReservation[]
   orderItemComboComponents OrderItemComboComponent[]
+  storeAssignments ProductStoreAssignment[]
+  storeFieldStates ProductStoreFieldState[]
 
   @@index([isActive])
   @@index([categoryId])
@@ -3838,6 +3841,9 @@ model Store {
 
   credentials StoreCredential[]
   healthChecks StoreHealthCheck[]
+  assignments ProductStoreAssignment[]
+  availabilityRules StoreAvailabilityRule[]
+  fieldStates ProductStoreFieldState[]
 
   // §8.10: duplicate protection — one row per logical store.
   @@unique([kind, domainNormalised])
@@ -3876,4 +3882,90 @@ model StoreHealthCheck {
 
   @@index([storeId])
   @@index([checkedAt])
+}
+
+// ---------- Central Commerce / Multi-Store — P3 Distribution & ownership (§8.2, §8.3) ----------
+// Additive only. Assignment OFF/ON and rules NEVER write Product rows — the
+// storefront read path (isActive + status != draft) is untouched by design.
+
+enum StoreAssignmentSource {
+  MANUAL
+  RULE
+}
+
+enum FieldOwnership {
+  ECOMATE
+  EXTERNAL
+  CONFLICT
+}
+
+enum OwnershipEvidence {
+  PLUGIN
+  INFERRED
+}
+
+/// Per-product store override. source=MANUAL rows are the §8.2 `override`
+/// layer (override ?? rule ?? default). No NATIVE rows may exist (BR-20 —
+/// rejected 400 at the API, excluded from bulk).
+model ProductStoreAssignment {
+  id        String                @id @default(uuid())
+  storeId   String
+  store     Store                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
+  source    StoreAssignmentSource @default(MANUAL)
+  available Boolean               @default(true)
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+
+  @@unique([storeId, productId])
+  @@index([productId])
+  @@index([storeId])
+}
+
+/// Per-category availability rule for one external store. Resolution (§8.2):
+/// nearest category with a rule wins; a rule with inheritFromParent=false
+/// governs only its own category (walk continues upward); inheritFromParent
+/// =true (default) propagates down until a nearer own-value rule overrides.
+/// No NATIVE rows may exist (BR-20).
+model StoreAvailabilityRule {
+  id                String   @id @default(uuid())
+  storeId           String
+  store             Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  categoryId        String
+  category          Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  available         Boolean  @default(true)
+  inheritFromParent Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([storeId, categoryId])
+  @@index([storeId])
+  @@index([categoryId])
+}
+
+/// Per-(store, product, field) sync ownership state (§8.3). Written by the
+/// P4 sync engine; P3 owns the shape plus the pure decision function.
+/// baselineHash = hash EcoMate last pushed (or adopted at first contact,
+/// BR-05); ecoMateHashAtRebase anchors eco-change detection after an
+/// adopt/rebase so the next EcoMate edit pushes normally instead of
+/// freezing the field.
+model ProductStoreFieldState {
+  id                  String             @id @default(uuid())
+  storeId             String
+  store               Store              @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  productId           String
+  product             Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  field               String
+  ownership           FieldOwnership     @default(ECOMATE)
+  baselineHash        String?
+  externalHash        String?
+  ecoMateHashAtRebase String?
+  evidence            OwnershipEvidence?
+  lastPushedAt        DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@unique([storeId, productId, field])
+  @@index([storeId, productId])
 }

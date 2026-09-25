@@ -14,10 +14,21 @@ import { ProviderRegistryService } from './providers/provider-registry.service';
 import { WooCommerceProvider } from './providers/woocommerce.provider';
 import { ShopifyProvider } from './providers/shopify.provider';
 import { CustomBridgeProvider } from './providers/custom-bridge.provider';
+import { StoreAvailabilityService } from './distribution/store-availability.service';
+import { FieldOwnershipService } from './distribution/field-ownership.service';
+import { DistributionService } from './distribution/distribution.service';
+import {
+  ProductStoreAvailabilityController,
+  StoreAvailabilityRulesController,
+} from './distribution/distribution.controller';
 
 @Module({
   imports: [PrismaModule],
-  controllers: [StoresController],
+  controllers: [
+    StoresController,
+    ProductStoreAvailabilityController,
+    StoreAvailabilityRulesController,
+  ],
   providers: [
     StoresService,
     ProviderRegistryService,
@@ -25,7 +36,10 @@ import { CustomBridgeProvider } from './providers/custom-bridge.provider';
     ShopifyProvider,
     CustomBridgeProvider,
     EncryptionService,
+    StoreAvailabilityService,
+    FieldOwnershipService,
+    DistributionService,
   ],
-  exports: [StoresService, ProviderRegistryService],
+  exports: [StoresService, ProviderRegistryService, StoreAvailabilityService, DistributionService],
 })
 export class StoresModule {}

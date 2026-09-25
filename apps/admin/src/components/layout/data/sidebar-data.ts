@@ -29,6 +29,7 @@ export const sidebarData: SidebarData = {
           feature: 'admin_products',
           items: [
             { title: 'All Products', url: '/op/products' },
+            { title: 'Store Availability', url: '/op/products/store-availability', feature: 'admin_stores' },
             { title: 'Combos', url: '/op/combos', icon: Gift, feature: 'admin_combos' },
             { title: 'Categories', url: '/op/categories' },
             { title: 'Brands', url: '/op/brands', feature: 'admin_brands' },
