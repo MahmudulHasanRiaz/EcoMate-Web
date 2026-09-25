@@ -6,15 +6,16 @@
  * tree bases · drill params (marketing rows) · KpiValue states on the cost
  * line · query keys carry every filter.
  */
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render } from 'vitest-browser-react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import {
+import MarketingAnalytics, {
   AttributionMismatchNotice,
   CampaignTree,
   SpendDateBasisBanner,
   UndatedFixList,
 } from '../marketing'
+import { businessAnalyticsApi } from '../api'
 import { KpiCard } from '../components/KpiCard'
 import { DrilldownPanel } from '../components/DrilldownPanel'
 import {
@@ -34,6 +35,10 @@ function renderWithClient(ui: React.ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
 }
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 function kpi(over: Partial<KpiValue>): KpiValue {
   return { value: 500, state: 'ok', ...over }
@@ -60,12 +65,23 @@ const COST: MarketingCostBlock = {
 // ─── spend-date basis statements ─────────────────────────────────────────────
 
 describe('SpendDateBasisBanner', () => {
-  it('states the spend-date basis and the allocatedAt honesty note', async () => {
+  it('states the spend-date basis with the period summary', async () => {
     const { container, getByText } = await renderWithClient(<SpendDateBasisBanner cost={COST} />)
     await expect.element(getByText(/dated by spendDate only/)).toBeInTheDocument()
-    await expect.element(getByText(/never financial dates/)).toBeInTheDocument()
     await expect.element(getByText('৳500', { exact: true })).toBeInTheDocument()
     expect(container.querySelector('[data-testid="spend-date-basis"]')).not.toBeNull()
+  })
+
+  it('is a flattened section — no nested Card around the KpiCard', async () => {
+    const { container } = await renderWithClient(<SpendDateBasisBanner cost={COST} />)
+    const banner = container.querySelector('[data-testid="spend-date-basis"]')
+    expect(banner?.tagName).toBe('SECTION')
+    expect(banner?.querySelector('.chart-card')).toBeNull()
+  })
+
+  it('leaves the allocatedAt honesty note to the fix-list (single source)', async () => {
+    const { container } = await renderWithClient(<SpendDateBasisBanner cost={COST} />)
+    expect(container.textContent).not.toMatch(/allocatedAt/)
   })
 
   it('links the coverage badge to the undated fix-list', async () => {
@@ -152,6 +168,22 @@ describe('UndatedFixList', () => {
     )
     await expect.element(getByText(/Page 1 of 3 · 41 row\(s\)/)).toBeInTheDocument()
   })
+
+  it('states the allocatedAt honesty note exactly once (fix-list caption)', async () => {
+    const { container } = await renderWithClient(
+      <UndatedFixList data={UNDATED} page={1} onPage={() => {}} />,
+    )
+    expect(container.textContent?.match(/allocatedAt/g) ?? []).toHaveLength(1)
+  })
+
+  it('pages with real Buttons, never text-buttons', async () => {
+    const { container, getByRole } = await renderWithClient(
+      <UndatedFixList data={{ ...UNDATED, total: 41, totalPages: 3 }} page={1} onPage={() => {}} />,
+    )
+    expect(container.querySelector('[data-testid="undated-pager"]')).not.toBeNull()
+    await expect.element(getByRole('button', { name: 'Prev' })).toBeInTheDocument()
+    await expect.element(getByRole('button', { name: 'Next' })).toBeInTheDocument()
+  })
 })
 
 // ─── expected-mismatch disclosure (§8.13) ────────────────────────────────────
@@ -211,7 +243,8 @@ describe('CampaignTree', () => {
     const { container, getByText } = await renderWithClient(<CampaignTree campaigns={TREE} />)
     await expect.element(getByText('Camp One', { exact: true })).toBeInTheDocument()
     await expect.element(getByText('Set One', { exact: true })).toBeInTheDocument()
-    await expect.element(getByText('Ad One', { exact: true })).toBeInTheDocument()
+    // Ad nodes live inside collapsed <details> — assert via the DOM node.
+    expect(container.textContent).toMatch(/Ad One/)
     expect(container.querySelector('[data-testid="campaign-node-c1"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="adset-node-s1"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="ad-node-ad1"]')).not.toBeNull()
@@ -219,6 +252,16 @@ describe('CampaignTree', () => {
     expect(container.textContent).toMatch(/attribution intake basis/)
     expect(container.textContent).toMatch(/spendDate only/)
     expect(container.querySelector('[data-testid="platform-facebook"]')).not.toBeNull()
+  })
+
+  it('collapses ad sets by default (details closed, campaigns flattened)', async () => {
+    const { container } = await renderWithClient(<CampaignTree campaigns={TREE} />)
+    const adset = container.querySelector('[data-testid="adset-node-s1"]')
+    expect(adset?.tagName).toBe('DETAILS')
+    expect(adset?.hasAttribute('open')).toBe(false)
+    // No nested Card boxes: campaigns are flat sections.
+    expect(container.querySelector('[data-testid="campaign-node-c1"]')?.tagName).toBe('SECTION')
+    expect(container.querySelector('[data-testid="campaign-tree"] .chart-card')).toBeNull()
   })
 })
 
@@ -241,6 +284,86 @@ describe('marketing drill-down params', () => {
     expect(href).toMatch(/preset=last_30_days/)
   })
 })
+
+// ─── page story: Spend → Revenue → Efficiency, one footer ───────────────────
+
+describe('marketing page story', () => {
+  function stubMarketingApi() {
+    const meta = {
+      formulaVersion: 'analytics-p2/1.0',
+      dataAsOf: '2026-09-21T00:00:00.000Z',
+      dateBasis: 'spendDate only',
+      ladderState: 'actual',
+      range: { periodDays: 30 },
+    } as any
+    const summary = {
+      cost: COST,
+      sources: {
+        rows: [{ key: 'facebook', label: 'Facebook', orders: 2, revenue: 1250 }],
+        unattributed: { orders: 0, revenue: 0 },
+        dateBasis: 'attribution intake basis',
+      },
+      channels: { rows: [], dateBasis: 'attribution intake basis' },
+      segments: {
+        newOrders: 1,
+        newRevenue: 500,
+        returningOrders: 1,
+        returningRevenue: 750,
+        vipOrders: 0,
+        vipRevenue: 0,
+        dateBasis: 'attribution intake basis',
+      },
+      unrecognisedSpend: {
+        amount: 0,
+        allocations: 0,
+        orders: 0,
+        rows: [],
+        note: '',
+        dateBasis: 'spendDate only',
+      },
+      attributionDisclosure: 'A period-by-period mismatch against P&L is expected by design.',
+    }
+    vi.spyOn(businessAnalyticsApi, 'getMarketingSummary').mockResolvedValue({
+      data: { data: summary, meta },
+    } as any)
+    vi.spyOn(businessAnalyticsApi, 'getMarketingCampaigns').mockResolvedValue({
+      data: { data: { campaigns: [], disclosure: '' }, meta },
+    } as any)
+    vi.spyOn(businessAnalyticsApi, 'getMarketingUndated').mockResolvedValue({
+      data: { data: UNDATED, meta },
+    } as any)
+  }
+
+  it('leads Spend → Revenue → Efficiency in the first viewport', async () => {
+    stubMarketingApi()
+    const { container } = await renderWithClient(<MarketingAnalytics />)
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="spend-date-basis"]')).not.toBeNull(),
+    )
+    const html = container.innerHTML
+    const order = [
+      'spend-date-basis',
+      'source-table',
+      'segment-split',
+      'unrecognised-spend',
+    ].map((t) => html.indexOf(`data-testid="${t}"`))
+    expect(order.every((i) => i >= 0)).toBe(true)
+    expect([...order].sort((a, b) => a - b)).toEqual(order)
+  })
+
+  it('renders a single metadata footer and a single set of fix actions', async () => {
+    stubMarketingApi()
+    const { container } = await renderWithClient(<MarketingAnalytics />)
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="undated-fixlist"]')).not.toBeNull(),
+    )
+    expect(container.textContent?.match(/Formula /g) ?? []).toHaveLength(1)
+    expect(
+      container.querySelectorAll('[data-testid^="fix-action-"]'),
+    ).toHaveLength(UNDATED.fixActions.length)
+  })
+})
+
 
 // ─── query keys ──────────────────────────────────────────────────────────────
 

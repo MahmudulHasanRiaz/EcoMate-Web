@@ -8,15 +8,18 @@
  */
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render } from 'vitest-browser-react'
+import { userEvent } from 'vitest/browser'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   AgingTable,
+  InventoryLedgerSection,
   LostSalesCard,
   MovementTable,
   TurnoverCards,
   ValueBasisBanner,
   inventoryLedgerHref,
   resolveInventoryDrill,
+  resolveLedgerNames,
 } from '../inventory'
 import InventoryAnalytics from '../inventory'
 import { businessAnalyticsApi } from '../api'
@@ -128,22 +131,32 @@ function stockoutsData(over: Partial<InventoryStockoutsData> = {}): InventorySto
 // ─── closing_only disclosure ─────────────────────────────────────────────────
 
 describe('ValueBasisBanner', () => {
-  it('states the reconstruction basis with reconstructedAt and periodDays', async () => {
-    const { container, getByText } = await renderWithClient(<ValueBasisBanner value={valueData()} />)
+  it('states the reconstruction basis with coverage in disclosure', async () => {
+    const { container, getByText, getByRole, getByTestId } = await renderWithClient(<ValueBasisBanner value={valueData()} />)
     expect(container.querySelector('[data-testid="value-basis"]')).not.toBeNull()
     await expect.element(getByText('reconstructed', { exact: true })).toBeInTheDocument()
-    expect(container.textContent).toMatch(/Reconstructed at 2026-09-21/)
-    expect(container.textContent).toMatch(/Period 30 day\(s\)/)
+    await userEvent.click(getByRole('button', { name: 'About inventory coverage' }))
+    await expect.element(getByTestId('value-coverage')).toHaveTextContent(/Reconstructed at 2026-09-21/)
+    await expect.element(getByTestId('value-coverage')).toHaveTextContent(/Period 30 day\(s\)/)
   })
 
-  it('discloses closing_only with the fallback note', async () => {
+  it('is a flattened section — no nested Card around the value KpiCards', async () => {
+    const { container } = await renderWithClient(<ValueBasisBanner value={valueData()} />)
+    const banner = container.querySelector('[data-testid="value-basis"]')
+    expect(banner?.tagName).toBe('SECTION')
+    expect(banner?.querySelector('.chart-card')).toBeNull()
+  })
+
+  it('announces closing_only with a compact alert, silent otherwise', async () => {
     const { container } = await renderWithClient(
       <ValueBasisBanner
         value={valueData({ basis: 'closing_only', basisNote: INVENTORY_CLOSING_ONLY_NOTE })}
       />,
     )
-    expect(container.querySelector('[data-testid="closing-only-note"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="closing-only-note"]')?.getAttribute('role')).toBe('alert')
     expect(container.textContent).toMatch(/closing-only basis/)
+    const clean = await renderWithClient(<ValueBasisBanner value={valueData()} />)
+    expect(clean.container.querySelector('[data-testid="closing-only-note"]')).toBeNull()
   })
 
   it('renders an unavailable opening as honesty, never ৳0', async () => {
@@ -192,12 +205,14 @@ describe('TurnoverCards', () => {
 // ─── movement policy label + drill params ────────────────────────────────────
 
 describe('MovementTable', () => {
-  it('labels the default 30/90-day policy with the rationale tooltip', async () => {
-    const { container } = await renderWithClient(<MovementTable data={movementData()} />)
+  it('labels the default 30/90-day policy with a tap-friendly rationale disclosure', async () => {
+    const { container, getByRole, getByTestId } = await renderWithClient(<MovementTable data={movementData()} />)
     const policy = container.querySelector('[data-testid="movement-policy"]')
     expect(policy).not.toBeNull()
     expect(policy?.textContent).toContain(MOVEMENT_POLICY_LABEL)
-    expect(policy?.getAttribute('title')).toBe('Default 30/90-day policy rationale')
+    expect(policy?.querySelector('[title]')).toBeNull()
+    await userEvent.click(getByRole('button', { name: 'About movement policy' }))
+    await expect.element(getByTestId('movement-policy-notes')).toHaveTextContent(/Default 30\/90-day policy rationale/)
   })
 
   it('drill links carry productId and variantId to the ledger view', async () => {
@@ -311,6 +326,53 @@ describe('resolveInventoryDrill', () => {
   })
 })
 
+describe('resolveLedgerNames', () => {
+  it('maps product|variant to the movement-row name', () => {
+    expect(resolveLedgerNames([{ productId: 'p1', variantId: 'v1', name: 'Jar' }])).toEqual({
+      'p1|v1': 'Jar',
+    })
+    expect(resolveLedgerNames([])).toEqual({})
+  })
+})
+
+describe('InventoryLedgerSection focus note', () => {
+  function ledgerData(): InventoryLedgerData {
+    return {
+      periodDays: 30,
+      rows: [],
+      total: 0,
+      page: 1,
+      pageSize: 20,
+      totalPages: 1,
+      dateBasis: 'Ledger entry date',
+    }
+  }
+
+  it('names the drill product from the movement rows, not the raw id', async () => {
+    const { container } = await renderWithClient(
+      <InventoryLedgerSection
+        data={ledgerData()}
+        focus
+        productId="p1"
+        variantId="v1"
+        names={{ 'p1|v1': 'Jar' }}
+      />,
+    )
+    const note = container.querySelector('[data-testid="ledger-focus-note"]')?.textContent ?? ''
+    expect(note).toContain('Jar')
+    expect(note).not.toContain('product p1')
+  })
+
+  it('falls back to the raw id when the product has no movement row', async () => {
+    const { container } = await renderWithClient(
+      <InventoryLedgerSection data={ledgerData()} focus productId="p9" />,
+    )
+    expect(
+      container.querySelector('[data-testid="ledger-focus-note"]')?.textContent,
+    ).toContain('product p9')
+  })
+})
+
 describe('inventory drill landing effect', () => {
   function ledgerData(): InventoryLedgerData {
     return {
@@ -358,7 +420,11 @@ describe('inventory drill landing effect', () => {
     )
     const section = container.querySelector('[data-testid="ledger-section"]')
     expect(section?.getAttribute('data-focus')).toBe('true')
-    expect(container.querySelector('[data-testid="ledger-focus-note"]')?.textContent).toContain('p1')
+    // Movement rows name p1/v1 "Jar" — the note shows the name, not the raw id.
+    const note = container.querySelector('[data-testid="ledger-focus-note"]')?.textContent ?? ''
+    expect(note).toContain('Jar')
+    expect(note).toContain('v1')
+    expect(note).not.toContain('product p1')
   })
 
   it('bare product params focus and filter the ledger without an explicit view', async () => {
@@ -382,6 +448,15 @@ describe('inventory drill landing effect', () => {
     )
     expect(container.querySelector('[data-testid="ledger-section"]')?.getAttribute('data-focus')).toBe('false')
     expect(container.querySelector('[data-testid="ledger-focus-note"]')).toBeNull()
+  })
+
+  it('renders a single metadata footer (no WidgetShell duplication)', async () => {
+    stubInventoryApi()
+    const { container } = await renderWithClient(<InventoryAnalytics initialSearch={{}} />)
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="ledger-section"]')).not.toBeNull(),
+    )
+    expect(container.textContent?.match(/Formula /g) ?? []).toHaveLength(1)
   })
 })
 

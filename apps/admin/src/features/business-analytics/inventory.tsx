@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useRef, useState, type Ref } from 'react'
+import { useEffect, useMemo, useRef, useState, type Ref } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Info, Package } from 'lucide-react'
+import { AlertTriangle, Package } from 'lucide-react'
 import { riseStyle, type StatusTone } from '@/components/ui/dashboard'
 import { apiClient } from '@/lib/api-client'
 import { WidgetShell } from '../dashboard/components/WidgetShell'
@@ -33,6 +34,7 @@ import {
   type KpiValue,
 } from './types'
 import { AnalyticsFilterBar } from './components/AnalyticsFilterBar'
+import { AnalyticsPageHeader, EmptyState, InfoDisclosure, MetricMetaFooter } from './components/analytics-ui'
 import { KpiCard } from './components/KpiCard'
 import { DataCoverageBadge } from './components/badges'
 import { DrilldownPanel, type DrilldownItem } from './components/DrilldownPanel'
@@ -100,12 +102,29 @@ export function readInventoryDrillSearch(): InventoryDrillSearch {
   }
 }
 
+/**
+ * Product names for the ledger focus note, resolved from the movement rows
+ * already on the page (pure so the id → name resolution is unit-testable).
+ * Keyed `${productId}|${variantId ?? ''}`.
+ */
+export function resolveLedgerNames(
+  rows: { productId: string; variantId: string | null; name: string }[],
+): Record<string, string> {
+  const map: Record<string, string> = {}
+  for (const r of rows) map[`${r.productId}|${r.variantId ?? ''}`] = r.name
+  return map
+}
+
 interface WarehouseOption {
   id: string
   name: string
 }
 
-/** Warehouse scope for inventory pages (§4.1 — fulfillment location). */
+/**
+ * Warehouse scope for inventory pages (§4.1 — fulfillment location). W3: the
+ * shadcn Select idiom (never a native select), rendered in the filter row
+ * below the page header so the header never squeezes at 360px.
+ */
 export function InventoryWarehouseScope({
   value,
   onChange,
@@ -120,115 +139,131 @@ export function InventoryWarehouseScope({
   })
   const options = (Array.isArray(data) ? data : []) as WarehouseOption[]
   return (
-    <label className="flex items-center gap-2 text-xs text-muted-foreground">
-      Warehouse
-      <select
-        aria-label="Warehouse scope"
-        className="tap-h rounded-lg border border-border/50 bg-background px-2 text-xs"
-        value={value.warehouseId ?? ''}
-        onChange={(e) => onChange({ ...value, warehouseId: e.target.value || undefined })}
-        data-testid="warehouse-scope"
+    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <span id="warehouse-scope-label">Warehouse</span>
+      <Select
+        value={value.warehouseId ?? '__all'}
+        onValueChange={(v) => onChange({ ...value, warehouseId: v === '__all' ? undefined : v })}
       >
-        <option value="">All warehouses</option>
-        {options.map((w) => (
-          <option key={w.id} value={w.id}>
-            {w.name}
-          </option>
-        ))}
-      </select>
-    </label>
-  )
-}
-
-/** §2.8 value panel: reconstructed open/close/average with basis honesty. */
-export function ValueBasisBanner({ value }: { value: InventoryValueData }) {
-  const closingOnly = value.basis === 'closing_only'
-  return (
-    <Card data-testid="value-basis" className="chart-card rounded-2xl">
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <CardTitle className="text-sm font-medium">Inventory Value — reconstructed</CardTitle>
-          <span className="flex gap-2">
-            <DataCoverageBadge
-              missing={closingOnly ? 1 : 0}
-              label="History gap"
-              title="Reconstruction diverged from the FIFO valuation — closing-only basis"
-            />
-            <Badge variant="info">{value.basis === 'closing_only' ? 'closing_only' : 'reconstructed'}</Badge>
-          </span>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <p className="text-xs text-muted-foreground">{value.basisStatement || INVENTORY_VALUE_BASIS_STATEMENT}</p>
-        {closingOnly ? (
-          <p className="text-xs text-warning border border-warning/30 bg-warning-soft rounded-md px-2 py-1.5" data-testid="closing-only-note">
-            {value.basisNote || INVENTORY_CLOSING_ONLY_NOTE}
-          </p>
-        ) : null}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 animate-rise" style={riseStyle(0)}>
-          <KpiCard title="Opening value" kpi={value.value.opening} />
-          <KpiCard title="Closing value" kpi={value.value.closing} />
-          <KpiCard title="Average value" kpi={value.value.average} />
-        </div>
-        <p className="text-[11px] text-muted-foreground tabular-nums">
-          Reconstructed at {value.reconstructedAt} · {COUNT_FORMAT(value.coverage.lots)} lot(s) ·{' '}
-          {COUNT_FORMAT(value.coverage.products)} product(s)
-          {value.coverage.inactiveExcluded > 0 ? ` · ${value.coverage.inactiveExcluded} inactive lot(s) excluded` : null} ·{' '}
-          Period {value.periodDays} day(s)
-        </p>
-      </CardContent>
-    </Card>
-  )
-}
-
-/** Turnover / DOI / sell-through summary (COGS from the P2 recognised cohort). */
-export function TurnoverCards({ value }: { value: InventoryValueData }) {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-rise" style={riseStyle(1)} data-testid="turnover-cards">
-      <KpiCard title="Stock turnover (COGS ÷ avg)" kpi={value.turnover} format={RATIO_FORMAT} />
-      <KpiCard title="Days of inventory" kpi={value.doi} format={DAYS_FORMAT} />
+        <SelectTrigger
+          className="tap-h h-10 w-44 cursor-pointer text-xs"
+          aria-labelledby="warehouse-scope-label"
+          data-testid="warehouse-scope"
+        >
+          <SelectValue placeholder="All warehouses" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__all">All warehouses</SelectItem>
+          {options.map((w) => (
+            <SelectItem key={w.id} value={w.id}>
+              {w.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   )
 }
 
-/** Movement table with the default-policy label + rationale tooltip. */
+/**
+ * §2.8 value panel (W3): a section, never a Card nesting KpiCards. The
+ * closing-only warning is a compact role=alert shown only on closing_only;
+ * coverage counts live in disclosure, never a caption.
+ */
+export function ValueBasisBanner({ value, formulaVersion }: { value: InventoryValueData; formulaVersion?: string }) {
+  const closingOnly = value.basis === 'closing_only'
+  return (
+    <section aria-label="Inventory Value — reconstructed" data-testid="value-basis" className="space-y-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h2 className="text-sm font-semibold">Inventory Value — reconstructed</h2>
+        <span className="flex gap-2">
+          <DataCoverageBadge
+            missing={closingOnly ? 1 : 0}
+            label="History gap"
+            title="Reconstruction diverged from the FIFO valuation — closing-only basis"
+          />
+          <Badge variant="info">{value.basis === 'closing_only' ? 'closing_only' : 'reconstructed'}</Badge>
+        </span>
+      </div>
+      <p className="text-xs text-muted-foreground">{value.basisStatement || INVENTORY_VALUE_BASIS_STATEMENT}</p>
+      {closingOnly ? (
+        <div role="alert" className="flex gap-2 rounded-xl border border-warning/30 bg-warning-soft p-3 text-xs text-warning" data-testid="closing-only-note">
+          <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
+          <span>{value.basisNote || INVENTORY_CLOSING_ONLY_NOTE}</span>
+        </div>
+      ) : null}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 animate-rise" style={riseStyle(0)}>
+        <KpiCard title="Opening value" kpi={value.value.opening} formulaVersion={formulaVersion} animate={false} />
+        <KpiCard title="Closing value" kpi={value.value.closing} formulaVersion={formulaVersion} animate={false} />
+        <KpiCard title="Average value" kpi={value.value.average} formulaVersion={formulaVersion} animate={false} />
+      </div>
+      <InfoDisclosure
+        label="About inventory coverage"
+        lines={[
+          `Reconstructed at ${value.reconstructedAt}`,
+          `${COUNT_FORMAT(value.coverage.lots)} lot(s) · ${COUNT_FORMAT(value.coverage.products)} product(s)${value.coverage.inactiveExcluded > 0 ? ` · ${value.coverage.inactiveExcluded} inactive lot(s) excluded` : ''}`,
+          `Period ${value.periodDays} day(s)`,
+        ]}
+        contentTestId="value-coverage"
+      />
+    </section>
+  )
+}
+
+/** Turnover / DOI / sell-through summary (COGS from the P2 recognised cohort). */
+export function TurnoverCards({ value, formulaVersion }: { value: InventoryValueData; formulaVersion?: string }) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-rise" style={riseStyle(1)} data-testid="turnover-cards">
+      <KpiCard title="Stock turnover (COGS ÷ avg)" kpi={value.turnover} format={RATIO_FORMAT} formulaVersion={formulaVersion} animate={false} />
+      <KpiCard title="Days of inventory" kpi={value.doi} format={DAYS_FORMAT} formulaVersion={formulaVersion} animate={false} />
+    </div>
+  )
+}
+
+/**
+ * Movement table (W3): the default-policy label stays visible; the rationale
+ * moved from a hover-only title into a tap-friendly disclosure. Per-row
+ * variant ids are quiet sublines; the class Badge carries no title (the
+ * class word itself is the indicator, colour never sole).
+ */
 export function MovementTable({ data }: { data: InventoryMovementData }) {
   return (
     <Card data-testid="movement-table" className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <CardTitle className="text-sm font-medium">Movement Classes</CardTitle>
-          <span
-            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"
-            title={data.policyRationale}
-            data-testid="movement-policy"
-          >
-            <Info className="h-3.5 w-3.5" />
+          <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground" data-testid="movement-policy">
             {data.policyLabel || MOVEMENT_POLICY_LABEL}
+            <InfoDisclosure
+              label="About movement policy"
+              lines={[data.policyLabel || MOVEMENT_POLICY_LABEL, data.policyRationale]}
+              contentTestId="movement-policy-notes"
+              compact
+            />
           </span>
         </div>
       </CardHeader>
       <CardContent>
         {data.rows.length === 0 ? (
-          <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">No data</div>
+          <EmptyState />
         ) : (
           <div className="overflow-x-auto">
             <table className="dash-table w-full text-sm">
               <thead>
                 <tr className="text-left text-xs text-muted-foreground">
-                  <th className="py-2 pr-3 font-medium">Product</th>
+                  <th className="py-2 pr-3 font-medium sticky left-0 bg-card z-10">Product</th>
                   <th className="py-2 pr-3 font-medium">Class</th>
-                  <th className="py-2 pr-3 font-medium">Sold</th>
-                  <th className="py-2 pr-3 font-medium">Closing</th>
-                  <th className="py-2 pr-3 font-medium">DOI</th>
-                  <th className="py-2 pr-3 font-medium">Sell-through</th>
-                  <th className="py-2 pr-3 font-medium">Stock-out days</th>
+                  <th className="py-2 pr-3 font-medium text-right">Sold</th>
+                  <th className="py-2 pr-3 font-medium text-right">Closing</th>
+                  <th className="py-2 pr-3 font-medium text-right">DOI</th>
+                  <th className="py-2 pr-3 font-medium text-right">Sell-through</th>
+                  <th className="py-2 pr-3 font-medium text-right">Stock-out days</th>
                 </tr>
               </thead>
               <tbody>
                 {data.rows.map((r: InventoryMovementRow) => (
-                  <tr key={`${r.productId}|${r.variantId ?? ''}`} className="border-t border-border/50" data-testid={`movement-row-${r.productId}`}>
-                    <td className="py-2 pr-3 font-medium">
+                  <tr key={`${r.productId}|${r.variantId ?? ''}`} className="border-t border-border/50 transition-colors hover:bg-muted/40" data-testid={`movement-row-${r.productId}`}>
+                    <td className="py-2 pr-3 font-medium sticky left-0 bg-card z-10">
                       <a
                         className="underline underline-offset-2"
                         href={inventoryLedgerHref(r.productId, r.variantId)}
@@ -236,18 +271,18 @@ export function MovementTable({ data }: { data: InventoryMovementData }) {
                       >
                         {r.name}
                       </a>
-                      {r.variantId ? <span className="block text-[11px] text-muted-foreground">{r.variantId}</span> : null}
+                      {r.variantId ? <span className="block text-[10px] font-normal text-muted-foreground/70">Variant {r.variantId}</span> : null}
                     </td>
                     <td className="py-2 pr-3">
-                      <Badge variant={MOVEMENT_TONE[r.movementClass] ?? 'info'} title={r.policyLabel}>
+                      <Badge variant={MOVEMENT_TONE[r.movementClass] ?? 'info'}>
                         {r.movementClass}
                       </Badge>
                     </td>
-                    <td className="py-2 pr-3 tabular-nums">{COUNT_FORMAT(r.unitsSold)}</td>
-                    <td className="py-2 pr-3 tabular-nums">{COUNT_FORMAT(r.closingUnits)}</td>
-                    <td className="py-2 pr-3 tabular-nums">{r.doi === null ? 'N/A' : DAYS_FORMAT(r.doi)}</td>
-                    <td className="py-2 pr-3 tabular-nums">{formatPct(r.sellThrough)}</td>
-                    <td className="py-2 pr-3 tabular-nums">{COUNT_FORMAT(r.stockoutDays)}</td>
+                    <td className="py-2 pr-3 tabular-nums text-right">{COUNT_FORMAT(r.unitsSold)}</td>
+                    <td className="py-2 pr-3 tabular-nums text-right">{COUNT_FORMAT(r.closingUnits)}</td>
+                    <td className="py-2 pr-3 tabular-nums text-right">{r.doi === null ? 'N/A' : DAYS_FORMAT(r.doi)}</td>
+                    <td className="py-2 pr-3 tabular-nums text-right">{formatPct(r.sellThrough)}</td>
+                    <td className="py-2 pr-3 tabular-nums text-right">{COUNT_FORMAT(r.stockoutDays)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -263,7 +298,7 @@ export function MovementTable({ data }: { data: InventoryMovementData }) {
 }
 
 /** Lost-sales honesty: estimated only with stock-out + measurable demand. */
-export function LostSalesCard({ data }: { data: InventoryStockoutsData }) {
+export function LostSalesCard({ data, formulaVersion }: { data: InventoryStockoutsData; formulaVersion?: string }) {
   const kpi: KpiValue = data.lostSales
   return (
     <Card data-testid="lost-sales" className="chart-card rounded-2xl">
@@ -278,8 +313,8 @@ export function LostSalesCard({ data }: { data: InventoryStockoutsData }) {
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <KpiCard title="Stock-out days" kpi={data.stockoutDays} format={COUNT_FORMAT} />
-          <KpiCard title="Lost sales" kpi={kpi} />
+          <KpiCard title="Stock-out days" kpi={data.stockoutDays} format={COUNT_FORMAT} formulaVersion={formulaVersion} animate={false} />
+          <KpiCard title="Lost sales" kpi={kpi} formulaVersion={formulaVersion} animate={false} />
         </div>
         {kpi.state === 'estimated' && data.lostSales.lostUnits != null ? (
           <p className="text-xs text-muted-foreground tabular-nums" data-testid="lost-units">
@@ -303,20 +338,20 @@ export function AgingTable({ value }: { value: InventoryValueData }) {
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="dash-table w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-muted-foreground">
-                <th className="py-2 pr-3 font-medium">Age</th>
-                <th className="py-2 pr-3 font-medium">Units</th>
-                <th className="py-2 pr-3 font-medium">Value</th>
+                <th className="py-2 pr-3 font-medium sticky left-0 bg-card z-10">Age</th>
+                <th className="py-2 pr-3 font-medium text-right">Units</th>
+                <th className="py-2 pr-3 font-medium text-right">Value</th>
               </tr>
             </thead>
             <tbody>
               {value.aging.buckets.map((b) => (
-                <tr key={b.label} className="border-t border-border/50">
-                  <td className="py-2 pr-3 font-medium">{b.label} days</td>
-                  <td className="py-2 pr-3 tabular-nums">{COUNT_FORMAT(b.units)}</td>
-                  <td className="py-2 pr-3 tabular-nums font-medium">{formatBDT(b.value)}</td>
+                <tr key={b.label} className="border-t border-border/50 transition-colors hover:bg-muted/40">
+                  <td className="py-2 pr-3 font-medium sticky left-0 bg-card z-10">{b.label} days</td>
+                  <td className="py-2 pr-3 tabular-nums text-right">{COUNT_FORMAT(b.units)}</td>
+                  <td className="py-2 pr-3 tabular-nums font-medium text-right">{formatBDT(b.value)}</td>
                 </tr>
               ))}
             </tbody>
@@ -337,29 +372,29 @@ export function LedgerTable({ data }: { data: InventoryLedgerData }) {
       </CardHeader>
       <CardContent>
         {data.rows.length === 0 ? (
-          <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">No data</div>
+          <EmptyState />
         ) : (
           <div className="overflow-x-auto">
             <table className="dash-table w-full text-sm">
               <thead>
                 <tr className="text-left text-xs text-muted-foreground">
-                  <th className="py-2 pr-3 font-medium">Date</th>
+                  <th className="py-2 pr-3 font-medium sticky left-0 bg-card z-10">Date</th>
                   <th className="py-2 pr-3 font-medium">Source</th>
-                  <th className="py-2 pr-3 font-medium">Qty</th>
-                  <th className="py-2 pr-3 font-medium">Before → After</th>
+                  <th className="py-2 pr-3 font-medium text-right">Qty</th>
+                  <th className="py-2 pr-3 font-medium text-right">Before → After</th>
                   <th className="py-2 pr-3 font-medium">Type</th>
                 </tr>
               </thead>
               <tbody>
                 {data.rows.map((r) => (
-                  <tr key={`${r.source}-${r.id}`} className="border-t border-border/50">
-                    <td className="py-2 pr-3 tabular-nums">{new Date(r.createdAt).toLocaleDateString('en-GB')}</td>
+                  <tr key={`${r.source}-${r.id}`} className="border-t border-border/50 transition-colors hover:bg-muted/40">
+                    <td className="py-2 pr-3 tabular-nums sticky left-0 bg-card z-10">{new Date(r.createdAt).toLocaleDateString('en-GB')}</td>
                     <td className="py-2 pr-3">{r.source}</td>
-                    <td className="py-2 pr-3 tabular-nums">
+                    <td className="py-2 pr-3 tabular-nums text-right">
                       {r.direction === 'OUT' ? '-' : '+'}
                       {COUNT_FORMAT(r.quantity)}
                     </td>
-                    <td className="py-2 pr-3 tabular-nums">
+                    <td className="py-2 pr-3 tabular-nums text-right">
                       {r.stockBefore ?? '—'} → {r.stockAfter ?? '—'}
                     </td>
                     <td className="py-2 pr-3 text-muted-foreground">{r.type ?? '—'}</td>
@@ -380,21 +415,28 @@ export function LedgerTable({ data }: { data: InventoryLedgerData }) {
 /**
  * Ledger section: when a drill landing focuses it, the section is marked,
  * announced, and pre-filtered by the drill product — the params → filtered
- * ledger effect lives here (not in the href shape).
+ * ledger effect lives here (not in the href shape). The focus note names the
+ * product from the movement rows on the page (raw ids only as fallback —
+ * variant labels exist nowhere in the inventory payload).
  */
 export function InventoryLedgerSection({
   data,
   focus,
   productId,
   variantId,
+  names,
   sectionRef,
 }: {
   data: InventoryLedgerData
   focus: boolean
   productId?: string
   variantId?: string
+  names?: Record<string, string>
   sectionRef?: Ref<HTMLElement>
 }) {
+  const productName = productId
+    ? (names?.[`${productId}|${variantId ?? ''}`] ?? names?.[`${productId}|`])
+    : undefined
   return (
     <section
       ref={sectionRef}
@@ -404,9 +446,9 @@ export function InventoryLedgerSection({
       aria-label={focus ? 'Stock ledger (drill-down filtered)' : 'Stock ledger'}
     >
       {focus ? (
-        <p className="mb-2 text-xs text-muted-foreground" data-testid="ledger-focus-note">
+        <p className="mb-2 max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground" data-testid="ledger-focus-note">
           Ledger pre-filtered by drill-down
-          {productId ? ` · product ${productId}` : ''}
+          {productId ? ` · product ${productName ?? productId}` : ''}
           {variantId ? ` · variant ${variantId}` : ''}
         </p>
       ) : null}
@@ -445,6 +487,12 @@ export default function InventoryAnalytics({ initialSearch }: { initialSearch?: 
   const movement = useInventoryMovement(filters, page, pageSize)
   const stockouts = useInventoryStockouts(filters, page, pageSize)
   const ledger = useInventoryLedger(filters, page, pageSize)
+  // Product names for the ledger focus note come from the movement rows —
+  // the ledger payload itself carries ids only.
+  const ledgerNames = useMemo(
+    () => resolveLedgerNames(movement.data?.data.rows ?? []),
+    [movement.data],
+  )
 
   const onFilters = (n: AnalyticsFilters) => {
     setFilters(n)
@@ -453,33 +501,30 @@ export default function InventoryAnalytics({ initialSearch }: { initialSearch?: 
 
   return (
     <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-3">
-          <span className="chart-card-header-icon bg-accent-violet-soft text-accent-violet border border-accent-violet/25">
-            <Package className="h-5 w-5" />
-          </span>
-          <div>
-            <h1 className="text-2xl font-bold">Inventory Analytics</h1>
-            <p className="text-xs text-muted-foreground">{INVENTORY_DRILL_LABEL}. Movement {MOVEMENT_POLICY_LABEL}.</p>
-          </div>
-        </div>
-        <InventoryWarehouseScope value={filters} onChange={onFilters} />
-      </div>
+      <AnalyticsPageHeader
+        icon={Package}
+        title="Inventory Analytics"
+        subtitle={`${INVENTORY_DRILL_LABEL}. Movement ${MOVEMENT_POLICY_LABEL}.`}
+        tileClassName="bg-accent-violet-soft text-accent-violet border-accent-violet/25"
+      />
 
       <AnalyticsFilterBar value={filters} onChange={onFilters} />
 
+      <div className="flex flex-wrap items-center gap-2">
+        <InventoryWarehouseScope value={filters} onChange={onFilters} />
+      </div>
+
       <WidgetShell
         title="Inventory"
-        description={data ? `Formula ${data.meta.formulaVersion} · data as of ${data.meta.dataAsOf}` : undefined}
         isLoading={isLoading}
         error={error as Error | undefined}
         onRetry={() => refetch()}
       >
         {data ? (
           <div className="space-y-6">
-            <ValueBasisBanner value={data.data} />
+            <ValueBasisBanner value={data.data} formulaVersion={data.meta.formulaVersion} />
 
-            <TurnoverCards value={data.data} />
+            <TurnoverCards value={data.data} formulaVersion={data.meta.formulaVersion} />
 
             <AgingTable value={data.data} />
 
@@ -488,15 +533,15 @@ export default function InventoryAnalytics({ initialSearch }: { initialSearch?: 
             ) : movement.isLoading ? (
               <Skeleton className="h-[200px] w-full rounded-lg" />
             ) : (
-              <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">No data</div>
+              <EmptyState />
             )}
 
             {stockouts.data ? (
-              <LostSalesCard data={stockouts.data.data} />
+              <LostSalesCard data={stockouts.data.data} formulaVersion={data.meta.formulaVersion} />
             ) : stockouts.isLoading ? (
               <Skeleton className="h-[200px] w-full rounded-lg" />
             ) : (
-              <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">No data</div>
+              <EmptyState />
             )}
 
             {ledger.data ? (
@@ -505,24 +550,29 @@ export default function InventoryAnalytics({ initialSearch }: { initialSearch?: 
                 focus={drill.focusLedger}
                 productId={drill.productId}
                 variantId={drill.variantId}
+                names={ledgerNames}
                 sectionRef={ledgerRef}
               />
             ) : ledger.isLoading ? (
               <Skeleton className="h-[200px] w-full rounded-lg" />
             ) : (
-              <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">No data</div>
+              <EmptyState />
             )}
 
             <DrilldownPanel filters={filters} items={INVENTORY_DRILLDOWN} queryBuilder={buildInventoryQuery} />
 
-            <p className="text-[11px] text-muted-foreground">
-              Formula {data.meta.formulaVersion} · Data as of {data.meta.dataAsOf} · {data.meta.dateBasis} · Period {data.meta.range.periodDays} day(s)
-            </p>
+            <MetricMetaFooter
+              formulaVersion={data.meta.formulaVersion}
+              dataAsOf={data.meta.dataAsOf}
+              dateBasis={data.meta.dateBasis}
+              ladderState={data.meta.ladderState}
+              periodDays={data.meta.range.periodDays}
+            />
           </div>
         ) : isLoading ? (
           <Skeleton className="h-[400px] w-full rounded-lg" />
         ) : (
-          <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">No data</div>
+          <EmptyState />
         )}
       </WidgetShell>
     </div>

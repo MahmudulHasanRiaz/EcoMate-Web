@@ -9,6 +9,7 @@
  */
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render } from 'vitest-browser-react'
+import { userEvent } from 'vitest/browser'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   BudgetVsActualCard,
@@ -140,12 +141,17 @@ function kpi(over: Partial<KpiValue>): KpiValue {
 // ─── split renders ───────────────────────────────────────────────────────────
 
 describe('ExpensesOverviewCards', () => {
-  it('renders the fixed/variable/unclassified split with the kind note', async () => {
-    const { container } = await renderWithClient(<ExpensesOverviewCards summary={summaryData()} />)
+  it('renders the fixed/variable/unclassified split with scope in disclosure', async () => {
+    const { container, getByRole, getByTestId } = await renderWithClient(<ExpensesOverviewCards summary={summaryData()} />)
     expect(container.querySelector('[data-testid="expenses-overview"]')).not.toBeNull()
     expect(container.textContent).toMatch(/৳1,150/)
     expect(container.textContent).toMatch(/৳200/)
-    expect(container.querySelector('[data-testid="kind-note"]')?.textContent).toMatch(/never inferred/i)
+    // Kind note and revenue scope live in disclosure, never captions.
+    expect(container.querySelector('[data-testid="kind-note"]')).toBeNull()
+    expect(container.querySelector('[data-testid="revenue-scope"]')).toBeNull()
+    await userEvent.click(getByRole('button', { name: 'About expense kinds and revenue scope' }))
+    await expect.element(getByTestId('expenses-scope-notes')).toHaveTextContent(/never inferred/i)
+    await expect.element(getByTestId('expenses-scope-notes')).toHaveTextContent(/Recognised Net Sales/)
   })
 
   it('renders expense/revenue, per-order and growth with N/A-safe pct', async () => {
@@ -196,6 +202,15 @@ describe('BudgetVsActualCard', () => {
     expect(container.textContent).toMatch(/No budget model exists/)
     expect(container.textContent).not.toMatch(/৳0/)
   })
+
+  it('is a compact line, not a full card slot', async () => {
+    const { container } = await renderWithClient(
+      <BudgetVsActualCard kpi={{ value: null, state: 'unavailable', reason: 'No budget model exists' }} />,
+    )
+    const el = container.querySelector('[data-testid="budget-vs-actual"]')
+    expect(el?.tagName).toBe('DIV')
+    expect(el?.closest('.chart-card')).toBeNull()
+  })
 })
 
 // ─── trend / tables ──────────────────────────────────────────────────────────
@@ -205,6 +220,18 @@ describe('ExpenseTrendChart', () => {
     const { container } = await renderWithClient(<ExpenseTrendChart trend={trendData()} />)
     expect(container.querySelector('[data-testid="expenses-trend"]')).not.toBeNull()
     expect(container.textContent).toMatch(/Auto-granularity: day/)
+  })
+})
+
+describe('expense date basis (single source)', () => {
+  it('states the date basis once — trend keeps it, tables disclose it', async () => {
+    const trend = await renderWithClient(<ExpenseTrendChart trend={trendData()} />)
+    expect(trend.container.textContent).toMatch(/expenseDate/)
+    const cats = await renderWithClient(<ExpenseCategoryTable data={categoriesData()} />)
+    expect(cats.container.textContent).not.toMatch(/expenseDate/)
+    const list = await renderWithClient(<ExpenseListTable data={listData()} />)
+    expect(list.container.textContent).not.toMatch(/expenseDate/)
+    expect(list.container.textContent).toMatch(/incl\. tax/)
   })
 })
 
@@ -223,6 +250,12 @@ describe('ExpenseListTable', () => {
     expect(container.querySelector('[data-testid="expense-row-e1"]')).not.toBeNull()
     expect(container.textContent).toMatch(/৳1,150/)
     expect(container.textContent).toMatch(/REF-1/)
+  })
+
+  it('keeps the category kind as quiet text — never a hover-only title', async () => {
+    const { container } = await renderWithClient(<ExpenseListTable data={listData()} />)
+    expect(container.textContent).toMatch(/fixed/)
+    expect(container.querySelector('[title]')).toBeNull()
   })
 })
 
@@ -245,7 +278,15 @@ describe('expenses drill landing', () => {
       <ExpensesListSection data={listData()} focus categoryId="c1" />,
     )
     expect(container.querySelector('[data-testid="expenses-list-section"]')?.getAttribute('data-focus')).toBe('true')
-    expect(container.querySelector('[data-testid="expenses-list-focus-note"]')?.textContent).toMatch(/c1/)
+    // Category resolves to its human name from the rows, not the raw id.
+    expect(container.querySelector('[data-testid="expenses-list-focus-note"]')?.textContent).toMatch(/Rent/)
+  })
+
+  it('falls back to the raw id when the category is not in the rows', async () => {
+    const { container } = await renderWithClient(
+      <ExpensesListSection data={listData()} focus categoryId="c9" />,
+    )
+    expect(container.querySelector('[data-testid="expenses-list-focus-note"]')?.textContent).toMatch(/c9/)
   })
 
   it('pre-filters the list query by the drill category', async () => {
@@ -259,6 +300,25 @@ describe('expenses drill landing', () => {
     })
     const filters = scope.mock.calls[0][0] as AnalyticsFilters
     expect(filters.expenseCategoryId).toBe('c1')
+  })
+
+  it('renders a single metadata footer (no WidgetShell duplication)', async () => {
+    const meta = {
+      formulaVersion: 'analytics-p2/1.0',
+      dataAsOf: '2026-09-21T00:00:00.000Z',
+      dateBasis: 'expenseDate',
+      ladderState: 'actual',
+      range: { periodDays: 30 },
+    } as any
+    vi.spyOn(businessAnalyticsApi, 'getExpensesSummary').mockResolvedValue({ data: { data: summaryData(), meta } } as any)
+    vi.spyOn(businessAnalyticsApi, 'getExpensesTrend').mockResolvedValue({ data: { data: trendData(), meta } } as any)
+    vi.spyOn(businessAnalyticsApi, 'getExpensesCategories').mockResolvedValue({ data: { data: categoriesData(), meta } } as any)
+    vi.spyOn(businessAnalyticsApi, 'getExpensesList').mockResolvedValue({ data: { data: listData(), meta } } as any)
+    const { container } = await renderWithClient(<ExpensesAnalytics initialSearch={{}} />)
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="expenses-list-section"]')).not.toBeNull(),
+    )
+    expect(container.textContent?.match(/Formula /g) ?? []).toHaveLength(1)
   })
 })
 

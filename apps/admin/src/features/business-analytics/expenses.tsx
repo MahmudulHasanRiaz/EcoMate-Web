@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Area, ComposedChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
-import { Receipt, TrendingDown } from 'lucide-react'
+import { Receipt } from 'lucide-react'
 import { riseStyle } from '@/components/ui/dashboard'
 import { WidgetShell } from '../dashboard/components/WidgetShell'
 import {
@@ -35,7 +35,9 @@ import {
   type KpiValue,
 } from './types'
 import { AnalyticsFilterBar } from './components/AnalyticsFilterBar'
+import { AnalyticsPageHeader, EmptyState, InfoDisclosure, MetricMetaFooter } from './components/analytics-ui'
 import { KpiCard } from './components/KpiCard'
+import { MetricUnavailable } from './components/badges'
 import { DrilldownPanel, type DrilldownItem } from './components/DrilldownPanel'
 import { buildExpensesQuery } from './api'
 
@@ -91,80 +93,91 @@ export function readExpensesDrillSearch(): ExpensesDrillSearch {
   }
 }
 
-/** §2.9 overview: total + fixed/variable/unclassified split + ratios + growth. */
-export function ExpensesOverviewCards({ summary }: { summary: ExpensesSummaryData }) {
+/**
+ * §2.9 overview (W3): total + split + ratios + growth are all KpiCards (one
+ * idiom — the hand-rolled growth card is gone). The kind note and the revenue
+ * scope live in one disclosure, never captions.
+ */
+export function ExpensesOverviewCards({ summary, formulaVersion }: { summary: ExpensesSummaryData; formulaVersion?: string }) {
+  const growthLabel = `${formatDelta(summary.growth.delta)} (${formatDeltaPct(summary.growth.deltaPct)})`
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-rise" style={riseStyle(0)} data-testid="expenses-overview">
-        <KpiCard title="Total expense" kpi={summary.total} />
-        <KpiCard title="Fixed" kpi={summary.byKind.fixed} />
-        <KpiCard title="Variable" kpi={summary.byKind.variable} />
-        <KpiCard title="Unclassified" kpi={summary.byKind.unclassified} />
+        <KpiCard title="Total expense" kpi={summary.total} formulaVersion={formulaVersion} animate={false} />
+        <KpiCard title="Fixed" kpi={summary.byKind.fixed} formulaVersion={formulaVersion} animate={false} />
+        <KpiCard title="Variable" kpi={summary.byKind.variable} formulaVersion={formulaVersion} animate={false} />
+        <KpiCard title="Unclassified" kpi={summary.byKind.unclassified} formulaVersion={formulaVersion} animate={false} />
       </div>
-      <p className="text-[11px] text-muted-foreground" data-testid="kind-note">
-        {summary.kindNote || EXPENSE_KIND_NOTE}
-      </p>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 animate-rise" style={riseStyle(1)}>
-        <KpiCard title="Expense / revenue" kpi={summary.expenseRevenue} format={RATIO_FORMAT} />
-        <KpiCard title="Expense per order" kpi={summary.perOrder} />
-        <Card data-testid="expenses-growth" className="kpi-card kpi-accent-danger">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Growth vs previous period</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="kpi-value tabular-nums">{formatDelta(summary.growth.delta)}</p>
-            <p className="text-xs text-muted-foreground mt-1 tabular-nums">
-              {formatDeltaPct(summary.growth.deltaPct)} vs {formatBDT(summary.growth.prevTotal)} ·{' '}
-              {summary.periodDays} day(s)
-            </p>
-          </CardContent>
-        </Card>
+        <KpiCard title="Expense / revenue" kpi={summary.expenseRevenue} format={RATIO_FORMAT} formulaVersion={formulaVersion} animate={false} />
+        <KpiCard title="Expense per order" kpi={summary.perOrder} formulaVersion={formulaVersion} animate={false} />
+        <div data-testid="expenses-growth" className="contents">
+          <KpiCard
+            title="Growth vs previous period"
+            kpi={{
+              value: summary.growth.delta,
+              state: 'ok',
+              reason: `${formatDeltaPct(summary.growth.deltaPct)} vs ${formatBDT(summary.growth.prevTotal)} · ${summary.periodDays} day(s)`,
+              dateBasis: summary.dateBasis,
+            }}
+            format={() => growthLabel}
+            formulaVersion={formulaVersion}
+            animate={false}
+          />
+        </div>
       </div>
-      <p className="text-[11px] text-muted-foreground tabular-nums" data-testid="revenue-scope">
-        Recognised Net Sales {formatBDT(summary.revenue.netSales)} · {COUNT_FORMAT(summary.revenue.recognisedOrders)} recognised order(s).{' '}
-        {EXPENSE_REVENUE_SCOPE_NOTE}
-      </p>
+      <InfoDisclosure
+        label="About expense kinds and revenue scope"
+        lines={[
+          summary.kindNote || EXPENSE_KIND_NOTE,
+          `Recognised Net Sales ${formatBDT(summary.revenue.netSales)} · ${COUNT_FORMAT(summary.revenue.recognisedOrders)} recognised order(s).`,
+          EXPENSE_REVENUE_SCOPE_NOTE,
+        ]}
+        contentTestId="expenses-scope-notes"
+      />
     </div>
   )
 }
 
-/** §8.6 — no budget model: the card renders Unavailable, never ৳0. */
+/**
+ * §8.6 — no budget model (W3): a compact unavailable line, never a full card
+ * slot and never ৳0.
+ */
 export function BudgetVsActualCard({ kpi }: { kpi: KpiValue }) {
   return (
-    <Card data-testid="budget-vs-actual" className="chart-card rounded-2xl">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">Budget vs Actual</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        <KpiCard title="Budget variance" kpi={kpi} />
-        <p className="text-[11px] text-muted-foreground">{BUDGET_VS_ACTUAL_NOTE}</p>
-      </CardContent>
-    </Card>
+    <div data-testid="budget-vs-actual" className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span className="text-sm font-medium">Budget vs Actual</span>
+      <MetricUnavailable reason={kpi.reason} compact />
+      <InfoDisclosure
+        label="About Budget vs Actual"
+        lines={[BUDGET_VS_ACTUAL_NOTE]}
+        contentTestId="budget-note"
+        compact
+      />
+    </div>
   )
 }
 
-/** Expense trend on Dhaka buckets at the backend's auto-granularity. */
+/**
+ * Expense trend on Dhaka buckets at the backend's auto-granularity. Kept as
+ * its own chart: the W1 unified TrendChart is net-sales-typed (TrendPoint
+ * key + recognised-orders tooltip) and mapping expense points into it would
+ * mislabel semantics — the chrome already matches (area + line + tooltip).
+ */
 export function ExpenseTrendChart({ trend }: { trend: ExpensesTrendData }) {
   return (
     <Card data-testid="expenses-trend" className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
-        <div className="flex items-center gap-2.5">
-          <span className="chart-card-header-icon bg-danger-soft text-danger border border-danger/25">
-            <TrendingDown className="h-4 w-4" />
-          </span>
-          <div>
-            <CardTitle className="text-sm font-medium">Expense Trend</CardTitle>
-            <p className="text-[11px] text-muted-foreground">
-              Auto-granularity: {trend.granularity}
-              {trend.granularity !== trend.requestedGranularity ? ` (requested ${trend.requestedGranularity}, stepped up past the bucket cap)` : ''} ·{' '}
-              {trend.dateBasis || EXPENSE_DATE_BASIS_STATEMENT}
-            </p>
-          </div>
-        </div>
+        <CardTitle className="text-sm font-medium">Expense Trend</CardTitle>
+        <p className="text-[11px] text-muted-foreground">
+          Auto-granularity: {trend.granularity}
+          {trend.granularity !== trend.requestedGranularity ? ` (requested ${trend.requestedGranularity}, stepped up past the bucket cap)` : ''} ·{' '}
+          {trend.dateBasis || EXPENSE_DATE_BASIS_STATEMENT}
+        </p>
       </CardHeader>
       <CardContent>
         {trend.points.length === 0 ? (
-          <div className="flex items-center justify-center h-[250px] text-muted-foreground text-sm">No data</div>
+          <EmptyState />
         ) : (
           <ResponsiveContainer width="100%" height={250}>
             <ComposedChart data={trend.points} margin={{ top: 10, right: 10, left: -10, bottom: 0 }} className="chart-draw">
@@ -208,27 +221,34 @@ export function ExpenseCategoryTable({ data }: { data: ExpensesCategoriesData })
   return (
     <Card data-testid="expenses-categories" className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">By Category</CardTitle>
-        <p className="text-[11px] text-muted-foreground">{data.dateBasis || EXPENSE_DATE_BASIS_STATEMENT}</p>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <CardTitle className="text-sm font-medium">By Category</CardTitle>
+          <InfoDisclosure
+            label="About category basis"
+            lines={[data.dateBasis || EXPENSE_DATE_BASIS_STATEMENT]}
+            contentTestId="category-basis"
+            compact
+          />
+        </div>
       </CardHeader>
       <CardContent>
         {data.rows.length === 0 ? (
-          <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">No data</div>
+          <EmptyState />
         ) : (
           <div className="overflow-x-auto">
             <table className="dash-table w-full text-sm">
               <thead>
                 <tr className="text-left text-xs text-muted-foreground">
-                  <th className="py-2 pr-3 font-medium">Category</th>
+                  <th className="py-2 pr-3 font-medium sticky left-0 bg-card z-10">Category</th>
                   <th className="py-2 pr-3 font-medium">Kind</th>
-                  <th className="py-2 pr-3 font-medium">Expenses</th>
-                  <th className="py-2 pr-3 font-medium">Total</th>
+                  <th className="py-2 pr-3 font-medium text-right">Expenses</th>
+                  <th className="py-2 pr-3 font-medium text-right">Total</th>
                 </tr>
               </thead>
               <tbody>
                 {data.rows.map((r) => (
                   <tr key={r.categoryId} className="border-t border-border/50 transition-colors hover:bg-muted/40" data-testid={`category-row-${r.categoryId}`}>
-                    <td className="py-2 pr-3 font-medium">
+                    <td className="py-2 pr-3 font-medium sticky left-0 bg-card z-10">
                       <a
                         className="underline underline-offset-2"
                         href={expensesListHref(r.categoryId)}
@@ -242,8 +262,8 @@ export function ExpenseCategoryTable({ data }: { data: ExpensesCategoriesData })
                         {r.expenseKind}
                       </Badge>
                     </td>
-                    <td className="py-2 pr-3 tabular-nums">{COUNT_FORMAT(r.expenses)}</td>
-                    <td className="py-2 pr-3 tabular-nums font-medium">{formatBDT(r.total)}</td>
+                    <td className="py-2 pr-3 tabular-nums text-right">{COUNT_FORMAT(r.expenses)}</td>
+                    <td className="py-2 pr-3 tabular-nums font-medium text-right">{formatBDT(r.total)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -258,46 +278,64 @@ export function ExpenseCategoryTable({ data }: { data: ExpensesCategoriesData })
   )
 }
 
-/** Expense-row drill list: line → category → expense (§4.2). */
+/**
+ * Expense-row drill list (W3): line → category → expense (§4.2). Reference
+ * numbers are quiet sublines; the per-row category keeps its kind word as
+ * quiet text (never a hover-only title) — the category table above stays the
+ * grouped home of that info.
+ */
 export function ExpenseListTable({ data }: { data: ExpensesListData }) {
   return (
     <Card data-testid="expenses-list" className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">Expenses</CardTitle>
-        <p className="text-[11px] text-muted-foreground">{data.dateBasis || EXPENSE_DATE_BASIS_STATEMENT} · incl. tax</p>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <CardTitle className="text-sm font-medium">Expenses</CardTitle>
+          <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            incl. tax
+            <InfoDisclosure
+              label="About expense date basis"
+              lines={[data.dateBasis || EXPENSE_DATE_BASIS_STATEMENT]}
+              contentTestId="expense-list-basis"
+              compact
+            />
+          </span>
+        </div>
       </CardHeader>
       <CardContent>
         {data.rows.length === 0 ? (
-          <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">No data</div>
+          <EmptyState />
         ) : (
           <div className="overflow-x-auto">
             <table className="dash-table w-full text-sm">
               <thead>
                 <tr className="text-left text-xs text-muted-foreground">
-                  <th className="py-2 pr-3 font-medium">Date</th>
+                  <th className="py-2 pr-3 font-medium sticky left-0 bg-card z-10">Date</th>
                   <th className="py-2 pr-3 font-medium">Description</th>
                   <th className="py-2 pr-3 font-medium">Category</th>
-                  <th className="py-2 pr-3 font-medium">Amount</th>
-                  <th className="py-2 pr-3 font-medium">Tax</th>
-                  <th className="py-2 pr-3 font-medium">Total</th>
+                  <th className="py-2 pr-3 font-medium text-right">Amount</th>
+                  <th className="py-2 pr-3 font-medium text-right">Tax</th>
+                  <th className="py-2 pr-3 font-medium text-right">Total</th>
                 </tr>
               </thead>
               <tbody>
                 {data.rows.map((r) => (
-                  <tr key={r.id} className="border-t border-border/50" data-testid={`expense-row-${r.id}`}>
-                    <td className="py-2 pr-3 tabular-nums">{new Date(r.expenseDate).toLocaleDateString('en-GB')}</td>
+                  <tr key={r.id} className="border-t border-border/50 transition-colors hover:bg-muted/40" data-testid={`expense-row-${r.id}`}>
+                    <td className="py-2 pr-3 tabular-nums sticky left-0 bg-card z-10">{new Date(r.expenseDate).toLocaleDateString('en-GB')}</td>
                     <td className="py-2 pr-3 font-medium">
                       {r.description}
-                      {r.referenceNo ? <span className="block text-[11px] text-muted-foreground">{r.referenceNo}</span> : null}
+                      {r.referenceNo ? <span className="block text-[10px] font-normal text-muted-foreground/70">{r.referenceNo}</span> : null}
                     </td>
                     <td className="py-2 pr-3">
-                      <Badge variant={KIND_BADGE[r.category.expenseKind]} title={r.category.expenseKind}>
-                        {r.category.name}
-                      </Badge>
+                      <span className="inline-flex items-center gap-1.5">
+                        <Badge variant={KIND_BADGE[r.category.expenseKind]} className="text-[10px]">
+                          {r.category.name}
+                        </Badge>
+                        <span className="text-[10px] text-muted-foreground">{r.category.expenseKind}</span>
+                      </span>
                     </td>
-                    <td className="py-2 pr-3 tabular-nums">{formatBDT(r.amount)}</td>
-                    <td className="py-2 pr-3 tabular-nums">{formatBDT(r.taxAmount)}</td>
-                    <td className="py-2 pr-3 tabular-nums font-medium">{formatBDT(r.total)}</td>
+                    <td className="py-2 pr-3 tabular-nums text-right">{formatBDT(r.amount)}</td>
+                    <td className="py-2 pr-3 tabular-nums text-right">{formatBDT(r.taxAmount)}</td>
+                    <td className="py-2 pr-3 tabular-nums font-medium text-right">{formatBDT(r.total)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -315,7 +353,8 @@ export function ExpenseListTable({ data }: { data: ExpensesListData }) {
 /**
  * List section: when a drill landing focuses it, the section is marked,
  * announced, and pre-filtered by the drill category — the params → filtered
- * list effect lives here (not in the href shape).
+ * list effect lives here (not in the href shape). The focus note names the
+ * category from the rows on the page (raw id only as fallback).
  */
 export function ExpensesListSection({
   data,
@@ -328,6 +367,9 @@ export function ExpensesListSection({
   categoryId?: string
   sectionRef?: Ref<HTMLElement>
 }) {
+  const categoryName = categoryId
+    ? data.rows.find((r) => r.category.id === categoryId)?.category.name
+    : undefined
   return (
     <section
       ref={sectionRef}
@@ -337,9 +379,9 @@ export function ExpensesListSection({
       aria-label={focus ? 'Expenses (drill-down filtered)' : 'Expenses'}
     >
       {focus ? (
-        <p className="mb-2 text-xs text-muted-foreground" data-testid="expenses-list-focus-note">
+        <p className="mb-2 max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground" data-testid="expenses-list-focus-note">
           Expenses pre-filtered by drill-down
-          {categoryId ? ` · category ${categoryId}` : ''}
+          {categoryId ? ` · category ${categoryName ?? categoryId}` : ''}
         </p>
       ) : null}
       <ExpenseListTable data={data} />
@@ -383,30 +425,24 @@ export default function ExpensesAnalytics({ initialSearch }: { initialSearch?: E
 
   return (
     <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-3">
-          <span className="chart-card-header-icon bg-danger-soft text-danger border border-danger/25">
-            <Receipt className="h-5 w-5" />
-          </span>
-          <div>
-            <h1 className="text-2xl font-bold">Expenses Analytics</h1>
-            <p className="text-xs text-muted-foreground">{EXPENSE_DRILL_LABEL}. {EXPENSE_DATE_BASIS_STATEMENT}.</p>
-          </div>
-        </div>
-      </div>
+      <AnalyticsPageHeader
+        icon={Receipt}
+        title="Expenses Analytics"
+        subtitle={`${EXPENSE_DRILL_LABEL}. ${EXPENSE_DATE_BASIS_STATEMENT}.`}
+        tileClassName="bg-danger-soft text-danger border-danger/25"
+      />
 
       <AnalyticsFilterBar value={filters} onChange={onFilters} />
 
       <WidgetShell
         title="Expenses"
-        description={data ? `Formula ${data.meta.formulaVersion} · data as of ${data.meta.dataAsOf}` : undefined}
         isLoading={isLoading}
         error={error as Error | undefined}
         onRetry={() => refetch()}
       >
         {data ? (
           <div className="space-y-6">
-            <ExpensesOverviewCards summary={data.data} />
+            <ExpensesOverviewCards summary={data.data} formulaVersion={data.meta.formulaVersion} />
 
             <BudgetVsActualCard kpi={data.data.budgetVsActual} />
 
@@ -415,7 +451,7 @@ export default function ExpensesAnalytics({ initialSearch }: { initialSearch?: E
             ) : trend.isLoading ? (
               <Skeleton className="h-[250px] w-full rounded-lg" />
             ) : (
-              <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">No data</div>
+              <EmptyState />
             )}
 
             {categories.data ? (
@@ -423,7 +459,7 @@ export default function ExpensesAnalytics({ initialSearch }: { initialSearch?: E
             ) : categories.isLoading ? (
               <Skeleton className="h-[200px] w-full rounded-lg" />
             ) : (
-              <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">No data</div>
+              <EmptyState />
             )}
 
             {list.data ? (
@@ -436,19 +472,23 @@ export default function ExpensesAnalytics({ initialSearch }: { initialSearch?: E
             ) : list.isLoading ? (
               <Skeleton className="h-[200px] w-full rounded-lg" />
             ) : (
-              <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">No data</div>
+              <EmptyState />
             )}
 
             <DrilldownPanel filters={filters} items={EXPENSES_DRILLDOWN} queryBuilder={buildExpensesQuery} />
 
-            <p className="text-[11px] text-muted-foreground">
-              Formula {data.meta.formulaVersion} · Data as of {data.meta.dataAsOf} · {data.meta.dateBasis} · Period {data.meta.range.periodDays} day(s)
-            </p>
+            <MetricMetaFooter
+              formulaVersion={data.meta.formulaVersion}
+              dataAsOf={data.meta.dataAsOf}
+              dateBasis={data.meta.dateBasis}
+              ladderState={data.meta.ladderState}
+              periodDays={data.meta.range.periodDays}
+            />
           </div>
         ) : isLoading ? (
           <Skeleton className="h-[400px] w-full rounded-lg" />
         ) : (
-          <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">No data</div>
+          <EmptyState />
         )}
       </WidgetShell>
     </div>
