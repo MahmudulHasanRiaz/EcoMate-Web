@@ -6,17 +6,24 @@
  * drill params (segment → customers → order history) · KpiValue states on
  * customer metrics · query keys carry every filter.
  */
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
+import { userEvent } from 'vitest/browser'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { CohortTable, UnattributedBanner } from '../customers'
+import CustomerAnalytics, { ClrSection, CohortTable, CustomerPager, UnattributedBanner } from '../customers'
 import { KpiCard } from '../components/KpiCard'
 import { DrilldownPanel } from '../components/DrilldownPanel'
 import { customersListQueryKey, customersSummaryQueryKey } from '../api'
+import { CLR_STATEMENT } from '../types'
 import type {
   AnalyticsFilters,
   CustomerCohort,
+  CustomerCohortsResponse,
+  CustomerRow,
+  CustomersListResponse,
+  CustomersSummaryResponse,
   KpiValue,
+  OverviewMeta,
 } from '../types'
 
 function renderWithClient(ui: React.ReactElement) {
@@ -58,8 +65,8 @@ describe('CLR labelling', () => {
 // ─── Unattributed disclosure ─────────────────────────────────────────────────
 
 describe('UnattributedBanner', () => {
-  it('discloses counts and the never-merged statement', async () => {
-    const { container, getByText } = await renderWithClient(
+  it('keeps counts visible and discloses the never-merged statement on tap', async () => {
+    const { container, getByText, getByRole, getByTestId } = await renderWithClient(
       <UnattributedBanner
         unattributed={{
           orders: 3,
@@ -70,8 +77,10 @@ describe('UnattributedBanner', () => {
       />,
     )
     await expect.element(getByText(/3 unattributed order\(s\)/)).toBeInTheDocument()
-    await expect.element(getByText(/never merged/)).toBeInTheDocument()
     expect(container.querySelector('[data-testid="unattributed-banner"]')).not.toBeNull()
+    // Statement lives in disclosure — tap to read it.
+    await userEvent.click(getByRole('button', { name: 'About unattributed orders' }))
+    await expect.element(getByTestId('unattributed-statement')).toHaveTextContent(/never merged/)
   })
 
   it('renders nothing when there are no unattributed orders', async () => {
@@ -156,5 +165,151 @@ describe('customer query keys', () => {
     expect(JSON.stringify(customersListQueryKey(withSeg, 2, 20, 'vip'))).toMatch(/vip/)
     // Page and segment participate: different pages are different keys.
     expect(customersListQueryKey(FILTERS, 1, 20, '')).not.toEqual(customersListQueryKey(FILTERS, 2, 20, ''))
+  })
+})
+
+// ─── W2 polish: flattened CLR, Button pager, sticky cols, footer ─────────────
+
+const customersMocks = vi.hoisted(() => ({
+  summary: undefined as unknown as CustomersSummaryResponse,
+  cohorts: undefined as unknown as CustomerCohortsResponse,
+  list: undefined as unknown as CustomersListResponse,
+}))
+
+vi.mock('@/features/business-analytics/hooks', () => ({
+  useCustomersSummary: () => ({ data: customersMocks.summary, isLoading: false, error: undefined, refetch: () => {} }),
+  useCustomerCohorts: () => ({ data: customersMocks.cohorts, isLoading: false, error: undefined }),
+  useCustomersList: () => ({ data: customersMocks.list, isLoading: false, error: undefined }),
+}))
+
+vi.mock('@/features/categories/api', () => ({
+  categoriesApi: { list: vi.fn().mockResolvedValue({ data: { data: [] } }) },
+}))
+
+function customersMeta(): OverviewMeta {
+  return {
+    range: { start: '2026-09-01', end: '2026-09-07', periodDays: 7 },
+    comparison: { prevStart: '2026-08-25', prevEnd: '2026-08-31' },
+    filters: {},
+    granularity: 'day',
+    generatedAt: '2026-09-07T00:00:00.000Z',
+    dataAsOf: '2026-09-07',
+    formulaVersion: 'v9',
+    recognition: 'delivered-only',
+    costCoverage: {
+      cogs: { actualPct: 100, estimatedPct: 0, unavailableUnits: 0, unavailableItems: 0 },
+      shipping: { actualOrders: 5, estimatedOrders: 0, unavailableOrders: 0 },
+      fees: { paidPayments: 5, withFee: 5, withoutFee: 0 },
+      marketing: { datedRows: 1, undatedRows: 0, datedAmount: 200, undatedAmount: 0 },
+      delivery: { onlineOrders: 5, codOrders: 0, collectionUnavailableOrders: 0 },
+    },
+    ladderState: 'actual',
+    thresholds: {},
+    dateBasis: 'Delivered transition',
+  }
+}
+
+const CUSTOMER_ROW: CustomerRow = {
+  key: 'p1',
+  kind: 'profile',
+  profileId: 'c-1',
+  phone: '+8801712345678',
+  name: 'Smoke Customer',
+  segment: 'returning',
+  firstRecognisedAt: '2026-08-01T00:00:00.000Z',
+  lifetimeOrders: 6,
+  lifetimeRevenue: 12000,
+  rangeOrders: 2,
+  rangeRevenue: 4000,
+}
+
+function customersFixtures() {
+  const meta = customersMeta()
+  customersMocks.summary = {
+    data: {
+      acquisition: {
+        newCustomers: kpi({ value: 4 }),
+        returningCustomers: kpi({ value: 6 }),
+        totalCustomers: kpi({ value: 10 }),
+      },
+      repeat: { rate: kpi({ value: 0.4 }) },
+      value: {
+        revenuePerCustomer: kpi({ value: 5000 }),
+        ordersPerCustomer: kpi({ value: 2 }),
+        averageCustomerOrderValue: kpi({ value: 2500 }),
+      },
+      clr: { total: kpi({ value: 42000 }), statement: CLR_STATEMENT },
+      unattributed: { orders: 3, customers: 3, revenue: 4500, statement: '' },
+    },
+    meta,
+  }
+  customersMocks.cohorts = {
+    data: { state: 'ok', months: ['2026-08'], cohorts: COHORTS, insufficientReason: null },
+    meta,
+  }
+  customersMocks.list = {
+    data: {
+      rows: [CUSTOMER_ROW],
+      total: 1,
+      page: 1,
+      pageSize: 20,
+      totalPages: 1,
+      unattributed: { orders: 0, customers: 0, revenue: 0, statement: '' },
+    },
+    meta,
+  }
+}
+
+describe('ClrSection (W2 flatten)', () => {
+  it('renders CLR without nesting a card — statement in disclosure', async () => {
+    const { container, getByText, getByRole, getByTestId } = await renderWithClient(
+      <ClrSection clr={{ total: kpi({ value: 42000 }), statement: CLR_STATEMENT }} formulaVersion="v9" />,
+    )
+    await expect.element(getByText('Cumulative CLR', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText('৳42,000', { exact: true })).toBeInTheDocument()
+    const section = container.querySelector('[data-testid="clr-section"]')
+    expect(section).not.toBeNull()
+    // Flattened: no Card in the section — the KpiCard is the only card idiom.
+    expect(section?.querySelector('.chart-card')).toBeNull()
+    expect(container.querySelector('[data-testid="clr-card"]')).toBeNull()
+    await userEvent.click(getByRole('button', { name: 'About CLR' }))
+    await expect.element(getByTestId('clr-statement')).toHaveTextContent(/observed cumulative revenue/)
+  })
+})
+
+describe('CustomerPager (W2 Button idiom)', () => {
+  it('paginates with real Buttons, never text-buttons', async () => {
+    const { container, getByRole } = await renderWithClient(
+      <CustomerPager page={2} totalPages={5} total={81} onPage={() => {}} />,
+    )
+    await expect.element(getByRole('button', { name: 'Prev' })).toBeInTheDocument()
+    await expect.element(getByRole('button', { name: 'Next' })).toBeInTheDocument()
+    // Real <button> elements (Button component) — never bare text-buttons.
+    const btns = [...(container.querySelector('[data-testid="customer-pager"]')?.querySelectorAll('button') ?? [])]
+    expect(btns.map((b) => b.textContent)).toEqual(['Prev', 'Next'])
+    expect(container.querySelector('[data-testid="customer-pager"]')?.textContent).toMatch(/Page 2 of 5 · 81 customer\(s\)/)
+  })
+})
+
+describe('customers page (W2)', () => {
+  it('flattens CLR, buttons the pager, pins first columns, single footer', async () => {
+    customersFixtures()
+    const { container, getByText, getByTestId } = await renderWithClient(<CustomerAnalytics />)
+    await expect.element(getByText('Customer Analytics', { exact: true })).toBeInTheDocument()
+    // CLR flattened — no clr-card anywhere.
+    await expect.element(getByTestId('clr-section')).toBeInTheDocument()
+    expect(container.querySelector('[data-testid="clr-card"]')).toBeNull()
+    // Pager is Buttons.
+    await expect.element(getByTestId('customer-pager')).toBeInTheDocument()
+    const pagerBtns = [...(container.querySelector('[data-testid="customer-pager"]')?.querySelectorAll('button') ?? [])]
+    expect(pagerBtns.map((b) => b.textContent)).toEqual(['Prev', 'Next'])
+    // Acquisition drill links preserved (segment → customers).
+    const drill = container.querySelector('a[href="/mon/analytics/customers?segment=new"]')
+    expect(drill).not.toBeNull()
+    // Sticky first columns on both tables.
+    expect(container.querySelector('[data-testid="cohort-table"] thead th.sticky')).not.toBeNull()
+    // Single footer.
+    const text = container.textContent ?? ''
+    expect((text.match(/Formula v9 ·/g) ?? []).length).toBe(1)
   })
 })

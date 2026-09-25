@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TriangleAlert, Users } from 'lucide-react'
@@ -18,8 +19,10 @@ import {
   type CustomerCohort,
   type CustomerSegmentLabel,
   type CustomerUnattributed,
+  type KpiValue,
 } from './types'
 import { AnalyticsFilterBar } from './components/AnalyticsFilterBar'
+import { AnalyticsPageHeader, AnalyticsSection, InfoDisclosure, MetricMetaFooter } from './components/analytics-ui'
 import { KpiCard } from './components/KpiCard'
 import { DrilldownPanel, type DrilldownItem } from './components/DrilldownPanel'
 
@@ -33,6 +36,61 @@ const CUSTOMER_DRILLDOWN: DrilldownItem[] = [
   { label: 'Unattributed → phone-less guest orders', description: 'Orders that cannot be linked — fix by capturing a phone', to: '/op/orders' },
 ]
 
+/**
+ * Customer Lifetime Revenue, flattened (W2): a section, never a Card
+ * nesting a KpiCard. The observed-CLR statement lives in disclosure —
+ * the section subtext keeps the never-a-prediction promise visible.
+ */
+export function ClrSection({
+  clr,
+  formulaVersion,
+}: {
+  clr: { total: KpiValue; statement: string }
+  formulaVersion: string
+}) {
+  return (
+    <AnalyticsSection title="Customer Lifetime Revenue (observed)" subtext="Observed cumulative revenue — never a prediction.">
+      <div className="space-y-2" data-testid="clr-section">
+        <KpiCard title="Cumulative CLR" kpi={clr.total} formulaVersion={formulaVersion} animate={false} />
+        <InfoDisclosure
+          label="About CLR"
+          lines={[clr.statement || CLR_STATEMENT]}
+          contentTestId="clr-statement"
+        />
+      </div>
+    </AnalyticsSection>
+  )
+}
+
+/**
+ * Pager in the SettlementTable idiom — real Buttons, never text-buttons.
+ */
+export function CustomerPager({
+  page,
+  totalPages,
+  total,
+  onPage,
+}: {
+  page: number
+  totalPages: number
+  total: number
+  onPage: (page: number) => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 mt-3 text-xs text-muted-foreground" data-testid="customer-pager">
+      <span>Page {page} of {totalPages} · {total} customer(s)</span>
+      <span className="flex gap-2">
+        <Button variant="outline" size="sm" className="tap-h cursor-pointer" disabled={page <= 1} onClick={() => onPage(page - 1)}>
+          Prev
+        </Button>
+        <Button variant="outline" size="sm" className="tap-h cursor-pointer" disabled={page >= totalPages} onClick={() => onPage(page + 1)}>
+          Next
+        </Button>
+      </span>
+    </div>
+  )
+}
+
 /** W9/limitation-12 disclosure: phone-less guests are counted singly, never merged. */
 export function UnattributedBanner({ unattributed }: { unattributed: CustomerUnattributed }) {
   if (unattributed.orders === 0) return null
@@ -40,12 +98,16 @@ export function UnattributedBanner({ unattributed }: { unattributed: CustomerUna
     <Card className="chart-card rounded-2xl border-warning/30 bg-warning-soft" data-testid="unattributed-banner">
       <CardContent className="pt-4 flex items-start gap-3">
         <TriangleAlert className="h-4 w-4 text-warning shrink-0 mt-0.5" />
-        <div>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <p className="text-sm font-medium">
             {unattributed.orders} unattributed order(s) · {unattributed.customers} unattributed customer(s) ·{' '}
             {formatBDT(unattributed.revenue)} unattributed revenue
           </p>
-          <p className="text-xs text-muted-foreground mt-1">{unattributed.statement || UNATTRIBUTED_STATEMENT}</p>
+          <InfoDisclosure
+            label="About unattributed orders"
+            lines={[unattributed.statement || UNATTRIBUTED_STATEMENT]}
+            contentTestId="unattributed-statement"
+          />
         </div>
       </CardContent>
     </Card>
@@ -59,25 +121,25 @@ export function CohortTable({ cohorts, months }: { cohorts: CustomerCohort[]; mo
       <table className="dash-table w-full text-sm">
         <thead>
           <tr className="text-left text-xs text-muted-foreground">
-            <th className="py-2 pr-3 font-medium">Acquired</th>
-            <th className="py-2 pr-3 font-medium">Customers</th>
+            <th className="py-2 pr-3 font-medium sticky left-0 bg-card z-10">Acquired</th>
+            <th className="py-2 pr-3 font-medium text-right">Customers</th>
             {months.map((m) => (
-              <th key={m} className="py-2 pr-3 font-medium">{m}</th>
+              <th key={m} className="py-2 pr-3 font-medium text-right">{m}</th>
             ))}
-            <th className="py-2 pr-3 font-medium">Cumulative CLR</th>
+            <th className="py-2 pr-3 font-medium text-right">Cumulative CLR</th>
           </tr>
         </thead>
         <tbody>
           {cohorts.map((c) => (
             <tr key={c.acquisitionMonth} className="border-t border-border/50 transition-colors hover:bg-muted/40" data-testid={`cohort-row-${c.acquisitionMonth}`}>
-              <td className="py-2 pr-3 font-medium">{c.acquisitionMonth}</td>
-              <td className="py-2 pr-3 tabular-nums">{c.size}</td>
+              <td className="py-2 pr-3 font-medium sticky left-0 bg-card z-10">{c.acquisitionMonth}</td>
+              <td className="py-2 pr-3 tabular-nums text-right">{c.size}</td>
               {months.map((m) => {
                 const cell = c.retention.find((r) => r.month === m)
-                if (!cell) return <td key={m} className="py-2 pr-3 text-muted-foreground/40">—</td>
+                if (!cell) return <td key={m} className="py-2 pr-3 text-right text-muted-foreground/40">—</td>
                 const intensity = cell.rate === null ? 0 : cell.rate
                 return (
-                  <td key={m} className="py-2 pr-3">
+                  <td key={m} className="py-2 pr-3 text-right">
                     <span
                       className="inline-block rounded px-2 py-0.5 tabular-nums bg-success-soft text-success border border-success/25"
                       style={{ opacity: (0.55 + intensity * 0.45).toFixed(2) }}
@@ -88,7 +150,7 @@ export function CohortTable({ cohorts, months }: { cohorts: CustomerCohort[]; mo
                   </td>
                 )
               })}
-              <td className="py-2 pr-3 tabular-nums font-medium">{formatBDT(c.cumulativeClr)}</td>
+              <td className="py-2 pr-3 tabular-nums font-medium text-right">{formatBDT(c.cumulativeClr)}</td>
             </tr>
           ))}
         </tbody>
@@ -136,23 +198,17 @@ export default function CustomerAnalytics() {
 
   return (
     <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-3">
-          <span className="chart-card-header-icon bg-accent-cyan-soft text-accent-cyan border border-accent-cyan/25">
-            <Users className="h-5 w-5" />
-          </span>
-          <div>
-            <h1 className="text-2xl font-bold">Customer Analytics</h1>
-            <p className="text-xs text-muted-foreground">Recognised customers only — Delivered is the recognition event. CLR is observed revenue, never a prediction.</p>
-          </div>
-        </div>
-      </div>
+      <AnalyticsPageHeader
+        icon={Users}
+        title="Customer Analytics"
+        subtitle="Recognised customers only — Delivered is the recognition event. CLR is observed revenue, never a prediction."
+        tileClassName="bg-accent-cyan-soft text-accent-cyan border-accent-cyan/25"
+      />
 
       <AnalyticsFilterBar value={filters} onChange={onFilters} />
 
       <WidgetShell
         title="Customers"
-        description={data ? `Formula ${data.meta.formulaVersion} · data as of ${data.meta.dataAsOf}` : undefined}
         isLoading={isLoading}
         error={error as Error | undefined}
         onRetry={() => refetch()}
@@ -160,27 +216,19 @@ export default function CustomerAnalytics() {
         {data ? (
           <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 animate-rise" style={riseStyle(0)} data-testid="acquisition-band">
-              <KpiCard title="New Customers" kpi={data.data.acquisition.newCustomers} format={COUNT_FORMAT} formulaVersion={data.meta.formulaVersion} drilldownHref="/mon/analytics/customers?segment=new" />
-              <KpiCard title="Returning Customers" kpi={data.data.acquisition.returningCustomers} format={COUNT_FORMAT} formulaVersion={data.meta.formulaVersion} drilldownHref="/mon/analytics/customers?segment=returning" />
-              <KpiCard title="Total Customers" kpi={data.data.acquisition.totalCustomers} format={COUNT_FORMAT} formulaVersion={data.meta.formulaVersion} />
+              <KpiCard title="New Customers" kpi={data.data.acquisition.newCustomers} format={COUNT_FORMAT} formulaVersion={data.meta.formulaVersion} drilldownHref="/mon/analytics/customers?segment=new" animate={false} />
+              <KpiCard title="Returning Customers" kpi={data.data.acquisition.returningCustomers} format={COUNT_FORMAT} formulaVersion={data.meta.formulaVersion} drilldownHref="/mon/analytics/customers?segment=returning" animate={false} />
+              <KpiCard title="Total Customers" kpi={data.data.acquisition.totalCustomers} format={COUNT_FORMAT} formulaVersion={data.meta.formulaVersion} animate={false} />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-rise" style={riseStyle(1)}>
-              <KpiCard title="Repeat Purchase Rate" kpi={data.data.repeat.rate} format={(v) => formatPct(v)} formulaVersion={data.meta.formulaVersion} />
-              <KpiCard title="Revenue per Customer" kpi={data.data.value.revenuePerCustomer} formulaVersion={data.meta.formulaVersion} />
-              <KpiCard title="Orders per Customer" kpi={data.data.value.ordersPerCustomer} format={COUNT_FORMAT} formulaVersion={data.meta.formulaVersion} />
-              <KpiCard title="Avg Customer Order Value" kpi={data.data.value.averageCustomerOrderValue} formulaVersion={data.meta.formulaVersion} />
+              <KpiCard title="Repeat Purchase Rate" kpi={data.data.repeat.rate} format={(v) => formatPct(v)} formulaVersion={data.meta.formulaVersion} animate={false} />
+              <KpiCard title="Revenue per Customer" kpi={data.data.value.revenuePerCustomer} formulaVersion={data.meta.formulaVersion} animate={false} />
+              <KpiCard title="Orders per Customer" kpi={data.data.value.ordersPerCustomer} format={COUNT_FORMAT} formulaVersion={data.meta.formulaVersion} animate={false} />
+              <KpiCard title="Avg Customer Order Value" kpi={data.data.value.averageCustomerOrderValue} formulaVersion={data.meta.formulaVersion} animate={false} />
             </div>
 
-            <Card data-testid="clr-card" className="chart-card rounded-2xl">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Customer Lifetime Revenue (observed)</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <KpiCard title="Cumulative CLR" kpi={data.data.clr.total} formulaVersion={data.meta.formulaVersion} />
-                <p className="text-[11px] text-muted-foreground mt-2">{data.data.clr.statement || CLR_STATEMENT}</p>
-              </CardContent>
-            </Card>
+            <ClrSection clr={data.data.clr} formulaVersion={data.meta.formulaVersion} />
 
             <UnattributedBanner unattributed={data.data.unattributed} />
 
@@ -216,7 +264,12 @@ export default function CustomerAnalytics() {
             <Card className="chart-card rounded-2xl">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between flex-wrap gap-2">
-                  <CardTitle className="text-sm font-medium">Customers — segment → customer → order history</CardTitle>
+                  <div className="flex items-center gap-2.5">
+                    <span className="chart-card-header-icon bg-accent-cyan-soft text-accent-cyan border border-accent-cyan/25">
+                      <Users className="h-4 w-4" />
+                    </span>
+                    <CardTitle className="text-sm font-medium">Customers — segment → customer → order history</CardTitle>
+                  </div>
                   <Tabs value={segment || 'all'} onValueChange={onSegment}>
                     <TabsList className="tap-h max-w-full overflow-x-auto no-scrollbar">
                       <TabsTrigger value="all" className="tap-h">All</TabsTrigger>
@@ -237,18 +290,18 @@ export default function CustomerAnalytics() {
                         <table className="dash-table w-full text-sm">
                           <thead>
                             <tr className="text-left text-xs text-muted-foreground">
-                              <th className="py-2 pr-3 font-medium">Customer</th>
+                              <th className="py-2 pr-3 font-medium sticky left-0 bg-card z-10">Customer</th>
                               <th className="py-2 pr-3 font-medium">Segment</th>
-                              <th className="py-2 pr-3 font-medium">Lifetime Orders</th>
-                              <th className="py-2 pr-3 font-medium">Lifetime Revenue (CLR)</th>
-                              <th className="py-2 pr-3 font-medium">In Range</th>
+                              <th className="py-2 pr-3 font-medium text-right">Lifetime Orders</th>
+                              <th className="py-2 pr-3 font-medium text-right">Lifetime Revenue (CLR)</th>
+                              <th className="py-2 pr-3 font-medium text-right">In Range</th>
                               <th className="py-2 pr-3 font-medium">History</th>
                             </tr>
                           </thead>
                           <tbody>
                             {list.data.data.rows.map((r) => (
                               <tr key={r.key} className="border-t border-border/50 transition-colors hover:bg-muted/40" data-testid={`customer-row-${r.key}`}>
-                                <td className="py-2 pr-3">
+                                <td className="py-2 pr-3 sticky left-0 bg-card z-10">
                                   <span className="block font-medium">{r.name ?? r.phone ?? 'Guest'}</span>
                                   <span className="block text-xs text-muted-foreground">
                                     {r.kind === 'profile' ? 'Profile' : 'Guest'} {r.phone ? `· ${r.phone}` : ''}
@@ -259,9 +312,9 @@ export default function CustomerAnalytics() {
                                     {r.segment}
                                   </StatusBadge>
                                 </td>
-                                <td className="py-2 pr-3 tabular-nums">{r.lifetimeOrders}</td>
-                                <td className="py-2 pr-3 tabular-nums font-medium">{formatBDT(r.lifetimeRevenue)}</td>
-                                <td className="py-2 pr-3 tabular-nums">{r.rangeOrders} order(s) · {formatBDT(r.rangeRevenue)}</td>
+                                <td className="py-2 pr-3 tabular-nums text-right">{r.lifetimeOrders}</td>
+                                <td className="py-2 pr-3 tabular-nums font-medium text-right">{formatBDT(r.lifetimeRevenue)}</td>
+                                <td className="py-2 pr-3 tabular-nums text-right text-xs text-muted-foreground">{r.rangeOrders} order(s) · {formatBDT(r.rangeRevenue)}</td>
                                 <td className="py-2 pr-3">
                                   <a href={customerHistoryHref(r)} className="text-xs underline underline-offset-2">
                                     Order history
@@ -272,25 +325,7 @@ export default function CustomerAnalytics() {
                           </tbody>
                         </table>
                       </div>
-                      <div className="flex flex-wrap items-center justify-between gap-2 mt-3 text-xs text-muted-foreground">
-                        <span>Page {list.data.data.page} of {list.data.data.totalPages} · {list.data.data.total} customer(s)</span>
-                        <span className="flex gap-2">
-                          <button
-                            className="tap-h px-2 underline underline-offset-2 disabled:opacity-40"
-                            disabled={page <= 1}
-                            onClick={() => setPage((p) => Math.max(1, p - 1))}
-                          >
-                            Prev
-                          </button>
-                          <button
-                            className="tap-h px-2 underline underline-offset-2 disabled:opacity-40"
-                            disabled={page >= list.data.data.totalPages}
-                            onClick={() => setPage((p) => p + 1)}
-                          >
-                            Next
-                          </button>
-                        </span>
-                      </div>
+                      <CustomerPager page={list.data.data.page} totalPages={list.data.data.totalPages} total={list.data.data.total} onPage={(p) => setPage(p)} />
                     </>
                   )
                 ) : list.isLoading ? (
@@ -303,9 +338,13 @@ export default function CustomerAnalytics() {
 
             <DrilldownPanel filters={filters} items={CUSTOMER_DRILLDOWN} />
 
-            <p className="text-[11px] text-muted-foreground">
-              Formula {data.meta.formulaVersion} · Data as of {data.meta.dataAsOf} · {data.meta.dateBasis} · Period {data.meta.range.periodDays} day(s)
-            </p>
+            <MetricMetaFooter
+              formulaVersion={data.meta.formulaVersion}
+              dataAsOf={data.meta.dataAsOf}
+              dateBasis={data.meta.dateBasis}
+              ladderState={data.meta.ladderState}
+              periodDays={data.meta.range.periodDays}
+            />
           </div>
         ) : isLoading ? (
           <Skeleton className="h-[400px] w-full rounded-lg" />

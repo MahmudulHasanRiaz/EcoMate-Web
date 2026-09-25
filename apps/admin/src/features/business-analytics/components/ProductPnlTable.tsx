@@ -18,7 +18,7 @@ export function PnlCell({ kpi, format }: { kpi: KpiValue; format?: (v: number) =
           {fmt(kpi.value as number)}
           {kpi.state === 'estimated' ? (
             <Badge variant="warning" className="ml-1">
-              Est
+              Estimated
             </Badge>
           ) : null}
         </span>
@@ -63,6 +63,10 @@ export function ProductPnlTable({
     <Card className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        <p className="text-[11px] text-muted-foreground" data-testid="pnl-basis-legend">
+          Basis — <BasisBadge basis="direct" /> Gross, Discounts, Returns, Net Sales, Units, COGS ·{' '}
+          <BasisBadge basis="attributed" /> Marketing · <BasisBadge basis="allocated" /> Fulfillment, Gateway Fees
+        </p>
       </CardHeader>
       <CardContent className="overflow-x-auto">
         {rows.length === 0 ? (
@@ -71,16 +75,16 @@ export function ProductPnlTable({
           <Table className="dash-table">
             <TableHeader>
               <TableRow>
-                <TableHead>{showVariant ? 'Variant' : 'Product'}</TableHead>
-                <TableHead className="text-right">Gross <BasisBadge basis="direct" /></TableHead>
-                <TableHead className="text-right">Discounts <BasisBadge basis="direct" /></TableHead>
-                <TableHead className="text-right">Returns <BasisBadge basis="direct" /></TableHead>
-                <TableHead className="text-right">Net Sales <BasisBadge basis="direct" /></TableHead>
-                <TableHead className="text-right">Units <BasisBadge basis="direct" /></TableHead>
-                <TableHead className="text-right">COGS <BasisBadge basis="direct" /></TableHead>
-                <TableHead className="text-right">Marketing <BasisBadge basis="attributed" /></TableHead>
-                <TableHead className="text-right">Fulfillment <BasisBadge basis="allocated" /></TableHead>
-                <TableHead className="text-right">Gateway Fees <BasisBadge basis="allocated" /></TableHead>
+                <TableHead className="sticky left-0 bg-card z-10">{showVariant ? 'Variant' : 'Product'}</TableHead>
+                <TableHead className="text-right">Gross</TableHead>
+                <TableHead className="text-right">Discounts</TableHead>
+                <TableHead className="text-right">Returns</TableHead>
+                <TableHead className="text-right">Net Sales</TableHead>
+                <TableHead className="text-right">Units</TableHead>
+                <TableHead className="text-right">COGS</TableHead>
+                <TableHead className="text-right">Marketing</TableHead>
+                <TableHead className="text-right">Fulfillment</TableHead>
+                <TableHead className="text-right">Gateway Fees</TableHead>
                 <TableHead className="text-right">Contribution</TableHead>
                 <TableHead className="text-right">Margin</TableHead>
                 <TableHead className="text-right" title={RETURN_INCIDENCE_LABEL}>
@@ -92,7 +96,7 @@ export function ProductPnlTable({
             <TableBody>
               {rows.map((r) => (
                 <TableRow key={showVariant && isVariantRow(r) ? `${r.productId}::${r.variantId ?? ''}` : r.productId}>
-                  <TableCell className="text-sm">
+                  <TableCell className="text-sm sticky left-0 bg-card z-10">
                     <a href={detailHref(r)} className="font-medium text-foreground hover:underline">
                       {showVariant && isVariantRow(r) ? r.variantLabel : r.name}
                     </a>

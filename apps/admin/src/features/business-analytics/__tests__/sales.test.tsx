@@ -5,8 +5,9 @@
  * zeros) · settlement COD display + gap banner + inference column · drill
  * params · KpiValue states on sales metrics · trend legend bases.
  */
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
+import { userEvent } from 'vitest/browser'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { KpiCard } from '../components/KpiCard'
 import { FunnelPanel } from '../components/FunnelPanel'
@@ -16,11 +17,16 @@ import { SalesTrendChart } from '../components/SalesTrendChart'
 import { DrilldownPanel, type DrilldownItem } from '../components/DrilldownPanel'
 import { SettlementGapBanner } from '../components/FulfillmentEconomicsPanel'
 import { salesSettlementQueryKey, salesSummaryQueryKey } from '../api'
+import SalesAnalytics, { EconAftermath, OrderCountsBand, ReturnsBand } from '../sales'
 import type {
   AnalyticsFilters,
+  FulfillmentCompact,
   KpiValue,
+  OverviewMeta,
   SalesFunnelStage,
   SalesSettlementRow,
+  SalesSummaryData,
+  SalesSummaryResponse,
   SalesTrendPoint,
 } from '../types'
 
@@ -284,5 +290,259 @@ describe('sales query keys', () => {
     expect(JSON.stringify(salesSettlementQueryKey(base, 1, 20))).not.toBe(
       JSON.stringify(salesSettlementQueryKey(base, 1, 50)),
     )
+  })
+})
+
+// ─── W2 polish: counts-only band, returns KpiCards, econ section, footer ─────
+
+const salesMocks = vi.hoisted(() => ({
+  summary: undefined as unknown as SalesSummaryResponse,
+  settlement: undefined as unknown as null,
+}))
+
+vi.mock('@/features/business-analytics/hooks', () => ({
+  useSalesSummary: () => ({ data: salesMocks.summary, isLoading: false, error: undefined, refetch: () => {} }),
+  useSalesSettlement: () => ({ data: salesMocks.settlement, isLoading: false, error: undefined }),
+}))
+
+vi.mock('@/features/categories/api', () => ({
+  categoriesApi: { list: vi.fn().mockResolvedValue({ data: { data: [] } }) },
+}))
+
+function salesMeta(): OverviewMeta {
+  return {
+    range: { start: '2026-09-01', end: '2026-09-07', periodDays: 7 },
+    comparison: { prevStart: '2026-08-25', prevEnd: '2026-08-31' },
+    filters: {},
+    granularity: 'day',
+    generatedAt: '2026-09-07T00:00:00.000Z',
+    dataAsOf: '2026-09-07',
+    formulaVersion: 'v9',
+    recognition: 'delivered-only',
+    costCoverage: {
+      cogs: { actualPct: 100, estimatedPct: 0, unavailableUnits: 0, unavailableItems: 0 },
+      shipping: { actualOrders: 10, estimatedOrders: 0, unavailableOrders: 0 },
+      fees: { paidPayments: 10, withFee: 10, withoutFee: 0 },
+      marketing: { datedRows: 2, undatedRows: 0, datedAmount: 500, undatedAmount: 0 },
+      delivery: { onlineOrders: 10, codOrders: 0, collectionUnavailableOrders: 0 },
+    },
+    ladderState: 'actual',
+    thresholds: {},
+    dateBasis: 'Delivered transition',
+  }
+}
+
+const SALES_FULFILLMENT: FulfillmentCompact = {
+  totals: {
+    collected: 10000,
+    refunded: 500,
+    retained: 9500,
+    courierCost: 800,
+    deliveryChargeRetained: 600,
+    fulfillmentMargin: -200,
+  },
+  coverage: { onlineOrders: 10, codOrders: 0, collectionUnavailableOrders: 0, unknownAmount: 0 },
+  gapBanner: { codOrders: 0, courierCost: 0, message: '' },
+  panelNote: 'Not part of recognised revenue.',
+}
+
+function salesOrderMetrics(): SalesSummaryData['orderMetrics'] {
+  return {
+    bookedOrders: kpi({ value: 40 }),
+    bookedValue: kpi({ value: 80000 }),
+    recognisedOrders: kpi({ value: 30 }),
+    recognisedValue: kpi({ value: 60000 }),
+    aovRecognised: kpi({ value: 2000 }),
+    unitsRecognised: kpi({ value: 55 }),
+    cashCollected: kpi({ value: 38000 }),
+  }
+}
+
+function salesReturns(): SalesSummaryData['returns'] {
+  return {
+    events: 2,
+    value: 5000,
+    units: 3,
+    cogsReversal: 1200,
+    cogsUnavailableUnits: 0,
+    rate: 2 / 30,
+    rateBasis: 'order-level incidence — never fractional',
+    dateBasis: 'Delivered transition',
+  }
+}
+
+function salesEconomics(): SalesSummaryData['economics'] {
+  return {
+    fulfillment: SALES_FULFILLMENT,
+    returnLoss: { amount: 300, events: 2, unavailableEvents: 0, note: 'return shipping net of retained charge' },
+    refundLeakage: { amount: 150, refunds: 1, orders: 1, note: 'leak on never-delivered orders' },
+    coverage: { onlineOrders: 10, codOrders: 0, collectionUnavailableOrders: 0, unknownAmount: 0 },
+  }
+}
+
+function salesFixture(): SalesSummaryResponse {
+  const trend = (label: string, amount: number): SalesTrendPoint => ({
+    bucketStart: '2026-09-01T00:00:00.000Z',
+    label,
+    amount,
+    orders: 5,
+  })
+  return {
+    data: {
+      lenses: {
+        booked: kpi({ value: 80000, dateBasis: 'Order.createdAt — intake only' }),
+        recognised: kpi({ value: 60000, dateBasis: 'Delivered transition — the P&L basis' }),
+        cashCollected: kpi({ value: 38000, dateBasis: 'Payment.createdAt (PAID only)' }),
+      },
+      strip: {
+        bookedOrders: 40,
+        bookedAmount: 80000,
+        recognised: 30,
+        inFulfilment: 7,
+        delivered: 30,
+        notYetRecognised: 7,
+        recognitionRate: 0.75,
+        dateSourceMix: { timeline: 28, dispatch: 2 },
+        undatedDeliveries: 0,
+      },
+      orderMetrics: salesOrderMetrics(),
+      funnel: FUNNEL,
+      pipeline: {
+        stages: [
+          { key: 'intake', label: 'Intake', orders: 5, value: 10000, note: 'pipeline — not revenue (recognised only at Delivered)' },
+          { key: 'shipping', label: 'Shipping', orders: 2, value: 4000, note: 'pipeline — not revenue (recognised only at Delivered)' },
+        ],
+        totalOrders: 7,
+        totalValue: 14000,
+      },
+      paymentBreakdown: {
+        methods: [{ gateway: 'bKash', orders: 5, amount: 10000, note: '' }],
+        unpaid: { orders: 1, bookedValue: 2000, note: 'intake with no PAID payment yet' },
+      },
+      cancellations: {
+        total: 3,
+        totalValue: 6000,
+        undated: 1,
+        dateBasis: 'Order.createdAt — intake cohort',
+        byPriorStage: [{ stage: 'Shipping', orders: 3, value: 6000 }],
+        bySalesChannel: [],
+      },
+      returns: salesReturns(),
+      refunds: {
+        reversal: { orders: 1, amount: 1000 },
+        informational: { orders: 0, amount: 0 },
+        not_a_reversal: { orders: 1, amount: 500 },
+        dateBasis: 'Payment.createdAt (PAID only)',
+        crossoverNote: 'crossover note — delivered vs returned vs never-delivered',
+      },
+      trends: {
+        requestedGranularity: 'day',
+        granularity: 'day',
+        booked: [trend('Sep 1', 10000)],
+        recognised: [trend('Sep 1', 8000)],
+        cash: [trend('Sep 1', 7000)],
+      },
+      economics: salesEconomics(),
+    },
+    meta: salesMeta(),
+  }
+}
+
+describe('OrderCountsBand (W2 triple-count kill)', () => {
+  it('renders counts-only metrics — lens money never repeats', async () => {
+    const { container, getByText } = await renderWithClient(
+      <OrderCountsBand orderMetrics={salesOrderMetrics()} formulaVersion="v9" />,
+    )
+    await expect.element(getByText('Booked Orders', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText('Recognised Orders', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText('Units Recognised', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText('AOV (Recognised)', { exact: true })).toBeInTheDocument()
+    const text = container.textContent ?? ''
+    expect(text).not.toMatch(/Booked Value/)
+    expect(text).not.toMatch(/Recognised Value/)
+    expect(text).not.toMatch(/৳80,000/)
+    expect(text).not.toMatch(/৳60,000/)
+  })
+})
+
+describe('ReturnsBand (W2 KpiCard idiom)', () => {
+  it('renders the four return stats with values', async () => {
+    const { getByText } = await renderWithClient(<ReturnsBand returns={salesReturns()} />)
+    await expect.element(getByText('Return Events', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText('Returned Value', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText('৳5,000', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText(/6\.7%/)).toBeInTheDocument()
+  })
+
+  it('renders a null rate as no_data — never 0%', async () => {
+    const { container } = await renderWithClient(<ReturnsBand returns={{ ...salesReturns(), rate: null }} />)
+    expect(container.textContent ?? '').toMatch(/No data/)
+    expect(container.textContent ?? '').not.toMatch(/0\.0%/)
+  })
+})
+
+describe('EconAftermath (W2 subordinate econ)', () => {
+  it('keeps every loss/leakage figure with its note', async () => {
+    const { container, getByText, getByRole } = await renderWithClient(
+      <EconAftermath economics={salesEconomics()} />,
+    )
+    await expect.element(getByText('Return Loss (online return events)', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText('৳300', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText('Refund Leakage (never-delivered)', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText('৳150', { exact: true })).toBeInTheDocument()
+    // Full fulfillment panel stays above the subordinate cards.
+    await expect.element(getByText('Fulfillment & Returns Economics', { exact: true })).toBeInTheDocument()
+    const text = container.textContent ?? ''
+    expect(text).toMatch(/return shipping net of retained charge/)
+    expect(text).toMatch(/leak on never-delivered orders/)
+    await expect.element(getByRole('button', { name: 'About Return Loss (online return events)' })).toBeInTheDocument()
+  })
+})
+
+describe('FunnelPanel outcome bars (W2)', () => {
+  const OUTCOMES: SalesFunnelStage[] = [
+    { key: 'booked', label: 'Booked', instrumented: true, orders: 40, value: 80000, shareOfBooked: 1, conversionFromPrev: null },
+    { key: 'delivered', label: 'Delivered', instrumented: true, orders: 30, value: 60000, shareOfBooked: 0.75, conversionFromPrev: 0.75 },
+    { key: 'returned', label: 'Returned', instrumented: true, orders: 2, value: 5000, shareOfBooked: 0.05, conversionFromPrev: null },
+    { key: 'cancelled', label: 'Cancelled', instrumented: true, orders: 3, value: 6000, shareOfBooked: 0.075, conversionFromPrev: null },
+  ]
+
+  it('uses neutral progression bars and semantic colour for outcomes only', async () => {
+    const { container } = await renderWithClient(<FunnelPanel stages={OUTCOMES} />)
+    const bar = (stageKey: string) =>
+      container.querySelector(`[data-testid="funnel-stage-${stageKey}"] div.h-full`)?.className ?? ''
+    expect(bar('booked')).toMatch(/bg-muted-foreground/)
+    expect(bar('booked')).not.toMatch(/bg-success/)
+    expect(bar('delivered')).toMatch(/bg-success/)
+    expect(bar('returned')).toMatch(/bg-danger/)
+    expect(bar('cancelled')).toMatch(/bg-warning/)
+  })
+})
+
+describe('sales page (W2)', () => {
+  it('kills the triple-count and renders a single meta footer', async () => {
+    salesMocks.summary = salesFixture()
+    const { container, getByText, getByRole } = await renderWithClient(<SalesAnalytics />)
+    await expect.element(getByRole('heading', { level: 1, name: 'Sales & Orders' })).toBeInTheDocument()
+    await expect.element(getByText('Booked Orders', { exact: true })).toBeInTheDocument()
+    const text = container.textContent ?? ''
+    expect(text).not.toMatch(/Booked Value/)
+    expect(text).not.toMatch(/Recognised Value/)
+    // Lens trio keeps the money values.
+    await expect.element(getByText('৳80,000', { exact: true })).toBeInTheDocument()
+    // Single footer: exactly one "Formula v9 ·" line, no WidgetShell description dup.
+    expect((text.match(/Formula v9 ·/g) ?? []).length).toBe(1)
+    expect(text).toMatch(/Ladder state: actual/)
+  })
+
+  it('moves the unpaid footnote into disclosure and reaches returns via tabs', async () => {
+    salesMocks.summary = salesFixture()
+    const { container, getByText, getByRole, getByTestId } = await renderWithClient(<SalesAnalytics />)
+    await expect.element(getByText('Cash by Payment Method (PAID only)', { exact: true })).toBeInTheDocument()
+    expect(container.textContent ?? '').not.toMatch(/No PAID payment: 1 order/)
+    await userEvent.click(getByRole('button', { name: 'About unpaid intake' }))
+    await expect.element(getByTestId('unpaid-notes')).toHaveTextContent(/No PAID payment: 1 order/)
+    await userEvent.click(getByRole('tab', { name: 'Returns' }))
+    await expect.element(getByText('Return Events', { exact: true })).toBeInTheDocument()
   })
 })

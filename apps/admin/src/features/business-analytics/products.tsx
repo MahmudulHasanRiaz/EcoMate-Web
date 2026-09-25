@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { Package } from 'lucide-react'
-import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -10,12 +9,52 @@ import { Badge } from '@/components/ui/badge'
 import { riseStyle } from '@/components/ui/dashboard'
 import { WidgetShell } from '../dashboard/components/WidgetShell'
 import { useAnalyticsProducts, useUncostedProducts } from './hooks'
-import { DEFAULT_FILTERS, formatBDT, type ProductAnalyticsFilters } from './types'
+import { DEFAULT_FILTERS, type ProductAnalyticsFilters, type ProductsData } from './types'
 import { buildProductsQuery } from './api'
 import { AnalyticsFilterBar } from './components/AnalyticsFilterBar'
+import { AnalyticsPageHeader, MetricMetaFooter } from './components/analytics-ui'
+import { KpiCard } from './components/KpiCard'
 import { ProductPnlTable } from './components/ProductPnlTable'
 import { ContributionFloor } from './components/ContributionFloor'
 import { UncostedFixList } from './components/UncostedFixList'
+
+const COUNT_FORMAT = (v: number) => v.toLocaleString('en-US')
+
+/**
+ * Σ-product totals as KpiCards — the unified idiom, carrying the backend
+ * formula version in every card disclosure (W2 restores info/formulaVersion).
+ */
+export function ProductTotalsBand({
+  totals,
+  formulaVersion,
+}: {
+  totals: ProductsData['totals']
+  formulaVersion: string
+}) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 animate-rise" style={riseStyle(0)} data-testid="product-totals">
+      <KpiCard
+        title="Net Sales (Σ products)"
+        kpi={{ value: totals.netSales, state: 'ok', reason: 'Σ over product rows — delivery-recognised', dateBasis: 'Delivered transition' }}
+        formulaVersion={formulaVersion}
+        animate={false}
+      />
+      <KpiCard
+        title="Contribution (Σ products)"
+        kpi={{ value: totals.contribution, state: 'ok', reason: 'Σ over product rows — the product bottom line', dateBasis: 'Delivered transition' }}
+        formulaVersion={formulaVersion}
+        animate={false}
+      />
+      <KpiCard
+        title="Units recognised"
+        kpi={{ value: totals.units, state: 'ok', reason: 'Σ recognised units over product rows', dateBasis: 'Delivered transition' }}
+        format={COUNT_FORMAT}
+        formulaVersion={formulaVersion}
+        animate={false}
+      />
+    </div>
+  )
+}
 
 /**
  * Product Analytics list (P4, §2.6): parent P&L rows with direct / allocated /
@@ -37,17 +76,14 @@ export default function ProductAnalytics() {
   return (
     <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-3">
-          <span className="chart-card-header-icon bg-success-soft text-success border border-success/25">
-            <Package className="h-5 w-5" />
-          </span>
-          <div>
-            <h1 className="text-2xl font-bold">Product Analytics</h1>
-            <p className="text-xs text-muted-foreground">Delivery-recognised orders only — Delivered is the recognition event.</p>
-          </div>
-        </div>
+        <AnalyticsPageHeader
+          icon={Package}
+          title="Product Analytics"
+          subtitle="Delivery-recognised orders only — Delivered is the recognition event."
+          tileClassName="bg-success-soft text-success border-success/25"
+        />
         {data && data.data.uncosted.lines > 0 ? (
-          <button onClick={() => setShowUncosted((v) => !v)} title="Lines without costSnapshot — COGS is never back-filled from standardCost" className="tap-h rounded-lg">
+          <button onClick={() => setShowUncosted((v) => !v)} title="Lines without costSnapshot — COGS is never back-filled from standardCost" className="tap-h cursor-pointer rounded-lg">
             <Badge variant="warning">
               Uncosted: {data.data.uncosted.lines} line(s) missing
             </Badge>
@@ -59,67 +95,50 @@ export default function ProductAnalytics() {
 
       <AnalyticsFilterBar value={filters} onChange={(n) => setFilters((f) => ({ ...f, ...n }))} />
 
-      <div className="flex flex-wrap gap-2">
-        <Input
-          placeholder="Search products…"
-          className="max-w-xs"
-          value={filters.search ?? ''}
-          onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value || undefined }))}
-        />
-        <Select value={filters.sort ?? 'netSales'} onValueChange={(v) => setFilters((f) => ({ ...f, sort: v as ProductAnalyticsFilters['sort'] }))}>
-          <SelectTrigger className="w-[180px] tap-h">
-            <SelectValue placeholder="Sort by" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="netSales">Net Sales</SelectItem>
-            <SelectItem value="units">Units</SelectItem>
-            <SelectItem value="contribution">Contribution</SelectItem>
-            <SelectItem value="margin">Margin</SelectItem>
-            <SelectItem value="returnRate">Return Rate</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={filters.dir ?? 'desc'} onValueChange={(v) => setFilters((f) => ({ ...f, dir: v as 'asc' | 'desc' }))}>
-          <SelectTrigger className="w-[120px] tap-h">
-            <SelectValue placeholder="Direction" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="desc">Desc</SelectItem>
-            <SelectItem value="asc">Asc</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
       <WidgetShell
         title="Products"
-        description={data ? `Formula ${data.meta.formulaVersion} · data as of ${data.meta.dataAsOf}` : undefined}
         isLoading={isLoading}
         error={error as Error | undefined}
         onRetry={() => refetch()}
       >
         {data ? (
           <div className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 animate-rise" style={riseStyle(0)}>
-              <Card className="kpi-card kpi-accent-success">
-                <CardContent className="pt-4">
-                  <p className="text-xs text-muted-foreground">Net Sales (Σ products)</p>
-                  <p className="kpi-value">{formatBDT(data.data.totals.netSales)}</p>
-                </CardContent>
-              </Card>
-              <Card className="kpi-card kpi-accent-success">
-                <CardContent className="pt-4">
-                  <p className="text-xs text-muted-foreground">Contribution (Σ products)</p>
-                  <p className="kpi-value">{formatBDT(data.data.totals.contribution)}</p>
-                </CardContent>
-              </Card>
-              <Card className="kpi-card kpi-accent-info">
-                <CardContent className="pt-4">
-                  <p className="text-xs text-muted-foreground">Units recognised</p>
-                  <p className="kpi-value">{data.data.totals.units.toLocaleString('en-US')}</p>
-                </CardContent>
-              </Card>
-            </div>
+            <ProductTotalsBand totals={data.data.totals} formulaVersion={data.meta.formulaVersion} />
 
-            <ProductPnlTable title="Product P&L — parent rows (parent = Σ variants)" rows={data.data.rows} detailHref={detailHref} />
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-2" data-testid="product-table-controls">
+                <Input
+                  placeholder="Search products…"
+                  aria-label="Search products"
+                  className="max-w-xs"
+                  value={filters.search ?? ''}
+                  onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value || undefined }))}
+                />
+                <Select value={filters.sort ?? 'netSales'} onValueChange={(v) => setFilters((f) => ({ ...f, sort: v as ProductAnalyticsFilters['sort'] }))}>
+                  <SelectTrigger className="w-[180px] tap-h" aria-label="Sort products by">
+                    <SelectValue placeholder="Sort by" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="netSales">Net Sales</SelectItem>
+                    <SelectItem value="units">Units</SelectItem>
+                    <SelectItem value="contribution">Contribution</SelectItem>
+                    <SelectItem value="margin">Margin</SelectItem>
+                    <SelectItem value="returnRate">Return Rate</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={filters.dir ?? 'desc'} onValueChange={(v) => setFilters((f) => ({ ...f, dir: v as 'asc' | 'desc' }))}>
+                  <SelectTrigger className="w-[120px] tap-h" aria-label="Sort direction">
+                    <SelectValue placeholder="Direction" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="desc">Desc</SelectItem>
+                    <SelectItem value="asc">Asc</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <ProductPnlTable title="Product P&L — parent rows (parent = Σ variants)" rows={data.data.rows} detailHref={detailHref} />
+            </div>
 
             {showUncosted ? (
               uncosted.data ? (
@@ -129,10 +148,13 @@ export default function ProductAnalytics() {
               )
             ) : null}
 
-            <p className="text-[11px] text-muted-foreground">
-              Formula {data.meta.formulaVersion} · Data as of {data.meta.dataAsOf} · {data.meta.dateBasis} · Ladder state:{' '}
-              {data.meta.ladderState} · Period {data.meta.range.periodDays} day(s)
-            </p>
+            <MetricMetaFooter
+              formulaVersion={data.meta.formulaVersion}
+              dataAsOf={data.meta.dataAsOf}
+              dateBasis={data.meta.dateBasis}
+              ladderState={data.meta.ladderState}
+              periodDays={data.meta.range.periodDays}
+            />
           </div>
         ) : isLoading ? (
           <Skeleton className="h-[400px] w-full rounded-lg" />

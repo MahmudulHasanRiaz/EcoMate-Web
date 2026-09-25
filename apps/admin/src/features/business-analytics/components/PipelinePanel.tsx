@@ -20,7 +20,7 @@ export function PipelinePanel({
     <Card className="chart-card rounded-2xl">
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2.5">
-          <span className="chart-card-header-icon bg-warning-soft text-warning border border-warning/25">
+          <span className="chart-card-header-icon bg-info-soft text-info border border-info/25">
             <ArrowRightLeft className="h-4 w-4" />
           </span>
           <div>

@@ -3,13 +3,13 @@
 import { useState } from 'react'
 import { ShoppingCart } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { riseStyle } from '@/components/ui/dashboard'
 import { WidgetShell } from '../dashboard/components/WidgetShell'
 import { useSalesSettlement, useSalesSummary } from './hooks'
-import { DEFAULT_FILTERS, formatBDT, formatPct, type AnalyticsFilters } from './types'
+import { DEFAULT_FILTERS, formatBDT, formatPct, type AnalyticsFilters, type SalesSummaryData } from './types'
 import { AnalyticsFilterBar } from './components/AnalyticsFilterBar'
+import { AnalyticsPageHeader, AnalyticsSection, InfoDisclosure, MetricMetaFooter } from './components/analytics-ui'
 import { KpiCard } from './components/KpiCard'
 import { RecognitionStrip } from './components/RecognitionStrip'
 import { SalesTrendChart } from './components/SalesTrendChart'
@@ -29,6 +29,107 @@ export const SALES_DRILLDOWN: DrilldownItem[] = [
 ]
 
 const COUNT_FORMAT = (v: number) => v.toLocaleString('en-US')
+
+/**
+ * Order volume in range — counts only. Money lives in the lens trio above,
+ * so Booked/Recognised Value never repeat here (W2 triple-count kill).
+ */
+export function OrderCountsBand({
+  orderMetrics,
+  formulaVersion,
+}: {
+  orderMetrics: SalesSummaryData['orderMetrics']
+  formulaVersion: string
+}) {
+  return (
+    <AnalyticsSection title="Order volume in range" subtext="Counts and average — money lives in the lens cards above.">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="order-counts">
+        <KpiCard title="Booked Orders" kpi={orderMetrics.bookedOrders} format={COUNT_FORMAT} formulaVersion={formulaVersion} animate={false} />
+        <KpiCard title="Recognised Orders" kpi={orderMetrics.recognisedOrders} format={COUNT_FORMAT} formulaVersion={formulaVersion} animate={false} />
+        <KpiCard title="Units Recognised" kpi={orderMetrics.unitsRecognised} format={COUNT_FORMAT} formulaVersion={formulaVersion} animate={false} />
+        <KpiCard title="AOV (Recognised)" kpi={orderMetrics.aovRecognised} formulaVersion={formulaVersion} animate={false} />
+      </div>
+    </AnalyticsSection>
+  )
+}
+
+/** Returns tab — the four return stats as KpiCards (one idiom), notes in disclosure. */
+export function ReturnsBand({ returns }: { returns: SalesSummaryData['returns'] }) {
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4" data-testid="returns-band">
+        <KpiCard
+          title="Return Events"
+          kpi={{ value: returns.events, state: 'ok', reason: 'Delivered-then-returned order events in range', dateBasis: returns.dateBasis }}
+          format={COUNT_FORMAT}
+          animate={false}
+        />
+        <KpiCard
+          title="Returned Value"
+          kpi={{ value: returns.value, state: 'ok', reason: 'Returned intake value', dateBasis: returns.dateBasis }}
+          animate={false}
+        />
+        <KpiCard
+          title="Returned Units"
+          kpi={{ value: returns.units, state: 'ok', reason: 'Returned units in range', dateBasis: returns.dateBasis }}
+          format={COUNT_FORMAT}
+          animate={false}
+        />
+        <KpiCard
+          title="Return Rate (order-level)"
+          kpi={{ value: returns.rate, state: returns.rate === null ? 'no_data' : 'ok', reason: returns.rateBasis, dateBasis: returns.dateBasis }}
+          format={(v) => formatPct(v)}
+          animate={false}
+        />
+      </div>
+      <InfoDisclosure
+        label="About returns"
+        lines={[
+          returns.rateBasis,
+          returns.dateBasis,
+          `COGS reversal ${formatBDT(returns.cogsReversal)}${returns.cogsUnavailableUnits > 0 ? ` · ${returns.cogsUnavailableUnits} unit(s) without costSnapshot (never back-filled)` : ''}`,
+        ]}
+        contentTestId="returns-notes"
+      />
+    </div>
+  )
+}
+
+/**
+ * Supporting economics — the full fulfillment panel plus Return Loss and
+ * Refund Leakage as subordinate KpiCards (same idiom, reduced weight).
+ * Every note lives in the card disclosure, never a visible caption.
+ */
+export function EconAftermath({ economics }: { economics: SalesSummaryData['economics'] }) {
+  const { returnLoss, refundLeakage } = economics
+  return (
+    <AnalyticsSection title="Supporting economics" subtext="Delivery-axis diagnostics — not part of recognised revenue.">
+      <div className="space-y-4">
+        <FulfillmentEconomicsPanel fulfillment={economics.fulfillment} />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" data-testid="econ-aftermath">
+          <KpiCard
+            title="Return Loss (online return events)"
+            kpi={{
+              value: returnLoss.amount,
+              state: 'ok',
+              reason: `Σ(courierCost − deliveryChargeRetained) over ${returnLoss.events} event(s)${returnLoss.unavailableEvents > 0 ? ` · ${returnLoss.unavailableEvents} event(s) unavailable` : ''}. ${returnLoss.note}`,
+            }}
+            animate={false}
+          />
+          <KpiCard
+            title="Refund Leakage (never-delivered)"
+            kpi={{
+              value: refundLeakage.amount,
+              state: 'ok',
+              reason: `${refundLeakage.refunds} refund(s) on ${refundLeakage.orders} order(s). ${refundLeakage.note}`,
+            }}
+            animate={false}
+          />
+        </div>
+      </div>
+    </AnalyticsSection>
+  )
+}
 
 /**
  * Sales & Orders (P5): Booked vs Recognised vs Cash trio + three trends,
@@ -52,23 +153,17 @@ export default function SalesAnalytics() {
 
   return (
     <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-3">
-          <span className="chart-card-header-icon bg-success-soft text-success border border-success/25">
-            <ShoppingCart className="h-5 w-5" />
-          </span>
-          <div>
-            <h1 className="text-2xl font-bold">Sales & Orders</h1>
-            <p className="text-xs text-muted-foreground">Booked (intake) · Recognised (Delivered — the P&L basis) · Cash collected — three bases, never mixed.</p>
-          </div>
-        </div>
-      </div>
+      <AnalyticsPageHeader
+        icon={ShoppingCart}
+        title="Sales & Orders"
+        subtitle="Booked (intake) · Recognised (Delivered — the P&L basis) · Cash collected — three bases, never mixed."
+        tileClassName="bg-success-soft text-success border-success/25"
+      />
 
       <AnalyticsFilterBar value={filters} onChange={onFilters} />
 
       <WidgetShell
         title="Sales & Orders"
-        description={data ? `Formula ${data.meta.formulaVersion} · data as of ${data.meta.dataAsOf}` : undefined}
         isLoading={isLoading}
         error={error as Error | undefined}
         onRetry={() => refetch()}
@@ -78,18 +173,13 @@ export default function SalesAnalytics() {
             <RecognitionStrip strip={data.data.strip} />
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 animate-rise" style={riseStyle(0)} data-testid="lens-trio">
-              <KpiCard title="Booked (L1)" kpi={data.data.lenses.booked} formulaVersion={data.meta.formulaVersion} />
-              <KpiCard title="Recognised (L2)" kpi={data.data.lenses.recognised} formulaVersion={data.meta.formulaVersion} />
-              <KpiCard title="Cash Collected (L3)" kpi={data.data.lenses.cashCollected} formulaVersion={data.meta.formulaVersion} />
+              <KpiCard title="Booked (L1)" kpi={data.data.lenses.booked} formulaVersion={data.meta.formulaVersion} animate={false} />
+              <KpiCard title="Recognised (L2)" kpi={data.data.lenses.recognised} formulaVersion={data.meta.formulaVersion} animate={false} />
+              <KpiCard title="Cash Collected (L3)" kpi={data.data.lenses.cashCollected} formulaVersion={data.meta.formulaVersion} animate={false} />
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 animate-rise" style={riseStyle(1)}>
-              <KpiCard title="Booked Orders" kpi={data.data.orderMetrics.bookedOrders} format={COUNT_FORMAT} formulaVersion={data.meta.formulaVersion} />
-              <KpiCard title="Booked Value" kpi={data.data.orderMetrics.bookedValue} formulaVersion={data.meta.formulaVersion} />
-              <KpiCard title="Recognised Orders" kpi={data.data.orderMetrics.recognisedOrders} format={COUNT_FORMAT} formulaVersion={data.meta.formulaVersion} />
-              <KpiCard title="Recognised Value" kpi={data.data.orderMetrics.recognisedValue} formulaVersion={data.meta.formulaVersion} />
-              <KpiCard title="AOV (Recognised)" kpi={data.data.orderMetrics.aovRecognised} formulaVersion={data.meta.formulaVersion} />
-              <KpiCard title="Units Recognised" kpi={data.data.orderMetrics.unitsRecognised} format={COUNT_FORMAT} formulaVersion={data.meta.formulaVersion} />
+            <div className="animate-rise" style={riseStyle(1)}>
+              <OrderCountsBand orderMetrics={data.data.orderMetrics} formulaVersion={data.meta.formulaVersion} />
             </div>
 
             <SalesTrendChart
@@ -100,103 +190,79 @@ export default function SalesAnalytics() {
               requestedGranularity={data.data.trends.requestedGranularity}
             />
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-rise" style={riseStyle(2)}>
-              <FunnelPanel stages={data.data.funnel} />
-              <PipelinePanel stages={data.data.pipeline.stages} totalOrders={data.data.pipeline.totalOrders} totalValue={data.data.pipeline.totalValue} />
-            </div>
+            <AnalyticsSection title="Where booked intake goes" subtext="Intake cohort reaching each stage — pipeline is not revenue.">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 animate-rise" style={riseStyle(2)}>
+                <FunnelPanel stages={data.data.funnel} />
+                <PipelinePanel stages={data.data.pipeline.stages} totalOrders={data.data.pipeline.totalOrders} totalValue={data.data.pipeline.totalValue} />
+              </div>
+            </AnalyticsSection>
 
-            <Tabs defaultValue="payment" className="animate-rise" style={riseStyle(3)}>
-              <TabsList className="tap-h max-w-full overflow-x-auto no-scrollbar">
-                <TabsTrigger value="payment" className="tap-h">Payment Methods</TabsTrigger>
-                <TabsTrigger value="cancel" className="tap-h">Cancellations</TabsTrigger>
-                <TabsTrigger value="return" className="tap-h">Returns</TabsTrigger>
-                <TabsTrigger value="refund" className="tap-h">Refunds</TabsTrigger>
-              </TabsList>
-              <TabsContent value="payment">
-                <BreakdownTable
-                  title="Cash by Payment Method (PAID only)"
-                  rows={data.data.paymentBreakdown.methods.map((m) => ({ key: m.gateway, label: m.gateway, netSales: m.amount, orders: m.orders }))}
-                  hint="Orders with ≥1 PAID payment of this method — multi-payment orders match multiple methods. Unpaid intake orders are excluded from the rows."
-                />
-                <p className="text-[11px] text-muted-foreground mt-2">
-                  No PAID payment: {data.data.paymentBreakdown.unpaid.orders} order(s) · {formatBDT(data.data.paymentBreakdown.unpaid.bookedValue)} intake value. {data.data.paymentBreakdown.unpaid.note}
-                </p>
-              </TabsContent>
-              <TabsContent value="cancel">
-                <BreakdownTable
-                  title="Cancellations by Prior Stage"
-                  rows={data.data.cancellations.byPriorStage.map((s) => ({ key: s.stage, label: s.stage, netSales: s.value, orders: s.orders }))}
-                  hint={data.data.cancellations.dateBasis}
-                />
-                <p className="text-[11px] text-muted-foreground mt-2">
-                  {data.data.cancellations.total} cancelled · {formatBDT(data.data.cancellations.totalValue)} intake value · {data.data.cancellations.undated} undated (counted, never dated).
-                </p>
-              </TabsContent>
-              <TabsContent value="return">
-                <Card className="chart-card rounded-2xl">
-                  <CardContent className="pt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div>
-                      <p className="text-[11px] text-muted-foreground">Return Events</p>
-                      <p className="text-lg font-bold tabular-nums text-danger">{data.data.returns.events}</p>
-                    </div>
-                    <div>
-                      <p className="text-[11px] text-muted-foreground">Returned Value</p>
-                      <p className="text-lg font-bold tabular-nums text-danger">{formatBDT(data.data.returns.value)}</p>
-                    </div>
-                    <div>
-                      <p className="text-[11px] text-muted-foreground">Returned Units</p>
-                      <p className="text-lg font-bold tabular-nums text-danger">{data.data.returns.units.toLocaleString('en-US')}</p>
-                    </div>
-                    <div>
-                      <p className="text-[11px] text-muted-foreground">Return Rate (order-level)</p>
-                      <p className="text-lg font-bold tabular-nums text-danger">{formatPct(data.data.returns.rate)}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-                <p className="text-[11px] text-muted-foreground mt-2">
-                  {data.data.returns.rateBasis} · {data.data.returns.dateBasis} · COGS reversal {formatBDT(data.data.returns.cogsReversal)}
-                  {data.data.returns.cogsUnavailableUnits > 0 ? ` · ${data.data.returns.cogsUnavailableUnits} unit(s) without costSnapshot (never back-filled)` : ''}.
-                </p>
-              </TabsContent>
-              <TabsContent value="refund">
-                <BreakdownTable
-                  title="Refunds by Crossover Class (D7)"
-                  rows={[
-                    { key: 'reversal', label: 'Revenue reversal (delivered, not returned)', netSales: data.data.refunds.reversal.amount, orders: data.data.refunds.reversal.orders },
-                    { key: 'informational', label: 'Informational (delivered + returned)', netSales: data.data.refunds.informational.amount, orders: data.data.refunds.informational.orders },
-                    { key: 'not_a_reversal', label: 'Not a reversal (never delivered)', netSales: data.data.refunds.not_a_reversal.amount, orders: data.data.refunds.not_a_reversal.orders },
-                  ]}
-                  hint={data.data.refunds.dateBasis}
-                />
-                <p className="text-[11px] text-muted-foreground mt-2">{data.data.refunds.crossoverNote}</p>
-              </TabsContent>
-            </Tabs>
+            <AnalyticsSection title="How orders end" subtext="Cash, cancellations, returns and refunds — same intake cohort, different endings.">
+              <Tabs defaultValue="payment" className="animate-rise" style={riseStyle(3)}>
+                <TabsList className="tap-h max-w-full overflow-x-auto no-scrollbar">
+                  <TabsTrigger value="payment" className="tap-h">Payment Methods</TabsTrigger>
+                  <TabsTrigger value="cancel" className="tap-h">Cancellations</TabsTrigger>
+                  <TabsTrigger value="return" className="tap-h">Returns</TabsTrigger>
+                  <TabsTrigger value="refund" className="tap-h">Refunds</TabsTrigger>
+                </TabsList>
+                <TabsContent value="payment">
+                  <div className="space-y-2">
+                    <BreakdownTable
+                      title="Cash by Payment Method (PAID only)"
+                      rows={data.data.paymentBreakdown.methods.map((m) => ({ key: m.gateway, label: m.gateway, netSales: m.amount, orders: m.orders }))}
+                      hint="Orders with ≥1 PAID payment of this method — multi-payment orders match multiple methods. Unpaid intake orders are excluded from the rows."
+                    />
+                    <InfoDisclosure
+                      label="About unpaid intake"
+                      lines={[
+                        `No PAID payment: ${data.data.paymentBreakdown.unpaid.orders} order(s) · ${formatBDT(data.data.paymentBreakdown.unpaid.bookedValue)} intake value.`,
+                        data.data.paymentBreakdown.unpaid.note,
+                      ]}
+                      contentTestId="unpaid-notes"
+                    />
+                  </div>
+                </TabsContent>
+                <TabsContent value="cancel">
+                  <div className="space-y-2">
+                    <BreakdownTable
+                      title="Cancellations by Prior Stage"
+                      rows={data.data.cancellations.byPriorStage.map((s) => ({ key: s.stage, label: s.stage, netSales: s.value, orders: s.orders }))}
+                      hint={data.data.cancellations.dateBasis}
+                    />
+                    <InfoDisclosure
+                      label="About cancellations"
+                      lines={[
+                        `${data.data.cancellations.total} cancelled · ${formatBDT(data.data.cancellations.totalValue)} intake value · ${data.data.cancellations.undated} undated (counted, never dated).`,
+                      ]}
+                      contentTestId="cancel-notes"
+                    />
+                  </div>
+                </TabsContent>
+                <TabsContent value="return">
+                  <ReturnsBand returns={data.data.returns} />
+                </TabsContent>
+                <TabsContent value="refund">
+                  <div className="space-y-2">
+                    <BreakdownTable
+                      title="Refunds by Crossover Class (D7)"
+                      rows={[
+                        { key: 'reversal', label: 'Revenue reversal (delivered, not returned)', netSales: data.data.refunds.reversal.amount, orders: data.data.refunds.reversal.orders },
+                        { key: 'informational', label: 'Informational (delivered + returned)', netSales: data.data.refunds.informational.amount, orders: data.data.refunds.informational.orders },
+                        { key: 'not_a_reversal', label: 'Not a reversal (never delivered)', netSales: data.data.refunds.not_a_reversal.amount, orders: data.data.refunds.not_a_reversal.orders },
+                      ]}
+                      hint={data.data.refunds.dateBasis}
+                    />
+                    <InfoDisclosure
+                      label="About refunds"
+                      lines={[data.data.refunds.crossoverNote]}
+                      contentTestId="refund-notes"
+                    />
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </AnalyticsSection>
 
-            <FulfillmentEconomicsPanel fulfillment={data.data.economics.fulfillment} />
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-rise" style={riseStyle(4)}>
-              <Card className="kpi-card kpi-accent-danger">
-                <CardContent className="pt-4">
-                  <p className="text-xs text-muted-foreground">Return Loss (online return events)</p>
-                  <p className="kpi-value">{formatBDT(data.data.economics.returnLoss.amount)}</p>
-                  <p className="text-[11px] text-muted-foreground mt-1">
-                    Σ(courierCost − deliveryChargeRetained) over {data.data.economics.returnLoss.events} event(s)
-                    {data.data.economics.returnLoss.unavailableEvents > 0 ? ` · ${data.data.economics.returnLoss.unavailableEvents} event(s) unavailable` : ''}.{' '}
-                    {data.data.economics.returnLoss.note}
-                  </p>
-                </CardContent>
-              </Card>
-              <Card className="kpi-card kpi-accent-warning">
-                <CardContent className="pt-4">
-                  <p className="text-xs text-muted-foreground">Refund Leakage (never-delivered)</p>
-                  <p className="kpi-value">{formatBDT(data.data.economics.refundLeakage.amount)}</p>
-                  <p className="text-[11px] text-muted-foreground mt-1">
-                    {data.data.economics.refundLeakage.refunds} refund(s) on {data.data.economics.refundLeakage.orders} order(s).{' '}
-                    {data.data.economics.refundLeakage.note}
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
+            <EconAftermath economics={data.data.economics} />
 
             {settlement.data ? (
               <SettlementTable
@@ -217,10 +283,13 @@ export default function SalesAnalytics() {
 
             <DrilldownPanel filters={filters} items={SALES_DRILLDOWN} />
 
-            <p className="text-[11px] text-muted-foreground">
-              Formula {data.meta.formulaVersion} · Data as of {data.meta.dataAsOf} · {data.meta.dateBasis} · Ladder state:{' '}
-              {data.meta.ladderState} · Period {data.meta.range.periodDays} day(s)
-            </p>
+            <MetricMetaFooter
+              formulaVersion={data.meta.formulaVersion}
+              dataAsOf={data.meta.dataAsOf}
+              dateBasis={data.meta.dateBasis}
+              ladderState={data.meta.ladderState}
+              periodDays={data.meta.range.periodDays}
+            />
           </div>
         ) : isLoading ? (
           <Skeleton className="h-[400px] w-full rounded-lg" />

@@ -6,8 +6,9 @@
  * KpiValue states in product cells · filter → query-key → request-params for
  * search/sort/dir · uncosted fix-list order drill-down.
  */
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
+import { userEvent } from 'vitest/browser'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ProductPnlTable, PnlCell } from '../components/ProductPnlTable'
 import { ContributionFloor } from '../components/ContributionFloor'
@@ -15,6 +16,8 @@ import { UncostedFixList } from '../components/UncostedFixList'
 import { BasisBadge } from '../components/ProductBasisBadge'
 import { buildProductsQuery, productsQueryKey, productDetailQueryKey } from '../api'
 import { productVariantOrdersHref } from '../product-detail'
+import ProductAnalytics, { ProductTotalsBand } from '../products'
+import type { OverviewMeta, ProductsResponse } from '../types'
 import {
   PRODUCT_CONTRIBUTION_FLOOR_STATEMENT,
   RETURN_INCIDENCE_LABEL,
@@ -238,5 +241,123 @@ describe('UncostedFixList', () => {
   it('renders the empty state when nothing is uncosted', async () => {
     const { getByText } = await renderWithClient(<UncostedFixList uncosted={{ rows: [], totals: { units: 0, lines: 0 } }} />)
     await expect.element(getByText('No uncosted lines', { exact: true })).toBeInTheDocument()
+  })
+})
+
+// ─── W2 polish: totals KpiCards, basis legend, sticky col, footer ────────────
+
+const productsMocks = vi.hoisted(() => ({
+  products: undefined as unknown as ProductsResponse,
+}))
+
+vi.mock('@/features/business-analytics/hooks', () => ({
+  useAnalyticsProducts: () => ({ data: productsMocks.products, isLoading: false, error: undefined, refetch: () => {} }),
+  useAnalyticsProductDetail: () => ({ data: null, isLoading: false, error: undefined, refetch: () => {} }),
+  useUncostedProducts: () => ({ data: null, isLoading: false, error: undefined }),
+}))
+
+vi.mock('@/features/categories/api', () => ({
+  categoriesApi: { list: vi.fn().mockResolvedValue({ data: { data: [] } }) },
+}))
+
+function productsFixture(): ProductsResponse {
+  return {
+    data: {
+      rows: [row()],
+      totals: { netSales: 9000, contribution: 4210, units: 18 },
+      uncosted: { units: 0, lines: 0 },
+      contributionFloor: PRODUCT_CONTRIBUTION_FLOOR_STATEMENT,
+    },
+    meta: {
+      range: { start: '2026-09-01', end: '2026-09-07', periodDays: 7 },
+      comparison: { prevStart: '2026-08-25', prevEnd: '2026-08-31' },
+      filters: {},
+      granularity: 'day',
+      generatedAt: '2026-09-07T00:00:00.000Z',
+      dataAsOf: '2026-09-07',
+      formulaVersion: 'v9',
+      recognition: 'delivered-only',
+      costCoverage: {
+        cogs: { actualPct: 100, estimatedPct: 0, unavailableUnits: 0, unavailableItems: 0 },
+        shipping: { actualOrders: 9, estimatedOrders: 0, unavailableOrders: 0 },
+        fees: { paidPayments: 9, withFee: 9, withoutFee: 0 },
+        marketing: { datedRows: 1, undatedRows: 0, datedAmount: 500, undatedAmount: 0 },
+        delivery: { onlineOrders: 9, codOrders: 0, collectionUnavailableOrders: 0 },
+      },
+      ladderState: 'actual',
+      thresholds: {},
+      dateBasis: 'Delivered transition',
+    } satisfies OverviewMeta as OverviewMeta,
+  }
+}
+
+describe('ProductTotalsBand (W2 KpiCard idiom)', () => {
+  it('renders Σ totals as KpiCards carrying the formula version', async () => {
+    const { container, getByText, getByRole } = await renderWithClient(
+      <ProductTotalsBand totals={{ netSales: 9000, contribution: 4210, units: 18 }} formulaVersion="v9" />,
+    )
+    await expect.element(getByText('Net Sales (Σ products)', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText('৳9,000', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText('Contribution (Σ products)', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText('Units recognised', { exact: true })).toBeInTheDocument()
+    // Formula disclosure restored on every card.
+    await userEvent.click(getByRole('button', { name: 'About Net Sales (Σ products)' }))
+    const text = container.textContent ?? ''
+    expect(text).toMatch(/Formula: v9/)
+  })
+})
+
+describe('ProductPnlTable basis legend + sticky column (W2)', () => {
+  it('states the column→basis mapping once above the table, not per column', async () => {
+    const { container } = await renderWithClient(
+      <ProductPnlTable title="T" rows={[row()]} detailHref={(r) => `/mon/analytics/products/${r.productId}`} />,
+    )
+    const legend = container.querySelector('[data-testid="pnl-basis-legend"]')?.textContent ?? ''
+    expect(legend).toMatch(/direct/)
+    expect(legend).toMatch(/attributed/)
+    expect(legend).toMatch(/allocated/)
+    expect(legend).toMatch(/Marketing/)
+    expect(legend).toMatch(/Fulfillment/)
+    // Headers carry no per-column badges anymore.
+    const thead = container.querySelector('thead')?.textContent ?? ''
+    expect(thead).not.toMatch(/direct/)
+    expect(thead).not.toMatch(/attributed/)
+    expect(thead).not.toMatch(/allocated/)
+  })
+
+  it('pins the first column for wide-table sideways scroll', async () => {
+    const { container } = await renderWithClient(
+      <ProductPnlTable title="T" rows={[row()]} detailHref={(r) => `/mon/analytics/products/${r.productId}`} />,
+    )
+    const firstHead = container.querySelector('thead th')
+    expect(firstHead?.className).toMatch(/sticky/)
+    const firstCell = container.querySelector('tbody td')
+    expect(firstCell?.className).toMatch(/sticky/)
+  })
+})
+
+describe('PnlCell estimated wording (W2)', () => {
+  it('labels estimated cells "Estimated" like every other badge', async () => {
+    const { container, getByText } = await renderWithClient(
+      <PnlCell kpi={kpi(4210, 'estimated')} />,
+    )
+    await expect.element(getByText('Estimated', { exact: true })).toBeInTheDocument()
+    expect(container.textContent ?? '').not.toMatch(/Est\b/)
+  })
+})
+
+describe('products page (W2)', () => {
+  it('bands totals, controls, table in order with a single meta footer', async () => {
+    productsMocks.products = productsFixture()
+    const { container, getByText, getByTestId } = await renderWithClient(<ProductAnalytics />)
+    await expect.element(getByText('Product Analytics', { exact: true })).toBeInTheDocument()
+    await expect.element(getByTestId('product-totals')).toBeInTheDocument()
+    await expect.element(getByTestId('product-table-controls')).toBeInTheDocument()
+    // Table-header-adjacent controls: totals → controls → table.
+    const html = container.innerHTML
+    expect(html.indexOf('product-totals')).toBeLessThan(html.indexOf('product-table-controls'))
+    expect(html.indexOf('product-table-controls')).toBeLessThan(html.indexOf('pnl-basis-legend'))
+    const text = container.textContent ?? ''
+    expect((text.match(/Formula v9 ·/g) ?? []).length).toBe(1)
   })
 })

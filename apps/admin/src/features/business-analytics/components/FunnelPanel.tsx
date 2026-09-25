@@ -8,7 +8,19 @@ import { formatBDT, formatPct, type SalesFunnelStage } from '../types'
  * counts; Add-to-Cart / Checkout-started render "Not instrumented" — never
  * zeros. Outcomes (returned / cancelled) show share-of-booked, not chain
  * conversion.
+ *
+ * Bar idiom (W2): neutral progression bars; semantic colour for outcomes
+ * only — success for Delivered-positive, danger for returned, warning for
+ * cancelled. Colour is never the sole indicator: every bar carries its
+ * counts + conversion in words.
  */
+function funnelBarClass(key: string): string {
+  const k = key.toLowerCase()
+  if (k.includes('deliver')) return 'bg-success/70'
+  if (k.includes('return')) return 'bg-danger/60'
+  if (k.includes('cancel')) return 'bg-warning/60'
+  return 'bg-muted-foreground/40'
+}
 export function FunnelPanel({ stages }: { stages: SalesFunnelStage[] }) {
   const max = Math.max(1, ...stages.filter((s) => s.instrumented).map((s) => s.orders ?? 0))
   return (
@@ -44,7 +56,7 @@ export function FunnelPanel({ stages }: { stages: SalesFunnelStage[] }) {
               {s.instrumented ? (
                 <div className="mt-1 h-2 rounded-full bg-muted overflow-hidden">
                   <div
-                    className="h-full rounded-full bg-success/70"
+                    className={`h-full rounded-full ${funnelBarClass(s.key)}`}
                     style={{ width: `${Math.max(0, Math.min(100, ((s.orders ?? 0) / max) * 100))}%` }}
                   />
                 </div>
