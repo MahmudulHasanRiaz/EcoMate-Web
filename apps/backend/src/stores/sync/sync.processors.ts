@@ -14,6 +14,8 @@ import { StockStatusSyncService } from './stock-status-sync.service';
 import { SyncRunService } from './sync-run.service';
 import { SyncQueuesService, fanoutConcurrency } from './sync-queues.service';
 import { StoreCircuitBreaker } from './sync-circuit';
+import { StoreOrderIngestService } from '../orders/store-order-ingest.service';
+import { StoreOrderReconcileService } from '../orders/store-order-reconcile.service';
 import { classifyProviderError, MAX_SYNC_ATTEMPTS, RETRY_BACKOFF_MS } from '../providers/retry-classifier';
 
 async function boundedMap<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): Promise<R[]> {
@@ -173,15 +175,60 @@ export class StoreStockSyncProcessor extends WorkerHost {
 
 @Processor('store-order-ingest', { concurrency: 5, limiter: { max: 20, duration: 1000 } })
 export class StoreOrderIngestProcessor extends WorkerHost {
-  constructor(private readonly runs: SyncRunService) { super(); }
+  private readonly logger = new Logger(StoreOrderIngestProcessor.name);
+  constructor(
+    private readonly runs: SyncRunService,
+    private readonly queues: SyncQueuesService,
+    private readonly ingest: StoreOrderIngestService,
+  ) { super(); }
+
+  /**
+   * P6 ingest execution (BR-11/BR-12): webhook + reconcile funnels share one
+   * job identity (`store:{storeId}:order:{externalId}`); per-store
+   * serialization keeps a store's deliveries ordered (R-8).
+   */
   async process(job: Job): Promise<unknown> {
-    const { runId } = (job.data ?? {}) as { runId?: string };
-    if (runId) {
-      await this.runs.recordItem(runId, {
-        objectType: 'ORDER', status: 'SKIPPED', reason: 'ORDER_INGEST_DEFERRED_TO_P6', auditLevel: 'G',
-      });
+    const { runId, storeId, rawOrder, deliveryKey } = (job.data ?? {}) as {
+      runId?: string; storeId?: string; rawOrder?: Record<string, unknown>; deliveryKey?: string;
+    };
+    if (!storeId || !rawOrder) {
+      if (runId) {
+        await this.runs.recordItem(runId, {
+          objectType: 'ORDER', status: 'SKIPPED', reason: 'ORDER_INGEST_MISSING_PAYLOAD', auditLevel: 'G',
+        });
+      }
+      return { ignored: 'missing-payload' };
     }
-    return { deferred: 'P6' };
+    return this.queues.serializeStore(storeId, async () => {
+      try {
+        const res = await this.ingest.ingest(storeId, rawOrder, {
+          type: job.name === 'webhook-order' ? 'WEBHOOK' : 'RECONCILE',
+          runId,
+          actor: job.name === 'webhook-order' ? 'webhook' : 'reconcile',
+        });
+        return { ...res, deliveryKey };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.error(`order ingest failed (store ${storeId}): ${msg}`);
+        if (runId) {
+          await this.runs.recordItem(runId, {
+            storeId,
+            objectType: 'ORDER',
+            status: 'FAILED',
+            reason: `ORDER_INGEST_FAILED: ${msg}`,
+            auditLevel: 'G',
+          });
+        }
+        await this.runs.upsertIssue({
+          storeId,
+          code: 'ORDER_INGEST_FAILED',
+          objectType: 'ORDER',
+          objectKey: `store:${storeId}:ingest:${deliveryKey ?? 'unknown'}`,
+          message: `Order ingest failed: ${msg}`,
+        });
+        throw err;
+      }
+    });
   }
 }
 
@@ -207,8 +254,22 @@ export class StoreReconcileProcessor extends WorkerHost {
     private readonly products: ProductSyncService,
     private readonly runs: SyncRunService,
     private readonly queues: SyncQueuesService,
+    private readonly orderReconcile: StoreOrderReconcileService,
   ) { super(); }
   async process(job: Job): Promise<unknown> {
+    // P6 order reconcile (BR-10/BR-11): hourly tick fans out per-store bounded
+    // runs; manual triggers land here with the same bounds.
+    if (job.name === 'order-reconcile-tick') {
+      return this.orderReconcile.tickHourly();
+    }
+    if (job.name === 'order-reconcile') {
+      const { runId, storeId, requestedDays, wideningReason } = job.data as {
+        runId: string; storeId: string; requestedDays?: number; wideningReason?: string;
+      };
+      return this.queues.serializeStore(storeId, () =>
+        this.orderReconcile.runStore(storeId, runId, { requestedDays, wideningReason }),
+      );
+    }
     // Hourly product safety-net: re-run the ownership engine over assigned
     // products (bounded 3-day window semantics land with order reconcile in
     // P6; product re-verification here never resolves — BR-26).

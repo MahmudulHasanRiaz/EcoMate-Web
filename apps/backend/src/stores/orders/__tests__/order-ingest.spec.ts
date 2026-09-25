@@ -1,0 +1,349 @@
+/**
+ * P6 order suite (§13) — ingest worker: webhook-only / reconcile-only / both
+ * → exactly one order; 3-day window; widening bounds; stock-shortfall kept;
+ * unmatched-SKU issue + one-click map; status-only reconcile (BR-17).
+ *
+ * Service-level with mocked Prisma/Orders/Runs; the provider side uses the
+ * real FakeProvider (P2 fixture contract) for the reconcile window vectors.
+ */
+import { StoreOrderIngestService } from '../store-order-ingest.service';
+import { StoreOrderReconcileService } from '../store-order-reconcile.service';
+import { FakeProvider } from '../../providers/__tests__/fake.provider';
+import { seedFakeProvider, buildOrderFixtures } from '../../providers/__tests__/fixtures';
+import { STATUS_MAP } from '../../../import/order-import.service';
+
+function mockPrisma() {
+  return {
+    store: { findUnique: jest.fn() },
+    storeOrderMapping: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
+    storeOrderStatusMap: { findUnique: jest.fn(), create: jest.fn() },
+    storeSkuMapping: { findUnique: jest.fn(), upsert: jest.fn() },
+    productVariant: { findUnique: jest.fn() },
+    product: { findFirst: jest.fn() },
+    orderStatus: { findFirst: jest.fn() },
+    order: { findUnique: jest.fn(), update: jest.fn() },
+    syncRun: { update: jest.fn().mockResolvedValue({}) },
+    syncRun: { update: jest.fn() },
+  } as any;
+}
+
+function mockRuns() {
+  return {
+    begin: jest.fn().mockResolvedValue({ id: 'run-1' }),
+    recordItem: jest.fn().mockResolvedValue({}),
+    upsertIssue: jest.fn().mockResolvedValue({}),
+    finish: jest.fn().mockResolvedValue({}),
+  } as any;
+}
+
+const CONFIRMED = { id: 'st-confirmed', name: 'Confirmed' };
+const CREATED_ORDER = { id: 'ord-1', status: { name: 'Confirmed' }, total: 250 };
+
+function buildIngest(prisma: any, overrides: Record<string, any> = {}) {
+  const orders = {
+    create: jest.fn().mockResolvedValue({ ...CREATED_ORDER }),
+    updateStatus: jest.fn().mockResolvedValue({}),
+  };
+  const svc = new StoreOrderIngestService(
+    prisma,
+    orders as any,
+    mockRuns(),
+    { providerFor: jest.fn() } as any,
+    { storeWithSecrets: jest.fn() } as any,
+  );
+  return { svc, orders, runs: (svc as any).runs };
+}
+
+function seedStatusMaps(prisma: any, name = 'Confirmed') {
+  prisma.storeOrderStatusMap.findUnique.mockResolvedValue({ internalStatusName: name });
+  prisma.orderStatus.findFirst.mockResolvedValue({ id: 'st-x', name });
+}
+
+describe('P6 ingest — webhook creates exactly one order (BR-12)', () => {
+  it('creates with the external-store internal contract + provenance', async () => {
+    const prisma = mockPrisma();
+    prisma.storeOrderMapping.findUnique.mockResolvedValue(null);
+    prisma.store.findUnique.mockResolvedValue({ id: 's1', kind: 'CUSTOM', name: 'Bridge' });
+    seedStatusMaps(prisma);
+    prisma.storeSkuMapping.findUnique.mockResolvedValue(null);
+    prisma.productVariant.findUnique.mockResolvedValue(null);
+    prisma.product.findFirst.mockResolvedValue({ id: 'prod-1' });
+    const { svc, orders } = buildIngest(prisma);
+
+    const res = await svc.ingest('s1', {
+      id: 'ext-1', status: 'processing', total: 250, currency: 'BDT',
+      createdAt: '2026-09-23T13:00:00.000Z',
+      items: [{ sku: 'SKU-IN-001', qty: 1, price: 250 }],
+      customer: { phone: '01700000001', name: 'Sara' },
+    }, { type: 'WEBHOOK', runId: 'run-1' });
+
+    expect(res).toMatchObject({ orderId: 'ord-1', created: true });
+    expect(orders.create).toHaveBeenCalledTimes(1);
+    // create(dto, clientIp, user, internal): internal is the FOURTH arg —
+    // passing it third would land in `user` and silently disable the ingest
+    // contract (live-E2E find).
+    expect(orders.create.mock.calls[0]).toHaveLength(4);
+    expect(orders.create.mock.calls[0][2]).toBeUndefined();
+    const [, , , internal] = orders.create.mock.calls[0];
+    expect(internal).toMatchObject({
+      ingest: 'external_store',
+      storeId: 's1',
+      externalOrderId: 'ext-1',
+      idempotencyKey: 'store:s1:order:ext-1',
+      allowStockShortfall: true,
+      skipPurchaseTracking: true,
+    });
+    expect(prisma.storeOrderMapping.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ storeId: 's1', externalOrderId: 'ext-1', orderId: 'ord-1' }),
+      }),
+    );
+  });
+
+  it('webhook + reconcile + manual of the same external order → exactly one order', async () => {
+    const prisma = mockPrisma();
+    prisma.store.findUnique.mockResolvedValue({ id: 's1', kind: 'CUSTOM', name: 'Bridge' });
+    seedStatusMaps(prisma);
+    prisma.storeSkuMapping.findUnique.mockResolvedValue(null);
+    prisma.productVariant.findUnique.mockResolvedValue(null);
+    prisma.product.findFirst.mockResolvedValue({ id: 'prod-1' });
+    // First call misses the mapping; every later call finds it (same status).
+    prisma.storeOrderMapping.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue({ orderId: 'ord-1', externalOrderId: 'ext-9', order: { status: { name: 'Confirmed' }, total: 250 } });
+    prisma.storeOrderMapping.create.mockResolvedValue({});
+    prisma.storeOrderStatusMap.findUnique.mockResolvedValue({ internalStatusName: 'Confirmed' });
+    const { svc, orders } = buildIngest(prisma);
+    const raw = {
+      id: 'ext-9', status: 'processing', total: 250, currency: 'BDT',
+      createdAt: '2026-09-23T13:00:00.000Z',
+      items: [{ sku: 'SKU-IN-001', qty: 1, price: 250 }],
+    };
+    const r1 = await svc.ingest('s1', raw, { type: 'WEBHOOK', runId: 'run-1' });
+    const r2 = await svc.ingest('s1', raw, { type: 'RECONCILE', runId: 'run-2' });
+    const r3 = await svc.ingest('s1', raw, { type: 'MANUAL', runId: 'run-3' });
+    expect(r1.created).toBe(true);
+    expect(r2.created).toBe(false);
+    expect(r3.created).toBe(false);
+    expect(orders.create).toHaveBeenCalledTimes(1);
+    expect(r2.orderId).toBe('ord-1');
+    expect(r3.orderId).toBe('ord-1');
+  });
+});
+
+describe('P6 ingest — unmatched SKU (BR-16 spirit: never lose the order)', () => {
+  it('creates product-less + raises UNMATCHED_SKU with a one-click map action', async () => {
+    const prisma = mockPrisma();
+    prisma.storeOrderMapping.findUnique.mockResolvedValue(null);
+    prisma.store.findUnique.mockResolvedValue({ id: 's1', kind: 'CUSTOM', name: 'Bridge' });
+    seedStatusMaps(prisma);
+    prisma.storeSkuMapping.findUnique.mockResolvedValue(null);
+    prisma.productVariant.findUnique.mockResolvedValue(null);
+    prisma.product.findFirst.mockResolvedValue(null); // nothing matches
+    const { svc, orders, runs } = buildIngest(prisma);
+
+    await svc.ingest('s1', {
+      id: 'ext-u1', status: 'pending', total: 150, currency: 'BDT',
+      createdAt: '2026-09-22T12:00:00.000Z',
+      items: [{ sku: 'SKU-NOPE-001', qty: 1, price: 150 }],
+    }, { type: 'WEBHOOK', runId: 'run-1' });
+
+    expect(orders.create).toHaveBeenCalledTimes(1);
+    const [dto, , , internal] = orders.create.mock.calls[0];
+    expect(dto.items[0]).toMatchObject({ quantity: 1, price: 150 });
+    expect(dto.items[0].productId).toBeUndefined();
+    expect(internal.allowProductlessItems).toBe(true);
+    expect(runs.upsertIssue).toHaveBeenCalledWith(
+      expect.objectContaining({ storeId: 's1', code: 'UNMATCHED_SKU' }),
+    );
+
+    // One-click map action: operator maps the SKU; the row is stored.
+    prisma.storeSkuMapping.upsert.mockResolvedValue({ storeId: 's1', sku: 'SKU-NOPE-001' });
+    await svc.mapSku('s1', 'SKU-NOPE-001', { productId: 'prod-1' });
+    expect(prisma.storeSkuMapping.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { storeId_sku: { storeId: 's1', sku: 'SKU-NOPE-001' } } }),
+    );
+  });
+});
+
+describe('P6 status-only reconcile (BR-17)', () => {
+  it('same status → no order rewrite, totals/items untouched', async () => {
+    const prisma = mockPrisma();
+    prisma.storeOrderMapping.findUnique.mockResolvedValue({
+      orderId: 'ord-1', externalOrderId: 'ext-2',
+      order: { status: { name: 'Confirmed' }, total: 500 },
+    });
+    prisma.storeOrderStatusMap.findUnique.mockResolvedValue({ internalStatusName: 'Confirmed' });
+    const { svc, orders, runs } = buildIngest(prisma);
+
+    const res = await svc.ingest('s1', {
+      id: 'ext-2', status: 'processing', total: 500, currency: 'BDT',
+      createdAt: '2026-09-21T11:00:00.000Z', items: [],
+    }, { type: 'RECONCILE', runId: 'run-1' });
+
+    expect(res).toMatchObject({ created: false, status: 'Confirmed' });
+    expect(orders.create).not.toHaveBeenCalled();
+    expect(orders.updateStatus).not.toHaveBeenCalled();
+    expect(prisma.order.update).not.toHaveBeenCalled();
+    expect(runs.recordItem).toHaveBeenCalledWith(
+      'run-1',
+      expect.objectContaining({ status: 'SKIPPED', reason: expect.stringContaining('totals/items untouched') }),
+    );
+  });
+
+  it('status change → updateStatus only; totals delta noted, never rewritten', async () => {
+    const prisma = mockPrisma();
+    prisma.storeOrderMapping.findUnique.mockResolvedValue({
+      orderId: 'ord-1', externalOrderId: 'ext-2',
+      order: { status: { name: 'Confirmed' }, total: 500 },
+    });
+    prisma.storeOrderStatusMap.findUnique.mockResolvedValue({ internalStatusName: 'Delivered' });
+    prisma.orderStatus.findFirst.mockResolvedValue({ id: 'st-del', name: 'Delivered' });
+    prisma.order.findUnique.mockResolvedValue({ timeline: [] });
+    const { svc, orders, runs } = buildIngest(prisma);
+
+    const res = await svc.ingest('s1', {
+      id: 'ext-2', status: 'completed', total: 999, currency: 'BDT',
+      createdAt: '2026-09-21T11:00:00.000Z', items: [],
+    }, { type: 'WEBHOOK', runId: 'run-1' });
+
+    expect(res).toMatchObject({ created: false, status: 'Delivered' });
+    expect(orders.updateStatus).toHaveBeenCalledWith(
+      'ord-1', { statusId: 'st-del' }, 'webhook', 'store-sync',
+    );
+    // A timeline note may be appended, but items/totals are never rewritten.
+    for (const call of prisma.order.update.mock.calls) {
+      expect(call[0].data).not.toHaveProperty('items');
+      expect(call[0].data).not.toHaveProperty('total');
+      expect(call[0].data).not.toHaveProperty('subtotal');
+    }
+    expect(runs.recordItem).toHaveBeenCalledWith(
+      'run-1',
+      expect.objectContaining({ status: 'SUCCESS', reason: expect.stringContaining('STATUS_ONLY_RECONCILE') }),
+    );
+  });
+});
+
+describe('P6 status map seeding (import STATUS_MAP)', () => {
+  it('seeds every STATUS_MAP entry once; never overwrites operator edits', async () => {
+    const prisma = mockPrisma();
+    prisma.storeOrderStatusMap.findUnique.mockResolvedValue(null);
+    prisma.storeOrderStatusMap.create.mockResolvedValue({});
+    const { svc } = buildIngest(prisma);
+    const seeded = await svc.ensureStatusMaps('s1');
+    expect(seeded).toBe(Object.keys(STATUS_MAP).length);
+    expect(prisma.storeOrderStatusMap.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ externalStatus: 'processing', internalStatusName: 'Confirmed' }) }),
+    );
+
+    prisma.storeOrderStatusMap.findUnique.mockResolvedValue({ internalStatusName: 'Custom' });
+    const reseeded = await svc.ensureStatusMaps('s1');
+    expect(reseeded).toBe(0);
+    expect(prisma.storeOrderStatusMap.create).toHaveBeenCalledTimes(Object.keys(STATUS_MAP).length);
+  });
+});
+
+describe('P6 reconcile — 3-day window + widening bounds (BR-10)', () => {
+  function buildReconcile() {
+    const prisma = mockPrisma();
+    const runs = mockRuns();
+    const fake = new FakeProvider();
+    seedFakeProvider(fake);
+    const ingest = {
+      ingest: jest.fn().mockResolvedValue({ orderId: 'ord-1', created: true, status: 'Confirmed', statusChanged: true }),
+      providerFor: jest.fn().mockResolvedValue(fake),
+    } as any;
+    const stores = {
+      storeWithSecrets: jest.fn().mockResolvedValue({ id: 's1', kind: 'CUSTOM', settings: {}, secrets: {} }),
+    } as any;
+    const svc = new StoreOrderReconcileService(prisma, runs, { enqueue: jest.fn() } as any, ingest, stores);
+    return { svc, prisma, runs, ingest, fake };
+  }
+
+  it('fetches the previous 3 days, paged and bounded', async () => {
+    const { svc, fake, runs } = buildReconcile();
+    const counts = await svc.runStore('s1', 'run-1', {});
+    // 5 fixture orders across 2026-09-20…24 — the 3-day window ending now
+    // (2026+) contains none of them, so zero created and a clean finish.
+    expect(counts).toMatchObject({ failed: 0 });
+    expect(fake.calls.filter((c) => c.method === 'fetchOrders')).toHaveLength(1);
+    const args = fake.calls.find((c) => c.method === 'fetchOrders')!.detail as any;
+    const spanDays = (new Date(args.until).getTime() - new Date(args.since).getTime()) / 86400000;
+    expect(spanDays).toBeCloseTo(3, 5);
+    expect(args.pageSize).toBeLessThanOrEqual(50);
+    expect(runs.finish).toHaveBeenCalledWith('run-1', expect.objectContaining({ failed: 0 }));
+  });
+
+  it('ingests fixture orders that fall inside the window', async () => {
+    const { svc, ingest } = buildReconcile();
+    // Opt-in widening: master flags + widening flag on, recorded reason.
+    process.env.THIRD_PARTY_STORES_ENABLED = 'true';
+    process.env.store_sync_enabled = 'true';
+    process.env.store_reconcile_enabled = 'true';
+    process.env.store_reconcile_widening_enabled = 'true';
+    try {
+      const counts = await svc.runStore('s1', 'run-1', {
+        requestedDays: 30,
+        wideningReason: 'fixture coverage',
+      });
+      expect((svc as any).prisma.syncRun.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'run-1' },
+          data: expect.objectContaining({ windowDays: 30, wideningReason: 'fixture coverage' }),
+        }),
+      );
+      expect(counts.failed).toBe(0);
+      expect(ingest.ingest).toHaveBeenCalled();
+    } finally {
+      delete process.env.THIRD_PARTY_STORES_ENABLED;
+      delete process.env.store_sync_enabled;
+      delete process.env.store_reconcile_enabled;
+      delete process.env.store_reconcile_widening_enabled;
+    }
+  });
+
+  it('widening without flag/reason or beyond 30 days is clamped', async () => {
+    const { svc } = buildReconcile();
+    // Fail-closed: widening flag off → default 3 days even when requested.
+    await svc.runStore('s1', 'run-1', { requestedDays: 90, wideningReason: 'x' });
+    const data = (svc as any).prisma.syncRun.update.mock.calls[0][0].data;
+    expect(data.windowDays).toBe(3);
+    expect(data.wideningReason).toBeNull();
+
+    // Flag on but absurd request → hard-capped at 30.
+    process.env.THIRD_PARTY_STORES_ENABLED = 'true';
+    process.env.store_sync_enabled = 'true';
+    process.env.store_reconcile_enabled = 'true';
+    process.env.store_reconcile_widening_enabled = 'true';
+    try {
+      const svc2 = buildReconcile().svc;
+      await svc2.runStore('s1', 'run-2', { requestedDays: 90, wideningReason: 'outage' });
+      const data2 = (svc2 as any).prisma.syncRun.update.mock.calls[0][0].data;
+      expect(data2.windowDays).toBe(30);
+      expect(data2.wideningReason).toBe('outage');
+    } finally {
+      delete process.env.THIRD_PARTY_STORES_ENABLED;
+      delete process.env.store_sync_enabled;
+      delete process.env.store_reconcile_enabled;
+      delete process.env.store_reconcile_widening_enabled;
+    }
+  });
+});
+
+describe('P6 order suite — failed webhook recovered by reconciliation', () => {
+  it('a missed webhook order is created by the reconcile funnel with the same identity', async () => {
+    const prisma = mockPrisma();
+    prisma.store.findUnique.mockResolvedValue({ id: 's1', kind: 'CUSTOM', name: 'Bridge' });
+    seedStatusMaps(prisma);
+    prisma.storeOrderMapping.findUnique.mockResolvedValue(null);
+    prisma.storeSkuMapping.findUnique.mockResolvedValue(null);
+    prisma.productVariant.findUnique.mockResolvedValue(null);
+    prisma.product.findFirst.mockResolvedValue({ id: 'prod-1' });
+    const { svc, orders } = buildIngest(prisma);
+    const fixture = buildOrderFixtures()[0];
+    const res = await svc.ingest('s1', { ...fixture }, { type: 'RECONCILE', runId: 'run-9' });
+    expect(res.created).toBe(true);
+    const [, , , internal] = orders.create.mock.calls[0];
+    expect(internal.idempotencyKey).toBe(`store:s1:order:${fixture.id}`);
+  });
+});

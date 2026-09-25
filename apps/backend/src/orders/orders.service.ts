@@ -108,6 +108,45 @@ function shouldAutoAssign(
 }
 
 /**
+ * P6 order-ingestion internal options (§8.5.2, BR-13/BR-16).
+ *
+ * ONE optional third parameter on `create()`. Inert by default: when absent
+ * (every controller passes only dto/ip/user — NO controller may pass
+ * `internal`), behaviour is byte-identical to before. Only four behaviours
+ * diverge, all gated on `internal.ingest === 'external_store'`:
+ *  - initial-status lookup replaced by `initialStatusName` when provided;
+ *  - `idempotencyKey` pass-through ('store:{storeId}:order:{externalId}');
+ *  - `allowStockShortfall`: a stock-availability failure becomes a warning +
+ *    STOCK_SHORTFALL flag + issue instead of a throw (BR-16);
+ *  - blocked-check bypass: the three storefront blocking checks are skipped
+ *    entirely and evaluated read-only for flagging only (BR-13/§8.5.1).
+ *    There is no blockedPolicy/reject switch anywhere (BR-13 absolute).
+ */
+export interface OrderCreateInternal {
+  ingest?: 'external_store';
+  storeId?: string;
+  externalOrderId?: string;
+  initialStatusName?: string;
+  idempotencyKey?: string;
+  allowStockShortfall?: boolean;
+  skipPurchaseTracking?: boolean;
+  storeMetadata?: Record<string, unknown>;
+  /**
+   * P6 §8.5: unresolved SKUs are created product-less (productId/variantId
+   * null, dto price kept) and raised as UNMATCHED_SKU issues with a one-click
+   * map action — the order is never lost. Only the ingest worker sets this.
+   */
+  allowProductlessItems?: boolean;
+}
+
+/** Ingest flags with operational meaning only — never blocking (BR-15). */
+export const INGEST_FLAG_BLOCKED_PHONE = 'BLOCKED_PHONE';
+export const INGEST_FLAG_BLOCKED_IP = 'BLOCKED_IP';
+export const INGEST_FLAG_SUSPENDED_CUSTOMER = 'SUSPENDED_CUSTOMER';
+export const INGEST_FLAG_STOCK_SHORTFALL = 'STOCK_SHORTFALL';
+export const INGEST_FLAG_UNMATCHED_SKU = 'UNMATCHED_SKU';
+
+/**
  * Analytics cost-capture mapping (P2, §3.2). A provided fulfillment cost is
  * staff-entered ⇒ source defaults to 'manual' (actual); an explicit
  * 'courier_default' is honoured (estimated). Absent input maps to NULL/NULL
@@ -585,6 +624,15 @@ export class OrdersService {
     sort?: string;
     order?: string;
     includeTrashed?: boolean;
+    // P6 additive channel filters (§10). storeId filters the P6 provenance
+    // column (real). salesChannelType/marketingChannel map onto legacy
+    // source fields as documented approximations until P8 adds the canonical
+    // columns; showroomId is accepted for forward-compat and becomes real in
+    // P8 (no warehouse FK on Order today).
+    storeId?: string;
+    salesChannelType?: string;
+    showroomId?: string;
+    marketingChannel?: string;
   }) {
     const page = query.page || 1;
     const perPage = query.perPage || 10;
@@ -613,6 +661,17 @@ export class OrdersService {
     if (query.courier) where.courierService = query.courier;
     if (query.assignedToId === 'unassigned') where.assignedToId = null;
     else if (query.assignedToId) where.assignedToId = query.assignedToId;
+    // P6 provenance filter: exact match on the ingesting store (null =
+    // native-only via storeId=null? No — absent means all; pass the string
+    // 'native' to select storeId IS NULL).
+    if (query.storeId === 'native') where.storeId = null;
+    else if (query.storeId) where.storeId = query.storeId;
+    // P8-preview approximations (documented; canonical columns land in P8):
+    // ONLINE ≡ legacy WEBSITE today (§9.2); platform attribution lives in
+    // sourcePlatform today. showroomId has no predicate yet (P8).
+    if (query.salesChannelType === 'ONLINE') where.salesChannel = 'WEBSITE';
+    else if (query.salesChannelType === 'OFFLINE') where.salesChannel = { not: 'WEBSITE' };
+    if (query.marketingChannel) where.sourcePlatform = query.marketingChannel;
     if (query.dateFrom || query.dateTo) {
       where.createdAt = {};
       if (query.dateFrom) where.createdAt.gte = new Date(query.dateFrom);
@@ -884,14 +943,23 @@ export class OrdersService {
     }
   }
 
-  async create(dto: CreateOrderDto, clientIp?: string, user?: any) {
+  async create(dto: CreateOrderDto, clientIp?: string, user?: any, internal?: OrderCreateInternal) {
     const userId = user?.userId;
     const isCustomer = Boolean(user && user.role === 'customer');
 
+    // P6 §8.5.2: the ONLY internal entry point. No controller passes this.
+    const isExternalIngest = internal?.ingest === 'external_store';
+
     const displayId = await this.generateDisplayId();
-    const initialStatus = await this.prisma.orderStatus.findFirst({
-      where: { isInitial: true },
-    });
+    // P6 §8.5.2: initial-status override for external ingest; the default
+    // path (initial flag lookup) is untouched.
+    const initialStatus = isExternalIngest && internal?.initialStatusName
+      ? await this.prisma.orderStatus.findFirst({
+          where: { name: internal.initialStatusName },
+        })
+      : await this.prisma.orderStatus.findFirst({
+          where: { isInitial: true },
+        });
     if (!initialStatus)
       throw new BadRequestException('No initial order status configured');
 
@@ -928,7 +996,50 @@ export class OrdersService {
     const warnings: string[] = [];
     const isStaffCreate = !!userId && !isCustomer;
 
-    if (clientIp) {
+    // P6 §8.5.1 (BR-13/BR-15): an external order that already exists on the
+    // store is ALWAYS ingested. The three storefront blocking checks below
+    // are skipped entirely for external ingest — evaluated read-only for
+    // flagging only. Flags never block ingestion or any later transition.
+    // There is no blockedPolicy / reject mode / configurable override (BR-13).
+    const ingestFlags: string[] = [];
+    const ingestNotes: string[] = [];
+
+    if (isExternalIngest) {
+      if (clientIp) {
+        const orderBlockIp =
+          await this.blockedEntries.findOrderBlockedIp(clientIp);
+        if (orderBlockIp) {
+          ingestFlags.push(INGEST_FLAG_BLOCKED_IP);
+          ingestNotes.push(
+            'Ingested with blocked IP (storefront-ordering block is informational for external orders).',
+          );
+        }
+      }
+      const ingestBlockedPhone = dto.guestPhone
+        ? await this.blockedEntries.findBlockedPhone(dto.guestPhone)
+        : null;
+      if (ingestBlockedPhone) {
+        ingestFlags.push(INGEST_FLAG_BLOCKED_PHONE);
+        ingestNotes.push(
+          'Ingested with blocked phone number (storefront-ordering block is informational for external orders).',
+        );
+      }
+    // Native storefront path only — external ingest evaluated these
+    // read-only above (§8.5.1) and must never throw here (BR-13).
+      if (dto.guestPhone && !dto.customerId) {
+        const ingestSuspended = await this.customersService.isPhoneBlocked(
+          dto.guestPhone,
+        );
+        if (ingestSuspended) {
+          ingestFlags.push(INGEST_FLAG_SUSPENDED_CUSTOMER);
+          ingestNotes.push(
+            'Ingested for a suspended customer account (informational for external orders).',
+          );
+        }
+      }
+    }
+
+    if (!isExternalIngest && clientIp) {
       const orderBlockIp =
         await this.blockedEntries.findOrderBlockedIp(clientIp);
       if (orderBlockIp) {
@@ -941,7 +1052,7 @@ export class OrdersService {
       }
     }
 
-    const blockedPhone = dto.guestPhone
+    const blockedPhone = dto.guestPhone && !isExternalIngest
       ? await this.blockedEntries.findBlockedPhone(dto.guestPhone)
       : null;
     if (blockedPhone) {
@@ -953,7 +1064,9 @@ export class OrdersService {
       warnings.push('This phone number is blocked for storefront ordering.');
     }
 
-    if (dto.guestPhone && !dto.customerId) {
+    // Native storefront path only — external ingest evaluated these
+    // read-only above (§8.5.1) and must never throw here (BR-13).
+    if (dto.guestPhone && !dto.customerId && !isExternalIngest) {
       const isBlocked = await this.customersService.isPhoneBlocked(
         dto.guestPhone,
       );
@@ -991,9 +1104,17 @@ export class OrdersService {
         },
       });
       if (user?.status === 'suspended') {
-        throw new BadRequestException(
-          'This account has been blocked. Please contact support.',
-        );
+        // P6 §8.5.1: external ingest never rejects on suspension — flag only.
+        if (isExternalIngest) {
+          ingestFlags.push(INGEST_FLAG_SUSPENDED_CUSTOMER);
+          ingestNotes.push(
+            'Ingested for a suspended customer account (informational for external orders).',
+          );
+        } else {
+          throw new BadRequestException(
+            'This account has been blocked. Please contact support.',
+          );
+        }
       }
       // Ensure CustomerProfile exists (order FK now references CustomerProfile).
       // Staff-created orders may update the customer's name/email/phone.
@@ -1029,7 +1150,40 @@ export class OrdersService {
       }
     }
 
-    // ALWAYS_OUT_OF_STOCK guard: block order creation for these products
+    // ALWAYS_OUT_OF_STOCK guard: block order creation for these products.
+    // P6 BR-16: external ingest with allowStockShortfall never discards the
+    // order on a stock-state mismatch — the shortfall is flagged instead.
+    const allowStockShortfall =
+      isExternalIngest && internal?.allowStockShortfall === true;
+    const stockShortfalls: string[] = [];
+    const shortfallItems = new Set<object>();
+    const noteShortfall = (item: object | null, msg: string) => {
+      stockShortfalls.push(msg);
+      if (item) shortfallItems.add(item);
+    };
+    const guardAvailability = (
+      item: object,
+      opts: {
+        name: string;
+        availabilityMode?: string | null;
+        managedStockQuantity: number | null;
+        reservedStock: number | null;
+        quantity: number;
+      },
+    ) => {
+      if (!allowStockShortfall) {
+        this.assertManagedAvailability(opts);
+        return;
+      }
+      try {
+        this.assertManagedAvailability(opts);
+      } catch (err) {
+        noteShortfall(
+          item,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    };
     const itemProductIds = dto.items
       .filter((i) => i.productId)
       .map((i) => i.productId!);
@@ -1043,9 +1197,23 @@ export class OrdersService {
       });
       if (blockedProducts.length > 0) {
         const names = blockedProducts.map((p) => p.name).join(', ');
-        throw new BadRequestException(
-          `Cannot order "${names}" — this product is currently unavailable.`,
-        );
+        if (allowStockShortfall) {
+          for (const item of dto.items) {
+            if (
+              item.productId &&
+              blockedProducts.some((p) => p.id === item.productId)
+            ) {
+              noteShortfall(
+                item,
+                `Product "${blockedProducts.find((p) => p.id === item.productId)?.name}" is marked always-out-of-stock; order kept with shortfall flag.`,
+              );
+            }
+          }
+        } else {
+          throw new BadRequestException(
+            `Cannot order "${names}" — this product is currently unavailable.`,
+          );
+        }
       }
     }
 
@@ -1203,7 +1371,7 @@ export class OrdersService {
                   reservedStock: true,
                 },
               });
-              this.assertManagedAvailability({
+              guardAvailability(item, {
                 name: sub.product.name ?? sub.productId,
                 availabilityMode: sub.product.availabilityMode,
                 managedStockQuantity: compVariant?.managedStockQuantity ?? 0,
@@ -1211,7 +1379,7 @@ export class OrdersService {
                 quantity: compQty,
               });
             } else {
-              this.assertManagedAvailability({
+              guardAvailability(item, {
                 name: sub.product?.name ?? sub.productId,
                 availabilityMode: sub.product?.availabilityMode,
                 managedStockQuantity: sub.product?.managedStockQuantity ?? 0,
@@ -1246,11 +1414,18 @@ export class OrdersService {
             throw new BadRequestException(`Product is no longer active`);
           }
           if (parentProduct.availabilityMode === 'ALWAYS_OUT_OF_STOCK') {
-            throw new BadRequestException(
-              `Product "${parentProduct.name}" is out of stock and cannot be ordered`,
-            );
+            if (allowStockShortfall) {
+              noteShortfall(
+                item,
+                `Product "${parentProduct.name}" is out of stock; order kept with shortfall flag.`,
+              );
+            } else {
+              throw new BadRequestException(
+                `Product "${parentProduct.name}" is out of stock and cannot be ordered`,
+              );
+            }
           }
-          this.assertManagedAvailability({
+          guardAvailability(item, {
             name: parentProduct.name,
             availabilityMode: parentProduct.availabilityMode,
             managedStockQuantity: variant.managedStockQuantity ?? 0,
@@ -1275,11 +1450,18 @@ export class OrdersService {
             throw new BadRequestException(`Product is no longer active`);
           }
           if (product.availabilityMode === 'ALWAYS_OUT_OF_STOCK') {
-            throw new BadRequestException(
-              `Product "${product.name}" is out of stock and cannot be ordered`,
-            );
+            if (allowStockShortfall) {
+              noteShortfall(
+                item,
+                `Product "${product.name}" is out of stock; order kept with shortfall flag.`,
+              );
+            } else {
+              throw new BadRequestException(
+                `Product "${product.name}" is out of stock and cannot be ordered`,
+              );
+            }
           }
-          this.assertManagedAvailability({
+          guardAvailability(item, {
             name: product.name,
             availabilityMode: product.availabilityMode,
             managedStockQuantity: product.managedStockQuantity ?? 0,
@@ -1287,6 +1469,12 @@ export class OrdersService {
             quantity: item.quantity,
           });
           item.price = Number(product.salePrice ?? product.basePrice);
+        } else if (isExternalIngest && internal?.allowProductlessItems && !item.productId && !item.variantId && !item.comboId) {
+          // P6 §8.5: unmatched-SKU item — created product-less with the
+          // external unit price kept verbatim (BR-17: external prices are
+          // never re-derived). The worker raises UNMATCHED_SKU with a
+          // one-click map action. Price stays exactly as supplied.
+          item.price = Number(item.price ?? 0);
         } else {
           throw new BadRequestException(
             'Each item must have a productId, variantId, or comboId',
@@ -1523,6 +1711,19 @@ export class OrdersService {
       const orderTimeZip = (shippingAddrObj.zip as string) || (shippingAddrObj.zipCode as string) || (shippingAddrObj.postalCode as string) || null;
       const orderTimeCountry = (shippingAddrObj.country as string) || 'BD';
 
+      // P6 §8.5.2: stock shortfalls collected during validation become a
+      // flag + warning + issue instead of a throw (BR-16). Folded into the
+      // ingest flag set before the order row is written.
+      if (allowStockShortfall && stockShortfalls.length > 0) {
+        ingestFlags.push(INGEST_FLAG_STOCK_SHORTFALL);
+        for (const msg of stockShortfalls) {
+          ingestNotes.push(`Stock shortfall (order kept): ${msg}`);
+        }
+      }
+      // Index boundary: shortfalls recorded from here on are reservation-time
+      // (late) and are appended post-create without rewriting the row.
+      const validatedShortfallCount = stockShortfalls.length;
+
       const created = await tx.order.create({
         data: {
           displayId,
@@ -1535,6 +1736,18 @@ export class OrdersService {
           discountType: effectiveDiscountType,
           total: finalTotal,
           viewToken: randomUUID(),
+          // P6 §8.5.2: idempotency + provenance pass-through. Present ONLY
+          // on the external-ingest path so the default payload is
+          // byte-identical to before (R-1).
+          ...(isExternalIngest
+            ? {
+                idempotencyKey: internal?.idempotencyKey ?? undefined,
+                storeId: internal?.storeId ?? undefined,
+                externalOrderId: internal?.externalOrderId ?? undefined,
+                ingestFlags,
+                storeMetadata: (internal?.storeMetadata ?? undefined) as any,
+              }
+            : {}),
           shippingAddress: {
             ...(typeof dto.shippingAddress === 'object' && dto.shippingAddress
               ? dto.shippingAddress
@@ -1588,8 +1801,17 @@ export class OrdersService {
             {
               status: initialStatus.name,
               timestamp: new Date().toISOString(),
-              note: 'Order created',
+              note: isExternalIngest
+                ? `Order ingested from external store${internal?.externalOrderId ? ` (external id ${internal.externalOrderId})` : ''}`
+                : 'Order created',
             },
+            // P6 §8.5.1/BR-16: every flag is recorded as a timeline note for
+            // operational visibility. Flags never block anything (BR-15).
+            ...ingestNotes.map((note) => ({
+              status: initialStatus.name,
+              timestamp: new Date().toISOString(),
+              note,
+            })),
           ] as any,
         },
         include: {
@@ -1734,6 +1956,9 @@ export class OrdersService {
       }
 
       for (const item of dto.items) {
+        // P6 BR-16: items already flagged short during validation keep their
+        // rows but receive no reservation — the order is kept, never dropped.
+        if (allowStockShortfall && shortfallItems.has(item)) continue;
         const createdItem = created.items.find((ci) => {
           if (item.comboId) {
             return ci.comboId === item.comboId;
@@ -1778,14 +2003,26 @@ export class OrdersService {
                 snapshot.product.availabilityMode === 'MANAGED_STOCK' &&
                 snapshot.product.manageStock
               ) {
-                await this.stockService.operate('reserve', {
-                  productId: snapshot.productId,
-                  variantId: snapshot.variantId ?? undefined,
-                  quantity: snapshot.totalQuantity,
-                  reference: `Order create: ${displayId}`,
-                  performedBy: 'system',
-                  tx,
-                });
+                // P6 BR-16: a reservation failure on external ingest keeps
+                // the component row and flags the shortfall instead of
+                // rolling back the whole order.
+                try {
+                  await this.stockService.operate('reserve', {
+                    productId: snapshot.productId,
+                    variantId: snapshot.variantId ?? undefined,
+                    quantity: snapshot.totalQuantity,
+                    reference: `Order create: ${displayId}`,
+                    performedBy: 'system',
+                    tx,
+                  });
+                } catch (err) {
+                  if (!allowStockShortfall) throw err;
+                  noteShortfall(
+                    item,
+                    err instanceof Error ? err.message : String(err),
+                  );
+                  continue;
+                }
                 await tx.orderItemComboComponent.update({
                   where: { id: snapshot.id },
                   data: { managedStockReserved: true },
@@ -1839,6 +2076,14 @@ export class OrdersService {
                         const availablePhysical =
                           existingPi.quantity - existingPi.reservedQuantity;
                         if (availablePhysical < snapshot.totalQuantity) {
+                          // P6 BR-16: physical shortfall keeps the order.
+                          if (allowStockShortfall) {
+                            noteShortfall(
+                              item,
+                              `Insufficient physical stock for "${snapshot.product.name}" in combo. Available: ${availablePhysical}, needed: ${snapshot.totalQuantity}.`,
+                            );
+                            continue;
+                          }
                           throw new BadRequestException(
                             `Insufficient physical stock for "${snapshot.product.name}" in combo. Available: ${availablePhysical}, needed: ${snapshot.totalQuantity}.`,
                           );
@@ -1861,18 +2106,57 @@ export class OrdersService {
             }
           }
         } else if (createdItem) {
-          await this.resolveAndApplyStock(
-            'reserve',
-            item.productId,
-            item.variantId,
-            item.quantity,
-            displayId,
-            tx,
-            {
-              orderId: created.id,
-              orderItemId: createdItem.id,
+          // P6 BR-16: reservation failure on external ingest keeps the order.
+          try {
+            await this.resolveAndApplyStock(
+              'reserve',
+              item.productId,
+              item.variantId,
+              item.quantity,
+              displayId,
+              tx,
+              {
+                orderId: created.id,
+                orderItemId: createdItem.id,
+              },
+            );
+          } catch (err) {
+            if (!allowStockShortfall) throw err;
+            noteShortfall(
+              item,
+              err instanceof Error ? err.message : String(err),
+            );
+          }
+        }
+      }
+
+      // P6 BR-16 (late shortfalls): a reservation-time failure appends the
+      // flag post-create via a targeted update — the row is never rewritten.
+      if (allowStockShortfall && stockShortfalls.length > validatedShortfallCount) {
+        const lateFlags = ingestFlags.includes(INGEST_FLAG_STOCK_SHORTFALL)
+          ? ingestFlags
+          : [...ingestFlags, INGEST_FLAG_STOCK_SHORTFALL];
+        const extraNotes = stockShortfalls
+          .slice(validatedShortfallCount)
+          .map((note) => ({
+            status: initialStatus.name,
+            timestamp: new Date().toISOString(),
+            note: `Stock shortfall (order kept): ${note}`,
+          }));
+        if (
+          lateFlags.length !== ingestFlags.length ||
+          extraNotes.length > 0
+        ) {
+          const currentTimeline = Array.isArray((created as any).timeline)
+            ? [...(created as any).timeline]
+            : this.parseTimeline((created as any).timeline);
+          await tx.order.update({
+            where: { id: created.id },
+            data: {
+              ingestFlags: lateFlags,
+              timeline: [...currentTimeline, ...extraNotes] as any,
             },
-          );
+          });
         }
       }
 
@@ -1900,11 +2184,23 @@ export class OrdersService {
         },
       });
       if (orderWithItems) {
-        await this.firePurchaseInstant(
-          orderWithItems as any,
-          tx,
-          preloadedPurchaseSettings,
-        );
+        // P6 §8.5.3 (BR-24): external-store orders never dispatch tracking
+        // from the create path. Defense in depth: the explicit skip flag AND
+        // the EXTERNAL_STORE source-policy gate inside each fire* method
+        // (fail-closed, default off) must both agree — zero CAPI by default.
+        const skipExternalTracking =
+          isExternalIngest && internal?.skipPurchaseTracking === true;
+        if (skipExternalTracking) {
+          this.logger.log(
+            `Skipping purchase tracking capture for external-store order ${created.id} (BR-24)`,
+          );
+        } else {
+          await this.firePurchaseInstant(
+            orderWithItems as any,
+            tx,
+            preloadedPurchaseSettings,
+          );
+        }
         // OrderPlaced fires at receipt ONLY when no instant Purchase fired —
         // an instant Purchase already signals receipt (same modes gate as
         // firePurchaseInstant). Validated-mode orders get OrderPlaced now and
@@ -1915,7 +2211,7 @@ export class OrdersService {
             'instant') === 'instant' ||
           (preloadedPurchaseSettings['tracking_tiktok_purchase_mode'] ||
             'instant') === 'instant';
-        if (!instantFired) {
+        if (!instantFired && !skipExternalTracking) {
           try {
             await this.fireOrderPlacedEvent(orderWithItems as any, tx);
           } catch (err) {

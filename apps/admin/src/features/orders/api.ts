@@ -46,6 +46,12 @@ export interface OrderResponse {
   sourcePlatform?: string | null;
   sourceType?: string | null;
   sourceEntity?: string | null;
+  // P6 order-ingestion provenance (§8.5). ingestFlags are informational only
+  // (BR-15) — they never blocked ingestion or any transition.
+  storeId?: string | null;
+  externalOrderId?: string | null;
+  ingestFlags?: string[];
+  storeMetadata?: Record<string, unknown> | null;
   trashedAt?: string | null;
   createdAt: string; updatedAt: string;
   customer: { id: string; firstName: string; lastName: string; email: string; phoneNumber: string } | null;

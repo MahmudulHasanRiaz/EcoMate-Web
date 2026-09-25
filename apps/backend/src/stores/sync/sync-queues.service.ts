@@ -66,8 +66,12 @@ export class SyncQueuesService {
     opts?: { delay?: number },
   ): Promise<void> {
     try {
+      // BullMQ custom ids cannot contain ':' (key separator) — sanitize so a
+      // store-scoped identity (`store:{id}:order:{ext}`) stays a valid job id
+      // without losing uniqueness (P6 live-E2E find).
+      const safeJobId = jobId?.replace(/:/g, '-');
       await this.queueFor(name).add(jobName, data, {
-        ...(jobId ? { jobId } : {}),
+        ...(safeJobId ? { jobId: safeJobId } : {}),
         ...(opts?.delay ? { delay: opts.delay } : {}),
         removeOnComplete: 100,
         removeOnFail: 50,

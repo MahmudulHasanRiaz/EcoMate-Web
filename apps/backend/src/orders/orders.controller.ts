@@ -59,6 +59,13 @@ export class OrdersController {
     @Query('sort') sort?: string,
     @Query('order') order?: string,
     @Query('includeTrashed') includeTrashed?: string,
+    // P6 additive channel filters (§10). storeId is real (provenance);
+    // salesChannelType/showroomId/marketingChannel are P8-preview (see
+    // service; full channel columns land in P8).
+    @Query('storeId') storeId?: string,
+    @Query('salesChannelType') salesChannelType?: string,
+    @Query('showroomId') showroomId?: string,
+    @Query('marketingChannel') marketingChannel?: string,
   ) {
     return this.svc.findAll({
       page: page ? parseInt(page) : undefined,
@@ -73,6 +80,10 @@ export class OrdersController {
       sort,
       order,
       includeTrashed: includeTrashed === 'true',
+      storeId,
+      salesChannelType,
+      showroomId,
+      marketingChannel,
     });
   }
 

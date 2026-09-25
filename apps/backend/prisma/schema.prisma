@@ -675,6 +675,21 @@ model Order {
   posSessionId             String?
   idempotencyKey           String?            @unique
   posSession               PosSession?        @relation(fields: [posSessionId], references: [id])
+  // P6 order ingestion (§8.5): provenance for external-store orders.
+  // storeId = which external store (null = native). ingestFlags =
+  // operational visibility only (BLOCKED_PHONE | BLOCKED_IP |
+  // SUSPENDED_CUSTOMER | STOCK_SHORTFALL | UNMATCHED_SKU) — flags never
+  // block ingestion or any later transition (BR-13/BR-15). externalOrderId
+  // = the store-side id (authoritative identity lives in
+  // StoreOrderMapping @@unique([storeId, externalOrderId]), BR-12).
+  // storeMetadata = mutable store-side metadata only (status mirror,
+  // currency, external timestamps). Totals/items/prices are immutable
+  // after ingest (BR-17).
+  storeId                  String?
+  store                    Store?             @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  externalOrderId          String?
+  ingestFlags              String[]           @default([])
+  storeMetadata            Json?
   paymentStatus            PaymentStatus      @default(PAYMENT_PENDING)
   paymentProof             Json?              @default("{}")
   partialAmount            Decimal?           @db.Decimal(10, 2)
@@ -704,6 +719,7 @@ model Order {
   orderAttribution    OrderAttribution?
   marketingAllocations MarketingCostAllocation[]
   commissionEarnings   CommissionEarning[]
+  storeOrderMapping    StoreOrderMapping?
 
   @@index([customerId])
   @@index([statusId])
@@ -717,6 +733,8 @@ model Order {
   @@index([posSessionId])
   @@index([source])
   @@index([salesChannel])
+  @@index([storeId])
+  @@index([externalOrderId])
   @@index([trackingSessionId])
   @@index([trashedAt])
 }
@@ -3852,6 +3870,9 @@ model Store {
   categoryMappings StoreCategoryMapping[]
   skuMappings StoreSkuMapping[]
   mediaMappings StoreMediaMapping[]
+  orderMappings StoreOrderMapping[]
+  orderStatusMaps StoreOrderStatusMap[]
+  orders Order[]
 
   // §8.10: duplicate protection — one row per logical store.
   @@unique([kind, domainNormalised])
@@ -4214,4 +4235,46 @@ model StoreMediaMapping {
   createdAt  DateTime @default(now())
 
   @@unique([storeId, mediaKey])
+}
+
+// ---------- Central Commerce — P6 Order ingestion (§8.5, BR-11/BR-12/BR-13/BR-16/BR-17) ----------
+// Additive only. Identity is store-scoped and DB-enforced (BR-12):
+// StoreOrderMapping @@unique([storeId, externalOrderId]) + Order.idempotencyKey
+// 'store:{storeId}:order:{externalId}'. Status mapping seeded from the CSV
+// importer's STATUS_MAP (order-import.service.ts).
+
+/// One row per ingested external order — the store-scoped identity (BR-12).
+/// Disconnect never deletes these rows (§8.10); the Order row is retained.
+model StoreOrderMapping {
+  id               String   @id @default(uuid())
+  storeId          String
+  store            Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  externalOrderId  String
+  orderId          String   @unique
+  order            Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  lastExternalStatus String?
+  externalUpdatedAt DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([storeId, externalOrderId])
+  @@index([storeId])
+  @@index([orderId])
+}
+
+/// External status → internal OrderStatus name, per store (§8.5 ingest
+/// worker step 4). Seeded from the import STATUS_MAP; operator-editable via
+/// a future Sync Center UI (P11). Unknown external statuses fall back to the
+/// seeded default map, then to the initial status.
+model StoreOrderStatusMap {
+  id                 String   @id @default(uuid())
+  storeId            String
+  store              Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  externalStatus     String
+  internalStatusName String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([storeId, externalStatus])
+  @@index([storeId])
 }

@@ -13,6 +13,7 @@ import { CourierCustomerHistoryCard } from '@/features/orders/courier-customer-h
 import { OrderSummaryCard } from '@/features/orders/order-summary-card'
 import { OrderEditLockGuard } from '@/features/orders/order-edit-lock'
 import { OrderSourceBadges } from '@/features/orders/order-source-badge'
+import { IngestFlagBadges } from '@/features/orders/ingest-flag-badges'
 import { CustomerEditSheet } from '@/features/orders/customer-edit-sheet'
 import { apiClient } from '@/lib/api-client'
 import { variantLabel, variantThumbUrl } from '@/lib/product-variant'
@@ -420,6 +421,13 @@ function OrderDetailPage() {
                     <Trash2 className='h-3 w-3 mr-1 inline' /> Trashed
                   </Badge>
                 )}
+                {/* P6 ingest provenance: external id + informational flags (BR-15) */}
+                {order.externalOrderId ? (
+                  <span className='ml-2 align-middle text-xs text-muted-foreground' title={order.storeId ? `Ingested from store ${order.storeId}` : 'Ingested from an external store'}>
+                    ext: {order.externalOrderId}
+                  </span>
+                ) : null}
+                <IngestFlagBadges flags={order.ingestFlags} />
               </h2>
               <p className='text-xs text-muted-foreground'>{new Date(order.createdAt).toLocaleString()}</p>
             </div>
