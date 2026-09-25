@@ -362,6 +362,20 @@ export abstract class BaseCommerceProvider implements CommerceProvider {
     return this.stub('pushOrderStatus');
   }
 
+  /**
+   * P7 read-back default: loud throw (a missing implementation must surface
+   * as VERIFY_UNSUPPORTED, never as a silent verify-pass). Adapters with live
+   * order HTTP override this (WooCommerce in P7; Shopify/Custom in P9/P10).
+   */
+  async readOrderStatus(
+    store: StoreWithSecrets,
+    ref: RemoteRef,
+  ): Promise<{ status: string }> {
+    void store;
+    void ref;
+    throw notImplemented(this.slug, 'readOrderStatus (VERIFY_UNSUPPORTED)');
+  }
+
   ensureWebhooks(
     store: StoreWithSecrets,
     callbackBaseUrl: string,

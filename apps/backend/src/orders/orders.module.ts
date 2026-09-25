@@ -11,6 +11,7 @@ import { CouponsModule } from '../coupons/coupons.module';
 import { BlockedEntriesModule } from '../blocked-entries/blocked-entries.module';
 import { MarketingModule } from '../marketing/marketing.module';
 import { CommissionsModule } from '../commissions/commissions.module';
+import { StoresModule } from '../stores/stores.module';
 
 @Module({
   controllers: [OrdersController, OrderStatusController],
@@ -24,6 +25,10 @@ import { CommissionsModule } from '../commissions/commissions.module';
     CouponsModule,
     MarketingModule,
     CommissionsModule,
+    // P7 §8.6: order hooks notify StoreOrderPushService post-commit
+    // (acyclic: StoresModule never imports the orders module — ingest
+    // resolves OrdersService lazily via ModuleRef).
+    StoresModule,
   ],
 })
 export class OrdersModule {}

@@ -137,4 +137,34 @@ describe('WooCommerceProvider live HTTP (P4)', () => {
     ).rejects.toThrow(/missing connection settings/);
     expect(mock.calls).toHaveLength(0);
   });
+
+  it('P7: readOrderStatus reads GET /orders/{id} (read-back verification seam)', async () => {
+    const mock = new MockFetch();
+    mock.onAll(() => jsonResponse(200, { id: 5001, status: 'cancelled' }));
+    const woo = new WooCommerceProvider(mock.fetch);
+    await expect(woo.readOrderStatus(STORE(), { providerId: '5001' })).resolves.toEqual({ status: 'cancelled' });
+    expect(mock.calls[0]?.url).toMatch(/\/orders\/5001$/);
+    expect(mock.calls[0]?.init?.method ?? 'GET').not.toBe('PUT');
+  });
+
+  it('P7: push→read-back round-trip over live HTTP (cancelled then completed)', async () => {
+    let remote = 'processing';
+    const mock = new MockFetch();
+    mock.setFallback((url, init) => {
+      if (String(init?.method) === 'PUT') {
+        remote = String(JSON.parse(String(init?.body))?.status ?? remote);
+        return jsonResponse(200, { id: 5001, status: remote });
+      }
+      return jsonResponse(200, { id: 5001, status: remote });
+    });
+    const woo = new WooCommerceProvider(mock.fetch);
+    await woo.pushOrderStatus(STORE(), { providerId: '5001' }, 'cancelled');
+    await expect(woo.readOrderStatus(STORE(), { providerId: '5001' })).resolves.toEqual({ status: 'cancelled' });
+    await woo.pushOrderStatus(STORE(), { providerId: '5001' }, 'completed');
+    await expect(woo.readOrderStatus(STORE(), { providerId: '5001' })).resolves.toEqual({ status: 'completed' });
+    const puts = mock.calls.filter((c) => c.init?.method === 'PUT');
+    expect(puts).toHaveLength(2);
+    expect(JSON.parse(String(puts[0]?.init?.body))).toEqual({ status: 'cancelled' });
+    expect(JSON.parse(String(puts[1]?.init?.body))).toEqual({ status: 'completed' });
+  });
 });

@@ -144,6 +144,11 @@ export class FakeProvider implements CommerceProvider {
   private orders: NormalizedOrder[] = [];
   private failures: FakeFailureSpec[] = [];
   private counters = { product: 0, variant: 0, media: 0, category: 0 };
+  /**
+   * P7: remote order statuses keyed by external order id. `pushOrderStatus`
+   * writes, `readOrderStatus` reads — the read-back verification vector.
+   */
+  private remoteOrderStatuses = new Map<string, string>();
 
   constructor(readonly webhookSecret = 'fake-webhook-secret') {}
 
@@ -179,6 +184,19 @@ export class FakeProvider implements CommerceProvider {
 
   directSeedOrder(order: NormalizedOrder): void {
     this.orders.push({ ...order });
+  }
+
+  /**
+   * P7: seed a remote order status (the value `readOrderStatus` returns).
+   * Lets tests stage verify-pass AND verify-mismatch without HTTP.
+   */
+  directSeedOrderStatus(externalOrderId: string, status: string): void {
+    this.remoteOrderStatuses.set(externalOrderId, status);
+  }
+
+  /** P7: white-box read of the last pushed remote status. */
+  remoteOrderStatus(externalOrderId: string): string | undefined {
+    return this.remoteOrderStatuses.get(externalOrderId);
   }
 
   // ── Failure injection ───────────────────────────────────────────────
@@ -593,7 +611,20 @@ export class FakeProvider implements CommerceProvider {
     if (!this.declaredCapabilities.orderStatusUpdateTargets.includes(target)) {
       return { ok: false, skipped: true, reason: `unsupported-target:${target}` };
     }
+    // P7: a real push lands remotely — the read-back vector observes it.
+    this.remoteOrderStatuses.set(ref.providerId, target);
     return { ok: true, ref };
+  }
+
+  /** P7 read-back: returns the last pushed/seeded remote status ('' = unknown). */
+  async readOrderStatus(
+    store: StoreWithSecrets,
+    ref: RemoteRef,
+  ): Promise<{ status: string }> {
+    void store;
+    this.maybeFail('readOrderStatus');
+    this.log('readOrderStatus', { ref });
+    return { status: this.remoteOrderStatuses.get(ref.providerId) ?? '' };
   }
 
   // ── Contract: webhooks (custom-bridge HMAC scheme) ───────────────────

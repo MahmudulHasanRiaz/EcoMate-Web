@@ -204,6 +204,17 @@ export interface CommerceProvider {
     ref: RemoteRef,
     target: 'cancelled' | 'completed',
   ): Promise<PushResult>;
+  /**
+   * P7 (§8.6): read the remote order's current status for read-back
+   * verification after pushOrderStatus. Optional so the contract stays
+   * backward-compatible; the base default throws (loud, never a silent
+   * verify-pass). WooCommerce implements live in P7; Shopify/Custom stay
+   * stubbed-but-contract-explicit until P9/P10.
+   */
+  readOrderStatus?(
+    store: StoreWithSecrets,
+    ref: RemoteRef,
+  ): Promise<{ status: string }>;
   ensureWebhooks(
     store: StoreWithSecrets,
     callbackBaseUrl: string,

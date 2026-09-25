@@ -448,6 +448,16 @@ export class WooCommerceProvider extends BaseCommerceProvider {
     return { ok: true, ref };
   }
 
+  /**
+   * P7 (§8.6) read-back verification: `GET /orders/{id}` → raw `status`
+   * string. The worker compares it case-insensitively against the canonical
+   * target; only status is read — no writes here.
+   */
+  override async readOrderStatus(store: StoreWithSecrets, ref: RemoteRef): Promise<{ status: string }> {
+    const body = await this.woo<{ status?: string }>(store, 'GET', `/orders/${encodeURIComponent(ref.providerId)}`);
+    return { status: String((body as any)?.status ?? '') };
+  }
+
   override async ensureWebhooks(store: StoreWithSecrets, callbackBaseUrl: string): Promise<WebhookRegistrationResult> {
     const topics = ['order.created', 'order.updated', 'product.updated'];
     const existing = await this.woo<any[]>(store, 'GET', '/webhooks?per_page=100').catch(() => []);

@@ -13,6 +13,7 @@ export const STORE_RUNTIME_FLAGS = [
   'store_product_sync_enabled',
   'store_order_sync_enabled',
   'store_stock_sync_enabled',
+  'store_order_push_enabled',
   'store_reconcile_enabled',
   'store_reconcile_widening_enabled',
   'store_stock_audit_enabled',
@@ -52,6 +53,17 @@ export function orderSyncEnabled(
   env: Record<string, string | undefined> = process.env,
 ): boolean {
   return storesEnabled(env) && isFlagOn(env, 'store_order_sync_enabled');
+}
+
+/**
+ * P7 (§8.6): order-status push kill-switch. Nested under orderSyncEnabled —
+ * push is part of order sync, so a disabled order sync disables push too.
+ * Fail-closed (default off). The worker AND the notify path both check it.
+ */
+export function orderPushEnabled(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return orderSyncEnabled(env) && isFlagOn(env, 'store_order_push_enabled');
 }
 
 export function stockSyncEnabled(

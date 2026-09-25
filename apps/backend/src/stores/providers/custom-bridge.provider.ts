@@ -5,6 +5,10 @@
  * are the safe defaults until a manifest is read: status-only stock is the
  * tested default path. A manifest may only narrow writes, never widen them
  * past these defaults without an explicit audited capability grant (P10).
+ *
+ * P7 note (§8.6): pushOrderStatus/readOrderStatus stay on the base stub
+ * (loud `notImplemented`, never a silent no-op) until P10 — the push worker
+ * records the stub throw as an explicit failure/skip, never silence.
  */
 import { Injectable } from '@nestjs/common';
 import { BaseCommerceProvider } from './base-provider';

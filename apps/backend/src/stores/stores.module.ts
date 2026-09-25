@@ -50,6 +50,7 @@ import { SyncOpsController } from './sync/sync-ops.controller';
 import { StoreOverridesController } from './sync/store-overrides.controller';
 import { StoreOrderIngestService } from './orders/store-order-ingest.service';
 import { StoreOrderReconcileService } from './orders/store-order-reconcile.service';
+import { StoreOrderPushService } from './orders/store-order-push.service';
 import { StoreOrderScheduler } from './orders/store-order-scheduler';
 import { StoreOrdersController } from './orders/store-orders.controller';
 import { StoreWebhookService } from './webhooks/store-webhook.service';
@@ -101,6 +102,7 @@ const SYNC_QUEUE_DEFAULTS = { removeOnComplete: 100, removeOnFail: 50, attempts:
     StoreCircuitBreaker,
     StoreOrderIngestService,
     StoreOrderReconcileService,
+    StoreOrderPushService,
     StoreOrderScheduler,
     StoreWebhookService,
     StoreWebhookRawBodyProvider,
@@ -122,6 +124,7 @@ const SYNC_QUEUE_DEFAULTS = { removeOnComplete: 100, removeOnFail: 50, attempts:
     StockStatusSyncService,
     StoreOrderIngestService,
     StoreOrderReconcileService,
+    StoreOrderPushService,
     StoreWebhookService,
   ],
 })

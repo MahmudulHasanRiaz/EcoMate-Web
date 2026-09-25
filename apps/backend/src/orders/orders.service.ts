@@ -50,6 +50,10 @@ import { MarketingAttributionService } from '../marketing/marketing-attribution.
 import { CommissionsService } from '../commissions/commissions.service';
 import { TrackingEligibilityGate } from '../tracking/tracking-eligibility-gate';
 import { CacheService } from '../cache/cache.service';
+// Value import: Nest needs the runtime token for DI. Acyclic: StoresModule
+// imports only PrismaModule + BlockedEntries/Customers — it never imports
+// the orders module (ingest resolves OrdersService lazily via ModuleRef).
+import { StoreOrderPushService } from '../stores/orders/store-order-push.service';
 
 const ORDER_TRANSITIONS: Record<string, string[]> = {
   Pending: ['Payment Pending', 'Hold', 'Confirmed', 'Cancelled'],
@@ -280,6 +284,11 @@ export class OrdersService {
     private readonly marketingAttribution?: MarketingAttributionService,
     @Optional()
     private readonly cache?: CacheService,
+    // P7 §8.6: post-commit status-push notification for mapped store orders.
+    // @Optional so unit specs constructing OrdersService manually keep
+    // working; every call is guarded and non-propagating (R-2).
+    @Optional()
+    private readonly storeOrderPush?: StoreOrderPushService,
   ) {}
 
   /**
@@ -293,6 +302,20 @@ export class OrdersService {
       await this.cache?.invalidateByPrefix('analytics:');
     } catch (err) {
       this.logger.warn(`Analytics cache invalidation failed: ${err}`);
+    }
+  }
+
+  /**
+   * P7 §8.6 status-push notification — post-commit, never propagates, never
+   * blocks. No provider call happens here (R-2): the push service only
+   * enqueues (and only for orders with a StoreOrderMapping in a pushable
+   * status). Correctness comes from the worker's re-reads, not from here.
+   */
+  private notifyStoreOrderPush(orderId: string): void {
+    try {
+      void this.storeOrderPush?.notifyOrderStatusChanged(orderId).catch(() => undefined);
+    } catch {
+      // never propagate into the mutation path
     }
   }
 
@@ -3246,6 +3269,12 @@ export class OrdersService {
     }
 
     await this.invalidateAnalytics();
+    // P7 §8.6: post-commit status-push enqueue for mapped store orders
+    // (cancel/return/Delivered hooks). Non-propagating; the worker re-reads
+    // live state and no-ops for non-mapped orders.
+    if (['Cancelled', 'Delivered', 'Returned'].includes(updated.status.name)) {
+      this.notifyStoreOrderPush(updated.id);
+    }
     return updated;
   }
 
@@ -3837,6 +3866,11 @@ export class OrdersService {
     }
 
     await this.invalidateAnalytics();
+    // P7 §8.6: bulk cancel/return/Delivered hook — post-commit enqueue per
+    // transitioned order, non-propagating.
+    if (['Cancelled', 'Delivered', 'Returned'].includes(targetStatus.name)) {
+      for (const bulkPushedId of validIds) this.notifyStoreOrderPush(bulkPushedId);
+    }
     return {
       updated: validIds.length,
       skipped: failedDetails.length,
@@ -4135,6 +4169,8 @@ export class OrdersService {
     }
 
     await this.invalidateAnalytics();
+    // P7 §8.6: customer-cancel hook — post-commit enqueue, non-propagating.
+    this.notifyStoreOrderPush(orderId);
     return updated;
   }
 
@@ -4319,6 +4355,11 @@ export class OrdersService {
     // Recognition input changed (statusId drives delivered-only revenue) —
     // drop cached analytics like updateStatus/cancelByCustomer do.
     await this.invalidateAnalytics();
+
+    // P7 §8.6: transition hook — post-commit enqueue, non-propagating.
+    if (['Cancelled', 'Delivered', 'Returned'].includes(newStatus)) {
+      this.notifyStoreOrderPush(orderId);
+    }
 
     return result;
   }

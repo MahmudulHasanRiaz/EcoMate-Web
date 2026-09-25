@@ -4254,6 +4254,11 @@ model StoreOrderMapping {
   order            Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   lastExternalStatus String?
   externalUpdatedAt DateTime?
+  /// P7 (§8.6): canonical push target last confirmed on the store
+  /// ('cancelled' | 'completed'). Idempotency key for status push — a repeat
+  /// run with the same target no-ops without a provider call. NULL = never
+  /// pushed. Written only by StoreOrderPushService after read-back verify.
+  lastPushedStatus String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

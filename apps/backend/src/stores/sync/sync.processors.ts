@@ -16,6 +16,7 @@ import { SyncQueuesService, fanoutConcurrency } from './sync-queues.service';
 import { StoreCircuitBreaker } from './sync-circuit';
 import { StoreOrderIngestService } from '../orders/store-order-ingest.service';
 import { StoreOrderReconcileService } from '../orders/store-order-reconcile.service';
+import { StoreOrderPushService } from '../orders/store-order-push.service';
 import { classifyProviderError, MAX_SYNC_ATTEMPTS, RETRY_BACKOFF_MS } from '../providers/retry-classifier';
 
 async function boundedMap<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): Promise<R[]> {
@@ -234,15 +235,37 @@ export class StoreOrderIngestProcessor extends WorkerHost {
 
 @Processor('store-order-push', { concurrency: 5, limiter: { max: 20, duration: 1000 } })
 export class StoreOrderPushProcessor extends WorkerHost {
-  constructor(private readonly runs: SyncRunService) { super(); }
+  private readonly logger = new Logger(StoreOrderPushProcessor.name);
+  constructor(
+    private readonly runs: SyncRunService,
+    private readonly queues: SyncQueuesService,
+    private readonly push: StoreOrderPushService,
+  ) { super(); }
+
+  /**
+   * P7 status-push execution (§8.6): per-store serialization (R-8); the
+   * worker owns idempotency (lastPushedStatus), capability gating,
+   * read-back verification and the standard retry ladder. Unknown job
+   * names are an explicit skip, never silent.
+   */
   async process(job: Job): Promise<unknown> {
+    if (job.name === 'order-status-push') {
+      const { storeId } = (job.data ?? {}) as { storeId?: string };
+      if (!storeId) {
+        this.logger.warn('order-status-push without storeId — ignored');
+        return { ignored: 'missing-storeId' };
+      }
+      return this.queues.serializeStore(storeId, () =>
+        this.push.handlePush((job.data ?? {}) as any),
+      );
+    }
     const { runId } = (job.data ?? {}) as { runId?: string };
     if (runId) {
       await this.runs.recordItem(runId, {
-        objectType: 'ORDER', status: 'SKIPPED', reason: 'ORDER_PUSH_DEFERRED_TO_P7', auditLevel: 'G',
+        objectType: 'ORDER', status: 'SKIPPED', reason: `UNKNOWN_PUSH_JOB:${job.name}: ignored`, auditLevel: 'G',
       });
     }
-    return { deferred: 'P7' };
+    return { ignored: job.name };
   }
 }
 

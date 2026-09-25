@@ -2,6 +2,7 @@ import {
   storesEnabled,
   productSyncEnabled,
   orderSyncEnabled,
+  orderPushEnabled,
   stockSyncEnabled,
   reconcileEnabled,
   reconcileWideningEnabled,
@@ -44,12 +45,14 @@ describe('store runtime flags (P0, fail-closed)', () => {
     const env = {
       store_product_sync_enabled: 'true',
       store_order_sync_enabled: 'true',
+      store_order_push_enabled: 'true',
       store_stock_sync_enabled: 'true',
       store_reconcile_enabled: 'true',
       store_stock_audit_enabled: 'true',
     };
     expect(productSyncEnabled(env)).toBe(false);
     expect(orderSyncEnabled(env)).toBe(false);
+    expect(orderPushEnabled(env)).toBe(false);
     expect(stockSyncEnabled(env)).toBe(false);
     expect(reconcileEnabled(env)).toBe(false);
     expect(stockAuditEnabled(env)).toBe(false);
@@ -77,6 +80,25 @@ describe('store runtime flags (P0, fail-closed)', () => {
         store_reconcile_widening_enabled: 'true',
       }),
     ).toBe(false);
+  });
+
+  it('P7: order push is nested under order sync (fail-closed, no bypass)', () => {
+    const master = {
+      THIRD_PARTY_STORES_ENABLED: 'true',
+      store_sync_enabled: 'true',
+    };
+    // Off by default even with order sync on.
+    expect(orderPushEnabled({ ...master, store_order_sync_enabled: 'true' })).toBe(false);
+    // On only with both order sync AND the push flag.
+    expect(
+      orderPushEnabled({
+        ...master,
+        store_order_sync_enabled: 'true',
+        store_order_push_enabled: 'true',
+      }),
+    ).toBe(true);
+    // Push flag alone cannot bypass a disabled order sync.
+    expect(orderPushEnabled({ ...master, store_order_push_enabled: 'true' })).toBe(false);
   });
 
   it('only the exact string "true" enables (fail-closed on garbage)', () => {
