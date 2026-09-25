@@ -59,9 +59,10 @@ export class OrdersController {
     @Query('sort') sort?: string,
     @Query('order') order?: string,
     @Query('includeTrashed') includeTrashed?: string,
-    // P6 additive channel filters (§10). storeId is real (provenance);
-    // salesChannelType/showroomId/marketingChannel are P8-preview (see
-    // service; full channel columns land in P8).
+    // P6 additive channel filters (§10) + P8 canonical columns (§9).
+    // storeId is real (provenance); salesChannelType/showroomId/
+    // marketingChannel predicate the real canonical columns when the
+    // new-channel model flag is on, else the P6 preview approximations.
     @Query('storeId') storeId?: string,
     @Query('salesChannelType') salesChannelType?: string,
     @Query('showroomId') showroomId?: string,

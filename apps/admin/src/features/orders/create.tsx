@@ -342,6 +342,14 @@ export function CreateOrder() {
       ...(sourcePlatform ? { sourcePlatform } : {}),
       ...(sourceType ? { sourceType } : {}),
       ...(sourceEntity ? { sourceEntity } : {}),
+      // P8: real showroom FK when a POS showroom is picked (additive; the
+      // backend also name-resolves sourceEntity, so this is belt-and-braces).
+      ...(salesChannel === 'POS' && sourceEntity
+        ? (() => {
+            const match = showrooms.find((s) => s.name === sourceEntity)
+            return match ? { showroomId: match.id } : {}
+          })()
+        : {}),
       customerNotes: customerNotes || null,
       officeNotes: officeNotes || null,
       paymentOptionType: paymentMode === 'cod' ? 'CASH_ON_DELIVERY' : paymentMode === 'full' ? 'FULL_PAYMENT' : paymentMode === 'partial' ? 'PARTIAL_PAYMENT' : undefined,

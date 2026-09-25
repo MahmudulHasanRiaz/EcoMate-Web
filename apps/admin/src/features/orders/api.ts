@@ -52,6 +52,12 @@ export interface OrderResponse {
   externalOrderId?: string | null;
   ingestFlags?: string[];
   storeMetadata?: Record<string, unknown> | null;
+  // P8 canonical channel dimensions (§9, BR-18). Nullable; legacy
+  // salesChannel/source* above stay and keep being written (dual-write).
+  salesChannelType?: 'ONLINE' | 'OFFLINE' | null;
+  showroomId?: string | null;
+  showroom?: { id: string; name: string } | null;
+  marketingChannel?: string | null;
   trashedAt?: string | null;
   createdAt: string; updatedAt: string;
   customer: { id: string; firstName: string; lastName: string; email: string; phoneNumber: string } | null;

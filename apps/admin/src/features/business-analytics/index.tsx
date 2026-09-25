@@ -112,23 +112,41 @@ export default function BusinessOverview() {
             </AnalyticsSection>
 
             <AnalyticsSection title="Where sales come from">
-              <Tabs defaultValue="channel">
-                <TabsList className="tap-h max-w-full overflow-x-auto no-scrollbar">
-                  <TabsTrigger value="channel" className="tap-h">Sales Channel</TabsTrigger>
-                  <TabsTrigger value="source" className="tap-h">Source System</TabsTrigger>
-                  <TabsTrigger value="category" className="tap-h">Category</TabsTrigger>
-                </TabsList>
-                <TabsContent value="channel">
-                  <BreakdownTable title="Net Sales by Sales Channel" rows={data.data.breakdowns.bySalesChannel} hint="Where the sale came from. Kept apart from how the order was placed." />
-                </TabsContent>
-                <TabsContent value="source">
-                  <BreakdownTable title="Net Sales by Source System" rows={data.data.breakdowns.bySource} hint="How the order was placed (shop, online, or by staff)." />
-                </TabsContent>
-                <TabsContent value="category">
-                  <BreakdownTable title="Net Sales by Category (Top 8)" rows={data.data.breakdowns.byCategory} hint="By main category. Every taka counted once. Combo packs are split." />
-                </TabsContent>
-              </Tabs>
-            </AnalyticsSection>
+                <Tabs defaultValue="channel">
+                  <TabsList className="tap-h max-w-full overflow-x-auto no-scrollbar">
+                    <TabsTrigger value="channel" className="tap-h">Sales Channel</TabsTrigger>
+                    <TabsTrigger value="source" className="tap-h">Source System</TabsTrigger>
+                    <TabsTrigger value="category" className="tap-h">Category</TabsTrigger>
+                    {/* P8 canonical breakdowns: rendered only when the backend
+                        sends them (new-channel model flag on). */}
+                    {data.data.breakdowns.bySalesChannelType ? (
+                      <TabsTrigger value="sales-type" className="tap-h">Sales Type</TabsTrigger>
+                    ) : null}
+                    {data.data.breakdowns.byMarketingChannel ? (
+                      <TabsTrigger value="marketing" className="tap-h">Marketing Channel</TabsTrigger>
+                    ) : null}
+                  </TabsList>
+                  <TabsContent value="channel">
+                    <BreakdownTable title="Net Sales by Sales Channel" rows={data.data.breakdowns.bySalesChannel} hint="Where the sale came from. Kept apart from how the order was placed." />
+                  </TabsContent>
+                  <TabsContent value="source">
+                    <BreakdownTable title="Net Sales by Source System" rows={data.data.breakdowns.bySource} hint="How the order was placed (shop, online, or by staff)." />
+                  </TabsContent>
+                  <TabsContent value="category">
+                    <BreakdownTable title="Net Sales by Category (Top 8)" rows={data.data.breakdowns.byCategory} hint="By main category. Every taka counted once. Combo packs are split." />
+                  </TabsContent>
+                  {data.data.breakdowns.bySalesChannelType ? (
+                    <TabsContent value="sales-type">
+                      <BreakdownTable title="Net Sales by Sales Type" rows={data.data.breakdowns.bySalesChannelType} hint="Canonical Online / Offline split (P8). A phone call counts as Offline — it is an order origin, not a marketing platform." />
+                    </TabsContent>
+                  ) : null}
+                  {data.data.breakdowns.byMarketingChannel ? (
+                    <TabsContent value="marketing">
+                      <BreakdownTable title="Net Sales by Marketing Channel" rows={data.data.breakdowns.byMarketingChannel} hint="Independent platform-attribution dimension (P8)." />
+                    </TabsContent>
+                  ) : null}
+                </Tabs>
+              </AnalyticsSection>
 
             <DrilldownPanel filters={filters} currentPath="/mon/analytics" />
 

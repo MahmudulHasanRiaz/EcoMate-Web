@@ -1,10 +1,12 @@
 /**
- * Business analytics filter DTO (P2 data layer, §4.1).
+ * Business analytics filter DTO (P2 data layer, §4.1; P8 canonical §9).
  *
  * The SINGLE filter every analytics service consumes. Source System
  * (Order.source) and Sales Channel (Order.salesChannel) are separate filters
- * and are never merged. There is intentionally NO Store dimension (F7 —
- * Order has no store/storeId/branch).
+ * and are never merged. P8 adds the canonical dimensions (salesChannelType /
+ * storeId / showroomId / marketingChannel) as additive optional filters —
+ * honoured only when the new-channel model flag is on (flag off ⇒ ignored,
+ * reads identical to pre-P8).
  */
 import { IsIn, IsOptional, IsString, Matches, IsEnum } from 'class-validator';
 import { SalesChannel } from '@prisma/client';
@@ -77,6 +79,32 @@ export class AnalyticsFilterDto {
   salesChannel?: SalesChannel;
 
   /**
+   * P8 canonical dimensions (§9, BR-18). Additive: honoured only when the
+   * new-channel model flag is on; ignored with the flag off (reads stay
+   * identical to pre-P8). Legacy `salesChannel` keeps working in both
+   * modes (dual-write keeps it fresh).
+   */
+  /** ONLINE | OFFLINE (Order.salesChannelType). */
+  @IsOptional()
+  @IsIn(['ONLINE', 'OFFLINE'])
+  salesChannelType?: string;
+
+  /** Ingesting external store (Order.storeId, P6 provenance). */
+  @IsOptional()
+  @IsString()
+  storeId?: string;
+
+  /** Showroom sale location (Order.showroomId → Warehouse showroom). */
+  @IsOptional()
+  @IsString()
+  showroomId?: string;
+
+  /** Platform attribution (Order.marketingChannel, canonical enum). */
+  @IsOptional()
+  @IsString()
+  marketingChannel?: string;
+
+  /**
    * Marketing Source — platform slug via
    * OrderAttribution → campaign → adAccount → platform; unattributed orders
    * resolve via MarketingSession.utmSource, else 'unattributed'.
@@ -138,6 +166,10 @@ export const ANALYTICS_FILTER_FIELDS = [
   'granularity',
   'source',
   'salesChannel',
+  'salesChannelType',
+  'storeId',
+  'showroomId',
+  'marketingChannel',
   'marketingSource',
   'paymentMethod',
   'productId',

@@ -62,6 +62,9 @@ export class CreateOrderDto {
   @IsOptional() @IsString() sourcePlatform?: string;
   @IsOptional() @IsString() sourceType?: string;
   @IsOptional() @IsString() sourceEntity?: string;
+  // P8 §9.1: explicit showroom FK (admin POS picker). Optional; the service
+  // name-resolves sourceEntity when absent. Validated as a showroom row.
+  @IsOptional() @IsString() showroomId?: string;
   /** Raw landing signals (utm/click-id/referrer) collected first-party by the storefront. */
   @IsOptional() @IsObject() attribution?: Record<string, unknown>;
   @IsOptional() @IsString() trackingSessionId?: string;

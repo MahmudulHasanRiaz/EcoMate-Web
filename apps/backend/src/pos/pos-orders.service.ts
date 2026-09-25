@@ -17,6 +17,7 @@ import { MediaResolverService } from '../media/media-resolver.service';
 import { TrackingCaptureService } from '../tracking/tracking-capture.service';
 import { TrackingSettingsService } from '../tracking/tracking-settings.service';
 import { resolveActionSource } from '../tracking/meta-action-source';
+import { resolveChannels } from '../orders/channels/channel-resolver';
 import { Prisma } from '@prisma/client';
 import { CommissionsService } from '../commissions/commissions.service';
 
@@ -546,6 +547,24 @@ export class PosOrdersService {
           sourceType: 'SHOWROOM',
           sourceEntity: (session.showroom as any)?.name || null,
           posSessionId: sessionId,
+          // P8 §9.1 dual-write (BR-18): canonical dimensions beside the
+          // legacy columns, same row, same transaction. showroomId is the
+          // REAL session showroom FK (not name-resolved); the POS channel
+          // resolves OFFLINE with no marketing platform ('POS' is not one).
+          ...(() => {
+            const resolved = resolveChannels({
+              salesChannel: dto.salesChannel || 'POS',
+              source: 'POS',
+              sourcePlatform: 'POS',
+              sourceType: 'SHOWROOM',
+              sourceEntity: (session.showroom as any)?.name || null,
+            });
+            return {
+              salesChannelType: resolved.salesChannelType,
+              showroomId: (session as any).showroomId ?? null,
+              marketingChannel: resolved.marketingChannel,
+            };
+          })(),
           customerId: dto.customerId,
           guestName: dto.guestName,
           guestPhone: dto.guestPhone,

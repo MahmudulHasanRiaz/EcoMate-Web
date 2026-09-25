@@ -4,6 +4,7 @@ import { OrderStatusController } from './order-status.controller';
 import { OrdersService } from './orders.service';
 import { OrderEditLockService } from './order-edit-lock.service';
 import { OrdersEventService } from './orders-event.service';
+import { ChannelBackfillService } from './channels/channel-backfill.service';
 import { TrackingModule } from '../tracking/tracking.module';
 import { CustomersModule } from '../customers/customers.module';
 import { InventoryModule } from '../inventory/inventory.module';
@@ -15,8 +16,8 @@ import { StoresModule } from '../stores/stores.module';
 
 @Module({
   controllers: [OrdersController, OrderStatusController],
-  providers: [OrdersService, OrdersEventService, OrderEditLockService],
-  exports: [OrdersService, OrderEditLockService],
+  providers: [OrdersService, OrdersEventService, OrderEditLockService, ChannelBackfillService],
+  exports: [OrdersService, OrderEditLockService, ChannelBackfillService],
   imports: [
     TrackingModule,
     CustomersModule,

@@ -16,6 +16,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { newSalesChannelModelEnabled } from '../orders/channels/channel-flags';
 
 /** Order source tracking categories. */
 export type OrderSourceCategory =
@@ -73,6 +74,12 @@ interface OrderSourceInput {
   sourceType?: string | null;
   posSessionId?: string | null;
   idempotencyKey?: string | null;
+  // P8 additive (§9.3 dual-read): canonical dimensions. Read only with the
+  // new-channel model flag on.
+  salesChannelType?: string | null;
+  marketingChannel?: string | null;
+  storeId?: string | null;
+  showroomId?: string | null;
 }
 
 /**
@@ -90,6 +97,13 @@ export function resolveOrderSourceCategory(order: OrderSourceInput): OrderSource
     typeof order.idempotencyKey === 'string' &&
     order.idempotencyKey.startsWith('store:')
   ) {
+    return 'EXTERNAL_STORE';
+  }
+
+  // P8 §9.3 dual-read: with the flag on, the canonical store identity
+  // (P6 provenance column, set only by the ingest worker) is an equivalent
+  // external-store signal. Flag off ⇒ this branch is dead ⇒ identical.
+  if (newSalesChannelModelEnabled() && typeof order.storeId === 'string' && order.storeId) {
     return 'EXTERNAL_STORE';
   }
 

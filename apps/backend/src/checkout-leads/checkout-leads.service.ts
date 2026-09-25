@@ -12,6 +12,7 @@ import { TrackingSettingsService } from '../tracking/tracking-settings.service';
 import { normalizePhone } from '../common/utils/phone-utils';
 import { resolveDivision } from '../delivery-areas/data/district-division';
 import { resolveActionSource } from '../tracking/meta-action-source';
+import { resolveChannels } from '../orders/channels/channel-resolver';
 import { ConvertOrderDto } from './dto/convert-order.dto';
 import { LEAD_STATUS } from './checkout-lead.constants';
 import { dhakaDateParts } from '../common/utils/dhaka-time';
@@ -387,6 +388,24 @@ export class CheckoutLeadsService {
           sourcePlatform: overrides?.sourcePlatform || 'PHONE',
           sourceType: overrides?.sourceType || 'CALL',
           sourceEntity: overrides?.sourceEntity || null,
+          // P8 §9.1 dual-write (BR-18): canonical dimensions beside the
+          // legacy columns, same row, same transaction. Lead conversion
+          // defaults (OFFLINE/PHONE/CALL) resolve OFFLINE with no marketing
+          // platform — a phone call is an order origin, never marketing.
+          ...(() => {
+            const resolved = resolveChannels({
+              salesChannel: overrides?.salesChannel || 'OFFLINE',
+              source: null,
+              sourcePlatform: overrides?.sourcePlatform || 'PHONE',
+              sourceType: overrides?.sourceType || 'CALL',
+              sourceEntity: overrides?.sourceEntity || null,
+            });
+            return {
+              salesChannelType: resolved.salesChannelType,
+              showroomId: null,
+              marketingChannel: resolved.marketingChannel,
+            };
+          })(),
           trackingSessionId: lead.ctxId ?? undefined,
           paymentOptionType:
             overrides?.paymentMode === 'cod'

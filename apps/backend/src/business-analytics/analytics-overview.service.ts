@@ -51,6 +51,7 @@ import {
 } from './analytics-envelope.util';
 import type { Granularity } from './analytics-range.util';
 import { autoGranularity } from './analytics-range.util';
+import { newSalesChannelModelEnabled } from '../orders/channels/channel-flags';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
@@ -119,6 +120,10 @@ export interface OverviewResponse {
       bySalesChannel: BreakdownRow[];
       bySource: BreakdownRow[];
       byCategory: BreakdownRow[];
+      // P8 additive (§9.3 dual-read): present only with the new-channel
+      // model flag on; legacy bySalesChannel is untouched in both modes.
+      bySalesChannelType?: BreakdownRow[];
+      byMarketingChannel?: BreakdownRow[];
     };
   };
   meta: AnalyticsMeta;
@@ -247,6 +252,8 @@ export class AnalyticsOverviewService {
           discountType: true,
           source: true,
           salesChannel: true,
+          salesChannelType: true,
+          marketingChannel: true,
           status: { select: { name: true } },
           timeline: true,
           createdAt: true,
@@ -494,6 +501,10 @@ export class AnalyticsOverviewService {
   ): OverviewResponse['data']['breakdowns'] {
     const byChannel = new Map<string, { netSales: number; orders: number }>();
     const bySource = new Map<string, { netSales: number; orders: number }>();
+    // P8 additive: canonical breakdowns accumulate always (cheap) but are
+    // only EXPOSED with the flag on — flag-off responses stay identical.
+    const bySalesChannelType = new Map<string, { netSales: number; orders: number }>();
+    const byMarketingChannel = new Map<string, { netSales: number; orders: number }>();
     const byCategory = new Map<string, { label: string; netSales: number; orders: number }>();
     const rawById = new Map<string, any>(rawOrders.map((o: any) => [o.id, o]));
 
@@ -547,6 +558,17 @@ export class AnalyticsOverviewService {
       so.orders += 1;
       bySource.set(sourceKey, so);
 
+      const typeKey = (raw.salesChannelType as string) ?? 'unspecified';
+      const tc = bySalesChannelType.get(typeKey) ?? { netSales: 0, orders: 0 };
+      tc.netSales += orderNet;
+      tc.orders += 1;
+      bySalesChannelType.set(typeKey, tc);
+      const mcKey = (raw.marketingChannel as string) ?? 'unspecified';
+      const mc = byMarketingChannel.get(mcKey) ?? { netSales: 0, orders: 0 };
+      mc.netSales += orderNet;
+      mc.orders += 1;
+      byMarketingChannel.set(mcKey, mc);
+
       const rawItems: any[] = raw.items ?? [];
       order.items.forEach((item, idx) => {
         const rawItem = rawItems[idx] ?? {};
@@ -596,6 +618,14 @@ export class AnalyticsOverviewService {
       bySalesChannel: top([...byChannel.entries()].map(([k, v]) => [k, v] as [string, { netSales: number; orders: number }])),
       bySource: top([...bySource.entries()].map(([k, v]) => [k, v] as [string, { netSales: number; orders: number }])),
       byCategory: top([...byCategory.entries()]),
+      // P8 dual-read: canonical breakdowns are additive and flag-gated.
+      // Flag off ⇒ keys absent ⇒ response identical to pre-P8.
+      ...(newSalesChannelModelEnabled()
+        ? {
+            bySalesChannelType: top([...bySalesChannelType.entries()].map(([k, v]) => [k, v] as [string, { netSales: number; orders: number }])),
+            byMarketingChannel: top([...byMarketingChannel.entries()].map(([k, v]) => [k, v] as [string, { netSales: number; orders: number }])),
+          }
+        : {}),
     };
   }
 }

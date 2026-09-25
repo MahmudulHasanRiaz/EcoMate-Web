@@ -43,6 +43,8 @@ import { normalizePhone } from '../common/utils/phone-utils';
 import { resolveDivision } from '../delivery-areas/data/district-division';
 import { resolveActionSource } from '../tracking/meta-action-source';
 import { resolveWebAttribution } from './web-attribution';
+import { resolveChannels } from './channels/channel-resolver';
+import { newSalesChannelModelEnabled } from './channels/channel-flags';
 import { BlockedEntriesService } from '../blocked-entries/blocked-entries.service';
 import { SecurityService } from '../security/security.service';
 import { OrderEditLockService } from './order-edit-lock.service';
@@ -647,11 +649,11 @@ export class OrdersService {
     sort?: string;
     order?: string;
     includeTrashed?: boolean;
-    // P6 additive channel filters (§10). storeId filters the P6 provenance
-    // column (real). salesChannelType/marketingChannel map onto legacy
-    // source fields as documented approximations until P8 adds the canonical
-    // columns; showroomId is accepted for forward-compat and becomes real in
-    // P8 (no warehouse FK on Order today).
+    // P6 additive channel filters (§10) + P8 canonical columns (§9).
+    // storeId filters the P6 provenance column (real). salesChannelType /
+    // showroomId / marketingChannel predicate the REAL canonical columns
+    // when newSalesChannelModelEnabled() is on, else the P6 preview
+    // approximations (identical reads with the flag off).
     storeId?: string;
     salesChannelType?: string;
     showroomId?: string;
@@ -689,12 +691,24 @@ export class OrdersService {
     // 'native' to select storeId IS NULL).
     if (query.storeId === 'native') where.storeId = null;
     else if (query.storeId) where.storeId = query.storeId;
-    // P8-preview approximations (documented; canonical columns land in P8):
-    // ONLINE ≡ legacy WEBSITE today (§9.2); platform attribution lives in
-    // sourcePlatform today. showroomId has no predicate yet (P8).
-    if (query.salesChannelType === 'ONLINE') where.salesChannel = 'WEBSITE';
-    else if (query.salesChannelType === 'OFFLINE') where.salesChannel = { not: 'WEBSITE' };
-    if (query.marketingChannel) where.sourcePlatform = query.marketingChannel;
+    // P8 §9.3 dual-read: with the canonical model enabled the channel
+    // filters predicate the REAL canonical columns (backfilled + dual-
+    // written). With the flag off the P6 preview approximations apply
+    // unchanged, so reads are identical to before P8.
+    if (newSalesChannelModelEnabled()) {
+      if (query.salesChannelType === 'ONLINE' || query.salesChannelType === 'OFFLINE') {
+        where.salesChannelType = query.salesChannelType;
+      }
+      if (query.showroomId) where.showroomId = query.showroomId;
+      if (query.marketingChannel) where.marketingChannel = query.marketingChannel;
+    } else {
+      // P8-preview approximations (documented; canonical columns land in P8):
+      // ONLINE ≡ legacy WEBSITE today (§9.2); platform attribution lives in
+      // sourcePlatform today. showroomId has no predicate yet (P8).
+      if (query.salesChannelType === 'ONLINE') where.salesChannel = 'WEBSITE';
+      else if (query.salesChannelType === 'OFFLINE') where.salesChannel = { not: 'WEBSITE' };
+      if (query.marketingChannel) where.sourcePlatform = query.marketingChannel;
+    }
     if (query.dateFrom || query.dateTo) {
       where.createdAt = {};
       if (query.dateFrom) where.createdAt.gte = new Date(query.dateFrom);
@@ -733,6 +747,8 @@ export class OrdersService {
           },
           // Latest dispatch only — supplies the (correct) tracking link on list rows.
           dispatches: { orderBy: { createdAt: 'desc' }, take: 1 },
+          // P8: canonical showroom (additive; null when no showroom sale).
+          showroom: { select: { id: true, name: true } },
         },
       }),
       this.prisma.order.count({ where }),
@@ -908,6 +924,8 @@ export class OrdersService {
         editLock: {
           include: { user: { select: { firstName: true, lastName: true } } },
         },
+        // P8: canonical showroom (additive; null when no showroom sale).
+        showroom: { select: { id: true, name: true } },
       },
     });
     if (!order || order.trashedAt)
@@ -1718,6 +1736,61 @@ export class OrdersService {
       const resolvedSourceType =
         dto.sourceType || webAttribution?.sourceType || null;
 
+      // P8 §9.1 (BR-18): canonical channel dual-write. Legacy
+      // salesChannel/source* above are still written verbatim (untouched);
+      // the canonical dimensions are derived by the single ChannelResolver
+      // and written in the SAME transaction. Best-effort session/showroom
+      // reads never break ordering (null on any failure).
+      const resolvedSalesChannel = dto.salesChannel || 'WEBSITE';
+      let channelUtmSource: string | null = null;
+      if (dto.trackingSessionId) {
+        try {
+          const session = await this.prisma.marketingSession.findUnique({
+            where: { sessionToken: dto.trackingSessionId },
+            select: { utmSource: true },
+          });
+          channelUtmSource = session?.utmSource ?? null;
+        } catch {
+          channelUtmSource = null;
+        }
+      }
+      const resolvedChannels = resolveChannels({
+        salesChannel: resolvedSalesChannel,
+        source: null,
+        sourcePlatform: resolvedSourcePlatform,
+        sourceType: resolvedSourceType,
+        sourceEntity: dto.sourceEntity || null,
+        utmSource: channelUtmSource,
+      });
+      let resolvedShowroomId: string | null = null;
+      // Explicit showroomId (admin POS picker) wins when it names a real
+      // showroom row; otherwise fall back to sourceEntity name resolution.
+      if (dto.showroomId) {
+        try {
+          const explicit = await this.prisma.warehouse.findFirst({
+            where: { id: dto.showroomId, type: 'showroom' },
+            select: { id: true },
+          });
+          resolvedShowroomId = explicit?.id ?? null;
+        } catch {
+          resolvedShowroomId = null;
+        }
+      }
+      if (!resolvedShowroomId && resolvedChannels.showroomName) {
+        try {
+          const warehouse = await this.prisma.warehouse.findFirst({
+            where: {
+              type: 'showroom',
+              name: { equals: resolvedChannels.showroomName, mode: 'insensitive' },
+            },
+            select: { id: true },
+          });
+          resolvedShowroomId = warehouse?.id ?? null;
+        } catch {
+          resolvedShowroomId = null;
+        }
+      }
+
       // Order-time customer snapshot: capture customer data at order creation
       // time so it's preserved independently of later CustomerProfile mutations.
       // This is the immutable record of what was known about the customer when
@@ -1786,6 +1859,11 @@ export class OrdersService {
           sourcePlatform: resolvedSourcePlatform,
           sourceType: resolvedSourceType,
           sourceEntity: dto.sourceEntity || null,
+          // P8 §9.1 dual-write: canonical dimensions beside the legacy
+          // columns, same row, same transaction (BR-18).
+          salesChannelType: resolvedChannels.salesChannelType,
+          showroomId: resolvedShowroomId,
+          marketingChannel: resolvedChannels.marketingChannel,
           trackingSessionId: dto.trackingSessionId ?? null,
           guestName: dto.guestName,
           guestPhone: dto.guestPhone,

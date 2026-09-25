@@ -103,6 +103,27 @@ enum SalesChannel {
   OTHER
 }
 
+// P8 §9.1 (BR-18): canonical sales/marketing channel dimensions. Legacy
+// SalesChannel/source* stay and keep being written (dual-write); these new
+// nullable columns are derived by the single ChannelResolver. CALL/PHONE/
+// DIRECT never yield a marketing channel; canonical enum has no CALL.
+enum SalesChannelType {
+  ONLINE
+  OFFLINE
+}
+
+enum MarketingChannel {
+  FACEBOOK
+  MESSENGER
+  INSTAGRAM
+  INSTAGRAM_INBOX
+  TIKTOK
+  TIKTOK_INBOX
+  WHATSAPP
+  THREADS
+  OTHER
+}
+
 model UserProfile {
   id                  String     @id @default(uuid())
   firstName           String
@@ -675,6 +696,16 @@ model Order {
   posSessionId             String?
   idempotencyKey           String?            @unique
   posSession               PosSession?        @relation(fields: [posSessionId], references: [id])
+  // P8 §9.1 (BR-18): canonical channel dimensions. Nullable + additive;
+  // legacy salesChannel/source* above remain and keep being written
+  // (dual-write in the same transaction). salesChannelType = ONLINE/OFFLINE;
+  // showroomId = FK Warehouse(type='showroom') for OFFLINE showroom sales;
+  // marketingChannel = independent platform-attribution dimension (CALL is
+  // not a member — a phone call is an order origin, never marketing).
+  salesChannelType         SalesChannelType?
+  showroomId               String?
+  showroom                 Warehouse?         @relation("OrderShowroom", fields: [showroomId], references: [id], onDelete: SetNull)
+  marketingChannel         MarketingChannel?
   // P6 order ingestion (§8.5): provenance for external-store orders.
   // storeId = which external store (null = native). ingestFlags =
   // operational visibility only (BLOCKED_PHONE | BLOCKED_IP |
@@ -733,6 +764,9 @@ model Order {
   @@index([posSessionId])
   @@index([source])
   @@index([salesChannel])
+  @@index([salesChannelType])
+  @@index([showroomId])
+  @@index([marketingChannel])
   @@index([storeId])
   @@index([externalOrderId])
   @@index([trackingSessionId])
@@ -2369,6 +2403,7 @@ model Warehouse {
   zones                              Zone[]
   binLocations                       BinLocation[]
   posSessions                        PosSession[]
+  showroomOrders                     Order[]                            @relation("OrderShowroom")
   physicalInventories                PhysicalInventory[]
   physicalLedgers                    PhysicalInventoryLedger[]
   physicalReservations               PhysicalReservation[]

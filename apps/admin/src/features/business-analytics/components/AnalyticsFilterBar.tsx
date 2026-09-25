@@ -18,6 +18,10 @@ const PRESET_KEYS = ['today', 'yesterday', 'last_7_days', 'last_30_days', 'this_
 
 const SOURCES = ['POS', 'ECOMMERCE', 'MANUAL']
 const SALES_CHANNELS = ['CALL', 'FACEBOOK', 'INSTAGRAM', 'TIKTOK', 'MESSENGER', 'WHATSAPP', 'THREADS', 'WALK_IN', 'WEBSITE', 'OFFLINE', 'POS', 'OTHER']
+// P8 canonical dimensions (§9, BR-18). The canonical marketing enum has no
+// CALL — a phone call is an order origin, never a marketing platform.
+const SALES_CHANNEL_TYPES = ['ONLINE', 'OFFLINE']
+const MARKETING_CHANNELS = ['FACEBOOK', 'MESSENGER', 'INSTAGRAM', 'INSTAGRAM_INBOX', 'TIKTOK', 'TIKTOK_INBOX', 'WHATSAPP', 'THREADS', 'OTHER']
 const SEGMENTS = ['new', 'returning', 'vip']
 const OUTCOMES = ['delivered', 'returned', 'in_fulfilment', 'cancelled']
 const COLLECTION = ['online-collected', 'cod-unavailable']
@@ -114,9 +118,9 @@ export function AnalyticsFilterBar({ value, onChange }: Props) {
   })
 
   const presets = DATE_PRESETS.filter((p) => (PRESET_KEYS as readonly string[]).includes(p.key) && p.key !== 'custom')
-  const activeCount = [value.source, value.salesChannel, value.marketingSource, value.paymentMethod, value.categoryId, value.location, value.customerSegment, value.deliveryOutcome, value.collectionStatus].filter(Boolean).length
+  const activeCount = [value.source, value.salesChannel, value.salesChannelType, value.marketingChannel, value.marketingSource, value.paymentMethod, value.categoryId, value.location, value.customerSegment, value.deliveryOutcome, value.collectionStatus].filter(Boolean).length
   // Secondary dims live behind "More filters" — their active count badges the trigger.
-  const hiddenActive = [value.collectionStatus, value.categoryId, value.marketingSource, value.paymentMethod, value.location].filter(Boolean).length
+  const hiddenActive = [value.collectionStatus, value.categoryId, value.marketingSource, value.marketingChannel, value.paymentMethod, value.location].filter(Boolean).length
 
   return (
     <div className="flex flex-col gap-2">
@@ -193,6 +197,7 @@ export function AnalyticsFilterBar({ value, onChange }: Props) {
         <div className="flex items-end gap-2 flex-wrap">
           <DimSelect label="Source System" value={value.source} placeholder="All sources" options={SOURCES.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ source: v })} />
           <DimSelect label="Sales Channel" value={value.salesChannel} placeholder="All channels" options={SALES_CHANNELS.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ salesChannel: v })} />
+          <DimSelect label="Sales Type" value={value.salesChannelType} placeholder="Online + Offline" options={SALES_CHANNEL_TYPES.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ salesChannelType: v })} />
           <DimSelect label="Segment" value={value.customerSegment} placeholder="All segments" options={SEGMENTS.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ customerSegment: v })} />
           <DimSelect label="Delivery Outcome" value={value.deliveryOutcome} placeholder="All outcomes" options={OUTCOMES.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ deliveryOutcome: v })} />
           <CollapsibleTrigger asChild>
@@ -213,6 +218,7 @@ export function AnalyticsFilterBar({ value, onChange }: Props) {
             onPick={(v) => set({ categoryId: v })}
           />
           <FreeInput label="Marketing Source" value={value.marketingSource} onPick={(v) => set({ marketingSource: v })} placeholder="slug / utm_source" />
+          <DimSelect label="Marketing Channel" value={value.marketingChannel} placeholder="All platforms" options={MARKETING_CHANNELS.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ marketingChannel: v })} />
           <FreeInput label="Payment Method" value={value.paymentMethod} onPick={(v) => set({ paymentMethod: v })} placeholder="gateway code" />
           <FreeInput label="Location" value={value.location} onPick={(v) => set({ location: v })} placeholder="city / state / zip" />
         </CollapsibleContent>

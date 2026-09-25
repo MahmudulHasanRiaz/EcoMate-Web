@@ -8,6 +8,7 @@ import type { CostState } from './metric-contract';
 import type { AnalyticsRange } from './analytics-range.util';
 import type { AnalyticsFilterDto } from './analytics-filter.dto';
 import type { ResolvedAnalyticsContext } from './analytics-filter.service';
+import { newSalesChannelModelEnabled } from '../orders/channels/channel-flags';
 
 export const FORMULA_VERSION = 'analytics-p2/1.0';
 
@@ -127,6 +128,10 @@ export function analyticsCacheTtlMs(range: Pick<AnalyticsRange, 'end'>): number 
  * (no-op in unit tests, resilient — a cache failure never breaks the
  * mutation). The short TTLs below bound any residual staleness. No summary
  * tables; revisit trigger per §6 (p95 > 1.5s or > 500k orders).
+ *
+ * P8: the key also carries the channel-model flag state (`ch1`/`ch0`) so
+ * flag-on responses (with additive canonical keys) and flag-off responses
+ * never share a cache entry.
  */
 export function analyticsCacheKey(
   endpoint: string,
@@ -135,5 +140,5 @@ export function analyticsCacheKey(
   const entries = Object.entries(filters ?? {})
     .filter(([, v]) => v !== undefined && v !== null && v !== '')
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-  return `analytics:${endpoint}:${JSON.stringify(entries)}`;
+  return `analytics:${endpoint}:${JSON.stringify(entries)}:ch${newSalesChannelModelEnabled() ? 1 : 0}`;
 }

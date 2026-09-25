@@ -11,6 +11,8 @@ import {
   RELAY_ENABLED_SETTING_KEY,
 } from './outbox-relay.service';
 import { MonitoringDateRange } from './dto/monitoring.dto';
+import { resolveOrderSourceCategory } from './order-source-policy';
+import { newSalesChannelModelEnabled } from '../orders/channels/channel-flags';
 
 export interface VolumeByEventTypeRow {
   eventType: string;
@@ -225,6 +227,8 @@ export interface PurchaseReconciliation {
     POS: number;
     INCOMPLETE_CONVERSION: number;
     MANUAL: number;
+    // P8 additive: present only with the new-channel model flag on.
+    EXTERNAL_STORE?: number;
   };
 
   // === CONFIGURATION WATERFALL ===
@@ -925,6 +929,7 @@ export class MonitoringService {
               'tracking_send_pos_orders',
               'tracking_send_incomplete_conversion_orders',
               'tracking_send_manual_orders',
+              'tracking_send_external_store_orders',
             ],
           },
         },
@@ -936,12 +941,13 @@ export class MonitoringService {
     const metaMode = settingMap['tracking_meta_purchase_mode'] || 'instant';
     const metaStatus = settingMap['tracking_meta_validated_status'] || '';
 
-    // Source eligibility defaults
+    // Source eligibility defaults (BR-24: external-store dispatch off by default).
     const sourceEligibility: Record<string, boolean> = {
       DIRECT_WEBSITE: sourceSettingMap['tracking_send_website_orders'] !== 'false',
       POS: sourceSettingMap['tracking_send_pos_orders'] === 'true',
       INCOMPLETE_CONVERSION: sourceSettingMap['tracking_send_incomplete_conversion_orders'] === 'true',
       MANUAL: sourceSettingMap['tracking_send_manual_orders'] === 'true',
+      EXTERNAL_STORE: sourceSettingMap['tracking_send_external_store_orders'] === 'true',
     };
 
     // === STEP 2: Business lifecycle metrics ===
@@ -950,6 +956,7 @@ export class MonitoringService {
     });
 
     // Get all non-trashed orders and scan timeline for status transitions in range
+    // (P8: canonical columns ride along for the dual-read classifier).
     const allOrders = await this.prisma.order.findMany({
       where: { trashedAt: null },
       select: {
@@ -960,12 +967,21 @@ export class MonitoringService {
         sourcePlatform: true,
         sourceType: true,
         posSessionId: true,
+        idempotencyKey: true,
+        salesChannelType: true,
+        marketingChannel: true,
+        storeId: true,
+        showroomId: true,
         status: { select: { name: true } },
       },
     });
 
-    // Classify each order's source
+    // Classify each order's source. P8 §9.3 dual-read: flag off ⇒ the exact
+    // pre-P8 inline classifier (identical); flag on ⇒ the single shared
+    // policy resolver (canonical store identity included).
+    const useCanonicalClassifier = newSalesChannelModelEnabled();
     function classifySource(order: any): string {
+      if (useCanonicalClassifier) return resolveOrderSourceCategory(order);
       if (order.posSessionId || order.source === 'POS') return 'POS';
       if (order.sourcePlatform === 'PHONE' || order.sourceType === 'CALL' || order.sourcePlatform === 'LEAD') return 'INCOMPLETE_CONVERSION';
       if (order.salesChannel && order.salesChannel !== 'WEBSITE' && order.salesChannel !== 'POS') return 'MANUAL';
@@ -976,7 +992,17 @@ export class MonitoringService {
     // Scan timelines for Confirmed/Delivered transitions in range
     let confirmedOrders = 0;
     let deliveredOrders = 0;
-    const confirmedBySource = { DIRECT_WEBSITE: 0, POS: 0, INCOMPLETE_CONVERSION: 0, MANUAL: 0 };
+    // P8: EXTERNAL_STORE bucket exists only with the flag on (ingested
+    // orders classify MANUAL under the legacy classifier — unchanged off).
+    const confirmedBySource: {
+      DIRECT_WEBSITE: number;
+      POS: number;
+      INCOMPLETE_CONVERSION: number;
+      MANUAL: number;
+      EXTERNAL_STORE?: number;
+    } = useCanonicalClassifier
+      ? { DIRECT_WEBSITE: 0, POS: 0, INCOMPLETE_CONVERSION: 0, MANUAL: 0, EXTERNAL_STORE: 0 }
+      : { DIRECT_WEBSITE: 0, POS: 0, INCOMPLETE_CONVERSION: 0, MANUAL: 0 };
     const confirmedOrderDetails: Array<{ id: string; source: string; eligible: boolean; configKey: string; configValue: boolean }> = [];
 
     for (const order of allOrders) {
@@ -994,13 +1020,14 @@ export class MonitoringService {
       }
       if (enteredConfirmed) {
         confirmedOrders++;
-        const source = classifySource(order) as keyof typeof confirmedBySource;
-        confirmedBySource[source]++;
+        const source = classifySource(order);
+        confirmedBySource[source] = (confirmedBySource[source] ?? 0) + 1;
         const eligible = sourceEligibility[source] ?? false;
         const configKey = source === 'DIRECT_WEBSITE' ? 'tracking_send_website_orders'
           : source === 'POS' ? 'tracking_send_pos_orders'
             : source === 'INCOMPLETE_CONVERSION' ? 'tracking_send_incomplete_conversion_orders'
-              : 'tracking_send_manual_orders';
+              : source === 'EXTERNAL_STORE' ? 'tracking_send_external_store_orders'
+                : 'tracking_send_manual_orders';
         confirmedOrderDetails.push({ id: order.id, source, eligible, configKey, configValue: eligible });
       }
       if (enteredDelivered) deliveredOrders++;

@@ -38,6 +38,11 @@ const FILTER_KEYS: (keyof AnalyticsFilters)[] = [
   'granularity',
   'source',
   'salesChannel',
+  // P8 canonical dimensions (sent only when set; flag-gated backend-side).
+  'salesChannelType',
+  'storeId',
+  'showroomId',
+  'marketingChannel',
   'marketingSource',
   'paymentMethod',
   'categoryId',

@@ -627,13 +627,17 @@ export function Orders() {
                               {new Date(o.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
                               <span className='text-muted-foreground/60 ml-1'>{relativeTime(o.createdAt)}</span>
                             </span>
-                            {o.salesChannel || o.sourcePlatform || o.sourceType || o.sourceEntity ? (
+                            {o.salesChannel || o.sourcePlatform || o.sourceType || o.sourceEntity || o.salesChannelType || o.marketingChannel || (o as any).showroom?.name ? (
                               <OrderSourceBadges
                                 attribution={{
                                   salesChannel: o.salesChannel,
                                   sourcePlatform: o.sourcePlatform,
                                   sourceType: o.sourceType,
                                   sourceEntity: o.sourceEntity,
+                                  // P8 canonical badges (additive; absent on legacy rows).
+                                  salesChannelType: o.salesChannelType,
+                                  marketingChannel: o.marketingChannel,
+                                  showroomName: (o as any).showroom?.name,
                                 }}
                               />
                             ) : null}

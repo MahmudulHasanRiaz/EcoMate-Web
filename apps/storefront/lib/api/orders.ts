@@ -25,6 +25,13 @@ export interface CreateOrderData {
   sourcePlatform?: string;
   sourceType?: string;
   sourceEntity?: string;
+  // P8 canonical dimensions (§9, BR-18). Optional and normally omitted: the
+  // backend dual-writes them via the single ChannelResolver (WEBSITE →
+  // ONLINE, marketing from the landing session's utmSource). Sent only if a
+  // caller has an authoritative value.
+  salesChannelType?: 'ONLINE' | 'OFFLINE';
+  showroomId?: string;
+  marketingChannel?: string;
   attribution?: {
     utmSource?: string;
     utmMedium?: string;

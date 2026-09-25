@@ -403,7 +403,7 @@ function OrderDetailPage() {
             <div>
               <h2 className='text-xl font-bold tracking-tight'>
                 {order.displayId}
-                {order.salesChannel || order.sourcePlatform || order.sourceType || order.sourceEntity ? (
+                {order.salesChannel || order.sourcePlatform || order.sourceType || order.sourceEntity || order.salesChannelType || order.marketingChannel || (order as any).showroom?.name ? (
                   <span className='ml-2 align-middle'>
                     <OrderSourceBadges
                       attribution={{
@@ -411,6 +411,10 @@ function OrderDetailPage() {
                         sourcePlatform: order.sourcePlatform,
                         sourceType: order.sourceType,
                         sourceEntity: order.sourceEntity,
+                        // P8 canonical badges (additive; absent on legacy rows).
+                        salesChannelType: (order as any).salesChannelType,
+                        marketingChannel: (order as any).marketingChannel,
+                        showroomName: (order as any).showroom?.name,
                       }}
                       className='text-xs h-auto py-0.5'
                     />

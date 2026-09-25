@@ -21,6 +21,8 @@
  * binary baked into each call site.
  */
 
+import { newSalesChannelModelEnabled } from '../orders/channels/channel-flags';
+
 export type MetaActionSource =
   | 'email'
   | 'website'
@@ -61,19 +63,53 @@ export interface OrderAttributionContext {
   salesChannel?: string | null;
   sourcePlatform?: string | null;
   sourceType?: string | null;
+  // P8 additive (§9.3 dual-read): canonical dimensions. Read only with the
+  // new-channel model flag on; legacy fields drive the result when off.
+  salesChannelType?: string | null;
+  marketingChannel?: string | null;
+  storeId?: string | null;
 }
 
 export const DEFAULT_ACTION_SOURCE: MetaActionSource = 'website';
+
+/**
+ * Canonical chat platforms (P8 MarketingChannel set). With the flag on, a
+ * resolved canonical marketing channel decides 'chat' directly — this also
+ * fixes legacy `*_CHAT` channel strings (e.g. 'TikTok Chat'), which the
+ * legacy platform set below never matched and fell through to
+ * 'physical_store'.
+ */
+const CANONICAL_CHAT = new Set([
+  'FACEBOOK',
+  'MESSENGER',
+  'INSTAGRAM',
+  'INSTAGRAM_INBOX',
+  'TIKTOK',
+  'TIKTOK_INBOX',
+  'WHATSAPP',
+  'THREADS',
+]);
 
 /**
  * Resolve the Meta CAPI action_source for an order from its attribution
  * context. Order of precedence: explicit sourceType/salesChannel intent wins
  * over platform heuristics; unknown channels fall back to the platform-derived
  * default.
+ *
+ * P8 §9.3 dual-read: with the new-channel model flag off this function
+ * reads ONLY the legacy fields (identical to pre-P8). With the flag on, a
+ * canonical chat marketing channel short-circuits to 'chat' first; every
+ * other case falls through to the unchanged legacy logic (legacy columns
+ * are dual-written, so they agree).
  */
 export function resolveActionSource(
   order: OrderAttributionContext,
 ): MetaActionSource {
+  if (newSalesChannelModelEnabled()) {
+    const canonical = (order.marketingChannel || '').trim().toUpperCase();
+    if (CANONICAL_CHAT.has(canonical)) return 'chat';
+  }
+
   const channel = (order.salesChannel || '').trim().toUpperCase();
   const platform = (order.sourcePlatform || '').trim().toUpperCase();
   const type = (order.sourceType || '').trim().toUpperCase();

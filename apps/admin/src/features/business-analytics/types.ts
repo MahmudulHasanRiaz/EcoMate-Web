@@ -145,7 +145,14 @@ export interface OverviewData {
   fulfillment: FulfillmentCompact
   comparison: OverviewComparison
   trend: { requestedGranularity: string; granularity: string; points: TrendPoint[] }
-  breakdowns: { bySalesChannel: BreakdownRow[]; bySource: BreakdownRow[]; byCategory: BreakdownRow[] }
+  breakdowns: {
+    bySalesChannel: BreakdownRow[]
+    bySource: BreakdownRow[]
+    byCategory: BreakdownRow[]
+    // P8 additive: present only with the new-channel model flag on.
+    bySalesChannelType?: BreakdownRow[]
+    byMarketingChannel?: BreakdownRow[]
+  }
 }
 
 export interface OverviewResponse {
@@ -162,6 +169,12 @@ export interface AnalyticsFilters {
   source?: string
   salesChannel?: string
   marketingSource?: string
+  // P8 canonical dimensions (§9, BR-18). Optional; sent only when set, and
+  // honoured backend-side only with the new-channel model flag on.
+  salesChannelType?: string
+  storeId?: string
+  showroomId?: string
+  marketingChannel?: string
   paymentMethod?: string
   categoryId?: string
   location?: string
@@ -383,6 +396,9 @@ export interface SalesSummaryData {
     dateBasis: string
     byPriorStage: { stage: string; orders: number; value: number }[]
     bySalesChannel: BreakdownRow[]
+    // P8 additive: present only with the new-channel model flag on.
+    bySalesChannelType?: BreakdownRow[]
+    byMarketingChannel?: BreakdownRow[]
   }
   returns: {
     events: number
@@ -587,6 +603,9 @@ export interface MarketingSummaryData {
   cost: MarketingCostBlock
   sources: { rows: MarketingSourceRow[]; unattributed: { orders: number; revenue: number }; dateBasis: string }
   channels: { rows: MarketingSourceRow[]; dateBasis: string }
+  // P8 additive: present only with the new-channel model flag on.
+  salesChannelTypes?: { rows: MarketingSourceRow[]; dateBasis: string }
+  marketingChannels?: { rows: MarketingSourceRow[]; dateBasis: string }
   segments: {
     newOrders: number
     newRevenue: number

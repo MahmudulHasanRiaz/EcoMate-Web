@@ -31,9 +31,15 @@ describe('AnalyticsFilterDto', () => {
     expect(errors).toHaveLength(0);
   });
 
-  it('rejects an unknown Store dimension (F7 — no store filter exists)', async () => {
+  it('rejects an unknown Store dimension (F7 — no bare `store` filter exists)', async () => {
+    // P8 supersedes the old "no storeId" half of F7: Order gained storeId in
+    // P6 (provenance) and showroomId + canonical channels in P8 (§9). The
+    // bare `store` dimension still does not exist.
     expect(ANALYTICS_FILTER_FIELDS).not.toContain('store');
-    expect(ANALYTICS_FILTER_FIELDS).not.toContain('storeId');
+    expect(ANALYTICS_FILTER_FIELDS).toContain('storeId');
+    expect(ANALYTICS_FILTER_FIELDS).toContain('showroomId');
+    expect(ANALYTICS_FILTER_FIELDS).toContain('salesChannelType');
+    expect(ANALYTICS_FILTER_FIELDS).toContain('marketingChannel');
     // Mirrors the global ValidationPipe (whitelist: true): unknown props are
     // stripped, never honoured.
     const dto = dtoOf({ store: 'dhaka' } as any);
@@ -214,6 +220,62 @@ describe('AnalyticsFilterService.buildOrderWhere', () => {
     const where = svc.buildOrderWhere(dtoOf({}), ['o1', 'o2']);
     expect(where).toMatchObject({ id: { in: ['o1', 'o2'] } });
     expect(svc.buildOrderWhere(dtoOf({}))).not.toHaveProperty('id');
+  });
+
+  describe('P8 canonical filters (§9.3 dual-read)', () => {
+    const FLAG = 'NEW_SALES_CHANNEL_MODEL_ENABLED';
+    const prev = process.env[FLAG];
+    afterEach(() => {
+      if (prev === undefined) delete process.env[FLAG];
+      else process.env[FLAG] = prev;
+    });
+
+    it('flag off: canonical filters are ignored (reads identical to pre-P8)', () => {
+      delete process.env[FLAG];
+      const where = svc.buildOrderWhere(
+        dtoOf({
+          salesChannelType: 'ONLINE',
+          storeId: 's1',
+          showroomId: 'w1',
+          marketingChannel: 'WHATSAPP',
+        }),
+      ) as any;
+      expect(where).not.toHaveProperty('salesChannelType');
+      expect(where).not.toHaveProperty('storeId');
+      expect(where).not.toHaveProperty('showroomId');
+      expect(where).not.toHaveProperty('marketingChannel');
+      expect(where).toMatchObject({ trashedAt: null });
+    });
+
+    it('flag on: canonical filters become real predicates', () => {
+      process.env[FLAG] = 'true';
+      const where = svc.buildOrderWhere(
+        dtoOf({
+          salesChannelType: 'OFFLINE',
+          storeId: 's1',
+          showroomId: 'w1',
+          marketingChannel: 'WHATSAPP',
+        }),
+      );
+      expect(where).toMatchObject({
+        trashedAt: null,
+        salesChannelType: 'OFFLINE',
+        storeId: 's1',
+        showroomId: 'w1',
+        marketingChannel: 'WHATSAPP',
+      });
+    });
+
+    it('flag on: legacy salesChannel keeps working alongside canonical', () => {
+      process.env[FLAG] = 'true';
+      const where = svc.buildOrderWhere(
+        dtoOf({ salesChannel: 'WEBSITE', salesChannelType: 'ONLINE' }),
+      );
+      expect(where).toMatchObject({
+        salesChannel: 'WEBSITE',
+        salesChannelType: 'ONLINE',
+      });
+    });
   });
 });
 
