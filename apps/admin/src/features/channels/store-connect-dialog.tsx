@@ -3,10 +3,11 @@ import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
-import { storesApi, type TestConnectionResponse } from './api'
+import { storesApi, DEFAULT_SYNC_SCOPE, INITIAL_SYNC_POLICY, type SyncScope, type TestConnectionResponse } from './api'
 import { STORES_KEYS } from './hooks'
 import { CapabilityNotice } from './components/capability-notice'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
@@ -20,6 +21,15 @@ const PROVIDERS = [
   { slug: 'CUSTOM', label: 'Custom (Bridge v1)' },
 ] as const
 
+/** P9 canonical wizard steps (§11): the dialog never skips or reorders these. */
+const WIZARD_STEPS = [
+  'Select Platform',
+  'Provider Auth',
+  'Verify',
+  'Sync Configuration',
+  'Complete',
+] as const
+
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -27,11 +37,12 @@ interface Props {
 }
 
 /**
- * Connect wizard (§11): provider → credentials → Test Connection panel
- * (reachability, authentication, permissions, media preflight, capability
- * summary including stock fidelity and contact-check exposure,
- * duplicate-store warning) → initial sync policy (`adopt_existing`
- * default per BR-05) → scope.
+ * Connect wizard (§11): Select Platform → Provider Auth → Verify (Test
+ * Connection panel: reachability, authentication, permissions, media
+ * preflight, capability summary including stock fidelity and contact-check
+ * exposure, duplicate-store warning) → Sync Configuration (scope checkboxes
+ * + fixed `adopt_existing` policy per BR-05) → Complete (Save & Complete
+ * persists scope + policy via PATCH, then navigates to the store detail).
  *
  * The middle auth step is per-provider; the dialog, steps and flow are
  * identical — only the auth fields/labels switch by platform:
@@ -42,6 +53,7 @@ interface Props {
  * Connection, availability and sync states stay separate (no merging).
  */
 export function StoreConnectDialog({ open, onOpenChange, onCreated }: Props) {
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [provider, setProvider] = useState<string>('WOOCOMMERCE')
   const [name, setName] = useState('')
@@ -52,11 +64,18 @@ export function StoreConnectDialog({ open, onOpenChange, onCreated }: Props) {
   const [probe, setProbe] = useState<TestConnectionResponse | null>(null)
   const [createdId, setCreatedId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [scope, setScope] = useState<SyncScope>({ ...DEFAULT_SYNC_SCOPE })
+  const [completing, setCompleting] = useState(false)
+  const [completed, setCompleted] = useState(false)
 
   const reset = () => {
     setName(''); setDomain(''); setConsumerKey(''); setConsumerSecret('')
     setProbe(null); setCreatedId(null)
+    setScope({ ...DEFAULT_SYNC_SCOPE }); setCompleting(false); setCompleted(false)
   }
+
+  /** Canonical step index: pre-create covers Select Platform + Provider Auth. */
+  const stepIndex = completed ? 4 : probe?.authenticated ? 3 : createdId ? 2 : 1
 
   const credentials = () => {
     if (provider === 'SHOPIFY') {
@@ -120,7 +139,8 @@ export function StoreConnectDialog({ open, onOpenChange, onCreated }: Props) {
       setCreatedId(store.id)
       queryClient.invalidateQueries({ queryKey: STORES_KEYS.all })
       toast.success('Store registered — run Test Connection to verify')
-      onCreated?.(store.id)
+      // NOTE (P9): onCreated is intentionally NOT fired here — the wizard
+      // completes at Sync Configuration → Save & Complete navigates then.
     } catch (e: any) {
       // §8.10: 409 carries the reconnect-to-existing payload.
       const data = e?.response?.data
@@ -150,12 +170,57 @@ export function StoreConnectDialog({ open, onOpenChange, onCreated }: Props) {
     }
   }
 
+  /**
+   * P9 Sync Configuration → Complete: persists the wizard scope + the fixed
+   * `adopt_existing` policy (BR-05) via PATCH, then navigates to the store
+   * detail. Additive — auth fields and the verify panel are untouched.
+   */
+  async function handleSaveAndComplete() {
+    const id = createdId
+    if (!id) { toast.error('Create the store first, then complete setup'); return }
+    if (!probe?.authenticated) { toast.error('Verify the connection first — Save & Complete needs a passing probe'); return }
+    setCompleting(true)
+    try {
+      await storesApi.update(id, { syncScope: scope, initialSyncPolicy: INITIAL_SYNC_POLICY })
+      queryClient.invalidateQueries({ queryKey: STORES_KEYS.all })
+      queryClient.invalidateQueries({ queryKey: STORES_KEYS.detail(id) })
+      setCompleted(true)
+      toast.success('Sync configuration saved — store setup complete')
+      onCreated?.(id)
+      onOpenChange(false)
+      navigate({ to: '/op/channels/stores/$id', params: { id } })
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? 'Saving sync configuration failed')
+    } finally {
+      setCompleting(false)
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v) }}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Connect a store</DialogTitle>
         </DialogHeader>
+        <ol className="flex flex-wrap items-center gap-1 text-[11px]" aria-label="Connect steps">
+          {WIZARD_STEPS.map((label, i) => (
+            <li key={label} className="flex items-center gap-1">
+              {i > 0 && <span className="text-muted-foreground">→</span>}
+              <span
+                className={
+                  i === stepIndex
+                    ? 'font-semibold text-foreground'
+                    : i < stepIndex
+                      ? 'text-muted-foreground line-through'
+                      : 'text-muted-foreground'
+                }
+                aria-current={i === stepIndex ? 'step' : undefined}
+              >
+                {label}
+              </span>
+            </li>
+          ))}
+        </ol>
         <div className="space-y-4">
           <div className="space-y-2">
             <Label>Provider</Label>
@@ -217,6 +282,37 @@ export function StoreConnectDialog({ open, onOpenChange, onCreated }: Props) {
             products already on the store keep their values as the baseline; EcoMate never
             overwrites them on first contact.
           </div>
+
+          {probe?.authenticated && createdId && (
+            <div className="space-y-3 rounded-md border p-3">
+              <div className="text-sm font-medium">Sync configuration</div>
+              <div className="space-y-2">
+                {(
+                  [
+                    ['products', 'Products'],
+                    ['orders', 'Orders'],
+                    ['stock', 'Stock status'],
+                  ] as const
+                ).map(([key, label]) => (
+                  <label key={key} className="flex cursor-pointer items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={scope[key]}
+                      onCheckedChange={(v) => setScope((s) => ({ ...s, [key]: v === true }))}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Initial sync policy: <span className="font-medium">{INITIAL_SYNC_POLICY}</span> (fixed, BR-05) —
+                pre-existing store values stay the baseline on first contact.
+              </div>
+              <Button onClick={handleSaveAndComplete} disabled={completing}>
+                {completing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Save &amp; Complete
+              </Button>
+            </div>
+          )}
         </div>
         <DialogFooter>
           {!createdId ? (
@@ -238,7 +334,8 @@ export function StoreConnectDialog({ open, onOpenChange, onCreated }: Props) {
 
 /**
  * Full-page connect wizard (`/op/channels/stores/new`): the same dialog,
- * always open, stepping back to the store list on close.
+ * always open, stepping back to the store list on close. `onCreated` fires
+ * at Save & Complete (P9) — the dialog navigates to the store detail itself.
  */
 export function StoreConnectPage() {
   const navigate = useNavigate()

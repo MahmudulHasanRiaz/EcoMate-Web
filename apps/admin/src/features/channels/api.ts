@@ -81,6 +81,32 @@ export interface CreateStorePayload {
   credentials?: Record<string, unknown>
 }
 
+// ─── P9 wizard "Sync configuration" (§11 canonical steps) ──────────────────
+
+export type InitialSyncPolicy = 'adopt_existing'
+
+/** Fixed first-contact policy (BR-05, not editable in the wizard). */
+export const INITIAL_SYNC_POLICY: InitialSyncPolicy = 'adopt_existing'
+
+export interface SyncScope {
+  products: boolean
+  orders: boolean
+  stock: boolean
+}
+
+/** Wizard defaults: every scope on. */
+export const DEFAULT_SYNC_SCOPE: SyncScope = { products: true, orders: true, stock: true }
+
+export interface UpdateStorePayload {
+  name?: string
+  settings?: Record<string, unknown>
+  autoSyncEnabled?: boolean
+  /** P9 additive: persisted into `settings.syncScope` server-side. */
+  syncScope?: Partial<SyncScope>
+  /** P9 additive: persisted into `settings.initialSyncPolicy` server-side. */
+  initialSyncPolicy?: InitialSyncPolicy
+}
+
 // ─── Pure helpers (unit-tested in api.test.ts) ──────────────────────────────
 
 export function healthTone(state: StoreHealthState): 'success' | 'warning' | 'destructive' | 'muted' {
@@ -131,7 +157,7 @@ export const storesApi = {
   list: () => apiClient.get<StoreResponse[]>('/stores').then(r => r.data),
   detail: (id: string) => apiClient.get<StoreResponse>(`/stores/${id}`).then(r => r.data),
   create: (payload: CreateStorePayload) => apiClient.post<StoreResponse>('/stores', payload).then(r => r.data),
-  update: (id: string, payload: { name?: string; settings?: Record<string, unknown>; autoSyncEnabled?: boolean }) =>
+  update: (id: string, payload: UpdateStorePayload) =>
     apiClient.patch<StoreResponse>(`/stores/${id}`, payload).then(r => r.data),
   disconnect: (id: string) => apiClient.delete<StoreResponse>(`/stores/${id}`).then(r => r.data),
   rotateCredentials: (id: string, credentials: Record<string, unknown>) =>

@@ -119,12 +119,39 @@ export class StoresService {
     if (store.kind === NATIVE_STORE_KIND && dto.autoSyncEnabled !== undefined) {
       throw new BadRequestException('NATIVE store has no sync settings (BR-20)');
     }
+    // P9 wizard "Sync configuration" (additive): syncScope/initialSyncPolicy
+    // merge into the existing settings JSON — never a wholesale replace of
+    // unrelated keys (e.g. baseUrl/mediaProbeUrl written by other flows).
+    const prevSettings = ((store.settings as Record<string, unknown> | null) ?? {});
+    const wantsSyncConfig =
+      dto.settings !== undefined ||
+      dto.syncScope !== undefined ||
+      dto.initialSyncPolicy !== undefined;
+    const nextSettings: Record<string, unknown> | undefined = wantsSyncConfig
+      ? {
+          ...prevSettings,
+          ...((dto.settings as Record<string, unknown> | undefined) ?? {}),
+          ...(dto.syncScope !== undefined
+            ? {
+                syncScope: {
+                  ...((prevSettings.syncScope as Record<string, unknown> | undefined) ?? {}),
+                  ...dto.syncScope,
+                },
+              }
+            : {}),
+          ...(dto.initialSyncPolicy !== undefined
+            ? { initialSyncPolicy: dto.initialSyncPolicy }
+            : dto.syncScope !== undefined && (prevSettings as Record<string, unknown>).initialSyncPolicy === undefined
+              ? { initialSyncPolicy: 'adopt_existing' }
+              : {}),
+        }
+      : undefined;
     const updated = await this.prisma.store.update({
       where: { id },
       data: {
         ...(dto.name !== undefined ? { name: dto.name } : {}),
-        ...(dto.settings !== undefined
-          ? { settings: dto.settings as unknown as Prisma.InputJsonValue }
+        ...(nextSettings !== undefined
+          ? { settings: nextSettings as unknown as Prisma.InputJsonValue }
           : {}),
         ...(dto.autoSyncEnabled !== undefined ? { autoSyncEnabled: dto.autoSyncEnabled } : {}),
       },

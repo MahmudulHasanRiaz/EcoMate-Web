@@ -64,6 +64,25 @@ export class UpdateStoreDto {
   @IsOptional()
   @IsBoolean()
   autoSyncEnabled?: boolean;
+
+  /**
+   * P9 wizard "Sync configuration" step (additive): per-scope toggles
+   * persisted into `settings.syncScope`. Merged server-side — never replaces
+   * the rest of `settings`.
+   */
+  @IsOptional()
+  @IsObject()
+  syncScope?: { products?: boolean; orders?: boolean; stock?: boolean };
+
+  /**
+   * P9 wizard fixed policy display (BR-05, not editable): only
+   * `adopt_existing` is accepted; persisted into
+   * `settings.initialSyncPolicy` (defaults to `adopt_existing` when
+   * `syncScope` is saved without an explicit policy).
+   */
+  @IsOptional()
+  @IsIn(['adopt_existing'])
+  initialSyncPolicy?: string;
 }
 
 export class RotateStoreCredentialsDto {

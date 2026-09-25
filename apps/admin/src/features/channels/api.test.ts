@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { healthTone, capabilityNotices, type ProviderCapabilities } from './api'
+import { healthTone, capabilityNotices, DEFAULT_SYNC_SCOPE, INITIAL_SYNC_POLICY, type ProviderCapabilities } from './api'
 
 const baseCaps: ProviderCapabilities = {
   products: true, variations: true, categories: true, media: true,
@@ -64,6 +64,16 @@ describe('channels API helpers (P1)', () => {
     it('handles null capabilities', () => {
       expect(capabilityNotices(null)).toEqual([])
       expect(capabilityNotices(undefined)).toEqual([])
+    })
+  })
+
+  describe('P9 sync-configuration defaults', () => {
+    it('defaults every sync scope on (Products, Orders, Stock status)', () => {
+      expect(DEFAULT_SYNC_SCOPE).toEqual({ products: true, orders: true, stock: true })
+    })
+
+    it('fixes the initial sync policy to adopt_existing (BR-05, not editable)', () => {
+      expect(INITIAL_SYNC_POLICY).toBe('adopt_existing')
     })
   })
 })
