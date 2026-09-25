@@ -58,9 +58,20 @@ export class SyncQueuesService {
   }
 
   /** Enqueue post-commit; never throws into the caller (R-2). */
-  async enqueue(name: SyncQueueName, jobName: string, data: Record<string, unknown>, jobId?: string): Promise<void> {
+  async enqueue(
+    name: SyncQueueName,
+    jobName: string,
+    data: Record<string, unknown>,
+    jobId?: string,
+    opts?: { delay?: number },
+  ): Promise<void> {
     try {
-      await this.queueFor(name).add(jobName, data, jobId ? { jobId, removeOnComplete: 100, removeOnFail: 50 } : { removeOnComplete: 100, removeOnFail: 50 });
+      await this.queueFor(name).add(jobName, data, {
+        ...(jobId ? { jobId } : {}),
+        ...(opts?.delay ? { delay: opts.delay } : {}),
+        removeOnComplete: 100,
+        removeOnFail: 50,
+      });
     } catch (err) {
       this.logger.error(`enqueue ${name}/${jobName} failed (non-propagating): ${err}`);
     }

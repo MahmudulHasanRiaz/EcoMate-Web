@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -16,6 +17,9 @@ import { MediaService } from '../media/media.service';
 import { MediaResolverService } from '../media/media-resolver.service';
 import { CacheService } from '../cache/cache.service';
 import { StockRouterService } from '../stock/stock-router.service';
+// Value import: Nest needs the runtime token for DI. Acyclic: the
+// stock-status module never imports the products module.
+import { StockStatusSyncService } from '../stores/sync/stock-status-sync.service';
 
 function slugify(text: string): string {
   return text
@@ -32,7 +36,23 @@ export class ProductsService {
     private readonly cache: CacheService,
     private readonly stockRouter: StockRouterService,
     private readonly mediaResolver: MediaResolverService,
+    // P5 §8.4: post-commit stock-change notification. @Optional so unit
+    // specs constructing ProductsService manually keep working; every call
+    // is guarded and non-propagating (R-2).
+    @Optional() private readonly stockStatus?: StockStatusSyncService,
   ) {}
+
+  /**
+   * P5 §8.4 change notification — post-commit, never propagates, never
+   * blocks. No provider call happens here (R-2): only a debounced enqueue.
+   */
+  private notifyStockChanged(productId: string, variantId?: string | null, reason?: string): void {
+    try {
+      void this.stockStatus?.notifyStockChanged(productId, variantId ?? null, reason).catch(() => undefined);
+    } catch {
+      // never propagate into the mutation path
+    }
+  }
 
   private async syncTags(tagNames: string[], productId: string): Promise<void> {
     const oldTags = await this.prisma.productTag.findMany({
@@ -847,6 +867,11 @@ export class ProductsService {
       }
     }
 
+    // P5 §8.4: initial stock (product + variant rows) committed above.
+    this.notifyStockChanged(product.id, null, 'product-create');
+    for (const v of product.variants ?? []) {
+      this.notifyStockChanged(product.id, v.id, 'product-create');
+    }
     return product;
   }
 
@@ -1021,6 +1046,8 @@ export class ProductsService {
     }
 
     await this.cache.invalidateByPrefix('product:');
+    // P5 §8.4: availability-mode transitions zero managed rows above.
+    this.notifyStockChanged(id, null, 'product-update');
     return product;
   }
 
@@ -1180,6 +1207,8 @@ export class ProductsService {
 
     await this.syncTags(dto.tags || [], product.id);
     await this.cache.invalidateByPrefix('product:');
+    // P5 §8.4: draft carries initial variant/product stock rows.
+    this.notifyStockChanged(product.id, null, 'product-draft-create');
     return product;
   }
 
@@ -1302,6 +1331,11 @@ export class ProductsService {
       }
     }
     await this.cache.invalidateByPrefix('product:');
+    // P5 §8.4: draft autosave replaces the variant set wholesale (stock rows).
+    this.notifyStockChanged(id, null, 'product-draft-update');
+    for (const v of (product as any).variants ?? []) {
+      this.notifyStockChanged(id, v.id, 'product-draft-update');
+    }
     return product;
   }
 
@@ -1424,6 +1458,11 @@ export class ProductsService {
       }
     }
     await this.cache.invalidateByPrefix('product:');
+    // P5 §8.4: publishing activates stock rows (incl. the variant set).
+    this.notifyStockChanged(id, null, 'product-draft-publish');
+    for (const v of (product as any).variants ?? []) {
+      this.notifyStockChanged(id, v.id, 'product-draft-publish');
+    }
     return product;
   }
 
@@ -1524,6 +1563,8 @@ export class ProductsService {
       }
     });
 
+    // P5 §8.4: regenerated variant set (with initial stock rows) committed.
+    this.notifyStockChanged(productId, null, 'product-variants-generate');
     return this.findOne(productId);
   }
 
@@ -1732,6 +1773,8 @@ export class ProductsService {
       data: { type: 'simple', managedStockQuantity: 0, manageStock: true },
     });
     await this.cache.invalidateByPrefix('product:');
+    // P5 §8.4: variant regeneration resets managed rows (parent zeroed).
+    this.notifyStockChanged(productId, null, 'product-variants-regenerate');
     return { message: 'All variants removed. Product reset to simple type.' };
   }
 
@@ -1754,6 +1797,9 @@ export class ProductsService {
     await this.media.detachAll('variant', variantId);
     await this.prisma.productVariant.delete({ where: { id: variantId } });
     await this.cache.invalidateByPrefix('product:');
+    // P5 §8.4: variant row (and its stock) deleted — re-evaluate the parent.
+    this.notifyStockChanged(productId, variantId, 'product-variant-remove');
+    this.notifyStockChanged(productId, null, 'product-variant-remove');
     return { message: 'Variant deleted' };
   }
 }

@@ -4166,6 +4166,9 @@ model StoreVariantMapping {
   productId  String
   variantId  String
   externalId String
+  /// P5 stock-status monotonic guard: max stock-row updatedAt + ledger
+  /// timestamp last evaluated for this variant (lexicographic version).
+  lastEvaluatedVersion String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

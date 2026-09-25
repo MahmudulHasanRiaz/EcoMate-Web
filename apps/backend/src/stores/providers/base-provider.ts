@@ -309,6 +309,39 @@ export abstract class BaseCommerceProvider implements CommerceProvider {
     return this.stub('publishStockState');
   }
 
+  /**
+   * P5 variation-scoped stock defaults (BR-06 status-only). Adapters without
+   * true per-variation stock inherit the loud throw — the stock engine maps
+   * it to SKIPPED + VARIANT_STOCK_UNSUPPORTED, never to a product-level push
+   * of a variant's state.
+   */
+  async readVariantStockState(
+    store: StoreWithSecrets,
+    parentRef: RemoteRef,
+    variantRef: RemoteRef,
+  ): Promise<StockState> {
+    void store;
+    void parentRef;
+    void variantRef;
+    throw notImplemented(this.slug, 'readVariantStockState (VARIANT_STOCK_UNSUPPORTED)');
+  }
+
+  async publishVariantStockState(
+    store: StoreWithSecrets,
+    parentRef: RemoteRef,
+    variantRef: RemoteRef,
+    state: StockState,
+  ): Promise<PushResult> {
+    void store;
+    void parentRef;
+    void variantRef;
+    void state;
+    if (this.declaredCapabilities.stockStatusFidelity === 'unsupported') {
+      throw stockWritesUnsupported(this.slug);
+    }
+    throw notImplemented(this.slug, 'publishVariantStockState (VARIANT_STOCK_UNSUPPORTED)');
+  }
+
   fetchOrders(
     store: StoreWithSecrets,
     opts: { since: Date; until: Date; status?: string[]; page: number; pageSize: number },

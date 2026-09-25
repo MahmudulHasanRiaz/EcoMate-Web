@@ -61,7 +61,7 @@ interface FakeRemoteProduct {
   fields: Record<string, unknown>;
   publication: 'published' | 'draft';
   stockState: StockState;
-  variants: Map<string, { ref: RemoteRef; data: Record<string, unknown> }>;
+  variants: Map<string, { ref: RemoteRef; data: Record<string, unknown>; stockState: StockState }>;
 }
 
 function skuOf(input: Record<string, unknown>): string {
@@ -169,6 +169,7 @@ export class FakeProvider implements CommerceProvider {
       record.variants.set(v.sku, {
         ref: { providerId: `fake-var-${this.counters.variant}` },
         data: { ...v },
+        stockState: 'IN_STOCK',
       });
     }
     this.products.set(providerId, record);
@@ -373,6 +374,7 @@ export class FakeProvider implements CommerceProvider {
         slot = {
           ref: { providerId: `fake-var-${this.counters.variant}` },
           data: {},
+          stockState: 'IN_STOCK',
         };
         record.variants.set(sku, slot);
       }
@@ -494,6 +496,49 @@ export class FakeProvider implements CommerceProvider {
     record.stockState = state;
     this.log('publishStockState', { ref, state });
     return { ok: true, ref };
+  }
+
+  async readVariantStockState(
+    store: StoreWithSecrets,
+    parentRef: RemoteRef,
+    variantRef: RemoteRef,
+  ): Promise<StockState> {
+    void store;
+    this.maybeFail('readVariantStockState');
+    const slot = this.findVariantSlot(parentRef, variantRef);
+    this.log('readVariantStockState', { parentRef, variantRef });
+    return slot.stockState;
+  }
+
+  async publishVariantStockState(
+    store: StoreWithSecrets,
+    parentRef: RemoteRef,
+    variantRef: RemoteRef,
+    state: StockState,
+  ): Promise<PushResult> {
+    void store;
+    this.maybeFail('publishVariantStockState');
+    const slot = this.findVariantSlot(parentRef, variantRef);
+    // Status-only, like the product path: { parentRef, variantRef, state }
+    // MUST never carry a quantity (BR-06).
+    slot.stockState = state;
+    this.log('publishVariantStockState', { parentRef, variantRef, state });
+    return { ok: true, ref: variantRef };
+  }
+
+  private findVariantSlot(
+    parentRef: RemoteRef,
+    variantRef: RemoteRef,
+  ): { ref: RemoteRef; data: Record<string, unknown>; stockState: StockState } {
+    const record = this.products.get(parentRef.providerId);
+    for (const slot of record?.variants.values() ?? []) {
+      if (slot.ref.providerId === variantRef.providerId) return slot;
+    }
+    throw new ProviderError(
+      `[fake] unknown variant ${variantRef.providerId} of ${parentRef.providerId}`,
+      ProviderErrorCategory.REMOTE_NOT_FOUND,
+      this.slug,
+    );
   }
 
   // ── Contract: orders ────────────────────────────────────────────────

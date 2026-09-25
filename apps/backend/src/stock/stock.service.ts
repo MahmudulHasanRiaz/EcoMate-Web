@@ -3,11 +3,15 @@ import {
   BadRequestException,
   NotFoundException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, ReferenceEntity } from '@prisma/client';
 import { CacheService } from '../cache/cache.service';
 import { CostingLotService } from './costing-lot.service';
+// Value import (not `import type`): Nest needs the runtime token for DI.
+// Acyclic: the stock-status module never imports the stock module.
+import { StockStatusSyncService } from '../stores/sync/stock-status-sync.service';
 
 export interface StockOperationParams {
   productId?: string;
@@ -43,7 +47,23 @@ export class StockService {
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
     private readonly costingLotService: CostingLotService,
+    // P5 §8.4: post-commit stock-change notification. @Optional so unit
+    // specs constructing StockService manually keep working; every call is
+    // guarded and non-propagating (R-2).
+    @Optional() private readonly stockStatus?: StockStatusSyncService,
   ) {}
+
+  /**
+   * P5 §8.4 change notification — post-commit, never propagates, never
+   * blocks. No provider call happens here (R-2): only a debounced enqueue.
+   */
+  private notifyStockChanged(productId: string, variantId?: string | null, reason?: string): void {
+    try {
+      void this.stockStatus?.notifyStockChanged(productId, variantId ?? null, reason).catch(() => undefined);
+    } catch {
+      // never propagate into the hot mutation path
+    }
+  }
 
   private client(tx?: Prisma.TransactionClient) {
     if (tx) return tx;
@@ -703,6 +723,10 @@ export class StockService {
     if (params.tx) {
       const res = await exec(params.tx);
       await this.cache.invalidateByPrefix('product:');
+      // Post-commit notify (tx path: the outer transaction commits after us;
+      // the job re-reads live state + the version guard absorbs skew, and the
+      // daily audit is the correctness backstop per R-2).
+      for (const t of res) this.notifyStockChanged(t.productId, t.variantId, `managed:${operation}`);
       return res;
     }
     const MAX_RETRIES = 3;
@@ -712,6 +736,7 @@ export class StockService {
           isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
         });
         await this.cache.invalidateByPrefix('product:');
+        for (const t of res) this.notifyStockChanged(t.productId, t.variantId, `managed:${operation}`);
         return res;
       } catch (error) {
         if (
@@ -934,10 +959,12 @@ export class StockService {
     if (params.tx) {
       const res = await exec(params.tx);
       await this.cache.invalidateByPrefix('product:');
+      for (const t of res) this.notifyStockChanged(t.productId, t.variantId, `managed:${operation}`);
       return res;
     }
     const res = await this.prisma.$transaction(exec);
     await this.cache.invalidateByPrefix('product:');
+    for (const t of res) this.notifyStockChanged(t.productId, t.variantId, `managed:${operation}`);
     return res;
   }
 

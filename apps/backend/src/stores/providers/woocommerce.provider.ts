@@ -400,6 +400,33 @@ export class WooCommerceProvider extends BaseCommerceProvider {
     return { ok: true, ref };
   }
 
+  override async readVariantStockState(
+    store: StoreWithSecrets,
+    parentRef: RemoteRef,
+    variantRef: RemoteRef,
+  ): Promise<StockState> {
+    const body = await this.woo<{ stock_status?: string }>(
+      store, 'GET',
+      `/products/${encodeURIComponent(parentRef.providerId)}/variations/${encodeURIComponent(variantRef.providerId)}`,
+    );
+    return (body as any).stock_status === 'outofstock' ? 'OUT_OF_STOCK' : 'IN_STOCK';
+  }
+
+  override async publishVariantStockState(
+    store: StoreWithSecrets,
+    parentRef: RemoteRef,
+    variantRef: RemoteRef,
+    state: StockState,
+  ): Promise<PushResult> {
+    // Status-only (BR-06): never a quantity, sentinel or placeholder.
+    await this.woo(
+      store, 'PUT',
+      `/products/${encodeURIComponent(parentRef.providerId)}/variations/${encodeURIComponent(variantRef.providerId)}`,
+      { stock_status: state === 'IN_STOCK' ? 'instock' : 'outofstock' },
+    );
+    return { ok: true, ref: variantRef };
+  }
+
   override async fetchOrders(
     store: StoreWithSecrets,
     opts: { since: Date; until: Date; status?: string[]; page: number; pageSize: number },

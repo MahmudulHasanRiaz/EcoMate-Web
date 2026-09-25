@@ -10,6 +10,7 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ProductSyncService, SYNC_FANOUT_CONCURRENCY_DEFAULT } from './product-sync.service';
+import { StockStatusSyncService } from './stock-status-sync.service';
 import { SyncRunService } from './sync-run.service';
 import { SyncQueuesService, fanoutConcurrency } from './sync-queues.service';
 import { StoreCircuitBreaker } from './sync-circuit';
@@ -137,17 +138,36 @@ export class StoreProductSyncProcessor extends WorkerHost {
 
 @Processor('store-stock-sync', { concurrency: 10, limiter: { max: 30, duration: 1000 } })
 export class StoreStockSyncProcessor extends WorkerHost {
-  constructor(private readonly runs: SyncRunService) { super(); }
+  private readonly logger = new Logger(StoreStockSyncProcessor.name);
+  constructor(
+    private readonly runs: SyncRunService,
+    private readonly stock: StockStatusSyncService,
+    private readonly queues: SyncQueuesService,
+  ) { super(); }
   async process(job: Job): Promise<unknown> {
-    // P5 owns stock-status sync: P4 registers the queue + bounds so the
-    // name exists and work enqueued today is parked, never dropped.
+    // P5 owns stock-status sync (§8.4): per-change jobs serialize per store
+    // (R-8); the daily audit spans stores and runs unserialized — the
+    // monotonic version guard keeps the two paths from racing.
+    if (job.name === 'stock-change') {
+      const { storeId } = (job.data ?? {}) as { storeId?: string };
+      if (!storeId) {
+        this.logger.warn('stock-change without storeId — ignored');
+        return { ignored: 'missing-storeId' };
+      }
+      return this.queues.serializeStore(storeId, () =>
+        this.stock.handleStockChange((job.data ?? {}) as any),
+      );
+    }
+    if (job.name === 'stock-audit') {
+      return this.stock.runAudit((job.data ?? {}) as any);
+    }
     const { runId } = (job.data ?? {}) as { runId?: string };
     if (runId) {
       await this.runs.recordItem(runId, {
-        objectType: 'PRODUCT', status: 'SKIPPED', reason: 'STOCK_SYNC_DEFERRED_TO_P5', auditLevel: 'G',
+        objectType: 'PRODUCT', status: 'SKIPPED', reason: 'UNKNOWN_STOCK_JOB: ignored (P5 owns stock-status sync)', auditLevel: 'G',
       });
     }
-    return { deferred: 'P5' };
+    return { ignored: true };
   }
 }
 

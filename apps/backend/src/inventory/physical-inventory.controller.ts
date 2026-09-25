@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Body, Param, Query, NotFoundException, BadRequestException, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, Query, NotFoundException, BadRequestException, UseGuards, Optional } from '@nestjs/common';
 import { StockService } from '../stock/stock.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -6,6 +6,9 @@ import { InventoryEnabledGuard } from '../stock/inventory-enabled.guard';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { AdjustPhysicalDto, BulkAdjustPhysicalDto, BulkAdjustPhysicalItemDto } from './dto/physical-inventory.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+// Value import: Nest needs the runtime token for DI. Acyclic: the
+// stock-status module never imports the inventory module.
+import { StockStatusSyncService } from '../stores/sync/stock-status-sync.service';
 
 @Controller('inventory/physical')
 @RequiresFeature('admin_inventory')
@@ -13,7 +16,23 @@ export class PhysicalInventoryController {
   constructor(
     private readonly stockService: StockService,
     private readonly prisma: PrismaService,
+    // P5 §8.4: post-commit stock-change notification. @Optional so unit
+    // specs constructing the controller manually keep working; every call
+    // is guarded and non-propagating (R-2).
+    @Optional() private readonly stockStatus?: StockStatusSyncService,
   ) {}
+
+  /**
+   * P5 §8.4 change notification — post-commit, never propagates, never
+   * blocks. No provider call happens here (R-2): only a debounced enqueue.
+   */
+  private notifyStockChanged(productId: string, variantId?: string | null, reason?: string): void {
+    try {
+      void this.stockStatus?.notifyStockChanged(productId, variantId ?? null, reason).catch(() => undefined);
+    } catch {
+      // never propagate into the mutation path
+    }
+  }
 
   @Roles('superadmin', 'admin', 'manager')
   @UseGuards(InventoryEnabledGuard)
@@ -122,6 +141,11 @@ export class PhysicalInventoryController {
       }
     }
 
+    // P5 §8.4: physical adjustment (+ managed mirror) committed above.
+    // (addPhysical also notifies at the StockService choke point — coalesced.)
+    if (productId) {
+      this.notifyStockChanged(productId, dto.variantId ?? null, 'physical-adjust');
+    }
     return { ok: true };
   }
 
@@ -236,6 +260,11 @@ export class PhysicalInventoryController {
       }
     }
 
+    // P5 §8.4: bulk physical adjustments (+ managed mirrors) committed above.
+    for (const key of seenKeys) {
+      const [pid, vid] = key.split('|');
+      this.notifyStockChanged(pid, vid || null, 'physical-bulk-adjust');
+    }
     return { ok: true };
   }
 

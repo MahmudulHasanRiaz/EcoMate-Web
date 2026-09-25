@@ -25,6 +25,7 @@ import {
 import { SyncRunService } from './sync/sync-run.service';
 import { CategorySyncService } from './sync/category-sync.service';
 import { ProductSyncService } from './sync/product-sync.service';
+import { StockStatusSyncService } from './sync/stock-status-sync.service';
 import { SyncQueuesService } from './sync/sync-queues.service';
 import { StoreCircuitBreaker } from './sync/sync-circuit';
 import {
@@ -72,6 +73,7 @@ const SYNC_QUEUE_DEFAULTS = { removeOnComplete: 100, removeOnFail: 50, attempts:
     SyncRunService,
     CategorySyncService,
     ProductSyncService,
+    StockStatusSyncService,
     SyncQueuesService,
     StoreCircuitBreaker,
     StoreProductSyncProcessor,
@@ -89,6 +91,7 @@ const SYNC_QUEUE_DEFAULTS = { removeOnComplete: 100, removeOnFail: 50, attempts:
     SyncRunService,
     ProductSyncService,
     SyncQueuesService,
+    StockStatusSyncService,
   ],
 })
 export class StoresModule {}

@@ -169,6 +169,26 @@ export interface CommerceProvider {
     ref: RemoteRef,
     state: StockState,
   ): Promise<PushResult>;
+  /**
+   * P5 variation-scoped stock (BR-06 status-only, never quantities).
+   * Optional: adapters with `variations: true` and true per-variation stock
+   * implement these (WooCommerce); the base default throws
+   * `VARIANT_STOCK_UNSUPPORTED` so a missing implementation is loud and the
+   * stock engine records SKIPPED instead of pushing to the wrong remote
+   * object. `parentRef` is the product-level remote ref, `variantRef` the
+   * variation-level remote ref.
+   */
+  readVariantStockState?(
+    store: StoreWithSecrets,
+    parentRef: RemoteRef,
+    variantRef: RemoteRef,
+  ): Promise<StockState>;
+  publishVariantStockState?(
+    store: StoreWithSecrets,
+    parentRef: RemoteRef,
+    variantRef: RemoteRef,
+    state: StockState,
+  ): Promise<PushResult>;
   fetchOrders(
     store: StoreWithSecrets,
     opts: {
