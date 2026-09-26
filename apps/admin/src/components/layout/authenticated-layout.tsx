@@ -100,7 +100,10 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
         navigate({ to: '/license/activate', replace: true })
         return
       }
-      const newFeatures: string[] = r.data?.license?.features || []
+      // NOTE: `license` is null in dev/offline mode while top-level
+      // `features` still carries the effective set (e.g. ['*']) — prefer
+      // it so menus never blank out when only the license object is absent.
+      const newFeatures: string[] = r.data?.license?.features ?? r.data?.features ?? []
       const { added, removed } = useLicenseStore.getState().setFeatures(newFeatures)
 
       if (added.length > 0 && removed.length > 0) {
