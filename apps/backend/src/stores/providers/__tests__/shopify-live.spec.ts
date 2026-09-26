@@ -966,31 +966,60 @@ describe('ShopifyProvider live HTTP (P9)', () => {
     });
   });
 
-  // ── Orders: paged fetch, CANCELLED/FULFILLED push, read-back ──────────
+  // ── Orders: cursor-paged fetch, CANCELLED/FULFILLED push, read-back ────
   describe('orders', () => {
-    it('fetchOrders passes the window + pagination over REST', async () => {
+    it('fetchOrders uses window (no page param) + follows Link cursors', async () => {
       const mock = new MockFetch();
       mockShopifyTokenEndpoint(mock);
-      mock.onAll(() =>
-        jsonResponse(200, {
-          orders: [
-            { id: 5001, financial_status: 'pending', total_price: '250.00', line_items: [] },
-            { id: 5002, financial_status: 'paid', total_price: '500.00', line_items: [] },
-          ],
-        }),
-      );
-      const res = await new ShopifyProvider(mock.fetch).fetchOrders(STORE(), {
+      const seen: string[] = [];
+      mock.setFallback((url, init) => {
+        if (!url.includes('/orders.json?')) return jsonResponse(200, {});
+        seen.push(url);
+        if (url.includes('page_info=')) {
+          return jsonResponse(200, {
+            orders: [
+              { id: 5002, financial_status: 'paid', total_price: '500.00', line_items: [] },
+            ],
+          });
+        }
+        return {
+          ...jsonResponse(200, {
+            orders: [
+              { id: 5001, financial_status: 'pending', total_price: '250.00', line_items: [] },
+            ],
+          }),
+          headers: {
+            get: (name: string) =>
+              name.toLowerCase() === 'link'
+                ? '<https://test-shop.myshopify.com/admin/api/2026-07/orders.json?limit=2&page_info=CURSOR2>; rel="next"'
+                : null,
+          },
+        };
+      });
+      const shopify = new ShopifyProvider(mock.fetch);
+      const first = await shopify.fetchOrders(STORE(), {
+        since: new Date('2026-09-20T00:00:00.000Z'),
+        until: new Date('2026-09-24T00:00:00.000Z'),
+        page: 1,
+        pageSize: 2,
+      });
+      expect(first.orders).toHaveLength(1);
+      expect(first.hasMore).toBe(true);
+      expect(first.nextCursor).toBe('CURSOR2');
+      expect(seen[0]).toMatch(/created_at_min=.*09-20/);
+      expect(seen[0]).toMatch(/status=any/);
+      expect(seen[0]).not.toMatch(/[?&]page=/);
+      const second = await shopify.fetchOrders(STORE(), {
         since: new Date('2026-09-20T00:00:00.000Z'),
         until: new Date('2026-09-24T00:00:00.000Z'),
         page: 2,
         pageSize: 2,
+        cursor: first.nextCursor,
       });
-      expect(res.orders).toHaveLength(2);
-      expect(res.hasMore).toBe(true);
-      const ordersCall = mock.calls.find((c) => c.url.includes('/orders.json?'));
-      expect(ordersCall?.url).toMatch(/created_at_min=.*09-20/);
-      expect(ordersCall?.url).toMatch(/page=2/);
-      expect(ordersCall?.url).toMatch(/status=any/);
+      expect(second.orders).toHaveLength(1);
+      expect(second.hasMore).toBe(false);
+      expect(seen[1]).toMatch(/page_info=CURSOR2/);
+      expect(seen[1]).not.toMatch(/created_at_min/);
     });
 
     it('non-protected fetch errors still throw (no silent fallback)', async () => {

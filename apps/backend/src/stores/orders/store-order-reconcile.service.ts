@@ -126,6 +126,7 @@ export class StoreOrderReconcileService {
 
     let page = 1;
     let pages = 0;
+    let cursor: string | undefined;
     try {
       for (;;) {
         pages += 1;
@@ -140,12 +141,15 @@ export class StoreOrderReconcileService {
           break;
         }
         // Rate-limited paging: small delay between pages, bounded page size.
+        // Cursor-threaded: page-based providers use `page`, cursor providers
+        // (Shopify page_info) use `nextCursor` — both bounded by the cap.
         if (page > 1) await new Promise((r) => setTimeout(r, 400));
-        const { orders, hasMore } = await provider.fetchOrders(withSecrets as any, {
+        const { orders, hasMore, nextCursor } = await provider.fetchOrders(withSecrets as any, {
           since,
           until,
           page,
           pageSize: RECONCILE_PAGE_SIZE,
+          ...(cursor ? { cursor } : {}),
         });
         for (const raw of orders as Record<string, unknown>[]) {
           try {
@@ -170,6 +174,7 @@ export class StoreOrderReconcileService {
           }
         }
         if (!hasMore) break;
+        cursor = nextCursor;
         page += 1;
       }
     } catch (err) {

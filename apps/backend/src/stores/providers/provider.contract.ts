@@ -277,8 +277,10 @@ export interface CommerceProvider {
       status?: string[];
       page: number;
       pageSize: number;
+      /** Opaque provider cursor (Shopify page_info). Absent = first page. */
+      cursor?: string;
     },
-  ): Promise<{ orders: NormalizedOrder[]; hasMore: boolean }>;
+  ): Promise<{ orders: NormalizedOrder[]; hasMore: boolean; nextCursor?: string }>;
   pushOrderStatus(
     store: StoreWithSecrets,
     ref: RemoteRef,

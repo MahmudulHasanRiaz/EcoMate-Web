@@ -645,6 +645,46 @@ export class ShopifyProvider extends BaseCommerceProvider {
     return parsed as T;
   }
 
+  /**
+   * GET variant returning response headers (cursor pagination reads the
+   * RFC5988 `Link` header — `rest()` discards headers by design).
+   */
+  private async getWithHeaders<T>(
+    store: StoreWithSecrets,
+    path: string,
+  ): Promise<{ data: T; link?: string }> {
+    const ctx = ctxOf(store);
+    const call = async (token: string) => {
+      const res = await this.fetchFn(`${ctx.baseUrl}${path}`, {
+        method: 'GET',
+        headers: { 'X-Shopify-Access-Token': token, 'Content-Type': 'application/json' },
+      });
+      let parsed: unknown = null;
+      try {
+        parsed = await res.json();
+      } catch {
+        parsed = null;
+      }
+      return { res, parsed };
+    };
+    let token = await this.resolveAccessToken(store);
+    let { res, parsed } = await call(token);
+    if (res.status === 401) {
+      this.tokenCache.delete(store.id);
+      token = await this.resolveAccessToken(store, { forceRefresh: true });
+      ({ res, parsed } = await call(token));
+    }
+    if (!res.ok) throw toProviderError(this.slug, res.status, parsed, `GET ${path}`);
+    return { data: parsed as T, link: res.headers?.get?.('link') ?? undefined };
+  }
+
+  /** Next-page cursor from an RFC5988 Link header (`rel="next"`). */
+  private nextPageInfo(link: string | undefined): string | null {
+    if (!link) return null;
+    const m = /<[^>]*[?&]page_info=([^>&]+)>;\s*rel="next"/.exec(link);
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+
   private async graphql<T>(store: StoreWithSecrets, query: string, variables?: unknown): Promise<T> {
     const ctx = ctxOf(store);
     const call = async (token: string) => {
@@ -1436,21 +1476,37 @@ export class ShopifyProvider extends BaseCommerceProvider {
 
   override async fetchOrders(
     store: StoreWithSecrets,
-    opts: { since: Date; until: Date; status?: string[]; page: number; pageSize: number },
-  ): Promise<{ orders: NormalizedOrder[]; hasMore: boolean }> {
+    opts: { since: Date; until: Date; status?: string[]; page: number; pageSize: number; cursor?: string },
+  ): Promise<{ orders: NormalizedOrder[]; hasMore: boolean; nextCursor?: string }> {
+    // Cursor pagination (RFC5988 Link header): the `page` param was removed
+    // by the platform (422 "page cannot be passed"). First page carries the
+    // window; follow-ups carry ONLY limit + page_info.
     const params = new URLSearchParams({
-      status: 'any',
-      created_at_min: opts.since.toISOString(),
-      created_at_max: opts.until.toISOString(),
       limit: String(Math.min(Math.max(opts.pageSize, 1), 250)),
-      page: String(Math.max(1, opts.page)),
-      fields:
-        'id,name,financial_status,fulfillment_status,cancelled_at,cancel_reason,total_price,currency,created_at,updated_at,line_items,customer,phone,email',
     });
-    if (opts.status && opts.status.length > 0) params.set('financial_status', opts.status.join(','));
-    const body = await this.rest<{ orders?: unknown[] }>(store, 'GET', `/orders.json?${params.toString()}`);
-    const orders = (body.orders ?? []) as NormalizedOrder[];
-    return { orders, hasMore: orders.length === Math.min(Math.max(opts.pageSize, 1), 250) };
+    if (opts.cursor) {
+      params.set('page_info', opts.cursor);
+    } else {
+      params.set('status', 'any');
+      params.set('created_at_min', opts.since.toISOString());
+      params.set('created_at_max', opts.until.toISOString());
+      params.set(
+        'fields',
+        'id,name,financial_status,fulfillment_status,cancelled_at,cancel_reason,total_price,currency,created_at,updated_at,line_items,customer,phone,email',
+      );
+      if (opts.status && opts.status.length > 0) params.set('financial_status', opts.status.join(','));
+    }
+    const { data, link } = await this.getWithHeaders<{ orders?: unknown[] }>(
+      store,
+      `/orders.json?${params.toString()}`,
+    );
+    const orders = (data.orders ?? []) as NormalizedOrder[];
+    const nextCursor = this.nextPageInfo(link);
+    return {
+      orders,
+      hasMore: nextCursor !== null,
+      ...(nextCursor ? { nextCursor } : {}),
+    };
   }
 
   override async pushOrderStatus(store: StoreWithSecrets, ref: RemoteRef, target: 'cancelled' | 'completed'): Promise<PushResult> {

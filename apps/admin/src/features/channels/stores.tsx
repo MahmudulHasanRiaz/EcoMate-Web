@@ -4,9 +4,11 @@ import { toast } from 'sonner'
 import { Link } from '@tanstack/react-router'
 import { Plus, Plug, Loader2 } from 'lucide-react'
 import { healthTone } from './api'
+import type { StoreResponse } from './api'
 import { STORES_KEYS, useStores } from './hooks'
 import { storesApi } from './api'
 import { StoreConnectDialog } from './store-connect-dialog'
+import { StoreReconnectDialog } from './store-reconnect-dialog'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -23,6 +25,7 @@ export function ChannelsStores() {
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [disconnectId, setDisconnectId] = useState<string | null>(null)
+  const [reconnectStore, setReconnectStore] = useState<StoreResponse | null>(null)
   const { data: stores, isLoading } = useStores()
 
   const disconnectMut = useMutation({
@@ -88,7 +91,11 @@ export function ChannelsStores() {
                     <TableCell><Badge variant={healthTone(store.healthState) as any}>{store.healthState}</Badge></TableCell>
                     <TableCell className="text-sm text-muted-foreground">{store.lastSyncAt ?? '—'}</TableCell>
                     <TableCell className="text-right">
-                      <Button variant="outline" size="sm" onClick={() => setDisconnectId(store.id)}>Disconnect</Button>
+                      {store.status === 'DISCONNECTED' ? (
+                        <Button variant="default" size="sm" onClick={() => setReconnectStore(store)}>Reconnect</Button>
+                      ) : (
+                        <Button variant="outline" size="sm" onClick={() => setDisconnectId(store.id)}>Disconnect</Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -101,6 +108,7 @@ export function ChannelsStores() {
         </Card>
       </Main>
       <StoreConnectDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+      <StoreReconnectDialog store={reconnectStore} onClose={() => setReconnectStore(null)} />
       <ConfirmDialog
         open={disconnectId !== null}
         onOpenChange={(v) => { if (!v) setDisconnectId(null) }}
