@@ -286,8 +286,7 @@ describe('P9 secret-leak audit', () => {
       expect(prisma.storeCredential.create).not.toHaveBeenCalled();
     });
 
-    it('adapter INVALID_REQUEST refusal surfaces as 400 with the actionable message (no secret echo)', async () => {
-      const refusal = new ProviderError(
+    it('adapter INVALID_REQUEST refusal surfaces as 400 with the actionable message (no secret echo)', async () => {      const refusal = new ProviderError(
         '[shopify] token exchange refused: app_not_installed — install the app on the store',
         ProviderErrorCategory.INVALID_REQUEST,
         'shopify',
@@ -307,7 +306,51 @@ describe('P9 secret-leak audit', () => {
       expect(secretKeysPresent(err?.response ?? {})).toEqual([]);
     });
 
-    it('provider missing-credential probes return data (no throw, no echo)', async () => {      const woo = new WooCommerceProvider();
+    it('authenticated probe flips PENDING → CONNECTED; failed probe leaves status alone', async () => {
+      const probeResult = {
+        reachable: true,
+        authenticated: true,
+        permissionsOk: true,
+        providerStoreId: 'test-shop.myshopify.com',
+        capabilities: { products: true },
+      };
+      const mockProvider: any = { testConnection: jest.fn().mockResolvedValue(probeResult) };
+      const prisma: any = {
+        store: {
+          findUnique: jest.fn().mockResolvedValue(baseStore({ status: 'PENDING' })),
+          update: jest.fn().mockResolvedValue(baseStore({ status: 'CONNECTED' })),
+        },
+        storeCredential: { findFirst: jest.fn().mockResolvedValue(null) },
+        storeHealthCheck: { create: jest.fn().mockResolvedValue({}) },
+      };
+      const { svc } = buildService(prisma, mockProvider);
+      await svc.testConnection('store-p9-audit', { credentials: {} });
+      expect(prisma.store.update).toHaveBeenCalledWith({
+        where: { id: 'store-p9-audit' },
+        data: expect.objectContaining({ status: 'CONNECTED' }),
+      });
+
+      const deadProvider: any = {
+        testConnection: jest.fn().mockResolvedValue({ ...probeResult, authenticated: false }),
+      };
+      const prisma2: any = {
+        store: {
+          findUnique: jest.fn().mockResolvedValue(baseStore({ status: 'PENDING' })),
+          update: jest.fn(),
+        },
+        storeCredential: { findFirst: jest.fn().mockResolvedValue(null) },
+        storeHealthCheck: { create: jest.fn().mockResolvedValue({}) },
+      };
+      const svc2 = buildService(prisma2, deadProvider).svc;
+      await svc2.testConnection('store-p9-audit', { credentials: {} });
+      expect(prisma2.store.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: 'CONNECTED' }) }),
+        expect.anything(),
+      );
+    });
+
+    it('provider missing-credential probes return data (no throw, no echo)', async () => {
+      const woo = new WooCommerceProvider();
       const shopify = new ShopifyProvider();
       const custom = new CustomBridgeProvider();
       const results = await Promise.all([

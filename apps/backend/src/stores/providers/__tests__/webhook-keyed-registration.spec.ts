@@ -61,7 +61,7 @@ describe('keyed webhook registration (Issue 1)', () => {
     }
   });
 
-  it('shopify registers address WITH the storeKey; topics/format/api_version pin unchanged', async () => {
+  it('shopify registers address WITH the storeKey; topics/format unchanged, no api_version (API rejects it)', async () => {
     const mock = new MockFetch();
     mockShopifyTokenEndpoint(mock);
     const created: unknown[] = [];
@@ -83,9 +83,9 @@ describe('keyed webhook registration (Issue 1)', () => {
         webhook: {
           address: `${BASE}${receiverShape('shopify', store.id)}`,
           format: 'json',
-          api_version: SHOPIFY_API_VERSION,
         },
       });
+      expect((body as any).webhook.api_version).toBeUndefined();
     }
   });
 

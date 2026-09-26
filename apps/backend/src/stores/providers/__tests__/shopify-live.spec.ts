@@ -349,6 +349,74 @@ describe('ShopifyProvider live HTTP (P9)', () => {
       expect(wire).not.toMatch(/dimension/i);
     });
 
+    it('simple product rides sku/price on the default variant at create', async () => {
+      const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
+      const seen = { bodies: [] as unknown[], graphql: [] as unknown[] };
+      mock.setFallback(createRouter(seen));
+      await new ShopifyProvider(mock.fetch).upsertProduct(
+        STORE(),
+        { sku: 'SKU-SIMPLE-1', name: 'Simple', price: '250', salePrice: '200' } as any,
+        ['name', 'price', 'salePrice'],
+      );
+      const variants = (seen.bodies[0] as any).product.variants;
+      expect(variants).toHaveLength(1);
+      expect(variants[0]).toMatchObject({
+        sku: 'SKU-SIMPLE-1',
+        price: '200',
+        compare_at_price: '250',
+      });
+    });
+
+    it('price-only update attaches the default variant id (one bounded read)', async () => {
+      const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
+      const puts: unknown[] = [];
+      let variantReads = 0;
+      mock.setFallback((url, init) => {
+        const method = init?.method ?? 'GET';
+        if (method === 'GET' && url.includes('/variants.json')) {
+          variantReads += 1;
+          return jsonResponse(200, { variants: [{ id: 7001 }] });
+        }
+        if (method === 'PUT' && url.includes('/products/9001.json')) {
+          puts.push(JSON.parse(String(init?.body ?? '{}')));
+          return jsonResponse(200, { product: { id: 9001, variants: [] } });
+        }
+        return jsonResponse(200, {});
+      });
+      await new ShopifyProvider(mock.fetch).upsertProduct(
+        STORE(),
+        { sku: 'SKU-SIMPLE-1', price: '300', __externalId: '9001' } as any,
+        ['price'],
+      );
+      expect(variantReads).toBe(1);
+      expect((puts[0] as any).product.variants).toEqual([
+        expect.objectContaining({ id: 7001, price: '300' }),
+      ]);
+    });
+
+    it('non-price update issues no variant read and no variants key', async () => {
+      const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
+      const puts: unknown[] = [];
+      mock.setFallback((url, init) => {
+        const method = init?.method ?? 'GET';
+        if (method === 'PUT' && url.includes('/products/9001.json')) {
+          puts.push(JSON.parse(String(init?.body ?? '{}')));
+          return jsonResponse(200, { product: { id: 9001, variants: [] } });
+        }
+        return jsonResponse(200, {});
+      });
+      await new ShopifyProvider(mock.fetch).upsertProduct(
+        STORE(),
+        { name: 'Renamed', __externalId: '9001' } as any,
+        ['name'],
+      );
+      expect(mock.calls.some((c) => c.url.includes('/variants.json'))).toBe(false);
+      expect((puts[0] as any).product.variants).toBeUndefined();
+    });
+
     it('cost travels ONLY via inventory_items PUT (BR-23, never customer-facing)', async () => {
       const mock = new MockFetch();
       mockShopifyTokenEndpoint(mock);
@@ -678,8 +746,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
       );
     });
 
-    it('publishStockState + publishVariantStockState throw BEFORE any HTTP write (zero writes)', async () => {
-      for (const variant of [false, true]) {
+    it('publishStockState + publishVariantStockState throw BEFORE any HTTP write (zero writes)', async () => {      for (const variant of [false, true]) {
         const mock = new MockFetch();
         mockShopifyTokenEndpoint(mock);
         mock.onAll(() => jsonResponse(200, {}));
@@ -781,6 +848,20 @@ describe('ShopifyProvider live HTTP (P9)', () => {
       expect(ordersCall?.url).toMatch(/created_at_min=.*09-20/);
       expect(ordersCall?.url).toMatch(/page=2/);
       expect(ordersCall?.url).toMatch(/status=any/);
+    });
+
+    it('non-protected fetch errors still throw (no silent fallback)', async () => {
+      const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
+      mock.onAll(() => jsonResponse(500, { errors: 'boom' }));
+      await expect(
+        new ShopifyProvider(mock.fetch).fetchOrders(STORE(), {
+          since: new Date('2026-09-20T00:00:00.000Z'),
+          until: new Date('2026-09-24T00:00:00.000Z'),
+          page: 1,
+          pageSize: 10,
+        }),
+      ).rejects.toThrow();
     });
 
     it('pushOrderStatus: cancelled → cancel.json, completed → fulfillments.json (CANCELLED/FULFILLED)', async () => {
@@ -912,10 +993,33 @@ describe('ShopifyProvider live HTTP (P9)', () => {
           },
         });
       }
-      // Payload serialization pinned to the code's version (not the default).
+      // api_version is NOT sent (the API rejects it with 422) — payload
+      // version comes from the dashboard "Webhooks API version" setting.
       for (const body of created) {
-        expect(body).toMatchObject({ webhook: { api_version: '2026-07' } });
+        expect(body?.webhook?.api_version).toBeUndefined();
       }
+    });
+
+    it('skips protected-customer-data topics with reason instead of failing registration', async () => {
+      const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
+      const created: string[] = [];
+      mock.setFallback((url, init) => {
+        if ((init?.method ?? 'GET') === 'GET') return jsonResponse(200, { webhooks: [] });
+        const body = JSON.parse(String(init?.body ?? '{}'));
+        if (String(body?.webhook?.topic ?? '').startsWith('orders/')) {
+          return jsonResponse(403, {
+            errors: 'You do not have permission for orders/create topic. Protected customer data approval required.',
+          });
+        }
+        created.push(String(body?.webhook?.topic));
+        return jsonResponse(201, { webhook: { id: 7 } });
+      });
+      const res = await new ShopifyProvider(mock.fetch).ensureWebhooks(STORE(), 'https://api.example.test');
+      expect(res.ok).toBe(true);
+      expect(res.topics).toEqual(['products/update']);
+      expect(String(res.reason)).toMatch(/orders\/create.*orders\/updated/);
+      expect(created).toEqual(['products/update']);
     });
   });
 });

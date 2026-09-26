@@ -223,8 +223,26 @@ function assertRestVariantLimit(variants: Record<string, unknown>[]): void {
   }
 }
 
-/** Composed excerpt (not native on Shopify): plain-text head of body_html. */
-export function shopifyExcerpt(bodyHtml: unknown, maxLen = 160): string | null {
+/**
+ * Simple-product default variant. EcoMate carries sku/price at the product
+ * level for simple products, but Shopify nests them on (auto-created)
+ * variants — without this synthesis a simple-product push lands with an
+ * empty SKU and price 0.00. Returns null when the input carries neither.
+ */
+function defaultVariantFromProduct(rec: Record<string, unknown>): Record<string, unknown> | null {
+  if (rec.sku === undefined && rec.price === undefined && rec.salePrice === undefined) {
+    return null;
+  }
+  return shopifyVariantToPayload({
+    sku: rec.sku,
+    price: rec.price,
+    salePrice: rec.salePrice,
+    barcode: rec.barcode,
+    weight: rec.weight,
+  });
+}
+
+/** Composed excerpt (not native on Shopify): plain-text head of body_html. */export function shopifyExcerpt(bodyHtml: unknown, maxLen = 160): string | null {
   const text = stripHtml(bodyHtml);
   if (!text) return null;
   return text.length > maxLen ? `${text.slice(0, maxLen).trimEnd()}…` : text;
@@ -911,11 +929,34 @@ export class ShopifyProvider extends BaseCommerceProvider {
           values: uniqueOptionValues(variantsInput, name),
         }));
       }
+    } else if (!externalId) {
+      // Simple product: ride sku/price on the default variant.
+      const fallback = defaultVariantFromProduct(rec);
+      if (fallback) payload.variants = [fallback];
     }
 
     let productId: string;
     let variantInventory: { sku: string; inventoryItemId: string }[] = [];
+    // Simple-product price/sku ride the default variant (read live: PUT
+    // needs the remote variant id, so one bounded read per update).
+    const attachDefaultVariant = async (pid: string): Promise<void> => {
+      if (variantsInput || !fields.some((f) => f === 'price' || f === 'salePrice' || f === 'sku')) {
+        return;
+      }
+      const fallback = defaultVariantFromProduct(rec);
+      if (!fallback) return;
+      const remote = await this.rest<{ variants?: any[] }>(
+        store,
+        'GET',
+        `/products/${encodeURIComponent(pid)}/variants.json?limit=250&fields=id`,
+      ).catch(() => ({ variants: [] as any[] }));
+      const first = (remote.variants ?? [])[0];
+      if (first?.id !== undefined) {
+        (payload as any).variants = [{ id: first.id, ...fallback }];
+      }
+    };
     if (externalId) {
+      await attachDefaultVariant(externalId);
       const updated = await this.rest<{ product?: any }>(
         store,
         'PUT',
@@ -930,6 +971,7 @@ export class ShopifyProvider extends BaseCommerceProvider {
       if (sku) {
         const existing = await this.findBySku(store, sku).catch(() => null);
         if (existing) {
+          await attachDefaultVariant(existing.providerId);
           const updated = await this.rest<{ product?: any }>(
             store,
             'PUT',
@@ -1213,20 +1255,50 @@ export class ShopifyProvider extends BaseCommerceProvider {
       webhooks: [] as any[],
     }));
     const have = new Set((existing.webhooks ?? []).map((h: any) => h.topic));
+    const registered: string[] = [...have].filter((t) => SHOPIFY_WEBHOOK_TOPICS.includes(t));
+    const skipped: string[] = [];
     for (const topic of SHOPIFY_WEBHOOK_TOPICS) {
       if (have.has(topic)) continue;
-      await this.rest(store, 'POST', '/webhooks.json', {
-        webhook: {
-          topic,
-          address: `${callbackBaseUrl.replace(/\/+$/, '')}/api/webhooks/stores/shopify/${store.id}`,
-          format: 'json',
-          // Pin payload serialization to the code's version: without this,
-          // deliveries may serialize under the dashboard default instead.
-          api_version: SHOPIFY_API_VERSION,
-        },
-      });
+      try {
+        await this.rest(store, 'POST', '/webhooks.json', {
+          webhook: {
+            topic,
+            address: `${callbackBaseUrl.replace(/\/+$/, '')}/api/webhooks/stores/shopify/${store.id}`,
+            format: 'json',
+            // NOTE: api_version is intentionally NOT sent — the API rejects
+            // it (422). Payload version comes from the app's "Webhooks API
+            // version" dashboard setting, which must match
+            // SHOPIFY_API_VERSION (currently 2026-07).
+          },
+        });
+        registered.push(topic);
+      } catch (err) {
+        // Order topics carry protected customer data: without dashboard
+        // approval Shopify 403s the subscription. Skip the topic with a
+        // reason (reconcile still covers ingestion) instead of failing the
+        // whole registration. Any other error still throws.
+        const msg = String((err as any)?.message ?? '');
+        if (/protected customer data|protected_data/i.test(msg)) {
+          skipped.push(topic);
+          continue;
+        }
+        throw err;
+      }
     }
-    return { ok: true, topics: SHOPIFY_WEBHOOK_TOPICS };
+    if (registered.length === 0) {
+      return {
+        ok: false,
+        topics: [],
+        reason: `no topics registered (skipped: ${skipped.join(', ') || 'none'} — protected customer data approval required)`,
+      };
+    }
+    return {
+      ok: true,
+      topics: registered,
+      ...(skipped.length > 0
+        ? { reason: `skipped: ${skipped.join(', ')} — protected customer data approval required; order ingestion continues via reconcile` }
+        : {}),
+    };
   }
 }
 

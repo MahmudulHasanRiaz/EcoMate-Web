@@ -54,6 +54,13 @@ export class StoreProductSyncProcessor extends WorkerHost {
         this.logger.warn(`breaker open for ${storeId} — requeueing probe`);
         throw new Error(`circuit-open:${storeId}`);
       }
+      // BR-09: permanent EcoMate deletion propagates here (enqueued
+      // post-commit by ProductsService.remove — never inline). Mapping
+      // cleanup + capability gating live in deleteRemote.
+      if (job.name === 'product-delete') {
+        if (!productId) return { ignored: job.name };
+        return this.products.deleteRemote(storeId, productId);
+      }
       try {
         const counts = { created: 0, updated: 0, skipped: 0, failed: 0 };
         if (productId) {

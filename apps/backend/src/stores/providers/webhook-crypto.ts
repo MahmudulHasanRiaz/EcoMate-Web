@@ -59,6 +59,41 @@ export function signWooDelivery(secret: string, rawBody: Buffer): string {
   return hmacSha256Base64(secret, rawBody);
 }
 
+/**
+ * Shopify install-callback HMAC (app-install redirect to the App URL).
+ * Recipe: drop `hmac`/`signature`, sort remaining keys, join `key=value`
+ * with `&`, HMAC-SHA256 hex with the app secret. Constant-time compare.
+ */
+export function verifyShopifyInstallHmac(
+  query: Record<string, string | string[] | undefined>,
+  secret: string,
+): boolean {
+  const raw = getHeader(query as Record<string, string | string[] | undefined>, 'hmac');
+  if (!raw || !secret) return false;
+  const message = Object.keys(query)
+    .filter((k) => k !== 'hmac' && k !== 'signature')
+    .sort()
+    .map((k) => {
+      const v = query[k];
+      return `${k}=${Array.isArray(v) ? v[0] ?? '' : v ?? ''}`;
+    })
+    .join('&');
+  const expected = createHmac('sha256', secret).update(message).digest('hex');
+  return safeEqualString(raw, expected);
+}
+
+/** Install-callback freshness (generous: browser redirects are immediate). */
+export function isInstallTimestampFresh(
+  timestamp: string | undefined,
+  nowMs: number = Date.now(),
+  windowMs: number = 24 * 60 * 60 * 1000,
+): boolean {
+  if (!timestamp) return false;
+  const ts = Number(timestamp);
+  if (!Number.isFinite(ts)) return false;
+  return Math.abs(nowMs - ts * 1000) <= windowMs;
+}
+
 /** Fixture/test signing — Shopify delivery. */
 export function signShopifyDelivery(secret: string, rawBody: Buffer): string {
   return hmacSha256Base64(secret, rawBody);

@@ -17,6 +17,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
@@ -28,6 +29,10 @@ import {
   ProviderError,
   ProviderErrorCategory,
 } from '../marketing/ad-provider.adapter';
+import {
+  isInstallTimestampFresh,
+  verifyShopifyInstallHmac,
+} from './providers/webhook-crypto';
 import {
   CreateStoreDto,
   RotateStoreCredentialsDto,
@@ -243,6 +248,15 @@ export class StoresService {
         data: { providerStoreId: result.providerStoreId },
       });
     }
+    // Verified connection completes the wizard: PENDING → CONNECTED on the
+    // first authenticated probe. DISCONNECTED is untouched (reconnect flows
+    // through PENDING first); health vocabulary stays in healthState.
+    if (result.authenticated && (store as any).status === 'PENDING') {
+      await this.prisma.store.update({
+        where: { id },
+        data: { status: 'CONNECTED' as any },
+      });
+    }
     return result;
   }
 
@@ -326,6 +340,43 @@ export class StoresService {
     const store = await this.prisma.store.findUnique({ where: { id } });
     if (!store) throw new NotFoundException('Store not found');
     return store;
+  }
+
+  /**
+   * Shopify app-install landing (App URL redirect after merchant install).
+   * Resolves the `shop` query param to a connected SHOPIFY store, verifies
+   * the HMAC with that store's secret, and returns safe display data.
+   * Unknown shop → 404; bad/stale signature → 401 (both generic, no
+   * secrets, no query echo).
+   */
+  async verifyInstallCallback(
+    query: Record<string, string | string[] | undefined>,
+  ): Promise<{ shop: string; storeId: string; storeName: string }> {
+    const first = (v: string | string[] | undefined): string =>
+      Array.isArray(v) ? v[0] ?? '' : v ?? '';
+    const shop = first(query['shop']);
+    const domain = normaliseDomain(shop);
+    const store = domain
+      ? await this.prisma.store.findFirst({
+          where: { kind: 'SHOPIFY' as any, domainNormalised: domain },
+        })
+      : null;
+    if (!store) throw new NotFoundException('Store not found');
+    const secrets = (await this.loadSecrets(store.id)) ?? {};
+    const secret = String(
+      (secrets as any).webhookSecret ?? (secrets as any).clientSecret ?? '',
+    );
+    if (
+      !verifyShopifyInstallHmac(query, secret) ||
+      !isInstallTimestampFresh(first(query['timestamp']))
+    ) {
+      throw new UnauthorizedException('Unauthorized');
+    }
+    return {
+      shop: (store as any).domainNormalised ?? domain ?? '',
+      storeId: store.id,
+      storeName: (store as any).name ?? '',
+    };
   }
 
   private async recordHealthCheck(

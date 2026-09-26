@@ -11,6 +11,7 @@
  * rather than silently queuing nothing.
  */
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -132,8 +133,7 @@ export class StoresController {
     const store = await this.stores.detail(id);
     const provider = this.registry.providerFor({ kind: (store as any).kind });
     const full = await this.stores.storeWithSecrets(id);
-    const base = String(process.env.PUBLIC_API_BASE_URL ?? '').replace(/\/+$/, '');
-    return provider.ensureWebhooks(full, base);
+    return provider.ensureWebhooks(full, resolveWebhookCallbackBase());
   }
 
   /** Manual sync trigger (`{ scope } → { runId }`, BR-21: returns now). */
@@ -152,4 +152,21 @@ export class StoresController {
     const scope = (body.scope ?? 'PRODUCT') as 'PRODUCT' | 'PUBLISH';
     return this.queues.triggerStoreSync(id, scope, user?.sub);
   }
+}
+
+/**
+ * Resolve the public callback base for provider webhook registration.
+ * A relative URL is doomed (Shopify 422s "address is invalid") — fail
+ * loudly here instead of registering garbage. Exported for unit tests.
+ */
+export function resolveWebhookCallbackBase(
+  env: Record<string, string | undefined> = process.env,
+): string {
+  const base = String(env.PUBLIC_API_BASE_URL ?? '').replace(/\/+$/, '');
+  if (!/^https:\/\//i.test(base)) {
+    throw new BadRequestException(
+      'Webhook callback base URL is not configured (PUBLIC_API_BASE_URL must be an https:// URL)',
+    );
+  }
+  return base;
 }

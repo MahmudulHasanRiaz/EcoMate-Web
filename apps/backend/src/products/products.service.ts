@@ -20,6 +20,9 @@ import { StockRouterService } from '../stock/stock-router.service';
 // Value import: Nest needs the runtime token for DI. Acyclic: the
 // stock-status module never imports the products module.
 import { StockStatusSyncService } from '../stores/sync/stock-status-sync.service';
+// Value import (runtime token for DI). Acyclic: SyncQueuesService imports
+// only Prisma + run/queue services, never the products module.
+import { SyncQueuesService } from '../stores/sync/sync-queues.service';
 
 function slugify(text: string): string {
   return text
@@ -40,6 +43,10 @@ export class ProductsService {
     // specs constructing ProductsService manually keep working; every call
     // is guarded and non-propagating (R-2).
     @Optional() private readonly stockStatus?: StockStatusSyncService,
+    // P4/BR-09: hard deletes propagate to mapped stores via queue (never
+    // inline provider calls). @Optional for the same manual-construction
+    // reason; absent queue simply means no propagation.
+    @Optional() private readonly syncQueues?: SyncQueuesService,
   ) {}
 
   /**
@@ -1072,6 +1079,25 @@ export class ProductsService {
         );
       }
       throw e;
+    }
+    // BR-09: external deletion happens ONLY here (permanent EcoMate
+    // deletion), capability-gated in deleteRemote. Post-commit enqueue per
+    // mapped store — never an inline provider call (R-2), never throwing.
+    try {
+      const mappings = await (this.prisma as any).storeProductMapping?.findMany?.({
+        where: { productId: id },
+        select: { storeId: true },
+      }) ?? [];
+      for (const m of mappings as { storeId: string }[]) {
+        await this.syncQueues?.enqueue?.(
+          'store-product-sync',
+          'product-delete',
+          { storeId: m.storeId, productId: id },
+          `delete-${m.storeId}-${id}`,
+        ).catch(() => undefined);
+      }
+    } catch {
+      // Propagation must never fail the already-committed local delete.
     }
     return { message: 'Product deleted' };
   }

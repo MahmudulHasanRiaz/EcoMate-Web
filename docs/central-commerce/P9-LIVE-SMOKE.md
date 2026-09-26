@@ -58,3 +58,28 @@ and **Client Secret** (Client Credentials Grant; scopes `write_products`, `write
 client secret) → re-run `node .tmp-e2e/shopify-live-smoke.js` with
 `SHOPIFY_TEST_SHOP` / `SHOPIFY_TEST_CLIENT_ID` / `SHOPIFY_TEST_CLIENT_SECRET` set → expected PASS (or SKIP with reason on steps 5/9 if scopes are read-only) →
 then P11-live-vectors RUN. Re-delete the script after the attempt; do not commit it.
+
+## LIVE RUN 2026-09-26 — dev store ecomate-rq7rmj4g (operator-connected, no secrets below)
+
+The operator connected the store through the wizard, unblocking the live
+sequence. Executed through backend APIs (stored encrypted credentials —
+values never printed, logged, or committed).
+
+| # | Step | Verdict + evidence |
+|---|---|---|
+| 1 | testConnection | **PASS** — reachable/authenticated/permissionsOk true, providerStoreId resolved, apiVersion `{requested 2026-07, served 2026-07, fallForward false}`. Store PENDING → CONNECTED, health HEALTHY |
+| 2 | Product push | **PASS** — TEST product pushed, remote id assigned, run SUCCESS |
+| 3 | Variant/SKU idempotency | **PASS** — 3 syncs, same remote id, no duplicate. **Live-found gap FIXED**: simple products pushed with empty SKU + 0.00 price (adapter dropped product-level sku/price) → default-variant synthesis on create + id-attached patch on update, 3 new unit tests |
+| 4 | Media | **SKIP** — test product carried no media (MediaService ingest path covered by existing suites + fixture vectors) |
+| 5 | Order fetch | **BLOCKED (app)** — `orders.json` 403: order endpoints require protected-customer-data approval (proven: even `fields=id` 403s). PII-stripped fallback attempted and reverted — endpoint-level gate, no degraded path exists. Needs dashboard approval |
+| 6 | Webhook receive | **PASS** — `products/update` delivery row recorded from our own push (tunnel → HMAC → dedupe → 200) |
+| 7 | HMAC verification | **PASS** (same delivery accepted) |
+| 8 | Delivery-ID replay | **PASS by suite** (live replay not forced against merchant store; dedupe unit + keyed-intake vectors green) |
+| 9 | Cancel/fulfil push | **PENDING** — no test order on the dev store; operator to create one (or approve data access first: cancel/fulfil endpoints likely share the order gate) |
+| 10 | Read-back | **PASS** — remote variant read back sku + 150.00 after Force + fix; deletion read-back 404 |
+| 11 | No stock write | **PASS** — zero stock-quantity writes (unit-gated + no stock path executed; remote inventory untouched) |
+| 12 | Secret leakage | **PASS** — responses/logs scanned, no credential values (secret-leak suite extended: 400-mapping, PENDING→CONNECTED) |
+
+Additional live finds fixed in this run: stale backend process (restarted on current build); single-use fetch-body bug hiding HTML OAuth refusals (now loud `app_not_installed`); generic-500 masking → 400 with action; install-landing 404 → HMAC-verified `/` handler (replayed install URL → 200); missing PENDING→CONNECTED transition; keyed webhook registration vs relative `PUBLIC_API_BASE_URL` (loud 400 guard + env set); protected-data webhook topics skip with reason (reconcile covers ingestion); unwired BR-09 `deleteRemote` (now enqueued post-commit; live 404 + mapping cleanup proven).
+
+Cleanup: both TEST products deleted remotely, 0 mappings, 0 test orders, 0 blocks. P11-live-vectors: correlationId on runs + ORDER_RECONCILE_FAILED issue + DISCONNECTED→ERROR→HEALTHY transition observed live; forced-transient retry remains unit-covered.

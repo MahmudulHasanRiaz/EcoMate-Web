@@ -59,6 +59,7 @@ import { StoreOrderScheduler } from './orders/store-order-scheduler';
 import { StoreOrdersController } from './orders/store-orders.controller';
 import { StoreWebhookService } from './webhooks/store-webhook.service';
 import { StoreWebhooksController } from './webhooks/store-webhooks.controller';
+import { StoreInstallController } from './webhooks/store-install.controller';
 import { StoreBridgeController } from './webhooks/store-bridge.controller';
 import { StoreWebhookRawBodyProvider } from './webhooks/store-webhook-rawbody.provider';
 
@@ -86,6 +87,7 @@ const SYNC_QUEUE_DEFAULTS = { removeOnComplete: 100, removeOnFail: 50, attempts:
     StoreOverridesController,
     StoreOrdersController,
     StoreWebhooksController,
+    StoreInstallController,
     StoreBridgeController,
   ],
   providers: [
