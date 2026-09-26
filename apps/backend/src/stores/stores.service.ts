@@ -209,6 +209,10 @@ export class StoresService {
     const provider = this.registry.providerFor({ kind: store.kind });
     const secrets =
       dto?.credentials ?? ((await this.loadSecrets(id)) as Record<string, unknown> | null) ?? {};
+    // Same shop fallback as storeWithSecrets (reconnect blobs omit `shop`).
+    if (!secrets.shop && (store as any).domainNormalised) {
+      secrets.shop = (store as any).domainNormalised;
+    }
     let result: TestConnectionResult;
     try {
       result = await provider.testConnection({
@@ -326,11 +330,18 @@ export class StoresService {
   /** Build the provider-facing shape (secrets stay server-side). */
   async storeWithSecrets(id: string): Promise<StoreWithSecrets> {
     const store = await this.requireStore(id);
+    const secrets = (await this.loadSecrets(id)) ?? {};
+    // Shop identity lives on the store row (domainNormalised) — credential
+    // rotations that omit `shop` (reconnect sends credentials only) must
+    // not orphan the connection. Secrets win when present.
+    if (!secrets.shop && (store as any).domainNormalised) {
+      (secrets as any).shop = (store as any).domainNormalised;
+    }
     return {
       id: store.id,
       kind: store.kind,
       settings: (store.settings as Record<string, unknown> | null) ?? {},
-      secrets: await this.loadSecrets(id),
+      secrets,
     };
   }
 

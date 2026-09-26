@@ -306,8 +306,7 @@ describe('P9 secret-leak audit', () => {
       expect(secretKeysPresent(err?.response ?? {})).toEqual([]);
     });
 
-    it('authenticated probe flips PENDING → CONNECTED; failed probe leaves status alone', async () => {
-      const probeResult = {
+    it('authenticated probe flips PENDING → CONNECTED; failed probe leaves status alone', async () => {      const probeResult = {
         reachable: true,
         authenticated: true,
         permissionsOk: true,
@@ -347,6 +346,40 @@ describe('P9 secret-leak audit', () => {
         expect.objectContaining({ data: expect.objectContaining({ status: 'CONNECTED' }) }),
         expect.anything(),
       );
+    });
+
+    it('shop falls back to the store row domain when the credential blob omits it', async () => {
+      const seen: any[] = [];
+      const mockProvider: any = {
+        testConnection: jest.fn(async (s: any) => {
+          seen.push(s.secrets);
+          return {
+            reachable: true,
+            authenticated: true,
+            permissionsOk: true,
+            capabilities: { products: true },
+          };
+        }),
+      };
+      const storeRow = {
+        ...baseStore(),
+        domainNormalised: 'fallback-shop.myshopify.com',
+        status: 'PENDING',
+      };
+      const prisma: any = {
+        store: {
+          findUnique: jest.fn().mockResolvedValue(storeRow),
+          update: jest.fn().mockResolvedValue(storeRow),
+        },
+        storeCredential: {
+          // Reconnect blob: credentials only, no shop (pre-fix shape).
+          findFirst: jest.fn().mockResolvedValue({ credentialsEnc: 'enc:{"clientId":"x"}' }),
+        },
+        storeHealthCheck: { create: jest.fn().mockResolvedValue({}) },
+      };
+      const { svc } = buildService(prisma, mockProvider);
+      await svc.testConnection('store-p9-audit', undefined);
+      expect(seen[0]).toMatchObject({ shop: 'fallback-shop.myshopify.com', clientId: 'x' });
     });
 
     it('provider missing-credential probes return data (no throw, no echo)', async () => {

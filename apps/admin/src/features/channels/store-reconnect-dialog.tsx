@@ -40,12 +40,12 @@ function copyFor(kind: string) {
   }
 }
 
-function credentialsFor(kind: string, key: string, secret: string) {
-  if (kind === 'SHOPIFY') return { clientId: key, clientSecret: secret }
+function credentialsFor(kind: string, domain: string, key: string, secret: string) {
+  if (kind === 'SHOPIFY') return { shop: domain, clientId: key, clientSecret: secret }
   if (kind === 'CUSTOM') {
-    return { bridgeKey: key, ...(secret ? { webhookSecret: secret } : {}) }
+    return { baseUrl: domain, bridgeKey: key, ...(secret ? { webhookSecret: secret } : {}) }
   }
-  return { consumerKey: key, consumerSecret: secret }
+  return { baseUrl: domain, consumerKey: key, consumerSecret: secret }
 }
 
 /**
@@ -68,7 +68,10 @@ export function StoreReconnectDialog({
 
   const reconnectMut = useMutation({
     mutationFn: () =>
-      storesApi.reconnect(store!.id, credentialsFor(store!.kind, key.trim(), secret)),
+      storesApi.reconnect(
+        store!.id,
+        credentialsFor(store!.kind, (store as any).domainNormalised ?? '', key.trim(), secret),
+      ),
     onSuccess: () => {
       toast.success('Reconnect started — run Test Connection to verify')
       queryClient.invalidateQueries({ queryKey: STORES_KEYS.all })
