@@ -1,15 +1,22 @@
 /**
- * Stock-status sync suite — central-commerce §8.4, BR-06/BR-07/BR-08,
- * §13 stock suite, P5 row.
+ * Stock projection sync suite — central-commerce §8.4, P13 (SUPERSEDES the
+ * BR-06 status-only / BR-08 Shopify zero-write vectors — see
+ * docs/central-commerce/P13-ERP-STOCK-PROJECTION.md), BR-07, §13 stock
+ * suite, P5 row.
  *
- * Covers: threshold matrix (0 / below / above), per-store override,
- * race case (stale event never resurrects state), zero verified on every
- * assigned store, above-threshold silence, unsupported-fidelity zero writes
- * + STOCK_DRIFT_MONITOR_ONLY, read-back-or-repair-then-issue, combos never
- * pushed, NATIVE guard, notify coalescing/debounce/non-propagation,
- * daily-audit repeatable (0 3 * * * Asia/Dhaka, paged/bounded/resumable,
- * SyncRun STOCK), status-only (no quantity ever), never-call-provider-
- * from-mutation.
+ * Covers: threshold matrix per fidelity (>5: faithful status-only with ZERO
+ * qty keys asserted + quantized-capped capped-5 asserted; 1–5 exact qty per
+ * provider; 0: OUT + qty 0 + no-sell), planFor pure planner, per-store
+ * override, race case (stale event never resurrects state), zero verified
+ * on every assigned store, above-threshold silence, multi-store fan-out
+ * (same projection to ALL assigned stores), qty-keyed cooldown (4→3 never
+ * suppressed), unsupported-fidelity zero writes + STOCK_DRIFT_MONITOR_ONLY
+ * (the ONLY zero-write path), read-back-or-repair-then-issue per plan kind,
+ * combos never pushed, NATIVE guard, notify coalescing/debounce/
+ * non-propagation, daily-audit repeatable (0 3 * * * Asia/Dhaka,
+ * paged/bounded/resumable, SyncRun STOCK), above-band status detail
+ * ({ref,state} only, no quantity), never-call-provider-from-mutation
+ * (status AND quantity methods).
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -22,9 +29,11 @@ import {
   STOCK_AUDIT_TZ,
   STOCK_DEBOUNCE_MS,
   STOCK_THRESHOLD_DEFAULT,
+  STOCK_VERIFY,
   StockStatusSyncService,
   desiredFromQty,
   isStale,
+  planFor,
   thresholdFor,
   versionFor,
 } from '../stock-status-sync.service';
@@ -42,6 +51,7 @@ const ENV_KEYS = [
   'store_stock_audit_enabled',
 ] as const;
 let savedEnv: Record<string, string | undefined> = {};
+let savedVerifyDelay = 2000;
 
 function flagsOn() {
   for (const k of ENV_KEYS) process.env[k] = 'true';
@@ -233,6 +243,7 @@ function setup(overrides: Record<string, unknown> = {}) {
   const runs = new SyncRunService(ctx.prisma);
   const enqueued: any[] = [];
   const queues: any = {
+    replaceFinishedJob: jest.fn(async () => undefined),
     enqueue: jest.fn(async (...args: any[]) => {
       enqueued.push(args);
     }),
@@ -273,12 +284,15 @@ beforeEach(() => {
     savedEnv[k] = process.env[k];
   }
   flagsOn();
+  savedVerifyDelay = STOCK_VERIFY.delayMs;
+  STOCK_VERIFY.delayMs = 0;
 });
 afterEach(() => {
   for (const k of ENV_KEYS) {
     if (savedEnv[k] === undefined) delete process.env[k];
     else process.env[k] = savedEnv[k];
   }
+  STOCK_VERIFY.delayMs = savedVerifyDelay;
   jest.restoreAllMocks();
 });
 
@@ -340,6 +354,25 @@ describe('notifyStockChanged (§8.4 post-commit, R-2)', () => {
       { delay: 1500 },
     );
     expect(s.fake.calls).toHaveLength(0);
+  });
+
+  it('notify clears a finished job record first (same-id dedupe must not swallow the change)', async () => {
+    const s = setup();
+    seedRemote(s, 'IN_STOCK');
+    mapped(s);
+    const order: string[] = [];
+    s.queues.replaceFinishedJob.mockImplementation(async () => {
+      order.push('replace');
+    });
+    (s.queues.enqueue as jest.Mock).mockImplementation(async () => {
+      order.push('enqueue');
+    });
+    await s.svc.notifyStockChanged(PRODUCT_ID, null, 'test');
+    expect(s.queues.replaceFinishedJob).toHaveBeenCalledWith(
+      'store-stock-sync',
+      `stock:${STORE_ID}:${PRODUCT_ID}:-`,
+    );
+    expect(order).toEqual(['replace', 'enqueue']);
   });
 
   it('variant notify coalesces on product+variant; two stores fan out twice', async () => {
@@ -405,53 +438,190 @@ describe('notifyStockChanged (§8.4 post-commit, R-2)', () => {
       expect(src).not.toContain('publishStockState');
       expect(src).not.toContain('readStockState');
       expect(src).not.toContain('providerFor');
+      // P13: quantity-projection methods are provider/worker-only too.
+      expect(src).not.toContain('publishStockQuantity');
+      expect(src).not.toContain('readStockQuantity');
+      expect(src).not.toContain('publishVariantStockQuantity');
+      expect(src).not.toContain('readVariantStockQuantity');
     }
   });
 });
 
-describe('threshold paths (BR-07, faithful store)', () => {
-  it('qty=0 → forced OUT_OF_STOCK push + read-back verify on the assigned store', async () => {
+describe('P13 projection planner (pure)', () => {
+  it('always (ALWAYS_IN_STOCK) → status-only IN, never a quantity', () => {
+    expect(planFor('faithful', true, Number.POSITIVE_INFINITY, 'always', 5, false)).toEqual({
+      kind: 'status',
+      state: 'IN_STOCK',
+      wireQty: 0,
+    });
+    expect(planFor('quantized-capped', true, Number.POSITIVE_INFINITY, 'always', 5, true)).toEqual({
+      kind: 'status',
+      state: 'IN_STOCK',
+      wireQty: 0,
+    });
+  });
+
+  it('zero/below + quantity-capable → quantity (0 = no sell, else exact)', () => {
+    expect(planFor('faithful', true, 0, 'zero', 5, false)).toEqual({
+      kind: 'quantity',
+      state: 'OUT_OF_STOCK',
+      wireQty: 0,
+    });
+    expect(planFor('faithful', true, 3, 'below', 5, false)).toEqual({
+      kind: 'quantity',
+      state: 'IN_STOCK',
+      wireQty: 3,
+    });
+    expect(planFor('quantized-capped', true, 2, 'below', 5, false)).toEqual({
+      kind: 'quantity',
+      state: 'IN_STOCK',
+      wireQty: 2,
+    });
+  });
+
+  it('zero/below + status-only (undeclared quantity) → status', () => {
+    expect(planFor('faithful', false, 0, 'zero', 5, false)).toEqual({
+      kind: 'status',
+      state: 'OUT_OF_STOCK',
+      wireQty: 0,
+    });
+    expect(planFor('faithful', false, 3, 'below', 5, false)).toEqual({
+      kind: 'status',
+      state: 'IN_STOCK',
+      wireQty: 0,
+    });
+  });
+
+  it('above + audit + quantized-capped → quantity at the cap; faithful → status', () => {
+    expect(planFor('quantized-capped', true, 50, 'above', 5, true)).toEqual({
+      kind: 'quantity',
+      state: 'IN_STOCK',
+      wireQty: 5,
+    });
+    // Per-store override moves the cap with the band.
+    expect(planFor('quantized-capped', true, 50, 'above', 10, true)).toEqual({
+      kind: 'quantity',
+      state: 'IN_STOCK',
+      wireQty: 10,
+    });
+    expect(planFor('faithful', true, 50, 'above', 5, true)).toEqual({
+      kind: 'status',
+      state: 'IN_STOCK',
+      wireQty: 0,    });
+    expect(planFor('faithful', false, 50, 'above', 5, true)).toEqual({
+      kind: 'status',
+      state: 'IN_STOCK',
+      wireQty: 0,
+    });
+  });
+
+  it('above + first evaluation + quantized-capped → quantity at the cap (no silent zero-state)', () => {
+    expect(planFor('quantized-capped', true, 50, 'above', 5, false, true)).toEqual({
+      kind: 'quantity',
+      state: 'IN_STOCK',
+      wireQty: 5,
+    });
+    // Faithful first evaluation stays status-only (no quantities ever).
+    expect(planFor('faithful', true, 50, 'above', 5, false, true)).toEqual({
+      kind: 'status',
+      state: 'IN_STOCK',
+      wireQty: 0,
+    });
+    // Later non-audit evaluations stay silent (audit-owned).
+    expect(planFor('quantized-capped', true, 50, 'above', 5, false, false)).toEqual({
+      kind: 'status',
+      state: 'IN_STOCK',
+      wireQty: 0,
+    });
+  });
+});
+
+describe('threshold paths (BR-07 × P13 matrix, faithful store)', () => {
+  it('qty=0 → forced quantity-0 push + read-back verify (no-sell)', async () => {
     const s = setup({ managedStockQuantity: 0, reservedStock: 0 });
     seedRemote(s, 'IN_STOCK');
     mapped(s);
     const out = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
     expect(out).toHaveLength(1);
-    expect(out[0]).toMatchObject({ status: 'SUCCESS', pushed: true });
+    expect(out[0]).toMatchObject({ status: 'SUCCESS', pushed: true, reason: 'PUSH_VERIFIED_QTY' });
     expect(s.fake.getProduct('remote-1')?.stockState).toBe('OUT_OF_STOCK');
+    expect(s.fake.getProduct('remote-1')?.stockQuantity).toBe(0);
+    expect(
+      s.fake.calls.filter((c) => c.method === 'publishStockQuantity'),
+    ).toHaveLength(1);
     expect(
       s.fake.calls.filter((c) => c.method === 'publishStockState'),
-    ).toHaveLength(1);
-    expect(s.items.some((i) => String(i.reason).includes('PUSH_VERIFIED'))).toBe(true);
+    ).toHaveLength(0);
   });
 
-  it('0<qty<threshold → status recheck/push per change', async () => {
+  it('0<qty<threshold → exact-quantity push per change', async () => {
     const s = setup({ managedStockQuantity: 2, reservedStock: 0 });
     seedRemote(s, 'OUT_OF_STOCK');
     mapped(s);
     const out = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
-    expect(out[0]).toMatchObject({ status: 'SUCCESS', pushed: true });
+    expect(out[0]).toMatchObject({ status: 'SUCCESS', pushed: true, reason: 'PUSH_VERIFIED_QTY' });
     expect(s.fake.getProduct('remote-1')?.stockState).toBe('IN_STOCK');
+    expect(s.fake.getProduct('remote-1')?.stockQuantity).toBe(2);
   });
 
-  it('already in sync below threshold → no write', async () => {
+  it('already in sync below threshold → no write (IN_SYNC_QTY)', async () => {
     const s = setup({ managedStockQuantity: 2, reservedStock: 0 });
     seedRemote(s, 'IN_STOCK');
+    s.fake.getProduct('remote-1')!.stockQuantity = 2;
     mapped(s);
     const out = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
-    expect(out[0]).toMatchObject({ status: 'SUCCESS', pushed: false, reason: 'IN_SYNC' });
+    expect(out[0]).toMatchObject({ status: 'SUCCESS', pushed: false, reason: 'IN_SYNC_QTY' });
+    expect(s.fake.calls.filter((c) => c.method === 'publishStockQuantity')).toHaveLength(0);
     expect(s.fake.calls.filter((c) => c.method === 'publishStockState')).toHaveLength(0);
   });
 
-  it('qty>=threshold → NO per-change provider push (daily audit owns it)', async () => {
+  it('unit step 3→2 is NOT cooldown-suppressed; identical re-push IS suppressed', async () => {
+    const s = setup({ managedStockQuantity: 3, reservedStock: 0 });
+    seedRemote(s, 'OUT_OF_STOCK');
+    mapped(s);
+    const first = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
+    expect(first[0]).toMatchObject({ status: 'SUCCESS', pushed: true });
+    // A newer commit lands with one unit fewer (fresh monotonic version).
+    s.setProduct(
+      simpleProduct({ managedStockQuantity: 2, reservedStock: 0, updatedAt: new Date('2026-09-21T00:00:00Z') }),
+    );
+    const second = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
+    expect(second[0]).toMatchObject({ status: 'SUCCESS', pushed: true });
+    expect(
+      s.fake.calls.filter((c) => c.method === 'publishStockQuantity').map((c) => (c.detail as any).qty),
+    ).toEqual([3, 2]);
+    // Same units, newer version, remote drifted, inside the cooldown →
+    // suppressed (no flap-push storm).
+    s.fake.getProduct('remote-1')!.stockQuantity = 9;
+    s.setProduct(
+      simpleProduct({ managedStockQuantity: 2, reservedStock: 0, updatedAt: new Date('2026-09-22T00:00:00Z') }),
+    );
+    const third = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
+    expect(third[0]).toMatchObject({ status: 'SUCCESS', pushed: false, reason: 'COOLDOWN_SUPPRESSED' });
+    expect(s.fake.calls.filter((c) => c.method === 'publishStockQuantity')).toHaveLength(2);
+  });
+
+  it('qty>=threshold → NO per-change provider push once projected (daily audit owns it)', async () => {
     const s = setup({ managedStockQuantity: 50, reservedStock: 0 });
     seedRemote(s, 'OUT_OF_STOCK');
     mapped(s);
+    // First evaluation projects (never silent zero-state)…
+    const first = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
+    expect(first[0]).toMatchObject({ status: 'SUCCESS', pushed: true });
+    // …a newer commit above band stays silent (audit owns it).
+    s.setProduct(
+      simpleProduct({ managedStockQuantity: 60, reservedStock: 0, updatedAt: new Date('2026-09-22T00:00:00Z') }),
+    );
     const out = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
     expect(out[0]).toMatchObject({ status: 'SKIPPED', pushed: false, reason: 'ABOVE_THRESHOLD' });
-    expect(s.fake.calls.filter((c) => c.method === 'publishStockState')).toHaveLength(0);
-    // …but the audit DOES repair the same drift.
-    const auditOut = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: true });
-    expect(auditOut[0]).toMatchObject({ status: 'SUCCESS', pushed: true });
+  });
+
+  it('first above-band evaluation always executes (no silent zero-state)', async () => {
+    const s = setup({ managedStockQuantity: 50, reservedStock: 0 });
+    seedRemote(s, 'OUT_OF_STOCK');
+    mapped(s); // lastEvaluatedVersion null → never projected
+    const out = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
+    expect(out[0]).toMatchObject({ status: 'SUCCESS', pushed: true });
     expect(s.fake.getProduct('remote-1')?.stockState).toBe('IN_STOCK');
   });
 
@@ -491,7 +661,7 @@ describe('race safety (§8.4 monotonic guard)', () => {
   });
 });
 
-describe('fidelity gate (BR-06/BR-08)', () => {
+describe('fidelity gate (P13: zero writes ONLY unsupported)', () => {
   function unsupportedSetup() {
     const s = setup({ managedStockQuantity: 0, reservedStock: 0 });
     const publish = jest.fn(async () => ({ ok: true }));
@@ -533,17 +703,131 @@ describe('fidelity gate (BR-06/BR-08)', () => {
     expect(s.publish).not.toHaveBeenCalled();
   });
 
-  it('status-only: the push carries (ref, state) and NEVER a quantity/sentinel (BR-06)', async () => {
-    const s = setup({ managedStockQuantity: 0, reservedStock: 0 });
-    seedRemote(s, 'IN_STOCK');
+  it('above-band status push carries (ref, state) and NEVER a quantity (P13 faithful)', async () => {
+    const s = setup({ managedStockQuantity: 50, reservedStock: 0 });
+    seedRemote(s, 'OUT_OF_STOCK');
     mapped(s);
-    await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
+    // Audit owns the above band: faithful pushes status-only here.
+    await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: true });
     const pushes = s.fake.calls.filter((c) => c.method === 'publishStockState');
     expect(pushes).toHaveLength(1);
     const detail = pushes[0]!.detail as Record<string, unknown>;
     expect(Object.keys(detail).sort()).toEqual(['ref', 'state']);
-    expect(detail.state).toBe('OUT_OF_STOCK');
+    expect(detail.state).toBe('IN_STOCK');
     expect(JSON.stringify(detail)).not.toMatch(/qty|quantity|sentinel|placeholder/i);
+    expect(s.fake.calls.filter((c) => c.method === 'publishStockQuantity')).toHaveLength(0);
+  });
+
+  it('status-only bridge (undeclared quantity): 1–5 band pushes status, never a quantity', async () => {
+    const s = setup({ managedStockQuantity: 3, reservedStock: 0 });
+    seedRemote(s, 'OUT_OF_STOCK');
+    // A quantity-less provider behind a faithful fidelity: the engine must
+    // fall back to the status path (planFor capable=false).
+    let remoteState: 'IN_STOCK' | 'OUT_OF_STOCK' = 'OUT_OF_STOCK';
+    const statusOnly: any = {
+      slug: 'custom',
+      declaredCapabilities: { stockStatusFidelity: 'faithful', stockQuantity: false },
+      resolveCapabilities: async () => ({ stockStatusFidelity: 'faithful', stockQuantity: false }),
+      readStockState: jest.fn(async () => remoteState),
+      publishStockState: jest.fn(async () => {
+        remoteState = 'IN_STOCK';
+        return { ok: true };
+      }),
+    };
+    s.registry.providerFor = () => statusOnly;
+    mapped(s);
+    const out = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
+    expect(out[0]).toMatchObject({ status: 'SUCCESS', pushed: true, reason: 'PUSH_VERIFIED' });
+    expect(statusOnly.publishStockState).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('quantized-capped band (Shopify semantics via Fake override)', () => {
+  function cappedSetup(qty: number, remoteQty: number | null = null) {
+    const s = setup({ managedStockQuantity: qty, reservedStock: 0 });
+    s.fake.setFidelity('quantized-capped', 5);
+    seedRemote(s, 'IN_STOCK');
+    if (remoteQty !== null) s.fake.getProduct('remote-1')!.stockQuantity = remoteQty;
+    mapped(s);
+    return s;
+  }
+
+  it('ERP > 5 → capped quantity 5 (never the truth), verified by read-back', async () => {
+    const s = cappedSetup(50);
+    const out = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: true });
+    expect(out[0]).toMatchObject({ status: 'SUCCESS', pushed: true, reason: 'PUSH_VERIFIED_QTY' });
+    expect(s.fake.getProduct('remote-1')?.stockQuantity).toBe(5);
+  });
+
+  it('ERP > 5 per-change → audit-owned silence once projected (no push outside the audit)', async () => {
+    const s = cappedSetup(50);
+    const first = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
+    expect(first[0]).toMatchObject({ status: 'SUCCESS', pushed: true });
+    expect(s.fake.getProduct('remote-1')?.stockQuantity).toBe(5);
+    s.setProduct(
+      simpleProduct({ managedStockQuantity: 60, reservedStock: 0, updatedAt: new Date('2026-09-22T00:00:00Z') }),
+    );
+    const out = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
+    expect(out[0]).toMatchObject({ status: 'SKIPPED', pushed: false, reason: 'ABOVE_THRESHOLD' });
+    expect(
+      s.fake.calls.filter((c) => c.method === 'publishStockQuantity').map((c) => (c.detail as any).qty),
+    ).toEqual([5]);
+  });
+
+  it('1–5 → exact quantity in real time; 0 → quantity 0 (no-sell)', async () => {    const low = cappedSetup(3);
+    const lowOut = await low.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
+    expect(lowOut[0]).toMatchObject({ status: 'SUCCESS', pushed: true, reason: 'PUSH_VERIFIED_QTY' });
+    expect(low.fake.getProduct('remote-1')?.stockQuantity).toBe(3);
+
+    const zero = cappedSetup(0);
+    const zeroOut = await zero.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
+    expect(zeroOut[0]).toMatchObject({ status: 'SUCCESS', pushed: true, reason: 'PUSH_VERIFIED_QTY' });
+    expect(zero.fake.getProduct('remote-1')?.stockQuantity).toBe(0);
+    expect(zero.fake.getProduct('remote-1')?.stockState).toBe('OUT_OF_STOCK');
+  });
+
+  it('lagging read-back settles without repair (no false VERIFY_FAILED)', async () => {
+    const s = cappedSetup(3);
+    // Remote serves the stale value twice, then converges — settled reads
+    // verify with NO repair push and NO failure issue.
+    let reads = 0;
+    jest.spyOn(s.fake, 'readStockQuantity').mockImplementation(async () => {
+      reads += 1;
+      return reads < 3 ? 9 : 3;
+    });
+    const out = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
+    expect(out[0]).toMatchObject({ status: 'SUCCESS', pushed: true, reason: 'PUSH_VERIFIED_QTY' });
+    // 1 recheck + 3 settled reads (3rd converges), exactly one push.
+    expect(reads).toBe(4);
+    expect(s.fake.calls.filter((c) => c.method === 'publishStockQuantity')).toHaveLength(1);
+  });
+});
+
+describe('multi-store fan-out (P13: ALL assigned stores get the projection)', () => {
+  it('one 1–5 change projects the exact quantity to every assigned store', async () => {
+    const s = setup({ managedStockQuantity: 3, reservedStock: 0 });
+    s.prisma.__setStores([
+      { id: STORE_ID, kind: 'WOOCOMMERCE', settings: {}, status: 'CONNECTED' },
+      { id: STORE_2, kind: 'WOOCOMMERCE', settings: {}, status: 'CONNECTED' },
+    ]);
+    seedRemote(s, 'OUT_OF_STOCK');
+    mapped(s);
+    s.setMapping({
+      storeId: STORE_2,
+      productId: PRODUCT_ID,
+      externalId: 'remote-2',
+      lastEvaluatedVersion: null,
+    });
+    // Distinct remotes per store (one shared remote would read back the
+    // first store's push as in-sync for the second).
+    s.fake.directSeed('remote-2', { sku: 'STOCK-TEE-2' }, 'OUT_OF_STOCK', 'published');
+    const first = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
+    const second = await s.svc.evaluateProduct(STORE_2, PRODUCT_ID, null, RUN_ID, { audit: false });
+    expect(first[0]).toMatchObject({ status: 'SUCCESS', pushed: true, reason: 'PUSH_VERIFIED_QTY' });
+    expect(second[0]).toMatchObject({ status: 'SUCCESS', pushed: true, reason: 'PUSH_VERIFIED_QTY' });
+    expect(
+      s.fake.calls.filter((c) => c.method === 'publishStockQuantity').map((c) => (c.detail as any).qty),
+    ).toEqual([3, 3]);
   });
 });
 
@@ -569,7 +853,8 @@ describe('verification: read-back-or-repair-then-issue', () => {
   }
 
   it('mismatch then match → exactly one repair push (REPAIRED_AFTER_RETRY)', async () => {
-    const s = flakySetup(['IN_STOCK', 'OUT_OF_STOCK']);
+    // Settled reads (3) all miss, the post-repair final read matches.
+    const s = flakySetup(['IN_STOCK', 'IN_STOCK', 'IN_STOCK', 'OUT_OF_STOCK']);
     const out = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
     expect(out[0]).toMatchObject({ status: 'SUCCESS', pushed: true, reason: 'REPAIRED_AFTER_RETRY' });
     expect(s.provider.publishStockState).toHaveBeenCalledTimes(2);
@@ -582,6 +867,48 @@ describe('verification: read-back-or-repair-then-issue', () => {
     expect(out[0]).toMatchObject({ status: 'FAILED', pushed: true, reason: 'STOCK_VERIFY_FAILED' });
     expect(s.provider.publishStockState).toHaveBeenCalledTimes(2);
     expect(s.issues.some((i) => i.code === 'STOCK_VERIFY_FAILED')).toBe(true);
+  });
+});
+
+describe('quantity verification: read-back-or-repair-then-issue', () => {
+  function qtyFlakySetup(readScript: Array<number | null>) {
+    const s = setup({ managedStockQuantity: 3, reservedStock: 0 });
+    let n = 0;
+    const provider: any = {
+      slug: 'woocommerce',
+      declaredCapabilities: { stockStatusFidelity: 'faithful', stockQuantity: true },
+      resolveCapabilities: async () => ({ stockStatusFidelity: 'faithful', stockQuantity: true }),
+      readStockState: jest.fn(async () => 'IN_STOCK' as const),
+      publishStockState: jest.fn(async () => ({ ok: true })),
+      readStockQuantity: jest.fn(async () => readScript[Math.min(n++, readScript.length - 1)]),
+      publishStockQuantity: jest.fn(async () => ({ ok: true })),
+    };
+    s.registry.providerFor = () => provider;
+    mapped(s);
+    return { ...s, provider };
+  }
+
+  it('quantity mismatch then match → exactly one repair push (REPAIRED_AFTER_RETRY_QTY)', async () => {
+    // Recheck + 3 settled reads all miss; the post-repair final read matches.
+    const s = qtyFlakySetup([9, 9, 9, 9, 3]);
+    const out = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
+    expect(out[0]).toMatchObject({ status: 'SUCCESS', pushed: true, reason: 'REPAIRED_AFTER_RETRY_QTY' });
+    expect(s.provider.publishStockQuantity).toHaveBeenCalledTimes(2);
+    expect(s.issues.some((i) => i.code === 'STOCK_VERIFY_FAILED')).toBe(false);
+  });
+
+  it('quantity mismatch after repair → STOCK_VERIFY_FAILED issue', async () => {
+    const s = qtyFlakySetup([9, 9, 9]);
+    const out = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
+    expect(out[0]).toMatchObject({ status: 'FAILED', pushed: true, reason: 'STOCK_VERIFY_FAILED' });
+    expect(s.provider.publishStockQuantity).toHaveBeenCalledTimes(2);
+    expect(s.issues.some((i) => i.code === 'STOCK_VERIFY_FAILED')).toBe(true);
+  });
+
+  it('unobservable quantity + matching status → PUSH_VERIFIED_STATUS_FALLBACK (never silent)', async () => {
+    const s = qtyFlakySetup([null, null]);
+    const out = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, null, RUN_ID, { audit: false });
+    expect(out[0]).toMatchObject({ status: 'SUCCESS', pushed: true, reason: 'PUSH_VERIFIED_STATUS_FALLBACK' });
   });
 });
 
@@ -611,7 +938,7 @@ describe('combos + isolation (BR-22/BR-20)', () => {
     expect(s.fake.calls).toHaveLength(0);
   });
 
-  it('variant zero stock writes the variation ref, never the parent product', async () => {
+  it('variant zero stock writes the variation quantity, never the parent product', async () => {
     const s = setup({
       type: 'variable',
       managedStockQuantity: 0,
@@ -643,9 +970,10 @@ describe('combos + isolation (BR-22/BR-20)', () => {
       lastEvaluatedVersion: null,
     });
     const out = await s.svc.evaluateProduct(STORE_ID, PRODUCT_ID, VARIANT_ID, RUN_ID, { audit: false });
-    expect(out[0]).toMatchObject({ status: 'SUCCESS', pushed: true });
-    expect(s.fake.calls.filter((c) => c.method === 'publishVariantStockState')).toHaveLength(1);
+    expect(out[0]).toMatchObject({ status: 'SUCCESS', pushed: true, reason: 'PUSH_VERIFIED_QTY' });
+    expect(s.fake.calls.filter((c) => c.method === 'publishVariantStockQuantity')).toHaveLength(1);
     expect(s.fake.calls.filter((c) => c.method === 'publishStockState')).toHaveLength(0);
+    expect(s.fake.calls.filter((c) => c.method === 'publishStockQuantity')).toHaveLength(0);
   });
 });
 

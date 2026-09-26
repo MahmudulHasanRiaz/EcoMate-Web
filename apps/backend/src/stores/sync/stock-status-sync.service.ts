@@ -1,33 +1,47 @@
 /**
- * Stock-status sync — central-commerce §8.4 (P5).
+ * Stock projection sync — central-commerce §8.4 (P5, P13).
  *
- * BR-06: status-only. No exact quantity, sentinel, placeholder or fabricated
- * value is ever written — the provider contract takes `(store, ref, state)`
- * with `state: 'IN_STOCK' | 'OUT_OF_STOCK'` and nothing else.
+ * P13 ERP-STOCK-PROJECTION (operator-directed — SUPERSEDES plan BR-06
+ * status-only and BR-08 Shopify zero-write; see
+ * docs/central-commerce/P13-ERP-STOCK-PROJECTION.md):
+ * "ERP calculates the truth; every integrated store only receives a
+ * controlled stock projection." ERP stock = the resolved quantity
+ * (INVENTORY_CONTROLLED → inventory-controlled path, else managed-stock
+ * quantity — see desiredState).
+ * - Own ERP Website (NATIVE): unchanged, never a sync target (BR-20).
+ * - Custom + WooCommerce (`faithful` + quantity-capable): ERP > threshold →
+ *   IN_STOCK status only (no quantity ever — the remote tracks nothing
+ *   countable, so oversell is impossible); 1–5 → ACTUAL quantity in real
+ *   time; 0 → OUT_OF_STOCK (forced + read-back verify).
+ * - Shopify (`quantized-capped`): ERP > threshold → capped quantity
+ *   (threshold, default 5) via InventoryLevel (tracked, deny policy);
+ *   1–5 → actual quantity real-time; 0 → quantity 0 (selling stops).
+ * - `unsupported` fidelity → ZERO writes ever (BR-08 remainder); per-change
+ *   exits monitor-only, the daily audit runs read-only and raises
+ *   STOCK_DRIFT_MONITOR_ONLY. Zero-write now applies ONLY here.
  *
- * BR-07: `qty = 0` → forced push + read-back verify on every assigned store;
- * `0 < qty < threshold` (default 5, per-store override via
- * `Store.settings.stockLowThreshold`, product `lowStockQty` as fallback) →
- * status recheck/push per change; `qty >= threshold` → no per-change push,
- * the daily audit owns it.
- *
- * BR-08: fidelity gate. `faithful` → push IN/OUT with read-back verify;
- * `unsupported` → ZERO writes ever; per-change path exits monitor-only and
- * the daily audit runs read-only, raising STOCK_DRIFT_MONITOR_ONLY.
+ * BR-07 banding (unchanged): `qty = 0` → forced push + read-back verify on
+ * every assigned store; `0 < qty < threshold` (default 5, per-store override
+ * via `Store.settings.stockLowThreshold`, product `lowStockQty` fallback) →
+ * immediate push per change; `qty >= threshold` → no per-change push, the
+ * daily audit owns it (including the capped band).
  *
  * Change notification: every writer in §3.8 calls
  * `notifyStockChanged()` AFTER commit inside a non-propagating guard. No
  * provider call ever happens inside a mutation (R-2) — notify only enqueues
  * (debounced 1500 ms, coalesced by
- * `jobId = stock:{storeId}:{productId}:{variantId}`).
+ * `jobId = stock:{storeId}:{productId}:{variantId}`); fan-out is per
+ * assigned store, so a product on MULTIPLE stores projects to ALL of them.
  *
  * Race safety: the job never trusts its payload — it re-reads live state and
  * computes a monotonic version (max stock-row `updatedAt` + ledger /
  * physical timestamp). `version <= lastEvaluatedVersion` exits without
  * pushing, so a stale event can never resurrect IN_STOCK over a newer
- * OUT_OF_STOCK. Product-level versions live on
- * `StoreProductMapping.lastEvaluatedVersion` (P4); variant-level versions on
- * `StoreVariantMapping.lastEvaluatedVersion` (P5 migration).
+ * OUT_OF_STOCK. The same-state cooldown is keyed on (state + wire qty), so
+ * a 4→3 unit step is never suppressed as "same state". Product-level
+ * versions live on `StoreProductMapping.lastEvaluatedVersion` (P4);
+ * variant-level versions on `StoreVariantMapping.lastEvaluatedVersion`
+ * (P5 migration).
  *
  * Combos: availability is `min(child availability)` for the audit trail;
  * combos are never pushed as products (BR-22).
@@ -55,12 +69,21 @@ import type {
   CommerceProvider,
   RemoteRef,
   StockState,
+  StockStatusFidelity,
   StoreWithSecrets,
 } from '../providers/provider.contract';
 
 export const STOCK_THRESHOLD_DEFAULT = 5;
 export const STOCK_DEBOUNCE_MS = 1500;
 export const STOCK_SAME_STATE_COOLDOWN_MS = 60_000;
+
+/**
+ * Read-back verification against eventual consistency: remotes (Shopify
+ * included) may serve the pre-write value for seconds after a push. Reads
+ * retry with delays before any repair, so a lagging read-back never files
+ * a false STOCK_VERIFY_FAILED. Mutable for tests (delayMs = 0).
+ */
+export const STOCK_VERIFY = { reads: 3, delayMs: 2000 };
 export const STOCK_AUDIT_CRON = '0 3 * * *';
 export const STOCK_AUDIT_TZ = 'Asia/Dhaka';
 export const STOCK_AUDIT_PAGE_SIZE = 100;
@@ -120,6 +143,64 @@ export function desiredFromQty(
   return { state: 'IN_STOCK', path: 'above' };
 }
 
+export type StockPushKind = 'status' | 'quantity';
+
+export interface StockPushPlan {
+  kind: StockPushKind;
+  state: StockState;
+  /**
+   * Wire units when kind === 'quantity': exact ERP units for the zero/below
+   * bands, the quantized cap (threshold) for the audit-owned above band on
+   * `quantized-capped` providers. Meaningless (0) for status plans.
+   */
+  wireQty: number;
+}
+
+/**
+ * P13 pure projection planner: ERP qty + band + provider capability →
+ * exactly one push shape. Rules:
+ * - `always` (ALWAYS_IN_STOCK, unlimited) → status-only IN, never a
+ *   quantity (Infinity is not projectable).
+ * - zero/below + quantity-capable → quantity (0 = no sell, else exact).
+ * - above + audit + `quantized-capped` + quantity-capable → quantity at the
+ *   cap (threshold — the per-store override moves the cap with the band).
+ * - above + FIRST evaluation (no projection landed yet) + `quantized-capped`
+ *   + quantity-capable → quantity at the cap. Later above-band evaluations
+ *   stay silent (audit-owned) — but the first must project, otherwise a
+ *   newly mapped product sits at remote zero/unknown until 3AM.
+ * - everything else (status-only bridges, faithful above-band, undeclared
+ *   quantity) → status-only.
+ * `quantityCapable` = `caps.stockQuantity === true` AND the matching
+ * quantity method exists on the provider (product vs variant).
+ */
+export function planFor(
+  fidelity: StockStatusFidelity,
+  quantityCapable: boolean,
+  qty: number,
+  path: StockEvalPath,
+  threshold: number,
+  audit: boolean,
+  firstEvaluation = false,
+): StockPushPlan {
+  if (path === 'always') return { kind: 'status', state: 'IN_STOCK', wireQty: 0 };
+  const finite = Number.isFinite(qty);
+  const q = finite ? Math.max(0, Math.floor(qty)) : 0;
+  const state: StockState = q > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK';
+  if (!finite) return { kind: 'status', state, wireQty: 0 };
+  if ((path === 'zero' || path === 'below') && quantityCapable) {
+    return { kind: 'quantity', state, wireQty: q };
+  }
+  if (
+    path === 'above' &&
+    (audit || firstEvaluation) &&
+    fidelity === 'quantized-capped' &&
+    quantityCapable
+  ) {
+    return { kind: 'quantity', state: 'IN_STOCK', wireQty: Math.max(1, Math.floor(threshold)) };
+  }
+  return { kind: 'status', state, wireQty: 0 };
+}
+
 /** Lexicographically comparable monotonic version. */
 export function versionFor(
   rowUpdatedAt: Date | string | number,
@@ -168,8 +249,12 @@ async function boundedMap<T, R>(
 @Injectable()
 export class StockStatusSyncService implements OnModuleInit {
   private readonly logger = new Logger(StockStatusSyncService.name);
-  /** Per-(store|product|variant|status) flapping guard — recency only, truth lives in the DB. */
-  private readonly lastPush = new Map<string, { state: StockState; at: number }>();
+  /**
+   * Per-(store|product|variant|status|wire-qty) flapping guard — recency
+   * only, truth lives in the DB. The qty arm matters: a 4→3 unit step must
+   * never be suppressed as "same state" (P13).
+   */
+  private readonly lastPush = new Map<string, { state: StockState; qty: number | null; at: number }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -229,6 +314,10 @@ export class StockStatusSyncService implements OnModuleInit {
       });
       for (const s of stores) {
         const jobId = `stock:${s.id}:${productId}:${variantId ?? '-'}`;
+        // A finished record with the same id would swallow this change
+        // (BullMQ id dedupe) — clear it first; pending jobs coalesce safely
+        // because the worker re-reads live state.
+        await this.queues.replaceFinishedJob('store-stock-sync', jobId);
         await this.queues.enqueue(
           'store-stock-sync',
           'stock-change',
@@ -455,8 +544,8 @@ export class StockStatusSyncService implements OnModuleInit {
     const storeWithSecrets = await this.storeWithSecrets(store);
     const caps = await provider.resolveCapabilities(storeWithSecrets);
 
-    // BR-08: unsupported fidelity → ZERO writes, always.
-    if (caps.stockStatusFidelity !== 'faithful') {
+    // BR-08 remainder: unsupported fidelity → ZERO writes, always.
+    if (caps.stockStatusFidelity !== 'faithful' && caps.stockStatusFidelity !== 'quantized-capped') {
       if (!opts.audit) {
         await this.bumpVersion(store.id, product.id, variant, version);
         await item('SKIPPED', 'UNSUPPORTED_FIDELITY: monitor-only, zero writes (BR-08)');
@@ -489,75 +578,58 @@ export class StockStatusSyncService implements OnModuleInit {
       return { status: 'SUCCESS', pushed: false, reason: 'IN_SYNC_MONITORED' };
     }
 
-    // Faithful path needs a remote ref; product sync owns mapping creation.
+    // P13 projection path (faithful / quantized-capped). `unsupported`
+    // exited above with zero writes.
     if (!mapping) {
       await item('SKIPPED', 'NOT_MAPPED: product sync owns mapping creation');
       return { status: 'SKIPPED', pushed: false, reason: 'NOT_MAPPED' };
     }
 
-    // BR-07: above threshold → no per-change push; the daily audit owns it.
-    if (desired.path === 'above' && !opts.audit) {
+    // BR-07/P13: above threshold → no per-change push; the daily audit owns
+    // it (including the Shopify capped band). EXCEPTION: the first-ever
+    // evaluation (no projection landed yet) always executes — otherwise a
+    // newly mapped product would sit at remote zero/unknown until 3AM.
+    if (desired.path === 'above' && !opts.audit && mapping?.lastEvaluatedVersion) {
       await this.bumpVersion(store.id, product.id, variant, version);
       await item('SKIPPED', `ABOVE_THRESHOLD: qty ${desired.qty} ≥ threshold ${threshold} — daily audit owns it (BR-07)`);
       return { status: 'SKIPPED', pushed: false, reason: 'ABOVE_THRESHOLD' };
     }
 
-    try {
-      // Below threshold (and audit re-verification): recheck first, push
-      // only on difference. Zero is a forced push + read-back verify.
-      if (desired.path !== 'zero') {
-        const remote = await this.readRemote(provider, storeWithSecrets, store.id, product, variant, mapping);
-        if (remote === null) {
-          await item('SKIPPED', 'VARIANT_STOCK_UNSUPPORTED: no per-variation read on this provider');
-          return { status: 'SKIPPED', pushed: false, reason: 'VARIANT_STOCK_UNSUPPORTED' };
-        }
-        if (remote === desired.state) {
-          await this.bumpVersion(store.id, product.id, variant, version);
-          await item('SUCCESS', `IN_SYNC: remote already ${desired.state} (no write)`);
-          return { status: 'SUCCESS', pushed: false, reason: 'IN_SYNC' };
-        }
-      }
-      const cooldownKey = `${store.id}:${product.id}:${variant?.id ?? '-'}`;
-      const last = this.lastPush.get(cooldownKey);
-      if (
-        last &&
-        last.state === desired.state &&
-        Date.now() - last.at < STOCK_SAME_STATE_COOLDOWN_MS
-      ) {
-        await this.bumpVersion(store.id, product.id, variant, version);
-        await item('SUCCESS', `COOLDOWN_SUPPRESSED: ${desired.state} verified <${STOCK_SAME_STATE_COOLDOWN_MS}ms ago (no flapping)`);
-        return { status: 'SUCCESS', pushed: false, reason: 'COOLDOWN_SUPPRESSED' };
-      }
-      // BR-06: the push carries ONLY the status. The contract signature is
-      // (store, ref, state) — no quantity, sentinel or placeholder exists
-      // anywhere on this path.
-      const pushed = await this.pushRemote(provider, storeWithSecrets, store.id, product, variant, mapping, desired.state);
-      if (pushed === null) {
-        await item('SKIPPED', 'VARIANT_STOCK_UNSUPPORTED: no per-variation write on this provider');
-        return { status: 'SKIPPED', pushed: false, reason: 'VARIANT_STOCK_UNSUPPORTED' };
-      }
-      const readBack = await this.readRemote(provider, storeWithSecrets, store.id, product, variant, mapping);
-      if (readBack === desired.state) {
-        return await this.verified(store.id, product, variant, version, cooldownKey, desired, runId, objectType, 'PUSH_VERIFIED');
-      }
-      // One repair attempt, then a STOCK_VERIFY_FAILED issue.
-      await this.pushRemote(provider, storeWithSecrets, store.id, product, variant, mapping, desired.state);
-      const second = await this.readRemote(provider, storeWithSecrets, store.id, product, variant, mapping);
-      if (second === desired.state) {
-        return await this.verified(store.id, product, variant, version, cooldownKey, desired, runId, objectType, 'REPAIRED_AFTER_RETRY');
-      }
-      await this.runs.upsertIssue({
+    const quantityCapable =
+      caps.stockQuantity === true &&
+      (variant
+        ? typeof provider.publishVariantStockQuantity === 'function'
+        : typeof provider.publishStockQuantity === 'function');
+    const plan = planFor(
+      caps.stockStatusFidelity,
+      quantityCapable,
+      desired.qty,
+      desired.path,
+      desired.threshold,
+      opts.audit,
+      !mapping?.lastEvaluatedVersion,
+    );
+    const record = (status: string, reason: string) =>
+      this.runs.recordItem(runId, {
         storeId: store.id,
-        code: 'STOCK_VERIFY_FAILED',
-        objectType,
-        objectKey,
         productId: product.id,
-        field: variant?.id,
-        message: `Stock push unverified after repair: pushed ${desired.state} (qty ${desired.qty}) but remote reads ${second}.`,
+        objectType,
+        status,
+        reason,
+        auditLevel: 'G',
       });
-      await item('FAILED', `STOCK_VERIFY_FAILED: pushed ${desired.state} but remote reads ${second} after repair`);
-      // No version bump: a later change retries the push.
-      return { status: 'FAILED', pushed: true, reason: 'STOCK_VERIFY_FAILED' };
+
+    try {
+      if (plan.kind === 'quantity') {
+        return await this.pushQuantityPlan(
+          provider, storeWithSecrets, store, product, variant, mapping,
+          desired, plan, version, record,
+        );
+      }
+      return await this.pushStatusPlan(
+        provider, storeWithSecrets, store, product, variant, mapping,
+        desired, version, record,
+      );
     } catch (err) {
       if (isVariantStockUnsupported(err)) {
         await this.runs.upsertIssue({
@@ -574,6 +646,162 @@ export class StockStatusSyncService implements OnModuleInit {
       }
       throw err;
     }
+  }
+
+  /**
+   * Legacy status-only executor (P13 above-band for `faithful` /
+   * status-only bridges, and the `always` path): recheck first (zero is a
+   * forced push), push only on difference, cooldown-suppressed reflaps,
+   * read-back verify with one repair attempt, then STOCK_VERIFY_FAILED.
+   */
+  private async pushStatusPlan(
+    provider: CommerceProvider,
+    sws: StoreWithSecrets,
+    store: any,
+    product: any,
+    variant: any | null,
+    mapping: any,
+    desired: StockDesired,
+    version: string,
+    record: (status: string, reason: string) => Promise<unknown>,
+  ): Promise<StockTargetResult> {
+    const objectKey = `stock:${store.id}:${product.id}:${variant?.id ?? '-'}`;
+    const objectType = variant ? 'VARIANT' : 'PRODUCT';
+    // Below threshold (and audit re-verification): recheck first, push
+    // only on difference. Zero is a forced push + read-back verify.
+    if (desired.path !== 'zero') {
+      const remote = await this.readRemote(provider, sws, store.id, product, variant, mapping);
+      if (remote === null) {
+        await record('SKIPPED', 'VARIANT_STOCK_UNSUPPORTED: no per-variation read on this provider');
+        return { status: 'SKIPPED', pushed: false, reason: 'VARIANT_STOCK_UNSUPPORTED' };
+      }
+      if (remote === desired.state) {
+        await this.bumpVersion(store.id, product.id, variant, version);
+        await record('SUCCESS', `IN_SYNC: remote already ${desired.state} (no write)`);
+        return { status: 'SUCCESS', pushed: false, reason: 'IN_SYNC' };
+      }
+    }
+    const cooldownKey = `${store.id}:${product.id}:${variant?.id ?? '-'}`;
+    if (this.cooldownHit(cooldownKey, desired.state, null)) {
+      await this.bumpVersion(store.id, product.id, variant, version);
+      await record('SUCCESS', `COOLDOWN_SUPPRESSED: ${desired.state} verified <${STOCK_SAME_STATE_COOLDOWN_MS}ms ago (no flapping)`);
+      return { status: 'SUCCESS', pushed: false, reason: 'COOLDOWN_SUPPRESSED' };
+    }
+    // P13 above-band status push carries ONLY the status (Woo: `stock_status`
+    // with remote management quantities NEVER enabled; bridge: `{status}`).
+    const pushed = await this.pushRemote(provider, sws, store.id, product, variant, mapping, desired.state);
+    if (pushed === null) {
+      await record('SKIPPED', 'VARIANT_STOCK_UNSUPPORTED: no per-variation write on this provider');
+      return { status: 'SKIPPED', pushed: false, reason: 'VARIANT_STOCK_UNSUPPORTED' };
+    }
+    const settledState = await this.settledRead(() =>
+      this.readRemote(provider, sws, store.id, product, variant, mapping),
+    );
+    if (settledState.values.includes(desired.state)) {
+      return await this.verified(store.id, product, variant, version, cooldownKey, desired, record, objectType, 'PUSH_VERIFIED', null);
+    }
+    // One repair attempt, then a STOCK_VERIFY_FAILED issue.
+    await this.pushRemote(provider, sws, store.id, product, variant, mapping, desired.state);
+    const second = await this.readRemote(provider, sws, store.id, product, variant, mapping);
+    if (second === desired.state) {
+      return await this.verified(store.id, product, variant, version, cooldownKey, desired, record, objectType, 'REPAIRED_AFTER_RETRY', null);
+    }
+    await this.runs.upsertIssue({
+      storeId: store.id,
+      code: 'STOCK_VERIFY_FAILED',
+      objectType,
+      objectKey,
+      productId: product.id,
+      field: variant?.id,
+      message: `Stock push unverified after repair: pushed ${desired.state} (qty ${desired.qty}) but remote reads ${second}.`,
+    });
+    await record('FAILED', `STOCK_VERIFY_FAILED: pushed ${desired.state} but remote reads ${second} after repair`);
+    // No version bump: a later change retries the push.
+    return { status: 'FAILED', pushed: true, reason: 'STOCK_VERIFY_FAILED' };
+  }
+
+  /**
+   * P13 quantity executor (zero / 1–5 exact / audit-capped bands):
+   * recheck-first on non-zero bands when the remote quantity is observable
+   * (a matching remote is IN_SYNC_QTY with no write; an unobservable remote
+   * proceeds to push), forced push on zero, cooldown keyed on
+   * (state + wire qty) so unit steps are never suppressed, quantity
+   * read-back verify with one repair attempt, then STOCK_VERIFY_FAILED.
+   * When the quantity is unobservable after both attempts, a matching
+   * status read-back still verifies (PUSH_VERIFIED_STATUS_FALLBACK) —
+   * never a silent verify-pass.
+   */
+  private async pushQuantityPlan(
+    provider: CommerceProvider,
+    sws: StoreWithSecrets,
+    store: any,
+    product: any,
+    variant: any | null,
+    mapping: any,
+    desired: StockDesired,
+    plan: StockPushPlan,
+    version: string,
+    record: (status: string, reason: string) => Promise<unknown>,
+  ): Promise<StockTargetResult> {
+    const objectKey = `stock:${store.id}:${product.id}:${variant?.id ?? '-'}`;
+    const objectType = variant ? 'VARIANT' : 'PRODUCT';
+    const cooldownKey = `${store.id}:${product.id}:${variant?.id ?? '-'}`;
+    const qtyDesired: StockDesired = { ...desired, state: plan.state, qty: plan.wireQty };
+
+    if (desired.path !== 'zero') {
+      const remoteQty = await this.readQuantity(provider, sws, store.id, product, variant, mapping);
+      if (remoteQty === null && variant && !this.hasVariantQuantityRead(provider)) {
+        await record('SKIPPED', 'VARIANT_STOCK_UNSUPPORTED: no per-variation quantity read on this provider');
+        return { status: 'SKIPPED', pushed: false, reason: 'VARIANT_STOCK_UNSUPPORTED' };
+      }
+      if (remoteQty !== null && remoteQty === plan.wireQty) {
+        await this.bumpVersion(store.id, product.id, variant, version);
+        await record('SUCCESS', `IN_SYNC_QTY: remote already ${plan.wireQty} (no write)`);
+        return { status: 'SUCCESS', pushed: false, reason: 'IN_SYNC_QTY' };
+      }
+    }
+    if (this.cooldownHit(cooldownKey, plan.state, plan.wireQty)) {
+      await this.bumpVersion(store.id, product.id, variant, version);
+      await record('SUCCESS', `COOLDOWN_SUPPRESSED: ${plan.state}×${plan.wireQty} verified <${STOCK_SAME_STATE_COOLDOWN_MS}ms ago (no flapping)`);
+      return { status: 'SUCCESS', pushed: false, reason: 'COOLDOWN_SUPPRESSED' };
+    }
+    const pushed = await this.pushQuantity(provider, sws, store.id, product, variant, mapping, plan.wireQty);
+    if (pushed === null) {
+      await record('SKIPPED', 'VARIANT_STOCK_UNSUPPORTED: no per-variation quantity write on this provider');
+      return { status: 'SKIPPED', pushed: false, reason: 'VARIANT_STOCK_UNSUPPORTED' };
+    }
+    const settled = await this.settledRead(() =>
+      this.readQuantity(provider, sws, store.id, product, variant, mapping),
+    );
+    if (settled.values.includes(plan.wireQty)) {
+      return await this.verified(store.id, product, variant, version, cooldownKey, qtyDesired, record, objectType, 'PUSH_VERIFIED_QTY', plan.wireQty);
+    }
+    // One repair attempt.
+    await this.pushQuantity(provider, sws, store.id, product, variant, mapping, plan.wireQty);
+    const second = await this.readQuantity(provider, sws, store.id, product, variant, mapping);
+    if (second === plan.wireQty) {
+      return await this.verified(store.id, product, variant, version, cooldownKey, qtyDesired, record, objectType, 'REPAIRED_AFTER_RETRY_QTY', plan.wireQty);
+    }
+    if (settled.values.every((v) => v === null) && second === null) {
+      // Quantity unobservable on this remote: a matching status still
+      // verifies the projection (loud reason, never silent).
+      const statusBack = await this.readRemote(provider, sws, store.id, product, variant, mapping);
+      if (statusBack === plan.state) {
+        return await this.verified(store.id, product, variant, version, cooldownKey, qtyDesired, record, objectType, 'PUSH_VERIFIED_STATUS_FALLBACK', plan.wireQty);
+      }
+    }
+    await this.runs.upsertIssue({
+      storeId: store.id,
+      code: 'STOCK_VERIFY_FAILED',
+      objectType,
+      objectKey,
+      productId: product.id,
+      field: variant?.id,
+      message: `Stock quantity push unverified after repair: pushed ${plan.wireQty} (state ${plan.state}, ERP qty ${desired.qty}) but remote reads ${second}.`,
+    });
+    await record('FAILED', `STOCK_VERIFY_FAILED: pushed qty ${plan.wireQty} but remote reads ${second} after repair`);
+    // No version bump: a later change retries the push.
+    return { status: 'FAILED', pushed: true, reason: 'STOCK_VERIFY_FAILED' };
   }
 
   // ── Daily audit (BullMQ repeatable `0 3 * * *` Asia/Dhaka) ────────────
@@ -691,20 +919,15 @@ export class StockStatusSyncService implements OnModuleInit {
     version: string,
     cooldownKey: string,
     desired: StockDesired,
-    runId: string,
+    record: (status: string, reason: string) => Promise<unknown>,
     objectType: string,
     reason: string,
+    wireQty: number | null,
   ): Promise<StockTargetResult> {
-    this.lastPush.set(cooldownKey, { state: desired.state, at: Date.now() });
+    this.markPushed(cooldownKey, desired.state, wireQty);
     await this.bumpVersion(storeId, product.id, variant, version);
-    await this.runs.recordItem(runId, {
-      storeId,
-      productId: product.id,
-      objectType,
-      status: 'SUCCESS',
-      reason: `${reason}: remote ${desired.state} verified by read-back (qty ${desired.qty})`,
-      auditLevel: 'G',
-    });
+    const qtyNote = wireQty === null ? `(qty ${desired.qty})` : `(wire ${wireQty}, ERP ${desired.qty})`;
+    await record('SUCCESS', `${reason}: remote ${desired.state} verified by read-back ${qtyNote}`);
     // Drain: a commit that landed mid-push must not wait for the audit.
     const fresh = await this.computeVersion(product, variant).catch(() => null);
     if (fresh && fresh > version) {
@@ -892,6 +1115,120 @@ export class StockStatusSyncService implements OnModuleInit {
       }
     }
     await provider.publishStockState(sws, { providerId: mapping.externalId }, state);
+    return true;
+  }
+
+  /** P13 flapping guard keyed on (state + wire qty): unit steps never suppress. */
+  private cooldownHit(key: string, state: StockState, qty: number | null): boolean {
+    const last = this.lastPush.get(key);
+    return (
+      !!last &&
+      last.state === state &&
+      last.qty === qty &&
+      Date.now() - last.at < STOCK_SAME_STATE_COOLDOWN_MS
+    );
+  }
+
+  private markPushed(key: string, state: StockState, qty: number | null): void {
+    this.lastPush.set(key, { state, qty, at: Date.now() });
+  }
+
+  private hasVariantQuantityRead(provider: CommerceProvider): boolean {
+    return typeof provider.readVariantStockQuantity === 'function';
+  }
+
+  /**
+   * P13 quantity read-back: exact remote units when observable, null when
+   * the provider cannot observe a quantity (engine falls back to a status
+   * read-back — never a silent verify-pass). A variant target without a
+   * variant quantity reader yields null (the caller maps it to
+   * VARIANT_STOCK_UNSUPPORTED, never to a product-level quantity).
+   */
+  private async readQuantity(
+    provider: CommerceProvider,
+    sws: StoreWithSecrets,
+    storeId: string,
+    product: any,
+    variant: any | null,
+    mapping: any,
+  ): Promise<number | null> {
+    void storeId;
+    if (variant) {
+      const productMapping = await (this.prisma as any).storeProductMapping.findUnique({
+        where: { storeId_productId: { storeId, productId: product.id } },
+      });
+      if (!productMapping) return null;
+      const parentRef: RemoteRef = { providerId: productMapping.externalId };
+      const variantRef: RemoteRef = { providerId: mapping.externalId };
+      try {
+        if (typeof provider.readVariantStockQuantity !== 'function') return null;
+        return await provider.readVariantStockQuantity(sws, parentRef, variantRef);
+      } catch (err) {
+        if (isVariantStockUnsupported(err)) return null;
+        throw err;
+      }
+    }
+    if (typeof provider.readStockQuantity !== 'function') return null;
+    return provider.readStockQuantity(sws, { providerId: mapping.externalId });
+  }
+
+  /**
+   * Settled read-back: remotes serve stale values for seconds after a
+   * write. Poll (reads × delay) for the expected value before concluding
+   * a mismatch — a lagging read must trigger patience, not a repair push
+   * plus a false STOCK_VERIFY_FAILED issue.
+   */
+  private async settledRead(
+    read: () => Promise<StockState | number | null>,
+  ): Promise<{ values: (StockState | number | null)[] }> {
+    const values: (StockState | number | null)[] = [];
+    for (let i = 0; i < STOCK_VERIFY.reads; i++) {
+      if (i > 0 && STOCK_VERIFY.delayMs > 0) {
+        await new Promise((r) => setTimeout(r, STOCK_VERIFY.delayMs));
+      }
+      try {
+        values.push(await read());
+      } catch {
+        values.push(null);
+      }
+    }
+    return { values };
+  }
+
+  /**
+   * P13 quantity push: exact wire units via the provider's native shape
+   * (Woo `stock_quantity`, Shopify `InventoryLevel`, bridge `quantity`).
+   * Variant targets without a variant quantity writer yield null (the
+   * caller maps it to VARIANT_STOCK_UNSUPPORTED).
+   */
+  private async pushQuantity(
+    provider: CommerceProvider,
+    sws: StoreWithSecrets,
+    storeId: string,
+    product: any,
+    variant: any | null,
+    mapping: any,
+    qty: number,
+  ): Promise<boolean | null> {
+    void storeId;
+    if (variant) {
+      const productMapping = await (this.prisma as any).storeProductMapping.findUnique({
+        where: { storeId_productId: { storeId, productId: product.id } },
+      });
+      if (!productMapping) return null;
+      const parentRef: RemoteRef = { providerId: productMapping.externalId };
+      const variantRef: RemoteRef = { providerId: mapping.externalId };
+      try {
+        if (typeof provider.publishVariantStockQuantity !== 'function') return null;
+        await provider.publishVariantStockQuantity(sws, parentRef, variantRef, qty);
+        return true;
+      } catch (err) {
+        if (isVariantStockUnsupported(err)) return null;
+        throw err;
+      }
+    }
+    if (typeof provider.publishStockQuantity !== 'function') return null;
+    await provider.publishStockQuantity(sws, { providerId: mapping.externalId }, qty);
     return true;
   }
 

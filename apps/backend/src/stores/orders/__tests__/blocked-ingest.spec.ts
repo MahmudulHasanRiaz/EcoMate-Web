@@ -202,6 +202,11 @@ describe('P6 blocked-ingest (BR-13/BR-14/BR-15)', () => {
   });
 
   it('stock shortfall keeps the order with STOCK_SHORTFALL (BR-16)', async () => {
+    // NOTE (P13): this is the OrdersService.create() contract — unchanged.
+    // ZERO_STOCK_REJECT lives one layer up, in StoreOrderIngestService, and
+    // fires BEFORE create() is ever called. A zero-stock external order
+    // therefore never reaches this path; a nonzero shortfall still lands
+    // here and is flagged, never thrown.
     (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(INITIAL);
     (prisma.product.findMany as jest.Mock).mockResolvedValue([{
       id: 'prod-2', basePrice: 500, salePrice: null, isActive: true,
@@ -291,7 +296,7 @@ describe('P6 blocked-ingest (BR-13/BR-14/BR-15)', () => {
     expect(createBody).not.toContain('statusId');
   });
 
-  it('BR-13 static: no blockedPolicy / reject switch anywhere in the ingest path', () => {
+  it('BR-13 static: no blockedPolicy / reject switch anywhere in the ingest path (P13 ZERO_STOCK_REJECT is the single explicit exception)', () => {
     const src = (rel: string) =>
       fs.readFileSync(path.resolve(__dirname, '..', '..', '..', rel), 'utf8');
     // Mechanism patterns (comments may discuss the rule; only an actual
@@ -315,6 +320,14 @@ describe('P6 blocked-ingest (BR-13/BR-14/BR-15)', () => {
         expect(body).not.toMatch(re);
       }
     }
+    // P13 deviation (operator-directed, SUPERSEDES BR-13/BR-16 for the zero
+    // case only): the ONE stock-based reject path is explicit
+    // (`ZERO_STOCK_REJECT` in the ingest worker + evidence doc), gated on
+    // ERP-zero per item, with nonzero-shortfall still flagged-not-rejected.
+    // It must never generalize into a policy switch (asserted above).
+    const ingest = src('stores/orders/store-order-ingest.service.ts');
+    expect(ingest).toMatch(/ZERO_STOCK_REJECT/);
+    expect(ingest).toMatch(/DEVIATION from BR-13\/BR-16/);
   });
 });
 

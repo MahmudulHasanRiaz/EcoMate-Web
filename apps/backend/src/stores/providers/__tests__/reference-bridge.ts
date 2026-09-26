@@ -36,7 +36,7 @@ export interface ReferenceBridgeOptions {
   capabilities?: Record<string, unknown>;
   /** Manifest corruption modes (validation vectors). */
   invalidManifest?: 'missing-storeId' | 'not-object' | null;
-  stockStatusFidelity?: 'faithful' | 'unsupported';
+  stockStatusFidelity?: 'faithful' | 'quantized-capped' | 'unsupported';
   /** When false, category re-parent answers 422 capability_unsupported. */
   supportCategoryMove?: boolean;
 }
@@ -59,6 +59,9 @@ const FULL_CAPABILITIES: Record<string, unknown> = {
   orderStatusUpdate: true,
   orderStatusUpdateTargets: ['cancelled', 'completed'],
   stockStatusFidelity: 'faithful',
+  // P13: quantity projection is opt-in on the wire (default status-only
+  // when undeclared — the provider resolves stockQuantity: false).
+  stockQuantity: false,
   contactCheckExposure: true,
   combos: false,
 };
@@ -103,7 +106,8 @@ export class ReferenceBridge {
   readonly categories = new Map<string, any>();
   readonly mediaByHash = new Map<string, any>();
   readonly mediaById = new Map<string, any>();
-  readonly stock = new Map<string, string>(); // productId or `${pid}:${vid}` → in_stock|out_of_stock
+  /** P13: productId or `${pid}:${vid}` → { status, quantity? }. */
+  readonly stock = new Map<string, { status: string; quantity?: number }>();
   orders: ReferenceBridgeOrder[] = referenceBridgeOrders();
   readonly webhooks: { topic: string; url: string }[] = [];
 
@@ -139,8 +143,13 @@ export class ReferenceBridge {
     const full: Record<string, unknown> = { status: 'draft', ...product, id };
     this.products.set(id, full);
     if (full.sku) this.productsBySku.set(String(full.sku), id);
-    this.stock.set(id, stock);
+    this.stock.set(id, { status: stock });
     return id;
+  }
+
+  /** Test seam: read the stored projection (status + optional quantity). */
+  stockOf(key: string): { status: string; quantity?: number } | undefined {
+    return this.stock.get(key);
   }
 
   readonly handle: MockHandler = (url, init) => {
@@ -189,7 +198,7 @@ export class ReferenceBridge {
       const created: Record<string, unknown> = { status: 'draft', ...body, id };
       this.products.set(id, created);
       if (sku) this.productsBySku.set(sku, id);
-      this.stock.set(id, 'in_stock');
+      this.stock.set(id, { status: 'in_stock' });
       return jsonResponse(201, { product: created });
     }
     const productMatch = path.match(/^\/bridge\/v1\/products\/([^/]+)$/);
@@ -299,33 +308,49 @@ export class ReferenceBridge {
       return jsonResponse(201, { media });
     }
 
-    // ── Stock (§4) ───────────────────────────────────────────────────
+    // ── Stock (§4: status + P13 optional quantity) ────────────────────
     const stockMatch = path.match(/^\/bridge\/v1\/products\/([^/]+)\/stock$/);
     if (stockMatch) {
       const id = decodeURIComponent(stockMatch[1]!);
       if (method === 'GET') {
-        return jsonResponse(200, { status: this.stock.get(id) ?? 'out_of_stock' });
+        const cur = this.stock.get(id) ?? { status: 'out_of_stock' };
+        return jsonResponse(200, { ...cur });
       }
       if (method === 'PUT') {
         if (this.capabilities.stockStatusFidelity === 'unsupported') {
           return jsonResponse(422, { error: { code: 'capability_unsupported', message: 'stock is monitor-only' } });
         }
-        this.stock.set(id, String(body?.status ?? 'out_of_stock'));
-        return jsonResponse(200, { ok: true, status: this.stock.get(id) });
+        const status = String(body?.status ?? 'out_of_stock');
+        const next: { status: string; quantity?: number } = { status };
+        // Quantity is stored ONLY when the manifest declared it — an
+        // undeclared bridge stays status-only on the wire (P13 default).
+        if (this.capabilities.stockQuantity === true && body?.quantity !== undefined) {
+          const q = Number(body.quantity);
+          if (Number.isFinite(q)) next.quantity = Math.max(0, Math.floor(q));
+        }
+        this.stock.set(id, next);
+        return jsonResponse(200, { ok: true, ...next });
       }
     }
     const varStockMatch = path.match(/^\/bridge\/v1\/products\/([^/]+)\/variants\/([^/]+)\/stock$/);
     if (varStockMatch) {
       const key = `${decodeURIComponent(varStockMatch[1]!)}:${decodeURIComponent(varStockMatch[2]!)}`;
       if (method === 'GET') {
-        return jsonResponse(200, { status: this.stock.get(key) ?? 'out_of_stock' });
+        const cur = this.stock.get(key) ?? { status: 'out_of_stock' };
+        return jsonResponse(200, { ...cur });
       }
       if (method === 'PUT') {
         if (this.capabilities.stockStatusFidelity === 'unsupported') {
           return jsonResponse(422, { error: { code: 'capability_unsupported', message: 'stock is monitor-only' } });
         }
-        this.stock.set(key, String(body?.status ?? 'out_of_stock'));
-        return jsonResponse(200, { ok: true, status: this.stock.get(key) });
+        const status = String(body?.status ?? 'out_of_stock');
+        const next: { status: string; quantity?: number } = { status };
+        if (this.capabilities.stockQuantity === true && body?.quantity !== undefined) {
+          const q = Number(body.quantity);
+          if (Number.isFinite(q)) next.quantity = Math.max(0, Math.floor(q));
+        }
+        this.stock.set(key, next);
+        return jsonResponse(200, { ok: true, ...next });
       }
     }
 

@@ -305,8 +305,11 @@ export abstract class BaseCommerceProvider implements CommerceProvider {
     void store;
     void ref;
     void state;
-    // BR-08 fidelity gate (P2): an unsupported-fidelity provider throws
-    // BEFORE any HTTP seam is touched — zero writes, provable by call log.
+    // BR-08 remainder gate (P2, narrowed by P13): an unsupported-fidelity
+    // provider throws BEFORE any HTTP seam is touched — zero writes,
+    // provable by call log. `quantized-capped` (Shopify) DOES write
+    // (capped quantities) and is NOT gated here; zero-write now applies
+    // ONLY to `unsupported` paths.
     if (this.declaredCapabilities.stockStatusFidelity === 'unsupported') {
       return Promise.reject(stockWritesUnsupported(this.slug));
     }
@@ -314,10 +317,15 @@ export abstract class BaseCommerceProvider implements CommerceProvider {
   }
 
   /**
-   * P5 variation-scoped stock defaults (BR-06 status-only). Adapters without
-   * true per-variation stock inherit the loud throw — the stock engine maps
-   * it to SKIPPED + VARIANT_STOCK_UNSUPPORTED, never to a product-level push
+   * P5 variation-scoped stock defaults. Adapters without true
+   * per-variation stock inherit the loud throw — the stock engine maps it
+   * to SKIPPED + VARIANT_STOCK_UNSUPPORTED, never to a product-level push
    * of a variant's state.
+   *
+   * P13: quantity-projection methods are deliberately ABSENT from the base
+   * (optional on the contract) — the engine probes `typeof provider.x ===
+   * 'function'` AND `capabilities.stockQuantity` before calling, so a
+   * status-only adapter can never receive a quantity push.
    */
   async readVariantStockState(
     store: StoreWithSecrets,

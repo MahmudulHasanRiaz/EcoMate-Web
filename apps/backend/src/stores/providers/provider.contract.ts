@@ -16,7 +16,23 @@ export { ProviderErrorCategory };
 
 export type ProviderSlug = 'woocommerce' | 'shopify' | 'custom';
 
-export type StockStatusFidelity = 'faithful' | 'unsupported'; // no 'quantized' (BR-06)
+/**
+ * P13 ERP-STOCK-PROJECTION (operator-directed, SUPERSEDES plan BR-06
+ * status-only and BR-08 Shopify zero-write — see
+ * docs/central-commerce/P13-ERP-STOCK-PROJECTION.md):
+ * "ERP calculates the truth; every integrated store only receives a
+ * controlled stock projection." ERP stock = the resolved quantity
+ * (INVENTORY_CONTROLLED → inventory-controlled path, else managed-stock
+ * quantity). Threshold default 5, per-store override kept.
+ * - `faithful` (WooCommerce, quantity-enabled Custom bridge): ERP > 5 →
+ *   IN_STOCK status only (no quantity ever); 1–5 → ACTUAL quantity in real
+ *   time; 0 → OUT_OF_STOCK.
+ * - `quantized-capped` (Shopify): ERP > 5 → capped quantity (threshold,
+ *   default 5); 1–5 → actual quantity real-time; 0 → quantity 0 (no sell).
+ * - `unsupported`: ZERO writes ever (monitor-only drift audit, BR-08
+ *   remainder). Zero-write now applies ONLY to this fidelity.
+ */
+export type StockStatusFidelity = 'faithful' | 'quantized-capped' | 'unsupported';
 export type CategoryModel = 'taxonomy' | 'collection' | 'custom' | 'unsupported';
 export type SeoModel = 'native' | 'plugin-meta' | 'unsupported';
 export type MediaModel = 'url-fetch' | 'binary-upload' | 'unsupported';
@@ -41,7 +57,15 @@ export interface ProviderCapabilities {
   webhooks: boolean;
   orderStatusUpdate: boolean;
   orderStatusUpdateTargets: string[]; // e.g. ['cancelled','completed']
-  stockStatusFidelity: StockStatusFidelity; // drives BR-06/BR-07/BR-08
+  stockStatusFidelity: StockStatusFidelity; // drives P13 projection / BR-08
+  /**
+   * P13: exact-quantity push support in the 1–5 band (and the capped band
+   * for `quantized-capped`). WooCommerce + Shopify: true (native). Custom
+   * bridge: manifest-declared via `capabilities.stockQuantity` (default
+   * false → status-only when undeclared). False → the engine sends status
+   * only, never a quantity.
+   */
+  stockQuantity: boolean;
   contactCheckExposure: boolean; // may expose block data to the channel (BR-14)
   categoryModel: CategoryModel;
   seoModel: SeoModel;
@@ -96,6 +120,22 @@ export type NormalizedVariant = Record<string, unknown>;
 export type NormalizedMedia = Record<string, unknown>;
 export type NormalizedOrder = Record<string, unknown>;
 export type StockState = 'IN_STOCK' | 'OUT_OF_STOCK';
+/**
+ * P13 controlled stock projection: the ERP-resolved quantity (already
+ * threshold-banded by the engine) a provider renders into its native wire
+ * shape. `qty` is an exact unit count the remote must express (Woo
+ * `stock_quantity`, Shopify `InventoryLevel.available`, bridge `quantity`);
+ * `capped` marks the >threshold quantized band (Shopify writes the cap, not
+ * the truth — oversell is impossible since the remote never sees the real
+ * count above the band).
+ */
+export interface StockProjection {
+  state: StockState;
+  /** Exact ERP units for the 1–5 band, the cap for the above band, 0 for zero. */
+  qty: number;
+  /** True when `qty` is the quantized cap (remote must not sell past it). */
+  capped: boolean;
+}
 export interface PushResult {
   ok: boolean;
   ref?: RemoteRef;
@@ -170,16 +210,49 @@ export interface CommerceProvider {
     store: StoreWithSecrets,
     ref: RemoteRef,
   ): Promise<StockState>;
-  /** Never called when fidelity === 'unsupported' (BR-08). */
+  /** Never called when fidelity === 'unsupported' (BR-08 remainder). */
   publishStockState(
     store: StoreWithSecrets,
     ref: RemoteRef,
     state: StockState,
   ): Promise<PushResult>;
   /**
-   * P5 variation-scoped stock (BR-06 status-only, never quantities).
-   * Optional: adapters with `variations: true` and true per-variation stock
-   * implement these (WooCommerce); the base default throws
+   * P13 quantity projection (1–5 exact band, capped above band, 0 = no
+   * sell). Optional so the contract stays backward-compatible; the engine
+   * calls these ONLY when `capabilities.stockQuantity === true` AND the
+   * method exists, otherwise it falls back to the status-only path above.
+   * Never called when fidelity === 'unsupported' (zero writes).
+   */
+  publishStockQuantity?(
+    store: StoreWithSecrets,
+    ref: RemoteRef,
+    qty: number,
+  ): Promise<PushResult>;
+  publishVariantStockQuantity?(
+    store: StoreWithSecrets,
+    parentRef: RemoteRef,
+    variantRef: RemoteRef,
+    qty: number,
+  ): Promise<PushResult>;
+  /**
+   * P13 quantity read-back for verify-after-push. Optional; `null` means
+   * "quantity not observable" and the engine falls back to a status
+   * read-back. Never called when fidelity === 'unsupported' except by the
+   * read-only drift audit (same as readStockState).
+   */
+  readStockQuantity?(
+    store: StoreWithSecrets,
+    ref: RemoteRef,
+  ): Promise<number | null>;
+  readVariantStockQuantity?(
+    store: StoreWithSecrets,
+    parentRef: RemoteRef,
+    variantRef: RemoteRef,
+  ): Promise<number | null>;
+  /**
+   * P5 variation-scoped stock. Adapters with `variations: true` and true
+   * per-variation stock implement these (WooCommerce, Shopify P13,
+   * quantity-enabled bridge); the base default throws
    * `VARIANT_STOCK_UNSUPPORTED` so a missing implementation is loud and the
    * stock engine records SKIPPED instead of pushing to the wrong remote
    * object. `parentRef` is the product-level remote ref, `variantRef` the

@@ -136,9 +136,11 @@ function asBool(v: unknown): boolean | undefined {
 /**
  * Manifest → effective capabilities. Starts from the declared safe
  * defaults; the manifest may only NARROW (true→false), except `costPrice`
- * which it may enable (push-only, BR-23). `combos` is forced false even
- * when the manifest claims true (BR-22). Targets are intersected with the
- * canonical vocabulary. Invalid enum values fall back to declared.
+ * (which it may enable — still push-only, BR-23) and `stockQuantity`
+ * (which it may enable — P13 exact-quantity band; default false means
+ * status-only when undeclared). `combos` is forced false always, BR-22.
+ * Targets are intersected with the canonical vocabulary. Invalid enum
+ * values fall back to declared.
  */
 export function bridgeManifestToCapabilities(
   manifest: BridgeManifest,
@@ -159,6 +161,7 @@ export function bridgeManifestToCapabilities(
   );
   const fidelity =
     mc.stockStatusFidelity === 'faithful' ||
+    mc.stockStatusFidelity === 'quantized-capped' ||
     mc.stockStatusFidelity === 'unsupported'
       ? mc.stockStatusFidelity
       : declared.stockStatusFidelity;
@@ -202,6 +205,10 @@ export function bridgeManifestToCapabilities(
     orderStatusUpdate: narrow('orderStatusUpdate'),
     orderStatusUpdateTargets: targets,
     stockStatusFidelity: fidelity,
+    // P13: the one quantity flag a manifest may enable (status-only when
+    // undeclared — the engine then sends status only, never a quantity).
+    stockQuantity:
+      asBool(mc.stockQuantity) === true ? true : declared.stockQuantity,
     contactCheckExposure:
       asBool(mc.contactCheckExposure) === false
         ? false
@@ -416,6 +423,7 @@ export class CustomBridgeProvider extends BaseCommerceProvider {
     orderStatusUpdate: true,
     orderStatusUpdateTargets: ['cancelled', 'completed'],
     stockStatusFidelity: 'faithful', // status-only recommended; manifest narrows
+    stockQuantity: false, // P13: manifest may enable exact-qty; default status-only
     contactCheckExposure: true,
     categoryModel: 'custom',
     seoModel: 'native',
@@ -1015,7 +1023,7 @@ export class CustomBridgeProvider extends BaseCommerceProvider {
     return { ok: true };
   }
 
-  // ── Stock: status-only push vs zero-write monitor (BR-06/BR-08) ──────
+  // ── Stock: status push vs quantity projection vs zero-write monitor ──
 
   /**
    * Read-only stock state for the drift audit: `GET …/stock` → IN/OUT.
@@ -1035,6 +1043,37 @@ export class CustomBridgeProvider extends BaseCommerceProvider {
       : 'OUT_OF_STOCK';
   }
 
+  /**
+   * P13 quantity read-back: `GET …/stock` → `quantity` when the bridge
+   * reports one, else null (engine falls back to a status read-back).
+   */
+  async readStockQuantity(
+    store: StoreWithSecrets,
+    ref: RemoteRef,
+  ): Promise<number | null> {
+    const body = await this.bridge<{ quantity?: unknown }>(
+      store,
+      'GET',
+      `/bridge/v1/products/${encodeURIComponent(ref.providerId)}/stock`,
+    );
+    const q = Number((body as any)?.quantity);
+    return Number.isFinite(q) ? q : null;
+  }
+
+  async readVariantStockQuantity(
+    store: StoreWithSecrets,
+    parentRef: RemoteRef,
+    variantRef: RemoteRef,
+  ): Promise<number | null> {
+    const body = await this.bridge<{ quantity?: unknown }>(
+      store,
+      'GET',
+      `/bridge/v1/products/${encodeURIComponent(parentRef.providerId)}/variants/${encodeURIComponent(variantRef.providerId)}/stock`,
+    );
+    const q = Number((body as any)?.quantity);
+    return Number.isFinite(q) ? q : null;
+  }
+
   override async readVariantStockState(
     store: StoreWithSecrets,
     parentRef: RemoteRef,
@@ -1051,11 +1090,12 @@ export class CustomBridgeProvider extends BaseCommerceProvider {
   }
 
   /**
-   * Status-only push (BR-06): the PUT body carries ONLY `{status}` — no
-   * quantity field exists in this protocol. When the manifest declares
-   * `unsupported`, throws BEFORE any HTTP write beyond the manifest GET
-   * (zero writes, monitor-only like Shopify — BR-08). A manifest outage
-   * fails closed (throw, retryable) rather than writing blind.
+   * Status push (P13 above-band / status-only bridges): the PUT body
+   * carries ONLY `{status}` — no quantity field exists on this path. When
+   * the manifest declares `unsupported`, throws BEFORE any HTTP write
+   * beyond the manifest GET (zero writes, monitor-only — BR-08 remainder).
+   * A manifest outage fails closed (throw, retryable) rather than writing
+   * blind.
    */
   override async publishStockState(
     store: StoreWithSecrets,
@@ -1098,6 +1138,72 @@ export class CustomBridgeProvider extends BaseCommerceProvider {
       'PUT',
       `/bridge/v1/products/${encodeURIComponent(parentRef.providerId)}/variants/${encodeURIComponent(variantRef.providerId)}/stock`,
       { status: state === 'IN_STOCK' ? 'in_stock' : 'out_of_stock' },
+    );
+    return { ok: true, ref: variantRef };
+  }
+
+  /**
+   * P13 quantity projection (1–5 exact band, 0 = no sell): the PUT body
+   * carries `{status, quantity}` — the manifest quantity field. The engine
+   * calls this ONLY when the manifest declared `stockQuantity: true`;
+   * defensively, when the live manifest says otherwise the adapter degrades
+   * to a status-only push (never a blind quantity write against an
+   * undeclared bridge).
+   */
+  async publishStockQuantity(
+    store: StoreWithSecrets,
+    ref: RemoteRef,
+    qty: number,
+  ): Promise<PushResult> {
+    const n = Math.max(0, Math.floor(qty));
+    const caps = await this.manifestCapabilitiesOrThrow(store);
+    if (caps.stockStatusFidelity === 'unsupported') {
+      throw new ProviderError(
+        '[custom] stock writes are unsupported (BR-08: monitor-only, zero writes)',
+        ProviderErrorCategory.INVALID_REQUEST,
+        'custom',
+      );
+    }
+    if (!caps.stockQuantity) {
+      return this.publishStockState(store, ref, n > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK');
+    }
+    await this.bridge(
+      store,
+      'PUT',
+      `/bridge/v1/products/${encodeURIComponent(ref.providerId)}/stock`,
+      { status: n > 0 ? 'in_stock' : 'out_of_stock', quantity: n },
+    );
+    return { ok: true, ref };
+  }
+
+  async publishVariantStockQuantity(
+    store: StoreWithSecrets,
+    parentRef: RemoteRef,
+    variantRef: RemoteRef,
+    qty: number,
+  ): Promise<PushResult> {
+    const n = Math.max(0, Math.floor(qty));
+    const caps = await this.manifestCapabilitiesOrThrow(store);
+    if (caps.stockStatusFidelity === 'unsupported') {
+      throw new ProviderError(
+        '[custom] stock writes are unsupported (BR-08: monitor-only, zero writes)',
+        ProviderErrorCategory.INVALID_REQUEST,
+        'custom',
+      );
+    }
+    if (!caps.stockQuantity) {
+      return this.publishVariantStockState(
+        store,
+        parentRef,
+        variantRef,
+        n > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK',
+      );
+    }
+    await this.bridge(
+      store,
+      'PUT',
+      `/bridge/v1/products/${encodeURIComponent(parentRef.providerId)}/variants/${encodeURIComponent(variantRef.providerId)}/stock`,
+      { status: n > 0 ? 'in_stock' : 'out_of_stock', quantity: n },
     );
     return { ok: true, ref: variantRef };
   }

@@ -36,12 +36,17 @@
  * productUpdate, slug→handle, publicationState→status (active/draft),
  * customFields→metafields (allowlisted namespaces only, never secrets).
  *
- * Stock is `unsupported` (BR-08): publishStockState/publishVariantStockState
- * are NOT overridden — the base fidelity gate throws BEFORE any HTTP seam
- * is touched (zero writes, provable by call log). readStockState is
- * read-only (product variants' inventory_quantity → IN/OUT) for the daily
- * drift audit, which raises STOCK_DRIFT_MONITOR_ONLY. No quantity,
- * sentinel or placeholder value is ever written (BR-06).
+ * Stock is the P13 ERP projection (`quantized-capped`, SUPERSEDES the
+ * P1–P12 BR-08 zero-write stance — see
+ * docs/central-commerce/P13-ERP-STOCK-PROJECTION.md): ERP > threshold →
+ * capped quantity (threshold, default 5) via `InventoryLevel.set`
+ * (tracked, deny policy — selling stops at the cap, oversell impossible);
+ * 1–5 → actual quantity in real time; 0 → quantity 0 (selling stops).
+ * Location strategy: first location from `GET /locations.json`, cached per
+ * store (a per-store location override is out of scope, noted here).
+ * `inventory_management: 'shopify'` (tracked) is set on push when absent.
+ * Reads stay read-only (product variants' `inventory_quantity` → IN/OUT)
+ * for the drift audit on `unsupported` bridges.
  *
  * Orders: fetchOrders pages REST /orders.json over the reconcile window;
  * pushOrderStatus maps canonical cancelled→POST .../orders/{id}/cancel.json
@@ -428,7 +433,8 @@ export class ShopifyProvider extends BaseCommerceProvider {
     webhooks: true,
     orderStatusUpdate: true,
     orderStatusUpdateTargets: ['CANCELLED', 'FULFILLED'],
-    stockStatusFidelity: 'unsupported', // BR-08: no writes, monitor-only
+    stockStatusFidelity: 'quantized-capped', // P13: capped qty (see header)
+    stockQuantity: true, // native InventoryLevel projection
     contactCheckExposure: true, // via bridge / app proxy
     categoryModel: 'collection',
     seoModel: 'native',
@@ -1209,13 +1215,12 @@ export class ShopifyProvider extends BaseCommerceProvider {
     return { ok: true };
   }
 
-  // ── Stock: read-only (BR-08 — publish stays on the base zero-write gate) ─
+  // ── Stock: P13 quantized-capped projection (read + quantity write) ───
 
   /**
    * Read-only stock state for the drift audit: product variants'
    * `inventory_quantity` summed — any unit available → IN_STOCK, else
-   * OUT_OF_STOCK. Zero writes (BR-08); the audit raises
-   * STOCK_DRIFT_MONITOR_ONLY on mismatch.
+   * OUT_OF_STOCK.
    */
   override async readStockState(store: StoreWithSecrets, ref: RemoteRef): Promise<StockState> {
     const body = await this.rest<{ product?: { variants?: any[] } }>(
@@ -1224,15 +1229,208 @@ export class ShopifyProvider extends BaseCommerceProvider {
       `/products/${encodeURIComponent(ref.providerId)}.json?fields=id,variants`,
     );
     const variants = body.product?.variants ?? [];
-    // NOTE: read path only — `inventory_quantity` is observed here, never
-    // written anywhere in this adapter (BR-06/BR-08).
+    // NOTE: read path only — `inventory_quantity` is observed here; writes
+    // travel exclusively through publishStockQuantity below (P13).
     const total = variants.reduce((sum: number, v: any) => sum + Number(v?.inventory_quantity ?? 0), 0);
     return total > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK';
   }
 
-  // publishStockState / publishVariantStockState are INTENTIONALLY inherited
-  // from BaseCommerceProvider: `unsupported` fidelity throws BEFORE any HTTP
-  // seam is touched (zero writes — asserted by the contract + live suites).
+  /**
+   * P13 quantity read-back for verify-after-push: summed
+   * `inventory_quantity` across the product's variants, or null when the
+   * product cannot be read (engine falls back to a status read-back).
+   */
+  async readStockQuantity(
+    store: StoreWithSecrets,
+    ref: RemoteRef,
+  ): Promise<number | null> {
+    try {
+      const body = await this.rest<{ product?: { variants?: any[] } }>(
+        store,
+        'GET',
+        `/products/${encodeURIComponent(ref.providerId)}.json?fields=id,variants`,
+      );
+      const variants = body.product?.variants ?? [];
+      if (!Array.isArray(variants) || variants.length === 0) return null;
+      return variants.reduce((sum: number, v: any) => sum + Number(v?.inventory_quantity ?? 0), 0);
+    } catch {
+      return null;
+    }
+  }
+
+  async readVariantStockQuantity(
+    store: StoreWithSecrets,
+    parentRef: RemoteRef,
+    variantRef: RemoteRef,
+  ): Promise<number | null> {
+    try {
+      const item = await this.variantNode(store, parentRef, variantRef);
+      const q = Number((item as any)?.inventory_quantity);
+      return Number.isFinite(q) ? q : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Location strategy (P13): the FIRST location from `GET /locations.json`,
+   * cached per store id (instance-scoped like the token cache, so tests
+   * never leak locations between stores). A per-store location override is
+   * explicitly out of scope — noted here so a future override has one seam
+   * to extend (`resolveLocationId`).
+   */
+  private readonly locationCache = new Map<string, string>();
+
+  async resolveLocationId(store: StoreWithSecrets): Promise<string> {
+    const cached = this.locationCache.get(store.id);
+    if (cached) return cached;
+    const body = await this.rest<{ locations?: any[] }>(store, 'GET', '/locations.json?limit=250');
+    const first = (body.locations ?? [])[0];
+    if (first?.id === undefined || first?.id === null) {
+      throw new ProviderError(
+        '[shopify] SHOPIFY_NO_LOCATION: the store exposes no locations — stock projection has no target',
+        ProviderErrorCategory.INVALID_REQUEST,
+        'shopify',
+      );
+    }
+    const id = String(first.id);
+    this.locationCache.set(store.id, id);
+    return id;
+  }
+
+  /** Test seam: forget the cached location (tests assert the re-fetch). */
+  clearLocationCache(storeId?: string): void {
+    if (storeId) this.locationCache.delete(storeId);
+    else this.locationCache.clear();
+  }
+
+  private async variantNode(
+    store: StoreWithSecrets,
+    parentRef: RemoteRef,
+    variantRef: RemoteRef,
+  ): Promise<Record<string, unknown>> {
+    const body = await this.rest<{ product?: { variants?: any[] } }>(
+      store,
+      'GET',
+      `/products/${encodeURIComponent(parentRef.providerId)}.json?fields=id,variants`,
+    );
+    const variants = (body.product?.variants ?? []) as any[];
+    const hit = variants.find((v: any) => String(v?.id) === String(variantRef.providerId));
+    if (!hit) {
+      throw new ProviderError(
+        `[shopify] unknown variant ${variantRef.providerId} of ${parentRef.providerId}`,
+        ProviderErrorCategory.REMOTE_NOT_FOUND,
+        'shopify',
+      );
+    }
+    return hit as Record<string, unknown>;
+  }
+
+  /**
+   * Ensure the variant is tracked (`inventory_management: 'shopify'`).
+   * Set on push when absent — untracked variants ignore InventoryLevel, so
+   * without this the projection would silently not apply. Deny policy:
+   * tracked inventory with `inventory_policy: 'deny'` stops selling at 0
+   * (the 0-band guarantee); the policy travels on the same update when the
+   * remote accepts it, and is best-effort otherwise (the quantity itself is
+   * the enforcement — a 0 available sells nothing regardless).
+   */
+  private async ensureTracked(
+    store: StoreWithSecrets,
+    variantId: string,
+    inventoryItemId: string,
+  ): Promise<void> {
+    await this.rest(store, 'PUT', `/variants/${encodeURIComponent(variantId)}.json`, {
+      variant: { id: variantId, inventory_management: 'shopify', inventory_policy: 'deny' },
+    }).catch(() => null);
+    // Inventory-item tracking flag (older stores gate levels on it).
+    await this.rest(store, 'PUT', `/inventory_items/${encodeURIComponent(inventoryItemId)}.json`, {
+      inventory_item: { id: inventoryItemId, tracked: true },
+    }).catch(() => null);
+  }
+
+  /**
+   * P13 capped quantity push. The engine passes the already-banded wire
+   * qty (cap for the above band, exact units for 1–5, 0 for zero) — the
+   * adapter writes exactly what it is given via `InventoryLevel.set`
+   * (`available`, disconnect-if-necessary semantics), never the ERP truth
+   * above the cap. One bounded product read stages the variant's
+   * `inventory_item_id`; tracked + deny are ensured on every push (cheap,
+   * idempotent, and required for the 0-band no-sell guarantee).
+   */
+  async publishStockQuantity(
+    store: StoreWithSecrets,
+    ref: RemoteRef,
+    qty: number,
+  ): Promise<PushResult> {
+    const n = Math.max(0, Math.floor(qty));
+    const locationId = await this.resolveLocationId(store);
+    const body = await this.rest<{ product?: { variants?: any[] } }>(
+      store,
+      'GET',
+      `/products/${encodeURIComponent(ref.providerId)}.json?fields=id,variants`,
+    );
+    const variants = (body.product?.variants ?? []) as any[];
+    if (variants.length === 0) {
+      throw new ProviderError(
+        `[shopify] SHOPIFY_NO_VARIANTS: product ${ref.providerId} exposes no variants to project stock onto`,
+        ProviderErrorCategory.REMOTE_NOT_FOUND,
+        'shopify',
+      );
+    }
+    // Simple products project onto their single (default) variant; variable
+    // products are projected per-variant via publishVariantStockQuantity —
+    // a product-level call spreads nothing, it targets the default variant.
+    const target = variants[0] as any;
+    await this.setLevel(store, locationId, String(target.id), String(target.inventory_item_id), n);
+    return { ok: true, ref };
+  }
+
+  async publishVariantStockQuantity(
+    store: StoreWithSecrets,
+    parentRef: RemoteRef,
+    variantRef: RemoteRef,
+    qty: number,
+  ): Promise<PushResult> {
+    const n = Math.max(0, Math.floor(qty));
+    const locationId = await this.resolveLocationId(store);
+    const node = await this.variantNode(store, parentRef, variantRef);
+    await this.setLevel(
+      store,
+      locationId,
+      String((node as any).id ?? variantRef.providerId),
+      String((node as any).inventory_item_id ?? ''),
+      n,
+    );
+    return { ok: true, ref: variantRef };
+  }
+
+  private async setLevel(
+    store: StoreWithSecrets,
+    locationId: string,
+    variantId: string,
+    inventoryItemId: string,
+    qty: number,
+  ): Promise<void> {
+    if (!inventoryItemId) {
+      throw new ProviderError(
+        `[shopify] SHOPIFY_NO_INVENTORY_ITEM: variant ${variantId} exposes no inventory_item_id`,
+        ProviderErrorCategory.REMOTE_NOT_FOUND,
+        'shopify',
+      );
+    }
+    await this.ensureTracked(store, variantId, inventoryItemId);
+    await this.rest(store, 'POST', '/inventory_levels/set.json', {
+      location_id: locationId,
+      inventory_item_id: inventoryItemId,
+      available: qty,
+    });
+  }
+
+  // NOTE: publishStockState / publishVariantStockState are INTENTIONALLY
+  // inherited from BaseCommerceProvider (P13): the engine never calls them
+  // on a `quantized-capped` provider — quantity projection owns every band
+  // (status is derived from the level, not pushed alongside it).
 
   // ── Orders: paged fetch, CANCELLED/FULFILLED push, read-back ──────────
 

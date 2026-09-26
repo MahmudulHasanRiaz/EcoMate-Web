@@ -6,7 +6,7 @@
  * Service-level with mocked Prisma/Orders/Runs; the provider side uses the
  * real FakeProvider (P2 fixture contract) for the reconcile window vectors.
  */
-import { StoreOrderIngestService } from '../store-order-ingest.service';
+import { StoreOrderIngestService, ZERO_STOCK_REJECT } from '../store-order-ingest.service';
 import { StoreOrderReconcileService } from '../store-order-reconcile.service';
 import { FakeProvider } from '../../providers/__tests__/fake.provider';
 import { seedFakeProvider, buildOrderFixtures } from '../../providers/__tests__/fixtures';
@@ -19,7 +19,11 @@ function mockPrisma() {
     storeOrderStatusMap: { findUnique: jest.fn(), create: jest.fn() },
     storeSkuMapping: { findUnique: jest.fn(), upsert: jest.fn() },
     productVariant: { findUnique: jest.fn() },
-    product: { findFirst: jest.fn() },
+    // P13 ZERO_STOCK_REJECT reads ERP stock here: default null (unresolvable
+    // → never reject) so pre-existing vectors keep their behavior; the
+    // zero-reject suite below stages real levels per case.
+    product: { findFirst: jest.fn(), findUnique: jest.fn().mockResolvedValue(null) },
+    physicalInventory: { findMany: jest.fn().mockResolvedValue([]) },
     orderStatus: { findFirst: jest.fn() },
     order: { findUnique: jest.fn(), update: jest.fn() },
     syncRun: { update: jest.fn().mockResolvedValue({}) },
@@ -364,5 +368,138 @@ describe('P6 order suite — failed webhook recovered by reconciliation', () => 
     expect(res.created).toBe(true);
     const [, , , internal] = orders.create.mock.calls[0];
     expect(internal.idempotencyKey).toBe(`store:s1:order:${fixture.id}`);
+  });
+});
+
+describe('P13 ZERO_STOCK_REJECT — operator-directed deviation from BR-13/BR-16', () => {
+  const RAW = {
+    id: 'ext-zero-1', status: 'processing', total: 250, currency: 'BDT',
+    createdAt: '2026-09-23T13:00:00.000Z',
+    items: [{ sku: 'SKU-IN-001', qty: 1, price: 250 }],
+    customer: { phone: '01700000001', name: 'Sara' },
+  };
+
+  function zeroPrisma(erp: Record<string, any> | null) {
+    const prisma = mockPrisma();
+    prisma.store.findUnique.mockResolvedValue({ id: 's1', kind: 'CUSTOM', name: 'Bridge' });
+    seedStatusMaps(prisma);
+    prisma.storeOrderMapping.findUnique.mockResolvedValue(null);
+    prisma.storeSkuMapping.findUnique.mockResolvedValue(null);
+    prisma.productVariant.findUnique.mockResolvedValue(null);
+    prisma.product.findFirst.mockResolvedValue({ id: 'prod-1' });
+    // ERP stock resolution: null (default mock) = unresolvable → never reject.
+    prisma.product.findUnique.mockResolvedValue(erp);
+    return prisma;
+  }
+
+  it('managed stock zero → order NOT created, explicit reason + issue + FAILED item', async () => {
+    const prisma = zeroPrisma({
+      id: 'prod-1', availabilityMode: 'MANAGED_STOCK', managedStockQuantity: 0, reservedStock: 0,
+    });
+    const { svc, orders, runs } = buildIngest(prisma);
+    await expect(
+      svc.ingest('s1', { ...RAW }, { type: 'WEBHOOK', runId: 'run-1' }),
+    ).rejects.toThrow(new RegExp(ZERO_STOCK_REJECT));
+    expect(orders.create).not.toHaveBeenCalled();
+    expect(prisma.storeOrderMapping.create).not.toHaveBeenCalled();
+    expect(runs.upsertIssue).toHaveBeenCalledWith(
+      expect.objectContaining({ storeId: 's1', code: ZERO_STOCK_REJECT }),
+    );
+    expect(runs.recordItem).toHaveBeenCalledWith(
+      'run-1',
+      expect.objectContaining({ status: 'FAILED', reason: expect.stringContaining(ZERO_STOCK_REJECT) }),
+    );
+  });
+
+  it('ALWAYS_OUT_OF_STOCK → rejected; ALWAYS_IN_STOCK → ingested', async () => {
+    const outPrisma = zeroPrisma({ id: 'prod-1', availabilityMode: 'ALWAYS_OUT_OF_STOCK' });
+    const outSvc = buildIngest(outPrisma);
+    await expect(outSvc.svc.ingest('s1', { ...RAW }, { type: 'WEBHOOK' })).rejects.toThrow(
+      new RegExp(ZERO_STOCK_REJECT),
+    );
+    expect(outSvc.orders.create).not.toHaveBeenCalled();
+
+    const inPrisma = zeroPrisma({ id: 'prod-1', availabilityMode: 'ALWAYS_IN_STOCK' });
+    const inSvc = buildIngest(inPrisma);
+    const res = await inSvc.svc.ingest('s1', { ...RAW }, { type: 'WEBHOOK' });
+    expect(res.created).toBe(true);
+    expect(inSvc.orders.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('variant zero → rejected with the variant SKU in the reason', async () => {
+    const prisma = zeroPrisma({
+      id: 'prod-1', availabilityMode: 'MANAGED_STOCK', managedStockQuantity: 10, reservedStock: 0,
+    });
+    prisma.productVariant.findUnique.mockResolvedValue({
+      id: 'var-1', productId: 'prod-1', managedStockQuantity: 0, reservedStock: 0,
+    });
+    const { svc, orders } = buildIngest(prisma);
+    await expect(
+      svc.ingest('s1', { ...RAW }, { type: 'WEBHOOK' }),
+    ).rejects.toThrow(/SKU-IN-001/);
+    expect(orders.create).not.toHaveBeenCalled();
+  });
+
+  it('insufficient-but-nonzero → NOT rejected (BR-16 shortfall path preserved)', async () => {
+    const prisma = zeroPrisma({
+      id: 'prod-1', availabilityMode: 'MANAGED_STOCK', managedStockQuantity: 2, reservedStock: 0,
+    });
+    const { svc, orders } = buildIngest(prisma);
+    const res = await svc.ingest(
+      's1',
+      { ...RAW, items: [{ sku: 'SKU-IN-001', qty: 5, price: 250 }] },
+      { type: 'WEBHOOK' },
+    );
+    // Ingest passes through; the real create() flags STOCK_SHORTFALL (BR-16).
+    expect(res.created).toBe(true);
+    expect(orders.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('product-less (unmatched SKU) → never a reject trigger', async () => {
+    const prisma = zeroPrisma({
+      id: 'prod-1', availabilityMode: 'MANAGED_STOCK', managedStockQuantity: 0, reservedStock: 0,
+    });
+    prisma.product.findFirst.mockResolvedValue(null);
+    const { svc, orders, runs } = buildIngest(prisma);
+    const res = await svc.ingest('s1', { ...RAW }, { type: 'WEBHOOK', runId: 'run-1' });
+    expect(res.created).toBe(true);
+    expect(orders.create).toHaveBeenCalledTimes(1);
+    expect(runs.upsertIssue).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'UNMATCHED_SKU' }),
+    );
+  });
+
+  it('mixed zero + nonzero lines → the zero line rejects the whole order', async () => {
+    const prisma = zeroPrisma({
+      id: 'prod-1', availabilityMode: 'MANAGED_STOCK', managedStockQuantity: 0, reservedStock: 0,
+    });
+    prisma.storeSkuMapping.findUnique.mockImplementation(async ({ where }: any) =>
+      where?.storeId_sku?.sku === 'SKU-HAS-STOCK'
+        ? { productId: 'prod-9', variantId: null }
+        : null,
+    );
+    prisma.product.findFirst.mockImplementation(async ({ where }: any) =>
+      where?.sku === 'SKU-HAS-STOCK' ? null : { id: 'prod-1' },
+    );
+    prisma.product.findUnique.mockImplementation(async ({ where }: any) =>
+      where?.id === 'prod-9'
+        ? { id: 'prod-9', availabilityMode: 'MANAGED_STOCK', managedStockQuantity: 9, reservedStock: 0 }
+        : { id: 'prod-1', availabilityMode: 'MANAGED_STOCK', managedStockQuantity: 0, reservedStock: 0 },
+    );
+    const { svc, orders } = buildIngest(prisma);
+    await expect(
+      svc.ingest(
+        's1',
+        {
+          ...RAW,
+          items: [
+            { sku: 'SKU-HAS-STOCK', qty: 1, price: 100 },
+            { sku: 'SKU-IN-001', qty: 1, price: 250 },
+          ],
+        },
+        { type: 'WEBHOOK' },
+      ),
+    ).rejects.toThrow(new RegExp(ZERO_STOCK_REJECT));
+    expect(orders.create).not.toHaveBeenCalled();
   });
 });

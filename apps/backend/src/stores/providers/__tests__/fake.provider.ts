@@ -61,7 +61,9 @@ interface FakeRemoteProduct {
   fields: Record<string, unknown>;
   publication: 'published' | 'draft';
   stockState: StockState;
-  variants: Map<string, { ref: RemoteRef; data: Record<string, unknown>; stockState: StockState }>;
+  /** P13: remote countable units (exact band / capped band / 0). */
+  stockQuantity: number | null;
+  variants: Map<string, { ref: RemoteRef; data: Record<string, unknown>; stockState: StockState; stockQuantity: number | null }>;
 }
 
 function skuOf(input: Record<string, unknown>): string {
@@ -96,7 +98,8 @@ export class FakeProvider implements CommerceProvider {
     webhooks: true,
     orderStatusUpdate: true,
     orderStatusUpdateTargets: ['cancelled', 'completed'],
-    stockStatusFidelity: 'faithful', // status-only, never quantities (BR-06)
+    stockStatusFidelity: 'faithful', // P13 projection-capable (status + exact qty)
+    stockQuantity: true, // exact-quantity band supported
     contactCheckExposure: true,
     categoryModel: 'custom',
     seoModel: 'native',
@@ -152,6 +155,24 @@ export class FakeProvider implements CommerceProvider {
 
   constructor(readonly webhookSecret = 'fake-webhook-secret') {}
 
+  /**
+   * P13 test seam: stage the fake as a `quantized-capped` (Shopify-like)
+   * provider. `resolveCapabilities` reports the override; the quantity
+   * methods then cap writes at `capQty` (default 5) exactly like the
+   * engine's wire-qty rule, so the stock suite can assert the capped band
+   * without HTTP.
+   */
+  private fidelityOverride: 'faithful' | 'quantized-capped' | 'unsupported' | null = null;
+  private capQty = 5;
+
+  setFidelity(
+    fidelity: 'faithful' | 'quantized-capped' | 'unsupported' | null,
+    capQty = 5,
+  ): void {
+    this.fidelityOverride = fidelity;
+    this.capQty = capQty;
+  }
+
   // ── Seeding (fixtures only) ─────────────────────────────────────────
 
   directSeed(
@@ -167,6 +188,7 @@ export class FakeProvider implements CommerceProvider {
       fields: { ...input },
       publication,
       stockState,
+      stockQuantity: stockState === 'IN_STOCK' ? null : 0,
       variants: new Map(),
     };
     for (const v of variants) {
@@ -175,6 +197,7 @@ export class FakeProvider implements CommerceProvider {
         ref: { providerId: `fake-var-${this.counters.variant}` },
         data: { ...v },
         stockState: 'IN_STOCK',
+        stockQuantity: null,
       });
     }
     this.products.set(providerId, record);
@@ -244,7 +267,10 @@ export class FakeProvider implements CommerceProvider {
   async resolveCapabilities(): Promise<ProviderCapabilities> {
     this.maybeFail('resolveCapabilities');
     this.log('resolveCapabilities');
-    return { ...this.declaredCapabilities };
+    return {
+      ...this.declaredCapabilities,
+      ...(this.fidelityOverride ? { stockStatusFidelity: this.fidelityOverride } : {}),
+    };
   }
 
   async testConnection(): Promise<TestConnectionResult> {
@@ -360,6 +386,7 @@ export class FakeProvider implements CommerceProvider {
       fields: initial,
       publication: 'draft',
       stockState: 'IN_STOCK',
+      stockQuantity: null,
       variants: new Map(),
     });
     this.productsBySku.set(sku, ref.providerId);
@@ -393,6 +420,7 @@ export class FakeProvider implements CommerceProvider {
           ref: { providerId: `fake-var-${this.counters.variant}` },
           data: {},
           stockState: 'IN_STOCK',
+          stockQuantity: null,
         };
         record.variants.set(sku, slot);
       }
@@ -474,7 +502,7 @@ export class FakeProvider implements CommerceProvider {
     return { ok: true };
   }
 
-  // ── Contract: stock (faithful, status-only — BR-06) ──────────────────
+  // ── Contract: stock (P13 projection: status + exact/capped qty) ─────
 
   async readStockState(
     store: StoreWithSecrets,
@@ -509,11 +537,89 @@ export class FakeProvider implements CommerceProvider {
         this.slug,
       );
     }
-    // Status-only: the logged detail carries { ref, state } and MUST never
-    // carry a quantity (asserted by the contract suite, BR-06).
+    // Above-band path: status ONLY — the logged detail carries { ref, state }
+    // and MUST never carry a quantity (asserted by the P13 matrix suite).
     record.stockState = state;
+    record.stockQuantity = null;
     this.log('publishStockState', { ref, state });
     return { ok: true, ref };
+  }
+
+  /**
+   * P13 exact/capped quantity push. In `quantized-capped` override mode the
+   * fake enforces the cap itself (writes min(qty, cap)) so the suite
+   * observes the same quantized semantics as Shopify without HTTP.
+   */
+  async publishStockQuantity(
+    store: StoreWithSecrets,
+    ref: RemoteRef,
+    qty: number,
+  ): Promise<PushResult> {
+    void store;
+    this.maybeFail('publishStockQuantity');
+    const record = this.products.get(ref.providerId);
+    if (!record) {
+      throw new ProviderError(
+        `[fake] unknown product ${ref.providerId}`,
+        ProviderErrorCategory.REMOTE_NOT_FOUND,
+        this.slug,
+      );
+    }
+    const n = Math.max(0, Math.floor(qty));
+    const effective =
+      this.fidelityOverride === 'quantized-capped' ? Math.min(n, this.capQty) : n;
+    record.stockQuantity = effective;
+    record.stockState = effective > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK';
+    this.log('publishStockQuantity', { ref, qty: effective });
+    return { ok: true, ref };
+  }
+
+  async publishVariantStockQuantity(
+    store: StoreWithSecrets,
+    parentRef: RemoteRef,
+    variantRef: RemoteRef,
+    qty: number,
+  ): Promise<PushResult> {
+    void store;
+    this.maybeFail('publishVariantStockQuantity');
+    const slot = this.findVariantSlot(parentRef, variantRef);
+    const n = Math.max(0, Math.floor(qty));
+    const effective =
+      this.fidelityOverride === 'quantized-capped' ? Math.min(n, this.capQty) : n;
+    slot.stockQuantity = effective;
+    slot.stockState = effective > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK';
+    this.log('publishVariantStockQuantity', { parentRef, variantRef, qty: effective });
+    return { ok: true, ref: variantRef };
+  }
+
+  async readStockQuantity(
+    store: StoreWithSecrets,
+    ref: RemoteRef,
+  ): Promise<number | null> {
+    void store;
+    this.maybeFail('readStockQuantity');
+    const record = this.products.get(ref.providerId);
+    if (!record) {
+      throw new ProviderError(
+        `[fake] unknown product ${ref.providerId}`,
+        ProviderErrorCategory.REMOTE_NOT_FOUND,
+        this.slug,
+      );
+    }
+    this.log('readStockQuantity', { ref });
+    return record.stockQuantity;
+  }
+
+  async readVariantStockQuantity(
+    store: StoreWithSecrets,
+    parentRef: RemoteRef,
+    variantRef: RemoteRef,
+  ): Promise<number | null> {
+    void store;
+    this.maybeFail('readVariantStockQuantity');
+    const slot = this.findVariantSlot(parentRef, variantRef);
+    this.log('readVariantStockQuantity', { parentRef, variantRef });
+    return slot.stockQuantity;
   }
 
   async readVariantStockState(
@@ -537,9 +643,10 @@ export class FakeProvider implements CommerceProvider {
     void store;
     this.maybeFail('publishVariantStockState');
     const slot = this.findVariantSlot(parentRef, variantRef);
-    // Status-only, like the product path: { parentRef, variantRef, state }
-    // MUST never carry a quantity (BR-06).
+    // Above-band path: { parentRef, variantRef, state } MUST never carry a
+    // quantity (P13 matrix suite).
     slot.stockState = state;
+    slot.stockQuantity = null;
     this.log('publishVariantStockState', { parentRef, variantRef, state });
     return { ok: true, ref: variantRef };
   }
@@ -547,7 +654,7 @@ export class FakeProvider implements CommerceProvider {
   private findVariantSlot(
     parentRef: RemoteRef,
     variantRef: RemoteRef,
-  ): { ref: RemoteRef; data: Record<string, unknown>; stockState: StockState } {
+  ): { ref: RemoteRef; data: Record<string, unknown>; stockState: StockState; stockQuantity: number | null } {
     const record = this.products.get(parentRef.providerId);
     for (const slot of record?.variants.values() ?? []) {
       if (slot.ref.providerId === variantRef.providerId) return slot;

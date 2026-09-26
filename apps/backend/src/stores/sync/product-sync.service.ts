@@ -10,13 +10,16 @@
  *
  * Read-only on Product rows: sync never writes Product/Variant/Category.
  */
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ProviderRegistryService } from '../providers/provider-registry.service';
 import { FieldOwnershipService } from '../distribution/field-ownership.service';
 import { DistributionService } from '../distribution/distribution.service';
 import { StoresService } from '../stores.service';
+// Value import (runtime token for DI). Acyclic: stock-status imports
+// registry/runs/queues/stores — never product-sync.
+import { StockStatusSyncService } from './stock-status-sync.service';
 import { hashFieldValue } from '../providers/field-snapshot';
 import { FIELD_MATRIX, matrixRowFor, readEcoMateFields, assertSyncedFieldsSubset } from './field-matrix';
 import { classifyProviderError, RETRY_BACKOFF_MS, MAX_SYNC_ATTEMPTS } from '../providers/retry-classifier';
@@ -42,6 +45,11 @@ export class ProductSyncService {
     private readonly runs: SyncRunService,
     private readonly categories: CategorySyncService,
     private readonly stores?: StoresService,
+    // First-projection kick: a fresh mapping means the remote product never
+    // received a stock projection — notify post-mapping so the stock engine
+    // evaluates (debounced, non-propagating, R-2 safe). @Optional for
+    // manual construction in specs.
+    @Optional() private readonly stockStatus?: StockStatusSyncService,
   ) {}
 
   // ── Single-product sync (the ownership engine) ──────────────────────
@@ -250,6 +258,9 @@ export class ProductSyncService {
       mapping = await (this.prisma as any).storeProductMapping.create({
         data: { storeId, productId, externalId: ref.providerId, externalUrl: ref.url },
       });
+      // Fresh mapping → the remote never received a stock projection.
+      // Kick the stock engine (debounced job, never inline, never throws).
+      void this.stockStatus?.notifyStockChanged(productId, null, 'mapping-created').catch(() => undefined);
       for (const f of pushFields) {
         const ecoHash = hashFieldValue((ecoFields as any)[f]);
         await this.upsertFieldState(storeId, productId, f, {
@@ -571,6 +582,8 @@ export class ProductSyncService {
     await (this.prisma as any).storeProductMapping.create({
       data: { storeId, productId, externalId: preexisting.providerId },
     });
+    // Adopted mapping is equally projection-naive — same first-evaluation kick.
+    void this.stockStatus?.notifyStockChanged(productId, null, 'mapping-adopted').catch(() => undefined);
   }
 
   private async syncMedia(

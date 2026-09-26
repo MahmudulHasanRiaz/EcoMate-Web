@@ -8,17 +8,17 @@
  * weightUnit, handle, vendor, tags), media identity + reuse, collections +
  * product_type adapter-internal, publication ACTIVE/DRAFT, delete via
  * GraphQL productDelete, cost via inventory_item.cost (BR-23), SEO via
- * GraphQL productUpdate, readStockState read-only, publishStockState
- * unreachable (BR-08 zero writes), orders fetch (paged, window),
+ * GraphQL productUpdate, readStockState read-only, P13 capped quantity
+ * projection (InventoryLevel available at the first location, tracked +
+ * deny; zero stops selling), orders fetch (paged, window),
  * pushOrderStatus CANCELLED/FULFILLED + read-back, HMAC vectors incl.
  * 5-minute replay where timestamped, ensureWebhooks.
  *
- * Zero-write assertions (§13): a full product + stock + order flow yields
- * zero stock-quantity writes — no request body anywhere carries
- * inventory_quantity/quantity/available_available writes (BR-06). The
- * STOCK_DRIFT_MONITOR_ONLY engine path itself is proven in
- * sync/__tests__/stock-status-sync.spec.ts (unsupported audit vectors);
- * here the adapter side is pinned: read-only read + unreachable publish.
+ * Write-shape assertions (§13): product/order payloads never carry stock
+ * quantities — the projection writes `available` via
+ * /inventory_levels/set.json ONLY (P13 SUPERSEDES the BR-06/BR-08
+ * zero-write stance; zero-write now applies solely to `unsupported`
+ * fidelity, proven in sync/__tests__/stock-status-sync.spec.ts).
  *
  * No local Shopify store exists on this machine and no live credentials
  * exist in env — provider behaviour is proven by fixture-replay here plus
@@ -791,9 +791,9 @@ describe('ShopifyProvider live HTTP (P9)', () => {
     });
   });
 
-  // ── Stock: read-only read, unreachable publish (BR-06/BR-08) ──────────
-  describe('stock fidelity (BR-06/BR-08)', () => {
-    it('readStockState derives IN/OUT from inventory_quantity with exactly one GET (zero writes)', async () => {
+  // ── Stock: P13 quantized-capped projection (read + InventoryLevel writes) ─
+  describe('stock projection (P13 quantized-capped)', () => {
+    it('readStockState derives IN/OUT from inventory_quantity with exactly one GET (read-only)', async () => {
       const mock = new MockFetch();
       mockShopifyTokenEndpoint(mock);
       mock.onAll(() =>
@@ -818,24 +818,95 @@ describe('ShopifyProvider live HTTP (P9)', () => {
       );
     });
 
-    it('publishStockState + publishVariantStockState throw BEFORE any HTTP write (zero writes)', async () => {      for (const variant of [false, true]) {
-        const mock = new MockFetch();
-        mockShopifyTokenEndpoint(mock);
-        mock.onAll(() => jsonResponse(200, {}));
-        const shopify = new ShopifyProvider(mock.fetch);
-        const err = variant
-          ? await shopify
-              .publishVariantStockState(STORE(), { providerId: '9001' }, { providerId: '7001' }, 'OUT_OF_STOCK')
-              .catch((e) => e)
-          : await shopify.publishStockState(STORE(), { providerId: '9001' }, 'OUT_OF_STOCK').catch((e) => e);
-        expect(err).toBeInstanceOf(Error);
-        expect(err.category).toBe(ProviderErrorCategory.INVALID_REQUEST);
-        expect(String(err.message)).toMatch(/zero writes/);
-        expect(mock.calls).toHaveLength(0);
-      }
+    it('publishStockQuantity writes InventoryLevel available at the first location (tracked + deny); zero stops selling', async () => {
+      const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
+      mock.onPrefix('https://test-shop.myshopify.com/admin/api', (url, init) => {
+        if (url.endsWith('/locations.json?limit=250')) {
+          return jsonResponse(200, { locations: [{ id: 111, name: 'Main' }] });
+        }
+        if (url.includes('/products/9001.json')) {
+          return jsonResponse(200, {
+            product: {
+              id: 9001,
+              variants: [{ id: 7001, inventory_item_id: 8001, inventory_quantity: 5, inventory_management: 'shopify' }],
+            },
+          });
+        }
+        if (url.endsWith('/variants/7001.json')) return jsonResponse(200, { variant: { id: 7001 } });
+        if (url.endsWith('/inventory_items/8001.json')) return jsonResponse(200, { inventory_item: { id: 8001 } });
+        if (url.endsWith('/inventory_levels/set.json')) return jsonResponse(200, { inventory_level: {} });
+        return jsonResponse(404, { message: `unexpected ${init?.method ?? 'GET'} ${url}` });
+      });
+      const shopify = new ShopifyProvider(mock.fetch);
+      await shopify.publishStockQuantity(STORE(), { providerId: '9001' }, 5);
+      const setCall = mock.calls.find((c) => c.url.endsWith('/inventory_levels/set.json'));
+      expect(setCall).toBeDefined();
+      expect(JSON.parse(String(setCall?.init?.body ?? '{}'))).toEqual({
+        location_id: '111',
+        inventory_item_id: '8001',
+        available: 5,
+      });
+      // Zero band: available 0 (selling stops) with a deny-tracked variant.
+      mock.calls.length = 0;
+      shopify.clearLocationCache();
+      await shopify.publishStockQuantity(STORE(), { providerId: '9001' }, 0);
+      const zeroCall = mock.calls.find((c) => c.url.endsWith('/inventory_levels/set.json'));
+      expect(JSON.parse(String(zeroCall?.init?.body ?? '{}'))).toMatchObject({ available: 0 });
+      const trackCall = mock.calls.find((c) => c.url.endsWith('/variants/7001.json') && c.init?.method === 'PUT');
+      expect(JSON.parse(String(trackCall?.init?.body ?? '{}'))).toMatchObject({
+        variant: expect.objectContaining({ inventory_management: 'shopify', inventory_policy: 'deny' }),
+      });
     });
 
-    it('full product + stock + order flow yields zero stock-quantity writes', async () => {
+    it('publishVariantStockQuantity targets the variant inventory item; unknown variant is loud', async () => {
+      const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
+      mock.onPrefix('https://test-shop.myshopify.com/admin/api', (url, init) => {
+        if (url.endsWith('/locations.json?limit=250')) {
+          return jsonResponse(200, { locations: [{ id: 111, name: 'Main' }] });
+        }
+        if (url.includes('/products/9001.json')) {
+          return jsonResponse(200, {
+            product: {
+              id: 9001,
+              variants: [
+                { id: 7001, inventory_item_id: 8001, inventory_quantity: 2 },
+                { id: 7002, inventory_item_id: 8002, inventory_quantity: 0 },
+              ],
+            },
+          });
+        }
+        if (url.endsWith('/variants/7002.json')) return jsonResponse(200, { variant: { id: 7002 } });
+        if (url.endsWith('/inventory_items/8002.json')) return jsonResponse(200, { inventory_item: { id: 8002 } });
+        if (url.endsWith('/inventory_levels/set.json')) return jsonResponse(200, { inventory_level: {} });
+        return jsonResponse(404, { message: `unexpected ${init?.method ?? 'GET'} ${url}` });
+      });
+      const shopify = new ShopifyProvider(mock.fetch);
+      await shopify.publishVariantStockQuantity(STORE(), { providerId: '9001' }, { providerId: '7002' }, 2);
+      const setCall = mock.calls.find((c) => c.url.endsWith('/inventory_levels/set.json'));
+      expect(JSON.parse(String(setCall?.init?.body ?? '{}'))).toMatchObject({
+        inventory_item_id: '8002',
+        available: 2,
+      });
+      await expect(
+        shopify.publishVariantStockQuantity(STORE(), { providerId: '9001' }, { providerId: 'ghost' }, 1),
+      ).rejects.toMatchObject({ category: ProviderErrorCategory.REMOTE_NOT_FOUND });
+    });
+
+    it('no locations → loud SHOPIFY_NO_LOCATION (never a blind write)', async () => {
+      const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
+      mock.onPrefix('https://test-shop.myshopify.com/admin/api', (url) => {
+        if (url.endsWith('/locations.json?limit=250')) return jsonResponse(200, { locations: [] });
+        return jsonResponse(404, { message: 'unexpected' });
+      });
+      await expect(
+        new ShopifyProvider(mock.fetch).publishStockQuantity(STORE(), { providerId: '9001' }, 3),
+      ).rejects.toThrow(/SHOPIFY_NO_LOCATION/);
+    });
+
+    it('full product + read flow: product create carries no stock quantities (projection owns all writes)', async () => {
       const mock = new MockFetch();
       mockShopifyTokenEndpoint(mock);
       mock.setFallback((url, init) => {
@@ -885,12 +956,12 @@ describe('ShopifyProvider live HTTP (P9)', () => {
         .map((c) => String(c.init?.body ?? ''));
       expect(writeBodies.length).toBeGreaterThan(0);
       for (const body of writeBodies) {
-        // BR-06: no exact quantity is ever written — the read `quantity`
-        // inside order line_items travels only in GET responses, never in a
-        // write body.
+        // P13: product/order payloads never carry stock quantities — the
+        // read `quantity` inside order line_items travels only in GET
+        // responses, never in a write body. (The projection writes
+        // `available` via /inventory_levels/set.json only.)
         expect(body).not.toMatch(/inventory_quantity/i);
         expect(body).not.toMatch(/"quantity"/i);
-        expect(body).not.toMatch(/available/i);
       }
     });
   });

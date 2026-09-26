@@ -211,6 +211,20 @@ export class StockService {
       p.availabilityMode === 'MANAGED_STOCK' ||
       p.availabilityMode === null;
 
+    // P13 race fix (no new lock service): `reserve` increments reservedStock
+    // with NO availability check, so two concurrent order creates could both
+    // pass the pre-transaction guard in orders.service and double-spend.
+    // This check runs AFTER lockRows() took SELECT … FOR UPDATE on the same
+    // rows inside the same transaction, making check-then-increment atomic:
+    // the loser reads the winner's committed reservation and throws instead
+    // of overselling. Gated to managed-stock modes only (ALWAYS_* /
+    // INVENTORY_CONTROLLED never reach here via the router, and unlimited
+    // modes must not throw). See docs/central-commerce/P13 evidence.
+    const isReserveChecked = (p: { availabilityMode: string | null }) =>
+      field === 'reservedStock' &&
+      op === 'increment' &&
+      (p.availabilityMode === 'MANAGED_STOCK' || p.availabilityMode === null);
+
     for (const t of targets) {
       if (t.variantId) {
         const v = variantMap.get(t.variantId);
@@ -227,6 +241,11 @@ export class StockService {
             `Insufficient stock variant ${t.variantId}. Available: ${avail}, needed: ${t.qty}.`,
           );
         }
+        if (isReserveChecked(p!) && avail < t.qty) {
+          throw new BadRequestException(
+            `Insufficient stock variant ${t.variantId}. Available: ${avail}, needed: ${t.qty}.`,
+          );
+        }
         await adjust('productVariant', t.variantId, field, t.qty);
         // Also update parent product stock if it manages stock
         if (p && p.manageStock && p.type === 'simple') {
@@ -235,6 +254,11 @@ export class StockService {
               ? (op === 'increment' ? Number(p.managedStockQuantity) - Number(p.reservedStock) : Number(p.reservedStock))
               : Number(p.managedStockQuantity);
           if (op === 'decrement' && pAvail < t.qty) {
+            throw new BadRequestException(
+              `Insufficient stock product ${t.productId}. Available: ${pAvail}, needed: ${t.qty}.`,
+            );
+          }
+          if (isReserveChecked(p) && pAvail < t.qty) {
             throw new BadRequestException(
               `Insufficient stock product ${t.productId}. Available: ${pAvail}, needed: ${t.qty}.`,
             );
@@ -252,6 +276,11 @@ export class StockService {
             : p.managedStockQuantity;
         if (op === 'decrement' && !p.manageStock) continue; // skip non-managed stock
         if (op === 'decrement' && avail < t.qty) {
+          throw new BadRequestException(
+            `Insufficient stock product ${t.productId}. Available: ${avail}, needed: ${t.qty}.`,
+          );
+        }
+        if (isReserveChecked(p) && avail < t.qty) {
           throw new BadRequestException(
             `Insufficient stock product ${t.productId}. Available: ${avail}, needed: ${t.qty}.`,
           );

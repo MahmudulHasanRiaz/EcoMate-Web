@@ -12,8 +12,11 @@
  * plugin), tags→tags[] ({name}), primaryImage/galleryImages→images[{src}],
  * publicationState→status (publish/draft), customFields→meta_data
  * (allowlisted keys only, never secrets). Cost/seo never pushed (BR-23,
- * seo:false plugin-only). Stock is status-only (BR-06): stock_status =
- * instock/outofstock, verified by read-back in the engine.
+ * seo:false plugin-only). Stock is the P13 ERP projection (faithful):
+ * ERP > threshold → status-only `stock_status` (remote management
+ * quantities NEVER enabled on that path); 1–5 → `manage_stock=true +
+ * stock_quantity=N` in real time; 0 → `outofstock`. Verified by read-back
+ * in the engine.
  */
 import { Injectable } from '@nestjs/common';
 import { ProviderError, ProviderErrorCategory } from '../../marketing/ad-provider.adapter';
@@ -172,6 +175,7 @@ export class WooCommerceProvider extends BaseCommerceProvider {
     orderStatusUpdate: true,
     orderStatusUpdateTargets: ['cancelled', 'completed'],
     stockStatusFidelity: 'faithful',
+    stockQuantity: true, // P13: exact qty in the 1–5 band; status-only above
     contactCheckExposure: true,
     categoryModel: 'taxonomy',
     seoModel: 'plugin-meta',
@@ -393,7 +397,9 @@ export class WooCommerceProvider extends BaseCommerceProvider {
   }
 
   override async publishStockState(store: StoreWithSecrets, ref: RemoteRef, state: StockState): Promise<PushResult> {
-    // Status-only (BR-06): never a quantity, sentinel or placeholder.
+    // P13 above-band path: status ONLY — never manage_stock/stock_quantity.
+    // Remote tracks nothing countable here, so oversell is impossible. The
+    // exact-quantity band travels via publishStockQuantity below.
     await this.woo(store, 'PUT', `/products/${encodeURIComponent(ref.providerId)}`, {
       stock_status: state === 'IN_STOCK' ? 'instock' : 'outofstock',
     });
@@ -418,13 +424,81 @@ export class WooCommerceProvider extends BaseCommerceProvider {
     variantRef: RemoteRef,
     state: StockState,
   ): Promise<PushResult> {
-    // Status-only (BR-06): never a quantity, sentinel or placeholder.
+    // P13 above-band path: status ONLY (see publishStockState).
     await this.woo(
       store, 'PUT',
       `/products/${encodeURIComponent(parentRef.providerId)}/variations/${encodeURIComponent(variantRef.providerId)}`,
       { stock_status: state === 'IN_STOCK' ? 'instock' : 'outofstock' },
     );
     return { ok: true, ref: variantRef };
+  }
+
+  // ── P13 quantity projection (1–5 exact band, 0 = no sell) ────────────
+
+  /**
+   * Exact-quantity push for the low band: `manage_stock=true` +
+   * `stock_quantity=N` (+ `stock_status`). Zero writes an explicit
+   * `stock_quantity: 0` with management left armed (a restock re-arms
+   * counting with no settings change) so the read-back verifies 0.
+   */
+  async publishStockQuantity(
+    store: StoreWithSecrets,
+    ref: RemoteRef,
+    qty: number,
+  ): Promise<PushResult> {
+    const n = Math.max(0, Math.floor(qty));
+    await this.woo(store, 'PUT', `/products/${encodeURIComponent(ref.providerId)}`, {
+      manage_stock: true,
+      stock_quantity: n,
+      stock_status: n > 0 ? 'instock' : 'outofstock',
+    });
+    return { ok: true, ref };
+  }
+
+  async publishVariantStockQuantity(
+    store: StoreWithSecrets,
+    parentRef: RemoteRef,
+    variantRef: RemoteRef,
+    qty: number,
+  ): Promise<PushResult> {
+    const n = Math.max(0, Math.floor(qty));
+    await this.woo(
+      store, 'PUT',
+      `/products/${encodeURIComponent(parentRef.providerId)}/variations/${encodeURIComponent(variantRef.providerId)}`,
+      { manage_stock: true, stock_quantity: n, stock_status: n > 0 ? 'instock' : 'outofstock' },
+    );
+    return { ok: true, ref: variantRef };
+  }
+
+  /**
+   * Quantity read-back for verify-after-push: `stock_quantity` when the
+   * remote manages stock, else null (engine falls back to a status
+   * read-back — never a silent verify-pass).
+   */
+  async readStockQuantity(
+    store: StoreWithSecrets,
+    ref: RemoteRef,
+  ): Promise<number | null> {
+    const body = await this.woo<{ manage_stock?: boolean; stock_quantity?: number | null }>(
+      store, 'GET', `/products/${encodeURIComponent(ref.providerId)}`,
+    );
+    if ((body as any)?.manage_stock !== true) return null;
+    const q = Number((body as any)?.stock_quantity);
+    return Number.isFinite(q) ? q : null;
+  }
+
+  async readVariantStockQuantity(
+    store: StoreWithSecrets,
+    parentRef: RemoteRef,
+    variantRef: RemoteRef,
+  ): Promise<number | null> {
+    const body = await this.woo<{ manage_stock?: boolean; stock_quantity?: number | null }>(
+      store, 'GET',
+      `/products/${encodeURIComponent(parentRef.providerId)}/variations/${encodeURIComponent(variantRef.providerId)}`,
+    );
+    if ((body as any)?.manage_stock !== true) return null;
+    const q = Number((body as any)?.stock_quantity);
+    return Number.isFinite(q) ? q : null;
   }
 
   override async fetchOrders(

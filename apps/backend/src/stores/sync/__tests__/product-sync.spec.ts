@@ -160,7 +160,7 @@ function ecoProduct(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function setup(ecoOverrides: Record<string, unknown> = {}, seedRemote: Record<string, unknown> | null = { name: 'Eco Tee' }) {
+function setup(ecoOverrides: Record<string, unknown> = {}, seedRemote: Record<string, unknown> | null = { name: 'Eco Tee' }, stockStatus?: any) {
   const { prisma, fieldStates, productMappings, issues, items, attempts } = mockPrisma();
   const fake = new FakeProvider();
   (prisma.product.findUnique as jest.Mock).mockResolvedValue(ecoProduct(ecoOverrides));
@@ -173,6 +173,8 @@ function setup(ecoOverrides: Record<string, unknown> = {}, seedRemote: Record<st
     new DistributionService(prisma, new StoreAvailabilityService()),
     runs,
     new CategorySyncService(prisma, runs),
+    undefined,
+    stockStatus,
   );
   const runId = 'run-1';
   if (seedRemote) {
@@ -235,6 +237,14 @@ describe('product sync engine (P4)', () => {
     expect(fields.variants).toEqual([
       expect.objectContaining({ sku: 'V-1', attributes: { Size: 'M' } }),
     ]);
+  });
+
+    it('fresh mapping kicks a first stock evaluation (mapping-created notify)', async () => {
+    const stockStatus = { notifyStockChanged: jest.fn().mockResolvedValue(undefined) };
+    const { svc, runId } = setup({}, null, stockStatus);
+    await svc.syncProduct(STORE_ID, PRODUCT_ID, runId);
+    expect(stockStatus.notifyStockChanged).toHaveBeenCalledTimes(1);
+    expect(stockStatus.notifyStockChanged).toHaveBeenCalledWith(PRODUCT_ID, null, 'mapping-created');
   });
 
   it('passing the SKU gate auto-resolves a stale MISSING_SKU issue', async () => {    const { svc, runId, prisma } = setup({}, null);

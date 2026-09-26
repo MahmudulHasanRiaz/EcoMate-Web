@@ -93,16 +93,26 @@ describe('Bridge v1 conformance (P10)', () => {
       expect(caps.combos).toBe(false);
     });
 
-    it('intersects unknown status targets out; enables manifest costPrice (BR-23 push-only)', () => {
+    it('intersects unknown status targets out; enables manifest costPrice (BR-23 push-only) + stockQuantity (P13)', () => {
       const caps = bridgeManifestToCapabilities(
         {
           storeId: 'x',
-          capabilities: { orderStatusUpdateTargets: ['cancelled', 'weird'], costPrice: true },
+          capabilities: { orderStatusUpdateTargets: ['cancelled', 'weird'], costPrice: true, stockQuantity: true },
         },
         new CustomBridgeProvider().declaredCapabilities,
       );
       expect(caps.orderStatusUpdateTargets).toEqual(['cancelled']);
       expect(caps.costPrice).toBe(true);
+      expect(caps.stockQuantity).toBe(true);
+    });
+
+    it('stockQuantity defaults to status-only when undeclared (P13)', () => {
+      const caps = bridgeManifestToCapabilities(
+        { storeId: 'x', capabilities: {} },
+        new CustomBridgeProvider().declaredCapabilities,
+      );
+      expect(caps.stockQuantity).toBe(false);
+      expect(caps.stockStatusFidelity).toBe('faithful');
     });
 
     it('never widens default-false flags other than costPrice', () => {
@@ -536,9 +546,9 @@ describe('Bridge v1 conformance (P10)', () => {
     });
   });
 
-  // ── Stock status-only (protocol §4, BR-06/BR-08) ─────────────────────
-  describe('stock status-only', () => {
-    it('faithful: PUT body carries ONLY {status}; read-back verifies', async () => {
+  // ── Stock status + quantity (protocol §4, P13) ────────────────────────
+  describe('stock status + quantity projection (P13 §4)', () => {
+    it('faithful default: PUT body carries ONLY {status}; read-back verifies', async () => {
       const { provider, mock } = wired(new ReferenceBridge());
       const ref = await provider.upsertProduct(STORE(), { sku: 'SKU-BR-STOCK', name: 'S' } as any, ['name', 'sku']);
       await provider.publishStockState(STORE(), ref, 'OUT_OF_STOCK');
@@ -552,6 +562,32 @@ describe('Bridge v1 conformance (P10)', () => {
       }
     });
 
+    it('quantity-declared bridge: {status, quantity} round-trips per product and variation', async () => {
+      const { provider, mock, bridge } = wired(new ReferenceBridge({ capabilities: { stockQuantity: true } }));
+      await expect(provider.resolveCapabilities(STORE())).resolves.toMatchObject({ stockQuantity: true });
+      const ref = await provider.upsertProduct(STORE(), { sku: 'SKU-BR-QTY', name: 'Q' } as any, ['name', 'sku']);
+      await provider.publishStockQuantity(STORE(), ref, 3);
+      await expect(provider.readStockQuantity(STORE(), ref)).resolves.toBe(3);
+      const puts = mock.calls.filter((c) => c.init?.method === 'PUT' && c.url.includes('/stock'));
+      expect(puts).toHaveLength(1);
+      expect(JSON.parse(String(puts[0]?.init?.body ?? '{}'))).toEqual({ status: 'in_stock', quantity: 3 });
+      expect(bridge.stockOf(ref.providerId)).toMatchObject({ status: 'in_stock', quantity: 3 });
+
+      const vars = await provider.upsertVariants(STORE(), ref, [{ sku: 'SKU-VST-A', price: '10' }] as any);
+      const vref = vars.get('SKU-VST-A')!;
+      await provider.publishVariantStockQuantity(STORE(), ref, vref, 0);
+      await expect(provider.readVariantStockQuantity(STORE(), ref, vref)).resolves.toBe(0);
+    });
+
+    it('undeclared bridge stays status-only: quantity call degrades without a quantity key', async () => {
+      const { provider, mock } = wired(new ReferenceBridge());
+      const ref = await provider.upsertProduct(STORE(), { sku: 'SKU-BR-DEG', name: 'D' } as any, ['name', 'sku']);
+      await provider.publishStockQuantity(STORE(), ref, 3);
+      const puts = mock.calls.filter((c) => c.init?.method === 'PUT' && c.url.includes('/stock'));
+      expect(puts).toHaveLength(1);
+      expect(JSON.parse(String(puts[0]?.init?.body ?? '{}'))).toEqual({ status: 'in_stock' });
+    });
+
     it('variant stock round-trips per variation', async () => {
       const { provider } = wired(new ReferenceBridge());
       const ref = await provider.upsertProduct(STORE(), { sku: 'SKU-BR-VSTOCK', name: 'S' } as any, ['name', 'sku']);
@@ -561,7 +597,7 @@ describe('Bridge v1 conformance (P10)', () => {
       await expect(provider.readVariantStockState(STORE(), ref, vref)).resolves.toBe('OUT_OF_STOCK');
     });
 
-    it('full product + stock + order flow yields zero quantity writes (BR-06)', async () => {
+    it('full product + stock + order flow: default bridge writes no quantity key (status-only when undeclared)', async () => {
       const { provider, mock } = wired(new ReferenceBridge());
       const ref = await provider.upsertProduct(STORE(), { sku: 'SKU-BR-FULL', name: 'F', price: '250' } as any, [
         'name',
@@ -587,7 +623,7 @@ describe('Bridge v1 conformance (P10)', () => {
       }
     });
 
-    it('unsupported: publish throws BEFORE any stock write (zero writes, monitor-only like Shopify)', async () => {
+    it('unsupported: publish throws BEFORE any stock write (zero writes — the ONLY zero-write path)', async () => {
       const stub = new ReferenceBridge({ stockStatusFidelity: 'unsupported' });
       const { provider, mock, bridge } = wired(stub);
       // Manifest resolves unsupported through the live path.
@@ -608,7 +644,7 @@ describe('Bridge v1 conformance (P10)', () => {
       // Only manifest GETs — no PUT/POST anywhere.
       expect(mock.calls.filter((c) => (c.init?.method ?? 'GET') !== 'GET')).toHaveLength(0);
       // Read stays available for the drift audit.
-      bridge.stock.set(ref.providerId, 'out_of_stock');
+      bridge.stock.set(ref.providerId, { status: 'out_of_stock' });
       await expect(provider.readStockState(STORE(), ref)).resolves.toBe('OUT_OF_STOCK');
     });
   });

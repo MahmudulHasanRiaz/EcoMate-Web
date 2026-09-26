@@ -46,6 +46,36 @@ export interface IngestResult {
   statusChanged: boolean;
 }
 
+/**
+ * P13 ZERO-STOCK REJECT — OPERATOR-DIRECTED DEVIATION from BR-13/BR-16.
+ *
+ * The plan's BR-13 ("never reject an external order") and BR-16
+ * ("shortfall-flag, never discard") are EXPLICITLY SUPERSEDED for one
+ * narrow case by operator direction (see
+ * docs/central-commerce/P13-ERP-STOCK-PROJECTION.md, "Deviation note"):
+ * when the ERP authoritative stock is ZERO (<= 0) for an ordered item, the
+ * external order is REJECTED — not created — with this explicit reason code
+ * plus a `ZERO_STOCK_REJECT` issue row. Rationale: ERP is the stock truth
+ * and there is nothing to sell; creating the order would manufacture a
+ * certain shortfall.
+ *
+ * Scope is deliberately narrow:
+ * - per-ITEM: only items whose ERP stock is zero trigger the reject;
+ * - insufficient-but-NONZERO stock keeps the BR-16 shortfall-flag behavior
+ *   (flagged, never rejected) — untouched in `OrdersService.create()`;
+ * - product-less (unmatched-SKU) items cannot resolve ERP stock and are
+ *   never reject triggers — they keep the UNMATCHED_SKU path;
+ * - native storefront/admin validation is UNCHANGED (still throws via
+ *   `assertManagedAvailability` as before).
+ */
+export const ZERO_STOCK_REJECT = 'ZERO_STOCK_REJECT';
+
+/** ERP authoritative stock for one ordered item (null = unresolvable). */
+export interface ErpStockLevel {
+  qty: number;
+  mode: string | null;
+}
+
 @Injectable()
 export class StoreOrderIngestService {
   private readonly logger = new Logger(StoreOrderIngestService.name);
@@ -133,6 +163,86 @@ export class StoreOrderIngestService {
     });
     if (product) return { productId: product.id, resolved: true };
     return { resolved: false };
+  }
+
+  /**
+   * Resolve the ERP authoritative stock for one ordered item — the SAME
+   * truth the P13 projection pushes (INVENTORY_CONTROLLED → physical
+   * available sum, else managed-stock available). Returns null when the
+   * row(s) cannot be resolved (caller must NOT reject on unknown).
+   */
+  async erpStockForItem(
+    productId: string | undefined,
+    variantId: string | undefined,
+  ): Promise<ErpStockLevel | null> {
+    if (!productId && !variantId) return null;
+    const product = productId
+      ? await this.prisma.product.findUnique({
+          where: { id: productId },
+          select: {
+            id: true,
+            availabilityMode: true,
+            managedStockQuantity: true,
+            reservedStock: true,
+          },
+        })
+      : null;
+    // A variant-only reference resolves its parent for the mode.
+    let mode: string | null = (product as any)?.availabilityMode ?? null;
+    if (!product && variantId) {
+      const parent = await this.prisma.productVariant.findUnique({
+        where: { id: variantId },
+        select: {
+          productId: true,
+          product: {
+            select: { availabilityMode: true, managedStockQuantity: true, reservedStock: true },
+          },
+        },
+      }).catch(() => null) as any;
+      if (!parent) return null;
+      mode = parent?.product?.availabilityMode ?? null;
+      if (mode === 'INVENTORY_CONTROLLED') {
+        const rows = await this.prisma.physicalInventory.findMany({
+          where: { productId: parent.productId, variantId },
+          select: { quantity: true, reservedQuantity: true },
+        }).catch(() => null);
+        if (!rows) return null;
+        const qty = rows.reduce((s: number, r: any) => s + ((r.quantity ?? 0) - (r.reservedQuantity ?? 0)), 0);
+        return { qty, mode };
+      }
+      const v = await this.prisma.productVariant.findUnique({
+        where: { id: variantId },
+        select: { managedStockQuantity: true, reservedStock: true },
+      }).catch(() => null) as any;
+      if (!v) return null;
+      return { qty: (v.managedStockQuantity ?? 0) - (v.reservedStock ?? 0), mode };
+    }
+    if (!product) return null;
+    if (mode === 'ALWAYS_IN_STOCK') return { qty: Number.POSITIVE_INFINITY, mode };
+    if (mode === 'ALWAYS_OUT_OF_STOCK') return { qty: 0, mode };
+    if (mode === 'INVENTORY_CONTROLLED') {
+      const rows = await this.prisma.physicalInventory.findMany({
+        where: { productId: (product as any).id, variantId: variantId ?? null },
+        select: { quantity: true, reservedQuantity: true },
+      }).catch(() => null);
+      if (!rows) return null;
+      const qty = rows.reduce((s: number, r: any) => s + ((r.quantity ?? 0) - (r.reservedQuantity ?? 0)), 0);
+      return { qty, mode };
+    }
+    // MANAGED_STOCK and any other mode (fail-closed to managed fields —
+    // same rule as the projection's desiredState).
+    if (variantId) {
+      const v = await this.prisma.productVariant.findUnique({
+        where: { id: variantId },
+        select: { managedStockQuantity: true, reservedStock: true },
+      }).catch(() => null) as any;
+      if (!v) return null;
+      return { qty: (v.managedStockQuantity ?? 0) - (v.reservedStock ?? 0), mode };
+    }
+    return {
+      qty: ((product as any).managedStockQuantity ?? 0) - ((product as any).reservedStock ?? 0),
+      mode,
+    };
   }
 
   /**
@@ -256,6 +366,48 @@ export class StoreOrderIngestService {
         quantity: li.quantity,
         price: li.price,
       });
+    }
+    // P13 ZERO_STOCK_REJECT (operator-directed deviation from BR-13/BR-16 —
+    // see ZERO_STOCK_REJECT above): per resolved item, when the ERP
+    // authoritative stock is zero the order is NOT created. Product-less
+    // (unmatched-SKU) items are unresolvable and never trigger; nonzero
+    // shortfalls flow on to create() and keep the BR-16 flag behavior.
+    const zeroSkus: string[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i] as { productId?: string; variantId?: string };
+      if (!it.productId && !it.variantId) continue;
+      const erp = await this.erpStockForItem(it.productId, it.variantId);
+      if (erp && erp.qty <= 0) {
+        zeroSkus.push(normalized.items[i]?.sku || it.variantId || it.productId || `line ${i + 1}`);
+      }
+    }
+    if (zeroSkus.length > 0) {
+      const reason =
+        `${ZERO_STOCK_REJECT}: external order ${normalized.externalId} not created — ` +
+        `ERP authoritative stock is zero for: ${zeroSkus.join(', ')}. ` +
+        `Restock in EcoMate and re-ingest (deviation from BR-13/BR-16 per P13).`;
+      await this.runs.upsertIssue({
+        storeId,
+        code: ZERO_STOCK_REJECT,
+        objectType: 'ORDER',
+        objectKey,
+        message: reason,
+      });
+      if (trigger.runId) {
+        await this.runs.recordItem(trigger.runId, {
+          storeId,
+          objectType: 'ORDER',
+          externalObjectId: normalized.externalId,
+          status: 'FAILED',
+          reason,
+          auditLevel: 'G',
+        });
+      }
+      // Permanent (not retryable-by-design): a retry re-resolves the same
+      // zero stock and re-rejects identically — no order is ever created, no
+      // mapping row is written, and the issue row is upserted (one compact
+      // row, never N). The reconcile/processor catch-chain records FAILED.
+      throw new Error(reason);
     }
     // An external order with zero parseable lines still ingests (BR-13/BR-16
     // spirit: never lose it) — one product-less placeholder keeps the totals.

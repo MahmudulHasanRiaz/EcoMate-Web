@@ -57,8 +57,33 @@ export class SyncQueuesService {
     }
   }
 
-  /** Enqueue post-commit; never throws into the caller (R-2). */
-  async enqueue(
+  /**
+   * Drop a FINISHED (completed/failed) job record so a re-add with the same
+   * id actually runs. BullMQ dedupes by job id while ANY record exists —
+   * with removeOnComplete retention, a second stock change for the same
+   * product would otherwise be silently swallowed by the first job's
+   * completed record (live find: 3→0 never evaluated). Pending
+   * (waiting/delayed/active) jobs are left alone: they re-read live state
+   * at run time, so coalescing stays safe.
+   */
+  async replaceFinishedJob(name: SyncQueueName, jobId: string): Promise<void> {
+    try {
+      const safe = jobId.replace(/:/g, '-');
+      const existing = await this.queueFor(name).getJob(safe);
+      if (!existing) return;
+      if (await existing.isCompleted().catch(() => false)) {
+        await existing.remove().catch(() => undefined);
+        return;
+      }
+      if (await existing.isFailed().catch(() => false)) {
+        await existing.remove().catch(() => undefined);
+      }
+    } catch {
+      // Best-effort only — worst case the add below dedupes as before.
+    }
+  }
+
+  /** Enqueue post-commit; never throws into the caller (R-2). */  async enqueue(
     name: SyncQueueName,
     jobName: string,
     data: Record<string, unknown>,

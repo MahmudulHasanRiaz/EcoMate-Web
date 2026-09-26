@@ -5,7 +5,7 @@
  *   are first-class from P1; WooCommerce is the first implementation).
  * - `providerFor` THROWS for NATIVE (native-isolation invariant).
  * - Capability spot-checks that lock §7.1: WooCommerce faithful stock,
- *   Shopify unsupported stock (BR-08), combos false everywhere (BR-22),
+ *   Shopify quantized-capped stock (P13), combos false everywhere (BR-22),
  *   costPrice never customer-facing (BR-23: WC has no native field).
  */
 import { ProviderRegistryService } from './provider-registry.service';
@@ -44,14 +44,14 @@ describe('ProviderRegistryService (P1)', () => {
     expect(() => providerForUnknown(registry)).toThrow(/Unknown store kind/);
   });
 
-  it('locks the §7.1 stock-fidelity matrix (BR-06/BR-08)', () => {
+  it('locks the §7.1 stock-fidelity matrix (P13: faithful / quantized-capped)', () => {
     const registry = makeRegistry();
     expect(
       registry.providerBySlug('woocommerce').declaredCapabilities.stockStatusFidelity,
     ).toBe('faithful');
     expect(
       registry.providerBySlug('shopify').declaredCapabilities.stockStatusFidelity,
-    ).toBe('unsupported');
+    ).toBe('quantized-capped');
   });
 
   it('declares combos=false for every provider (BR-22)', () => {

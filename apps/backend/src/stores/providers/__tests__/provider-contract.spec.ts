@@ -9,9 +9,10 @@
  * LOUD via the named notImplemented error, never silently).
  *
  * Vectors (§13): capability completeness, connection-failure taxonomy,
- * idempotent upsert, media reuse, publication transitions, stock fidelity
- * (faithful never receives a quantity — BR-06; unsupported receives ZERO
- * writes — BR-08), order pagination + window boundaries, webhook
+ * idempotent upsert, media reuse, publication transitions, stock projection
+ * (P13: faithful status + exact qty in the 1–5 band; quantized-capped
+ * writes the cap; unsupported receives ZERO writes — zero-write applies
+ * ONLY to unsupported paths), order pagination + window boundaries, webhook
  * accept/reject vectors, retry classification (§8.1).
  *
  * The §8.11 field-subset gate lives here too: every adapter's
@@ -134,8 +135,9 @@ describe('provider contract suite (P2 §13)', () => {
         for (const key of boolKeys) {
           expect(typeof caps[key]).toBe('boolean');
         }
+        expect(typeof caps.stockQuantity).toBe('boolean');
         expect(Array.isArray(caps.orderStatusUpdateTargets)).toBe(true);
-        expect(['faithful', 'unsupported']).toContain(caps.stockStatusFidelity);
+        expect(['faithful', 'quantized-capped', 'unsupported']).toContain(caps.stockStatusFidelity);
         expect(['taxonomy', 'collection', 'custom', 'unsupported']).toContain(
           caps.categoryModel,
         );
@@ -153,17 +155,22 @@ describe('provider contract suite (P2 §13)', () => {
       },
     );
 
-    it('locks the §7.1 stock-fidelity matrix (BR-06/BR-08)', () => {
+    it('locks the §7.1 stock-fidelity matrix (P13: faithful / quantized-capped / unsupported)', () => {
       expect(new WooCommerceProvider().declaredCapabilities.stockStatusFidelity).toBe(
         'faithful',
       );
+      expect(new WooCommerceProvider().declaredCapabilities.stockQuantity).toBe(true);
       expect(new ShopifyProvider().declaredCapabilities.stockStatusFidelity).toBe(
-        'unsupported',
+        'quantized-capped',
       );
+      expect(new ShopifyProvider().declaredCapabilities.stockQuantity).toBe(true);
       expect(new CustomBridgeProvider().declaredCapabilities.stockStatusFidelity).toBe(
         'faithful',
       );
+      // Bridge default is status-only when the manifest is undeclared.
+      expect(new CustomBridgeProvider().declaredCapabilities.stockQuantity).toBe(false);
       expect(makeFake().declaredCapabilities.stockStatusFidelity).toBe('faithful');
+      expect(makeFake().declaredCapabilities.stockQuantity).toBe(true);
     });
 
     it('requires non-empty orderStatusUpdateTargets wherever status push is declared', () => {
@@ -542,9 +549,9 @@ describe('provider contract suite (P2 §13)', () => {
     });
   });
 
-  // ── Stock fidelity (BR-06/BR-08) ──────────────────────────────────────
-  describe('stock fidelity (BR-06/BR-08)', () => {
-    it('faithful Fake: status-only push, read-back verifies, detail carries NO quantity', async () => {
+  // ── Stock projection (P13: exact/capped qty; zero-write ONLY unsupported) ─
+  describe('stock projection (P13)', () => {
+    it('faithful Fake: status-only above band (detail { ref, state }, NO quantity); quantity band carries exact units', async () => {
       const { fake, store } = seededFake();
       const ref = await fake.upsertProduct(
         store,
@@ -553,33 +560,69 @@ describe('provider contract suite (P2 §13)', () => {
       );
       await fake.publishStockState(store, ref, 'OUT_OF_STOCK');
       await expect(fake.readStockState(store, ref)).resolves.toBe('OUT_OF_STOCK');
-      await fake.publishStockState(store, ref, 'IN_STOCK');
+      await fake.publishStockQuantity(store, ref, 3);
+      await expect(fake.readStockQuantity(store, ref)).resolves.toBe(3);
       await expect(fake.readStockState(store, ref)).resolves.toBe('IN_STOCK');
+      await fake.publishStockQuantity(store, ref, 0);
+      await expect(fake.readStockState(store, ref)).resolves.toBe('OUT_OF_STOCK');
 
-      const pushes = fake.calls.filter((c) => c.method === 'publishStockState');
-      expect(pushes.length).toBeGreaterThan(0);
-      for (const push of pushes) {
-        // BR-06: no exact quantity is ever written — the detail is { ref, state } only.
+      const statusPushes = fake.calls.filter((c) => c.method === 'publishStockState');
+      expect(statusPushes.length).toBeGreaterThan(0);
+      for (const push of statusPushes) {
+        // P13 above-band: no exact quantity is written on the status path —
+        // the detail is { ref, state } only.
         expect(Object.keys(push.detail).sort()).toEqual(['ref', 'state']);
       }
-      expect(JSON.stringify(fake.calls)).not.toMatch(/"quantity"/);
+      const qtyPushes = fake.calls.filter((c) => c.method === 'publishStockQuantity');
+      expect(qtyPushes.map((p) => p.detail.qty)).toEqual([3, 0]);
     });
 
-    it('unsupported Shopify: publishStockState throws BEFORE any HTTP write (zero writes)', async () => {
-      const mock = new MockFetch();
-      mock.onAll(() => jsonResponse(200, {}));
-      const shopify = new ShopifyProvider(mock.fetch);
-      const store = buildStoreUnit('SHOPIFY');
-      const err = await shopify
-        .publishStockState(store, { providerId: 'shopify-prod-1' }, 'OUT_OF_STOCK')
+    it('quantized-capped Fake: writes are capped at the threshold (Shopify semantics)', async () => {
+      const { fake, store } = seededFake();
+      fake.setFidelity('quantized-capped', 5);
+      const caps = await fake.resolveCapabilities(store);
+      expect(caps.stockStatusFidelity).toBe('quantized-capped');
+      const ref = await fake.upsertProduct(
+        store,
+        { ...buildProductFixture({ sku: 'SKU-P2-CAP' }) },
+        ['name', 'sku'],
+      );
+      await fake.publishStockQuantity(store, ref, 50);
+      await expect(fake.readStockQuantity(store, ref)).resolves.toBe(5);
+      await fake.publishStockQuantity(store, ref, 3);
+      await expect(fake.readStockQuantity(store, ref)).resolves.toBe(3);
+      fake.setFidelity(null);
+    });
+
+    it('unsupported Custom bridge: publish throws BEFORE any stock write (zero writes — the ONLY zero-write path)', async () => {
+      const narrowBridge = new ReferenceBridge({ stockStatusFidelity: 'unsupported' });
+      const narrowMock = new MockFetch();
+      narrowMock.onPrefix(narrowBridge.baseUrl, narrowBridge.handle);
+      const narrow = new CustomBridgeProvider(narrowMock.fetch);
+      const store = buildStoreUnit('CUSTOM');
+      await expect(narrow.resolveCapabilities(store)).resolves.toMatchObject({
+        stockStatusFidelity: 'unsupported',
+      });
+      for (const variant of [false, true]) {
+        const err = variant
+          ? await narrow
+              .publishVariantStockState(store, { providerId: 'bridge-prod-1' }, { providerId: 'v-1' }, 'OUT_OF_STOCK')
+              .catch((e) => e)
+          : await narrow
+              .publishStockState(store, { providerId: 'bridge-prod-1' }, 'OUT_OF_STOCK')
+              .catch((e) => e);
+        expect(err).toBeInstanceOf(ProviderError);
+        expect(err.category).toBe(ProviderErrorCategory.INVALID_REQUEST);
+        expect(String(err.message)).toMatch(/zero writes/);
+      }
+      const qtyErr = await narrow
+        .publishStockQuantity(store, { providerId: 'bridge-prod-1' }, 3)
         .catch((e) => e);
-      expect(err).toBeInstanceOf(ProviderError);
-      expect(err.category).toBe(ProviderErrorCategory.INVALID_REQUEST);
-      expect(String(err.message)).toMatch(/zero writes/);
-      expect(mock.calls).toHaveLength(0);
+      expect(String(qtyErr.message)).toMatch(/zero writes/);
+      expect(narrowMock.calls.filter((c) => (c.init?.method ?? 'GET') !== 'GET')).toHaveLength(0);
     });
 
-    it('WooCommerce P4: faithful publishStockState writes status-only (BR-06)', async () => {
+    it('WooCommerce P4/P13: above-band publishStockState writes status-only (zero qty keys); quantity band writes exact units', async () => {
       const mock = new MockFetch();
       mock.onAll(() => jsonResponse(200, { id: 55, stock_status: 'outofstock' }));
       const woo = new WooCommerceProvider(mock.fetch);
@@ -590,14 +633,77 @@ describe('provider contract suite (P2 §13)', () => {
       const body = JSON.parse(String(mock.calls[0]?.init?.body ?? '{}'));
       expect(body).toEqual({ stock_status: 'outofstock' });
       expect(JSON.stringify(body)).not.toMatch(/quantity/i);
+
+      mock.calls.length = 0;
+      await woo.publishStockQuantity(store, { providerId: '55' }, 3);
+      expect(mock.calls).toHaveLength(1);
+      expect(JSON.parse(String(mock.calls[0]?.init?.body ?? '{}'))).toEqual({
+        manage_stock: true,
+        stock_quantity: 3,
+        stock_status: 'instock',
+      });
+
+      mock.calls.length = 0;
+      await woo.publishStockQuantity(store, { providerId: '55' }, 0);
+      expect(JSON.parse(String(mock.calls[0]?.init?.body ?? '{}'))).toEqual({
+        manage_stock: true,
+        stock_quantity: 0,
+        stock_status: 'outofstock',
+      });
     });
 
-    it('Custom bridge P10: faithful publishes status-only; unsupported receives ZERO writes', async () => {
+    it('Shopify P13: capped quantity via InventoryLevel (first location, tracked + deny); reads stay live', async () => {
+      const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
+      mock.onPrefix('https://test-shop.myshopify.com/admin/api', (url, init) => {
+        const method = init?.method ?? 'GET';
+        if (url.endsWith('/locations.json?limit=250')) {
+          return jsonResponse(200, { locations: [{ id: 111, name: 'Main' }, { id: 222, name: 'Spare' }] });
+        }
+        if (url.includes('/products/9001.json')) {
+          return jsonResponse(200, {
+            product: {
+              id: 9001,
+              variants: [{ id: 7001, inventory_item_id: 8001, inventory_quantity: 3, inventory_management: 'shopify' }],
+            },
+          });
+        }
+        if (url.endsWith('/variants/7001.json')) return jsonResponse(200, { variant: { id: 7001 } });
+        if (url.endsWith('/inventory_items/8001.json')) return jsonResponse(200, { inventory_item: { id: 8001 } });
+        if (url.endsWith('/inventory_levels/set.json')) return jsonResponse(200, { inventory_level: {} });
+        return jsonResponse(404, { message: `unexpected ${method} ${url}` });
+      });
+      const shopify = new ShopifyProvider(mock.fetch);
+      const store = buildStoreUnit('SHOPIFY');
+      await shopify.publishStockQuantity(store, { providerId: '9001' }, 5);
+      // First location wins (per-store override out of scope); tracked + deny ensured.
+      const setCall = mock.calls.find((c) => c.url.endsWith('/inventory_levels/set.json'));
+      expect(JSON.parse(String(setCall?.init?.body ?? '{}'))).toMatchObject({
+        location_id: '111',
+        inventory_item_id: '8001',
+        available: 5,
+      });
+      const trackCall = mock.calls.find((c) => c.url.endsWith('/variants/7001.json') && c.init?.method === 'PUT');
+      expect(JSON.parse(String(trackCall?.init?.body ?? '{}'))).toMatchObject({
+        variant: expect.objectContaining({ inventory_management: 'shopify' }),
+      });
+      await expect(shopify.readStockQuantity(store, { providerId: '9001' })).resolves.toBe(3);
+      // Location cached: a second push issues no locations GET.
+      const locGets = mock.calls.filter((c) => c.url.includes('/locations.json')).length;
+      await shopify.publishStockQuantity(store, { providerId: '9001' }, 2);
+      expect(mock.calls.filter((c) => c.url.includes('/locations.json'))).toHaveLength(locGets);
+    });
+
+    it('Custom bridge P10/P13: status-only by default (undeclared quantity); exact qty when the manifest declares it; unsupported receives ZERO writes', async () => {
       const bridge = new ReferenceBridge();
       const mock = new MockFetch();
       mock.onPrefix(bridge.baseUrl, bridge.handle);
       const custom = new CustomBridgeProvider(mock.fetch);
       const store = buildStoreUnit('CUSTOM');
+      await expect(custom.resolveCapabilities(store)).resolves.toMatchObject({
+        stockStatusFidelity: 'faithful',
+        stockQuantity: false,
+      });
       const ref = await custom.upsertProduct(store, { sku: 'SKU-CT-001', name: 'T' } as any, [
         'name',
         'sku',
@@ -611,17 +717,24 @@ describe('provider contract suite (P2 §13)', () => {
         status: 'out_of_stock',
       });
 
-      const narrowBridge = new ReferenceBridge({ stockStatusFidelity: 'unsupported' });
-      const narrowMock = new MockFetch();
-      narrowMock.onPrefix(narrowBridge.baseUrl, narrowBridge.handle);
-      const narrow = new CustomBridgeProvider(narrowMock.fetch);
-      const err = await narrow
-        .publishStockState(store, { providerId: 'bridge-prod-1' }, 'OUT_OF_STOCK')
-        .catch((e) => e);
-      expect(err).toBeInstanceOf(ProviderError);
-      expect(err.category).toBe(ProviderErrorCategory.INVALID_REQUEST);
-      expect(String(err.message)).toMatch(/zero writes/);
-      expect(narrowMock.calls.filter((c) => (c.init?.method ?? 'GET') !== 'GET')).toHaveLength(0);
+      // Quantity-declared bridge: {status, quantity} on the wire.
+      const qtyBridge = new ReferenceBridge({ capabilities: { stockQuantity: true } });
+      const qtyMock = new MockFetch();
+      qtyMock.onPrefix(qtyBridge.baseUrl, qtyBridge.handle);
+      const qtyCustom = new CustomBridgeProvider(qtyMock.fetch);
+      await expect(qtyCustom.resolveCapabilities(store)).resolves.toMatchObject({
+        stockQuantity: true,
+      });
+      const qtyRef = await qtyCustom.upsertProduct(store, { sku: 'SKU-CT-QTY', name: 'Q' } as any, ['name', 'sku']);
+      qtyMock.calls.length = 0;
+      await qtyCustom.publishStockQuantity(store, qtyRef, 3);
+      await expect(qtyCustom.readStockQuantity(store, qtyRef)).resolves.toBe(3);
+      const qtyPuts = qtyMock.calls.filter((c) => c.init?.method === 'PUT');
+      expect(qtyPuts).toHaveLength(1);
+      expect(JSON.parse(String(qtyPuts[0]?.init?.body ?? '{}'))).toEqual({
+        status: 'in_stock',
+        quantity: 3,
+      });
     });
 
     it('BaseCommerceProvider exposes the fetch seam for P4/P9/P10 reuse', () => {
