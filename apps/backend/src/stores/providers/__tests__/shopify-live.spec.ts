@@ -437,8 +437,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
       expect(mock.calls.filter((c) => !c.url.includes('/oauth/access_token'))).toHaveLength(0);
     });
 
-    it('single attribute-less variant creates without options (valid Default Title)', async () => {
-      const mock = new MockFetch();
+    it('single attribute-less variant creates without options (valid Default Title)', async () => {      const mock = new MockFetch();
       mockShopifyTokenEndpoint(mock);
       const seen = { bodies: [] as unknown[], graphql: [] as unknown[] };
       mock.setFallback(createRouter(seen));
@@ -454,6 +453,40 @@ describe('ShopifyProvider live HTTP (P9)', () => {
       const productBody = (seen.bodies[0] as any).product;
       expect(productBody.variants).toHaveLength(1);
       expect(productBody.options).toBeUndefined();
+    });
+
+    it('attributed multi-variant create sets positional option values (no 422)', async () => {
+      const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
+      const seen = { bodies: [] as unknown[], graphql: [] as unknown[] };
+      mock.setFallback(createRouter(seen));
+      await new ShopifyProvider(mock.fetch).upsertProduct(
+        STORE(),
+        {
+          sku: 'PARENT-2',
+          name: 'Attributed Variable',
+          variants: [
+            { sku: 'A-1', price: '10', attributes: { Size: 'S', Color: 'Red' } },
+            { sku: 'A-2', price: '20', attributes: { Size: 'M', Color: 'Blue' } },
+          ],
+        } as any,
+        ['name', 'variants'],
+      );
+      const productBody = (seen.bodies[0] as any).product;
+      expect(productBody.options).toEqual([
+        { name: 'Size', values: ['S', 'M'] },
+        { name: 'Color', values: ['Red', 'Blue'] },
+      ]);
+      expect(productBody.variants[0]).toMatchObject({
+        sku: 'A-1',
+        option1: 'S',
+        option2: 'Red',
+      });
+      expect(productBody.variants[1]).toMatchObject({
+        sku: 'A-2',
+        option1: 'M',
+        option2: 'Blue',
+      });
     });
 
     it('cost travels ONLY via inventory_items PUT (BR-23, never customer-facing)', async () => {

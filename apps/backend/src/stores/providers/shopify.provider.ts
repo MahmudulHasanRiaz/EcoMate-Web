@@ -933,18 +933,33 @@ export class ShopifyProvider extends BaseCommerceProvider {
           'shopify',
         );
       }
-      payload.variants = variantsInput.map((v) => shopifyVariantToPayload(v));
-      // Options ride only when variants carry real attributes — otherwise
-      // Shopify rejects empty-valued options. Attribute-less sets omit
-      // `options` (Default Title is auto-created).
-      if (variantsHaveAttributes(variantsInput)) {
-        const names = uniqueOptionNames(variantsInput);
-        if (names.length > 0) {
-          payload.options = names.map((name) => ({
-            name,
-            values: uniqueOptionValues(variantsInput, name),
-          }));
-        }
+      // Option order is positional: optionN on each variant must match the
+      // Nth product-level option, or Shopify 422s ("options must have
+      // corresponding variants").
+      const optionNames = variantsHaveAttributes(variantsInput)
+        ? uniqueOptionNames(variantsInput)
+        : [];
+      payload.variants = variantsInput.map((v) => {
+        const base = shopifyVariantToPayload(v);
+        const attrs = ((v as any).attributes ?? (v as any).variantAttributes) as
+          | Record<string, unknown>
+          | undefined;
+        optionNames.forEach((name, i) => {
+          const val =
+            attrs && typeof attrs === 'object' && !Array.isArray(attrs)
+              ? (attrs as Record<string, unknown>)[name]
+              : undefined;
+          if (val !== undefined && val !== null && String(val) !== '') {
+            (base as any)[`option${i + 1}`] = String(val);
+          }
+        });
+        return base;
+      });
+      if (optionNames.length > 0) {
+        payload.options = optionNames.map((name) => ({
+          name,
+          values: uniqueOptionValues(variantsInput, name),
+        }));
       }
     } else if (!externalId) {
       // Simple product: ride sku/price on the default variant.

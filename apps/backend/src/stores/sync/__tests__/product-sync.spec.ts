@@ -206,8 +206,38 @@ describe('product sync engine (P4)', () => {
     expect(issues.some((i) => i.code === 'MISSING_SKU')).toBe(true);
   });
 
-  it('passing the SKU gate auto-resolves a stale MISSING_SKU issue', async () => {
-    const { svc, runId, prisma } = setup({}, null);
+  it('variant attribute names ride the variants payload (routing-only, ownership untouched)', async () => {
+    const { svc, runId, fake, prisma, productMappings } = setup(
+      {
+        type: 'variable',
+        sku: 'VAR-P',
+        variants: [
+          {
+            id: 'v1',
+            sku: 'V-1',
+            price: '10',
+            salePrice: null,
+            isActive: true,
+            attributeValues: [{ attributeValueId: 'av-size-m' }],
+          },
+        ],
+      },
+      null,
+    );
+    (prisma as any).attributeValue = {
+      findMany: jest.fn(async () => [
+        { id: 'av-size-m', value: 'M', attribute: { name: 'Size' } },
+      ]),
+    };
+    await svc.syncProduct(STORE_ID, PRODUCT_ID, runId);
+    const ref = (productMappings.get(`${STORE_ID}:${PRODUCT_ID}`) as any)?.externalId;
+    const fields = fake.getProduct(ref)?.fields as any;
+    expect(fields.variants).toEqual([
+      expect.objectContaining({ sku: 'V-1', attributes: { Size: 'M' } }),
+    ]);
+  });
+
+  it('passing the SKU gate auto-resolves a stale MISSING_SKU issue', async () => {    const { svc, runId, prisma } = setup({}, null);
     await svc.syncProduct(STORE_ID, PRODUCT_ID, runId);
     expect(prisma.storeSyncIssue.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({

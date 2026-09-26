@@ -236,6 +236,15 @@ export class ProductSyncService {
     }
 
     // Create vs update push.
+    // Routing enrichment: variant attribute names ride along for adapters
+    // whose option model needs them (Shopify). pushFields/ownership are
+    // untouched — this only decorates the variants payload in transit.
+    if (Array.isArray((pushPayload as any).variants)) {
+      (pushPayload as any).variants = await this.withVariantAttributeNames(
+        product,
+        (pushPayload as any).variants,
+      );
+    }
     if (!mapping) {
       const ref = await provider.upsertProduct(storeWithSecrets, pushPayload as any, pushFields);
       mapping = await (this.prisma as any).storeProductMapping.create({
@@ -498,8 +507,35 @@ export class ProductSyncService {
     });
   }
 
-  private async findPreexistingBySku(provider: any, storeWithSecrets: any, sku: string): Promise<{ providerId: string } | null> {
-    // Provider-agnostic first-contact probe: adapters expose lookup via
+  private async withVariantAttributeNames(product: any, payload: any[]): Promise<any[]> {    const locals: any[] = product.variants ?? [];
+    const ids = new Set<string>();
+    for (const v of locals) {
+      for (const av of v.attributeValues ?? []) {
+        if (av?.attributeValueId) ids.add(av.attributeValueId);
+      }
+    }
+    if (ids.size === 0 || payload.length === 0) return payload;
+    const rows =
+      (await (this.prisma as any).attributeValue?.findMany?.({
+        where: { id: { in: [...ids] } },
+        include: { attribute: true },
+      })) ?? [];
+    const byId = new Map(
+      (rows as any[]).map((r: any) => [r.id, { name: r.attribute?.name, value: r.value }]),
+    );
+    const attrsBySku = new Map<string, Record<string, string>>();
+    for (const v of locals) {
+      const obj: Record<string, string> = {};
+      for (const av of v.attributeValues ?? []) {
+        const m = byId.get(av.attributeValueId);
+        if (m?.name) obj[m.name] = m.value ?? '';
+      }
+      if (v.sku) attrsBySku.set(v.sku, obj);
+    }
+    return payload.map((p: any) => ({ ...p, attributes: attrsBySku.get(p.sku) ?? {} }));
+  }
+
+  private async findPreexistingBySku(provider: any, storeWithSecrets: any, sku: string): Promise<{ providerId: string } | null> {    // Provider-agnostic first-contact probe: adapters expose lookup via
     // upsert idempotency, but an explicit read keeps adopt semantics loud.
     // WooCommerce implements `findBySku`; others return null → normal create.
     // Shape-validated: only `{ providerId: string }` counts (the Fake's
@@ -574,12 +610,15 @@ export class ProductSyncService {
     const variants = product.variants ?? [];
     if (product.type !== 'variable' || variants.length === 0 || !mapping) return;
     if (provider.declaredCapabilities.variations !== true) return;
-    const payload = variants.map((v: any) => ({
-      sku: v.sku,
-      price: v.price !== null && v.price !== undefined ? String(v.price) : undefined,
-      salePrice: v.salePrice !== null && v.salePrice !== undefined ? String(v.salePrice) : undefined,
-      isActive: v.isActive,
-    }));
+    const payload = await this.withVariantAttributeNames(
+      product,
+      variants.map((v: any) => ({
+        sku: v.sku,
+        price: v.price !== null && v.price !== undefined ? String(v.price) : undefined,
+        salePrice: v.salePrice !== null && v.salePrice !== undefined ? String(v.salePrice) : undefined,
+        isActive: v.isActive,
+      })),
+    );
     const refs = await provider.upsertVariants(storeWithSecrets, { providerId: mapping.externalId }, payload);
     for (const v of variants) {
       const ref = refs.get(v.sku);
