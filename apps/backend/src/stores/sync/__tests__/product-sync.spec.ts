@@ -127,6 +127,7 @@ function mockPrisma() {
       findUnique: jest.fn(async () => null),
       create: jest.fn(async ({ data }: any) => { issues.push(data); return data; }),
       update: jest.fn(async ({ data }: any) => data),
+      updateMany: jest.fn(async () => ({ count: 1 })),
       findMany: jest.fn(async () => issues),
     },
   };
@@ -203,6 +204,21 @@ describe('product sync engine (P4)', () => {
     expect(res.skipped).toEqual(['missing-sku']);
     expect(fake.calls).toHaveLength(0);
     expect(issues.some((i) => i.code === 'MISSING_SKU')).toBe(true);
+  });
+
+  it('passing the SKU gate auto-resolves a stale MISSING_SKU issue', async () => {
+    const { svc, runId, prisma } = setup({}, null);
+    await svc.syncProduct(STORE_ID, PRODUCT_ID, runId);
+    expect(prisma.storeSyncIssue.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          storeId: STORE_ID,
+          code: 'MISSING_SKU',
+          objectKey: `product:${PRODUCT_ID}`,
+          status: 'OPEN',
+        }),
+      }),
+    );
   });
 
   it('combos are skipped with reason, never fabricated (BR-22)', async () => {
@@ -306,8 +322,7 @@ describe('product sync engine (P4)', () => {
     expect(fake.calls.some((c) => c.method === 'deleteProduct')).toBe(false);
   });
 
-  it('delete:false retains remote + MANUAL_ACTION_REQUIRED (BR-09)', async () => {
-    const { svc, fake } = setup();
+  it('delete:false retains remote + MANUAL_ACTION_REQUIRED (BR-09)', async () => {    const { svc, fake } = setup();
     (fake as any).declaredCapabilities = { ...fake.declaredCapabilities, delete: false };
     const out = await svc.deleteRemote(STORE_ID, PRODUCT_ID);
     expect(out.deleted).toBe(false);

@@ -163,8 +163,28 @@ export class SyncRunService {
     });
   }
 
-  async upsertIssue(issue: {
-    storeId: string;
+  /**
+   * Auto-resolve a stale OPEN issue when its cause is gone (e.g. MISSING_SKU
+   * after the operator assigns an SKU). Keeps the compact-state row with an
+   * audit note instead of deleting history.
+   */
+  async resolveIssue(
+    storeId: string,
+    code: string,
+    objectKey: string,
+    note: string,
+  ): Promise<void> {
+    await this.prisma.storeSyncIssue.updateMany({
+      where: { storeId, code, objectKey, status: 'OPEN' as any },
+      data: {
+        status: 'RESOLVED' as any,
+        resolvedAt: new Date(),
+        resolveNote: note,
+      } as any,
+    });
+  }
+
+  async upsertIssue(issue: {    storeId: string;
     code: string;
     objectType: string;
     objectKey: string;

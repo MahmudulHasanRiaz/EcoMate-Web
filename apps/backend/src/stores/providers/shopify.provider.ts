@@ -921,13 +921,30 @@ export class ShopifyProvider extends BaseCommerceProvider {
     const variantsInput = Array.isArray(rec.variants) ? (rec.variants as Record<string, unknown>[]) : null;
     if (!externalId && variantsInput && variantsInput.length > 0) {
       assertRestVariantLimit(variantsInput);
+      // Structural gate (Table B row 14 spirit): Shopify requires options
+      // for multi-variant products. Attribute-less variant sets 422 either
+      // way (empty options, or option-less variants under options) — block
+      // pre-HTTP with an actionable issue instead of a half-written remote
+      // product. Single attribute-less variants omit `options` (valid).
+      if (variantsInput.length > 1 && !variantsHaveAttributes(variantsInput)) {
+        throw new ProviderError(
+          '[shopify] VARIANT_ATTRIBUTES_REQUIRED: multi-variant products need variant attributes (options) — assign attributes to the variants in EcoMate before distribution',
+          ProviderErrorCategory.INVALID_REQUEST,
+          'shopify',
+        );
+      }
       payload.variants = variantsInput.map((v) => shopifyVariantToPayload(v));
-      const names = uniqueOptionNames(variantsInput);
-      if (names.length > 0) {
-        payload.options = names.map((name) => ({
-          name,
-          values: uniqueOptionValues(variantsInput, name),
-        }));
+      // Options ride only when variants carry real attributes — otherwise
+      // Shopify rejects empty-valued options. Attribute-less sets omit
+      // `options` (Default Title is auto-created).
+      if (variantsHaveAttributes(variantsInput)) {
+        const names = uniqueOptionNames(variantsInput);
+        if (names.length > 0) {
+          payload.options = names.map((name) => ({
+            name,
+            values: uniqueOptionValues(variantsInput, name),
+          }));
+        }
       }
     } else if (!externalId) {
       // Simple product: ride sku/price on the default variant.
@@ -1335,6 +1352,31 @@ function uniqueOptionNames(variants: Record<string, unknown>[]): string[] {
   }
   if (names.size === 0 && variants.length > 1) return ['Title'];
   return [...names];
+}
+
+/**
+ * True when at least one variant carries real attribute entries. The
+ * 'Title' fallback above exists so multi-variant creates satisfy Shopify's
+ * options requirement — but with empty values Shopify rejects the push
+ * ("options must have corresponding variants"). Attribute-less variant
+ * sets must omit `options` entirely (Shopify auto-creates Default Title).
+ */
+function variantsHaveAttributes(variants: Record<string, unknown>[]): boolean {
+  return variants.some((v) => {
+    const attrs =
+      (v as any).attributes ?? (v as any).variantAttributes;
+    if (attrs && typeof attrs === 'object' && !Array.isArray(attrs)) {
+      return Object.keys(attrs).length > 0;
+    }
+    if (Array.isArray(attrs)) {
+      return attrs.some(
+        (a: any) =>
+          (a?.attrs && Object.keys(a.attrs).length > 0) ||
+          (a?.values && a.values.length > 0),
+      );
+    }
+    return false;
+  });
 }
 
 function uniqueOptionValues(variants: Record<string, unknown>[], name: string): string[] {

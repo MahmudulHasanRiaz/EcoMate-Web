@@ -396,8 +396,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
       ]);
     });
 
-    it('non-price update issues no variant read and no variants key', async () => {
-      const mock = new MockFetch();
+    it('non-price update issues no variant read and no variants key', async () => {      const mock = new MockFetch();
       mockShopifyTokenEndpoint(mock);
       const puts: unknown[] = [];
       mock.setFallback((url, init) => {
@@ -415,6 +414,46 @@ describe('ShopifyProvider live HTTP (P9)', () => {
       );
       expect(mock.calls.some((c) => c.url.includes('/variants.json'))).toBe(false);
       expect((puts[0] as any).product.variants).toBeUndefined();
+    });
+
+    it('attribute-less multi-variant create is blocked pre-HTTP (422 guard)', async () => {
+      const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
+      mock.setFallback(createRouter({ bodies: [], graphql: [] }));
+      await expect(
+        new ShopifyProvider(mock.fetch).upsertProduct(
+          STORE(),
+          {
+            sku: 'PARENT-1',
+            name: 'NoAttr Variable',
+            variants: [
+              { sku: 'VAR-A', price: '500' },
+              { sku: 'VAR-B', price: '600' },
+            ],
+          } as any,
+          ['name', 'variants'],
+        ),
+      ).rejects.toThrow('VARIANT_ATTRIBUTES_REQUIRED');
+      expect(mock.calls.filter((c) => !c.url.includes('/oauth/access_token'))).toHaveLength(0);
+    });
+
+    it('single attribute-less variant creates without options (valid Default Title)', async () => {
+      const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
+      const seen = { bodies: [] as unknown[], graphql: [] as unknown[] };
+      mock.setFallback(createRouter(seen));
+      await new ShopifyProvider(mock.fetch).upsertProduct(
+        STORE(),
+        {
+          sku: 'PARENT-1',
+          name: 'Single NoAttr',
+          variants: [{ sku: 'VAR-ONLY', price: '500' }],
+        } as any,
+        ['name', 'variants'],
+      );
+      const productBody = (seen.bodies[0] as any).product;
+      expect(productBody.variants).toHaveLength(1);
+      expect(productBody.options).toBeUndefined();
     });
 
     it('cost travels ONLY via inventory_items PUT (BR-23, never customer-facing)', async () => {

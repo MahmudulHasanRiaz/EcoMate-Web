@@ -76,8 +76,7 @@ export class ProductSyncService {
     }
 
     // SKU gate (Table B rows 4-6): no SKU → blocked + MISSING_SKU.
-    if (!product.sku) {
-      await this.runs.recordItem(runId, {
+    if (!product.sku) {      await this.runs.recordItem(runId, {
         storeId, productId, objectType: 'PRODUCT', status: 'SKIPPED',
         reason: 'MISSING_SKU: a product without an SKU cannot be distributed',
         auditLevel: 'F', durationMs: Date.now() - started,
@@ -89,6 +88,14 @@ export class ProductSyncService {
       });
       return { pushed, preserved, skipped: ['missing-sku'] };
     }
+    // The gate passed: clear a stale MISSING_SKU left from before the
+    // operator assigned an SKU (compact row kept, marked RESOLVED).
+    await this.runs.resolveIssue(
+      storeId,
+      'MISSING_SKU',
+      `product:${productId}`,
+      'SKU assigned since — gate passes, auto-resolved by sync.',
+    ).catch(() => undefined);
 
     // Mapping: reuse external id; first contact by SKU → adopt_existing (BR-05).
     let mapping = await (this.prisma as any).storeProductMapping.findUnique({
