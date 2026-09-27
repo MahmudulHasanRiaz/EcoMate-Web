@@ -17,6 +17,16 @@ import { SyncRunService } from '../sync/sync-run.service';
 import { SyncQueuesService } from '../sync/sync-queues.service';
 import { isTimestampFresh } from '../providers/webhook-crypto';
 import { buildStoreDeliveryKey } from '../orders/normalize-order';
+
+/**
+ * Order topics across providers (`orders/create` Shopify, `order.created`
+ * WooCommerce, `order.*` bridge). Anything else (products/*, …) is audit
+ * history, never ingestion input.
+ */
+export function isOrderTopic(topic: string): boolean {
+  const t = topic.trim().toLowerCase();
+  return t === 'orders' || t.startsWith('orders/') || t.startsWith('order.');
+}
 import type { ProviderSlug } from '../providers/provider.contract';
 
 export const STORE_WEBHOOK_GENERIC_ERROR = 'Unauthorized';
@@ -130,6 +140,18 @@ export class StoreWebhookService {
         topic: verification.topic ?? null,
       },
     });
+
+    // Topic routing: ONLY order topics enter order ingestion. Product (and
+    // any other) topics are recorded above for audit and acknowledged —
+    // feeding a product payload to order ingest fabricated phantom orders
+    // (live find: products/update created orders with product ids as
+    // externalOrderId and zero totals). Product-side drift is picked up by
+    // the next product sync's ownership read (BR-02/BR-03), never here.
+    const topic = verification.topic ?? '';
+    if (!isOrderTopic(topic)) {
+      this.logger.log(`webhook ${slug}: non-order topic ${topic || '(unknown)'} recorded, no order job`);
+      return { received: true, duplicate: false };
+    }
 
     const run = await this.runs.begin({
       scope: 'ORDER_INGEST' as any,

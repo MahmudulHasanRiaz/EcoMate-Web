@@ -85,6 +85,18 @@ describe('keyed webhook intake — Shopify (Issue 1, items 3–9)', () => {
     expect(jobId).toContain('webhook:');
   });
 
+  it('products/update is recorded but never ingested as an order (no phantom orders)', async () => {
+    const { svc, prisma, queues } = buildIntake();
+    const productPayload = { id: 9001, title: 'Not an order', variants: [] };
+    const d = buildShopifyDelivery(CLIENT_SECRET, productPayload, {
+      headers: { 'X-Shopify-Topic': 'products/update' },
+    });
+    const res = await svc.intake('shopify', SHOPIFY_STORE_ID, d.headers, d.rawBody);
+    expect(res).toEqual({ received: true, duplicate: false });
+    expect(queues.enqueue).not.toHaveBeenCalled();
+    expect(prisma.storeWebhookDelivery.seen.size).toBe(1);
+  });
+
   it('(4) bad HMAC rejected with the generic 401 (never a reason oracle)', async () => {
     const { svc, queues } = buildIntake();
     const rawBody = Buffer.from(JSON.stringify(payload), 'utf8');
@@ -132,8 +144,7 @@ describe('keyed webhook intake — Shopify (Issue 1, items 3–9)', () => {
   it.each([
     ['orders/create'],
     ['orders/updated'],
-    ['products/update'],
-  ])('(7–9) topic %s accepted through the keyed URL', async (topic) => {
+  ])('(7–9) order topic %s accepted through the keyed URL with one enqueue', async (topic) => {
     const { svc, queues } = buildIntake();
     const d = buildShopifyDelivery(CLIENT_SECRET, payload, {
       headers: {
