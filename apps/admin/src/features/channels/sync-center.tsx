@@ -60,6 +60,7 @@ function formatDuration(run: SyncRunResponse): string {
 export function SyncCenter() {
   const [tab, setTab] = useState('history')
   const [detailId, setDetailId] = useState<string | null>(null)
+  const [syncAllScope, setSyncAllScope] = useState<'PRODUCT' | 'ORDERS'>('PRODUCT')
   const { data: runs, refetch } = useSyncRuns()
   const { data: stores } = useStores()
   const { data: issues } = useSyncIssues('OPEN')
@@ -67,11 +68,12 @@ export function SyncCenter() {
   const syncAllMut = useSyncAll()
   const storeName = (id?: string | null) => stores?.find((s) => s.id === id)?.name ?? id ?? '—'
 
-  const onSyncAll = () => {
-    syncAllMut.mutate(undefined, {
+  const onSyncAll = (scope: 'PRODUCT' | 'ORDERS') => {
+    syncAllMut.mutate(scope, {
       onSuccess: (res: unknown) => {
         const r = res as { childRunIds: string[]; excludedNativeCount: number }
-        toast.success(`Sync started on ${r.childRunIds.length} stores (${r.excludedNativeCount} native excluded)`)
+        const label = scope === 'ORDERS' ? 'Order reconcile' : 'Product sync'
+        toast.success(`${label} started on ${r.childRunIds.length} stores (${r.excludedNativeCount} native excluded)`)
         void refetch()
       },
       onError: handleServerError,
@@ -86,7 +88,23 @@ export function SyncCenter() {
           <h1 className="font-semibold">Sync Center</h1>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <Button size="sm" onClick={onSyncAll} disabled={syncAllMut.isPending}>
+          <div className="flex items-center gap-1 rounded-md border p-0.5" role="group" aria-label="Sync-all scope">
+            <Button
+              size="sm"
+              variant={syncAllScope === 'PRODUCT' ? 'default' : 'ghost'}
+              onClick={() => setSyncAllScope('PRODUCT')}
+            >
+              Products
+            </Button>
+            <Button
+              size="sm"
+              variant={syncAllScope === 'ORDERS' ? 'default' : 'ghost'}
+              onClick={() => setSyncAllScope('ORDERS')}
+            >
+              Orders
+            </Button>
+          </div>
+          <Button size="sm" onClick={() => onSyncAll(syncAllScope)} disabled={syncAllMut.isPending}>
             <Play className="mr-1 h-4 w-4" /> Sync all stores
           </Button>
           <ThemeSwitch />

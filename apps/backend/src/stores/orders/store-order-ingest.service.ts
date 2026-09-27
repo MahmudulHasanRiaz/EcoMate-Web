@@ -432,6 +432,9 @@ export class StoreOrderIngestService {
         guestName: normalized.customerName ?? undefined,
         guestPhone: normalizedPhone ?? undefined,
         guestEmail: normalized.customerEmail ?? undefined,
+        // Shipping/contact detail rides the order (name/phone/email double
+        // as fallback contacts when PII-approved reads provide them).
+        shippingAddress: (normalized.shippingAddress ?? {}) as any,
         customerNotes:
           normalizedPhone || !normalized.customerPhone
             ? undefined

@@ -35,7 +35,7 @@ import {
   SYNC_RUN_RETENTION_DAYS,
   WEBHOOK_DELIVERY_RETENTION_DAYS,
 } from './sync-retention.service';
-import { productSyncEnabled, storesEnabled } from '../store-flags';
+import { productSyncEnabled, stockSyncEnabled, storesEnabled } from '../store-flags';
 
 export class TriggerSyncDto {
   @IsOptional()
@@ -94,19 +94,24 @@ export class SyncOpsController {
   @Roles('superadmin', 'admin')
   async syncAll(@Body() dto: TriggerSyncDto, @CurrentUser() user?: any) {
     gate();
-    const scope = (dto.scope ?? 'PRODUCT') as 'PRODUCT' | 'PUBLISH';
+    const scope = (dto.scope ?? 'PRODUCT') as 'PRODUCT' | 'PUBLISH' | 'ORDERS' | 'RECONCILE';
     // NATIVE excluded structurally: fan-out filters kind !== 'NATIVE' and
     // reports excludedNativeCount (BR-20).
     const stores = await this.prisma.store.findMany({ select: { id: true, kind: true } });
     const external = (stores as any[]).filter((s) => s.kind !== 'NATIVE');
     const excludedNativeCount = (stores as any[]).length - external.length;
-    const batch = await this.runs.begin({ scope: scope as any, triggerType: 'MANUAL', initiatedById: user?.sub });
+    const orderScope = scope === 'ORDERS' || scope === 'RECONCILE';
+    const batch = await this.runs.begin({ scope: (orderScope ? 'RECONCILE' : scope) as any, triggerType: 'MANUAL', initiatedById: user?.sub });
     const batchRunId = (batch as any).id as string;
     const childRunIds: string[] = [];
     for (const store of external.slice(0, 500)) {
-      const child = await this.runs.begin({ scope: scope as any, triggerType: 'MANUAL', storeId: store.id, initiatedById: user?.sub });
+      const child = await this.runs.begin({ scope: (orderScope ? 'RECONCILE' : scope) as any, triggerType: 'MANUAL', storeId: store.id, initiatedById: user?.sub });
       childRunIds.push((child as any).id);
-      await this.queues.enqueue('store-product-sync', 'store-sync', { runId: (child as any).id, storeId: store.id }, `store-sync:${(child as any).id}`);
+      if (orderScope) {
+        await this.queues.enqueue('store-reconcile', 'order-reconcile', { runId: (child as any).id, storeId: store.id }, `order-reconcile:${store.id}:${(child as any).id}`);
+      } else {
+        await this.queues.enqueue('store-product-sync', 'store-sync', { runId: (child as any).id, storeId: store.id }, `store-sync:${(child as any).id}`);
+      }
     }
     await this.runs.finish(batchRunId, { created: childRunIds.length, updated: 0, skipped: excludedNativeCount, failed: 0 });
     return { batchRunId, childRunIds, excludedNativeCount };
@@ -120,6 +125,22 @@ export class SyncOpsController {
     const run = await this.runs.begin({ scope: 'PUBLISH' as any, triggerType: 'MANUAL', initiatedById: user?.sub });
     const runId = (run as any).id as string;
     await this.queues.enqueue('store-product-sync', 'sync-all', { batchRunId: runId, scope: 'PUBLISH' }, `sync-all:${runId}`);
+    return { runId };
+  }
+
+  /** Manual per-store stock-only sweep (store detail "Sync stock" button). */
+  @Post('sync/stores/:id/stock-sync')
+  @Roles('superadmin', 'admin')
+  async stockSync(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user?: any,
+  ) {
+    if (!storesEnabled() || !stockSyncEnabled()) {
+      throw new ForbiddenException('Stock sync is disabled');
+    }
+    const run = await this.runs.begin({ scope: 'STOCK' as any, triggerType: 'MANUAL', storeId: id, initiatedById: user?.sub });
+    const runId = (run as any).id as string;
+    await this.queues.enqueue('store-stock-sync', 'stock-store-sweep', { runId, storeId: id }, `stock-sweep:${id}:${runId}`);
     return { runId };
   }
 

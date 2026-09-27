@@ -104,6 +104,36 @@ describe('P6 ingest — webhook creates exactly one order (BR-12)', () => {
     );
   });
 
+  it('persists contact + shipping address onto the created order', async () => {
+    const prisma = mockPrisma();
+    prisma.storeOrderMapping.findUnique.mockResolvedValue(null);
+    prisma.store.findUnique.mockResolvedValue({ id: 's1', kind: 'CUSTOM', name: 'Bridge' });
+    seedStatusMaps(prisma);
+    prisma.storeSkuMapping.findUnique.mockResolvedValue(null);
+    prisma.productVariant.findUnique.mockResolvedValue(null);
+    prisma.product.findFirst.mockResolvedValue({ id: 'prod-1' });
+    const { svc, orders } = buildIngest(prisma);
+
+    await svc.ingest('s1', {
+      id: 'ext-2', status: 'processing', total: 500, currency: 'BDT',
+      createdAt: '2026-09-23T13:00:00.000Z',
+      items: [{ sku: 'SKU-IN-001', qty: 1, price: 500 }],
+      customer: { phone: '01700000002', name: 'Rahim', email: 'r@example.com' },
+      shipping: { address_1: 'House 1, Road 2', city: 'Dhaka', postcode: '1205', country: 'BD' },
+    }, { type: 'WEBHOOK', runId: 'run-1' });
+
+    const [dto] = orders.create.mock.calls[0];
+    expect(dto).toMatchObject({
+      guestName: 'Rahim',
+      guestPhone: '+8801700000002',
+      guestEmail: 'r@example.com',
+    });
+    expect(dto.shippingAddress).toMatchObject({
+      address_1: 'House 1, Road 2',
+      city: 'Dhaka',
+    });
+  });
+
   it('webhook + reconcile + manual of the same external order → exactly one order', async () => {
     const prisma = mockPrisma();
     prisma.store.findUnique.mockResolvedValue({ id: 's1', kind: 'CUSTOM', name: 'Bridge' });

@@ -109,6 +109,7 @@ export class ProductSyncService {
     let mapping = await (this.prisma as any).storeProductMapping.findUnique({
       where: { storeId_productId: { storeId, productId } },
     });
+    let mappingFresh = false;
     const caps = provider.declaredCapabilities;
     const ecoFields = readEcoMateFields(product);
     const fieldKeys = FIELD_MATRIX.filter((r) => this.capabilityAllows(caps, r.capability, r.key)).map((r) => r.key);
@@ -120,6 +121,7 @@ export class ProductSyncService {
         mapping = await (this.prisma as any).storeProductMapping.findUnique({
           where: { storeId_productId: { storeId, productId } },
         });
+        if (mapping) mappingFresh = true;
       }
     }
 
@@ -258,9 +260,9 @@ export class ProductSyncService {
       mapping = await (this.prisma as any).storeProductMapping.create({
         data: { storeId, productId, externalId: ref.providerId, externalUrl: ref.url },
       });
-      // Fresh mapping → the remote never received a stock projection.
-      // Kick the stock engine (debounced job, never inline, never throws).
-      void this.stockStatus?.notifyStockChanged(productId, null, 'mapping-created').catch(() => undefined);
+      // Fresh mapping — the stock kick lands after syncVariants below (variant
+      // mappings must exist first, else variant evaluations exit NOT_MAPPED).
+      mappingFresh = true;
       for (const f of pushFields) {
         const ecoHash = hashFieldValue((ecoFields as any)[f]);
         await this.upsertFieldState(storeId, productId, f, {
@@ -302,6 +304,14 @@ export class ProductSyncService {
 
     // Variants: add/update; removal per variantDelete.
     await this.syncVariants(storeId, provider, storeWithSecrets, product, mapping, runId);
+
+    // Fresh mapping (created or adopted above) → the remote never received
+    // a stock projection. Kick AFTER variant mappings exist, else variant
+    // evaluations exit NOT_MAPPED and nothing re-triggers. Debounced job,
+    // never inline, never throws (R-2).
+    if (mappingFresh && mapping) {
+      void this.stockStatus?.notifyStockChanged(productId, null, 'mapping-created').catch(() => undefined);
+    }
 
     // Publication (§8.8): effective availability → published/draft.
     await this.syncPublication(storeId, provider, storeWithSecrets, product, mapping, runId);
@@ -582,8 +592,8 @@ export class ProductSyncService {
     await (this.prisma as any).storeProductMapping.create({
       data: { storeId, productId, externalId: preexisting.providerId },
     });
-    // Adopted mapping is equally projection-naive — same first-evaluation kick.
-    void this.stockStatus?.notifyStockChanged(productId, null, 'mapping-adopted').catch(() => undefined);
+    // No kick here: syncProduct kicks once after syncVariants (variant
+    // mappings must exist first) — see `mappingFresh` below.
   }
 
   private async syncMedia(

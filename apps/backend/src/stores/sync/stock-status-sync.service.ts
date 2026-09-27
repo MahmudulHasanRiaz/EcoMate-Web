@@ -806,6 +806,50 @@ export class StockStatusSyncService implements OnModuleInit {
 
   // ── Daily audit (BullMQ repeatable `0 3 * * *` Asia/Dhaka) ────────────
 
+  /**
+   * Manual per-store stock-only sweep (store detail "Sync stock" button).
+   * Evaluates every assigned product of one store (variant fan-out inside
+   * evaluateProduct), bounded at 500. Returns run-shaped counts.
+   */
+  async sweepStore(
+    storeId: string,
+    runId: string,
+  ): Promise<{ pushed: number; skipped: number; failed: number }> {
+    const counts = { pushed: 0, skipped: 0, failed: 0 };
+    const assignments = await (this.prisma as any).productStoreAssignment.findMany({
+      where: { storeId, available: true },
+      select: { productId: true },
+      take: 500,
+    });
+    for (const a of assignments as { productId: string }[]) {
+      try {
+        const results = await this.evaluateProduct(storeId, a.productId, null, runId, { audit: false });
+        for (const r of results) {
+          if (r.status === 'FAILED') counts.failed += 1;
+          else if (r.pushed) counts.pushed += 1;
+          else counts.skipped += 1;
+        }
+      } catch (err) {
+        counts.failed += 1;
+        await this.runs.recordItem(runId, {
+          storeId,
+          productId: a.productId,
+          objectType: 'PRODUCT',
+          status: 'FAILED',
+          reason: `STOCK_SWEEP_FAILED: ${err instanceof Error ? err.message : String(err)}`,
+          auditLevel: 'G',
+        });
+      }
+    }
+    await this.runs.finish(runId, {
+      created: 0,
+      updated: counts.pushed,
+      skipped: counts.skipped,
+      failed: counts.failed,
+    });
+    return counts;
+  }
+
   async runAudit(
     jobData: { cursor?: { storeId?: string; productId?: string } } = {},
   ): Promise<{ stores: number; evaluated: number; pushed: number; failed: number }> {

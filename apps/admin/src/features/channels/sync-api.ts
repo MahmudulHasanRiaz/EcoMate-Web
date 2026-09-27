@@ -174,6 +174,10 @@ export function isAttemptEligibleUi(
 export const syncApi = {
   triggerStoreSync: (storeId: string, scope = 'PRODUCT') =>
     apiClient.post<{ runId: string }>(`/stores/${storeId}/sync`, { scope }).then((r) => r.data),
+  reconcileOrders: (storeId: string) =>
+    apiClient.post<{ runId: string }>(`/stores/${storeId}/reconcile-orders`, {}).then((r) => r.data),
+  stockSync: (storeId: string) =>
+    apiClient.post<{ runId: string }>(`/sync/stores/${storeId}/stock-sync`, {}).then((r) => r.data),
   syncAll: (scope = 'PRODUCT') =>
     apiClient.post<{ batchRunId: string; childRunIds: string[]; excludedNativeCount: number }>('/stores/sync-all', { scope }).then((r) => r.data),
   publish: () => apiClient.post<{ runId: string }>('/sync/publish', {}).then((r) => r.data),

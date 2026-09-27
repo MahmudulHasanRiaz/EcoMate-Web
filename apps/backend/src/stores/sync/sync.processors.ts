@@ -172,6 +172,18 @@ export class StoreStockSyncProcessor extends WorkerHost {
     if (job.name === 'stock-audit') {
       return this.stock.runAudit((job.data ?? {}) as any);
     }
+    // Manual per-store stock-only sweep (store detail "Sync stock" button):
+    // evaluates every assigned product (variant fan-out inside), bounded.
+    if (job.name === 'stock-store-sweep') {
+      const { runId, storeId } = (job.data ?? {}) as { runId?: string; storeId?: string };
+      if (!runId || !storeId) {
+        this.logger.warn('stock-store-sweep without runId/storeId — ignored');
+        return { ignored: 'missing-ids' };
+      }
+      return this.queues.serializeStore(storeId, () =>
+        this.stock.sweepStore(storeId, runId),
+      );
+    }
     const { runId } = (job.data ?? {}) as { runId?: string };
     if (runId) {
       await this.runs.recordItem(runId, {
