@@ -55,6 +55,7 @@ import { CorrelationIdMiddleware } from './common/middleware/correlation-id.midd
 import { IpBlockMiddleware } from './common/middleware/ip-block.middleware';
 import { BlockedEntriesModule } from './blocked-entries/blocked-entries.module';
 import { BlockSettingsModule } from './block-settings/block-settings.module';
+import { CourierSettlementModule } from './courier-settlement/courier-settlement.module';
 import { MarketingModule } from './marketing/marketing.module';
 import { StoresModule } from './stores/stores.module';
 import { SecurityModule } from './security/security.module';
@@ -148,6 +149,7 @@ import { SecurityDashboardModule } from './security-dashboard/security-dashboard
     CacheModule,
     BlockedEntriesModule,
     BlockSettingsModule,
+    CourierSettlementModule,
     MarketingModule,
     StoresModule,
     SecurityModule,

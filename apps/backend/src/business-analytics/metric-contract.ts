@@ -380,7 +380,11 @@ export type CostState =
 export const COGS_COST_TYPES = ['actual', 'estimated'] as const;
 export type CogsCostType = (typeof COGS_COST_TYPES)[number];
 
-export const FULFILLMENT_COST_SOURCES = ['manual', 'courier_default'] as const;
+export const FULFILLMENT_COST_SOURCES = [
+  'manual',
+  'courier_default',
+  'courier_invoice',
+] as const;
 export type FulfillmentCostSource =
   (typeof FULFILLMENT_COST_SOURCES)[number];
 
@@ -404,6 +408,7 @@ export function fulfillmentCostState(input: {
     return 'unavailable';
   }
   if (input.shippingCostSource === 'manual') return 'actual';
+  if (input.shippingCostSource === 'courier_invoice') return 'actual';
   if (input.shippingCostSource === 'courier_default') return 'estimated';
   return 'unavailable';
 }

@@ -18,6 +18,8 @@ import { CacheService } from '../../cache/cache.service';
 import {
   UnavailableSettlementSource,
   collectionKindOf,
+  type OrderSettlementInput,
+  type SettlementLoad,
 } from '../settlement-source';
 
 const D = (s: string) => new Date(s);
@@ -230,6 +232,114 @@ describe('computeFulfillment — COD honesty (D11)', () => {
     expect(r.gapBanner.codOrders).toBe(2);
     expect(r.gapBanner.courierCost).toBe(120);
     expect(r.gapBanner.message).toContain('settlement');
+  });
+});
+
+describe('computeFulfillment — settlement-backed COD (§17)', () => {
+  const settledOrder = (): OrderSettlementInput => ({
+    collected: 5000,
+    charges: 50,
+    net: 4950,
+    codPosition: 0,
+    shippingCharge: 80,
+    hasFinalizedRow: true,
+  });
+  const settled = (id: string): SettlementLoad => ({
+    byOrder: new Map([[id, settledOrder()]]),
+  });
+
+  it('reports actual collection for a settlement-backed COD order', () => {
+    const r = computeFulfillment([cod({ id: 'cod1' })], settled('cod1'));
+    const row = r.rows[0];
+    expect(row.amountCollected).toMatchObject({ value: 5000, state: 'actual' });
+    expect(row.amountRetained.value).toBe(4950);
+    expect(row.deliveryChargeRetained).toMatchObject({
+      value: 80,
+      state: 'actual',
+    });
+    expect(row.fulfillmentMargin.value).toBe(30);
+    expect(r.coverage).toMatchObject({
+      codOrders: 1,
+      codSettled: 1,
+      codUnsettled: 0,
+      collectionUnavailableOrders: 0,
+      unknownAmount: 0,
+    });
+    expect(r.totals).toMatchObject({ collected: 5000, retained: 4950 });
+    expect(r.gapBanner.message).toContain('settled');
+  });
+
+  it('flags partial settlement (codPosition beyond tolerance) — DCR withheld', () => {
+    const load: SettlementLoad = {
+      byOrder: new Map([
+        ['cod1', { ...settledOrder(), net: 4800, codPosition: 150 }],
+      ]),
+    };
+    const row = computeFulfillment([cod({ id: 'cod1' })], load).rows[0];
+    // Collected/retained are real courier-reported figures, but the remittance
+    // is incomplete ⇒ DCR and margin must NOT be claimed.
+    expect(row.amountCollected).toMatchObject({ value: 5000, state: 'actual' });
+    expect(row.amountRetained.reason).toBe('partially settled');
+    expect(row.deliveryChargeRetained).toMatchObject({
+      value: null,
+      state: 'unavailable',
+      reason: 'partially settled',
+    });
+    expect(row.fulfillmentMargin).toMatchObject({
+      value: null,
+      state: 'unavailable',
+      reason: 'partially settled',
+    });
+  });
+
+  it('splits settled vs unsettled COD in coverage and the gap banner', () => {
+    const r = computeFulfillment(
+      [cod({ id: 'cod1' }), cod({ id: 'cod2' }), online({ id: 'on1' })],
+      settled('cod1'),
+    );
+    expect(r.coverage).toMatchObject({
+      onlineOrders: 1,
+      codOrders: 2,
+      codSettled: 1,
+      codUnsettled: 1,
+      collectionUnavailableOrders: 1,
+      // courier cost counted only on the settlement-unavailable order.
+      unknownAmount: 60,
+    });
+    expect(r.gapBanner.message).toContain('1');
+    // online fixture contributes its own 1000 collection + 5000 from cod1.
+    expect(r.totals.collected).toBe(6000);
+  });
+
+  it('keeps a COD order with no settlement entry unavailable', () => {
+    const r = computeFulfillment([cod({ id: 'cod1' })], settled('other-id'));
+    expect(r.rows[0].amountCollected).toMatchObject({
+      value: null,
+      state: 'unavailable',
+    });
+    expect(r.coverage.codSettled).toBe(0);
+    expect(r.coverage.codUnsettled).toBe(1);
+  });
+
+  it('courier_invoice source renders courier cost as actual, never estimated', () => {
+    const row = computeFulfillment([
+      cod({ id: 'cod1', shippingCostSource: 'courier_invoice' }),
+    ]).rows[0];
+    expect(row.courierCost).toMatchObject({ value: 60, state: 'actual' });
+    expect(
+      computeFulfillment([
+        cod({ id: 'cod1', shippingCostSource: 'courier_default' }),
+      ]).rows[0].courierCost.state,
+    ).toBe('estimated');
+  });
+
+  it('without a settlement load, COD stays entirely unavailable (honest default)', () => {
+    const r = computeFulfillment([cod()]);
+    expect(r.coverage).toMatchObject({
+      codSettled: 0,
+      codUnsettled: 1,
+      collectionUnavailableOrders: 1,
+    });
   });
 });
 

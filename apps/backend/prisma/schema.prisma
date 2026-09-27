@@ -730,7 +730,8 @@ model Order {
   shippingChargeOverridden Boolean            @default(false)
   /// Actual fulfillment/courier cost (BDT). NULL = not recorded.
   shippingCost       Decimal? @db.Decimal(10, 2)
-  /// 'manual' | 'courier_default' — drives the actual/estimated cost state.
+  /// 'manual' | 'courier_default' | 'courier_invoice' — source of the actual courier cost.
+  /// 'courier_invoice' is written by Courier Settlement finalization (§7, authoritative incl. when 0).
   shippingCostSource String?
   trashedAt                DateTime?
 
@@ -751,6 +752,9 @@ model Order {
   marketingAllocations MarketingCostAllocation[]
   commissionEarnings   CommissionEarning[]
   storeOrderMapping    StoreOrderMapping?
+  courierSettlementRows        CourierSettlementRow[]
+  courierSettlementExceptions  CourierSettlementException[]
+  courierSettlementAdjustments CourierSettlementAdjustment[]
 
   @@index([customerId])
   @@index([statusId])
@@ -1170,6 +1174,10 @@ model Dispatch {
   @@index([status])
   @@index([courierStatus])
   @@index([lastSyncedAt])
+  // Settlement matcher probes consignment/tracking WITHOUT a courier filter
+  // (the composite unique's leading column can't serve those lookups).
+  @@index([consignmentId])
+  @@index([trackingCode])
 }
 
 enum WebhookAttemptOutcome {
@@ -2361,6 +2369,7 @@ model JournalEntry {
   expense Expense?
   marketingFunding MarketingFundingEntry?
   marketingPayment MarketingPayment?
+  courierSettlementInvoice CourierSettlementInvoice?
 
   @@index([periodId])
   @@index([entryDate])
@@ -4318,3 +4327,406 @@ model StoreOrderStatusMap {
   @@unique([storeId, externalStatus])
   @@index([storeId])
 }
+
+// ── Courier Settlement & Invoice Management (PRD §5–§14) ──────────────────────
+// Immutable raw preservation, normalization, reconciliation, finalization,
+// authoritatively-written Order.shippingCost (§7), and accounting linkage (§8/§16).
+
+enum CourierSettlementInvoiceState {
+  UPLOADED
+  ANALYZED
+  MAPPING_REQUIRED
+  IMPORTING
+  READY_FOR_REVIEW
+  REVIEW_REQUIRED
+  ISSUE_FOUND
+  FINALIZING
+  FINALIZED_PENDING_ACCOUNTING
+  ACCOUNTING_POSTED
+  ACCOUNTING_SKIPPED_ACCOUNTING_DISABLED
+  ACCOUNTING_FAILED
+  ADJUSTED
+  RECONCILED
+  DISCARDED
+  SUPERSEDED_BY_REVISION
+}
+
+enum CourierSettlementRowClass {
+  DATA
+  SUMMARY
+  FOOTER
+  UNKNOWN
+}
+
+enum CourierSettlementRowKind {
+  DELIVERY
+  RETURN
+  FEE_ONLY
+  BILLING_ONLY
+  ADJUSTMENT
+  SUMMARY
+  FOOTER
+  UNKNOWN
+}
+
+enum CourierSettlementMatchMethod {
+  BY_CONSIGNMENT
+  BY_TRACKING
+  BY_ORDER_DISPLAYID
+  BY_ORDER_EXTERNALID
+  BY_ORDER_CUSTOMER
+  MANUAL
+  /// matchedBy is NULL and row could not be resolved (RED NO_MATCH)
+  NONE
+}
+
+enum CourierSettlementAccountingStatus {
+  PENDING
+  POSTED
+  SKIPPED_ACCOUNTING_DISABLED
+  FAILED
+}
+
+enum CourierSettlementActivityAction {
+  IMPORTED
+  MAPPED
+  MATCHED
+  FINALIZED
+  SNAPSHOT_TAKEN
+  POSTED_ACCOUNTING
+  ACCOUNTING_REPAIRED
+  ADJUSTED
+  REVISED
+  REVISION_LINKED
+  SUPERSEDED_BY_REVISION
+  EFFECTIVE_STATE_CHANGED
+  ACKNOWLEDGED
+  DISCARDED
+}
+
+enum CourierSettlementAliasOrigin {
+  SYSTEM
+  LEARNED
+  MANUAL
+}
+
+model CourierSettlementInvoice {
+  id             String                          @id @default(uuid())
+  displayId      String                          @unique
+  courier        String
+  provider       String?
+  invoiceNo      String?
+  invoiceDate    DateTime
+  rowCount       Int                             @default(0)
+
+  // Immutable source reference (§9 ①): original bytes preserved by StorageService,
+  // never overwritten. Only derived fields change afterwards.
+  fileStorageId   String?
+  fileOriginalName String?
+  fileSha256      String?
+  fileMime        String?
+  fileSize        Int?
+
+  // Provider totals read from the file footer / structure (informational only).
+  rawTotals       Json?
+  // Original file header order (§3/§18): Postgres jsonb re-serializes keys
+  // (length-then-byte order), so rawJson alone cannot reproduce the source
+  // column order. The imported sheet takes its column order from this array.
+  sourceHeaders   Json?
+  // Current effective totals: { collected, charges, net, residual, cashReceived, cashDisbursed }.
+  effectiveTotals Json?
+
+  // §14 revision semantics: a revised invoice is a correction of a previous invoice,
+  // not a second settlement. historical (snapshot) vs current (effective).
+  isRevision          Boolean @default(false)
+  revisionOfId        String?
+  supersedesInvoiceId String?
+
+  state               CourierSettlementInvoiceState @default(UPLOADED)
+  // §17 background import (async commit above threshold): stage + 0-100 progress,
+  // polled by the admin while state == IMPORTING.
+  importProgress      Int      @default(0)
+  importStage         String?
+  finalizingToken     String?
+  finalizingStartedAt DateTime?
+  finalizedAt         DateTime?
+  finalizedBy         String?
+
+  journalEntryId String?  @unique
+  journalEntry   JournalEntry? @relation(fields: [journalEntryId], references: [id])
+
+  accountingStatus        CourierSettlementAccountingStatus @default(PENDING)
+  accountingError         String?
+  accountingAttemptedAt   DateTime?
+  accountingAttemptedBy   String?
+
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rows        CourierSettlementRow[]
+  exceptions  CourierSettlementException[]
+  activities  CourierSettlementActivity[]
+  adjustments CourierSettlementAdjustment[]
+  snapshots   CourierSettlementFinalizationSnapshot[]
+  revisions   CourierSettlementInvoice[] @relation("InvoiceRevisionHistory")
+  revisedFrom CourierSettlementInvoice?  @relation("InvoiceRevisionHistory", fields: [revisionOfId], references: [id])
+
+  @@index([state])
+  @@index([courier])
+  @@index([finalizedAt])
+  @@index([displayId])
+  // Upload duplicate check (sha256 probed on every analyze) + list ordering
+  // (state filter + createdAt sort, and unfiltered createdAt sort).
+  @@index([fileSha256])
+  @@index([createdAt])
+  @@index([state, createdAt])
+}
+
+model CourierSettlementRow {
+  id          String  @id @default(uuid())
+  invoiceId   String
+  rowNumber   Int
+  rowClass    CourierSettlementRowClass
+  rowKind     CourierSettlementRowKind
+
+  consignmentId String?
+  orderId      String?
+  dispatchId   String?
+  identifier   String?
+
+  // Declared (provider) values, plus the effective value after adjustments (§9 ④).
+  declaredCollected  Decimal @default(0) @db.Decimal(14, 2)
+  declaredCharges    Decimal @default(0) @db.Decimal(14, 2)
+  declaredNet        Decimal @default(0) @db.Decimal(14, 2)
+  declaredResidual   Decimal @default(0) @db.Decimal(14, 2)
+  effectiveCollected  Decimal @default(0) @db.Decimal(14, 2)
+  effectiveCharges    Decimal @default(0) @db.Decimal(14, 2)
+  effectiveNet        Decimal @default(0) @db.Decimal(14, 2)
+  effectiveResidual   Decimal @default(0) @db.Decimal(14, 2)
+
+  matchMethod String
+  matchedAt   DateTime?
+  /// { provider, confidence, orderSource, ... } — recorded for transparency
+  matchContext Json?
+
+  // (§9) ① raw ② normalized ③ adjustment(s) ④ effective. Only ④ feeds finance.
+  rawJson       Json?
+  normalized    Json?
+  hasAdjustment Boolean @default(false)
+
+  /// 'green' | 'yellow' | 'red' — derived from §15 ruleset, materialised for reads.
+  reviewState   String @default("green")
+
+  // §14 revision semantics: when a later revision supersedes this row, the row
+  // stops contributing to EVERY current aggregate but its raw/declared/effective
+  // values and the finalization snapshot remain immutable history.
+  supersededByRowId   String?
+  supersededByInvoiceId String?
+  supersededAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoice     CourierSettlementInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  order       Order?    @relation(fields: [orderId], references: [id])
+  exceptions  CourierSettlementException[]
+  adjustments CourierSettlementAdjustment[]
+
+  @@unique([invoiceId, rowNumber])
+  @@index([invoiceId])
+  @@index([orderId])
+  @@index([consignmentId])
+  @@index([reviewState])
+  @@index([supersededByRowId])
+  @@index([supersededByInvoiceId])
+  // Flow/invariant aggregates (rowClass=DATA + not superseded) and the
+  // reconciliation queue group-by (invoiceId + matchMethod).
+  @@index([rowClass, supersededByRowId])
+  @@index([invoiceId, matchMethod])
+  // Previous-settlement lookup scans superseded rows by supersededAt.
+  @@index([supersededAt])
+}
+
+model CourierSettlementException {
+  id           String  @id @default(uuid())
+  invoiceId    String
+  rowId        String?
+  orderId      String?
+  dispatchId   String?
+  ruleId       String
+  severity     String  @default("yellow") // 'red' | 'yellow'
+  status       String  @default("open")   // 'open' | 'acknowledged' | 'resolved'
+  blocked      Boolean @default(false)    // true when the row rule blocks finalization
+  message      String?
+  context      Json?
+  resolvedAt   DateTime?
+  resolvedBy   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoice   CourierSettlementInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  row       CourierSettlementRow?    @relation(fields: [rowId], references: [id])
+  order     Order?                   @relation(fields: [orderId], references: [id])
+
+  @@index([invoiceId])
+  @@index([rowId])
+  @@index([orderId])
+  @@index([status])
+  @@index([severity])
+  // Detail timeline (invoice + createdAt sort) + queue filter (severity+status).
+  @@index([invoiceId, createdAt])
+  @@index([severity, status])
+}
+
+model CourierSettlementAdjustment {
+  id             String  @id @default(uuid())
+  invoiceId      String
+  rowId          String?
+  orderId        String?
+  /// §8.1: 'source' | 'cost' | 'settlement'
+  adjustmentClass String
+  field          String   // canonical column name being adjusted
+  originalValue  String?
+  adjustedValue  String?
+  difference     Decimal? @db.Decimal(14, 2)
+  reason         String?
+  /// §8.2 counterpart: 'net' | 'gross' | 'variance' (required when ΔR ≠ 0)
+  counterpart    String?
+  userId         String?
+  journalEntryId String? @unique // the compensating entry produced by this adjustment
+  createdAt      DateTime @default(now())
+
+  /// a reversal points back to the adjustment it reverses (original preserved)
+  reversalOfId String? @unique
+  reversedById String?
+
+  invoice CourierSettlementInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  row     CourierSettlementRow?    @relation(fields: [rowId], references: [id])
+  order   Order?                   @relation(fields: [orderId], references: [id])
+
+  @@index([invoiceId])
+  @@index([rowId])
+  @@index([invoiceId, field])
+}
+
+model CourierSettlementActivity {
+  id          String                    @id @default(uuid())
+  invoiceId   String
+  action      CourierSettlementActivityAction
+  actor       String?
+  timestamp   DateTime @default(now())
+  /// arbitrary detail kept immutable: { before, after, reason, journalEntryId, ... }
+  detail      Json?
+  /// idempotency key (§6): @@unique([invoiceId, action, dedupeKey])
+  dedupeKey   String?
+
+  invoice CourierSettlementInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([timestamp])
+  // Timeline reads are always invoice-scoped + time-sorted.
+  @@index([invoiceId, timestamp])
+  @@unique([invoiceId, action, dedupeKey])
+}
+
+/// Learned/seeded header → canonical field mapping. Ambiguous mappings stay inactive
+/// (§12) and never propagate silently.
+model CourierSettlementColumnAlias {
+  id             String  @id @default(uuid())
+  courier        String
+  sourceHeader   String
+  normalizedHeader String
+  field          String
+  confidence     Decimal @default(0.0) @db.Decimal(5, 2)
+  origin         CourierSettlementAliasOrigin @default(LEARNED)
+  ambiguityCount Int   @default(0)
+  active         Boolean @default(false)
+  createdBy      String?
+  lastUsedAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([courier, sourceHeader])
+  @@index([courier])
+  // Rival-active check probes (courier, field, active).
+  @@index([courier, field])
+  @@index([active])
+}
+
+/// Immutable point-in-time financial picture at the moment of finalization (§14.2).
+/// Reconstructible forever; never updated or deleted by any service path (test-enforced).
+model CourierSettlementFinalizationSnapshot {
+  id            String   @id @default(uuid())
+  invoiceId     String
+  version       Int
+  takenAt       DateTime @default(now())
+  takenById     String?
+  journalEntryId String? @unique
+  reason        String?
+  /// invoice-level figures exactly as finalised: { collected, charges, net, residual, cashReceived, cashDisbursed }
+  totals        Json
+  /// per-row: identity + normalized + effective figures + match info + row state
+  rows          Json
+
+  invoice       CourierSettlementInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([invoiceId, version])
+  @@index([invoiceId])
+}
+
+/// Declarative finance rule per courier/format. §11: generic/unproven providers must not
+/// finalize without approvedById set (approved rule). No formula is ever evaluated.
+model CourierSettlementFinanceRule {
+  id             String   @id @default(uuid())
+  courier        String
+  format         String?
+  /// whitelist: 'declared_field' | 'collected_minus_charges' | 'billing_when_no_collection' | 'component_sum'
+  netRule        String
+  /// ordered [{ header, field, sign }] — signs multiply the parsed header value
+  chargeComponents Json
+  residualThreshold Decimal @default(100.0) @db.Decimal(12, 2)
+  tolerance           Decimal @default(1.0) @db.Decimal(12, 2)
+  /// ordered candidate columns used to resolve an Order, e.g. ["consignmentId","trackingCode",...]
+  identifierOrder   Json
+  isPrecedence      Int    @default(0)
+
+  /// §12 rule governance: every approval bumps the version; the superseded
+  /// configuration is archived to CourierSettlementFinanceRuleVersion, so a
+  /// finalized invoice's rule version stays reconstructible.
+  version   Int    @default(1)
+  note      String?
+
+  approved       Boolean @default(false)
+  approvedById   String?
+  approvedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  versions CourierSettlementFinanceRuleVersion[]
+
+  @@unique([courier, format])
+  @@index([courier])
+  @@index([approved])
+}
+
+/// Superseded finance-rule configuration (versions 1..n-1; current lives on the rule).
+model CourierSettlementFinanceRuleVersion {
+  id          String  @id @default(uuid())
+  ruleId      String
+  version     Int
+  /// Full configuration snapshot: { netRule, chargeComponents, residualThreshold,
+  /// tolerance, identifierOrder, format, note }
+  snapshot    Json
+  approvedById String?
+  approvedAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  rule CourierSettlementFinanceRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@unique([ruleId, version])
+  @@index([ruleId])
+}
+

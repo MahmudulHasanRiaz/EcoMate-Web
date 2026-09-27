@@ -102,6 +102,12 @@ export const sidebarData: SidebarData = {
           ],
         },
         {
+          title: 'Courier Settlement',
+          url: '/op/courier-settlement',
+          icon: Wallet,
+          feature: 'admin_courier_settlement',
+        },
+        {
           title: 'Marketing',
           icon: Megaphone,
           feature: 'admin_email_campaigns',

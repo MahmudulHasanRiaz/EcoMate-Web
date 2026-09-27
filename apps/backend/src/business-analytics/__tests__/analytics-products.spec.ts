@@ -355,6 +355,7 @@ function reconInput(extra: Partial<ReconciliationInput['products']> = {}): Recon
       nullCampaignConsumption: 0,
     },
     codLeakOrders: [],
+    codSettledOrders: [],
     warnings: {
       cogsUnavailableUnits: 0,
       ordersMissingShippingCost: 0,

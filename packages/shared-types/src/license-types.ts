@@ -122,6 +122,9 @@ export const FEATURES: Record<string, FeatureFlag> = {
   courier_redx: { key: 'courier_redx', enabled: true, dependencies: ['admin_products', 'admin_orders'] },
   courier_carrybee: { key: 'courier_carrybee', enabled: true, dependencies: ['admin_products', 'admin_orders'] },
 
+  // Courier Settlement & Invoice Management (PRD §5–§14) — depends on accounting + orders
+  admin_courier_settlement: { key: 'admin_courier_settlement', enabled: true, dependencies: ['admin_accounting', 'admin_orders'] },
+
   // ── M: Payment Gateways (6) ──
   gateway_bkash: { key: 'gateway_bkash', enabled: true, dependencies: ['storefront'] },
   gateway_nagad: { key: 'gateway_nagad', enabled: true, dependencies: ['storefront'] },
@@ -163,6 +166,7 @@ export const DEPENDENCY_MAP: Record<string, string[]> = {
   admin_inventory_valuation: ['admin_inventory'],
   admin_purchases: ['admin_suppliers', 'admin_inventory'],
   admin_financial_periods: ['admin_accounting'],
+  admin_courier_settlement: ['admin_accounting', 'admin_orders'],
   admin_refunds: ['admin_orders'],
   admin_packing: ['admin_orders'],
   admin_dispatch: ['admin_products', 'admin_orders'],

@@ -22,7 +22,10 @@ import {
 import {
   collectionKindOf,
   UnavailableSettlementSource,
+  actualCodSettlement,
   type SettlementSource,
+  type OrderSettlementInput,
+  type ActualCodCollection,
 } from './settlement-source';
 import {
   AnalyticsFilterService,
@@ -35,15 +38,25 @@ import {
   analyticsCacheTtlMs,
   type AnalyticsMeta,
 } from './analytics-envelope.util';
+import { FINALIZED_INVOICE_STATES } from '../courier-settlement/cost-projection';
 
 export interface FulfillmentOrderInput {
   id: string;
   paymentOptionType?: string | null;
   shippingCharge: number;
   shippingCost?: number | null;
-  shippingCostSource?: 'manual' | 'courier_default' | null;
+  shippingCostSource?: 'manual' | 'courier_default' | 'courier_invoice' | null;
   payments: { amount: number; status: string; gatewayCode: string; createdAt: Date }[];
   refunds: { amount: number; status: string; createdAt: Date }[];
+}
+
+/**
+ * Loaded settlement figures for the analysed cohort. `byOrder` maps orderId →
+ * finalized, non-superseded settlement aggregates. Empty ⇒ COD stays
+ * unavailable (the pre-settlement honest default).
+ */
+export interface SettlementLoad {
+  byOrder: Map<string, OrderSettlementInput>;
 }
 
 export interface SettlementAmount {
@@ -80,6 +93,11 @@ export interface FulfillmentResult {
   coverage: {
     onlineOrders: number;
     codOrders: number;
+    /** COD orders backed by a finalized settlement (actual figures). */
+    codSettled: number;
+    codSettledAmount: number;
+    /** COD orders with no settlement document yet (unavailable). */
+    codUnsettled: number;
     collectionUnavailableOrders: number;
     /** Courier cost sitting on collection-unavailable orders (COD gap). */
     unknownAmount: number;
@@ -126,7 +144,8 @@ export function settleOrder(
       : {
           value: courierValue,
           state:
-            order.shippingCostSource === 'manual'
+            order.shippingCostSource === 'manual' ||
+            order.shippingCostSource === 'courier_invoice'
               ? 'actual'
               : order.shippingCostSource === 'courier_default'
                 ? 'estimated'
@@ -136,6 +155,34 @@ export function settleOrder(
 
   if (kind !== 'online') {
     const cod = source.getCodCollection({ id: order.id });
+    if (cod.state !== 'unavailable') {
+      // Authoritative settlement figures (finalized courier invoice exists).
+      return {
+        orderId: order.id,
+        collection: kind,
+        // Figures are actual once a settlement row backs them; `reason` carries
+        // 'partially settled' when the courier remittance is incomplete.
+        amountCollected: { value: cod.amountCollected, state: 'actual', reason: cod.reason, dateBasis: 'courier settlement' },
+        amountRefunded: {
+          value: refunded,
+          state: 'actual',
+          reason: refundCount === 0 ? 'no completed refunds' : undefined,
+        },
+        amountRetained: { value: cod.amountRetained, state: 'actual', reason: cod.reason },
+        deliveryChargeRetained: {
+          value: cod.deliveryChargeRetained,
+          state: cod.deliveryChargeRetained === null ? 'unavailable' : 'actual',
+          reason: cod.deliveryChargeRetained === null ? 'partially settled' : undefined,
+          inference: 'none',
+        },
+        courierCost: courier,
+        fulfillmentMargin: {
+          value: cod.fulfillmentMargin,
+          state: cod.fulfillmentMargin === null ? 'unavailable' : 'actual',
+          reason: cod.fulfillmentMargin === null ? 'partially settled' : undefined,
+        },
+      };
+    }
     return {
       orderId: order.id,
       collection: kind,
@@ -215,8 +262,27 @@ export function settleOrder(
   };
 }
 
-export function computeFulfillment(orders: FulfillmentOrderInput[]): FulfillmentResult {
-  const rows = orders.map((o) => settleOrder(o));
+/**
+ * A loaded-settlement source: returns actuals for settled orders, else the
+ * honest unavailable default. Pure — the loader does the DB read.
+ */
+export class LoadedSettlementSource implements SettlementSource {
+  constructor(private readonly load: SettlementLoad) {}
+  getCodCollection(order: { id: string }) {
+    const settlement = this.load.byOrder.get(order.id);
+    if (settlement && settlement.hasFinalizedRow) {
+      return actualCodSettlement(settlement);
+    }
+    return new UnavailableSettlementSource().getCodCollection(order);
+  }
+}
+
+export function computeFulfillment(
+  orders: FulfillmentOrderInput[],
+  load?: SettlementLoad,
+): FulfillmentResult {
+  const source = load ? new LoadedSettlementSource(load) : unavailableSettlement;
+  const rows = orders.map((o) => settleOrder(o, source));
   assertNoRevenueLeak(rows as unknown as Record<string, unknown>[]);
 
   let collected = 0;
@@ -227,6 +293,8 @@ export function computeFulfillment(orders: FulfillmentOrderInput[]): Fulfillment
   let margin = 0;
   let onlineOrders = 0;
   let codOrders = 0;
+  let codSettled = 0;
+  let codSettledAmount = 0;
   let unavailableOrders = 0;
   let unknownAmount = 0;
 
@@ -242,16 +310,30 @@ export function computeFulfillment(orders: FulfillmentOrderInput[]): Fulfillment
       }
     } else {
       codOrders += 1;
-      unavailableOrders += 1;
+      // COD with a finalized settlement is ACTUAL, not unavailable.
+      const settled = row.amountCollected.value !== null;
+      if (settled) {
+        codSettled += 1;
+        codSettledAmount += row.amountCollected.value ?? 0;
+        collected += row.amountCollected.value ?? 0;
+        retained += row.amountRetained.value ?? 0;
+        dcr += row.deliveryChargeRetained.value ?? 0;
+        if (row.fulfillmentMargin.value !== null) margin += row.fulfillmentMargin.value;
+      } else {
+        unavailableOrders += 1;
+      }
       // Online-confirmed refunds on COD orders still count as refunded money.
       refunded += row.amountRefunded.value ?? 0;
     }
     if (row.courierCost.value !== null) {
       courierCost += row.courierCost.value;
-      if (row.collection !== 'online') unknownAmount += row.courierCost.value;
+      if (row.collection !== 'online' && row.amountCollected.value === null) {
+        unknownAmount += row.courierCost.value;
+      }
     }
   }
 
+  const unsettledCod = codOrders - codSettled;
   return {
     rows,
     totals: {
@@ -265,16 +347,24 @@ export function computeFulfillment(orders: FulfillmentOrderInput[]): Fulfillment
     coverage: {
       onlineOrders,
       codOrders,
+      /** COD orders backed by a finalized settlement (actual figures). */
+      codSettled,
+      codSettledAmount,
+      /** COD orders with no settlement document yet (unavailable). */
+      codUnsettled: unsettledCod,
       collectionUnavailableOrders: unavailableOrders,
+      /** Courier cost sitting on collection-unavailable orders (COD gap). */
       unknownAmount,
     },
     gapBanner: {
       codOrders,
       courierCost: unknownAmount,
       message:
-        codOrders > 0
-          ? `COD settlement data is not captured. Collection, retained amount and fulfillment margin are unavailable for these ${codOrders} orders (৳${unknownAmount} courier cost). A courier settlement import will supply this.`
-          : 'All orders in scope have confirmed collection.',
+        unsettledCod > 0
+          ? `COD settlement data is not captured for ${unsettledCod} order(s). Collection, retained amount and fulfillment margin are unavailable for these (৳${unknownAmount} courier cost). A courier settlement import will supply this.`
+          : codOrders > 0
+            ? `All ${codSettled} COD order(s) are settled from courier invoices.`
+            : 'All orders in scope have confirmed collection.',
     },
     panelNote: PANEL_NOTE,
   };
@@ -354,6 +444,9 @@ export class AnalyticsFulfillmentService {
         rev.revenueDate <= end
       );
     });
+    const settlementLoad = await this.loadSettlements(
+      cohort.filter((o: any) => o.paymentOptionType === 'CASH_ON_DELIVERY').map((o: any) => o.id),
+    );
     const result = computeFulfillment(
       cohort.map((o: any): FulfillmentOrderInput => ({
         id: o.id,
@@ -373,6 +466,7 @@ export class AnalyticsFulfillmentService {
           createdAt: new Date(r.createdAt),
         })),
       })),
+      settlementLoad,
     );
     const response = {
       data: result,
@@ -390,6 +484,79 @@ export class AnalyticsFulfillmentService {
   }
 
   /**
+   * Public seam for other services that re-derive settlement independently
+   * (reconciliation R18): returns a source backed by finalized settlement rows.
+   */
+  async buildSettlementSource(orderIds: string[]): Promise<SettlementSource> {
+    if (orderIds.length === 0) return new UnavailableSettlementSource();
+    return new LoadedSettlementSource(await this.loadSettlements(orderIds));
+  }
+
+  /** Public seam: finalized-settlement aggregates keyed by orderId. */
+  async loadSettlementLoad(orderIds: string[]): Promise<SettlementLoad> {
+    if (orderIds.length === 0) return { byOrder: new Map() };
+    return this.loadSettlements(orderIds);
+  }
+
+  /**
+   * Load finalized, non-superseded courier settlement aggregates per order.
+   * Only orders with ≥ 1 finalized DATA row become `codSettled` in analytics.
+   */
+  private async loadSettlements(orderIds: string[]): Promise<SettlementLoad> {
+    const byOrder = new Map<string, OrderSettlementInput>();
+    if (orderIds.length === 0) return { byOrder };
+
+    const rows = await this.prisma.courierSettlementRow.findMany({
+      where: {
+        orderId: { in: orderIds },
+        rowClass: 'DATA',
+        supersededByRowId: null,
+        invoice: { state: { in: [...FINALIZED_INVOICE_STATES] } },
+      },
+      select: {
+        orderId: true,
+        effectiveCollected: true,
+        effectiveCharges: true,
+        effectiveNet: true,
+        order: { select: { shippingCharge: true, paymentOptionType: true, total: true, payments: { select: { amount: true, gatewayCode: true, status: true } } } },
+      },
+    });
+
+    for (const r of rows) {
+      if (!r.orderId || !r.order) continue;
+      const acc = byOrder.get(r.orderId) ?? {
+        collected: 0,
+        charges: 0,
+        net: 0,
+        codPosition: 0,
+        shippingCharge: Number(r.order.shippingCharge),
+        hasFinalizedRow: true,
+      };
+      acc.collected += Number(r.effectiveCollected);
+      acc.charges += Number(r.effectiveCharges);
+      acc.net += Number(r.effectiveNet);
+      byOrder.set(r.orderId, acc);
+    }
+    // codPosition = expectedCod − charges − net (expectedCod from cash payments/fallback).
+    const ordersMeta = await this.prisma.order.findMany({
+      where: { id: { in: [...byOrder.keys()] } },
+      select: {
+        id: true,
+        total: true,
+        payments: { select: { amount: true, gatewayCode: true, status: true } },
+      },
+    });
+    for (const o of ordersMeta) {
+      const acc = byOrder.get(o.id);
+      if (!acc) continue;
+      const expected = expectedCodFromOrder(o.total, o.payments);
+      acc.codPosition =
+        Math.round((expected - acc.charges - acc.net + Number.EPSILON) * 100) / 100;
+    }
+    return { byOrder };
+  }
+
+  /**
    * Read-path cache write: a cache blip serves the computed response anyway
    * (the next read simply recomputes) — it must never fail the request.
    */
@@ -400,4 +567,20 @@ export class AnalyticsFulfillmentService {
       /* computed response is served regardless */
     }
   }
+}
+
+/** expectedCod for a COD order: Σ non-failed cash payments, else Order.total (§2.1). */
+function expectedCodFromOrder(
+  total: unknown,
+  payments: { amount: unknown; gatewayCode: string; status: string }[],
+): number {
+  const cash = (payments ?? []).filter(
+    (p) => p.gatewayCode === 'cash' && p.status !== 'FAILED' && p.status !== 'CANCELLED',
+  );
+  if (cash.length === 0) return round2(Number(total) || 0);
+  return round2(cash.reduce((s, p) => s + (Number(p.amount) || 0), 0));
+}
+
+function round2(n: number): number {
+  return Math.round(((Number.isFinite(n) ? n : 0) + Number.EPSILON) * 100) / 100;
 }
