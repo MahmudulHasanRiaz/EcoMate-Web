@@ -46,6 +46,7 @@ import {
   useStoreSyncRuns,
 } from './sync-hooks'
 import { SyncRunDetail } from './sync-center'
+import { StoreReconnectDialog } from './store-reconnect-dialog'
 
 const TABS = ['Overview', 'Products', 'Orders', 'Synchronization', 'Settings', 'Activity'] as const
 
@@ -60,7 +61,6 @@ export function ChannelStoreDetail() {
   const queryClient = useQueryClient()
   const [tab, setTab] = useState<(typeof TABS)[number]>('Overview')
   const [rotateOpen, setRotateOpen] = useState(false)
-  const [secret, setSecret] = useState('')
   const { data: store, isLoading } = useStoreDetail(id)
   const { data: health } = useStoreHealth(id)
 
@@ -75,19 +75,12 @@ export function ChannelStoreDetail() {
     }
   }
 
-  async function handleRotate() {
-    if (!secret) { toast.error('Paste the new secret first'); return }
-    try {
-      await storesApi.rotateCredentials(id, { secret })
-      toast.success('Credentials rotated (write-only — never echoed back)')
-      setSecret(''); setRotateOpen(false)
-    } catch (e: unknown) {
-      toast.error((e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Rotation failed')
-    }
-  }
-
   return (
     <>
+      <StoreReconnectDialog
+        store={rotateOpen && store ? store : null}
+        onClose={() => setRotateOpen(false)}
+      />
       <Header fixed>
         <h1 className="font-semibold">{store?.name ?? 'Store'}</h1>
         <div className="ml-auto flex items-center gap-2">
@@ -104,7 +97,7 @@ export function ChannelStoreDetail() {
               <Badge>{store.status}</Badge>
               <Badge variant={healthTone(store.healthState) as never}>{store.healthState}</Badge>
               <Button variant="outline" size="sm" onClick={handleProbe}>
-                <RefreshCw className="mr-2 h-3 w-3" /> Probe health
+                <RefreshCw className="mr-2 h-3 w-3" /> Test Connection
               </Button>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -137,15 +130,10 @@ export function ChannelStoreDetail() {
                 <Card>
                   <CardHeader><CardTitle>Rotate credentials</CardTitle></CardHeader>
                   <CardContent className="space-y-2">
-                    {!rotateOpen
-                      ? <Button variant="outline" size="sm" onClick={() => setRotateOpen(true)}>Rotate…</Button>
-                      : (
-                        <div className="space-y-2">
-                          <Label htmlFor="rotate-secret">New secret (write-only)</Label>
-                          <Input id="rotate-secret" type="password" value={secret} onChange={(e) => setSecret(e.target.value)} autoComplete="off" />
-                          <Button size="sm" onClick={handleRotate}>Rotate</Button>
-                        </div>
-                      )}
+                    <p className="text-sm text-muted-foreground">
+                      Replace credentials with the provider-specific form (keeps identity, mappings and history).
+                    </p>
+                    <Button variant="outline" size="sm" onClick={() => setRotateOpen(true)}>Rotate…</Button>
                   </CardContent>
                 </Card>
               </div>
