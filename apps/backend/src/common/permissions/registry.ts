@@ -31,6 +31,12 @@ export const PERMISSIONS = {
     'manage_stock',
   ],
   SETTINGS: ['view_system_settings', 'modify_integrations'],
+  COURIER_SETTLEMENT: [
+    'view_courier_settlement',
+    'import_courier_settlement',
+    'finalize_courier_settlement',
+    'adjust_courier_settlement',
+  ],
 } as const;
 
 export type PermissionKey =
@@ -78,6 +84,10 @@ export function getPermissionLabel(key: string): string {
     manage_hr_settings: 'Manage HR Settings',
     manage_attendance_devices: 'Manage Attendance Devices',
     manage_attendance_adjustments: 'Manage Attendance Adjustments',
+    view_courier_settlement: 'View Courier Settlement',
+    import_courier_settlement: 'Import Courier Settlement',
+    finalize_courier_settlement: 'Finalize Courier Settlement',
+    adjust_courier_settlement: 'Adjust Courier Settlement',
   };
   return (
     labels[key] ||
@@ -95,6 +105,7 @@ export function getModuleLabel(key: string): string {
     HR: 'HR Management',
     INVENTORY: 'Inventory Management',
     SETTINGS: 'System Settings',
+    COURIER_SETTLEMENT: 'Courier Settlement',
   };
   return labels[key] || key;
 }

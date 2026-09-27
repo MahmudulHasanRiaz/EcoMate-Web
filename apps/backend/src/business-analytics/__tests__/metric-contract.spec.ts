@@ -688,6 +688,7 @@ describe('cost states (§2.3)', () => {
     expect(FULFILLMENT_COST_SOURCES).toStrictEqual([
       'manual',
       'courier_default',
+      'courier_invoice',
     ]);
   });
 

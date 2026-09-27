@@ -26,10 +26,12 @@ import {
 } from './analytics-filter.service';
 import type { AnalyticsFilterDto } from './analytics-filter.dto';
 import { AnalyticsPnlService } from './analytics-pnl.service';
-import { AnalyticsProductsService } from './analytics-products.service';import {
+import { AnalyticsProductsService } from './analytics-products.service';
+import {
   AnalyticsFulfillmentService,
   assertNoRevenueLeak,
   settleOrder,
+  LoadedSettlementSource,
 } from './analytics-fulfillment.service';
 import {
   buildMeta,
@@ -151,6 +153,8 @@ export interface ReconciliationInput {
     nullCampaignConsumption: number;
   };
   codLeakOrders: string[];
+  /** COD orders whose figures are backed by a finalized settlement (ok). */
+  codSettledOrders: string[];
   warnings: ReconciliationWarnings;
 }
 
@@ -471,14 +475,14 @@ export const CHECK_REGISTRY: CheckDef[] = [
   },
   {
     id: 'R18',
-    title: 'COD honesty: no COD order carries collection figures',
+    title: 'COD honesty: collection figures require a finalized settlement',
     run: (i) =>
       result(
         'R18',
         i.codLeakOrders.length === 0 ? 'pass' : 'fail',
-        [],
+        { settledWithFigures: i.codSettledOrders.length },
         i.codLeakOrders,
-        'COD collected/retained/DCR/margin stay unavailable until a settlement source exists (D11)',
+        'A COD order may carry collection/retained/DCR/margin figures ONLY when backed by a finalized courier settlement row; otherwise they stay unavailable (D11, settlement §17)',
       ),
   },
 ];
@@ -732,7 +736,18 @@ export class AnalyticsReconciliationService {
       undatedDeliveries: 0,
     };
     const doubleReversalOrders: string[] = [];
+    // R18 (redefined by courier settlement §17): a COD order may carry
+    // collection/retained/DCR/margin figures ONLY when backed by a finalized
+    // settlement row. Figures without such backing = leak; backed figures are
+    // actual. Unsettled COD stays unavailable (no figures, counted W11).
     const codLeakOrders: string[] = [];
+    const codSettledOrders: string[] = [];
+    const codOrderIds = candidates
+      .filter((c) => c.paymentOptionType === 'CASH_ON_DELIVERY')
+      .map((c) => c.id);
+    const settlementLoad = await this.fulfillment.loadSettlementLoad(codOrderIds);
+    const settledOrderIds = new Set(settlementLoad.byOrder.keys());
+    const settlementSource = new LoadedSettlementSource(settlementLoad);
     let partialFlagged = 0;
     let returnPendingInFlight = 0;
     let unmappedLocations = 0;
@@ -786,36 +801,42 @@ export class AnalyticsReconciliationService {
       });
       if (inReturns && hasReversalRefund) doubleReversalOrders.push(o.id);
 
-      const settled = settleOrder({
-        id: o.id,
-        paymentOptionType: o.paymentOptionType,
-        shippingCharge: Number(o.shippingCharge),
-        shippingCost: o.shippingCost === null ? null : Number(o.shippingCost),
-        shippingCostSource:
-          o.shippingCostSource === 'manual' ||
-          o.shippingCostSource === 'courier_default'
-            ? o.shippingCostSource
-            : null,
-        payments: o.payments.map((p) => ({
-          amount: Number(p.amount),
-          status: p.status,
-          gatewayCode: p.gatewayCode,
-          createdAt: toDate(p.createdAt) ?? new Date(0),
-        })),
-        refunds: o.refunds.map((r) => ({
-          amount: Number(r.amount),
-          status: r.status,
-          createdAt: toDate(r.createdAt) ?? new Date(0),
-        })),
-      });
-      if (
-        settled.collection !== 'online' &&
-        (settled.amountCollected.value !== null ||
-          settled.amountRetained.value !== null ||
-          settled.deliveryChargeRetained.value !== null ||
-          settled.fulfillmentMargin.value !== null)
-      ) {
-        codLeakOrders.push(o.id);
+      const settled = settleOrder(
+        {
+          id: o.id,
+          paymentOptionType: o.paymentOptionType,
+          shippingCharge: Number(o.shippingCharge),
+          shippingCost: o.shippingCost === null ? null : Number(o.shippingCost),
+          shippingCostSource:
+            o.shippingCostSource === 'manual' ||
+            o.shippingCostSource === 'courier_default' ||
+            o.shippingCostSource === 'courier_invoice'
+              ? o.shippingCostSource
+              : null,
+          payments: o.payments.map((p) => ({
+            amount: Number(p.amount),
+            status: p.status,
+            gatewayCode: p.gatewayCode,
+            createdAt: toDate(p.createdAt) ?? new Date(0),
+          })),
+          refunds: o.refunds.map((r) => ({
+            amount: Number(r.amount),
+            status: r.status,
+            createdAt: toDate(r.createdAt) ?? new Date(0),
+          })),
+        },
+        settlementSource,
+      );
+      const carriesFigures =
+        settled.amountCollected.value !== null ||
+        settled.amountRetained.value !== null ||
+        settled.deliveryChargeRetained.value !== null ||
+        settled.fulfillmentMargin.value !== null;
+      const backedBySettlement =
+        settled.collection !== 'online' && settledOrderIds.has(o.id);
+      if (settled.collection !== 'online') {
+        if (carriesFigures && !backedBySettlement) codLeakOrders.push(o.id);
+        if (backedBySettlement && carriesFigures) codSettledOrders.push(o.id);
       }
 
       if (statusName === 'Partial') partialFlagged += 1;
@@ -980,6 +1001,7 @@ export class AnalyticsReconciliationService {
         nullCampaignConsumption,
       },
       codLeakOrders,
+      codSettledOrders,
       warnings: {
         cogsUnavailableUnits: coverage.cogs.unavailableUnits,
         ordersMissingShippingCost: coverage.shipping.unavailableOrders,
@@ -994,7 +1016,7 @@ export class AnalyticsReconciliationService {
         shippingRefundInferences: bridge.shippingRefundInferences,
         consumptionsMissingSpendDate: coverage.marketing.undatedRows,
         consumptionsMissingSpendAmount: coverage.marketing.undatedAmount,
-        codUnsettledOrders: ful.coverage.collectionUnavailableOrders,
+        codUnsettledOrders: ful.coverage.codUnsettled,
         codUnsettledCourierCost: ful.coverage.unknownAmount,
       },
     });

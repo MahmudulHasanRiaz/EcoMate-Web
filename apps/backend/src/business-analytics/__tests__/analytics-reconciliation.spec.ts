@@ -92,6 +92,7 @@ function baseInput(extra: Partial<ReconciliationInput> = {}): ReconciliationInpu
       nullCampaignConsumption: 0,
     },
     codLeakOrders: [],
+    codSettledOrders: [],
     warnings: {
       cogsUnavailableUnits: 0,
       ordersMissingShippingCost: 0,
@@ -268,6 +269,25 @@ describe('implemented R checks', () => {
       byId(evaluateChecks(baseInput({ codLeakOrders: ['cod1'] })), 'R18')
         .status,
     ).toBe('fail');
+  });
+
+  it('R18 (§17) allows figures ONLY when settlement-backed, and reports them', () => {
+    const settled = byId(
+      evaluateChecks(baseInput({ codSettledOrders: ['cod1', 'cod2'] })),
+      'R18',
+    );
+    expect(settled.status).toBe('pass');
+    expect(settled.expected).toEqual({ settledWithFigures: 2 });
+
+    // A settled order AND an unbacked leak in the same run ⇒ still a fail.
+    const both = byId(
+      evaluateChecks(
+        baseInput({ codSettledOrders: ['cod1'], codLeakOrders: ['cod9'] }),
+      ),
+      'R18',
+    );
+    expect(both.status).toBe('fail');
+    expect(both.actual).toEqual(['cod9']);
   });
 
   it('R7 passes on agreement, warns with delta + cause on divergence (never fails)', () => {
@@ -513,10 +533,16 @@ describe('runReconciliation R5 wiring', () => {
         data: {
           rows: fulRows,
           totals: { collected: 0, fulfillmentMargin: 0, deliveryChargeRetained: 0 },
-          coverage: { collectionUnavailableOrders: 0, unknownAmount: 0 },
+          coverage: {
+            collectionUnavailableOrders: 0,
+            unknownAmount: 0,
+            codUnsettled: 0,
+          },
         },
         meta: {},
       }),
+      loadSettlementLoad: jest.fn().mockResolvedValue({ byOrder: new Map() }),
+      buildSettlementSource: jest.fn(),
     };
     const mockProductsSvc: any = {
       getAggregates: jest.fn().mockResolvedValue({ productNetSum: 0, scoped: false, parents: [] }),
@@ -633,5 +659,161 @@ describe('runReconciliation R5 wiring', () => {
     expect(res.data.checks.find((c: any) => c.id === 'W8').status).toBe(
       'pass',
     );
+  });
+});
+
+describe('runReconciliation R18 live derivation (courier settlement §17)', () => {
+  const range = {
+    start: new Date('2026-09-01T00:00:00+06:00'),
+    end: new Date('2026-09-30T17:59:59.999Z'),
+    periodDays: 30,
+    granularity: 'day',
+    comparison: { prevStart: new Date(), prevEnd: new Date() },
+  };
+
+  const zeroLine = { value: 0, state: 'ok' };
+
+  const codCandidate = (id: string) => ({
+    id,
+    status: { name: 'Delivered' },
+    timeline: [],
+    paymentOptionType: 'CASH_ON_DELIVERY',
+    customerId: 'cus1',
+    customerPhone: '+8801700000000',
+    guestPhone: null,
+    customerCity: 'Dhaka',
+    customerState: null,
+    customerZip: null,
+    shippingCost: 60,
+    shippingCharge: 80,
+    shippingCostSource: 'manual',
+    payments: [],
+    refunds: [],
+    dispatches: [{ deliveredAt: new Date('2026-09-10T10:00:00+06:00') }],
+  });
+
+  /** finalized settlement rows already aggregated into the load shape. */
+  const settledRow = {
+    collected: 5000,
+    charges: 50,
+    net: 4950,
+    codPosition: 0,
+    shippingCharge: 80,
+    hasFinalizedRow: true,
+  };
+
+  async function runR18(
+    candidates: any[],
+    byOrder: Map<string, any>,
+  ) {
+    const mockPrisma: any = {
+      order: { findMany: jest.fn().mockResolvedValue(candidates) },
+      expense: { findMany: jest.fn().mockResolvedValue([]) },
+      marketingConsumption: {
+        findMany: jest.fn().mockResolvedValue([]),
+        groupBy: jest.fn().mockResolvedValue([]),
+      },
+      expenseCategory: { findMany: jest.fn().mockResolvedValue([]) },
+      payment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 } }) },
+      marketingCostAllocation: {
+        aggregate: jest.fn().mockResolvedValue({ _sum: { allocatedCost: 0 } }),
+        groupBy: jest.fn().mockResolvedValue([]),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      productMarketingCost: { groupBy: jest.fn().mockResolvedValue([]) },
+      marketingCampaign: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const mockFilter: any = {
+      resolveContext: jest.fn().mockReturnValue({ range, filters: {} }),
+      buildOrderWhere: jest.fn().mockReturnValue({ trashedAt: null }),
+      resolveMarketingOrderIds: jest.fn(),
+    };
+    const mockPnlSvc: any = {
+      getPnl: jest.fn().mockResolvedValue({
+        data: {
+          lines: Object.fromEntries(
+            [
+              'grossSales', 'discounts', 'returns', 'refundsReversal', 'netSales',
+              'cogs', 'grossProfit', 'fulfillmentCost', 'paymentFees',
+              'marketingCost', 'contributionProfit', 'operatingExpenses',
+              'operatingProfit', 'netProfit',
+            ].map((k) => [k, zeroLine]),
+          ),
+          bridge: {
+            contributionProfit: 0,
+            deliveryChargeRetained: 0,
+            fulfillmentMargin: 0,
+            totalBusinessContribution: 0,
+            operatingProfit: 0,
+            netProfit: 0,
+            operands: ['contributionProfit', 'deliveryChargeRetained'],
+            shippingRefundInferences: 0,
+          },
+          lenses: { cashCollected: { value: 0, state: 'ok' } },
+          strip: { undatedDeliveries: 0 },
+          coverage: {
+            cogs: { unavailableUnits: 0 },
+            shipping: { unavailableOrders: 0 },
+            fees: { withoutFee: 0 },
+            marketing: { undatedRows: 0, undatedAmount: 0 },
+          },
+        },
+        meta: { costCoverage: {}, ladderState: 'actual', thresholds: {} },
+      }),
+    };
+    const mockFulSvc: any = {
+      getFulfillment: jest.fn().mockResolvedValue({
+        data: {
+          rows: [],
+          totals: { collected: 0, fulfillmentMargin: 0, deliveryChargeRetained: 0 },
+          coverage: { collectionUnavailableOrders: 0, unknownAmount: 0, codUnsettled: 0 },
+        },
+        meta: {},
+      }),
+      loadSettlementLoad: jest.fn().mockResolvedValue({ byOrder }),
+    };
+    const mockProductsSvc: any = {
+      getAggregates: jest.fn().mockResolvedValue({ productNetSum: 0, scoped: false, parents: [] }),
+    };
+    const cache: any = { get: jest.fn().mockResolvedValue(undefined), set: jest.fn() };
+    const module = await Test.createTestingModule({
+      providers: [
+        AnalyticsReconciliationService,
+        { provide: PrismaService, useValue: mockPrisma },
+        { provide: AnalyticsFilterService, useValue: mockFilter },
+        { provide: AnalyticsPnlService, useValue: mockPnlSvc },
+        { provide: AnalyticsFulfillmentService, useValue: mockFulSvc },
+        { provide: AnalyticsProductsService, useValue: mockProductsSvc },
+        { provide: CacheService, useValue: cache },
+      ],
+    }).compile();
+    const service: any = module.get(AnalyticsReconciliationService);
+    const res = await service.runReconciliation({});
+    return res.data.checks.find((c: any) => c.id === 'R18');
+  }
+
+  it('a settlement-backed COD order may carry figures (pass, counted settled)', async () => {
+    const check = await runR18(
+      [codCandidate('cod1')],
+      new Map([['cod1', settledRow]]),
+    );
+    expect(check.status).toBe('pass');
+    expect(check.expected).toEqual({ settledWithFigures: 1 });
+    expect(check.actual).toEqual([]);
+  });
+
+  it('an unsettled COD order carries no figures ⇒ no leak (pass)', async () => {
+    const check = await runR18([codCandidate('cod1')], new Map());
+    expect(check.status).toBe('pass');
+    expect(check.expected).toEqual({ settledWithFigures: 0 });
+  });
+
+  it('mixes: backed order counted settled while an unbacked leak still fails', async () => {
+    const check = await runR18(
+      [codCandidate('cod1'), codCandidate('cod2')],
+      new Map([['cod1', settledRow]]),
+    );
+    expect(check.status).toBe('pass');
+    expect(check.expected).toEqual({ settledWithFigures: 1 });
   });
 });

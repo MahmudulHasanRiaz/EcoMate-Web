@@ -83,6 +83,8 @@ import { Route as AuthenticatedOpCategoriesIndexRouteImport } from './routes/_au
 import { Route as AuthenticatedOpChatsIndexRouteImport } from './routes/_authenticated/op/chats/index'
 import { Route as AuthenticatedOpCombosIndexRouteImport } from './routes/_authenticated/op/combos/index'
 import { Route as AuthenticatedOpCouponsIndexRouteImport } from './routes/_authenticated/op/coupons/index'
+import { Route as AuthenticatedOpCourierSettlementIndexRouteImport } from './routes/_authenticated/op/courier-settlement/index'
+import { Route as AuthenticatedOpCourierSettlementIdRouteImport } from './routes/_authenticated/op/courier-settlement/$id'
 import { Route as AuthenticatedOpCustomersIndexRouteImport } from './routes/_authenticated/op/customers/index'
 import { Route as AuthenticatedOpCustomersIdRouteImport } from './routes/_authenticated/op/customers/$id'
 import { Route as AuthenticatedOpDispatchIndexRouteImport } from './routes/_authenticated/op/dispatch/index'
@@ -590,6 +592,18 @@ const AuthenticatedOpCouponsIndexRoute =
   AuthenticatedOpCouponsIndexRouteImport.update({
     id: '/op/coupons/',
     path: '/op/coupons/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpCourierSettlementIndexRoute =
+  AuthenticatedOpCourierSettlementIndexRouteImport.update({
+    id: '/op/courier-settlement/',
+    path: '/op/courier-settlement/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpCourierSettlementIdRoute =
+  AuthenticatedOpCourierSettlementIdRouteImport.update({
+    id: '/op/courier-settlement/$id',
+    path: '/op/courier-settlement/$id',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedOpCustomersIndexRoute =
@@ -1179,6 +1193,7 @@ export interface FileRoutesByFullPath {
   '/op/analytics/overview': typeof AuthenticatedOpAnalyticsOverviewRoute
   '/op/analytics/products': typeof AuthenticatedOpAnalyticsProductsRouteWithChildren
   '/op/analytics/sales': typeof AuthenticatedOpAnalyticsSalesRoute
+  '/op/courier-settlement/$id': typeof AuthenticatedOpCourierSettlementIdRoute
   '/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/op/employees/create': typeof AuthenticatedOpEmployeesCreateRoute
   '/op/employees/departments': typeof AuthenticatedOpEmployeesDepartmentsRoute
@@ -1218,6 +1233,7 @@ export interface FileRoutesByFullPath {
   '/op/chats/': typeof AuthenticatedOpChatsIndexRoute
   '/op/combos/': typeof AuthenticatedOpCombosIndexRoute
   '/op/coupons/': typeof AuthenticatedOpCouponsIndexRoute
+  '/op/courier-settlement/': typeof AuthenticatedOpCourierSettlementIndexRoute
   '/op/customers/': typeof AuthenticatedOpCustomersIndexRoute
   '/op/dispatch/': typeof AuthenticatedOpDispatchIndexRoute
   '/op/employees/': typeof AuthenticatedOpEmployeesIndexRoute
@@ -1343,6 +1359,7 @@ export interface FileRoutesByTo {
   '/op/analytics/overview': typeof AuthenticatedOpAnalyticsOverviewRoute
   '/op/analytics/products': typeof AuthenticatedOpAnalyticsProductsRouteWithChildren
   '/op/analytics/sales': typeof AuthenticatedOpAnalyticsSalesRoute
+  '/op/courier-settlement/$id': typeof AuthenticatedOpCourierSettlementIdRoute
   '/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/op/employees/create': typeof AuthenticatedOpEmployeesCreateRoute
   '/op/employees/departments': typeof AuthenticatedOpEmployeesDepartmentsRoute
@@ -1382,6 +1399,7 @@ export interface FileRoutesByTo {
   '/op/chats': typeof AuthenticatedOpChatsIndexRoute
   '/op/combos': typeof AuthenticatedOpCombosIndexRoute
   '/op/coupons': typeof AuthenticatedOpCouponsIndexRoute
+  '/op/courier-settlement': typeof AuthenticatedOpCourierSettlementIndexRoute
   '/op/customers': typeof AuthenticatedOpCustomersIndexRoute
   '/op/dispatch': typeof AuthenticatedOpDispatchIndexRoute
   '/op/employees': typeof AuthenticatedOpEmployeesIndexRoute
@@ -1509,6 +1527,7 @@ export interface FileRoutesById {
   '/_authenticated/op/analytics/overview': typeof AuthenticatedOpAnalyticsOverviewRoute
   '/_authenticated/op/analytics/products': typeof AuthenticatedOpAnalyticsProductsRouteWithChildren
   '/_authenticated/op/analytics/sales': typeof AuthenticatedOpAnalyticsSalesRoute
+  '/_authenticated/op/courier-settlement/$id': typeof AuthenticatedOpCourierSettlementIdRoute
   '/_authenticated/op/customers/$id': typeof AuthenticatedOpCustomersIdRoute
   '/_authenticated/op/employees/create': typeof AuthenticatedOpEmployeesCreateRoute
   '/_authenticated/op/employees/departments': typeof AuthenticatedOpEmployeesDepartmentsRoute
@@ -1548,6 +1567,7 @@ export interface FileRoutesById {
   '/_authenticated/op/chats/': typeof AuthenticatedOpChatsIndexRoute
   '/_authenticated/op/combos/': typeof AuthenticatedOpCombosIndexRoute
   '/_authenticated/op/coupons/': typeof AuthenticatedOpCouponsIndexRoute
+  '/_authenticated/op/courier-settlement/': typeof AuthenticatedOpCourierSettlementIndexRoute
   '/_authenticated/op/customers/': typeof AuthenticatedOpCustomersIndexRoute
   '/_authenticated/op/dispatch/': typeof AuthenticatedOpDispatchIndexRoute
   '/_authenticated/op/employees/': typeof AuthenticatedOpEmployeesIndexRoute
@@ -1675,6 +1695,7 @@ export interface FileRouteTypes {
     | '/op/analytics/overview'
     | '/op/analytics/products'
     | '/op/analytics/sales'
+    | '/op/courier-settlement/$id'
     | '/op/customers/$id'
     | '/op/employees/create'
     | '/op/employees/departments'
@@ -1714,6 +1735,7 @@ export interface FileRouteTypes {
     | '/op/chats/'
     | '/op/combos/'
     | '/op/coupons/'
+    | '/op/courier-settlement/'
     | '/op/customers/'
     | '/op/dispatch/'
     | '/op/employees/'
@@ -1839,6 +1861,7 @@ export interface FileRouteTypes {
     | '/op/analytics/overview'
     | '/op/analytics/products'
     | '/op/analytics/sales'
+    | '/op/courier-settlement/$id'
     | '/op/customers/$id'
     | '/op/employees/create'
     | '/op/employees/departments'
@@ -1878,6 +1901,7 @@ export interface FileRouteTypes {
     | '/op/chats'
     | '/op/combos'
     | '/op/coupons'
+    | '/op/courier-settlement'
     | '/op/customers'
     | '/op/dispatch'
     | '/op/employees'
@@ -2004,6 +2028,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/analytics/overview'
     | '/_authenticated/op/analytics/products'
     | '/_authenticated/op/analytics/sales'
+    | '/_authenticated/op/courier-settlement/$id'
     | '/_authenticated/op/customers/$id'
     | '/_authenticated/op/employees/create'
     | '/_authenticated/op/employees/departments'
@@ -2043,6 +2068,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/chats/'
     | '/_authenticated/op/combos/'
     | '/_authenticated/op/coupons/'
+    | '/_authenticated/op/courier-settlement/'
     | '/_authenticated/op/customers/'
     | '/_authenticated/op/dispatch/'
     | '/_authenticated/op/employees/'
@@ -2650,6 +2676,20 @@ declare module '@tanstack/react-router' {
       path: '/op/coupons'
       fullPath: '/op/coupons/'
       preLoaderRoute: typeof AuthenticatedOpCouponsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/courier-settlement/': {
+      id: '/_authenticated/op/courier-settlement/'
+      path: '/op/courier-settlement'
+      fullPath: '/op/courier-settlement/'
+      preLoaderRoute: typeof AuthenticatedOpCourierSettlementIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/courier-settlement/$id': {
+      id: '/_authenticated/op/courier-settlement/$id'
+      path: '/op/courier-settlement/$id'
+      fullPath: '/op/courier-settlement/$id'
+      preLoaderRoute: typeof AuthenticatedOpCourierSettlementIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/op/customers/': {
@@ -3439,6 +3479,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpAnalyticsOverviewRoute: typeof AuthenticatedOpAnalyticsOverviewRoute
   AuthenticatedOpAnalyticsProductsRoute: typeof AuthenticatedOpAnalyticsProductsRouteWithChildren
   AuthenticatedOpAnalyticsSalesRoute: typeof AuthenticatedOpAnalyticsSalesRoute
+  AuthenticatedOpCourierSettlementIdRoute: typeof AuthenticatedOpCourierSettlementIdRoute
   AuthenticatedOpCustomersIdRoute: typeof AuthenticatedOpCustomersIdRoute
   AuthenticatedOpEmployeesCreateRoute: typeof AuthenticatedOpEmployeesCreateRoute
   AuthenticatedOpEmployeesDepartmentsRoute: typeof AuthenticatedOpEmployeesDepartmentsRoute
@@ -3478,6 +3519,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpChatsIndexRoute: typeof AuthenticatedOpChatsIndexRoute
   AuthenticatedOpCombosIndexRoute: typeof AuthenticatedOpCombosIndexRoute
   AuthenticatedOpCouponsIndexRoute: typeof AuthenticatedOpCouponsIndexRoute
+  AuthenticatedOpCourierSettlementIndexRoute: typeof AuthenticatedOpCourierSettlementIndexRoute
   AuthenticatedOpCustomersIndexRoute: typeof AuthenticatedOpCustomersIndexRoute
   AuthenticatedOpDispatchIndexRoute: typeof AuthenticatedOpDispatchIndexRoute
   AuthenticatedOpEmployeesIndexRoute: typeof AuthenticatedOpEmployeesIndexRoute
@@ -3580,6 +3622,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpAnalyticsProductsRoute:
     AuthenticatedOpAnalyticsProductsRouteWithChildren,
   AuthenticatedOpAnalyticsSalesRoute: AuthenticatedOpAnalyticsSalesRoute,
+  AuthenticatedOpCourierSettlementIdRoute:
+    AuthenticatedOpCourierSettlementIdRoute,
   AuthenticatedOpCustomersIdRoute: AuthenticatedOpCustomersIdRoute,
   AuthenticatedOpEmployeesCreateRoute: AuthenticatedOpEmployeesCreateRoute,
   AuthenticatedOpEmployeesDepartmentsRoute:
@@ -3629,6 +3673,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpChatsIndexRoute: AuthenticatedOpChatsIndexRoute,
   AuthenticatedOpCombosIndexRoute: AuthenticatedOpCombosIndexRoute,
   AuthenticatedOpCouponsIndexRoute: AuthenticatedOpCouponsIndexRoute,
+  AuthenticatedOpCourierSettlementIndexRoute:
+    AuthenticatedOpCourierSettlementIndexRoute,
   AuthenticatedOpCustomersIndexRoute: AuthenticatedOpCustomersIndexRoute,
   AuthenticatedOpDispatchIndexRoute: AuthenticatedOpDispatchIndexRoute,
   AuthenticatedOpEmployeesIndexRoute: AuthenticatedOpEmployeesIndexRoute,

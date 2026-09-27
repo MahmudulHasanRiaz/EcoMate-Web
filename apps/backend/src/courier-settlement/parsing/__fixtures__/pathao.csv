@@ -1,0 +1,5 @@
+Consignment_ID,Created_Date,Invoice type,Collected_Amount,Recipient_Name,Recipient_Phone,Collectable_Amount,COD_fee,Delivery_Fee,Final_Fee,Discount,Additional_Charge,Compensation_Cost,Promo_Discount,Payout,Merchant_Order_ID,Store_name
+DF2409266X3XVL,2026-09-26 15:00:02,insta_fee,0.00,Customer,•••••••9419,0.00,0.00,41.30,26.84,14.46,0.00,0.00,0.00,-26.84,ORD-260924-0019,Customer
+DF2509268VHH49,2026-09-26 12:10:09,delivery,770.00,Customer,•••••••1762,770.00,0.00,60.00,55.00,5.00,0.00,0.00,0.00,715.00,ORD-260925-0020,Customer
+DF250926N6DKPA,2026-09-26 14:43:09,delivery,2755.00,Customer,•••••••9131,2755.00,0.00,60.00,55.00,5.00,0.00,0.00,0.00,2700.00,ORD-260925-0017,Customer
+DF2409266X3XVL,2026-09-26 11:34:54,delivery,770.00,Customer,•••••••9419,770.00,0.00,60.00,55.00,5.00,0.00,0.00,0.00,715.00,ORD-260924-0019,Customer
