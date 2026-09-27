@@ -1460,10 +1460,39 @@ export class ShopifyProvider extends BaseCommerceProvider {
       );
     }
     await this.ensureTracked(store, variantId, inventoryItemId);
+    // Aggregate-correct projection: the variant's sellable quantity is the
+    // SUM across every stocked location, and merchant locations are never
+    // touched (disconnect is rejected for managed locations and would
+    // destroy merchant state anyway). So the managed location absorbs the
+    // delta: managed = max(0, target − others). Later merchant changes
+    // re-surface as drift and the next evaluation re-adjusts; the read-back
+    // verify arbitrates the final truth.
+    const levels = await this.rest<{ inventory_levels?: any[] }>(
+      store,
+      'GET',
+      `/inventory_levels.json?inventory_item_ids=${encodeURIComponent(inventoryItemId)}`,
+    ).catch(() => ({ inventory_levels: [] as any[] }));
+    let othersSum = 0;
+    let managedStocked = false;
+    for (const l of ((levels as any).inventory_levels ?? []) as any[]) {
+      if (String(l?.location_id) === String(locationId)) {
+        managedStocked = true;
+        continue;
+      }
+      const a = Number(l?.available);
+      if (Number.isFinite(a)) othersSum += a;
+    }
+    if (!managedStocked) {
+      await this.rest(store, 'POST', '/inventory_levels/connect.json', {
+        location_id: locationId,
+        inventory_item_id: inventoryItemId,
+      }).catch(() => null);
+    }
+    const managedQty = Math.max(0, qty - othersSum);
     await this.rest(store, 'POST', '/inventory_levels/set.json', {
       location_id: locationId,
       inventory_item_id: inventoryItemId,
-      available: qty,
+      available: managedQty,
     });
   }
 

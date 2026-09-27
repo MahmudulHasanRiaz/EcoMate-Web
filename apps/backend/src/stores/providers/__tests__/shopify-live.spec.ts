@@ -859,8 +859,7 @@ describe('ShopifyProvider live HTTP (P9)', () => {
       });
     });
 
-    it('publishVariantStockQuantity targets the variant inventory item; unknown variant is loud', async () => {
-      const mock = new MockFetch();
+    it('publishVariantStockQuantity targets the variant inventory item; unknown variant is loud', async () => {      const mock = new MockFetch();
       mockShopifyTokenEndpoint(mock);
       mock.onPrefix('https://test-shop.myshopify.com/admin/api', (url, init) => {
         if (url.endsWith('/locations.json?limit=250')) {
@@ -894,8 +893,51 @@ describe('ShopifyProvider live HTTP (P9)', () => {
       ).rejects.toMatchObject({ category: ProviderErrorCategory.REMOTE_NOT_FOUND });
     });
 
-    it('no locations → loud SHOPIFY_NO_LOCATION (never a blind write)', async () => {
+    it('aggregate-correct projection: managed location absorbs other locations (never touched)', async () => {
       const mock = new MockFetch();
+      mockShopifyTokenEndpoint(mock);
+      mock.onPrefix('https://test-shop.myshopify.com/admin/api', (url, init) => {
+        if (url.endsWith('/locations.json?limit=250')) {
+          return jsonResponse(200, { locations: [{ id: 111, name: 'Main' }] });
+        }
+        if (url.includes('/products/9001.json')) {
+          return jsonResponse(200, {
+            product: {
+              id: 9001,
+              variants: [{ id: 7001, inventory_item_id: 8001, inventory_quantity: 5, inventory_management: 'shopify' }],
+            },
+          });
+        }
+        if (url.includes('/inventory_levels.json')) {
+          return jsonResponse(200, {
+            inventory_levels: [
+              { location_id: 111, inventory_item_id: 8001, available: 0 },
+              { location_id: 222, inventory_item_id: 8001, available: -1 },
+            ],
+          });
+        }
+        if (url.endsWith('/variants/7001.json')) return jsonResponse(200, { variant: { id: 7001 } });
+        if (url.endsWith('/inventory_items/8001.json')) return jsonResponse(200, { inventory_item: { id: 8001 } });
+        if (url.endsWith('/inventory_levels/set.json')) return jsonResponse(200, { inventory_level: {} });
+        if (url.endsWith('/inventory_levels/disconnect.json')) return jsonResponse(200, {});
+        if (url.endsWith('/inventory_levels/connect.json')) return jsonResponse(200, {});
+        return jsonResponse(404, { message: `unexpected ${init?.method ?? 'GET'} ${url}` });
+      });
+      const shopify = new ShopifyProvider(mock.fetch);
+      await shopify.publishStockQuantity(STORE(), { providerId: '9001' }, 3);
+      // Other locations are never written (no disconnect — merchant state
+      // is sacred); the managed location absorbs the delta: 3 − (−1) = 4.
+      expect(mock.calls.some((c) => c.url.endsWith('/inventory_levels/disconnect.json'))).toBe(false);
+      // Managed location already stocked → no connect call.
+      expect(mock.calls.some((c) => c.url.endsWith('/inventory_levels/connect.json'))).toBe(false);
+      const setCall = mock.calls.find((c) => c.url.endsWith('/inventory_levels/set.json'));
+      expect(JSON.parse(String(setCall?.init?.body ?? '{}'))).toMatchObject({
+        location_id: '111',
+        available: 4,
+      });
+    });
+
+    it('no locations → loud SHOPIFY_NO_LOCATION (never a blind write)', async () => {      const mock = new MockFetch();
       mockShopifyTokenEndpoint(mock);
       mock.onPrefix('https://test-shop.myshopify.com/admin/api', (url) => {
         if (url.endsWith('/locations.json?limit=250')) return jsonResponse(200, { locations: [] });
