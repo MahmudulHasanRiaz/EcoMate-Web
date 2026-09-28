@@ -9,27 +9,27 @@ const badgeVariants = cva(
     variants: {
       variant: {
         default:
-          'border-transparent bg-primary text-primary-foreground [a&]:hover:bg-primary/90',
+          'gloss-sheen border-transparent bg-primary text-primary-foreground [a&]:hover:bg-primary/90',
         secondary:
-          'border-transparent bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90',
+          'gloss-sheen border-transparent bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90',
         destructive:
-          'border-transparent bg-destructive text-white [a&]:hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60',
+          'gloss-sheen border-transparent bg-destructive text-white [a&]:hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60',
         outline:
           'text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground',
         success:
-          'border-success/25 bg-success-soft text-success',
+          'gloss-sheen border-success/25 bg-success-soft text-success',
         danger:
-          'border-danger/25 bg-danger-soft text-danger',
+          'gloss-sheen border-danger/25 bg-danger-soft text-danger',
         warning:
-          'border-warning/25 bg-warning-soft text-warning',
+          'gloss-sheen border-warning/25 bg-warning-soft text-warning',
         info:
-          'border-info/25 bg-info-soft text-info',
+          'gloss-sheen border-info/25 bg-info-soft text-info',
         violet:
-          'border-accent-violet/25 bg-accent-violet-soft text-accent-violet',
+          'gloss-sheen border-accent-violet/25 bg-accent-violet-soft text-accent-violet',
         cyan:
-          'border-accent-cyan/25 bg-accent-cyan-soft text-accent-cyan',
+          'gloss-sheen border-accent-cyan/25 bg-accent-cyan-soft text-accent-cyan',
         pink:
-          'border-accent-pink/25 bg-accent-pink-soft text-accent-pink',
+          'gloss-sheen border-accent-pink/25 bg-accent-pink-soft text-accent-pink',
       },
     },
     defaultVariants: {

@@ -79,7 +79,7 @@ export function StatusBadge({
 }) {
   const Icon = icon === null ? null : (icon ?? TONE_ICONS[tone])
   return (
-    <span className={cn('status-pill inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap', TONE_CLASSES[tone], className)}>
+    <span className={cn('status-pill gloss-sheen inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap', TONE_CLASSES[tone], className)}>
       {Icon ? <Icon className="h-3 w-3 shrink-0" aria-hidden /> : null}
       {children}
     </span>
@@ -119,7 +119,7 @@ export function TrendChip({
   const tone = direction === 'up' ? 'success' : direction === 'down' ? 'danger' : 'neutral'
   return (
     <span
-      className={cn('status-pill inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-bold tabular-nums whitespace-nowrap', TONE_CLASSES[tone], className)}
+      className={cn('status-pill gloss-sheen inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-bold tabular-nums whitespace-nowrap', TONE_CLASSES[tone], className)}
     >
       <Icon className="h-3 w-3 shrink-0" aria-hidden />
       {children}

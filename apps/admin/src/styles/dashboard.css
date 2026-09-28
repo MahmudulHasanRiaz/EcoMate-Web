@@ -24,6 +24,17 @@
 }
 
 @layer components {
+  /* ---- Liquid gloss: faint top-light sheen for tinted surfaces.
+     Single reusable overlay — composes with any background-color
+     (soft tints, solids) in both modes. Static (no motion), so it
+     needs no reduced-motion handling. Alpha stays tiny so AA
+     contrast of text on tinted surfaces is unaffected. ---- */
+  .gloss-sheen {
+    background-image:
+      linear-gradient(180deg, rgb(255 255 255 / 0.07), transparent 42%),
+      radial-gradient(120% 90% at 50% -20%, rgb(255 255 255 / 0.05), transparent 60%);
+  }
+
   /* ---- KPI / Stat card: flat surface + faint top-left tint + 2px top accent ---- */
   .kpi-card {
     --kpi-accent: var(--border);
@@ -33,6 +44,8 @@
     border: 1px solid var(--border);
     border-top: 2px solid var(--kpi-accent);
     background:
+      linear-gradient(180deg, rgb(255 255 255 / 0.06), transparent 38%),
+      radial-gradient(120% 90% at 50% -20%, rgb(255 255 255 / 0.05), transparent 60%),
       linear-gradient(135deg, var(--kpi-accent-soft), transparent 55%),
       var(--card);
     box-shadow: var(--shadow-card);
@@ -71,7 +84,9 @@
     height: 1.75rem;
     border-radius: var(--radius-md);
     color: var(--kpi-accent);
-    background: var(--kpi-accent-soft);
+    background-color: var(--kpi-accent-soft);
+    background-image:
+      linear-gradient(180deg, rgb(255 255 255 / 0.09), transparent 55%);
     border: 1px solid var(--kpi-accent-border);
   }
 
@@ -88,6 +103,8 @@
     justify-content: center;
     border-radius: var(--radius-md);
     padding: 0.375rem;
+    background-image:
+      linear-gradient(180deg, rgb(255 255 255 / 0.08), transparent 55%);
   }
 
   /* ---- Dashboard table: 44px rows, hairline, no zebra, sunken sticky header ---- */
@@ -161,7 +178,9 @@
     top: 2px;
     bottom: 2px;
     border-radius: calc(var(--radius-md) - 2px);
-    background: var(--surface);
+    background-color: var(--surface);
+    background-image:
+      linear-gradient(180deg, rgb(255 255 255 / 0.06), transparent 55%);
     box-shadow: var(--shadow-card);
     transition: transform var(--duration-slow) var(--ease-out-expo),
       width var(--duration-slow) var(--ease-out-expo);
@@ -185,6 +204,10 @@
   .seg-item[data-active='true'] { color: var(--ink); font-weight: 600; }
 
   /* ---- Status pill: soft dot + label (colors via utility classes) ---- */
+  .status-pill {
+    background-image:
+      linear-gradient(180deg, rgb(255 255 255 / 0.08), transparent 60%);
+  }
   .status-pill::before {
     content: '';
     width: 0.375rem;
@@ -283,6 +306,12 @@
     color: var(--ink-muted);
   }
 
+  /* ---- Tabs trigger active thumb: raised + top-light ---- */
+  [data-slot='tabs-trigger'][data-state='active'] {
+    background-image:
+      linear-gradient(180deg, rgb(255 255 255 / 0.06), transparent 55%);
+  }
+
   /* ---- Sidebar nav item: 32px row, brand active state ---- */
   .nav-item {
     border-radius: var(--radius-md);
@@ -290,7 +319,9 @@
   /* Active: soft brand bg + brand-ink + 2px rounded left indicator.
      Overrides the sidebar menu-button's built-in accent variant. */
   .nav-item[data-active='true'] {
-    background: var(--primary-soft) !important;
+    background-color: var(--primary-soft) !important;
+    background-image:
+      linear-gradient(180deg, rgb(255 255 255 / 0.07), transparent 55%) !important;
     color: var(--primary-ink) !important;
     box-shadow: none !important;
   }
@@ -316,7 +347,9 @@
     border-radius: var(--radius-sm);
     flex-shrink: 0;
     color: var(--chip-ink, var(--ink-muted));
-    background: var(--chip-soft, var(--surface-raised));
+    background-color: var(--chip-soft, var(--surface-raised));
+    background-image:
+      linear-gradient(180deg, rgb(255 255 255 / 0.09), transparent 55%);
   }
 
   /* ---- Sidebar scroll fade masks (top + bottom) ---- */
