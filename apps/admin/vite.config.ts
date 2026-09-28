@@ -51,7 +51,10 @@ export default defineConfig(({ mode }) => {
     plugins: [
       tanstackRouter({
         target: 'react',
-        autoCodeSplitting: true,
+        // autoCodeSplitting OFF: it emits 250+ tiny chunks; on HTTP/1.1 with
+        // slow TTFB each file costs a full round trip (15s+ hard reload).
+        // manualChunks below bundles vendors; routes stay in a few chunks.
+        autoCodeSplitting: false,
       }),
       react(),
       tailwindcss(),
@@ -88,6 +91,24 @@ export default defineConfig(({ mode }) => {
     build: {
       commonjsOptions: {
         include: [/@ecomate\/shared-types/, /node_modules/],
+      },
+      rollupOptions: {
+        output: {
+          // Bundle node_modules into a few large vendor chunks instead of
+          // 100+ tiny files. With HTTP/1.1 (6 parallel connections) and slow
+          // TTFB, each file costs a full round trip — 144 files × 1.7s ÷ 6
+          // = 15s+ on hard reload. 4 vendor chunks × 1.7s ÷ 6 = ~2s.
+          // Hashed filenames + immutable cache headers keep caching effective.
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('recharts')) return 'vendor-charts';
+              if (id.includes('@tanstack')) return 'vendor-tanstack';
+              if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/scheduler/'))
+                return 'vendor-react';
+              return 'vendor';
+            }
+          },
+        },
       },
     },
     optimizeDeps: {
