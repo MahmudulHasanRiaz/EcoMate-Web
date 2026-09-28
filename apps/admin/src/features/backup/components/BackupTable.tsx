@@ -96,7 +96,7 @@ export function BackupTable({
                     <div className="flex gap-1">
                       {b.status === 'completed' && b.fileKey && (
                         <>
-                          <Button size="icon" variant="ghost" className="h-10 w-10" onClick={() => onDownload(b.id)}
+                          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => onDownload(b.id)}
                             title="Download">
                             <Download className="h-4 w-4" />
                           </Button>
@@ -104,18 +104,18 @@ export function BackupTable({
                             onConfirm={() => onRestore(b.id)}
                             isPending={restorePending}
                             trigger={
-                              <Button size="icon" variant="ghost" className="h-10 w-10" title="Restore">
+                              <Button size="icon" variant="ghost" className="h-8 w-8" title="Restore">
                                 <RotateCcw className="h-4 w-4" />
                               </Button>
                             }
                           />
                         </>
                       )}
-                      <Button size="icon" variant="ghost" className="h-10 w-10" onClick={() => onToggleLock(b.id, !b.locked)}
+                      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => onToggleLock(b.id, !b.locked)}
                         title={b.locked ? 'Unlock' : 'Lock'}>
                         {b.locked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
                       </Button>
-                      <Button size="icon" variant="ghost" className="h-10 w-10" onClick={() => onDelete(b.id)}
+                      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => onDelete(b.id)}
                         title="Delete">
                         <Trash2 className="h-4 w-4" />
                       </Button>

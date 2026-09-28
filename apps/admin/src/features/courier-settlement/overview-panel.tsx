@@ -110,7 +110,7 @@ export function OverviewPanel() {
         <p className="text-xs text-muted-foreground">
           Flow figures follow the selected period; position figures are current.
         </p>
-        <div className="inline-flex min-h-10 flex-wrap items-center gap-1 rounded-xl border border-border/50 bg-muted p-1 sm:flex-nowrap sm:gap-0">
+        <div className="inline-flex min-h-9 flex-wrap items-center gap-1 rounded-xl border border-border/50 bg-muted p-1 sm:flex-nowrap sm:gap-0">
           {PERIODS.map((p) => (
             <button
               key={p.value}

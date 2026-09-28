@@ -566,7 +566,7 @@ export function SourceSheet({
           ) : null}
         </div>
 
-        <div className="flex min-h-10 flex-wrap items-center gap-1 rounded-xl border border-border/50 bg-muted p-1">
+        <div className="flex min-h-9 flex-wrap items-center gap-1 rounded-xl border border-border/50 bg-muted p-1">
           {CLASS_FILTERS.map((c) => (
             <button
               key={c}
@@ -652,7 +652,7 @@ export function SourceSheet({
                       setDragHeader(null)
                       setDropTarget(null)
                     }}
-                    className={`flex min-h-10 cursor-grab items-center gap-2 rounded-md px-2 py-1 text-xs transition-colors hover:bg-muted ${
+                    className={`flex min-h-9 cursor-grab items-center gap-2 rounded-md px-2 py-1 text-xs transition-colors hover:bg-muted ${
                       dropTarget === h && dragHeader && dragHeader !== h ? 'ring-1 ring-primary/60' : ''
                     } ${dragHeader === h ? 'opacity-50' : ''}`}
                   >
@@ -679,7 +679,7 @@ export function SourceSheet({
           ) : null}
         </div>
 
-        <div className="flex min-h-10 flex-wrap items-center gap-1 rounded-xl border border-border/50 bg-muted p-1">
+        <div className="flex min-h-9 flex-wrap items-center gap-1 rounded-xl border border-border/50 bg-muted p-1">
           {(['comfy', 'dense'] as const).map((d) => (
             <button
               key={d}
@@ -713,7 +713,7 @@ export function SourceSheet({
           <Button
             variant="ghost"
             size="sm"
-            className="h-10 w-10 p-0"
+            className="h-8 w-8 p-0"
             onClick={() => setFullscreen((v) => !v)}
             aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
             title={fullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen'}

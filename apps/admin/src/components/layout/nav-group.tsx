@@ -37,9 +37,9 @@ export function NavGroup({ title, items }: NavGroupProps) {
   const { state, isMobile } = useSidebar()
   const href = useLocation({ select: (location) => location.href })
   return (
-    <SidebarGroup className="py-2.5">
+    <SidebarGroup className="py-1.5">
       {title && (
-        <SidebarGroupLabel className="text-[10px] font-extrabold tracking-wider text-muted-foreground/85 uppercase px-3.5 py-1 h-auto select-none">
+        <SidebarGroupLabel className="text-[10px] font-extrabold tracking-wider text-muted-foreground/85 uppercase px-3 py-1 h-auto select-none">
           {title}
         </SidebarGroupLabel>
       )}
@@ -84,20 +84,20 @@ function SidebarMenuLink({ item, href }: { item: NavLink; href: string }) {
         asChild
         isActive={isActive}
         tooltip={item.title}
-        className={`w-full h-8.5 px-3.5 transition-all duration-150 rounded-md font-medium text-[13px] border-l-2 ${
+        className={`w-full h-8 px-3 transition-all duration-150 rounded-lg font-medium text-[13px] ${
           isActive
-            ? 'bg-secondary text-secondary-foreground font-semibold border-primary shadow-xs'
-            : 'text-muted-foreground/90 border-transparent hover:text-foreground hover:bg-muted/40'
+            ? 'bg-secondary text-secondary-foreground font-semibold'
+            : 'text-muted-foreground/90 hover:text-foreground hover:bg-muted/40'
         }`}
       >
         {isExternal ? (
-          <a href={item.url} target="_blank" rel="noopener noreferrer" onClick={() => setOpenMobile(false)} className="flex items-center gap-2.5">
+          <a href={item.url} target="_blank" rel="noopener noreferrer" onClick={() => setOpenMobile(false)} className="flex items-center gap-2">
             {item.icon && <item.icon className="h-4 w-4 shrink-0 text-muted-foreground/85" />}
             <span className="truncate flex-1">{item.title}</span>
             {item.badge && <NavBadge>{item.badge}</NavBadge>}
           </a>
         ) : (
-          <Link to={item.url} onClick={() => setOpenMobile(false)} className="flex items-center gap-2.5">
+          <Link to={item.url} onClick={() => setOpenMobile(false)} className="flex items-center gap-2">
             {item.icon && <item.icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-primary' : 'text-muted-foreground/85'}`} />}
             <span className="truncate flex-1">{item.title}</span>
             {item.badge && <NavBadge>{item.badge}</NavBadge>}
@@ -128,10 +128,10 @@ function SidebarMenuCollapsible({
         <CollapsibleTrigger asChild>
           <SidebarMenuButton
             tooltip={item.title}
-            className={`w-full h-8.5 px-3.5 transition-all duration-150 rounded-md font-medium text-[13px] border-l-2 ${
+            className={`w-full h-8 px-3 transition-all duration-150 rounded-lg font-medium text-[13px] ${
               isActive
-                ? 'text-foreground font-semibold border-primary bg-muted/20'
-                : 'text-muted-foreground/90 border-transparent hover:text-foreground hover:bg-muted/40'
+                ? 'text-foreground font-semibold bg-muted/40'
+                : 'text-muted-foreground/90 hover:text-foreground hover:bg-muted/40'
             }`}
           >
             {item.icon && <item.icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-primary' : 'text-muted-foreground/85'}`} />}
@@ -141,7 +141,7 @@ function SidebarMenuCollapsible({
           </SidebarMenuButton>
         </CollapsibleTrigger>
         <CollapsibleContent className="CollapsibleContent">
-          <SidebarMenuSub className="border-l border-border/50 ml-5.5 pl-2.5 space-y-0.5 mt-0.5">
+          <SidebarMenuSub className="border-l border-border/50 ml-4 pl-2 space-y-0.5 mt-0.5">
             {item.items.map((subItem) => {
               const isSubActive = checkIsActive(href, subItem)
               return (
@@ -149,9 +149,9 @@ function SidebarMenuCollapsible({
                   <SidebarMenuSubButton
                     asChild
                     isActive={isSubActive}
-                    className={`w-full h-8 px-3 transition-all duration-150 rounded-md font-medium text-[12px] ${
+                    className={`w-full h-7.5 px-3 transition-all duration-150 rounded-lg font-medium text-[12px] ${
                       isSubActive
-                        ? 'bg-secondary text-secondary-foreground font-semibold shadow-xs'
+                        ? 'bg-secondary text-secondary-foreground font-semibold'
                         : 'text-muted-foreground/80 hover:text-foreground hover:bg-muted/30'
                     }`}
                   >
@@ -187,10 +187,10 @@ function SidebarMenuCollapsedDropdown({
           <SidebarMenuButton
             tooltip={item.title}
             isActive={isActive}
-            className={`w-full h-8.5 transition-all duration-150 rounded-md border-l-2 ${
+            className={`w-full h-8 transition-all duration-150 rounded-lg ${
               isActive
-                ? 'bg-secondary text-secondary-foreground font-semibold border-primary shadow-xs'
-                : 'text-muted-foreground/90 border-transparent hover:text-foreground hover:bg-muted/40'
+                ? 'bg-secondary text-secondary-foreground font-semibold'
+                : 'text-muted-foreground/90 hover:text-foreground hover:bg-muted/40'
             }`}
           >
             {item.icon && <item.icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-primary' : 'text-muted-foreground/85'}`} />}

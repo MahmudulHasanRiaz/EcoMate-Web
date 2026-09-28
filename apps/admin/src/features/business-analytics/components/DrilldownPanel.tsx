@@ -90,7 +90,7 @@ export function DrilldownPanel({
             <a
               key={i.label}
               href={href(i.to, i.params)}
-              className="-mx-2 flex min-h-10 cursor-pointer items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-[13px] transition-colors duration-150 hover:bg-muted/40"
+              className="-mx-2 flex min-h-9 cursor-pointer items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-[13px] transition-colors duration-150 hover:bg-muted/40"
             >
               <span className="min-w-0">
                 <span className="block font-medium">{i.label}</span>

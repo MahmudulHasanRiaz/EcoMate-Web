@@ -84,7 +84,7 @@ export function RecentOrders({ dateRange, view = 'activity' }: WidgetProps) {
                     <TableCell className="text-xs text-muted-foreground">{formatDate(order.createdAt)}</TableCell>
                     <TableCell className="text-right">
                       <Link to="/op/orders/$id" params={{ id: order.id }}>
-                        <Button variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground hover:text-foreground" aria-label="View order details">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" aria-label="View order details">
                           <Eye className="h-4 w-4" />
                         </Button>
                       </Link>

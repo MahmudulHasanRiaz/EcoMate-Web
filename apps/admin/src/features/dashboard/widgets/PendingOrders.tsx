@@ -122,7 +122,7 @@ export function PendingOrders({ dateRange, view = 'activity' }: WidgetProps) {
                     <TableCell>
                       <div className="flex items-center justify-end gap-1.5">
                         <Link to="/op/orders/$id" params={{ id: order.id }}>
-                          <Button variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground hover:text-foreground" title="View details" aria-label="View order details">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" title="View details" aria-label="View order details">
                             <Eye className="h-4 w-4" />
                           </Button>
                         </Link>
@@ -131,7 +131,7 @@ export function PendingOrders({ dateRange, view = 'activity' }: WidgetProps) {
                           size="icon"
                           onClick={() => handleProcess(order.id)}
                           disabled={updateStatusMut.isPending}
-                          className="h-10 w-10 text-info hover:text-info hover:bg-info-soft"
+                          className="h-8 w-8 text-info hover:text-info hover:bg-info-soft"
                           title="Confirm & Process Order"
                         >
                           <Play className="h-4 w-4 fill-info" />
@@ -141,7 +141,7 @@ export function PendingOrders({ dateRange, view = 'activity' }: WidgetProps) {
                           size="icon"
                           onClick={() => handleShip(order.id)}
                           disabled={updateStatusMut.isPending}
-                          className="h-10 w-10 text-success hover:text-success hover:bg-success-soft"
+                          className="h-8 w-8 text-success hover:text-success hover:bg-success-soft"
                           title="Ship Order"
                         >
                           <Truck className="h-4 w-4" />

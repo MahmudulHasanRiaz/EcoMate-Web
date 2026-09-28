@@ -196,9 +196,11 @@
     font-weight: 600;
   }
 
-  /* Minimum 40px tap height for dashboard controls. */
+  /* Shopify-like control density: 36px minimum control height app-wide.
+     Compact like the Shopify admin (never bloated), still comfortably
+     tappable; dense 32px controls use size="sm" directly. */
   .tap-h {
-    min-height: 2.5rem;
+    min-height: 2.25rem;
   }
 }
 
