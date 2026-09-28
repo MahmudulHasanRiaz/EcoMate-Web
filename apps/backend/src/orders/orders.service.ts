@@ -979,8 +979,22 @@ export class OrdersService {
       dto.customerId = customer.id;
     }
 
+    // Customer profile linked via dto.customerId (if any). Hoisted so the
+    // order-time snapshot below can prefer the CUSTOMER's data. Never the
+    // authenticated actor: for staff creates `user` is the staff member and
+    // must never leak into customer fields (previously a block-scoped
+    // `const user` here shadowed the staff param inside this block, while the
+    // snapshot below fell back to the staff identity).
+    let linkedCustomer: {
+      status?: unknown;
+      phoneNumber?: string | null;
+      firstName?: string | null;
+      lastName?: string | null;
+      email?: string | null;
+    } | null = null;
+
     if (dto.customerId) {
-      const user = await this.prisma.userProfile.findUnique({
+      linkedCustomer = await this.prisma.userProfile.findUnique({
         where: { id: dto.customerId },
         select: {
           status: true,
@@ -990,18 +1004,20 @@ export class OrdersService {
           email: true,
         },
       });
-      if (user?.status === 'suspended') {
+      if (linkedCustomer?.status === 'suspended') {
         throw new BadRequestException(
           'This account has been blocked. Please contact support.',
         );
       }
       // Ensure CustomerProfile exists (order FK now references CustomerProfile).
       // Staff-created orders may update the customer's name/email/phone.
-      const desiredPhone = dto.guestPhone || user?.phoneNumber;
+      const desiredPhone = dto.guestPhone || linkedCustomer?.phoneNumber;
       const name =
         dto.guestName ||
-        (user ? `${user.firstName} ${user.lastName}`.trim() : 'Customer');
-      const email = dto.guestEmail || user?.email || undefined;
+        (linkedCustomer
+          ? `${linkedCustomer.firstName} ${linkedCustomer.lastName}`.trim()
+          : 'Customer');
+      const email = dto.guestEmail || linkedCustomer?.email || undefined;
       if (desiredPhone) {
         // Phone is a unique key — don't clobber another customer's number.
         let phone: string | undefined = desiredPhone;
@@ -1511,13 +1527,19 @@ export class OrdersService {
       // time so it's preserved independently of later CustomerProfile mutations.
       // This is the immutable record of what was known about the customer when
       // the order was placed.
+      //
+      // Fallback chain: explicit DTO fields → linked customer profile →
+      // the authenticated actor ONLY when that actor IS the customer
+      // (storefront customer placing their own order). A staff member
+      // creating an order on someone's behalf must NEVER appear here.
+      const orderActor = isCustomer ? user : undefined;
       const shippingAddrObj = typeof dto.shippingAddress === 'object' && dto.shippingAddress
         ? dto.shippingAddress as Record<string, unknown>
         : {};
-      const orderTimeEmail = dto.guestEmail || user?.email || null;
-      const orderTimePhone = dto.guestPhone || user?.phoneNumber || null;
-      const orderTimeFirstName = dto.guestName?.split(' ')[0] || user?.firstName || null;
-      const orderTimeLastName = dto.guestName?.split(' ').slice(1).join(' ') || user?.lastName || null;
+      const orderTimeEmail = dto.guestEmail || linkedCustomer?.email || orderActor?.email || null;
+      const orderTimePhone = dto.guestPhone || linkedCustomer?.phoneNumber || orderActor?.phoneNumber || null;
+      const orderTimeFirstName = dto.guestName?.split(' ')[0] || linkedCustomer?.firstName || orderActor?.firstName || null;
+      const orderTimeLastName = dto.guestName?.split(' ').slice(1).join(' ') || linkedCustomer?.lastName || orderActor?.lastName || null;
       const orderTimeCity = (shippingAddrObj.city as string) || (shippingAddrObj.district as string) || null;
       const orderTimeState = (shippingAddrObj.state as string) || (shippingAddrObj.division as string) || resolveDivision(dto.district) || null;
       const orderTimeZip = (shippingAddrObj.zip as string) || (shippingAddrObj.zipCode as string) || (shippingAddrObj.postalCode as string) || null;

@@ -782,6 +782,118 @@ describe('OrdersService', () => {
       ]);
     });
 
+    describe('staff identity isolation (customer snapshot)', () => {
+      const staffUser = {
+        userId: 'staff-1',
+        role: 'admin',
+        firstName: 'StaffFirst',
+        lastName: 'StaffLast',
+        email: 'staff@shop.com',
+        phoneNumber: '01999999999',
+      };
+      const linkedCustomerProfile = {
+        status: 'active',
+        phoneNumber: '01711111111',
+        firstName: 'Rahim',
+        lastName: 'Customer',
+        email: 'rahim@example.com',
+      };
+
+      it('never writes the staff last name when the customer name is a single word', async () => {
+        runTx();
+        (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(
+          linkedCustomerProfile,
+        );
+
+        await service.create(
+          {
+            ...makeGuestDto(),
+            customerId: 'customer-id-1',
+            guestName: 'Rahim',
+            guestEmail: undefined,
+          },
+          '10.0.0.3',
+          staffUser,
+        );
+
+        const data = (prisma.order.create as jest.Mock).mock.calls[0][0]
+          .data;
+        expect(data.customerId).toBe('customer-id-1');
+        expect(data.customerFirstName).toBe('Rahim');
+        // Linked customer profile wins — staff identity must not leak.
+        expect(data.customerLastName).toBe('Customer');
+        expect(data.customerLastName).not.toBe('StaffLast');
+        expect(data.customerEmail).toBe('rahim@example.com');
+        expect(data.customerEmail).not.toBe('staff@shop.com');
+      });
+
+      it('falls back to null (not staff data) when neither DTO nor customer profile has the field', async () => {
+        runTx();
+        (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+          status: 'active',
+          phoneNumber: null,
+          firstName: null,
+          lastName: null,
+          email: null,
+        });
+
+        await service.create(
+          {
+            ...makeGuestDto(),
+            customerId: 'customer-id-1',
+            guestName: undefined,
+            guestPhone: undefined,
+            guestEmail: undefined,
+          },
+          '10.0.0.4',
+          staffUser,
+        );
+
+        const data = (prisma.order.create as jest.Mock).mock.calls[0][0]
+          .data;
+        expect(data.customerFirstName).toBeNull();
+        expect(data.customerLastName).toBeNull();
+        expect(data.customerEmail).toBeNull();
+        expect(data.customerPhone).toBeNull();
+      });
+
+      it('still uses the actor identity for a storefront customer placing their own order', async () => {
+        runTx();
+        (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(
+          linkedCustomerProfile,
+        );
+        const customerUser = {
+          userId: 'customer-id-1',
+          role: 'customer',
+          firstName: 'Rahim',
+          lastName: 'Customer',
+          email: 'rahim@example.com',
+          phoneNumber: '01711111111',
+        };
+
+        await service.create(
+          {
+            ...makeGuestDto(),
+            customerId: undefined,
+            guestName: undefined,
+            guestPhone: undefined,
+            guestEmail: undefined,
+            items: [{ productId: 'prod-1', quantity: 1, price: 500 }],
+          },
+          undefined,
+          customerUser,
+        );
+
+        const data = (prisma.order.create as jest.Mock).mock.calls[0][0]
+          .data;
+        // Authenticated customer is locked to their own identity.
+        expect(data.customerId).toBe('customer-id-1');
+        expect(data.customerFirstName).toBe('Rahim');
+        expect(data.customerLastName).toBe('Customer');
+        expect(data.customerEmail).toBe('rahim@example.com');
+      });
+    });
+
     describe('managed-stock availability gate (zero/negative stock)', () => {
       const runTx = () => {
         (prisma.$transaction as jest.Mock).mockImplementation(
