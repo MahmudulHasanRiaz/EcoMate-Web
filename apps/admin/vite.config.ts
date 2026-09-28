@@ -23,6 +23,17 @@ export default defineConfig(({ mode }) => {
     server: {
       host: '0.0.0.0',
       ...(devAllowedHosts.length > 0 ? { allowedHosts: devAllowedHosts } : {}),
+      // Warmup: pre-transform the shell + most-visited routes on dev-server
+      // start, so the first page load (and tunnel visits) don't pay the
+      // per-file transform cost on demand. Only affects `vite dev`.
+      warmup: {
+        clientFiles: [
+          './src/components/layout/authenticated-layout.tsx',
+          './src/routes/_authenticated/op/overview.tsx',
+          './src/routes/_authenticated/op/orders/index.tsx',
+          './src/features/dashboard/**/*.tsx',
+        ],
+      },
       proxy: {
         '/pos': {
           target: 'http://localhost:5174',

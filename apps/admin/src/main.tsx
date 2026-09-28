@@ -74,9 +74,36 @@ const router = createRouter({
   defaultPreload: 'intent',
   defaultPreloadStaleTime: 30_000,
   basepath: '/admin',
-  // No defaultPendingComponent: the HTML boot skeleton is the single loading
-  // state. It stays until the first route resolves, so a full page reload
-  // shows one continuous loader instead of skeleton → spinner → dashboard.
+  // Pending indicator for in-app navigation. On full page reload the HTML
+  // boot skeleton (z-index 9999) covers it, so the user sees one continuous
+  // loader; on client-side navigation it gives instant feedback while the
+  // next route chunk loads.
+  defaultPendingComponent: () => (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'rgba(255,255,255,0.7)',
+        backdropFilter: 'blur(2px)',
+        zIndex: 50,
+      }}
+    >
+      <div
+        style={{
+          width: 32,
+          height: 32,
+          border: '3px solid #e2e8f0',
+          borderTopColor: '#2563eb',
+          borderRadius: '50%',
+          animation: 'spin 0.8s linear infinite',
+        }}
+      />
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  ),
 })
 
 // Register the router instance for type safety
