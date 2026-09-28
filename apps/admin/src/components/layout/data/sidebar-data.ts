@@ -7,7 +7,15 @@ import {
   HardDrive, Target, Plug, Wallet, BarChart3, CreditCard, CalendarDays,
   CalendarCheck, LifeBuoy,
 } from 'lucide-react'
-import { type SidebarData } from '../types'
+import { type SidebarData, type HueName, type NavItem } from '../types'
+
+/** Section label + icon-chip hue for a group of items. */
+const sec = (label: string, hue: HueName) => ({ label, hue })
+
+/** Attach a section to an item (presentational grouping only). */
+function inSection(item: NavItem, label: string, hue: HueName): NavItem {
+  return { ...item, section: sec(label, hue) }
+}
 
 export const sidebarData: SidebarData = {
   user: { name: 'Admin', email: 'admin@ecomate.com', avatar: '/avatars/avatar.svg' },
@@ -22,11 +30,29 @@ export const sidebarData: SidebarData = {
       panel: 'operational',
       items: [
         { title: 'Dashboard', url: '/op/overview', icon: LayoutDashboard },
-        { title: 'Tasks', url: '/op/tasks', icon: ListTodo, feature: 'admin_tasks' },
-        {
-          title: 'Products',
-          icon: Package,
-          feature: 'admin_products',
+        // ── Sales ──
+        inSection({
+          title: 'Orders', icon: ListTodo, feature: 'admin_orders',
+          items: [
+            { title: 'All Orders', url: '/op/orders' },
+            { title: 'Incomplete Leads', url: '/op/orders/incomplete-leads', feature: 'admin_incomplete_orders' },
+            { title: 'Reviews', url: '/op/reviews', feature: 'admin_reviews' },
+          ],
+        }, 'Sales', 'info'),
+        inSection({
+          title: 'Dispatch', icon: Truck, feature: 'admin_dispatch',
+          items: [
+            { title: 'Dispatch List', url: '/op/dispatch' },
+            { title: 'Duplication Review', url: '/op/dispatch/duplicate-review' },
+          ],
+        }, 'Sales', 'info'),
+        inSection({ title: 'Customers', url: '/op/customers', icon: Users, feature: 'admin_customers' }, 'Sales', 'info'),
+        inSection({ title: 'Payments', url: '/op/payments', icon: Coins, feature: 'admin_payments' }, 'Sales', 'info'),
+        inSection({ title: 'Refunds', url: '/op/refunds', icon: RefreshCw, feature: 'admin_refunds' }, 'Sales', 'info'),
+        inSection({ title: 'Courier Settlement', url: '/op/courier-settlement', icon: Wallet, feature: 'admin_courier_settlement' }, 'Sales', 'info'),
+        // ── Catalog ──
+        inSection({
+          title: 'Products', icon: Package, feature: 'admin_products',
           items: [
             { title: 'All Products', url: '/op/products' },
             { title: 'Combos', url: '/op/combos', icon: Gift, feature: 'admin_combos' },
@@ -36,11 +62,9 @@ export const sidebarData: SidebarData = {
             { title: 'Attributes', url: '/op/attributes', icon: Palette },
             { title: 'Size Charts', url: '/op/size-charts', icon: Ruler, feature: 'admin_size_charts' },
           ],
-        },
-        {
-          title: 'Inventory',
-          icon: AlertTriangle,
-          feature: 'admin_inventory',
+        }, 'Catalog', 'cyan'),
+        inSection({
+          title: 'Inventory', icon: AlertTriangle, feature: 'admin_inventory',
           items: [
             { title: 'Stock', url: '/op/inventory' },
             { title: 'Overview', url: '/op/inventory/overview' },
@@ -54,70 +78,17 @@ export const sidebarData: SidebarData = {
             { title: 'Bin Locations', url: '/op/inventory/bin-locations', feature: 'admin_warehouses' },
             { title: 'Warehouse Hierarchy', url: '/op/inventory/hierarchy', feature: 'admin_warehouses' },
           ],
-        },
-        {
-          title: 'Orders',
-          icon: ListTodo,
-          feature: 'admin_orders',
-          items: [
-            { title: 'All Orders', url: '/op/orders' },
-            { title: 'Incomplete Leads', url: '/op/orders/incomplete-leads', feature: 'admin_incomplete_orders' },
-            { title: 'Reviews', url: '/op/reviews', feature: 'admin_reviews' },
-          ],
-        },
-
-        {
-          title: 'Dispatch',
-          icon: Truck,
-          feature: 'admin_dispatch',
-          items: [
-            { title: 'Dispatch List', url: '/op/dispatch' },
-            { title: 'Duplication Review', url: '/op/dispatch/duplicate-review' },
-          ],
-        },
-        { title: 'Customers', url: '/op/customers', icon: Users, feature: 'admin_customers' },
-        { title: 'Payments', url: '/op/payments', icon: Coins, feature: 'admin_payments' },
-        { title: 'Refunds', url: '/op/refunds', icon: RefreshCw, feature: 'admin_refunds' },
-        { title: 'Coupons', url: '/op/coupons', icon: Percent, feature: 'admin_coupons' },
-        { title: 'Suppliers', url: '/op/suppliers', icon: Building2, feature: 'admin_suppliers' },
-        { title: 'Purchase Orders', url: '/op/purchases', icon: ShoppingCart, feature: 'admin_purchases' },
-        {
-          title: 'Expenses',
-          icon: Receipt,
-          feature: 'admin_expenses',
-          items: [
-            { title: 'All Expenses', url: '/op/expenses' },
-            { title: 'Categories', url: '/op/expense-categories' },
-          ],
-        },
-        {
-          title: 'Accounting',
-          icon: BookOpen,
-          feature: 'admin_accounting',
-          items: [
-            { title: 'Chart of Accounts', url: '/op/accounting' },
-            { title: 'Journal Entries', url: '/op/accounting/journal-entries' },
-            { title: 'Reports', url: '/op/accounting/reports' },
-          ],
-        },
-        {
-          title: 'Courier Settlement',
-          url: '/op/courier-settlement',
-          icon: Wallet,
-          feature: 'admin_courier_settlement',
-        },
-        {
-          title: 'Marketing',
-          icon: Megaphone,
-          feature: 'admin_email_campaigns',
-          items: [
-            { title: 'Campaigns', url: '/op/campaigns', icon: Megaphone },
-          ],
-        },
-        {
-          title: 'Marketing Attribution',
-          icon: Target,
-          feature: 'marketing_attribution',
+        }, 'Catalog', 'cyan'),
+        inSection({ title: 'Suppliers', url: '/op/suppliers', icon: Building2, feature: 'admin_suppliers' }, 'Catalog', 'cyan'),
+        inSection({ title: 'Purchase Orders', url: '/op/purchases', icon: ShoppingCart, feature: 'admin_purchases' }, 'Catalog', 'cyan'),
+        // ── Growth ──
+        inSection({ title: 'Coupons', url: '/op/coupons', icon: Percent, feature: 'admin_coupons' }, 'Growth', 'violet'),
+        inSection({
+          title: 'Marketing', icon: Megaphone, feature: 'admin_email_campaigns',
+          items: [{ title: 'Campaigns', url: '/op/campaigns', icon: Megaphone }],
+        }, 'Growth', 'violet'),
+        inSection({
+          title: 'Marketing Attribution', icon: Target, feature: 'marketing_attribution',
           items: [
             { title: 'Dashboard', url: '/op/marketing', icon: LayoutDashboard },
             { title: 'Connections', url: '/op/marketing/connections', icon: Plug },
@@ -129,12 +100,30 @@ export const sidebarData: SidebarData = {
             { title: 'Reports', url: '/op/marketing/reports', icon: BarChart3 },
             { title: 'Help', url: '/op/marketing/help', icon: HelpCircle },
           ],
-        },
-        { title: 'Referrals', url: '/op/referrals', icon: UserPlus, feature: 'admin_referrals' },
-        { title: 'Landing Pages', url: '/op/landing-pages', icon: FileText, feature: 'admin_landing_pages' },
-        { title: 'POS Terminal', url: '/pos', icon: Store, feature: 'pos_system' },
-        { title: 'Blocked', url: '/op/blocked', icon: ShieldCheck, feature: 'admin_blocking' },
-        { title: 'Media Gallery', url: '/op/media', icon: Monitor, feature: 'admin_media' },
+        }, 'Growth', 'violet'),
+        inSection({ title: 'Referrals', url: '/op/referrals', icon: UserPlus, feature: 'admin_referrals' }, 'Growth', 'violet'),
+        inSection({ title: 'Landing Pages', url: '/op/landing-pages', icon: FileText, feature: 'admin_landing_pages' }, 'Growth', 'violet'),
+        // ── Finance ──
+        inSection({
+          title: 'Expenses', icon: Receipt, feature: 'admin_expenses',
+          items: [
+            { title: 'All Expenses', url: '/op/expenses' },
+            { title: 'Categories', url: '/op/expense-categories' },
+          ],
+        }, 'Finance', 'warning'),
+        inSection({
+          title: 'Accounting', icon: BookOpen, feature: 'admin_accounting',
+          items: [
+            { title: 'Chart of Accounts', url: '/op/accounting' },
+            { title: 'Journal Entries', url: '/op/accounting/journal-entries' },
+            { title: 'Reports', url: '/op/accounting/reports' },
+          ],
+        }, 'Finance', 'warning'),
+        // ── Tools ──
+        inSection({ title: 'POS Terminal', url: '/pos', icon: Store, feature: 'pos_system' }, 'Tools', 'neutral'),
+        inSection({ title: 'Tasks', url: '/op/tasks', icon: ListTodo, feature: 'admin_tasks' }, 'Tools', 'neutral'),
+        inSection({ title: 'Blocked', url: '/op/blocked', icon: ShieldCheck, feature: 'admin_blocking' }, 'Tools', 'neutral'),
+        inSection({ title: 'Media Gallery', url: '/op/media', icon: Monitor, feature: 'admin_media' }, 'Tools', 'neutral'),
       ],
     },
     // ===== HR MANAGEMENT PANEL =====
@@ -142,40 +131,33 @@ export const sidebarData: SidebarData = {
       title: '',
       panel: 'hr',
       items: [
-        { title: 'Dashboard', url: '/hr/overview', icon: LayoutDashboard, feature: 'admin_hr', permissions: ['view_hr'] },
-        {
-          title: 'Employees',
-          icon: UserCog,
-          feature: 'admin_employees',
-          permissions: ['view_hr'],
+        // ── People ──
+        inSection({ title: 'Dashboard', url: '/hr/overview', icon: LayoutDashboard, feature: 'admin_hr', permissions: ['view_hr'] }, 'People', 'violet'),
+        inSection({
+          title: 'Employees', icon: UserCog, feature: 'admin_employees', permissions: ['view_hr'],
           items: [
             { title: 'All Employees', url: '/hr/employees' },
             { title: 'Create Employee', url: '/hr/employees/create' },
             { title: 'Departments', url: '/hr/employees/departments', feature: 'admin_employees' },
             { title: 'Designations', url: '/hr/employees/designations' },
           ],
-        },
-        { title: 'Payroll', url: '/hr/payroll', icon: DollarSign, feature: 'admin_payroll', permissions: ['view_hr'] },
-        { title: 'Commissions', url: '/hr/commissions', icon: Percent, feature: 'admin_payroll', permissions: ['view_hr'] },
-        { title: 'Leave', url: '/hr/leave', icon: CalendarDays, feature: 'admin_hr', permissions: ['view_hr'] },
-        { title: 'Attendance', url: '/hr/attendance', icon: CalendarCheck, feature: 'admin_hr', permissions: ['manage_attendance'] },
-        {
-          title: 'Settings',
-          url: '/hr/settings',
-          icon: Settings,
-          feature: 'admin_hr',
-          permissions: ['manage_hr_settings'],
-        },
-        { title: 'Help', url: '/hr/help', icon: LifeBuoy, feature: 'admin_hr', permissions: ['view_hr'] },
-        {
-          title: 'User Management',
-          icon: Users,
-          permissions: ['view_hr'],
+        }, 'People', 'violet'),
+        inSection({
+          title: 'User Management', icon: Users, permissions: ['view_hr'],
           items: [
             { title: 'All Users', url: '/hr/users', feature: 'admin_users' },
             { title: 'Access Presets', url: '/hr/presets', feature: 'admin_access_presets' },
           ],
-        },
+        }, 'People', 'violet'),
+        // ── Payroll ──
+        inSection({ title: 'Payroll', url: '/hr/payroll', icon: DollarSign, feature: 'admin_payroll', permissions: ['view_hr'] }, 'Payroll', 'warning'),
+        inSection({ title: 'Commissions', url: '/hr/commissions', icon: Percent, feature: 'admin_payroll', permissions: ['view_hr'] }, 'Payroll', 'warning'),
+        // ── Time ──
+        inSection({ title: 'Leave', url: '/hr/leave', icon: CalendarDays, feature: 'admin_hr', permissions: ['view_hr'] }, 'Time', 'cyan'),
+        inSection({ title: 'Attendance', url: '/hr/attendance', icon: CalendarCheck, feature: 'admin_hr', permissions: ['manage_attendance'] }, 'Time', 'cyan'),
+        // ── System ──
+        inSection({ title: 'Settings', url: '/hr/settings', icon: Settings, feature: 'admin_hr', permissions: ['manage_hr_settings'] }, 'System', 'neutral'),
+        inSection({ title: 'Help', url: '/hr/help', icon: LifeBuoy, feature: 'admin_hr', permissions: ['view_hr'] }, 'System', 'neutral'),
       ],
     },
     // ===== MONITORING / ADMIN PANEL =====
@@ -184,10 +166,9 @@ export const sidebarData: SidebarData = {
       panel: 'monitoring',
       items: [
         { title: 'Dashboard', url: '/mon/overview', icon: LayoutDashboard },
-        {
-          title: 'Analytics',
-          icon: BarChart3,
-          feature: 'admin_analytics',
+        // ── Overview ──
+        inSection({
+          title: 'Analytics', icon: BarChart3, feature: 'admin_analytics',
           items: [
             { title: 'Business Overview', url: '/mon/analytics' },
             { title: 'Sales & Orders', url: '/mon/analytics/sales' },
@@ -198,13 +179,15 @@ export const sidebarData: SidebarData = {
             { title: 'Expenses', url: '/mon/analytics/expenses' },
             { title: 'Help', url: '/mon/analytics/help' },
           ],
-        },
-        { title: 'Security Dashboard', url: '/mon/security', icon: ShieldAlert },
-        { title: 'Backup & Restore', url: '/mon/backup', icon: HardDrive },
-        { title: 'Pages', url: '/mon/pages', icon: FileText, feature: 'admin_cms_pages' },
-        { title: 'Blocking Settings', url: '/mon/blocking-settings', icon: ShieldCheck, feature: 'admin_blocking' },
-        { title: 'Notifications', url: '/mon/notifications', icon: Bell, feature: 'admin_notifications' },
-        { title: 'Product Catalogs', url: '/mon/marketing/catalog', icon: Upload, feature: 'admin_product_feeds' },
+        }, 'Overview', 'info'),
+        // ── Security ──
+        inSection({ title: 'Security Dashboard', url: '/mon/security', icon: ShieldAlert }, 'Security', 'danger'),
+        inSection({ title: 'Blocking Settings', url: '/mon/blocking-settings', icon: ShieldCheck, feature: 'admin_blocking' }, 'Security', 'danger'),
+        // ── System ──
+        inSection({ title: 'Backup & Restore', url: '/mon/backup', icon: HardDrive }, 'System', 'neutral'),
+        inSection({ title: 'Pages', url: '/mon/pages', icon: FileText, feature: 'admin_cms_pages' }, 'System', 'neutral'),
+        inSection({ title: 'Notifications', url: '/mon/notifications', icon: Bell, feature: 'admin_notifications' }, 'System', 'neutral'),
+        inSection({ title: 'Product Catalogs', url: '/mon/marketing/catalog', icon: Upload, feature: 'admin_product_feeds' }, 'System', 'neutral'),
       ],
     },
 

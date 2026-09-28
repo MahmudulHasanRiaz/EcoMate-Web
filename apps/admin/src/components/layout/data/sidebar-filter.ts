@@ -1,4 +1,4 @@
-import type { NavCollapsible, NavItem, NavLink } from '../types'
+import type { NavGroup, NavItem, NavCollapsible, NavLink } from '../types'
 
 export const EVERYTHING_FEATURE = '*'
 

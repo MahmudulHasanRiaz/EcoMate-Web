@@ -12,6 +12,9 @@ type Team = {
   plan: string
 }
 
+/** Group hue — drives the 20px icon chip tint. From the fixed palette. */
+export type HueName = 'info' | 'success' | 'warning' | 'danger' | 'violet' | 'cyan' | 'pink' | 'neutral'
+
 type BaseNavItem = {
   title: string
   badge?: string
@@ -19,6 +22,8 @@ type BaseNavItem = {
   feature?: string
   permissions?: string[]
   panel?: 'operational' | 'monitoring' | 'hr'
+  /** Presentational section grouping (label + icon-chip hue). */
+  section?: { label: string; hue: HueName }
 }
 
 type NavLink = BaseNavItem & {

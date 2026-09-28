@@ -19,10 +19,7 @@ export function AppSidebar() {
 
   const mainGroups = sidebarData.navGroups
     .filter((g) => g.title !== 'Secondary' && (!g.panel || g.panel === activePanel))
-    .map((g) => ({
-      ...g,
-      items: filterNavItems(g.items, features, permissions),
-    }))
+    .map((g) => ({ ...g, items: filterNavItems(g.items, features, permissions) }))
     .filter((g) => g.items.length > 0)
 
   const secondaryGroup = sidebarData.navGroups.find((g) => g.title === 'Secondary')
@@ -36,7 +33,7 @@ export function AppSidebar() {
       <SidebarHeader>
         <TeamSwitcher />
       </SidebarHeader>
-      <SidebarContent>
+      <SidebarContent className="sidebar-fade">
         {mainGroups.map((props, idx) => (
           <NavGroup key={props.title || props.panel || idx} {...props} />
         ))}
