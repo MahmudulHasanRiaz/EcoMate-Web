@@ -36,8 +36,8 @@
   }
 
   /* ---- KPI / Stat card: rich accent grade wash + 2px top accent.
-     The wash uses the solid accent (not the faint soft token) so every
-     dashboard card carries visible color in both modes. ---- */
+     The wash uses the solid accent so every dashboard card carries
+     visible color in both modes (light: tinted grade, dark: glow grade). ---- */
   .kpi-card {
     --kpi-accent: var(--border);
     --kpi-accent-soft: transparent;
@@ -45,9 +45,10 @@
     border-radius: var(--radius-lg);
     border: 1px solid var(--border);
     border-top: 2px solid var(--kpi-accent);
-    background:
-      linear-gradient(135deg, color-mix(in oklab, var(--kpi-accent) 16%, transparent), transparent 62%),
-      var(--card);
+    background-color: var(--card);
+    background-image:
+      linear-gradient(165deg, color-mix(in oklab, var(--kpi-accent) 32%, transparent) 0%, transparent 58%),
+      linear-gradient(0deg, color-mix(in oklab, var(--kpi-accent) 8%, transparent), color-mix(in oklab, var(--kpi-accent) 8%, transparent));
     box-shadow: var(--shadow-card);
     transition: transform var(--duration-base) var(--ease-out-expo),
       box-shadow var(--duration-base) var(--ease-out-expo);
