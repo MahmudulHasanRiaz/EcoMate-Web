@@ -37,8 +37,8 @@ export function DateFilter() {
   }, [customOpen])
 
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto whitespace-nowrap no-scrollbar py-1 md:w-auto md:flex-none">
-      <div className="inline-flex min-h-9 shrink-0 flex-wrap items-center gap-1 rounded-xl bg-muted p-1 text-muted-foreground border border-border/50 sm:flex-nowrap sm:gap-0">
+    <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto whitespace-nowrap no-scrollbar py-1">
+      <div className="inline-flex min-h-9 shrink-0 flex-wrap items-center gap-1 rounded-xl bg-muted p-1 text-muted-foreground border border-border/50">
         {DISPLAY_PRESETS.map(p => {
           const isActive = preset === p.key
           return (

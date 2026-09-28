@@ -16,7 +16,7 @@ export function GlobalSearchBar({
       aria-expanded={open}
       aria-keyshortcuts='Meta+K Control+K'
       className={cn(
-        'group relative h-8 w-full flex-1 justify-start rounded-md bg-muted/25 text-sm font-normal text-muted-foreground shadow-none hover:bg-accent sm:w-48 sm:pe-12 md:flex-none lg:w-64 xl:w-80',
+        'group relative h-8 w-full min-w-0 flex-1 justify-start rounded-md bg-muted/25 text-sm font-normal text-muted-foreground shadow-none hover:bg-accent sm:w-48 sm:pe-12 md:flex-none lg:w-64 xl:w-80',
         className,
       )}
       onClick={openSearch}
