@@ -1,7 +1,8 @@
-// §9/§15 — deletion never happens. Discard is the audited pre-finalize
-// withdrawal: the invoice stays for audit, stops blocking the duplicate-file
-// checksum lookup, and can no longer be finalized. Financial states are
-// refused — a finalized invoice cannot be thrown away.
+// §9/§15 — discard is a permanent, hard deletion. The invoice row and all
+// invoice-scoped children (rows, exceptions, adjustments, activities,
+// snapshots — all onDelete: Cascade) are removed, so a discarded draft
+// vanishes from every list, filter, count, and the duplicate-file lookup.
+// Financial states are refused — a finalized invoice cannot be thrown away.
 
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -22,7 +23,7 @@ async function makeService(state?: string | null) {
             ? null
             : { id: 'inv-1', displayId: 'CS-260927-0001', state },
       ),
-      update: jest.fn().mockResolvedValue({ state: 'DISCARDED' }),
+      delete: jest.fn().mockResolvedValue({ id: 'inv-1' }),
     },
     $transaction: jest.fn(),
   };
@@ -45,32 +46,20 @@ async function makeService(state?: string | null) {
   return { svc: mod.get(CourierSettlementFinalizeService), prisma, activity };
 }
 
-describe('CourierSettlementFinalizeService.discard (§9/§15)', () => {
-  it('withdraws a pre-finalize invoice to DISCARDED and audits the reason', async () => {
+describe('CourierSettlementFinalizeService.discard (§9/§15 — hard delete)', () => {
+  it('permanently deletes a pre-finalize invoice and leaves no trace', async () => {
     const { svc, prisma, activity } = await makeService();
     const res = await svc.discard('inv-1', 'u1', 'duplicate of CS-260927-0001');
-    expect(res).toEqual({ invoiceId: 'inv-1', state: 'DISCARDED', alreadyDiscarded: false });
-    expect(prisma.courierSettlementInvoice.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ state: 'DISCARDED' }) }),
-    );
-    expect(activity.record).toHaveBeenCalledWith(
-      expect.objectContaining({
-        invoiceId: 'inv-1',
-        action: 'DISCARDED',
-        actor: 'u1',
-        detail: expect.objectContaining({
-          from: 'READY_FOR_REVIEW',
-          reason: 'duplicate of CS-260927-0001',
-        }),
-      }),
-    );
+    expect(res).toEqual({ invoiceId: 'inv-1', deleted: true });
+    expect(prisma.courierSettlementInvoice.delete).toHaveBeenCalledWith({
+      where: { id: 'inv-1' },
+    });
+    expect(activity.record).not.toHaveBeenCalled();
   });
 
-  it('is idempotent for an already discarded invoice', async () => {
-    const { svc, prisma } = await makeService('DISCARDED');
-    const res = await svc.discard('inv-1');
-    expect(res.alreadyDiscarded).toBe(true);
-    expect(prisma.courierSettlementInvoice.update).not.toHaveBeenCalled();
+  it('raises NotFound for an unknown or already-deleted invoice', async () => {
+    const { svc } = await makeService(null);
+    await expect(svc.discard('nope')).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('refuses to discard a financially finalized invoice', async () => {
@@ -81,10 +70,5 @@ describe('CourierSettlementFinalizeService.discard (§9/§15)', () => {
   it('refuses while a finalization is in flight', async () => {
     const { svc } = await makeService('FINALIZING');
     await expect(svc.discard('inv-1')).rejects.toBeInstanceOf(ConflictException);
-  });
-
-  it('raises NotFound for an unknown invoice', async () => {
-    const { svc } = await makeService(null);
-    await expect(svc.discard('nope')).rejects.toBeInstanceOf(NotFoundException);
   });
 });

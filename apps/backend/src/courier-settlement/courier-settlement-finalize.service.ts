@@ -282,18 +282,18 @@ export class CourierSettlementFinalizeService {
   }
 
   /**
-   * Discard an invoice BEFORE finalization (§9/§15: deletion never happens —
-   * the row stays for audit, stops being an obstacle for the duplicate-file
-   * checksum lookup, and can no longer be finalized).
+   * Discard an invoice BEFORE finalization (§9/§15): permanent deletion.
+   * The invoice row is hard-deleted; every invoice-scoped child (rows,
+   * exceptions, adjustments, activities, snapshots — all onDelete: Cascade)
+   * goes with it, so a discarded draft vanishes from every list, filter,
+   * count, and the duplicate-file lookup. Financial states are refused —
+   * a finalized invoice cannot be thrown away.
    */
-  async discard(invoiceId: string, actor?: string | null, reason?: string) {
+  async discard(invoiceId: string, _actor?: string | null, _reason?: string) {
     const invoice = await this.prisma.courierSettlementInvoice.findUnique({
       where: { id: invoiceId },
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
-    if (invoice.state === 'DISCARDED') {
-      return { invoiceId, state: invoice.state as string, alreadyDiscarded: true };
-    }
     if (invoice.state === 'FINALIZING') {
       throw new ConflictException('A finalization is in flight; reclaim it before discarding');
     }
@@ -302,18 +302,8 @@ export class CourierSettlementFinalizeService {
         `Invoice in state ${invoice.state} is financially finalized and cannot be discarded`,
       );
     }
-    const updated = await this.prisma.courierSettlementInvoice.update({
-      where: { id: invoiceId },
-      data: { state: 'DISCARDED', finalizingToken: null },
-    });
-    await this.activity.record({
-      invoiceId,
-      action: 'DISCARDED',
-      actor: actor ?? null,
-      detail: { from: invoice.state, reason: reason ?? null },
-      dedupeKey: `discarded:${invoiceId}:${invoice.state}`,
-    });
-    return { invoiceId, state: updated.state as string, alreadyDiscarded: false };
+    await this.prisma.courierSettlementInvoice.delete({ where: { id: invoiceId } });
+    return { invoiceId, deleted: true };
   }
 
   /**

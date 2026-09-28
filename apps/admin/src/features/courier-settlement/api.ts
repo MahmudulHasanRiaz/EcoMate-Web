@@ -528,7 +528,7 @@ export const courierSettlementApi = {
     apiClient.post<FinalizeResult>(`${BASE}/invoices/${id}/finalize`, body, { timeout: 120000 }),
 
   discard: (id: string, reason?: string) =>
-    apiClient.post<{ invoiceId: string; state: string; alreadyDiscarded: boolean }>(
+    apiClient.post<{ invoiceId: string; deleted: boolean }>(
       `${BASE}/invoices/${id}/discard`,
       { reason },
     ),

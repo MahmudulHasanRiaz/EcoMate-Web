@@ -217,7 +217,7 @@ export function useCourierSettlementMutations() {
       mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
         courierSettlementApi.discard(id, reason).then((r) => r.data),
       onSuccess: (res) => {
-        toast.success(res.alreadyDiscarded ? 'Already discarded' : 'Invoice discarded')
+        toast.success('Invoice discarded')
         invalidate(qc, ALL_LIST_KEYS)
       },
       onError: (e) => toast.error(`Discard refused: ${err(e)}`),
