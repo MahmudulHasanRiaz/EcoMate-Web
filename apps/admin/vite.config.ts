@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import viteCompression from 'vite-plugin-compression'
 import { playwright } from '@vitest/browser-playwright'
 
 // https://vite.dev/config/
@@ -58,6 +59,9 @@ export default defineConfig(({ mode }) => {
       }),
       react(),
       tailwindcss(),
+      // Precompress js/css/html at build time. nginx serves the .gz directly
+      // (gzip_static) instead of compressing on every request — cuts TTFB.
+      viteCompression({ algorithm: 'gzip', ext: '.gz', threshold: 1024 }),
       VitePWA({
         registerType: 'autoUpdate',
         injectRegister: 'auto',

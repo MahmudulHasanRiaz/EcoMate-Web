@@ -19,7 +19,7 @@
     "prod": "npm run build && npm run start",
     "install:all": "npm install"
   },
-    "overrides": {
+  "overrides": {
     "exceljs": {
       "uuid": "$uuid"
     },
@@ -56,33 +56,34 @@
     "concurrently": "^9.2.1",
     "fast-uri": "^3.1.6",
     "typescript": "^5",
-    "vite": "^8.0.8"
+    "vite": "^8.0.8",
+    "vite-plugin-compression": "^0.5.1"
   },
   "dependencies": {
-    "uuid": "^11.1.1",
-    "deepmerge-ts": "^8.0.0",
     "@fastify/static": "^10.1.2",
-    "@tanstack/react-virtual": "^3.14.6"
+    "@tanstack/react-virtual": "^3.14.6",
+    "deepmerge-ts": "^8.0.0",
+    "uuid": "^11.1.1"
   },
   "optionalDependencies": {
-    "@rollup/rollup-linux-x64-gnu": "^4.0.0",
-    "@rollup/rollup-linux-x64-musl": "^4.0.0",
-    "@tailwindcss/oxide-linux-x64-gnu": "^4.0.0",
-    "@tailwindcss/oxide-linux-x64-musl": "^4.0.0",
-    "@next/swc-linux-x64-gnu": "^15.0.0",
-    "@oxc-parser/binding-linux-x64-gnu": "^0.56.0",
-    "@rolldown/binding-linux-x64-gnu": "^1.0.0",
     "@img/sharp-darwin-arm64": "0.35.3",
     "@img/sharp-darwin-x64": "0.35.3",
     "@img/sharp-libvips-darwin-arm64": "1.3.2",
     "@img/sharp-libvips-darwin-x64": "1.3.2",
-    "@img/sharp-linux-arm64": "0.35.3",
-    "@img/sharp-linux-x64": "0.35.3",
     "@img/sharp-libvips-linux-arm64": "1.3.2",
     "@img/sharp-libvips-linux-x64": "1.3.2",
+    "@img/sharp-libvips-linuxmusl-arm64": "1.3.2",
+    "@img/sharp-libvips-linuxmusl-x64": "1.3.2",
+    "@img/sharp-linux-arm64": "0.35.3",
+    "@img/sharp-linux-x64": "0.35.3",
     "@img/sharp-linuxmusl-arm64": "0.35.3",
     "@img/sharp-linuxmusl-x64": "0.35.3",
-    "@img/sharp-libvips-linuxmusl-arm64": "1.3.2",
-    "@img/sharp-libvips-linuxmusl-x64": "1.3.2"
+    "@next/swc-linux-x64-gnu": "^15.0.0",
+    "@oxc-parser/binding-linux-x64-gnu": "^0.56.0",
+    "@rolldown/binding-linux-x64-gnu": "^1.0.0",
+    "@rollup/rollup-linux-x64-gnu": "^4.0.0",
+    "@rollup/rollup-linux-x64-musl": "^4.0.0",
+    "@tailwindcss/oxide-linux-x64-gnu": "^4.0.0",
+    "@tailwindcss/oxide-linux-x64-musl": "^4.0.0"
   }
 }
