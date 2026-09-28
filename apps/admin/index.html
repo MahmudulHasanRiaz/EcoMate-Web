@@ -147,6 +147,12 @@
               d.setAttribute('rel', 'icon');
               d.setAttribute('href', prev.adminFavicon);
               document.head.appendChild(d);
+              // Boot skeleton logo: show the configured favicon instead of the
+              // generic mark. Falls back to the inline SVG when unset.
+              var bootLogo = document.querySelector('.app-boot__logo');
+              if (bootLogo && !bootLogo.querySelector('img')) {
+                bootLogo.innerHTML = '<img src="' + prev.adminFavicon + '" alt="" style="width:100%;height:100%;object-fit:contain" />';
+              }
             }
             if (prev.adminTitle) {
               document.title = prev.adminTitle;
@@ -184,6 +190,10 @@
                 d.setAttribute('rel', 'icon');
                 d.setAttribute('href', href);
                 document.head.appendChild(d);
+                var bootLogo = document.querySelector('.app-boot__logo');
+                if (bootLogo && !bootLogo.querySelector('img')) {
+                  bootLogo.innerHTML = '<img src="' + href + '" alt="" style="width:100%;height:100%;object-fit:contain" />';
+                }
               }
               if (data.adminTagline) {
                 var desc = document.querySelector('meta[name="description"]');

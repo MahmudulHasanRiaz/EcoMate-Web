@@ -2,6 +2,23 @@ import { create } from 'zustand'
 import { getCookie, setCookie, removeCookie } from '@/lib/cookies'
 
 const ACCESS_TOKEN_KEY = 'eco_mate_access_token'
+const USER_KEY = 'eco_mate_user'
+
+function loadCachedUser(): AuthUser | null {
+  try {
+    const raw = localStorage.getItem(USER_KEY)
+    return raw ? (JSON.parse(raw) as AuthUser) : null
+  } catch {
+    return null
+  }
+}
+
+function saveCachedUser(user: AuthUser | null) {
+  try {
+    if (user) localStorage.setItem(USER_KEY, JSON.stringify(user))
+    else localStorage.removeItem(USER_KEY)
+  } catch { /* ignore */ }
+}
 
 interface AuthUser {
   id: string
@@ -25,9 +42,12 @@ export const useAuthStore = create<AuthState>()((set) => {
   const initToken = getCookie(ACCESS_TOKEN_KEY) || ''
   return {
     auth: {
-      user: null,
-      setUser: (user) =>
-        set((state) => ({ ...state, auth: { ...state.auth, user } })),
+      // Cached user renders instantly on reload; /auth/me refreshes it.
+      user: loadCachedUser(),
+      setUser: (user) => {
+        saveCachedUser(user)
+        set((state) => ({ ...state, auth: { ...state.auth, user } }))
+      },
       accessToken: initToken,
       setAccessToken: (accessToken) =>
         set((state) => {
@@ -42,6 +62,7 @@ export const useAuthStore = create<AuthState>()((set) => {
       reset: () =>
         set((state) => {
           removeCookie(ACCESS_TOKEN_KEY)
+          saveCachedUser(null)
           return {
             ...state,
             auth: { ...state.auth, user: null, accessToken: '' },
