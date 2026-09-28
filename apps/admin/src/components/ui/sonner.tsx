@@ -8,6 +8,14 @@ export function Toaster({ ...props }: ToasterProps) {
     <Sonner
       theme={theme as ToasterProps['theme']}
       className='toaster group [&_div[data-content]]:w-full'
+      toastOptions={{
+        className: 'rounded-lg border shadow-pop',
+        style: {
+          background: 'var(--surface-raised)',
+          borderColor: 'var(--border)',
+          color: 'var(--ink)',
+        },
+      }}
       style={
         {
           '--normal-bg': 'var(--popover)',
