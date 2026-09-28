@@ -77,8 +77,8 @@
   --duration-slow: 220ms;
   --duration-entrance: 240ms;
 
-  /* ---- Sidebar ---- */
-  --sidebar: var(--canvas);
+  /* ---- Sidebar: lifted surface so the nav reads as its own rail ---- */
+  --sidebar: var(--surface);
   --sidebar-foreground: var(--ink);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
