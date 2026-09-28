@@ -8,6 +8,7 @@ import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { GlobalSearchBar } from '@/components/global-search-bar'
+import { CopyButton } from '@/components/copy-button'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -300,12 +301,18 @@ export function IncompleteLeads() {
                         </TableCell>
                         <TableCell>
                           <div className='text-sm font-medium leading-tight'>{l.name || 'Unknown'}</div>
-                          <div className='text-xs text-muted-foreground'>{l.phone || '—'}</div>
+                          <div className='text-xs text-muted-foreground inline-flex items-center gap-1'>
+                            {l.phone || '—'}
+                            {l.phone && <CopyButton text={l.phone} label='Phone' />}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <div className='flex items-center gap-1.5 text-sm'>
                             <Phone className='h-3 w-3 text-muted-foreground shrink-0' />
-                            <span className='text-xs'>{l.phone || '—'}</span>
+                            <span className='text-xs inline-flex items-center gap-1'>
+                              {l.phone || '—'}
+                              {l.phone && <CopyButton text={l.phone} label='Phone' />}
+                            </span>
                           </div>
                           {l.email && <div className='text-xs text-muted-foreground truncate max-w-[150px]'>{l.email}</div>}
                         </TableCell>
@@ -424,7 +431,10 @@ export function IncompleteLeads() {
                                     <div className='font-medium text-sm'>{l.name || 'No name'}</div>
                                     <div className='flex items-center gap-2 text-sm'>
                                       <Phone className='h-3.5 w-3.5 text-muted-foreground shrink-0' />
-                                      <span>{l.phone || '—'}</span>
+                                      <span className='inline-flex items-center gap-1'>
+                                        {l.phone || '—'}
+                                        {l.phone && <CopyButton text={l.phone} label='Phone' />}
+                                      </span>
                                     </div>
                                     {l.address && typeof l.address === 'object' && (
                                       <div className='text-sm text-muted-foreground'>

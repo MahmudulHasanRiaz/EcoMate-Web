@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { DataTableColumnHeader } from '@/components/data-table'
+import { CopyButton } from '@/components/copy-button'
 import { DataTablePagination } from '@/components/data-table'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -54,7 +55,10 @@ function makeColumns(navigate: ReturnType<typeof useNavigate>): ColumnDef<Custom
         <DataTableColumnHeader column={column} title='Phone' />
       ),
       cell: ({ row }) => (
-        <span className='text-nowrap'>{row.getValue('phoneNumber')}</span>
+        <span className='text-nowrap inline-flex items-center gap-1'>
+          {row.getValue('phoneNumber')}
+          <CopyButton text={row.getValue('phoneNumber')} label='Phone' />
+        </span>
       ),
       enableSorting: false,
     },
@@ -216,10 +220,13 @@ function CustomerDetail({ customer }: { customer: CustomerResponse }) {
                 </TableHeader>
                 <TableBody>
                   {orderSummary.recentOrders.map((order) => (
-                    <TableRow key={order.id}>
-                      <TableCell className='font-mono text-xs'>
-                        {order.displayId || order.id.slice(0, 8)}
-                      </TableCell>
+                      <TableRow key={order.id}>
+                        <TableCell className='font-mono text-xs'>
+                          <span className='inline-flex items-center gap-1'>
+                            {order.displayId || order.id.slice(0, 8)}
+                            <CopyButton text={order.displayId || order.id.slice(0, 8)} label='Order ID' />
+                          </span>
+                        </TableCell>
                       <TableCell>
                         <Badge
                           variant='outline'

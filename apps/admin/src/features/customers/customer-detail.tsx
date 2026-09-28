@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Header } from '@/components/layout/header'
+import { CopyButton } from '@/components/copy-button'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -133,7 +134,10 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
               </div>
               <div className='flex items-center gap-2'>
                 <Phone className='h-4 w-4 text-muted-foreground shrink-0' />
-                <span>{customer.phoneNumber}</span>
+                <span className='inline-flex items-center gap-1'>
+                  {customer.phoneNumber}
+                  <CopyButton text={customer.phoneNumber} label='Phone' />
+                </span>
               </div>
               <div className='flex items-center gap-2'>
                 <Mail className='h-4 w-4 text-muted-foreground shrink-0' />
@@ -185,7 +189,10 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
             <CardContent className='space-y-4'>
               <div>
                 <Label className='text-sm font-medium'>Phone Number</Label>
-                <p className='text-sm text-muted-foreground mb-2'>{customer.phoneNumber}</p>
+                <p className='text-sm text-muted-foreground mb-2 inline-flex items-center gap-1'>
+                  {customer.phoneNumber}
+                  <CopyButton text={customer.phoneNumber} label='Phone' />
+                </p>
                 <Button
                   variant={isBlocked ? 'default' : 'destructive'}
                   size='sm'
@@ -222,7 +229,12 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
                   <TableBody>
                     {recentOrders.map((order) => (
                       <TableRow key={order.id} className='cursor-pointer' onClick={() => navigate({ to: `/op/orders/${order.id}` })}>
-                        <TableCell className='font-mono text-xs'>{order.displayId || order.id.slice(0, 8)}</TableCell>
+                        <TableCell className='font-mono text-xs'>
+                          <span className='inline-flex items-center gap-1'>
+                            {order.displayId || order.id.slice(0, 8)}
+                            <CopyButton text={order.displayId || order.id.slice(0, 8)} label='Order ID' />
+                          </span>
+                        </TableCell>
                         <TableCell>
                           <Badge variant='outline' className='capitalize' style={{ borderColor: order.status.color, color: order.status.color }}>
                             {order.status.name}

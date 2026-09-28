@@ -593,7 +593,7 @@ export function Orders() {
                           <div className='flex items-center gap-2'>
                             <Link to='/op/orders/$id' params={{ id: o.id }} className='font-mono text-sm font-semibold text-primary hover:underline' onClick={e => e.stopPropagation()}>{o.displayId}</Link>
                             <Tooltip>
-                              <TooltipTrigger asChild><button onClick={e => { e.stopPropagation(); copyToClipboard(o.displayId, 'Order ID') }} className='opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground'><ClipboardCopy className='h-3 w-3' /></button></TooltipTrigger>
+                              <TooltipTrigger asChild><button onClick={e => { e.stopPropagation(); copyToClipboard(o.displayId, 'Order ID') }} aria-label='Copy Order ID' className='opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground'><ClipboardCopy className='h-3 w-3' /></button></TooltipTrigger>
                               <TooltipContent>Copy order ID</TooltipContent>
                             </Tooltip>
                           </div>

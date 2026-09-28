@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { SafeImage } from '@/components/safe-image'
 import { CustomerContactActions } from '@/components/customer-contact-actions'
+import { CopyButton } from '@/components/copy-button'
 import { BlockPhoneDialog } from '@/features/orders/block-phone-dialog'
 import { UserBadge } from '@/components/user-badge'
 import { ordersApi, mediaUrl } from '@/features/orders/api'
@@ -400,8 +401,11 @@ function OrderDetailPage() {
           {/* ── Page Header ──────────────────────────────────────── */}
           <div className='flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
             <div>
-              <h2 className='text-xl font-bold tracking-tight'>
-                {order.displayId}
+              <h2 className='text-xl font-bold tracking-tight flex items-center gap-2 flex-wrap'>
+                <span className='inline-flex items-center gap-1.5'>
+                  {order.displayId}
+                  <CopyButton text={order.displayId} label='Order ID' />
+                </span>
                 {order.salesChannel || order.sourcePlatform || order.sourceType || order.sourceEntity ? (
                   <span className='ml-2 align-middle'>
                     <OrderSourceBadges
@@ -938,7 +942,7 @@ function OrderDetailPage() {
                         <a href={`tel:${getCustomerPhone(order)}`} className='flex items-center gap-1 hover:text-primary transition-colors'>
                           <Phone className='h-3 w-3' />{getCustomerPhone(order)}
                         </a>
-                        <CustomerContactActions phone={getCustomerPhone(order)} />
+                        <CustomerContactActions phone={getCustomerPhone(order)} showCopy />
                         {getCustomerPhone(order) && (
                           <button
                             onClick={() => setBlockPhones({ phones: [getCustomerPhone(order)], contextLabel: order.displayId })}
@@ -1121,7 +1125,10 @@ function OrderDetailPage() {
                           <p className='text-[10px] font-semibold text-muted-foreground uppercase tracking-wider'>Recent Orders</p>
                           {customerSummary.recentOrders.map((o: any) => (
                             <div key={o.id} className='flex items-center justify-between text-xs'>
-                              <span className='font-mono text-muted-foreground'>{o.displayId}</span>
+                              <span className='font-mono text-muted-foreground inline-flex items-center gap-1'>
+                                {o.displayId}
+                                <CopyButton text={o.displayId} label='Order ID' />
+                              </span>
                               <span className='font-semibold'>৳{nn(o.total).toFixed(0)}</span>
                               <Badge style={{ backgroundColor: o.status?.color || '#6B7280', color: '#fff' }} className='text-[9px] px-1 py-0'>
                                 {o.status?.name}
