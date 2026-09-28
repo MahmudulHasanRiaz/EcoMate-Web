@@ -1,151 +1,202 @@
+/* ============================================================
+   Chromatic Calm — design tokens (single source of truth)
+   Brand hues are fixed; only the tonal step changes per mode so
+   text/icons stay WCAG AA. Components consume these via Tailwind
+   utilities (bg-success-soft, text-hue-ink, …) — no hex in components.
+   ============================================================ */
+
 :root {
+  /* ---- Neutral surfaces (tinted, never stark white/black) ---- */
+  --canvas: #f4f6fb;
+  --surface: #ffffff;
+  --surface-raised: #f8fafe;
+  --sunken: #eef1f8;
+  --border: #e3e7f0;
+  --ink: #0f1630;
+  --ink-muted: #5b6482;
+
+  /* ---- Brand / primary ---- */
+  --primary: #4f6bf2;
+  --primary-foreground: #ffffff;
+
+  /* ---- Semantic hues: solid / soft (12%) / border (25%) / ink ---- */
+  --success: #10b981;
+  --success-soft: #10b9811f;
+  --success-border: #10b98140;
+  --success-ink: #0e7c5b;
+
+  --danger: #f43f5e;
+  --danger-soft: #f43f5e1f;
+  --danger-border: #f43f5e40;
+  --danger-ink: #be123c;
+
+  --warning: #f59e0b;
+  --warning-soft: #f59e0b1f;
+  --warning-border: #f59e0b40;
+  --warning-ink: #92400e;
+
+  --info: #0ea5e9;
+  --info-soft: #0ea5e91f;
+  --info-border: #0ea5e940;
+  --info-ink: #0369a1;
+
+  --accent-violet: #8b5cf6;
+  --accent-violet-soft: #8b5cf61f;
+  --accent-violet-border: #8b5cf640;
+  --accent-violet-ink: #6d28d9;
+
+  --accent-cyan: #14b8a6;
+  --accent-cyan-soft: #14b8a61f;
+  --accent-cyan-border: #14b8a640;
+  --accent-cyan-ink: #0f766e;
+
+  --accent-pink: #ec4899;
+  --accent-pink-soft: #ec48991f;
+  --accent-pink-border: #ec489940;
+  --accent-pink-ink: #be185d;
+
+  /* ---- Radius (10 cards / 8 inputs / 999 pills) ---- */
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.129 0.042 264.695);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.129 0.042 264.695);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.129 0.042 264.695);
-  --primary: oklch(0.208 0.042 265.755);
-  --primary-foreground: oklch(0.984 0.003 247.858);
-  --secondary: oklch(0.968 0.007 247.896);
-  --secondary-foreground: oklch(0.208 0.042 265.755);
-  --muted: oklch(0.968 0.007 247.896);
-  --muted-foreground: oklch(0.554 0.046 257.417);
-  --accent: oklch(0.968 0.007 247.896);
-  --accent-foreground: oklch(0.208 0.042 265.755);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.929 0.013 255.508);
-  --input: oklch(0.929 0.013 255.508);
-  --ring: oklch(0.704 0.04 256.788);
-  /* Chart palette = semantic tokens (income green, cost red, same everywhere). */
-  --chart-1: var(--success);
-  --chart-2: var(--danger);
-  --chart-3: var(--info);
-  --chart-4: var(--warning);
-  --chart-5: var(--accent-violet);
-  --chart-6: var(--accent-cyan);
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.75rem;
+  --radius-full: 999px;
 
-  /* Semantic dashboard tokens — single-tenant palette shared by every admin
-     dashboard. Base theme (primary / background / card / border / sidebar)
-     is untouched. Solids are text-safe on card surfaces (WCAG AA); softs are
-     tint backgrounds. Never use client brand colors here (storefront only). */
-  --success: oklch(0.505 0.153 166.5);
-  --success-soft: oklch(0.962 0.022 166.5);
-  --danger: oklch(0.51 0.22 29);
-  --danger-soft: oklch(0.958 0.024 29);
-  --warning: oklch(0.52 0.14 75);
-  --warning-soft: oklch(0.968 0.035 90);
-  --info: oklch(0.5 0.15 252);
-  --info-soft: oklch(0.95 0.025 252);
-  --accent-violet: oklch(0.5 0.21 292);
-  --accent-violet-soft: oklch(0.95 0.03 292);
-  --accent-cyan: oklch(0.5 0.12 205);
-  --accent-cyan-soft: oklch(0.95 0.03 205);
-  --accent-pink: oklch(0.545 0.21 353);
-  --accent-pink-soft: oklch(0.958 0.028 353);
+  /* ---- Shadows (light mode only; dark uses hairlines) ---- */
+  --shadow-card: 0 1px 2px rgb(15 22 48 / 0.04), 0 4px 12px -2px rgb(15 22 48 / 0.06);
+  --shadow-pop: 0 4px 16px -2px rgb(15 22 48 / 0.12);
+  --shadow-lift: 0 2px 4px rgb(15 22 48 / 0.05), 0 8px 24px -4px rgb(15 22 48 / 0.12);
 
-  --sidebar: var(--background);
-  --sidebar-foreground: var(--foreground);
+  /* ---- Motion (transform/opacity only) ---- */
+  --ease-out-expo: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --duration-fast: 120ms;
+  --duration-base: 160ms;
+  --duration-slow: 220ms;
+  --duration-entrance: 240ms;
+
+  /* ---- Sidebar ---- */
+  --sidebar: var(--canvas);
+  --sidebar-foreground: var(--ink);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: var(--accent);
-  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-accent: var(--surface-raised);
+  --sidebar-accent-foreground: var(--ink);
   --sidebar-border: var(--border);
-  --sidebar-ring: var(--ring);
+  --sidebar-ring: var(--primary);
 }
 
 .dark {
-  --background: oklch(0.129 0.042 264.695);
-  --foreground: oklch(0.984 0.003 247.858);
-  --card: oklch(0.14 0.04 259.21);
-  --card-foreground: oklch(0.984 0.003 247.858);
-  --popover: oklch(0.208 0.042 265.755);
-  --popover-foreground: oklch(0.984 0.003 247.858);
-  --primary: oklch(0.929 0.013 255.508);
-  --primary-foreground: oklch(0.208 0.042 265.755);
-  --secondary: oklch(0.279 0.041 260.031);
-  --secondary-foreground: oklch(0.984 0.003 247.858);
-  --muted: oklch(0.279 0.041 260.031);
-  --muted-foreground: oklch(0.704 0.04 256.788);
-  --accent: oklch(0.279 0.041 260.031);
-  --accent-foreground: oklch(0.984 0.003 247.858);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.551 0.027 264.364);
-  /* Chart palette = semantic tokens (resolves per color-scheme). */
-  --chart-1: var(--success);
-  --chart-2: var(--danger);
-  --chart-3: var(--info);
-  --chart-4: var(--warning);
-  --chart-5: var(--accent-violet);
-  --chart-6: var(--accent-cyan);
+  --canvas: #070a1a;
+  --surface: #0d1226;
+  --surface-raised: #131a33;
+  --sunken: #0a0f22;
+  --border: #1f2747;
+  --ink: #e8ecfa;
+  --ink-muted: #8c96b8;
 
-  /* Dark-mode semantic tokens: solids are brightened for contrast on the dark
-     card surface; softs are low-opacity tints (never light-mode -50 shades). */
-  --success: oklch(0.765 0.16 166.5);
-  --success-soft: oklch(0.765 0.16 166.5 / 12%);
-  --danger: oklch(0.71 0.19 27);
-  --danger-soft: oklch(0.71 0.19 27 / 12%);
-  --warning: oklch(0.8 0.15 80);
-  --warning-soft: oklch(0.8 0.15 80 / 12%);
-  --info: oklch(0.73 0.14 252);
-  --info-soft: oklch(0.73 0.14 252 / 12%);
-  --accent-violet: oklch(0.73 0.19 292);
-  --accent-violet-soft: oklch(0.73 0.19 292 / 12%);
-  --accent-cyan: oklch(0.76 0.14 205);
-  --accent-cyan-soft: oklch(0.76 0.14 205 / 12%);
-  --accent-pink: oklch(0.74 0.18 353);
-  --accent-pink-soft: oklch(0.74 0.18 353 / 12%);
+  --primary: #4f6bf2;
+  --primary-foreground: #ffffff;
+
+  /* Dark solids are a lighter step so icons/bars read on dark surfaces */
+  --success: #34d399;
+  --success-soft: #10b9811f;
+  --success-border: #10b98140;
+  --success-ink: #6ee7b7;
+
+  --danger: #fb7185;
+  --danger-soft: #f43f5e1f;
+  --danger-border: #f43f5e40;
+  --danger-ink: #fda4af;
+
+  --warning: #fbbf24;
+  --warning-soft: #f59e0b1f;
+  --warning-border: #f59e0b40;
+  --warning-ink: #fcd34d;
+
+  --info: #38bdf8;
+  --info-soft: #0ea5e91f;
+  --info-border: #0ea5e940;
+  --info-ink: #7dd3fc;
+
+  --accent-violet: #a78bfa;
+  --accent-violet-soft: #8b5cf61f;
+  --accent-violet-border: #8b5cf640;
+  --accent-violet-ink: #c4b5fd;
+
+  --accent-cyan: #2dd4bf;
+  --accent-cyan-soft: #14b8a61f;
+  --accent-cyan-border: #14b8a640;
+  --accent-cyan-ink: #5eead4;
+
+  --accent-pink: #f472b6;
+  --accent-pink-soft: #ec48991f;
+  --accent-pink-border: #ec489940;
+  --accent-pink-ink: #f9a8d4;
+
+  --shadow-card: none;
+  --shadow-pop: none;
+  --shadow-lift: none;
 }
 
 @theme inline {
   --font-inter: 'Inter', 'Hind Siliguri', 'Noto Sans Bengali', 'sans-serif';
   --font-manrope: 'Manrope', 'Hind Siliguri', 'Noto Sans Bengali', 'sans-serif';
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  --radius-full: var(--radius-full);
+
+  --color-background: var(--canvas);
+  --color-foreground: var(--ink);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--ink);
+  --color-popover: var(--surface-raised);
+  --color-popover-foreground: var(--ink);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
+  --color-secondary: var(--sunken);
+  --color-secondary-foreground: var(--ink);
+  --color-muted: var(--sunken);
+  --color-muted-foreground: var(--ink-muted);
+  --color-accent: var(--surface-raised);
+  --color-accent-foreground: var(--ink);
+  --color-destructive: var(--danger);
   --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --color-chart-6: var(--chart-6);
+  --color-input: var(--border);
+  --color-ring: var(--primary);
+
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
+  --color-success-border: var(--success-border);
+  --color-success-ink: var(--success-ink);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
+  --color-danger-border: var(--danger-border);
+  --color-danger-ink: var(--danger-ink);
   --color-warning: var(--warning);
   --color-warning-soft: var(--warning-soft);
+  --color-warning-border: var(--warning-border);
+  --color-warning-ink: var(--warning-ink);
   --color-info: var(--info);
   --color-info-soft: var(--info-soft);
+  --color-info-border: var(--info-border);
+  --color-info-ink: var(--info-ink);
   --color-accent-violet: var(--accent-violet);
   --color-accent-violet-soft: var(--accent-violet-soft);
+  --color-accent-violet-border: var(--accent-violet-border);
+  --color-accent-violet-ink: var(--accent-violet-ink);
   --color-accent-cyan: var(--accent-cyan);
   --color-accent-cyan-soft: var(--accent-cyan-soft);
+  --color-accent-cyan-border: var(--accent-cyan-border);
+  --color-accent-cyan-ink: var(--accent-cyan-ink);
   --color-accent-pink: var(--accent-pink);
   --color-accent-pink-soft: var(--accent-pink-soft);
+  --color-accent-pink-border: var(--accent-pink-border);
+  --color-accent-pink-ink: var(--accent-pink-ink);
+
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -154,4 +205,8 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  --shadow-card: var(--shadow-card);
+  --shadow-pop: var(--shadow-pop);
+  --shadow-lift: var(--shadow-lift);
 }

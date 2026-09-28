@@ -7,9 +7,16 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
+    /* 2px brand focus ring, 2px offset — always visible for keyboard users.
+       Transparent by default so it never shows until :focus-visible. */
+    outline: 2px solid transparent;
+    outline-offset: 2px;
     scrollbar-width: thin;
     scrollbar-color: var(--border) transparent;
+  }
+  *:focus-visible {
+    outline-color: var(--ring);
   }
   html {
     @apply overflow-x-hidden;
