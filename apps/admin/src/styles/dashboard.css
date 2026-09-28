@@ -35,7 +35,9 @@
       radial-gradient(120% 90% at 50% -20%, rgb(255 255 255 / 0.05), transparent 60%);
   }
 
-  /* ---- KPI / Stat card: flat surface + faint top-left tint + 2px top accent ---- */
+  /* ---- KPI / Stat card: rich accent grade wash + 2px top accent.
+     The wash uses the solid accent (not the faint soft token) so every
+     dashboard card carries visible color in both modes. ---- */
   .kpi-card {
     --kpi-accent: var(--border);
     --kpi-accent-soft: transparent;
@@ -44,9 +46,7 @@
     border: 1px solid var(--border);
     border-top: 2px solid var(--kpi-accent);
     background:
-      linear-gradient(180deg, rgb(255 255 255 / 0.06), transparent 38%),
-      radial-gradient(120% 90% at 50% -20%, rgb(255 255 255 / 0.05), transparent 60%),
-      linear-gradient(135deg, var(--kpi-accent-soft), transparent 55%),
+      linear-gradient(135deg, color-mix(in oklab, var(--kpi-accent) 16%, transparent), transparent 62%),
       var(--card);
     box-shadow: var(--shadow-card);
     transition: transform var(--duration-base) var(--ease-out-expo),
@@ -75,7 +75,7 @@
   }
   .kpi-value.is-zero { color: var(--ink-muted); font-weight: 600; }
 
-  /* 28px tinted icon chip (top-right of a KPI card). */
+  /* 28px tinted icon chip (top-right of a KPI card). Flat tint, no gloss. */
   .kpi-icon-badge {
     display: inline-flex;
     align-items: center;
@@ -85,8 +85,6 @@
     border-radius: var(--radius-md);
     color: var(--kpi-accent);
     background-color: var(--kpi-accent-soft);
-    background-image:
-      linear-gradient(180deg, rgb(255 255 255 / 0.09), transparent 55%);
     border: 1px solid var(--kpi-accent-border);
   }
 
@@ -320,10 +318,8 @@
      Overrides the sidebar menu-button's built-in accent variant. */
   .nav-item[data-active='true'] {
     background-color: var(--primary-soft) !important;
-    background-image:
-      linear-gradient(180deg, rgb(255 255 255 / 0.07), transparent 55%) !important;
     color: var(--primary-ink) !important;
-    box-shadow: 0 2px 14px -6px var(--primary) !important;
+    box-shadow: none !important;
   }
   .nav-item[data-active='true']::before {
     content: '';
@@ -348,8 +344,6 @@
     flex-shrink: 0;
     color: var(--chip-ink, var(--ink-muted));
     background-color: var(--chip-soft, var(--surface-raised));
-    background-image:
-      linear-gradient(180deg, rgb(255 255 255 / 0.09), transparent 55%);
   }
 
   /* ---- Sidebar scroll fade masks (top + bottom) ---- */
