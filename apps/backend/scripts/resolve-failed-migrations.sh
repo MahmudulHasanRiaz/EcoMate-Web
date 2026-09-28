@@ -23,6 +23,8 @@
 # v2: Added probes for ALL HR-domain migrations (not just payslip_lifecycle_groundwork).
 #     Added deduplication for multiple failed rows with the same migration name.
 #     Added fix-p2039.sql execution before reconciliation.
+# v3: Added probes for all Courier Settlement migrations (20260927/28) so redeploy
+#     self-heals settlement migration failures without manual intervention.
 
 set -e
 
@@ -426,6 +428,120 @@ probe_ddl() {
       if [ "$enum_vals" = "3" ] && [ "$col" = "1" ]; then
         echo "APPLIED"
       elif [ "$enum_vals" = "0" ] && [ "$col" = "0" ]; then
+        echo "NOT_APPLIED"
+      else
+        echo "UNKNOWN"
+      fi
+      ;;
+
+    20260927000100_courier_settlement_core)
+      # DDL: CourierSettlementInvoiceState enum + CourierSettlementInvoice table.
+      enum_count="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM pg_type t WHERE t.typname = 'CourierSettlementInvoiceState';"
+      )"
+      tbl_count="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename='CourierSettlementInvoice';"
+      )"
+      if [ "$enum_count" = "1" ] && [ "$tbl_count" = "1" ]; then
+        echo "APPLIED"
+      elif [ "$enum_count" = "0" ] && [ "$tbl_count" = "0" ]; then
+        echo "NOT_APPLIED"
+      else
+        echo "UNKNOWN"
+      fi
+      ;;
+
+    20260927000200_courier_settlement_revision_activity)
+      # DDL: CourierSettlementActivityAction gains 'ACKNOWLEDGED' enum value.
+      enum_count="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+           WHERE t.typname = 'CourierSettlementActivityAction' AND e.enumlabel = 'ACKNOWLEDGED';"
+      )"
+      if [ "$enum_count" = "1" ]; then
+        echo "APPLIED"
+      elif [ "$enum_count" = "0" ]; then
+        echo "NOT_APPLIED"
+      else
+        echo "UNKNOWN"
+      fi
+      ;;
+
+    20260927000300_courier_settlement_adjusted_state)
+      # DDL: CourierSettlementInvoiceState gains 'ADJUSTED' + 'RECONCILED' enum values.
+      enum_count="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+           WHERE t.typname = 'CourierSettlementInvoiceState' AND e.enumlabel IN ('ADJUSTED','RECONCILED');"
+      )"
+      if [ "$enum_count" = "2" ]; then
+        echo "APPLIED"
+      elif [ "$enum_count" = "0" ]; then
+        echo "NOT_APPLIED"
+      else
+        echo "UNKNOWN"
+      fi
+      ;;
+
+    20260928000100_fix_ledger_funding_type_enum)
+      # DDL: MarketingFundingLedger.fundingType cast from TEXT to MarketingFundingType enum.
+      col_type="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT udt_name FROM information_schema.columns
+           WHERE table_name = 'MarketingFundingLedger' AND column_name = 'fundingType';"
+      )"
+      if [ "$col_type" = "MarketingFundingType" ]; then
+        echo "APPLIED"
+      elif [ "$col_type" = "text" ]; then
+        echo "NOT_APPLIED"
+      else
+        echo "UNKNOWN"
+      fi
+      ;;
+
+    20260928000110_align_schema_db_drift)
+      # DDL: JournalEntry.marketingPaymentId column dropped.
+      col_count="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM information_schema.columns
+           WHERE table_name = 'JournalEntry' AND column_name = 'marketingPaymentId';"
+      )"
+      if [ "$col_count" = "0" ]; then
+        echo "APPLIED"
+      elif [ "$col_count" = "1" ]; then
+        echo "NOT_APPLIED"
+      else
+        echo "UNKNOWN"
+      fi
+      ;;
+
+    20260928000200_courier_settlement_scalability)
+      # DDL: CourierSettlementFinanceRuleVersion table created.
+      tbl_count="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename='CourierSettlementFinanceRuleVersion';"
+      )"
+      if [ "$tbl_count" = "1" ]; then
+        echo "APPLIED"
+      elif [ "$tbl_count" = "0" ]; then
+        echo "NOT_APPLIED"
+      else
+        echo "UNKNOWN"
+      fi
+      ;;
+
+    20260928000300_invoice_source_headers)
+      # DDL: CourierSettlementInvoice.sourceHeaders column added.
+      col_count="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM information_schema.columns
+           WHERE table_name = 'CourierSettlementInvoice' AND column_name = 'sourceHeaders';"
+      )"
+      if [ "$col_count" = "1" ]; then
+        echo "APPLIED"
+      elif [ "$col_count" = "0" ]; then
         echo "NOT_APPLIED"
       else
         echo "UNKNOWN"
