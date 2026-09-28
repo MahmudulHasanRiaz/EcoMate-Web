@@ -135,7 +135,7 @@ export function TrendChip({
 export function CountUp({
   value,
   format,
-  duration = 800,
+  duration = 500,
   className,
 }: {
   value: number

@@ -18,6 +18,8 @@
   /* ---- Brand / primary ---- */
   --primary: #4f6bf2;
   --primary-foreground: #ffffff;
+  --primary-soft: #4f6bf21f;
+  --primary-ink: #3b54c4;
 
   /* ---- Semantic hues: solid / soft (12%) / border (25%) / ink ---- */
   --success: #10b981;
@@ -97,6 +99,8 @@
 
   --primary: #4f6bf2;
   --primary-foreground: #ffffff;
+  --primary-soft: #4f6bf226;
+  --primary-ink: #a5b4fc;
 
   /* Dark solids are a lighter step so icons/bars read on dark surfaces */
   --success: #34d399;
@@ -157,6 +161,8 @@
   --color-popover-foreground: var(--ink);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-ink: var(--primary-ink);
   --color-secondary: var(--sunken);
   --color-secondary-foreground: var(--ink);
   --color-muted: var(--sunken);

@@ -19,8 +19,8 @@
   to { opacity: 1; transform: scaleY(1) translateY(0); }
 }
 @keyframes cc-shimmer {
-  from { background-position: 200% 0; }
-  to { background-position: -200% 0; }
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
 }
 
 @layer components {
@@ -47,6 +47,7 @@
   .kpi-accent-danger    { --kpi-accent: var(--danger);  --kpi-accent-soft: var(--danger-soft); }
   .kpi-accent-warning   { --kpi-accent: var(--warning); --kpi-accent-soft: var(--warning-soft); }
   .kpi-accent-info      { --kpi-accent: var(--info);    --kpi-accent-soft: var(--info-soft); }
+  .kpi-accent-primary   { --kpi-accent: var(--primary); --kpi-accent-soft: var(--primary-soft); }
   .kpi-accent-violet    { --kpi-accent: var(--accent-violet); --kpi-accent-soft: var(--accent-violet-soft); }
   .kpi-accent-cyan      { --kpi-accent: var(--accent-cyan);   --kpi-accent-soft: var(--accent-cyan-soft); }
   .kpi-accent-pink      { --kpi-accent: var(--accent-pink);   --kpi-accent-soft: var(--accent-pink-soft); }
@@ -138,11 +139,10 @@
     animation: cc-draw var(--duration-slow) var(--ease-out-expo) both;
   }
 
-  /* ---- Skeleton shimmer (matches final layout; no spinners) ---- */
+  /* ---- Skeleton shimmer (opacity pulse — transform/opacity only) ---- */
   .skeleton-shimmer {
-    background: linear-gradient(100deg, var(--sunken) 30%, var(--surface-raised) 45%, var(--sunken) 60%);
-    background-size: 200% 100%;
-    animation: cc-shimmer 1.6s linear infinite;
+    background: var(--sunken);
+    animation: cc-shimmer 1.6s var(--ease-out-expo) infinite;
   }
 
   /* ---- Segmented control: sunken track + raised sliding thumb ---- */
@@ -184,26 +184,14 @@
   }
   .seg-item[data-active='true'] { color: var(--ink); font-weight: 600; }
 
-  /* ---- Status pill: soft dot + label ---- */
-  .status-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    border-radius: var(--radius-full);
-    padding: 0.25rem 0.625rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    border: 1px solid var(--pill-border, var(--border));
-    background: var(--pill-soft, var(--surface-raised));
-    color: var(--pill-ink, var(--ink));
-    white-space: nowrap;
-  }
+  /* ---- Status pill: soft dot + label (colors via utility classes) ---- */
   .status-pill::before {
     content: '';
     width: 0.375rem;
     height: 0.375rem;
     border-radius: var(--radius-full);
-    background: var(--pill-dot, var(--border));
+    background: currentColor;
+    opacity: 0.65;
   }
 
   /* ---- Page header: icon chip + title + subtitle (+ right actions) ---- */
@@ -293,6 +281,65 @@
     border-radius: var(--radius-full);
     background: var(--sunken);
     color: var(--ink-muted);
+  }
+
+  /* ---- Sidebar nav item: 32px row, brand active state ---- */
+  .nav-item {
+    border-radius: var(--radius-md);
+  }
+  /* Active: soft brand bg + brand-ink + 2px rounded left indicator.
+     Overrides the sidebar menu-button's built-in accent variant. */
+  .nav-item[data-active='true'] {
+    background: var(--primary-soft) !important;
+    color: var(--primary-ink) !important;
+    box-shadow: none !important;
+  }
+  .nav-item[data-active='true']::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 2px;
+    height: 1.125rem;
+    border-radius: var(--radius-full);
+    background: var(--primary);
+  }
+
+  /* ---- Sidebar icon chip: 20px, tinted by group hue ---- */
+  .nav-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: var(--radius-sm);
+    flex-shrink: 0;
+    color: var(--chip-ink, var(--ink-muted));
+    background: var(--chip-soft, var(--surface-raised));
+  }
+
+  /* ---- Sidebar scroll fade masks (top + bottom) ---- */
+  .sidebar-fade {
+    position: relative;
+  }
+  .sidebar-fade::before,
+  .sidebar-fade::after {
+    content: '';
+    position: sticky;
+    left: 0;
+    right: 0;
+    height: 1.25rem;
+    z-index: 5;
+    pointer-events: none;
+  }
+  .sidebar-fade::before {
+    top: 0;
+    background: linear-gradient(to bottom, var(--sidebar), transparent);
+  }
+  .sidebar-fade::after {
+    bottom: 0;
+    background: linear-gradient(to top, var(--sidebar), transparent);
   }
 }
 
