@@ -7,7 +7,7 @@ import { getStorefrontConfigServer } from '@/lib/api/storefront-config-server';
 const API = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
 
 async function getCombo(id: string) {
-  const res = await fetch(`${API}/combos/${id}`, { next: { revalidate: 300 } });
+  const res = await fetch(`${API}/combos/${id}`, { next: { revalidate: 0 } });
   if (!res.ok) return null;
   const data = await res.json();
   const basePrice = Number(data.basePrice);

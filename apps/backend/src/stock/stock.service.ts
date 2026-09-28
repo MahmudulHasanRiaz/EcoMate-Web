@@ -1368,6 +1368,11 @@ export class StockService {
 
       remaining -= deductQty;
     }
+
+    // Physical quantities were written directly (not via operatePhysical) —
+    // the storefront product cache must be cleared so stock reflects the
+    // consumed reservation immediately.
+    await this.cache.invalidateByPrefix('product:');
   }
 
   async hasExistingPhysicalReservation(

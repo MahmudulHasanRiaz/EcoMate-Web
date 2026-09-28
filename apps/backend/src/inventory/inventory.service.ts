@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stock/stock.service';
 import { StockRouterService } from '../stock/stock-router.service';
 import { CostingLotService } from '../stock/costing-lot.service';
+import { CacheService } from '../cache/cache.service';
 import { ManagedStockLedgerService } from './managed-stock-ledger.service';
 import {
   Prisma,
@@ -25,6 +26,7 @@ export class InventoryService {
     private readonly stockRouter: StockRouterService,
     private readonly costingLotService: CostingLotService,
     private readonly managedStockLedgerService: ManagedStockLedgerService,
+    private readonly cache: CacheService,
   ) {}
 
   async lowStock() {
@@ -393,6 +395,10 @@ export class InventoryService {
           );
         }
       }
+
+      // Combo adjustment writes managedStockQuantity directly (bypassing
+      // stockService.operate), so the product cache must be invalidated here.
+      await this.cache.invalidateByPrefix('product:');
 
       return {
         id: combo.id,

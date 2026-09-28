@@ -1010,6 +1010,38 @@ describe('ProductsService', () => {
       });
     });
 
+    describe('findBySlug', () => {
+      it('caches the enriched product with a short 10s TTL so stock never serves stale for long', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue(mockProduct);
+
+        const result = await service.findBySlug('test-product');
+
+        expect(result).toBeTruthy();
+        expect(cache.set).toHaveBeenCalledWith(
+          'product:slug:test-product',
+          expect.anything(),
+          10_000,
+        );
+      });
+
+      it('serves the cached payload without querying the database', async () => {
+        (cache.get as jest.Mock).mockReturnValue(mockProduct);
+
+        const result = await service.findBySlug('test-product');
+
+        expect(result).toEqual(mockProduct);
+        expect(prisma.product.findUnique).not.toHaveBeenCalled();
+      });
+
+      it('throws NotFoundException for an unknown slug', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+
+        await expect(service.findBySlug('missing-slug')).rejects.toThrow(
+          NotFoundException,
+        );
+      });
+    });
+
     describe('updateDraft', () => {
       it('refuses to edit a non-draft product', async () => {
         (prisma.product.findUnique as jest.Mock).mockResolvedValue(mockProduct);

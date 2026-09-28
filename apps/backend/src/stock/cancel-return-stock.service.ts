@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from './stock.service';
 import { StockRouterService } from './stock-router.service';
 import { CostingLotService } from './costing-lot.service';
+import { CacheService } from '../cache/cache.service';
 import { Prisma } from '@prisma/client';
 
 /**
@@ -37,6 +38,7 @@ export class CancelReturnStockService {
     private readonly stockService: StockService,
     private readonly stockRouter: StockRouterService,
     private readonly costingLotService: CostingLotService,
+    private readonly cache: CacheService,
   ) {}
 
   /**
@@ -313,6 +315,12 @@ export class CancelReturnStockService {
       });
       this.logger.log(`Cycle ${cycleId} TERMINATED for order ${orderId}`);
     }
+
+    // Physical restores write physicalInventory directly inside the caller's
+    // transaction (bypassing operatePhysical). Clear the product cache so the
+    // restored stock is visible on the storefront immediately. Same pattern
+    // as operatePhysical, which also invalidates when running inside a tx.
+    await this.cache.invalidateByPrefix('product:');
   }
 
   // ---------------------------------------------------------------------------

@@ -5,7 +5,8 @@ import ColorCatalogGrid from "@/components/ColorCatalogGrid";
 import ProductDetailClient from "@/components/ProductDetailClient";
 import Link from "next/link";
 
-export const revalidate = 300;
+// Variant stock is rendered on this page — never serve from ISR cache.
+export const dynamic = 'force-dynamic';
 
 export async function generateMetadata(props: {
   params: Promise<{ slug: string }>;

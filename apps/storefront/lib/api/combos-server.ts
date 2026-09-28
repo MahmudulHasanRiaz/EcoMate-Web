@@ -102,7 +102,7 @@ export async function fetchCombosServer(
 ): Promise<ServerCombosResponse> {
   const url = `/combos${buildQuery(opts)}`;
   try {
-    const data = await serverFetch<any>(url, { revalidate: 60 });
+    const data = await serverFetch<any>(url, { revalidate: 0 });
     return {
       data: (data.data || []).map(transformBackendCombo),
       meta: {

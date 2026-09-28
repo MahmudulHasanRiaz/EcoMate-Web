@@ -59,10 +59,10 @@ export async function fetchProductsServer(
 ): Promise<ServerProductsResponse> {
   const url = `/products${buildQuery(opts)}`;
   try {
-    // Search results must reflect inventory immediately (a fresh product/
-    // SKU should show up the same second, not after a 60s revalidate window).
+    // Stock renders on listing cards — never serve from the fetch cache.
+    // The backend list endpoint is uncached, so every render is a fresh read.
     const data = await serverFetch<any>(url, {
-      revalidate: opts.search ? 0 : 60,
+      revalidate: 0,
     });
     return {
       data: (data.data || []).map(transformBackendProduct),
@@ -147,7 +147,7 @@ export async function getPopularItemsServer(perPage = 8): Promise<Product[]> {
 
 export async function getProductBySlugServer(slug: string): Promise<Product | null> {
   try {
-    const data = await serverFetch<any>(`/products/slug/${encodeURIComponent(slug)}`, { revalidate: 60 });
+    const data = await serverFetch<any>(`/products/slug/${encodeURIComponent(slug)}`, { revalidate: 0 });
     return data ? transformBackendProduct(data) : null;
   } catch (err) {
     console.error(`Failed to fetch product by slug ${slug} from backend:`, err);

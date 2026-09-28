@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Delete, Body, Param, Query, NotFoundException, BadRequestException, UseGuards } from '@nestjs/common';
 import { StockService } from '../stock/stock.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { CacheService } from '../cache/cache.service';
 import { Roles } from '../common/decorators/roles.decorator';
 import { InventoryEnabledGuard } from '../stock/inventory-enabled.guard';
 import { RequiresFeature } from '@ecomate/feature-flags';
@@ -13,6 +14,7 @@ export class PhysicalInventoryController {
   constructor(
     private readonly stockService: StockService,
     private readonly prisma: PrismaService,
+    private readonly cache: CacheService,
   ) {}
 
   @Roles('superadmin', 'admin', 'manager')
@@ -121,6 +123,11 @@ export class PhysicalInventoryController {
         }
       }
     }
+
+    // The syncManagedStock mirror writes managedStockQuantity directly after
+    // stockService.addPhysical already invalidated — invalidate again so the
+    // mirrored value is never served from a stale cache.
+    await this.cache.invalidateByPrefix('product:');
 
     return { ok: true };
   }
@@ -235,6 +242,9 @@ export class PhysicalInventoryController {
         }
       }
     }
+
+    // Mirror writes land after each addPhysical invalidation — clear again.
+    await this.cache.invalidateByPrefix('product:');
 
     return { ok: true };
   }

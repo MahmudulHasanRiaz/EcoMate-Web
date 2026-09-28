@@ -619,7 +619,11 @@ export class ProductsService {
     if (!product) throw new NotFoundException('Product not found');
     const enriched = (await this.enrichProductsWithAvailableStock([product]))[0];
     await this.enrichWithDerivatives([enriched]);
-    await this.cache.set(cacheKey, enriched);
+    // Short TTL: availableStock is baked into this payload, so the cache is
+    // only a brief read amplifier. Every stock-mutating path invalidates
+    // 'product:' explicitly; this 10s window is the safety net that bounds
+    // staleness if a future write path forgets to invalidate.
+    await this.cache.set(cacheKey, enriched, 10_000);
     return enriched;
   }
 
