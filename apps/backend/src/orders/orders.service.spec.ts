@@ -2058,6 +2058,30 @@ describe('OrdersService', () => {
         expect(prisma.order.update).toHaveBeenCalled();
         expect(result.statusId).toBe('status-return-pending');
       });
+
+      it('allows a manual staff member to mark a Partial order Delivered', async () => {
+        (prisma.order.findUnique as jest.Mock).mockResolvedValue(partialOrder);
+        (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+          deliveredStatus,
+        );
+        (prisma.order.update as jest.Mock).mockResolvedValue({
+          ...partialOrder,
+          statusId: 'status-delivered',
+          status: deliveredStatus,
+          payments: [],
+        });
+        (prisma.payment.findFirst as jest.Mock).mockResolvedValue(null);
+        (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([]);
+
+        const result = await service.updateStatus(
+          'order-id-1',
+          { statusId: 'status-delivered', note: 'Remainder delivered' },
+          userId,
+        );
+
+        expect(prisma.order.update).toHaveBeenCalled();
+        expect(result.statusId).toBe('status-delivered');
+      });
     });
 
     describe('Delivered COD verification (delivery-tx regression)', () => {

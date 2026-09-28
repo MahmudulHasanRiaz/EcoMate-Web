@@ -138,7 +138,7 @@ async function main() {
     'Packing Hold': ['Packed', 'Cancelled'],
     'Shipping': ['Delivered', 'Partial'],
     'Delivered': ['Return Pending'],
-    'Partial': ['Return Pending'],
+    'Partial': ['Delivered', 'Return Pending'],
     'Return Pending': ['Returned', 'Damaged'],
     'Returned': ['Damaged'],
     'Cancelled': ['Confirmed'],
