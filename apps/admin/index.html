@@ -209,7 +209,11 @@
       })();
     </script>
 
-    <!-- License-gated PWA teardown: unregister SW if mobile_distribution not active -->
+    <!--
+      Critical API prefetch: fire auth/license/branding calls during bundle
+      download, cache results in sessionStorage. React reads them instantly
+      on mount instead of waiting for sequential round-trips.
+    -->
     <script>
       (function () {
         try {
@@ -217,21 +221,21 @@
             if (location.hostname.indexOf('localhost') === -1) return '/api';
             return 'http://localhost:4000/api';
           })();
-          fetch(apiBase + '/license/status', { credentials: 'include', cache: 'no-store' })
-            .then(function (r) { return r.ok ? r.json() : null; })
-            .then(function (data) {
-              if (!data) return;
-              var features = data.features || [];
-              if (features.indexOf('*') !== -1 || features.indexOf('mobile_distribution') !== -1) return;
-              if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.getRegistrations().then(function (regs) {
-                  regs.forEach(function (reg) { reg.unregister(); });
-                });
-              }
-              var manifestLink = document.querySelector('link[rel="manifest"]');
-              if (manifestLink) manifestLink.remove();
-            })
-            .catch(function () {});
+          var PREFETCH_KEY = 'admin_prefetch';
+          var urls = ['/auth/me', '/license/status', '/system-settings/branding'];
+          Promise.all(urls.map(function (u) {
+            return fetch(apiBase + u, { credentials: 'include', cache: 'no-store' })
+              .then(function (r) { return r.ok ? r.json() : null; })
+              .catch(function () { return null; });
+          })).then(function (results) {
+            try {
+              var payload = {};
+              if (results[0]) payload.authMe = results[0];
+              if (results[1]) payload.licenseStatus = results[1];
+              if (results[2]) payload.branding = results[2];
+              sessionStorage.setItem(PREFETCH_KEY, JSON.stringify(payload));
+            } catch (_) {}
+          });
         } catch (_) {}
       })();
     </script>

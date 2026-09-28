@@ -47,14 +47,17 @@ export default defineConfig(({ mode }) => {
       VitePWA({
         registerType: 'autoUpdate',
         injectRegister: 'auto',
+        // No manifest: the admin must not be installable (license gate), but
+        // the service worker stays registered to precache app-shell assets —
+        // full page reloads then load instantly from the SW cache.
+        manifest: false,
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
           runtimeCaching: [
             {
               // API GETs must never serve stale sw-cache (one browser showed
               // 24h-old empty product/SKU search results while others saw fresh
-              // data). NetworkOnly: every request hits the backend; PWA stays
-              // installable for app-shell assets only.
+              // data). NetworkOnly: every request hits the backend.
               urlPattern: /^https?:\/\/.*\/api\/.*/i,
               handler: 'NetworkOnly',
               options: {

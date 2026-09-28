@@ -5,6 +5,17 @@ const ACCESS_TOKEN_KEY = 'eco_mate_access_token'
 const USER_KEY = 'eco_mate_user'
 
 function loadCachedUser(): AuthUser | null {
+  // Prefetched /auth/me result (inline script fires it during bundle download)
+  try {
+    const raw = sessionStorage.getItem('admin_prefetch')
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (parsed.authMe) {
+        const u = parsed.authMe.user || parsed.authMe
+        if (u && u.id) return { id: u.id, email: u.email, role: u.role, permissions: u.permissions || [] }
+      }
+    }
+  } catch { /* fall through */ }
   try {
     const raw = localStorage.getItem(USER_KEY)
     return raw ? (JSON.parse(raw) as AuthUser) : null

@@ -34,15 +34,33 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
     if (!accessToken) return
     const { user, setUser, reset } = useAuthStore.getState().auth
     if (user) return
-    apiClient.get('/auth/me').then(r => {
-      const u = r.data?.user || r.data
-      if (u) {
-        setUser({ id: u.id, email: u.email, role: u.role, permissions: u.permissions || [] })
-        if (u.role === 'packing_assistant') {
-          const isOnPacking = window.location.pathname.startsWith('/op/packing')
-          if (!isOnPacking) navigate({ to: '/op/packing', replace: true })
+
+    const applyUser = (u: { id: string; email: string; role: string; permissions?: string[] }) => {
+      setUser({ id: u.id, email: u.email, role: u.role, permissions: u.permissions || [] })
+      if (u.role === 'packing_assistant') {
+        const isOnPacking = window.location.pathname.startsWith('/op/packing')
+        if (!isOnPacking) navigate({ to: '/op/packing', replace: true })
+      }
+    }
+
+    // Prefetched by the inline script during bundle download — apply instantly.
+    try {
+      const raw = sessionStorage.getItem('admin_prefetch')
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (parsed.authMe) {
+          const u = parsed.authMe.user || parsed.authMe
+          if (u && u.id) {
+            applyUser(u)
+            return
+          }
         }
       }
+    } catch { /* fall through to API call */ }
+
+    apiClient.get('/auth/me').then(r => {
+      const u = r.data?.user || r.data
+      if (u) applyUser(u)
     }).catch(() => {
       // Check if access token still exists — if yes, the interceptor is likely
       // retrying refresh. Don't reset immediately; let the interceptor handle it.
@@ -94,13 +112,13 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
     if (!accessToken) return
     if (window.location.pathname.includes('/license/activate')) return
 
-    apiClient.get('/license/status').then(r => {
-      const isActive = r.data?.active
+    const applyLicenseStatus = (data: { active?: boolean; license?: { features?: string[] } }) => {
+      const isActive = data?.active
       if (!isActive) {
         navigate({ to: '/license/activate', replace: true })
         return
       }
-      const newFeatures: string[] = r.data?.license?.features || []
+      const newFeatures: string[] = data?.license?.features || []
       const { added, removed } = useLicenseStore.getState().setFeatures(newFeatures)
 
       if (added.length > 0 && removed.length > 0) {
@@ -123,7 +141,21 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
           { duration: 6000 }
         )
       }
-    }).catch(() => {
+    }
+
+    // Prefetched by the inline script during bundle download — apply instantly.
+    try {
+      const raw = sessionStorage.getItem('admin_prefetch')
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (parsed.licenseStatus) {
+          applyLicenseStatus(parsed.licenseStatus)
+          return
+        }
+      }
+    } catch { /* fall through to API call */ }
+
+    apiClient.get('/license/status').then(r => applyLicenseStatus(r.data)).catch(() => {
       useLicenseStore.getState().setFeatures([])
     })
   }, [accessToken, navigate])
