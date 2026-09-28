@@ -5,6 +5,14 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ---- Panel identity tint: one accent per panel, used ONLY in the
+   switcher chip + the 2px line under the top bar. Brand/buttons/focus
+   never change per panel. ---- */
+[data-panel='operational'] { --panel-accent: var(--primary); }
+[data-panel='monitoring'] { --panel-accent: var(--warning); }
+[data-panel='hr'] { --panel-accent: var(--accent-violet); }
+[data-panel='packing'] { --panel-accent: var(--accent-cyan); }
+
 @layer base {
   * {
     @apply border-border;

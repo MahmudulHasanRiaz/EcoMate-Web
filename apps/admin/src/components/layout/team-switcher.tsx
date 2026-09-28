@@ -1,6 +1,6 @@
 'use client'
 
-import { ChevronsUpDown } from 'lucide-react'
+import { ChevronsUpDown, Check, Package, ShieldCheck, Users, Boxes, type LucideIcon } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
@@ -13,6 +13,15 @@ import { useLicenseStore } from '@/stores/license-store'
 
 const EMPTY_PERMISSIONS: string[] = []
 
+type Team = {
+  name: string
+  key: PanelType | 'packing'
+  plan: string
+  route: string
+  visible: boolean
+  logo: LucideIcon
+}
+
 export function TeamSwitcher() {
   const { isMobile } = useSidebar()
   const { activePanel, setActivePanel } = usePanel()
@@ -24,12 +33,13 @@ export function TeamSwitcher() {
   const canAccessHr =
     role === 'superadmin' || role === 'admin' || (hasFeature('admin_hr') && permissions.includes('view_hr'))
 
-  const teams = [
-    { name: 'Operational', key: 'operational' as PanelType, plan: 'Orders & Catalog', route: '/op', visible: true },
-    { name: 'Admin', key: 'monitoring' as PanelType, plan: 'Settings & Overview', route: '/mon', visible: role === 'superadmin' || role === 'admin' },
-    { name: 'HR Management', key: 'hr' as PanelType, plan: 'People & Payroll', route: '/hr/overview', visible: canAccessHr },
-    { name: 'Packing Workspace', key: 'packing' as any, plan: 'Order Packing Workspace', route: '/op/packing', visible: role === 'superadmin' || role === 'admin' },
-  ].filter(t => t.visible)
+  const allTeams: Team[] = [
+    { name: 'Operational', key: 'operational', plan: 'Orders & Catalog', route: '/op', visible: true, logo: Package },
+    { name: 'Admin', key: 'monitoring', plan: 'Settings & Overview', route: '/mon', visible: role === 'superadmin' || role === 'admin', logo: ShieldCheck },
+    { name: 'HR Management', key: 'hr', plan: 'People & Payroll', route: '/hr/overview', visible: canAccessHr, logo: Users },
+    { name: 'Packing Workspace', key: 'packing', plan: 'Order Packing Workspace', route: '/op/packing', visible: role === 'superadmin' || role === 'admin', logo: Boxes },
+  ]
+  const teams = allTeams.filter(t => t.visible)
 
   const active = teams.find(t => t.key === activePanel) || teams[0]
 
@@ -40,48 +50,49 @@ export function TeamSwitcher() {
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton
               size="lg"
-              className="w-full transition-all duration-150 border border-border/40 hover:bg-muted/40 rounded-lg shadow-xs data-[state=open]:bg-sidebar-accent"
+              className="w-full gap-2.5 rounded-lg border border-border/50 bg-background px-2 py-1.5 text-left transition-colors duration-150 hover:bg-surface-raised data-[state=open]:bg-surface-raised"
             >
-              <div className="flex aspect-square size-7 items-center justify-center rounded-md border border-border/70 bg-muted/40 text-foreground font-semibold">
-                <ChevronsUpDown className="size-3.5 text-muted-foreground/80" />
-              </div>
-              <div className="grid flex-1 text-start text-xs leading-tight ml-1.5">
-                <span className="truncate font-bold text-foreground text-[12px]">{active.name} Panel</span>
-                <span className="truncate text-[10px] text-muted-foreground/80 font-medium">{active.plan}</span>
-              </div>
-              <ChevronsUpDown className="ms-auto size-3.5 text-muted-foreground/70" />
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary-soft text-primary-ink">
+                <active.logo className="size-4" />
+              </span>
+              <span className="grid min-w-0 flex-1 text-start leading-tight">
+                <span className="truncate text-[12px] font-semibold text-ink">{active.name}</span>
+                <span className="truncate text-[10px] font-medium text-ink-muted">{active.plan}</span>
+              </span>
+              <ChevronsUpDown className="size-3.5 shrink-0 text-ink-muted" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
-            className="w-(--radix-dropdown-menu-trigger-width) min-w-[220px] rounded-lg shadow-md border-border/80"
+            className="w-(--radix-dropdown-menu-trigger-width) min-w-[220px] rounded-lg border-border/60 p-1 shadow-pop"
             align="start"
             side={isMobile ? 'bottom' : 'right'}
             sideOffset={4}
           >
-            <DropdownMenuLabel className="text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground px-2.5 py-1.5">
+            <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
               Switch Panel
             </DropdownMenuLabel>
-            <div className="p-1 space-y-0.5">
+            <div className="space-y-0.5">
               {teams.map((team) => {
                 const isActive = team.key === activePanel
                 return (
                   <DropdownMenuItem
                     key={team.key}
                     onClick={() => {
-                      setActivePanel(team.key)
+                      setActivePanel(team.key as PanelType)
                       navigate({ to: team.route })
                     }}
-                    className={`flex items-center gap-2.5 p-2 rounded-md cursor-pointer ${
-                      isActive ? 'bg-secondary text-secondary-foreground font-semibold' : 'focus:bg-muted text-muted-foreground hover:text-foreground'
+                    className={`flex items-center gap-2.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
+                      isActive ? 'bg-primary-soft text-primary-ink' : 'text-ink-muted hover:bg-surface-raised hover:text-ink'
                     }`}
                   >
-                    <div className="flex size-6 items-center justify-center rounded bg-muted/40 border border-border/80">
-                      <ChevronsUpDown className="size-3 text-muted-foreground" />
-                    </div>
-                    <div className="flex flex-col min-w-0">
-                      <span className="text-xs font-semibold leading-tight">{team.name} Panel</span>
-                      <span className="text-[9px] text-muted-foreground leading-tight">{team.plan}</span>
-                    </div>
+                    <span className={`flex size-6 shrink-0 items-center justify-center rounded-md ${isActive ? 'bg-primary-soft text-primary-ink' : 'bg-sunken text-ink-muted'}`}>
+                      <team.logo className="size-3.5" />
+                    </span>
+                    <span className="grid min-w-0 flex-1 leading-tight">
+                      <span className="truncate font-semibold">{team.name}</span>
+                      <span className="truncate text-[10px] opacity-80">{team.plan}</span>
+                    </span>
+                    {isActive && <Check className="size-3.5 shrink-0" />}
                   </DropdownMenuItem>
                 )
               })}

@@ -189,13 +189,26 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
 
   const isPackingWorkspace = location.pathname.startsWith('/op/packing')
 
+  // Panel identity for the 2px accent line under the top bar (presentational only).
+  const panel = location.pathname.startsWith('/mon')
+    ? 'monitoring'
+    : location.pathname.startsWith('/hr')
+      ? 'hr'
+      : location.pathname.startsWith('/op/packing')
+        ? 'packing'
+        : 'operational'
+
   if (isPackingWorkspace) {
     return (
       <SearchProvider>
         <PanelProvider>
           <LayoutProvider>
             <div className="no-print"><SkipToMain /></div>
-            <main className="flex flex-col h-screen w-screen overflow-hidden bg-zinc-50 dark:bg-zinc-950">
+            <main
+              data-panel="packing"
+              className="flex flex-col h-screen w-screen overflow-hidden bg-zinc-50 dark:bg-zinc-950"
+            >
+              <div className="panel-accent-line" aria-hidden />
               {children ?? <Outlet />}
             </main>
           </LayoutProvider>
@@ -212,6 +225,7 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
           <div className="no-print"><SkipToMain /></div>
           <AppSidebar />
           <SidebarInset
+            data-panel={panel}
             className={cn(
               '@container/content',
               'has-data-[layout=fixed]:h-svh',

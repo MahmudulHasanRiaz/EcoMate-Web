@@ -50,19 +50,16 @@ export function DashboardWrapper({ route }: DashboardWrapperProps) {
       
       {route === 'mon' ? (
         <Main>
-          <div className="mb-4 flex flex-col flex-wrap sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <span className="chart-card-header-icon bg-info-soft text-info border border-info/25">
-                <LayoutGrid className="h-5 w-5" />
+          <div className="mb-4 flex flex-col flex-wrap gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="page-header">
+              <span className="page-header-icon bg-info-soft text-info">
+                <LayoutGrid className="size-4" />
               </span>
               <div>
-                <h1 className="text-2xl font-bold tracking-tight">Management Dashboard</h1>
-                <p className="text-xs text-muted-foreground font-medium">
+                <h1 className="text-xl font-semibold tracking-tight">Management Dashboard</h1>
+                <p className="text-xs text-muted-foreground">
                   Now · what needs attention — trends, profit and comparisons live in{' '}
-                  <Link to="/mon/analytics" className="underline underline-offset-2">
-                    Analytics
-                  </Link>
-                  .
+                  <Link to="/mon/analytics" className="underline underline-offset-2">Analytics</Link>.
                 </p>
               </div>
             </div>
@@ -76,22 +73,25 @@ export function DashboardWrapper({ route }: DashboardWrapperProps) {
       ) : (
         <Main className="space-y-4 sm:space-y-6">
           {/* Header section (Sticky) */}
-          <div className="sticky top-0 z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 pb-4 border-b border-border/50">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-2">
-              <div className="flex items-center gap-3">
-                <span className="chart-card-header-icon bg-info-soft text-info border border-info/25">
-                  <LayoutGrid className="h-5 w-5" />
+          <div
+            className="sticky top-0 z-20 border-b border-border bg-background"
+            style={{ boxShadow: 'inset 0 -2px 0 0 var(--panel-accent, transparent)' }}
+          >
+            <div className="flex flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between md:px-6">
+              <div className="page-header">
+                <span className="page-header-icon bg-info-soft text-info">
+                  <LayoutGrid className="size-4" />
                 </span>
                 <div>
-                  <h1 className="text-2xl font-extrabold tracking-tight">Operations Dashboard</h1>
-                  <p className="text-xs text-muted-foreground font-medium">
+                  <h1 className="text-xl font-semibold tracking-tight">Operations Dashboard</h1>
+                  <p className="text-xs text-muted-foreground">
                     {view === 'pipeline'
                       ? 'Where orders created in the selected period stand now'
                       : 'What happened in the selected period'}
                   </p>
                 </div>
               </div>
-              <div className="flex flex-col flex-wrap sm:flex-row sm:items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <ViewSwitch view={view} onChange={setView} />
                 <DateFilter />
               </div>
