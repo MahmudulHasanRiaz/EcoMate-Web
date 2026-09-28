@@ -17,7 +17,7 @@ function fmtAttr(attrs: VariantAttribute[] | undefined, fallback?: string): stri
 }
 
 export default function CartPage() {
-  const { items, updateQuantity, removeFromCart, cartTotal, cartCount, clearCart } = useCart();
+  const { items, updateQuantity, removeFromCart, cartTotal, cartCount, clearCart, clearBuyNow } = useCart();
   const { config } = useStorefrontConfig();
   const s = config.currency.symbol;
   const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -212,6 +212,9 @@ export default function CartPage() {
 
               <Link
                 href="/checkout"
+                // Explicit cart-checkout intent: drop any pending Buy Now item
+                // so the checkout bills the cart the shopper just reviewed.
+                onClick={clearBuyNow}
                 className="w-full h-[48px] rounded-[4px] bg-brand-blue hover:bg-brand-blue-dark text-white font-bold flex items-center justify-center gap-2 transition-colors text-[14px]"
               >
                 Proceed to Checkout <ArrowRight size={16} />

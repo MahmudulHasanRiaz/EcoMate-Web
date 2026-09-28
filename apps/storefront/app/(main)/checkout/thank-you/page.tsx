@@ -47,11 +47,12 @@ function derivePaymentStatus(order: AnyOrder | null): PaymentStatus {
 export default async function ThankYouPage({
   searchParams,
 }: {
-  searchParams: Promise<{ orderId?: string; t?: string }>;
+  searchParams: Promise<{ orderId?: string; t?: string; mode?: string }>;
 }) {
   const params = await searchParams;
   const orderId = typeof params.orderId === 'string' ? params.orderId : null;
   const token = typeof params.t === 'string' ? params.t : null;
+  const wasBuyNow = params.mode === 'buynow';
 
   if (!orderId) {
     return (
@@ -88,6 +89,7 @@ export default async function ThankYouPage({
       token={token}
       paymentStatus={paymentStatus}
       errorMessage={errorMessage}
+      wasBuyNow={wasBuyNow}
     />
   );
 }

@@ -25,6 +25,8 @@ export interface ThankYouContentProps {
   token: string | null;
   paymentStatus: PaymentStatus;
   errorMessage?: string;
+  /** True when the completed order came from a Buy Now single-item checkout. */
+  wasBuyNow?: boolean;
 }
 
 const nn = (v: number | string | undefined | null) => {
@@ -41,9 +43,10 @@ export default function ThankYouContent({
   token,
   paymentStatus,
   errorMessage,
+  wasBuyNow,
 }: ThankYouContentProps) {
   const router = useRouter();
-  const { clearCart } = useCart();
+  const { clearCart, clearBuyNow } = useCart();
   const { config } = useStorefrontConfig();
   const [gateways, setGateways] = useState<any[]>([]);
   const [loadingGateways, setLoadingGateways] = useState(true);
@@ -65,7 +68,11 @@ export default function ThankYouContent({
 
   useEffect(() => {
     if (!order) return;
-    clearCart();
+    // Buy Now orders never touched the shared cart — clearing it here would
+    // wipe items the shopper deliberately kept. Clear only the consumed
+    // Buy Now intent; cart checkouts clear the cart as before.
+    if (wasBuyNow) clearBuyNow();
+    else clearCart();
 
     if (typeof window === 'undefined') return;
     const sessionKey = `tracked_order_${order.id}`;
@@ -94,7 +101,7 @@ export default function ThankYouContent({
           trackEvent('Purchase', sharedData, sharedUserData, `purchase_${order.id}`);
         }
       });
-  }, [order, clearCart, config.currency.code, config.meta?.purchaseMode, config.tiktok?.purchaseMode]);
+  }, [order, clearCart, clearBuyNow, wasBuyNow, config.currency.code, config.meta?.purchaseMode, config.tiktok?.purchaseMode]);
 
   if (!orderId || (!order && !errorMessage)) {
     return (

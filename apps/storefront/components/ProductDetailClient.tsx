@@ -284,7 +284,7 @@ function TrustBar({ config }: { config: any }) {
 }
 
 export default function ProductDetailClient({ product, defaultColor }: { product: Product; defaultColor?: string }) {
-  const { items, addToCart, updateQuantity } = useCart();
+  const { items, addToCart, updateQuantity, startBuyNow } = useCart();
   const { config } = useStorefrontConfig();
   const { isWishlisted, toggle } = useWishlist();
   const { user } = useAuth();
@@ -627,7 +627,11 @@ export default function ProductDetailClient({ product, defaultColor }: { product
         return;
       }
     }
-    addToCart({
+    // Buy Now checks out exactly one unit of this product/variant in an
+    // isolated single-item flow — the shared cart is never touched, so
+    // repeat clicks can never merge quantities and other cart items never
+    // leak into the Buy Now order.
+    startBuyNow({
       id: product.id,
       name: product.name,
       price: displayPrice,
@@ -640,7 +644,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
       variantAttributes,
       stock: displayStock,
       catalogId: resolveCatalogId(product, selectedVariant),
-    }, true);
+    });
     window.location.href = '/checkout';
   }
 

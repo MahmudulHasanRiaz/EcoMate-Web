@@ -251,7 +251,7 @@ function CheckoutItemRow({ item, removeFromCart, updateQuantity, currencySymbol 
 }
 
 
-function PaymentPopup({ orderId, total, guestPhone, guestName, viewToken, onClose, onSuccess }: {
+function PaymentPopup({ orderId, total, guestPhone, guestName, viewToken, onClose, onSuccess, isBuyNow }: {
   orderId: string;
   total: number;
   guestPhone?: string;
@@ -259,6 +259,7 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, viewToken, onClos
   viewToken?: string;
   onClose: () => void;
   onSuccess?: () => void;
+  isBuyNow?: boolean;
 }) {
   const [gateways, setGateways] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -354,7 +355,7 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, viewToken, onClos
           <CheckCircle size={48} className="mx-auto mb-4 text-green-500" />
           <h3 className="text-lg font-bold text-gray-800 mb-2">Payment Submitted!</h3>
           <p className="text-sm text-gray-500 mb-6">Your payment info has been received. We will verify it shortly.</p>
-          <button onClick={() => router.push(`/checkout/thank-you?orderId=${orderId}&t=${viewToken || ''}&pending=true`)}
+          <button onClick={() => router.push(`/checkout/thank-you?orderId=${orderId}&t=${viewToken || ''}&pending=true${isBuyNow ? '&mode=buynow' : ''}`)}
             className="w-full bg-brand-blue text-white font-bold py-3 rounded-lg hover:bg-brand-blue/90 transition-colors">
             View Order Status
           </button>
@@ -471,7 +472,26 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, viewToken, onClos
 }
 
 export default function CheckoutPage() {
-  const { items, cartTotal, clearCart, updateQuantity, removeFromCart } = useCart();
+  const { items, cartTotal, clearCart, updateQuantity, removeFromCart, buyNowItem, updateBuyNowQuantity, removeBuyNow, clearBuyNow } = useCart();
+
+  // Buy Now single-item mode: when a Buy Now item is pending, the checkout
+  // bills ONLY that one item (exactly the quantity the shopper chose with
+  // +/- here) — the shared cart is neither read nor modified.
+  const isBuyNow = !!buyNowItem;
+  const coItems = isBuyNow && buyNowItem ? [buyNowItem] : items;
+  const coTotal = isBuyNow && buyNowItem ? buyNowItem.price * buyNowItem.quantity : cartTotal;
+  const coUpdateQuantity = (key: string, qty: number) => {
+    if (isBuyNow) updateBuyNowQuantity(qty);
+    else updateQuantity(key, qty);
+  };
+  const coRemoveItem = (key: string) => {
+    if (isBuyNow) removeBuyNow();
+    else removeFromCart(key);
+  };
+  const coClear = () => {
+    if (isBuyNow) clearBuyNow();
+    else clearCart();
+  };
   const { user } = useAuth();
   const { config } = useStorefrontConfig();
   const router = useRouter();
@@ -567,16 +587,16 @@ export default function CheckoutPage() {
         deliveryCharge = zoneGroup.amount ?? config.delivery.charge;
       }
     }
-    if (cartTotal >= config.delivery.freeDeliveryMin) {
+    if (coTotal >= config.delivery.freeDeliveryMin) {
       deliveryCharge = 0;
     }
   }
   const discountAmount = appliedCoupon?.valid && appliedCoupon.coupon
     ? (appliedCoupon.coupon.type === 'percentage'
-      ? (cartTotal * Number(appliedCoupon.coupon.value)) / 100
+      ? (coTotal * Number(appliedCoupon.coupon.value)) / 100
       : Number(appliedCoupon.coupon.value))
     : 0;
-  const totalWithDelivery = cartTotal + deliveryCharge - discountAmount;
+  const totalWithDelivery = coTotal + deliveryCharge - discountAmount;
 
   useEffect(() => {
     getDistricts().then(setDistricts).catch(() => {});
@@ -600,7 +620,7 @@ export default function CheckoutPage() {
   const validPhone = !user ? normalizePhone(guestPhone) : true;
   const showPhoneError = !user && guestPhone.length > 0 && !validPhone;
   const phoneOk = !user ? (guestPhone.length === 0 || validPhone) : true;
-  const canSubmit = items.length > 0 && !submitting && (user || (guestName.length > 0 && phoneOk)) && !noDeliveryError && Object.keys(fieldErrors).length === 0;
+  const canSubmit = coItems.length > 0 && !submitting && (user || (guestName.length > 0 && phoneOk)) && !noDeliveryError && Object.keys(fieldErrors).length === 0;
 
   useEffect(() => { localStorage.setItem('checkout_guestName', guestName); }, [guestName]);
   useEffect(() => { localStorage.setItem('checkout_guestPhone', guestPhone); }, [guestPhone]);
@@ -630,7 +650,7 @@ export default function CheckoutPage() {
    * produces a new signature and MUST re-fire with a fresh event_id so the
    * payload never goes stale (D1 fix).
    */
-  const cartSignature = React.useMemo(() => computeCartSignature(items), [items]);
+  const cartSignature = React.useMemo(() => computeCartSignature(coItems), [coItems]);
 
   /**
    * Per-attempt event id (spec §8 / D1 correction). The explicit override path
@@ -655,19 +675,19 @@ export default function CheckoutPage() {
   const lastSignatureRef = React.useRef<string>('');
 
   useEffect(() => {
-    if (items.length > 0 && cartSignature !== lastSignatureRef.current) {
-      const value = items.reduce((s, i) => s + (i.price || 0) * (i.quantity || 1), 0);
+    if (coItems.length > 0 && cartSignature !== lastSignatureRef.current) {
+      const value = coItems.reduce((s, i) => s + (i.price || 0) * (i.quantity || 1), 0);
       const rawPhone = user?.phoneNumber || '';
       const normalizedPhone = rawPhone ? (normalizePhone(rawPhone) ?? '') : '';
       trackEvent('InitiateCheckout', {
         value,
         currency: config.currency.code,
         content_type: 'product',
-        content_ids: items.map(i => i.catalogId || i.id),
-        num_items: items.reduce((s, i) => s + i.quantity, 0),
-        contents: items.map(i => ({ id: i.catalogId || i.id, quantity: i.quantity, item_price: i.price })),
-        content_name: items[0]?.name,
-        content_category: items[0]?.category,
+        content_ids: coItems.map(i => i.catalogId || i.id),
+        num_items: coItems.reduce((s, i) => s + i.quantity, 0),
+        contents: coItems.map(i => ({ id: i.catalogId || i.id, quantity: i.quantity, item_price: i.price })),
+        content_name: coItems[0]?.name,
+        content_category: coItems[0]?.category,
       }, {
         phone: normalizedPhone || undefined,
         name: [user?.firstName, user?.lastName].filter(Boolean).join(' ') || undefined,
@@ -679,7 +699,7 @@ export default function CheckoutPage() {
       }, cartAttemptId);
       lastSignatureRef.current = cartSignature;
     }
-  }, [items, cartSignature, cartAttemptId, config.currency.code, user, guestEmail]);
+  }, [coItems, cartSignature, cartAttemptId, config.currency.code, user, guestEmail]);
 
   const getLeadData = useCallback(() => {
     const rawPhone = guestPhone || user?.phoneNumber || '';
@@ -690,16 +710,16 @@ export default function CheckoutPage() {
       phone, name,
       email: (guestEmail && !isSyntheticEmail(guestEmail)) ? guestEmail.trim() : undefined,
       address: { district, thana, addressLine },
-      items: items.map(i => ({
+      items: coItems.map(i => ({
         id: i.id, name: i.name, price: i.price, quantity: i.quantity,
         image: i.image, isCombo: i.isCombo, comboId: i.comboId,
       })),
       paymentMethod: paymentOptionType,
-      fingerprint: simpleFingerprint(phone, items),
+      fingerprint: simpleFingerprint(phone, coItems),
       fbp: getCookie('_fbp') || undefined,
       fbc: getCookie('_fbc') || undefined,
     };
-  }, [guestPhone, guestName, guestEmail, items, district, thana, addressLine, paymentOptionType, user]);
+  }, [guestPhone, guestName, guestEmail, coItems, district, thana, addressLine, paymentOptionType, user]);
 
   const leadDataRef = useRef(getLeadData());
   leadDataRef.current = getLeadData();
@@ -719,7 +739,7 @@ export default function CheckoutPage() {
   }, []);
 
   const buildOrderPayload = () => {
-    const orderItems = items.map((item) => {
+    const orderItems = coItems.map((item) => {
       if (item.isCombo) {
         return { comboId: item.comboId, comboSelection: item.comboSelections, quantity: item.quantity, price: item.price };
       }
@@ -875,8 +895,8 @@ export default function CheckoutPage() {
   };
 
   const handlePlaceOrder = async () => {
-    if (items.length === 0) {
-      toast.error('Your cart is empty. Please add items to your cart.');
+    if (coItems.length === 0) {
+      toast.error(isBuyNow ? 'No item to checkout. Please start a Buy Now again.' : 'Your cart is empty. Please add items to your cart.');
       return;
     }
     if (submitting) return;
@@ -918,7 +938,7 @@ export default function CheckoutPage() {
 
       if (isOnlinePayment) {
         paymentSuccessCallback.current = () => {
-          clearCart();
+          coClear();
           try {
             ['checkout_guestName','checkout_guestPhone','checkout_guestEmail','checkout_district','checkout_thana',
              'checkout_address','checkout_notes','checkout_paymentOptionType'].forEach(k => localStorage.removeItem(k));
@@ -926,12 +946,12 @@ export default function CheckoutPage() {
         };
         setPaymentPopup({ orderId: order.id, total: totalWithDelivery, viewToken: order.viewToken });
       } else {
-        clearCart();
+        coClear();
         try {
           ['checkout_guestName','checkout_guestPhone','checkout_guestEmail','checkout_district','checkout_thana',
            'checkout_address','checkout_notes','checkout_paymentOptionType'].forEach(k => localStorage.removeItem(k));
         } catch {}
-        router.push(`/checkout/thank-you?orderId=${order.id}&t=${order.viewToken || ''}`);
+        router.push(`/checkout/thank-you?orderId=${order.id}&t=${order.viewToken || ''}${isBuyNow ? '&mode=buynow' : ''}`);
       }
     } catch (err: any) {
       const message = err?.response?.data?.message || 'Failed to place order. Please try again.';
@@ -941,7 +961,7 @@ export default function CheckoutPage() {
         toast.error(message);
       }
       if (message.includes('no longer exist')) {
-        clearCart();
+        coClear();
       }
     } finally {
       setSubmitting(false);
@@ -964,22 +984,22 @@ export default function CheckoutPage() {
   const s = config.currency.symbol || '৳';
 
   const renderCartItems = () => {
-    if (items.length === 0) {
+    if (coItems.length === 0) {
       return <p className="text-gray-400 text-xs py-2">Your cart is empty.</p>;
     }
-    
+
     const maxVisible = 2;
-    const hasMore = items.length > maxVisible;
-    const visibleItems = isItemsExpanded ? items : items.slice(0, maxVisible);
-    
+    const hasMore = coItems.length > maxVisible;
+    const visibleItems = isItemsExpanded ? coItems : coItems.slice(0, maxVisible);
+
     return (
       <div className="divide-y divide-gray-100">
         {visibleItems.map(item => (
           <CheckoutItemRow
             key={getItemKey(item)}
             item={item}
-            removeFromCart={removeFromCart}
-            updateQuantity={updateQuantity}
+            removeFromCart={coRemoveItem}
+            updateQuantity={coUpdateQuantity}
             currencySymbol={s}
           />
         ))}
@@ -988,7 +1008,7 @@ export default function CheckoutPage() {
             onClick={() => setIsItemsExpanded(!isItemsExpanded)}
             className="w-full text-center py-2.5 text-xs text-brand-blue font-bold hover:underline flex items-center justify-center gap-1 mt-1 cursor-pointer"
           >
-            {isItemsExpanded ? 'Show less' : `+ Show ${items.length - maxVisible} more item${items.length - maxVisible > 1 ? 's' : ''}`}
+            {isItemsExpanded ? 'Show less' : `+ Show ${coItems.length - maxVisible} more item${coItems.length - maxVisible > 1 ? 's' : ''}`}
             <ChevronDown size={12} className={`transform transition-transform ${isItemsExpanded ? 'rotate-180' : ''}`} />
           </button>
         )}
@@ -1037,7 +1057,7 @@ export default function CheckoutPage() {
       <div className="space-y-3.5 text-xs">
         <div className="flex justify-between items-center text-gray-500">
           <span>Subtotal</span>
-          <span className="font-bold text-gray-800">{s}{cartTotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
+          <span className="font-bold text-gray-800">{s}{coTotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
         </div>
         <div className="flex justify-between items-center text-gray-500">
           <span>Shipping</span>
@@ -1203,7 +1223,7 @@ export default function CheckoutPage() {
     );
   }
 
-  if (items.length === 0) {
+  if (coItems.length === 0) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
         <div className="bg-white p-8 rounded-xl border border-gray-150 max-w-md w-full text-center space-y-6 shadow-2xs">
@@ -1464,7 +1484,7 @@ export default function CheckoutPage() {
               {config.shippingMode !== 'options' && deliveryCharge > 0 && !noDeliveryError && (
                 <p className="text-[10px] text-gray-400">
                   Delivery cost{district ? ` for ${district}` : ''}: <span className="font-bold text-gray-600">{s}{deliveryCharge}</span>
-                  {cartTotal >= config.delivery.freeDeliveryMin ? (
+                  {coTotal >= config.delivery.freeDeliveryMin ? (
                     <span className="text-green-600 ml-2 font-bold">(Free)</span>
                   ) : config.delivery.freeDeliveryMin > 0 && (
                     <span className="text-gray-400 ml-1">(Free above {s}{config.delivery.freeDeliveryMin})</span>
@@ -1619,11 +1639,12 @@ export default function CheckoutPage() {
           viewToken={paymentPopup.viewToken}
           guestPhone={guestPhone}
           guestName={guestName}
+          isBuyNow={isBuyNow}
           onSuccess={() => paymentSuccessCallback.current?.()}
           onClose={() => {
             paymentSuccessCallback.current = null;
             setPaymentPopup(null);
-            router.push(`/checkout/thank-you?orderId=${paymentPopup.orderId}&t=${paymentPopup.viewToken}&pending=true`);
+            router.push(`/checkout/thank-you?orderId=${paymentPopup.orderId}&t=${paymentPopup.viewToken}&pending=true${isBuyNow ? '&mode=buynow' : ''}`);
           }}
         />
       )}

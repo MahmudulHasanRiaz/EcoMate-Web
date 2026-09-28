@@ -18,10 +18,39 @@ interface CartContextType {
   isCartOpen: boolean;
   setIsCartOpen: (isOpen: boolean) => void;
   clearCart: () => void;
+  /** Buy Now single-item checkout: exactly one unit of one product/variant,
+   * isolated from the cart. The shared cart is never touched by Buy Now. */
+  buyNowItem: CartItem | null;
+  startBuyNow: (product: CartItem) => void;
+  updateBuyNowQuantity: (quantity: number) => void;
+  removeBuyNow: () => void;
+  clearBuyNow: () => void;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 const STORAGE_KEY = 'ecomate_cart';
+const BUYNOW_STORAGE_KEY = 'ecomate_buynow';
+
+function loadBuyNow(): CartItem | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = sessionStorage.getItem(BUYNOW_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as CartItem) : null;
+  } catch { return null; }
+}
+
+function saveBuyNow(item: CartItem | null) {
+  if (typeof window === 'undefined') return;
+  try {
+    if (item) sessionStorage.setItem(BUYNOW_STORAGE_KEY, JSON.stringify(item));
+    else sessionStorage.removeItem(BUYNOW_STORAGE_KEY);
+  } catch { /* storage unavailable — in-memory state still works */ }
+}
+
+function capBuyNowQty(quantity: number, stock: CartItem['stock']): number {
+  if (stock != null) return Math.min(Math.max(quantity, 0), stock);
+  return Math.max(quantity, 0);
+}
 
 function loadCart(): CartItem[] {
   if (typeof window === 'undefined') return [];
@@ -54,12 +83,16 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [buyNowItem, setBuyNowItem] = useState<CartItem | null>(null);
+  const [buyNowLoaded, setBuyNowLoaded] = useState(false);
   const userDismissedRef = useRef(false);
 
   // Load cart from localStorage after hydration to avoid SSR mismatch
   useEffect(() => {
     setItems(loadCart());
     setLoaded(true);
+    setBuyNowItem(loadBuyNow());
+    setBuyNowLoaded(true);
   }, []);
 
   const handleSetIsCartOpen = useCallback((open: boolean) => {
@@ -114,11 +147,39 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const clearCart = useCallback(() => setItems([]), []);
 
+  // ── Buy Now: isolated single-item checkout ──────────────────────────
+  // The pending Buy Now item lives OUTSIDE the cart so repeat Buy Now
+  // clicks can never merge quantities, and other cart items never leak
+  // into a Buy Now checkout. sessionStorage (per-tab) carries the intent
+  // across the full-page navigation to /checkout.
+  useEffect(() => {
+    if (buyNowLoaded) saveBuyNow(buyNowItem);
+  }, [buyNowItem, buyNowLoaded]);
+
+  const startBuyNow = useCallback((product: CartItem) => {
+    if (product.availabilityMode === 'ALWAYS_OUT_OF_STOCK') return;
+    if (product.stock != null && product.stock <= 0) return;
+    setBuyNowItem({ ...product, quantity: product.stock != null ? Math.min(1, product.stock) : 1 });
+  }, []);
+
+  const updateBuyNowQuantity = useCallback((quantity: number) => {
+    setBuyNowItem((prev) => {
+      if (!prev) return prev;
+      if (prev.availabilityMode === 'ALWAYS_OUT_OF_STOCK') return prev;
+      if (prev.stock != null && prev.stock <= 0) return prev;
+      if (quantity <= 0) return null;
+      return { ...prev, quantity: capBuyNowQty(quantity, prev.stock) };
+    });
+  }, []);
+
+  const removeBuyNow = useCallback(() => setBuyNowItem(null), []);
+  const clearBuyNow = useCallback(() => setBuyNowItem(null), []);
+
   const cartCount = items.reduce((sum, item) => sum + item.quantity, 0);
   const cartTotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
   return (
-    <CartContext.Provider value={{ items, addToCart, removeFromCart, updateQuantity, cartCount, cartTotal, isCartOpen, setIsCartOpen: handleSetIsCartOpen, clearCart }}>
+    <CartContext.Provider value={{ items, addToCart, removeFromCart, updateQuantity, cartCount, cartTotal, isCartOpen, setIsCartOpen: handleSetIsCartOpen, clearCart, buyNowItem, startBuyNow, updateBuyNowQuantity, removeBuyNow, clearBuyNow }}>
       {children}
     </CartContext.Provider>
   );
