@@ -64,7 +64,7 @@ export function OperationalKpiStrip({ dateRange, preset, view = 'activity' }: Wi
   } = useQuery({
     queryKey: ['operational-kpis', view, startStr, endStr],
     queryFn: () =>
-      isPipeline
+      view === 'pipeline'
         ? dashboardApi.getOperationalPipelineKpis(startStr, endStr)
         : dashboardApi.getOperationalKpis(startStr, endStr),
     refetchInterval: 30_000,
