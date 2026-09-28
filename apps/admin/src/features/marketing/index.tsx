@@ -64,7 +64,7 @@ function StatCard({ title, value, sub, icon: Icon, delta }: {
 }
 
 export function MarketingDashboard() {
-  const [days, setDays] = useState(30)
+  const [days, setDays] = useState(1)
 
   const toDate = new Date().toISOString().slice(0, 10)
   const from = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10)
@@ -127,6 +127,7 @@ export function MarketingDashboard() {
             value={days}
             onChange={(e) => setDays(Number(e.target.value))}
           >
+            <option value={1}>Today</option>
             <option value={7}>Last 7 days</option>
             <option value={30}>Last 30 days</option>
             <option value={90}>Last 90 days</option>

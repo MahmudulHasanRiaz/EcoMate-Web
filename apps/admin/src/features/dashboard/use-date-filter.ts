@@ -12,7 +12,7 @@ export function useDateFilter() {
 
   const params = useMemo(() => new URLSearchParams(location.searchStr), [location.searchStr])
 
-  const preset = (params.get('preset') as DatePresetKey) || 'last_30_days'
+  const preset = (params.get('preset') as DatePresetKey) || 'today'
   const customStart = params.get('start') || undefined
   const customEnd = params.get('end') || undefined
   const rawView = params.get('view') as DashboardView | null

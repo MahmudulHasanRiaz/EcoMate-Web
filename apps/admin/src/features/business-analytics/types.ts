@@ -186,7 +186,7 @@ export interface ExpenseAnalyticsFilters extends AnalyticsFilters {
   sort?: 'total' | 'name' | 'expenseDate'
 }
 
-export const DEFAULT_FILTERS: AnalyticsFilters = { preset: 'last_30_days' }
+export const DEFAULT_FILTERS: AnalyticsFilters = { preset: 'today' }
 
 /** P4 product list/detail filters: shared dimensions + list-only search/sort. */
 export interface ProductAnalyticsFilters extends AnalyticsFilters {

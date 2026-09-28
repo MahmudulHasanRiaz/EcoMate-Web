@@ -15,7 +15,7 @@ import { Link, useParams } from '@tanstack/react-router'
 
 export function MarketingCampaignDetail() {
   const params = useParams({ from: '/_authenticated/op/marketing/campaigns/$id' }) as { id: string }
-  const [days, setDays] = useState(30)
+  const [days, setDays] = useState(1)
 
   const toDate = new Date().toISOString().slice(0, 10)
   const from = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10)
@@ -98,6 +98,7 @@ export function MarketingCampaignDetail() {
               value={days}
               onChange={(e) => setDays(Number(e.target.value))}
             >
+              <option value={1}>Today</option>
               <option value={14}>14 days</option>
               <option value={30}>30 days</option>
               <option value={90}>90 days</option>

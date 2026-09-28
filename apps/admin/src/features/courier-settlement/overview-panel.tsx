@@ -10,9 +10,10 @@ import { InvoiceStateBadge } from './state-badge'
 const bdt = (v: number) =>
   `৳${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
-type Period = 'month' | 'lastMonth' | '90d' | 'all'
+type Period = 'today' | 'month' | 'lastMonth' | '90d' | 'all'
 
 const PERIODS: { value: Period; label: string }[] = [
+  { value: 'today', label: 'Today' },
   { value: 'month', label: 'This month' },
   { value: 'lastMonth', label: 'Last month' },
   { value: '90d', label: 'Last 90 days' },
@@ -57,10 +58,13 @@ function Kpi({
  * it says so instead of crying broken on a scoped period.
  */
 export function OverviewPanel() {
-  const [period, setPeriod] = useState<Period>('month')
+  const [period, setPeriod] = useState<Period>('today')
 
   const params = useMemo(() => {
     const now = new Date()
+    if (period === 'today') {
+      return { from: iso(new Date(now.getFullYear(), now.getMonth(), now.getDate())) }
+    }
     if (period === 'lastMonth') {
       // to = first of this month → covers every finalized second of last month.
       return {

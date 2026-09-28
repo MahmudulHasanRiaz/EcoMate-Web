@@ -131,7 +131,7 @@ describe('product detail page (W2)', () => {
     )
     expect(inventory).not.toBeUndefined()
     expect(inventory?.getAttribute('href')).toContain('/op/inventory?')
-    expect(inventory?.getAttribute('href')).toContain('preset=last_30_days')
+    expect(inventory?.getAttribute('href')).toContain('preset=today')
     // Empty uncosted: compact empty state, no full fix-list card.
     await expect.element(getByText(/No lines missing cost/)).toBeInTheDocument()
     expect(container.textContent ?? '').not.toMatch(/Lines missing cost —/)
