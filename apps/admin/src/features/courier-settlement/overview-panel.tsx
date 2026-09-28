@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react'
+import { Package, TrendingUp } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { CountUp, riseStyle } from '@/components/ui/dashboard'
+import { cn } from '@/lib/utils'
 import { useOverview } from './hooks'
 import { InvoiceStateBadge } from './state-badge'
 
@@ -30,15 +33,16 @@ function Kpi({
   sub?: string
   tone?: 'good' | 'warn' | 'bad'
 }) {
-  const color =
-    tone === 'bad' ? 'text-red-600' : tone === 'warn' ? 'text-amber-600' : 'text-foreground'
+  const accent = tone === 'bad' ? 'kpi-accent-danger' : tone === 'warn' ? 'kpi-accent-warning' : 'kpi-accent-success'
   return (
-    <Card>
+    <Card className={cn('kpi-card', accent)}>
       <CardHeader className="pb-1">
         <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className={`text-2xl font-semibold tabular-nums ${color}`}>{bdt(value)}</div>
+        <div className="kpi-value">
+          <CountUp value={value} format={bdt} />
+        </div>
         {sub ? <p className="mt-1 text-xs text-muted-foreground">{sub}</p> : null}
       </CardContent>
     </Card>
@@ -76,7 +80,7 @@ export function OverviewPanel() {
   }
   if (isError || !data) {
     return (
-      <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+      <div className="rounded-xl border border-danger/30 bg-danger-soft p-4 text-sm text-danger">
         Failed to load the courier settlement overview. The figures below would be incomplete, so
         nothing is shown.
       </div>
@@ -106,15 +110,15 @@ export function OverviewPanel() {
         <p className="text-xs text-muted-foreground">
           Flow figures follow the selected period; position figures are current.
         </p>
-        <div className="flex items-center rounded-md border p-0.5">
+        <div className="inline-flex min-h-10 flex-wrap items-center gap-1 rounded-xl border border-border/50 bg-muted p-1 sm:flex-nowrap sm:gap-0">
           {PERIODS.map((p) => (
             <button
               key={p.value}
               type="button"
               onClick={() => setPeriod(p.value)}
-              className={`rounded-sm px-2.5 py-1 text-[11px] font-medium transition-colors duration-150 cursor-pointer ${
+              className={`rounded-lg px-2.5 py-1.5 min-h-8 text-[11px] font-medium transition-all duration-200 cursor-pointer ${
                 period === p.value
-                  ? 'bg-foreground text-background'
+                  ? 'bg-background text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
@@ -125,9 +129,12 @@ export function OverviewPanel() {
       </div>
 
       {/* ── Period flow ── */}
-      <section className="space-y-3">
+      <section className="space-y-3 animate-rise" style={riseStyle(0)}>
         <div className="flex flex-wrap items-baseline gap-2">
-          <h2 className="text-sm font-semibold">Period flow</h2>
+          <h2 className="dash-section-title">
+            <TrendingUp className="h-4 w-4 text-success" aria-hidden />
+            Period flow
+          </h2>
           <span className="text-xs text-muted-foreground">{rangeLabel}</span>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -136,17 +143,22 @@ export function OverviewPanel() {
             value={kpis.settledThisPeriod.net}
             sub={`received ${bdt(kpis.settledThisPeriod.cashReceived)} · disbursed ${bdt(kpis.settledThisPeriod.cashDisbursed)}`}
           />
-          <Kpi title="Courier cost" value={kpis.courierCost} sub="finalized effective charges" />
+          <Kpi title="Courier cost" value={kpis.courierCost} sub="finalized effective charges" tone="bad" />
           <Kpi title="Shipping margin" value={kpis.shippingMargin} />
         </div>
-        <Card>
+        <Card className="chart-card rounded-2xl">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Settlement waterfall</CardTitle>
+            <div className="flex items-center gap-2.5">
+              <span className="chart-card-header-icon bg-success-soft text-success border border-success/25">
+                <TrendingUp className="h-4 w-4" />
+              </span>
+              <CardTitle className="text-sm">Settlement waterfall</CardTitle>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
               {steps.map((s) => (
-                <div key={s.label} className="rounded-md border p-2 text-center">
+                <div key={s.label} className="rounded-xl border border-border/50 bg-muted/20 p-2 text-center transition-colors duration-200">
                   <div className="text-xs text-muted-foreground">{s.label}</div>
                   <div className="mt-1 text-sm font-semibold tabular-nums">
                     {s.value < 0 ? `−${bdt(Math.abs(s.value))}` : bdt(s.value)}
@@ -162,8 +174,11 @@ export function OverviewPanel() {
       </section>
 
       {/* ── Current position ── */}
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold">Current position</h2>
+      <section className="space-y-3 animate-rise" style={riseStyle(1)}>
+        <h2 className="dash-section-title">
+          <Package className="h-4 w-4 text-info" aria-hidden />
+          Current position
+        </h2>
         <div className="grid gap-4 lg:grid-cols-3">
           <div className="grid gap-4 sm:grid-cols-2 lg:col-span-2 lg:grid-cols-2">
             <Kpi
@@ -172,36 +187,41 @@ export function OverviewPanel() {
               sub={`awaiting settlement ${bdt(kpis.awaitingSettlement)}`}
               tone={kpis.codOutstanding > 0 ? 'warn' : 'good'}
             />
-            <Card>
+            <Card className="kpi-card kpi-accent-danger">
               <CardHeader className="pb-1">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
                   Exceptions
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-muted-foreground">RED (blocking)</span>
-                  <Badge variant="outline" className="bg-red-100 text-red-800">
+                  <Badge variant="danger" className="tabular-nums">
                     {kpis.exceptions.red}
                   </Badge>
                 </div>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-muted-foreground">YELLOW</span>
-                  <Badge variant="outline" className="bg-amber-100 text-amber-800">
+                  <Badge variant="warning" className="tabular-nums">
                     {kpis.exceptions.yellow}
                   </Badge>
                 </div>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-muted-foreground">Open</span>
-                  <Badge variant="outline">{kpis.exceptions.open}</Badge>
+                  <Badge variant="outline" className="tabular-nums">{kpis.exceptions.open}</Badge>
                 </div>
               </CardContent>
             </Card>
           </div>
 
-          <Card>
+          <Card className="chart-card rounded-2xl">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Invoices by state</CardTitle>
+              <div className="flex items-center gap-2.5">
+                <span className="chart-card-header-icon bg-info-soft text-info border border-info/25">
+                  <Package className="h-4 w-4" />
+                </span>
+                <CardTitle className="text-sm">Invoices by state</CardTitle>
+              </div>
             </CardHeader>
             <CardContent>
               {Object.keys(invoicesByState).length === 0 ? (
@@ -227,7 +247,7 @@ export function OverviewPanel() {
       {/* ── Stock-vs-flow check: basis-aware ── */}
       {scoped ? (
         <div
-          className="rounded-md border bg-muted/50 p-3 text-sm text-muted-foreground"
+          className="rounded-xl border border-border/50 bg-muted/40 p-3 text-sm text-muted-foreground"
           role="status"
         >
           Stock-vs-flow check runs on an <span className="font-medium">All time</span> basis — this
@@ -238,10 +258,10 @@ export function OverviewPanel() {
         </div>
       ) : (
         <div
-          className={`rounded-md border p-3 text-sm ${
+          className={`rounded-xl border p-3 text-sm ${
             invariant.equal
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-              : 'border-red-200 bg-red-50 text-red-800'
+              ? 'border-success/30 bg-success-soft text-success'
+              : 'border-danger/30 bg-danger-soft text-danger'
           }`}
           role="status"
         >

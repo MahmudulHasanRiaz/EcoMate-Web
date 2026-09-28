@@ -26,16 +26,21 @@ export function CourierSettlementPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-            <Wallet className="size-6 text-muted-foreground" aria-hidden />
-            Courier Settlement
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Import courier invoices, resolve exceptions, finalize and reconcile COD &amp; charges.
-          </p>
+        <div className="flex items-center gap-3">
+          <span className="chart-card-header-icon bg-success-soft text-success border border-success/25">
+            <Wallet className="size-5" aria-hidden />
+          </span>
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              Courier Settlement
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Import courier invoices, resolve exceptions, finalize and reconcile COD &amp; charges.
+            </p>
+          </div>
         </div>
         <Button
+          className="tap-h"
           onClick={() => {
             setResumeDraftId(null)
             setImportOpen(true)
@@ -46,13 +51,13 @@ export function CourierSettlementPage() {
       </div>
 
       <Tabs defaultValue="overview">
-        <TabsList className="h-auto flex-wrap">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="invoices">Invoices</TabsTrigger>
-          <TabsTrigger value="reconciliation">Reconciliation</TabsTrigger>
-          <TabsTrigger value="balances">Balances</TabsTrigger>
-          <TabsTrigger value="exceptions">Exceptions</TabsTrigger>
-          <TabsTrigger value="settings">Rules</TabsTrigger>
+        <TabsList className="tap-h h-auto max-w-full flex-wrap overflow-x-auto no-scrollbar">
+          <TabsTrigger value="overview" className="tap-h">Overview</TabsTrigger>
+          <TabsTrigger value="invoices" className="tap-h">Invoices</TabsTrigger>
+          <TabsTrigger value="reconciliation" className="tap-h">Reconciliation</TabsTrigger>
+          <TabsTrigger value="balances" className="tap-h">Balances</TabsTrigger>
+          <TabsTrigger value="exceptions" className="tap-h">Exceptions</TabsTrigger>
+          <TabsTrigger value="settings" className="tap-h">Rules</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-4">

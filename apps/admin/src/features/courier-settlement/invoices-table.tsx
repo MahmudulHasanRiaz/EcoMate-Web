@@ -53,7 +53,7 @@ export function InvoicesTable({ onResumeDraft }: { onResumeDraft?: (id: string) 
   const meta = data?.meta
 
   return (
-    <Card>
+    <Card className="chart-card rounded-2xl animate-rise">
       <CardContent className="p-0">
         <div className="flex flex-wrap items-center gap-2 border-b p-3">
           <Input
@@ -63,7 +63,7 @@ export function InvoicesTable({ onResumeDraft }: { onResumeDraft?: (id: string) 
               setSearch(e.target.value)
               setPage(1)
             }}
-            className="max-w-xs"
+            className="tap-h w-full sm:max-w-xs"
           />
           <Select
             value={state}
@@ -72,7 +72,7 @@ export function InvoicesTable({ onResumeDraft }: { onResumeDraft?: (id: string) 
               setPage(1)
             }}
           >
-            <SelectTrigger className="w-52">
+            <SelectTrigger className="tap-h w-full sm:w-52">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -89,7 +89,7 @@ export function InvoicesTable({ onResumeDraft }: { onResumeDraft?: (id: string) 
           </Select>
         </div>
 
-        <Table>
+        <Table className="dash-table">
           <TableHeader>
             <TableRow>
               <TableHead>Invoice</TableHead>
@@ -151,7 +151,7 @@ export function InvoicesTable({ onResumeDraft }: { onResumeDraft?: (id: string) 
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {inv.openExceptions ? (
-                      <Badge variant="outline" className="bg-amber-100 text-amber-800">
+                      <Badge variant="warning">
                         {inv.openExceptions}
                       </Badge>
                     ) : (
@@ -163,6 +163,7 @@ export function InvoicesTable({ onResumeDraft }: { onResumeDraft?: (id: string) 
                       <Button
                         size="sm"
                         variant="outline"
+                        className="tap-h"
                         onClick={() => onResumeDraft?.(inv.id)}
                         title="Resume this analyzed draft — nothing has been imported yet"
                       >
@@ -176,7 +177,7 @@ export function InvoicesTable({ onResumeDraft }: { onResumeDraft?: (id: string) 
           </TableBody>
         </Table>
 
-        <div className="flex items-center justify-between border-t p-3 text-sm text-muted-foreground">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t p-3 text-sm text-muted-foreground">
           <span>
             {meta ? `${meta.total} invoice(s) · page ${meta.page} of ${Math.max(meta.pages, 1)}` : ''}
           </span>
@@ -184,6 +185,7 @@ export function InvoicesTable({ onResumeDraft }: { onResumeDraft?: (id: string) 
             <Button
               variant="outline"
               size="sm"
+              className="tap-h"
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
             >
@@ -192,6 +194,7 @@ export function InvoicesTable({ onResumeDraft }: { onResumeDraft?: (id: string) 
             <Button
               variant="outline"
               size="sm"
+              className="tap-h"
               disabled={!meta || page >= meta.pages}
               onClick={() => setPage((p) => p + 1)}
             >

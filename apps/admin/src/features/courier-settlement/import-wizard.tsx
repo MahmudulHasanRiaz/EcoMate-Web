@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -216,14 +217,14 @@ export function ImportWizard({
                 {headers.length} source columns
               </span>
               {blocking.length > 0 ? (
-                <span className="rounded-sm border border-red-200 bg-red-50 px-1.5 py-0.5 font-medium text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">
+                <Badge variant="danger" className="rounded-md font-medium">
                   {blocking.length} blocking
-                </span>
+                </Badge>
               ) : null}
               {warnings.length > 0 ? (
-                <span className="rounded-sm border border-amber-200 bg-amber-50 px-1.5 py-0.5 font-medium text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                <Badge variant="warning" className="rounded-md font-medium">
                   {warnings.length} warning{warnings.length > 1 ? 's' : ''}
-                </span>
+                </Badge>
               ) : null}
               <span className="ml-auto rounded-sm bg-muted px-1.5 py-0.5 font-medium text-muted-foreground">
                 Draft · not imported
@@ -237,7 +238,7 @@ export function ImportWizard({
             <div className="space-y-2">
               <Label>Courier</Label>
               <Select value={courier} onValueChange={setCourier}>
-                <SelectTrigger className="rounded-sm">
+                <SelectTrigger className="tap-h rounded-md">
                   <SelectValue placeholder="Detect from file header (recommended)" />
                 </SelectTrigger>
                 <SelectContent>
@@ -279,7 +280,7 @@ export function ImportWizard({
               <Button
                 onClick={start}
                 disabled={!file || upload.isPending}
-                className="rounded-sm text-xs"
+                className="tap-h rounded-md text-xs"
               >
                 {upload.isPending ? 'Analyzing…' : 'Analyze file'}
               </Button>
@@ -289,10 +290,10 @@ export function ImportWizard({
           <>
             <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col gap-0">
               <div className="shrink-0 border-b px-5 pt-3">
-                <TabsList className="h-9 rounded-md bg-muted">
-                  <TabsTrigger value="review">Review</TabsTrigger>
-                  <TabsTrigger value="sheet">Source sheet</TabsTrigger>
-                  <TabsTrigger value="findings">
+                <TabsList className="tap-h h-9 max-w-full overflow-x-auto rounded-md bg-muted no-scrollbar">
+                  <TabsTrigger value="review" className="tap-h">Review</TabsTrigger>
+                  <TabsTrigger value="sheet" className="tap-h">Source sheet</TabsTrigger>
+                  <TabsTrigger value="findings" className="tap-h">
                     Findings
                     {findings.length > 0 ? (
                       <span className="ml-1.5 rounded-sm bg-background px-1.5 text-[10px] font-medium tabular-nums text-foreground shadow-sm">
@@ -300,7 +301,7 @@ export function ImportWizard({
                       </span>
                     ) : null}
                   </TabsTrigger>
-                  <TabsTrigger value="previous">Previous settlements</TabsTrigger>
+                  <TabsTrigger value="previous" className="tap-h">Previous settlements</TabsTrigger>
                 </TabsList>
               </div>
 
@@ -313,11 +314,17 @@ export function ImportWizard({
                   <h4 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                     What this invoice says
                   </h4>
-                  <div className="divide-y rounded-md border sm:divide-y-0">
-                    <div className="grid grid-cols-2 divide-x sm:grid-cols-4">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <div className="rounded-xl border border-border/50 bg-muted/20">
                       <Figure label="Gross COD collected" value={money(preview.money.grossCollected)} />
+                    </div>
+                    <div className="rounded-xl border border-border/50 bg-muted/20">
                       <Figure label="Courier charges" value={money(preview.money.charges)} />
+                    </div>
+                    <div className="rounded-xl border border-border/50 bg-muted/20">
                       <Figure label="Net settlement" value={money(preview.money.net)} strong />
+                    </div>
+                    <div className="rounded-xl border border-border/50 bg-muted/20">
                       <Figure
                         label="Expected COD"
                         value={unmatched > 0 ? '—' : money(preview.money.expectedCod)}
@@ -329,10 +336,18 @@ export function ImportWizard({
                         }
                       />
                     </div>
-                    <div className="grid grid-cols-2 divide-x sm:grid-cols-4">
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <div className="rounded-xl border border-border/50 bg-muted/20">
                       <Figure label="Cash we receive" value={money(preview.money.cashReceived)} muted />
+                    </div>
+                    <div className="rounded-xl border border-border/50 bg-muted/20">
                       <Figure label="Cash we pay out" value={money(preview.money.cashDisbursed)} muted />
+                    </div>
+                    <div className="rounded-xl border border-border/50 bg-muted/20">
                       <Figure label="Unexplained residual" value={money(preview.money.residual)} muted />
+                    </div>
+                    <div className="rounded-xl border border-border/50 bg-muted/20">
                       <Figure label="Shipping margin impact" value={money(-preview.money.charges)} muted />
                     </div>
                   </div>
@@ -381,13 +396,13 @@ export function ImportWizard({
                 </section>
 
                 {!preview.identity.proven ? (
-                  <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">
+                  <p className="rounded-xl border border-danger/30 bg-danger-soft p-3 text-sm text-danger">
                     No approved financial rule for this format — you can import and review it, but
                     finalization stays disabled until a rule is approved in Rules.
                   </p>
                 ) : null}
                 {preview.duplicateFile ? (
-                  <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                  <p className="rounded-xl border border-warning/30 bg-warning-soft p-3 text-sm text-warning">
                     This exact file already exists. Confirming creates a flagged duplicate
                     (<span className="font-mono">DUPLICATE_FILE</span>) so it can never silently
                     double-count.
@@ -421,7 +436,7 @@ export function ImportWizard({
                 className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4"
               >
                 {unmatched > 0 ? (
-                  <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                  <p className="rounded-xl border border-warning/30 bg-warning-soft p-3 text-sm text-warning">
                     Previous-settlement check unavailable — {unmatched} unmatched row(s). The check
                     can only cover rows matched to an order.
                   </p>
@@ -489,12 +504,12 @@ export function ImportWizard({
                 ) : (
                   <>
                     <div className="flex flex-wrap items-center gap-3 text-xs">
-                      <span className="flex items-center gap-1.5 font-medium text-red-800 dark:text-red-300">
-                        <span className="size-1.5 rounded-full bg-red-500" />
+                      <span className="flex items-center gap-1.5 font-medium text-danger">
+                        <span className="size-1.5 rounded-full bg-danger" />
                         {blocking.length} blocking
                       </span>
-                      <span className="flex items-center gap-1.5 font-medium text-amber-800 dark:text-amber-300">
-                        <span className="size-1.5 rounded-full bg-amber-500" />
+                      <span className="flex items-center gap-1.5 font-medium text-warning">
+                        <span className="size-1.5 rounded-full bg-warning" />
                         {warnings.length} review
                       </span>
                     </div>
@@ -502,19 +517,19 @@ export function ImportWizard({
                       {findings.map((f) => (
                         <li
                           key={`${f.severity}-${f.ruleId}-${f.message}`}
-                          className={`flex items-start gap-2.5 rounded-md border px-2.5 py-2 text-sm transition-colors ${
+                          className={`flex items-start gap-2.5 rounded-xl border px-2.5 py-2 text-sm transition-colors ${
                             f.severity === 'red'
-                              ? 'border-red-200 bg-red-50/70 dark:border-red-500/30 dark:bg-red-500/10'
-                              : 'border-amber-200 bg-amber-50/70 dark:border-amber-500/30 dark:bg-amber-500/10'
+                              ? 'border-danger/30 bg-danger-soft'
+                              : 'border-warning/30 bg-warning-soft'
                           }`}
                         >
                           <span
                             className={`mt-1.5 size-2 shrink-0 rounded-full ${
-                              f.severity === 'red' ? 'bg-red-500' : 'bg-amber-500'
+                              f.severity === 'red' ? 'bg-danger' : 'bg-warning'
                             }`}
                           />
                           <div className="min-w-0 flex-1">
-                            <p className={f.severity === 'red' ? 'text-red-900 dark:text-red-200' : 'text-amber-900 dark:text-amber-200'}>
+                            <p className={f.severity === 'red' ? 'text-danger' : 'text-warning'}>
                               {f.message}
                             </p>
                             <p className="mt-0.5 text-xs text-muted-foreground">
@@ -529,7 +544,7 @@ export function ImportWizard({
                               <Button
                                 variant="outline"
                                 size="sm"
-                                className="h-7 rounded-sm text-xs"
+                                className="tap-h rounded-md text-xs"
                                 onClick={() => setMappingOpen(true)}
                               >
                                 Edit mapping
@@ -539,7 +554,7 @@ export function ImportWizard({
                               <Button
                                 variant="outline"
                                 size="sm"
-                                className="h-7 rounded-sm text-xs"
+                                className="tap-h rounded-md text-xs"
                                 onClick={() => goToRows(f.sampleRowNumbers)}
                               >
                                 Review {f.sampleRowNumbers.length} affected row
@@ -571,14 +586,14 @@ export function ImportWizard({
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
                     variant="ghost"
-                    className="rounded-sm text-xs"
+                    className="tap-h rounded-md text-xs"
                     onClick={() => setMappingOpen(true)}
                   >
                     Edit mapping
                   </Button>
                   <Button
                     variant="ghost"
-                    className="rounded-sm text-xs text-red-700 hover:text-red-800 dark:text-red-400"
+                    className="tap-h rounded-md text-xs text-danger hover:text-danger"
                     onClick={discardDraft}
                     disabled={discard.isPending}
                   >
@@ -586,7 +601,7 @@ export function ImportWizard({
                   </Button>
                   <span className="mx-1 hidden h-5 w-px bg-border sm:block" />
                   <Button
-                    className="rounded-sm text-xs"
+                    className="tap-h rounded-md text-xs"
                     onClick={confirmImport}
                     disabled={importDraft.isPending}
                     title="Writes rows and findings for review — nothing is booked"
@@ -603,13 +618,13 @@ export function ImportWizard({
           </>
         ) : draftPreview.isLoading ? (
           <div className="min-h-0 flex-1 space-y-3 px-5 py-6">
-            <div className="h-4 w-1/3 animate-pulse rounded-sm bg-muted" />
-            <div className="h-24 animate-pulse rounded-md bg-muted" />
-            <div className="h-4 w-1/2 animate-pulse rounded-sm bg-muted" />
+            <div className="h-4 w-1/3 skeleton-shimmer rounded-sm bg-muted" />
+            <div className="h-24 skeleton-shimmer rounded-md bg-muted" />
+            <div className="h-4 w-1/2 skeleton-shimmer rounded-sm bg-muted" />
             <p className="text-center text-sm text-muted-foreground">Loading draft preview…</p>
           </div>
         ) : draftPreview.isError ? (
-          <p className="px-5 py-10 text-center text-sm text-red-700">
+          <p className="px-5 py-10 text-center text-sm text-danger">
             Unable to load this draft — the original file may be missing. Re-upload it to continue.
           </p>
         ) : null}
@@ -652,7 +667,7 @@ function Figure({
           na
             ? 'text-base font-medium text-muted-foreground/70'
             : strong
-              ? 'text-xl font-semibold'
+              ? 'kpi-value'
               : muted
                 ? 'text-sm font-medium text-foreground/80'
                 : 'text-base font-medium'
@@ -704,7 +719,7 @@ function Stat({
   return (
     <span className="text-xs">
       <span className="text-muted-foreground">{label} </span>
-      <span className={`font-medium tabular-nums ${warn ? 'text-amber-700 dark:text-amber-400' : ''}`}>
+      <span className={`font-medium tabular-nums ${warn ? 'text-warning' : ''}`}>
         {value}
       </span>
     </span>

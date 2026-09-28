@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
+import { TriangleAlert } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -32,14 +33,19 @@ export function ExceptionsPanel() {
   const rows = Array.isArray(data) ? data : (data as unknown as { data?: unknown[] })?.data ?? []
 
   return (
-    <Card>
+    <Card className="chart-card rounded-2xl animate-rise">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm">Exceptions across all invoices</CardTitle>
+        <div className="flex items-center gap-2.5">
+          <span className="chart-card-header-icon bg-warning-soft text-warning border border-warning/25">
+            <TriangleAlert className="h-4 w-4" />
+          </span>
+          <CardTitle className="text-sm">Exceptions across all invoices</CardTitle>
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex flex-wrap gap-2">
           <Select value={severity} onValueChange={(v) => setSeverity(v as typeof severity)}>
-            <SelectTrigger className="w-40">
+            <SelectTrigger className="tap-h w-full sm:w-40">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -49,7 +55,7 @@ export function ExceptionsPanel() {
             </SelectContent>
           </Select>
           <Select value={status} onValueChange={(v) => setStatus(v as typeof status)}>
-            <SelectTrigger className="w-44">
+            <SelectTrigger className="tap-h w-full sm:w-44">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -64,7 +70,7 @@ export function ExceptionsPanel() {
         {isLoading ? (
           <div className="py-10 text-center text-muted-foreground">Loading exceptions…</div>
         ) : isError ? (
-          <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <div className="rounded-xl border border-danger/30 bg-danger-soft p-4 text-sm text-danger">
             Failed to load the exception queue. Nothing is shown rather than a partial list that
             could hide a blocking issue.
           </div>
@@ -75,9 +81,9 @@ export function ExceptionsPanel() {
               : 'No exceptions match this filter.'}
           </div>
         ) : (
-          <ul className="divide-y rounded-md border">
+          <ul className="divide-y rounded-xl border border-border/50">
             {rows.map((e: any) => (
-              <li key={e.id} className="flex flex-wrap items-start gap-3 p-3 text-sm">
+              <li key={e.id} className="flex flex-wrap items-start gap-3 p-3 text-sm transition-colors duration-150 hover:bg-muted/40">
                 <ExceptionBadge severity={e.severity} status={e.status} />
                 <div className="min-w-0 flex-1">
                   <p>{e.message ?? e.ruleId}</p>
@@ -110,9 +116,9 @@ export function ExceptionsPanel() {
                     ) : null}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {e.blocked ? (
-                    <Badge variant="outline" className="bg-red-100 text-red-800">
+                    <Badge variant="danger">
                       blocks finalize
                     </Badge>
                   ) : null}
@@ -120,6 +126,7 @@ export function ExceptionsPanel() {
                     <Button
                       size="sm"
                       variant="outline"
+                      className="tap-h"
                       onClick={() =>
                         acknowledge.mutate({ invoiceId: e.invoiceId, exceptionId: e.id })
                       }

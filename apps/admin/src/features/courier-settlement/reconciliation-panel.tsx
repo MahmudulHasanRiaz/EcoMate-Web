@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router'
+import { ArrowRightLeft } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -31,13 +32,19 @@ export function ReconciliationPanel() {
   )
 
   return (
-    <Card>
+    <Card className="chart-card rounded-2xl animate-rise">
       <CardHeader className="pb-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <CardTitle className="text-sm">Invoice reconciliation status</CardTitle>
+          <div className="flex items-center gap-2.5">
+            <span className="chart-card-header-icon bg-info-soft text-info border border-info/25">
+              <ArrowRightLeft className="h-4 w-4" />
+            </span>
+            <CardTitle className="text-sm">Invoice reconciliation status</CardTitle>
+          </div>
           <Button
             variant="outline"
             size="sm"
+            className="tap-h"
             onClick={() => refetch()}
             disabled={isFetching}
           >
@@ -48,23 +55,23 @@ export function ReconciliationPanel() {
       <CardContent className="p-0">
         <div className="flex flex-wrap gap-4 border-b px-4 py-3 text-sm">
           <span className="text-muted-foreground">
-            RED <Badge variant="outline" className="ml-1 bg-red-100 text-red-800">{totals.red}</Badge>
+            RED <Badge variant="danger" className="ml-1">{totals.red}</Badge>
           </span>
           <span className="text-muted-foreground">
-            YELLOW <Badge variant="outline" className="ml-1 bg-amber-100 text-amber-800">{totals.yellow}</Badge>
+            YELLOW <Badge variant="warning" className="ml-1">{totals.yellow}</Badge>
           </span>
           <span className="text-muted-foreground">
             Acknowledged <Badge variant="outline" className="ml-1">{totals.acknowledged}</Badge>
           </span>
           <span className="text-muted-foreground">
             Needs attention{' '}
-            <Badge variant="outline" className="ml-1 bg-sky-100 text-sky-800">
+            <Badge variant="info" className="ml-1">
               {totals.needsAttention}
             </Badge>
           </span>
         </div>
 
-        <Table>
+        <Table className="dash-table">
           <TableHeader>
             <TableRow>
               <TableHead>Invoice</TableHead>
@@ -87,7 +94,7 @@ export function ReconciliationPanel() {
               </TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={9} className="py-8 text-center text-red-700">
+                <TableCell colSpan={9} className="py-8 text-center text-danger">
                   Failed to load reconciliation. Nothing is shown rather than an incomplete picture.
                 </TableCell>
               </TableRow>
@@ -117,14 +124,14 @@ export function ReconciliationPanel() {
                   <TableCell className="text-right tabular-nums">{r.matched}</TableCell>
                   <TableCell className="text-right tabular-nums">
                     {r.red ? (
-                      <Badge variant="outline" className="bg-red-100 text-red-800">{r.red}</Badge>
+                      <Badge variant="danger">{r.red}</Badge>
                     ) : (
                       <span className="text-muted-foreground">0</span>
                     )}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {r.yellow ? (
-                      <Badge variant="outline" className="bg-amber-100 text-amber-800">{r.yellow}</Badge>
+                      <Badge variant="warning">{r.yellow}</Badge>
                     ) : (
                       <span className="text-muted-foreground">0</span>
                     )}
@@ -132,7 +139,7 @@ export function ReconciliationPanel() {
                   <TableCell className="text-right tabular-nums">{r.acknowledged}</TableCell>
                   <TableCell className="text-right tabular-nums">
                     {r.needsAttention ? (
-                      <Badge variant="outline" className="bg-sky-100 text-sky-800">
+                      <Badge variant="info">
                         {r.needsAttention}
                       </Badge>
                     ) : (

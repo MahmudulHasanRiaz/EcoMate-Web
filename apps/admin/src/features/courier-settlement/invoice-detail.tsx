@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, BadgeDollarSign } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -40,7 +40,7 @@ function TotalsGrid({ totals }: { totals: Record<string, number> }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
       {TOTAL_KEYS.map((k) => (
-        <div key={k} className="rounded-md border p-3">
+        <div key={k} className="rounded-xl border border-border/50 bg-muted/20 p-3 transition-colors duration-200">
           <div className="text-xs text-muted-foreground">{TOTAL_LABEL[k]}</div>
           <div className="mt-1 text-lg font-semibold tabular-nums">{bdt(totals[k])}</div>
         </div>
@@ -190,8 +190,8 @@ function ReconciliationTab({ rows }: { rows: InvoiceRow[] }) {
         Effective values (adjustments applied, superseded rows excluded) — the figures every
         financial surface uses.
       </p>
-      <div className="overflow-x-auto rounded-md border">
-        <Table>
+      <div className="overflow-x-auto rounded-xl border border-border/50">
+        <Table className="dash-table">
           <TableHeader>
             <TableRow>
               <TableHead>#</TableHead>
@@ -223,13 +223,14 @@ function ReconciliationTab({ rows }: { rows: InvoiceRow[] }) {
                   <ReviewStateDot state={r.reviewState} />
                 </TableCell>
                 <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">
-                    <Button variant="ghost" size="sm" onClick={() => setMatchRow(r)}>
+                  <div className="flex flex-wrap justify-end gap-1">
+                    <Button variant="ghost" size="sm" className="tap-h" onClick={() => setMatchRow(r)}>
                       Match
                     </Button>
                     <Button
                       variant="ghost"
                       size="sm"
+                      className="tap-h"
                       onClick={() => revalidateRow.mutate(r.id)}
                       disabled={revalidateRow.isPending}
                     >
@@ -267,10 +268,10 @@ function ReconciliationTab({ rows }: { rows: InvoiceRow[] }) {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setMatchRow(null)}>
+            <Button variant="outline" className="tap-h" onClick={() => setMatchRow(null)}>
               Cancel
             </Button>
-            <Button onClick={doMatch} disabled={!orderId.trim() || manualMatch.isPending}>
+            <Button className="tap-h" onClick={doMatch} disabled={!orderId.trim() || manualMatch.isPending}>
               {manualMatch.isPending ? 'Matching…' : 'Match'}
             </Button>
           </DialogFooter>
@@ -301,8 +302,8 @@ function ExceptionsTab({
     return <p className="py-8 text-center text-muted-foreground">No exceptions.</p>
 
   return (
-    <div className="overflow-x-auto rounded-md border">
-      <Table>
+    <div className="overflow-x-auto rounded-xl border border-border/50">
+      <Table className="dash-table">
         <TableHeader>
           <TableRow>
             <TableHead>Severity</TableHead>
@@ -322,11 +323,12 @@ function ExceptionsTab({
               <TableCell>{e.message ?? '—'}</TableCell>
               <TableCell className="capitalize">{e.status}</TableCell>
               <TableCell className="text-right">
-                <span className="flex items-center justify-end gap-1">
+                <span className="flex flex-wrap items-center justify-end gap-1">
                   {e.rowId !== undefined && e.rowId !== null && rowNumberById.has(e.rowId) && onViewRow ? (
                     <Button
                       variant="ghost"
                       size="sm"
+                      className="tap-h"
                       onClick={() => onViewRow(rowNumberById.get(e.rowId as string)!)}
                     >
                       Sheet row {rowNumberById.get(e.rowId as string)}
@@ -336,6 +338,7 @@ function ExceptionsTab({
                     <Button
                       variant="ghost"
                       size="sm"
+                      className="tap-h"
                       onClick={() =>
                         acknowledge.mutate({ invoiceId, exceptionId: e.id })
                       }
@@ -368,8 +371,8 @@ function AdjustmentsTab({ invoiceId }: { invoiceId: string }) {
     return <p className="py-8 text-center text-muted-foreground">No adjustments yet.</p>
 
   return (
-    <div className="overflow-x-auto rounded-md border">
-      <Table>
+    <div className="overflow-x-auto rounded-xl border border-border/50">
+      <Table className="dash-table">
         <TableHeader>
           <TableRow>
             <TableHead>Class</TableHead>
@@ -400,19 +403,20 @@ function AdjustmentsTab({ invoiceId }: { invoiceId: string }) {
                 {a.reason ?? '—'}
               </TableCell>
               <TableCell className="font-mono text-xs">{a.journalEntryId ?? '—'}</TableCell>
-              <TableCell className="text-right">
-                {a.reversedById ? (
-                  <span className="text-xs text-muted-foreground">reversed</span>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setPending(a.id)}
-                  >
-                    Reverse
-                  </Button>
-                )}
-              </TableCell>
+                <TableCell className="text-right">
+                  {a.reversedById ? (
+                    <span className="text-xs text-muted-foreground">reversed</span>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="tap-h"
+                      onClick={() => setPending(a.id)}
+                    >
+                      Reverse
+                    </Button>
+                  )}
+                </TableCell>
             </TableRow>
           ))}
         </TableBody>
@@ -474,10 +478,11 @@ function ReverseDialog({
           />
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" className="tap-h" onClick={onClose}>
             Cancel
           </Button>
           <Button
+            className="tap-h"
             disabled={!reason.trim() || busy}
             onClick={() => onConfirm(reason.trim())}
           >
@@ -498,14 +503,14 @@ function ActivityTab({ invoiceId }: { invoiceId: string }) {
   return (
     <ol className="space-y-2">
       {data.map((a) => (
-        <li key={a.id} className="flex items-start gap-3 rounded-md border p-3">
-          <span className="font-mono text-xs text-muted-foreground">
+        <li key={a.id} className="flex flex-wrap items-start gap-3 rounded-xl border border-border/50 bg-muted/20 p-3 transition-colors duration-200 hover:bg-muted/40">
+          <span className="font-mono text-xs text-muted-foreground shrink-0">
             {new Date(a.timestamp).toLocaleString()}
           </span>
-          <Badge variant="outline">{a.action}</Badge>
+          <Badge variant="outline" className="shrink-0">{a.action}</Badge>
           <span className="text-sm">{a.actor ?? 'system'}</span>
           {a.detail ? (
-            <span className="truncate font-mono text-xs text-muted-foreground" title={JSON.stringify(a.detail)}>
+            <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground" title={JSON.stringify(a.detail)}>
               {JSON.stringify(a.detail)}
             </span>
           ) : null}
@@ -550,7 +555,7 @@ function OverviewTab({
         <Figure label="Effective net" value={bdt(effective.effectiveTotals?.net)} strong />
         <Figure label="Rows under revisions" value={String(effective.supersededRows ?? 0)} />
       </div>
-      <div className="rounded-md border p-3 text-sm text-muted-foreground">
+      <div className="rounded-xl border border-border/50 bg-muted/20 p-3 text-sm text-muted-foreground">
         Current effective totals are shown above the tabs and never change when you switch tabs —
         the sheet is always the raw file, Reconciliation is always the effective figures, and
         Activity is the audit trail.
@@ -571,7 +576,7 @@ function Figure({
   capitalize?: boolean
 }) {
   return (
-    <div className="rounded-md border p-3">
+    <div className="rounded-xl border border-border/50 p-3">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div
         className={`${strong ? 'text-lg font-semibold' : 'text-sm font-medium'} tabular-nums truncate ${
@@ -594,7 +599,7 @@ function RowsPager({
 }) {
   if (!meta || meta.total <= meta.limit) return null
   return (
-    <div className="flex items-center justify-between border-t px-3 py-2 text-sm text-muted-foreground">
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t px-3 py-2 text-sm text-muted-foreground">
       <span>
         Rows {meta.total} · page {meta.page} of {Math.max(meta.pages, 1)} ({meta.limit} per page)
       </span>
@@ -602,6 +607,7 @@ function RowsPager({
         <Button
           variant="outline"
           size="sm"
+          className="tap-h"
           disabled={meta.page <= 1}
           onClick={() => onPage(meta.page - 1)}
         >
@@ -610,6 +616,7 @@ function RowsPager({
         <Button
           variant="outline"
           size="sm"
+          className="tap-h"
           disabled={meta.page >= meta.pages}
           onClick={() => onPage(meta.page + 1)}
         >
@@ -664,7 +671,7 @@ export function InvoiceDetailPage({ id }: { id: string }) {
     )
   if (isError || !data)
     return (
-      <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+      <div className="rounded-xl border border-danger/30 bg-danger-soft p-4 text-sm text-danger">
         Invoice not found or you lack permission.
       </div>
     )
@@ -708,6 +715,9 @@ export function InvoiceDetailPage({ id }: { id: string }) {
             <ArrowLeft className="size-4" /> All invoices
           </Link>
           <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
+            <span className="chart-card-header-icon bg-success-soft text-success border border-success/25">
+              <BadgeDollarSign className="size-5" aria-hidden />
+            </span>
             {invoice.displayId}
             <InvoiceStateBadge state={state} />
             {invoice.isRevision ? <Badge variant="outline">revision</Badge> : null}
@@ -722,6 +732,7 @@ export function InvoiceDetailPage({ id }: { id: string }) {
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
+            className="tap-h"
             onClick={() => setDiscardOpen(true)}
             disabled={!canDiscard}
           >
@@ -729,6 +740,7 @@ export function InvoiceDetailPage({ id }: { id: string }) {
           </Button>
           <Button
             variant="outline"
+            className="tap-h"
             onClick={() => reclaimStale.mutate(id)}
             disabled={!canReclaim || reclaimStale.isPending}
           >
@@ -736,6 +748,7 @@ export function InvoiceDetailPage({ id }: { id: string }) {
           </Button>
           <Button
             variant="outline"
+            className="tap-h"
             onClick={() => repairAccounting.mutate(id)}
             disabled={!canRepair || repairAccounting.isPending}
           >
@@ -743,12 +756,14 @@ export function InvoiceDetailPage({ id }: { id: string }) {
           </Button>
           <Button
             variant="outline"
+            className="tap-h"
             onClick={() => postAccounting.mutate(id)}
             disabled={!canPost || postAccounting.isPending}
           >
             Post accounting
           </Button>
           <Button
+            className="tap-h"
             onClick={finalizeIt}
             disabled={!canFinalize || finalize.isPending}
             title={openRed ? `${openRed} blocking finding(s)` : undefined}
@@ -759,8 +774,8 @@ export function InvoiceDetailPage({ id }: { id: string }) {
       </div>
 
       {state === 'IMPORTING' ? (
-        <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-100">
-          <div className="flex items-center justify-between gap-2">
+        <div className="rounded-xl border border-info/30 bg-info-soft p-3 text-sm text-info">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="font-medium">
               Importing in background
               {invoice.importStage ? (
@@ -769,9 +784,9 @@ export function InvoiceDetailPage({ id }: { id: string }) {
             </span>
             <span className="tabular-nums">{invoice.importProgress ?? 0}%</span>
           </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-blue-100 dark:bg-blue-950">
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-info-soft">
             <div
-              className="h-full rounded-full bg-blue-600 transition-all duration-500"
+              className="h-full rounded-full bg-info transition-all duration-500"
               style={{ width: `${Math.max(0, Math.min(100, invoice.importProgress ?? 0))}%` }}
             />
           </div>
@@ -782,23 +797,28 @@ export function InvoiceDetailPage({ id }: { id: string }) {
       ) : null}
 
       {openRed > 0 ? (
-        <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <p className="rounded-xl border border-danger/30 bg-danger-soft p-3 text-sm text-danger">
           {openRed} RED finding(s) must be resolved — finalization is refused until they are.
         </p>
       ) : openYellow > 0 ? (
-        <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        <p className="rounded-xl border border-warning/30 bg-warning-soft p-3 text-sm text-warning">
           {openYellow} warning(s) — acknowledgement required before finalization.
         </p>
       ) : null}
 
-      <Card>
+      <Card className="chart-card rounded-2xl">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Current effective totals</CardTitle>
+          <div className="flex items-center gap-2.5">
+            <span className="chart-card-header-icon bg-success-soft text-success border border-success/25">
+              <BadgeDollarSign className="h-4 w-4" />
+            </span>
+            <CardTitle className="text-sm">Current effective totals</CardTitle>
+          </div>
         </CardHeader>
         <CardContent className="space-y-3">
           <TotalsGrid totals={effective.effectiveTotals as unknown as Record<string, number>} />
           {divergent ? (
-            <div className="rounded-md border border-violet-200 bg-violet-50 p-3 text-sm text-violet-900">
+            <div className="rounded-xl border border-accent-violet/30 bg-accent-violet-soft p-3 text-sm text-accent-violet">
               <p className="font-medium">
                 Revised — historical at finalization differs from current effective
                 {divergent.version ? ` (snapshot v${divergent.version})` : ''}.
@@ -858,11 +878,12 @@ export function InvoiceDetailPage({ id }: { id: string }) {
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDiscardOpen(false)}>
+            <Button variant="outline" className="tap-h" onClick={() => setDiscardOpen(false)}>
               Cancel
             </Button>
             <Button
               variant="destructive"
+              className="tap-h"
               disabled={discard.isPending}
               onClick={() =>
                 discard.mutate(
@@ -883,18 +904,18 @@ export function InvoiceDetailPage({ id }: { id: string }) {
       </Dialog>
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="h-auto flex-wrap">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="sheet">Invoice sheet (raw)</TabsTrigger>
-          <TabsTrigger value="recon">Reconciliation</TabsTrigger>
-          <TabsTrigger value="exceptions">
+        <TabsList className="tap-h h-auto max-w-full flex-wrap overflow-x-auto no-scrollbar">
+          <TabsTrigger value="overview" className="tap-h">Overview</TabsTrigger>
+          <TabsTrigger value="sheet" className="tap-h">Invoice sheet (raw)</TabsTrigger>
+          <TabsTrigger value="recon" className="tap-h">Reconciliation</TabsTrigger>
+          <TabsTrigger value="exceptions" className="tap-h">
             Exceptions
             {exceptions.length
               ? ` (${exceptions.length}${exceptionsMeta && exceptionsMeta.total > exceptionsMeta.limit ? `+` : ''})`
               : ''}
           </TabsTrigger>
-          <TabsTrigger value="adjustments">Adjustments</TabsTrigger>
-          <TabsTrigger value="activity">Activity</TabsTrigger>
+          <TabsTrigger value="adjustments" className="tap-h">Adjustments</TabsTrigger>
+          <TabsTrigger value="activity" className="tap-h">Activity</TabsTrigger>
         </TabsList>
         <TabsContent value="overview" className="mt-4">
           <OverviewTab invoice={invoice} historical={historical} effective={effective} />

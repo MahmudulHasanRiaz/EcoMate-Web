@@ -74,7 +74,7 @@ export function MappingDialog({
             <div className="space-y-1.5">
               <Label>Source column</Label>
               <Select value={sourceHeader} onValueChange={setSourceHeader}>
-                <SelectTrigger>
+                <SelectTrigger className="tap-h">
                   <SelectValue placeholder={freeHeaders.length ? 'Select column' : 'No unmapped columns'} />
                 </SelectTrigger>
                 <SelectContent>
@@ -89,7 +89,7 @@ export function MappingDialog({
             <div className="space-y-1.5">
               <Label>Field</Label>
               <Select value={field} onValueChange={setField}>
-                <SelectTrigger>
+                <SelectTrigger className="tap-h">
                   <SelectValue placeholder="Select field" />
                 </SelectTrigger>
                 <SelectContent>
@@ -102,7 +102,7 @@ export function MappingDialog({
               </Select>
             </div>
             <div className="flex items-end gap-2 pb-1">
-              <Button onClick={save} disabled={!sourceHeader || !field || saveMapping.isPending}>
+              <Button onClick={save} disabled={!sourceHeader || !field || saveMapping.isPending} className="tap-h">
                 Save
               </Button>
             </div>
@@ -144,12 +144,12 @@ export function MappingDialog({
                         {m.courier}
                       </Badge>
                       {m.active ? (
-                        <Badge className="bg-emerald-100 text-emerald-800">active</Badge>
+                        <Badge variant="success">active</Badge>
                       ) : (
                         <Badge variant="outline">candidate</Badge>
                       )}
                       {m.conflict ? (
-                        <Badge className="bg-red-100 text-red-800">conflict</Badge>
+                        <Badge variant="danger">conflict</Badge>
                       ) : null}
                     </div>
                     <div className="flex gap-2">
@@ -157,6 +157,7 @@ export function MappingDialog({
                         <Button
                           size="sm"
                           variant="outline"
+                          className="tap-h"
                           onClick={() =>
                             deactivateMapping.mutate({ id: m.id, invoiceId })
                           }
@@ -167,6 +168,7 @@ export function MappingDialog({
                         <Button
                           size="sm"
                           variant="outline"
+                          className="tap-h"
                           disabled={!!m.conflict}
                           title={m.conflict ? 'Resolve the conflicting mapping first' : undefined}
                           onClick={() => activateMapping.mutate({ id: m.id, invoiceId })}

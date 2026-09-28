@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { SlidersHorizontal } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -125,14 +126,21 @@ export function SettingsPanel() {
 
   return (
     <div className="space-y-4">
-      <Card>
+      <Card className="chart-card rounded-2xl animate-rise">
         <CardHeader>
-          <CardTitle>Finance rules</CardTitle>
-          <CardDescription>
-            Versioned declarative net rules — every approval archives the previous version, so a
-            finalized invoice stays reconstructible. Approved rules gate finalization per courier
-            and format.
-          </CardDescription>
+          <div className="flex items-center gap-2.5">
+            <span className="chart-card-header-icon bg-info-soft text-info border border-info/25">
+              <SlidersHorizontal className="h-4 w-4" />
+            </span>
+            <div>
+              <CardTitle>Finance rules</CardTitle>
+              <CardDescription>
+                Versioned declarative net rules — every approval archives the previous version, so a
+                finalized invoice stays reconstructible. Approved rules gate finalization per courier
+                and format.
+              </CardDescription>
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="space-y-3">
           {isLoading ? (
@@ -150,54 +158,54 @@ export function SettingsPanel() {
               const archived = (r.versions ?? []).slice().reverse()
               const isOpen = openHistory.has(r.id)
               return (
-                <div key={r.id} className="rounded-md border">
-                  <div className="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-3 py-2">
-                    <span className="text-sm font-semibold capitalize">{r.courier}</span>
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {r.format ?? 'default format'}
-                    </span>
-                    <Badge variant="outline" className="tabular-nums">
-                      v{r.version ?? 1}
+              <div key={r.id} className="rounded-xl border border-border/50">
+                <div className="flex flex-wrap items-center gap-2 border-b border-border/50 bg-muted/40 px-3 py-2">
+                  <span className="text-sm font-semibold capitalize">{r.courier}</span>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {r.format ?? 'default format'}
+                  </span>
+                  <Badge variant="outline" className="tabular-nums">
+                    v{r.version ?? 1}
+                  </Badge>
+                  {r.approvedAt ? (
+                    <Badge variant="success">
+                      approved
                     </Badge>
-                    {r.approvedAt ? (
-                      <Badge variant="outline" className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
-                        approved
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-                        pending
-                      </Badge>
-                    )}
-                    <div className="ml-auto flex items-center gap-1.5">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 rounded-sm text-xs"
-                        onClick={() => {
-                          startNewVersion(r)
-                          setShowTest(true)
-                        }}
-                      >
-                        Test
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 rounded-sm text-xs"
-                        onClick={() => startNewVersion(r)}
-                      >
-                        Create new version
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 rounded-sm text-xs"
-                        onClick={() => toggleHistory(r.id)}
-                      >
-                        {isOpen ? 'Hide history' : `History (${(r.versions ?? []).length})`}
-                      </Button>
-                    </div>
+                  ) : (
+                    <Badge variant="warning">
+                      pending
+                    </Badge>
+                  )}
+                  <div className="ml-auto flex flex-wrap items-center gap-1.5">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="tap-h rounded-md text-xs"
+                      onClick={() => {
+                        startNewVersion(r)
+                        setShowTest(true)
+                      }}
+                    >
+                      Test
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="tap-h rounded-md text-xs"
+                      onClick={() => startNewVersion(r)}
+                    >
+                      Create new version
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="tap-h rounded-md text-xs"
+                      onClick={() => toggleHistory(r.id)}
+                    >
+                      {isOpen ? 'Hide history' : `History (${(r.versions ?? []).length})`}
+                    </Button>
                   </div>
+                </div>
 
                   <dl className="grid gap-x-6 gap-y-1.5 px-3 py-2.5 text-xs sm:grid-cols-2 lg:grid-cols-3">
                     <Field label="Net source" value={prettyRule(r.netRule)} />
@@ -264,7 +272,7 @@ export function SettingsPanel() {
         </CardContent>
       </Card>
 
-      <Card id="cs-rule-builder">
+      <Card id="cs-rule-builder" className="chart-card rounded-2xl">
         <CardHeader>
           <CardTitle>
             {editing ? `Create new version — ${editing.courier}` : 'Add finance rule'}
@@ -299,7 +307,7 @@ export function SettingsPanel() {
           <div className="space-y-2">
             <Label>Net rule</Label>
             <Select value={netRule} onValueChange={setNetRule}>
-              <SelectTrigger>
+              <SelectTrigger className="tap-h">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -343,11 +351,11 @@ export function SettingsPanel() {
 
           {/* ── §12: Test against sample rows ── */}
           <div className="space-y-3 sm:col-span-2">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 rounded-sm text-xs"
+                className="tap-h rounded-md text-xs"
                 onClick={() => setShowTest((v) => !v)}
               >
                 {showTest ? 'Hide sample test' : 'Test against sample rows'}
@@ -369,7 +377,7 @@ export function SettingsPanel() {
                       onChange={(e) => setSCollected(e.target.value)}
                       inputMode="decimal"
                       placeholder="0"
-                      className="h-8 text-xs"
+                      className="tap-h text-xs"
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -382,7 +390,7 @@ export function SettingsPanel() {
                       onChange={(e) => setSCharges(e.target.value)}
                       inputMode="decimal"
                       placeholder="0"
-                      className="h-8 text-xs"
+                      className="tap-h text-xs"
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -395,7 +403,7 @@ export function SettingsPanel() {
                       onChange={(e) => setSNet(e.target.value)}
                       inputMode="decimal"
                       placeholder="for declared_field"
-                      className="h-8 text-xs"
+                      className="tap-h text-xs"
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -408,14 +416,14 @@ export function SettingsPanel() {
                       onChange={(e) => setSBilling(e.target.value)}
                       inputMode="decimal"
                       placeholder="for billing rule"
-                      className="h-8 text-xs"
+                      className="tap-h text-xs"
                     />
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button
                     size="sm"
-                    className="h-7 rounded-sm text-xs"
+                    className="tap-h rounded-md text-xs"
                     onClick={runTest}
                     disabled={testFinanceRule.isPending}
                   >
@@ -423,15 +431,14 @@ export function SettingsPanel() {
                   </Button>
                   {testResult ? (
                     <Badge
-                      variant="outline"
-                      className={
+                      variant={
                         testResult.severity === 'ok'
-                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
+                          ? 'success'
                           : testResult.severity === 'yellow'
-                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200'
+                            ? 'warning'
                             : testResult.severity === 'red'
-                              ? 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200'
-                              : ''
+                              ? 'danger'
+                              : 'outline'
                       }
                     >
                       {testResult.ok ? 'passes' : testResult.severity ?? 'no net'}
@@ -439,7 +446,7 @@ export function SettingsPanel() {
                   ) : null}
                 </div>
                 {testResult ? (
-                  <div className="grid grid-cols-3 gap-2 rounded-md bg-muted/50 px-3 py-2 text-xs">
+                  <div className="grid grid-cols-1 gap-2 rounded-xl border border-border/50 bg-muted/40 px-3 py-2 text-xs sm:grid-cols-3">
                     <div>
                       <span className="text-muted-foreground">Charges </span>
                       <span className="font-medium tabular-nums">{testResult.charges}</span>
@@ -456,15 +463,15 @@ export function SettingsPanel() {
                         {testResult.residual ?? '—'}
                       </span>
                     </div>
-                    <p className="col-span-3 text-muted-foreground">{testResult.explanation}</p>
+                    <p className="text-muted-foreground sm:col-span-3">{testResult.explanation}</p>
                   </div>
                 ) : null}
               </div>
             ) : null}
           </div>
 
-          <div className="flex items-center gap-2 sm:col-span-2">
-            <Button onClick={save} disabled={!courier || createFinanceRule.isPending}>
+          <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
+            <Button onClick={save} disabled={!courier || createFinanceRule.isPending} className="tap-h">
               {createFinanceRule.isPending
                 ? 'Saving…'
                 : editing
@@ -472,7 +479,7 @@ export function SettingsPanel() {
                   : 'Save rule'}
             </Button>
             {editing ? (
-              <Button variant="ghost" className="rounded-sm text-xs" onClick={resetForm}>
+              <Button variant="ghost" className="tap-h rounded-md text-xs" onClick={resetForm}>
                 Cancel
               </Button>
             ) : null}

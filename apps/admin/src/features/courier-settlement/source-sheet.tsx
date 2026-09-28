@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -551,7 +552,7 @@ export function SourceSheet({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search every column…"
-            className="h-8 w-56 pl-7 pr-7 text-xs"
+            className="tap-h w-full pl-7 pr-7 text-xs sm:w-56"
           />
           {search ? (
             <button
@@ -565,15 +566,15 @@ export function SourceSheet({
           ) : null}
         </div>
 
-        <div className="flex items-center rounded-md border p-0.5">
+        <div className="flex min-h-10 flex-wrap items-center gap-1 rounded-xl border border-border/50 bg-muted p-1">
           {CLASS_FILTERS.map((c) => (
             <button
               key={c}
               type="button"
               onClick={() => setKlass(c)}
-              className={`rounded-sm px-2 py-1 text-[11px] font-medium transition-colors duration-150 cursor-pointer ${
+              className={`rounded-lg px-2 py-1 min-h-8 text-[11px] font-medium transition-all duration-200 cursor-pointer ${
                 klass === c
-                  ? 'bg-foreground text-background'
+                  ? 'bg-background text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
@@ -583,7 +584,7 @@ export function SourceSheet({
         </div>
 
         <Select value={status} onValueChange={(v) => setStatus(v as StatusFilter)}>
-          <SelectTrigger className="h-8 w-[150px] text-xs">
+          <SelectTrigger className="tap-h w-full text-xs sm:w-[150px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -599,7 +600,7 @@ export function SourceSheet({
           <Button
             variant="outline"
             size="sm"
-            className="h-8 gap-1.5 px-2 text-xs"
+            className="tap-h gap-1.5 px-2 text-xs"
             onClick={() => setColumnsOpen((v) => !v)}
           >
             <Columns3 className="size-3.5" />
@@ -620,7 +621,7 @@ export function SourceSheet({
                   </span>
                   <button
                     type="button"
-                    className="inline-flex items-center gap-1 rounded-sm px-1 text-[11px] text-primary transition-colors hover:underline cursor-pointer"
+                    className="tap-h inline-flex items-center gap-1 rounded-md px-2 text-[11px] text-primary transition-colors hover:underline cursor-pointer"
                     onClick={() => {
                       setHidden(new Set())
                       setOrder(headers)
@@ -651,7 +652,7 @@ export function SourceSheet({
                       setDragHeader(null)
                       setDropTarget(null)
                     }}
-                    className={`flex cursor-grab items-center gap-2 rounded-sm px-1 py-1 text-xs transition-colors hover:bg-muted ${
+                    className={`flex min-h-10 cursor-grab items-center gap-2 rounded-md px-2 py-1 text-xs transition-colors hover:bg-muted ${
                       dropTarget === h && dragHeader && dragHeader !== h ? 'ring-1 ring-primary/60' : ''
                     } ${dragHeader === h ? 'opacity-50' : ''}`}
                   >
@@ -678,15 +679,15 @@ export function SourceSheet({
           ) : null}
         </div>
 
-        <div className="flex items-center rounded-md border p-0.5">
+        <div className="flex min-h-10 flex-wrap items-center gap-1 rounded-xl border border-border/50 bg-muted p-1">
           {(['comfy', 'dense'] as const).map((d) => (
             <button
               key={d}
               type="button"
               onClick={() => setDensity(d)}
-              className={`rounded-sm px-2 py-1 text-[11px] font-medium transition-colors duration-150 cursor-pointer ${
+              className={`rounded-lg px-2 py-1 min-h-8 text-[11px] font-medium transition-all duration-200 cursor-pointer ${
                 density === d
-                  ? 'bg-foreground text-background'
+                  ? 'bg-background text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
@@ -705,25 +706,25 @@ export function SourceSheet({
           <button
             type="button"
             onClick={resetView}
-            className="rounded-sm px-1 text-primary transition-colors hover:underline cursor-pointer"
+            className="tap-h rounded-md px-2 text-primary transition-colors hover:underline cursor-pointer"
           >
             Reset view
           </button>
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 w-7 p-0"
+            className="h-10 w-10 p-0"
             onClick={() => setFullscreen((v) => !v)}
             aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
             title={fullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen'}
           >
-            {fullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+            {fullscreen ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
           </Button>
         </div>
       </div>
 
       {highlightRowNumbers && highlightRowNumbers.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-warning/30 bg-warning-soft px-2.5 py-1.5 text-xs text-warning">
           <span>
             {highlightRowNumbers.length} affected row(s) from the selected finding — outlined below.
           </span>
@@ -735,7 +736,7 @@ export function SourceSheet({
             <button
               type="button"
               onClick={onClearHighlight}
-              className="ml-auto rounded-sm px-1 font-medium text-primary transition-colors hover:underline cursor-pointer"
+              className="tap-h ml-auto rounded-md px-2 font-medium text-primary transition-colors hover:underline cursor-pointer"
             >
               Clear highlight
             </button>
@@ -869,34 +870,34 @@ export function SourceSheet({
                         else rowRefs.current.delete(r.rowNumber)
                       }}
                       className={`group transition-colors duration-150 hover:bg-muted/50 ${
-                        highlighted ? 'outline outline-1 -outline-offset-1 outline-amber-400' : ''
+                        highlighted ? 'outline outline-1 -outline-offset-1 outline-warning' : ''
                       }`}
                     >
                       <td
                         className={`sticky left-0 z-10 border-b px-2 py-0 bg-background group-hover:bg-muted ${
                           r.reviewState === 'red'
-                            ? 'border-l-2 border-l-red-500'
+                            ? 'border-l-2 border-l-danger'
                             : r.reviewState === 'yellow'
-                              ? 'border-l-2 border-l-amber-400'
+                              ? 'border-l-2 border-l-warning'
                               : 'border-l-2 border-l-transparent'
                         }`}
                       >
                         <span className="flex items-center gap-1">
                           <span className="tabular-nums text-muted-foreground">{r.rowNumber}</span>
-                          {r.reviewState && r.reviewState !== 'green' ? (
-                            <span
-                              className={`size-1.5 rounded-full ${
-                                r.reviewState === 'red' ? 'bg-red-500' : 'bg-amber-500'
-                              }`}
-                              title={r.reviewState === 'red' ? 'Blocking issue on this row' : 'Warning on this row'}
-                            />
-                          ) : null}
-                          {r.adjusted ? (
-                            <span
-                              className="size-1.5 rounded-full bg-violet-500"
-                              title="Adjusted — raw value untouched, effective value differs"
-                            />
-                          ) : null}
+                            {r.reviewState && r.reviewState !== 'green' ? (
+                              <span
+                                className={`size-1.5 rounded-full ${
+                                  r.reviewState === 'red' ? 'bg-danger' : 'bg-warning'
+                                }`}
+                                title={r.reviewState === 'red' ? 'Blocking issue on this row' : 'Warning on this row'}
+                              />
+                            ) : null}
+                            {r.adjusted ? (
+                              <span
+                                className="size-1.5 rounded-full bg-accent-violet"
+                                title="Adjusted — raw value untouched, effective value differs"
+                              />
+                            ) : null}
                         </span>
                       </td>
                       <td className="sticky left-14 z-10 border-b px-2 py-0 bg-background group-hover:bg-muted">
@@ -926,8 +927,8 @@ export function SourceSheet({
                             } ${
                               issue
                                 ? issue.severity === 'red'
-                                  ? 'bg-red-50 dark:bg-red-950'
-                                  : 'bg-amber-50 dark:bg-amber-950'
+                                  ? 'bg-danger-soft'
+                                  : 'bg-warning-soft'
                                 : ''
                             }`}
                             title={cellTitle(raw, issue)}
@@ -944,7 +945,7 @@ export function SourceSheet({
                                     openIssue(r, h, issue)
                                   }}
                                   className={`inline-block size-1.5 shrink-0 rounded-full cursor-pointer ${
-                                    issue.severity === 'red' ? 'bg-red-500' : 'bg-amber-500'
+                                    issue.severity === 'red' ? 'bg-danger' : 'bg-warning'
                                   }`}
                                   aria-label={`Issue ${issue.ruleId}`}
                                 />
@@ -1003,15 +1004,12 @@ export function SourceSheet({
             <div className="flex items-start justify-between gap-2 border-b px-3 py-2">
               <div className="min-w-0 space-y-0.5">
                 <div className="flex items-center gap-1.5">
-                  <span
-                    className={`rounded-sm px-1 py-px text-[10px] font-semibold uppercase tracking-wide ${
-                      issuePop.issue.severity === 'red'
-                        ? 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200'
-                        : 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200'
-                    }`}
+                  <Badge
+                    variant={issuePop.issue.severity === 'red' ? 'danger' : 'warning'}
+                    className="rounded-md px-1 py-px text-[10px] font-semibold uppercase tracking-wide"
                   >
                     {issuePop.issue.blocking ? 'Blocking' : 'Warning'}
-                  </span>
+                  </Badge>
                   <span className="font-mono text-[11px] font-medium">{issuePop.issue.ruleId}</span>
                 </div>
                 <p className="text-xs leading-snug text-muted-foreground">
