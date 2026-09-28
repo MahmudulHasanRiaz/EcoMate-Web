@@ -618,7 +618,7 @@ export function Orders() {
                           <div className='text-sm font-medium leading-tight'>{getCustomerDisplayName(o)}</div>
                           <div className='flex items-center gap-1.5 mt-0.5'>
                             <a href={`tel:${getCustomerPhone(o)}`} onClick={e => e.stopPropagation()} className='text-[11px] text-muted-foreground hover:text-primary transition-colors'>{getCustomerPhone(o) || '—'}</a>
-                            <CustomerContactActions phone={getCustomerPhone(o)} showCopy />
+                            <CustomerContactActions phone={getCustomerPhone(o)} />
                           </div>
                         </TableCell>
                         <TableCell onClick={e => e.stopPropagation()}>
@@ -802,7 +802,7 @@ export function Orders() {
                                         <div className='flex items-center gap-2 text-sm'>
                                           <Phone className='h-3.5 w-3.5 text-muted-foreground shrink-0' />
                                           <a href={`tel:${o.customer?.phoneNumber || o.guestPhone}`} className='hover:underline'>{o.customer?.phoneNumber || o.guestPhone}</a>
-                                          <CustomerContactActions phone={o.customer?.phoneNumber || o.guestPhone} showCopy />
+                                          <CustomerContactActions phone={o.customer?.phoneNumber || o.guestPhone} />
                                         </div>
                                       )}
                                       {getCustomerEmail(o) && (

@@ -942,7 +942,7 @@ function OrderDetailPage() {
                         <a href={`tel:${getCustomerPhone(order)}`} className='flex items-center gap-1 hover:text-primary transition-colors'>
                           <Phone className='h-3 w-3' />{getCustomerPhone(order)}
                         </a>
-                        <CustomerContactActions phone={getCustomerPhone(order)} showCopy />
+                        <CustomerContactActions phone={getCustomerPhone(order)} />
                         {getCustomerPhone(order) && (
                           <button
                             onClick={() => setBlockPhones({ phones: [getCustomerPhone(order)], contextLabel: order.displayId })}
