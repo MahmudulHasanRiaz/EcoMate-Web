@@ -101,7 +101,7 @@ export function OperationalKpiStrip({ dateRange, preset, view = 'activity' }: Wi
       subtext: isPipeline ? cohortLabel : periodLabel,
       tooltip: isPipeline ? 'Total orders created in the selected period' : undefined,
       icon: <ShoppingCart className="h-4 w-4" />,
-      accent: 'info',
+      accent: 'primary',
       link: '/op/orders',
     },
     {
@@ -134,7 +134,7 @@ export function OperationalKpiStrip({ dateRange, preset, view = 'activity' }: Wi
         ? 'Orders created in the selected period, currently in Shipping status'
         : undefined,
       icon: <Truck className="h-4 w-4" />,
-      accent: 'pink',
+      accent: 'info',
       link: '/op/orders',
     },
     {
@@ -226,7 +226,7 @@ export function OperationalKpiStrip({ dateRange, preset, view = 'activity' }: Wi
               </div>
               <div className="mt-auto space-y-0.5 pt-2">
                 <span
-                  className="kpi-value block leading-tight truncate"
+                  className={`kpi-value block leading-tight truncate ${tile.raw === 0 ? 'is-zero' : ''}`}
                   title={tile.raw === null ? '—' : tile.format(tile.raw)}
                 >
                   {tile.raw === null ? '—' : <CountUp value={tile.raw} format={tile.format} />}

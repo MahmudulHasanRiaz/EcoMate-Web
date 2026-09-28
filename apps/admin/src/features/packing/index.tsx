@@ -500,17 +500,17 @@ export function PackingWorkspace() {
   }, [selectedOrderId, activeOrder, verifiedQuantities, currentProductIdx, isAllVerified, handleBackAndRelease, handleDone])
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-zinc-950 text-zinc-100 font-sans select-none">
+    <div className="flex flex-col h-screen w-screen bg-[var(--canvas)] text-[var(--ink)] font-sans select-none">
       
       {/* 1. Header Navigation Panel */}
-      <header className="h-14 shrink-0 px-3 border-b border-zinc-850 bg-zinc-900 flex items-center justify-between select-none">
+      <header className="h-14 shrink-0 px-3 border-b border-[var(--border)] bg-[var(--surface)] flex items-center justify-between select-none">
         {/* Left: Brand/Logo */}
         <div className="flex flex-col text-start justify-center min-w-0">
           <h1 className="text-xs sm:text-sm font-black text-white tracking-tight flex items-center gap-1 sm:gap-1.5 truncate">
             <Package className="h-3.5 w-3.5 text-info shrink-0" />
             <span className="truncate">EcoMate Pack</span>
           </h1>
-          <span className="text-[9px] text-zinc-500 truncate max-w-[90px] sm:max-w-[180px]">
+          <span className="text-[9px] text-[var(--ink-muted)] truncate max-w-[90px] sm:max-w-[180px]">
             {currentUser?.email}
           </span>
         </div>
@@ -518,15 +518,15 @@ export function PackingWorkspace() {
         {/* Right: Actions and Mode Selector */}
         <div className="flex items-center gap-1.5 shrink-0">
           {/* Verification Mode Selector */}
-          <div className="flex items-center gap-1 border border-zinc-800 bg-zinc-950 rounded-lg px-1.5 py-1 text-[10px] md:text-xs">
-            <Scan className="h-3 w-3 text-zinc-400 shrink-0" />
+          <div className="flex items-center gap-1 border border-[var(--border)] bg-[var(--canvas)] rounded-lg px-1.5 py-1 text-[10px] md:text-xs">
+            <Scan className="h-3 w-3 text-[var(--ink-muted)] shrink-0" />
             <select
               value={verificationMode}
               onChange={(e) => handleSetVerificationMode(e.target.value as any)}
-              className="bg-transparent font-extrabold text-zinc-300 outline-none cursor-pointer focus:text-white border-none p-0 pr-0.5 text-[10px] md:text-xs"
+              className="bg-transparent font-extrabold text-[var(--ink-muted)] outline-none cursor-pointer focus:text-white border-none p-0 pr-0.5 text-[10px] md:text-xs"
             >
-              <option value="strict_scan" className="bg-zinc-950 text-zinc-200">Strict</option>
-              <option value="manual_allowed" className="bg-zinc-950 text-zinc-200">Manual</option>
+              <option value="strict_scan" className="bg-[var(--canvas)] text-zinc-200">Strict</option>
+              <option value="manual_allowed" className="bg-[var(--canvas)] text-zinc-200">Manual</option>
             </select>
           </div>
 
@@ -534,7 +534,7 @@ export function PackingWorkspace() {
           {currentPackerRole !== 'packing_assistant' && (
             <button
               onClick={() => navigate({ to: '/op/overview' })}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[10px] md:text-xs font-semibold rounded-lg border border-zinc-800 hover:border-zinc-700 bg-zinc-950 text-zinc-300 hover:text-white transition-all cursor-pointer shrink-0"
+              className="inline-flex items-center gap-1 px-2 py-1 text-[10px] md:text-xs font-semibold rounded-lg border border-[var(--border)] hover:border-[var(--border)] bg-[var(--canvas)] text-[var(--ink-muted)] hover:text-white transition-all cursor-pointer shrink-0"
             >
               <LogOut className="h-3 w-3" />
               <span>Exit</span>
@@ -544,24 +544,24 @@ export function PackingWorkspace() {
       </header>
 
       {/* 2. Main Content Viewport */}
-      <main className="flex-1 overflow-y-auto flex flex-col relative bg-zinc-950">
+      <main className="flex-1 overflow-y-auto flex flex-col relative bg-[var(--canvas)]">
         
         {/* TAB A: Live QR/Barcode Camera Scanner */}
         {activeTab === 'scan' && (
           <div className={selectedOrderId ? "relative z-50 pointer-events-none" : "flex-1 flex flex-col p-4 space-y-4 max-w-lg mx-auto w-full"}>
             {/* Live Camera Frame box */}
             <div className={selectedOrderId
-              ? "fixed bottom-24 right-4 z-50 w-28 h-28 md:w-36 md:h-36 rounded-full border-2 border-success bg-zinc-900 shadow-2xl overflow-hidden flex flex-col items-center justify-center transition-all duration-300 transform scale-100 hover:scale-105 active:scale-95 pointer-events-auto"
-              : "relative w-full aspect-square rounded-3xl border-2 border-zinc-800 bg-zinc-900 overflow-hidden flex flex-col items-center justify-center shadow-2xl"
+              ? "fixed bottom-24 right-4 z-50 w-28 h-28 md:w-36 md:h-36 rounded-full border-2 border-success bg-[var(--surface)] shadow-2xl overflow-hidden flex flex-col items-center justify-center transition-all duration-300 transform scale-100 hover:scale-105 active:scale-95 pointer-events-auto"
+              : "relative w-full aspect-square rounded-3xl border-2 border-[var(--border)] bg-[var(--surface)] overflow-hidden flex flex-col items-center justify-center shadow-2xl"
             }>
               {scannerActive && !scannerError ? (
                 <div id="scanner-viewport" className="h-full w-full object-cover"></div>
               ) : (
                 <div className="p-4 text-center space-y-1 text-zinc-550 select-none">
-                  <Camera className={`${selectedOrderId ? 'h-5 w-5' : 'h-10 w-10'} mx-auto text-zinc-650`} />
+                  <Camera className={`${selectedOrderId ? 'h-5 w-5' : 'h-10 w-10'} mx-auto text-[var(--ink-muted)]`} />
                   {!selectedOrderId && (
                     <>
-                      <p className="text-zinc-400 text-sm font-semibold">Camera is paused</p>
+                      <p className="text-[var(--ink-muted)] text-sm font-semibold">Camera is paused</p>
                       <p className="text-zinc-600 text-xs">Tap start below to enable scanning</p>
                     </>
                   )}
@@ -607,8 +607,8 @@ export function PackingWorkspace() {
                     onClick={() => setScannerActive(!scannerActive)}
                     className={`flex-1 py-3.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 cursor-pointer transition-all border ${
                       scannerActive 
-                        ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-850' 
-                        : 'bg-blue-600 border-blue-500 hover:bg-blue-700 text-white'
+                        ? 'bg-[var(--surface)] border-[var(--border)] text-[var(--ink-muted)] hover:text-white hover:bg-[var(--surface-raised)]' 
+                        : 'bg-info border-info hover:bg-blue-700 text-white'
                     }`}
                   >
                     {scannerActive ? (
@@ -630,7 +630,7 @@ export function PackingWorkspace() {
                       <select
                         value={selectedCameraId}
                         onChange={(e) => setSelectedCameraId(e.target.value)}
-                        className="w-full py-3.5 px-4 bg-zinc-900 border border-zinc-800 rounded-xl text-sm font-semibold text-zinc-200 outline-none cursor-pointer focus:border-zinc-700 select-none appearance-none"
+                        className="w-full py-3.5 px-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl text-sm font-semibold text-zinc-200 outline-none cursor-pointer focus:border-[var(--border)] select-none appearance-none"
                       >
                         {cameras.map((c, i) => (
                           <option key={c.id} value={c.id}>
@@ -643,10 +643,10 @@ export function PackingWorkspace() {
                 </div>
 
                 {/* Quick manual keyboard entry option */}
-                <div className="pt-2 border-t border-zinc-900">
+                <div className="pt-2 border-t border-[var(--border)]">
                   <button
                     onClick={() => setShowManualSearch(!showManualSearch)}
-                    className="w-full text-center text-xs font-semibold text-zinc-500 hover:text-zinc-300 flex items-center justify-center gap-1 py-2 cursor-pointer"
+                    className="w-full text-center text-xs font-semibold text-[var(--ink-muted)] hover:text-[var(--ink-muted)] flex items-center justify-center gap-1 py-2 cursor-pointer"
                   >
                     <Search className="h-3.5 w-3.5" />
                     {showManualSearch ? 'Hide Keyboard Input' : 'Type Order ID Manually'}
@@ -657,13 +657,13 @@ export function PackingWorkspace() {
                       <Input
                         type="text"
                         placeholder="Type display ID, guest, etc."
-                        className="flex-1 bg-zinc-900 border-zinc-800 text-zinc-100 text-xs py-5 rounded-xl font-medium focus-visible:ring-1 focus-visible:ring-blue-500 focus-visible:border-blue-500 placeholder-zinc-500 select-text"
+                        className="flex-1 bg-[var(--surface)] border-[var(--border)] text-[var(--ink)] text-xs py-5 rounded-xl font-medium focus-visible:ring-1 focus-visible:ring-blue-500 focus-visible:border-info placeholder-[var(--ink-muted)] select-text"
                         value={manualSearch}
                         onChange={(e) => setManualSearch(e.target.value)}
                       />
                       <button
                         type="submit"
-                        className="px-4 py-2.5 bg-zinc-900 border border-zinc-800 rounded-xl text-xs font-bold text-white hover:bg-zinc-850 cursor-pointer"
+                        className="px-4 py-2.5 bg-[var(--surface)] border border-[var(--border)] rounded-xl text-xs font-bold text-white hover:bg-[var(--surface-raised)] cursor-pointer"
                       >
                         Load
                       </button>
@@ -672,22 +672,22 @@ export function PackingWorkspace() {
                 </div>
 
                 {/* Personal Packer Dashboard Statistics */}
-                <div className="border border-zinc-900 bg-zinc-900/10 rounded-2xl p-4 mt-4">
+                <div className="border border-[var(--border)] bg-zinc-900/10 rounded-2xl p-4 mt-4">
                   <span className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-550 block text-center mb-3">
                     Desk Packing stats today
                   </span>
                   <div className="grid grid-cols-3 gap-2">
                     <div className="flex flex-col p-2.5 rounded-xl bg-success-soft border border-success/25 text-center">
                       <span className="text-success text-lg font-black">{stats?.packed ?? 0}</span>
-                      <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Packed</span>
+                      <span className="text-[9px] text-[var(--ink-muted)] font-bold uppercase tracking-wider">Packed</span>
                     </div>
                     <div className="flex flex-col p-2.5 rounded-xl bg-warning-soft border border-warning/25 text-center">
                       <span className="text-warning text-lg font-black">{stats?.held ?? 0}</span>
-                      <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Held</span>
+                      <span className="text-[9px] text-[var(--ink-muted)] font-bold uppercase tracking-wider">Held</span>
                     </div>
                     <div className="flex flex-col p-2.5 rounded-xl bg-info-soft border border-info/25 text-center">
                       <span className="text-info text-lg font-black">{stats?.pending ?? 0}</span>
-                      <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Queue</span>
+                      <span className="text-[9px] text-[var(--ink-muted)] font-bold uppercase tracking-wider">Queue</span>
                     </div>
                   </div>
                 </div>
@@ -701,10 +701,10 @@ export function PackingWorkspace() {
           <div className="flex-1 flex flex-col p-4 max-w-lg mx-auto w-full space-y-3">
             <h2 className="text-base font-bold text-white mb-1">Packed Orders Today</h2>
             {isHistoryLoading ? (
-              <div className="text-center py-10 text-zinc-500 text-sm">Loading packed logs...</div>
+              <div className="text-center py-10 text-[var(--ink-muted)] text-sm">Loading packed logs...</div>
             ) : packedLogs.length === 0 ? (
-              <div className="text-center py-12 border border-dashed border-zinc-850 rounded-2xl p-6 text-zinc-500 space-y-2">
-                <CheckCircle2 className="h-8 w-8 text-zinc-650 mx-auto" />
+              <div className="text-center py-12 border border-dashed border-[var(--border)] rounded-2xl p-6 text-[var(--ink-muted)] space-y-2">
+                <CheckCircle2 className="h-8 w-8 text-[var(--ink-muted)] mx-auto" />
                 <p className="font-semibold text-sm">No packed logs found today</p>
                 <p className="text-xs text-zinc-600">Scan and complete packing to see them here.</p>
               </div>
@@ -714,11 +714,11 @@ export function PackingWorkspace() {
                   <div
                     key={log.id}
                     onClick={() => setViewedPackedOrder(log)}
-                    className="p-3.5 bg-zinc-900 border border-zinc-850 hover:border-zinc-750 rounded-2xl flex items-center justify-between cursor-pointer transition-all active:scale-[0.99]"
+                    className="p-3.5 bg-[var(--surface)] border border-[var(--border)] hover:border-[var(--border)] rounded-2xl flex items-center justify-between cursor-pointer transition-all active:scale-[0.99]"
                   >
                     <div className="flex flex-col text-start">
                       <span className="font-mono text-sm font-bold text-white">{log.displayId}</span>
-                      <span className="text-[10px] text-zinc-500 mt-0.5">
+                      <span className="text-[10px] text-[var(--ink-muted)] mt-0.5">
                         {new Date(log.updatedAt).toLocaleTimeString()}
                       </span>
                     </div>
@@ -726,7 +726,7 @@ export function PackingWorkspace() {
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-success-soft border border-success/25 text-success uppercase tracking-wider">
                         Packed
                       </span>
-                      <ExternalLink className="h-3.5 w-3.5 text-zinc-650" />
+                      <ExternalLink className="h-3.5 w-3.5 text-[var(--ink-muted)]" />
                     </div>
                   </div>
                 ))}
@@ -740,10 +740,10 @@ export function PackingWorkspace() {
           <div className="flex-1 flex flex-col p-4 max-w-lg mx-auto w-full space-y-3">
             <h2 className="text-base font-bold text-white mb-1">Currently Held Orders</h2>
             {isQueueLoading ? (
-              <div className="text-center py-10 text-zinc-500 text-sm">Loading hold list...</div>
+              <div className="text-center py-10 text-[var(--ink-muted)] text-sm">Loading hold list...</div>
             ) : heldLogs.length === 0 ? (
-              <div className="text-center py-12 border border-dashed border-zinc-850 rounded-2xl p-6 text-zinc-500 space-y-2">
-                <AlertTriangle className="h-8 w-8 text-zinc-650 mx-auto" />
+              <div className="text-center py-12 border border-dashed border-[var(--border)] rounded-2xl p-6 text-[var(--ink-muted)] space-y-2">
+                <AlertTriangle className="h-8 w-8 text-[var(--ink-muted)] mx-auto" />
                 <p className="font-semibold text-sm">No orders currently on hold</p>
                 <p className="text-xs text-zinc-600">Held orders will show up here for easy resumption.</p>
               </div>
@@ -753,7 +753,7 @@ export function PackingWorkspace() {
                   <div
                     key={order.id}
                     onClick={() => setViewedHeldOrder(order)}
-                    className="p-3.5 bg-zinc-900 border border-zinc-850 hover:border-zinc-755 rounded-2xl flex items-center justify-between cursor-pointer transition-all active:scale-[0.99]"
+                    className="p-3.5 bg-[var(--surface)] border border-[var(--border)] hover:border-[var(--border)] rounded-2xl flex items-center justify-between cursor-pointer transition-all active:scale-[0.99]"
                   >
                     <div className="flex flex-col text-start">
                       <span className="font-mono text-sm font-bold text-white">{order.displayId}</span>
@@ -766,7 +766,7 @@ export function PackingWorkspace() {
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-warning-soft border border-warning/25 text-warning uppercase tracking-wider">
                         Held
                       </span>
-                      <ExternalLink className="h-3.5 w-3.5 text-zinc-650" />
+                      <ExternalLink className="h-3.5 w-3.5 text-[var(--ink-muted)]" />
                     </div>
                   </div>
                 ))}
@@ -777,12 +777,12 @@ export function PackingWorkspace() {
 
         {/* 3. visual Details Active Order Overlay (Carousel layout) */}
         {selectedOrderId && activeOrder && (
-          <div className="absolute inset-0 z-40 bg-zinc-950 flex flex-col h-full overflow-hidden">
+          <div className="absolute inset-0 z-40 bg-[var(--canvas)] flex flex-col h-full overflow-hidden">
             {/* Overlay Header */}
-            <div className="h-14 shrink-0 px-4 border-b border-zinc-850 bg-zinc-900/60 flex items-center justify-between">
+            <div className="h-14 shrink-0 px-4 border-b border-[var(--border)] bg-zinc-900/60 flex items-center justify-between">
               <button
                 onClick={handleBackAndRelease}
-                className="p-2 hover:bg-zinc-800 rounded-xl text-zinc-450 hover:text-white transition-colors cursor-pointer border border-zinc-800 flex items-center justify-center shrink-0"
+                className="p-2 hover:bg-[var(--surface-raised)] rounded-xl text-zinc-450 hover:text-white transition-colors cursor-pointer border border-[var(--border)] flex items-center justify-center shrink-0"
               >
                 <ChevronLeft className="h-4 w-4" />
                 <span className="text-xs font-semibold pr-1">Back</span>
@@ -792,14 +792,14 @@ export function PackingWorkspace() {
                 <span className="font-mono text-base font-extrabold text-white">
                   Order {activeOrder.displayId}
                 </span>
-                <span className="text-[9px] font-bold text-zinc-500">
+                <span className="text-[9px] font-bold text-[var(--ink-muted)]">
                   {activeOrder.statusName} status
                 </span>
               </div>
 
               {/* Progress counter */}
               <div className="flex items-center gap-1 select-none">
-                <span className="text-[10px] px-2.5 py-1 rounded-full text-xs font-black bg-zinc-900 border border-zinc-800 text-zinc-350">
+                <span className="text-[10px] px-2.5 py-1 rounded-full text-xs font-black bg-[var(--surface)] border border-[var(--border)] text-zinc-350">
                   {verifiedCount}/{totalItemCount} packed
                 </span>
               </div>
@@ -847,7 +847,7 @@ export function PackingWorkspace() {
                   return (
                     <div className="flex-1 flex flex-col justify-between space-y-4">
                       {/* Product Image Box */}
-                      <div className="relative w-full h-56 md:h-72 shrink-0 rounded-2xl bg-zinc-900 border border-zinc-850 flex items-center justify-center overflow-hidden shadow-inner">
+                      <div className="relative w-full h-56 md:h-72 shrink-0 rounded-2xl bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center overflow-hidden shadow-inner">
                         <SafeImage
                           src={primaryImage}
                           fallbackSrc={fallbackImage}
@@ -860,7 +860,7 @@ export function PackingWorkspace() {
                         {zoomSource && (
                           <button 
                             onClick={() => zoomSource && setZoomImage(zoomSource)}
-                            className="absolute right-3.5 bottom-3.5 p-2 rounded-xl bg-black/60 text-zinc-300 border border-zinc-800 hover:text-white transition-colors cursor-pointer"
+                            className="absolute right-3.5 bottom-3.5 p-2 rounded-xl bg-black/60 text-[var(--ink-muted)] border border-[var(--border)] hover:text-white transition-colors cursor-pointer"
                           >
                             <Maximize2 className="h-3.5 w-3.5" />
                           </button>
@@ -875,12 +875,12 @@ export function PackingWorkspace() {
 
                         <div className="flex flex-wrap gap-1.5 justify-center items-center">
                           {item.variantName && (
-                            <span className="text-xs font-bold text-zinc-300 bg-zinc-850 border border-zinc-850 px-2.5 py-0.5 rounded-lg">
+                            <span className="text-xs font-bold text-[var(--ink-muted)] bg-[var(--surface-raised)] border border-[var(--border)] px-2.5 py-0.5 rounded-lg">
                               {item.variantName}
                             </span>
                           )}
                           {item.sku && (
-                            <span className="font-mono text-[10px] text-zinc-500 bg-zinc-950 px-2 py-0.5 rounded border border-zinc-900 select-text selection:bg-blue-600">
+                            <span className="font-mono text-[10px] text-[var(--ink-muted)] bg-[var(--canvas)] px-2 py-0.5 rounded border border-[var(--border)] select-text selection:bg-info">
                               SKU: {item.sku}
                             </span>
                           )}
@@ -907,17 +907,17 @@ export function PackingWorkspace() {
                       </div>
 
                       {/* Giant Qty Status Widget */}
-                      <div className="flex items-center justify-between p-4 rounded-2xl bg-zinc-900 border border-zinc-850">
+                      <div className="flex items-center justify-between p-4 rounded-2xl bg-[var(--surface)] border border-[var(--border)]">
                         <span className="text-xs font-black text-zinc-450 uppercase tracking-wider select-none">
                           Items to Pack
                         </span>
                         <div className="flex items-center gap-1.5">
                           <span className={`text-2xl font-black px-4 py-1.5 rounded-xl border select-none ${
                             isVerified
-                              ? 'bg-green-600/10 border-green-500 text-green-400'
+                              ? 'bg-green-600/10 border-green-500 text-success'
                               : isMultiple
-                                ? 'bg-amber-500/10 border-amber-500 text-amber-500'
-                                : 'bg-blue-500/10 border-blue-500 text-blue-500'
+                                ? 'bg-warning-soft border-amber-500 text-amber-500'
+                                : 'bg-info-soft border-info text-blue-500'
                           }`}>
                             {currentVerifiedQty} / {item.quantity}
                           </span>
@@ -932,8 +932,8 @@ export function PackingWorkspace() {
                             isVerified
                               ? 'bg-green-600 hover:bg-green-700 text-white cursor-pointer'
                               : verificationMode === 'strict_scan'
-                                ? 'bg-zinc-950 border border-zinc-900 text-zinc-550 cursor-not-allowed opacity-70'
-                                : 'bg-zinc-900 border border-zinc-800 text-zinc-250 hover:bg-zinc-850 cursor-pointer'
+                                ? 'bg-[var(--canvas)] border border-[var(--border)] text-zinc-550 cursor-not-allowed opacity-70'
+                                : 'bg-[var(--surface)] border border-[var(--border)] text-zinc-250 hover:bg-[var(--surface-raised)] cursor-pointer'
                           }`}
                         >
                           {isVerified ? (
@@ -943,12 +943,12 @@ export function PackingWorkspace() {
                             </>
                           ) : verificationMode === 'strict_scan' ? (
                             <>
-                              <Scan className="h-4 w-4 text-zinc-500 animate-pulse" />
+                              <Scan className="h-4 w-4 text-[var(--ink-muted)] animate-pulse" />
                               Scan Barcode to Verify ({currentVerifiedQty}/{item.quantity})
                             </>
                           ) : (
                             <>
-                              <Check className="h-4 w-4 stroke-[3] text-zinc-500 animate-pulse" />
+                              <Check className="h-4 w-4 stroke-[3] text-[var(--ink-muted)] animate-pulse" />
                               Verify 1 Piece ({currentVerifiedQty}/{item.quantity})
                             </>
                           )}
@@ -967,17 +967,17 @@ export function PackingWorkspace() {
                   <button
                     disabled={currentProductIdx === 0}
                     onClick={() => setCurrentProductIdx(prev => prev - 1)}
-                    className="p-2 border border-zinc-800 rounded-xl hover:bg-zinc-850 text-zinc-300 disabled:opacity-30 cursor-pointer"
+                    className="p-2 border border-[var(--border)] rounded-xl hover:bg-[var(--surface-raised)] text-[var(--ink-muted)] disabled:opacity-30 cursor-pointer"
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </button>
-                  <span className="text-xs font-semibold text-zinc-400">
+                  <span className="text-xs font-semibold text-[var(--ink-muted)]">
                     Product {currentProductIdx + 1} of {activeOrder.items.length} ({totalItemCount} total items)
                   </span>
                   <button
                     disabled={currentProductIdx === activeOrder.items.length - 1}
                     onClick={() => setCurrentProductIdx(prev => prev + 1)}
-                    className="p-2 border border-zinc-800 rounded-xl hover:bg-zinc-850 text-zinc-300 disabled:opacity-30 cursor-pointer"
+                    className="p-2 border border-[var(--border)] rounded-xl hover:bg-[var(--surface-raised)] text-[var(--ink-muted)] disabled:opacity-30 cursor-pointer"
                   >
                     <ChevronRight className="h-4 w-4" />
                   </button>
@@ -985,13 +985,13 @@ export function PackingWorkspace() {
               )}
 
               {/* Toggle Customer Info Panel */}
-              <div className="border border-zinc-850 rounded-2xl overflow-hidden bg-zinc-900/20 shrink-0">
+              <div className="border border-[var(--border)] rounded-2xl overflow-hidden bg-zinc-900/20 shrink-0">
                 <button
                   onClick={() => setShowCustomerDetails(!showCustomerDetails)}
                   className="w-full px-4 py-3 flex items-center justify-between text-zinc-450 hover:text-white transition-all text-[11px] font-extrabold uppercase tracking-wider cursor-pointer"
                 >
                   <span className="flex items-center gap-1.5">
-                    <Info className="h-3.5 w-3.5 text-zinc-500" />
+                    <Info className="h-3.5 w-3.5 text-[var(--ink-muted)]" />
                     Customer & courier metadata
                   </span>
                   <span className="text-xs font-semibold text-blue-500">
@@ -1000,23 +1000,23 @@ export function PackingWorkspace() {
                 </button>
 
                 {showCustomerDetails && (
-                  <div className="px-5 py-4 border-t border-zinc-850 text-start text-xs space-y-2 bg-zinc-900/10 text-zinc-300 select-text">
-                    <p><span className="text-zinc-500 font-bold select-none">Name:</span> {activeOrder.customer?.name ?? 'Guest User'}</p>
-                    <p><span className="text-zinc-500 font-bold select-none">Phone:</span> {activeOrder.customer?.phone ?? 'N/A'}</p>
-                    <p><span className="text-zinc-500 font-bold select-none">Created Date:</span> {new Date(activeOrder.createdAt).toLocaleString()}</p>
-                    <p><span className="text-zinc-500 font-bold select-none">Order Status:</span> {activeOrder.statusName}</p>
+                  <div className="px-5 py-4 border-t border-[var(--border)] text-start text-xs space-y-2 bg-zinc-900/10 text-[var(--ink-muted)] select-text">
+                    <p><span className="text-[var(--ink-muted)] font-bold select-none">Name:</span> {activeOrder.customer?.name ?? 'Guest User'}</p>
+                    <p><span className="text-[var(--ink-muted)] font-bold select-none">Phone:</span> {activeOrder.customer?.phone ?? 'N/A'}</p>
+                    <p><span className="text-[var(--ink-muted)] font-bold select-none">Created Date:</span> {new Date(activeOrder.createdAt).toLocaleString()}</p>
+                    <p><span className="text-[var(--ink-muted)] font-bold select-none">Order Status:</span> {activeOrder.statusName}</p>
                   </div>
                 )}
               </div>
             </div>
 
             {/* Giant Sticky actions drawer footer */}
-            <div className="shrink-0 p-4 border-t border-zinc-850 bg-zinc-900/60 flex items-center justify-between gap-3 select-none">
+            <div className="shrink-0 p-4 border-t border-[var(--border)] bg-zinc-900/60 flex items-center justify-between gap-3 select-none">
               <div className="flex gap-2">
                 {/* Print */}
                 <button
                   onClick={() => window.open(`/admin/op/print/sticker/${activeOrder.id}`, '_blank')}
-                  className="p-4 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-350 hover:text-white cursor-pointer"
+                  className="p-4 rounded-xl border border-[var(--border)] bg-[var(--canvas)] text-zinc-350 hover:text-white cursor-pointer"
                   title="Print sticker label"
                 >
                   <Printer className="h-4 w-4" />
@@ -1024,7 +1024,7 @@ export function PackingWorkspace() {
                 {/* Hold */}
                 <button
                   onClick={() => handleHold(activeOrder.id)}
-                  className="p-4 rounded-xl border border-zinc-800 bg-zinc-950 text-amber-500/80 hover:text-amber-400 cursor-pointer"
+                  className="p-4 rounded-xl border border-[var(--border)] bg-[var(--canvas)] text-warning hover:text-warning cursor-pointer"
                   title="Put order on hold"
                 >
                   <AlertTriangle className="h-4 w-4" />
@@ -1038,7 +1038,7 @@ export function PackingWorkspace() {
                 className={`flex-1 py-4.5 rounded-2xl text-sm font-extrabold text-white transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.98] ${
                   isAllVerified
                     ? 'bg-green-600 hover:bg-green-700 animate-pulse-subtle'
-                    : 'bg-zinc-800 hover:bg-zinc-750 text-zinc-400 border border-zinc-700/50'
+                    : 'bg-[var(--surface-raised)] hover:bg-[var(--surface-raised)] text-[var(--ink-muted)] border border-zinc-700/50'
                 }`}
               >
                 <CheckCircle2 className="h-4 w-4 shrink-0" />
@@ -1051,12 +1051,12 @@ export function PackingWorkspace() {
 
       {/* 4. Bottom Tab Bar Navigation panel */}
       {!selectedOrderId && (
-        <nav className="h-16 shrink-0 border-t border-zinc-850 bg-zinc-900 flex items-center justify-around select-none">
+        <nav className="h-16 shrink-0 border-t border-[var(--border)] bg-[var(--surface)] flex items-center justify-around select-none">
           {/* Tab 1: Scanner */}
           <button
             onClick={() => setActiveTab('scan')}
             className={`flex flex-col items-center justify-center w-20 h-full gap-1 cursor-pointer transition-colors ${
-              activeTab === 'scan' ? 'text-blue-500 font-bold' : 'text-zinc-500 hover:text-zinc-350'
+              activeTab === 'scan' ? 'text-blue-500 font-bold' : 'text-[var(--ink-muted)] hover:text-zinc-350'
             }`}
           >
             <Camera className="h-5 w-5" />
@@ -1067,7 +1067,7 @@ export function PackingWorkspace() {
           <button
             onClick={() => setActiveTab('packed')}
             className={`flex flex-col items-center justify-center w-20 h-full gap-1 cursor-pointer transition-colors ${
-              activeTab === 'packed' ? 'text-blue-500 font-bold' : 'text-zinc-500 hover:text-zinc-350'
+              activeTab === 'packed' ? 'text-blue-500 font-bold' : 'text-[var(--ink-muted)] hover:text-zinc-350'
             }`}
           >
             <CheckCircle2 className="h-5 w-5" />
@@ -1078,7 +1078,7 @@ export function PackingWorkspace() {
           <button
             onClick={() => setActiveTab('held')}
             className={`flex flex-col items-center justify-center w-20 h-full gap-1 cursor-pointer transition-colors ${
-              activeTab === 'held' ? 'text-blue-500 font-bold' : 'text-zinc-500 hover:text-zinc-350'
+              activeTab === 'held' ? 'text-blue-500 font-bold' : 'text-[var(--ink-muted)] hover:text-zinc-350'
             }`}
           >
             <AlertTriangle className="h-5 w-5" />
@@ -1090,22 +1090,22 @@ export function PackingWorkspace() {
       {/* 5. MODAL: Packed Log details viewer */}
       {viewedPackedOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs select-text" onClick={() => setViewedPackedOrder(null)}>
-          <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-5 shadow-2xl space-y-4" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center border-b border-zinc-800 pb-2.5">
+          <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-2xl space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center border-b border-[var(--border)] pb-2.5">
               <span className="font-mono font-bold text-white">Packed Details {viewedPackedOrder.displayId}</span>
-              <button onClick={() => setViewedPackedOrder(null)} className="p-1 rounded-full hover:bg-zinc-800 text-zinc-400 select-none cursor-pointer">
+              <button onClick={() => setViewedPackedOrder(null)} className="p-1 rounded-full hover:bg-[var(--surface-raised)] text-[var(--ink-muted)] select-none cursor-pointer">
                 <X className="h-4.5 w-4.5" />
               </button>
             </div>
-            <div className="text-xs space-y-2 text-zinc-300 text-start">
-              <p><span className="text-zinc-500 font-bold select-none">Order status:</span> <span className="text-green-400 font-semibold uppercase">Packed</span></p>
-              <p><span className="text-zinc-500 font-bold select-none">Packed Timestamp:</span> {new Date(viewedPackedOrder.updatedAt).toLocaleString()}</p>
-              <p><span className="text-zinc-500 font-bold select-none">Packer user:</span> {viewedPackedOrder.packerName}</p>
+            <div className="text-xs space-y-2 text-[var(--ink-muted)] text-start">
+              <p><span className="text-[var(--ink-muted)] font-bold select-none">Order status:</span> <span className="text-success font-semibold uppercase">Packed</span></p>
+              <p><span className="text-[var(--ink-muted)] font-bold select-none">Packed Timestamp:</span> {new Date(viewedPackedOrder.updatedAt).toLocaleString()}</p>
+              <p><span className="text-[var(--ink-muted)] font-bold select-none">Packer user:</span> {viewedPackedOrder.packerName}</p>
             </div>
-            <div className="border-t border-zinc-800 pt-2 text-start select-none">
+            <div className="border-t border-[var(--border)] pt-2 text-start select-none">
               <button 
                 onClick={() => setViewedPackedOrder(null)}
-                className="w-full py-2.5 bg-zinc-800 rounded-xl text-xs font-semibold hover:bg-zinc-750 text-white cursor-pointer"
+                className="w-full py-2.5 bg-[var(--surface-raised)] rounded-xl text-xs font-semibold hover:bg-[var(--surface-raised)] text-white cursor-pointer"
               >
                 Close Logs
               </button>
@@ -1117,28 +1117,28 @@ export function PackingWorkspace() {
       {/* 6. MODAL: Held Log details viewer with Resume */}
       {viewedHeldOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs select-text" onClick={() => setViewedHeldOrder(null)}>
-          <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-5 shadow-2xl space-y-4" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center border-b border-zinc-800 pb-2.5">
+          <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-2xl space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center border-b border-[var(--border)] pb-2.5">
               <span className="font-mono font-bold text-white">Held Details {viewedHeldOrder.displayId}</span>
-              <button onClick={() => setViewedHeldOrder(null)} className="p-1 rounded-full hover:bg-zinc-800 text-zinc-450 select-none cursor-pointer">
+              <button onClick={() => setViewedHeldOrder(null)} className="p-1 rounded-full hover:bg-[var(--surface-raised)] text-zinc-450 select-none cursor-pointer">
                 <X className="h-4.5 w-4.5" />
               </button>
             </div>
-            <div className="text-xs space-y-2 text-zinc-300 text-start">
-              <p><span className="text-zinc-500 font-bold select-none">Order Status:</span> <span className="text-amber-400 font-semibold uppercase">Packing Hold</span></p>
-              <p><span className="text-zinc-500 font-bold select-none">Total Items:</span> {viewedHeldOrder.totalItems}</p>
-              <p><span className="text-zinc-500 font-bold select-none">Hold Timestamp:</span> {new Date(viewedHeldOrder.createdAt).toLocaleString()}</p>
+            <div className="text-xs space-y-2 text-[var(--ink-muted)] text-start">
+              <p><span className="text-[var(--ink-muted)] font-bold select-none">Order Status:</span> <span className="text-warning font-semibold uppercase">Packing Hold</span></p>
+              <p><span className="text-[var(--ink-muted)] font-bold select-none">Total Items:</span> {viewedHeldOrder.totalItems}</p>
+              <p><span className="text-[var(--ink-muted)] font-bold select-none">Hold Timestamp:</span> {new Date(viewedHeldOrder.createdAt).toLocaleString()}</p>
               {viewedHeldOrder.customer && (
                 <>
-                  <p><span className="text-zinc-500 font-bold select-none">Customer Name:</span> {viewedHeldOrder.customer.name}</p>
-                  <p><span className="text-zinc-500 font-bold select-none">Phone:</span> {viewedHeldOrder.customer.phone}</p>
+                  <p><span className="text-[var(--ink-muted)] font-bold select-none">Customer Name:</span> {viewedHeldOrder.customer.name}</p>
+                  <p><span className="text-[var(--ink-muted)] font-bold select-none">Phone:</span> {viewedHeldOrder.customer.phone}</p>
                 </>
               )}
             </div>
-            <div className="flex gap-2.5 border-t border-zinc-800 pt-3 select-none">
+            <div className="flex gap-2.5 border-t border-[var(--border)] pt-3 select-none">
               <button 
                 onClick={() => setViewedHeldOrder(null)}
-                className="flex-1 py-2.5 bg-zinc-800 border border-zinc-750 rounded-xl text-xs font-semibold hover:bg-zinc-750 text-zinc-300 cursor-pointer"
+                className="flex-1 py-2.5 bg-[var(--surface-raised)] border border-[var(--border)] rounded-xl text-xs font-semibold hover:bg-[var(--surface-raised)] text-[var(--ink-muted)] cursor-pointer"
               >
                 Close
               </button>
@@ -1164,7 +1164,7 @@ export function PackingWorkspace() {
         <div className="fixed inset-0 z-50 bg-black flex items-center justify-center p-4 select-none" onClick={() => setZoomImage(null)}>
           <button 
             onClick={() => setZoomImage(null)}
-            className="absolute right-4 top-4 p-2 rounded-full bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white cursor-pointer"
+            className="absolute right-4 top-4 p-2 rounded-full bg-[var(--surface)] border border-[var(--border)] text-[var(--ink-muted)] hover:text-white cursor-pointer"
           >
             <X className="h-6 w-6" />
           </button>

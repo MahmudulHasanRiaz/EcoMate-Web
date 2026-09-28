@@ -172,7 +172,7 @@ export function CountUp({
   return <span className={cn('tabular-nums', className)}>{format(display)}</span>
 }
 
-export type KpiAccent = 'success' | 'danger' | 'warning' | 'info' | 'violet' | 'cyan' | 'pink'
+export type KpiAccent = 'primary' | 'success' | 'danger' | 'warning' | 'info' | 'violet' | 'cyan' | 'pink'
 
 /** KPI title → accent color bucket (presentational only, data untouched). */
 export function kpiAccentForTitle(title: string): KpiAccent {

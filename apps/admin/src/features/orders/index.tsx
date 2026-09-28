@@ -34,7 +34,7 @@ import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDo
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { OrderSourceBadges } from '@/features/orders/order-source-badge'
 
-const fallbackStatusColors: Record<string, string> = { Pending: '#F59E0B', Confirmed: '#3B82F6', Cancelled: '#EF4444', 'On Hold': '#8B5CF6', Packed: '#06B6D4', Shipped: '#10B981', 'In Courier': '#6366F1', Delivered: '#22C55E', 'Partial Return': '#F97316', 'Return Pending': '#EC4899', Returned: '#DC2626', Damaged: '#991B1B' }
+const fallbackStatusColors: Record<string, string> = { Pending: 'var(--warning)', Confirmed: 'var(--info)', Cancelled: 'var(--danger)', 'On Hold': 'var(--accent-violet)', Packed: 'var(--accent-cyan)', Shipped: 'var(--success)', 'In Courier': 'var(--accent-violet)', Delivered: 'var(--success)', 'Partial Return': 'var(--warning)', 'Return Pending': 'var(--accent-pink)', Returned: 'var(--danger)', Damaged: 'var(--danger)' }
 const nn = (v: number | string) => Number(v)
 const fmt = (v: number | string) => nn(v).toFixed(2)
 
@@ -92,24 +92,24 @@ function getProductThumb(item: OrderResponse['items'][number]): string | null {
 
 function paymentMethodLabel(method: string): { label: string; colorClass: string } {
   const m = method?.toLowerCase() || ''
-  if (m.includes('bkash')) return { label: 'bKash', colorClass: 'text-pink-500' }
-  if (m.includes('nagad')) return { label: 'Nagad', colorClass: 'text-orange-500' }
-  if (m.includes('rocket')) return { label: 'Rocket', colorClass: 'text-purple-500' }
-  if (m.includes('card') || m.includes('visa') || m.includes('master')) return { label: method, colorClass: 'text-blue-500' }
-  if (m.includes('cash')) return { label: 'Cash', colorClass: 'text-emerald-600 dark:text-emerald-400' }
-  if (m.includes('cod') || m.includes('delivery')) return { label: 'COD', colorClass: 'text-emerald-600 dark:text-emerald-400' }
-  if (m.includes('bank') || m.includes('transfer')) return { label: method, colorClass: 'text-slate-500' }
+  if (m.includes('bkash')) return { label: 'bKash', colorClass: 'text-accent-pink' }
+  if (m.includes('nagad')) return { label: 'Nagad', colorClass: 'text-warning' }
+  if (m.includes('rocket')) return { label: 'Rocket', colorClass: 'text-accent-violet' }
+  if (m.includes('card') || m.includes('visa') || m.includes('master')) return { label: method, colorClass: 'text-info' }
+  if (m.includes('cash')) return { label: 'Cash', colorClass: 'text-success' }
+  if (m.includes('cod') || m.includes('delivery')) return { label: 'COD', colorClass: 'text-success' }
+  if (m.includes('bank') || m.includes('transfer')) return { label: method, colorClass: 'text-ink-muted' }
   if (m.includes('gateway')) return { label: method.split('_').slice(1).join(' ') || method, colorClass: 'text-muted-foreground' }
   return { label: method, colorClass: 'text-muted-foreground' }
 }
 
 function paymentStatusBadgeClass(status: string): { variant: 'default' | 'secondary' | 'destructive' | 'outline'; className: string } {
   const s = status?.toLowerCase() || ''
-  if (['paid', 'verified', 'completed'].includes(s)) return { variant: 'default', className: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800' }
-  if (['pending', 'payment_pending'].includes(s)) return { variant: 'secondary', className: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800' }
-  if (['failed', 'cancelled', 'unpaid'].includes(s)) return { variant: 'destructive', className: 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800' }
-  if (s === 'partial_paid') return { variant: 'default', className: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800' }
-  if (s === 'refunded') return { variant: 'outline', className: 'bg-pink-500/10 text-pink-600 dark:text-pink-400 border-pink-200 dark:border-pink-800' }
+  if (['paid', 'verified', 'completed'].includes(s)) return { variant: 'default', className: 'bg-success-soft text-success border-success/25' }
+  if (['pending', 'payment_pending'].includes(s)) return { variant: 'secondary', className: 'bg-warning-soft text-warning border-warning/25' }
+  if (['failed', 'cancelled', 'unpaid'].includes(s)) return { variant: 'destructive', className: 'bg-danger-soft text-danger border-danger/25' }
+  if (s === 'partial_paid') return { variant: 'default', className: 'bg-info-soft text-info border-info/25' }
+  if (s === 'refunded') return { variant: 'outline', className: 'bg-accent-pink-soft text-accent-pink border-accent-pink/25' }
   return { variant: 'outline', className: '' }
 }
 
