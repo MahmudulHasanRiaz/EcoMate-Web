@@ -7,6 +7,11 @@ import path from "path";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const apiBase = env.VITE_API_URL || process.env.VITE_API_URL || "/api";
+  // Dev-only allowed hosts (see apps/admin/vite.config.ts for the rationale).
+  const devAllowedHosts = (env.VITE_DEV_ALLOWED_HOSTS ?? "")
+    .split(",")
+    .map((h) => h.trim())
+    .filter(Boolean);
 
   return {
     // The production nginx image serves this application exclusively at
@@ -16,6 +21,7 @@ export default defineConfig(({ mode }) => {
     server: {
       host: "0.0.0.0",
       port: 5174,
+      ...(devAllowedHosts.length > 0 ? { allowedHosts: devAllowedHosts } : {}),
       proxy: {
         "/api": {
           target: "http://localhost:4000",
