@@ -79,6 +79,7 @@ export function PackingWorkspace() {
   // Load verifiedQuantities from localStorage when order changes
   useEffect(() => {
     if (!selectedOrderId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setVerifiedQuantities({})
       return
     }

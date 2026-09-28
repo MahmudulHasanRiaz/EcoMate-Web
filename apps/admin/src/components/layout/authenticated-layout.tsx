@@ -153,7 +153,7 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
         try {
           const features = JSON.parse(e.newValue)
           useLicenseStore.getState().setFeatures(features)
-        } catch {}
+        } catch { /* ignore malformed feature payload */ }
       }
     }
     window.addEventListener('storage', handleStorage)
