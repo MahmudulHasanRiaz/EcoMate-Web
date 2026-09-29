@@ -55,17 +55,18 @@ export function CartPanel({ onCloseSession, isMobileDrawer = false, onCloseDrawe
   const [paymentOpen, setPaymentOpen] = useState(false)
   const [oosModalOpen, setOosModalOpen] = useState(false)
   const [oosItems, setOosItems] = useState<any[]>([])
+  // Bumped to remount the OOS popup with fresh state after a resolution or a
+  // completed checkout, so stale "Requested" chips never leak into the next run.
+  const [oosResetKey, setOosResetKey] = useState(0)
   const [validating, setValidating] = useState(false)
   const { showroomId, showroomName } = useSessionStore()
 
-  // Validate stock before opening payment modal
-  const handleCheckout = useCallback(async () => {
-    if (items.length === 0 || !showroomId) {
-      setPaymentOpen(true)
-      return
-    }
+  // Validate stock before opening payment modal.
+  // Returns 'ok' (proceed), 'oos' (popup opened) or 'error' (validation
+  // endpoint unavailable — caller decides whether to proceed anyway).
+  const runValidation = useCallback(async (): Promise<'ok' | 'oos' | 'error'> => {
+    if (items.length === 0 || !showroomId) return 'ok'
 
-    setValidating(true)
     try {
       const res = await validateStock({
         items: items.map((i) => ({
@@ -76,46 +77,93 @@ export function CartPanel({ onCloseSession, isMobileDrawer = false, onCloseDrawe
       })
       const validation = res.data
 
-      if (validation.allAvailable) {
-        setPaymentOpen(true)
-      } else {
-        const failedItems = validation.items
-          .filter((r: any) => !r.available)
-          .map((r: any) => {
-            const idx = items.findIndex(
-              (i) => i.productId === r.productId && i.variantId === r.variantId,
-            )
-            return {
-              index: idx >= 0 ? idx : 0,
-              productId: r.productId,
-              variantId: r.variantId,
-              name: items[idx]?.name || 'Unknown item',
-              requestedQty: r.requested,
-            }
-          })
-        setOosItems(failedItems)
-        setOosModalOpen(true)
-      }
-    } catch (err: any) {
-      // If validation endpoint fails, fall through to payment
-      toast.warning('Stock check unavailable. Proceeding to payment.')
+      if (validation.allAvailable) return 'ok'
+
+      const failedItems = validation.items
+        .filter((r: any) => !r.available)
+        .map((r: any) => {
+          const idx = items.findIndex(
+            (i) => i.productId === r.productId && i.variantId === r.variantId,
+          )
+          return {
+            index: idx >= 0 ? idx : 0,
+            productId: r.productId,
+            variantId: r.variantId,
+            name: items[idx]?.name || 'Unknown item',
+            requestedQty: r.requested,
+            currentAvailable: r.currentAvailable ?? 0,
+          }
+        })
+      setOosItems(failedItems)
+      setOosModalOpen(true)
+      return 'oos'
+    } catch {
+      return 'error'
+    }
+  }, [items, showroomId])
+
+  const handleCheckout = useCallback(async () => {
+    if (items.length === 0 || !showroomId) {
       setPaymentOpen(true)
+      return
+    }
+
+    setValidating(true)
+    try {
+      const result = await runValidation()
+      if (result === 'ok') {
+        setPaymentOpen(true)
+      } else if (result === 'error') {
+        toast.warning('Stock check unavailable. Proceeding to payment.')
+        setPaymentOpen(true)
+      }
     } finally {
       setValidating(false)
     }
-  }, [items, showroomId])
+  }, [items, showroomId, runValidation])
 
   const handleRemoveOosItem = (index: number) => {
     removeItem(index)
     setOosItems((prev) => prev.filter((item) => item.index !== index))
   }
 
-  const handleContinueAfterOos = () => {
-    setOosModalOpen(false)
-    if (items.length > 0) {
-      setPaymentOpen(true)
+  // "Continue with available items": keep only what the showroom can sell —
+  // trim partial matches to the available quantity, drop zero-stock items —
+  // then go straight to payment with the reduced total.
+  const handleResolveAvailable = (resolutions: { index: number; keepQty: number }[]) => {
+    const sorted = [...resolutions].sort((a, b) => b.index - a.index)
+    for (const r of sorted) {
+      if (r.keepQty <= 0) removeItem(r.index)
+      else updateQuantity(r.index, r.keepQty)
     }
+    const removed = resolutions.filter((r) => r.keepQty <= 0).length
+    const remaining = items.length - removed
+    setOosItems([])
+    setOosModalOpen(false)
+    setOosResetKey((k) => k + 1)
+    if (remaining > 0) setPaymentOpen(true)
   }
+
+  // "Complete Checkout" inside the popup: re-validate. Stock has arrived once
+  // the approver moved it — then payment opens and the sale completes.
+  const handleCompleteCheckout = useCallback(async () => {
+    setValidating(true)
+    try {
+      const result = await runValidation()
+      if (result === 'ok') {
+        setOosItems([])
+        setOosModalOpen(false)
+        setOosResetKey((k) => k + 1)
+        setPaymentOpen(true)
+      } else if (result === 'error') {
+        toast.error('Stock check unavailable — please try again.')
+      } else {
+        toast.info('Transfer not approved yet — stock has not arrived.')
+      }
+    } finally {
+      setValidating(false)
+    }
+  }, [runValidation])
 
   return (
     <div className="flex h-full flex-col bg-white">
@@ -327,13 +375,16 @@ export function CartPanel({ onCloseSession, isMobileDrawer = false, onCloseDrawe
 
       <DiscountModal open={discountOpen} onOpenChange={setDiscountOpen} currentDiscount={orderDiscount} currentType={orderDiscountType} onApply={setOrderDiscount} />
       <AlternativeSourcesModal
+        key={oosResetKey}
         open={oosModalOpen}
         onOpenChange={setOosModalOpen}
         items={oosItems}
         showroomId={showroomId || ''}
         showroomName={showroomName || 'current showroom'}
         onRemoveItem={handleRemoveOosItem}
-        onContinue={handleContinueAfterOos}
+        onResolveAvailable={handleResolveAvailable}
+        onCompleteCheckout={handleCompleteCheckout}
+        busy={validating}
       />
       <PaymentModal open={paymentOpen} onOpenChange={setPaymentOpen} onSuccess={() => {}} />
     </div>

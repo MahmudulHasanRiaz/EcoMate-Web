@@ -53,6 +53,22 @@ export class InventoryController {
   }
 
   @Roles('superadmin', 'admin', 'manager')
+  @Get('transfers')
+  async transfers(
+    @Query('page') page?: string,
+    @Query('perPage') perPage?: string,
+    @Query('search') search?: string,
+    @Query('status') status?: string,
+  ) {
+    return this.inventoryService.listTransfers(
+      page ? parseInt(page) : 1,
+      perPage ? parseInt(perPage) : 20,
+      search,
+      status,
+    );
+  }
+
+  @Roles('superadmin', 'admin', 'manager')
   @Get('stock-overview')
   async stockOverview(
     @Query('page') page?: string,

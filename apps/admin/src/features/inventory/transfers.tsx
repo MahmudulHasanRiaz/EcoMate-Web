@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { apiClient } from '@/lib/api-client'
@@ -29,24 +29,57 @@ interface Warehouse {
   isActive: boolean
 }
 
-interface TransferLog {
-  id: string
+// ── Grouped transfer history (GET /inventory/transfers) ──────────────────
+// One row per logical transfer: POS requests roll up their APPROVE_* child
+// headers and both stock legs; manual transfers carry their own legs.
+interface HistoryItem {
   productId: string
-  variantId: string | null
-  quantity: number
-  direction: 'IN' | 'OUT'
-  type: string
-  stockBefore: number
-  stockAfter: number
-  note: string | null
-  performedBy: string
-  performedAt: string
   productName: string
+  productSku: string | null
+  variantId: string | null
+  variantSku: string | null
+  variantLabel: string | null
+  quantity: number
 }
 
-interface TransferLogResponse {
-  data: TransferLog[]
+interface HistoryMovement {
+  ledgerId: string
+  direction: 'IN' | 'OUT'
+  quantity: number
+  stockBefore: number
+  stockAfter: number
+  productId: string
+  productName: string
+  variantId: string | null
+  variantLabel: string | null
+  warehouse: { id: string; name: string } | null
+  performedBy: string
+  performedAt: string
+}
+
+interface HistoryTransfer {
+  id: string
+  kind: 'REQUEST' | 'MANUAL'
+  status: 'COMPLETED' | 'IN_PROGRESS' | 'PARTIAL'
+  source: { id: string; name: string }
+  destination: { id: string; name: string }
+  items: HistoryItem[]
+  movements: HistoryMovement[]
+  notes: string | null
+  initiatedBy: string
+  createdAt: string
+  completedAt: string | null
+}
+
+interface HistoryTransfersResponse {
+  data: HistoryTransfer[]
   meta: { total: number; page: number; perPage: number; totalPages: number }
+}
+
+const HISTORY_STATUS_META: Record<string, { label: string; className: string }> = {
+  COMPLETED: { label: 'Completed', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  IN_PROGRESS: { label: 'In transit', className: 'bg-amber-50 text-amber-700 border-amber-200' },
+  PARTIAL: { label: 'Partial failure', className: 'bg-rose-50 text-rose-700 border-rose-200' },
 }
 
 interface TransferRequestItem {
@@ -89,17 +122,41 @@ export function Transfers() {
   const queryClient = useQueryClient()
   const [newTransferOpen, setNewTransferOpen] = useState(false)
 
-  const { data: logsRes, isLoading, isError, error } = useQuery<TransferLogResponse>({
-    queryKey: ['inventory-logs', 'transfer'],
-    queryFn: () => apiClient.get('/inventory/logs', { params: { type: 'transfer' } }).then(r => r.data),
-  })
+  // History: one row per logical transfer. Search + status are server-side.
+  const [historySearchInput, setHistorySearchInput] = useState('')
+  const [historySearch, setHistorySearch] = useState('')
+  const [historyStatus, setHistoryStatus] = useState('all')
+  const [viewTransfer, setViewTransfer] = useState<HistoryTransfer | null>(null)
+
+  const { data: historyRes, isLoading: historyLoading, isError: historyError, error: historyErrorObj } =
+    useQuery<HistoryTransfersResponse>({
+      queryKey: ['inventory-transfers', historySearch, historyStatus],
+      queryFn: () =>
+        apiClient
+          .get('/inventory/transfers', {
+            params: {
+              page: 1,
+              perPage: 50,
+              ...(historySearch ? { search: historySearch } : {}),
+              ...(historyStatus !== 'all' ? { status: historyStatus } : {}),
+            },
+          })
+          .then(r => r.data),
+      refetchInterval: 30_000,
+    })
+
+  // Debounce so typing doesn't fire a query per keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setHistorySearch(historySearchInput.trim()), 300)
+    return () => clearTimeout(t)
+  }, [historySearchInput])
 
   const { data: warehouses } = useQuery<Warehouse[]>({
     queryKey: ['warehouses'],
     queryFn: () => apiClient.get('/warehouses').then(r => r.data),
   })
 
-  const logs = logsRes?.data ?? []
+  const transfers = historyRes?.data ?? []
   const warehouseList = Array.isArray(warehouses) ? warehouses.filter(w => w.isActive) : []
   const warehouseNameById = (id: string) => warehouseList.find((w: any) => w.id === id)?.name || id
 
@@ -145,6 +202,7 @@ export function Transfers() {
       queryClient.invalidateQueries({ queryKey: ['inventory-physical-list'] })
       queryClient.invalidateQueries({ queryKey: ['inventory-stock-overview'] })
       queryClient.invalidateQueries({ queryKey: ['inventory-history-logs'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
       setNewTransferOpen(false)
       resetForm()
       toast.success('Transfer created successfully')
@@ -176,6 +234,7 @@ export function Transfers() {
     queryClient.invalidateQueries({ queryKey: ['inventory-physical-list'] })
     queryClient.invalidateQueries({ queryKey: ['inventory-stock-overview'] })
     queryClient.invalidateQueries({ queryKey: ['inventory-history-logs'] })
+    queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
   }
 
   const decideMut = useMutation({
@@ -370,99 +429,247 @@ export function Transfers() {
           </TabsContent>
 
           <TabsContent value='history' className='flex flex-col gap-4'>
-        <div className="flex items-center gap-4 bg-muted/30 p-2 rounded-lg border">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Search transfers by ID..." className="pl-9 bg-background" />
-          </div>
-          <Select defaultValue="all">
-            <SelectTrigger className="w-[180px] bg-background">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
-              <SelectItem value="draft">Draft</SelectItem>
-              <SelectItem value="transit">In Transit</SelectItem>
-              <SelectItem value="completed">Completed</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+            <div className="flex items-center gap-4 bg-muted/30 p-2 rounded-lg border">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by transfer ID, product, location or note..."
+                  className="pl-9 bg-background"
+                  value={historySearchInput}
+                  onChange={(e) => setHistorySearchInput(e.target.value)}
+                />
+              </div>
+              <Select value={historyStatus} onValueChange={setHistoryStatus}>
+                <SelectTrigger className="w-[180px] bg-background">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="transit">In Transit</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-        <div className="rounded-md border bg-card">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Transfer ID</TableHead>
-                <TableHead>Route</TableHead>
-                <TableHead>Items</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Initiated By</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8">
-                    <Loader2 className="animate-spin h-6 w-6 mx-auto" />
-                  </TableCell>
-                </TableRow>
-              ) : isError ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-destructive">
-                    Failed to load transfers. {(error as any)?.response?.data?.message || (error as Error)?.message || 'Unknown error'}
-                  </TableCell>
-                </TableRow>
-              ) : logs.length ? (
-                logs.map((log) => (
-                  <TableRow key={log.id}>
-                    <TableCell className="font-medium font-mono text-xs">#{log.id.slice(0, 8)}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="font-medium">{log.productName}</span>
-                        <Badge variant="outline" className="text-xs">{log.direction === 'IN' ? 'Received' : 'Shipped'}</Badge>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <span className={log.direction === 'IN' ? 'text-green-600' : 'text-red-600'}>
-                        {log.direction === 'IN' ? '+' : '-'}{log.quantity}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={log.direction === 'IN' ? 'default' : 'secondary'}>
-                        {log.direction === 'IN' ? 'Completed' : 'In Transit'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {new Date(log.performedAt).toLocaleString()}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {log.performedBy && log.performedBy.toLowerCase() !== 'system' ? (
-                        <UserBadge email={log.performedBy} showEmail={false} size="sm" />
-                      ) : (
-                        <Badge variant="secondary" className="text-[10px] h-4">System</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="sm">
-                        <Eye className="h-4 w-4 mr-2" /> View
-                      </Button>
-                    </TableCell>
+            <div className="rounded-md border bg-card">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Transfer ID</TableHead>
+                    <TableHead>Route</TableHead>
+                    <TableHead>Items</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Initiated By</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
-                    No transfers yet. Create your first transfer.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
+                </TableHeader>
+                <TableBody>
+                  {historyLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8">
+                        <Loader2 className="animate-spin h-6 w-6 mx-auto" />
+                      </TableCell>
+                    </TableRow>
+                  ) : historyError ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8 text-destructive">
+                        Failed to load transfers. {(historyErrorObj as any)?.response?.data?.message || (historyErrorObj as Error)?.message || 'Unknown error'}
+                      </TableCell>
+                    </TableRow>
+                  ) : transfers.length ? (
+                    transfers.map((t) => {
+                      const meta = HISTORY_STATUS_META[t.status] ?? { label: t.status, className: '' }
+                      return (
+                        <TableRow key={t.id}>
+                          <TableCell className="font-medium font-mono text-xs">#{t.id.slice(0, 8)}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1.5 text-sm whitespace-nowrap">
+                              <span className="font-medium">{t.source.name}</span>
+                              <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+                              <span className="font-medium">{t.destination.name}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-0.5 max-w-[280px]">
+                              {t.items.slice(0, 3).map((it, idx) => (
+                                <div key={idx} className="text-xs leading-tight">
+                                  <span className="font-medium">{it.productName}</span>
+                                  {it.variantLabel && <span className="text-muted-foreground"> · {it.variantLabel}</span>}
+                                  <span className="font-bold ml-1">×{it.quantity}</span>
+                                </div>
+                              ))}
+                              {t.items.length > 3 && (
+                                <div className="text-[11px] text-muted-foreground">+{t.items.length - 3} more</div>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={`text-xs ${meta.className}`}>{meta.label}</Badge>
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{new Date(t.createdAt).toLocaleString()}</TableCell>
+                          <TableCell>
+                            {t.initiatedBy && t.initiatedBy.toLowerCase() !== 'system' ? (
+                              <UserBadge email={t.initiatedBy} showEmail={false} size="sm" />
+                            ) : (
+                              <Badge variant="secondary" className="text-[10px] h-4">System</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button variant="ghost" size="sm" onClick={() => setViewTransfer(t)}>
+                              <Eye className="h-4 w-4 mr-2" /> View
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
+                        {historySearchInput || historyStatus !== 'all'
+                          ? 'No transfers match your filters.'
+                          : 'No transfers yet. Create your first transfer.'}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </TabsContent>
         </Tabs>
+
+      <Dialog open={!!viewTransfer} onOpenChange={(v) => { if (!v) setViewTransfer(null) }}>
+        <DialogContent className="sm:max-w-[760px] max-h-[88vh] overflow-y-auto">
+          {viewTransfer && (() => {
+            const meta = HISTORY_STATUS_META[viewTransfer.status] ?? { label: viewTransfer.status, className: '' }
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <span className="font-mono">#{viewTransfer.id.slice(0, 8)}</span>
+                    <Badge variant="outline" className={`text-xs ${meta.className}`}>{meta.label}</Badge>
+                    {viewTransfer.kind === 'REQUEST' && (
+                      <Badge variant="secondary" className="text-[10px]">POS request</Badge>
+                    )}
+                  </DialogTitle>
+                  <DialogDescription className="flex items-center gap-1.5 text-sm">
+                    <span className="font-medium text-foreground">{viewTransfer.source.name}</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
+                    <span className="font-medium text-foreground">{viewTransfer.destination.name}</span>
+                    <span className="text-muted-foreground">· {new Date(viewTransfer.createdAt).toLocaleString()}</span>
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-muted-foreground text-xs">Initiated by</span>
+                    <div className="font-medium">{viewTransfer.initiatedBy}</div>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground text-xs">Completed</span>
+                    <div className="font-medium">
+                      {viewTransfer.completedAt ? new Date(viewTransfer.completedAt).toLocaleString() : '—'}
+                    </div>
+                  </div>
+                </div>
+
+                {viewTransfer.notes && (
+                  <div className="rounded-md bg-muted/40 p-2.5 text-xs text-muted-foreground">
+                    {viewTransfer.notes}
+                  </div>
+                )}
+
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-1.5">
+                    Items moved
+                  </h4>
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Product</TableHead>
+                          <TableHead>Variant</TableHead>
+                          <TableHead className="text-right">Qty</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {viewTransfer.items.map((it, i) => (
+                          <TableRow key={`${it.productId}-${it.variantId ?? 'base'}-${i}`}>
+                            <TableCell className="text-sm font-medium">
+                              {it.productName}
+                              {it.productSku && (
+                                <span className="ml-1.5 text-[10px] font-mono text-muted-foreground">{it.productSku}</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {it.variantLabel || '—'}
+                            </TableCell>
+                            <TableCell className="text-sm text-right font-bold">×{it.quantity}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-1.5">
+                    Stock movements ({viewTransfer.movements.length})
+                  </h4>
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Location</TableHead>
+                          <TableHead>Movement</TableHead>
+                          <TableHead>Qty</TableHead>
+                          <TableHead>Before → After</TableHead>
+                          <TableHead>By</TableHead>
+                          <TableHead>When</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {viewTransfer.movements.map((m) => (
+                          <TableRow key={m.ledgerId}>
+                            <TableCell className="text-sm font-medium">{m.warehouse?.name ?? '—'}</TableCell>
+                            <TableCell>
+                              <Badge
+                                variant="outline"
+                                className={m.direction === 'IN'
+                                  ? 'text-emerald-600 border-emerald-200'
+                                  : 'text-slate-600'}
+                              >
+                                {m.direction === 'IN' ? 'Received (in)' : 'Shipped (out)'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className={`text-sm font-bold ${m.direction === 'IN' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                              {m.direction === 'IN' ? '+' : '-'}{m.quantity}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {m.stockBefore} → {m.stockAfter}
+                            </TableCell>
+                            <TableCell className="text-xs">{m.performedBy}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {new Date(m.performedAt).toLocaleString()}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                        {viewTransfer.movements.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-4">
+                              No stock movement recorded yet.
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              </>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
       </Main>
 
       <Dialog open={newTransferOpen} onOpenChange={(v) => { if (!v) { setNewTransferOpen(false); resetForm() } }}>

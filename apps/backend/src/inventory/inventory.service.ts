@@ -247,6 +247,234 @@ export class InventoryService {
     };
   }
 
+  /**
+   * Transfer history for the admin History tab: ONE row per logical transfer,
+   * never one row per stock movement.
+   *
+   * A stock move physically writes two ledger legs (TRANSFER_OUT at source,
+   * TRANSFER_IN at destination) and — when it came from a POS request — one
+   * APPROVE_-keyed StockTransfer header per item on top of the POS_TRF_ request
+   * header. Rows are therefore keyed by the origin:
+   *   - POS request  → the POS_TRF_ header (status FULFILLED/APPROVAL_FAILED);
+   *                    children + both legs are rolled up under it.
+   *   - Manual/admin → the executed header itself (IN_PROGRESS/COMPLETED).
+   * Each row carries route, product/variant quantities and every movement leg
+   * (warehouse, direction, qty, before/after, who, when) so nothing is hidden.
+   */
+  async listTransfers(
+    page = 1,
+    perPage = 20,
+    search?: string,
+    status?: string,
+  ) {
+    const REQUEST_REP = ['FULFILLED', 'APPROVAL_FAILED'];
+    const EXECUTED = ['IN_PROGRESS', 'COMPLETED'];
+
+    const and: any[] = [
+      {
+        OR: [
+          {
+            idempotencyKey: { startsWith: 'POS_TRF_' },
+            status: { in: REQUEST_REP },
+          },
+          {
+            NOT: { idempotencyKey: { startsWith: 'APPROVE_' } },
+            status: { in: EXECUTED },
+          },
+        ],
+      },
+    ];
+
+    if (status === 'completed') {
+      and.push({
+        OR: [
+          { status: 'FULFILLED' },
+          { status: 'COMPLETED', NOT: { idempotencyKey: { startsWith: 'APPROVE_' } } },
+        ],
+      });
+    } else if (status === 'transit') {
+      and.push({
+        status: 'IN_PROGRESS',
+        NOT: { idempotencyKey: { startsWith: 'APPROVE_' } },
+      });
+    }
+
+    if (search && search.trim()) {
+      const q = search.trim();
+      and.push({
+        OR: [
+          { id: { contains: q, mode: Prisma.QueryMode.insensitive } },
+          { idempotencyKey: { contains: q, mode: Prisma.QueryMode.insensitive } },
+          { notes: { contains: q, mode: Prisma.QueryMode.insensitive } },
+          { sourceWarehouse: { name: { contains: q, mode: Prisma.QueryMode.insensitive } } },
+          { destWarehouse: { name: { contains: q, mode: Prisma.QueryMode.insensitive } } },
+          { items: { some: { product: { name: { contains: q, mode: Prisma.QueryMode.insensitive } } } } },
+        ],
+      });
+    }
+
+    const where: any = { AND: and };
+    const variantInclude = {
+      attributeValues: {
+        include: {
+          attributeValue: { select: { value: true, attribute: { select: { name: true } } } },
+        },
+      },
+    } as const;
+
+    const [rows, total] = await Promise.all([
+      this.prisma.stockTransfer.findMany({
+        where,
+        include: {
+          sourceWarehouse: { select: { id: true, name: true, type: true } },
+          destWarehouse: { select: { id: true, name: true, type: true } },
+          items: {
+            include: {
+              product: { select: { id: true, name: true, sku: true } },
+              variant: { include: variantInclude },
+            },
+          },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (page - 1) * perPage,
+        take: perPage,
+      }),
+      this.prisma.stockTransfer.count({ where }),
+    ]);
+
+    // Children of the POS requests on this page (one APPROVE_-keyed header
+    // per requested item) — their ledger legs belong to the request's row.
+    const requestIds = rows
+      .filter((r) => r.idempotencyKey.startsWith('POS_TRF_'))
+      .map((r) => r.id);
+    const children = requestIds.length
+      ? await this.prisma.stockTransfer.findMany({
+          where: {
+            OR: requestIds.map((id) => ({
+              idempotencyKey: { startsWith: `APPROVE_${id}_` },
+            })),
+          },
+          select: { id: true, idempotencyKey: true },
+        })
+      : [];
+
+    const headerIds = [...rows.map((r) => r.id), ...children.map((c) => c.id)];
+    const legs = headerIds.length
+      ? await this.prisma.physicalInventoryLedger.findMany({
+          where: {
+            AND: [
+              { OR: headerIds.map((id) => ({ reason: { contains: id } })) },
+              { type: { in: ['transfer', 'TRANSFER', 'TRANSFER_IN', 'TRANSFER_OUT'] } },
+            ],
+          },
+          include: {
+            warehouse: { select: { id: true, name: true } },
+            product: { select: { id: true, name: true, sku: true } },
+            variant: { include: variantInclude },
+          },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        })
+      : [];
+
+    const variantLabelOf = (v: any): string | null =>
+      v
+        ? v.attributeValues
+            ?.map((av: any) => av.attributeValue?.value)
+            .filter(Boolean)
+            .join(' / ') || null
+        : null;
+
+    const legsFor = (ids: string[]) =>
+      legs.filter((l) => ids.some((id) => (l.reason ?? '').includes(id)));
+
+    const data = rows.map((r) => {
+      const isRequest = r.idempotencyKey.startsWith('POS_TRF_');
+      // child key is APPROVE_<requestId>_<itemId> — match on the request id
+      const childIds = isRequest
+        ? children
+            .filter((c) => c.idempotencyKey.startsWith(`APPROVE_${r.id}_`))
+            .map((c) => c.id)
+        : [];
+      const headerIdsForRow = [r.id, ...childIds];
+      const rowLegs = legsFor(headerIdsForRow);
+
+      let items = r.items.map((it) => ({
+        productId: it.productId,
+        productName: it.product?.name ?? '—',
+        productSku: it.product?.sku ?? null,
+        variantId: it.variantId,
+        variantSku: it.variant?.sku ?? null,
+        variantLabel: variantLabelOf(it.variant),
+        quantity: it.quantity,
+      }));
+
+      if (items.length === 0) {
+        // Manual transfers carry no StockTransferItem rows — derive the
+        // product/variant quantities from the OUT legs of this header.
+        const byKey = new Map<string, any>();
+        for (const leg of rowLegs) {
+          if (leg.direction !== 'OUT') continue;
+          const key = `${leg.productId}::${leg.variantId ?? ''}`;
+          const prev = byKey.get(key);
+          if (prev) {
+            prev.quantity += leg.quantity;
+          } else {
+            byKey.set(key, {
+              productId: leg.productId,
+              productName: leg.product?.name ?? '—',
+              productSku: leg.product?.sku ?? null,
+              variantId: leg.variantId,
+              variantSku: leg.variant?.sku ?? null,
+              variantLabel: variantLabelOf(leg.variant),
+              quantity: leg.quantity,
+            });
+          }
+        }
+        items = [...byKey.values()];
+      }
+
+      const status =
+        r.status === 'FULFILLED'
+          ? 'COMPLETED'
+          : r.status === 'APPROVAL_FAILED'
+            ? 'PARTIAL'
+            : r.status;
+
+      return {
+        id: r.id,
+        kind: isRequest ? 'REQUEST' : 'MANUAL',
+        status,
+        rawStatus: r.status,
+        source: { id: r.sourceWarehouse.id, name: r.sourceWarehouse.name },
+        destination: { id: r.destWarehouse.id, name: r.destWarehouse.name },
+        items,
+        movements: rowLegs.map((l) => ({
+          ledgerId: l.id,
+          direction: l.direction,
+          quantity: l.quantity,
+          stockBefore: l.stockBefore,
+          stockAfter: l.stockAfter,
+          productId: l.productId,
+          productName: l.product?.name ?? '—',
+          variantId: l.variantId,
+          variantLabel: variantLabelOf(l.variant),
+          warehouse: l.warehouse ? { id: l.warehouse.id, name: l.warehouse.name } : null,
+          performedBy: l.performedBy || 'System',
+          performedAt: l.createdAt,
+        })),
+        notes: r.notes,
+        initiatedBy: r.requestedBy || r.performedBy || 'System',
+        createdAt: r.createdAt,
+        completedAt: r.completedAt,
+      };
+    });
+
+    return {
+      data,
+      meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) },
+    };
+  }
+
   async adjust(
     productId?: string,
     quantity?: number,

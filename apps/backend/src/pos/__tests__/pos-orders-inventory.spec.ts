@@ -95,7 +95,7 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
             orderItem: { create: jest.fn() },
             payment: { create: jest.fn() },
             physicalInventory: { findMany: jest.fn().mockResolvedValue([]) },
-            stockTransfer: { create: jest.fn() },
+            stockTransfer: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
             category: { findMany: jest.fn() },
             $queryRawUnsafe: jest.fn().mockResolvedValue([]),
           },
@@ -485,6 +485,79 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
       expect(sources.sort()).toEqual(['banani', 'uttara']);
       expect(result.count).toBe(2);
       expect(result.transfers.map((t) => t.id).sort()).toEqual(['trf-a', 'trf-b']);
+    });
+
+    it('reuses an identical pending request instead of duplicating it', async () => {
+      (prisma.stockTransfer.findMany as jest.Mock).mockResolvedValue([
+        {
+          id: 'pending-1',
+          status: 'REQUESTED',
+          sourceWarehouseId: 'banani',
+          destWarehouseId: 'showroom-1',
+          items: [{ productId: 'prod-1', variantId: null, quantity: 5 }],
+        },
+      ]);
+
+      const result = await service.initiateTransfer(
+        { items: [{ productId: 'prod-1', sourceWarehouseId: 'banani', quantity: 5 }] },
+        'cashier-1',
+        'showroom-1',
+      );
+
+      expect(prisma.stockTransfer.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            destWarehouseId: 'showroom-1',
+            sourceWarehouseId: { in: ['banani'] },
+            status: { in: ['REQUESTED', 'APPROVING'] },
+          }),
+        }),
+      );
+      expect(prisma.stockTransfer.create).not.toHaveBeenCalled();
+      expect(result.count).toBe(1);
+      expect(result.transfers[0]).toMatchObject({
+        id: 'pending-1',
+        status: 'REQUESTED',
+        sourceWarehouseId: 'banani',
+        quantity: 5,
+      });
+    });
+
+    it('creates a new header only for items without a matching pending request', async () => {
+      (prisma.stockTransfer.findMany as jest.Mock).mockResolvedValue([
+        {
+          id: 'pending-1',
+          status: 'REQUESTED',
+          sourceWarehouseId: 'banani',
+          destWarehouseId: 'showroom-1',
+          items: [{ productId: 'prod-1', variantId: null, quantity: 5 }],
+        },
+      ]);
+      (prisma.stockTransfer.create as jest.Mock).mockResolvedValue({ id: 'trf-new' });
+
+      const result = await service.initiateTransfer(
+        {
+          items: [
+            { productId: 'prod-1', sourceWarehouseId: 'banani', quantity: 5 },
+            { productId: 'prod-2', sourceWarehouseId: 'banani', quantity: 3 },
+          ],
+        },
+        'cashier-1',
+        'showroom-1',
+      );
+
+      expect(prisma.stockTransfer.create).toHaveBeenCalledTimes(1);
+      expect(prisma.stockTransfer.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            items: {
+              create: [{ productId: 'prod-2', variantId: null, quantity: 3 }],
+            },
+          }),
+        }),
+      );
+      expect(result.count).toBe(2);
+      expect(result.transfers.map((t) => t.id).sort()).toEqual(['pending-1', 'trf-new']);
     });
 
     it('rejects a source that cannot cover the quantity, without creating anything', async () => {

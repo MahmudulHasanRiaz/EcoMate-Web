@@ -1277,6 +1277,49 @@ export class PosOrdersService {
       }
     }
 
+    // Re-send safety: when the checkout popup is reopened (or Complete
+    // Checkout re-runs validation) an identical request that is still waiting
+    // for approval is reused instead of duplicated — same source → showroom,
+    // same product/variant, same quantity.
+    const pendingHeaders = bySource.size
+      ? await this.prisma.stockTransfer.findMany({
+          where: {
+            destWarehouseId: showroomId,
+            status: { in: ['REQUESTED', 'APPROVING'] },
+            sourceWarehouseId: { in: [...bySource.keys()] },
+          },
+          include: { items: true },
+        })
+      : [];
+
+    const newBySource = new Map<string, CreatePosTransferRequestDto['items']>();
+    const reused: Array<{
+      headerId: string;
+      status: string;
+      item: CreatePosTransferRequestDto['items'][number];
+    }> = [];
+    for (const [sourceWarehouseId, items] of bySource) {
+      const fresh: CreatePosTransferRequestDto['items'] = [];
+      for (const item of items) {
+        const match = pendingHeaders.find(
+          (h) =>
+            h.sourceWarehouseId === sourceWarehouseId &&
+            h.items.some(
+              (it) =>
+                it.productId === item.productId &&
+                (it.variantId ?? null) === (item.variantId ?? null) &&
+                it.quantity === item.quantity,
+            ),
+        );
+        if (match) {
+          reused.push({ headerId: match.id, status: match.status, item });
+        } else {
+          fresh.push(item);
+        }
+      }
+      if (fresh.length) newBySource.set(sourceWarehouseId, fresh);
+    }
+
     const transfers: Array<{
       id: string;
       productId: string;
@@ -1288,7 +1331,7 @@ export class PosOrdersService {
 
     await this.prisma.$transaction(async (tx) => {
       let group = 0;
-      for (const [sourceWarehouseId, items] of bySource) {
+      for (const [sourceWarehouseId, items] of newBySource) {
         group += 1;
         const idempotencyKey = `POS_TRF_${cashierId}_${Date.now()}_${group}_${Math.random().toString(36).slice(2, 8)}`;
 
@@ -1338,6 +1381,17 @@ export class PosOrdersService {
         }
       }
     });
+
+    for (const reuse of reused) {
+      transfers.push({
+        id: reuse.headerId,
+        productId: reuse.item.productId,
+        variantId: reuse.item.variantId,
+        quantity: reuse.item.quantity,
+        sourceWarehouseId: reuse.item.sourceWarehouseId,
+        status: reuse.status,
+      });
+    }
 
     return { transfers, count: transfers.length };
   }
