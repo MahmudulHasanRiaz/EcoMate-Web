@@ -6,6 +6,7 @@ import { VariantModal } from './variant-modal'
 import { SafeImage } from './safe-image'
 import { productImageUrl, variantImageUrl } from '../lib/media'
 import { StockIndicator } from './stock-indicator'
+import { StockLocationsModal, StockLookupTarget } from './stock-locations-modal'
 import { toast } from 'sonner'
 
 interface Props {
@@ -22,6 +23,11 @@ export function ProductGrid({ categoryId, searchQuery, barcodeInput, onBarcodeSu
   const [error, setError] = useState<string | null>(null)
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null)
   const [variantModalOpen, setVariantModalOpen] = useState(false)
+  // Cross-location lookup only means something under physical inventory —
+  // in managed-stock mode stock has no location, so no "See where".
+  const [inventoryManagement, setInventoryManagement] = useState(false)
+  const [stockTarget, setStockTarget] = useState<StockLookupTarget | null>(null)
+  const [stockLookupOpen, setStockLookupOpen] = useState(false)
   const addItem = useCartStore((s) => s.addItem)
 
   const fetchProducts = useCallback(async () => {
@@ -35,6 +41,7 @@ export function ProductGrid({ categoryId, searchQuery, barcodeInput, onBarcodeSu
       if (showroomId) params.showroomId = showroomId
       const res = await getPosProducts(params)
       setProducts(res.data.data || [])
+      setInventoryManagement(res.data?.inventoryManagement === true)
     } catch (err: any) {
       // If we have cached products, keep showing them — don't clear on error
       setError(err?.message || 'Failed to load products')
@@ -44,6 +51,11 @@ export function ProductGrid({ categoryId, searchQuery, barcodeInput, onBarcodeSu
   }, [categoryId, searchQuery, barcodeInput])
 
   useEffect(() => { fetchProducts() }, [fetchProducts])
+
+  const openStockLookup = (target: StockLookupTarget) => {
+    setStockTarget(target)
+    setStockLookupOpen(true)
+  }
 
   const handleProductClick = (product: any) => {
     if (product.type === 'variable' && product.variants && product.variants.length > 0) {
@@ -246,6 +258,11 @@ export function ProductGrid({ categoryId, searchQuery, barcodeInput, onBarcodeSu
                     available={p._showroomAvailable ?? 0}
                     lowStockQty={p.lowStockQty}
                     showCount={true}
+                    onClick={
+                      inventoryManagement
+                        ? () => openStockLookup({ productId: p.id, name: p.name })
+                        : undefined
+                    }
                   />
                 </div>
               )}
@@ -254,11 +271,30 @@ export function ProductGrid({ categoryId, searchQuery, barcodeInput, onBarcodeSu
         })}
       </div>
 
-      <VariantModal 
+      <VariantModal
         open={variantModalOpen}
         onOpenChange={setVariantModalOpen}
         product={selectedProduct}
         onAdd={handleAddVariant}
+        allowStockLookup={inventoryManagement}
+        onSeeWhere={(variant, variantName) => {
+          if (!selectedProduct) return
+          openStockLookup({
+            productId: selectedProduct.id,
+            variantId: variant.id,
+            name: selectedProduct.name,
+            variantName,
+          })
+          // One modal at a time: hand off to the locations modal. Close is
+          // deferred so Radix finishes its pointer-down-outside pass first.
+          setTimeout(() => setVariantModalOpen(false), 0)
+        }}
+      />
+
+      <StockLocationsModal
+        open={stockLookupOpen}
+        onOpenChange={setStockLookupOpen}
+        target={stockTarget}
       />
     </>
   )

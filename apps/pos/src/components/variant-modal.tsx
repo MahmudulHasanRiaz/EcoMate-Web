@@ -9,9 +9,18 @@ interface Props {
   onOpenChange: (open: boolean) => void
   product: any
   onAdd: (variant: any, variantName: string) => void
+  allowStockLookup?: boolean
+  onSeeWhere?: (variant: any, variantName: string) => void
 }
 
-export function VariantModal({ open, onOpenChange, product, onAdd }: Props) {
+export function VariantModal({
+  open,
+  onOpenChange,
+  product,
+  onAdd,
+  allowStockLookup = false,
+  onSeeWhere,
+}: Props) {
   if (!product || !product.variants || product.variants.length === 0) return null
 
   return (
@@ -83,8 +92,13 @@ export function VariantModal({ open, onOpenChange, product, onAdd }: Props) {
                         stock={v._showroomStock ?? v.managedStockQuantity ?? 0}
                         available={v._showroomAvailable ?? (v.managedStockQuantity ?? 0) - (v.reservedStock ?? 0)}
                         showCount={true}
+                        onClick={
+                          allowStockLookup && onSeeWhere
+                            ? () => onSeeWhere(v, variantName)
+                            : undefined
+                        }
                       />
-                  </div>
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-3 shrink-0">

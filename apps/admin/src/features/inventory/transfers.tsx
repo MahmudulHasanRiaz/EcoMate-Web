@@ -16,7 +16,9 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandInput, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
-import { Plus, ArrowRight, Truck, Search, Eye, AlertCircle, Loader2, Check, ChevronsUpDown } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
+import { Plus, ArrowRight, Truck, Search, Eye, AlertCircle, Loader2, Check, ChevronsUpDown, X, Send } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { UserBadge } from '@/components/user-badge'
 
@@ -45,6 +47,34 @@ interface TransferLog {
 interface TransferLogResponse {
   data: TransferLog[]
   meta: { total: number; page: number; perPage: number; totalPages: number }
+}
+
+interface TransferRequestItem {
+  id: string
+  productId: string
+  variantId: string | null
+  quantity: number
+  product: { id: string; name: string; sku: string } | null
+  variant: { id: string; sku: string } | null
+}
+
+interface TransferRequest {
+  id: string
+  status: string
+  notes: string | null
+  createdAt: string
+  sourceWarehouse: { id: string; name: string; type: string }
+  destWarehouse: { id: string; name: string; type: string }
+  requestedByUser: { id: string; firstName: string; lastName: string; email: string } | null
+  items: TransferRequestItem[]
+}
+
+const REQUEST_STATUS_META: Record<string, { label: string; variant: 'warning' | 'info' | 'success' | 'secondary' | 'danger' }> = {
+  REQUESTED: { label: 'Pending approval', variant: 'warning' },
+  APPROVING: { label: 'Approving', variant: 'info' },
+  FULFILLED: { label: 'Fulfilled', variant: 'success' },
+  REJECTED: { label: 'Rejected', variant: 'secondary' },
+  APPROVAL_FAILED: { label: 'Approval failed', variant: 'danger' },
 }
 
 interface Product {
@@ -122,6 +152,54 @@ export function Transfers() {
     onError: (e: any) => toast.error(e.response?.data?.message || 'Error creating transfer'),
   })
 
+  // ── POS transfer requests ────────────────────────────────────────────────
+  const [tab, setTab] = useState<'requests' | 'history'>('requests')
+  const [decision, setDecision] = useState<{ mode: 'approve' | 'reject'; request: TransferRequest } | null>(null)
+  const [rejectReason, setRejectReason] = useState('')
+
+  const {
+    data: requests = [],
+    isLoading: requestsLoading,
+    isError: requestsError,
+    error: requestsLoadError,
+  } = useQuery<TransferRequest[]>({
+    queryKey: ['inventory-transfer-requests'],
+    queryFn: () => apiClient.get('/inventory/transfer-requests').then(r => r.data),
+    refetchInterval: 30_000,
+  })
+
+  const pendingRequests = requests.filter(r => r.status === 'REQUESTED').length
+
+  const invalidateRequestData = () => {
+    queryClient.invalidateQueries({ queryKey: ['inventory-transfer-requests'] })
+    queryClient.invalidateQueries({ queryKey: ['inventory-logs'] })
+    queryClient.invalidateQueries({ queryKey: ['inventory-physical-list'] })
+    queryClient.invalidateQueries({ queryKey: ['inventory-stock-overview'] })
+    queryClient.invalidateQueries({ queryKey: ['inventory-history-logs'] })
+  }
+
+  const decideMut = useMutation({
+    mutationFn: ({ id, mode, reason }: { id: string; mode: 'approve' | 'reject'; reason?: string }) =>
+      mode === 'approve'
+        ? apiClient.post(`/inventory/transfer-requests/${id}/approve`)
+        : apiClient.post(`/inventory/transfer-requests/${id}/reject`, { reason: reason || undefined }),
+    onSuccess: (_res, vars) => {
+      invalidateRequestData()
+      setDecision(null)
+      setRejectReason('')
+      toast.success(
+        vars.mode === 'approve'
+          ? 'Transfer approved — stock moved to the showroom'
+          : 'Transfer request rejected',
+      )
+    },
+    onError: (e: any, vars) => {
+      const raw = e?.response?.data?.message ?? e?.message ?? 'Unknown error'
+      const message = Array.isArray(raw) ? raw.join('\n') : raw
+      toast.error(`${vars.mode === 'approve' ? 'Approve' : 'Reject'} failed: ${message}`)
+    },
+  })
+
   const resetForm = () => {
     setFormSource('')
     setFormDest('')
@@ -172,6 +250,126 @@ export function Transfers() {
           </Button>
         </div>
 
+        <Tabs value={tab} onValueChange={(v) => setTab(v as 'requests' | 'history')}>
+          <TabsList>
+            <TabsTrigger value='requests' className='gap-1.5'>
+              Requests
+              {pendingRequests > 0 && (
+                <Badge variant='warning' className='ml-1 px-1.5 text-[10px]'>{pendingRequests}</Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value='history'>History</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value='requests' className='flex flex-col gap-4'>
+            <p className='text-sm text-muted-foreground'>
+              Stock requests raised from the POS app when a showroom is out of stock.
+              Nothing moves until you approve.
+            </p>
+
+            <div className='rounded-md border bg-card'>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Requested</TableHead>
+                    <TableHead>Route</TableHead>
+                    <TableHead>Items</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className='text-right'>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {requestsLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className='text-center py-8'>
+                        <Loader2 className='animate-spin h-6 w-6 mx-auto' />
+                      </TableCell>
+                    </TableRow>
+                  ) : requestsError ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className='text-center py-8 text-destructive'>
+                        Failed to load requests.{' '}
+                        {(requestsLoadError as any)?.response?.data?.message ||
+                          (requestsLoadError as Error)?.message ||
+                          'Unknown error'}
+                      </TableCell>
+                    </TableRow>
+                  ) : requests.length ? (
+                    requests.map((req) => {
+                      const meta = REQUEST_STATUS_META[req.status] ?? { label: req.status, variant: 'secondary' as const }
+                      const isPending = req.status === 'REQUESTED'
+                      return (
+                        <TableRow key={req.id}>
+                          <TableCell>
+                            <div className='text-sm font-medium'>{new Date(req.createdAt).toLocaleString()}</div>
+                            <div className='text-xs text-muted-foreground'>
+                              {req.requestedByUser
+                                ? `${req.requestedByUser.firstName} ${req.requestedByUser.lastName}`.trim()
+                                : 'Unknown cashier'}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className='flex items-center gap-2 text-sm'>
+                              <span className='font-medium'>{req.sourceWarehouse?.name}</span>
+                              <ArrowRight className='h-3 w-3 text-muted-foreground' />
+                              <span>{req.destWarehouse?.name}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className='space-y-1'>
+                              {req.items.map((item) => (
+                                <div key={item.id} className='text-sm'>
+                                  <span className='font-medium'>{item.product?.name ?? item.productId}</span>
+                                  {item.variant && (
+                                    <span className='text-xs text-muted-foreground'> · {item.variant.sku}</span>
+                                  )}
+                                  <Badge variant='outline' className='ml-2 text-xs'>×{item.quantity}</Badge>
+                                </div>
+                              ))}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={meta.variant}>{meta.label}</Badge>
+                          </TableCell>
+                          <TableCell className='text-right'>
+                            {isPending ? (
+                              <div className='flex justify-end gap-2'>
+                                <Button
+                                  size='sm'
+                                  onClick={() => setDecision({ mode: 'approve', request: req })}
+                                  disabled={decideMut.isPending}
+                                >
+                                  <Check className='h-4 w-4 mr-1' /> Approve
+                                </Button>
+                                <Button
+                                  size='sm'
+                                  variant='outline'
+                                  onClick={() => setDecision({ mode: 'reject', request: req })}
+                                  disabled={decideMut.isPending}
+                                >
+                                  <X className='h-4 w-4 mr-1' /> Reject
+                                </Button>
+                              </div>
+                            ) : (
+                              <span className='text-xs text-muted-foreground'>—</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={5} className='text-center py-12 text-muted-foreground'>
+                        No transfer requests from POS.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </TabsContent>
+
+          <TabsContent value='history' className='flex flex-col gap-4'>
         <div className="flex items-center gap-4 bg-muted/30 p-2 rounded-lg border">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -263,6 +461,8 @@ export function Transfers() {
             </TableBody>
           </Table>
         </div>
+          </TabsContent>
+        </Tabs>
       </Main>
 
       <Dialog open={newTransferOpen} onOpenChange={(v) => { if (!v) { setNewTransferOpen(false); resetForm() } }}>
@@ -439,6 +639,80 @@ export function Transfers() {
             <Button onClick={handleCreateTransfer} disabled={createTransferMut.isPending}>
               {createTransferMut.isPending && <Loader2 className="animate-spin h-4 w-4 mr-2" />}
               Confirm & Dispatch Transfer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={!!decision}
+        onOpenChange={(v) => { if (!v) { setDecision(null); setRejectReason('') } }}
+      >
+        <DialogContent className='sm:max-w-[480px]'>
+          <DialogHeader>
+            <DialogTitle className='flex items-center gap-2'>
+              {decision?.mode === 'approve' ? <Send className='h-5 w-5' /> : <AlertCircle className='h-5 w-5' />}
+              {decision?.mode === 'approve' ? 'Approve transfer request' : 'Reject transfer request'}
+            </DialogTitle>
+            <DialogDescription>
+              {decision?.mode === 'approve'
+                ? 'Stock moves immediately from the source location to the showroom.'
+                : 'The request is closed. No stock moves.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          {decision && (
+            <div className='space-y-4 py-2'>
+              <div className='rounded-lg border bg-muted/20 p-3 space-y-2 text-sm'>
+                <div className='flex items-center gap-2'>
+                  <span className='font-medium'>{decision.request.sourceWarehouse?.name}</span>
+                  <ArrowRight className='h-3 w-3 text-muted-foreground' />
+                  <span>{decision.request.destWarehouse?.name}</span>
+                </div>
+                {decision.request.items.map((item) => (
+                  <div key={item.id} className='flex items-center justify-between'>
+                    <span>{item.product?.name ?? item.productId}</span>
+                    <Badge variant='outline'>×{item.quantity}</Badge>
+                  </div>
+                ))}
+              </div>
+
+              {decision.mode === 'reject' && (
+                <div className='space-y-2'>
+                  <Label>Reason (optional)</Label>
+                  <Textarea
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    placeholder='Why is this request being rejected?'
+                    rows={3}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant='outline'
+              onClick={() => { setDecision(null); setRejectReason('') }}
+              disabled={decideMut.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant={decision?.mode === 'approve' ? 'default' : 'destructive'}
+              disabled={!decision || decideMut.isPending}
+              onClick={() => {
+                if (decision) {
+                  decideMut.mutate({
+                    id: decision.request.id,
+                    mode: decision.mode,
+                    reason: rejectReason,
+                  })
+                }
+              }}
+            >
+              {decideMut.isPending && <Loader2 className='animate-spin h-4 w-4 mr-2' />}
+              {decision?.mode === 'approve' ? 'Approve & move stock' : 'Reject request'}
             </Button>
           </DialogFooter>
         </DialogContent>

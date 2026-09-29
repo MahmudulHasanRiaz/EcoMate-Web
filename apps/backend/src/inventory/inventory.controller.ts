@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
@@ -10,6 +10,7 @@ import {
   BulkAdjustInventoryDto,
 } from './dto/adjust-inventory.dto';
 import { ValuationQueryDto, StockTransferDto } from './dto/valuation.dto';
+import { RejectTransferRequestDto } from './dto/transfer-request.dto';
 import { LedgerQueryDto } from './dto/ledger-query.dto';
 
 @Controller('inventory')
@@ -124,6 +125,41 @@ export class InventoryController {
     @CurrentUser() user: { email: string },
   ) {
     return this.inventoryService.transfer(body, user.email);
+  }
+
+  /**
+   * POS transfer requests ("See where → Request transfer" in the POS app).
+   * A request is a StockTransfer row with items but no stock movement yet;
+   * approving it runs the transfer() pipeline, rejecting it closes it out.
+   */
+  @Roles('superadmin', 'admin', 'manager')
+  @Get('transfer-requests')
+  async transferRequests() {
+    return this.inventoryService.listTransferRequests();
+  }
+
+  @Roles('superadmin', 'admin', 'manager')
+  @UseGuards(InventoryEnabledGuard)
+  @Post('transfer-requests/:id/approve')
+  async approveTransferRequest(
+    @Param('id') id: string,
+    @CurrentUser() user: { email: string },
+  ) {
+    return this.inventoryService.approveTransferRequest(id, user.email);
+  }
+
+  @Roles('superadmin', 'admin', 'manager')
+  @Post('transfer-requests/:id/reject')
+  async rejectTransferRequest(
+    @Param('id') id: string,
+    @Body() body: RejectTransferRequestDto,
+    @CurrentUser() user: { email: string },
+  ) {
+    return this.inventoryService.rejectTransferRequest(
+      id,
+      user.email,
+      body?.reason,
+    );
   }
 
   /**

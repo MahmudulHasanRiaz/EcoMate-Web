@@ -1,6 +1,7 @@
 import {
   Injectable,
   BadRequestException,
+  ConflictException,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -1287,5 +1288,177 @@ export class InventoryService {
         destination: dto.destinationLocation,
       };
     });
+  }
+
+  /**
+   * Statuses that identify a transfer REQUEST as opposed to a transfer that
+   * transfer() executed (those end up IN_PROGRESS → COMPLETED). A request
+   * moves REQUESTED → APPROVING → FULFILLED, or → REJECTED / APPROVAL_FAILED.
+   */
+  private static readonly REQUEST_STATUSES = [
+    'REQUESTED',
+    'APPROVING',
+    'FULFILLED',
+    'REJECTED',
+    'APPROVAL_FAILED',
+  ];
+
+  private async attachRequesters<T extends { requestedBy: string | null }>(
+    rows: T[],
+  ): Promise<Array<T & { requestedByUser: { id: string; firstName: string; lastName: string; email: string } | null }>> {
+    const ids = [...new Set(rows.map((r) => r.requestedBy).filter(Boolean))] as string[];
+    const users = ids.length
+      ? await this.prisma.userProfile.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, firstName: true, lastName: true, email: true },
+        })
+      : [];
+    const byId = new Map(users.map((u) => [u.id, u]));
+    return rows.map((row) => ({
+      ...row,
+      requestedByUser: row.requestedBy ? byId.get(row.requestedBy) ?? null : null,
+    }));
+  }
+
+  /** POS transfer requests, newest first (pending + recently handled). */
+  async listTransferRequests() {
+    const rows = await this.prisma.stockTransfer.findMany({
+      where: { status: { in: InventoryService.REQUEST_STATUSES } },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      include: {
+        sourceWarehouse: { select: { id: true, name: true, type: true } },
+        destWarehouse: { select: { id: true, name: true, type: true } },
+        items: {
+          include: {
+            product: { select: { id: true, name: true, sku: true } },
+            variant: { select: { id: true, sku: true } },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+    return this.attachRequesters(rows);
+  }
+
+  private async getTransferRequest(id: string) {
+    const row = await this.prisma.stockTransfer.findUnique({
+      where: { id },
+      include: {
+        sourceWarehouse: { select: { id: true, name: true, type: true } },
+        destWarehouse: { select: { id: true, name: true, type: true } },
+        items: {
+          include: {
+            product: { select: { id: true, name: true, sku: true } },
+            variant: { select: { id: true, sku: true } },
+          },
+        },
+      },
+    });
+    if (!row) throw new NotFoundException('Transfer request not found');
+    const [enriched] = await this.attachRequesters([row]);
+    return enriched;
+  }
+
+  /**
+   * Execute a POS transfer request: claims it with a compare-and-swap so two
+   * approvers can never both move the stock, then runs the regular transfer()
+   * pipeline (source deduction + ledger + FIFO costing lots + destination add)
+   * once per item.
+   */
+  async approveTransferRequest(id: string, performedBy: string) {
+    const request = await this.prisma.stockTransfer.findUnique({
+      where: { id },
+      include: { items: true },
+    });
+    if (!request) throw new NotFoundException('Transfer request not found');
+    if (request.items.length === 0) {
+      throw new BadRequestException('Transfer request has no items to move');
+    }
+    if (request.status !== 'REQUESTED') {
+      throw new ConflictException(
+        `Transfer request is already ${request.status.toLowerCase().replace('_', ' ')}`,
+      );
+    }
+
+    const claimed = await this.prisma.stockTransfer.updateMany({
+      where: { id, status: 'REQUESTED' },
+      data: { status: 'APPROVING' },
+    });
+    if (claimed.count !== 1) {
+      throw new ConflictException('Transfer request was already handled');
+    }
+
+    const executed: string[] = [];
+    try {
+      for (const item of request.items) {
+        const movement = await this.transfer(
+          {
+            productId: item.productId,
+            variantId: item.variantId ?? undefined,
+            sourceLocation: request.sourceWarehouseId,
+            destinationLocation: request.destWarehouseId,
+            quantity: item.quantity,
+            notes: `Approved POS transfer request ${request.id}`,
+            idempotencyKey: `APPROVE_${request.id}_${item.id}`,
+          },
+          performedBy,
+        );
+        executed.push(movement.id);
+      }
+    } catch (err) {
+      // Part of the request may already have moved — never silently reopen it.
+      const failure = (err as Error).message ?? 'unknown error';
+      await this.prisma.stockTransfer.update({
+        where: { id },
+        data: {
+          status: 'APPROVAL_FAILED',
+          notes: `${request.notes ?? ''} — approval stopped after ${executed.length}/${request.items.length} item(s): ${failure}`.trim(),
+        },
+      });
+      throw err;
+    }
+
+    await this.prisma.stockTransfer.update({
+      where: { id },
+      data: {
+        status: 'FULFILLED',
+        completedAt: new Date(),
+        notes: `${request.notes ?? ''} — fulfilled: ${executed.join(', ')}`.trim(),
+      },
+    });
+
+    return this.getTransferRequest(id);
+  }
+
+  async rejectTransferRequest(id: string, performedBy: string, reason?: string) {
+    const request = await this.prisma.stockTransfer.findUnique({
+      where: { id },
+      select: { id: true, status: true, notes: true },
+    });
+    if (!request) throw new NotFoundException('Transfer request not found');
+
+    const detail = [
+      'rejected',
+      reason?.trim() ? `reason: ${reason.trim()}` : null,
+      `by ${performedBy}`,
+    ]
+      .filter(Boolean)
+      .join(', ');
+
+    const updated = await this.prisma.stockTransfer.updateMany({
+      where: { id, status: 'REQUESTED' },
+      data: {
+        status: 'REJECTED',
+        notes: `${request.notes ?? ''} — ${detail}`.trim(),
+      },
+    });
+    if (updated.count !== 1) {
+      throw new ConflictException(
+        `Transfer request is already ${request.status.toLowerCase().replace('_', ' ')}`,
+      );
+    }
+
+    return this.getTransferRequest(id);
   }
 }

@@ -943,123 +943,109 @@ export class PosOrdersService {
       this.prisma.product.count({ where }),
     ]);
 
+    // Inventory-management flag drives POS stock semantics (physical vs
+    // managed) and whether cross-location lookup means anything at all.
+    const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
+
     // Compute per-showroom stock availability when showroomId is provided
     if (query.showroomId) {
-      const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
       const productIds = data.map((p: any) => p.id);
       const variantIds = data.flatMap((p: any) =>
         (p.variants || []).map((v: any) => v.id),
       );
 
-      let physicalMap = new Map<string, { stock: number; reserved: number }>();
+      const physicalMap = new Map<string, { stock: number; reserved: number }>();
+      const networkMap = new Map<string, { stock: number; reserved: number }>();
+
+      const accumulate = (
+        map: Map<string, { stock: number; reserved: number }>,
+        rec: {
+          productId: string;
+          variantId: string | null;
+          quantity: number;
+          reservedQuantity: number;
+        },
+      ) => {
+        // Simple products key on productId (variantId is null), variable on variantId
+        const key = rec.variantId || rec.productId;
+        const existing = map.get(key);
+        if (existing) {
+          existing.stock += rec.quantity;
+          existing.reserved += rec.reservedQuantity;
+        } else {
+          map.set(key, {
+            stock: rec.quantity,
+            reserved: rec.reservedQuantity,
+          });
+        }
+      };
 
       if (imEnabled) {
-        // Query physical inventory for current showroom (aggregate: for simple products, productId only; for variable, variantId)
-        const physicalRecords = await this.prisma.physicalInventory.findMany({
-          where: {
-            warehouseId: query.showroomId,
-            OR: [
-              { productId: { in: productIds }, variantId: null },
-              { variantId: { in: variantIds } },
-            ],
-          },
-        });
-
-        for (const rec of physicalRecords) {
-          const key = rec.variantId || rec.productId;
-          const existing = physicalMap.get(key);
-          if (existing) {
-            existing.stock += rec.quantity;
-            existing.reserved += rec.reservedQuantity;
-          } else {
-            physicalMap.set(key, {
-              stock: rec.quantity,
-              reserved: rec.reservedQuantity,
-            });
-          }
-        }
-      }
-
-      for (const product of data as any[]) {
-        if (product.type === 'variable' && product.variants?.length) {
-          for (const variant of product.variants) {
-            let currentStock: number;
-            let currentAvailable: number;
-            if (imEnabled) {
-              const entry = physicalMap.get(variant.id);
-              currentStock = entry?.stock ?? 0;
-              currentAvailable = (entry?.stock ?? 0) - (entry?.reserved ?? 0);
-            } else {
-              currentStock = variant.managedStockQuantity ?? 0;
-              currentAvailable = (variant.managedStockQuantity ?? 0) - (variant.reservedStock ?? 0);
-            }
-            variant._showroomStock = currentStock;
-            variant._showroomAvailable = currentAvailable;
-          }
-          // For variable products, overall stock = sum of variant stocks
-          const totalStock = product.variants.reduce((s: number, v: any) => s + (v._showroomStock ?? 0), 0);
-          const totalAvailable = product.variants.reduce((s: number, v: any) => s + (v._showroomAvailable ?? 0), 0);
-          product._showroomStock = totalStock;
-          product._showroomAvailable = totalAvailable;
-        } else {
-          if (imEnabled) {
-            const entry = physicalMap.get(product.id);
-            product._showroomStock = entry?.stock ?? 0;
-            product._showroomAvailable = (entry?.stock ?? 0) - (entry?.reserved ?? 0);
-          } else {
-            product._showroomStock = product.managedStockQuantity ?? 0;
-            product._showroomAvailable = (product.managedStockQuantity ?? 0) - (product.reservedStock ?? 0);
-          }
-        }
-
-        // Compute total network stock across ALL warehouses
-        if (imEnabled) {
-          const networkRecords = await this.prisma.physicalInventory.findMany({
+        // Fetched ONCE for the whole page — the network query used to run
+        // inside the per-product loop (N identical queries per request).
+        const [showroomRecords, networkRecords] = await Promise.all([
+          this.prisma.physicalInventory.findMany({
+            where: {
+              warehouseId: query.showroomId,
+              OR: [
+                { productId: { in: productIds }, variantId: null },
+                { variantId: { in: variantIds } },
+              ],
+            },
+          }),
+          this.prisma.physicalInventory.findMany({
             where: {
               OR: [
                 { productId: { in: productIds }, variantId: null },
                 { variantId: { in: variantIds } },
               ],
             },
-          });
+          }),
+        ]);
+        showroomRecords.forEach((rec) => accumulate(physicalMap, rec));
+        networkRecords.forEach((rec) => accumulate(networkMap, rec));
+      }
 
-          const networkMap = new Map<string, { stock: number; reserved: number }>();
-          for (const rec of networkRecords) {
-            const key = rec.variantId || rec.productId;
-            const existing = networkMap.get(key);
-            if (existing) {
-              existing.stock += rec.quantity;
-              existing.reserved += rec.reservedQuantity;
+      for (const product of data as any[]) {
+        if (product.type === 'variable' && product.variants?.length) {
+          for (const variant of product.variants) {
+            if (imEnabled) {
+              const entry = physicalMap.get(variant.id);
+              variant._showroomStock = entry?.stock ?? 0;
+              variant._showroomAvailable = (entry?.stock ?? 0) - (entry?.reserved ?? 0);
+              const net = networkMap.get(variant.id);
+              variant._networkAvailable = (net?.stock ?? 0) - (net?.reserved ?? 0);
             } else {
-              networkMap.set(key, { stock: rec.quantity, reserved: rec.reservedQuantity });
+              variant._showroomStock = variant.managedStockQuantity ?? 0;
+              variant._showroomAvailable =
+                (variant.managedStockQuantity ?? 0) - (variant.reservedStock ?? 0);
+              variant._networkAvailable = variant.managedStockQuantity ?? 0;
             }
           }
-
-          for (const product of data as any[]) {
-            if (product.type === 'variable' && product.variants?.length) {
-              for (const variant of product.variants) {
-                const entry = networkMap.get(variant.id);
-                variant._networkAvailable = (entry?.stock ?? 0) - (entry?.reserved ?? 0);
-              }
-              product._networkAvailable = product.variants.reduce(
-                (s: number, v: any) => s + (v._networkAvailable ?? 0), 0,
-              );
-            } else {
-              const entry = networkMap.get(product.id);
-              product._networkAvailable = (entry?.stock ?? 0) - (entry?.reserved ?? 0);
-            }
-          }
+          // For variable products, overall stock = sum of variant stocks.
+          // _networkAvailable is summed from the variants too: the parent row
+          // carries no managedStockQuantity of its own, so reading it directly
+          // reported 0 network-wide even when variants had stock.
+          product._showroomStock = product.variants.reduce((s: number, v: any) => s + (v._showroomStock ?? 0), 0);
+          product._showroomAvailable = product.variants.reduce((s: number, v: any) => s + (v._showroomAvailable ?? 0), 0);
+          product._networkAvailable = product.variants.reduce((s: number, v: any) => s + (v._networkAvailable ?? 0), 0);
+        } else if (imEnabled) {
+          const entry = physicalMap.get(product.id);
+          product._showroomStock = entry?.stock ?? 0;
+          product._showroomAvailable = (entry?.stock ?? 0) - (entry?.reserved ?? 0);
+          const net = networkMap.get(product.id);
+          product._networkAvailable = (net?.stock ?? 0) - (net?.reserved ?? 0);
         } else {
-          // IM OFF: managedStockQuantity is the global total
-          for (const product of data as any[]) {
-            product._networkAvailable = product.managedStockQuantity ?? 0;
-          }
+          product._showroomStock = product.managedStockQuantity ?? 0;
+          product._showroomAvailable =
+            (product.managedStockQuantity ?? 0) - (product.reservedStock ?? 0);
+          product._networkAvailable = product.managedStockQuantity ?? 0;
         }
       }
     }
 
     await this.enrichProductMedia(data);
-    return { data, total, page, perPage };
+    return { data, total, page, perPage, inventoryManagement: imEnabled };
   }
 
   async validateStock(
@@ -1229,40 +1215,108 @@ export class PosOrdersService {
     cashierId: string,
     showroomId: string,
   ) {
-    const transfers: Array<{
-    id: string;
-    productId: string;
-    variantId?: string;
-    quantity: number;
-    sourceWarehouseId: string;
-    status: string;
-  }> = [];
-
-    for (const item of dto.items) {
-      const idempotencyKey = `POS_TRF_${cashierId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-      const transfer = await this.prisma.stockTransfer.create({
-        data: {
-          idempotencyKey,
-          sourceWarehouseId: item.sourceWarehouseId,
-          destWarehouseId: showroomId,
-          status: 'REQUESTED',
-          notes: dto.notes || `Transfer requested from POS for order ${dto.orderId || 'N/A'}`,
-          performedBy: cashierId,
-          requestedBy: cashierId,
-          orderId: dto.orderId || null,
-        },
-      });
-
-      transfers.push({
-        id: transfer.id,
-        productId: item.productId,
-        variantId: item.variantId,
-        quantity: item.quantity,
-        sourceWarehouseId: item.sourceWarehouseId,
-        status: 'REQUESTED',
-      });
+    if (!dto.items?.length) {
+      throw new BadRequestException(
+        'Transfer request requires at least one item',
+      );
     }
+
+    // A StockTransfer header carries ONE source warehouse, so a request that
+    // spans two origins becomes two headers.
+    const bySource = new Map<string, CreatePosTransferRequestDto['items']>();
+    for (const item of dto.items) {
+      if (item.sourceWarehouseId === showroomId) {
+        throw new BadRequestException(
+          'Source location must differ from the current showroom',
+        );
+      }
+      const list = bySource.get(item.sourceWarehouseId) ?? [];
+      list.push(item);
+      bySource.set(item.sourceWarehouseId, list);
+    }
+
+    // Validate EVERY source before writing anything — no half-created headers
+    // when one location cannot cover its share.
+    for (const [sourceWarehouseId, items] of bySource) {
+      for (const item of items) {
+        const availability = await this.stock.checkPhysicalAvailability(
+          item.productId,
+          sourceWarehouseId,
+          item.variantId,
+        );
+        if (availability.availableStock < item.quantity) {
+          const product = await this.prisma.product.findUnique({
+            where: { id: item.productId },
+            select: { name: true },
+          });
+          throw new BadRequestException(
+            `"${product?.name ?? item.productId}" has only ${Math.max(availability.availableStock, 0)} available at that location (requested ${item.quantity})`,
+          );
+        }
+      }
+    }
+
+    const transfers: Array<{
+      id: string;
+      productId: string;
+      variantId?: string;
+      quantity: number;
+      sourceWarehouseId: string;
+      status: string;
+    }> = [];
+
+    await this.prisma.$transaction(async (tx) => {
+      let group = 0;
+      for (const [sourceWarehouseId, items] of bySource) {
+        group += 1;
+        const idempotencyKey = `POS_TRF_${cashierId}_${Date.now()}_${group}_${Math.random().toString(36).slice(2, 8)}`;
+
+        // The header is what an approver reads first — put the actual wares
+        // in the notes so a request is legible without opening its items.
+        const labels: string[] = [];
+        for (const item of items) {
+          const product = await tx.product.findUnique({
+            where: { id: item.productId },
+            select: { name: true },
+          });
+          labels.push(`${item.quantity}x ${product?.name ?? item.productId}`);
+        }
+
+        const transfer = await tx.stockTransfer.create({
+          data: {
+            idempotencyKey,
+            sourceWarehouseId,
+            destWarehouseId: showroomId,
+            status: 'REQUESTED',
+            notes: dto.notes
+              ? `${dto.notes} — ${labels.join(', ')}`
+              : `Transfer requested from POS — ${labels.join(', ')}`,
+            performedBy: cashierId,
+            requestedBy: cashierId,
+            orderId: dto.orderId || null,
+            items: {
+              create: items.map((item) => ({
+                productId: item.productId,
+                variantId: item.variantId ?? null,
+                quantity: item.quantity,
+              })),
+            },
+          },
+          include: { items: true },
+        });
+
+        for (const item of items) {
+          transfers.push({
+            id: transfer.id,
+            productId: item.productId,
+            variantId: item.variantId,
+            quantity: item.quantity,
+            sourceWarehouseId,
+            status: 'REQUESTED',
+          });
+        }
+      }
+    });
 
     return { transfers, count: transfers.length };
   }

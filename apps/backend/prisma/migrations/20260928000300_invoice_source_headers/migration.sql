@@ -9,4 +9,7 @@ ALTER TABLE "CourierSettlementInvoice" ADD COLUMN "sourceHeaders" JSONB;
 -- (orderItemId) predates the composite unique (orderItemId, cycleId) declared
 -- in the datamodel; it would block legitimate multi-cycle reservations.
 -- DropIndex
-DROP INDEX "PhysicalReservation_orderItemId_key";
+-- IF EXISTS: the singleton index is already dropped by
+-- 20260715132458_cycle_safe_reservation_and_combo_snapshot, so a shadow-DB
+-- replay reaches this statement with nothing to drop.
+DROP INDEX IF EXISTS "PhysicalReservation_orderItemId_key";

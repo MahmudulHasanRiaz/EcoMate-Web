@@ -15,9 +15,24 @@ export function App() {
   const token = localStorage.getItem('pos_access_token')
 
   useEffect(() => {
-    if (!token) setPage('login')
-    else if (!sessionId) setPage('session-select')
-    else setPage('pos')
+    if (!token) {
+      setPage('login')
+      return
+    }
+    if (sessionId) {
+      setPage('pos')
+      return
+    }
+    // No open session: only leave the login page on a cold start. Picking a
+    // showroom stores sessionId as '' before the drawer opens, so downgrading
+    // unconditionally here would bounce the user straight back to this screen.
+    // sessionId === null means the showroom choice itself was cleared (Back),
+    // which really must return to the picker.
+    setPage((prev) => {
+      if (prev === 'login' || prev === 'pos') return 'session-select'
+      if (prev === 'session-open' && sessionId === null) return 'session-select'
+      return prev
+    })
   }, [token, sessionId])
 
   return (

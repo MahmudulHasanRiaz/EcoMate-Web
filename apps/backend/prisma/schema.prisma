@@ -456,6 +456,7 @@ model Product {
   physicalLedgers          PhysicalInventoryLedger[]
   physicalReservations     PhysicalReservation[]
   orderItemComboComponents OrderItemComboComponent[]
+  transferItems            StockTransferItem[]
 
   @@index([isActive])
   @@index([categoryId])
@@ -494,6 +495,7 @@ model ProductVariant {
   binLocation         BinLocation?                   @relation("VariantBin", fields: [binLocationId], references: [id])
   physicalInventories PhysicalInventory[]
   physicalLedgers     PhysicalInventoryLedger[]
+  transferItems       StockTransferItem[]
 
   @@index([productId])
   // Substring SKU search on the orders list (trigram).
@@ -2558,11 +2560,31 @@ model StockTransfer {
   sourceWarehouse Warehouse    @relation("TransferSource", fields: [sourceWarehouseId], references: [id])
   destWarehouse   Warehouse    @relation("TransferDest", fields: [destWarehouseId], references: [id])
   destinationLots CostingLot[]
+  items           StockTransferItem[]
 
   @@index([sourceWarehouseId])
   @@index([destWarehouseId])
   @@index([status])
   @@index([orderId])
+}
+
+// One row per product/variant requested by a transfer request (POS) or any
+// other requester. The StockTransfer header carries source/destination and
+// lifecycle status; this table answers "what exactly is being moved".
+model StockTransferItem {
+  id         String        @id @default(uuid())
+  transferId String
+  productId  String
+  variantId  String?
+  quantity   Int
+  createdAt  DateTime      @default(now())
+
+  transfer StockTransfer  @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  product  Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant  ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@index([transferId])
+  @@index([productId])
 }
 
 model GoodsReceiptNote {

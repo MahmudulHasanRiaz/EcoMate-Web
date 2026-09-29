@@ -135,5 +135,15 @@ export const getSessionOrders = (sessionId: string) =>
 export const getProductAvailability = (productId: string, showroomId: string, variantId?: string) =>
   api.get(`/pos/products/${productId}/availability`, { params: { showroomId, variantId } });
 
+export const createTransferRequest = (data: {
+  items: {
+    productId: string
+    variantId?: string
+    sourceWarehouseId: string
+    quantity: number
+  }[]
+  notes?: string
+}) => api.post('/pos/transfer-requests', data);
+
 export const validateStock = (data: { items: { productId?: string; variantId?: string; quantity: number }[] }) =>
   api.post('/pos/orders/validate-stock', data);

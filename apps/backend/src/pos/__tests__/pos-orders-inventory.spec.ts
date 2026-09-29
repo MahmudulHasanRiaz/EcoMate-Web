@@ -354,14 +354,63 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
       expect(result.data[0].variants[1]._showroomStock).toBe(2);
       expect(result.data[0].variants[1]._showroomAvailable).toBe(2);
     });
+
+    it('reports inventoryManagement so POS knows which stock model is live', async () => {
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([{ ...mockProduct }]);
+      (prisma.product.count as jest.Mock).mockResolvedValue(1);
+
+      (stockRouter.isInventoryManagementEnabled as jest.Mock).mockResolvedValue(true);
+      expect((await service.findProducts({ showroomId: 'showroom-1' })).inventoryManagement).toBe(true);
+
+      (stockRouter.isInventoryManagementEnabled as jest.Mock).mockResolvedValue(false);
+      expect((await service.findProducts({ showroomId: 'showroom-1' })).inventoryManagement).toBe(false);
+    });
+
+    it('fetches showroom and network stock exactly once per page (no N+1)', async () => {
+      (stockRouter.isInventoryManagementEnabled as jest.Mock).mockResolvedValue(true);
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([
+        { ...mockProduct },
+        { ...mockProduct, id: 'prod-3', sku: 'TST-002' },
+        { ...mockProduct, id: 'prod-4', sku: 'TST-003' },
+      ]);
+      (prisma.product.count as jest.Mock).mockResolvedValue(3);
+      (prisma.physicalInventory.findMany as jest.Mock).mockResolvedValue([]);
+
+      await service.findProducts({ showroomId: 'showroom-1' });
+
+      expect(prisma.physicalInventory.findMany).toHaveBeenCalledTimes(2);
+    });
+
+    it('sums variant managed stock into _networkAvailable when IM OFF', async () => {
+      (stockRouter.isInventoryManagementEnabled as jest.Mock).mockResolvedValue(false);
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([{ ...mockVariantProduct }]);
+      (prisma.product.count as jest.Mock).mockResolvedValue(1);
+
+      const result = await service.findProducts({ showroomId: 'showroom-1' });
+
+      // The parent row is not the sum of its variants — network-wide stock
+      // must come from the variants themselves, like the showroom figures.
+      expect(result.data[0]._networkAvailable).toBe(8);
+      expect(result.data[0]._showroomAvailable).toBe(8);
+      expect(result.data[0].variants[1]._networkAvailable).toBe(3);
+    });
   });
 
   // ─── initiateTransfer() ───────────────────────────────────────
 
   describe('initiateTransfer', () => {
-    it('creates stock transfer with REQUESTED status and correct destWarehouseId', async () => {
+    beforeEach(() => {
+      (stock.checkPhysicalAvailability as jest.Mock).mockResolvedValue({
+        availableStock: 10,
+        currentStock: 10,
+        reserved: 0,
+        available: true,
+      });
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue({ name: 'Test Product' });
       (prisma.stockTransfer.create as jest.Mock).mockResolvedValue({ id: 'trf-1' });
+    });
 
+    it('creates stock transfer with REQUESTED status and correct destWarehouseId', async () => {
       const result = await service.initiateTransfer(
         {
           items: [{ productId: 'prod-1', sourceWarehouseId: 'banani', quantity: 5 }],
@@ -384,6 +433,116 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
       );
       expect(result.transfers).toHaveLength(1);
       expect(result.count).toBe(1);
+    });
+
+    it('persists the requested product and quantity as transfer items', async () => {
+      await service.initiateTransfer(
+        {
+          items: [
+            { productId: 'prod-1', sourceWarehouseId: 'banani', quantity: 5 },
+            { productId: 'prod-2', variantId: 'variant-1', sourceWarehouseId: 'banani', quantity: 2 },
+          ],
+        },
+        'cashier-1',
+        'showroom-1',
+      );
+
+      expect(prisma.stockTransfer.create).toHaveBeenCalledTimes(1);
+      expect(prisma.stockTransfer.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            items: {
+              create: [
+                { productId: 'prod-1', variantId: null, quantity: 5 },
+                { productId: 'prod-2', variantId: 'variant-1', quantity: 2 },
+              ],
+            },
+          }),
+        }),
+      );
+    });
+
+    it('creates one header per source warehouse', async () => {
+      (prisma.stockTransfer.create as jest.Mock)
+        .mockResolvedValueOnce({ id: 'trf-a' })
+        .mockResolvedValueOnce({ id: 'trf-b' });
+
+      const result = await service.initiateTransfer(
+        {
+          items: [
+            { productId: 'prod-1', sourceWarehouseId: 'banani', quantity: 5 },
+            { productId: 'prod-1', sourceWarehouseId: 'uttara', quantity: 3 },
+          ],
+        },
+        'cashier-1',
+        'showroom-1',
+      );
+
+      expect(prisma.stockTransfer.create).toHaveBeenCalledTimes(2);
+      const sources = (prisma.stockTransfer.create as jest.Mock).mock.calls.map(
+        (c: any[]) => c[0].data.sourceWarehouseId,
+      );
+      expect(sources.sort()).toEqual(['banani', 'uttara']);
+      expect(result.count).toBe(2);
+      expect(result.transfers.map((t) => t.id).sort()).toEqual(['trf-a', 'trf-b']);
+    });
+
+    it('rejects a source that cannot cover the quantity, without creating anything', async () => {
+      (stock.checkPhysicalAvailability as jest.Mock).mockResolvedValue({
+        availableStock: 2,
+        currentStock: 2,
+        reserved: 0,
+        available: true,
+      });
+
+      await expect(
+        service.initiateTransfer(
+          { items: [{ productId: 'prod-1', sourceWarehouseId: 'banani', quantity: 5 }] },
+          'cashier-1',
+          'showroom-1',
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(prisma.stockTransfer.create).not.toHaveBeenCalled();
+    });
+
+    it('does not create the first header when a LATER source fails validation', async () => {
+      (stock.checkPhysicalAvailability as jest.Mock)
+        .mockResolvedValueOnce({ availableStock: 10 })
+        .mockResolvedValueOnce({ availableStock: 0 });
+
+      await expect(
+        service.initiateTransfer(
+          {
+            items: [
+              { productId: 'prod-1', sourceWarehouseId: 'banani', quantity: 5 },
+              { productId: 'prod-1', sourceWarehouseId: 'uttara', quantity: 5 },
+            ],
+          },
+          'cashier-1',
+          'showroom-1',
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(prisma.stockTransfer.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses the current showroom as a source', async () => {
+      await expect(
+        service.initiateTransfer(
+          { items: [{ productId: 'prod-1', sourceWarehouseId: 'showroom-1', quantity: 1 }] },
+          'cashier-1',
+          'showroom-1',
+        ),
+      ).rejects.toThrow('Source location must differ from the current showroom');
+
+      expect(prisma.stockTransfer.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses an empty item list', async () => {
+      await expect(
+        service.initiateTransfer({ items: [] }, 'cashier-1', 'showroom-1'),
+      ).rejects.toThrow('Transfer request requires at least one item');
     });
   });
 
