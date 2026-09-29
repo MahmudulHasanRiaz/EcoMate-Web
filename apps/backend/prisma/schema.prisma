@@ -258,6 +258,8 @@ model CustomerProfile {
   addresses      Address[]
 
   @@index([email])
+  // Orders-list search matches customer name as a substring.
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "CustomerProfile_name_trgm_idx")
 }
 
 model Task {
@@ -461,6 +463,8 @@ model Product {
   @@index([sku])
   @@index([type])
   @@index([brandId])
+  // Substring SKU search on the orders list (trigram).
+  @@index([sku(ops: raw("gin_trgm_ops"))], type: Gin, map: "Product_sku_trgm_idx")
 }
 
 model ProductVariant {
@@ -492,6 +496,8 @@ model ProductVariant {
   physicalLedgers     PhysicalInventoryLedger[]
 
   @@index([productId])
+  // Substring SKU search on the orders list (trigram).
+  @@index([sku(ops: raw("gin_trgm_ops"))], type: Gin, map: "ProductVariant_sku_trgm_idx")
 }
 
 model ProductVariantAttributeValue {
@@ -720,6 +726,9 @@ model Order {
   @@index([salesChannel])
   @@index([trackingSessionId])
   @@index([trashedAt])
+  // Orders-list search: order number and guest name are matched as substrings.
+  @@index([displayId(ops: raw("gin_trgm_ops"))], type: Gin, map: "Order_displayId_trgm_idx")
+  @@index([guestName(ops: raw("gin_trgm_ops"))], type: Gin, map: "Order_guestName_trgm_idx")
 }
 
 model OrderItem {

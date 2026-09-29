@@ -16,6 +16,7 @@ import { TrackingContextService } from '../tracking/tracking-context.service';
 import { StoredIdentifiers } from '../tracking/context-merge';
 import { CustomersService } from '../customers/customers.service';
 import { OrdersEventService } from './orders-event.service';
+import { buildOrderSearchFilter } from './order-search';
 import { StockService } from '../stock/stock.service';
 import { StockRouterService } from '../stock/stock-router.service';
 import { CostingLotService } from '../stock/costing-lot.service';
@@ -591,22 +592,10 @@ export class OrdersService {
     const where: any = {};
     if (!query.includeTrashed) where.trashedAt = null;
     if (query.search) {
-      const normalizedPhone = normalizePhone(query.search);
-      where.OR = [
-        { displayId: { contains: query.search, mode: 'insensitive' } },
-        {
-          customer: {
-            name: { contains: query.search, mode: 'insensitive' },
-          },
-        },
-        {
-          customer: {
-            phone: { contains: normalizedPhone || query.search },
-          },
-        },
-        { guestName: { contains: query.search, mode: 'insensitive' } },
-        { guestPhone: { contains: normalizedPhone || query.search } },
-      ];
+      // Order number · customer/guest name · product SKU · phone (exact once
+      // the input is a complete number, digits-only while it is not).
+      const searchFilter = buildOrderSearchFilter(query.search);
+      if (searchFilter) where.OR = searchFilter.OR;
     }
     if (query.statusId) where.statusId = query.statusId;
     if (query.paymentStatus) where.paymentStatus = query.paymentStatus;

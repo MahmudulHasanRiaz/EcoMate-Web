@@ -466,14 +466,65 @@ describe('OrdersService', () => {
                   name: { contains: 'ORD-25', mode: 'insensitive' },
                 },
               },
-              { customer: { phone: { contains: 'ORD-25' } } },
               { guestName: { contains: 'ORD-25', mode: 'insensitive' } },
-              { guestPhone: { contains: 'ORD-25' } },
+              {
+                items: {
+                  some: {
+                    OR: [
+                      {
+                        variant: {
+                          sku: { contains: 'ORD-25', mode: 'insensitive' },
+                        },
+                      },
+                      {
+                        product: {
+                          sku: { contains: 'ORD-25', mode: 'insensitive' },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
             ],
             statusId: 'status-pending',
             trashedAt: null,
           },
         }),
+      );
+    });
+
+    it('should match a phone number by equality when the search is a full number', async () => {
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.order.count as jest.Mock).mockResolvedValue(0);
+
+      await service.findAll({ search: '01712121213', page: 1, perPage: 10 });
+
+      const where = (prisma.order.findMany as jest.Mock).mock.calls[0][0].where;
+      expect(where.OR).toEqual(
+        expect.arrayContaining([
+          {
+            customer: {
+              phone: {
+                in: [
+                  '+8801712121213',
+                  '8801712121213',
+                  '01712121213',
+                  '1712121213',
+                ],
+              },
+            },
+          },
+          {
+            guestPhone: {
+              in: [
+                '+8801712121213',
+                '8801712121213',
+                '01712121213',
+                '1712121213',
+              ],
+            },
+          },
+        ]),
       );
     });
 

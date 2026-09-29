@@ -448,14 +448,16 @@ export function Orders() {
         <Card className='border-none shadow-sm bg-muted/40 dark:bg-muted/10 backdrop-blur-sm'>
           <CardContent className='p-3'>
             <div className='flex flex-wrap items-center gap-2'>
-              <div className='relative w-[220px]'>
+              <div className='relative w-[280px]'>
                 <SearchIcon className='absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground' />
-                <Input 
-                  ref={searchInputRef} 
-                  placeholder='Search orders...' 
-                  value={search} 
-                  onChange={e => setSearch(e.target.value)} 
-                  className='h-9 text-sm pl-9 pr-7 bg-background/70 focus:bg-background border-none shadow-sm transition-colors' 
+                <Input
+                  ref={searchInputRef}
+                  placeholder='Order ID, phone, name or SKU…'
+                  aria-label='Search orders by order ID, phone number, customer name or product SKU'
+                  title='Search by order ID, phone number (with or without country code), customer name or product SKU'
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className='h-9 text-sm pl-9 pr-7 bg-background/70 focus:bg-background border-none shadow-sm transition-colors'
                 />
                 {search && (
                   <button onClick={() => setSearch('')} className='absolute right-2 top-1/2 -translate-y-1/2 hover:text-foreground transition-colors'>
@@ -464,24 +466,6 @@ export function Orders() {
                 )}
               </div>
               
-              <div className='w-[140px]'>
-                <SearchableSelect
-                  options={[
-                    { id: 'all', label: 'All Statuses' },
-                    ...statusList.map((s: any) => ({
-                      id: s.id,
-                      label: s.name,
-                      icon: <span className='h-2 w-2 rounded-full shrink-0' style={{ backgroundColor: getStatusColor(s.name, s.color) }} />
-                    }))
-                  ]}
-                  value={statusFilter}
-                  onChange={(v) => { setStatusFilter(v || 'all'); setPage(1) }}
-                  placeholder='Status'
-                  searchPlaceholder='Search status...'
-                  triggerClassName='h-9 text-sm bg-background/70 focus:bg-background border-none shadow-sm'
-                />
-              </div>
-
               <div className='w-[130px]'>
                 <Select value={courierFilter} onValueChange={v => { setCourierFilter(v); setPage(1) }}>
                   <SelectTrigger className='h-9 text-sm bg-background/70 focus:bg-background border-none shadow-sm'>
@@ -534,11 +518,6 @@ export function Orders() {
             </div>
             {hasActiveFilters && (
               <div className='flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-muted-foreground/10'>
-                {statusFilter !== 'all' && (() => { const s = statusList.find((st: any) => st.id === statusFilter); return s ? (
-                  <button onClick={() => { setStatusFilter('all'); setPage(1) }} className='inline-flex items-center gap-1.5 rounded-full bg-background px-2.5 py-1 text-xs font-medium border shadow-sm hover:bg-muted transition-colors'>
-                    <span className='h-1.5 w-1.5 rounded-full' style={{ backgroundColor: getStatusColor(s.name, s.color) }} />{s.name}<X className='h-3 w-3 ml-0.5 text-muted-foreground' />
-                  </button>
-                ) : null })()}
                 {courierFilter !== 'all' && (
                   <button onClick={() => { setCourierFilter('all'); setPage(1) }} className='inline-flex items-center gap-1.5 rounded-full bg-background px-2.5 py-1 text-xs font-medium border shadow-sm hover:bg-muted transition-colors'>
                     <Truck className='h-3 w-3 text-muted-foreground' />{courierFilter}<X className='h-3 w-3 ml-0.5 text-muted-foreground' />
