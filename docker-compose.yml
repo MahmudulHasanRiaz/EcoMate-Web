@@ -57,6 +57,7 @@ services:
 
   backend:
     image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-backend:latest
+    pull_policy: always
     platform: linux/amd64
     restart: unless-stopped
     networks:
@@ -76,6 +77,7 @@ services:
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      LICENSE_ENCRYPTION_KEY: ${LICENSE_ENCRYPTION_KEY:-}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-https://${CLIENT_DOMAIN:-mac.riaz.com.bd}}
       PORT: 4000
@@ -140,6 +142,7 @@ services:
 
   storefront:
     image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-storefront:latest
+    pull_policy: always
     platform: linux/amd64
     restart: unless-stopped
     networks:
@@ -172,6 +175,7 @@ services:
 
   admin:
     image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-admin:latest
+    pull_policy: always
     platform: linux/amd64
     restart: unless-stopped
     networks:
@@ -199,6 +203,7 @@ services:
 
   pos:
     image: ghcr.io/${DOCKER_REGISTRY_OWNER:-mahmudulhasanriaz}/ecomate-pos:latest
+    pull_policy: always
     platform: linux/amd64
     restart: unless-stopped
     networks:

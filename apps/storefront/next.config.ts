@@ -27,6 +27,11 @@ const nextConfig: NextConfig = {
 export default async function (phase: string) {
   const isProd = phase === PHASE_PRODUCTION_SERVER || phase === PHASE_PRODUCTION_BUILD;
   const apiUrl = process.env.API_URL || (isProd ? 'http://backend:4000' : 'http://localhost:4000');
+  // API_URL may be given with or without the /api suffix (the compose default
+  // includes it). The rewrites below always append their own prefix, so
+  // normalize to the backend origin — otherwise /api/* resolves to
+  // /api/api/* and every proxied browser API call 404s.
+  const apiOrigin = apiUrl.replace(/\/api\/?$/, '');
   const posUrl = process.env.POS_URL || (isProd ? 'http://pos:80' : 'http://localhost:5174');
 
   return {
@@ -59,15 +64,15 @@ export default async function (phase: string) {
       const list = [
         {
           source: '/api/:path*',
-          destination: `${apiUrl}/api/:path*`,
+          destination: `${apiOrigin}/api/:path*`,
         },
         {
           source: '/uploads/:path*',
-          destination: `${apiUrl}/uploads/:path*`,
+          destination: `${apiOrigin}/uploads/:path*`,
         },
         {
           source: '/assets/:path*',
-          destination: `${apiUrl}/assets/:path*`,
+          destination: `${apiOrigin}/assets/:path*`,
         },
         {
           source: '/pos',

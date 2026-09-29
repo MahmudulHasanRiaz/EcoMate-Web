@@ -56,3 +56,35 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # Redeploys the Portainer stack AFTER all images are pushed, so the stack can
+  # never pick up half-built images (the "redeployed but still old code" race).
+  # Skips cleanly when PORTAINER_WEBHOOK_ECOMATE_WEB is not configured.
+  deploy:
+    name: redeploy stack
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Portainer stack redeploy
+        env:
+          WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_ECOMATE_WEB }}
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "No PORTAINER_WEBHOOK_ECOMATE_WEB secret configured — skipping redeploy."
+            exit 0
+          fi
+          MAX_TRIES=3
+          TRY=1
+          HTTP_CODE=0
+          while [ $TRY -le $MAX_TRIES ]; do
+            HTTP_CODE=$(curl -w "%{http_code}" -s -S -o /tmp/response.txt -X POST -k --max-time 30 "$WEBHOOK_URL") || HTTP_CODE=0
+            echo "Attempt $TRY/$MAX_TRIES → HTTP $HTTP_CODE $(cat /tmp/response.txt 2>/dev/null || true)"
+            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+              echo "Stack redeploy triggered."
+              exit 0
+            fi
+            if [ $TRY -lt $MAX_TRIES ]; then sleep $((2 ** (TRY - 1))); fi
+            TRY=$((TRY + 1))
+          done
+          echo "Portainer webhook failed with HTTP $HTTP_CODE after $MAX_TRIES attempts."
+          exit 1
