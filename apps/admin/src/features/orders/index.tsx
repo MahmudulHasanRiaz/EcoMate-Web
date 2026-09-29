@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { ordersApi, mediaUrl, type OrderResponse } from './api'
+import { usersApi } from '@/features/users/api'
 import { SafeImage } from '@/components/safe-image'
 import { CustomerContactActions } from '@/components/customer-contact-actions'
 import { BlockPhoneDialog } from '@/features/orders/block-phone-dialog'
@@ -30,7 +31,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '@/components/ui/label'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuGroup } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, UserPlus, UserCheck, Search as SearchIcon, Send, Plus, Upload, Trash2, Ban } from 'lucide-react'
+import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, UserPlus, UserCheck, Calendar, Search as SearchIcon, Send, Plus, Upload, Trash2, Ban } from 'lucide-react'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { OrderSourceBadges } from '@/features/orders/order-source-badge'
 
@@ -148,6 +149,90 @@ function EmptyState({ search, statusFilter, onClear }: { search: string; statusF
         </Button>
       )}
     </div>
+  )
+}
+
+const ASSIGNEE_ROLE_VARIANT: Record<string, 'danger' | 'violet' | 'info' | 'cyan' | 'success' | 'warning' | 'outline'> = {
+  superadmin: 'danger',
+  admin: 'violet',
+  manager: 'info',
+  moderator: 'cyan',
+  sales_executive: 'success',
+  cashier: 'warning',
+}
+
+export function AssigneeCell({ assignee }: { assignee: { id: string; firstName?: string; lastName?: string } | null | undefined }) {
+  const [open, setOpen] = useState(false)
+  const { data: user, isLoading } = useQuery({
+    queryKey: ['assignee-card', assignee?.id],
+    queryFn: () => usersApi.get(assignee!.id).then(r => r.data),
+    enabled: open && !!assignee?.id,
+    staleTime: 120_000,
+    retry: false,
+  })
+  if (!assignee) return <span className='text-xs text-muted-foreground/50 italic'>Unassigned</span>
+  const name = `${assignee.firstName ?? ''} ${assignee.lastName ?? ''}`.trim() || 'Staff'
+  const shown = user ?? null
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} title={name} className='flex items-center gap-1.5 rounded-md px-1 -mx-1 transition-colors hover:bg-muted/50 cursor-pointer'>
+        <div className='h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center text-[11px] font-semibold text-primary shrink-0'>
+          {assignee.firstName?.[0]}{assignee.lastName?.[0]}
+        </div>
+        <span className='text-xs font-medium truncate max-w-[80px]'>{name}</span>
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className='h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-semibold text-primary shrink-0'>
+                {(shown?.firstName ?? assignee.firstName)?.[0]}{(shown?.lastName ?? assignee.lastName)?.[0]}
+              </div>
+              <span>{shown ? `${shown.firstName} ${shown.lastName}` : name}</span>
+            </DialogTitle>
+          </DialogHeader>
+          {isLoading ? (
+            <div className="space-y-3 py-2">
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-4 w-24" />
+            </div>
+          ) : shown ? (
+            <div className="space-y-3 py-1">
+              <Card>
+                <CardContent className="p-3 space-y-2.5">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Mail className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <span>{shown.email}</span>
+                  </div>
+                  {shown.phoneNumber && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Phone className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <span>{shown.phoneNumber}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 text-sm">
+                    <UserCheck className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <Badge variant={ASSIGNEE_ROLE_VARIANT[shown.role] ?? 'outline'} className="text-[11px] px-1.5 py-0">
+                      {shown.role.replace(/_/g, ' ')}
+                    </Badge>
+                    <Badge variant={shown.status === 'active' ? 'success' : 'outline'} className="text-[11px] px-1.5 py-0">
+                      {shown.status}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Calendar className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <span className="text-muted-foreground">Joined {new Date(shown.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground text-center py-4">User not found</p>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
@@ -650,16 +735,7 @@ export function Orders() {
                           )}
                         </TableCell>
                         <TableCell onClick={e => e.stopPropagation()}>
-                          {o.assignee ? (
-                            <div className='flex items-center gap-1.5'>
-                              <div className='h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center text-[11px] font-semibold text-primary shrink-0'>
-                                {o.assignee.firstName?.[0]}{o.assignee.lastName?.[0]}
-                              </div>
-                              <span className='text-xs font-medium truncate max-w-[80px]'>{o.assignee.firstName} {o.assignee.lastName}</span>
-                            </div>
-                          ) : (
-                            <span className='text-xs text-muted-foreground/50 italic'>Unassigned</span>
-                          )}
+                          <AssigneeCell assignee={o.assignee} />
                         </TableCell>
                         <TableCell className='text-right font-semibold text-sm'>৳{fmt(o.total)}</TableCell>
                         <TableCell className='text-right text-sm text-muted-foreground'>{o.items.length}</TableCell>
