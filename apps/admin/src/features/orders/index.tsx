@@ -414,26 +414,36 @@ export function Orders() {
           </div>
         </div>
 
-        <div className='grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3'>
-          {statusList.slice(0, 7).map((s: any) => {
-            const color = getStatusColor(s.name, s.color)
-            const count = statusCountMap[s.id] || 0
-            const isActive = statusFilter === s.id
-            return (
-              <button
-                key={s.id}
-                onClick={() => { setStatusFilter(isActive ? 'all' : s.id); setPage(1) }}
-                className={`relative overflow-hidden rounded-lg border p-3 text-left transition-all hover:shadow-sm ${isActive ? 'ring-2 ring-primary' : ''}`}
-              >
-                <div className='absolute top-0 left-0 w-1 h-full rounded-l-lg' style={{ backgroundColor: color }} />
-                <div className='pl-2'>
-                  <p className='text-xs text-muted-foreground'>{s.name}</p>
-                  <p className='text-xl font-bold'>{count}</p>
-                </div>
-              </button>
-            )
-          })}
-        </div>
+        {(() => {
+          const visible = statusList.filter((s: any) => (statusCountMap[s.id] || 0) > 0)
+          if (visible.length === 0 && totalOrders === 0) return null
+          const chip = (key: string, label: string, count: number, color: string, active: boolean, onClick: () => void) => (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={active}
+              title={label}
+              onClick={onClick}
+              className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer ${active ? '' : 'border-border bg-card text-muted-foreground hover:text-foreground hover:border-muted-foreground/40'}`}
+              style={active ? { borderColor: `color-mix(in srgb, ${color} 45%, transparent)`, backgroundColor: `color-mix(in srgb, ${color} 13%, transparent)` } : undefined}
+            >
+              <span className="size-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+              <span className="truncate max-w-32">{label}</span>
+              <span className="tabular-nums text-[11px] font-bold" style={active ? { color } : undefined}>{count}</span>
+            </button>
+          )
+          const allActive = statusFilter === 'all'
+          return (
+            <div className="flex gap-2 overflow-x-auto no-scrollbar py-1" aria-label="Filter orders by status">
+              {chip('all', 'All', totalOrders, 'var(--primary)', allActive, () => { if (!allActive) { setStatusFilter('all'); setPage(1) } })}
+              {visible.map((s: any) => {
+                const color = getStatusColor(s.name, s.color)
+                const active = statusFilter === s.id
+                return chip(s.id, s.name, statusCountMap[s.id] || 0, color, active, () => { setStatusFilter(active ? 'all' : s.id); setPage(1) })
+              })}
+            </div>
+          )
+        })()}
 
         <Card className='border-none shadow-sm bg-muted/40 dark:bg-muted/10 backdrop-blur-sm'>
           <CardContent className='p-3'>
