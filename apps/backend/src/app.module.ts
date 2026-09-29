@@ -87,6 +87,7 @@ import { PayrollModule } from './payroll/payroll.module';
 import { StockModule } from './stock/stock.module';
 import { WarehousesModule } from './warehouses/warehouses.module';
 import { PosModule } from './pos/pos.module';
+import { PosAnalyticsModule } from './pos-analytics/pos-analytics.module';
 import { FinancialPeriodsModule } from './financial-periods/financial-periods.module';
 import { OpeningBalancesModule } from './opening-balances/opening-balances.module';
 import { PackingModule } from './packing/packing.module';
@@ -186,6 +187,7 @@ import { SecurityDashboardModule } from './security-dashboard/security-dashboard
     StockModule,
     WarehousesModule,
     PosModule,
+    PosAnalyticsModule,
     BetterAuthModule,
     BackupModule,
     AuthSettingsModule,

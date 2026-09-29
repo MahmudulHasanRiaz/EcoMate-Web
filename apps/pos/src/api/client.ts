@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { useSessionStore } from '../stores/session-store';
 import { API_BASE_URL } from '../lib/api-base';
+import { buildAnalyticsQuery } from '../lib/analytics-range';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -147,3 +148,78 @@ export const createTransferRequest = (data: {
 
 export const validateStock = (data: { items: { productId?: string; variantId?: string; quantity: number }[] }) =>
   api.post('/pos/orders/validate-stock', data);
+
+// ---- POS Sales Analytics (spec 2026-09-29, §5 contract) ----
+// Session-scoped via the `x-pos-session-id` header (request interceptor
+// above). Never send any showroomId — the server resolves the showroom
+// from the session and rejects client-supplied overrides with 400.
+
+export type PosAnalyticsScope = 'showroom' | 'mine';
+
+export type PosAnalyticsPreset =
+  | 'today'
+  | 'yesterday'
+  | 'last_7_days'
+  | 'last_30_days'
+  | 'this_month'
+  | 'previous_month'
+  | 'custom';
+
+export interface PosAnalyticsRangeParams {
+  scope: PosAnalyticsScope;
+  preset: PosAnalyticsPreset;
+  /** Dhaka YYYY-MM-DD. Sent only when preset === 'custom'. */
+  from?: string;
+  /** Dhaka YYYY-MM-DD. Sent only when preset === 'custom'. */
+  to?: string;
+}
+
+export interface PosAnalyticsKpis {
+  netSales: number;
+  grossSales: number;
+  refundsTotal: number;
+  discountTotal: number;
+  totalOrders: number;
+  unitsSold: number;
+  avgOrderValue: number;
+}
+
+export interface PosAnalyticsTransaction {
+  orderId: string;
+  displayId: string;
+  reportingAt: string;
+  customerName: string;
+  staffName: string;
+  itemsSummary: string;
+  quantity: number;
+  discount: number;
+  total: number;
+  paymentMethods: string[];
+  status: string;
+}
+
+export type PosAnalyticsSort = 'reportingAt' | 'total';
+export type SortOrder = 'asc' | 'desc';
+
+export interface PosAnalyticsTransactionParams extends PosAnalyticsRangeParams {
+  page?: number;
+  pageSize?: number;
+  sort?: PosAnalyticsSort;
+  order?: SortOrder;
+}
+
+export const getPosAnalyticsOverview = (params: PosAnalyticsRangeParams) =>
+  api.get('/pos/analytics/overview', { params: buildAnalyticsQuery(params) });
+
+export const getPosAnalyticsTransactions = (params: PosAnalyticsTransactionParams) =>
+  api.get('/pos/analytics/transactions', { params: buildAnalyticsQuery(params) });
+
+export const exportPosAnalyticsExcel = (
+  params: PosAnalyticsRangeParams,
+  onDownloadProgress?: (e: { loaded: number; total?: number }) => void,
+) =>
+  api.get('/pos/analytics/export.xlsx', {
+    params: buildAnalyticsQuery(params),
+    responseType: 'blob',
+    ...(onDownloadProgress ? { onDownloadProgress } : {}),
+  });

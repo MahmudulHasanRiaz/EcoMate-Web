@@ -4,12 +4,13 @@ import { ProductGrid } from '../components/product-grid'
 import { SearchBar } from '../components/search-bar'
 import { CartPanel } from '../components/cart-panel'
 import { CashierDashboard } from '../components/cashier-dashboard'
+import { SalesAnalytics } from '../components/sales-analytics'
 import { useSessionStore } from '../stores/session-store'
 import { useCartStore } from '../stores/cart-store'
 import { getPosProducts } from '../api/client'
 import { VariantModal } from '../components/variant-modal'
 import { toast } from 'sonner'
-import { LogOut, ShoppingCart, User, Wifi, Menu, X, BarChart3, ChevronRight, Store } from 'lucide-react'
+import { LogOut, ShoppingCart, User, Wifi, Menu, X, BarChart3, ChevronRight, Store, PieChart } from 'lucide-react'
 import { productImageUrl, variantImageUrl } from '../lib/media'
 
 interface Props { onCloseSession: () => void }
@@ -21,6 +22,7 @@ export function PosTerminalPage({ onCloseSession }: Props) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true)
   const [isDashboardOpen, setIsDashboardOpen] = useState(false)
+  const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(false)
   const [isProfileOpen, setIsProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
   
@@ -202,6 +204,15 @@ export function PosTerminalPage({ onCloseSession }: Props) {
             <BarChart3 size={15} />
           </button>
 
+          {/* Sales Analytics Button */}
+          <button
+            onClick={() => setIsAnalyticsOpen(true)}
+            title="Sales Analytics"
+            className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-500 border border-slate-200 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 transition cursor-pointer"
+          >
+            <PieChart size={15} />
+          </button>
+
           {/* User Profile Popover */}
           <div className="relative" ref={profileRef}>
             <button
@@ -351,6 +362,12 @@ export function PosTerminalPage({ onCloseSession }: Props) {
       <CashierDashboard
         open={isDashboardOpen}
         onOpenChange={setIsDashboardOpen}
+      />
+
+      {/* POS Sales Analytics (full-screen view) */}
+      <SalesAnalytics
+        open={isAnalyticsOpen}
+        onOpenChange={setIsAnalyticsOpen}
       />
     </div>
   )
