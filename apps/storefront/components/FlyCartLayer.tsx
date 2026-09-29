@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Image from 'next/image';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 
@@ -27,20 +27,20 @@ export default function FlyCartLayer() {
     return () => window.removeEventListener('fly-to-cart', handleFly);
   }, []);
 
-  const removeItem = (id: number) => {
+  const removeItem = useCallback((id: number) => {
     setItems(prev => prev.filter(item => item.id !== id));
-  };
+  }, []);
 
   return (
     <div className="fixed inset-0 pointer-events-none z-[999999]" style={{ overflow: 'hidden' }}>
       {items.map(item => (
-        <FlyingDot key={item.id} item={item} onComplete={() => removeItem(item.id)} />
+        <FlyingDot key={item.id} item={item} onComplete={removeItem} />
       ))}
     </div>
   );
 }
 
-function FlyingDot({ item, onComplete }: { item: FlyingItem, onComplete: () => void; key?: string | number }) {
+function FlyingDot({ item, onComplete }: { item: FlyingItem, onComplete: (id: number) => void; key?: string | number }) {
   const [isActive, setIsActive] = useState(false);
   const [targetPos, setTargetPos] = useState({ x: item.x, y: item.y });
 
@@ -67,11 +67,15 @@ function FlyingDot({ item, onComplete }: { item: FlyingItem, onComplete: () => v
     });
 
     const timer = setTimeout(() => {
-        target?.classList.add('scale-[1.15]', '-translate-x-2', 'brightness-110');
+        // Only scale/filter here: #floating-cart already owns its `translate`
+        // via Tailwind utilities, and a second translate class on the same
+        // element fights it (same CSS property) — that clash was the visible
+        // glitch when add-to-cart opened the side cart.
+        target?.classList.add('scale-[1.15]', 'brightness-110');
         setTimeout(() => {
-          target?.classList.remove('scale-[1.15]', '-translate-x-2', 'brightness-110');
+          target?.classList.remove('scale-[1.15]', 'brightness-110');
         }, 300);
-        onComplete();
+        onComplete(item.id);
     }, 850);
 
     return () => {

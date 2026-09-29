@@ -17,6 +17,8 @@
 - Treat `.env*`, API keys, payment credentials, session secrets, customer PII, and production data as sensitive. Never print or commit them.
 - Preserve unrelated user changes. Do not rewrite or delete files merely to simplify a task.
 - Prefer targeted tests while iterating; run the relevant app build/typecheck before claiming completion.
+- **Change-completeness gate (mandatory before every commit):** walk the matrix in `AGENT.md` → "CHANGE COMPLETENESS & DEPLOYMENT SYNC RULES" and update every companion file in the SAME commit — new env vars → `docker-compose.yml` + `.env.example` + `portainer/portainer-stack.json`; ports/volumes/healthchecks/topology → compose + Dockerfiles + docs; API shapes → all consumers (admin/storefront/pos) + tests; anything a redeploy must pick up → push + CI images built before redeploying. A code change with a missing deployment companion is a defect, not a follow-up. State the Definition of Done in the final report.
+- **Schema/migration gate:** `schema.prisma` edits always ship with a generated migration AND its rollback in the same commit; migrations must be redeploy-safe (expand → migrate → contract, no destructive DDL without explicit approval, idempotent guards, batched backfills on hot tables) and self-healing on the next boot (`apps/backend/scripts/resolve-failed-migrations.sh`). Full rules: `AGENT.md` → SCHEMA MIGRATION RULES.
 
 # Verification Commands
 

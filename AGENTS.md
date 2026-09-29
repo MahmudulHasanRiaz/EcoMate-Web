@@ -2,7 +2,8 @@
 - Execute the 12-section post-remediation acceptance audit of EcoMate Web: verify every original requirement with code-path + automated tests + browser evidence, fix only real gaps, and answer 3 explicit yes/no questions before declaring complete (Q1 smart IM default, Q2 persistent drafts, Q3 admin order creation with blocked phone/IP).
 
 ## Constraints & Preferences
-- Each requirement audited independently; existing passing suite ≠ requirement completion; fix only actual gaps.
+- Each requirement audited independently; existing passing suite ≠ requirement completion; fix only real gaps.
+- Change-completeness gate (AGENT.md "CHANGE COMPLETENESS & DEPLOYMENT SYNC RULES"): before every commit, update companion files in the SAME commit (env vars → docker-compose.yml + .env.example + portainer-stack.json; ports/volumes/topology → compose + Dockerfiles + docs; API shapes → all consumers + tests; redeploy-affecting changes → CI images built before redeploy). Schema edits ship with migration + rollback, redeploy-safe + self-healing (resolve-failed-migrations.sh). State the DoD checklist in the final report.
 - Prisma rules (AGENTS.md): schema edit → migration mandatory; no `db push`/`migrate reset`/destructive flags; no drift left behind; schema+migration committed together; backend changes → `nest build` mandatory.
 - Frontend changes → `npx tsc --noEmit` + full regression (admin vitest, storefront `npm test`).
 - Final report must include the 3 explicit yes/no answers; "No"/"partially" → task not complete.

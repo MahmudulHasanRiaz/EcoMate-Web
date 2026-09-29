@@ -101,6 +101,18 @@ export default function CartDrawer() {
   const [imgErrors, setImgErrors] = useState<{ [key: string]: boolean }>({});
   const [imgFallbackErrors, setImgFallbackErrors] = useState<{ [key: string]: boolean }>({});
 
+  // Lock body scroll while the drawer is open. Without this, dragging the cart
+  // list on mobile scroll-chains into the page behind (sticky header + fixed
+  // widgets drift under the fixed panel) and the page visibly tears apart.
+  useEffect(() => {
+    if (!isCartOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [isCartOpen]);
+
   const imgSrcFor = (key: string, item: { image?: string; productImage?: string }) => {
     if (!imgErrors[key]) return item.image || PLACEHOLDER_IMAGE;
     if (!imgFallbackErrors[key] && item.productImage) return item.productImage;
@@ -112,18 +124,24 @@ export default function CartDrawer() {
     else if (item.productImage) setImgFallbackErrors(prev => ({ ...prev, [key]: true }));
   };
 
-  if (!isCartOpen) return null;
-
   return (
     <>
       {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-black/50 z-[60] backdrop-blur-sm transition-opacity"
+      <div
+        className={`fixed inset-0 bg-black/50 z-[60] backdrop-blur-sm transition-opacity duration-300 ${isCartOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
         onClick={() => setIsCartOpen(false)}
+        aria-hidden={!isCartOpen}
       />
 
-      {/* Drawer */}
-      <div className="fixed top-0 right-0 h-full w-full sm:w-[400px] bg-[#fcfcfc] z-[70] shadow-2xl flex flex-col transform transition-transform duration-300">
+      {/* Drawer — kept mounted (like MobileMenu) so the slide is one owned
+          animation instead of a mount/unmount pop */}
+      <div
+        className={`fixed top-0 right-0 h-full w-full sm:w-[400px] bg-[#fcfcfc] z-[70] shadow-2xl flex flex-col transform transition-transform duration-300 ease-out ${isCartOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Shopping cart"
+        aria-hidden={!isCartOpen}
+      >
         
         {/* Header */}
         <div className="px-4 flex items-center justify-between h-14 border-b border-gray-100 bg-white shadow-sm">
@@ -139,7 +157,7 @@ export default function CartDrawer() {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto pb-24 bg-[#fafafa]">
+        <div className="flex-1 overflow-y-auto overscroll-contain pb-24 bg-[#fafafa]">
           {/* Promo Banner */}
             <div className="m-4 mb-6 rounded-[12px] border border-brand-blue/10 bg-brand-blue/5 relative overflow-hidden shadow-sm">
              <div className="flex items-center gap-3 p-3">
@@ -278,7 +296,7 @@ export default function CartDrawer() {
           )}
 
           {/* You May Also Like (from footer upsells) */}
-          {items.length > 0 && <UpsellSection currencySymbol={s} />}
+          {isCartOpen && items.length > 0 && <UpsellSection currencySymbol={s} />}
         </div>
 
         {/* Footer */}
@@ -294,7 +312,7 @@ export default function CartDrawer() {
                 setIsCartOpen(false);
                 router.push('/checkout');
               }}
-              className="w-full h-12 bg-brand-blue hover:bg-brand-blue/90 text-white font-medium text-[15px] rounded-[6px] flex items-center justify-center tracking-wide uppercase animate-[bump_1.5s_ease-in-out_infinite]"
+              className="w-full h-12 bg-brand-blue hover:bg-brand-blue/90 text-white font-medium text-[15px] rounded-[6px] flex items-center justify-center tracking-wide uppercase animate-[bump_1.5s_ease-in-out_2]"
             >
               Checkout
             </button>

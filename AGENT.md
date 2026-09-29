@@ -215,6 +215,46 @@ CI/CD pipeline MUST reject PRs that modify `schema.prisma` without a correspondi
 
 ---
 
+## Redeploy safety + rollback + auto-healing (MANDATORY for every migration)
+
+A migration is NOT done when it applies locally — it MUST be safe on a live redeploy:
+
+- **Additive-first (expand → migrate → contract).** Never rename/drop/retype in the same release the code stops using the old shape. Old and new app versions run side by side during a rolling deploy; BOTH must work against the migrated DB. No conflicts between app versions and schema.
+- **No destructive DDL without explicit user approval.** `DROP COLUMN/TABLE`, `TRUNCATE`, type rewrites and `DELETE` backfills require written approval and a backup taken first.
+- **Idempotent where possible.** Guard DDL (`IF NOT EXISTS` / `DO $$ ... EXCEPTION WHEN duplicate_object`) so a partially-applied migration can be re-run after a crash instead of blocking every future boot (P3009).
+- **Rollback required.** Every migration ships with its rollback in the same commit: a `rollback.sql` next to `migration.sql` (or, where Prisma must generate it, a documented `prisma migrate diff` command in the migration dir) plus one tested rollback → re-apply cycle. Never merge a migration whose rollback is unknown.
+- **No long locks on hot tables** (`orders`, `order_items`, `products`, stock/ledger tables). Add nullable or defaulted columns and backfill in batches (≤ 5 000 rows per statement) in separate transactions.
+- **Auto-healing is part of the migration.** `apps/backend/scripts/resolve-failed-migrations.sh` runs before `migrate deploy` at container startup. If a migration can fail mid-way in a recoverable way, teach that script how to resolve it automatically — a redeploy must self-heal and never require hand-run SQL in production.
+- **Prove it before commit:** `npx prisma migrate deploy` succeeds (1) from the previous migration, (2) against a copy of production data, (3) on an immediate second run (no-op), and `prisma migrate status` shows no drift.
+
+---
+
+# CHANGE COMPLETENESS & DEPLOYMENT SYNC RULES (MANDATORY BEFORE COMMIT)
+
+Most production incidents in this repo come from HALF-DONE changes: code updated without its companion deployment files (or the reverse). Before ANY commit — and before declaring a task finished — walk this matrix and update every companion file in the SAME commit:
+
+| If the change touches… | …MUST also be updated in the same commit |
+| --- | --- |
+| New/renamed/required `process.env.*` | `docker-compose.yml` (service `environment:`), `.env.example`, `portainer/portainer-stack.json` `env` list, and any docs listing the variable |
+| Ports, volumes, healthchecks, service names, container topology | `docker-compose.yml` + `apps/*/Dockerfile` + `docs/portainer-deployment.md` |
+| Package dependencies | lockfile committed and the Docker build layer (`npm install`) still resolves them |
+| Build tooling / Dockerfiles / CI | `.github/workflows/*.yml` and the image tags + ports the compose expects |
+| Public API shape / DTO / route | every consumer (admin, storefront, pos), the API docs, and the tests |
+| `schema.prisma` | migration + rollback (see SCHEMA MIGRATION RULES above) |
+| Feature flags / license-gated capability | `packages/feature-flags` catalog + all consumer gates + docs |
+| Anything a redeploy must pick up | commit pushed AND CI "Build Images" green BEFORE the stack is redeployed (a redeploy before the images exist runs the OLD `:latest` again) |
+
+**Definition of Done — state it in the final report:**
+1. Every applicable matrix row is "done" (companion files committed together with the code).
+2. `schema.prisma` changes ship with migration + rollback, redeploy-safe and self-healing.
+3. Required env vars are wired through `docker-compose.yml`, not only documented.
+4. Verification commands run for every touched app (backend `nest build` + Jest; admin/storefront `tsc --noEmit` + tests; `docker compose config` whenever compose changed).
+5. A deployment-order note included when needed (e.g. "redeploy only after CI images are pushed").
+
+If a companion update is deliberately skipped, the commit message MUST say why. Silent omission is a defect.
+
+---
+
 # FINAL QUALITY STANDARD
 
 EcoMate is NOT a demo project.
