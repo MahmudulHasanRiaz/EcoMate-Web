@@ -114,6 +114,12 @@ export interface SessionResponse {
   createdAt: string
 }
 
+export interface CampaignAliasResponse {
+  utmValue: string
+  campaignId: string
+  campaignName: string | null
+}
+
 export interface MarketingPaymentResponse {
   id: string
   adAccountId: string
@@ -321,6 +327,10 @@ export const marketingApi = {
     rebuild: (data: { fromDate?: string; toDate?: string }) => apiClient.post('/marketing/attribution/rebuild', data),
     sessions: (params?: { page?: number; perPage?: number; utmCampaign?: string }) =>
       apiClient.get<Paginated<SessionResponse>>('/marketing/sessions', { params }),
+    /** utm_campaign value → synced campaign, for values that don't match by name. */
+    aliases: () => apiClient.get<CampaignAliasResponse[]>('/marketing/campaign-aliases'),
+    setAliases: (aliases: Array<{ utmValue: string; campaignId: string }>) =>
+      apiClient.put<CampaignAliasResponse[]>('/marketing/campaign-aliases', { aliases }),
   },
   analysis: {
     kpis: (params?: { fromDate?: string; toDate?: string }) =>

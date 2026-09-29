@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
 import {
   Table, TableHeader, TableRow, TableHead, TableBody, TableCell,
 } from '@/components/ui/table'
@@ -31,6 +32,130 @@ const METHOD_BADGE: Record<string, 'info' | 'success' | 'warning' | 'violet' | '
   pixel: 'violet',
   conversion_api: 'violet',
   manual: 'outline',
+}
+
+/**
+ * Campaign matching aliases.
+ *
+ * An order's campaign is matched from its utm_campaign value. Real values are
+ * hand-typed slugs ("fb_ramadan_2"), which almost never equal the ad platform's
+ * campaign name ("Ramadan Sale 2") — without a mapping those orders land in the
+ * unattributed bucket even though the ad is fully synced. This is that mapping:
+ * explicit, one row per value, never guessed.
+ */
+function CampaignMatchingPanel() {
+  const queryClient = useQueryClient()
+  const [rows, setRows] = useState<Array<{ utmValue: string; campaignId: string }>>([])
+  const [draftValue, setDraftValue] = useState('')
+  const [draftCampaignId, setDraftCampaignId] = useState('')
+
+  const { data: aliases } = useQuery({
+    queryKey: ['marketing-campaign-aliases'],
+    queryFn: () => marketingApi.attribution.aliases().then(r => r.data),
+  })
+  const { data: campaigns } = useQuery({
+    queryKey: ['marketing-campaigns-for-aliases'],
+    queryFn: () => marketingApi.campaigns.list({ perPage: 100 }).then(r => r.data),
+  })
+
+  useEffect(() => {
+    if (aliases) setRows(aliases.map(a => ({ utmValue: a.utmValue, campaignId: a.campaignId })))
+  }, [aliases])
+
+  const saveMut = useMutation({
+    mutationFn: (next: Array<{ utmValue: string; campaignId: string }>) =>
+      marketingApi.attribution.setAliases(next),
+    onSuccess: () => {
+      toast.success('Campaign matching saved')
+      queryClient.invalidateQueries({ queryKey: ['marketing-campaign-aliases'] })
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Failed to save campaign matching'),
+  })
+
+  const campaignName = (id: string) =>
+    (campaigns?.data ?? []).find(c => c.id === id)?.name ?? id
+
+  const addRow = () => {
+    const value = draftValue.trim().toLowerCase()
+    if (!value || !draftCampaignId) {
+      toast.error('Enter a utm campaign value and pick a campaign')
+      return
+    }
+    if (rows.some(r => r.utmValue === value)) {
+      toast.error(`"${value}" is already mapped`)
+      return
+    }
+    setRows(prev => [...prev, { utmValue: value, campaignId: draftCampaignId }])
+    setDraftValue('')
+    setDraftCampaignId('')
+  }
+
+  return (
+    <Card>
+      <CardContent className="space-y-4 p-4">
+        <div className="text-xs text-muted-foreground">
+          Values are matched exactly (case-insensitive, trimmed) after the campaign id and name checks.
+          Adding a mapping here does not rewrite orders that were already attributed.
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Input
+            className="sm:w-72"
+            placeholder="utm_campaign value, e.g. fb_ramadan_2"
+            value={draftValue}
+            onChange={e => setDraftValue(e.target.value)}
+          />
+          <Select value={draftCampaignId} onValueChange={setDraftCampaignId}>
+            <SelectTrigger className="sm:w-72">
+              <SelectValue placeholder="Campaign" />
+            </SelectTrigger>
+            <SelectContent>
+              {(campaigns?.data ?? []).map(c => (
+                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" size="sm" onClick={addRow}>Add mapping</Button>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>utm_campaign value</TableHead>
+              <TableHead>Campaign</TableHead>
+              <TableHead className="w-24 text-right">Remove</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.length === 0 && (
+              <TableRow><TableCell colSpan={3} className="py-6 text-center text-sm text-muted-foreground">
+                No mappings. UTM campaign values that already equal a campaign id or name match without one.
+              </TableCell></TableRow>
+            )}
+            {rows.map(row => (
+              <TableRow key={row.utmValue}>
+                <TableCell className="font-mono text-xs">{row.utmValue}</TableCell>
+                <TableCell className="text-sm">{campaignName(row.campaignId)}</TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setRows(prev => prev.filter(r => r.utmValue !== row.utmValue))}
+                  >
+                    Remove
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        <div className="flex justify-end">
+          <Button size="sm" disabled={saveMut.isPending} onClick={() => saveMut.mutate(rows)}>
+            {saveMut.isPending ? <RefreshCw className="mr-1 h-4 w-4 animate-spin" /> : <Save className="mr-1 h-4 w-4" />}
+            Save mapping
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
 }
 
 export function MarketingAttribution() {
@@ -135,6 +260,7 @@ export function MarketingAttribution() {
           <TabsList>
             <TabsTrigger value="attributions">Attributed orders</TabsTrigger>
             <TabsTrigger value="sessions">Landing sessions</TabsTrigger>
+            <TabsTrigger value="matching">Campaign matching</TabsTrigger>
           </TabsList>
           <TabsContent value="attributions">
             <Card>
@@ -222,6 +348,9 @@ export function MarketingAttribution() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+          <TabsContent value="matching">
+            <CampaignMatchingPanel />
           </TabsContent>
         </Tabs>
       </Main>

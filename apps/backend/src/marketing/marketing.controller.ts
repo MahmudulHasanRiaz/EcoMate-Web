@@ -25,6 +25,7 @@ import {
   UpdateAdAccountDto,
   AttributionRebuildDto,
   UpdateCampaignDto,
+  SetCampaignAliasesDto,
 } from './dto/marketing.dto';
 
 @Roles('superadmin', 'admin', 'manager')
@@ -235,6 +236,21 @@ export class MarketingController {
     @CurrentUser() user?: any,
   ) {
     return this.attribution.rebuildMissing(dto.fromDate, dto.toDate);
+  }
+
+  /**
+   * utm_campaign → campaign aliases. Real utm values are hand-typed slugs that
+   * rarely equal the ad platform's campaign name, so matching needs an explicit
+   * operator mapping instead of guessing.
+   */
+  @Get('campaign-aliases')
+  listCampaignAliases() {
+    return this.attribution.listCampaignAliases();
+  }
+
+  @Put('campaign-aliases')
+  setCampaignAliases(@Body() dto: SetCampaignAliasesDto) {
+    return this.attribution.setCampaignAliases(dto.aliases);
   }
 
   @Get('audit')

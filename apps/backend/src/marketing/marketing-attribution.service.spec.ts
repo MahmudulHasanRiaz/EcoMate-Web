@@ -9,8 +9,12 @@ describe('MarketingAttributionService', () => {
   const mockPrisma = () => ({
     marketingSession: { findUnique: jest.fn(), findFirst: jest.fn(), upsert: jest.fn(), create: jest.fn(), update: jest.fn() },
     marketingCampaign: { findUnique: jest.fn(), findMany: jest.fn(), findFirst: jest.fn() },
+    marketingAd: { findFirst: jest.fn().mockResolvedValue(null) },
+    marketingAdSet: { findFirst: jest.fn().mockResolvedValue(null) },
     orderAttribution: { findUnique: jest.fn(), create: jest.fn(), findMany: jest.fn() },
     order: { findMany: jest.fn() },
+    // Campaign aliases live in SystemSetting; absent by default.
+    systemSetting: { findUnique: jest.fn().mockResolvedValue(null), upsert: jest.fn() },
   });
 
   beforeEach(async () => {
@@ -167,6 +171,154 @@ describe('MarketingAttributionService', () => {
       expect(args.data.fbclid).toBe('fb-old');
       expect(args.data.campaignId).toBe('camp-1');
       expect(args.data.sessionToken).toBeUndefined();
+    });
+  });
+
+  describe('matchCampaign — normalization and aliases', () => {
+    it('matches an exact provider id or name first', async () => {
+      (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValueOnce({ id: 'camp-1', name: 'Ramadan' });
+      const res = await service.matchCampaign('123456');
+      expect(res).toEqual({ id: 'camp-1', name: 'Ramadan' });
+      // No normalization lookup needed once the exact match hits.
+      expect(prisma.marketingCampaign.findFirst).toHaveBeenCalledTimes(1);
+    });
+
+    it('falls back to a trimmed, case-insensitive match', async () => {
+      (prisma.marketingCampaign.findFirst as jest.Mock)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 'camp-2', name: 'Ramadan Sale' });
+      const res = await service.matchCampaign('  ramadan sale ');
+      expect(res).toEqual({ id: 'camp-2', name: 'Ramadan Sale' });
+    });
+
+    it('resolves an operator-defined alias when no name matches', async () => {
+      (prisma.marketingCampaign.findFirst as jest.Mock)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 'camp-3', name: 'Eid Campaign' });
+      (prisma.systemSetting.findUnique as jest.Mock).mockResolvedValue({
+        key: 'marketing_campaign_aliases',
+        value: JSON.stringify({ fb_eid_2: 'camp-3' }),
+      });
+
+      const res = await service.matchCampaign('fb_eid_2');
+      expect(res).toEqual({ id: 'camp-3', name: 'Eid Campaign' });
+    });
+
+    it('ignores a malformed alias setting instead of throwing', async () => {
+      (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.systemSetting.findUnique as jest.Mock).mockResolvedValue({
+        key: 'marketing_campaign_aliases',
+        value: 'not-json{',
+      });
+
+      await expect(service.matchCampaign('whatever')).resolves.toBeNull();
+    });
+
+    it('never guesses: an unmapped value resolves to null', async () => {
+      (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue(null);
+      expect(await service.matchCampaign('totally-unknown')).toBeNull();
+      expect(await service.matchCampaign('   ')).toBeNull();
+      expect(await service.matchCampaign(null)).toBeNull();
+    });
+  });
+
+  describe('resolveFromOrder — ad set / ad resolution', () => {
+    const base = {
+      sourcePlatform: 'facebook',
+      sourceType: 'AD',
+      trackingSessionId: null,
+      attribution: { utm_campaign: 'brand', utm_content: 'ad-777' },
+    };
+
+    it('links the ad and its campaign when utm_content carries a provider ad id', async () => {
+      (prisma.orderAttribution.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue({
+        id: 'camp-9',
+        name: 'Brand',
+      });
+      (prisma.marketingAd.findFirst as jest.Mock).mockResolvedValue({
+        id: 'ad-row-1',
+        adSetId: 'adset-row-1',
+        adSet: { campaignId: 'camp-9', campaign: { name: 'Brand' } },
+      });
+      (prisma.orderAttribution.create as jest.Mock).mockImplementation(({ data }) => data);
+
+      await service.resolveFromOrder('order-9', base);
+
+      expect(prisma.orderAttribution.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          orderId: 'order-9',
+          campaignId: 'camp-9',
+          adId: 'ad-row-1',
+          adSetId: 'adset-row-1',
+        }),
+      });
+    });
+
+    it('attributes through the ad even when the campaign name does not match', async () => {
+      (prisma.orderAttribution.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.marketingAd.findFirst as jest.Mock).mockResolvedValue({
+        id: 'ad-row-2',
+        adSetId: 'adset-row-2',
+        adSet: { campaignId: 'camp-42', campaign: { name: 'Unsynced name' } },
+      });
+      (prisma.orderAttribution.create as jest.Mock).mockImplementation(({ data }) => data);
+
+      await service.resolveFromOrder('order-10', base);
+
+      expect(prisma.orderAttribution.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          campaignId: 'camp-42',
+          adId: 'ad-row-2',
+          confidence: 70,
+        }),
+      });
+    });
+
+    it('resolves the ad set from utm_term on a unique provider id', async () => {
+      (prisma.orderAttribution.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.marketingAd.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.marketingAdSet.findFirst as jest.Mock).mockResolvedValue({
+        id: 'adset-row-3',
+        campaignId: 'camp-3',
+        campaign: { name: 'Ramadan' },
+      });
+      (prisma.orderAttribution.create as jest.Mock).mockImplementation(({ data }) => data);
+
+      await service.resolveFromOrder('order-11', {
+        sourcePlatform: 'facebook',
+        sourceType: 'AD',
+        trackingSessionId: null,
+        attribution: { utm_term: 'adset-99' },
+      });
+
+      expect(prisma.orderAttribution.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ adSetId: 'adset-row-3', adId: null }),
+      });
+    });
+
+    it('records an ad id without a campaign rather than dropping the link', async () => {
+      (prisma.orderAttribution.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.marketingCampaign.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.marketingAd.findFirst as jest.Mock).mockResolvedValue({
+        id: 'ad-row-4',
+        adSetId: 'adset-row-4',
+        adSet: { campaignId: null, campaign: null },
+      });
+      (prisma.orderAttribution.create as jest.Mock).mockImplementation(({ data }) => data);
+
+      await service.resolveFromOrder('order-12', base);
+
+      expect(prisma.orderAttribution.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          adId: 'ad-row-4',
+          campaignId: null,
+          confidence: 50,
+        }),
+      });
     });
   });
 
