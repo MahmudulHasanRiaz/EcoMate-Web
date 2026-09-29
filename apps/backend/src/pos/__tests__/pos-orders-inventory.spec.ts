@@ -544,6 +544,57 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
         service.initiateTransfer({ items: [] }, 'cashier-1', 'showroom-1'),
       ).rejects.toThrow('Transfer request requires at least one item');
     });
+
+    it('refuses a variable product request that does not name a variant', async () => {
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+        type: 'variable',
+        name: 'Test Variable Products',
+      });
+
+      await expect(
+        service.initiateTransfer(
+          { items: [{ productId: 'prod-1', sourceWarehouseId: 'banani', quantity: 5 }] },
+          'cashier-1',
+          'showroom-1',
+        ),
+      ).rejects.toThrow('is a variable product — choose the variant to transfer');
+
+      expect(prisma.stockTransfer.create).not.toHaveBeenCalled();
+      expect(stock.checkPhysicalAvailability).not.toHaveBeenCalled();
+    });
+
+    it('accepts a variable product once the variant is named', async () => {
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+        type: 'variable',
+        name: 'Test Variable Products',
+      });
+
+      const result = await service.initiateTransfer(
+        {
+          items: [
+            {
+              productId: 'prod-1',
+              variantId: 'variant-1',
+              sourceWarehouseId: 'banani',
+              quantity: 5,
+            },
+          ],
+        },
+        'cashier-1',
+        'showroom-1',
+      );
+
+      expect(result.count).toBe(1);
+      expect(prisma.stockTransfer.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            items: {
+              create: [{ productId: 'prod-1', variantId: 'variant-1', quantity: 5 }],
+            },
+          }),
+        }),
+      );
+    });
   });
 
   // ─── create() with sourceWarehouseId (cross-warehouse) ────────

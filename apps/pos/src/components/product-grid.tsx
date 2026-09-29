@@ -259,7 +259,10 @@ export function ProductGrid({ categoryId, searchQuery, barcodeInput, onBarcodeSu
                     lowStockQty={p.lowStockQty}
                     showCount={true}
                     onClick={
-                      inventoryManagement
+                      // A variable product has no single stock line to move:
+                      // the lookup must name a variant, so it only exists in
+                      // the variant list. Simple products are one stock line.
+                      inventoryManagement && p.type !== 'variable'
                         ? () => openStockLookup({ productId: p.id, name: p.name })
                         : undefined
                     }

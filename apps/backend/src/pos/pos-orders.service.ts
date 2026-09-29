@@ -1224,10 +1224,31 @@ export class PosOrdersService {
     // A StockTransfer header carries ONE source warehouse, so a request that
     // spans two origins becomes two headers.
     const bySource = new Map<string, CreatePosTransferRequestDto['items']>();
+    const productTypes = new Map<string, { type: string; name: string }>();
     for (const item of dto.items) {
       if (item.sourceWarehouseId === showroomId) {
         throw new BadRequestException(
           'Source location must differ from the current showroom',
+        );
+      }
+      if (!productTypes.has(item.productId)) {
+        const product = await this.prisma.product.findUnique({
+          where: { id: item.productId },
+          select: { type: true, name: true },
+        });
+        productTypes.set(
+          item.productId,
+          product ?? { type: '', name: item.productId },
+        );
+      }
+      // A variable product's stock lives on its variants — a product-level
+      // request would move an unspecified mix of sizes/colours.
+      if (
+        productTypes.get(item.productId)!.type === 'variable' &&
+        !item.variantId
+      ) {
+        throw new BadRequestException(
+          `"${productTypes.get(item.productId)!.name}" is a variable product — choose the variant to transfer`,
         );
       }
       const list = bySource.get(item.sourceWarehouseId) ?? [];
