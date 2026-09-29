@@ -70,6 +70,12 @@ interface OrderSourceInput {
 /**
  * Resolves the tracking source category for an order based on its metadata.
  * This is deterministic: the same order metadata always produces the same category.
+ *
+ * `source` is authoritative where it is explicit (POS / MANUAL are written by the
+ * order paths themselves); the remaining categories are inferred from the
+ * attribution dimensions, because a converted checkout lead is staff-created yet
+ * is genuinely website-origin traffic and must stay INCOMPLETE_CONVERSION rather
+ * than being lumped into MANUAL.
  */
 export function resolveOrderSourceCategory(order: OrderSourceInput): OrderSourceCategory {
   // POS orders: created through POS sessions
@@ -77,8 +83,9 @@ export function resolveOrderSourceCategory(order: OrderSourceInput): OrderSource
     return 'POS';
   }
 
-  // Incomplete conversion: orders from checkout leads
-  // Check sourcePlatform/sourceType for lead conversion indicators
+  // Incomplete conversion: orders from checkout leads / phone orders. Checked
+  // BEFORE the MANUAL bucket — a converted lead is placed by staff but its
+  // origin is the website, so it keeps its own eligibility switch.
   if (
     order.sourcePlatform === 'PHONE' ||
     order.sourceType === 'CALL' ||
@@ -87,18 +94,16 @@ export function resolveOrderSourceCategory(order: OrderSourceInput): OrderSource
     return 'INCOMPLETE_CONVERSION';
   }
 
-  // Manual orders: admin-created with no clear website origin
-  // If salesChannel is not WEBSITE and not POS, it's likely manual
+  // Manual orders: explicitly marked by the creating path, or created with a
+  // non-website/non-POS channel.
+  if (order.source === 'MANUAL') {
+    return 'MANUAL';
+  }
   if (
     order.salesChannel &&
     order.salesChannel !== 'WEBSITE' &&
     order.salesChannel !== 'POS'
   ) {
-    return 'MANUAL';
-  }
-
-  // If source is explicitly set to something other than ECOMMERCE/POS
-  if (order.source && order.source !== 'ECOMMERCE' && order.source !== 'POS') {
     return 'MANUAL';
   }
 

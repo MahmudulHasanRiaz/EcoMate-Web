@@ -411,6 +411,14 @@ export function CreateOrder() {
       toast.error('Enter a partial payment amount')
       return
     }
+    // The source is the one thing only a staff member can supply: without it the
+    // order cannot be reported as anything but a website order, and its campaign
+    // attribution stays empty. Offline/chat channels are exactly where the
+    // platform matters most.
+    if (salesChannel !== 'WEBSITE' && salesChannel !== 'POS' && !sourcePlatform) {
+      toast.error('Select the platform this order came from')
+      return
+    }
     createMut.mutate(buildPayload())
   }
 

@@ -11,6 +11,7 @@ import {
   RELAY_ENABLED_SETTING_KEY,
 } from './outbox-relay.service';
 import { MonitoringDateRange } from './dto/monitoring.dto';
+import { resolveOrderSourceCategory } from './order-source-policy';
 
 export interface VolumeByEventTypeRow {
   eventType: string;
@@ -964,14 +965,11 @@ export class MonitoringService {
       },
     });
 
-    // Classify each order's source
-    function classifySource(order: any): string {
-      if (order.posSessionId || order.source === 'POS') return 'POS';
-      if (order.sourcePlatform === 'PHONE' || order.sourceType === 'CALL' || order.sourcePlatform === 'LEAD') return 'INCOMPLETE_CONVERSION';
-      if (order.salesChannel && order.salesChannel !== 'WEBSITE' && order.salesChannel !== 'POS') return 'MANUAL';
-      if (order.source && order.source !== 'ECOMMERCE' && order.source !== 'POS') return 'MANUAL';
-      return 'DIRECT_WEBSITE';
-    }
+    // Classify each order's source with the ONE shared policy. This used to be a
+    // private copy of the same rules, which is exactly how two classifiers drift
+    // apart — MANUAL is now written by the order paths, so the shared resolver is
+    // authoritative on `source` and both surfaces agree by construction.
+    const classifySource = (order: any): string => resolveOrderSourceCategory(order);
 
     // Scan timelines for Confirmed/Delivered transitions in range
     let confirmedOrders = 0;
