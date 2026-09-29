@@ -33,8 +33,28 @@ export interface CreateOrderData {
     utmTerm?: string;
     referrer?: string;
     fbclid?: string;
+    gclid?: string;
+    wbraid?: string;
+    gbraid?: string;
+    msclkid?: string;
     ttclid?: string;
+    twclid?: string;
     igshid?: string;
+    clickId?: string;
+  };
+  /** First-party device/technical context (analytics only). */
+  device?: {
+    screen?: string;
+    viewport?: string;
+    pixelRatio?: number;
+    timezone?: string;
+    language?: string;
+    platform?: string;
+    browser?: string;
+    os?: string;
+    deviceType?: string;
+    touch?: boolean;
+    connection?: string;
   };
   paymentOptionType?: 'FULL_PAYMENT' | 'PARTIAL_PAYMENT' | 'CASH_ON_DELIVERY';
   gatewayCode?: string;

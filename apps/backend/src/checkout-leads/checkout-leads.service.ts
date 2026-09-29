@@ -15,6 +15,7 @@ import { resolveActionSource } from '../tracking/meta-action-source';
 import { ConvertOrderDto } from './dto/convert-order.dto';
 import { LEAD_STATUS } from './checkout-lead.constants';
 import { dhakaDateParts } from '../common/utils/dhaka-time';
+import { buildOrderAttributionSnapshot } from '../orders/order-attribution-snapshot';
 
 @Injectable()
 export class CheckoutLeadsService {
@@ -153,7 +154,7 @@ export class CheckoutLeadsService {
             email: dto.email,
             address: dto.address,
             items: dto.items,
-            payload: dto.payload,
+            payload: this.mergeLeadPayload(dto, existing.payload),
             paymentMethod: dto.paymentMethod,
             ctxId: dto.ctxId,
             lastSeenAt: new Date(),
@@ -171,7 +172,7 @@ export class CheckoutLeadsService {
         email: dto.email,
         address: dto.address,
         items: dto.items,
-        payload: dto.payload,
+        payload: this.mergeLeadPayload(dto, null),
         paymentMethod: dto.paymentMethod,
         fingerprint: dto.fingerprint,
         ctxId: dto.ctxId,
@@ -186,6 +187,26 @@ export class CheckoutLeadsService {
     });
 
     return lead;
+  }
+
+  /**
+   * Fold the landing signals carried by the lead request into the stored
+   * payload. Existing values win only when the new request brought nothing —
+   * the first capture of a journey is the one that saw the ad click.
+   */
+  private mergeLeadPayload(
+    dto: { payload?: Record<string, unknown>; attribution?: Record<string, unknown>; device?: Record<string, unknown> },
+    existing: unknown,
+  ): any {
+    const prior = (existing as Record<string, unknown>) ?? {};
+    const payload: Record<string, unknown> = { ...prior, ...(dto.payload ?? {}) };
+    if (dto.attribution) {
+      payload.attribution = { ...((prior.attribution as object) ?? {}), ...dto.attribution };
+    }
+    if (dto.device && !prior.device) {
+      payload.device = dto.device;
+    }
+    return Object.keys(payload).length ? (payload as any) : undefined;
   }
 
   private async fireLeadEvent(
@@ -346,6 +367,38 @@ export class CheckoutLeadsService {
 
     const pm = overrides?.paymentMethod ?? lead.paymentMethod;
 
+    // Frozen attribution for the converted order. The lead captured a ctxId, so
+    // the journey session is the server-side fallback; the lead payload carries
+    // the landing signals when the storefront managed to send them. Without
+    // this, a converted lead lost every trace of which ad/search produced it.
+    const leadPayload = (lead.payload as Record<string, any>) ?? {};
+    const sessionFallback = lead.ctxId
+      ? await this.prisma.marketingSession.findUnique({
+          where: { sessionToken: lead.ctxId },
+          select: {
+            utmSource: true,
+            utmMedium: true,
+            utmCampaign: true,
+            utmContent: true,
+            utmTerm: true,
+            referrer: true,
+            landingUrl: true,
+            clickId: true,
+            fbclid: true,
+            ip: true,
+            userAgent: true,
+            startedAt: true,
+          },
+        })
+      : null;
+    const attributionSnapshot = buildOrderAttributionSnapshot({
+      attribution: leadPayload.attribution ?? null,
+      device: leadPayload.device ?? null,
+      sessionToken: lead.ctxId ?? null,
+      session: sessionFallback,
+      sessionStartedAt: sessionFallback?.startedAt ?? null,
+    });
+
     let fullOrder: any = null;
 
     await this.prisma.$transaction(async (tx) => {
@@ -388,6 +441,10 @@ export class CheckoutLeadsService {
           sourceType: overrides?.sourceType || 'CALL',
           sourceEntity: overrides?.sourceEntity || null,
           trackingSessionId: lead.ctxId ?? undefined,
+          // Frozen landing signals (see orders/order-attribution-snapshot.ts).
+          // No IP/UA here: the conversion request comes from a staff browser, and
+          // recording that as the customer's context would be a lie.
+          attribution: (attributionSnapshot as any) ?? undefined,
           paymentOptionType:
             overrides?.paymentMode === 'cod'
               ? 'CASH_ON_DELIVERY'

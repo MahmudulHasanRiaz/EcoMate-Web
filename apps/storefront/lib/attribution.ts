@@ -25,15 +25,35 @@ export interface LandingAttribution {
   utmContent?: string;
   utmTerm?: string;
   referrer?: string;
-  /** Generic click identifier — platform-agnostic (fbclid, ttclid, gclid, etc.) */
+  /** Generic click identifier — platform-agnostic (fbclid, gclid, ttclid, …) */
   clickId?: string;
   /** @deprecated Use clickId. Kept for backward compat with Meta-specific data. */
   fbclid?: string;
   ttclid?: string;
   igshid?: string;
+  gclid?: string;
+  wbraid?: string;
+  gbraid?: string;
+  msclkid?: string;
+  twclid?: string;
   /** epoch ms of the landing capture — used for debugging/diagnostics only. */
   ts?: number;
 }
+
+/**
+ * Platform click ids, in the same precedence the backend resolver uses. Each one
+ * only ever appears on a paid click, so losing any of them loses the platform.
+ */
+const CLICK_ID_PARAMS = [
+  'fbclid',
+  'gclid',
+  'wbraid',
+  'gbraid',
+  'msclkid',
+  'ttclid',
+  'twclid',
+  'igshid',
+] as const;
 
 function clean(value: string | null | undefined): string | undefined {
   if (!value) return undefined;
@@ -66,10 +86,10 @@ function writeStored(attribution: LandingAttribution): void {
 function captureFromWindow(): LandingAttribution | null {
   if (typeof window === 'undefined' || typeof document === 'undefined') return null;
   const params = new URLSearchParams(window.location.search || '');
-  const fbclid = clean(params.get('fbclid'));
-  const ttclid = clean(params.get('ttclid'));
-  // clickId: generic — first available provider click identifier
-  const clickId = fbclid || ttclid || undefined;
+  const clickIds = CLICK_ID_PARAMS.map((name) => [name, clean(params.get(name))] as const);
+  const present = Object.fromEntries(
+    clickIds.filter(([, value]) => value),
+  ) as Partial<Record<(typeof CLICK_ID_PARAMS)[number], string>>;
   return {
     utmSource: clean(params.get('utm_source')),
     utmMedium: clean(params.get('utm_medium')),
@@ -77,10 +97,10 @@ function captureFromWindow(): LandingAttribution | null {
     utmContent: clean(params.get('utm_content')),
     utmTerm: clean(params.get('utm_term')),
     referrer: clean(document.referrer),
-    clickId,
-    fbclid,
-    ttclid,
-    igshid: clean(params.get('igshid')),
+    // Generic clickId: first available provider click identifier, in the
+    // precedence order the backend resolver uses.
+    clickId: clickIds.find(([, value]) => value)?.[1],
+    ...present,
     ts: Date.now(),
   };
 }

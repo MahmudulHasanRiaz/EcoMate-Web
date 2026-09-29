@@ -1,4 +1,4 @@
-import { Globe, Store, Phone, MessageCircle, Tag, Megaphone, MousePointerClick, type LucideIcon } from 'lucide-react'
+import { Globe, Store, Phone, MessageCircle, Tag, Megaphone, MousePointerClick, Search, Ghost, Pin, type LucideIcon } from 'lucide-react'
 
 export interface ResolvedOrderSource {
   label: string
@@ -22,6 +22,16 @@ export const ORDER_SOURCE_LABELS: Record<string, string> = {
   DIRECT: 'Direct',
   PHONE: 'Phone',
   OTHER: 'Other',
+  GOOGLE: 'Google',
+  YOUTUBE: 'YouTube',
+  BING: 'Bing',
+  SNAPCHAT: 'Snapchat',
+  PINTEREST: 'Pinterest',
+  LINKEDIN: 'LinkedIn',
+  TWITTER: 'X (Twitter)',
+  YAHOO: 'Yahoo',
+  DUCKDUCKGO: 'DuckDuckGo',
+  YANDEX: 'Yandex',
 }
 
 const ICONS: Record<string, LucideIcon> = {
@@ -33,6 +43,16 @@ const ICONS: Record<string, LucideIcon> = {
   PHONE: Phone,
   DIRECT: MousePointerClick,
   OTHER: Tag,
+  GOOGLE: Search,
+  BING: Search,
+  YAHOO: Search,
+  DUCKDUCKGO: Search,
+  YANDEX: Search,
+  YOUTUBE: Globe,
+  LINKEDIN: Globe,
+  SNAPCHAT: Ghost,
+  PINTEREST: Pin,
+  TWITTER: MessageCircle,
 }
 
 const TONES: Record<string, string> = {
@@ -50,6 +70,16 @@ const TONES: Record<string, string> = {
   PHONE: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
   DIRECT: 'bg-slate-500/10 text-slate-600 dark:text-slate-400',
   OTHER: 'bg-slate-500/10 text-slate-600 dark:text-slate-400',
+  GOOGLE: 'bg-red-500/10 text-red-600 dark:text-red-400',
+  YOUTUBE: 'bg-red-500/10 text-red-600 dark:text-red-400',
+  BING: 'bg-green-500/10 text-green-600 dark:text-green-400',
+  SNAPCHAT: 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400',
+  PINTEREST: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+  LINKEDIN: 'bg-sky-700/10 text-sky-700 dark:text-sky-400',
+  TWITTER: 'bg-slate-700/10 text-slate-700 dark:text-slate-300',
+  YAHOO: 'bg-purple-600/10 text-purple-700 dark:text-purple-300',
+  DUCKDUCKGO: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
+  YANDEX: 'bg-red-600/10 text-red-700 dark:text-red-300',
 }
 
 const CHAT_ICON = MessageCircle
@@ -140,7 +170,13 @@ export function resolveOrderAttribution(
       tone: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
       kind: 'source',
     })
-  } else if (platform || type) {
+  }
+
+  // The platform badge is shown alongside the entity badge, not only when the
+  // entity is missing: how the customer arrived (Facebook · Ad, Google · Ad,
+  // Direct) is the answer to "where did this order come from" and used to be
+  // hidden for every order that carried an entity.
+  if (platform || type) {
     const platformKey = platform.toUpperCase()
     const platformLabel = platformKey in ORDER_SOURCE_LABELS ? ORDER_SOURCE_LABELS[platformKey] : titleCase(platform)
     const typeLabel = type ? (SOURCE_TYPE_LABELS[type.toUpperCase()] ?? titleCase(type)) : ''

@@ -33,4 +33,11 @@ export class UpsertLeadDto {
   @IsOptional() @IsString() fbp?: string;
   @IsOptional() @IsString() fbc?: string;
   @IsOptional() @IsString() ctxId?: string;
+  /**
+   * Landing signals captured by the storefront (utm / click ids / referrer) and
+   * the device context. Kept so a lead converted into an order keeps its real
+   * source instead of arriving blind.
+   */
+  @IsOptional() @IsObject() attribution?: Record<string, unknown>;
+  @IsOptional() @IsObject() device?: Record<string, unknown>;
 }

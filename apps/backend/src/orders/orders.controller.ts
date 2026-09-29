@@ -102,7 +102,13 @@ export class OrdersController {
   @RateLimitPolicy('api')
   @Post()
   create(@Body() dto: CreateOrderDto, @Req() req: any, @CurrentUser() user?: any) {
-    return this.svc.create(dto, req?.ip || req?.socket?.remoteAddress || '', user);
+    return this.svc.create(
+      dto,
+      req?.ip || req?.socket?.remoteAddress || '',
+      user,
+      // Frozen onto the order with the IP — first-party technical context.
+      (req?.headers?.['user-agent'] as string) || '',
+    );
   }
 
   @Roles('superadmin', 'admin')

@@ -224,6 +224,12 @@ describe('OrdersService', () => {
               findMany: jest.fn().mockResolvedValue([]),
               findUnique: jest.fn().mockResolvedValue(null),
             },
+            // Journey-session fallback for the attribution snapshot. No session
+            // is the common test case → null.
+            marketingSession: {
+              findUnique: jest.fn().mockResolvedValue(null),
+              findFirst: jest.fn().mockResolvedValue(null),
+            },
             user: {
               findUnique: jest.fn().mockResolvedValue({ status: 'active' }),
             },
@@ -1408,6 +1414,84 @@ describe('OrdersService', () => {
       await service.create(dtoWithoutVariant);
 
       expect(prisma.productVariant.update).not.toHaveBeenCalled();
+    });
+
+    it('freezes ip, user-agent, resolved platform and signals into the order snapshot', async () => {
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) =>
+          cb({
+            ...prisma,
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+          }),
+      );
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        mockInitialStatus,
+      );
+      (prisma.order.create as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.productVariant.update as jest.Mock).mockResolvedValue({});
+
+      await service.create(
+        {
+          ...createOrderDto,
+          attribution: {
+            utmSource: 'google',
+            utmMedium: 'cpc',
+            utmCampaign: 'brand_bd',
+            gclid: 'Cj0KCQ',
+          },
+          trackingSessionId: 'ctx-1',
+          device: { deviceType: 'mobile', timezone: 'Asia/Dhaka' },
+        },
+        '203.0.113.7',
+        undefined,
+        'Mozilla/5.0 (Linux; Android 14)',
+      );
+
+      const data = (prisma.order.create as jest.Mock).mock.calls[0][0].data;
+      expect(data.ipAddress).toBe('203.0.113.7');
+      expect(data.userAgent).toBe('Mozilla/5.0 (Linux; Android 14)');
+      expect(data.sourcePlatform).toBe('GOOGLE');
+      expect(data.sourceType).toBe('AD');
+      expect(data.source).toBe('ECOMMERCE');
+      expect(data.attribution).toMatchObject({
+        sessionToken: 'ctx-1',
+        ip: '203.0.113.7',
+        userAgent: 'Mozilla/5.0 (Linux; Android 14)',
+        utm: { source: 'google', medium: 'cpc', campaign: 'brand_bd' },
+        clickIds: { gclid: 'Cj0KCQ' },
+        device: { deviceType: 'mobile', timezone: 'Asia/Dhaka' },
+        resolved: { platform: 'GOOGLE', type: 'AD' },
+      });
+    });
+
+    it('marks a staff-created order as MANUAL and never as a website order', async () => {
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) =>
+          cb({
+            ...prisma,
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+          }),
+      );
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        mockInitialStatus,
+      );
+      (prisma.order.create as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.productVariant.update as jest.Mock).mockResolvedValue({});
+
+      await service.create(createOrderDto, '', {
+        userId: 'staff-1',
+        role: 'admin',
+      });
+
+      const data = (prisma.order.create as jest.Mock).mock.calls[0][0].data;
+      expect(data.source).toBe('MANUAL');
+      // A counter entry carries no landing signals at all — the snapshot column
+      // stays empty rather than storing an empty object.
+      expect(data.attribution).toBeUndefined();
     });
 
     it('should store trackingSessionId on the created order when provided', async () => {

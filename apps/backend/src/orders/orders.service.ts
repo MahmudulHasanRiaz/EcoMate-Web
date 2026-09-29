@@ -17,6 +17,7 @@ import { StoredIdentifiers } from '../tracking/context-merge';
 import { CustomersService } from '../customers/customers.service';
 import { OrdersEventService } from './orders-event.service';
 import { buildOrderSearchFilter } from './order-search';
+import { buildOrderAttributionSnapshot } from './order-attribution-snapshot';
 import { StockService } from '../stock/stock.service';
 import { StockRouterService } from '../stock/stock-router.service';
 import { CostingLotService } from '../stock/costing-lot.service';
@@ -37,6 +38,7 @@ import {
   ManagedStockMovementType,
   MovementDirection,
   ReferenceEntity,
+  OrderSource,
 } from '@prisma/client';
 import { ManagedStockLedgerService } from '../inventory/managed-stock-ledger.service';
 import { buildTrackingUrl } from '../courier-manager/courier-webhook.service';
@@ -873,7 +875,12 @@ export class OrdersService {
     }
   }
 
-  async create(dto: CreateOrderDto, clientIp?: string, user?: any) {
+  async create(
+    dto: CreateOrderDto,
+    clientIp?: string,
+    user?: any,
+    userAgent?: string,
+  ) {
     const userId = user?.userId;
     const isCustomer = Boolean(user && user.role === 'customer');
 
@@ -1534,6 +1541,50 @@ export class OrdersService {
       const orderTimeZip = (shippingAddrObj.zip as string) || (shippingAddrObj.zipCode as string) || (shippingAddrObj.postalCode as string) || null;
       const orderTimeCountry = (shippingAddrObj.country as string) || 'BD';
 
+      // Journey session for this ctxId, used ONLY as a fallback for signals the
+      // order request did not carry itself (one indexed lookup, no join).
+      const sessionFallback = dto.trackingSessionId        ? await tx.marketingSession.findUnique({
+            where: { sessionToken: dto.trackingSessionId },
+            select: {
+              utmSource: true,
+              utmMedium: true,
+              utmCampaign: true,
+              utmContent: true,
+              utmTerm: true,
+              referrer: true,
+              landingUrl: true,
+              clickId: true,
+              fbclid: true,
+              ip: true,
+              userAgent: true,
+              startedAt: true,
+            },
+          })
+        : null;
+
+      // Configured attribution window (days). Read once per order — a single
+      // indexed settings lookup — and only ever recorded on the snapshot.
+      const windowSetting = await tx.systemSetting.findUnique({
+        where: { key: 'attribution_window_days' },
+      });
+      const attributionWindowDays = Number(windowSetting?.value) || null;
+
+      // Immutable attribution snapshot (see order-attribution-snapshot.ts).
+      // The order payload wins; the journey session is a server-side fallback so
+      // a request that carried no signals of its own still records what the
+      // session knew (utm/click id/referrer/ip/ua) at order time.
+      const attributionSnapshot = buildOrderAttributionSnapshot({
+        attribution: dto.attribution as Record<string, any> | null,
+        device: (dto as any).device ?? null,
+        sessionToken: dto.trackingSessionId ?? null,
+        ip: clientIp ?? null,
+        userAgent: userAgent ?? null,
+        session: sessionFallback,
+        resolved: webAttribution,
+        sessionStartedAt: sessionFallback?.startedAt ?? null,
+        attributionWindowDays: attributionWindowDays,
+      });
+
       const created = await tx.order.create({
         data: {
           displayId,
@@ -1557,11 +1608,20 @@ export class OrdersService {
           },
           customerNotes: dto.customerNotes,
           officeNotes: resolvedOfficeNotes,
+          // Source dimension: a staff-created order is MANUAL, never a website
+          // order. Before this, Order.source kept its ECOMMERCE default for
+          // admin entries, so they were reported as (and ad-tracked like)
+          // storefront orders. POS writes its own value in pos-orders.service.
+          source: isStaffCreate ? OrderSource.MANUAL : OrderSource.ECOMMERCE,
           salesChannel: dto.salesChannel || 'WEBSITE',
           sourcePlatform: resolvedSourcePlatform,
           sourceType: resolvedSourceType,
           sourceEntity: dto.sourceEntity || null,
           trackingSessionId: dto.trackingSessionId ?? null,
+          // Frozen technical + attribution context (never updated afterwards).
+          ipAddress: clientIp || null,
+          userAgent: userAgent || null,
+          attribution: (attributionSnapshot as any) ?? undefined,
           guestName: dto.guestName,
           guestPhone: dto.guestPhone,
           // Order-time customer snapshot: immutable record of customer data at

@@ -21,6 +21,7 @@ import { trackEvent, getCookie, isSyntheticEmail } from '@/lib/tracking';
 import { computeCartSignature } from '@/lib/cart-signature';
 import { getOrCreateCtxId } from '@/lib/tracking-client';
 import { getLandingAttribution, clearLandingAttribution } from '@/lib/attribution';
+import { collectDeviceContext } from '@/lib/device-context';
 
 function simpleFingerprint(phone: string, items: any[]) {
   const itemStr = items.map(i => `${i.id}:${i.quantity}`).sort().join(',');
@@ -706,6 +707,7 @@ export default function CheckoutPage() {
     const phone = normalizePhone(rawPhone);
     const name = guestName || [user?.firstName, user?.lastName].filter(Boolean).join(' ') || '';
     if (!phone || !name || wasSubmitted.current) return null;
+    const landing = getLandingAttribution();
     return {
       phone, name,
       email: (guestEmail && !isSyntheticEmail(guestEmail)) ? guestEmail.trim() : undefined,
@@ -718,6 +720,29 @@ export default function CheckoutPage() {
       fingerprint: simpleFingerprint(phone, coItems),
       fbp: getCookie('_fbp') || undefined,
       fbc: getCookie('_fbc') || undefined,
+      // Landing signals ride with the abandoned checkout too: if staff later
+      // convert this lead into an order, the order keeps its real source instead
+      // of arriving blind. The journey session is a second (server-side) chance.
+      attribution: landing
+        ? {
+            utmSource: landing.utmSource,
+            utmMedium: landing.utmMedium,
+            utmCampaign: landing.utmCampaign,
+            utmContent: landing.utmContent,
+            utmTerm: landing.utmTerm,
+            referrer: landing.referrer,
+            fbclid: landing.fbclid,
+            gclid: landing.gclid,
+            wbraid: landing.wbraid,
+            gbraid: landing.gbraid,
+            msclkid: landing.msclkid,
+            ttclid: landing.ttclid,
+            twclid: landing.twclid,
+            igshid: landing.igshid,
+            clickId: landing.clickId,
+          }
+        : undefined,
+      device: collectDeviceContext(),
     };
   }, [guestPhone, guestName, guestEmail, coItems, district, thana, addressLine, paymentOptionType, user]);
 
@@ -759,9 +784,17 @@ export default function CheckoutPage() {
           utmContent: landingAttribution.utmContent,
           utmTerm: landingAttribution.utmTerm,
           referrer: landingAttribution.referrer,
+          // Every platform click id the resolver knows — dropping one drops the
+          // platform for that order (Google Ads used to arrive as DIRECT).
           fbclid: landingAttribution.fbclid,
+          gclid: landingAttribution.gclid,
+          wbraid: landingAttribution.wbraid,
+          gbraid: landingAttribution.gbraid,
+          msclkid: landingAttribution.msclkid,
           ttclid: landingAttribution.ttclid,
+          twclid: landingAttribution.twclid,
           igshid: landingAttribution.igshid,
+          clickId: landingAttribution.clickId,
         }
       : undefined;
 
@@ -787,7 +820,15 @@ export default function CheckoutPage() {
       thana: thana || undefined,
       salesChannel: 'WEBSITE',
       ...(attributionPayload ? { attribution: attributionPayload } : {}),
-      sourceEntity: config.store?.name || undefined,
+      // First-party device/technical context (analytics) — frozen onto the order
+      // alongside the attribution signals so they stay readable from the order.
+      device: collectDeviceContext(),
+      // NOTE: sourceEntity is deliberately NOT set here. It means "the entity
+      // that brought this order" (showroom/team/person) and is consumed as a
+      // campaign key by the attribution resolver — sending the store name made
+      // every website order resolve its campaign from the store name instead of
+      // utm_campaign. Website identity is already in salesChannel. The platform
+      // badge is derived from attribution instead.
       selectedShippingOptionId: config.shippingMode === 'options' ? (selectedShippingOptionId || null) : undefined,
     };
 

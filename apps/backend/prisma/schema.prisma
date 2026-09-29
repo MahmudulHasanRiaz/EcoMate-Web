@@ -692,6 +692,19 @@ model Order {
   shippingCostSource String?
   trashedAt                DateTime?
 
+  /// First-party technical context captured when the order was created.
+  /// Set ONCE (same invariant as the customer snapshot below) — never updated.
+  /// Present for storefront orders; staff/POS orders carry whatever the request
+  /// had. Used for fraud/duplicate review and device analytics.
+  ipAddress                String?
+  userAgent                String?
+  /// Immutable attribution snapshot: every raw landing signal that arrived with
+  /// the order (utm_*, platform click ids, referrer, landing url, device block)
+  /// plus the resolved platform/type. Frozen at creation so the order keeps its
+  /// own answer to "where did this come from" even when the journey session is
+  /// later overwritten or pruned. null = no signal at all was available.
+  attribution              Json?
+
   customer       CustomerProfile?     @relation(fields: [customerId], references: [id])
   assignee       UserProfile?         @relation("OrderAssignee", fields: [assignedToId], references: [id])
   status         OrderStatus          @relation(fields: [statusId], references: [id])
@@ -726,6 +739,7 @@ model Order {
   @@index([salesChannel])
   @@index([trackingSessionId])
   @@index([trashedAt])
+  @@index([ipAddress])
   // Orders-list search: order number and guest name are matched as substrings.
   @@index([displayId(ops: raw("gin_trgm_ops"))], type: Gin, map: "Order_displayId_trgm_idx")
   @@index([guestName(ops: raw("gin_trgm_ops"))], type: Gin, map: "Order_guestName_trgm_idx")

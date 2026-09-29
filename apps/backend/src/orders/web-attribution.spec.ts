@@ -106,4 +106,73 @@ describe('Web attribution resolver (spec §20-21)', () => {
       sourceType: 'AD',
     });
   });
+
+  describe('Google and the other platforms that used to fall through to DIRECT', () => {
+    it('Google Ads (utm_source=google + cpc) → GOOGLE/AD', () => {
+      expect(
+        resolveWebAttribution({ utmSource: 'google', utmMedium: 'cpc' }),
+      ).toEqual({ sourcePlatform: 'GOOGLE', sourceType: 'AD' });
+    });
+
+    it('Google Ads shorthand sources resolve to GOOGLE', () => {
+      for (const utmSource of ['googleads', 'adwords']) {
+        expect(
+          resolveWebAttribution({ utmSource, utmMedium: 'cpc' }),
+        ).toEqual({ sourcePlatform: 'GOOGLE', sourceType: 'AD' });
+      }
+    });
+
+    it('gclid / wbraid / gbraid → GOOGLE/AD without any utm', () => {
+      for (const field of ['gclid', 'wbraid', 'gbraid'] as const) {
+        expect(resolveWebAttribution({ [field]: 'x' })).toEqual({
+          sourcePlatform: 'GOOGLE',
+          sourceType: 'AD',
+        });
+      }
+    });
+
+    it('msclkid → BING/AD, twclid → TWITTER/AD', () => {
+      expect(resolveWebAttribution({ msclkid: 'm' })).toEqual({
+        sourcePlatform: 'BING',
+        sourceType: 'AD',
+      });
+      expect(resolveWebAttribution({ twclid: 't' })).toEqual({
+        sourcePlatform: 'TWITTER',
+        sourceType: 'AD',
+      });
+    });
+
+    it('organic search referrers resolve to their engine, as DIRECT', () => {
+      const cases: Array<[string, string]> = [
+        ['https://www.google.com/search?q=x', 'GOOGLE'],
+        ['https://google.com.bd/', 'GOOGLE'],
+        ['https://www.bing.com/search?q=x', 'BING'],
+        ['https://www.youtube.com/watch?v=1', 'YOUTUBE'],
+        ['https://duckduckgo.com/?q=x', 'DUCKDUCKGO'],
+        ['https://www.linkedin.com/feed/', 'LINKEDIN'],
+        ['https://t.co/abc', 'TWITTER'],
+      ];
+      for (const [referrer, platform] of cases) {
+        expect(resolveWebAttribution({ referrer })).toEqual({
+          sourcePlatform: platform,
+          sourceType: 'DIRECT',
+        });
+      }
+    });
+
+    it('a paid medium on a non-ad platform (chat link, email) stays DIRECT', () => {
+      expect(
+        resolveWebAttribution({ utmSource: 'whatsapp', utmMedium: 'cpc' }),
+      ).toEqual({ sourcePlatform: 'WHATSAPP', sourceType: 'DIRECT' });
+      expect(
+        resolveWebAttribution({ utmSource: 'messenger', utmMedium: 'paid' }),
+      ).toEqual({ sourcePlatform: 'MESSENGER', sourceType: 'DIRECT' });
+    });
+
+    it('a click id still wins when the utm_source is unknown', () => {
+      expect(
+        resolveWebAttribution({ utmSource: 'unknown-source', gclid: 'g' }),
+      ).toEqual({ sourcePlatform: 'GOOGLE', sourceType: 'AD' });
+    });
+  });
 });

@@ -64,6 +64,12 @@ export class CreateOrderDto {
   @IsOptional() @IsString() sourceEntity?: string;
   /** Raw landing signals (utm/click-id/referrer) collected first-party by the storefront. */
   @IsOptional() @IsObject() attribution?: Record<string, unknown>;
+  /**
+   * First-party device/technical context (screen, viewport, timezone, language,
+   * platform, browser, OS, device type). Analytics input, frozen into the
+   * order's attribution snapshot; free-form object, never trusted for logic.
+   */
+  @IsOptional() @IsObject() device?: Record<string, unknown>;
   @IsOptional() @IsString() trackingSessionId?: string;
 }
 

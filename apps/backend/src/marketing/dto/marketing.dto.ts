@@ -4,9 +4,12 @@ import {
   IsOptional,
   IsNumber,
   IsDateString,
+  IsArray,
+  ValidateNested,
   Min,
   MaxLength,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateConnectionDto {
   @IsString()
@@ -221,6 +224,37 @@ export class CaptureSessionDto {
   @IsString()
   referrer?: string;
 
+  // Platform click ids beyond Meta — each one is the only proof of a paid click
+  // on that platform, so they are accepted individually and folded into the
+  // generic clickId column in precedence order.
+  @IsOptional()
+  @IsString()
+  gclid?: string;
+
+  @IsOptional()
+  @IsString()
+  wbraid?: string;
+
+  @IsOptional()
+  @IsString()
+  gbraid?: string;
+
+  @IsOptional()
+  @IsString()
+  msclkid?: string;
+
+  @IsOptional()
+  @IsString()
+  ttclid?: string;
+
+  @IsOptional()
+  @IsString()
+  twclid?: string;
+
+  @IsOptional()
+  @IsString()
+  igshid?: string;
+
   @IsOptional()
   @IsString()
   landingUrl?: string;
@@ -231,8 +265,25 @@ export class CaptureSessionDto {
   userAgent?: string;
 }
 
-export class AttributionRebuildDto {
-  @IsOptional()
+export class CampaignAliasDto {
+  @IsString()
+  @IsNotEmpty()
+  utmValue: string;
+
+  @IsString()
+  @IsNotEmpty()
+  campaignId: string;
+}
+
+/** Replaces the whole alias map — the UI sends the full list it displays. */
+export class SetCampaignAliasesDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CampaignAliasDto)
+  aliases: CampaignAliasDto[];
+}
+
+export class AttributionRebuildDto {  @IsOptional()
   @IsDateString()
   fromDate?: string;
 

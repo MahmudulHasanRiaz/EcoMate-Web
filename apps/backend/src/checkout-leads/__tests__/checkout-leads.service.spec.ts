@@ -85,6 +85,9 @@ describe('CheckoutLeadsService', () => {
             trackingSnapshot: {
               findFirst: jest.fn().mockResolvedValue(null),
             },
+            marketingSession: {
+              findUnique: jest.fn().mockResolvedValue(null),
+            },
           },
         },
         {
