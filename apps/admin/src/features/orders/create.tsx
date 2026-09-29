@@ -87,7 +87,7 @@ export function CreateOrder() {
   const [shippingCharge, setShippingCharge] = useState('0')
   const [discount, setDiscount] = useState('0')
   const [discountType, setDiscountType] = useState<'flat' | 'percentage'>('flat')
-  const [salesChannel, setSalesChannel] = useState('WEBSITE')
+  const [salesChannel, setSalesChannel] = useState('MESSENGER')
   const [sourcePlatform, setSourcePlatform] = useState('')
   const [sourceType, setSourceType] = useState('')
   const [sourceEntity, setSourceEntity] = useState('')
@@ -112,12 +112,15 @@ export function CreateOrder() {
   }
   const applyOfflineSource = (entry: string) => {
     // Entry → {sourcePlatform, sourceType}: WhatsApp/Messenger/TikTok
-    // Chat/Facebook = CHAT; Phone = CALL.
+    // Chat/Facebook/Instagram/Threads = CHAT; Phone = CALL.
     const map: Record<string, { platform: string; type: string }> = {
       WHATSAPP: { platform: 'WHATSAPP', type: 'CHAT' },
       MESSENGER: { platform: 'FACEBOOK', type: 'CHAT' },
       'TIKTOK_CHAT': { platform: 'TIKTOK', type: 'CHAT' },
       FACEBOOK: { platform: 'FACEBOOK', type: 'CHAT' },
+      INSTAGRAM: { platform: 'INSTAGRAM', type: 'CHAT' },
+      TIKTOK: { platform: 'TIKTOK', type: 'CHAT' },
+      THREADS: { platform: 'THREADS', type: 'CHAT' },
       PHONE: { platform: 'PHONE', type: 'CALL' },
     }
     const mapped = map[entry]
@@ -409,14 +412,6 @@ export function CreateOrder() {
     }
     if (paymentMode === 'partial' && (!partialAmount || parseFloat(partialAmount) <= 0)) {
       toast.error('Enter a partial payment amount')
-      return
-    }
-    // The source is the one thing only a staff member can supply: without it the
-    // order cannot be reported as anything but a website order, and its campaign
-    // attribution stays empty. Offline/chat channels are exactly where the
-    // platform matters most.
-    if (salesChannel !== 'WEBSITE' && salesChannel !== 'POS' && !sourcePlatform) {
-      toast.error('Select the platform this order came from')
       return
     }
     createMut.mutate(buildPayload())
@@ -815,12 +810,18 @@ export function CreateOrder() {
                     className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1'
                     value={salesChannel}
                     onChange={e => {
-                      setSalesChannel(e.target.value)
-                      // Contextual controls re-derive these; clear stale values
-                      // when the channel changes to a different branch.
-                      setSourcePlatform('')
-                      setSourceType('')
-                      if (e.target.value !== 'POS') setSourceEntity('')
+                      const val = e.target.value
+                      setSalesChannel(val)
+                      // Chat platforms self-identify: derive platform+type so no
+                      // separate platform selection is needed. Website/POS keep
+                      // their own contextual controls; others clear stale values.
+                      if (['WHATSAPP', 'MESSENGER', 'FACEBOOK', 'INSTAGRAM', 'TIKTOK', 'THREADS'].includes(val)) {
+                        applyOfflineSource(val)
+                      } else {
+                        setSourcePlatform('')
+                        setSourceType('')
+                        if (val !== 'POS') setSourceEntity('')
+                      }
                     }}
                   >
                     <option value='WEBSITE'>Website</option>
