@@ -4,6 +4,10 @@ import { notFound } from 'next/navigation';
 import ComboDetailClient from '@/components/ComboDetailClient';
 import { getStorefrontConfigServer } from '@/lib/api/storefront-config-server';
 
+// Combo stock is rendered on this page via a revalidate:0 fetch — the page
+// must be fully dynamic or Next.js throws DYNAMIC_SERVER_USAGE at runtime.
+export const dynamic = 'force-dynamic';
+
 const API = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
 
 async function getCombo(id: string) {

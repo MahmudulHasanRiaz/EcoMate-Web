@@ -9,11 +9,10 @@ import Testimonials from "@/components/Testimonials";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import { getFeaturedProductsServer, getNewArrivalsServer, getPopularItemsServer, getBrandsServer, fetchProductsServer, getCategoriesServer } from "@/lib/api/products-server";
 
-// Homepage sections render stock indicators ("Only N left"). ISR is kept
-// for this high-traffic page, but bounded at 60s — the backend product
-// cache (10s TTL + invalidation on every stock write) keeps the data fresh
-// when the page regenerates.
-export const revalidate = 60;
+// Homepage sections render stock indicators ("Only N left") via revalidate:0
+// fetches, so the page must be fully dynamic — a static prerender would throw
+// DYNAMIC_SERVER_USAGE at runtime.
+export const dynamic = 'force-dynamic';
 
 export default async function HomePage() {
   const config = await getStorefrontConfigServer().catch(() => null);
