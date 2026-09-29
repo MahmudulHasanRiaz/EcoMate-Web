@@ -1660,6 +1660,10 @@ export class OrdersService {
               status: initialStatus.name,
               timestamp: new Date().toISOString(),
               note: 'Order created',
+              // Record WHO created the order — staff email for admin creates,
+              // 'Customer' for guest storefront orders. The admin timeline UI
+              // reads performedBy to render the actor badge.
+              performedBy: user?.email || 'Customer',
             },
           ] as any,
         },

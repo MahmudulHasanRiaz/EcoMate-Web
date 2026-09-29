@@ -715,6 +715,38 @@ describe('OrdersService', () => {
       expect(result).toEqual(mockOrder);
     });
 
+    it('records the creator in the order timeline (staff email, or Customer for guests)', async () => {
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) =>
+          cb({
+            ...prisma,
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+          }),
+      );
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        mockInitialStatus,
+      );
+      (prisma.order.create as jest.Mock).mockResolvedValue(mockOrder);
+
+      // Staff create → staff email recorded
+      await service.create(createOrderDto, '10.0.0.9', {
+        userId: 'staff-1',
+        email: 'staff@shop.com',
+        role: 'admin',
+      });
+      let data = (prisma.order.create as jest.Mock).mock.calls[0][0].data;
+      expect(data.timeline[0].performedBy).toBe('staff@shop.com');
+      expect(data.timeline[0].status).toBe(mockInitialStatus.name);
+
+      // Guest storefront order → 'Customer'
+      (prisma.order.create as jest.Mock).mockClear();
+      await service.create(createOrderDto, undefined, undefined);
+      data = (prisma.order.create as jest.Mock).mock.calls[0][0].data;
+      expect(data.timeline[0].performedBy).toBe('Customer');
+    });
+
     const makeGuestDto = () => ({
       ...createOrderDto,
       customerId: undefined,
