@@ -59,6 +59,12 @@ export default defineConfig(({ mode }) => {
         manifest: false,
         workbox: {
           globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+          // Workbox's 2 MiB precache default is a HARD build error, not a
+          // warning: the first asset over the limit fails generateSW and the
+          // whole image build. The POS entry is far below it today, but a
+          // future feature can cross it silently — keep headroom (same guard
+          // as apps/admin).
+          maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
           runtimeCaching: [
             {
               urlPattern: ({ request, url }) =>
