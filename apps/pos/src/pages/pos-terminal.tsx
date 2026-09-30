@@ -7,11 +7,12 @@ import { CashierDashboard } from '../components/cashier-dashboard'
 import { SalesAnalytics } from '../components/sales-analytics'
 import { useSessionStore } from '../stores/session-store'
 import { useCartStore } from '../stores/cart-store'
-import { getPosProducts } from '../api/client'
+import { getPosProducts, getPosBranding } from '../api/client'
 import { VariantModal } from '../components/variant-modal'
+import { BrandMark } from '../components/brand-mark'
 import { toast } from 'sonner'
 import { LogOut, ShoppingCart, User, Wifi, Menu, X, BarChart3, ChevronRight, Store, PieChart } from 'lucide-react'
-import { productImageUrl, variantImageUrl } from '../lib/media'
+import { productImageUrl, variantImageUrl, resolveImageUrl } from '../lib/media'
 
 interface Props { onCloseSession: () => void }
 
@@ -32,6 +33,20 @@ export function PosTerminalPage({ onCloseSession }: Props) {
   
   const { showroomName, showroomId, cashierName } = useSessionStore()
   const { items } = useCartStore()
+  const [brandFavicon, setBrandFavicon] = useState<string | undefined>(undefined)
+
+  // Store favicon for the header brand mark (public branding endpoint;
+  // same priority as index.html: storefront first, then admin).
+  useEffect(() => {
+    let alive = true
+    getPosBranding()
+      .then((b) => {
+        if (!alive) return
+        setBrandFavicon(resolveImageUrl(b.storefrontFavicon || b.adminFavicon) ?? undefined)
+      })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [])
 
   // Close profile popover on outside click
   useEffect(() => {
@@ -173,17 +188,7 @@ export function PosTerminalPage({ onCloseSession }: Props) {
             {isSidebarOpen || !isSidebarCollapsed ? <X size={20} /> : <Menu size={20} />}
           </button>
           
-          <div className="flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500 text-white font-black text-base shadow-sm">E</span>
-            <span className="text-base font-extrabold tracking-tight text-slate-900">EcoMate <span className="text-emerald-600">POS</span></span>
-          </div>
-          
-          <div className="hidden h-4 w-px bg-slate-200 md:block" />
-          
-          <span className="hidden items-center gap-1.5 text-xs font-semibold text-slate-500 md:flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span>{showroomName}</span>
-          </span>
+          <BrandMark name={showroomName} faviconUrl={brandFavicon} />
         </div>
 
         <div className="flex items-center gap-2">

@@ -127,6 +127,22 @@ export const quickCreateCustomer = (phone: string, name?: string) =>
 export const getShowrooms = () =>
   api.get('/warehouses', { params: { type: 'showroom' } });
 
+export interface PosBranding {
+  storeName: string
+  storefrontFavicon: string
+  adminFavicon: string
+}
+
+export const getPosBranding = async (): Promise<PosBranding> => {
+  const res = await api.get('/system-settings/branding')
+  const d = res.data ?? {}
+  return {
+    storeName: d.storeName ?? '',
+    storefrontFavicon: d.storefrontFavicon ?? '',
+    adminFavicon: d.adminFavicon ?? '',
+  }
+}
+
 export const getPaymentGateways = () =>
   api.get('/gateways');
 
