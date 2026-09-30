@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog'
-import { Printer, X } from 'lucide-react'
+import { Printer, X, CheckCircle } from 'lucide-react'
 import { ReceiptData } from '../lib/receipt'
 import { ReceiptPaper } from './receipt-paper'
 
@@ -26,12 +26,17 @@ export function ThermalReceiptModal({ open, onOpenChange, receipt }: Props) {
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200" />
           <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-5 shadow-2xl border border-slate-100 outline-none animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
-              <Dialog.Title className="text-base font-bold text-slate-800 flex items-center gap-2">
-                <Printer size={17} className="text-emerald-500" />
-                <span>Thermal Invoice</span>
+            {/* Thank-you confirmation — this single modal replaces a separate
+                "thank you" popup. It surfaces the order id and the print
+                action together so checkout lands on exactly one screen. */}
+            <div className="relative text-center mb-4">
+              <Dialog.Title className="text-xl font-bold text-emerald-700 flex items-center justify-center gap-2">
+                <CheckCircle size={22} />
+                <span>Thank you for your order!</span>
               </Dialog.Title>
-              <Dialog.Close className="rounded-lg p-1 text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition cursor-pointer">
+              <p className="mt-1 text-xs text-slate-500">Your order has been submitted.</p>
+              <p className="mt-1 text-[10px] font-mono text-slate-400 break-all">Order ID: {receipt?.orderNo || '—'}</p>
+              <Dialog.Close className="absolute top-0 right-0 rounded-lg p-1 text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition cursor-pointer">
                 <X size={16} />
               </Dialog.Close>
             </div>
@@ -61,7 +66,7 @@ export function ThermalReceiptModal({ open, onOpenChange, receipt }: Props) {
                 className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-500 py-3 text-xs font-extrabold text-slate-950 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed shadow-md border border-emerald-400 transition cursor-pointer"
               >
                 <Printer size={14} />
-                <span>Print Receipt</span>
+                <span>Print Thermal Receipt</span>
               </button>
             </div>
           </Dialog.Content>
