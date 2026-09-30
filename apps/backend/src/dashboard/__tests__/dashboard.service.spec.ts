@@ -30,6 +30,24 @@ describe('DashboardService', () => {
   });
 
   describe('getOperationalKpis', () => {
+    /** The configured statuses (id/name/colour/lifecycle order). */
+    const KPI_STATUSES = [
+      { id: 'st-pending', name: 'Pending', color: '#F59E0B', sortOrder: 0 },
+      { id: 'st-paypend', name: 'Payment Pending', color: '#F59E0B', sortOrder: 1 },
+      { id: 'st-payver', name: 'Payment Verifying', color: '#8B5CF6', sortOrder: 2 },
+      { id: 'st-hold', name: 'Hold', color: '#D97706', sortOrder: 3 },
+      { id: 'st-confirmed', name: 'Confirmed', color: '#3B82F6', sortOrder: 4 },
+      { id: 'st-packed', name: 'Packed', color: '#059669', sortOrder: 5 },
+      { id: 'st-packhold', name: 'Packing Hold', color: '#D97706', sortOrder: 6 },
+      { id: 'st-shipping', name: 'Shipping', color: '#06B6D4', sortOrder: 7 },
+      { id: 'st-delivered', name: 'Delivered', color: '#10B981', sortOrder: 8 },
+      { id: 'st-partial', name: 'Partial', color: '#F59E0B', sortOrder: 9 },
+      { id: 'st-retpend', name: 'Return Pending', color: '#EC4899', sortOrder: 10 },
+      { id: 'st-returned', name: 'Returned', color: '#DC2626', sortOrder: 11 },
+      { id: 'st-damaged', name: 'Damaged', color: '#991B1B', sortOrder: 12 },
+      { id: 'st-cancelled', name: 'Cancelled', color: '#EF4444', sortOrder: 13 },
+    ];
+
     /** Default happy-path mocks: order count, lifecycle query, snapshots. */
     function mockAll(overrides: {
       newOrders?: number;
@@ -40,16 +58,41 @@ describe('DashboardService', () => {
       pendingPayments?: number;
       pendingRefunds?: number;
       revenue?: number | null;
+      /** Per-status event rows (2nd raw query → `statusCounts`). */
+      statusEvents?: Array<{ status: string | null; orders: number }>;
+      /** Configured statuses (drives the `statusCounts` row list). */
+      statuses?: Array<{
+        id: string;
+        name: string;
+        color: string;
+        sortOrder: number;
+      }>;
     }) {
       prisma.order.count.mockResolvedValue(overrides.newOrders ?? 0);
-      prisma.$queryRawUnsafe.mockResolvedValue([
-        {
-          confirmed: overrides.confirmed ?? 0,
-          packed: overrides.packed ?? 0,
-          picked_up: overrides.pickedUp ?? 0,
-          delivered: overrides.delivered ?? 0,
-        },
-      ]);
+      // One raw query: the per-status event GROUP BY that backs both
+      // `statusCounts` and the legacy fixed fields. The legacy
+      // confirmed/packed/pickedUp/delivered knobs are expressed as the
+      // equivalent event rows so both views read the same source.
+      prisma.$queryRawUnsafe.mockResolvedValue(
+        overrides.statusEvents ?? [
+          ...(overrides.confirmed != null
+            ? [{ status: 'Confirmed', orders: overrides.confirmed }]
+            : []),
+          ...(overrides.packed != null
+            ? [{ status: 'Packed', orders: overrides.packed }]
+            : []),
+          // Pickup events are the dispatch-derived PICKED_UP pseudo-status.
+          ...(overrides.pickedUp != null
+            ? [{ status: 'PICKED_UP', orders: overrides.pickedUp }]
+            : []),
+          ...(overrides.delivered != null
+            ? [{ status: 'Delivered', orders: overrides.delivered }]
+            : []),
+        ],
+      );
+      prisma.orderStatus.findMany.mockResolvedValue(
+        overrides.statuses ?? KPI_STATUSES,
+      );
       prisma.payment.count.mockResolvedValue(overrides.pendingPayments ?? 0);
       prisma.refund.count.mockResolvedValue(overrides.pendingRefunds ?? 0);
       prisma.payment.aggregate.mockResolvedValue({
@@ -67,6 +110,7 @@ describe('DashboardService', () => {
         pendingPayments: 7,
         pendingRefunds: 2,
         revenue: 125000,
+        statuses: KPI_STATUSES,
       });
 
       const result = await service.getOperationalKpis(
@@ -83,6 +127,25 @@ describe('DashboardService', () => {
         pendingPayments: 7,
         pendingRefunds: 2,
         revenue: 125000,
+        // One row per configured status, in lifecycle order; the dispatch
+        // PICKED_UP events land on Shipping, not a phantom status.
+        statusCounts: KPI_STATUSES.map((s) => ({
+          name: s.name,
+          count:
+            s.name === 'Pending'
+              ? 42
+              : s.name === 'Confirmed'
+                ? 30
+                : s.name === 'Packed'
+                  ? 25
+                  : s.name === 'Shipping'
+                    ? 20
+                    : s.name === 'Delivered'
+                      ? 18
+                      : 0,
+          color: s.color,
+          sortOrder: s.sortOrder,
+        })),
       });
     });
 
@@ -137,12 +200,15 @@ describe('DashboardService', () => {
 
       const sql: string = prisma.$queryRawUnsafe.mock.calls[0][0];
       // DISTINCT order_id for every metric → no double counting from
-      // multiple dispatches or Confirmed→Hold→Confirmed cycles.
-      expect(sql).toContain('COUNT(DISTINCT order_id) FILTER');
-      expect(sql).toMatch(/status = 'Confirmed'/);
-      expect(sql).toMatch(/status = 'Packed'/);
-      expect(sql).toMatch(/status = 'PICKED_UP'/);
-      expect(sql).toMatch(/status IN \('Delivered', 'DELIVERED'\)/);
+      // multiple dispatches or Confirmed→Hold→Confirmed cycles. The
+      // aggregation is a per-status GROUP BY (not per-status FILTER columns),
+      // so every configured status is covered in one pass.
+      expect(sql).toContain('COUNT(DISTINCT order_id)');
+      expect(sql).toMatch(/GROUP BY status/);
+      // Both event sources are unioned: timeline transitions and the
+      // dispatch-derived pickup/delivery pseudo-statuses.
+      expect(sql).toMatch(/'PICKED_UP'/);
+      expect(sql).toMatch(/'DELIVERED'/);
     });
 
     it('lifecycle query unions the order timeline with dispatch event timestamps', async () => {
@@ -304,14 +370,14 @@ describe('DashboardService', () => {
 
   describe('getOperationalPipelineKpis', () => {
     const STATUSES = [
-      { id: 'st-confirmed', name: 'Confirmed' },
-      { id: 'st-packed', name: 'Packed' },
-      { id: 'st-shipping', name: 'Shipping' },
-      { id: 'st-delivered', name: 'Delivered' },
-      { id: 'st-hold', name: 'Hold' },
-      { id: 'st-cancelled', name: 'Cancelled' },
-      { id: 'st-pending', name: 'Pending' },
-      { id: 'st-packing-hold', name: 'Packing Hold' },
+      { id: 'st-confirmed', name: 'Confirmed', color: '#3B82F6', sortOrder: 0 },
+      { id: 'st-packed', name: 'Packed', color: '#059669', sortOrder: 1 },
+      { id: 'st-shipping', name: 'Shipping', color: '#06B6D4', sortOrder: 2 },
+      { id: 'st-delivered', name: 'Delivered', color: '#10B981', sortOrder: 3 },
+      { id: 'st-hold', name: 'Hold', color: '#D97706', sortOrder: 4 },
+      { id: 'st-cancelled', name: 'Cancelled', color: '#EF4444', sortOrder: 5 },
+      { id: 'st-pending', name: 'Pending', color: '#F59E0B', sortOrder: 6 },
+      { id: 'st-packing-hold', name: 'Packing Hold', color: '#D97706', sortOrder: 7 },
     ];
 
     /** Cohort: 20 orders created in period, mixed current statuses. */
@@ -348,6 +414,27 @@ describe('DashboardService', () => {
         pendingPayments: 7,
         pendingRefunds: 2,
         revenue: 75000,
+        // One entry per configured status, lifecycle order — including the
+        // ones with no cohort orders (the client hides those).
+        statusCounts: STATUSES.map((s) => ({
+          name: s.name,
+          count:
+            s.id === 'st-confirmed'
+              ? 5
+              : s.id === 'st-packed'
+                ? 3
+                : s.id === 'st-shipping'
+                  ? 4
+                  : s.id === 'st-delivered'
+                    ? 6
+                    : s.id === 'st-hold'
+                      ? 1
+                      : s.id === 'st-cancelled'
+                        ? 1
+                        : 0,
+          color: s.color,
+          sortOrder: s.sortOrder,
+        })),
       });
     });
 

@@ -119,6 +119,22 @@ export interface ActivityEntry {
   updatedAt: string
 }
 
+/** One order-status tile returned by both operational KPI views. */
+export interface OrderStatusCount {
+  /** `OrderStatus.name` (e.g. 'Pending', 'Payment Verifying', 'Cancelled'). */
+  name: string
+  /**
+   * Pipeline: cohort orders CURRENTLY in this status.
+   * Activity: DISTINCT orders that ENTERED this status during the period
+   * ('Pending' is the period's order-creation count).
+   */
+  count: number
+  /** Status colour from `OrderStatus.color` (hex) — used for tile accents. */
+  color: string
+  /** Lifecycle order for rendering left-to-right. */
+  sortOrder: number
+}
+
 export interface OperationalKpi {
   newOrders: number
   confirmed: number
@@ -128,4 +144,9 @@ export interface OperationalKpi {
   pendingPayments: number
   pendingRefunds: number
   revenue: number
+  /**
+   * One entry per CONFIGURED order status, ordered by `sortOrder` — including
+   * statuses with zero orders, so the panel can drop empty cards itself.
+   */
+  statusCounts: OrderStatusCount[]
 }

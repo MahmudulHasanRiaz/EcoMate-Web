@@ -6,6 +6,21 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { dhakaDayRange, endOfDhakaDay, startOfDhakaDay } from '../common/utils/dhaka-time';
 
+/**
+ * One order-status tile: how many orders sit in (Pipeline) or entered
+ * (Activity) this status for the selected period.
+ *
+ * Both operational KPI views return one entry per CONFIGURED `OrderStatus`,
+ * ordered by `sortOrder` — including statuses with no orders, so the client
+ * can hide zero cards without needing the status catalogue of its own.
+ */
+export interface StatusCount {
+  name: string;
+  count: number;
+  color: string;
+  sortOrder: number;
+}
+
 @Injectable()
 export class DashboardService {
   private readonly logger = new Logger(DashboardService.name);
@@ -429,13 +444,8 @@ export class DashboardService {
       // DISTINCT order_id across BOTH sources guarantees an order is counted
       // once even when it has multiple dispatches or repeated transitions
       // (e.g. Confirmed → Hold → Confirmed).
-      type LifecycleRow = {
-        confirmed: number;
-        packed: number;
-        picked_up: number;
-        delivered: number;
-      };
-      const [lifecycle] = await this.prisma.$queryRawUnsafe<LifecycleRow[]>(
+      type StatusEventRow = { status: string | null; orders: number };
+      const statusEventRows = await this.prisma.$queryRawUnsafe<StatusEventRow[]>(
         `WITH period AS (
            -- Params arrive as timezone-less UTC wall clock (Prisma sends
            -- DateTime params that way). Casting them straight to timestamptz
@@ -474,12 +484,14 @@ export class DashboardService {
            CROSS JOIN period p
            WHERE (d."deliveredAt" AT TIME ZONE 'UTC') BETWEEN p.range_start AND p.range_end
          )
-         SELECT
-           COUNT(DISTINCT order_id) FILTER (WHERE status = 'Confirmed')::int AS confirmed,
-           COUNT(DISTINCT order_id) FILTER (WHERE status = 'Packed')::int AS packed,
-           COUNT(DISTINCT order_id) FILTER (WHERE status = 'PICKED_UP')::int AS picked_up,
-           COUNT(DISTINCT order_id) FILTER (WHERE status IN ('Delivered', 'DELIVERED'))::int AS delivered
-         FROM events`,
+         -- One row per status instead of a fixed set of FILTER columns, so
+         -- EVERY configured order status gets a count in a single pass.
+         -- DISTINCT order_id keeps an order that entered/left a status twice
+         -- (or has several dispatches) counted once.
+         SELECT status, COUNT(DISTINCT order_id)::int AS orders
+         FROM events
+         WHERE status IS NOT NULL
+         GROUP BY status`,
         periodStart,
         periodEnd,
       );
@@ -515,15 +527,23 @@ export class DashboardService {
         },
       });
 
+      const statusCounts = await this.activityStatusCounts(
+        statusEventRows ?? [],
+        newOrders,
+      );
+
       return {
         newOrders,
-        confirmed: lifecycle?.confirmed ?? 0,
-        packed: lifecycle?.packed ?? 0,
-        pickedUp: lifecycle?.picked_up ?? 0,
-        delivered: lifecycle?.delivered ?? 0,
+        // Legacy fixed fields (kept for existing consumers): read from the
+        // SAME distribution the tiles use, so the two can never disagree.
+        confirmed: this.countOf(statusCounts, 'Confirmed'),
+        packed: this.countOf(statusCounts, 'Packed'),
+        pickedUp: this.countOf(statusCounts, 'Shipping'),
+        delivered: this.countOf(statusCounts, 'Delivered'),
         pendingPayments,
         pendingRefunds,
         revenue: Number(revenueAgg?._sum?.amount || 0),
+        statusCounts,
       };
     } catch (error) {
       this.logger.error(
@@ -553,29 +573,10 @@ export class DashboardService {
 
       // ── Current-status distribution of the cohort ──────────────────────
       // Where the period-created orders stand NOW (single current status per
-      // order). Exact status-name match only: 'Shipping' feeds the `pickedUp`
-      // field (frontend labels it "Shipping" in Pipeline view — distinct from
-      // Activity's pickup EVENT). Non-lifecycle statuses (Pending, Hold,
-      // Packing Hold, Cancelled, Returned, …) stay in `newOrders` only, so the
-      // tile sum is deliberately allowed to be smaller than the cohort total.
-      const groups = await this.prisma.order.groupBy({
-        by: ['statusId'],
-        _count: true,
-        where: { createdAt: dateFilter, trashedAt: null, kind: 'SALE' },
-      });
-      const statuses = await this.prisma.orderStatus.findMany();
-      const statusMap = new Map(statuses.map((s) => [s.id, s.name]));
-      let confirmed = 0;
-      let packed = 0;
-      let pickedUp = 0;
-      let delivered = 0;
-      for (const g of groups) {
-        const name = statusMap.get(g.statusId);
-        if (name === 'Confirmed') confirmed += g._count;
-        else if (name === 'Packed') packed += g._count;
-        else if (name === 'Shipping') pickedUp += g._count;
-        else if (name === 'Delivered') delivered += g._count;
-      }
+      // order). Every configured OrderStatus is reported (see
+      // `cohortStatusCounts`), so the panel can render one card per status
+      // instead of only the lifecycle subset.
+      const statusCounts = await this.cohortStatusCounts(dateFilter);
 
       // ── Snapshots: identical semantics to Activity ─────────────────────
       // Pending Payments / Pending Refunds are global backlogs; revenue is
@@ -596,13 +597,16 @@ export class DashboardService {
 
       return {
         newOrders,
-        confirmed,
-        packed,
-        pickedUp,
-        delivered,
+        // Legacy fixed fields (kept for existing consumers): read straight
+        // from the full distribution so the two can never disagree.
+        confirmed: this.countOf(statusCounts, 'Confirmed'),
+        packed: this.countOf(statusCounts, 'Packed'),
+        pickedUp: this.countOf(statusCounts, 'Shipping'),
+        delivered: this.countOf(statusCounts, 'Delivered'),
         pendingPayments,
         pendingRefunds,
         revenue: Number(revenueAgg?._sum?.amount || 0),
+        statusCounts,
       };
     } catch (error) {
       this.logger.error(
@@ -613,6 +617,84 @@ export class DashboardService {
         'Failed to fetch operational pipeline KPIs',
       );
     }
+  }
+
+  /**
+   * One tile per CONFIGURED OrderStatus, ordered by `sortOrder`, for the
+   * period cohort's CURRENT state (single status per order).
+   *
+   * Every configured status is returned — including the ones with zero orders
+   * — so the client decides what to render; `count` is a plain count here.
+   */
+  private async cohortStatusCounts(
+    dateFilter: { gte: Date; lte: Date },
+  ): Promise<StatusCount[]> {
+    const [statuses, groups] = await Promise.all([
+      this.prisma.orderStatus.findMany({
+        orderBy: { sortOrder: 'asc' },
+        select: { id: true, name: true, color: true, sortOrder: true },
+      }),
+      this.prisma.order.groupBy({
+        by: ['statusId'],
+        _count: true,
+        where: { createdAt: dateFilter, trashedAt: null, kind: 'SALE' },
+      }),
+    ]);
+    const countByStatus = new Map(groups.map((g) => [g.statusId, g._count]));
+    return statuses.map((s) => ({
+      name: s.name,
+      count: countByStatus.get(s.id) ?? 0,
+      color: s.color,
+      sortOrder: s.sortOrder,
+    }));
+  }
+
+  /**
+   * One tile per CONFIGURED OrderStatus for the Activity view: how many
+   * DISTINCT orders entered that status during the period.
+   *
+   * `PICKED_UP` / `DELIVERED` come from Dispatch rather than the order
+   * timeline, so they are folded into Shipping / Delivered — otherwise a
+   * courier-driven pickup would show up under a status that does not exist in
+   * `OrderStatus` (and would double-count an order that also has the timeline
+   * entry). `Pending` is an ORDER-CREATION measure, not a transition, so it
+   * takes `newOrders` (orders created in the period) — the panel labels it
+   * "New Orders".
+   */
+  private async activityStatusCounts(
+    eventRows: Array<{ status: string | null; orders: number }>,
+    newOrders: number,
+  ): Promise<StatusCount[]> {
+    const statuses = await this.prisma.orderStatus.findMany({
+      orderBy: { sortOrder: 'asc' },
+      select: { name: true, color: true, sortOrder: true },
+    });
+
+    const events = new Map<string, number>();
+    for (const row of eventRows) {
+      if (!row.status) continue;
+      events.set(row.status, (events.get(row.status) ?? 0) + row.orders);
+    }
+    const delivered = (events.get('Delivered') ?? 0) + (events.get('DELIVERED') ?? 0);
+    const shipping = events.get('Shipping') ?? 0;
+
+    return statuses.map((s) => {
+      let count: number;
+      if (s.name === 'Pending') count = newOrders;
+      else if (s.name === 'Delivered') count = delivered;
+      else if (s.name === 'Shipping') {
+        // Timeline 'Shipping' entries and dispatch PICKED_UP events describe
+        // the same milestone for the same order, so take the larger of the two
+        // rather than summing (which would double-count).
+        count = Math.max(shipping, events.get('PICKED_UP') ?? 0);
+      } else count = events.get(s.name) ?? 0;
+      return { name: s.name, count, color: s.color, sortOrder: s.sortOrder };
+    });
+  }
+
+  /** Count for one status out of a distribution (0 when absent). */
+  private countOf(statusCounts: StatusCount[], name: string): number {
+    return statusCounts.find((s) => s.name === name)?.count ?? 0;
   }
 
   async getActivityLog() {
