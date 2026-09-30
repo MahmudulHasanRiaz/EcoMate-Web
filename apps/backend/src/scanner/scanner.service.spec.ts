@@ -153,6 +153,40 @@ describe('scanner-resolver — resolveScanIdentifier', () => {
     const outcome = await resolveScanIdentifier(prisma, '   ');
     expect(outcome.status).toBe('not_found');
   });
+
+  it('enriches order previews with customer, item count and total (no extra query)', async () => {
+    const order = saleOrder({
+      customerFirstName: 'Md.',
+      customerLastName: 'Rahim',
+      customerPhone: '01700000001',
+      total: 1250,
+      items: [{ quantity: 1 }, { quantity: 3 }],
+    });
+    const { prisma } = makePrismaFake({ orders: [order] });
+    const outcome = await resolveScanIdentifier(prisma, 'ORD-260930-0001');
+    expect(outcome.order?.customerName).toBe('Md. Rahim');
+    expect(outcome.order?.customerPhone).toBe('01700000001');
+    expect(outcome.order?.itemCount).toBe(4);
+    expect(outcome.order?.orderTotal).toBe(1250);
+  });
+
+  it('falls back to guest name, then Guest, for order previews', async () => {
+    const guest = saleOrder({ id: 'order-9', displayId: 'ORD-260930-0009', guestName: 'Walk-in', total: 850 });
+    const bare = saleOrder({ id: 'order-8', displayId: 'ORD-260930-0008', total: 100 });
+    const { prisma } = makePrismaFake({ orders: [guest, bare] });
+    expect((await resolveScanIdentifier(prisma, 'ORD-260930-0009')).order?.customerName).toBe('Walk-in');
+    expect((await resolveScanIdentifier(prisma, 'ORD-260930-0008')).order?.customerName).toBe('Guest');
+  });
+
+  it('enriches dispatch previews with the order row facts', async () => {
+    const order = saleOrder({ customerFirstName: 'Nusrat', customerLastName: 'Jahan', total: 850, items: [{ quantity: 1 }] });
+    const d = dispatchFor(order, { consignmentId: 'SF-99881' });
+    const { prisma } = makePrismaFake({ orders: [order], dispatches: [d] });
+    const outcome = await resolveScanIdentifier(prisma, 'sf 99881');
+    expect(outcome.dispatches[0].customerName).toBe('Nusrat Jahan');
+    expect(outcome.dispatches[0].itemCount).toBe(1);
+    expect(outcome.dispatches[0].orderTotal).toBe(850);
+  });
 });
 
 describe('ScannerService — purpose registry', () => {

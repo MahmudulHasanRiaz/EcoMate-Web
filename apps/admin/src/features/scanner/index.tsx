@@ -2,36 +2,75 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Html5Qrcode } from 'html5-qrcode'
-import { apiClient } from '@/lib/api-client'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Switch } from '@/components/ui/switch'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import {
   CheckCircle2, XCircle, AlertTriangle, Info, Camera, CameraOff, ScanLine,
-  Truck, Package, Printer, RotateCcw, ExternalLink, Trash2, Play,
+  Truck, Package, Printer, RotateCcw, Play, Trash2,
+  Activity, X, Loader2, ChevronDown, CircleHelp, ArrowRight, Hourglass,
 } from 'lucide-react'
+import { StatusBadge, riseStyle } from '@/components/ui/dashboard'
+import { StagedList, displayCustomer, orderMeta, type StagedRow } from '@/features/scanner/staged-list'
 import {
-  scannerApi, ScanPurposeDescriptor, ScanResolveOutcome, ScanResult, ScanDispatchPreview, ScanOrderPreview,
+  scannerApi, ScanPurposeDescriptor, ScanResult, ScanDispatchPreview,
 } from '@/features/orders/api'
 
-const PURPOSE_ICONS: Record<string, any> = {
+/** Operator-facing task names. Backend purpose ids stay technical. */
+const TASK_NAMES: Record<string, string> = {
+  DISPATCH_HANDED_OVER: 'Hand over dispatch',
+  DISPATCH_RETURN: 'Process return',
+  ORDER_STATUS: 'Update order status',
+  STICKER_PRINT: 'Print sticker',
+}
+
+const TASK_ICONS: Record<string, any> = {
   DISPATCH_HANDED_OVER: Truck,
   DISPATCH_RETURN: RotateCcw,
   ORDER_STATUS: Package,
   STICKER_PRINT: Printer,
 }
 
-const RESULT_META: Record<string, { icon: any; color: string; label: string }> = {
-  success: { icon: CheckCircle2, color: 'text-emerald-500', label: 'Success' },
-  duplicate: { icon: Info, color: 'text-sky-500', label: 'Duplicate' },
-  warning: { icon: AlertTriangle, color: 'text-amber-500', label: 'Partial' },
-  error: { icon: XCircle, color: 'text-red-500', label: 'Failed' },
+/** Workspace title + accepted identifiers per task (mirrors the resolver). */
+const TASK_HELP: Record<string, { title: string; accept: string; empty: string }> = {
+  DISPATCH_HANDED_OVER: {
+    title: 'Hand over dispatch',
+    accept: 'Scan a courier dispatch ID, tracking code, or order number.',
+    empty: 'Scan a courier ID or order number to begin.',
+  },
+  DISPATCH_RETURN: {
+    title: 'Process return',
+    accept: 'Scan a returned courier dispatch ID, tracking code, or order number.',
+    empty: 'Scan a returned courier ID or order number to begin.',
+  },
+  ORDER_STATUS: {
+    title: 'Update order status',
+    accept: 'Scan one or more order numbers (ORD-…).',
+    empty: 'Scan an order number to begin.',
+  },
+  STICKER_PRINT: {
+    title: 'Print sticker',
+    accept: 'Scan an order number (ORD-…).',
+    empty: 'Scan an order number to begin.',
+  },
 }
+
+type FeedTone = 'success' | 'info' | 'warning' | 'danger'
+
+const RESULT_META: Record<string, { icon: any; tone: FeedTone; label: string }> = {
+  success: { icon: CheckCircle2, tone: 'success', label: 'Success' },
+  duplicate: { icon: Info, tone: 'info', label: 'Already done' },
+  warning: { icon: AlertTriangle, tone: 'warning', label: 'Needs action' },
+  error: { icon: XCircle, tone: 'danger', label: 'Failed' },
+}
+
+type FeedFilter = 'all' | 'success' | 'error' | 'action'
 
 const errMsg = (e: unknown): string => {
   const err = e as any
@@ -42,51 +81,289 @@ const errMsg = (e: unknown): string => {
   return 'Scan failed. Please try again.'
 }
 
-interface QueueItem {
+function relTime(iso: string, now: number): string {
+  const diff = Math.max(0, now - new Date(iso).getTime())
+  const s = Math.floor(diff / 1000)
+  if (s < 10) return 'Just now'
+  if (s < 60) return `${s} sec ago`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m} min ago`
+  return new Date(iso).toLocaleTimeString()
+}
+
+interface StagedOrder {
   key: string
   identifier: string
   label: string
   sub: string
-  allowedStatuses?: { id: string; name: string }[]
+  allowedStatuses: { id: string; name: string }[]
+  customerName: string
+  customerPhone: string
+  itemCount: number
+  orderTotal: number
 }
 
-interface HistoryItem extends ScanResult {
+interface QueuedDispatch {
+  key: string
+  identifier: string
+  label: string
+  sub: string
+  /** 'order' for sticker rows, 'dispatch' for handover/return rows. */
+  rowKind: 'order' | 'dispatch'
+  orderId: string
+  orderDisplayId: string
+  customerName: string
+  customerPhone: string
+  itemCount: number
+  orderTotal: number
+  courier: string
+  dispatchStatus: string
+}
+
+/** Dense-row projection — newest-first so the latest scan is on top. */
+function orderStagedRow(s: StagedOrder): StagedRow {
+  const who = displayCustomer(s.customerName, s.customerPhone)
+  const hay = `${s.label} ${s.customerName} ${s.customerPhone} ${who} ${s.sub}`.toLowerCase()
+  return {
+    key: s.key,
+    orderId: s.key,
+    primary: s.label,
+    customerName: who,
+    meta: orderMeta(s.itemCount, s.orderTotal),
+    status: s.sub,
+    searchText: hay,
+  }
+}
+
+function queueStagedRow(q: QueuedDispatch): StagedRow {
+  const isDispatch = q.rowKind === 'dispatch'
+  const who = displayCustomer(q.customerName, q.customerPhone)
+  const hay = `${q.label} ${q.orderDisplayId} ${q.customerName} ${q.customerPhone} ${who} ${q.courier} ${q.dispatchStatus} ${q.sub}`.toLowerCase()
+  return {
+    key: q.key,
+    orderId: q.orderId,
+    primary: q.label,
+    secondary: isDispatch && q.orderDisplayId && q.orderDisplayId !== q.label ? q.orderDisplayId : undefined,
+    customerName: who,
+    meta: isDispatch ? q.courier : orderMeta(q.itemCount, q.orderTotal),
+    status: isDispatch ? q.dispatchStatus : q.sub,
+    searchText: hay,
+  }
+}
+
+interface PendingSelection {
+  identifier: string
+  message: string
+  dispatches: ScanDispatchPreview[]
+}
+
+interface FeedItem extends ScanResult {
   rid: number
   at: string
 }
 
+const FEED_CAP = 200
+const FEED_RENDER_CAP = 100
+
 export default function ScannerPage() {
   const [mode, setMode] = useState<string>('DISPATCH_HANDED_OVER')
   const [input, setInput] = useState('')
-  const [history, setHistory] = useState<HistoryItem[]>([])
-  const [queue, setQueue] = useState<QueueItem[]>([])
+  const [feed, setFeed] = useState<FeedItem[]>([])
+  const [feedFilter, setFeedFilter] = useState<FeedFilter>('all')
+  const [batchMode, setBatchMode] = useState(false)
+  const [queue, setQueue] = useState<QueuedDispatch[]>([])
+  const [staged, setStaged] = useState<StagedOrder[]>([])
+  const [selection, setSelection] = useState<PendingSelection | null>(null)
   const [targetStatusId, setTargetStatusId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [cameraActive, setCameraActive] = useState(false)
   const [cameraError, setCameraError] = useState<string | null>(null)
+  const [now, setNow] = useState(() => Date.now())
+  const [confirmApply, setConfirmApply] = useState<null | { kind: 'staged' | 'queue' }>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const scannerRef = useRef<Html5Qrcode | null>(null)
   const ridRef = useRef(0)
   const modeRef = useRef(mode)
   modeRef.current = mode
+  const batchRef = useRef(batchMode)
+  batchRef.current = batchMode
 
   const { data: purposes } = useQuery({
     queryKey: ['scanner-purposes'],
     queryFn: () => scannerApi.purposes(),
   })
 
-  const record = useCallback((res: ScanResult) => {
-    setHistory((h) => [{ ...res, rid: ++ridRef.current, at: new Date().toISOString() }, ...h].slice(0, 200))
+  // Relative timestamps stay fresh without touching scan state.
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 15000)
+    return () => clearInterval(t)
   }, [])
 
-  // ── Batch execute: apply the mode's action to the whole queue ──────────
-  const applyBatch = useCallback(async () => {
+  const record = useCallback((res: ScanResult) => {
+    setFeed((h) => [{ ...res, rid: ++ridRef.current, at: new Date().toISOString() }, ...h].slice(0, FEED_CAP))
+  }, [])
+
+  const selectMode = useCallback((purpose: string) => {
+    setMode(purpose)
+    setTargetStatusId(null)
+    setStaged([])
+    setQueue([])
+    setSelection(null)
+    inputRef.current?.focus()
+  }, [])
+
+  /** Execute a scan purpose and record the confirmed backend result. */
+  const runExecute = useCallback(async (payload: {
+    identifier: string
+    dispatchId?: string
+    dispatchIds?: string[]
+    orderId?: string
+    orderIds?: string[]
+    targetStatusId?: string
+  }, context?: { customerName?: string; customerPhone?: string; orderDisplayId?: string }) => {
+    const res = await scannerApi.scan({ purpose: modeRef.current, ...payload })
+    if (context && (context.customerName || context.customerPhone || context.orderDisplayId)) {
+      const who = displayCustomer(context.customerName, context.customerPhone)
+      res.details = {
+        ...(res.details ?? {}),
+        customerLine: context.orderDisplayId && context.orderDisplayId !== res.identifier
+          ? `${who} · ${context.orderDisplayId}`
+          : who,
+      }
+    }
+    record(res)
+    // Success lives in the feed — only problems toast, so rapid scanning
+    // never buries the operator in dismissals.
+    if (res.status === 'error') toast.error(res.message)
+    else if (res.status === 'warning') toast.warning(res.message)
+    const results = (res as any).details?.results
+    if (Array.isArray(results)) {
+      for (const r of results) {
+        if (r.ok === false) {
+          record({
+            status: 'error',
+            identifier: r.displayId ?? '',
+            title: `${r.displayId ?? r.orderId ?? 'Item'} — failed`,
+            message: r.message ?? 'Rejected by the state machine.',
+            oldState: r.oldStatus,
+          })
+        }
+      }
+    }
+    return res
+  }, [record])
+
+  // ── Scan: resolve → execute immediately (or stage when the task needs
+  //    a follow-up choice: dispatch selection, target status) ─────────────
+  const handleScan = useCallback(async (raw: string) => {
+    const identifier = raw.trim()
+    if (!identifier || busy) return
+    setInput('')
+    setBusy(true)
+    try {
+      const outcome = await scannerApi.resolve(identifier, modeRef.current)
+      const purpose = modeRef.current
+
+      if (outcome.status === 'not_found') {
+        record({ status: 'error', identifier, title: 'Not found', message: outcome.message ?? 'Nothing matched this identifier. Check the code and try again.' })
+        toast.error(outcome.message ?? 'Nothing matched this identifier.')
+        return
+      }
+
+      if (outcome.status === 'selection_required') {
+        // Ambiguous — never guess. The inline panel resolves it.
+        setSelection({ identifier, message: outcome.message ?? 'Multiple dispatches found. Select the dispatch to continue.', dispatches: outcome.dispatches })
+        record({ status: 'warning', identifier, title: `${identifier} — Multiple dispatches found`, message: 'Select which dispatch to process below.' })
+        return
+      }
+
+      if (purpose === 'ORDER_STATUS') {
+        const o = outcome.order
+        if (!o) {
+          record({ status: 'error', identifier, title: 'Not found', message: 'No order found for this identifier.' })
+          return
+        }
+        setStaged((s) => {
+          if (s.some((i) => i.key === o.id)) {
+            record({ status: 'duplicate', identifier, title: `${o.displayId} — Already staged`, message: 'This order is already staged for the status update.', oldState: o.status })
+            return s
+          }
+          return [{ key: o.id, identifier: o.displayId, label: o.displayId, sub: o.status, allowedStatuses: o.allowedStatuses, customerName: o.customerName ?? '', customerPhone: o.customerPhone ?? '', itemCount: o.itemCount ?? 0, orderTotal: o.orderTotal ?? 0 }, ...s]
+        })
+        return
+      }
+
+      if (purpose === 'STICKER_PRINT') {
+        const o = outcome.order
+        if (!o) {
+          record({ status: 'error', identifier, title: 'Not found', message: 'No order found for this identifier.' })
+          return
+        }
+        if (batchRef.current) {
+          setQueue((q) => {
+            if (q.some((i) => i.key === o.id)) {
+              record({ status: 'duplicate', identifier, title: `${o.displayId} — Already staged`, message: 'This order is already staged for printing.' })
+              return q
+            }
+            return [{ key: o.id, identifier: o.displayId, label: o.displayId, sub: o.status, rowKind: 'order' as const, orderId: o.id, orderDisplayId: o.displayId, customerName: o.customerName ?? '', customerPhone: o.customerPhone ?? '', itemCount: o.itemCount ?? 0, orderTotal: o.orderTotal ?? 0, courier: '', dispatchStatus: '' }, ...q]
+          })
+          return
+        }
+        await runExecute({ identifier: o.displayId }, { customerName: o.customerName, customerPhone: o.customerPhone, orderDisplayId: o.displayId })
+        return
+      }
+
+      // Dispatch purposes (handover / return).
+      const d = outcome.dispatches[0]
+      if (!d) {
+        record({ status: 'error', identifier, title: 'Not found', message: 'No dispatch found for this identifier.' })
+        return
+      }
+      if (batchRef.current) {
+        setQueue((q) => {
+          if (q.some((i) => i.key === d.id)) {
+            record({ status: 'duplicate', identifier, title: `${d.consignmentId} — Already staged`, message: 'This dispatch is already staged in the batch.' })
+            return q
+          }
+          return [{ key: d.id, identifier: d.consignmentId, label: d.consignmentId, sub: `${d.courier} — ${d.status} — Order ${d.orderDisplayId}`, rowKind: 'dispatch' as const, orderId: d.orderId, orderDisplayId: d.orderDisplayId, customerName: d.customerName ?? '', customerPhone: d.customerPhone ?? '', itemCount: d.itemCount ?? 0, orderTotal: d.orderTotal ?? 0, courier: d.courier, dispatchStatus: d.status }, ...q]
+        })
+        return
+      }
+      await runExecute({ identifier: d.consignmentId, dispatchId: d.id }, { customerName: d.customerName, customerPhone: d.customerPhone, orderDisplayId: d.orderDisplayId })
+    } catch (e) {
+      toast.error(errMsg(e))
+    } finally {
+      setBusy(false)
+      inputRef.current?.focus()
+    }
+  }, [busy, record, runExecute])
+
+  /** Resolve an ambiguous scan by picking one dispatch inline. */
+  const resolveSelection = useCallback(async (d: ScanDispatchPreview) => {
+    if (busy) return
+    setBusy(true)
+    try {
+      if (batchRef.current && modeRef.current !== 'ORDER_STATUS' && modeRef.current !== 'STICKER_PRINT') {
+        setQueue((q) => q.some((i) => i.key === d.id)
+          ? q
+          : [{ key: d.id, identifier: d.consignmentId, label: d.consignmentId, sub: `${d.courier} — ${d.status} — Order ${d.orderDisplayId}`, rowKind: 'dispatch' as const, orderId: d.orderId, orderDisplayId: d.orderDisplayId, customerName: d.customerName ?? '', customerPhone: d.customerPhone ?? '', itemCount: d.itemCount ?? 0, orderTotal: d.orderTotal ?? 0, courier: d.courier, dispatchStatus: d.status }, ...q])
+      } else {
+        await runExecute({ identifier: d.consignmentId, dispatchId: d.id }, { customerName: d.customerName, customerPhone: d.customerPhone, orderDisplayId: d.orderDisplayId })
+      }
+      setSelection(null)
+    } catch (e) {
+      toast.error(errMsg(e))
+    } finally {
+      setBusy(false)
+      inputRef.current?.focus()
+    }
+  }, [busy, runExecute])
+
+  /** Batch apply: one action across the whole staged queue. */
+  const applyQueue = useCallback(async () => {
     if (queue.length === 0 || busy) return
     setBusy(true)
     try {
-      const isOrderStatus = modeRef.current === 'ORDER_STATUS'
-
-      // Sticker print batch → the existing bulk print page (chunked, one print).
       if (modeRef.current === 'STICKER_PRINT') {
         const ids = queue.map((q) => q.key).join(',')
         window.open(`/admin/op/print/bulk?type=sticker&ids=${encodeURIComponent(ids)}`, '_blank')
@@ -98,43 +375,29 @@ export default function ScannerPage() {
           details: { printUrl: `/admin/op/print/bulk?type=sticker&ids=${encodeURIComponent(ids)}` },
         })
         setQueue([])
-        setTargetStatusId(null)
-        setBusy(false)
-        inputRef.current?.focus()
         return
       }
-
-      const res = await scannerApi.scan({
-        purpose: modeRef.current,
-        identifier: queue[0]?.identifier ?? '',
-        ...(isOrderStatus
-          ? { orderIds: queue.map((q) => q.key), targetStatusId: targetStatusId ?? undefined }
-          : { dispatchIds: queue.map((q) => q.key) }),
-      })
-      record(res)
-      if (res.status === 'error') {
-        toast.error(res.message)
-      } else if (res.status === 'warning') {
-        toast.warning(res.message)
-      } else {
-        toast.success(res.message)
-      }
-      // Per-order batch results each get their own history entry.
-      const results = (res as any).details?.results
-      if (Array.isArray(results)) {
-        for (const r of results) {
-          if (r.ok === false) {
-            record({
-              status: 'error',
-              identifier: r.displayId ?? '',
-              title: `${r.displayId ?? r.orderId ?? 'Item'} — failed`,
-              message: r.message ?? 'Rejected by the state machine.',
-              oldState: r.oldStatus,
-            })
-          }
-        }
-      }
+      await runExecute({ identifier: queue[0]?.identifier ?? '', dispatchIds: queue.map((q) => q.key) })
       setQueue([])
+    } catch (e) {
+      toast.error(errMsg(e))
+    } finally {
+      setBusy(false)
+      inputRef.current?.focus()
+    }
+  }, [busy, queue, record, runExecute])
+
+  /** Order-status apply: one staged order executes singly, several as a batch. */
+  const applyStaged = useCallback(async () => {
+    if (staged.length === 0 || busy || !targetStatusId) return
+    setBusy(true)
+    try {
+      if (staged.length === 1) {
+        await runExecute({ identifier: staged[0].identifier, orderId: staged[0].key, targetStatusId })
+      } else {
+        await runExecute({ identifier: staged[0].identifier, orderIds: staged.map((s) => s.key), targetStatusId })
+      }
+      setStaged([])
       setTargetStatusId(null)
     } catch (e) {
       toast.error(errMsg(e))
@@ -142,91 +405,7 @@ export default function ScannerPage() {
       setBusy(false)
       inputRef.current?.focus()
     }
-  }, [busy, queue, targetStatusId, record])
-
-  // ── Scan: resolve → enqueue (never replaces the queue) ──────────────────
-  const handleScan = useCallback(async (raw: string) => {
-    const identifier = raw.trim()
-    if (!identifier || busy) return
-    setInput('')
-    setBusy(true)
-    try {
-      const outcome = await scannerApi.resolve(identifier, modeRef.current)
-      if (outcome.status === 'not_found') {
-        record({ status: 'error', identifier, title: 'Not found', message: outcome.message ?? 'Nothing matched this identifier.' })
-        toast.error(outcome.message ?? 'Nothing matched this identifier.')
-        return
-      }
-      if (outcome.status === 'selection_required') {
-        // Ambiguous identifier — the pending selection list handles it.
-        setQueue((q) => {
-          const existing = new Set(q.map((i) => i.key))
-          const additions: QueueItem[] = outcome.dispatches
-            .filter((d: ScanDispatchPreview) => !existing.has(d.id))
-            .map((d: ScanDispatchPreview) => ({
-              key: d.id,
-              identifier: d.consignmentId,
-              label: d.consignmentId,
-              sub: `${d.courier} — ${d.status} — Order ${d.orderDisplayId}`,
-            }))
-          return [...q, ...additions]
-        })
-        return
-      }
-
-      // resolved — enqueue the order/dispatch (duplicates are reported, not re-added)
-      if (modeRef.current === 'ORDER_STATUS') {
-        const o = outcome.order
-        if (!o) {
-          record({ status: 'error', identifier, title: 'Not found', message: 'No order found for this identifier.' })
-          return
-        }
-        setQueue((q) => {
-          if (q.some((i) => i.key === o.id)) {
-            record({ status: 'duplicate', identifier, title: `${o.displayId} — already queued`, message: 'This order is already in the batch queue.', oldState: o.status })
-            return q
-          }
-          return [...q, { key: o.id, identifier: o.displayId, label: o.displayId, sub: o.status, allowedStatuses: o.allowedStatuses }]
-        })
-        return
-      }
-
-      if (modeRef.current === 'STICKER_PRINT') {
-        const o = outcome.order
-        if (!o) {
-          record({ status: 'error', identifier, title: 'Not found', message: 'No order found for this identifier.' })
-          return
-        }
-        setQueue((q) => {
-          if (q.some((i) => i.key === o.id)) {
-            record({ status: 'duplicate', identifier, title: `${o.displayId} — already queued`, message: 'This order is already in the batch queue.' })
-            return q
-          }
-          return [...q, { key: o.id, identifier: o.displayId, label: o.displayId, sub: o.status }]
-        })
-        return
-      }
-
-      // Dispatch purposes
-      const d = outcome.dispatches[0]
-      if (!d) {
-        record({ status: 'error', identifier, title: 'Not found', message: 'No dispatch found for this identifier.' })
-        return
-      }
-      setQueue((q) => {
-        if (q.some((i) => i.key === d.id)) {
-          record({ status: 'duplicate', identifier, title: `${d.consignmentId} — already queued`, message: 'This dispatch is already in the batch queue.' })
-          return q
-        }
-        return [...q, { key: d.id, identifier: d.consignmentId, label: d.consignmentId, sub: `${d.courier} — ${d.status} — Order ${d.orderDisplayId}` }]
-      })
-    } catch (e) {
-      toast.error(errMsg(e))
-    } finally {
-      setBusy(false)
-      inputRef.current?.focus()
-    }
-  }, [busy, record])
+  }, [busy, staged, targetStatusId, runExecute])
 
   // Camera lifecycle — mirrors the packing workspace pattern.
   useEffect(() => {
@@ -247,7 +426,7 @@ export default function ScannerPage() {
       () => {},
     ).catch((err) => {
       console.error('Failed to start html5-qrcode', err)
-      setCameraError('Camera is currently in use or not responding.')
+      setCameraError('Camera is currently in use or not responding. You can keep scanning manually below.')
       setCameraActive(false)
     })
     return () => {
@@ -257,236 +436,505 @@ export default function ScannerPage() {
     }
   }, [cameraActive, handleScan])
 
+  // Input stays ready: focus on load, after camera closes, after every result.
   useEffect(() => {
     if (!cameraActive) inputRef.current?.focus()
-  }, [cameraActive, history])
+  }, [cameraActive, feed])
 
-  // Common target statuses across the whole queue (intersection) — the batch
-  // can only apply a transition that EVERY queued order currently allows.
+  // Ops shortcuts: 1–4 switch task (never while typing or picking options).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      const list = purposes ?? []
+      const idx = ['1', '2', '3', '4'].indexOf(e.key)
+      if (idx >= 0 && list[idx]) {
+        e.preventDefault()
+        selectMode(list[idx].purpose)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [purposes, selectMode])
+
+  // Common target statuses across staged orders (intersection) — a batch can
+  // only apply a transition that EVERY staged order currently allows.
   const commonStatuses = useMemo(() => {
-    if (mode !== 'ORDER_STATUS' || queue.length === 0) return []
-    const sets = queue.map((q) => new Set((q.allowedStatuses ?? []).map((s) => s.id)))
-    const first = sets[0]
-    const common = (queue[0].allowedStatuses ?? []).filter((s) => sets.every((set) => set.has(s.id)))
-    void first
-    return common
-  }, [mode, queue])
+    if (mode !== 'ORDER_STATUS' || staged.length === 0) return []
+    const sets = staged.map((s) => new Set(s.allowedStatuses.map((a) => a.id)))
+    return (staged[0].allowedStatuses ?? []).filter((a) => sets.every((set) => set.has(a.id)))
+  }, [mode, staged])
 
-  const counts = {
-    success: history.filter((h) => h.status === 'success').length,
-    failed: history.filter((h) => h.status === 'error').length,
-    duplicate: history.filter((h) => h.status === 'duplicate').length,
-    pending: queue.length,
-  }
+  const successCount = feed.filter((h) => h.status === 'success' || h.status === 'duplicate').length
+  const failedCount = feed.filter((h) => h.status === 'error').length
+  const actionCount = feed.filter((h) => h.status === 'warning').length + (selection ? 1 : 0)
 
+  const visibleFeed = useMemo(() => {
+    const list = feedFilter === 'all'
+      ? feed
+      : feedFilter === 'success'
+        ? feed.filter((h) => h.status === 'success' || h.status === 'duplicate')
+        : feedFilter === 'error'
+          ? feed.filter((h) => h.status === 'error')
+          : feed.filter((h) => h.status === 'warning')
+    return list.slice(0, FEED_RENDER_CAP)
+  }, [feed, feedFilter])
+
+  const help = TASK_HELP[mode] ?? TASK_HELP.DISPATCH_HANDED_OVER
   const isOrderStatus = mode === 'ORDER_STATUS'
   const isSticker = mode === 'STICKER_PRINT'
-  const canApply = queue.length > 0 && !busy && (isOrderStatus ? !!targetStatusId : true)
+  const isDispatchPurpose = !isOrderStatus && !isSticker
+  const showBatchToggle = isDispatchPurpose || isSticker
+  const TaskIcon = TASK_ICONS[mode] ?? ScanLine
+  const canApplyQueue = queue.length > 0 && !busy
+  const canApplyStaged = staged.length > 0 && !busy && !!targetStatusId
+
+  const stagedRows = useMemo(() => staged.map(orderStagedRow), [staged])
+  const queueRows = useMemo(() => queue.map(queueStagedRow), [queue])
+  const targetStatusName = commonStatuses.find((s) => s.id === targetStatusId)?.name ?? ''
+  const orderHref = useCallback((r: StagedRow) => `/admin/op/orders/${r.orderId}`, [])
+  const removeStaged = useCallback((key: string) => setStaged((s) => s.filter((i) => i.key !== key)), [])
+  const removeQueued = useCallback((key: string) => setQueue((q) => q.filter((i) => i.key !== key)), [])
 
   return (
     <>
       <Header fixed>
-        <h1 className="text-lg font-bold tracking-tight flex items-center gap-2">
-          <ScanLine className="h-5 w-5" /> Scanner
-        </h1>
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="chart-card-header-icon bg-info-soft text-info border border-info/25 shrink-0">
+            <ScanLine className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <h1 className="text-lg font-bold tracking-tight leading-tight">Scanner</h1>
+            <p className="hidden sm:block text-[11px] text-muted-foreground leading-tight truncate">Scan dispatches and orders to perform operational actions.</p>
+          </div>
+        </div>
         <div className="ms-auto flex items-center gap-2">
           <ThemeSwitch />
           <ProfileDropdown />
         </div>
       </Header>
 
-      <Main className="flex-1 flex-col gap-4">
-        {/* ── Mode selection ─────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-          {(purposes ?? []).map((p: ScanPurposeDescriptor) => {
-            const Icon = PURPOSE_ICONS[p.purpose] ?? ScanLine
-            const active = mode === p.purpose
-            return (
-              <button
-                key={p.purpose}
-                onClick={() => { setMode(p.purpose); setTargetStatusId(null); inputRef.current?.focus() }}
-                className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-colors ${
-                  active ? 'border-primary bg-primary/10' : 'border-border bg-card hover:bg-accent'
-                }`}
-                title={p.description}
-              >
-                <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${active ? 'text-primary' : 'text-muted-foreground'}`} />
-                <span>
-                  <span className={`block text-xs font-semibold ${active ? 'text-primary' : ''}`}>{p.label}</span>
-                  <span className="block text-[10px] text-muted-foreground leading-tight mt-0.5">{p.description}</span>
-                </span>
-              </button>
-            )
-          })}
-        </div>
-
-        {/* ── Scan input (hardware scanner / camera / manual typing) ── */}
-        <Card>
-          <CardContent className="p-3">
-            <div className="flex items-center gap-2">
-              <ScanLine className="h-4 w-4 text-muted-foreground shrink-0" />
-              <input
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void handleScan(input) } }}
-                placeholder="Scan barcode / type identifier, then Enter…"
-                className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                autoFocus
-              />
-              <Button
-                size="sm"
-                variant={cameraActive ? 'default' : 'outline'}
-                className="h-8 shrink-0"
-                onClick={() => { setCameraActive((v) => !v); setCameraError(null) }}
-                title="Toggle camera scanner"
-              >
-                {cameraActive ? <CameraOff className="h-3.5 w-3.5 mr-1" /> : <Camera className="h-3.5 w-3.5 mr-1" />}
-                <span className="hidden sm:inline">{cameraActive ? 'Stop' : 'Camera'}</span>
-              </Button>
-            </div>
-            {cameraActive && (
-              <div className="mt-3">
-                <div id="scanner-viewport" className="w-full max-w-sm mx-auto rounded-lg overflow-hidden border border-border min-h-[180px] bg-black/5" />
-                {cameraError && <p className="text-xs text-destructive text-center mt-2">{cameraError}</p>}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* ── Counters ───────────────────────────────────────────────── */}
-        <div className="grid grid-cols-4 gap-2">
-          {([
-            ['Success', counts.success, 'text-emerald-500'],
-            ['Failed', counts.failed, 'text-red-500'],
-            ['Duplicate', counts.duplicate, 'text-sky-500'],
-            ['Pending', counts.pending, 'text-amber-500'],
-          ] as const).map(([label, value, color]) => (
-            <div key={label} className="rounded-lg border border-border bg-card px-3 py-2 text-center">
-              <div className={`text-lg font-bold ${color}`}>{value}</div>
-              <div className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* ── Batch queue ────────────────────────────────────────────── */}
-        {queue.length > 0 && (
-          <Card className="border-amber-500/40 bg-amber-500/5">
-            <CardHeader className="pb-2 flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-amber-500" />
-                Batch queue — {queue.length} item{queue.length === 1 ? '' : 's'}
-              </CardTitle>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 text-xs text-muted-foreground"
-                onClick={() => { setQueue([]); setTargetStatusId(null) }}
-              >
-                <Trash2 className="h-3.5 w-3.5 mr-1" /> Clear
-              </Button>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-2">
-              <div className="max-h-48 overflow-y-auto flex flex-col gap-1.5">
-                {queue.map((item) => (
-                  <div key={item.key} className="flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5">
-                    <span className="text-xs font-medium truncate">{item.label}</span>
-                    <span className="text-[10px] text-muted-foreground truncate">{item.sub}</span>
-                    <button
-                      className="ml-auto text-muted-foreground hover:text-destructive shrink-0"
-                      title="Remove from queue"
-                      onClick={() => setQueue((q) => q.filter((i) => i.key !== item.key))}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              {/* Target status picker — intersection across the queue */}
-              {isOrderStatus && (
-                <div className="flex flex-wrap gap-1.5 items-center">
-                  <span className="text-[11px] text-muted-foreground">Apply status:</span>
-                  {commonStatuses.length === 0 && (
-                    <span className="text-[11px] text-amber-600">No common target status across the queued orders.</span>
-                  )}
-                  {commonStatuses.map((s) => (
-                    <Button
-                      key={s.id}
-                      size="sm"
-                      variant={targetStatusId === s.id ? 'default' : 'outline'}
-                      className="h-7 text-xs"
-                      onClick={() => setTargetStatusId(s.id)}
-                    >
-                      → {s.name}
-                    </Button>
-                  ))}
+      <Main className="flex-1 flex-col">
+        <div className="mx-auto w-full max-w-2xl flex flex-col gap-3">
+          {/* ── Scan task (compact configuration, not a dashboard grid) ── */}
+          <section aria-label="Scan task" className="animate-rise">
+            <div className="flex items-end gap-2">
+              <div className="flex-1 min-w-0">
+                <label htmlFor="scan-task" className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Scan task
+                </label>
+                <div className="relative">
+                  <select
+                    id="scan-task"
+                    value={mode}
+                    onChange={(e) => selectMode(e.target.value)}
+                    className="h-10 w-full appearance-none rounded-xl border border-border bg-card pl-3 pr-9 text-sm font-semibold outline-none transition-colors duration-200 cursor-pointer hover:border-primary/50 focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/30"
+                  >
+                    {(purposes ?? []).map((p: ScanPurposeDescriptor, i: number) => (
+                      <option key={p.purpose} value={p.purpose}>
+                        {i + 1} · {TASK_NAMES[p.purpose] ?? p.label}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
                 </div>
-              )}
-
-              <div className="flex justify-end">
-                <Button size="sm" disabled={!canApply} onClick={() => void applyBatch()}>
-                  <Play className="h-3.5 w-3.5 mr-1" />
-                  {busy
-                    ? 'Applying…'
-                    : isOrderStatus
-                      ? `Apply to ${queue.length} order${queue.length === 1 ? '' : 's'}`
-                      : isSticker
-                        ? `Print ${queue.length} sticker${queue.length === 1 ? '' : 's'}`
-                        : `Apply to ${queue.length} dispatch${queue.length === 1 ? '' : 'es'}`}
-                </Button>
               </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* ── Live result list ───────────────────────────────────────── */}
-        <Card className="flex-1">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Scan history <span className="text-muted-foreground font-normal">({history.length})</span></CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2">
-            {history.length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                No scans yet. Scan serially — every identifier joins the batch queue; apply one action to all of them.
-              </p>
-            )}
-            {history.map((h) => {
-              const meta = RESULT_META[h.status] ?? RESULT_META.error
-              const Icon = meta.icon
-              return (
-                <div key={h.rid} className="flex items-start gap-3 rounded-lg border border-border bg-card px-3 py-2.5">
-                  <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${meta.color}`} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium">{h.title}</span>
-                      <Badge variant="secondary" className="text-[10px] h-4">{meta.label}</Badge>
-                      {h.courier && <Badge variant="outline" className="text-[10px] h-4">{h.courier}</Badge>}
-                      {h.oldState && h.newState && (
-                        <span className="text-[10px] text-muted-foreground">{h.oldState} → {h.newState}</span>
-                      )}
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm" className="tap-h press shrink-0" title="How scanning works">
+                    <CircleHelp className="h-4 w-4 sm:mr-1" />
+                    <span className="hidden sm:inline">How it works</span>
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-sm">
+                  <DialogHeader>
+                    <DialogTitle className="text-sm">How scanning works</DialogTitle>
+                    <DialogDescription className="text-xs">Pick a task, scan, read the result, scan the next one.</DialogDescription>
+                  </DialogHeader>
+                  <ol className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+                    <li><span className="font-semibold text-foreground">1.</span> Choose the scan task above.</li>
+                    <li><span className="font-semibold text-foreground">2.</span> Scan a barcode or type the code, then Enter.</li>
+                    <li><span className="font-semibold text-foreground">3.</span> The action runs at once — the result appears below.</li>
+                    <li><span className="font-semibold text-foreground">4.</span> The input stays ready for the next scan.</li>
+                  </ol>
+                  <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5 text-xs">
+                    <p className="mb-1.5 font-semibold">Keyboard shortcuts</p>
+                    <div className="flex flex-col gap-1 text-muted-foreground">
+                      <p><kbd className="rounded border border-border bg-card px-1.5 py-0.5 text-[10px] font-semibold">Enter</kbd> submit a typed code</p>
+                      <p><kbd className="rounded border border-border bg-card px-1.5 py-0.5 text-[10px] font-semibold">Esc</kbd> clear the scan input</p>
+                      <p><kbd className="rounded border border-border bg-card px-1.5 py-0.5 text-[10px] font-semibold">1–4</kbd> switch scan task</p>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">{h.message}</p>
-                    {h.details?.rtnDisplayId && (
-                      <p className="text-xs text-muted-foreground mt-0.5">RTN: {h.details.rtnDisplayId}</p>
-                    )}
-                    {h.details?.printUrl && (
-                      <a
-                        href={h.details.printUrl}
-                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-1"
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
+          </section>
+
+          {/* ── Primary scan workspace ─────────────────────────────────── */}
+          <section aria-label="Scan workspace" className="animate-rise" style={riseStyle(1)}>
+            <Card className="chart-card rounded-2xl overflow-hidden">
+              <div className="h-0.5 bg-primary" aria-hidden />
+              <CardContent className="flex flex-col gap-2 p-4 sm:p-5">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="flex items-center gap-2 text-base font-bold tracking-tight">
+                    <TaskIcon className="h-4 w-4 text-primary" aria-hidden />
+                    {help.title}
+                  </h2>
+                  {showBatchToggle && (
+                    <label className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground cursor-pointer" title="Stage scans and apply one action to all of them at once. Off = every scan runs at once.">
+                      <Switch checked={batchMode} onCheckedChange={(v) => { setBatchMode(v); setQueue([]) }} aria-label="Batch mode" />
+                      Batch
+                    </label>
+                  )}
+                </div>
+
+                <div
+                  className={`flex items-center gap-2 rounded-xl border bg-muted/20 px-3 transition-colors duration-200 focus-within:border-primary focus-within:bg-card focus-within:ring-2 focus-within:ring-primary/25 ${
+                    busy ? 'border-border/60' : 'border-border'
+                  }`}
+                >
+                  <span className="shrink-0 text-muted-foreground" aria-hidden>
+                    {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <ScanLine className="h-5 w-5" />}
+                  </span>
+                  <label htmlFor="scanner-input" className="sr-only">Scan or enter identifier</label>
+                  <input
+                    id="scanner-input"
+                    ref={inputRef}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); void handleScan(input) }
+                      else if (e.key === 'Escape' && input) { e.preventDefault(); setInput('') }
+                    }}
+                    placeholder="Scan or enter identifier…"
+                    className="h-13 min-w-0 flex-1 bg-transparent py-3.5 font-mono text-[15px] tracking-tight outline-none placeholder:font-sans placeholder:text-sm placeholder:text-muted-foreground"
+                    autoFocus
+                    autoComplete="off"
+                    autoCapitalize="characters"
+                    spellCheck={false}
+                    aria-describedby="scanner-help"
+                  />
+                  {input && (
+                    <button
+                      className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
+                      title="Clear input (Esc)"
+                      aria-label="Clear scan input"
+                      onClick={() => { setInput(''); inputRef.current?.focus() }}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="tap-h press shrink-0 text-muted-foreground"
+                    onClick={() => { setCameraActive((v) => !v); setCameraError(null) }}
+                    title={cameraActive ? 'Close camera' : 'Open camera scanner'}
+                    aria-pressed={cameraActive}
+                    aria-label={cameraActive ? 'Close camera scanner' : 'Open camera scanner'}
+                  >
+                    {cameraActive ? <CameraOff className="h-4 w-4" /> : <Camera className="h-4 w-4" />}
+                  </Button>
+                </div>
+                <div className="flex items-center justify-between gap-2 px-0.5">
+                  <p id="scanner-help" className="text-xs text-muted-foreground">{help.accept}</p>
+                  <kbd className="shrink-0 rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">Enter ↵</kbd>
+                </div>
+
+                {cameraActive && (
+                  <div className="rounded-xl border border-border bg-black/[0.03] p-2 dark:bg-white/[0.03]">
+                    <div className="flex items-center justify-between px-1 pb-2">
+                      <p className="text-[11px] font-semibold text-muted-foreground">Camera scanner</p>
+                      <Button variant="ghost" size="sm" className="tap-h press text-xs" onClick={() => setCameraActive(false)}>
+                        <X className="h-3.5 w-3.5 mr-1" /> Close
+                      </Button>
+                    </div>
+                    <div id="scanner-viewport" className="w-full max-w-sm mx-auto rounded-xl overflow-hidden border border-border min-h-[180px] bg-black/5" />
+                    {cameraError && <p className="text-xs text-destructive text-center mt-2" role="alert">{cameraError}</p>}
+                  </div>
+                )}
+
+                {/* ── Inline dispatch resolution (never leave the page) ── */}
+                {selection && (
+                  <div className="rounded-xl border border-warning/40 bg-warning-soft/40 p-2.5 flex flex-col gap-2" role="group" aria-label="Select dispatch">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold">
+                        {selection.dispatches.length} dispatches found for <span className="font-mono">{selection.identifier}</span>
+                      </p>
+                      <button
+                        className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
+                        aria-label="Dismiss dispatch selection"
+                        onClick={() => { setSelection(null); inputRef.current?.focus() }}
                       >
-                        <ExternalLink className="h-3 w-3" /> Open sticker print
-                      </a>
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground -mt-1">Select the dispatch to {batchMode && isDispatchPurpose ? 'stage' : 'process'} — the scanner stays ready.</p>
+                    <div className="flex flex-col gap-1.5">
+                      {selection.dispatches.map((d) => (
+                        <div key={d.id} className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{d.courier}</p>
+                            <p className="font-mono text-sm font-semibold truncate">{d.consignmentId}</p>
+                            <p className="text-[11px] text-muted-foreground truncate">{d.status} · Order {d.orderDisplayId}</p>
+                          </div>
+                          <Button
+                            size="sm"
+                            className="tap-h press shrink-0"
+                            disabled={busy}
+                            aria-label={`Select ${d.consignmentId} (${d.courier})`}
+                            onClick={() => void resolveSelection(d)}
+                          >
+                            Select <ArrowRight className="h-3.5 w-3.5 ml-1" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Dense staged list (one compact row per scan) ────── */}
+                {isOrderStatus && staged.length > 0 && (
+                  <StagedList
+                    title="Staged orders"
+                    items={stagedRows}
+                    orderHref={orderHref}
+                    onRemove={removeStaged}
+                    onClear={() => { setStaged([]); setTargetStatusId(null) }}
+                    footer={
+                      <div className="flex flex-col gap-1.5">
+                        <span className="text-[11px] font-semibold text-muted-foreground">Move to:</span>
+                        {commonStatuses.length === 0 && (
+                          <span className="text-[11px] text-warning">These orders share no common next status.</span>
+                        )}
+                        <div className="flex flex-wrap gap-1.5" aria-label="Target status">
+                          {commonStatuses.map((s) => {
+                            const selected = targetStatusId === s.id
+                            return (
+                              <Button
+                                key={s.id}
+                                size="sm"
+                                variant={selected ? 'default' : 'outline'}
+                                className="tap-h press rounded-full text-xs"
+                                aria-pressed={selected}
+                                onClick={() => setTargetStatusId(s.id)}
+                              >
+                                {selected ? <CheckCircle2 className="h-3 w-3 mr-1" /> : null}→ {s.name}
+                              </Button>
+                            )
+                          })}
+                        </div>
+                        <Button
+                          size="sm"
+                          className="tap-h press w-full"
+                          disabled={!canApplyStaged}
+                          onClick={() => (staged.length > 1 ? setConfirmApply({ kind: 'staged' }) : void applyStaged())}
+                        >
+                          {busy ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Play className="h-3.5 w-3.5 mr-1" />}
+                          {busy ? 'Applying…' : `Apply to ${staged.length} order${staged.length === 1 ? '' : 's'}`}
+                        </Button>
+                        {!targetStatusId && (
+                          <p className="text-[11px] text-muted-foreground text-center">Pick a target status to continue.</p>
+                        )}
+                      </div>
+                    }
+                  />
+                )}
+
+                {/* ── Batch staging (explicit secondary workflow) ──────── */}
+                {batchMode && (isDispatchPurpose || isSticker) && queue.length > 0 && (
+                  <StagedList
+                    title={isSticker ? 'Staged prints' : 'Staged dispatches'}
+                    items={queueRows}
+                    orderHref={orderHref}
+                    onRemove={removeQueued}
+                    onClear={() => setQueue([])}
+                    footer={
+                      <Button
+                        size="sm"
+                        className="tap-h press w-full"
+                        disabled={!canApplyQueue}
+                        onClick={() => {
+                          if (isSticker || queue.length <= 1) { void applyQueue(); return }
+                          setConfirmApply({ kind: 'queue' })
+                        }}
+                      >
+                        {busy ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Play className="h-3.5 w-3.5 mr-1" />}
+                        {busy
+                          ? 'Applying…'
+                          : isSticker
+                            ? `Print ${queue.length} sticker${queue.length === 1 ? '' : 's'}`
+                            : `Apply to ${queue.length} dispatch${queue.length === 1 ? '' : 'es'}`}
+                      </Button>
+                    }
+                  />
+                )}
+
+                {/* ── Bulk mutation confirmation (scope always explicit) ── */}
+                <Dialog open={confirmApply !== null} onOpenChange={(open) => { if (!open) setConfirmApply(null) }}>
+                  <DialogContent className="max-w-xs">
+                    <DialogHeader>
+                      <DialogTitle className="text-sm">
+                        {confirmApply?.kind === 'staged'
+                          ? `Move ${staged.length} order${staged.length === 1 ? '' : 's'} to ${targetStatusName}?`
+                          : `Apply to ${queue.length} dispatch${queue.length === 1 ? '' : 'es'}?`}
+                      </DialogTitle>
+                      <DialogDescription className="text-xs">
+                        {confirmApply?.kind === 'staged'
+                          ? `${staged.length} order${staged.length === 1 ? '' : 's'} will be updated. Every transition is validated against the order state machine.`
+                          : `${queue.length} dispatch${queue.length === 1 ? '' : 'es'} will be processed. Each keeps its own idempotency guard.`}
+                      </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                      <Button variant="outline" size="sm" onClick={() => setConfirmApply(null)}>Cancel</Button>
+                      <Button
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => { const k = confirmApply?.kind; setConfirmApply(null); void (k === 'staged' ? applyStaged() : applyQueue()) }}
+                      >
+                        Confirm
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </CardContent>
+            </Card>
+          </section>
+
+          {/* ── Compact operational summary (never competes with scanner) ─ */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-xs text-muted-foreground animate-rise" style={riseStyle(2)} aria-label="Session summary">
+            <span className="inline-flex items-center gap-1">
+              <CheckCircle2 className="h-3.5 w-3.5 text-success" aria-hidden />
+              <strong className="font-semibold text-foreground tabular-nums">{successCount}</strong> successful
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <XCircle className="h-3.5 w-3.5 text-danger" aria-hidden />
+              <strong className="font-semibold text-foreground tabular-nums">{failedCount}</strong> failed
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <AlertTriangle className="h-3.5 w-3.5 text-warning" aria-hidden />
+              <strong className="font-semibold text-foreground tabular-nums">{actionCount}</strong> need action
+            </span>
+            {batchMode && queue.length > 0 && (
+              <span className="inline-flex items-center gap-1">
+                <Hourglass className="h-3.5 w-3.5" aria-hidden />
+                <strong className="font-semibold text-foreground tabular-nums">{queue.length}</strong> staged
+              </span>
+            )}
+          </div>
+
+          {/* ── Recent scans (the primary activity workspace) ──────────── */}
+          <section aria-label="Recent scans" className="animate-rise" style={riseStyle(3)}>
+            <Card className="chart-card rounded-2xl">
+              <CardHeader className="pb-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="chart-card-header-icon bg-accent-violet-soft text-accent-violet border border-accent-violet/25 shrink-0">
+                      <Activity className="h-4 w-4" />
+                    </span>
+                    <CardTitle className="text-sm truncate">Recent scans <span className="text-muted-foreground font-normal">({feed.length})</span></CardTitle>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="seg-control" role="tablist" aria-label="Filter recent scans">
+                      {(['all', 'success', 'error', 'action'] as const).map((f) => (
+                        <button
+                          key={f}
+                          role="tab"
+                          aria-selected={feedFilter === f}
+                          data-active={feedFilter === f}
+                          className="seg-item !min-h-7 !px-2 !text-[11px]"
+                          onClick={() => setFeedFilter(f)}
+                        >
+                          {f === 'all' ? 'All' : f === 'error' ? 'Failed' : f === 'action' ? 'Needs action' : 'Success'}
+                        </button>
+                      ))}
+                    </div>
+                    {feed.length > 0 && (
+                      <Button variant="ghost" size="sm" className="tap-h press text-xs text-muted-foreground" onClick={() => setFeed([])}>
+                        <Trash2 className="h-3.5 w-3.5 mr-1" /> Clear
+                      </Button>
                     )}
                   </div>
-                  <span className="text-[10px] text-muted-foreground shrink-0">
-                    {new Date(h.at).toLocaleTimeString()}
-                  </span>
                 </div>
-              )
-            })}
-          </CardContent>
-        </Card>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-2">
+                {feed.length === 0 && (
+                  <div className="empty-state !py-8">
+                    <span className="empty-state-icon" aria-hidden>
+                      <ScanLine className="h-5 w-5" />
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">Ready to scan</p>
+                      <p className="text-xs mt-0.5">{help.empty}</p>
+                    </div>
+                  </div>
+                )}
+                {feed.length > 0 && visibleFeed.length === 0 && (
+                  <div className="empty-state !py-8">
+                    <p className="text-sm text-muted-foreground">
+                      No {feedFilter === 'error' ? 'failed' : feedFilter === 'action' ? 'action-needed' : 'successful'} scans in this session.
+                    </p>
+                  </div>
+                )}
+                <div className="flex flex-col gap-2 max-h-[520px] overflow-y-auto pr-0.5" role="log" aria-live="polite" aria-label="Recent scans">
+                  {visibleFeed.map((h) => {
+                    const meta = RESULT_META[h.status] ?? RESULT_META.error
+                    const Icon = meta.icon
+                    return (
+                      <div key={h.rid} className="flex items-start gap-2.5 rounded-xl border border-border/50 bg-muted/20 px-3 py-2.5 transition-colors duration-200 hover:bg-muted/40">
+                        <span className={`kpi-icon-badge kpi-accent-${meta.tone} shrink-0 mt-0.5`} aria-hidden>
+                          <Icon className="h-3.5 w-3.5" />
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[13px] font-semibold leading-snug">{h.title}</span>
+                            <StatusBadge tone={meta.tone} icon={null} className="text-[10px]">{meta.label}</StatusBadge>
+                            {h.courier && <Badge variant="outline" className="text-[10px] font-mono">{h.courier}</Badge>}
+                          </div>
+                          {(h.oldState || h.newState) && (
+                            <p className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-muted-foreground tabular-nums">
+                              {h.oldState && <span className="max-w-[140px] truncate">{h.oldState}</span>}
+                              {h.oldState && h.newState && <span aria-hidden>→</span>}
+                              {h.newState && <span className="max-w-[140px] truncate font-medium text-foreground">{h.newState}</span>}
+                            </p>
+                          )}
+                          <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{h.message}</p>
+                          {typeof h.details?.customerLine === 'string' && h.details.customerLine && (
+                            <p className="mt-0.5 truncate text-[11px] text-muted-foreground/80" title={h.details.customerLine}>
+                              {h.details.customerLine}
+                            </p>
+                          )}
+                          {h.details?.rtnDisplayId && !h.message.includes(h.details.rtnDisplayId) && (
+                            <p className="font-mono text-[11px] text-muted-foreground mt-0.5">RTN: {h.details.rtnDisplayId}</p>
+                          )}
+                          {h.details?.printUrl && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="tap-h press mt-1.5 text-xs"
+                              onClick={() => window.open(h.details!.printUrl, '_blank')}
+                            >
+                              <Printer className="h-3.5 w-3.5 mr-1" /> Print sticker
+                            </Button>
+                          )}
+                        </div>
+                        <span className="shrink-0 whitespace-nowrap text-[10px] text-muted-foreground tabular-nums" title={new Date(h.at).toLocaleString()}>
+                          {relTime(h.at, now)}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+                {feed.length > FEED_RENDER_CAP && (
+                  <p className="text-center text-[11px] text-muted-foreground">
+                    Showing latest {FEED_RENDER_CAP} of {feed.length} scans.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </section>
+        </div>
       </Main>
     </>
   )

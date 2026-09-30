@@ -28,6 +28,14 @@ export interface DispatchPreview {
   orderDisplayId: string;
   orderStatus: string;
   orderKind: string;
+  /** Immutable order-time customer snapshot (first+last, else guest, else Guest). */
+  customerName: string;
+  /** Snapshot phone (else guest phone, else empty) — shown when the name is Guest. */
+  customerPhone: string;
+  /** Sum of order line quantities (units). */
+  itemCount: number;
+  /** Order grand total (already fetched on the order row — no extra query). */
+  orderTotal: number;
 }
 
 export interface OrderPreview {
@@ -36,6 +44,14 @@ export interface OrderPreview {
   status: string;
   kind: string;
   allowedStatuses: { id: string; name: string }[];
+  /** Immutable order-time customer snapshot (first+last, else guest, else Guest). */
+  customerName: string;
+  /** Snapshot phone (else guest phone, else empty) — shown when the name is Guest. */
+  customerPhone: string;
+  /** Sum of order line quantities (units). */
+  itemCount: number;
+  /** Order grand total (already fetched on the order row — no extra query). */
+  orderTotal: number;
 }
 
 export interface ResolveOutcome {

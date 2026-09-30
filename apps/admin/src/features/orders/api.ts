@@ -107,6 +107,10 @@ export interface ScanDispatchPreview {
   orderDisplayId: string
   orderStatus: string
   orderKind: string
+  customerName: string
+  customerPhone: string
+  itemCount: number
+  orderTotal: number
 }
 
 export interface ScanOrderPreview {
@@ -115,6 +119,10 @@ export interface ScanOrderPreview {
   status: string
   kind: string
   allowedStatuses: { id: string; name: string }[]
+  customerName: string
+  customerPhone: string
+  itemCount: number
+  orderTotal: number
 }
 
 export interface ScanResolveOutcome {
@@ -169,7 +177,9 @@ export const scannerApi = {
     purpose: string
     identifier: string
     dispatchId?: string
+    dispatchIds?: string[]
     orderId?: string
+    orderIds?: string[]
     targetStatusId?: string
   }) => apiClient.post<ScanResult>('/scanner/scan', payload).then(r => r.data),
 }

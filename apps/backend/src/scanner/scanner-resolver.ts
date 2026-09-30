@@ -20,6 +20,22 @@ function alnumCore(identifier: string): string {
   return identifier.replace(/[^A-Z0-9]/g, '');
 }
 
+/**
+ * Row enrichment for staged-list display. Uses ONLY fields already present
+ * on the fetched order row / requested includes — never an extra query per
+ * scan (no N+1 at 1000+ staged rows). Name priority mirrors the admin
+ * order-display helper: snapshot first+last → guest name → Guest.
+ */
+function orderRowFacts(o: any): { customerName: string; customerPhone: string; itemCount: number; orderTotal: number } {
+  const full = `${o?.customerFirstName ?? ''} ${o?.customerLastName ?? ''}`.trim();
+  const customerName = full || o?.guestName || 'Guest';
+  const customerPhone = o?.customerPhone || o?.guestPhone || '';
+  const itemCount = Array.isArray(o?.items)
+    ? o.items.reduce((n: number, it: any) => n + (Number(it?.quantity) || 0), 0)
+    : 0;
+  return { customerName, customerPhone, itemCount, orderTotal: Number(o?.total ?? 0) || 0 };
+}
+
 export function toDispatchPreview(d: any): DispatchPreview {
   return {
     id: d.id,
@@ -31,6 +47,7 @@ export function toDispatchPreview(d: any): DispatchPreview {
     orderDisplayId: d.order?.displayId ?? '',
     orderStatus: d.order?.status?.name ?? '',
     orderKind: d.order?.kind ?? 'SALE',
+    ...orderRowFacts(d.order),
   };
 }
 
@@ -46,6 +63,7 @@ export function toOrderPreview(o: any, statusMap: Map<string, string>): OrderPre
     allowedStatuses: next
       .map((sid: string) => ({ id: sid, name: statusMap.get(sid) ?? sid }))
       .filter((s: { id: string; name: string }) => s.name),
+    ...orderRowFacts(o),
   };
 }
 
@@ -76,6 +94,8 @@ export async function resolveScanIdentifier(
       where: { displayId: { equals: identifier, mode: 'insensitive' } },
       include: {
         status: true,
+        // Row facts for the staged list ride on this single fetch.
+        items: { select: { quantity: true } },
         dispatches: { orderBy: { createdAt: 'desc' } },
       },
     });
@@ -114,7 +134,7 @@ export async function resolveScanIdentifier(
           : []),
       ],
     },
-    include: { order: { include: { status: true } } },
+    include: { order: { include: { status: true, items: { select: { quantity: true } } } } },
     orderBy: { createdAt: 'asc' },
     take: 20,
   });
