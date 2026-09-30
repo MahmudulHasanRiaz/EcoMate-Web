@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
-import { getSessionOrders, getPosOrderById } from '../api/client'
+import { getSessionOrders, getPosOrderById, buildPosReceipt } from '../api/client'
 import { useSessionStore } from '../stores/session-store'
-import { buildReceiptFromPosOrder, type ReceiptData } from '../lib/receipt'
+import { type ReceiptData } from '../lib/receipt'
 import { ThermalReceiptModal } from './thermal-receipt-modal'
 import { toast } from 'sonner'
 import { X, TrendingUp, ShoppingBag, DollarSign, Clock, Package, ChevronRight, BarChart3, RefreshCw, Printer, Loader2 } from 'lucide-react'
@@ -73,8 +73,8 @@ export function CashierDashboard({ open, onOpenChange }: Props) {
     try {
       const res = await getPosOrderById(order.id)
       setReceipt(
-        buildReceiptFromPosOrder(res.data, {
-          storeName: showroomName || undefined,
+        await buildPosReceipt(res.data, {
+          showroomName: showroomName || undefined,
           cashierName: cashierName || undefined,
         }),
       )

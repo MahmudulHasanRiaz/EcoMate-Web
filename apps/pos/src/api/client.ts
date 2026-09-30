@@ -2,6 +2,7 @@ import axios from 'axios';
 import { useSessionStore } from '../stores/session-store';
 import { API_BASE_URL } from '../lib/api-base';
 import { buildAnalyticsQuery } from '../lib/analytics-range';
+import { buildReceiptFromPosOrder, type ReceiptData, type ReceiptContext } from '../lib/receipt';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -144,6 +145,77 @@ export const getPosBranding = async (): Promise<PosBranding> => {
     storefrontFavicon: d.storefrontFavicon ?? '',
     adminFavicon: d.adminFavicon ?? '',
   }
+}
+
+/**
+ * Same `/system-settings/storefront` payload the admin order-sticker
+ * template reads — so the thermal receipt follows the identical logo /
+ * showroom-name / phone / display / currency settings. Cached for the
+ * tab so repeated receipts don't re-fetch.
+ */
+export interface PosStorefrontConfig {
+  storeName: string
+  storePhone: string
+  storeLogo: string
+  storefrontFavicon: string
+  displayMode: 'logo' | 'name+logo' | 'name'
+  currencySymbol: string
+}
+
+let storefrontConfigPromise: Promise<PosStorefrontConfig> | null = null
+
+export const getPosStorefrontConfig = (): Promise<PosStorefrontConfig> => {
+  if (storefrontConfigPromise) return storefrontConfigPromise
+  const empty = () => ({
+    storeName: '',
+    storePhone: '',
+    storeLogo: '',
+    storefrontFavicon: '',
+    displayMode: 'name' as const,
+    currencySymbol: '৳',
+  })
+  storefrontConfigPromise = api
+    .get('/system-settings/storefront')
+    .then((res) => {
+      const d = res.data ?? {}
+      const display = d.systems?.[0]?.display || 'name'
+      return {
+        storeName: d.store?.name || '',
+        storePhone: d.store?.phone || '',
+        storeLogo: d.branding?.storeLogo || '',
+        storefrontFavicon: d.branding?.storefrontFavicon || '',
+        displayMode:
+          display === 'logo' || display === 'name+logo' ? display : 'name',
+        currencySymbol: d.currency?.symbol || '৳',
+      } as PosStorefrontConfig
+    })
+    .catch(() => {
+      storefrontConfigPromise = null // allow a retry on next call
+      return empty()
+    })
+  return storefrontConfigPromise
+}
+
+/**
+ * Build a thermal receipt from a POS order (fresh or reprinted), enriching
+ * it with storefront settings (logo / showroom phone / display mode /
+ * currency) so the output matches the admin order-sticker branding.
+ */
+export const buildPosReceipt = async (
+  order: Parameters<typeof buildReceiptFromPosOrder>[0],
+  ctx: ReceiptContext = {},
+): Promise<ReceiptData> => {
+  const cfg = await getPosStorefrontConfig()
+  return buildReceiptFromPosOrder(order, {
+    storeName: cfg.storeName || ctx.showroomName || 'EcoMate',
+    storePhone: cfg.storePhone,
+    storeLogo: cfg.storeLogo,
+    storefrontFavicon: cfg.storefrontFavicon,
+    displayMode: cfg.displayMode,
+    currencySymbol: cfg.currencySymbol,
+    cashierName: ctx.cashierName,
+    cartItems: ctx.cartItems,
+  })
 }
 
 export const getPaymentGateways = () =>

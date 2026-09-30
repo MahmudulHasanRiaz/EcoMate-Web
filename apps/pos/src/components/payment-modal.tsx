@@ -3,7 +3,8 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { useCartStore } from '../stores/cart-store'
 import { useSessionStore } from '../stores/session-store'
 import { createPosOrder, getPaymentGateways } from '../api/client'
-import { buildReceiptFromPosOrder, ReceiptData } from '../lib/receipt'
+import { buildPosReceipt } from '../api/client'
+import { ReceiptData } from '../lib/receipt'
 import { toast } from 'sonner'
 import { CreditCard, X, Plus, Trash2, CheckCircle2, AlertCircle, ChevronDown, Loader2, Banknote, Smartphone, Building2 } from 'lucide-react'
 
@@ -124,8 +125,8 @@ export function PaymentModal({ open, onOpenChange, onSuccess }: Props) {
       // Build a thermal receipt BEFORE clearing the cart — the API response
       // items carry only ids, while the product names live in the cart store.
       // The receipt modal opens once payment settlement succeeds.
-      const receipt = buildReceiptFromPosOrder(res.data, {
-        storeName: showroomName || undefined,
+      const receipt = await buildPosReceipt(res.data, {
+        showroomName: showroomName || undefined,
         cashierName: cashierName || undefined,
         cartItems: items,
       })

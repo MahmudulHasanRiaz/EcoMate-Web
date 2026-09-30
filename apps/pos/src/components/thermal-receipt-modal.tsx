@@ -1,4 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog'
+import { createPortal } from 'react-dom'
 import { Printer, X, CheckCircle } from 'lucide-react'
 import { ReceiptData } from '../lib/receipt'
 import { ReceiptPaper } from './receipt-paper'
@@ -74,13 +75,19 @@ export function ThermalReceiptModal({ open, onOpenChange, receipt }: Props) {
       </Dialog.Root>
 
       {/* Print-only target: hidden on screen, isolated by the
-          @media print rules. Kept mounted while a receipt is
-          open so window.print() always has something to emit. */}
-      {open && receipt && (
-        <div id="thermal-receipt-print">
-          <ReceiptPaper receipt={receipt} />
-        </div>
-      )}
+          @media print rules. It is portaled straight to document.body so
+          it is a top-level child — the only content that survives
+          `body * { visibility:hidden }` — which keeps the receipt from
+          rendering blank under "Save as PDF" regardless of any transformed
+          ancestor in the dialog/portal stack. */}
+      {open && receipt &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div id="thermal-receipt-print">
+            <ReceiptPaper receipt={receipt} />
+          </div>,
+          document.body,
+        )}
     </>
   )
 }

@@ -8,7 +8,7 @@ import {
 import { useSessionStore } from '../stores/session-store'
 import {
   getPosAnalyticsOverview, getPosAnalyticsTransactions, exportPosAnalyticsExcel,
-  getPosOrderById,
+  getPosOrderById, buildPosReceipt,
   type PosAnalyticsScope, type PosAnalyticsPreset, type PosAnalyticsKpis,
   type PosAnalyticsTransaction, type PosAnalyticsSort, type SortOrder,
 } from '../api/client'
@@ -16,9 +16,7 @@ import {
   ANALYTICS_PRESETS, defaultCustomRange, validateCustomRange, rangeLabel,
   formatBDT, formatReportDateTime, resolveExportFilename, parseTransactionsMeta,
 } from '../lib/analytics-range'
-import {
-  buildReceiptFromPosOrder, type ReceiptData,
-} from '../lib/receipt'
+import { type ReceiptData } from '../lib/receipt'
 import { ThermalReceiptModal } from './thermal-receipt-modal'
 
 interface Props {
@@ -216,8 +214,8 @@ export function SalesAnalytics({ open, onOpenChange }: Props) {
     try {
       const res = await getPosOrderById(tx.orderId)
       setReceipt(
-        buildReceiptFromPosOrder(res.data, {
-          storeName: showroomName || undefined,
+        await buildPosReceipt(res.data, {
+          showroomName: showroomName || undefined,
           cashierName: cashierName || undefined,
         }),
       )
