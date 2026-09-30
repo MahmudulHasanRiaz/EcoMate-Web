@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { PosOrdersService } from '../pos-orders.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StockService } from '../../stock/stock.service';
@@ -892,6 +892,73 @@ describe('PosOrdersService', () => {
           service.create(dto, 'session-1', 'cashier-1'),
         ).rejects.toThrow(/price mismatch/i);
       });
+    });
+  });
+
+  describe('getOrderForReceipt', () => {
+    it('returns the POS order with product/variant names for reprinting', async () => {
+      const receiptOrder = {
+        id: 'order-1',
+        displayId: 'POS-250715-0001',
+        source: 'POS',
+        subtotal: 2000,
+        discount: 0,
+        total: 2000,
+        customerFirstName: 'Rahim',
+        customerPhone: '01712345678',
+        items: [
+          {
+            id: 'item-1',
+            productId: 'prod-1',
+            variantId: 'variant-1',
+            quantity: 2,
+            price: 1000,
+            product: { name: 'Test Product', sku: 'TP-001' },
+            variant: {
+              sku: 'TP-001-RED',
+              attributeValues: [
+                { attributeValue: { value: 'Red' } },
+              ],
+            },
+            combo: null,
+          },
+        ],
+        payments: [{ gatewayCode: 'CASH', amount: 2000 }],
+        status: { name: 'Delivered' },
+      };
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue(receiptOrder);
+
+      const result = await service.getOrderForReceipt('order-1');
+
+      expect(prisma.order.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'order-1', source: 'POS', trashedAt: null },
+        }),
+      );
+      expect(result).toEqual(receiptOrder);
+    });
+
+    it('throws NotFoundException for unknown order ids', async () => {
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue(null);
+
+      await expect(service.getOrderForReceipt('missing')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('throws NotFoundException for trashed or non-POS orders', async () => {
+      // findFirst filters `source: 'POS'` and `trashedAt: null` in the
+      // WHERE clause, so a trashed/e-commerce order never matches.
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue(null);
+
+      await expect(service.getOrderForReceipt('ecom-order-1')).rejects.toThrow(
+        /not found/i,
+      );
+      expect(prisma.order.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ source: 'POS', trashedAt: null }),
+        }),
+      );
     });
   });
 });

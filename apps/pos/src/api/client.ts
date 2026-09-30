@@ -112,6 +112,9 @@ export const closeSession = (id: string, closingBalance: number, notes?: string)
 export const createPosOrder = (data: any, idempotencyKey?: string) =>
   api.post('/pos/orders', data, idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : {});
 
+export const getPosOrderById = (id: string) =>
+  api.get(`/pos/orders/${id}`);
+
 export const getPosProducts = (params: { search?: string; categoryId?: string; barcode?: string; page?: number }) =>
   api.get('/pos/products', { params });
 

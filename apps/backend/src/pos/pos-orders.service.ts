@@ -3,6 +3,7 @@ import {
   BadRequestException,
   Logger,
   Inject,
+  NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
@@ -786,6 +787,42 @@ export class PosOrdersService {
       }
     }
 
+    return order;
+  }
+
+  /**
+   * Full POS order with product/variant names for thermal receipt
+   * reprinting. Restricted to POS-source, non-trashed orders.
+   * Customer data comes from the frozen order-time snapshot fields
+   * (see the Order model invariant) — the print template must never
+   * read the mutable CustomerProfile relation.
+   */
+  async getOrderForReceipt(id: string) {
+    const order = await this.prisma.order.findFirst({
+      where: { id, source: 'POS', trashedAt: null },
+      include: {
+        items: {
+          orderBy: { createdAt: 'asc' },
+          include: {
+            product: { select: { name: true, sku: true } },
+            variant: {
+              select: {
+                sku: true,
+                attributeValues: {
+                  include: { attributeValue: { select: { value: true } } },
+                },
+              },
+            },
+            combo: { select: { name: true } },
+          },
+        },
+        payments: { orderBy: { createdAt: 'asc' } },
+        status: { select: { name: true } },
+      },
+    });
+    if (!order) {
+      throw new NotFoundException('POS order not found');
+    }
     return order;
   }
 

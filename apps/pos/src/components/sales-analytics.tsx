@@ -3,10 +3,12 @@ import { toast } from 'sonner'
 import {
   X, Download, ChevronLeft, ChevronRight, BarChart3, ShoppingBag,
   DollarSign, Package, Receipt, Banknote, BadgePercent, RotateCcw,
+  Printer, Loader2,
 } from 'lucide-react'
 import { useSessionStore } from '../stores/session-store'
 import {
   getPosAnalyticsOverview, getPosAnalyticsTransactions, exportPosAnalyticsExcel,
+  getPosOrderById,
   type PosAnalyticsScope, type PosAnalyticsPreset, type PosAnalyticsKpis,
   type PosAnalyticsTransaction, type PosAnalyticsSort, type SortOrder,
 } from '../api/client'
@@ -14,6 +16,10 @@ import {
   ANALYTICS_PRESETS, defaultCustomRange, validateCustomRange, rangeLabel,
   formatBDT, formatReportDateTime, resolveExportFilename, parseTransactionsMeta,
 } from '../lib/analytics-range'
+import {
+  buildReceiptFromPosOrder, type ReceiptData,
+} from '../lib/receipt'
+import { ThermalReceiptModal } from './thermal-receipt-modal'
 
 interface Props {
   open: boolean
@@ -83,6 +89,11 @@ export function SalesAnalytics({ open, onOpenChange }: Props) {
 
   const [exporting, setExporting] = useState(false)
   const [exportPct, setExportPct] = useState<number | null>(null)
+
+  // Thermal invoice reprint for any listed transaction.
+  const [receipt, setReceipt] = useState<ReceiptData | null>(null)
+  const [receiptOpen, setReceiptOpen] = useState(false)
+  const [printingId, setPrintingId] = useState<string | null>(null)
 
   // Guards out-of-order responses when scope/range flips quickly.
   const reqSeq = useRef(0)
@@ -195,6 +206,27 @@ export function SalesAnalytics({ open, onOpenChange }: Props) {
   const retry = () => {
     fetchOverview()
     fetchTransactions(page, sortKey)
+  }
+
+  // Reprint any transaction (current or past session) as an
+  // 80mm thermal invoice.
+  const handlePrintTransaction = async (tx: PosAnalyticsTransaction) => {
+    if (printingId) return
+    setPrintingId(tx.orderId)
+    try {
+      const res = await getPosOrderById(tx.orderId)
+      setReceipt(
+        buildReceiptFromPosOrder(res.data, {
+          storeName: showroomName || undefined,
+          cashierName: cashierName || undefined,
+        }),
+      )
+      setReceiptOpen(true)
+    } catch {
+      toast.error('Could not load order for printing.')
+    } finally {
+      setPrintingId(null)
+    }
   }
 
   const handleExport = async () => {
@@ -478,7 +510,23 @@ export function SalesAnalytics({ open, onOpenChange }: Props) {
                       const dt = formatReportDateTime(r.reportingAt)
                       return (
                         <tr key={r.orderId} className="hover:bg-slate-50/70 transition">
-                          <td className="py-2.5 pr-3 font-bold text-slate-800 whitespace-nowrap">{r.displayId}</td>
+                          <td className="py-2.5 pr-3 font-bold text-slate-800 whitespace-nowrap">
+                            <span className="inline-flex items-center gap-1">
+                              {r.displayId}
+                              <button
+                                onClick={() => handlePrintTransaction(r)}
+                                disabled={printingId === r.orderId}
+                                title="Print thermal invoice"
+                                className="rounded-md p-1 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 transition disabled:opacity-40 cursor-pointer"
+                              >
+                                {printingId === r.orderId ? (
+                                  <Loader2 size={12} className="animate-spin" />
+                                ) : (
+                                  <Printer size={12} />
+                                )}
+                              </button>
+                            </span>
+                          </td>
                           <td className="py-2.5 pr-3 whitespace-nowrap">
                             <p className="font-semibold text-slate-700">{dt.date}</p>
                             <p className="text-[10px] text-slate-400">{dt.time}</p>
@@ -532,6 +580,13 @@ export function SalesAnalytics({ open, onOpenChange }: Props) {
           </div>
         </div>
       </div>
+
+      {/* Thermal invoice reprint dialog */}
+      <ThermalReceiptModal
+        open={receiptOpen}
+        onOpenChange={setReceiptOpen}
+        receipt={receipt}
+      />
     </div>
   )
 }

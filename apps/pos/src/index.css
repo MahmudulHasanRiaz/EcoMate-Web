@@ -51,3 +51,39 @@ body {
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
+
+/* ---- Thermal receipt printing (80mm roll paper) ----
+   #thermal-receipt-print is mounted by ThermalReceiptModal.
+   On screen it stays hidden; during printing it becomes the
+   ONLY visible content and the page is sized to 80mm wide
+   with automatic length, so the receipt grows with its
+   content exactly like roll paper. */
+#thermal-receipt-print {
+  display: none;
+}
+
+@page {
+  size: 80mm auto;
+  margin: 0;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  #thermal-receipt-print,
+  #thermal-receipt-print * {
+    visibility: visible;
+  }
+
+  #thermal-receipt-print {
+    display: block;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 80mm;
+    margin: 0;
+    padding: 0;
+  }
+}

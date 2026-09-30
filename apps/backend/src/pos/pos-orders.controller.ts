@@ -7,6 +7,7 @@ import {
   Query,
   Headers,
   BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
 import { PosOrdersService } from './pos-orders.service';
 import { CreatePosOrderDto } from './dto/create-pos-order.dto';
@@ -33,6 +34,12 @@ export class PosOrdersController {
         'POS session required (x-pos-session-id header)',
       );
     return this.svc.create(dto, sessionId, user.userId, idempotencyKey);
+  }
+
+  @Get('orders/:id')
+  @Roles('cashier', 'admin')
+  async getOrder(@Param('id') id: string) {
+    return this.svc.getOrderForReceipt(id);
   }
 
   @Get('customers')

@@ -1,10 +1,14 @@
 import { useEffect, useState, useCallback } from 'react'
-import { getSessionOrders } from '../api/client'
+import { getSessionOrders, getPosOrderById } from '../api/client'
 import { useSessionStore } from '../stores/session-store'
-import { X, TrendingUp, ShoppingBag, DollarSign, Clock, Package, ChevronRight, BarChart3, RefreshCw } from 'lucide-react'
+import { buildReceiptFromPosOrder, type ReceiptData } from '../lib/receipt'
+import { ThermalReceiptModal } from './thermal-receipt-modal'
+import { toast } from 'sonner'
+import { X, TrendingUp, ShoppingBag, DollarSign, Clock, Package, ChevronRight, BarChart3, RefreshCw, Printer, Loader2 } from 'lucide-react'
 
 interface Order {
   id: string
+  displayId: string
   totalAmount: number
   createdAt: string
   items: { id: string; quantity: number; price: number }[]
@@ -38,6 +42,9 @@ export function CashierDashboard({ open, onOpenChange }: Props) {
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(false)
   const [lastFetched, setLastFetched] = useState<Date | null>(null)
+  const [receipt, setReceipt] = useState<ReceiptData | null>(null)
+  const [receiptOpen, setReceiptOpen] = useState(false)
+  const [printingId, setPrintingId] = useState<string | null>(null)
 
   const fetchOrders = useCallback(async () => {
     if (!sessionId) return
@@ -58,6 +65,26 @@ export function CashierDashboard({ open, onOpenChange }: Props) {
       fetchOrders()
     }
   }, [open, fetchOrders])
+
+  // Reprint any order from this session as an 80mm thermal invoice.
+  const handlePrint = async (order: Order) => {
+    if (printingId) return
+    setPrintingId(order.id)
+    try {
+      const res = await getPosOrderById(order.id)
+      setReceipt(
+        buildReceiptFromPosOrder(res.data, {
+          storeName: showroomName || undefined,
+          cashierName: cashierName || undefined,
+        }),
+      )
+      setReceiptOpen(true)
+    } catch {
+      toast.error('Could not load order for printing.')
+    } finally {
+      setPrintingId(null)
+    }
+  }
 
   const totalRevenue = orders.reduce((s, o) => s + Number(o.totalAmount || 0), 0)
   const totalOrders = orders.length
@@ -233,6 +260,18 @@ export function CashierDashboard({ open, onOpenChange }: Props) {
                       <p className="text-xs font-black text-slate-900">{formatCurrency(order.totalAmount)}</p>
                       <p className="text-[10px] text-slate-400 capitalize">{order.payments?.[0]?.method || 'cash'}</p>
                     </div>
+                    <button
+                      onClick={() => handlePrint(order)}
+                      disabled={printingId === order.id}
+                      title="Print thermal invoice"
+                      className="rounded-lg p-1.5 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 transition disabled:opacity-40 cursor-pointer"
+                    >
+                      {printingId === order.id ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Printer size={14} />
+                      )}
+                    </button>
                     <ChevronRight size={14} className="text-slate-300 shrink-0" />
                   </div>
                 ))}
@@ -248,6 +287,13 @@ export function CashierDashboard({ open, onOpenChange }: Props) {
           </div>
         )}
       </aside>
+
+      {/* Thermal invoice reprint dialog */}
+      <ThermalReceiptModal
+        open={receiptOpen}
+        onOpenChange={setReceiptOpen}
+        receipt={receipt}
+      />
     </>
   )
 }

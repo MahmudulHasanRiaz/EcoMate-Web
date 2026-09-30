@@ -1,6 +1,8 @@
 import { useState, useCallback } from 'react'
 import { useCartStore } from '../stores/cart-store'
 import { useSessionStore } from '../stores/session-store'
+import { ThermalReceiptModal } from './thermal-receipt-modal'
+import type { ReceiptData } from '../lib/receipt'
 import { CustomerQuickAdd } from './customer-quick-add'
 import { DiscountModal } from './discount-modal'
 import { PaymentModal } from './payment-modal'
@@ -59,7 +61,11 @@ export function CartPanel({ onCloseSession, isMobileDrawer = false, onCloseDrawe
   // completed checkout, so stale "Requested" chips never leak into the next run.
   const [oosResetKey, setOosResetKey] = useState(0)
   const [validating, setValidating] = useState(false)
-  const { showroomId, showroomName } = useSessionStore()
+  // Thermal invoice reprint — opened after payment (just-created order) or
+  // from the order list (recent/past orders).
+  const [receipt, setReceipt] = useState<ReceiptData | null>(null)
+  const [receiptOpen, setReceiptOpen] = useState(false)
+  const { showroomId, showroomName, cashierName } = useSessionStore()
 
   // Validate stock before opening payment modal.
   // Returns 'ok' (proceed), 'oos' (popup opened) or 'error' (validation
@@ -386,7 +392,21 @@ export function CartPanel({ onCloseSession, isMobileDrawer = false, onCloseDrawe
         onCompleteCheckout={handleCompleteCheckout}
         busy={validating}
       />
-      <PaymentModal open={paymentOpen} onOpenChange={setPaymentOpen} onSuccess={() => {}} />
+      <PaymentModal
+        open={paymentOpen}
+        onOpenChange={setPaymentOpen}
+        onSuccess={(r) => {
+          setReceipt(r)
+          setReceiptOpen(true)
+        }}
+      />
+      {/* Thermal invoice modal — fires after payment (just-created order) via
+          PaymentModal.onSuccess, or from the order list (dashboard / analytics). */}
+      <ThermalReceiptModal
+        open={receiptOpen}
+        onOpenChange={setReceiptOpen}
+        receipt={receipt}
+      />
     </div>
   )
 }

@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { useCartStore } from '../stores/cart-store'
+import { useSessionStore } from '../stores/session-store'
 import { createPosOrder, getPaymentGateways } from '../api/client'
+import { buildReceiptFromPosOrder, ReceiptData } from '../lib/receipt'
 import { toast } from 'sonner'
 import { CreditCard, X, Plus, Trash2, CheckCircle2, AlertCircle, ChevronDown, Loader2, Banknote, Smartphone, Building2 } from 'lucide-react'
 
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSuccess: () => void
+  onSuccess: (receipt: ReceiptData) => void
 }
 
 interface Gateway {
@@ -33,6 +35,7 @@ const GATEWAY_ICONS: Record<string, React.ReactNode> = {
 
 export function PaymentModal({ open, onOpenChange, onSuccess }: Props) {
   const { items, orderDiscount, orderDiscountType, customerId, guestName, guestPhone, salesChannel, deliveryMethod, notes, clearCart, total } = useCartStore()
+  const { showroomName, cashierName } = useSessionStore()
   const cartTotal = total()
 
   const [gateways, setGateways] = useState<Gateway[]>([])
@@ -98,7 +101,7 @@ export function PaymentModal({ open, onOpenChange, onSuccess }: Props) {
     setLoading(true)
     const idempotencyKey = crypto.randomUUID()
     try {
-      await createPosOrder({
+      const res = await createPosOrder({
         items: items.map((i) => ({
           productId: i.productId,
           variantId: i.variantId,
@@ -118,9 +121,19 @@ export function PaymentModal({ open, onOpenChange, onSuccess }: Props) {
         deliveryMethod,
         notes: notes || undefined,
       }, idempotencyKey)
-      toast.success('Order completed!')
+      // Build a thermal receipt BEFORE clearing the cart — the API response
+      // items carry only ids, while the product names live in the cart store.
+      // The receipt modal opens once payment settlement succeeds.
+      const receipt = buildReceiptFromPosOrder(res.data, {
+        storeName: showroomName || undefined,
+        cashierName: cashierName || undefined,
+        cartItems: items,
+      })
+      // No separate "thank you" popup: the thermal receipt modal that follows
+      // is the single post-payment confirmation screen (it ends with a
+      // "Thank you!" footer and a Print Receipt button).
       clearCart()
-      onSuccess()
+      onSuccess(receipt)
       onOpenChange(false)
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Payment failed')
