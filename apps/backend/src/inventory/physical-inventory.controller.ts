@@ -17,6 +17,47 @@ export class PhysicalInventoryController {
     private readonly cache: CacheService,
   ) {}
 
+  /** Share of a location's available stock a single adjustment may remove. */
+  private static readonly DESTRUCTIVE_RATIO = 0.9;
+
+  /**
+   * Refuse a negative adjustment that would wipe (nearly) all of a location's
+   * stock for one item unless the caller explicitly confirms it. A single
+   * mis-keyed quantity must not be able to zero out a showroom position.
+   */
+  private async assertNotDestructive(params: {
+    productId: string;
+    variantId?: string;
+    warehouseId: string;
+    removalQty: number;
+    confirmed?: boolean;
+  }): Promise<void> {
+    if (params.removalQty <= 0) return;
+    if (params.confirmed === true) return;
+
+    const rows = await this.prisma.physicalInventory.findMany({
+      where: {
+        productId: params.productId,
+        ...(params.variantId ? { variantId: params.variantId } : {}),
+        warehouseId: params.warehouseId,
+      },
+      select: { quantity: true, reservedQuantity: true },
+    });
+    const totalQty = rows.reduce((s, r) => s + r.quantity, 0);
+    const totalReserved = rows.reduce((s, r) => s + r.reservedQuantity, 0);
+    const available = totalQty - totalReserved;
+    if (available <= 0) return;
+    if (params.removalQty / available < PhysicalInventoryController.DESTRUCTIVE_RATIO) {
+      return;
+    }
+
+    throw new BadRequestException(
+      `This adjustment would remove ${params.removalQty} of ${available} available ` +
+        `at this location (${Math.round((params.removalQty / available) * 100)}%). ` +
+        `Re-submit with confirmDestructive=true if this is intentional.`,
+    );
+  }
+
   @Roles('superadmin', 'admin', 'manager')
   @UseGuards(InventoryEnabledGuard)
   @Get()
@@ -52,6 +93,14 @@ export class PhysicalInventoryController {
         );
       }
     }
+
+    await this.assertNotDestructive({
+      productId: dto.productId,
+      variantId: dto.variantId,
+      warehouseId: dto.warehouseId,
+      removalQty: Math.abs(Math.min(dto.quantity, 0)),
+      confirmed: dto.confirmDestructive,
+    });
 
     await this.stockService.addPhysical({
       productId: dto.productId,
@@ -166,6 +215,16 @@ export class PhysicalInventoryController {
           );
         }
       }
+    }
+
+    for (const item of dto.items) {
+      await this.assertNotDestructive({
+        productId: item.productId,
+        variantId: item.variantId,
+        warehouseId: dto.warehouseId,
+        removalQty: Math.abs(Math.min(item.quantity, 0)),
+        confirmed: dto.confirmDestructive,
+      });
     }
 
     for (const item of dto.items) {

@@ -1,4 +1,4 @@
-import { IsString, IsInt, IsOptional, IsNumber, Min, Max, IsArray, ValidateNested } from 'class-validator';
+import { IsString, IsInt, IsOptional, IsNumber, IsBoolean, Min, Max, IsArray, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class AdjustPhysicalDto {
@@ -30,6 +30,16 @@ export class AdjustPhysicalDto {
   @Min(0)
   @Type(() => Number)
   unitCost?: number;
+
+  /**
+   * Explicit opt-in required when one adjustment would remove (nearly) all of a
+   * location's stock for this item — stops a single mis-keyed entry from
+   * silently wiping a showroom/main stock position.
+   */
+  @IsOptional()
+  @IsBoolean()
+  @Type(() => Boolean)
+  confirmDestructive?: boolean;
 }
 
 export class BulkAdjustPhysicalItemDto {
@@ -68,4 +78,9 @@ export class BulkAdjustPhysicalDto {
   @ValidateNested({ each: true })
   @Type(() => BulkAdjustPhysicalItemDto)
   items: BulkAdjustPhysicalItemDto[];
+
+  @IsOptional()
+  @IsBoolean()
+  @Type(() => Boolean)
+  confirmDestructive?: boolean;
 }

@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Loader2, Package, X, Trash2, Plus, Info } from 'lucide-react'
 
 interface Props {
@@ -41,6 +42,7 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
   const [productSearch, setProductSearch] = useState('')
   const [selectedWarehouse, setSelectedWarehouse] = useState('')
   const [reason, setReason] = useState('')
+  const [confirmDestructive, setConfirmDestructive] = useState(false)
   const [items, setItems] = useState<AdjustItem[]>([])
 
   const { data: products } = useQuery<any[]>({
@@ -70,6 +72,7 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
     mutationFn: (data: {
       warehouseId: string
       reason: string
+      confirmDestructive?: boolean
       items: {
         productId: string
         variantId?: string
@@ -133,6 +136,7 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
     setProductSearch('')
     setSelectedWarehouse('')
     setReason('')
+    setConfirmDestructive(false)
     setItems([])
   }
 
@@ -242,6 +246,8 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
     bulkAdjustMut.mutate({
       warehouseId: selectedWarehouse,
       reason: reason.trim(),
+      // Opt-in only after the operator explicitly acknowledges a near-total wipe.
+      confirmDestructive: confirmDestructive || undefined,
       items: items.map((item) => ({
         productId: item.productId,
         variantId: item.variantId || undefined,
@@ -287,6 +293,24 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
               />
             </div>
           </div>
+
+          {/* Destructive-adjustment acknowledgement: a single entry must never be
+              able to silently wipe a location's stock without being called out. */}
+          {items.some((i) => i.quantity < 0) && (
+            <label className="flex items-start gap-3 rounded-xl border border-destructive/40 bg-destructive/5 p-3.5 cursor-pointer">
+              <Checkbox
+                checked={confirmDestructive}
+                onCheckedChange={(v) => setConfirmDestructive(v === true)}
+                className="mt-0.5"
+              />
+              <span className="text-sm text-destructive leading-snug">
+                This is a stock <strong>deduction</strong>. If it removes most of a
+                location&apos;s stock for an item, the server will reject it unless
+                you confirm here — tick to confirm the quantities are intentional
+                (for example a damage or loss write-off).
+              </span>
+            </label>
+          )}
 
           {/* Product Search Input */}
           <div className='space-y-2'>
