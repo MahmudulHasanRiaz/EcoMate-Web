@@ -71,6 +71,11 @@ export default defineConfig(({ mode }) => {
         manifest: false,
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+          // Workbox's 2 MiB precache default THROWS (fails the build) as soon
+          // as any emitted asset grows past it. The eagerly-loaded app entry
+          // is ~2.1 MB, so raise the limit to comfortably clear it; every
+          // chunk is still precached (verified in the generated sw.js).
+          maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
           runtimeCaching: [
             {
               // API GETs must never serve stale sw-cache (one browser showed
@@ -103,6 +108,12 @@ export default defineConfig(({ mode }) => {
           // TTFB, each file costs a full round trip — 144 files × 1.7s ÷ 6
           // = 15s+ on hard reload. 4 vendor chunks × 1.7s ÷ 6 = ~2s.
           // Hashed filenames + immutable cache headers keep caching effective.
+          //
+          // FIRST-PARTY code is intentionally NOT assigned a chunk here: the
+          // entry eagerly loads every route, so naming app code just merges it
+          // back into the entry (manualChunks is a hint) while risking the
+          // precache limit. App code is left to the default splitting; the
+          // precache limit above is what bounds the build.
           manualChunks(id) {
             if (id.includes('node_modules')) {
               if (id.includes('recharts')) return 'vendor-charts';
