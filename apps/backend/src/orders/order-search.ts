@@ -43,6 +43,12 @@ export function buildOrderSearchFilter(
 
   const or: any[] = [
     { displayId: { contains: q, mode: 'insensitive' } },
+    // RTN orders are found by their own RTN- number (above) AND by the
+    // original ORD- number they were created from.
+    { returnOfOrder: { displayId: { contains: q, mode: 'insensitive' } } },
+    // Associated dispatch identifiers (consignment / tracking code).
+    { courierConsignmentId: { contains: q, mode: 'insensitive' } },
+    { courierTrackingCode: { contains: q, mode: 'insensitive' } },
     { customer: { name: { contains: q, mode: 'insensitive' } } },
     { guestName: { contains: q, mode: 'insensitive' } },
     {

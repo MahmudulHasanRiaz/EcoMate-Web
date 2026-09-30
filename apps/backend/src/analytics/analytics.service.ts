@@ -24,7 +24,7 @@ export class AnalyticsService {
       this.prisma.order.aggregate({
         _count: true,
         _sum: { total: true },
-        where: { ...dateFilter, trashedAt: null },
+        where: { ...dateFilter, trashedAt: null, kind: 'SALE' },
       }),
       this.prisma.payment.aggregate({
         _sum: { amount: true },

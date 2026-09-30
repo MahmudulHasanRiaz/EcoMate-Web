@@ -114,12 +114,12 @@ export class CustomersService {
 
     const [aggregation, recentOrders] = await Promise.all([
       this.prisma.order.aggregate({
-        where: { customerId: user.id, trashedAt: null },
+        where: { customerId: user.id, trashedAt: null, kind: 'SALE' },
         _count: true,
         _sum: { total: true },
       }),
       this.prisma.order.findMany({
-        where: { customerId: user.id, trashedAt: null },
+        where: { customerId: user.id, trashedAt: null, kind: 'SALE' },
         orderBy: { createdAt: 'desc' },
         take: 10,
         select: {
@@ -330,12 +330,12 @@ export class CustomersService {
 
     const [aggregation, recentOrders, deliveredCount, cancelledCount] = await Promise.all([
       this.prisma.order.aggregate({
-        where: { customerId: user.id, trashedAt: null },
+        where: { customerId: user.id, trashedAt: null, kind: 'SALE' },
         _count: true,
         _sum: { total: true },
       }),
       this.prisma.order.findMany({
-        where: { customerId: user.id, trashedAt: null },
+        where: { customerId: user.id, trashedAt: null, kind: 'SALE' },
         orderBy: { createdAt: 'desc' },
         take: 5,
         select: {
@@ -348,10 +348,10 @@ export class CustomersService {
         },
       }),
       deliveredIds.length > 0
-        ? this.prisma.order.count({ where: { customerId: user.id, trashedAt: null, statusId: { in: deliveredIds } } })
+        ? this.prisma.order.count({ where: { customerId: user.id, trashedAt: null, kind: 'SALE', statusId: { in: deliveredIds } } })
         : Promise.resolve(0),
       cancelledIds.length > 0
-        ? this.prisma.order.count({ where: { customerId: user.id, trashedAt: null, statusId: { in: cancelledIds } } })
+        ? this.prisma.order.count({ where: { customerId: user.id, trashedAt: null, kind: 'SALE', statusId: { in: cancelledIds } } })
         : Promise.resolve(0),
     ]);
 

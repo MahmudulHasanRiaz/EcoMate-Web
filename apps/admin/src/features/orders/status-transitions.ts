@@ -18,7 +18,9 @@ export const ORDER_TRANSITIONS: Record<string, string[]> = {
   'Packing Hold': ['Packed', 'Cancelled'],
   'Shipping': ['Delivered', 'Partial', 'Return Pending'],
   'Delivered': ['Return Pending'],
-  'Partial': ['Delivered', 'Return Pending'],
+  // Partial must be resolved via the RTN return-order workflow — the generic
+  // Partial → Delivered shortcut is intentionally removed.
+  'Partial': ['Return Pending'],
   'Return Pending': ['Returned', 'Damaged'],
   'Returned': ['Damaged'],
   'Cancelled': ['Hold', 'Confirmed'],

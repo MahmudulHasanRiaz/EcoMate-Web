@@ -124,6 +124,7 @@ import { Route as AuthenticatedOpPurchasesIndexRouteImport } from './routes/_aut
 import { Route as AuthenticatedOpReferralsIndexRouteImport } from './routes/_authenticated/op/referrals/index'
 import { Route as AuthenticatedOpRefundsIndexRouteImport } from './routes/_authenticated/op/refunds/index'
 import { Route as AuthenticatedOpReviewsIndexRouteImport } from './routes/_authenticated/op/reviews/index'
+import { Route as AuthenticatedOpScannerIndexRouteImport } from './routes/_authenticated/op/scanner/index'
 import { Route as AuthenticatedOpShipmentsIndexRouteImport } from './routes/_authenticated/op/shipments/index'
 import { Route as AuthenticatedOpSizeChartsIndexRouteImport } from './routes/_authenticated/op/size-charts/index'
 import { Route as AuthenticatedOpSuppliersIndexRouteImport } from './routes/_authenticated/op/suppliers/index'
@@ -839,6 +840,12 @@ const AuthenticatedOpReviewsIndexRoute =
     path: '/op/reviews/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOpScannerIndexRoute =
+  AuthenticatedOpScannerIndexRouteImport.update({
+    id: '/op/scanner/',
+    path: '/op/scanner/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpShipmentsIndexRoute =
   AuthenticatedOpShipmentsIndexRouteImport.update({
     id: '/op/shipments/',
@@ -1255,6 +1262,7 @@ export interface FileRoutesByFullPath {
   '/op/referrals/': typeof AuthenticatedOpReferralsIndexRoute
   '/op/refunds/': typeof AuthenticatedOpRefundsIndexRoute
   '/op/reviews/': typeof AuthenticatedOpReviewsIndexRoute
+  '/op/scanner/': typeof AuthenticatedOpScannerIndexRoute
   '/op/shipments/': typeof AuthenticatedOpShipmentsIndexRoute
   '/op/size-charts/': typeof AuthenticatedOpSizeChartsIndexRoute
   '/op/suppliers/': typeof AuthenticatedOpSuppliersIndexRoute
@@ -1421,6 +1429,7 @@ export interface FileRoutesByTo {
   '/op/referrals': typeof AuthenticatedOpReferralsIndexRoute
   '/op/refunds': typeof AuthenticatedOpRefundsIndexRoute
   '/op/reviews': typeof AuthenticatedOpReviewsIndexRoute
+  '/op/scanner': typeof AuthenticatedOpScannerIndexRoute
   '/op/shipments': typeof AuthenticatedOpShipmentsIndexRoute
   '/op/size-charts': typeof AuthenticatedOpSizeChartsIndexRoute
   '/op/suppliers': typeof AuthenticatedOpSuppliersIndexRoute
@@ -1589,6 +1598,7 @@ export interface FileRoutesById {
   '/_authenticated/op/referrals/': typeof AuthenticatedOpReferralsIndexRoute
   '/_authenticated/op/refunds/': typeof AuthenticatedOpRefundsIndexRoute
   '/_authenticated/op/reviews/': typeof AuthenticatedOpReviewsIndexRoute
+  '/_authenticated/op/scanner/': typeof AuthenticatedOpScannerIndexRoute
   '/_authenticated/op/shipments/': typeof AuthenticatedOpShipmentsIndexRoute
   '/_authenticated/op/size-charts/': typeof AuthenticatedOpSizeChartsIndexRoute
   '/_authenticated/op/suppliers/': typeof AuthenticatedOpSuppliersIndexRoute
@@ -1757,6 +1767,7 @@ export interface FileRouteTypes {
     | '/op/referrals/'
     | '/op/refunds/'
     | '/op/reviews/'
+    | '/op/scanner/'
     | '/op/shipments/'
     | '/op/size-charts/'
     | '/op/suppliers/'
@@ -1923,6 +1934,7 @@ export interface FileRouteTypes {
     | '/op/referrals'
     | '/op/refunds'
     | '/op/reviews'
+    | '/op/scanner'
     | '/op/shipments'
     | '/op/size-charts'
     | '/op/suppliers'
@@ -2090,6 +2102,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/referrals/'
     | '/_authenticated/op/refunds/'
     | '/_authenticated/op/reviews/'
+    | '/_authenticated/op/scanner/'
     | '/_authenticated/op/shipments/'
     | '/_authenticated/op/size-charts/'
     | '/_authenticated/op/suppliers/'
@@ -2965,6 +2978,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpReviewsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/op/scanner/': {
+      id: '/_authenticated/op/scanner/'
+      path: '/op/scanner'
+      fullPath: '/op/scanner/'
+      preLoaderRoute: typeof AuthenticatedOpScannerIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/shipments/': {
       id: '/_authenticated/op/shipments/'
       path: '/op/shipments'
@@ -3541,6 +3561,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpReferralsIndexRoute: typeof AuthenticatedOpReferralsIndexRoute
   AuthenticatedOpRefundsIndexRoute: typeof AuthenticatedOpRefundsIndexRoute
   AuthenticatedOpReviewsIndexRoute: typeof AuthenticatedOpReviewsIndexRoute
+  AuthenticatedOpScannerIndexRoute: typeof AuthenticatedOpScannerIndexRoute
   AuthenticatedOpShipmentsIndexRoute: typeof AuthenticatedOpShipmentsIndexRoute
   AuthenticatedOpSizeChartsIndexRoute: typeof AuthenticatedOpSizeChartsIndexRoute
   AuthenticatedOpSuppliersIndexRoute: typeof AuthenticatedOpSuppliersIndexRoute
@@ -3698,6 +3719,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpReferralsIndexRoute: AuthenticatedOpReferralsIndexRoute,
   AuthenticatedOpRefundsIndexRoute: AuthenticatedOpRefundsIndexRoute,
   AuthenticatedOpReviewsIndexRoute: AuthenticatedOpReviewsIndexRoute,
+  AuthenticatedOpScannerIndexRoute: AuthenticatedOpScannerIndexRoute,
   AuthenticatedOpShipmentsIndexRoute: AuthenticatedOpShipmentsIndexRoute,
   AuthenticatedOpSizeChartsIndexRoute: AuthenticatedOpSizeChartsIndexRoute,
   AuthenticatedOpSuppliersIndexRoute: AuthenticatedOpSuppliersIndexRoute,

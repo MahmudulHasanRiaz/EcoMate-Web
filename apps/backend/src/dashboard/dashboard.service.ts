@@ -39,7 +39,7 @@ export class DashboardService {
         totalProducts,
         recentOrders,
       ] = await Promise.all([
-        this.prisma.order.count({ where: { ...dateFilter, trashedAt: null } }),
+        this.prisma.order.count({ where: { ...dateFilter, trashedAt: null, kind: 'SALE' } }),
         this.prisma.payment.aggregate({
           _sum: { amount: true },
           where: { ...dateFilter },
@@ -47,7 +47,7 @@ export class DashboardService {
         this.prisma.userProfile.count({ where: { role: 'customer' } }),
         this.prisma.product.count({ where: { isActive: true } }),
         this.prisma.order.findMany({
-          where: { ...dateFilter, trashedAt: null },
+          where: { ...dateFilter, trashedAt: null, kind: 'SALE' },
           take: 20,
           orderBy: { createdAt: 'desc' },
           include: { status: true, _count: { select: { items: true } } },
@@ -90,7 +90,7 @@ export class DashboardService {
 
       const [ordersLast30Days, revenueLast30Days, pageViewCount] =
         await Promise.all([
-          this.prisma.order.count({ where: { ...effectiveDateFilter, trashedAt: null } }),
+          this.prisma.order.count({ where: { ...effectiveDateFilter, trashedAt: null, kind: 'SALE' } }),
           this.prisma.payment.aggregate({
             _sum: { amount: true },
             where: { ...effectiveDateFilter, status: 'PAID' },
@@ -251,7 +251,7 @@ export class DashboardService {
         by: ['statusId'],
         _count: true,
         _sum: { total: true },
-        where: { ...this.dateFilter(startDate, endDate), trashedAt: null },
+        where: { ...this.dateFilter(startDate, endDate), trashedAt: null, kind: 'SALE' },
       });
       const statuses = await this.prisma.orderStatus.findMany();
       const statusMap = new Map(statuses.map((s) => [s.id, s.name]));
@@ -404,7 +404,7 @@ export class DashboardService {
       // Creation EVENT: orders created within the period (not trashed).
       // Uses the canonical indexed `createdAt` column.
       const newOrders = await this.prisma.order.count({
-        where: { createdAt: dateFilter, trashedAt: null },
+        where: { createdAt: dateFilter, trashedAt: null, kind: 'SALE' },
       });
 
       // ── Lifecycle events (Confirmed / Packed / Picked Up / Delivered) ──
@@ -548,7 +548,7 @@ export class DashboardService {
       // labels this "Order Cohort" — never "New Orders" — because it is a
       // cohort total, not a current "new" status.
       const newOrders = await this.prisma.order.count({
-        where: { createdAt: dateFilter, trashedAt: null },
+        where: { createdAt: dateFilter, trashedAt: null, kind: 'SALE' },
       });
 
       // ── Current-status distribution of the cohort ──────────────────────
@@ -561,7 +561,7 @@ export class DashboardService {
       const groups = await this.prisma.order.groupBy({
         by: ['statusId'],
         _count: true,
-        where: { createdAt: dateFilter, trashedAt: null },
+        where: { createdAt: dateFilter, trashedAt: null, kind: 'SALE' },
       });
       const statuses = await this.prisma.orderStatus.findMany();
       const statusMap = new Map(statuses.map((s) => [s.id, s.name]));

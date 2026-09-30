@@ -88,6 +88,14 @@ enum OrderSource {
   MANUAL
 }
 
+/// Order kind: SALE = normal customer sale; RETURN = RTN return transaction
+/// derived from a Partial original order (never a sale, never counted in
+/// revenue/analytics/marketing attribution).
+enum OrderKind {
+  SALE
+  RETURN
+}
+
 enum SalesChannel {
   CALL
   FACEBOOK
@@ -633,6 +641,16 @@ model OrderStatus {
 model Order {
   id                       String             @id @default(uuid())
   displayId                String             @unique
+  kind                     OrderKind          @default(SALE)
+  /// Original sale order this RTN return order was created from.
+  /// UNIQUE at the database level: one original order → at most one RTN.
+  /// NULL for every normal sale order (Postgres treats NULLs as distinct).
+  returnOfOrderId          String?
+  /// Set when the RTN order itself reached 'Returned' (stock restored).
+  returnedAt               DateTime?
+  /// Idempotency guard for RTN stock restoration: once true, the exact RTN
+  /// quantities have been restored and must never be restored again.
+  stockRestored            Boolean            @default(false)
   customerId               String?
   statusId                 String
   subtotal                 Decimal            @db.Decimal(10, 2)
@@ -709,6 +727,8 @@ model Order {
 
   customer       CustomerProfile?     @relation(fields: [customerId], references: [id])
   assignee       UserProfile?         @relation("OrderAssignee", fields: [assignedToId], references: [id])
+  returnOfOrder  Order?               @relation("OrderReturn", fields: [returnOfOrderId], references: [id])
+  returnOrders   Order[]              @relation("OrderReturn")
   status         OrderStatus          @relation(fields: [statusId], references: [id])
   items          OrderItem[]
   payments       Payment[]
@@ -742,6 +762,10 @@ model Order {
   @@index([trackingSessionId])
   @@index([trashedAt])
   @@index([ipAddress])
+  @@index([kind])
+  @@index([returnOfOrderId])
+  // One original order → at most one RTN return order (database-enforced).
+  @@unique([returnOfOrderId])
   // Orders-list search: order number and guest name are matched as substrings.
   @@index([displayId(ops: raw("gin_trgm_ops"))], type: Gin, map: "Order_displayId_trgm_idx")
   @@index([guestName(ops: raw("gin_trgm_ops"))], type: Gin, map: "Order_guestName_trgm_idx")
@@ -761,6 +785,10 @@ model OrderItem {
   managedStockReserved Boolean  @default(false)
   managedStockDeducted Boolean  @default(false)
   sourceWarehouseId    String?
+  /// Set ONLY on RTN return-order items: the original sale-order item this
+  /// return quantity came from. Links the return to the original stock
+  /// consumption for exact costing-lot restoration.
+  sourceOrderItemId    String?
   createdAt            DateTime @default(now())
 
   order           Order                     @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -776,6 +804,7 @@ model OrderItem {
   @@index([variantId])
   @@index([comboId])
   @@index([sourceWarehouseId])
+  @@index([sourceOrderItemId])
 }
 
 model Payment {

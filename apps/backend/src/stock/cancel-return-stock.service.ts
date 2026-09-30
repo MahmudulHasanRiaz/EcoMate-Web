@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from './stock.service';
 import { StockRouterService } from './stock-router.service';
@@ -321,6 +321,288 @@ export class CancelReturnStockService {
     // restored stock is visible on the storefront immediately. Same pattern
     // as operatePhysical, which also invalidates when running inside a tx.
     await this.cache.invalidateByPrefix('product:');
+  }
+
+  /**
+   * RTN stock restoration — the exact inverse of a PARTIAL return.
+   *
+   * An RTN order was never an outbound stock reservation/deduction, so
+   * restoreForOrder (which assumes prior deduction/reservation flags) must
+   * NOT be used here. This operation restores EXACTLY the RTN item
+   * quantities — nothing from the original order, nothing extra.
+   *
+   * Managed engine:  stockService.operate('add', RETURN)
+   * Physical engine: stockService.operatePhysical('add') — authoritative path
+   * Costing engine:  CostingLotRestoration rows scoped to the ORIGINAL order's
+   *                  FULFILLMENT consumptions (linked via sourceOrderItemId)
+   *
+   * Idempotent AND durable: Order.stockRestored is checked at entry and set
+   * inside the SAME transaction as the stock movement, so repeated calls
+   * (scanner retries, webhook + scanner races) can never restore twice.
+   */
+  async restoreForReturnOrder(params: {
+    rtnOrderId: string;
+    performedBy?: string;
+    tx: Prisma.TransactionClient;
+  }): Promise<{ restored: boolean }> {
+    const { rtnOrderId, performedBy, tx } = params;
+
+    const rtn = await tx.order.findUnique({
+      where: { id: rtnOrderId },
+      include: {
+        status: true,
+        items: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                availabilityMode: true,
+                manageStock: true,
+                syncManagedStock: true,
+                warehouseId: true,
+                name: true,
+              },
+            },
+            combo: { select: { id: true } },
+          },
+        },
+      },
+    });
+    if (!rtn || rtn.kind !== 'RETURN') {
+      throw new BadRequestException('Return order not found');
+    }
+    if (rtn.stockRestored) return { restored: false };
+
+    const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
+    const reference = `RTN RESTORE: ${rtn.displayId}`;
+
+    for (const item of rtn.items) {
+      if (!item.productId && !item.comboId) continue;
+
+      if (item.comboId) {
+        const snapshots = await tx.orderItemComboComponent.findMany({
+          where: { orderItemId: item.id },
+          include: { product: true },
+        });
+        for (const snap of snapshots) {
+          await this.restoreManagedStock(
+            tx,
+            snap.product,
+            snap.variantId ?? undefined,
+            snap.totalQuantity,
+            reference,
+            performedBy,
+          );
+          await this.restorePhysicalStock(
+            tx,
+            snap.product,
+            snap.variantId ?? undefined,
+            snap.totalQuantity,
+            item.sourceWarehouseId,
+            imEnabled,
+            reference,
+            performedBy,
+          );
+        }
+        continue;
+      }
+
+      if (!item.product) continue;
+      await this.restoreManagedStock(
+        tx,
+        item.product,
+        item.variantId ?? undefined,
+        item.quantity,
+        reference,
+        performedBy,
+      );
+      await this.restorePhysicalStock(
+        tx,
+        item.product,
+        item.variantId ?? undefined,
+        item.quantity,
+        item.sourceWarehouseId,
+        imEnabled,
+        reference,
+        performedBy,
+      );
+    }
+
+    // Costing-lot restoration scoped to the original order's consumptions.
+    const original = rtn.returnOfOrderId
+      ? await tx.order.findUnique({ where: { id: rtn.returnOfOrderId } })
+      : null;
+    if (original) {
+      const cycle = await tx.orderStockCycle.findFirst({
+        where: { orderId: original.id },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (cycle) {
+        await this.restoreCostingLotsForRtn(tx, rtn, cycle.id, performedBy);
+      }
+    }
+
+    // Durable idempotency flag — set in the same transaction as the movement.
+    await tx.order.update({
+      where: { id: rtnOrderId },
+      data: { stockRestored: true },
+    });
+    await this.cache.invalidateByPrefix('product:');
+    return { restored: true };
+  }
+
+  /**
+   * Managed-engine restore for an RTN quantity. Uses the authoritative
+   * StockService.operate path (ledger type RETURN, reference type RETURN).
+   */
+  private async restoreManagedStock(
+    tx: Prisma.TransactionClient,
+    product: any,
+    variantId: string | undefined,
+    quantity: number,
+    reference: string,
+    performedBy?: string,
+  ) {
+    if (!product) return;
+    if (product.availabilityMode !== 'MANAGED_STOCK' || !product.manageStock)
+      return;
+    await this.stockService.operate('add', {
+      productId: product.id,
+      variantId,
+      quantity,
+      reference,
+      ledgerType: 'RETURN',
+      referenceType: 'RETURN',
+      performedBy: performedBy || 'system',
+      tx,
+    });
+  }
+
+  /**
+   * Physical-engine restore for an RTN quantity. Uses the authoritative
+   * operatePhysical path (finds/creates the warehouse-level PI row). Guarded
+   * by the same router decision the forward flow uses.
+   */
+  private async restorePhysicalStock(
+    tx: Prisma.TransactionClient,
+    product: any,
+    variantId: string | undefined,
+    quantity: number,
+    sourceWarehouseId: string | null | undefined,
+    imEnabled: boolean,
+    reference: string,
+    performedBy?: string,
+  ) {
+    if (!product) return;
+    const decision = this.stockRouter.resolve(
+      product.availabilityMode,
+      'add',
+      imEnabled,
+      product.syncManagedStock ?? undefined,
+    );
+    if (decision.pi === 'skip') return;
+    const warehouseId = sourceWarehouseId ?? product.warehouseId;
+    if (!warehouseId) return;
+    await this.stockService.operatePhysical('add', {
+      productId: product.id,
+      variantId,
+      warehouseId,
+      quantity,
+      reference,
+      ledgerType: 'RESTORATION',
+      referenceType: 'RETURN',
+      performedBy: performedBy || 'system',
+      tx,
+    });
+  }
+
+  /**
+   * Costing-lot restoration for an RTN order. Walks the ORIGINAL order's
+   * FULFILLMENT consumptions (linked through each RTN item's
+   * sourceOrderItemId) and restores exactly the returned quantities.
+   * Idempotent via CostingLotRestoration's @@unique([consumptionId,
+   * returnReferenceId]) — a repeated call finds the restoration already
+   * there and restores nothing.
+   */
+  private async restoreCostingLotsForRtn(
+    tx: Prisma.TransactionClient,
+    rtn: any,
+    cycleId: string,
+    performedBy?: string,
+  ) {
+    const returnReferenceId = `rtn-${rtn.id}`;
+
+    for (const item of rtn.items) {
+      if (!item.sourceOrderItemId) continue;
+
+      if (item.comboId) {
+        const originalSnapshots = await tx.orderItemComboComponent.findMany({
+          where: { orderItemId: item.sourceOrderItemId },
+        });
+        for (const snap of originalSnapshots) {
+          const wanted = snap.unitQuantity * item.quantity;
+          await this.restoreCostingConsumption(
+            tx,
+            cycleId,
+            'COMBO_COMPONENT',
+            snap.id,
+            wanted,
+            returnReferenceId,
+          );
+        }
+        continue;
+      }
+
+      await this.restoreCostingConsumption(
+        tx,
+        cycleId,
+        'ORDER_ITEM',
+        item.sourceOrderItemId,
+        item.quantity,
+        returnReferenceId,
+      );
+    }
+  }
+
+  private async restoreCostingConsumption(
+    tx: Prisma.TransactionClient,
+    cycleId: string,
+    referenceType: string,
+    referenceId: string,
+    wanted: number,
+    returnReferenceId: string,
+  ) {
+    if (wanted <= 0) return;
+    const consumption = await tx.costingLotConsumption.findFirst({
+      where: { cycleId, referenceType, referenceId, type: 'FULFILLMENT' },
+      include: { restorations: { select: { quantity: true } } },
+    });
+    if (!consumption) return;
+
+    const restoredQty = consumption.restorations.reduce(
+      (sum, r) => sum + r.quantity,
+      0,
+    );
+    const remaining = consumption.quantity - restoredQty;
+    if (remaining <= 0) return;
+
+    const quantity = Math.min(remaining, wanted);
+    await tx.costingLotRestoration.create({
+      data: {
+        consumptionId: consumption.id,
+        cycleId,
+        returnReferenceId,
+        quantity,
+        unitCost: consumption.unitCost,
+      },
+    });
+    await tx.costingLot.update({
+      where: { id: consumption.costingLotId },
+      data: { remainingQty: { increment: quantity } },
+    });
+    this.logger.debug(
+      `CostingLot ${consumption.costingLotId} restored +${quantity} for RTN ${returnReferenceId}`,
+    );
   }
 
   // ---------------------------------------------------------------------------

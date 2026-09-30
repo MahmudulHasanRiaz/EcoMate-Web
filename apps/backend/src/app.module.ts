@@ -18,6 +18,8 @@ import { BrandsModule } from './brands/brands.module';
 import { AttributesModule } from './attributes/attributes.module';
 import { ProductsModule } from './products/products.module';
 import { OrdersModule } from './orders/orders.module';
+import { RtnModule } from './rtn/rtn.module';
+import { ScannerModule } from './scanner/scanner.module';
 
 import { PaymentsModule } from './payments/payments.module';
 import { UploadModule } from './upload/upload.module';
@@ -117,6 +119,8 @@ import { SecurityDashboardModule } from './security-dashboard/security-dashboard
     AttributesModule,
     ProductsModule,
     OrdersModule,
+    RtnModule,
+    ScannerModule,
     PackingModule,
     DispatchModule,
     PaymentsModule,

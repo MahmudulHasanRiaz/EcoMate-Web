@@ -15,7 +15,7 @@ import { CommissionsModule } from '../commissions/commissions.module';
 @Module({
   controllers: [OrdersController, OrderStatusController],
   providers: [OrdersService, OrdersEventService, OrderEditLockService],
-  exports: [OrdersService, OrderEditLockService],
+  exports: [OrdersService, OrderEditLockService, OrdersEventService],
   imports: [
     TrackingModule,
     CustomersModule,

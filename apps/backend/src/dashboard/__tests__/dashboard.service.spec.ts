@@ -95,7 +95,7 @@ describe('DashboardService', () => {
       await service.getOperationalKpis(start.toISOString(), end.toISOString());
 
       expect(prisma.order.count).toHaveBeenCalledWith({
-        where: { createdAt: { gte: start, lte: end }, trashedAt: null },
+        where: { createdAt: { gte: start, lte: end }, trashedAt: null, kind: 'SALE' },
       });
     });
 
@@ -362,7 +362,7 @@ describe('DashboardService', () => {
       );
 
       expect(prisma.order.count).toHaveBeenCalledWith({
-        where: { createdAt: { gte: start, lte: end }, trashedAt: null },
+        where: { createdAt: { gte: start, lte: end }, trashedAt: null, kind: 'SALE' },
       });
     });
 
@@ -379,7 +379,7 @@ describe('DashboardService', () => {
       expect(prisma.order.groupBy).toHaveBeenCalledWith(
         expect.objectContaining({
           by: ['statusId'],
-          where: { createdAt: { gte: start, lte: end }, trashedAt: null },
+          where: { createdAt: { gte: start, lte: end }, trashedAt: null, kind: 'SALE' },
         }),
       );
     });

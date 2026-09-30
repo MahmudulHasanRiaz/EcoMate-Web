@@ -31,7 +31,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '@/components/ui/label'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuGroup } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, UserPlus, UserCheck, Calendar, Search as SearchIcon, Send, Plus, Upload, Trash2, Ban } from 'lucide-react'
+import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, UserPlus, UserCheck, Calendar, Search as SearchIcon, Send, Plus, Upload, Trash2, Ban, RotateCcw } from 'lucide-react'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { OrderSourceBadges } from '@/features/orders/order-source-badge'
 
@@ -366,9 +366,11 @@ export function Orders() {
   const { data: staffList } = useQuery({ queryKey: ['staff-list'], queryFn: () => apiClient.get('/orders/staff/list').then(r => r.data as any[]) })
   const staff = (Array.isArray(staffList) ? staffList : []) as any[]
 
+  const [kindFilter, setKindFilter] = useState<'all' | 'SALE' | 'RETURN'>('all')
+
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['orders', page, perPage, debouncedSearch, statusFilter, courierFilter, assigneeFilter, sort, order],
-    queryFn: () => ordersApi.list({ page, perPage, search: debouncedSearch || undefined, statusId: statusFilter !== 'all' ? statusFilter : undefined, courier: courierFilter !== 'all' ? courierFilter : undefined, assignedToId: assigneeFilter !== 'all' ? assigneeFilter : undefined, sort, order }).then(r => r.data),
+    queryKey: ['orders', page, perPage, debouncedSearch, statusFilter, courierFilter, assigneeFilter, sort, order, kindFilter],
+    queryFn: () => ordersApi.list({ page, perPage, search: debouncedSearch || undefined, statusId: statusFilter !== 'all' ? statusFilter : undefined, courier: courierFilter !== 'all' ? courierFilter : undefined, assignedToId: assigneeFilter !== 'all' ? assigneeFilter : undefined, sort, order, kind: kindFilter !== 'all' ? kindFilter : undefined }).then(r => r.data),
   })
 
   const statusMut = useMutation({
@@ -521,6 +523,26 @@ export function Orders() {
           return (
             <div className="flex gap-2 overflow-x-auto no-scrollbar py-1" aria-label="Filter orders by status">
               {chip('all', 'All', totalOrders, 'var(--primary)', allActive, () => { if (!allActive) { setStatusFilter('all'); setPage(1) } })}
+              {([
+                ['SALE', 'Sales', 'var(--primary)'],
+                ['RETURN', 'Returns', '#EC4899'],
+              ] as const).map(([value, label, color]) => {
+                const active = kindFilter === value
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={active}
+                    title={label}
+                    onClick={() => { setKindFilter(active ? 'all' : value); setPage(1) }}
+                    className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer ${active ? '' : 'border-border bg-card text-muted-foreground hover:text-foreground hover:border-muted-foreground/40'}`}
+                    style={active ? { borderColor: `color-mix(in srgb, ${color} 45%, transparent)`, backgroundColor: `color-mix(in srgb, ${color} 13%, transparent)` } : undefined}
+                  >
+                    <span className="size-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                    <span className="truncate max-w-32">{label}</span>
+                  </button>
+                )
+              })}
               {visible.map((s: any) => {
                 const color = getStatusColor(s.name, s.color)
                 const active = statusFilter === s.id
@@ -666,6 +688,11 @@ export function Orders() {
                         <TableCell>
                           <div className='flex items-center gap-2'>
                             <Link to='/op/orders/$id' params={{ id: o.id }} className='font-mono text-sm font-semibold text-primary hover:underline' onClick={e => e.stopPropagation()}>{o.displayId}</Link>
+                            {o.kind === 'RETURN' && (
+                              <span className='inline-flex items-center gap-1 rounded-full border border-pink-500/40 bg-pink-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-pink-500'>
+                                <RotateCcw className='h-2.5 w-2.5' /> RTN
+                              </span>
+                            )}
                             <Tooltip>
                               <TooltipTrigger asChild><button onClick={e => { e.stopPropagation(); copyToClipboard(o.displayId, 'Order ID') }} aria-label='Copy Order ID' className='opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground'><ClipboardCopy className='h-3 w-3' /></button></TooltipTrigger>
                               <TooltipContent>Copy order ID</TooltipContent>
@@ -696,6 +723,7 @@ export function Orders() {
                           </div>
                         </TableCell>
                         <TableCell onClick={e => e.stopPropagation()}>
+                          {o.kind !== 'RETURN' && (
                           <Select value={o.status.id} onValueChange={v => {
                             const s = statusList.find((s: any) => s.id === v)
                             if (s) { setStatusNote(''); setStatusDialog({ order: o, newStatusId: v, newStatusName: s.name }) }
@@ -719,6 +747,7 @@ export function Orders() {
                               ))}
                             </SelectContent>
                           </Select>
+                          )}
                         </TableCell>
                         <TableCell>
                           {o.courierService ? (

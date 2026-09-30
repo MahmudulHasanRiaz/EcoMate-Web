@@ -1071,5 +1071,32 @@ describe('DispatchService', () => {
       );
       expect(prisma.order.updateMany).toHaveBeenCalled();
     });
+
+    it('persists productMapping quantities (whitelist-safe DTO) — drives remaining-fulfillment', async () => {
+      prisma.dispatch.findUnique.mockResolvedValue(null);
+
+      await service.create({
+        orderId: 'order-1',
+        courier: 'pathao',
+        consignmentId: 'CG-QTY',
+        productMapping: [
+          { productVariantId: 'prod-1', productName: 'P1', quantity: 2 },
+          { productVariantId: 'prod-2', productName: 'P2', quantity: 1 },
+        ],
+      });
+
+      // The global ValidationPipe runs with whitelist:true — an undecorated
+      // quantity would be stripped silently. This locks the decorated DTO.
+      expect(prisma.dispatch.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            productMapping: [
+              { productVariantId: 'prod-1', productName: 'P1', quantity: 2 },
+              { productVariantId: 'prod-2', productName: 'P2', quantity: 1 },
+            ],
+          }),
+        }),
+      );
+    });
   });
 });

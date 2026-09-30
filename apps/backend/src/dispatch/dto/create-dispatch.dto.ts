@@ -10,7 +10,11 @@ export class ProductMappingItem {
   @IsString()
   @IsOptional()
   variantName?: string;
-  quantity: any;
+  // Decorated so the global whitelist ValidationPipe does not strip it —
+  // dispatch-level quantities drive remaining-fulfillment calculations.
+  @IsNumber()
+  @Min(0)
+  quantity: number;
 }
 
 export class CreateDispatchDto {

@@ -64,7 +64,12 @@ const ORDER_TRANSITIONS: Record<string, string[]> = {
   'Packing Hold': ['Packed', 'Cancelled'],
   Shipping: ['Delivered', 'Partial', 'Return Pending'],
   Delivered: ['Return Pending'],
-  Partial: ['Delivered', 'Return Pending'],
+  // Partial is automation-stopped AND resolution-stopped: the ONLY legitimate
+  // Partial → Delivered path is the RTN return-order creation workflow
+  // (RtnService.createFromPartialOrder), which performs it transactionally.
+  // Staff can no longer close a Partial order as Delivered in the generic
+  // status UI — it must be resolved into a Return Order first.
+  Partial: ['Return Pending'],
   'Return Pending': ['Returned', 'Damaged'],
   Returned: ['Damaged'],
   Cancelled: ['Hold', 'Confirmed'],
@@ -560,7 +565,7 @@ export class OrdersService {
     });
   }
 
-  private recalculate(
+  recalculate(
     items: { price: number; quantity: number }[],
     shipping: number,
     discount: number,
@@ -588,11 +593,17 @@ export class OrdersService {
     sort?: string;
     order?: string;
     includeTrashed?: boolean;
+    kind?: 'SALE' | 'RETURN';
   }) {
     const page = query.page || 1;
     const perPage = query.perPage || 10;
     const where: any = {};
     if (!query.includeTrashed) where.trashedAt = null;
+    // RTN return orders are excluded from the sales list unless explicitly
+    // requested — they are operations records, not sales.
+    if (query.kind) {
+      where.kind = query.kind;
+    }
     if (query.search) {
       // Order number · customer/guest name · product SKU · phone (exact once
       // the input is a complete number, digits-only while it is not).
@@ -678,7 +689,7 @@ export class OrdersService {
   ) {
     const page = query.page || 1;
     const perPage = query.perPage || 10;
-    const where: any = { customerId: userId, trashedAt: null };
+    const where: any = { customerId: userId, trashedAt: null, kind: 'SALE' };
     if (query.status) {
       where.status = { name: { equals: query.status, mode: 'insensitive' } };
     }
@@ -711,7 +722,7 @@ export class OrdersService {
 
   async findMyOrderById(userId: string, id: string) {
     const order = await this.prisma.order.findFirst({
-      where: { id, customerId: userId },
+      where: { id, customerId: userId, kind: 'SALE' },
       include: {
         status: true,
         shipment: true,
@@ -813,6 +824,9 @@ export class OrdersService {
         },
         dispatchLogs: { orderBy: { createdAt: 'desc' } },
         dispatches: { orderBy: { createdAt: 'desc' } },
+        // RTN relationship — both directions (original → RTN, RTN → original).
+        returnOfOrder: { include: { status: true } },
+        returnOrders: { include: { status: true } },
         // Include edit lock for staff detail view (stripped for customers).
         editLock: {
           include: { user: { select: { firstName: true, lastName: true } } },
@@ -862,6 +876,47 @@ export class OrdersService {
     // Note: edit-lock presence is stripped by transformOrder for the public/customer
     // shape (it never exposes the holder). Staff only.
     return this.transformOrder(order);
+  }
+
+  /**
+   * Remaining fulfillable quantity per order line.
+   *
+   * Short fulfillment is a DIFFERENT concept from courier Partial: an order
+   * for A × 4 with a dispatch covering A × 2 still has A × 2 fulfillable from
+   * the SAME original order — no new customer order, no Partial status. This
+   * query makes that deterministic: ordered − Σ(dispatched, non-cancelled).
+   */
+  async getRemainingFulfillment(orderId: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { items: true, dispatches: true },
+    });
+    if (!order || order.trashedAt) throw new NotFoundException('Order not found');
+
+    const dispatched = new Map<string, number>();
+    for (const d of order.dispatches) {
+      if (d.status === 'CANCELLED') continue;
+      const mapping = Array.isArray(d.productMapping) ? d.productMapping : [];
+      for (const m of mapping) {
+        if (!m || typeof m !== 'object') continue;
+        const key = String((m as any).productVariantId ?? '');
+        if (!key) continue;
+        dispatched.set(key, (dispatched.get(key) ?? 0) + Number((m as any).quantity ?? 0));
+      }
+    }
+
+    return order.items.map((item) => {
+      const keys = [item.variantId, item.productId].filter(Boolean) as string[];
+      const total = keys.reduce((sum, k) => sum + (dispatched.get(k) ?? 0), 0);
+      return {
+        orderItemId: item.id,
+        productId: item.productId,
+        variantId: item.variantId ?? null,
+        ordered: item.quantity,
+        dispatched: total,
+        remaining: Math.max(0, item.quantity - total),
+      };
+    });
   }
 
   private async getDefaultOfficeNote(): Promise<string | null> {
@@ -3745,6 +3800,7 @@ export class OrdersService {
     const orders = await this.prisma.order.findMany({
       where: {
         trashedAt: null,
+        kind: 'SALE',
         OR: [{ guestPhone: normalized }, { customer: { phone: normalized } }],
       },
       select: PUBLIC_DISPLAY_SELECT,
@@ -3768,6 +3824,7 @@ export class OrdersService {
     const order = await this.prisma.order.findFirst({
       where: {
         trashedAt: null,
+        kind: 'SALE',
         displayId: { equals: queryStr, mode: 'insensitive' },
       },
       select: PUBLIC_DISPLAY_SELECT,

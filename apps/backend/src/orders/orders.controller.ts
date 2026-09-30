@@ -59,6 +59,7 @@ export class OrdersController {
     @Query('sort') sort?: string,
     @Query('order') order?: string,
     @Query('includeTrashed') includeTrashed?: string,
+    @Query('kind') kind?: 'SALE' | 'RETURN',
   ) {
     return this.svc.findAll({
       page: page ? parseInt(page) : undefined,
@@ -73,6 +74,7 @@ export class OrdersController {
       sort,
       order,
       includeTrashed: includeTrashed === 'true',
+      kind: kind === 'SALE' || kind === 'RETURN' ? kind : undefined,
     });
   }
 
@@ -183,6 +185,13 @@ export class OrdersController {
       userId: user?.userId,
       token: proofData.token,
     });
+  }
+
+  @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_orders')
+  @Get(':id/remaining-fulfillment')
+  remainingFulfillment(@Param('id') id: string) {
+    return this.svc.getRemainingFulfillment(id);
   }
 
   @Roles('superadmin', 'admin', 'manager')

@@ -1,0 +1,151 @@
+import { PrismaService } from '../prisma/prisma.service';
+import { DispatchPreview, OrderPreview, ResolveOutcome } from './scanner.types';
+
+/**
+ * Identifier resolution — the single backend path for EVERY scan input
+ * (hardware scanner, camera, manual typing). Normalization is safe and
+ * conservative: trim, uppercase, collapse whitespace. No courier-specific
+ * format is hardcoded — consignment/tracking identifiers are matched
+ * against the Dispatch registry across all supported couriers.
+ */
+
+const ORDER_NUMBER = /^(ORD|RTN)-\d{6}-\d{4}$/;
+
+export function normalizeScanIdentifier(raw: string): string {
+  return (raw || '').trim().toUpperCase().replace(/\s+/g, ' ');
+}
+
+/** Alphanumeric core — tolerates spacing/punctuation variants of one id. */
+function alnumCore(identifier: string): string {
+  return identifier.replace(/[^A-Z0-9]/g, '');
+}
+
+export function toDispatchPreview(d: any): DispatchPreview {
+  return {
+    id: d.id,
+    courier: d.courier,
+    consignmentId: d.consignmentId,
+    trackingCode: d.trackingCode ?? null,
+    status: d.status,
+    orderId: d.orderId,
+    orderDisplayId: d.order?.displayId ?? '',
+    orderStatus: d.order?.status?.name ?? '',
+    orderKind: d.order?.kind ?? 'SALE',
+  };
+}
+
+export function toOrderPreview(o: any, statusMap: Map<string, string>): OrderPreview {
+  const next: string[] = Array.isArray(o.status?.nextStatuses)
+    ? o.status.nextStatuses
+    : [];
+  return {
+    id: o.id,
+    displayId: o.displayId,
+    status: o.status?.name ?? '',
+    kind: o.kind ?? 'SALE',
+    allowedStatuses: next
+      .map((sid: string) => ({ id: sid, name: statusMap.get(sid) ?? sid }))
+      .filter((s: { id: string; name: string }) => s.name),
+  };
+}
+
+export async function resolveScanIdentifier(
+  prisma: PrismaService,
+  raw: string,
+): Promise<ResolveOutcome> {
+  const identifier = normalizeScanIdentifier(raw);
+  const base: ResolveOutcome = {
+    status: 'not_found',
+    identifier,
+    dispatches: [],
+    order: null,
+  };
+  if (!identifier) {
+    return { ...base, message: 'Nothing to scan — the input was empty.' };
+  }
+
+  const statusMap = new Map<string, string>(
+    (await prisma.orderStatus.findMany({ select: { id: true, name: true } })).map(
+      (s: { id: string; name: string }) => [s.id, s.name],
+    ),
+  );
+
+  // ---- A. Order number (ORD-… / RTN-…) ------------------------------------
+  if (ORDER_NUMBER.test(identifier)) {
+    const order = await prisma.order.findFirst({
+      where: { displayId: { equals: identifier, mode: 'insensitive' } },
+      include: {
+        status: true,
+        dispatches: { orderBy: { createdAt: 'desc' } },
+      },
+    });
+    if (!order) {
+      return { ...base, message: `No order found for "${identifier}".` };
+    }
+    const dispatches = order.dispatches.map(toDispatchPreview);
+    const preview = toOrderPreview(order, statusMap);
+    if (dispatches.length > 1) {
+      return {
+        ...base,
+        status: 'selection_required',
+        message: 'Multiple dispatches are linked to this order. Select the dispatch to continue.',
+        dispatches,
+        order: preview,
+      };
+    }
+    return { ...base, status: 'resolved', dispatches, order: preview };
+  }
+
+  // ---- B. Courier dispatch identifier (consignment / tracking) ------------
+  // Exact (case-insensitive) first; fall back to an alphanumeric-core match
+  // so `SF 12345` and `SF12345` resolve identically. Never fuzzy: a core
+  // shorter than 6 chars is rejected to avoid accidental collisions.
+  const core = alnumCore(identifier);
+  const candidates = await prisma.dispatch.findMany({
+    where: {
+      OR: [
+        { consignmentId: { equals: identifier, mode: 'insensitive' as const } },
+        { trackingCode: { equals: identifier, mode: 'insensitive' as const } },
+        ...(core.length >= 6
+          ? [
+              { consignmentId: { contains: core, mode: 'insensitive' as const } },
+              { trackingCode: { contains: core, mode: 'insensitive' as const } },
+            ]
+          : []),
+      ],
+    },
+    include: { order: { include: { status: true } } },
+    orderBy: { createdAt: 'asc' },
+    take: 20,
+  });
+
+  // Keep only true normalized matches (defence against contains over-match).
+  const matched = candidates.filter((d) => {
+    const ids = [d.consignmentId, d.trackingCode].filter(Boolean) as string[];
+    return ids.some(
+      (id) =>
+        normalizeScanIdentifier(id) === identifier ||
+        alnumCore(id) === core,
+    );
+  });
+
+  if (matched.length === 0) {
+    return {
+      ...base,
+      message: `No dispatch found for "${identifier}". Check the code and try again.`,
+    };
+  }
+
+  const dispatches = matched.map(toDispatchPreview);
+  const order = matched[0]?.order ? toOrderPreview(matched[0].order, statusMap) : null;
+  if (matched.length > 1) {
+    return {
+      ...base,
+      status: 'selection_required',
+      message: 'Multiple dispatches found. Select the dispatch to continue.',
+      dispatches,
+      order,
+    };
+  }
+  return { ...base, status: 'resolved', dispatches, order };
+}

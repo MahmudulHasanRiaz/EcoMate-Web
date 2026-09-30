@@ -339,7 +339,7 @@ export class MarketingAttributionService {
     }
 
     const orders = await this.prisma.order.findMany({
-      where,
+      where: { ...where, kind: 'SALE' },
       take: 500,
       orderBy: { createdAt: 'asc' },
       select: {

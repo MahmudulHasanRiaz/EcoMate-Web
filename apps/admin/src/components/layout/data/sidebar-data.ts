@@ -5,7 +5,7 @@ import {
   Building2, ShoppingCart, Receipt, Bell,
   Megaphone, UserPlus, UserCog, DollarSign, BookOpen, Store, ShieldAlert,
   HardDrive, Target, Plug, Wallet, BarChart3, CreditCard, CalendarDays,
-  CalendarCheck, LifeBuoy,
+  CalendarCheck, LifeBuoy, ScanLine,
 } from 'lucide-react'
 import { type SidebarData, type HueName, type NavItem } from '../types'
 
@@ -46,6 +46,7 @@ export const sidebarData: SidebarData = {
             { title: 'Duplication Review', url: '/op/dispatch/duplicate-review' },
           ],
         }, 'Sales', 'info'),
+        inSection({ title: 'Scanner', url: '/op/scanner', icon: ScanLine, feature: 'admin_barcode_search' }, 'Sales', 'info'),
         inSection({ title: 'Customers', url: '/op/customers', icon: Users, feature: 'admin_customers' }, 'Sales', 'info'),
         inSection({ title: 'Payments', url: '/op/payments', icon: Coins, feature: 'admin_payments' }, 'Sales', 'info'),
         inSection({ title: 'Refunds', url: '/op/refunds', icon: RefreshCw, feature: 'admin_refunds' }, 'Sales', 'info'),

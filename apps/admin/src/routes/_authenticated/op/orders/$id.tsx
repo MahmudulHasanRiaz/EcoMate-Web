@@ -8,7 +8,8 @@ import { CustomerContactActions } from '@/components/customer-contact-actions'
 import { CopyButton } from '@/components/copy-button'
 import { BlockPhoneDialog } from '@/features/orders/block-phone-dialog'
 import { UserBadge } from '@/components/user-badge'
-import { ordersApi, mediaUrl } from '@/features/orders/api'
+import { ordersApi, rtnApi, mediaUrl } from '@/features/orders/api'
+import { ReturnOrderDialog } from '@/features/orders/components/return-order-dialog'
 
 import { CourierCustomerHistoryCard } from '@/features/orders/courier-customer-history-card'
 import { OrderSummaryCard } from '@/features/orders/order-summary-card'
@@ -41,7 +42,7 @@ import {
   Loader2, ArrowLeft, ArrowRight, Package, Pencil, Save, Clock, User, ChevronDown, ChevronUp,
   Truck, ExternalLink, Printer, Eye, EyeOff, MessageSquarePlus, ArrowRightLeft, Tag, Send,
   AlertTriangle, MoreHorizontal, Minus, Plus, X, MapPin, Mail, Phone, Trash2, RefreshCcw, Ban, Lock
-} from 'lucide-react'
+, RotateCcw } from 'lucide-react'
 import { DISPATCH_STATUSES } from '@/features/dispatch/data/data'
 import { STATUS_COLORS as statusColors } from '@/features/orders/status-transitions'
 
@@ -143,6 +144,15 @@ function OrderDetailPage() {
   // ── Dispatch ─────────────────────────────────────────────────────
   const [showDispatchDialog, setShowDispatchDialog] = useState(false)
   const [dispatchCourier, setDispatchCourier] = useState('')
+
+  // ── RTN (return order) ─────────────────────────────────────────────
+  const { data: rtnOrder } = useQuery({
+    queryKey: ['rtn-for-order', id],
+    queryFn: () => rtnApi.forOrder(id),
+    enabled: !!order && order.kind !== 'RETURN',
+  })
+  const [showRtnDialog, setShowRtnDialog] = useState(false)
+  const [returnQtys, setReturnQtys] = useState<Record<string, number>>({})
 
   // ── Queries ───────────────────────────────────────────────────────
   const { data: courierCreds } = useQuery({ queryKey: ['courier-creds'], queryFn: () => apiClient.get('/couriers/credentials').then(r => r.data as any[]), enabled: showDispatchDialog })
@@ -424,6 +434,11 @@ function OrderDetailPage() {
                     <Trash2 className='h-3 w-3 mr-1 inline' /> Trashed
                   </Badge>
                 )}
+                {order.kind === 'RETURN' && (
+                  <Badge variant='outline' className='ml-2 align-middle text-xs border-pink-500/50 text-pink-500'>
+                    <RotateCcw className='h-3 w-3 mr-1 inline' /> Return Order
+                  </Badge>
+                )}
               </h2>
               <p className='text-xs text-muted-foreground'>{new Date(order.createdAt).toLocaleString()}</p>
             </div>
@@ -459,8 +474,9 @@ function OrderDetailPage() {
                 )}
               </div>
 
-              {/* Next-status: on mobile collapse to a single dropdown; on sm+ show pills */}
-              {allowedStatuses.length > 0 && (
+              {/* Next-status: on mobile collapse to a single dropdown; on sm+ show pills.
+                  Return Orders are excluded — their status is managed by the return workflow. */}
+              {allowedStatuses.length > 0 && order.kind !== 'RETURN' && (
                 <>
                   {/* Mobile: all in dropdown */}
                   <div className='sm:hidden'>
@@ -513,12 +529,26 @@ function OrderDetailPage() {
                 </>
               )}
 
-              {/* Dispatch button */}
-              {!order.courierService && (
+              {/* Dispatch button — hidden for Return Orders (RTN is not an outbound sale) */}
+              {!order.courierService && order.kind !== 'RETURN' && (
                 <Button variant='default' size='sm' className='h-8' onClick={() => setShowDispatchDialog(true)}>
                   <Send className='h-3.5 w-3.5 mr-1' />
                   <span className='hidden xs:inline'>Send to Courier</span>
                   <span className='xs:hidden'>Dispatch</span>
+                </Button>
+              )}
+
+              {/* Create Return Order — the ONLY Partial resolution path */}
+              {order.status.name === 'Partial' && !rtnOrder && (
+                <Button
+                  variant='default'
+                  size='sm'
+                  className='h-8'
+                  onClick={() => { setReturnQtys({}); setShowRtnDialog(true) }}
+                >
+                  <RotateCcw className='h-3.5 w-3.5 mr-1' />
+                  <span className='hidden xs:inline'>Create Return Order</span>
+                  <span className='xs:hidden'>Return Order</span>
                 </Button>
               )}
 
@@ -883,6 +913,71 @@ function OrderDetailPage() {
                   )}
                 </CardContent>
               </Card>
+
+              {/* ── Return relationship (RTN) ─────────────────────────── */}
+              {(order.kind === 'RETURN' || rtnOrder) && (
+                <Card className={order.kind === 'RETURN' ? 'border-pink-500/40' : ''}>
+                  <CardHeader className='pb-2'>
+                    <CardTitle className='text-sm font-semibold flex items-center gap-1.5'>
+                      <RotateCcw className='h-4 w-4 text-pink-500' /> Return
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className='flex flex-col gap-2.5'>
+                    {order.kind === 'RETURN' && order.returnOfOrder && (
+                      <div className='text-xs text-muted-foreground'>
+                        Return for{' '}
+                        <Link to='/op/orders/$id' params={{ id: order.returnOfOrder.id }} className='font-medium text-primary hover:underline'>
+                          {order.returnOfOrder.displayId}
+                        </Link>
+                      </div>
+                    )}
+                    {order.kind !== 'RETURN' && rtnOrder && (
+                      <div className='text-xs text-muted-foreground'>
+                        Return Order{' '}
+                        <Link to='/op/orders/$id' params={{ id: rtnOrder.id }} className='font-medium text-primary hover:underline'>
+                          {rtnOrder.displayId}
+                        </Link>
+                      </div>
+                    )}
+                    {rtnOrder && (
+                      <>
+                        <div className='flex items-center gap-2'>
+                          <span className='text-xs text-muted-foreground'>Status:</span>
+                          <Badge
+                            style={{ backgroundColor: statusColors[rtnOrder.status] || '#6B7280', color: '#fff' }}
+                            className='text-xs'
+                          >
+                            {rtnOrder.status}
+                          </Badge>
+                        </div>
+                        <div className='text-xs text-muted-foreground'>
+                          Items: <span className='font-medium text-foreground'>{rtnOrder.itemCount}</span>
+                        </div>
+                        {order.dispatches && order.dispatches.length > 0 && (
+                          <div className='text-xs text-muted-foreground flex items-center gap-1.5'>
+                            <Truck className='h-3.5 w-3.5' />
+                            {order.dispatches[order.dispatches.length - 1].courier} — {order.dispatches[order.dispatches.length - 1].consignmentId}
+                          </div>
+                        )}
+                        {rtnOrder.status === 'Returned' && (
+                          <p className='text-[11px] text-emerald-600'>Returned quantities have been restored to stock.</p>
+                        )}
+                        {rtnOrder.status === 'Return Pending' && (
+                          <p className='text-[11px] text-muted-foreground'>
+                            Stock is restored when the return dispatch is confirmed (Scanner → Dispatch → Return).
+                          </p>
+                        )}
+                      </>
+                    )}
+                    {order.kind === 'RETURN' && (
+                      <div className='text-xs text-muted-foreground flex flex-col gap-1'>
+                        <span>Returned: {order.returnedAt ? new Date(order.returnedAt).toLocaleString() : '—'}</span>
+                        <span>Stock restored: {order.stockRestored ? 'Yes' : 'No'}</span>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
             </div>
 
             {/* ════ RIGHT COLUMN (1/3) ════ */}
@@ -1187,6 +1282,13 @@ function OrderDetailPage() {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* ── Create Return Order (RTN) Dialog ─────────────────── */}
+        <ReturnOrderDialog
+          order={order}
+          open={showRtnDialog}
+          onClose={() => { setShowRtnDialog(false); setReturnQtys({}) }}
+        />
 
         {/* ── Dispatch Dialog ──────────────────────────────────── */}
         <Dialog open={showDispatchDialog} onOpenChange={() => { setShowDispatchDialog(false); setDispatchCourier('') }}>

@@ -468,6 +468,17 @@ describe('OrdersService', () => {
             OR: [
               { displayId: { contains: 'ORD-25', mode: 'insensitive' } },
               {
+                returnOfOrder: {
+                  displayId: { contains: 'ORD-25', mode: 'insensitive' },
+                },
+              },
+              {
+                courierConsignmentId: { contains: 'ORD-25', mode: 'insensitive' },
+              },
+              {
+                courierTrackingCode: { contains: 'ORD-25', mode: 'insensitive' },
+              },
+              {
                 customer: {
                   name: { contains: 'ORD-25', mode: 'insensitive' },
                 },
@@ -2338,28 +2349,27 @@ describe('OrdersService', () => {
         expect(result.statusId).toBe('status-return-pending');
       });
 
-      it('allows a manual staff member to mark a Partial order Delivered', async () => {
+      it('rejects the generic Partial → Delivered path — RTN resolution is required', async () => {
+        // Business rule change (RTN feature): the generic status machine no
+        // longer allows staff to close a Partial order as Delivered. The
+        // ONLY legitimate Partial → Delivered path is the RTN return-order
+        // creation workflow (RtnService.createFromPartialOrder), which
+        // performs it transactionally. This regression test locks the
+        // removal (migration 20260930010000_rtn_return_orders + ORDER_TRANSITIONS).
         (prisma.order.findUnique as jest.Mock).mockResolvedValue(partialOrder);
         (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
           deliveredStatus,
         );
-        (prisma.order.update as jest.Mock).mockResolvedValue({
-          ...partialOrder,
-          statusId: 'status-delivered',
-          status: deliveredStatus,
-          payments: [],
-        });
-        (prisma.payment.findFirst as jest.Mock).mockResolvedValue(null);
-        (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([]);
 
-        const result = await service.updateStatus(
-          'order-id-1',
-          { statusId: 'status-delivered', note: 'Remainder delivered' },
-          userId,
-        );
+        await expect(
+          service.updateStatus(
+            'order-id-1',
+            { statusId: 'status-delivered', note: 'Remainder delivered' },
+            userId,
+          ),
+        ).rejects.toThrow(/Cannot transition from "Partial" to "Delivered"/);
 
-        expect(prisma.order.update).toHaveBeenCalled();
-        expect(result.statusId).toBe('status-delivered');
+        expect(prisma.order.update).not.toHaveBeenCalled();
       });
     });
 
@@ -5045,4 +5055,34 @@ describe('order lifecycle custom events (OrderPlaced/OrderConfirmed/OrderCancell
     ]);
   });
 });
+
+  describe('getRemainingFulfillment — short fulfillment is NOT courier Partial', () => {
+    it('returns ordered − Σ(dispatched, non-cancelled) per line', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        id: 'order-1',
+        trashedAt: null,
+        items: [
+          { id: 'i1', productId: 'p1', variantId: null, quantity: 4 },
+          { id: 'i2', productId: 'p2', variantId: null, quantity: 2 },
+        ],
+        dispatches: [
+          { status: 'DELIVERED', productMapping: [{ productVariantId: 'p1', quantity: 2 }] },
+          { status: 'DELIVERED', productMapping: [{ productVariantId: 'p2', quantity: 1 }] },
+          { status: 'CANCELLED', productMapping: [{ productVariantId: 'p1', quantity: 99 }] },
+        ],
+      });
+
+      const result = await service.getRemainingFulfillment('order-1');
+
+      expect(result).toEqual([
+        { orderItemId: 'i1', productId: 'p1', variantId: null, ordered: 4, dispatched: 2, remaining: 2 },
+        { orderItemId: 'i2', productId: 'p2', variantId: null, ordered: 2, dispatched: 1, remaining: 1 },
+      ]);
+    });
+
+    it('throws NotFound for a missing order', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(null);
+      await expect(service.getRemainingFulfillment('nope')).rejects.toThrow(NotFoundException);
+    });
+  });
 });

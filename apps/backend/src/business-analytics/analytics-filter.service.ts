@@ -142,7 +142,9 @@ export class AnalyticsFilterService {
     filters: AnalyticsFilterDto,
     marketingOrderIds?: string[],
   ): Prisma.OrderWhereInput {
-    const where: Prisma.OrderWhereInput = { trashedAt: null };
+    // RTN return orders are never sales — they must not pollute any revenue,
+    // cohort, product, customer or fulfillment analytics.
+    const where: Prisma.OrderWhereInput = { trashedAt: null, kind: 'SALE' };
 
     if (filters.source) where.source = filters.source as any;
     if (filters.salesChannel) where.salesChannel = filters.salesChannel as any;
@@ -262,7 +264,7 @@ export class AnalyticsFilterService {
   async resolveMarketingOrderIds(source: string): Promise<string[]> {
     if (source === MARKETING_UNATTRIBUTED) {
       const rows = await this.prisma.order.findMany({
-        where: { trashedAt: null, orderAttribution: null as any },
+        where: { trashedAt: null, kind: 'SALE', orderAttribution: null as any },
         select: { id: true },
       });
       return rows.map((r) => r.id);
@@ -288,7 +290,7 @@ export class AnalyticsFilterService {
     const viaSessions =
       tokens.length > 0
         ? await this.prisma.order.findMany({
-            where: { trashedAt: null, trackingSessionId: { in: tokens } },
+            where: { trashedAt: null, kind: 'SALE', trackingSessionId: { in: tokens } },
             select: { id: true },
           })
         : [];

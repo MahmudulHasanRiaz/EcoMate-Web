@@ -539,7 +539,7 @@ export class StockService {
     }
   }
 
-  private async operatePhysical(
+  async operatePhysical(
     operation: 'reserve' | 'release' | 'deduct' | 'add',
     params: StockOperationParams,
   ) {
