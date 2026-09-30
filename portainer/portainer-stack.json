@@ -32,6 +32,7 @@
 
     { "name": "SEED_DUMMY_DATA", "label": "Seed Dummy Data on first deploy? (true/false)", "default": "false" },
     { "name": "RUN_SEED", "label": "Run Seeding on startup? (true/false)", "default": "false" },
+    { "name": "RETENTION_ENABLED", "label": "Tracking retention sweep enabled? (true/false — false keeps raw tracking data)", "default": "true" },
 
     { "name": "META_PIXEL_ID", "label": "Meta Pixel ID (Optional)", "default": "" },
     { "name": "META_ACCESS_TOKEN", "label": "Meta Access Token (Optional)", "default": "" },

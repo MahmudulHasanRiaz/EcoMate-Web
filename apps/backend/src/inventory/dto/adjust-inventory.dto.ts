@@ -3,6 +3,7 @@ import {
   IsInt,
   IsOptional,
   IsArray,
+  IsBoolean,
   ValidateNested,
   Min,
   Max,
@@ -29,6 +30,15 @@ export class AdjustInventoryDto {
 
   @IsString()
   reason: string;
+
+  /**
+   * Explicit acknowledgement for a deduction that would remove (nearly) all of
+   * the item's available stock — mirrors the physical-inventory guard so one
+   * mis-keyed entry cannot silently zero a managed position.
+   */
+  @IsOptional()
+  @IsBoolean()
+  confirmDestructive?: boolean;
 }
 
 export class BulkAdjustInventoryDto {

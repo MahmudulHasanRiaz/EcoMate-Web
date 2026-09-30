@@ -257,6 +257,9 @@ describe('Product cache invalidation on direct stock writes', () => {
         physicalInventory: {
           aggregate: jest.fn().mockResolvedValue({ _sum: { quantity: 7 } }),
         },
+        // The guard + write share one transaction and lock the location rows.
+        $queryRaw: jest.fn().mockResolvedValue([]),
+        $transaction: jest.fn(async (cb: any) => cb(prismaMock)),
       };
 
       const module: TestingModule = await Test.createTestingModule({

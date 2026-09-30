@@ -16,6 +16,10 @@ const DESTRUCTIVE_PATTERNS: RegExp[] = [
   /^\s*ALTER\s+TABLE\b[^;]*\bDROP\s+COLUMN\b/im,
   /ALTER\s+TYPE\b[^;]*\bDROP\s+VALUE\b/im,
   /^\s*DROP\s+INDEX\b/im,
+  // Row-destroying DML: a migration that deletes rows is unrecoverable (no
+  // rollback SQL exists for any migration) and must be reviewed explicitly.
+  /^\s*DELETE\s+FROM\b/im,
+  /^\s*TRUNCATE\b/im,
 ];
 
 /**
@@ -36,6 +40,10 @@ const ALLOWED_DESTRUCTIVE: Record<string, RegExp[]> = {
   // (orderItemId, cycleId) in the datamodel; it would block legitimate
   // multi-cycle reservations (DB stricter than schema).
   '20260928000300_invoice_source_headers': [/^\s*DROP\s+INDEX\b/im],
+  // One-off purge of courier-settlement invoices that were discarded before
+  // finalization (test/draft artifacts only; no finalized invoice, journal or
+  // reconciliation row is touched). Pre-dates this pattern's addition.
+  '20260928000400_purge_discarded_invoices': [/^\s*DELETE\s+FROM\b/im],
 };
 
 function postP0Migrations(migrationsDir: string): string[] {

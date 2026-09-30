@@ -1,0 +1,108 @@
+import { BadRequestException } from '@nestjs/common';
+import { InventoryService } from '../inventory.service';
+
+/**
+ * Managed-stock counterpart of the physical adjustment guard: one mis-keyed
+ * entry must not be able to silently zero a managed position.
+ */
+describe('InventoryService — managed-stock destructive guard', () => {
+  const prisma: any = {
+    product: { findUnique: jest.fn() },
+    productVariant: { findUnique: jest.fn() },
+    combo: { findUnique: jest.fn() },
+    $transaction: jest.fn(async (cb: any) => cb(prisma)),
+  };
+  const stockService: any = { add: jest.fn(), scrap: jest.fn() };
+  const ledger: any = { record: jest.fn() };
+  const service = new InventoryService(
+    prisma,
+    stockService,
+    {} as any,
+    {} as any,
+    ledger,
+    { invalidateByPrefix: jest.fn() } as any,
+  );
+
+  const product = (over: Record<string, any> = {}) => ({
+    id: 'prod-1',
+    name: 'Test Product',
+    sku: 'TP-1',
+    type: 'simple',
+    manageStock: true,
+    availabilityMode: 'MANAGED_STOCK',
+    managedStockQuantity: 10,
+    reservedStock: 0,
+    ...over,
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prisma.product.findUnique.mockResolvedValue(product());
+    stockService.scrap.mockResolvedValue([]);
+    stockService.add.mockResolvedValue([]);
+  });
+
+  it('blocks a deduction that would remove >=90% of available managed stock', async () => {
+    await expect(service.adjust('prod-1', -10, 'recount')).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(stockService.scrap).not.toHaveBeenCalled();
+  });
+
+  it('allows the same deduction when explicitly confirmed', async () => {
+    await expect(
+      service.adjust('prod-1', -10, 'write-off', 'admin@x', undefined, undefined, true),
+    ).resolves.toBeDefined();
+    expect(stockService.scrap).toHaveBeenCalled();
+  });
+
+  it('blocks any deduction when reserved >= on hand (nothing available)', async () => {
+    prisma.product.findUnique.mockResolvedValue(
+      product({ managedStockQuantity: 5, reservedStock: 5 }),
+    );
+    await expect(service.adjust('prod-1', -1, 'recount')).rejects.toThrow(
+      /no available stock/,
+    );
+    expect(stockService.scrap).not.toHaveBeenCalled();
+  });
+
+  it('allows a normal partial deduction untouched', async () => {
+    await expect(service.adjust('prod-1', -2, 'damaged')).resolves.toBeDefined();
+    expect(stockService.scrap).toHaveBeenCalled();
+  });
+
+  it('ignores reserved stock when adding stock (no false positive)', async () => {
+    prisma.product.findUnique.mockResolvedValue(
+      product({ managedStockQuantity: 0, reservedStock: 0 }),
+    );
+    await expect(service.adjust('prod-1', 5, 'restock')).resolves.toBeDefined();
+    expect(stockService.add).toHaveBeenCalled();
+  });
+
+  it('applies the same guard to the variant path', async () => {
+    prisma.product.findUnique.mockResolvedValue(null);
+    prisma.productVariant.findUnique.mockResolvedValue({
+      id: 'var-1',
+      sku: 'TP-1-RED',
+      managedStockQuantity: 8,
+      reservedStock: 0,
+      product: {
+        id: 'prod-1',
+        name: 'Test Product',
+        type: 'variable',
+        manageStock: true,
+        availabilityMode: 'MANAGED_STOCK',
+      },
+    });
+
+    await expect(service.adjust(undefined, -8, 'recount', 'admin@x', 'var-1')).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(stockService.scrap).not.toHaveBeenCalled();
+
+    await expect(
+      service.adjust(undefined, -8, 'write-off', 'admin@x', 'var-1', undefined, true),
+    ).resolves.toBeDefined();
+    expect(stockService.scrap).toHaveBeenCalled();
+  });
+});

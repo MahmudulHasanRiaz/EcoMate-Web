@@ -792,14 +792,22 @@ export class PosOrdersService {
 
   /**
    * Full POS order with product/variant names for thermal receipt
-   * reprinting. Restricted to POS-source, non-trashed orders.
+   * reprinting. Restricted to POS-source, non-trashed orders, and — when a
+   * showroomId is supplied by the caller's POS session — to orders created in
+   * that showroom, so one showroom's cashier can never read another
+   * showroom's customer data by guessing an order id.
    * Customer data comes from the frozen order-time snapshot fields
    * (see the Order model invariant) — the print template must never
    * read the mutable CustomerProfile relation.
    */
-  async getOrderForReceipt(id: string) {
+  async getOrderForReceipt(id: string, showroomId?: string) {
     const order = await this.prisma.order.findFirst({
-      where: { id, source: 'POS', trashedAt: null },
+      where: {
+        id,
+        source: 'POS',
+        trashedAt: null,
+        ...(showroomId ? { posSession: { showroomId } } : {}),
+      },
       include: {
         items: {
           orderBy: { createdAt: 'asc' },
@@ -1317,12 +1325,16 @@ export class PosOrdersService {
     // Re-send safety: when the checkout popup is reopened (or Complete
     // Checkout re-runs validation) an identical request that is still waiting
     // for approval is reused instead of duplicated — same source → showroom,
-    // same product/variant, same quantity.
+    // same product/variant, same quantity, and raised by the SAME cashier. The
+    // requester filter matters when two POS sessions run in one showroom: a
+    // second cashier must never adopt (and later "receive") a colleague's
+    // in-flight request.
     const pendingHeaders = bySource.size
       ? await this.prisma.stockTransfer.findMany({
           where: {
             destWarehouseId: showroomId,
             status: { in: ['REQUESTED', 'APPROVING'] },
+            requestedBy: cashierId,
             sourceWarehouseId: { in: [...bySource.keys()] },
           },
           include: { items: true },

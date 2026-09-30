@@ -113,6 +113,9 @@ services:
       SEED_DUMMY_DATA: ${SEED_DUMMY_DATA:-false}
       RUN_SEED: ${RUN_SEED:-false}
       STOCK_RECONCILE_ON_BOOT: ${STOCK_RECONCILE_ON_BOOT:-false}
+      # Tracking-store retention sweep (90d PII anonymisation / 30d terminal
+      # outbox purge / 2y archive). Only the literal 'false' disables it.
+      RETENTION_ENABLED: ${RETENTION_ENABLED:-true}
       # Mobile Build (optional — only if client has mobile license)
       MOBILE_BUILDER_GITHUB_TOKEN: ${MOBILE_BUILDER_GITHUB_TOKEN:-}
       MOBILE_BUILDER_CALLBACK_TOKEN: ${MOBILE_BUILDER_CALLBACK_TOKEN:-}

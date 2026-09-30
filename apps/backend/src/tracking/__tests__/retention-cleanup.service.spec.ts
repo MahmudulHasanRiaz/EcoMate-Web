@@ -421,6 +421,50 @@ describe('RetentionCleanupService — Phase 7 scheduled retention/anonymization 
         where: { id: { in: ['s1'] } },
       });
     });
+
+    it('archives a 2y snapshot whose terminal outbox was already purged at 30d', async () => {
+      // The 30-day job removed the SENT/DEAD outbox long before the 2y archive
+      // pass: a missing outbox must NOT make the snapshot unarchivable.
+      snapshotFindMany
+        .mockResolvedValueOnce([{ id: 's1' }])
+        .mockResolvedValue([]);
+      archiveFindMany.mockResolvedValue([]);
+      snapshotFindMany
+        .mockResolvedValueOnce([
+          {
+            id: 's1',
+            eventId: 'evt-9',
+            eventType: 'Purchase',
+            eventTime: 1_750_000_000n,
+            payload: Prisma.JsonNull,
+            createdAt: NOW,
+          },
+        ])
+        .mockResolvedValue([]);
+      outboxFindMany.mockResolvedValue([]); // already purged
+      dispatchFindMany.mockResolvedValue([]);
+      archiveCreateMany.mockResolvedValue({ count: 1 });
+      outboxDeleteMany.mockResolvedValue({ count: 0 });
+      dispatchDeleteMany.mockResolvedValue({ count: 0 });
+      eventDeleteMany.mockResolvedValue({ count: 0 });
+      snapshotDeleteMany.mockResolvedValue({ count: 1 });
+
+      await expect(service.archiveAndPurgeSnapshots(NOW)).resolves.toEqual({
+        snapshotsArchived: 1,
+        snapshotsPurged: 1,
+      });
+
+      expect(archiveCreateMany).toHaveBeenCalledWith({
+        data: [
+          expect.objectContaining({
+            snapshotId: 's1',
+            eventId: 'evt-9',
+            archivedPayload: Prisma.JsonNull,
+          }),
+        ],
+        skipDuplicates: true,
+      });
+    });
   });
 
   describe('runCleanup + config gate', () => {

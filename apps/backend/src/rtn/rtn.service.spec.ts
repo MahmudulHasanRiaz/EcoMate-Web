@@ -10,8 +10,15 @@ import { OrdersService } from '../orders/orders.service';
 import { OrdersEventService } from '../orders/orders-event.service';
 import { DispatchService } from '../dispatch/dispatch.service';
 import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
+import { StockService } from '../stock/stock.service';
 import { CacheService } from '../cache/cache.service';
 import { Prisma } from '@prisma/client';
+
+/** Stock primitives RtnService calls directly (removed-line hold release). */
+const STOCK_STUB = {
+  operate: jest.fn().mockResolvedValue(undefined),
+  releasePhysicalAllocated: jest.fn().mockResolvedValue(undefined),
+};
 
 /**
  * In-memory Prisma fake covering exactly the code paths RtnService touches.
@@ -154,6 +161,18 @@ function makePrismaFake(state: {
     costingLotConsumption: { findFirst: async () => null },
     costingLotRestoration: { create: async ({ data }: any) => data },
     costingLot: { update: async () => ({}) },
+    // appendOrderTimeline issues: UPDATE "Order" SET timeline = ... || $1::jsonb
+    // WHERE id = $2. Mirror it so timeline assertions stay behaviour-level.
+    $executeRaw: async (_strings: any, ...values: any[]) => {
+      const [payload, orderId] = values;
+      const target =
+        orderId === original.id ? original : orders.find((o) => o.id === orderId);
+      if (target) {
+        const current = Array.isArray(target.timeline) ? target.timeline : [];
+        target.timeline = [...current, ...JSON.parse(payload)];
+      }
+      return 1;
+    },
   };
 
   const prisma = {
@@ -228,6 +247,7 @@ describe('RtnService — createFromPartialOrder', () => {
       providers: [
         RtnService,
         { provide: PrismaService, useValue: fake.prisma },
+        { provide: StockService, useValue: STOCK_STUB },
         { provide: OrdersService, useValue: { recalculate: (items: any[], shipping: number, discount: number, type = 'flat') => {
           const subtotal = items.reduce((s, i) => s + i.price * i.quantity, 0);
           return { subtotal, total: Math.max(0, subtotal + shipping - discount) };
@@ -400,6 +420,7 @@ describe('RtnService — createFromPartialOrder', () => {
       providers: [
         RtnService,
         { provide: PrismaService, useValue: fake.prisma },
+        { provide: StockService, useValue: STOCK_STUB },
         { provide: OrdersService, useValue: { recalculate: () => ({ subtotal: 0, total: 0 }) } },
         { provide: OrdersEventService, useValue: { emit: jest.fn() } },
         { provide: DispatchService, useValue: {} },
@@ -421,6 +442,86 @@ describe('RtnService — createFromPartialOrder', () => {
     await setup(order, simpleItems);
     await service.createFromPartialOrder('order-1', { items: [{ orderItemId: 'item-1', quantity: 1 }] }, actor);
     expect(events.emit).toHaveBeenCalledTimes(2);
+  });
+
+  it('releases a removed line\'s holds before deleting it (no orphaned reservation)', async () => {
+    STOCK_STUB.operate.mockClear();
+    STOCK_STUB.releasePhysicalAllocated.mockClear();
+    const order = makePartialOrder();
+    // Reserved but NOT yet deducted: the hold would otherwise outlive the line.
+    const items = [
+      {
+        id: 'item-1', orderId: 'order-1', productId: 'prod-1', variantId: 'var-1', comboId: null,
+        quantity: 2, price: 100, sourceWarehouseId: 'wh-1',
+        managedStockReserved: true, managedStockDeducted: false,
+        product: { availabilityMode: 'MANAGED_STOCK', manageStock: true },
+      },
+    ];
+    const store = await setup(order, items);
+
+    await service.createFromPartialOrder(
+      'order-1',
+      { items: [{ orderItemId: 'item-1', quantity: 2 }] },
+      actor,
+    );
+
+    expect(store.items.find((i) => i.id === 'item-1')).toBeUndefined();
+    expect(STOCK_STUB.operate).toHaveBeenCalledWith(
+      'release',
+      expect.objectContaining({
+        productId: 'prod-1',
+        variantId: 'var-1',
+        quantity: 2,
+        reference: expect.stringContaining('RTN-260930-0001'),
+      }),
+    );
+    expect(STOCK_STUB.releasePhysicalAllocated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'order-1',
+        cycleId: 'cycle-1',
+        orderItemId: 'item-1',
+      }),
+    );
+  });
+
+  it('does not release a hold for a DEDUCTED line (the RTN restore owns that quantity)', async () => {
+    STOCK_STUB.operate.mockClear();
+    const order = makePartialOrder();
+    await setup(order, [
+      {
+        id: 'item-1', orderId: 'order-1', productId: 'prod-1', variantId: null, comboId: null,
+        quantity: 2, price: 100, sourceWarehouseId: 'wh-1',
+        managedStockReserved: true, managedStockDeducted: true,
+        product: { availabilityMode: 'MANAGED_STOCK', manageStock: true },
+      },
+    ]);
+
+    await service.createFromPartialOrder(
+      'order-1',
+      { items: [{ orderItemId: 'item-1', quantity: 2 }] },
+      actor,
+    );
+
+    expect(STOCK_STUB.operate).not.toHaveBeenCalled();
+  });
+
+  it('appends the timeline atomically — an existing entry is never lost', async () => {
+    const order = makePartialOrder();
+    order.timeline = [
+      { type: 'note', visibility: 'public', timestamp: '2026-09-29T10:00:00.000Z', note: 'Customer called about delivery', performedBy: 'staff@ecomate.com' },
+      { status: 'Partial', oldStatus: 'Shipping', timestamp: '2026-09-29T11:00:00.000Z', note: '', performedBy: 'system' },
+    ];
+    await setup(order, simpleItems.map((i) => ({ ...i })));
+
+    await service.createFromPartialOrder(
+      'order-1',
+      { items: [{ orderItemId: 'item-1', quantity: 2 }] },
+      actor,
+    );
+
+    expect(order.timeline).toHaveLength(3);
+    expect(order.timeline[0].note).toBe('Customer called about delivery');
+    expect(order.timeline[2].status).toBe('Delivered');
   });
 });
 
@@ -446,6 +547,7 @@ describe('RtnService — finalizeDispatchReturn', () => {
       providers: [
         RtnService,
         { provide: PrismaService, useValue: fake.prisma },
+        { provide: StockService, useValue: STOCK_STUB },
         { provide: OrdersService, useValue: { recalculate: () => ({ subtotal: 0, total: 0 }) } },
         { provide: OrdersEventService, useValue: { emit: jest.fn() } },
         { provide: DispatchService, useValue: {} },
@@ -574,6 +676,32 @@ describe('RtnService — finalizeDispatchReturn', () => {
     await setup({ order, dispatch: { id: 'dsp-x', orderId: 'order-1', courier: 'pathao', consignmentId: 'CONS-X', status: 'RETURN_PENDING' } });
     await expect(service.finalizeDispatchReturn('dsp-missing', actor)).rejects.toThrow(NotFoundException);
   });
+
+  it('refuses to full-heal a PARTIAL dispatch (no phantom restore of delivered goods)', async () => {
+    const order = deliveredOrder();
+    const dispatch = { id: 'dsp-1', orderId: 'order-1', courier: 'pathao', consignmentId: 'CONS-P', status: 'PARTIAL' };
+    await setup({ order, dispatch });
+
+    await expect(service.finalizeDispatchReturn('dsp-1', actor)).rejects.toThrow(
+      /cannot be marked Returned from its current state/,
+    );
+    // Nothing restored, nothing mutated — part of the goods actually shipped.
+    expect(cancelReturnStock.restoreForOrder).not.toHaveBeenCalled();
+    expect(dispatch.status).toBe('PARTIAL');
+    expect(order.statusId).toBe('status-delivered');
+  });
+
+  it('still heals a RETURNED dispatch whose order was never advanced', async () => {
+    const order = deliveredOrder();
+    const dispatch = { id: 'dsp-1', orderId: 'order-1', courier: 'pathao', consignmentId: 'CONS-R', status: 'RETURNED' };
+    await setup({ order, dispatch });
+
+    const result = await service.finalizeDispatchReturn('dsp-1', actor);
+
+    expect(result.outcome).toBe('returned');
+    expect(result.order.status).toBe('Returned');
+    expect(cancelReturnStock.restoreForOrder).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('RtnService — restoreForReturnOrder idempotency', () => {
@@ -591,6 +719,7 @@ describe('RtnService — restoreForReturnOrder idempotency', () => {
       providers: [
         RtnService,
         { provide: PrismaService, useValue: fake.prisma },
+        { provide: StockService, useValue: STOCK_STUB },
         { provide: OrdersService, useValue: { recalculate: () => ({ subtotal: 0, total: 0 }) } },
         { provide: OrdersEventService, useValue: { emit: jest.fn() } },
         { provide: DispatchService, useValue: {} },

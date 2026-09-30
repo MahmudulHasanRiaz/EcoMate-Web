@@ -316,6 +316,65 @@ describe('PosAnalyticsService', () => {
       });
       expect(found).toBe(over.data.netSales);
     });
+
+    it('reconciles line-by-line: the visible Line Total column sums to the TOTAL row', async () => {
+      // Multi-line order with a discount + a partial refund + a fully refunded
+      // order: the sheet's column must add up to the printed TOTAL exactly.
+      const rows = [
+        orderRow({
+          id: 'multi',
+          displayId: 'POS-260910-0001',
+          total: 1500,
+          discount: 120,
+          items: [
+            { quantity: 2, price: 500, product: { name: 'Tea' }, variant: null, combo: null },
+            { quantity: 1, price: 300, product: { name: 'Rice' }, variant: null, combo: null },
+            { quantity: 1, price: 320, product: { name: 'Oil' }, variant: null, combo: null },
+          ],
+          refunds: [{ amount: 200, status: 'completed', processedAt: D('2026-09-11T10:00:00+06:00') }],
+        }),
+        orderRow({
+          id: 'refunded',
+          displayId: 'POS-260910-0002',
+          total: 500,
+          items: [{ quantity: 1, price: 500, product: { name: 'Soap' }, variant: null, combo: null }],
+          refunds: [{ amount: 500, status: 'completed', processedAt: D('2026-09-11T11:00:00+06:00') }],
+        }),
+      ];
+      mockOrders(rows);
+      const over = await svc.getOverview(req());
+      (prisma.order.findMany as jest.Mock).mockResolvedValueOnce(rows).mockResolvedValue([]);
+      const { buffer } = await svc.buildExport(req());
+
+      const ExcelJS = require('exceljs');
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(buffer);
+      const ws = wb.worksheets[0];
+
+      let headerRow = 0;
+      ws.eachRow((row: any, idx: number) => {
+        if (String(row.getCell(1).value) === 'Order No') headerRow = idx;
+      });
+      expect(headerRow).toBeGreaterThan(0);
+
+      let lineTotalSum = 0;
+      let discountSum = 0;
+      let totalRowValue: number | null = null;
+      ws.eachRow((row: any, idx: number) => {
+        if (idx <= headerRow) return;
+        if (String(row.getCell(1).value).includes('TOTAL')) {
+          totalRowValue = Number(row.getCell(10).value);
+          return;
+        }
+        lineTotalSum += Number(row.getCell(10).value) || 0;
+        discountSum += Number(row.getCell(9).value) || 0;
+      });
+
+      const round2 = (n: number) => Math.round(n * 100) / 100;
+      expect(round2(lineTotalSum)).toBe(over.data.netSales);
+      expect(totalRowValue).toBe(over.data.netSales);
+      expect(round2(discountSum)).toBe(over.data.discountTotal);
+    });
   });
 
   describe('display fallbacks', () => {

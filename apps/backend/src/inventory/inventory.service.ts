@@ -475,6 +475,46 @@ export class InventoryService {
     };
   }
 
+  /** Share of an item's available managed stock a single adjustment may remove. */
+  private static readonly DESTRUCTIVE_RATIO = 0.9;
+
+  /**
+   * Refuse a negative managed-stock adjustment that would remove (nearly) all
+   * of the item's AVAILABLE stock unless the caller explicitly confirms it.
+   * Mirrors the physical-inventory guard (physical-inventory.controller.ts) so
+   * one mis-keyed entry cannot silently zero a managed position — including
+   * the reserved-aware case where nothing is available at all.
+   */
+  private assertNotDestructiveManaged(params: {
+    itemName: string;
+    onHand: number;
+    reserved: number;
+    removalQty: number;
+    confirmed?: boolean;
+  }): void {
+    if (params.removalQty <= 0) return;
+    if (params.confirmed === true) return;
+    const available = params.onHand - params.reserved;
+    if (
+      available > 0 &&
+      params.removalQty / available < InventoryService.DESTRUCTIVE_RATIO
+    ) {
+      return;
+    }
+    if (available <= 0) {
+      throw new BadRequestException(
+        `This adjustment would remove ${params.removalQty} from "${params.itemName}", ` +
+          `which has no available stock (${params.onHand} on hand, ${params.reserved} reserved). ` +
+          `Re-submit with confirmDestructive=true if this is intentional.`,
+      );
+    }
+    throw new BadRequestException(
+      `This adjustment would remove ${params.removalQty} of ${available} available for ` +
+        `"${params.itemName}" (${Math.round((params.removalQty / available) * 100)}%). ` +
+        `Re-submit with confirmDestructive=true if this is intentional.`,
+    );
+  }
+
   async adjust(
     productId?: string,
     quantity?: number,
@@ -482,6 +522,7 @@ export class InventoryService {
     performedBy?: string,
     variantId?: string,
     comboId?: string,
+    confirmDestructive?: boolean,
   ) {
     {
       const guardProduct: any = productId
@@ -532,10 +573,16 @@ export class InventoryService {
                   type: true,
                   manageStock: true,
                   managedStockQuantity: true,
+                  reservedStock: true,
                 },
               },
               variant: {
-                select: { id: true, sku: true, managedStockQuantity: true },
+                select: {
+                  id: true,
+                  sku: true,
+                  managedStockQuantity: true,
+                  reservedStock: true,
+                },
               },
             },
           },
@@ -560,6 +607,13 @@ export class InventoryService {
               `Insufficient stock for variant ${item.variant?.sku ?? 'unknown'}. Available: ${avail}, needed: ${Math.abs(qty)}.`,
             );
           }
+          this.assertNotDestructiveManaged({
+            itemName: `variant ${item.variant?.sku ?? 'unknown'}`,
+            onHand: avail,
+            reserved: item.variant?.reservedStock ?? 0,
+            removalQty: Math.abs(Math.min(qty, 0)),
+            confirmed: confirmDestructive,
+          });
           await this.prisma.productVariant.update({
             where: { id: item.variantId },
             data: { managedStockQuantity: { increment: qty } },
@@ -593,6 +647,13 @@ export class InventoryService {
               `Insufficient stock for product ${item.product.name}. Available: ${avail}, needed: ${Math.abs(qty)}.`,
             );
           }
+          this.assertNotDestructiveManaged({
+            itemName: item.product.name,
+            onHand: avail,
+            reserved: item.product.reservedStock ?? 0,
+            removalQty: Math.abs(Math.min(qty, 0)),
+            confirmed: confirmDestructive,
+          });
           await this.prisma.product.update({
             where: { id: item.productId },
             data: { managedStockQuantity: { increment: qty } },
@@ -653,6 +714,13 @@ export class InventoryService {
           `Insufficient stock for variant ${variant.sku}. Available: ${variant.managedStockQuantity}, needed: ${Math.abs(q)}.`,
         );
       }
+      this.assertNotDestructiveManaged({
+        itemName: `variant ${variant.sku}`,
+        onHand: variant.managedStockQuantity,
+        reserved: variant.reservedStock ?? 0,
+        removalQty: Math.abs(Math.min(q, 0)),
+        confirmed: confirmDestructive,
+      });
       const op =
         q >= 0
           ? this.stockService.add.bind(this.stockService)
@@ -702,6 +770,13 @@ export class InventoryService {
         `Insufficient stock for product ${product.name}. Available: ${product.managedStockQuantity}, needed: ${Math.abs(q)}.`,
       );
     }
+    this.assertNotDestructiveManaged({
+      itemName: product.name,
+      onHand: product.managedStockQuantity,
+      reserved: product.reservedStock ?? 0,
+      removalQty: Math.abs(Math.min(q, 0)),
+      confirmed: confirmDestructive,
+    });
 
     return this.adjustProductWithRetry(
       productId,
@@ -1148,6 +1223,7 @@ export class InventoryService {
       comboId?: string;
       quantity: number;
       reason: string;
+      confirmDestructive?: boolean;
     }[],
     performedBy?: string,
   ) {
@@ -1161,6 +1237,7 @@ export class InventoryService {
           performedBy,
           item.variantId,
           item.comboId,
+          item.confirmDestructive,
         );
         results.push({ ...item, success: true, result });
       } catch (err: any) {

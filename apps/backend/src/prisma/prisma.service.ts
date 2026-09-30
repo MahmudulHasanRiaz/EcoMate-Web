@@ -964,7 +964,23 @@ export class PrismaService
     this.logger.log('Schema drift check: all required columns verified ✓');
   }
 
+  /**
+   * Dev/test-only hygiene: drop columns that exist in the live DB but are no
+   * longer declared as scalars in THIS image's schema.prisma.
+   *
+   * NEVER runs in production. After a rollback to an older image — or on any
+   * redeploy whose bundled schema predates an applied migration — this would
+   * silently drop live columns (and their data). In production
+   * `prisma migrate deploy` is the only schema owner (same rule as
+   * autoHealSchema, which is already non-production-gated).
+   */
   private async dropStaleColumns(): Promise<void> {
+    if (process.env.NODE_ENV === 'production') {
+      this.logger.log(
+        'Stale column cleanup skipped (production: migrations own the schema)',
+      );
+      return;
+    }
     try {
       const schemaPath = path.join(process.cwd(), 'prisma', 'schema.prisma');
       if (!fs.existsSync(schemaPath)) return;

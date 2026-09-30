@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Delete, Body, Param, Query, NotFoundException, BadRequestException, UseGuards } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { StockService } from '../stock/stock.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
@@ -24,18 +25,29 @@ export class PhysicalInventoryController {
    * Refuse a negative adjustment that would wipe (nearly) all of a location's
    * stock for one item unless the caller explicitly confirms it. A single
    * mis-keyed quantity must not be able to zero out a showroom position.
+   *
+   * Runs on the SAME client as the write (callers pass their transaction) and
+   * locks the location's rows first, so two concurrent adjustments can no
+   * longer both pass the check. An item with nothing available
+   * (reserved ≥ on-hand) is ALSO destructive — removing from it is a wipe by
+   * definition, not a no-op.
    */
-  private async assertNotDestructive(params: {
-    productId: string;
-    variantId?: string;
-    warehouseId: string;
-    removalQty: number;
-    confirmed?: boolean;
-  }): Promise<void> {
+  private async assertNotDestructive(
+    client: Prisma.TransactionClient,
+    params: {
+      productId: string;
+      variantId?: string;
+      warehouseId: string;
+      removalQty: number;
+      confirmed?: boolean;
+    },
+  ): Promise<void> {
     if (params.removalQty <= 0) return;
     if (params.confirmed === true) return;
 
-    const rows = await this.prisma.physicalInventory.findMany({
+    await this.lockLocationRows(client, params);
+
+    const rows = await client.physicalInventory.findMany({
       where: {
         productId: params.productId,
         ...(params.variantId ? { variantId: params.variantId } : {}),
@@ -46,9 +58,21 @@ export class PhysicalInventoryController {
     const totalQty = rows.reduce((s, r) => s + r.quantity, 0);
     const totalReserved = rows.reduce((s, r) => s + r.reservedQuantity, 0);
     const available = totalQty - totalReserved;
-    if (available <= 0) return;
-    if (params.removalQty / available < PhysicalInventoryController.DESTRUCTIVE_RATIO) {
+
+    if (
+      available > 0 &&
+      params.removalQty / available <
+        PhysicalInventoryController.DESTRUCTIVE_RATIO
+    ) {
       return;
+    }
+
+    if (available <= 0) {
+      throw new BadRequestException(
+        `This adjustment would remove ${params.removalQty} from a location with no ` +
+          `available stock (${totalQty} on hand, ${totalReserved} reserved). ` +
+          `Re-submit with confirmDestructive=true if this is intentional.`,
+      );
     }
 
     throw new BadRequestException(
@@ -56,6 +80,33 @@ export class PhysicalInventoryController {
         `at this location (${Math.round((params.removalQty / available) * 100)}%). ` +
         `Re-submit with confirmDestructive=true if this is intentional.`,
     );
+  }
+
+  /**
+   * Row-lock every PhysicalInventory row the guard/write pair can touch, so
+   * the availability check and the adjustment are serialized across requests
+   * (without the lock a second request could pass the same stale check).
+   */
+  private async lockLocationRows(
+    client: Prisma.TransactionClient,
+    params: { productId: string; variantId?: string; warehouseId: string },
+  ): Promise<void> {
+    if (params.variantId) {
+      await client.$queryRaw`
+        SELECT "id" FROM "PhysicalInventory"
+        WHERE "productId" = ${params.productId}
+          AND "variantId" = ${params.variantId}
+          AND "warehouseId" = ${params.warehouseId}
+        FOR UPDATE
+      `;
+      return;
+    }
+    await client.$queryRaw`
+      SELECT "id" FROM "PhysicalInventory"
+      WHERE "productId" = ${params.productId}
+        AND "warehouseId" = ${params.warehouseId}
+      FOR UPDATE
+    `;
   }
 
   @Roles('superadmin', 'admin', 'manager')
@@ -94,24 +145,29 @@ export class PhysicalInventoryController {
       }
     }
 
-    await this.assertNotDestructive({
-      productId: dto.productId,
-      variantId: dto.variantId,
-      warehouseId: dto.warehouseId,
-      removalQty: Math.abs(Math.min(dto.quantity, 0)),
-      confirmed: dto.confirmDestructive,
-    });
+    // Guard + write share ONE transaction: the availability check runs under a
+    // row lock, so concurrent adjustments cannot both pass a stale check.
+    await this.prisma.$transaction(async (tx) => {
+      await this.assertNotDestructive(tx, {
+        productId: dto.productId,
+        variantId: dto.variantId,
+        warehouseId: dto.warehouseId,
+        removalQty: Math.abs(Math.min(dto.quantity, 0)),
+        confirmed: dto.confirmDestructive,
+      });
 
-    await this.stockService.addPhysical({
-      productId: dto.productId,
-      variantId: dto.variantId,
-      warehouseId: dto.warehouseId,
-      quantity: dto.quantity,
-      reference: dto.reason,
-      ledgerType: 'PHYSICAL_ADJUSTMENT',
-      binLocationId: dto.binLocationId,
-      unitCost: dto.unitCost,
-      performedBy: user.email,
+      await this.stockService.addPhysical({
+        productId: dto.productId,
+        variantId: dto.variantId,
+        warehouseId: dto.warehouseId,
+        quantity: dto.quantity,
+        reference: dto.reason,
+        ledgerType: 'PHYSICAL_ADJUSTMENT',
+        binLocationId: dto.binLocationId,
+        unitCost: dto.unitCost,
+        performedBy: user.email,
+        tx,
+      });
     });
 
     // Create CostingLot for positive adjustment
@@ -217,27 +273,44 @@ export class PhysicalInventoryController {
       }
     }
 
+    // Fail-fast pass: validate EVERY item before writing anything (the
+    // per-item transaction below re-checks under a row lock).
     for (const item of dto.items) {
-      await this.assertNotDestructive({
-        productId: item.productId,
-        variantId: item.variantId,
-        warehouseId: dto.warehouseId,
-        removalQty: Math.abs(Math.min(item.quantity, 0)),
-        confirmed: dto.confirmDestructive,
-      });
+      await this.assertNotDestructive(
+        this.prisma as unknown as Prisma.TransactionClient,
+        {
+          productId: item.productId,
+          variantId: item.variantId,
+          warehouseId: dto.warehouseId,
+          removalQty: Math.abs(Math.min(item.quantity, 0)),
+          confirmed: dto.confirmDestructive,
+        },
+      );
     }
 
     for (const item of dto.items) {
-      await this.stockService.addPhysical({
-        productId: item.productId,
-        variantId: item.variantId,
-        warehouseId: dto.warehouseId,
-        quantity: item.quantity,
-        reference: dto.reason,
-        ledgerType: 'PHYSICAL_ADJUSTMENT',
-        binLocationId: item.binLocationId,
-        unitCost: item.unitCost,
-        performedBy: user.email,
+      // Same guard+write transaction as the single endpoint (row-locked).
+      await this.prisma.$transaction(async (tx) => {
+        await this.assertNotDestructive(tx, {
+          productId: item.productId,
+          variantId: item.variantId,
+          warehouseId: dto.warehouseId,
+          removalQty: Math.abs(Math.min(item.quantity, 0)),
+          confirmed: dto.confirmDestructive,
+        });
+
+        await this.stockService.addPhysical({
+          productId: item.productId,
+          variantId: item.variantId,
+          warehouseId: dto.warehouseId,
+          quantity: item.quantity,
+          reference: dto.reason,
+          ledgerType: 'PHYSICAL_ADJUSTMENT',
+          binLocationId: item.binLocationId,
+          unitCost: item.unitCost,
+          performedBy: user.email,
+          tx,
+        });
       });
 
       if (item.quantity > 0 && item.unitCost) {

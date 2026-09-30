@@ -146,16 +146,29 @@ export class MarketingConsumptionService {
 
   /**
    * Consume spend for every (campaign, date) with spend > 0 after an insights
-   * sync. Shortfall (unfunded spend) is logged, never fails the sync.
+   * sync.
+   *
+   * Idempotent per (campaign, insight day): a repeated sync covering the same
+   * date only draws the DELTA that has not been consumed yet, so the prepaid
+   * balance is never double-drawn and no duplicate journal entry is posted.
+   * Shortfall (unfunded spend) is logged, never fails the sync.
    */
   async consumeInsightSpend(
     entries: Array<{ campaignId: string; spend: number; date: Date }>,
   ) {
     for (const entry of entries) {
       try {
+        const alreadyConsumed = await this.consumedForDay(
+          entry.campaignId,
+          entry.date,
+        );
+        const delta =
+          Math.round((Number(entry.spend) - alreadyConsumed) * 10000) / 10000;
+        if (delta <= 0.0001) continue;
+
         const { shortfall } = await this.consume(
           entry.campaignId,
-          entry.spend,
+          delta,
           'spend_sync',
           entry.date,
         );
@@ -170,6 +183,29 @@ export class MarketingConsumptionService {
         );
       }
     }
+  }
+
+  /**
+   * Spend already drawn for this campaign on the given insight day
+   * (UTC-midnight bucketed, matching how the sync parses provider dates).
+   */
+  private async consumedForDay(
+    campaignId: string,
+    day: Date,
+  ): Promise<number> {
+    const start = new Date(
+      Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate()),
+    );
+    const end = new Date(start.getTime() + 86_400_000);
+    const agg = await this.prisma.marketingConsumption.aggregate({
+      _sum: { consumedAmount: true },
+      where: {
+        campaignId,
+        source: 'spend_sync',
+        spendDate: { gte: start, lt: end },
+      },
+    });
+    return Number(agg._sum.consumedAmount ?? 0);
   }
 
   async totalConsumed(adAccountId?: string) {

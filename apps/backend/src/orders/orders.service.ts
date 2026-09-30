@@ -54,27 +54,11 @@ import { CommissionsService } from '../commissions/commissions.service';
 import { TrackingEligibilityGate } from '../tracking/tracking-eligibility-gate';
 import { CacheService } from '../cache/cache.service';
 
-const ORDER_TRANSITIONS: Record<string, string[]> = {
-  Pending: ['Payment Pending', 'Hold', 'Confirmed', 'Cancelled'],
-  'Payment Pending': ['Payment Verifying', 'Hold', 'Confirmed', 'Cancelled'],
-  'Payment Verifying': ['Confirmed', 'Hold', 'Cancelled'],
-  Hold: ['Pending', 'Confirmed', 'Cancelled'],
-  Confirmed: ['Hold', 'Packed', 'Packing Hold', 'Cancelled'],
-  Packed: ['Shipping', 'Packing Hold'],
-  'Packing Hold': ['Packed', 'Cancelled'],
-  Shipping: ['Delivered', 'Partial', 'Return Pending'],
-  Delivered: ['Return Pending'],
-  // Partial is automation-stopped AND resolution-stopped: the ONLY legitimate
-  // Partial → Delivered path is the RTN return-order creation workflow
-  // (RtnService.createFromPartialOrder), which performs it transactionally.
-  // Staff can no longer close a Partial order as Delivered in the generic
-  // status UI — it must be resolved into a Return Order first.
-  Partial: ['Return Pending'],
-  'Return Pending': ['Returned', 'Damaged'],
-  Returned: ['Damaged'],
-  Cancelled: ['Hold', 'Confirmed'],
-  Damaged: [],
-};
+// Order-status transition rules live in one place — the runtime gate and the
+// seed share the same map (see order-transitions.ts for the Partial rule).
+// Re-exported so existing internal references and tests keep working.
+import { ORDER_TRANSITIONS } from './order-transitions';
+export { ORDER_TRANSITIONS };
 
 /**
  * Order status name → lifecycle custom tracking event. Only genuinely

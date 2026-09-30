@@ -960,5 +960,24 @@ describe('PosOrdersService', () => {
         }),
       );
     });
+
+    it('scopes the lookup to the caller session showroom (no cross-showroom reads)', async () => {
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue(null);
+
+      await expect(
+        service.getOrderForReceipt('other-showroom-order', 'showroom-1'),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(prisma.order.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            id: 'other-showroom-order',
+            source: 'POS',
+            trashedAt: null,
+            posSession: { showroomId: 'showroom-1' },
+          }),
+        }),
+      );
+    });
   });
 });

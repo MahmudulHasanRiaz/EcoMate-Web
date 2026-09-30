@@ -3,6 +3,7 @@ import * as path from 'path';
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 import { PrismaClient, UserRole, UserStatus, PaymentOptionType, PaymentStatus } from '@prisma/client';
+import { ORDER_TRANSITIONS } from '../src/orders/order-transitions';
 import * as bcrypt from 'bcryptjs';
 import { writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
@@ -27,30 +28,47 @@ const MIME_EXT_MAP: Record<string, string> = {
 };
 
 async function main() {
-  const seedDummyData = process.env.SEED_DUMMY_DATA !== 'false';
+  // Fail CLOSED: demo customers/products/orders/payments are opt-in. Any
+  // manual `npx prisma db seed` without the env var must never inject (or
+  // duplicate) demo business data into a real database.
+  const seedDummyData = process.env.SEED_DUMMY_DATA === 'true';
   console.log(`Seeding database... (Dummy Data: ${seedDummyData})`);
 
   // ── Super Admin ──
+  // Create-only for the password: a redeploy/reseed must never reset a live
+  // admin password back to the publicly-known default.
   const email = process.env.ADMIN_EMAIL || 'admin@ecomate.com';
-  const plainPassword = process.env.ADMIN_PASSWORD || 'Admin@123';
-  const adminPassword = await bcrypt.hash(plainPassword, 12);
-  const admin = await prisma.userProfile.upsert({
-    where: { email },
-    update: {
-      password: adminPassword,
-    },
-    create: {
-      firstName: 'Super',
-      lastName: 'Admin',
-      username: 'superadmin',
-      email,
-      phoneNumber: '+8801700000000',
-      password: adminPassword,
-      role: UserRole.superadmin,
-      status: UserStatus.active,
-    },
-  });
-  console.log(`  ✓ Super admin created/updated: ${email} / ${plainPassword}`);
+  const explicitPassword = process.env.ADMIN_PASSWORD || process.env.ADMIN_PASS;
+  let admin = await prisma.userProfile.findUnique({ where: { email } });
+  if (admin) {
+    console.log(`  ✓ Super admin already exists — password left unchanged: ${email}`);
+  } else {
+    if (!explicitPassword && process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'ADMIN_PASSWORD must be set when seeding a new admin user in production ' +
+          '(refusing to create an account with the public default password).',
+      );
+    }
+    const plainPassword = explicitPassword || 'Admin@123';
+    const adminPassword = await bcrypt.hash(plainPassword, 12);
+    admin = await prisma.userProfile.create({
+      data: {
+        firstName: 'Super',
+        lastName: 'Admin',
+        username: 'superadmin',
+        email,
+        phoneNumber: '+8801700000000',
+        password: adminPassword,
+        role: UserRole.superadmin,
+        status: UserStatus.active,
+      },
+    });
+    console.log(
+      explicitPassword
+        ? `  ✓ Super admin created: ${email}`
+        : `  ⚠ Super admin created with the DEFAULT password (set ADMIN_PASSWORD to override): ${email}`,
+    );
+  }
 
   // ── Default Showroom ──
   const defaultShowroom = await prisma.warehouse.upsert({
@@ -118,41 +136,39 @@ async function main() {
   ];
 
   const orderStatusMap: Record<string, string> = {};
+  const createdStatusNames = new Set<string>();
   for (const s of statuses) {
-    const status = await prisma.orderStatus.upsert({
+    const existing = await prisma.orderStatus.findUnique({
       where: { name: s.name },
-      update: {},
-      create: { ...s, nextStatuses: [] },
+      select: { id: true },
+    });
+    if (existing) {
+      orderStatusMap[s.name] = existing.id;
+      continue;
+    }
+    const status = await prisma.orderStatus.create({
+      data: { ...s, nextStatuses: [] },
     });
     orderStatusMap[s.name] = status.id;
+    createdStatusNames.add(s.name);
   }
 
-  // Define allowed transitions
-  const transitions: Record<string, string[]> = {
-    'Pending': ['Payment Pending', 'Hold', 'Confirmed', 'Cancelled'],
-    'Payment Pending': ['Payment Verifying', 'Hold', 'Confirmed', 'Cancelled'],
-    'Payment Verifying': ['Confirmed', 'Hold', 'Cancelled'],
-    'Hold': ['Pending', 'Confirmed', 'Cancelled'],
-    'Confirmed': ['Hold', 'Packed', 'Packing Hold', 'Cancelled'],
-    'Packed': ['Shipping', 'Packing Hold'],
-    'Packing Hold': ['Packed', 'Cancelled'],
-    'Shipping': ['Delivered', 'Partial'],
-    'Delivered': ['Return Pending'],
-    'Partial': ['Delivered', 'Return Pending'],
-    'Return Pending': ['Returned', 'Damaged'],
-    'Returned': ['Damaged'],
-    'Cancelled': ['Confirmed'],
-    'Damaged': [],
-  };
-
-  for (const [name, nextNames] of Object.entries(transitions)) {
+  // Allowed transitions come from the ONE runtime source of truth
+  // (src/orders/order-transitions.ts). They are written ONLY for statuses
+  // created by this run: a reseed must never overwrite an installation's
+  // configured transitions (a previous RUN_SEED=true would otherwise silently
+  // restore business rules that migrations removed, e.g. Partial → Delivered).
+  for (const [name, nextNames] of Object.entries(ORDER_TRANSITIONS)) {
+    if (!createdStatusNames.has(name)) continue;
     const ids = nextNames.map((n) => orderStatusMap[n]).filter(Boolean);
     await prisma.orderStatus.update({
       where: { name },
       data: { nextStatuses: ids as any },
     });
   }
-  console.log(`  ✓ ${statuses.length} order statuses created`);
+  console.log(
+    `  ✓ ${statuses.length} order statuses present (${createdStatusNames.size} created)`,
+  );
 
   if (seedDummyData) {
     // ── Categories ──
@@ -783,6 +799,17 @@ async function main() {
     },
   ];
 
+  // Idempotency guard: demo orders/payments carry no natural unique key, so a
+  // second run would duplicate them. Create the sample block only when the
+  // demo customer has no orders yet.
+  const existingDemoOrders = await prisma.order.count({
+    where: { customerId: customer!.id },
+  });
+  if (existingDemoOrders > 0) {
+    console.log(
+      `  ⏭ Skipping ${orderData.length} sample orders — ${existingDemoOrders} order(s) already exist for the demo customer`,
+    );
+  } else
   for (const order of orderData) {
     const displayId = `ORD-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
@@ -952,10 +979,12 @@ async function main() {
     await prisma.systemSetting.upsert({
       where: { key: s.key },
       create: { key: s.key, value: s.value },
-      update: { value: s.value },
+      // Create-only: a reseed must never overwrite client-edited branding,
+      // SEO, delivery or contact settings with the shipped defaults.
+      update: {},
     });
   }
-  console.log(`  ✓ ${systemSettings.length} system settings created`);
+  console.log(`  ✓ ${systemSettings.length} system settings present (create-only)`);
 
   if (seedDummyData) {
     // ── Download external images to local storage ──
@@ -1079,7 +1108,7 @@ async function main() {
   }
 
   console.log('\n✅ Database seeded successfully!');
-  console.log(`   Super Admin: ${email} / ${plainPassword}`);
+  console.log(`   Super Admin: ${email}`);
   if (seedDummyData) {
     console.log('   Customer:    customer@example.com / Customer@123');
   }

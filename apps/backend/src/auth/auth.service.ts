@@ -4,6 +4,7 @@ import {
   ConflictException,
   BadRequestException,
   Logger,
+  OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -22,8 +23,9 @@ import ms from 'ms';
 import type { StringValue } from 'ms';
 
 @Injectable()
-export class AuthService implements OnModuleInit {
+export class AuthService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AuthService.name);
+  private cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -33,12 +35,20 @@ export class AuthService implements OnModuleInit {
 
   async onModuleInit() {
     await this.cleanupExpiredTokens();
-    // Run cleanup every hour
-    setInterval(() => {
+    // Run cleanup every hour. The handle is kept so a hot reload / restart
+    // cannot stack another sweep timer on top of a live one.
+    this.cleanupTimer = setInterval(() => {
       this.cleanupExpiredTokens().catch((err) =>
         this.logger.error('Failed to clean up expired refresh tokens', err),
       );
     }, 60 * 60 * 1000);
+  }
+
+  onModuleDestroy() {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
   }
 
   private async cleanupExpiredTokens() {

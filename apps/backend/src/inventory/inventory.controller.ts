@@ -16,10 +16,26 @@ import { LedgerQueryDto } from './dto/ledger-query.dto';
 @Controller('inventory')
 @RequiresFeature('admin_inventory')
 export class InventoryController {
+  /** Hard ceiling for list endpoints — an unbounded perPage is a DB/memory hazard. */
+  private static readonly MAX_PER_PAGE = 100;
+
   constructor(
     private readonly inventoryService: InventoryService,
     private readonly reconciliation: StockReconciliationService,
   ) {}
+
+  /** Parse a client perPage into 1..MAX_PER_PAGE (fallback on garbage input). */
+  private clampPerPage(value?: string, fallback = 20): number {
+    const parsed = value ? parseInt(value, 10) : fallback;
+    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+    return Math.min(parsed, InventoryController.MAX_PER_PAGE);
+  }
+
+  /** Parse a client page into a positive integer (fallback 1). */
+  private clampPage(value?: string): number {
+    const parsed = value ? parseInt(value, 10) : 1;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+  }
 
   @Roles('superadmin', 'admin', 'manager')
   @Get('low-stock')
@@ -44,8 +60,8 @@ export class InventoryController {
     @Query('productId') productId?: string,
   ) {
     return this.inventoryService.logs(
-      page ? parseInt(page) : 1,
-      perPage ? parseInt(perPage) : 20,
+      this.clampPage(page),
+      this.clampPerPage(perPage),
       type,
       warehouseId,
       productId,
@@ -61,8 +77,8 @@ export class InventoryController {
     @Query('status') status?: string,
   ) {
     return this.inventoryService.listTransfers(
-      page ? parseInt(page) : 1,
-      perPage ? parseInt(perPage) : 20,
+      this.clampPage(page),
+      this.clampPerPage(perPage),
       search,
       status,
     );
@@ -80,8 +96,8 @@ export class InventoryController {
     @Query('sortOrder') sortOrder?: string,
   ) {
     return this.inventoryService.stockOverview({
-      page: page ? parseInt(page) : 1,
-      perPage: perPage ? parseInt(perPage) : 20,
+      page: this.clampPage(page),
+      perPage: this.clampPerPage(perPage),
       search,
       categoryId,
       type,
@@ -103,6 +119,7 @@ export class InventoryController {
       user.email,
       body.variantId,
       body.comboId,
+      body.confirmDestructive,
     );
   }
 

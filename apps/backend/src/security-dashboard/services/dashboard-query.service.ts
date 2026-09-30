@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SecurityEventSeverity, SecurityEventCategory, SecurityActorType } from '@prisma/client';
 import type {
@@ -396,6 +396,25 @@ export class DashboardQueryService {
     severity: SecurityEventSeverity,
     data: { retentionDays: number; criticalRetentionDays?: number | null },
   ): Promise<RetentionPolicyItem> {
+    // Lower bound 1 day: a configured 0 makes the purge cutoff "now" and the
+    // next sweep deletes every non-override event of that category+severity.
+    const retentionDays = Number(data.retentionDays);
+    if (!Number.isSafeInteger(retentionDays) || retentionDays < 1) {
+      throw new BadRequestException(
+        'retentionDays must be a whole number >= 1 (0 would purge the whole category on the next sweep)',
+      );
+    }
+    const criticalRetentionDays =
+      data.criticalRetentionDays == null ? null : Number(data.criticalRetentionDays);
+    if (
+      criticalRetentionDays !== null &&
+      (!Number.isSafeInteger(criticalRetentionDays) || criticalRetentionDays < 1)
+    ) {
+      throw new BadRequestException(
+        'criticalRetentionDays must be a whole number >= 1 when provided',
+      );
+    }
+
     const policy = await this.prisma.securityRetentionPolicy.upsert({
       where: {
         tenant_category_severity: {
@@ -408,12 +427,12 @@ export class DashboardQueryService {
         tenant: 'default',
         category,
         severity,
-        retentionDays: data.retentionDays,
-        criticalRetentionDays: data.criticalRetentionDays ?? null,
+        retentionDays,
+        criticalRetentionDays,
       },
       update: {
-        retentionDays: data.retentionDays,
-        criticalRetentionDays: data.criticalRetentionDays ?? null,
+        retentionDays,
+        criticalRetentionDays,
       },
     });
 

@@ -55,9 +55,27 @@ export class SecurityEventProcessor extends WorkerHost {
     const eventTenant = data.tenant || 'default';
 
     try {
-      // ── Step 1: Insert raw event (dedupKey constraint handles retry duplicates) ──
-      await this.prisma.securityEvent
-        .create({
+      // Fast-path retry check: a retry after a committed run must not touch
+      // the aggregates again. (Inside the transaction the create would abort
+      // the whole tx on P2002, which is the race safety net below.)
+      const alreadyProcessed = await this.prisma.securityEvent.findUnique({
+        where: { dedupKey: data.dedupKey },
+        select: { id: true },
+      });
+      if (alreadyProcessed) {
+        this.logger.debug(
+          `DedupKey already processed (no-op): ${data.dedupKey}`,
+        );
+        return;
+      }
+
+      // ── Raw event + ALL aggregates commit atomically ──
+      // A BullMQ retry after a partial failure therefore rolls back and
+      // re-runs the whole unit, instead of incrementing the hourly/daily/block
+      // counters for an event that was already counted.
+      await this.prisma.$transaction(async (tx) => {
+        // ── Step 1: Insert raw event (dedupKey constraint handles retry duplicates) ──
+        await tx.securityEvent.create({
           data: {
             id: data.id,
             dedupKey: data.dedupKey,
@@ -82,102 +100,104 @@ export class SecurityEventProcessor extends WorkerHost {
             description: data.description ?? null,
             retentionOverride: data.retentionOverride ?? false,
           },
-        })
-        .catch((err: any) => {
-          // P2002 = unique constraint violation (dedupKey collision) — expected on retry
-          if (err?.code === 'P2002') {
-            this.logger.debug(`DedupKey collision (expected on retry): ${data.dedupKey}`);
-            return null;
-          }
-          throw err;
         });
 
-      // ── Step 2: Update hourly aggregate (Dhaka-hour bucket) ──
-      const hour = dhakaHourBucket(eventTimestamp);
+        // ── Step 2: Update hourly aggregate (Dhaka-hour bucket) ──
+        const hour = dhakaHourBucket(eventTimestamp);
 
-      await this.prisma.securityEventHourly.upsert({
-        where: {
-          tenant_bucket_eventType_severity_category: {
+        await tx.securityEventHourly.upsert({
+          where: {
+            tenant_bucket_eventType_severity_category: {
+              tenant: eventTenant,
+              bucket: hour,
+              eventType: data.eventType,
+              severity: data.severity,
+              category: data.category,
+            },
+          },
+          create: {
             tenant: eventTenant,
             bucket: hour,
             eventType: data.eventType,
             severity: data.severity,
             category: data.category,
+            count: 1,
           },
-        },
-        create: {
-          tenant: eventTenant,
-          bucket: hour,
-          eventType: data.eventType,
-          severity: data.severity,
-          category: data.category,
-          count: 1,
-        },
-        update: { count: { increment: 1 } },
-      });
+          update: { count: { increment: 1 } },
+        });
 
-      // ── Step 3: Update daily aggregate (Dhaka calendar date) ──
-      // `@db.Date` is stored via the Date's UTC components — build a UTC-midnight
-      // instant carrying the Dhaka date label so write and read sides agree.
-      const day = new Date(`${dhakaDayKey(eventTimestamp)}T00:00:00.000Z`);
+        // ── Step 3: Update daily aggregate (Dhaka calendar date) ──
+        // `@db.Date` is stored via the Date's UTC components — build a UTC-midnight
+        // instant carrying the Dhaka date label so write and read sides agree.
+        const day = new Date(`${dhakaDayKey(eventTimestamp)}T00:00:00.000Z`);
 
-      await this.prisma.securityEventDaily.upsert({
-        where: {
-          tenant_date_eventType_severity_category: {
-            tenant: eventTenant,
-            date: day,
-            eventType: data.eventType,
-            severity: data.severity,
-            category: data.category,
-          },
-        },
-        create: {
-          tenant: eventTenant,
-          date: day,
-          eventType: data.eventType,
-          severity: data.severity,
-          category: data.category,
-          count: 1,
-        },
-        update: { count: { increment: 1 } },
-      });
-
-      // ── Step 4: Update block daily summary (only for block-related events) ──
-      if (
-        data.eventType === 'auto_block_created' ||
-        data.eventType === 'block_created_manual' ||
-        data.eventType === 'block_unblocked'
-      ) {
-        const blockSource =
-          data.eventType === 'auto_block_created' ? 'auto' : 'manual';
-        const targetType = data.ipAddress ? 'ip' : 'phone';
-
-        const isIncrement = data.eventType !== 'block_unblocked';
-
-        await this.prisma.securityBlockDaily.upsert({
+        await tx.securityEventDaily.upsert({
           where: {
-            tenant_date_blockSource_targetType: {
+            tenant_date_eventType_severity_category: {
               tenant: eventTenant,
               date: day,
-              blockSource,
-              targetType,
+              eventType: data.eventType,
+              severity: data.severity,
+              category: data.category,
             },
           },
           create: {
             tenant: eventTenant,
             date: day,
-            blockSource,
-            targetType,
-            count: isIncrement ? 1 : 0,
+            eventType: data.eventType,
+            severity: data.severity,
+            category: data.category,
+            count: 1,
           },
-          update: {
-            count: isIncrement ? { increment: 1 } : { decrement: 1 },
-          },
+          update: { count: { increment: 1 } },
         });
-      }
+
+        // ── Step 4: Update block daily summary (only for block-related events) ──
+        if (
+          data.eventType === 'auto_block_created' ||
+          data.eventType === 'block_created_manual' ||
+          data.eventType === 'block_unblocked'
+        ) {
+          const blockSource =
+            data.eventType === 'auto_block_created' ? 'auto' : 'manual';
+          const targetType = data.ipAddress ? 'ip' : 'phone';
+
+          const isIncrement = data.eventType !== 'block_unblocked';
+
+          await tx.securityBlockDaily.upsert({
+            where: {
+              tenant_date_blockSource_targetType: {
+                tenant: eventTenant,
+                date: day,
+                blockSource,
+                targetType,
+              },
+            },
+            create: {
+              tenant: eventTenant,
+              date: day,
+              blockSource,
+              targetType,
+              count: isIncrement ? 1 : 0,
+            },
+            update: {
+              count: isIncrement ? { increment: 1 } : { decrement: 1 },
+            },
+          });
+        }
+      });
 
       this.logger.debug(`Processed event ${data.id}: ${data.eventType}`);
     } catch (err: unknown) {
+      // P2002 = unique constraint violation (dedupKey collision) — expected when
+      // a concurrent worker processed the same event first: nothing was applied
+      // (the transaction aborted), so this is a clean no-op.
+      if ((err as any)?.code === 'P2002') {
+        this.logger.debug(
+          `DedupKey collision — event already processed: ${data.dedupKey}`,
+        );
+        return;
+      }
       const message = err instanceof Error ? err.message : 'Unknown error';
       this.logger.error(
         `Failed to process security event ${data.id}: ${message}`,

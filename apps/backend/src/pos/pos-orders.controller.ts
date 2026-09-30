@@ -38,8 +38,19 @@ export class PosOrdersController {
 
   @Get('orders/:id')
   @Roles('cashier', 'admin')
-  async getOrder(@Param('id') id: string) {
-    return this.svc.getOrderForReceipt(id);
+  async getOrder(
+    @Param('id') id: string,
+    @Headers('x-pos-session-id') sessionId?: string,
+  ) {
+    // Showroom-scoped: a POS order may only be read from a session that
+    // belongs to the order's own showroom (no cross-showroom PII reads).
+    if (!sessionId) {
+      throw new BadRequestException(
+        'POS session required (x-pos-session-id header)',
+      );
+    }
+    const session = await this.svc.getSessionShowroom(sessionId);
+    return this.svc.getOrderForReceipt(id, session.showroomId);
   }
 
   @Get('customers')

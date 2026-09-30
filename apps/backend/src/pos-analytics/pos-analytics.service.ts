@@ -316,6 +316,35 @@ export class PosAnalyticsService {
     return { rows: await this.collectRows(ctx) };
   }
 
+  /**
+   * Allocate an order-level amount (net sales, discount) across its item
+   * lines, proportional to each line's gross value, in integer cents so the
+   * parts sum EXACTLY to the whole (the residual lands on the last line).
+   * Lines with no gross value split evenly. Exported rows then reconcile:
+   * Σ "Line Total" === the printed TOTAL row === dashboard net sales.
+   */
+  private allocateAcrossLines(lineGross: number[], amount: number): number[] {
+    const n = lineGross.length;
+    if (n === 0) return [];
+    const cents = Math.round((Number.isFinite(amount) ? amount : 0) * 100);
+    const totalGross = lineGross.reduce((s, g) => s + g, 0);
+    const shares: number[] = [];
+    let allocated = 0;
+    for (let i = 0; i < n; i += 1) {
+      if (i === n - 1) {
+        shares.push(cents - allocated);
+        break;
+      }
+      const share =
+        totalGross > 0
+          ? Math.floor((cents * lineGross[i]) / totalGross)
+          : Math.floor(cents / n);
+      allocated += share;
+      shares.push(share);
+    }
+    return shares.map((c) => c / 100);
+  }
+
   private sortRows(rows: ReportRow[], query: PosAnalyticsQueryDto): ReportRow[] {
     const dir = query.order === 'asc' ? 1 : -1;
     const key =
@@ -496,15 +525,28 @@ export class PosAnalyticsService {
     ws.views = [{ state: 'frozen', ySplit: headerRowIdx }];
     r += 1;
 
-    // Detail rows: one per order ITEM; order context repeats but order money
-    // is never re-added (totals come from the KPI block above).
+    // Detail rows: one per order ITEM. Order-level money (discount, refunds)
+    // is allocated across the order's lines proportionally to their gross
+    // value, with the cent-exact residual on the last line — so the visible
+    // column SUM equals the printed TOTAL row AND the dashboard net sales
+    // (spec §6 «totals row matching dashboard net sales», §8). A fully
+    // refunded order contributes 0 to every line (flagged, zero net).
     const money = (cell: ExcelJS.Cell, v: number) => {
       cell.value = v;
       cell.numFmt = BDT;
     };
     for (const row of detail) {
       const wall = dhakaWall(row.reportingAt);
-      for (const it of row.lines) {
+      const lineGross = row.lines.map((l) => round2(l.qty * l.unitPrice));
+      const lineNet = this.allocateAcrossLines(
+        lineGross,
+        row.fullyRefunded ? 0 : row.netTotal,
+      );
+      const lineDiscount = this.allocateAcrossLines(
+        lineGross,
+        row.fullyRefunded ? 0 : row.discount,
+      );
+      row.lines.forEach((it, idx) => {
         const excelRow = ws.addRow([
           row.displayId,
           wall.date,
@@ -514,15 +556,15 @@ export class PosAnalyticsService {
           it.name,
           it.qty,
           it.unitPrice,
-          row.discount,
-          round2(it.qty * it.unitPrice),
+          lineDiscount[idx],
+          lineNet[idx],
           row.paymentMethods.join('/'),
           row.status,
         ]);
         money(excelRow.getCell(8), it.unitPrice);
-        money(excelRow.getCell(9), row.discount);
-        money(excelRow.getCell(10), round2(it.qty * it.unitPrice));
-      }
+        money(excelRow.getCell(9), lineDiscount[idx]);
+        money(excelRow.getCell(10), lineNet[idx]);
+      });
     }
 
     // Totals row matches dashboard net sales.

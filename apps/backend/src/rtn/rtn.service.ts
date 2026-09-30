@@ -7,9 +7,11 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { OrdersService } from '../orders/orders.service';
+import { appendOrderTimeline } from '../orders/order-timeline.util';
 import { OrdersEventService } from '../orders/orders-event.service';
 import { DispatchService } from '../dispatch/dispatch.service';
 import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
+import { StockService } from '../stock/stock.service';
 import { CacheService } from '../cache/cache.service';
 import { Prisma } from '@prisma/client';
 import { CreateReturnOrderDto } from './dto/create-return-order.dto';
@@ -64,6 +66,7 @@ export class RtnService {
     private readonly events: OrdersEventService,
     private readonly dispatchService: DispatchService,
     private readonly cancelReturnStock: CancelReturnStockService,
+    private readonly stockService: StockService,
     private readonly cache: CacheService,
   ) {}
 
@@ -144,7 +147,14 @@ export class RtnService {
         status: true,
         items: {
           include: {
-            product: { select: { id: true, name: true } },
+            product: {
+              select: {
+                id: true,
+                name: true,
+                availabilityMode: true,
+                manageStock: true,
+              },
+            },
             variant: { select: { id: true } },
             combo: { select: { id: true } },
           },
@@ -307,6 +317,14 @@ export class RtnService {
         }
 
         // ---- Reduce the original order lines (never leave quantity 0) ------
+        // The line's stock holds must be released BEFORE the line disappears:
+        // the release paths resolve holds per order item, so a deleted item
+        // can never be visited again (orphaned reservation = availability
+        // understated forever).
+        const activeCycle = await tx.orderStockCycle.findFirst({
+          where: { orderId: original.id, status: 'ACTIVE' },
+          select: { id: true },
+        });
         const remainingItems: { price: number; quantity: number }[] = [];
         for (const item of original.items) {
           const found = lines.find((l) => l.line.orderItemId === item.id);
@@ -317,7 +335,15 @@ export class RtnService {
           const { line } = found;
           const newQty = item.quantity - line.quantity;
           if (newQty <= 0) {
-            // Full-line return: remove the line (cascades combo snapshots).
+            // Full-line return: release the holds, then remove the line
+            // (cascades combo snapshots).
+            await this.releaseHoldsForRemovedLine(
+              tx,
+              original.id,
+              activeCycle?.id ?? null,
+              item,
+              rtnDisplayId,
+            );
             await tx.orderItem.delete({ where: { id: item.id } });
             continue;
           }
@@ -352,25 +378,24 @@ export class RtnService {
           Number(original.discount),
           original.discountType || 'flat',
         );
-        const originalTimeline = [
-          ...(Array.isArray(original.timeline) ? original.timeline : []),
-          {
-            status: 'Delivered',
-            oldStatus: 'Partial',
-            timestamp: now,
-            note: `Return Order ${rtnDisplayId} created — returned quantities removed from this order.`,
-            performedBy: actor.email,
-          },
-        ];
+        const originalTimelineEntry = {
+          status: 'Delivered',
+          oldStatus: 'Partial',
+          timestamp: now,
+          note: `Return Order ${rtnDisplayId} created — returned quantities removed from this order.`,
+          performedBy: actor.email,
+        };
         await tx.order.update({
           where: { id: original.id },
           data: {
             statusId: delivered.id,
-            timeline: originalTimeline as any,
             subtotal: totals.subtotal,
             total: totals.total,
           },
         });
+        // Atomic append: a timeline read outside this transaction must never
+        // overwrite entries written concurrently (notes, status changes).
+        await appendOrderTimeline(tx, original.id, [originalTimelineEntry]);
 
         return created;
       });
@@ -455,7 +480,16 @@ export class RtnService {
     const rtnPending = rtn && rtn.status.name === 'Return Pending';
     const fullReturnPending = order.status.name === 'Return Pending';
     const partialResolved = order.status.name === 'Delivered' && rtnPending;
-    const fullHeal = order.status.name === 'Delivered' && !rtn;
+    // Heal path: the dispatch advanced into a return state without the order
+    // following it (webhook / sync gap). ONLY a full-consignment return may
+    // heal this way — a PARTIAL dispatch means part of the goods was actually
+    // delivered, and restoring the FULL order quantity would add stock that
+    // left the building. A partial return on a delivered order must be
+    // resolved through the RTN workflow (or a manual Return Pending → Returned).
+    const fullHeal =
+      order.status.name === 'Delivered' &&
+      !rtn &&
+      (dispatch.status === 'RETURN_PENDING' || dispatch.status === 'RETURNED');
 
     if (!fullReturnPending && !partialResolved && !fullHeal) {
       // dispatch RETURNED but everything already settled → idempotent no-op.
@@ -528,39 +562,32 @@ export class RtnService {
           tx,
         });
 
-        const rtnTimeline = [
-          ...(Array.isArray(rtnFull.timeline) ? rtnFull.timeline : []),
-          {
-            status: 'Returned',
-            oldStatus: 'Return Pending',
-            timestamp: now,
-            note: `Return confirmed via dispatch ${dispatch.consignmentId}; returned quantities restored to stock.`,
-            performedBy: actor.email,
-          },
-        ];
+        const rtnTimelineEntry = {
+          status: 'Returned',
+          oldStatus: 'Return Pending',
+          timestamp: now,
+          note: `Return confirmed via dispatch ${dispatch.consignmentId}; returned quantities restored to stock.`,
+          performedBy: actor.email,
+        };
         const updatedRtn = await tx.order.update({
           where: { id: rtn.id },
-          data: { statusId: returned.id, returnedAt: new Date(now), timeline: rtnTimeline as any },
+          data: { statusId: returned.id, returnedAt: new Date(now) },
         });
+        // Atomic append — never rewrite the RTN's timeline wholesale.
+        await appendOrderTimeline(tx, rtn.id, [rtnTimelineEntry]);
 
         // Audit entry on the ORIGINAL order — it stays Delivered.
         const original = await tx.order.findUnique({ where: { id: order.id }, include: { status: true } });
         if (original) {
-          await tx.order.update({
-            where: { id: order.id },
-            data: {
-              timeline: [
-                ...(Array.isArray(original.timeline) ? original.timeline : []),
-                {
-                  status: original.status.name,
-                  oldStatus: original.status.name,
-                  timestamp: now,
-                  note: `Return Order ${rtn.displayId} marked Returned — returned quantities restored to stock.`,
-                  performedBy: actor.email,
-                },
-              ] as any,
+          await appendOrderTimeline(tx, order.id, [
+            {
+              status: original.status.name,
+              oldStatus: original.status.name,
+              timestamp: now,
+              note: `Return Order ${rtn.displayId} marked Returned — returned quantities restored to stock.`,
+              performedBy: actor.email,
             },
-          });
+          ]);
         }
 
         for (const item of rtnFull.items) {
@@ -593,8 +620,11 @@ export class RtnService {
           where: { name: 'Return Pending' },
         });
         if (!returnPending) throw new Error('Order status configuration is incomplete');
-        const stepTimeline = [
-          ...(Array.isArray(order.timeline) ? order.timeline : []),
+        await tx.order.update({
+          where: { id: order.id },
+          data: { statusId: returnPending.id },
+        });
+        await appendOrderTimeline(tx, order.id, [
           {
             status: 'Return Pending',
             oldStatus: order.status.name,
@@ -602,11 +632,7 @@ export class RtnService {
             note: `Return initiated via dispatch ${dispatch.consignmentId}.`,
             performedBy: actor.email,
           },
-        ];
-        await tx.order.update({
-          where: { id: order.id },
-          data: { statusId: returnPending.id, timeline: stepTimeline as any },
-        });
+        ]);
         fromStatus = 'Return Pending';
       }
 
@@ -619,8 +645,7 @@ export class RtnService {
         tx,
       });
 
-      const finalTimeline = [
-        ...(Array.isArray(order.timeline) ? order.timeline : []),
+      const finalTimelineEntries = [
         {
           status: 'Return Pending',
           oldStatus: order.status.name,
@@ -638,8 +663,9 @@ export class RtnService {
       ];
       await tx.order.update({
         where: { id: order.id },
-        data: { statusId: returned.id, timeline: finalTimeline as any },
+        data: { statusId: returned.id },
       });
+      await appendOrderTimeline(tx, order.id, finalTimelineEntries);
 
       const items = await tx.orderItem.findMany({
         where: { orderId: order.id },
@@ -717,6 +743,122 @@ export class RtnService {
     return originalDisplayId.startsWith('ORD-')
       ? `RTN-${originalDisplayId.slice(4)}`
       : `RTN-${originalDisplayId}`;
+  }
+
+  /**
+   * Release the stock holds a fully-returned line still owns.
+   *
+   * The release paths walk `order.items`, so a line that is removed here can
+   * never be visited again — an ACTIVE physical reservation or a managed
+   * reservation would keep holding availability for goods the order no longer
+   * contains (permanently understated stock). Deducted lines are left alone:
+   * their reservation is CONSUMED / managedStockDeducted and
+   * `restoreForReturnOrder` restores exactly the returned quantity when the
+   * Return Order is finalized. Idempotent (the release primitives no-op on a
+   * CONSUMED/RELEASED reservation and on an already-zero counter).
+   */
+  private async releaseHoldsForRemovedLine(
+    tx: Prisma.TransactionClient,
+    orderId: string,
+    cycleId: string | null,
+    item: {
+      id: string;
+      productId: string | null;
+      variantId: string | null;
+      quantity: number;
+      managedStockReserved: boolean;
+      managedStockDeducted: boolean;
+      comboId: string | null;
+      product?: { availabilityMode: string; manageStock: boolean } | null;
+    },
+    rtnDisplayId: string,
+  ): Promise<void> {
+    const reference = `Return Order: ${rtnDisplayId}`;
+
+    if (item.comboId) {
+      const snapshots = await tx.orderItemComboComponent.findMany({
+        where: { orderItemId: item.id },
+        include: {
+          product: { select: { availabilityMode: true, manageStock: true } },
+        },
+      });
+      for (const snap of snapshots) {
+        if (snap.managedStockReserved && !snap.managedStockDeducted) {
+          await this.releaseManagedHold(
+            tx,
+            snap.product,
+            snap.productId,
+            snap.variantId,
+            snap.totalQuantity,
+            reference,
+          );
+        }
+        if (cycleId) {
+          await this.stockService.releasePhysicalAllocated({
+            orderId,
+            cycleId,
+            comboComponentId: snap.id,
+            tx,
+          });
+        }
+      }
+      return;
+    }
+
+    if (
+      item.managedStockReserved &&
+      !item.managedStockDeducted &&
+      item.productId
+    ) {
+      await this.releaseManagedHold(
+        tx,
+        item.product,
+        item.productId,
+        item.variantId,
+        item.quantity,
+        reference,
+      );
+    }
+    if (cycleId) {
+      await this.stockService.releasePhysicalAllocated({
+        orderId,
+        cycleId,
+        orderItemId: item.id,
+        tx,
+      });
+    }
+  }
+
+  private async releaseManagedHold(
+    tx: Prisma.TransactionClient,
+    product: { availabilityMode: string; manageStock: boolean } | null | undefined,
+    productId: string,
+    variantId: string | null,
+    quantity: number,
+    reference: string,
+  ): Promise<void> {
+    if (!product) return;
+    if (product.availabilityMode !== 'MANAGED_STOCK' || !product.manageStock) {
+      return;
+    }
+    try {
+      await this.stockService.operate('release', {
+        productId,
+        variantId: variantId ?? undefined,
+        quantity,
+        reference,
+        performedBy: 'system',
+        tx,
+        ledgerType: 'RELEASE',
+        referenceType: 'ORDER',
+      });
+    } catch (e) {
+      // The counter may already be 0 (legacy/drifted rows) — a hold with
+      // nothing left to release must never block the return workflow.
+      this.logger.warn(
+        `RTN removed-line hold release skipped (${productId}): ${(e as Error).message}`,
+      );
+    }
   }
 
   private emitStatusChanged(orderId: string, displayId: string, statusName: string) {

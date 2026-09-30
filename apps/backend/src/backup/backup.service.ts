@@ -135,14 +135,6 @@ function positiveInteger(value: string | undefined, fallback: number): number {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function nonNegativeInteger(
-  value: string | undefined,
-  fallback: number,
-): number {
-  const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : fallback;
-}
-
 function positiveBigInt(value: string | undefined, fallback: bigint): bigint {
   try {
     const parsed = BigInt(value || '');
@@ -1325,10 +1317,13 @@ export class BackupService implements OnModuleInit {
     const [daily, weekly, monthly, yearly] = values
       .slice(0, 4)
       .map((value, i) =>
-        nonNegativeInteger(value || undefined, [7, 4, 3, 1][i]),
+        // Minimum 1 per bucket: a configured 0 would silently delete EVERY
+        // backup in that bucket on the next sweep. Invalid/absent input keeps
+        // falling back to the shipped default.
+        positiveInteger(value || undefined, [7, 4, 3, 1][i]),
       );
     const maxTotal = positiveInteger(values[4] || undefined, 30);
-    const safetyLimit = nonNegativeInteger(values[5] || undefined, 2);
+    const safetyLimit = positiveInteger(values[5] || undefined, 2);
 
     let deleted = 0;
     const all = await this.prisma.backupJob.findMany({

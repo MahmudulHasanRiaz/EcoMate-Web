@@ -1,7 +1,7 @@
 import { SecurityEventProcessor } from '../processors/security-event.processor';
 
 describe('SecurityEventProcessor', () => {
-  const securityEvent = { create: jest.fn() };
+  const securityEvent = { create: jest.fn(), findUnique: jest.fn() };
   const securityEventHourly = { upsert: jest.fn() };
   const securityEventDaily = { upsert: jest.fn() };
   const securityBlockDaily = { upsert: jest.fn() };
@@ -11,6 +11,9 @@ describe('SecurityEventProcessor', () => {
     securityEventHourly,
     securityEventDaily,
     securityBlockDaily,
+    // Raw event + aggregates share ONE transaction (idempotent retries); the
+    // fake runs the callback against the same stubs.
+    $transaction: jest.fn(async (cb: any) => cb(prisma)),
   } as any;
 
   const processor = new SecurityEventProcessor(prisma);
@@ -18,6 +21,7 @@ describe('SecurityEventProcessor', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     securityEvent.create.mockResolvedValue({});
+    securityEvent.findUnique.mockResolvedValue(null);
     securityEventHourly.upsert.mockResolvedValue({});
     securityEventDaily.upsert.mockResolvedValue({});
     securityBlockDaily.upsert.mockResolvedValue({});
@@ -144,13 +148,41 @@ describe('SecurityEventProcessor', () => {
       expect(securityBlockDaily.upsert).not.toHaveBeenCalled();
     });
 
-    it('dedupKey collision on retry is swallowed and aggregates still upsert', async () => {
+    it('dedupKey collision on a concurrent retry is swallowed and nothing is applied', async () => {
+      // The transaction aborts on P2002 — a concurrent worker already counted
+      // this event, so the aggregates must NOT be incremented again.
       securityEvent.create.mockRejectedValueOnce({ code: 'P2002' });
 
       await processor.process({ data: { ...baseJob.data, tenant: undefined } } as any);
 
+      expect(securityEventHourly.upsert).not.toHaveBeenCalled();
+      expect(securityEventDaily.upsert).not.toHaveBeenCalled();
+      expect(securityBlockDaily.upsert).not.toHaveBeenCalled();
+    });
+
+    it('a retry of an already-processed event never touches the aggregates', async () => {
+      securityEvent.findUnique.mockResolvedValueOnce({ id: 'evt-1' });
+
+      await processor.process(baseJob);
+
+      expect(securityEvent.create).not.toHaveBeenCalled();
+      expect(securityEventHourly.upsert).not.toHaveBeenCalled();
+      expect(securityEventDaily.upsert).not.toHaveBeenCalled();
+    });
+
+    it('writes the raw event and every aggregate inside ONE transaction', async () => {
+      await processor.process(baseJob);
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(securityEvent.create).toHaveBeenCalledTimes(1);
       expect(securityEventHourly.upsert).toHaveBeenCalledTimes(1);
-      expect(securityEventHourly.upsert.mock.calls[0][0].create.tenant).toBe('default');
+      expect(securityEventDaily.upsert).toHaveBeenCalledTimes(1);
+    });
+
+    it('a mid-transaction failure propagates so BullMQ retries the whole unit', async () => {
+      securityEventDaily.upsert.mockRejectedValueOnce(new Error('db down'));
+
+      await expect(processor.process(baseJob)).rejects.toThrow('db down');
     });
   });
 });

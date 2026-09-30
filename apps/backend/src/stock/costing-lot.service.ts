@@ -1,9 +1,11 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, CostingLotConsumptionType } from '@prisma/client';
 
 @Injectable()
 export class CostingLotService {
+  private readonly logger = new Logger(CostingLotService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   /**
@@ -23,6 +25,7 @@ export class CostingLotService {
     const client = params.tx ?? this.prisma;
     let remaining = params.quantity;
     const consumed: { lotId: string; quantity: number; unitCost: Prisma.Decimal }[] = [];
+    const skippedLotIds: string[] = [];
 
     while (remaining > 0) {
       const lot = await client.costingLot.findFirst({
@@ -31,21 +34,28 @@ export class CostingLotService {
           variantId: params.variantId ?? null,
           warehouseId: params.warehouseId,
           remainingQty: { gt: 0 },
+          ...(skippedLotIds.length ? { id: { notIn: skippedLotIds } } : {}),
         },
         orderBy: { receivedAt: 'asc' },
       });
 
       if (!lot) {
-        console.warn(`[WARN] Insufficient costing lots for product ${params.productId} in warehouse ${params.warehouseId}. Remaining: ${remaining}`);
+        this.logShortfall(params, remaining, skippedLotIds.length);
         break;
       }
 
       const deductQty = Math.min(remaining, lot.remainingQty);
 
-      await client.costingLot.update({
-        where: { id: lot.id },
+      // Guarded decrement: a concurrent consumer that drained this lot between
+      // the read above and this write can never drive remainingQty negative.
+      const claim = await client.costingLot.updateMany({
+        where: { id: lot.id, remainingQty: { gte: deductQty } },
         data: { remainingQty: { decrement: deductQty } },
       });
+      if (claim.count === 0) {
+        skippedLotIds.push(lot.id);
+        continue;
+      }
 
       await client.costingLotConsumption.create({
         data: {
@@ -87,6 +97,7 @@ export class CostingLotService {
     const client = params.tx ?? this.prisma;
     let remaining = params.quantity;
     const consumed: { lotId: string; quantity: number; unitCost: Prisma.Decimal }[] = [];
+    const skippedLotIds: string[] = [];
 
     while (remaining > 0) {
       const lot = await client.costingLot.findFirst({
@@ -95,21 +106,27 @@ export class CostingLotService {
           variantId: params.variantId ?? null,
           warehouseId: params.warehouseId,
           remainingQty: { gt: 0 },
+          ...(skippedLotIds.length ? { id: { notIn: skippedLotIds } } : {}),
         },
         orderBy: { receivedAt: 'asc' },
       });
 
       if (!lot) {
-        console.warn(`[WARN] Insufficient costing lots for product ${params.productId} in warehouse ${params.warehouseId}. Remaining: ${remaining}`);
+        this.logShortfall(params, remaining, skippedLotIds.length);
         break;
       }
 
       const deductQty = Math.min(remaining, lot.remainingQty);
 
-      await client.costingLot.update({
-        where: { id: lot.id },
+      // Guarded decrement (see consumeFIFO): never negative under a race.
+      const claim = await client.costingLot.updateMany({
+        where: { id: lot.id, remainingQty: { gte: deductQty } },
         data: { remainingQty: { decrement: deductQty } },
       });
+      if (claim.count === 0) {
+        skippedLotIds.push(lot.id);
+        continue;
+      }
 
       // Check for existing consumption with same reference to aggregate
       const existing = await client.costingLotConsumption.findFirst({
@@ -149,6 +166,36 @@ export class CostingLotService {
     }
 
     return consumed;
+  }
+
+  /**
+   * A costing-lot shortfall means part of the movement has NO cost basis
+   * (valuation/reporting will drift). It must never be a silent console.warn:
+   * log it with the full reference at error level.
+   */
+  private logShortfall(
+    params: {
+      productId: string;
+      variantId: string | null;
+      warehouseId: string;
+      quantity: number;
+      type: CostingLotConsumptionType;
+      referenceType: string;
+      referenceId: string;
+    },
+    remaining: number,
+    racedLots: number,
+  ): void {
+    const consumedQty =
+      Math.round((params.quantity - remaining) * 10000) / 10000;
+    this.logger.error(
+      `Insufficient costing lots — product ${params.productId} (variant ${params.variantId ?? 'n/a'}) ` +
+        `at warehouse ${params.warehouseId}: requested ${params.quantity}, consumed ${consumedQty}, ` +
+        `shortfall ${remaining}. Reference ${params.referenceType}:${params.referenceId} (${params.type})` +
+        (racedLots > 0
+          ? `; ${racedLots} lot(s) were being consumed concurrently.`
+          : '.'),
+    );
   }
 
   /**

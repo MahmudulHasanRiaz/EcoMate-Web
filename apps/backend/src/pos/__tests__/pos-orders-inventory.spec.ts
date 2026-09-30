@@ -510,6 +510,9 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
             destWarehouseId: 'showroom-1',
             sourceWarehouseId: { in: ['banani'] },
             status: { in: ['REQUESTED', 'APPROVING'] },
+            // A second session in the same showroom must never adopt (and
+            // later receive) a colleague's in-flight request.
+            requestedBy: 'cashier-1',
           }),
         }),
       );

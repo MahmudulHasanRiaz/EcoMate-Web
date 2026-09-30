@@ -43,6 +43,10 @@ describe('MarketingConsumptionService', () => {
     accounting = module.get(AccountingService);
     // Default: skip journal creation in unit tests (no open period)
     (prisma.financialPeriod.findFirst as jest.Mock).mockResolvedValue(null);
+    // Default: nothing consumed yet for the insight day (delta = full spend)
+    (prisma.marketingConsumption.aggregate as jest.Mock).mockResolvedValue({
+      _sum: { consumedAmount: 0 },
+    });
   });
 
   afterEach(() => jest.clearAllMocks());
@@ -141,6 +145,38 @@ describe('MarketingConsumptionService', () => {
     await service.consumeInsightSpend([{ campaignId: 'camp-1', spend: 5, date: new Date('2026-01-01') }]);
     expect(consumeSpy).toHaveBeenCalledWith('camp-1', 5, 'spend_sync', expect.any(Date));
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Unfunded marketing spend'));
+  });
+
+  it('a repeated sync of the same insight day only draws the unconsumed delta', async () => {
+    const consumeSpy = jest
+      .spyOn(service as any, 'consume')
+      .mockResolvedValue({ consumedRows: 1, shortfall: 0 });
+    (prisma.marketingConsumption.aggregate as jest.Mock).mockResolvedValue({
+      _sum: { consumedAmount: 20 },
+    });
+
+    await service.consumeInsightSpend([
+      { campaignId: 'camp-1', spend: 25, date: new Date('2026-01-01T00:00:00Z') },
+    ]);
+
+    // 20 was already drawn for that day — only the 5 delta may be consumed.
+    expect(consumeSpy).toHaveBeenCalledTimes(1);
+    expect(consumeSpy).toHaveBeenCalledWith('camp-1', 5, 'spend_sync', expect.any(Date));
+  });
+
+  it('does not draw again when the insight day is already fully consumed', async () => {
+    const consumeSpy = jest
+      .spyOn(service as any, 'consume')
+      .mockResolvedValue({ consumedRows: 0, shortfall: 0 });
+    (prisma.marketingConsumption.aggregate as jest.Mock).mockResolvedValue({
+      _sum: { consumedAmount: 20 },
+    });
+
+    await service.consumeInsightSpend([
+      { campaignId: 'camp-1', spend: 20, date: new Date('2026-01-01T00:00:00Z') },
+    ]);
+
+    expect(consumeSpy).not.toHaveBeenCalled();
   });
 
   it('consumeInsightSpend swallows consume failures (sync must not fail on funding gaps)', async () => {

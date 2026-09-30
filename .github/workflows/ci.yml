@@ -17,8 +17,31 @@ permissions:
   packages: write
 
 jobs:
+  # Static data-safety gates. These run BEFORE any image is built, so a
+  # destructive migration (DROP COLUMN / DELETE FROM / TRUNCATE on a post-P0
+  # migration) can never reach the published image or the stack redeploy.
+  test:
+    name: static guards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Migration-safety gate (no destructive post-P0 migrations)
+        working-directory: apps/backend
+        run: npx jest migration-safety
+
   build:
     name: ${{ matrix.service }}
+    needs: [test]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

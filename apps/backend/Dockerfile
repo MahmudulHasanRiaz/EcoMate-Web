@@ -49,6 +49,10 @@ RUN apk add --no-cache unzip postgresql-client && \
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=obfuscator /app/dist ./dist
 COPY --from=builder /app/apps/backend/prisma ./prisma
+# prisma/seed.ts imports the shared order-transition map from src (single
+# source of truth with the runtime gate). tsx transpiles it on demand, so the
+# one constants file must exist in the runtime image alongside prisma/.
+COPY --from=builder /app/apps/backend/src/orders/order-transitions.ts ./src/orders/order-transitions.ts
 COPY --from=builder /app/apps/backend/prisma.config.ts ./
 COPY --from=builder /app/apps/backend/package.json ./
 COPY --from=builder /app/apps/backend/public ./public

@@ -863,6 +863,19 @@ async function scenario6() {
 // MAIN
 // ═════════════════════════════════════════════════════════════════════════════
 async function main() {
+  // Safety gate: this script mutates block settings and (below) wipes
+  // blocked-IP rows wholesale. It must never touch a production database.
+  if (
+    process.env.NODE_ENV === 'production' &&
+    process.env.ALLOW_E2E_INVENTORY !== 'true'
+  ) {
+    console.error(
+      'Refusing to run the inventory E2E script against NODE_ENV=production ' +
+        '(it resets blocked IPs / block settings). Set ALLOW_E2E_INVENTORY=true to override.',
+    );
+    process.exit(1);
+  }
+
   console.log('\n╔' + '═'.repeat(62) + '╗');
   console.log('║  EcoMate E2E Inventory Lifecycle Test Suite                   ║');
   console.log('╚' + '═'.repeat(62) + '╝');

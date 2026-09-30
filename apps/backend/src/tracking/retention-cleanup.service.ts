@@ -332,11 +332,16 @@ export class RetentionCleanupService implements OnModuleInit, OnModuleDestroy {
         }
 
         // Archive only when the outbox reached a terminal state (replay-worthy);
-        // non-terminal 2y-old snapshots are still purged.
+        // non-terminal 2y-old snapshots are still purged. A MISSING outbox row
+        // counts as terminal: the 30-day job already deleted it (terminal
+        // outboxes are its only target) or it never existed — either way the
+        // snapshot is replay-worthy and must be archived instead of being
+        // dropped unarchived.
         const archiveRows: Prisma.TrackingReplayArchiveCreateManyInput[] = [];
         for (const snap of snapshots) {
-          const status = outboxBySnapshot.get(snap.id)?.status ?? null;
-          if (status !== 'SENT' && status !== 'DEAD') continue;
+          const outbox = outboxBySnapshot.get(snap.id);
+          const status = outbox?.status ?? null;
+          if (outbox && status !== 'SENT' && status !== 'DEAD') continue;
           const payload = snap.payload as TrackingSnapshotPayload | null;
           archiveRows.push({
             snapshotId: snap.id,

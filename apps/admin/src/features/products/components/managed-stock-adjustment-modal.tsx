@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Loader2, X, Package, Check, ChevronRight, Search as SearchIcon } from 'lucide-react'
 import { toast } from 'sonner'
@@ -29,6 +30,7 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
 
   const [quantity, setQuantity] = useState('0')
   const [reason, setReason] = useState('')
+  const [confirmDestructive, setConfirmDestructive] = useState(false)
   const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   useEffect(() => {
@@ -89,7 +91,7 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
     }
     setProductSearch(''); setSearchResults([])
     setVariants([]); setVariantId('')
-    setQuantity('0'); setReason(''); setSelectedProductAvailability(null)
+    setQuantity('0'); setReason(''); setSelectedProductAvailability(null); setConfirmDestructive(false)
   }
 
   function clearProduct() {
@@ -113,7 +115,7 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
     if (!reason.trim()) { toast.error('Please provide a reason for the adjustment'); return }
     if (!productId) return
     if (isVar && !variantId) { toast.error('Please select a variant'); return }
-    adjustMut.mutate({ productId, variantId: isVar ? variantId : undefined, quantity: qty, reason: reason.trim() })
+    adjustMut.mutate({ productId, variantId: isVar ? variantId : undefined, quantity: qty, reason: reason.trim(), confirmDestructive: confirmDestructive || undefined })
   }
 
   return (
@@ -243,6 +245,25 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
             <Label className='text-sm font-semibold'>Quantity (positive=add, negative=remove)</Label>
             <Input type='number' value={quantity} onChange={e => setQuantity(e.target.value)} placeholder='e.g. 10 or -5' />
           </div>
+
+          {/* Destructive-adjustment acknowledgement: the server refuses a
+              deduction that would remove (nearly) all available stock unless
+              it is explicitly confirmed here. */}
+          {qtyNum < 0 && (
+            <label className='flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-3 cursor-pointer'>
+              <Checkbox
+                checked={confirmDestructive}
+                onCheckedChange={(v) => setConfirmDestructive(v === true)}
+                className='mt-0.5'
+              />
+              <span className='text-xs text-destructive leading-snug'>
+                This is a stock <strong>deduction</strong>. If it removes most of
+                this item&apos;s available stock, the server will reject it unless
+                you confirm here — tick to confirm the quantity is intentional
+                (for example a damage or loss write-off).
+              </span>
+            </label>
+          )}
 
           <div className='space-y-2'>
             <Label className='text-sm font-semibold'>Reason</Label>
