@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import useDialogState from '@/hooks/use-dialog-state'
 import { type UserResponse } from '../api'
 
-type UsersDialogType = 'invite' | 'add' | 'edit' | 'delete'
+type UsersDialogType = 'edit' | 'delete'
 
 type UsersContextType = {
   open: UsersDialogType | null

@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Loader2, Save, User, Settings, Palette, Bell, Monitor, KeyRound, Eye, EyeOff, AlertTriangle } from 'lucide-react'
+import { Loader2, Save, User, Settings, Palette, Bell, KeyRound, AlertTriangle } from 'lucide-react'
 import { PasswordInput } from '@/components/password-input'
 
 export function PersonalSettings() {
@@ -21,7 +21,6 @@ export function PersonalSettings() {
   const accountMut = useMutation({ mutationFn: settingsApi.updateAccount, onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['settings'] }); toast.success('Account updated') } })
   const appearanceMut = useMutation({ mutationFn: settingsApi.updateAppearance, onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['settings'] }); toast.success('Appearance updated') } })
   const notifMut = useMutation({ mutationFn: settingsApi.updateNotifications, onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['settings'] }); toast.success('Notifications updated') } })
-  const displayMut = useMutation({ mutationFn: settingsApi.updateDisplay, onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['settings'] }); toast.success('Display updated') } })
 
   if (isLoading) return <div className='flex justify-center py-12'><Loader2 className='animate-spin h-8 w-8' /></div>
 
@@ -36,7 +35,6 @@ export function PersonalSettings() {
           <TabsTrigger value='account'><Settings className='h-4 w-4 mr-1' /> Account</TabsTrigger>
           <TabsTrigger value='appearance'><Palette className='h-4 w-4 mr-1' /> Appearance</TabsTrigger>
           <TabsTrigger value='notifications'><Bell className='h-4 w-4 mr-1' /> Notifications</TabsTrigger>
-          <TabsTrigger value='display'><Monitor className='h-4 w-4 mr-1' /> Display</TabsTrigger>
         </TabsList>
 
         <TabsContent value='profile'>
@@ -50,9 +48,6 @@ export function PersonalSettings() {
         </TabsContent>
         <TabsContent value='notifications'>
           <NotificationsForm data={s.notifications || {}} onSave={(d: any) => notifMut.mutate(d)} saving={notifMut.isPending} />
-        </TabsContent>
-        <TabsContent value='display'>
-          <DisplayForm data={s.display || {}} onSave={(d: any) => displayMut.mutate(d)} saving={displayMut.isPending} />
         </TabsContent>
       </Tabs>
     </div>
@@ -175,39 +170,22 @@ function AppearanceForm({ data, onSave, saving }: { data: any; onSave: (d: any) 
 
 function NotificationsForm({ data, onSave, saving }: { data: any; onSave: (d: any) => void; saving: boolean }) {
   const [type, setType] = useState(data.type || 'all')
+  const [mobile, setMobile] = useState(data.mobile ?? false)
   const [comm, setComm] = useState(data.communication_emails ?? false)
   const [soc, setSoc] = useState(data.social_emails ?? false)
   const [mkt, setMkt] = useState(data.marketing_emails ?? false)
+  const [sec, setSec] = useState(data.security_emails ?? true)
   return (
     <Card>
       <CardHeader><CardTitle className='text-base'>Notifications</CardTitle></CardHeader>
       <CardContent className='space-y-3'>
         <div><Label>Notification Type</Label><select className='w-full rounded-md border px-3 py-2 text-sm bg-background' value={type} onChange={e => setType(e.target.value)}><option value='all'>All</option><option value='mentions'>Mentions Only</option><option value='none'>None</option></select></div>
+        <div className='flex items-center gap-2'><Switch checked={mobile} onCheckedChange={setMobile} /><Label>Push notifications</Label></div>
         <div className='flex items-center gap-2'><Switch checked={comm} onCheckedChange={setComm} /><Label>Communication emails</Label></div>
         <div className='flex items-center gap-2'><Switch checked={soc} onCheckedChange={setSoc} /><Label>Social emails</Label></div>
         <div className='flex items-center gap-2'><Switch checked={mkt} onCheckedChange={setMkt} /><Label>Marketing emails</Label></div>
-        <Button size='sm' onClick={() => onSave({ type, communication_emails: comm, social_emails: soc, marketing_emails: mkt, security_emails: true })} disabled={saving}><Save className='h-4 w-4 mr-1' /> Save</Button>
-      </CardContent>
-    </Card>
-  )
-}
-
-function DisplayForm({ data, onSave, saving }: { data: any; onSave: (d: any) => void; saving: boolean }) {
-  const [items, setItems] = useState<string[]>(data.items || ['recents', 'home'])
-  const allItems = ['recents', 'home', 'applications', 'desktop', 'downloads', 'documents']
-  return (
-    <Card>
-      <CardHeader><CardTitle className='text-base'>Display</CardTitle></CardHeader>
-      <CardContent className='space-y-3'>
-        <div className='space-y-2'>
-          {allItems.map(id => (
-            <div key={id} className='flex items-center gap-2'>
-              <Switch checked={items.includes(id)} onCheckedChange={(v) => setItems(v ? [...items, id] : items.filter(i => i !== id))} />
-              <Label className='capitalize'>{id}</Label>
-            </div>
-          ))}
-        </div>
-        <Button size='sm' onClick={() => onSave({ items })} disabled={saving}><Save className='h-4 w-4 mr-1' /> Save</Button>
+        <div className='flex items-center gap-2'><Switch checked={sec} onCheckedChange={setSec} /><Label>Security emails</Label></div>
+        <Button size='sm' onClick={() => onSave({ type, mobile, communication_emails: comm, social_emails: soc, marketing_emails: mkt, security_emails: sec })} disabled={saving}><Save className='h-4 w-4 mr-1' /> Save</Button>
       </CardContent>
     </Card>
   )

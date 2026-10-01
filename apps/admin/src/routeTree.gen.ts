@@ -63,6 +63,7 @@ import { Route as AuthenticatedMonPagesIndexRouteImport } from './routes/_authen
 import { Route as AuthenticatedMonSecurityIndexRouteImport } from './routes/_authenticated/mon/security/index'
 import { Route as AuthenticatedMonUsersIndexRouteImport } from './routes/_authenticated/mon/users/index'
 import { Route as AuthenticatedMonUsersIdRouteImport } from './routes/_authenticated/mon/users/$id'
+import { Route as AuthenticatedMonUsersCreateRouteImport } from './routes/_authenticated/mon/users/create'
 import { Route as AuthenticatedMonUsersPresetsRouteImport } from './routes/_authenticated/mon/users/presets'
 import { Route as AuthenticatedOpAccountingIndexRouteImport } from './routes/_authenticated/op/accounting/index'
 import { Route as AuthenticatedOpAccountingJournalEntriesRouteImport } from './routes/_authenticated/op/accounting/journal-entries'
@@ -475,6 +476,12 @@ const AuthenticatedMonUsersIdRoute = AuthenticatedMonUsersIdRouteImport.update({
   path: '/mon/users/$id',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedMonUsersCreateRoute =
+  AuthenticatedMonUsersCreateRouteImport.update({
+    id: '/mon/users/create',
+    path: '/mon/users/create',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedMonUsersPresetsRoute =
   AuthenticatedMonUsersPresetsRouteImport.update({
     id: '/mon/users/presets',
@@ -1190,6 +1197,7 @@ export interface FileRoutesByFullPath {
   '/mon/analytics/sales': typeof AuthenticatedMonAnalyticsSalesRoute
   '/mon/backup/settings': typeof AuthenticatedMonBackupSettingsRoute
   '/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
+  '/mon/users/create': typeof AuthenticatedMonUsersCreateRoute
   '/mon/users/presets': typeof AuthenticatedMonUsersPresetsRoute
   '/op/accounting/journal-entries': typeof AuthenticatedOpAccountingJournalEntriesRoute
   '/op/accounting/reports': typeof AuthenticatedOpAccountingReportsRoute
@@ -1357,6 +1365,7 @@ export interface FileRoutesByTo {
   '/mon/analytics/sales': typeof AuthenticatedMonAnalyticsSalesRoute
   '/mon/backup/settings': typeof AuthenticatedMonBackupSettingsRoute
   '/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
+  '/mon/users/create': typeof AuthenticatedMonUsersCreateRoute
   '/mon/users/presets': typeof AuthenticatedMonUsersPresetsRoute
   '/op/accounting/journal-entries': typeof AuthenticatedOpAccountingJournalEntriesRoute
   '/op/accounting/reports': typeof AuthenticatedOpAccountingReportsRoute
@@ -1526,6 +1535,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/analytics/sales': typeof AuthenticatedMonAnalyticsSalesRoute
   '/_authenticated/mon/backup/settings': typeof AuthenticatedMonBackupSettingsRoute
   '/_authenticated/mon/users/$id': typeof AuthenticatedMonUsersIdRoute
+  '/_authenticated/mon/users/create': typeof AuthenticatedMonUsersCreateRoute
   '/_authenticated/mon/users/presets': typeof AuthenticatedMonUsersPresetsRoute
   '/_authenticated/op/accounting/journal-entries': typeof AuthenticatedOpAccountingJournalEntriesRoute
   '/_authenticated/op/accounting/reports': typeof AuthenticatedOpAccountingReportsRoute
@@ -1695,6 +1705,7 @@ export interface FileRouteTypes {
     | '/mon/analytics/sales'
     | '/mon/backup/settings'
     | '/mon/users/$id'
+    | '/mon/users/create'
     | '/mon/users/presets'
     | '/op/accounting/journal-entries'
     | '/op/accounting/reports'
@@ -1862,6 +1873,7 @@ export interface FileRouteTypes {
     | '/mon/analytics/sales'
     | '/mon/backup/settings'
     | '/mon/users/$id'
+    | '/mon/users/create'
     | '/mon/users/presets'
     | '/op/accounting/journal-entries'
     | '/op/accounting/reports'
@@ -2030,6 +2042,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/analytics/sales'
     | '/_authenticated/mon/backup/settings'
     | '/_authenticated/mon/users/$id'
+    | '/_authenticated/mon/users/create'
     | '/_authenticated/mon/users/presets'
     | '/_authenticated/op/accounting/journal-entries'
     | '/_authenticated/op/accounting/reports'
@@ -2549,6 +2562,13 @@ declare module '@tanstack/react-router' {
       path: '/mon/users/$id'
       fullPath: '/mon/users/$id'
       preLoaderRoute: typeof AuthenticatedMonUsersIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/mon/users/create': {
+      id: '/_authenticated/mon/users/create'
+      path: '/mon/users/create'
+      fullPath: '/mon/users/create'
+      preLoaderRoute: typeof AuthenticatedMonUsersCreateRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/mon/users/presets': {
@@ -3489,6 +3509,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMonAnalyticsSalesRoute: typeof AuthenticatedMonAnalyticsSalesRoute
   AuthenticatedMonBackupSettingsRoute: typeof AuthenticatedMonBackupSettingsRoute
   AuthenticatedMonUsersIdRoute: typeof AuthenticatedMonUsersIdRoute
+  AuthenticatedMonUsersCreateRoute: typeof AuthenticatedMonUsersCreateRoute
   AuthenticatedMonUsersPresetsRoute: typeof AuthenticatedMonUsersPresetsRoute
   AuthenticatedOpAccountingJournalEntriesRoute: typeof AuthenticatedOpAccountingJournalEntriesRoute
   AuthenticatedOpAccountingReportsRoute: typeof AuthenticatedOpAccountingReportsRoute
@@ -3628,6 +3649,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedMonAnalyticsSalesRoute: AuthenticatedMonAnalyticsSalesRoute,
   AuthenticatedMonBackupSettingsRoute: AuthenticatedMonBackupSettingsRoute,
   AuthenticatedMonUsersIdRoute: AuthenticatedMonUsersIdRoute,
+  AuthenticatedMonUsersCreateRoute: AuthenticatedMonUsersCreateRoute,
   AuthenticatedMonUsersPresetsRoute: AuthenticatedMonUsersPresetsRoute,
   AuthenticatedOpAccountingJournalEntriesRoute:
     AuthenticatedOpAccountingJournalEntriesRoute,

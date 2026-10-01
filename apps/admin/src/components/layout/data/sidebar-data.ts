@@ -5,7 +5,7 @@ import {
   Building2, ShoppingCart, Receipt, Bell,
   Megaphone, UserPlus, UserCog, DollarSign, BookOpen, Store, ShieldAlert,
   HardDrive, Target, Plug, Wallet, BarChart3, CreditCard, CalendarDays,
-  CalendarCheck, LifeBuoy, ScanLine,
+  CalendarCheck, LifeBuoy, ScanLine, KeyRound,
 } from 'lucide-react'
 import { type SidebarData, type HueName, type NavItem } from '../types'
 
@@ -139,15 +139,9 @@ export const sidebarData: SidebarData = {
           items: [
             { title: 'All Employees', url: '/hr/employees' },
             { title: 'Create Employee', url: '/hr/employees/create' },
+            { title: 'Access Presets', url: '/hr/presets', feature: 'admin_access_presets' },
             { title: 'Departments', url: '/hr/employees/departments', feature: 'admin_employees' },
             { title: 'Designations', url: '/hr/employees/designations' },
-          ],
-        }, 'People', 'violet'),
-        inSection({
-          title: 'User Management', icon: Users, permissions: ['view_hr'],
-          items: [
-            { title: 'All Users', url: '/hr/users', feature: 'admin_users' },
-            { title: 'Access Presets', url: '/hr/presets', feature: 'admin_access_presets' },
           ],
         }, 'People', 'violet'),
         // ── Payroll ──
@@ -184,6 +178,17 @@ export const sidebarData: SidebarData = {
         // ── Security ──
         inSection({ title: 'Security Dashboard', url: '/mon/security', icon: ShieldAlert }, 'Security', 'danger'),
         inSection({ title: 'Blocking Settings', url: '/mon/blocking-settings', icon: ShieldCheck, feature: 'admin_blocking' }, 'Security', 'danger'),
+        // ── Access Control ──
+        // User administration lives here rather than under HR, since it governs
+        // who can reach the app — not who is on payroll. Access Presets stay
+        // under Employees in the HR panel, next to the employees they govern.
+        inSection({
+          title: 'User Management', icon: Users, feature: 'admin_users',
+          items: [
+            { title: 'All Users', url: '/hr/users' },
+            { title: 'User Creation', url: '/mon/users/create' },
+          ],
+        }, 'Access', 'violet'),
         // ── System ──
         inSection({ title: 'Backup & Restore', url: '/mon/backup', icon: HardDrive }, 'System', 'neutral'),
         inSection({ title: 'Pages', url: '/mon/pages', icon: FileText, feature: 'admin_cms_pages' }, 'System', 'neutral'),

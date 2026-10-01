@@ -148,63 +148,79 @@ describe('filterNavItems', () => {
   /* ── Production sidebarData integration ── */
 
   const hrGroup = sidebarData.navGroups.find(g => g.panel === 'hr')!
-  const userMgmt = hrGroup.items.find(
-    (i): i is NavItem & { items: NavItem[] } => 'items' in i && i.items !== undefined && i.title === 'User Management',
+  const monGroup = sidebarData.navGroups.find(g => g.panel === 'monitoring')!
+
+  /** Access Presets now live under Employees in the HR panel. */
+  const hrEmployees = hrGroup.items.find(
+    (i): i is NavItem & { items: NavItem[] } =>
+      'items' in i && i.items !== undefined && i.title === 'Employees',
   )!
 
-  it('sidebarData HR > User Management shows All Users when only admin_users + view_hr', () => {
-    const result = filterNavItems([userMgmt], ['admin_users'], ['view_hr'])
+  /** User administration moved to the Admin/monitoring panel. */
+  const monUserMgmt = monGroup.items.find(
+    (i): i is NavItem & { items: NavItem[] } =>
+      'items' in i && i.items !== undefined && i.title === 'User Management',
+  )!
+
+  it('sidebarData HR > Employees shows Access Presets when admin_access_presets', () => {
+    // The Employees parent is gated on admin_employees; Access Presets is a
+    // child gated on admin_access_presets. Both must be present for it to show.
+    const result = filterNavItems(
+      [hrEmployees],
+      ['admin_employees', 'admin_access_presets'],
+      ['view_hr'],
+    )
+    expect(result).toHaveLength(1)
+    const items = 'items' in result[0] ? result[0].items : []
+    expect(items.some(i => i.title === 'Access Presets')).toBe(true)
+    expect(items.find(i => i.title === 'Access Presets')?.url).toBe('/hr/presets')
+  })
+
+  it('sidebarData HR > Employees hides Access Presets without admin_access_presets', () => {
+    const result = filterNavItems([hrEmployees], ['admin_employees'], ['view_hr'])
+    const items = 'items' in result[0] ? result[0].items : []
+    expect(items.some(i => i.title === 'Access Presets')).toBe(false)
+  })
+
+  it('sidebarData HR has no User Management group any more', () => {
+    expect(
+      hrGroup.items.some(
+        (i) => 'items' in i && i.items !== undefined && i.title === 'User Management',
+      ),
+    ).toBe(false)
+  })
+
+  it('sidebarData monitoring > User Management shows All Users when admin_users', () => {
+    const result = filterNavItems([monUserMgmt], ['admin_users'])
     expect(result).toHaveLength(1)
     expect(result[0].title).toBe('User Management')
     const items = 'items' in result[0] ? result[0].items : []
-    expect(items).toHaveLength(1)
+    expect(items).toHaveLength(2)
     expect(items[0].title).toBe('All Users')
     expect(items[0].url).toBe('/hr/users')
+    expect(items[1].title).toBe('User Creation')
+    expect(items[1].url).toBe('/mon/users/create')
   })
 
-  it('sidebarData HR > User Management shows Access Presets when only admin_access_presets', () => {
-    const result = filterNavItems([userMgmt], ['admin_access_presets'], ['view_hr'])
+  it('sidebarData monitoring > User Management hides without admin_users', () => {
+    expect(filterNavItems([monUserMgmt], [])).toHaveLength(0)
+  })
+
+  it('sidebarData monitoring > User Management shows all children with wildcard', () => {
+    const result = filterNavItems([monUserMgmt], [EVERYTHING_FEATURE])
     expect(result).toHaveLength(1)
-    expect(result[0].title).toBe('User Management')
-    const items = 'items' in result[0] ? result[0].items : []
-    expect(items).toHaveLength(1)
-    expect(items[0].title).toBe('Access Presets')
-    expect(items[0].url).toBe('/hr/presets')
-  })
-
-  it('sidebarData HR > User Management shows both when both features present', () => {
-    const result = filterNavItems([userMgmt], ['admin_users', 'admin_access_presets'], ['view_hr'])
-    expect(result).toHaveLength(1)
-    expect(result[0].title).toBe('User Management')
-    const items = 'items' in result[0] ? result[0].items : []
-    expect(items).toHaveLength(2)
-  })
-
-  it('sidebarData HR > User Management hides when neither feature present', () => {
-    const result = filterNavItems([userMgmt], [], ['view_hr'])
-    expect(result).toHaveLength(0)
-  })
-
-  it('sidebarData HR > User Management hides without view_hr permission', () => {
-    const result = filterNavItems([userMgmt], [EVERYTHING_FEATURE], [])
-    expect(result).toHaveLength(0)
-  })
-
-  it('sidebarData HR > User Management shows all children with wildcard', () => {
-    const result = filterNavItems([userMgmt], [EVERYTHING_FEATURE], ['view_hr'])
-    expect(result).toHaveLength(1)
-    const items = 'items' in result[0] ? result[0].items : []
-    expect(items).toHaveLength(2)
+    expect('items' in result[0] ? result[0].items : []).toHaveLength(2)
   })
 
   it('sidebarData hr top-level items filter without crashing on production data', () => {
-    const result = filterNavItems(hrGroup.items, ['admin_users'], ['view_hr'])
+    // User admin moved out of HR, so admin_users alone no longer surfaces an
+    // HR entry — gate on the features HR still owns.
+    const result = filterNavItems(hrGroup.items, ['admin_employees'], ['view_hr'])
     expect(result.length).toBeGreaterThanOrEqual(1)
   })
 
   it('sidebarData monitoring top-level items filter without crashing on production data', () => {
-    const monitoringGroup = sidebarData.navGroups.find(g => g.panel === 'monitoring')!
-    const result = filterNavItems(monitoringGroup.items, ['admin_users'])
+    const result = filterNavItems(monGroup.items, ['admin_users'])
     expect(result.length).toBeGreaterThanOrEqual(1)
   })
 
