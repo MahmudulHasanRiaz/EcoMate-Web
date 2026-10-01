@@ -25,7 +25,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Loader2, ArrowLeft, Package, Barcode, Plus, Trash2, X, User, Phone, Mail, MapPin, CreditCard, ShoppingCart, Tag, Minus } from 'lucide-react'
@@ -808,7 +808,9 @@ export function CreateOrder() {
                     className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1'
                     value={channel}
                     onChange={e => {
-                      const val = e.target.value
+                      // The <select> only offers CHANNEL_OPTIONS, so the value
+                      // is a ChannelV2 by construction.
+                      const val = e.target.value as ChannelV2
                       setChannel(val)
                       // A source valid for the previous channel may not be valid
                       // for the next, so re-check rather than carry it blindly.
@@ -871,7 +873,9 @@ export function CreateOrder() {
                   <select
                     className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1'
                     value={acquisitionType}
-                    onChange={e => setAcquisitionType(e.target.value)}
+                    onChange={e =>
+                      setAcquisitionType(e.target.value as AcquisitionType | '')
+                    }
                   >
                     <option value=''>— not set —</option>
                     {ACQUISITION_OPTIONS.map(a => (
