@@ -5,6 +5,11 @@ import { usePackingQueuePage, usePackingStats, useOpenOrder, useMarkDone, useMar
 import { HoldModal } from './HoldModal'
 import { Input } from '@/components/ui/input'
 import { Html5Qrcode, type CameraDevice } from 'html5-qrcode'
+import {
+  createScanner,
+  pickDefaultCamera,
+  type ScannerController,
+} from './scanner-controller'
 import { SafeImage } from '@/components/safe-image'
 import { mediaUrl } from '@/lib/utils'
 import {
@@ -42,6 +47,9 @@ type TabType = 'scan' | 'packed' | 'held'
 // Stable empty array so `queue` keeps a constant identity between polls.
 const EMPTY_QUEUE: QueueItem[] = []
 
+// Must match the id of the scanner viewport element in the JSX.
+const SCANNER_ELEMENT_ID = 'scanner-viewport'
+
 export function PackingWorkspace() {
   const currentUser = useAuthStore((s) => s.auth.user)
   const currentPackerId = currentUser?.id ?? ''
@@ -77,7 +85,7 @@ export function PackingWorkspace() {
   const [cameras, setCameras] = useState<CameraDevice[]>([])
   const [selectedCameraId, setSelectedCameraId] = useState<string>('')
   const [scannerError, setScannerError] = useState<string | null>(null)
-  const scannerRef = useRef<Html5Qrcode | null>(null)
+  const controllerRef = useRef<ScannerController | null>(null)
 
   // The queue is polled every 15s. Mirroring it into a ref keeps
   // `onScanSuccess` (and therefore the camera effect that depends on it) from
@@ -292,13 +300,7 @@ export function PackingWorkspace() {
       .then(devices => {
         if (devices && devices.length > 0) {
           setCameras(devices)
-          // Default to environment back camera if possible
-          const backCam = devices.find(d => 
-            d.label.toLowerCase().includes('back') || 
-            d.label.toLowerCase().includes('environment') ||
-            d.label.toLowerCase().includes('rear')
-          )
-          setSelectedCameraId(backCam ? backCam.id : devices[0].id)
+          setSelectedCameraId(pickDefaultCamera(devices))
         } else {
           setScannerError("No cameras detected on this device.")
         }
@@ -309,61 +311,44 @@ export function PackingWorkspace() {
       })
   }, [])
 
-  // Camera start/stop controller
+  // Camera start/stop controller. All lifecycle work goes through
+  // `createScanner`, which serialises start/stop against html5-qrcode's
+  // single-slot transition lock. Gating cleanup on the library's own
+  // `isScanning` flag let `stop()` be called while `start()` still held that
+  // lock, which throws synchronously ("Cannot transition to a new state, already
+  // under transition") and took down the page with a 500 while leaving the
+  // camera stream open and the viewport permanently white.
   useEffect(() => {
-    // Only run if active tab is scan, no order details drawer is open, and scanner is toggled active
-    if (activeTab !== 'scan' || selectedOrderId || !scannerActive || !selectedCameraId) {
-      if (scannerRef.current && scannerRef.current.isScanning) {
-      const stopping = scannerRef.current
-      scannerRef.current = null
-      stopping.stop()
-        .catch(err => console.error("Error stopping scanner", err))
-    }
+    const shouldRun =
+      activeTab === 'scan' && !selectedOrderId && scannerActive && !!selectedCameraId
+    if (!shouldRun || !selectedCameraId) {
+      void controllerRef.current?.dispose()
       return
     }
 
-    const scannerId = "scanner-viewport"
-    const element = document.getElementById(scannerId)
-    if (!element) return
-
-    const html5QrCode = new Html5Qrcode(scannerId)
-    scannerRef.current = html5QrCode
-
-    const config = {
-      fps: 15,
-      qrbox: (width: number, height: number) => {
-        const size = Math.min(width, height) * 0.75
-        return { width: size, height: size }
-      }
-    }
-
-    html5QrCode.start(
-      selectedCameraId,
-      config,
-      (decodedText) => {
-        onScanSuccess(decodedText)
+    const controller = createScanner(
+      SCANNER_ELEMENT_ID,
+      {
+        fps: 15,
+        qrbox: (width: number, height: number) => {
+          const size = Math.min(width, height) * 0.75
+          return { width: size, height: size }
+        },
       },
-      () => {
-        // Quiet error callbacks to prevent console spamming
-      }
-    ).catch(err => {
-      console.error("Failed to start html5-qrcode", err)
-      setScannerError("Camera is currently in use or not responding.")
-    })
+      {
+        onScan: (decodedText) => onScanSuccess(decodedText),
+        onError: (err) => {
+          console.error('Camera scanner error', err)
+          setScannerError('Camera is currently in use or not responding.')
+        },
+      },
+    )
+    controllerRef.current = controller
+    void controller.start(selectedCameraId)
 
     return () => {
-      if (html5QrCode.isScanning) {
-        html5QrCode.stop()
-          .catch(err => console.error("Error stopping on clean up", err))
-          .finally(() => {
-            // P2-4: only clear the ref if it still points at THIS scanner.
-            // stop() is async; without the identity check its late .then would
-            // null out a freshly created scanner and leak the camera stream.
-            if (scannerRef.current === html5QrCode) {
-              scannerRef.current = null
-            }
-          })
-      }
+      void controller.dispose()
+      if (controllerRef.current === controller) controllerRef.current = null
     }
   }, [activeTab, selectedOrderId, scannerActive, selectedCameraId, onScanSuccess])
 
