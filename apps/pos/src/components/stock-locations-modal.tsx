@@ -87,7 +87,11 @@ export function StockLocationsModal({ open, onOpenChange, target }: Props) {
       const body = res.data as AvailabilityResponse
       setData(body)
       const initial: Record<string, number> = {}
-      for (const row of body.network ?? []) initial[row.warehouseId] = row.available
+      // Pre-fill with the EXACT variant's stock, not the product total.
+      for (const row of body.network ?? []) {
+        initial[row.warehouseId] =
+          target.variantId == null ? row.available : (row.exactVariantAvailable ?? 0)
+      }
       setQtys(initial)
     } catch (err: any) {
       setError(errorMessage(err))
@@ -102,9 +106,15 @@ export function StockLocationsModal({ open, onOpenChange, target }: Props) {
 
   const requestFrom = async (row: LocationRow) => {
     if (!target || !showroomId) return
-    const qty = qtys[row.warehouseId] ?? 0
-    if (!Number.isFinite(qty) || qty < 1 || qty > row.available) {
-      toast.error(`Quantity must be between 1 and ${row.available}`)
+    // A transfer is VARIANT-PRECISE: each variant is its own SKU with its own
+    // stock. `row.available` is the whole PRODUCT's total across every variant,
+    // so requesting from it would move stock that belongs to a different SKU
+    // than the one the cashier is looking at. Always request against the exact
+    // variant's quantity.
+    const requestable = exactAvailableFor(row)
+    const qty = qtys[row.warehouseId] ?? requestable
+    if (!Number.isFinite(qty) || qty < 1 || qty > requestable) {
+      toast.error(`Quantity must be between 1 and ${requestable}`)
       return
     }
     setSubmitting(row.warehouseId)
@@ -131,6 +141,20 @@ export function StockLocationsModal({ open, onOpenChange, target }: Props) {
 
   const network = data?.network ?? []
   const current = data?.currentShowroom
+
+  /**
+   * How much of THIS variant can actually be requested from a location.
+   *
+   * `row.available` aggregates the whole product across all its variants, so
+   * using it for a variant-specific transfer would let the cashier request
+   * stock belonging to a different SKU. `exactVariantAvailable` is that
+   * variant's own figure. For a simple product (no variantId) the two are the
+   * same thing, so the product total is correct there.
+   */
+  const exactAvailableFor = (row: LocationRow): number => {
+    if (target?.variantId == null) return row.available
+    return row.exactVariantAvailable ?? 0
+  }
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -210,16 +234,18 @@ export function StockLocationsModal({ open, onOpenChange, target }: Props) {
                       </p>
                     ) : (
                       network.map((row) => {
-                        const qty = qtys[row.warehouseId] ?? row.available
+                        // Requestable = THIS variant's stock, never the product
+                        // total. Showing the product total here is what made a
+                        // single variant appear to hold stock belonging to its
+                        // siblings.
+                        const requestable = exactAvailableFor(row)
+                        const qty = qtys[row.warehouseId] ?? requestable
                         const alreadyRequested = row.warehouseId in requested
-                        const valid = qty >= 1 && qty <= row.available
+                        const valid = qty >= 1 && qty <= requestable
                         const isSubmitting = submitting === row.warehouseId
-                        // The location may hold this product under a DIFFERENT
-                        // variant, so say so: a transfer is variant-precise and
-                        // the cashier should not promise a specific one.
+                        // The location holds the product, but not this variant.
                         const otherVariantOnly =
-                          target?.variantId != null &&
-                          (row.exactVariantAvailable ?? 0) === 0
+                          target?.variantId != null && requestable === 0
                         return (
                           <div
                             key={row.warehouseId}
@@ -233,7 +259,7 @@ export function StockLocationsModal({ open, onOpenChange, target }: Props) {
                                 </span>
                               </div>
                               <span className="text-xs font-bold tabular-nums text-slate-800 shrink-0">
-                                {row.available} available
+                                {requestable} available
                               </span>
                             </div>
 
@@ -251,7 +277,7 @@ export function StockLocationsModal({ open, onOpenChange, target }: Props) {
                               <input
                                 type="number"
                                 min={1}
-                                max={row.available}
+                                max={requestable}
                                 value={qty}
                                 disabled={alreadyRequested}
                                 onChange={(e) => {

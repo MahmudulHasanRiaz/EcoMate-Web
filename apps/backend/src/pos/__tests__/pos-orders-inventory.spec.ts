@@ -96,7 +96,13 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
             orderCounter: { upsert: jest.fn() },
             orderItem: { create: jest.fn() },
             payment: { create: jest.fn() },
-            physicalInventory: { findMany: jest.fn().mockResolvedValue([]) },
+            physicalInventory: {
+              findMany: jest.fn().mockResolvedValue([]),
+              // Transfer requests validate the exact variant's stock.
+              findFirst: jest
+                .fn()
+                .mockResolvedValue({ quantity: 100, reservedQuantity: 0 }),
+            },
             stockTransfer: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
             category: { findMany: jest.fn() },
             $queryRawUnsafe: jest.fn().mockResolvedValue([]),
@@ -423,6 +429,76 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
       });
       (prisma.product.findUnique as jest.Mock).mockResolvedValue({ name: 'Test Product' });
       (prisma.stockTransfer.create as jest.Mock).mockResolvedValue({ id: 'trf-1' });
+      (prisma.physicalInventory.findFirst as jest.Mock).mockResolvedValue({
+        quantity: 100,
+        reservedQuantity: 0,
+      });
+    });
+
+    // A transfer is SKU-precise: each variant is its own SKU with its own
+    // inventory rows. Validating the quantity against the PRODUCT total would
+    // let a request move stock that belongs to a sibling variant.
+    it('rejects a quantity the exact variant cannot cover, even if the product total can', async () => {
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+        name: 'Thobe',
+        type: 'variable',
+      });
+      // The variant itself only has 3 available…
+      (prisma.physicalInventory.findFirst as jest.Mock).mockResolvedValue({
+        quantity: 3,
+        reservedQuantity: 0,
+      });
+
+      await expect(
+        service.initiateTransfer(
+          {
+            // …but 23 is what the whole product has across every variant.
+            items: [
+              {
+                productId: 'prod-1',
+                variantId: 'var-size-40',
+                sourceWarehouseId: 'godown-1',
+                quantity: 23,
+              },
+            ],
+          },
+          'cashier-1',
+          'showroom-1',
+        ),
+      ).rejects.toThrow(/Insufficient stock for this variant/i);
+    });
+
+    it('allows a quantity the exact variant can cover', async () => {
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+        name: 'Thobe',
+        type: 'variable',
+      });
+      (prisma.physicalInventory.findFirst as jest.Mock).mockResolvedValue({
+        quantity: 9,
+        reservedQuantity: 0,
+      });
+
+      await service.initiateTransfer(
+        {
+          items: [
+            {
+              productId: 'prod-1',
+              variantId: 'var-size-40',
+              sourceWarehouseId: 'godown-1',
+              quantity: 4,
+            },
+          ],
+        },
+        'cashier-1',
+        'showroom-1',
+      );
+
+      expect(prisma.physicalInventory.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ variantId: 'var-size-40' }),
+        }),
+      );
+      expect(prisma.stockTransfer.create).toHaveBeenCalled();
     });
 
     it('creates stock transfer with REQUESTED status and correct destWarehouseId', async () => {

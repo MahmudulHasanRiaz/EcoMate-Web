@@ -1400,6 +1400,32 @@ private async resolveCanonicalPos(
           `"${productTypes.get(item.productId)!.name}" is a variable product — choose the variant to transfer`,
         );
       }
+
+      // Enforce the EXACT variant's stock, not the product total. A transfer is
+      // SKU-precise: each variant carries its own SKU and its own inventory
+      // rows, so a quantity validated against the product aggregate would let a
+      // request move stock belonging to a different variant. This is enforced
+      // here as well as in the UI, because the API is reachable directly.
+      if (item.variantId) {
+        const variantStock = await this.prisma.physicalInventory.findFirst({
+          where: {
+            productId: item.productId,
+            variantId: item.variantId,
+            warehouseId: item.sourceWarehouseId,
+            quantity: { gt: 0 },
+          },
+          select: { quantity: true, reservedQuantity: true },
+        });
+        const variantAvailable = Math.max(
+          0,
+          (variantStock?.quantity ?? 0) - (variantStock?.reservedQuantity ?? 0),
+        );
+        if (variantAvailable < item.quantity) {
+          throw new BadRequestException(
+            `Insufficient stock for this variant at the source location. Available: ${variantAvailable}, needed: ${item.quantity}.`,
+          );
+        }
+      }
       const list = bySource.get(item.sourceWarehouseId) ?? [];
       list.push(item);
       bySource.set(item.sourceWarehouseId, list);

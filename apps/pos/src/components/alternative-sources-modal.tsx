@@ -344,7 +344,9 @@ export function AlternativeSourcesModal({
                                 </span>
                                 <span className="flex items-center gap-2 ml-2 shrink-0">
                                   <span className="text-xs font-bold tabular-nums text-slate-800">
-                                    {w.available} pcs
+                                    {/* This variant's stock, not the product
+                                        total — each variant is its own SKU. */}
+                                    {(w.exactVariantAvailable ?? 0) || w.available} pcs
                                   </span>
                                   {/* A location may hold this product under a
                                       sibling variant; a transfer is
