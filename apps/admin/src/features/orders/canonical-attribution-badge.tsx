@@ -38,26 +38,26 @@ export function CanonicalAttributionBadges(props: {
   return (
     <span className='inline-flex flex-wrap items-center gap-1'>
       {ch && ChIcon ? (
-        <span className='inline-flex items-center gap-1 rounded border bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium'>
+        <span className='inline-flex items-center gap-1 rounded border border-border/70 bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-foreground'>
           <ChIcon className='size-2.5' />
           {CHANNEL_LABELS[ch] ?? ch}
         </span>
       ) : null}
 
       {channelEntity ? (
-        <span className='inline-flex items-center gap-1 rounded border border-teal-500/30 bg-teal-500/10 px-1.5 py-0.5 text-[10px]'>
+        <span className='inline-flex items-center gap-1 rounded border border-teal-500/30 bg-teal-500/10 text-teal-700 dark:text-teal-300 px-1.5 py-0.5 text-[10px] font-medium'>
           {displayValue(channelEntity)}
         </span>
       ) : null}
 
       {sourceSlug ? (
-        <span className='inline-flex items-center gap-1 rounded border border-violet-500/30 bg-violet-500/10 px-1.5 py-0.5 text-[10px]'>
+        <span className='inline-flex items-center gap-1 rounded border border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300 px-1.5 py-0.5 text-[10px] font-medium'>
           {sourceLabel ?? sourceSlug}
         </span>
       ) : null}
 
       {acquisitionType ? (
-        <span className='inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]'>
+        <span className='inline-flex items-center gap-1 rounded border border-border/70 bg-muted/40 text-muted-foreground px-1.5 py-0.5 text-[10px] font-medium'>
           {AcqIcon ? <AcqIcon className='size-2.5' /> : null}
           {acquisitionType}
         </span>

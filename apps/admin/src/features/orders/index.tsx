@@ -275,23 +275,23 @@ function CourierQuickView({ phone }: { phone: string }) {
       <div className='space-y-2 w-full mt-1.5'>
         <div className='flex items-center gap-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider'>
           <Truck className='h-3 w-3' /> Courier Analytics
-          {isDummy && <span className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800 px-1.5 py-0.5 rounded-[4px] text-[9px] lowercase tracking-normal">dummy preview</span>}
+          {isDummy && <span className="bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded-[4px] text-[9px] lowercase tracking-normal">dummy preview</span>}
         </div>
         
-        <div className={`rounded-xl border bg-card text-card-foreground shadow-sm overflow-hidden ${isDummy ? 'opacity-90' : ''}`}>
-          <div className='bg-muted/30 px-3 py-2 border-b flex items-center justify-between'>
+        <div className={`rounded-xl border border-border/70 dark:border-border/60 bg-card text-card-foreground shadow-2xs overflow-hidden ${isDummy ? 'opacity-90' : ''}`}>
+          <div className='bg-muted/40 dark:bg-muted/20 px-3 py-2 border-b border-border/60 flex items-center justify-between'>
              <div className='text-xs font-bold uppercase tracking-wider text-muted-foreground'>Overall Success Rate</div>
-             <div className='text-[10px] font-semibold text-muted-foreground bg-background px-1.5 py-0.5 rounded border shadow-sm'>Total Parcels: <span className='text-foreground'>{overallTotal}</span></div>
+             <div className='text-[10px] font-semibold text-muted-foreground bg-background px-1.5 py-0.5 rounded border border-border/60 shadow-2xs'>Total Parcels: <span className='text-foreground'>{overallTotal}</span></div>
           </div>
           <div className='p-3 space-y-3'>
              <div className='space-y-1.5'>
                <div className='flex justify-between text-sm font-black'>
-                 <span className='text-emerald-600 dark:text-emerald-500'>{overallSuccessRate}%</span>
-                 <span className='text-red-500'>{overallFailRate}%</span>
+                 <span className='text-emerald-600 dark:text-emerald-400'>{overallSuccessRate}%</span>
+                 <span className='text-rose-600 dark:text-rose-400'>{overallFailRate}%</span>
                </div>
-               <div className='h-2.5 w-full rounded-full bg-muted overflow-hidden flex shadow-inner'>
+               <div className='h-2 w-full rounded-full bg-muted dark:bg-muted/60 overflow-hidden flex shadow-inner'>
                  <div className='h-full bg-emerald-500 dark:bg-emerald-400 transition-all duration-500' style={{ width: `${overallSuccessRate}%` }} />
-                 <div className='h-full bg-red-500 dark:bg-red-400 transition-all duration-500' style={{ width: `${overallFailRate}%` }} />
+                 <div className='h-full bg-rose-500 dark:bg-rose-400 transition-all duration-500' style={{ width: `${overallFailRate}%` }} />
                </div>
                <div className='flex justify-between text-[10px] font-bold uppercase tracking-wider text-muted-foreground'>
                  <span>{overallDelivered} Delivered</span>
@@ -304,12 +304,12 @@ function CourierQuickView({ phone }: { phone: string }) {
                  const delivered = stats['Delivered Parcels'] || stats['Successful Delivery'] || 0;
                  const cancelled = stats['Canceled Parcels'] || stats['Canceled Delivery'] || 0;
                  return (
-                   <div key={name} className='flex items-center gap-1.5 bg-muted/40 rounded-md px-2 py-1 text-[10px] border shadow-sm'>
+                   <div key={name} className='flex items-center gap-1.5 bg-muted/40 dark:bg-muted/20 rounded-md px-2 py-1 text-[10px] border border-border/60 shadow-2xs'>
                      <span className='font-bold text-foreground'>{name.replace(' (Dummy)', '')}</span>
-                     <div className='flex items-center gap-1.5 bg-background px-1.5 py-0.5 rounded-sm border'>
-                       <span className='text-emerald-600 dark:text-emerald-500 font-bold' title='Delivered'>{delivered}</span>
+                     <div className='flex items-center gap-1.5 bg-background px-1.5 py-0.5 rounded-sm border border-border/60'>
+                       <span className='text-emerald-600 dark:text-emerald-400 font-bold' title='Delivered'>{delivered}</span>
                        <span className='text-muted-foreground/30'>/</span>
-                       <span className='text-red-500 font-bold' title='Cancelled'>{cancelled}</span>
+                       <span className='text-rose-600 dark:text-rose-400 font-bold' title='Cancelled'>{cancelled}</span>
                      </div>
                    </div>
                  )
@@ -728,8 +728,8 @@ export function Orders() {
           <CardContent className='p-0'>
             <div className='overflow-x-auto'>
               <Table>
-                <TableHeader className='bg-muted/35 sticky top-0 z-10 border-b border-border/60'>
-                  <TableRow className='hover:bg-transparent border-b border-border/60'>
+                <TableHeader className='bg-muted/40 dark:bg-muted/20 sticky top-0 z-10 border-b border-border/70 backdrop-blur-xs'>
+                  <TableRow className='hover:bg-transparent border-b border-border/70'>
                     <TableHead className='w-10 pl-3'>
                       <Checkbox checked={(data?.data?.length ?? 0) > 0 && selected.length === (data?.data?.length ?? 0)} onCheckedChange={toggleAll} />
                     </TableHead>
@@ -762,8 +762,8 @@ export function Orders() {
                     return [
                       <TableRow
                         key={o.id}
-                        className={`group cursor-pointer transition-colors ${
-                          isSelected ? 'bg-primary/5 hover:bg-primary/8' : 'hover:bg-muted/40 even:bg-muted/[0.015]'
+                        className={`group cursor-pointer transition-colors border-b border-border/50 dark:border-border/40 ${
+                          isSelected ? 'bg-primary/8 dark:bg-primary/15 hover:bg-primary/12 dark:hover:bg-primary/20' : 'hover:bg-muted/40 dark:hover:bg-muted/20 even:bg-muted/[0.02] dark:even:bg-muted/[0.03]'
                         }`}
                         onClick={() => toggleExpand(o.id)}
                         style={{ borderLeftWidth: 3, borderLeftColor: accentColor }}
@@ -773,7 +773,7 @@ export function Orders() {
                         </TableCell>
                         <TableCell className='px-1'>
                           <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}>
-                            <ChevronRightIcon className='h-3.5 w-3.5 text-muted-foreground/70' />
+                            <ChevronRightIcon className={`h-3.5 w-3.5 transition-colors ${isExpanded ? 'text-primary' : 'text-muted-foreground/70 group-hover:text-foreground'}`} />
                           </div>
                         </TableCell>
                         <TableCell>
@@ -787,7 +787,7 @@ export function Orders() {
                               {o.displayId}
                             </Link>
                             {o.kind === 'RETURN' && (
-                              <span className='inline-flex items-center gap-1 rounded-full border border-pink-500/40 bg-pink-500/10 px-1.5 py-0.2 text-[9px] font-bold text-pink-500'>
+                              <span className='inline-flex items-center gap-1 rounded-full border border-pink-500/40 bg-pink-500/10 px-1.5 py-0.5 text-[9px] font-bold text-pink-600 dark:text-pink-400'>
                                 <RotateCcw className='h-2.5 w-2.5' /> RTN
                               </span>
                             )}
@@ -856,8 +856,12 @@ export function Orders() {
                               }}
                             >
                               <SelectTrigger
-                                className='h-6.5 w-[125px] text-xs font-medium rounded-full border border-border/40 shadow-2xs transition-all hover:opacity-90'
-                                style={{ backgroundColor: accentColor + '18', color: accentColor, borderColor: accentColor + '35' }}
+                                className='h-6.5 w-[125px] text-xs font-medium rounded-full border shadow-2xs transition-all hover:opacity-90'
+                                style={{
+                                  backgroundColor: `color-mix(in srgb, ${accentColor} 14%, transparent)`,
+                                  color: accentColor,
+                                  borderColor: `color-mix(in srgb, ${accentColor} 30%, transparent)`,
+                                }}
                               >
                                 <SelectValue>
                                   <div className='flex items-center gap-1.5 truncate'>
@@ -953,9 +957,9 @@ export function Orders() {
                         </TableCell>
                       </TableRow>,
                       isExpanded && (
-                        <TableRow key={`${o.id}-detail`} className='bg-muted/10 hover:bg-muted/10'>
+                        <TableRow key={`${o.id}-detail`} className='bg-muted/10 dark:bg-muted/5 hover:bg-muted/10 dark:hover:bg-muted/5 border-b border-border/50 dark:border-border/40'>
                           <TableCell colSpan={10} className='p-0 border-0'>
-                            <div className='overflow-hidden bg-muted/15 dark:bg-muted/5' style={{ borderTop: `2px solid ${accentColor}` }}>
+                            <div className='overflow-hidden bg-muted/20 dark:bg-muted/10' style={{ borderTop: `2px solid ${accentColor}` }}>
                               <div className='px-6 py-4.5 grid grid-cols-1 lg:grid-cols-5 gap-4.5'>
                                 <div className='lg:col-span-3 space-y-3'>
                                   <div className='flex items-center gap-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider'>
@@ -967,7 +971,7 @@ export function Orders() {
                                       const thumb = getProductThumb(item)
                                       const lineTotal = nn(item.price) * item.quantity
                                       return (
-                                        <div key={item.id} className='flex items-center gap-3 rounded-lg border border-border/70 bg-card px-3 py-2 shadow-2xs hover:border-border transition-colors'>
+                                        <div key={item.id} className='flex items-center gap-3 rounded-lg border border-border/70 dark:border-border/60 bg-card px-3 py-2 shadow-2xs hover:border-border transition-colors'>
                                           {thumb ? (
                                             <SafeImage src={thumb} alt={item.product?.name} className='h-10 w-10 rounded-md object-cover border border-border/60 shrink-0' thumbWidth={40} thumbHeight={40} />
                                           ) : (
@@ -993,7 +997,7 @@ export function Orders() {
                                       )
                                     })}
                                   </div>
-                                  <div className='rounded-lg border border-border/70 bg-card p-3 shadow-2xs space-y-1.5 text-xs'>
+                                  <div className='rounded-lg border border-border/70 dark:border-border/60 bg-card p-3 shadow-2xs space-y-1.5 text-xs'>
                                     <div className='flex justify-between text-muted-foreground'>
                                       <span>Subtotal</span>
                                       <span className='font-mono font-medium text-foreground'>৳{fmt(o.subtotal)}</span>
@@ -1026,7 +1030,7 @@ export function Orders() {
                                       </button>
                                     )}
                                   </div>
-                                  <div className='rounded-lg border border-border/70 bg-card p-3 shadow-2xs space-y-2 text-xs'>
+                                  <div className='rounded-lg border border-border/70 dark:border-border/60 bg-card p-3 shadow-2xs space-y-2 text-xs'>
                                     <div className='font-semibold text-xs text-foreground'>
                                       {addr.name || getCustomerDisplayName(o)}
                                     </div>
@@ -1065,7 +1069,7 @@ export function Orders() {
                                   {(o.customerNotes || o.officeNotes) && (
                                     <div className='space-y-1.5'>
                                       {o.customerNotes && (
-                                        <div className='rounded-lg border-l-3 border-l-amber-500 bg-amber-500/10 px-3 py-2 shadow-2xs'>
+                                        <div className='rounded-lg border-l-3 border-l-amber-500 bg-amber-500/10 dark:bg-amber-950/25 border-y border-r border-amber-500/20 dark:border-amber-500/15 px-3 py-2 shadow-2xs'>
                                           <div className='flex items-center gap-1.5 text-[10.5px] font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wider mb-0.5'>
                                             <MessageCircle className='size-3' /> Customer Note
                                           </div>
@@ -1073,7 +1077,7 @@ export function Orders() {
                                         </div>
                                       )}
                                       {o.officeNotes && (
-                                        <div className='rounded-lg border-l-3 border-l-blue-500 bg-blue-500/10 px-3 py-2 shadow-2xs'>
+                                        <div className='rounded-lg border-l-3 border-l-blue-500 bg-blue-500/10 dark:bg-blue-950/25 border-y border-r border-blue-500/20 dark:border-blue-500/15 px-3 py-2 shadow-2xs'>
                                           <div className='flex items-center gap-1.5 text-[10.5px] font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wider mb-0.5'>
                                             <FileText className='size-3' /> Office Note
                                           </div>
@@ -1084,7 +1088,7 @@ export function Orders() {
                                   )}
 
                                   {o.assignee && (
-                                    <div className='rounded-lg border border-border/70 bg-card px-3 py-2 shadow-2xs'>
+                                    <div className='rounded-lg border border-border/70 dark:border-border/60 bg-card px-3 py-2 shadow-2xs'>
                                       <div className='flex items-center gap-2'>
                                         <div className='size-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary shrink-0'>
                                           {o.assignee.firstName?.[0]}{o.assignee.lastName?.[0]}
@@ -1105,7 +1109,7 @@ export function Orders() {
                                         const pm = paymentMethodLabel(gw || '')
                                         const ps = paymentStatusBadgeClass(p.status)
                                         return (
-                                          <div key={p.id} className='flex items-center justify-between rounded-lg border border-border/70 bg-card px-3 py-2 shadow-2xs'>
+                                          <div key={p.id} className='flex items-center justify-between rounded-lg border border-border/70 dark:border-border/60 bg-card px-3 py-2 shadow-2xs'>
                                             <div className='flex items-center gap-2'>
                                               <CreditCard className={`size-3.5 ${pm.colorClass}`} />
                                               <span className='text-xs font-medium'>{pm.label}</span>
@@ -1242,30 +1246,31 @@ export function Orders() {
             <DialogHeader>
               <DialogTitle>Change Order Status</DialogTitle>
               <DialogDescription>
-                Update status for <span className="font-mono font-medium">{statusDialog?.order.displayId}</span>
+                Update status for <span className="font-mono font-medium text-foreground">{statusDialog?.order.displayId}</span>
               </DialogDescription>
             </DialogHeader>
             {statusDialog && (
               <div className="space-y-4 py-2">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 rounded-lg border border-border/70 dark:border-border/60 bg-muted/40 dark:bg-muted/20 p-3">
                   <div className="flex-1">
-                    <p className="text-xs text-muted-foreground">Current</p>
-                    <p className="text-sm font-medium mt-0.5">{statusDialog.order.status.name}</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Current</p>
+                    <p className="text-sm font-semibold mt-0.5 text-foreground">{statusDialog.order.status.name}</p>
                   </div>
+                  <div className="h-8 w-px bg-border/60" />
                   <div className="flex-1">
-                    <p className="text-xs text-muted-foreground">New</p>
-                    <p className="text-sm font-medium mt-0.5">{statusDialog.newStatusName}</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">New</p>
+                    <p className="text-sm font-semibold mt-0.5 text-primary">{statusDialog.newStatusName}</p>
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="status-note">Note (optional)</Label>
-                  <Textarea id="status-note" placeholder="Reason for this status change..." value={statusNote} onChange={e => setStatusNote(e.target.value)} rows={2} />
+                  <Label htmlFor="status-note" className="text-xs font-medium">Note (optional)</Label>
+                  <Textarea id="status-note" placeholder="Reason for this status change..." value={statusNote} onChange={e => setStatusNote(e.target.value)} rows={2} className="text-xs rounded-lg border-border/70" />
                 </div>
               </div>
             )}
             <DialogFooter>
-              <Button variant="outline" onClick={() => { setStatusDialog(null); setStatusNote('') }}>Cancel</Button>
-              <Button onClick={() => {
+              <Button variant="outline" className="rounded-lg shadow-2xs" onClick={() => { setStatusDialog(null); setStatusNote('') }}>Cancel</Button>
+              <Button className="rounded-lg shadow-2xs" onClick={() => {
                 if (!statusDialog) return
                 statusMut.mutate(
                   { id: statusDialog.order.id, statusId: statusDialog.newStatusId, note: statusNote || undefined },
