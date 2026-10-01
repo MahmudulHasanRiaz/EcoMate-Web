@@ -1197,12 +1197,16 @@ private async resolveCanonicalPos(
       // Query alternatives: other warehouses/showrooms with stock
       let alternatives: AlternativeSourceDto[] = [];
       if (!available) {
+        // Same product-level reasoning as getProductAvailability: an item being
+        // unavailable in THIS showroom is a product-level problem, so the
+        // alternative lookup must not hide a location merely because it holds a
+        // sibling variant. Filtering on the exact variant here produced the
+        // same "no location has stock" result as the See Where button.
         const wherePhysical: any = {
           productId: item.productId,
           warehouseId: { not: showroomId },
           quantity: { gt: 0 },
         };
-        if (item.variantId) wherePhysical.variantId = item.variantId;
 
         const otherLocations = await this.prisma.physicalInventory.findMany({
           where: wherePhysical,
@@ -1217,9 +1221,12 @@ private async resolveCanonicalPos(
         for (const loc of otherLocations) {
           const key = loc.warehouse.id;
           const existing = warehouseMap.get(key);
-          const avail = loc.quantity - loc.reservedQuantity;
+          // Clamp: reservedQuantity can exceed quantity through historical
+          // drift, and a negative "available" is meaningless to the UI.
+          const avail = Math.max(0, loc.quantity - loc.reservedQuantity);
           if (existing) {
             existing.stock += loc.quantity;
+            existing.reserved += loc.reservedQuantity;
             existing.available += avail;
           } else {
             warehouseMap.set(key, {
@@ -1277,12 +1284,25 @@ private async resolveCanonicalPos(
       };
     }
 
+    // "See where else can this be found?" is a PRODUCT-level question, so the
+    // network lookup must aggregate at product level too.
+    //
+    // It previously filtered on the exact `variantId`, which made the lookup
+    // return nothing whenever a warehouse held that product under a different
+    // variant. On the production site 99/99 affected products were variable
+    // products with no showroom row at all, so the variant filter excluded
+    // every candidate row and the UI reported "no location has stock" while
+    // the godown was full. Simple products escaped this because their
+    // `variantId` is NULL and the filter was skipped.
+    //
+    // Per-variant detail is still returned below so the UI can say whether
+    // the EXACT variant is available there (transfer is variant-precise), but
+    // a location is no longer hidden just because it holds a sibling variant.
     const wherePhysical: any = {
       productId,
       warehouseId: { not: showroomId },
       quantity: { gt: 0 },
     };
-    if (variantId) wherePhysical.variantId = variantId;
 
     const networkRecords = await this.prisma.physicalInventory.findMany({
       where: wherePhysical,
@@ -1296,10 +1316,20 @@ private async resolveCanonicalPos(
     for (const rec of networkRecords) {
       const key = rec.warehouse.id;
       const existing = warehouseMap.get(key);
-      const avail = rec.quantity - rec.reservedQuantity;
+      // available can go NEGATIVE when reservedQuantity exceeds quantity
+      // (historical drift). Clamp for display so a drifted row reads as "none
+      // available" rather than a nonsensical negative number, and let the
+      // variant-level detail below explain it.
+      const avail = Math.max(0, rec.quantity - rec.reservedQuantity);
+      const isExactVariant = !variantId || rec.variantId === variantId;
       if (existing) {
         existing.stock += rec.quantity;
+        existing.reserved += rec.reservedQuantity;
         existing.available += avail;
+        if (isExactVariant) {
+          existing.exactVariantAvailable += avail;
+          existing.exactVariantStock += rec.quantity;
+        }
       } else {
         warehouseMap.set(key, {
           warehouseId: rec.warehouse.id,
@@ -1308,6 +1338,10 @@ private async resolveCanonicalPos(
           stock: rec.quantity,
           reserved: rec.reservedQuantity,
           available: avail,
+          // Per-variant detail: transfer is variant-precise, so the UI must be
+          // able to say whether the exact variant is actually there.
+          exactVariantAvailable: isExactVariant ? avail : 0,
+          exactVariantStock: isExactVariant ? rec.quantity : 0,
         });
       }
     }

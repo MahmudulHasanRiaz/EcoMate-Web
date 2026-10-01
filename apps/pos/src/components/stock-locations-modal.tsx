@@ -20,6 +20,14 @@ interface LocationRow {
   stock: number
   reserved: number
   available: number
+  /**
+   * Stock at this location for the EXACT variant being looked up. 0 while
+   * `available` is positive means the location holds the product under a
+   * sibling variant — worth telling the cashier, since a transfer is
+   * variant-precise.
+   */
+  exactVariantAvailable?: number
+  exactVariantStock?: number
 }
 
 interface AvailabilityResponse {
@@ -206,6 +214,12 @@ export function StockLocationsModal({ open, onOpenChange, target }: Props) {
                         const alreadyRequested = row.warehouseId in requested
                         const valid = qty >= 1 && qty <= row.available
                         const isSubmitting = submitting === row.warehouseId
+                        // The location may hold this product under a DIFFERENT
+                        // variant, so say so: a transfer is variant-precise and
+                        // the cashier should not promise a specific one.
+                        const otherVariantOnly =
+                          target?.variantId != null &&
+                          (row.exactVariantAvailable ?? 0) === 0
                         return (
                           <div
                             key={row.warehouseId}
@@ -222,6 +236,13 @@ export function StockLocationsModal({ open, onOpenChange, target }: Props) {
                                 {row.available} available
                               </span>
                             </div>
+
+                            {otherVariantOnly && (
+                              <p className="mt-1.5 text-[10px] leading-snug text-amber-600">
+                                This location has the product under a different variant.
+                                Request it, then confirm the variant before transferring.
+                              </p>
+                            )}
 
                             <div className="mt-2 flex items-center gap-2">
                               <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">

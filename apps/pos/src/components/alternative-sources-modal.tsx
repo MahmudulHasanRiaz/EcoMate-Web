@@ -20,6 +20,8 @@ interface WarehouseStock {
   warehouseType: string
   stock: number
   available: number
+  /** Stock for the exact variant on the line; 0 means a sibling variant. */
+  exactVariantAvailable?: number
 }
 
 interface ItemAvailability {
@@ -344,6 +346,18 @@ export function AlternativeSourcesModal({
                                   <span className="text-xs font-bold tabular-nums text-slate-800">
                                     {w.available} pcs
                                   </span>
+                                  {/* A location may hold this product under a
+                                      sibling variant; a transfer is
+                                      variant-precise, so flag it. */}
+                                  {w.exactVariantAvailable != null &&
+                                    w.exactVariantAvailable === 0 && (
+                                      <span
+                                        className="text-[10px] font-semibold text-amber-600"
+                                        title="This location has the product under a different variant"
+                                      >
+                                        other variant
+                                      </span>
+                                    )}
                                   {isChosen && (
                                     <Check size={13} className="text-emerald-600" />
                                   )}
