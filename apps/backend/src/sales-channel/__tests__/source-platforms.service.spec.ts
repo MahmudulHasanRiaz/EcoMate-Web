@@ -145,6 +145,12 @@ describe('SourcePlatformsService', () => {
       );
     });
 
+    it('does not offer Messenger as its own Source', () => {
+      // Messenger is a Facebook surface on the same ad account; listing it
+      // separately would let one order claim two platforms for the same ad.
+      expect(SOURCE_PLATFORM_SEEDS.map((s) => s.slug)).not.toContain('messenger');
+    });
+
     it('excludes chatgpt from MESSAGING while keeping it a marketing source', () => {
       const chatgpt = SOURCE_PLATFORM_SEEDS.find((s) => s.slug === 'chatgpt')!;
       expect(chatgpt.capabilities).not.toContain('MESSAGING');

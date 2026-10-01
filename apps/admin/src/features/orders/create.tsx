@@ -105,7 +105,7 @@ export function CreateOrder() {
   // so a new platform appears without a client change.
   const [channel, setChannel] = useState<ChannelV2>('MESSAGING')
   const [channelEntity, setChannelEntity] = useState('')
-  const [sourceSlug, setSourceSlug] = useState('')
+  const [sourceSlug, setSourceSlug] = useState('facebook')
   const [acquisitionType, setAcquisitionType] = useState<AcquisitionType | ''>('')
 
   // Messaging may only offer messaging-capable platforms. This is a
@@ -812,9 +812,12 @@ export function CreateOrder() {
                       // is a ChannelV2 by construction.
                       const val = e.target.value as ChannelV2
                       setChannel(val)
-                      // A source valid for the previous channel may not be valid
-                      // for the next, so re-check rather than carry it blindly.
-                      if (val !== 'MESSAGING') setSourceSlug('')
+                      // Re-check the source rather than carrying it blindly: a
+                      // platform valid for the previous channel may not be
+                      // valid for the next. Messaging keeps Facebook, which is
+                      // where most messaging orders actually originate.
+                      if (val === 'MESSAGING') setSourceSlug('facebook')
+                      else setSourceSlug('')
                       if (val === 'POS') setAcquisitionType('')
                     }}
                   >

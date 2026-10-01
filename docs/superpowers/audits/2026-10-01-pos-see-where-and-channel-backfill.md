@@ -197,18 +197,63 @@ Resolution, preserving the operator-customization invariant:
 - `ensureDefaults()` is strictly **insert-only** (`skipDuplicates`), and never
   updates an existing row.
 - The backfill's seeding step is also insert-only and performs no update.
-- The wrongly seeded rows were repaired by a **one-time data fix**
-  (`prisma/scripts/repair-source-platform-capabilities.ts`) that proves
+- The wrongly seeded rows were repaired by a **one-time data fix** that proved
   provenance — placeholder `sortOrder = 500` **and** canonical capabilities
   **and** canonical display name — rather than inferring it. 17 rows had
   `sortOrder` corrected from the placeholder `500` to their canonical values;
-  their capabilities had already been set.
+  their capabilities had already been set. The script has since been deleted
+  now that every environment is repaired.
 - Tests assert that a row with `capabilities = []` and a row with custom
   capabilities both survive `ensureDefaults()` unchanged, and that a missing
   default is inserted with canonical capabilities.
 
 Live proof: a row whose capabilities were set to `{}` survived a runtime
 `ensureDefaults()` call untouched — the case the rejected fix would have undone.
+
+### 3c. A transfer could be requested for the wrong SKU
+
+Found on production after the "See where" fix landed: opening a variant showed
+**23 available** when that variant held fewer, because 23 was the whole
+product's total across every variant (`L`, `M`, `XL`, `XXL`).
+
+This was a direct consequence of the product-level fix. The lookup was
+correctly widened to product level — but the dialog kept displaying and
+sending the **product total** while carrying a single `variantId`. Each variant
+is its own SKU with its own inventory rows, so that number could move stock
+belonging to a sibling variant.
+
+Resolution, in all three places the confusion appeared:
+
+- **StockLocationsModal** now pre-fills, validates, maxes the input and
+  **displays** `exactVariantAvailable` — that variant's own stock. A simple
+  product has no `variantId`, so the product total is correct there.
+- **The cart's alternative-sources modal** shows the same variant-precise
+  figure.
+- **`initiateTransfer` validates against the exact variant's inventory at the
+  source location** and rejects the request when it cannot be covered. This is
+  the real guard: the UI can be bypassed, the API cannot, and it is what stops
+  stock moving onto the wrong SKU.
+
+Two regression tests cover the reported shape — 23 available on the product but
+3 on the variant is rejected — and the matching accept case.
+
+### 3d. Messenger offered as a separate Source
+
+The messaging source dropdown listed **Messenger** alongside Facebook, which
+should not have happened: Messenger is a messaging *surface* of Facebook, not a
+distinct advertising platform.
+
+- Meta's Conversions API is driven by **one pixel and one ad account** for both
+  Facebook and Messenger traffic, and `utm_source=messenger` resolves to the
+  same ad account as `utm_source=facebook`.
+- Offering both would let one order claim **two platforms for the same ad**,
+  double-counting it in paid attribution and splitting attributed spend.
+
+Resolution: `messenger` was removed from the registry seeds and from the legacy
+platform→slug table. `Channel = Messaging` + `Source = Facebook` is the
+complete answer for a Messenger order. No order referenced
+`sourceSlug = 'messenger'`, so no historical data changed, and the legacy
+`salesChannel = MESSENGER` value still maps to `facebook`.
 
 ## 3b. CI build failure — `tsc -b` vs `tsc --noEmit`
 
@@ -219,6 +264,20 @@ and two `<select>` handlers passing `string` to typed setters.
 Cause: verification had used `tsc --noEmit` while CI builds with `tsc -b`.
 Verified afterwards with the command CI actually runs, and with the full
 four-app build.
+
+### 3e. Every order row showed two overlapping sets of source badges
+
+After the channel backfill ran, each order rendered the new canonical badges
+(`Website` · `facebook` · `PAID`) directly beside the legacy ones (`WEBSITE` ·
+`FACEBOOK · AD`) — five or six badges where two or three belong.
+
+The new badges had been added *alongside* the legacy ones instead of replacing
+them, so the same fact was painted twice and the row became unreadable.
+
+Resolution: the legacy badges are now a **fallback**, rendered only while an
+order has no canonical mapping (i.e. before the backfill has run). The legacy
+columns themselves are untouched — still stored, still feeding every legacy
+filter, report and export; the UI simply stops painting them twice.
 
 ---
 

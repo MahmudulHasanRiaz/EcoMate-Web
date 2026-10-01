@@ -58,7 +58,6 @@ const REGISTRY_SEEDS: {
   slug: string; displayName: string; capabilities: string[]; sortOrder: number;
 }[] = [
   { slug: 'facebook', displayName: 'Facebook', capabilities: ['MARKETING_SOURCE', 'MESSAGING', 'SOCIAL', 'AD_PLATFORM'], sortOrder: 10 },
-  { slug: 'messenger', displayName: 'Messenger', capabilities: ['MARKETING_SOURCE', 'MESSAGING', 'SOCIAL'], sortOrder: 15 },
   { slug: 'instagram', displayName: 'Instagram', capabilities: ['MARKETING_SOURCE', 'MESSAGING', 'SOCIAL', 'AD_PLATFORM'], sortOrder: 20 },
   { slug: 'whatsapp', displayName: 'WhatsApp', capabilities: ['MARKETING_SOURCE', 'MESSAGING'], sortOrder: 25 },
   { slug: 'tiktok', displayName: 'TikTok', capabilities: ['MARKETING_SOURCE', 'MESSAGING', 'SOCIAL', 'AD_PLATFORM'], sortOrder: 30 },
@@ -82,7 +81,7 @@ const REGISTRY_SLUGS = new Set(REGISTRY_SEEDS.map((s) => s.slug));
 const LEGACY_PLATFORM_TO_SLUG: Record<string, string> = {
   GOOGLE: 'google', FACEBOOK: 'facebook', INSTAGRAM: 'instagram',
   TIKTOK: 'tiktok', WHATSAPP: 'whatsapp', THREADS: 'threads',
-  MESSENGER: 'messenger', TELEGRAM: 'telegram', YOUTUBE: 'youtube',
+  TELEGRAM: 'telegram', YOUTUBE: 'youtube',
   BING: 'bing', PINTEREST: 'pinterest', LINKEDIN: 'linkedin',
   TWITTER: 'x', X: 'x', SNAPCHAT: 'snapchat', REDDIT: 'reddit',
   CHATGPT: 'chatgpt',
@@ -223,10 +222,9 @@ async function main() {
   // This is INSERT-ONLY and deliberately never updates an existing row. A row
   // that already exists is left completely alone — an operator may have
   // emptied its capabilities to withdraw a platform from a channel, and
-  // "capabilities = []" must never be read as "uncustomized". Any repair of
-  // rows seeded incorrectly by an earlier run belongs in a one-time controlled
-  // data-fix (see prisma/scripts/repair-source-platform-capabilities.ts), not
-  // here.
+  // "capabilities = []" must never be read as "uncustomized". Repairing rows
+  // seeded incorrectly by an earlier run belongs in a one-time controlled
+  // data-fix, not here.
   const existing = await prisma.sourcePlatform.findMany({ select: { slug: true } });
   const existingSlugs = new Set(existing.map((r) => r.slug));
 

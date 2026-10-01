@@ -7,6 +7,7 @@
  * appear alongside rather than replacing anything.
  */
 import { LEGACY_CHANNEL_TO_V2, V2_TO_LEGACY_CHANNELS } from '../legacy-channel-map';
+import { mapOrderToCanonical } from '../sales-channel.mapper';
 
 describe('canonical channel analytics — legacy compatibility', () => {
   describe('legacy → canonical translation', () => {
@@ -20,6 +21,15 @@ describe('canonical channel analytics — legacy compatibility', () => {
       for (const legacy of ['FACEBOOK', 'INSTAGRAM', 'TIKTOK', 'MESSENGER', 'WHATSAPP', 'THREADS']) {
         expect(LEGACY_CHANNEL_TO_V2[legacy]).toBe('MESSAGING');
       }
+    });
+
+    it('maps the legacy MESSENGER channel to Facebook, not a separate source', () => {
+      // Messenger is a Facebook surface, not its own advertising platform, so
+      // it must not become a distinct Source.
+      const m = mapOrderToCanonical({ salesChannel: 'MESSENGER' });
+      expect(m.channel).toBe('MESSAGING');
+      expect(m.sourceSlug).toBe('facebook');
+      expect(m.sourceSlug).not.toBe('messenger');
     });
 
     it('omits values the canonical model deliberately leaves NULL', () => {

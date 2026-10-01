@@ -66,9 +66,21 @@ export interface SourcePlatformSeed {
  * supports them — being registered is explicitly not the same as being
  * connected as an integration.
  */
+/**
+ * Messenger is intentionally NOT a separate Source.
+ *
+ * It is a messaging SURFACE of Facebook, not a distinct advertising platform:
+ * Meta's Conversions API takes one pixel/ad account, and `utm_source=messenger`
+ * resolves to the same Facebook ad account as `utm_source=facebook`. Offering
+ * both would let a single order claim two different platforms for the same ad,
+ * double-counting it in paid attribution.
+ *
+ * Channel=Messaging + Source=Facebook is the complete, correct answer for a
+ * Messenger order. The legacy `salesChannel=MESSENGER` value still maps here
+ * (see LEGACY_CHANNEL_TO_SOURCE), so historical orders are unaffected.
+ */
 export const SOURCE_PLATFORM_SEEDS: SourcePlatformSeed[] = [
   { slug: 'facebook', displayName: 'Facebook', capabilities: ['MARKETING_SOURCE', 'MESSAGING', 'SOCIAL', 'AD_PLATFORM'], sortOrder: 10 },
-  { slug: 'messenger', displayName: 'Messenger', capabilities: ['MARKETING_SOURCE', 'MESSAGING', 'SOCIAL'], sortOrder: 15 },
   { slug: 'instagram', displayName: 'Instagram', capabilities: ['MARKETING_SOURCE', 'MESSAGING', 'SOCIAL', 'AD_PLATFORM'], sortOrder: 20 },
   { slug: 'whatsapp', displayName: 'WhatsApp', capabilities: ['MARKETING_SOURCE', 'MESSAGING'], sortOrder: 25 },
   { slug: 'tiktok', displayName: 'TikTok', capabilities: ['MARKETING_SOURCE', 'MESSAGING', 'SOCIAL', 'AD_PLATFORM'], sortOrder: 30 },
@@ -118,7 +130,6 @@ export const LEGACY_PLATFORM_TO_SLUG: Record<string, string> = {
   TIKTOK: 'tiktok',
   WHATSAPP: 'whatsapp',
   THREADS: 'threads',
-  MESSENGER: 'messenger',
   TELEGRAM: 'telegram',
   YOUTUBE: 'youtube',
   BING: 'bing',
