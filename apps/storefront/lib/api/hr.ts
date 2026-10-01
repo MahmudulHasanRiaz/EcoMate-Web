@@ -249,6 +249,11 @@ export interface HrDayState {
   checkOutAt?: string;
   workedMinutes: number;
   breakMinutes: number;
+  /** True when the employee has an open session that never checked out. */
+  missingCheckout?: boolean;
+  /** False when the system mode or employee method blocks app attendance. */
+  appAllowed?: boolean;
+  appBlockedReason?: string;
 }
 
 export interface HrAttendanceDay {

@@ -66,6 +66,17 @@ export interface DayState {
   missingCheckout?: boolean
 }
 
+/**
+ * Self-service day state for the logged-in employee. Carries the app-path gate
+ * so the UI can hide check-in outright instead of showing a button that 400s.
+ */
+export interface MyDayState extends DayState {
+  /** False when system mode or the employee's method blocks app attendance. */
+  appAllowed?: boolean
+  appMethod?: AttendanceMethod
+  appBlockedReason?: string
+}
+
 export interface AttendanceEmployee {
   employeeId: string
   status: string
@@ -354,4 +365,28 @@ export const hrAttendanceApi = {
     apiClient.post<DeviceMapping>(`/hr/attendance/devices/${deviceId}/mappings`, dto),
   deleteMapping: (deviceId: string, mappingId: string) =>
     apiClient.delete(`/hr/attendance/devices/${deviceId}/mappings/${mappingId}`),
+}
+
+// ---------------------------------------------------------------------------
+// Self-service (/hr/my) — the logged-in employee's own attendance clock.
+// Deliberately not employeeId-parameterised: the server derives the employee
+// from the session, so this can never act on someone else's record.
+// ---------------------------------------------------------------------------
+
+export const hrMyAttendanceApi = {
+  /** 404 when no Employee row is linked to this account. */
+  profile: () =>
+    apiClient.get<{
+      id: string
+      employeeId?: string
+      attendanceMethod?: AttendanceMethod
+      department?: { name: string } | null
+      designation?: { name: string } | null
+      betterAuthUser?: { name?: string; email?: string } | null
+    }>('/hr/my/profile'),
+  today: () => apiClient.get<MyDayState>('/hr/my/attendance/today'),
+  checkIn: () => apiClient.post<{ id: string }>('/hr/my/attendance/check-in', {}),
+  breakStart: () => apiClient.post<{ id: string }>('/hr/my/attendance/break/start', {}),
+  breakEnd: () => apiClient.post<{ id: string }>('/hr/my/attendance/break/end', {}),
+  checkOut: () => apiClient.post<{ id: string }>('/hr/my/attendance/check-out', {}),
 }

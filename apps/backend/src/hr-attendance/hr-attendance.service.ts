@@ -507,15 +507,24 @@ export class HrAttendanceService {
 
   async getDayState(employeeId: string, date?: string, now?: Date) {
     const d = date ? this.resolveDate(date) : dhakaRangeForToday(now).from;
+    // Expose the app-path gate so any client can hide/disable check-in instead of
+    // rendering a live button that is guaranteed to 400 under MACHINE mode.
+    const employee = await this.loadEmployee(employeeId);
+    const access = await this.effectiveMethod(employee);
+    const gate = {
+      appAllowed: access.allowed,
+      appMethod: access.method,
+      ...(access.blockedReason ? { appBlockedReason: access.blockedReason } : {}),
+    };
     const day = await this.prisma.attendanceDay.findUnique({
       where: { employeeId_date: { employeeId, date: d } },
       include: DAY_INCLUDE,
     });
     if (!day) {
-      return { state: 'none', workedMinutes: 0, breakMinutes: 0, missingCheckout: false };
+      return { state: 'none', workedMinutes: 0, breakMinutes: 0, missingCheckout: false, ...gate };
     }
     if (day.sessions.length === 0) {
-      return { state: 'before_work', workedMinutes: 0, breakMinutes: 0, missingCheckout: false };
+      return { state: 'before_work', workedMinutes: 0, breakMinutes: 0, missingCheckout: false, ...gate };
     }
     const nowDate = new Date();
     const open = this.openSessionOf(day);
@@ -530,6 +539,7 @@ export class HrAttendanceService {
         workedMinutes,
         breakMinutes,
         missingCheckout: true,
+        ...gate,
       };
     }
     const first = day.sessions[0];
@@ -545,6 +555,7 @@ export class HrAttendanceService {
       workedMinutes: day.workedMinutes ?? workedMinutes,
       breakMinutes: day.breakMinutes ?? breakMinutes,
       missingCheckout: false,
+      ...gate,
     };
   }
 

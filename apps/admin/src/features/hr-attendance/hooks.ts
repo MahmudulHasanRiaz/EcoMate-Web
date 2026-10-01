@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   hrAttendanceApi,
+  hrMyAttendanceApi,
   getErrorMessage,
   type AttendanceListParams,
   type AttendanceMode,
@@ -205,6 +206,74 @@ export function useUpdateAttendanceSettingsMutation() {
       toast.success('Attendance settings saved')
     },
     onError: (e: unknown) => toast.error(getErrorMessage(e, 'Could not save settings')),
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Self-service (/hr/my) — powers the global header attendance clock
+// ---------------------------------------------------------------------------
+
+const MY_TODAY_KEY = 'hr-my-attendance-today'
+const MY_PROFILE_KEY = 'hr-my-profile'
+
+/**
+ * Probes whether the logged-in account has an Employee record linked. A 404 is
+ * the expected "not an employee" answer, so it resolves to `null` rather than
+ * throwing — callers hide the widget on a falsy result.
+ */
+export function useMyHrProfileQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: [MY_PROFILE_KEY],
+    queryFn: () =>
+      hrMyAttendanceApi
+        .profile()
+        .then((r) => r.data)
+        .catch(() => null),
+    enabled,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  })
+}
+
+export function useMyAttendanceTodayQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: [MY_TODAY_KEY],
+    queryFn: () => hrMyAttendanceApi.today().then((r) => r.data),
+    enabled,
+    // The clock sits on every page; keep it fresh without hammering the API.
+    refetchInterval: 30_000,
+    retry: false,
+  })
+}
+
+const MY_ACTION_LABELS: Record<MyAttendanceAction, { success: string; failure: string }> = {
+  checkIn: { success: 'Checked in', failure: 'Could not check in' },
+  breakStart: { success: 'Break started', failure: 'Could not start break' },
+  breakEnd: { success: 'Break ended', failure: 'Could not end break' },
+  checkOut: { success: 'Checked out', failure: 'Could not check out' },
+}
+
+export type MyAttendanceAction = 'checkIn' | 'breakStart' | 'breakEnd' | 'checkOut'
+
+export function useMyAttendanceActionMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (action: MyAttendanceAction) => {
+      const call = {
+        checkIn: hrMyAttendanceApi.checkIn,
+        breakStart: hrMyAttendanceApi.breakStart,
+        breakEnd: hrMyAttendanceApi.breakEnd,
+        checkOut: hrMyAttendanceApi.checkOut,
+      }[action]
+      return call().then((r) => r.data)
+    },
+    onSuccess: (_data, action) => {
+      queryClient.invalidateQueries({ queryKey: [MY_TODAY_KEY] })
+      invalidateAll(queryClient)
+      toast.success(MY_ACTION_LABELS[action].success)
+    },
+    onError: (e: unknown, action) =>
+      toast.error(getErrorMessage(e, MY_ACTION_LABELS[action].failure)),
   })
 }
 

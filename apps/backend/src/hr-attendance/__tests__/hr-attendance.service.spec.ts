@@ -543,6 +543,59 @@ describe('HrAttendanceService', () => {
   });
 
   describe('getDayState', () => {
+    it('exposes the app-path gate so clients can hide check-in instead of 400ing', async () => {
+      // MACHINE mode → app attendance blocked for every employee.
+      prismaMock.attendanceSettings.findUnique.mockResolvedValue({ mode: 'MACHINE' });
+      prismaMock.attendanceDay.findUnique.mockResolvedValue(null);
+      const res = await service.getDayState('emp-1', '2026-08-28');
+      expect(res).toMatchObject({ state: 'none', appAllowed: false, appMethod: 'APP' });
+      expect(res.appBlockedReason).toMatch(/MACHINE mode/i);
+    });
+
+    it('reports appAllowed with no reason when app attendance is permitted', async () => {
+      prismaMock.attendanceSettings.findUnique.mockResolvedValue({ mode: 'BOTH' });
+      prismaMock.attendanceDay.findUnique.mockResolvedValue(null);
+      const res = await service.getDayState('emp-1', '2026-08-28');
+      expect(res).toMatchObject({ appAllowed: true, appMethod: 'APP' });
+      expect(res.appBlockedReason).toBeUndefined();
+    });
+
+    it('blocks BOTH-mode employees whose own method is MACHINE', async () => {
+      prismaMock.attendanceSettings.findUnique.mockResolvedValue({ mode: 'BOTH' });
+      prismaMock.employee.findUnique.mockResolvedValue({
+        ...EMPLOYEE,
+        attendanceMethod: 'MACHINE',
+      });
+      prismaMock.attendanceDay.findUnique.mockResolvedValue(null);
+      const res = await service.getDayState('emp-1', '2026-08-28');
+      expect(res.appAllowed).toBe(false);
+      expect(res.appBlockedReason).toMatch(/machine attendance/i);
+    });
+
+    it('blocks employees with attendanceMethod NONE', async () => {
+      prismaMock.attendanceSettings.findUnique.mockResolvedValue({ mode: 'APP' });
+      prismaMock.employee.findUnique.mockResolvedValue({
+        ...EMPLOYEE,
+        attendanceMethod: 'NONE',
+      });
+      prismaMock.attendanceDay.findUnique.mockResolvedValue(null);
+      const res = await service.getDayState('emp-1', '2026-08-28');
+      expect(res.appAllowed).toBe(false);
+      expect(res.appBlockedReason).toMatch(/disabled/i);
+    });
+
+    it('keeps the existing state fields intact alongside the gate', async () => {
+      prismaMock.attendanceSettings.findUnique.mockResolvedValue({ mode: 'APP' });
+      prismaMock.attendanceDay.findUnique.mockResolvedValue(makeDay());
+      const res = await service.getDayState('emp-1', '2026-08-28');
+      expect(res).toMatchObject({
+        state: 'before_work',
+        workedMinutes: 0,
+        breakMinutes: 0,
+        missingCheckout: false,
+      });
+    });
+
     it('returns none when no day exists', async () => {
       prismaMock.attendanceDay.findUnique.mockResolvedValue(null);
       await expect(service.getDayState('emp-1', '2026-08-28')).resolves.toMatchObject({
