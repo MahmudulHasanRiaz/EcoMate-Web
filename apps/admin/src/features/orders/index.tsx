@@ -704,8 +704,15 @@ export function Orders() {
                               {new Date(o.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
                               <span className='text-muted-foreground/60 ml-1'>{relativeTime(o.createdAt)}</span>
                             </span>
-                            {/* Canonical dimensions first — four independent
-                                facts, each rendered as its own badge. */}
+                            {/* Canonical Channel · Entity · Source ·
+                                Acquisition. These SUPERSEDE the legacy
+                                salesChannel/sourcePlatform/sourceType/
+                                sourceEntity badges, which are deliberately
+                                not rendered alongside: showing both painted
+                                the same fact twice (e.g. "facebook" next to
+                                "FACEBOOK · AD") and made the row unreadable.
+                                The legacy columns are still stored and still
+                                feed every legacy consumer, filter and export. */}
                             <CanonicalAttributionBadges
                               channel={o.channel}
                               channelEntity={o.channelEntity}
@@ -713,7 +720,11 @@ export function Orders() {
                               sourceLabel={o.sourcePlatformName}
                               acquisitionType={o.acquisitionType}
                             />
-                            {o.salesChannel || o.sourcePlatform || o.sourceType || o.sourceEntity ? (
+                            {/* Pre-migration orders have no canonical values
+                                yet, so the legacy badges are the only thing
+                                to show until the backfill has run. */}
+                            {!o.channel && !o.sourceSlug && !o.acquisitionType &&
+                              (o.salesChannel || o.sourcePlatform || o.sourceType || o.sourceEntity) ? (
                               <OrderSourceBadges
                                 attribution={{
                                   salesChannel: o.salesChannel,

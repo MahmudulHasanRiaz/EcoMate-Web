@@ -439,19 +439,23 @@ function OrderDetailPage() {
                     acquisitionType={order.acquisitionType}
                   />
                 </span>
-                {order.salesChannel || order.sourcePlatform || order.sourceType || order.sourceEntity ? (
-                  <span className='ml-2 align-middle'>
-                    <OrderSourceBadges
-                      attribution={{
-                        salesChannel: order.salesChannel,
-                        sourcePlatform: order.sourcePlatform,
-                        sourceType: order.sourceType,
-                        sourceEntity: order.sourceEntity,
-                      }}
-                      className='text-xs h-auto py-0.5'
-                    />
-                  </span>
-                ) : null}
+                {/* Legacy badges are a FALLBACK, not an addition: rendering both
+                    repeated the same fact twice on the row. They still show for
+                    orders whose canonical mapping has not run yet. */}
+                {!order.channel && !order.sourceSlug && !order.acquisitionType &&
+                  (order.salesChannel || order.sourcePlatform || order.sourceType || order.sourceEntity) ? (
+                    <span className='ml-2 align-middle'>
+                      <OrderSourceBadges
+                        attribution={{
+                          salesChannel: order.salesChannel,
+                          sourcePlatform: order.sourcePlatform,
+                          sourceType: order.sourceType,
+                          sourceEntity: order.sourceEntity,
+                        }}
+                        className='text-xs h-auto py-0.5'
+                      />
+                    </span>
+                  ) : null}
                 {order.trashedAt && (
                   <Badge variant='destructive' className='ml-2 align-middle text-xs'>
                     <Trash2 className='h-3 w-3 mr-1 inline' /> Trashed
