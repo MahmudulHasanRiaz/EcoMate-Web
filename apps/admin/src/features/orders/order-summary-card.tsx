@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Pencil, Check, X, DollarSign, Percent, Truck, Tag } from 'lucide-react'
+import { Pencil, Check, X, DollarSign, Percent, Truck, Tag, Receipt } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -114,11 +114,21 @@ export function OrderSummaryCard({
 
   return (
     <TooltipProvider>
-      <Card>
-        <CardHeader className='pb-2'>
-          <CardTitle className='text-sm font-semibold'>Order Summary</CardTitle>
+      <Card className='overflow-hidden border border-border/70 shadow-xs'>
+        <CardHeader className='bg-muted/30 border-b border-border/50 py-3.5 px-4 sm:px-6'>
+          <div className='flex items-center gap-2.5'>
+            <div className='h-8 w-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-semibold'>
+              <Receipt className='h-4 w-4' />
+            </div>
+            <div>
+              <CardTitle className='text-sm font-semibold tracking-tight text-foreground'>
+                Order Summary
+              </CardTitle>
+              <p className='text-xs text-muted-foreground mt-0.5'>Financial totals and charge breakdown</p>
+            </div>
+          </div>
         </CardHeader>
-        <CardContent className='space-y-0 text-sm p-4 pt-0'>
+        <CardContent className='space-y-0 text-sm p-4 sm:p-6'>
 
           {/* Subtotal */}
           <div className='flex items-center justify-between py-1.5'>
@@ -305,12 +315,12 @@ export function OrderSummaryCard({
           <Separator className='my-1' />
 
           {/* Total */}
-          <div className='flex items-center justify-between py-2'>
-            <span className='font-semibold text-base'>Total</span>
-            <span className='font-bold text-base'>
+          <div className='flex items-center justify-between py-2.5 mt-2 px-3 rounded-lg bg-primary/5 border border-primary/15'>
+            <span className='font-bold text-sm sm:text-base text-foreground'>Total Amount</span>
+            <span className='font-bold text-base sm:text-lg text-primary'>
               ৳{fmt(displayTotal)}
               {(editShipping || editDiscount) && (
-                <span className='text-xs text-muted-foreground font-normal ml-1'>(preview)</span>
+                <span className='text-xs text-muted-foreground font-normal ml-1.5'>(preview)</span>
               )}
             </span>
           </div>

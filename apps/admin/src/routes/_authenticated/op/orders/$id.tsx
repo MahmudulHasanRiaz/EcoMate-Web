@@ -44,8 +44,9 @@ import { Separator } from '@/components/ui/separator'
 import {
   Loader2, ArrowLeft, ArrowRight, Package, Pencil, Save, Clock, User, ChevronDown, ChevronUp,
   Truck, ExternalLink, Printer, Eye, EyeOff, MessageSquarePlus, ArrowRightLeft, Tag, Send,
-  AlertTriangle, MoreHorizontal, Minus, Plus, X, MapPin, Mail, Phone, Trash2, RefreshCcw, Ban, Lock
-, RotateCcw, ScanSearch } from 'lucide-react'
+  AlertTriangle, MoreHorizontal, Minus, Plus, X, MapPin, Mail, Phone, Trash2, RefreshCcw, Ban, Lock,
+  RotateCcw, ScanSearch, Calendar, CreditCard, CheckCircle2, ShoppingBag, History
+} from 'lucide-react'
 import { DISPATCH_STATUSES } from '@/features/dispatch/data/data'
 import { STATUS_COLORS as statusColors } from '@/features/orders/status-transitions'
 
@@ -136,6 +137,7 @@ function OrderDetailPage() {
 
   // ── Customer sheet state ──────────────────────────────────────────
   const [showCustomerSheet, setShowCustomerSheet] = useState(false)
+  const [showPastOrdersDialog, setShowPastOrdersDialog] = useState(false)
 
   // ── Payment edit state (mirrors the create-page payment card) ──
   const [editingPayment, setEditingPayment] = useState(false)
@@ -416,21 +418,24 @@ function OrderDetailPage() {
           <ProfileDropdown />
         </Header>
 
-        <Main className='flex flex-1 flex-col gap-4'>
+        <Main className='flex flex-1 flex-col gap-3.5 sm:gap-6 p-2.5 sm:p-6 pb-24 sm:pb-32 max-w-[1600px] w-full mx-auto'>
 
           <OrderEditLockGuard orderId={order.id} disabled={!!order.trashedAt} />
 
-          {/* ── Page Header ──────────────────────────────────────── */}
-          <div className='flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
-            <div>
-              <h2 className='text-xl font-bold tracking-tight flex items-center gap-2 flex-wrap'>
-                <span className='inline-flex items-center gap-1.5'>
-                  {order.displayId}
-                  <CopyButton text={order.displayId} label='Order ID' />
-                </span>
-                {/* Canonical Channel · Entity · Source · Acquisition — four
-                    independent facts, never collapsed into one badge. */}
-                <span className='ml-2 align-middle'>
+          {/* ── Executive Order Header Banner ──────────────────────── */}
+          <div className='rounded-2xl border border-border/70 bg-card/75 backdrop-blur-md p-3 sm:p-6 shadow-2xs space-y-3 sm:space-y-4'>
+            {/* Top context & identification row */}
+            <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border/50 pb-4'>
+              <div className='flex items-center gap-2.5 flex-wrap'>
+                <div className='flex items-center gap-2'>
+                  <h1 className='text-xl sm:text-2xl lg:text-3xl font-bold font-mono tracking-tight text-foreground flex items-center gap-2'>
+                    <span className='break-all sm:break-normal'>{order.displayId}</span>
+                    <CopyButton text={order.displayId} label='Order ID' />
+                  </h1>
+                </div>
+
+                <div className='flex items-center gap-1.5 flex-wrap'>
+                  {/* Canonical attribution badges */}
                   <CanonicalAttributionBadges
                     channel={order.channel}
                     channelEntity={order.channelEntity}
@@ -438,13 +443,8 @@ function OrderDetailPage() {
                     sourceLabel={order.sourcePlatformName}
                     acquisitionType={order.acquisitionType}
                   />
-                </span>
-                {/* Legacy badges are a FALLBACK, not an addition: rendering both
-                    repeated the same fact twice on the row. They still show for
-                    orders whose canonical mapping has not run yet. */}
-                {!order.channel && !order.sourceSlug && !order.acquisitionType &&
-                  (order.salesChannel || order.sourcePlatform || order.sourceType || order.sourceEntity) ? (
-                    <span className='ml-2 align-middle'>
+                  {!order.channel && !order.sourceSlug && !order.acquisitionType &&
+                    (order.salesChannel || order.sourcePlatform || order.sourceType || order.sourceEntity) ? (
                       <OrderSourceBadges
                         attribution={{
                           salesChannel: order.salesChannel,
@@ -454,580 +454,556 @@ function OrderDetailPage() {
                         }}
                         className='text-xs h-auto py-0.5'
                       />
-                    </span>
-                  ) : null}
-                {order.trashedAt && (
-                  <Badge variant='destructive' className='ml-2 align-middle text-xs'>
-                    <Trash2 className='h-3 w-3 mr-1 inline' /> Trashed
-                  </Badge>
-                )}
-                {order.kind === 'RETURN' && (
-                  <Badge variant='outline' className='ml-2 align-middle text-xs border-pink-500/50 text-pink-500'>
-                    <RotateCcw className='h-3 w-3 mr-1 inline' /> Return Order
-                  </Badge>
-                )}
-              </h2>
-              <p className='text-xs text-muted-foreground'>{new Date(order.createdAt).toLocaleString()}</p>
+                    ) : null}
+                  {order.trashedAt && (
+                    <Badge variant='destructive' className='text-xs gap-1 py-0.5'>
+                      <Trash2 className='h-3 w-3' /> Trashed
+                    </Badge>
+                  )}
+                  {order.kind === 'RETURN' && (
+                    <Badge variant='outline' className='text-xs gap-1 border-pink-500/50 text-pink-500 bg-pink-500/10 py-0.5'>
+                      <RotateCcw className='h-3 w-3' /> Return Order
+                    </Badge>
+                  )}
+                </div>
+              </div>
+
+              <div className='flex items-center gap-2 text-xs text-muted-foreground'>
+                <Calendar className='h-3.5 w-3.5 text-muted-foreground/70 shrink-0' />
+                <span>Placed on <strong className='text-foreground font-medium'>{new Date(order.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</strong> at {new Date(order.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span>
+              </div>
             </div>
 
             {order.trashedAt && (
-              <div className='col-span-full rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-2 text-sm text-destructive'>
-                <AlertTriangle className='h-4 w-4 inline mr-1.5 -mt-0.5' />
-                This order is in trash. It was moved to trash on {new Date(order.trashedAt).toLocaleString()}.
-                It is excluded from all reports, stats, and listings.
+              <div className='rounded-xl border border-destructive/30 bg-destructive/8 p-3.5 text-sm text-destructive flex items-center gap-2.5'>
+                <AlertTriangle className='h-4 w-4 shrink-0' />
+                <span>This order was moved to trash on {new Date(order.trashedAt).toLocaleString()} and is excluded from regular reports.</span>
               </div>
             )}
 
-            <div className='flex items-center gap-2 flex-wrap'>
-              {/* Status Badge + Courier Status */}
-              <div className='flex items-center gap-1.5 border rounded-md px-2.5 py-1'>
-                <Badge style={{ backgroundColor: statusColors[order.status.name] || '#6B7280', color: '#fff' }} className='text-xs'>
-                  {order.status.name}
-                </Badge>
-                {order.dispatches && order.dispatches.length > 0 && (() => {
-                  const d = order.dispatches
-                  const latestDispatch = d[d.length - 1]
-                  const ds = DISPATCH_STATUSES.find(d => d.value === latestDispatch.status)
-                  return (
-                    <Badge variant='outline' className={`text-xs flex items-center gap-1 ${ds?.color ? ds.color.replace('bg-', 'text-').replace('-500', '-600') : ''}`}>
-                      <Truck className='h-3 w-3' />{ds?.label || latestDispatch.status}
-                    </Badge>
-                  )
-                })()}
-                {order.trackingUrl && (
-                  <Button size='icon' variant='ghost' className='h-6 w-6' title='Track' onClick={() => window.open(order.trackingUrl!, '_blank')}>
-                    <ExternalLink className='h-3 w-3' />
-                  </Button>
-                )}
-              </div>
+            {/* Status & Action Controls Toolbar */}
+            <div className='flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between pt-0.5'>
+              <div className='flex items-center gap-2 sm:gap-2.5 flex-wrap'>
+                {/* Current Status Pill */}
+                <div className='flex items-center gap-2 rounded-lg border border-border/80 bg-muted/40 px-2.5 sm:px-3 py-1.5 shadow-2xs flex-wrap'>
+                  <span
+                    className='h-2.5 w-2.5 rounded-full ring-2 ring-background shrink-0 animate-pulse'
+                    style={{ backgroundColor: statusColors[order.status.name] || '#6B7280' }}
+                  />
+                  <Badge style={{ backgroundColor: statusColors[order.status.name] || '#6B7280', color: '#fff' }} className='text-xs'>
+                    {order.status.name}
+                  </Badge>
+                  {order.dispatches && order.dispatches.length > 0 && (() => {
+                    const d = order.dispatches
+                    const latestDispatch = d[d.length - 1]
+                    const ds = DISPATCH_STATUSES.find(d => d.value === latestDispatch.status)
+                    return (
+                      <Badge variant='outline' className={`text-[11px] gap-1 px-2 py-0 border-border/60 ${ds?.color ? ds.color.replace('bg-', 'text-').replace('-500', '-600') : ''}`}>
+                        <Truck className='h-3 w-3' />{ds?.label || latestDispatch.status}
+                      </Badge>
+                    )
+                  })()}
+                  {order.trackingUrl && (
+                    <Button size='icon' variant='ghost' className='h-5.5 w-5.5 text-muted-foreground hover:text-foreground' title='Track shipment' onClick={() => window.open(order.trackingUrl!, '_blank')}>
+                      <ExternalLink className='h-3 w-3' />
+                    </Button>
+                  )}
+                </div>
 
-              {/* Next-status: on mobile collapse to a single dropdown; on sm+ show pills.
-                  Return Orders are excluded — their status is managed by the return workflow. */}
-              {allowedStatuses.length > 0 && order.kind !== 'RETURN' && (
-                <>
-                  {/* Mobile: all in dropdown */}
-                  <div className='sm:hidden'>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant='outline' size='sm' className='h-8 text-xs gap-1'>
-                          Change Status <ChevronDown className='h-3.5 w-3.5' />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align='start'>
-                        {allowedStatuses.map((s: any) => (
-                          <DropdownMenuItem key={s.id} onClick={() => setShowStatusDialog(s.id)}>
-                            <span style={{ color: statusColors[s.name] || undefined }}>→ {s.name}</span>
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                  {/* Desktop: pill buttons */}
-                  <div className='hidden sm:flex items-center gap-1'>
-                    {allowedStatuses.slice(0, 3).map((s: any) => (
-                      <Button
-                        key={s.id}
-                        variant='outline'
-                        size='sm'
-                        className='h-7 text-xs px-2.5'
-                        style={{ borderColor: statusColors[s.name] || undefined, color: statusColors[s.name] || undefined }}
-                        onClick={() => setShowStatusDialog(s.id)}
-                      >
-                        → {s.name}
-                      </Button>
-                    ))}
-                    {allowedStatuses.length > 3 && (
+                {/* Next Status Transitions */}
+                {allowedStatuses.length > 0 && order.kind !== 'RETURN' && (
+                  <>
+                    <div className='sm:hidden'>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant='outline' size='sm' className='h-7 text-xs px-2'>
-                            +{allowedStatuses.length - 3} <ChevronDown className='h-3 w-3 ml-0.5' />
+                          <Button variant='outline' size='sm' className='h-8 text-xs gap-1 shadow-2xs'>
+                            Change Status <ChevronDown className='h-3.5 w-3.5' />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align='end'>
-                          {allowedStatuses.slice(3).map((s: any) => (
+                        <DropdownMenuContent align='start'>
+                          {allowedStatuses.map((s: any) => (
                             <DropdownMenuItem key={s.id} onClick={() => setShowStatusDialog(s.id)}>
                               <span style={{ color: statusColors[s.name] || undefined }}>→ {s.name}</span>
                             </DropdownMenuItem>
                           ))}
                         </DropdownMenuContent>
                       </DropdownMenu>
-                    )}
-                  </div>
-                </>
-              )}
+                    </div>
+                    <div className='hidden sm:flex items-center gap-1.5'>
+                      {allowedStatuses.slice(0, 3).map((s: any) => (
+                        <Button
+                          key={s.id}
+                          variant='outline'
+                          size='sm'
+                          className='h-8 text-xs px-2.5 font-medium transition-all shadow-2xs hover:shadow-xs'
+                          style={{ borderColor: `${statusColors[s.name] || '#6B7280'}60`, color: statusColors[s.name] || undefined }}
+                          onClick={() => setShowStatusDialog(s.id)}
+                        >
+                          → {s.name}
+                        </Button>
+                      ))}
+                      {allowedStatuses.length > 3 && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant='outline' size='sm' className='h-8 text-xs px-2 shadow-2xs'>
+                              +{allowedStatuses.length - 3} <ChevronDown className='h-3 w-3 ml-0.5' />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align='end'>
+                            {allowedStatuses.slice(3).map((s: any) => (
+                              <DropdownMenuItem key={s.id} onClick={() => setShowStatusDialog(s.id)}>
+                                <span style={{ color: statusColors[s.name] || undefined }}>→ {s.name}</span>
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
 
-              {/* Dispatch button — hidden for Return Orders (RTN is not an outbound sale) */}
-              {!order.courierService && order.kind !== 'RETURN' && (
-                <Button variant='default' size='sm' className='h-8' onClick={() => setShowDispatchDialog(true)}>
-                  <Send className='h-3.5 w-3.5 mr-1' />
-                  <span className='hidden xs:inline'>Send to Courier</span>
-                  <span className='xs:hidden'>Dispatch</span>
-                </Button>
-              )}
-
-              {/* Create Return Order — the ONLY Partial resolution path */}
-              {order.status.name === 'Partial' && !rtnOrder && (
-                <Button
-                  variant='default'
-                  size='sm'
-                  className='h-8'
-                  onClick={() => { setReturnQtys({}); setShowRtnDialog(true) }}
-                >
-                  <RotateCcw className='h-3.5 w-3.5 mr-1' />
-                  <span className='hidden xs:inline'>Create Return Order</span>
-                  <span className='xs:hidden'>Return Order</span>
-                </Button>
-              )}
-
-              {/* Others Information — order snapshot vs current customer profile,
-                  device/request context, attribution and purchase delivery
-                  evidence. Exposes IP, User-Agent and customer PII, so it is
-                  gated to superadmin + admin here AND by the API's @Roles. */}
-              {canViewOthersInfo && (
-                <Button
-                  variant='outline'
-                  size='sm'
-                  className='h-8'
-                  onClick={() => setShowOthersInfo(true)}
-                >
-                  <ScanSearch className='h-3.5 w-3.5 mr-1' />
-                  <span className='hidden xs:inline'>Others Information</span>
-                  <span className='xs:hidden'>Others</span>
-                </Button>
-              )}
-
-              {/* More actions: Print */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant='outline' size='sm' className='h-8 px-2.5'>
-                    <MoreHorizontal className='h-4 w-4' />
+              {/* Primary & Secondary Action CTAs */}
+              <div className='flex items-center gap-2 flex-wrap'>
+                {!order.courierService && order.kind !== 'RETURN' && (
+                  <Button variant='default' size='sm' className='h-8 gap-1.5 shadow-xs font-medium' onClick={() => setShowDispatchDialog(true)}>
+                    <Send className='h-3.5 w-3.5' />
+                    <span className='hidden sm:inline'>Send to Courier</span>
+                    <span className='sm:hidden'>Dispatch</span>
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align='end'>
-                  <DropdownMenuItem onClick={() => window.open(`/admin/op/print/sticker/${order.id}`, '_blank')}>
-                    <Printer className='h-4 w-4 mr-2' /> Print Sticker
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => window.open(`/admin/op/print/invoice/${order.id}`, '_blank')}>
-                    <Printer className='h-4 w-4 mr-2' /> Print Invoice
-                  </DropdownMenuItem>
-                  {!order.trashedAt ? (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        className='text-destructive focus:text-destructive'
-                        disabled={trashMut.isPending}
-                        onClick={() => trashMut.mutate(order.id)}
-                      >
-                        <Trash2 className='h-4 w-4 mr-2' /> Move to Trash
-                      </DropdownMenuItem>
-                    </>
-                  ) : (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        disabled={restoreMut.isPending}
-                        onClick={() => restoreMut.mutate(order.id)}
-                      >
-                        <RefreshCcw className='h-4 w-4 mr-2' /> Restore from Trash
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                )}
+
+                {order.status.name === 'Partial' && !rtnOrder && (
+                  <Button
+                    variant='default'
+                    size='sm'
+                    className='h-8 gap-1.5 shadow-xs bg-pink-600 hover:bg-pink-700 font-medium'
+                    onClick={() => { setReturnQtys({}); setShowRtnDialog(true) }}
+                  >
+                    <RotateCcw className='h-3.5 w-3.5' />
+                    <span className='hidden sm:inline'>Create Return Order</span>
+                    <span className='sm:hidden'>Return Order</span>
+                  </Button>
+                )}
+
+                {canViewOthersInfo && (
+                  <Button
+                    variant='outline'
+                    size='sm'
+                    className='h-8 gap-1.5 text-xs font-medium'
+                    onClick={() => setShowOthersInfo(true)}
+                  >
+                    <ScanSearch className='h-3.5 w-3.5' />
+                    <span className='hidden sm:inline'>Others Information</span>
+                    <span className='sm:hidden'>Others</span>
+                  </Button>
+                )}
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant='outline' size='sm' className='h-8 px-2.5 shadow-2xs'>
+                      <MoreHorizontal className='h-4 w-4' />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align='end' className='w-48'>
+                    <DropdownMenuItem onClick={() => window.open(`/admin/op/print/sticker/${order.id}`, '_blank')}>
+                      <Printer className='h-4 w-4 mr-2' /> Print Sticker
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => window.open(`/admin/op/print/invoice/${order.id}`, '_blank')}>
+                      <Printer className='h-4 w-4 mr-2' /> Print Invoice
+                    </DropdownMenuItem>
+                    {!order.trashedAt ? (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className='text-destructive focus:text-destructive'
+                          disabled={trashMut.isPending}
+                          onClick={() => trashMut.mutate(order.id)}
+                        >
+                          <Trash2 className='h-4 w-4 mr-2' /> Move to Trash
+                        </DropdownMenuItem>
+                      </>
+                    ) : (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          disabled={restoreMut.isPending}
+                          onClick={() => restoreMut.mutate(order.id)}
+                        >
+                          <RefreshCcw className='h-4 w-4 mr-2' /> Restore from Trash
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
           </div>
 
           {/* ── Main Grid ────────────────────────────────────────── */}
-          <div className='grid grid-cols-1 lg:grid-cols-3 gap-5'>
+          <div className='grid grid-cols-1 xl:grid-cols-12 gap-3.5 sm:gap-6 items-start'>
 
             {/* ════ LEFT COLUMN ════ */}
-            <div className='lg:col-span-2 space-y-5'>
+            <div className='xl:col-span-7 2xl:col-span-8 space-y-3.5 sm:space-y-6'>
 
               {/* Items Card */}
-              <Card>
-                <CardHeader className='pb-2'>
-                  <CardTitle className='text-sm font-semibold flex items-center justify-between'>
-                    <span className='flex items-center gap-1.5'><Package className='h-4 w-4' /> Items</span>
+              <Card className='overflow-hidden border border-border/70 shadow-xs'>
+                <CardHeader className='bg-muted/30 border-b border-border/50 py-2.5 px-3.5 sm:py-3.5 sm:px-6'>
+                  <div className='flex items-center justify-between'>
+                    <div className='flex items-center gap-2.5'>
+                      <div className='h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-semibold'>
+                        <Package className='h-4 w-4' />
+                      </div>
+                      <div>
+                        <CardTitle className='text-sm font-semibold tracking-tight text-foreground flex items-center gap-2'>
+                          Ordered Items
+                          <Badge variant='secondary' className='text-[11px] font-medium px-2 py-0.5 rounded-full'>
+                            {(editingItems ? orderItems : order.items)?.length || 0} {(editingItems ? orderItems : order.items)?.length === 1 ? 'item' : 'items'}
+                          </Badge>
+                        </CardTitle>
+                        <p className='text-xs text-muted-foreground mt-0.5'>Review products, quantities, and pricing details</p>
+                      </div>
+                    </div>
                     {!editingItems ? (
-                      <Button variant='ghost' size='sm' className='h-7 text-xs' onClick={() => setEditingItems(true)}>
-                        <Pencil className='h-3.5 w-3.5 mr-1' /> Edit Items
+                      <Button variant='outline' size='sm' className='h-8 text-xs font-medium shadow-none hover:bg-accent' onClick={() => setEditingItems(true)}>
+                        <Pencil className='h-3.5 w-3.5 mr-1.5' />
+                        <span className='hidden sm:inline'>Edit Items</span>
+                        <span className='sm:hidden'>Edit</span>
                       </Button>
                     ) : (
-                      <div className='flex gap-1.5'>
-                        <Button variant='ghost' size='sm' className='h-7 text-xs' onClick={() => { setEditingItems(false); setOrderItems(order.items || []) }}>
-                          <X className='h-3.5 w-3.5 mr-1' /> Cancel
+                      <div className='flex gap-2'>
+                        <Button variant='ghost' size='sm' className='h-8 text-xs font-medium' onClick={() => { setEditingItems(false); setOrderItems(order.items || []) }}>
+                          <X className='h-3.5 w-3.5 mr-1.5' /> Cancel
                         </Button>
-                        <Button size='sm' className='h-7 text-xs' onClick={handleSaveItems} disabled={updateMut.isPending}>
-                          <Save className='h-3.5 w-3.5 mr-1' /> Save
+                        <Button size='sm' className='h-8 text-xs font-medium' onClick={handleSaveItems} disabled={updateMut.isPending}>
+                          {updateMut.isPending ? <Loader2 className='h-3.5 w-3.5 animate-spin mr-1.5' /> : <Save className='h-3.5 w-3.5 mr-1.5' />}
+                          <span className='hidden sm:inline'>Save Changes</span>
+                          <span className='sm:hidden'>Save</span>
                         </Button>
                       </div>
                     )}
-                  </CardTitle>
+                  </div>
                 </CardHeader>
                 <CardContent className='p-0'>
-                  <div className='overflow-x-auto'>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Product</TableHead>
-                        <TableHead className='text-right w-28'>Price</TableHead>
-                        <TableHead className='text-right w-24'>Qty</TableHead>
-                        <TableHead className='text-right w-24'>Total</TableHead>
-                        {editingItems && <TableHead className='w-10' />}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {(editingItems ? orderItems : order.items)?.map((item: any, index: number) => {
-                        const itemImages = resolveOrderItemImages(
-                          item.product ?? item.variant?.product,
-                          item.variant,
-                        )
-                        return (
-                        <TableRow key={item.id || index}>
-                          <TableCell>
-                            <div className='flex items-center gap-3'>
-                              {itemImages.hasImage ? (
-                                <SafeImage
-                                  src={mediaUrl(itemImages.image)}
-                                  fallbackSrc={mediaUrl(itemImages.colorImage ?? itemImages.productImage)}
-                                  alt=''
-                                  className='h-10 w-10 rounded border object-cover flex-shrink-0'
-                                  thumbWidth={48}
-                                  thumbHeight={48}
-                                />
-                              ) : (
-                                <div className='h-10 w-10 rounded border bg-muted flex items-center justify-center flex-shrink-0'>
-                                  <Package className='h-5 w-5 text-muted-foreground' />
-                                </div>
-                              )}
-                              <div>
-                                <span className='text-sm font-medium block'>{item.product?.name}</span>
-                                {item.variant && item.variant.attributeValues?.length > 0 && (
-                                  <span className='text-xs text-muted-foreground mt-0.5 block'>
-                                    {item.variant.attributeValues.map((av: any) => av.attributeValue?.value).filter(Boolean).join(' / ')}
-                                  </span>
-                                )}
-                                {item.variant?.sku && (
-                                  <span className='text-[10px] text-muted-foreground/60 font-mono block'>SKU: {item.variant.sku}</span>
-                                )}
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell className='text-right'>
-                            {editingItems ? (
-                              <Input type='number' value={item.price} onChange={e => {
-                                const newItems = [...orderItems]
-                                newItems[index].price = parseFloat(e.target.value) || 0
-                                setOrderItems(newItems)
-                              }} className='w-24 text-right h-8 text-sm ml-auto' />
-                            ) : (
-                              <span className='text-sm'>৳{fmt(item.price)}</span>
-                            )}
-                          </TableCell>
-                          <TableCell className='text-right'>
-                            {editingItems ? (
-                              <div className='flex items-center justify-end gap-1'>
-                                <Button variant='outline' size='icon' className='h-7 w-7' onClick={() => {
-                                  const newItems = [...orderItems]
-                                  newItems[index].quantity = Math.max(1, (newItems[index].quantity || 1) - 1)
-                                  setOrderItems(newItems)
-                                }}><Minus className='h-3 w-3' /></Button>
-                                <span className='text-sm w-8 text-center font-medium'>{item.quantity}</span>
-                                <Button variant='outline' size='icon' className='h-7 w-7' onClick={() => {
-                                  const newItems = [...orderItems]
-                                  newItems[index].quantity = (newItems[index].quantity || 1) + 1
-                                  setOrderItems(newItems)
-                                }}><Plus className='h-3 w-3' /></Button>
-                              </div>
-                            ) : (
-                              <span className='text-sm'>{item.quantity}</span>
-                            )}
-                          </TableCell>
-                          <TableCell className='text-right text-sm font-medium'>৳{fmt(nn(item.price) * item.quantity)}</TableCell>
-                          {editingItems && (
-                            <TableCell className='text-right'>
-                              <Button variant='ghost' size='icon' className='h-7 w-7 text-destructive hover:text-destructive' onClick={() => setOrderItems(orderItems.filter((_, i) => i !== index))}>
-                                <X className='h-3.5 w-3.5' />
-                              </Button>
-                            </TableCell>
-                          )}
-                        </TableRow>
-                        )
-                      })}
-
-                      {/* Add product search row */}
-                      {editingItems && (
-                        <TableRow>
-                          <TableCell colSpan={5} className='p-2'>
-                            <Command className='border rounded-md shadow-sm' shouldFilter={false}>
-                              <CommandInput
-                                placeholder='Search or scan product by name or SKU...'
-                                value={productSearchQuery}
-                                onValueChange={setProductSearchQuery}
-                                onKeyDown={e => {
-                                  if (e.key === 'Enter') {
-                                    const exact = productSearchResults.find((p: any) => p.sku === productSearchQuery || p.variants?.some((v: any) => v.sku === productSearchQuery))
-                                    if (exact) {
-                                      const variant = exact.variants?.find((v: any) => v.sku === productSearchQuery)
-                                      setOrderItems([...orderItems, { productId: exact.id, variantId: variant?.id, product: exact, quantity: 1, price: variant?.salePrice ?? variant?.price ?? exact.salePrice ?? exact.basePrice ?? 0 }])
-                                      setProductSearchQuery('')
-                                      toast.success('Product added')
-                                    } else {
-                                      toast.error('Product not found with this SKU')
-                                    }
-                                  }
-                                }}
-                              />
-                              {productSearchQuery && (
-                                <CommandList className='max-h-48 overflow-y-auto'>
-                                  <CommandEmpty>No results found.</CommandEmpty>
-                                  <CommandGroup>
-                                    {productSearchResults
-                                      .filter((p: any) => p.name.toLowerCase().includes(productSearchQuery.toLowerCase()) || p.sku?.toLowerCase().includes(productSearchQuery.toLowerCase()) || p.variants?.some((v: any) => v.sku?.toLowerCase().includes(productSearchQuery.toLowerCase())))
-                                      .map((p: any) => (
-                                        <CommandItem key={p.id} value={p.name} onSelect={() => {
-                                          if (p.type === 'variable' || p.variants?.length > 0) {
-                                            setSelectedProductForVariants(p)
-                                          } else {
-                                            setOrderItems([...orderItems, { productId: p.id, product: p, quantity: 1, price: p.salePrice ?? p.basePrice ?? 0 }])
-                                            setProductSearchQuery('')
-                                          }
-                                        }} className='flex items-center gap-2 p-2 cursor-pointer'>
-                                          {p.images && Array.isArray(p.images) && p.images[0] ? (
-                                            <SafeImage src={mediaUrl(p.images[0])} alt='' className='h-8 w-8 rounded border object-cover' thumbWidth={48} thumbHeight={48} />
-                                          ) : (
-                                            <div className='h-8 w-8 rounded border bg-muted flex items-center justify-center'><Package className='h-4 w-4 text-muted-foreground' /></div>
-                                          )}
-                                          <div className='flex-1 min-w-0'>
-                                            <p className='text-sm font-medium truncate'>{p.name}</p>
-                                            <p className='text-xs text-muted-foreground'>{p.sku || 'No SKU'}</p>
-                                          </div>
-                                          <div className='text-sm font-medium'>৳{fmt(ep(p))}</div>
-                                        </CommandItem>
-                                      ))}
-                                  </CommandGroup>
-                                </CommandList>
-                              )}
-                            </Command>
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Timeline Card */}
-              <Card>
-                <CardHeader className='pb-2'>
-                  <CardTitle className='text-sm font-semibold flex items-center gap-1.5'><Clock className='h-4 w-4' /> Timeline</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {!order.timeline || order.timeline.length === 0 ? (
-                    <div className='text-center py-6 text-muted-foreground'>
-                      <Clock className='h-7 w-7 mx-auto mb-2 opacity-40' />
-                      <p className='text-sm'>No timeline entries yet.</p>
-                    </div>
-                  ) : (
-                    <div className='space-y-0'>
-                      {(order.timeline as any[]).map((t: any, i: number) => {
-                        const isStatus = !!t.status && !t.type; const isPrivate = t.visibility === 'private'
-                        const color = isStatus ? (statusColors[t.status] || '#6B7280') : isPrivate ? '#8B5CF6' : '#6366F1'
-                        const prev = i > 0 ? (order.timeline as any[])[i - 1] : null
-                        const prevIsStatus = !!prev?.status && !prev?.type
-                        const isGrouped = prev && (t.type === prev.type || (isStatus && prevIsStatus))
-                        const performer = t.performedBy || t.performer || ''
-                        const performerEmail = performer.includes('@') ? performer : undefined
-                        return (
-                          <div key={i} className={`relative pl-6 pb-4 border-l-2 last:border-l-0 last:pb-0${isGrouped ? ' border-dashed' : ''}`} style={{ borderColor: color }}>
-                            <div className='absolute left-0 top-1 -translate-x-1/2 w-2.5 h-2.5 rounded-full border-2 bg-background' style={{ borderColor: color }} />
-                            <div className='flex items-center gap-2 flex-wrap'>
-                              {isStatus && t.oldStatus ? (
-                                <div className='flex items-center gap-1.5'>
-                                  <Badge variant='outline' className='text-xs'>{t.oldStatus}</Badge>
-                                  <ArrowRight className='h-3 w-3 text-muted-foreground' />
-                                  <Badge style={{ backgroundColor: color, color: '#fff' }} className='text-xs'>{t.status}</Badge>
-                                </div>
-                              ) : isStatus && <Badge style={{ backgroundColor: color, color: '#fff' }} className='text-xs'>{t.status}</Badge>}
-                              {t.type === 'shipping' && <Badge variant='outline' className='text-xs'><ArrowRightLeft className='h-3 w-3 mr-1' />Shipping</Badge>}
-                              {t.type === 'discount' && <Badge variant='outline' className='text-xs'><Tag className='h-3 w-3 mr-1' />Discount</Badge>}
-                              {t.type === 'note' && <Badge variant='outline' className='text-xs'><MessageSquarePlus className='h-3 w-3 mr-1' />Note</Badge>}
-                              {t.type === 'courier' && <Badge variant='outline' className='text-xs'><Truck className='h-3 w-3 mr-1' />{(t as any).courier}</Badge>}
-                              {isPrivate && <Badge variant='secondary' className='text-xs'><EyeOff className='h-2.5 w-2.5 mr-0.5' />Private</Badge>}
-                              {performer && performer !== 'System' && performer !== 'Customer' && <UserBadge email={performerEmail || performer} showEmail={false} size='sm' />}
-                              {performer === 'System' && <Badge variant='secondary' className='text-[10px] h-4'>Auto</Badge>}
-                              {performer === 'Customer' && <Badge variant='secondary' className='text-[10px] h-4'>Customer</Badge>}
-                              <span className='text-xs text-muted-foreground'><Clock className='h-3 w-3 mr-1 inline' />{new Date(t.timestamp).toLocaleString()}</span>
-                            </div>
-                            {t.note && <p className='text-sm text-muted-foreground mt-1'>{t.note}</p>}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-
-                  {/* Add note — integrated in Timeline footer */}
-                  <div className='mt-4 pt-3 border-t flex items-center gap-2'>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button variant='ghost' size='icon' className='h-7 w-7 shrink-0' onClick={() => setNoteVisibility(v => v === 'public' ? 'private' : 'public')}>
-                          {noteVisibility === 'public' ? <Eye className='h-3.5 w-3.5' /> : <EyeOff className='h-3.5 w-3.5' />}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>{noteVisibility === 'public' ? 'Public note' : 'Private note'} — click to toggle</TooltipContent>
-                    </Tooltip>
-                    <Input
-                      placeholder={`Add ${noteVisibility} note… (Enter to save)`}
-                      className='text-sm h-8 flex-1'
-                      value={noteText}
-                      onChange={e => setNoteText(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' && noteText.trim()) {
-                          noteMut.mutate({ id, note: noteText.trim(), visibility: noteVisibility })
-                          setNoteText('')
-                        }
-                      }}
-                    />
-                    <Button
-                      size='sm' variant='outline' className='h-8 shrink-0'
-                      disabled={!noteText.trim() || noteMut.isPending}
-                      onClick={() => { if (noteText.trim()) { noteMut.mutate({ id, note: noteText.trim(), visibility: noteVisibility }); setNoteText('') } }}
-                    >
-                      {noteMut.isPending ? <Loader2 className='h-3.5 w-3.5 animate-spin' /> : <MessageSquarePlus className='h-3.5 w-3.5' />}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Dispatch History */}
-              <Card>
-                <CardHeader className='pb-2'>
-                  <CardTitle className='text-sm font-semibold flex items-center gap-1.5'><Truck className='h-4 w-4' /> Dispatch History</CardTitle>
-                </CardHeader>
-                <CardContent className='p-0'>
-                  {order.dispatches && order.dispatches.length > 0 ? (
-                    <div className='overflow-x-auto'>
+                  {/* Desktop Table View */}
+                  <div className='hidden md:block overflow-x-auto'>
                     <Table>
                       <TableHeader>
-                        <TableRow>
-                          <TableHead>Courier</TableHead>
-                          <TableHead>Consignment ID</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Tracking</TableHead>
-                          <TableHead>Date</TableHead>
+                        <TableRow className='bg-muted/15 border-b border-border/40 hover:bg-muted/15'>
+                          <TableHead className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground h-10 px-4 sm:px-6'>Product & SKU</TableHead>
+                          <TableHead className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground h-10 text-right w-28'>Unit Price</TableHead>
+                          <TableHead className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground h-10 text-right w-28'>Quantity</TableHead>
+                          <TableHead className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground h-10 text-right w-28 pr-4 sm:pr-6'>Line Total</TableHead>
+                          {editingItems && <TableHead className='w-12 text-center' />}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {order.dispatches.slice().reverse().map((d: any) => {
-                          const statusConfig = DISPATCH_STATUSES.find(s => s.value === d.status)
+                        {(editingItems ? orderItems : order.items)?.map((item: any, index: number) => {
+                          const itemImages = resolveOrderItemImages(
+                            item.product ?? item.variant?.product,
+                            item.variant,
+                          )
                           return (
-                            <TableRow key={d.id}>
-                              <TableCell className='font-medium text-sm capitalize'>{d.courier}</TableCell>
-                              <TableCell className='text-sm font-mono'>{d.consignmentId}</TableCell>
-                              <TableCell>
-                                <Badge className={`text-xs ${statusConfig?.color || 'bg-gray-500'}`}>{statusConfig?.label || d.status}</Badge>
-                              </TableCell>
-                              <TableCell>
-                                {d.trackingCode ? (
-                                  <div className='flex items-center gap-1.5'>
-                                    <span className='font-mono text-sm'>{d.trackingCode}</span>
-                                    {d.trackingUrl && (
-                                      <a href={d.trackingUrl} target='_blank' rel='noreferrer' title='Track shipment' className='text-muted-foreground hover:text-primary transition-colors'>
-                                        <ExternalLink className='h-3.5 w-3.5' />
-                                      </a>
-                                    )}
+                            <TableRow key={item.id || index} className='hover:bg-muted/30 transition-colors'>
+                              <TableCell className='px-4 sm:px-6 py-3'>
+                                <div className='flex items-center gap-3.5'>
+                                  {itemImages.hasImage ? (
+                                    <SafeImage
+                                      src={mediaUrl(itemImages.image)}
+                                      fallbackSrc={mediaUrl(itemImages.colorImage ?? itemImages.productImage)}
+                                      alt=''
+                                      className='h-11 w-11 rounded-lg border border-border/70 object-cover flex-shrink-0 bg-muted/40 shadow-xs'
+                                      thumbWidth={48}
+                                      thumbHeight={48}
+                                    />
+                                  ) : (
+                                    <div className='h-11 w-11 rounded-lg border border-border/70 bg-muted/50 flex items-center justify-center flex-shrink-0 text-muted-foreground shadow-xs'>
+                                      <Package className='h-5 w-5 opacity-70' />
+                                    </div>
+                                  )}
+                                  <div className='min-w-0 flex-1 space-y-1'>
+                                    <span className='text-sm font-medium text-foreground block leading-snug'>{item.product?.name}</span>
+                                    <div className='flex flex-wrap items-center gap-1.5'>
+                                      {item.variant && item.variant.attributeValues?.length > 0 && (
+                                        <span className='inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-muted/60 text-muted-foreground border border-border/40'>
+                                          {item.variant.attributeValues.map((av: any) => av.attributeValue?.value).filter(Boolean).join(' / ')}
+                                        </span>
+                                      )}
+                                      {item.variant?.sku ? (
+                                        <span className='text-[11px] text-muted-foreground/75 font-mono inline-flex items-center gap-0.5'>
+                                          SKU: <span className='font-semibold text-foreground/80'>{item.variant.sku}</span>
+                                        </span>
+                                      ) : item.product?.sku ? (
+                                        <span className='text-[11px] text-muted-foreground/75 font-mono inline-flex items-center gap-0.5'>
+                                          SKU: <span className='font-semibold text-foreground/80'>{item.product.sku}</span>
+                                        </span>
+                                      ) : null}
+                                    </div>
                                   </div>
+                                </div>
+                              </TableCell>
+                              <TableCell className='text-right'>
+                                {editingItems ? (
+                                  <Input
+                                    type='number'
+                                    value={item.price}
+                                    onChange={e => {
+                                      const newItems = [...orderItems]
+                                      newItems[index].price = parseFloat(e.target.value) || 0
+                                      setOrderItems(newItems)
+                                    }}
+                                    className='w-24 text-right h-8 text-sm ml-auto font-medium'
+                                  />
                                 ) : (
-                                  <span className='text-sm text-muted-foreground'>—</span>
+                                  <span className='text-sm font-medium text-foreground'>৳{fmt(item.price)}</span>
                                 )}
                               </TableCell>
-                              <TableCell className='text-xs text-muted-foreground'>{new Date(d.createdAt).toLocaleString()}</TableCell>
+                              <TableCell className='text-right'>
+                                {editingItems ? (
+                                  <div className='inline-flex items-center border border-input rounded-md bg-background shadow-xs ml-auto'>
+                                    <Button
+                                      variant='ghost'
+                                      size='icon'
+                                      className='h-7 w-7 rounded-none rounded-l-md hover:bg-muted text-muted-foreground'
+                                      onClick={() => {
+                                        const newItems = [...orderItems]
+                                        newItems[index].quantity = Math.max(1, (newItems[index].quantity || 1) - 1)
+                                        setOrderItems(newItems)
+                                      }}
+                                    >
+                                      <Minus className='h-3 w-3' />
+                                    </Button>
+                                    <span className='text-xs font-semibold w-7 text-center'>{item.quantity}</span>
+                                    <Button
+                                      variant='ghost'
+                                      size='icon'
+                                      className='h-7 w-7 rounded-none rounded-r-md hover:bg-muted text-muted-foreground'
+                                      onClick={() => {
+                                        const newItems = [...orderItems]
+                                        newItems[index].quantity = (newItems[index].quantity || 1) + 1
+                                        setOrderItems(newItems)
+                                      }}
+                                    >
+                                      <Plus className='h-3 w-3' />
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <span className='inline-flex items-center justify-center min-w-[28px] h-6 px-2 rounded-md bg-muted/70 text-xs font-semibold text-foreground'>
+                                    × {item.quantity}
+                                  </span>
+                                )}
+                              </TableCell>
+                              <TableCell className='text-right pr-4 sm:pr-6 text-sm font-semibold text-foreground'>
+                                ৳{fmt(nn(item.price) * item.quantity)}
+                              </TableCell>
+                              {editingItems && (
+                                <TableCell className='text-center'>
+                                  <Button
+                                    variant='ghost'
+                                    size='icon'
+                                    className='h-7 w-7 text-destructive hover:bg-destructive/10'
+                                    onClick={() => setOrderItems(orderItems.filter((_, i) => i !== index))}
+                                  >
+                                    <X className='h-3.5 w-3.5' />
+                                  </Button>
+                                </TableCell>
+                              )}
                             </TableRow>
                           )
                         })}
                       </TableBody>
                     </Table>
-                    </div>
-                  ) : (
-                    <div className='flex items-center justify-center py-6 text-sm text-muted-foreground'>
-                      <Truck className='h-4 w-4 mr-2 text-muted-foreground/50' />
-                      Not yet dispatched to courier
+                  </div>
+
+                  {/* Mobile Compact Card View */}
+                  <div className='md:hidden divide-y divide-border/50'>
+                    {(editingItems ? orderItems : order.items)?.map((item: any, index: number) => {
+                      const itemImages = resolveOrderItemImages(
+                        item.product ?? item.variant?.product,
+                        item.variant,
+                      )
+                      return (
+                        <div key={item.id || index} className='p-3.5 space-y-2.5 bg-card'>
+                          {/* Product Info Row */}
+                          <div className='flex items-start gap-3'>
+                            {itemImages.hasImage ? (
+                              <SafeImage
+                                src={mediaUrl(itemImages.image)}
+                                fallbackSrc={mediaUrl(itemImages.colorImage ?? itemImages.productImage)}
+                                alt=''
+                                className='h-12 w-12 rounded-lg border border-border/70 object-cover flex-shrink-0 bg-muted/40 shadow-xs'
+                                thumbWidth={48}
+                                thumbHeight={48}
+                              />
+                            ) : (
+                              <div className='h-12 w-12 rounded-lg border border-border/70 bg-muted/50 flex items-center justify-center flex-shrink-0 text-muted-foreground shadow-xs'>
+                                <Package className='h-5 w-5 opacity-70' />
+                              </div>
+                            )}
+                            <div className='min-w-0 flex-1 space-y-1'>
+                              <span className='text-sm font-medium text-foreground block leading-snug line-clamp-2'>{item.product?.name}</span>
+                              <div className='flex flex-wrap items-center gap-1.5'>
+                                {item.variant && item.variant.attributeValues?.length > 0 && (
+                                  <span className='inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-muted/60 text-muted-foreground border border-border/40'>
+                                    {item.variant.attributeValues.map((av: any) => av.attributeValue?.value).filter(Boolean).join(' / ')}
+                                  </span>
+                                )}
+                                {item.variant?.sku ? (
+                                  <span className='text-[11px] text-muted-foreground/75 font-mono inline-flex items-center gap-0.5'>
+                                    SKU: <span className='font-semibold text-foreground/80'>{item.variant.sku}</span>
+                                  </span>
+                                ) : item.product?.sku ? (
+                                  <span className='text-[11px] text-muted-foreground/75 font-mono inline-flex items-center gap-0.5'>
+                                    SKU: <span className='font-semibold text-foreground/80'>{item.product.sku}</span>
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
+                            {editingItems && (
+                              <Button
+                                variant='ghost'
+                                size='icon'
+                                className='h-8 w-8 text-destructive hover:bg-destructive/10 shrink-0'
+                                onClick={() => setOrderItems(orderItems.filter((_, i) => i !== index))}
+                              >
+                                <X className='h-4 w-4' />
+                              </Button>
+                            )}
+                          </div>
+
+                          {/* Price & Quantity Controls */}
+                          {editingItems ? (
+                            <div className='flex items-center justify-between gap-2 pt-2 border-t border-border/40'>
+                              <div className='flex items-center gap-1.5'>
+                                <span className='text-xs text-muted-foreground'>Price: ৳</span>
+                                <Input
+                                  type='number'
+                                  value={item.price}
+                                  onChange={e => {
+                                    const newItems = [...orderItems]
+                                    newItems[index].price = parseFloat(e.target.value) || 0
+                                    setOrderItems(newItems)
+                                  }}
+                                  className='w-20 text-right h-8 text-xs font-medium'
+                                />
+                              </div>
+                              <div className='flex items-center gap-3'>
+                                <div className='inline-flex items-center border border-input rounded-md bg-background shadow-xs'>
+                                  <Button
+                                    variant='ghost'
+                                    size='icon'
+                                    className='h-7 w-7 rounded-none rounded-l-md hover:bg-muted text-muted-foreground'
+                                    onClick={() => {
+                                      const newItems = [...orderItems]
+                                      newItems[index].quantity = Math.max(1, (newItems[index].quantity || 1) - 1)
+                                      setOrderItems(newItems)
+                                    }}
+                                  >
+                                    <Minus className='h-3 w-3' />
+                                  </Button>
+                                  <span className='text-xs font-semibold w-7 text-center'>{item.quantity}</span>
+                                  <Button
+                                    variant='ghost'
+                                    size='icon'
+                                    className='h-7 w-7 rounded-none rounded-r-md hover:bg-muted text-muted-foreground'
+                                    onClick={() => {
+                                      const newItems = [...orderItems]
+                                      newItems[index].quantity = (newItems[index].quantity || 1) + 1
+                                      setOrderItems(newItems)
+                                    }}
+                                  >
+                                    <Plus className='h-3 w-3' />
+                                  </Button>
+                                </div>
+                                <div className='text-right'>
+                                  <span className='text-xs font-semibold text-foreground'>
+                                    ৳{fmt(nn(item.price) * item.quantity)}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className='flex items-center justify-between pt-1.5 border-t border-border/30 text-xs'>
+                              <div className='text-muted-foreground flex items-center gap-1.5'>
+                                <span>৳{fmt(item.price)}</span>
+                                <span className='inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded bg-muted/70 text-[11px] font-semibold text-foreground'>
+                                  × {item.quantity}
+                                </span>
+                              </div>
+                              <div className='text-sm font-semibold text-foreground'>
+                                ৳{fmt(nn(item.price) * item.quantity)}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* Add product search row in editing mode (shared for both desktop and mobile) */}
+                  {editingItems && (
+                    <div className='p-3 bg-muted/20 border-t border-border/50'>
+                      <Command className='border rounded-lg shadow-sm bg-background' shouldFilter={false}>
+                        <CommandInput
+                          placeholder='Search or scan product by name or SKU...'
+                          value={productSearchQuery}
+                          onValueChange={setProductSearchQuery}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              const exact = productSearchResults.find((p: any) => p.sku === productSearchQuery || p.variants?.some((v: any) => v.sku === productSearchQuery))
+                              if (exact) {
+                                const variant = exact.variants?.find((v: any) => v.sku === productSearchQuery)
+                                setOrderItems([...orderItems, { productId: exact.id, variantId: variant?.id, product: exact, quantity: 1, price: variant?.salePrice ?? variant?.price ?? exact.salePrice ?? exact.basePrice ?? 0 }])
+                                setProductSearchQuery('')
+                                toast.success('Product added')
+                              } else {
+                                toast.error('Product not found with this SKU')
+                              }
+                            }
+                          }}
+                        />
+                        {productSearchQuery && (
+                          <CommandList className='max-h-52 overflow-y-auto'>
+                            <CommandEmpty className='p-4 text-xs text-muted-foreground text-center'>No matching products found.</CommandEmpty>
+                            <CommandGroup>
+                              {productSearchResults
+                                .filter((p: any) => p.name.toLowerCase().includes(productSearchQuery.toLowerCase()) || p.sku?.toLowerCase().includes(productSearchQuery.toLowerCase()) || p.variants?.some((v: any) => v.sku?.toLowerCase().includes(productSearchQuery.toLowerCase())))
+                                .map((p: any) => (
+                                  <CommandItem
+                                    key={p.id}
+                                    value={p.name}
+                                    onSelect={() => {
+                                      if (p.type === 'variable' || p.variants?.length > 0) {
+                                        setSelectedProductForVariants(p)
+                                      } else {
+                                        setOrderItems([...orderItems, { productId: p.id, product: p, quantity: 1, price: p.salePrice ?? p.basePrice ?? 0 }])
+                                        setProductSearchQuery('')
+                                      }
+                                    }}
+                                    className='flex items-center gap-3 p-2.5 cursor-pointer rounded-md'
+                                  >
+                                    {p.images && Array.isArray(p.images) && p.images[0] ? (
+                                      <SafeImage src={mediaUrl(p.images[0])} alt='' className='h-9 w-9 rounded-md border object-cover' thumbWidth={48} thumbHeight={48} />
+                                    ) : (
+                                      <div className='h-9 w-9 rounded-md border bg-muted flex items-center justify-center'><Package className='h-4 w-4 text-muted-foreground' /></div>
+                                    )}
+                                    <div className='flex-1 min-w-0'>
+                                      <p className='text-sm font-medium truncate text-foreground'>{p.name}</p>
+                                      <p className='text-xs text-muted-foreground font-mono'>{p.sku || 'No SKU'}</p>
+                                    </div>
+                                    <div className='text-sm font-semibold text-foreground'>৳{fmt(ep(p))}</div>
+                                  </CommandItem>
+                                ))}
+                            </CommandGroup>
+                          </CommandList>
+                        )}
+                      </Command>
                     </div>
                   )}
                 </CardContent>
               </Card>
 
-              {/* ── Return relationship (RTN) ─────────────────────────── */}
-              {(order.kind === 'RETURN' || rtnOrder) && (
-                <Card className={order.kind === 'RETURN' ? 'border-pink-500/40' : ''}>
-                  <CardHeader className='pb-2'>
-                    <CardTitle className='text-sm font-semibold flex items-center gap-1.5'>
-                      <RotateCcw className='h-4 w-4 text-pink-500' /> Return
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className='flex flex-col gap-2.5'>
-                    {order.kind === 'RETURN' && order.returnOfOrder && (
-                      <div className='text-xs text-muted-foreground'>
-                        Return for{' '}
-                        <Link to='/op/orders/$id' params={{ id: order.returnOfOrder.id }} className='font-medium text-primary hover:underline'>
-                          {order.returnOfOrder.displayId}
-                        </Link>
-                      </div>
-                    )}
-                    {order.kind !== 'RETURN' && rtnOrder && (
-                      <div className='text-xs text-muted-foreground'>
-                        Return Order{' '}
-                        <Link to='/op/orders/$id' params={{ id: rtnOrder.id }} className='font-medium text-primary hover:underline'>
-                          {rtnOrder.displayId}
-                        </Link>
-                      </div>
-                    )}
-                    {rtnOrder && (
-                      <>
-                        <div className='flex items-center gap-2'>
-                          <span className='text-xs text-muted-foreground'>Status:</span>
-                          <Badge
-                            style={{ backgroundColor: statusColors[rtnOrder.status] || '#6B7280', color: '#fff' }}
-                            className='text-xs'
-                          >
-                            {rtnOrder.status}
-                          </Badge>
-                        </div>
-                        <div className='text-xs text-muted-foreground'>
-                          Items: <span className='font-medium text-foreground'>{rtnOrder.itemCount}</span>
-                        </div>
-                        {order.dispatches && order.dispatches.length > 0 && (
-                          <div className='text-xs text-muted-foreground flex items-center gap-1.5'>
-                            <Truck className='h-3.5 w-3.5' />
-                            {order.dispatches[order.dispatches.length - 1].courier} — {order.dispatches[order.dispatches.length - 1].consignmentId}
-                          </div>
-                        )}
-                        {rtnOrder.status === 'Returned' && (
-                          <p className='text-[11px] text-emerald-600'>Returned quantities have been restored to stock.</p>
-                        )}
-                        {rtnOrder.status === 'Return Pending' && (
-                          <p className='text-[11px] text-muted-foreground'>
-                            Stock is restored when the return dispatch is confirmed (Scanner → Dispatch → Return).
-                          </p>
-                        )}
-                      </>
-                    )}
-                    {order.kind === 'RETURN' && (
-                      <div className='text-xs text-muted-foreground flex flex-col gap-1'>
-                        <span>Returned: {order.returnedAt ? new Date(order.returnedAt).toLocaleString() : '—'}</span>
-                        <span>Stock restored: {order.stockRestored ? 'Yes' : 'No'}</span>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-
-            {/* ════ RIGHT COLUMN (1/3) ════ */}
-            <div className='space-y-4'>
-
-              {/* Order Summary — inline editable */}
+              {/* Order Summary — inline editable (placed directly below Ordered Items) */}
               <OrderSummaryCard
                 subtotal={nn(order.subtotal)}
                 shippingCharge={nn(order.shippingCharge)}
@@ -1046,239 +1022,647 @@ function OrderDetailPage() {
                 isSaving={updateMut.isPending}
               />
 
-              {/* Customer Card */}
-              <Card>
-                <CardHeader className='pb-2'>
-                  <CardTitle className='text-sm font-semibold flex items-center justify-between'>
-                    <span className='flex items-center gap-1.5'><User className='h-3.5 w-3.5' /> Customer</span>
-                    <Button variant='ghost' size='sm' className='h-7 text-xs' onClick={() => setShowCustomerSheet(true)}>
-                      <Pencil className='h-3 w-3 mr-1' /> Edit
-                    </Button>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className='space-y-2 text-sm pt-0'>
-                  <div>
-                    <p className='font-medium'>
-                      {order.customerId ? (
-                        <Link
-                          to='/op/customers/$id'
-                          params={{ id: order.customerId }}
-                          className='hover:text-primary hover:underline transition-colors'
-                        >
-                          {getCustomerDisplayName(order)}
-                        </Link>
-                      ) : (
-                        getCustomerDisplayName(order)
-                      )}
-                    </p>
-                    {getCustomerEmail(order) && (
-                      <p className='text-muted-foreground text-xs flex items-center gap-1 mt-0.5'>
-                        <Mail className='h-3 w-3' />{getCustomerEmail(order)}
-                      </p>
-                    )}
-                    {getCustomerPhone(order) && (
-                      // A div, not a p: CustomerContactActions renders a block
-                      // element, and a <p> may never contain a <div>.
-                      <div className='text-muted-foreground text-xs flex items-center gap-1 mt-0.5'>
-                        <a href={`tel:${getCustomerPhone(order)}`} className='flex items-center gap-1 hover:text-primary transition-colors'>
-                          <Phone className='h-3 w-3' />{getCustomerPhone(order)}
-                        </a>
-                        <CustomerContactActions phone={getCustomerPhone(order)} />
-                        {getCustomerPhone(order) && (
-                          <button
-                            onClick={() => setBlockPhones({ phones: [getCustomerPhone(order)], contextLabel: order.displayId })}
-                            className='inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-destructive hover:bg-destructive/10 transition-colors'
-                            title='Block this phone from ordering'
-                          >
-                            <Ban className='h-3 w-3' />Block
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  {order.shippingAddress && (
-                    <>
-                      <Separator />
-                      <div className='text-xs text-muted-foreground space-y-0.5'>
-                        {(order.shippingAddress.address || order.shippingAddress.addressLine) && (
-                          <p className='flex items-start gap-1.5'>
-                            <MapPin className='h-3 w-3 mt-0.5 shrink-0' />
-                            <span>{order.shippingAddress.address || order.shippingAddress.addressLine}</span>
-                          </p>
-                        )}
-                        {(order.shippingAddress.city || order.shippingAddress.zone) && (
-                          <p className='ml-5'>
-                            {[order.shippingAddress.zone?.name || order.shippingAddress.zone, order.shippingAddress.city?.name || order.shippingAddress.city].filter(Boolean).join(', ')}
-                          </p>
-                        )}
-                      </div>
-                    </>
-                  )}
-                  {(order.customerNotes || order.officeNotes) && (
-                    <>
-                      <Separator />
-                      <div className='space-y-1'>
-                        {order.customerNotes && (
-                          <div className='bg-muted/50 rounded p-2 text-xs'>
-                            <p className='text-muted-foreground mb-0.5 font-medium'>Customer Note</p>
-                            <p>{order.customerNotes}</p>
-                          </div>
-                        )}
-                        {order.officeNotes && (
-                          <div className='bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded p-2 text-xs'>
-                            <p className='text-amber-700 dark:text-amber-400 mb-0.5 font-medium'>Office Note</p>
-                            <p>{order.officeNotes}</p>
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Payment Cards */}
-              {(order.paymentOptionType || editingPayment) && (
-                <Card>
-                  <CardHeader className='pb-2'>
-                    <CardTitle className='text-sm font-semibold flex items-center gap-2'>
-                      Payment <PaymentStatusBadge status={order.paymentStatus} />
-                      {!editingPayment && (
-                        <Button variant='ghost' size='sm' className='h-6 px-2 text-xs ml-auto' onClick={openPaymentEdit}>
-                          <Pencil className='h-3 w-3 mr-1' /> Edit
-                        </Button>
-                      )}
-                    </CardTitle>
-                  </CardHeader>
-                  {editingPayment ? (
-                    <CardContent className='space-y-3 pt-0'>
-                      <div>
-                        <Label className='text-xs'>Method</Label>
-                        <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1' value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
-                          <option value='cash'>Cash</option>
-                          <option value='bkash'>bKash</option>
-                          <option value='nagad'>Nagad</option>
-                          <option value='bank'>Bank</option>
-                          <option value='card'>Card</option>
-                        </select>
-                      </div>
-                      <div>
-                        <Label className='text-xs'>Mode</Label>
-                        <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1' value={paymentMode} onChange={e => setPaymentMode(e.target.value as any)}>
-                          <option value='cod'>COD</option>
-                          <option value='full'>Full Payment</option>
-                          <option value='partial'>Partial Payment</option>
-                        </select>
-                      </div>
-                      {paymentMode === 'partial' && (
-                        <div>
-                          <Label className='text-xs'>Partial Amount</Label>
-                          <Input type='number' step='0.01' value={partialAmount} onChange={e => setPartialAmount(e.target.value)} className='h-9 text-sm mt-1' placeholder='Amount to collect' />
+              {/* Payment Details Card */}
+              {(order.paymentOptionType || editingPayment || (order.payments && order.payments.length > 0)) && (
+                <Card className='overflow-hidden border border-border/70 shadow-xs'>
+                  <CardHeader className='bg-muted/30 border-b border-border/50 py-2.5 px-3.5 sm:py-3.5 sm:px-6'>
+                    <div className='flex items-center justify-between'>
+                      <div className='flex items-center gap-2.5'>
+                        <div className='h-8 w-8 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-semibold'>
+                          <CreditCard className='h-4 w-4' />
                         </div>
-                      )}
-                      <div className='flex gap-2'>
-                        <Button size='sm' className='h-8' onClick={handleSavePayment} disabled={updateMut.isPending}>
-                          {updateMut.isPending ? <Loader2 className='h-3.5 w-3.5 animate-spin mr-1' /> : <Save className='h-3.5 w-3.5 mr-1' />} Save
-                        </Button>
-                        <Button size='sm' variant='outline' className='h-8' onClick={() => setEditingPayment(false)}>Cancel</Button>
+                        <div>
+                          <CardTitle className='text-sm font-semibold tracking-tight text-foreground flex items-center gap-2'>
+                            Payment Details
+                            <PaymentStatusBadge status={order.paymentStatus} />
+                          </CardTitle>
+                          <p className='text-xs text-muted-foreground mt-0.5'>Settlement mode and transaction log</p>
+                        </div>
                       </div>
-                    </CardContent>
-                  ) : (
-                    <CardContent className='space-y-1 text-sm pt-0'>
-                      <p><span className='text-muted-foreground'>Method:</span> {paymentOptionTypeLabel(order?.paymentOptionType ?? '')}</p>
-                      {order?.partialAmount && <p><span className='text-muted-foreground'>Partial:</span> ৳{fmt(order.partialAmount)}</p>}
-                    </CardContent>
-                  )}
-                </Card>
-              )}
-              {order.payments?.map((p: any) => {
-                const ps = p.status?.toLowerCase()
-                const statusVariant = ps === 'paid' || ps === 'verified' || ps === 'completed' ? 'default' as const : ps === 'pending' || ps === 'payment_pending' ? 'secondary' as const : ps === 'failed' || ps === 'cancelled' ? 'destructive' as const : 'outline' as const
-                return (
-                  <Card key={p.id}>
-                    <CardHeader className='pb-2'>
-                      <CardTitle className='text-sm flex items-center justify-between'>
-                        <PaymentLogo method={p.gatewayCode || p.method} size='sm' />
-                        <Badge variant={statusVariant} className='text-xs'>{p.status}</Badge>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className='space-y-1 text-sm pt-0'>
-                      <p>Amount: ৳{fmt(p.amount)}</p>
-                      {p.transactionId && <p>TrxID: <span className='font-mono text-xs'>{p.transactionId}</span></p>}
-                      {p.gatewayCode && <p className='text-xs text-muted-foreground'>Gateway: {p.gatewayCode}</p>}
-                    </CardContent>
-                  </Card>
-                )
-              })}
+                      {!editingPayment && (
+                        <Button variant='outline' size='sm' className='h-8 text-xs font-medium shadow-none hover:bg-accent' onClick={openPaymentEdit}>
+                          <Pencil className='h-3 w-3 mr-1.5' /> Edit
+                        </Button>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent className='p-3 sm:p-6 space-y-3 sm:space-y-4'>
+                    {editingPayment ? (
+                      <div className='space-y-3.5'>
+                        <div>
+                          <Label className='text-xs font-medium'>Payment Method</Label>
+                          <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-xs mt-1 font-medium' value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
+                            <option value='cash'>Cash</option>
+                            <option value='bkash'>bKash</option>
+                            <option value='nagad'>Nagad</option>
+                            <option value='bank'>Bank</option>
+                            <option value='card'>Card</option>
+                          </select>
+                        </div>
+                        <div>
+                          <Label className='text-xs font-medium'>Payment Mode</Label>
+                          <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-xs mt-1 font-medium' value={paymentMode} onChange={e => setPaymentMode(e.target.value as any)}>
+                            <option value='cod'>Cash on Delivery (COD)</option>
+                            <option value='full'>Full Payment</option>
+                            <option value='partial'>Partial Payment</option>
+                          </select>
+                        </div>
+                        {paymentMode === 'partial' && (
+                          <div>
+                            <Label className='text-xs font-medium'>Partial Amount to Collect</Label>
+                            <Input type='number' step='0.01' value={partialAmount} onChange={e => setPartialAmount(e.target.value)} className='h-9 text-xs mt-1 font-medium' placeholder='Amount in BDT' />
+                          </div>
+                        )}
+                        <div className='flex gap-2 pt-1'>
+                          <Button size='sm' className='h-8 text-xs font-medium' onClick={handleSavePayment} disabled={updateMut.isPending}>
+                            {updateMut.isPending ? <Loader2 className='h-3.5 w-3.5 animate-spin mr-1.5' /> : <Save className='h-3.5 w-3.5 mr-1.5' />} Save
+                          </Button>
+                          <Button size='sm' variant='ghost' className='h-8 text-xs font-medium' onClick={() => setEditingPayment(false)}>Cancel</Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className='rounded-lg bg-muted/40 border border-border/50 p-3 space-y-2 text-xs'>
+                        <div className='flex items-center justify-between'>
+                          <span className='text-muted-foreground'>Method / Mode:</span>
+                          <span className='font-semibold text-foreground'>{paymentOptionTypeLabel(order?.paymentOptionType ?? '')}</span>
+                        </div>
+                        {order?.partialAmount && (
+                          <div className='flex items-center justify-between pt-1.5 border-t border-border/40'>
+                            <span className='text-muted-foreground'>Partial Amount:</span>
+                            <span className='font-bold text-foreground'>৳{fmt(order.partialAmount)}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
-              {order.shipment && (
-                <Card>
-                  <CardHeader className='pb-2'><CardTitle className='text-sm font-semibold'>Shipment</CardTitle></CardHeader>
-                  <CardContent className='space-y-1 text-sm pt-0'>
-                    <p>Courier: {order.shipment.courier}</p>
-                    <p>Tracking: {order.shipment.trackingNo}</p>
+                    {order.payments && order.payments.length > 0 && (
+                      <div className='space-y-2.5 pt-1'>
+                        <p className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'>Recorded Transactions</p>
+                        {order.payments.map((p: any) => {
+                          const ps = p.status?.toLowerCase()
+                          const statusVariant = ps === 'paid' || ps === 'verified' || ps === 'completed' ? 'default' as const : ps === 'pending' || ps === 'payment_pending' ? 'secondary' as const : ps === 'failed' || ps === 'cancelled' ? 'destructive' as const : 'outline' as const
+                          return (
+                            <div key={p.id} className='rounded-lg border border-border/60 bg-card p-3 shadow-xs space-y-2'>
+                              <div className='flex items-center justify-between'>
+                                <PaymentLogo method={p.gatewayCode || p.method} size='sm' />
+                                <Badge variant={statusVariant} className='text-[10px] font-medium shadow-xs'>{p.status}</Badge>
+                              </div>
+                              <div className='grid grid-cols-2 gap-2 text-xs pt-1.5 border-t border-border/40'>
+                                <div>
+                                  <span className='text-muted-foreground text-[10px] block'>Amount</span>
+                                  <span className='font-bold text-sm text-foreground'>৳{fmt(p.amount)}</span>
+                                </div>
+                                {p.transactionId && (
+                                  <div>
+                                    <span className='text-muted-foreground text-[10px] block'>Transaction ID</span>
+                                    <div className='flex items-center gap-1 font-mono text-[11px] font-medium text-foreground'>
+                                      <span className='truncate'>{p.transactionId}</span>
+                                      <CopyButton text={p.transactionId} label='TrxID' />
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                              {p.gatewayCode && (
+                                <p className='text-[10px] text-muted-foreground/75 font-mono'>Gateway: {p.gatewayCode}</p>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               )}
 
-              {/* Customer Order History */}
-              <Card>
-                <CardHeader className='pb-2'>
-                  <CardTitle className='text-sm font-semibold flex items-center gap-1.5'>
-                    <User className='h-3.5 w-3.5' /> Customer History
-                  </CardTitle>
+              {/* Timeline Card */}
+              <Card className='overflow-hidden border border-border/70 shadow-xs'>
+                <CardHeader className='bg-muted/30 border-b border-border/50 py-2.5 px-3.5 sm:py-3.5 sm:px-6'>
+                  <div className='flex items-center justify-between'>
+                    <div className='flex items-center gap-2.5'>
+                      <div className='h-8 w-8 rounded-lg bg-indigo-500/10 text-indigo-500 flex items-center justify-center font-semibold'>
+                        <Clock className='h-4 w-4' />
+                      </div>
+                      <div>
+                        <CardTitle className='text-sm font-semibold tracking-tight text-foreground flex items-center gap-2'>
+                          Order Timeline & Activity
+                          <Badge variant='secondary' className='text-[11px] font-medium px-2 py-0.5 rounded-full'>
+                            {order.timeline?.length || 0}
+                          </Badge>
+                        </CardTitle>
+                        <p className='text-xs text-muted-foreground mt-0.5'>Audit trail of status transitions, courier updates, and staff notes</p>
+                      </div>
+                    </div>
+                  </div>
                 </CardHeader>
-                <CardContent className='pt-0 space-y-3'>
-                  {customerSummary?.customer ? (
-                    <>
-                      <div className='grid grid-cols-3 gap-2 text-sm'>
-                        <div className='bg-muted/50 rounded p-2 text-center'>
-                          <p className='text-lg font-bold'>{customerSummary.summary.totalOrders}</p>
-                          <p className='text-xs text-muted-foreground'>Orders</p>
-                        </div>
-                        <div className='bg-muted/50 rounded p-2 text-center'>
-                          <p className='text-lg font-bold'>৳{nn(customerSummary.summary.totalSpent).toFixed(0)}</p>
-                          <p className='text-xs text-muted-foreground'>Spent</p>
-                        </div>
-                        <div className='bg-muted/50 rounded p-2 text-center'>
-                          <p className={`text-lg font-bold ${customerSummary.summary.successRate >= 70 ? 'text-emerald-600' : 'text-red-500'}`}>
-                            {customerSummary.summary.successRate}%
-                          </p>
-                          <p className='text-xs text-muted-foreground'>Success Rate</p>
-                        </div>
-                      </div>
-
-                      <div className='space-y-1'>
-                        <div className='h-2 w-full rounded-full bg-muted overflow-hidden flex'>
-                          <div className='h-full bg-emerald-500 transition-all duration-500' style={{ width: `${customerSummary.summary.successRate}%` }} />
-                          <div className='h-full bg-red-400 transition-all duration-500' style={{ width: `${customerSummary.summary.failRate}%` }} />
-                        </div>
-                        <div className='flex justify-between text-[10px] font-semibold text-muted-foreground'>
-                          <span className='text-emerald-600'>{customerSummary.summary.delivered} Delivered</span>
-                          <span className='text-red-500'>{customerSummary.summary.cancelled} Cancelled</span>
-                        </div>
-                      </div>
-
-                      {customerSummary.recentOrders?.length > 0 && (
-                        <div className='space-y-1 pt-1 border-t border-border/50'>
-                          <p className='text-[10px] font-semibold text-muted-foreground uppercase tracking-wider'>Recent Orders</p>
-                          {customerSummary.recentOrders.map((o: any) => (
-                            <div key={o.id} className='flex items-center justify-between text-xs'>
-                              <span className='font-mono text-muted-foreground inline-flex items-center gap-1'>
-                                {o.displayId}
-                                <CopyButton text={o.displayId} label='Order ID' />
+                <CardContent className='p-3 sm:p-6'>
+                  {!order.timeline || order.timeline.length === 0 ? (
+                    <div className='text-center py-8 text-muted-foreground'>
+                      <Clock className='h-8 w-8 mx-auto mb-2 opacity-30' />
+                      <p className='text-sm font-medium text-foreground'>No activity recorded yet</p>
+                      <p className='text-xs text-muted-foreground mt-0.5'>Lifecycle changes and internal notes will appear here.</p>
+                    </div>
+                  ) : (
+                    <div className='space-y-0 pl-1'>
+                      {(order.timeline as any[]).map((t: any, i: number) => {
+                        const isStatus = !!t.status && !t.type
+                        const isPrivate = t.visibility === 'private'
+                        const color = isStatus ? (statusColors[t.status] || '#6B7280') : isPrivate ? '#8B5CF6' : '#6366F1'
+                        const prev = i > 0 ? (order.timeline as any[])[i - 1] : null
+                        const prevIsStatus = !!prev?.status && !prev?.type
+                        const isGrouped = prev && (t.type === prev.type || (isStatus && prevIsStatus))
+                        const performer = t.performedBy || t.performer || ''
+                        const performerEmail = performer.includes('@') ? performer : undefined
+                        return (
+                          <div
+                            key={i}
+                            className={`relative pl-6 pb-5 border-l-2 last:border-l-transparent last:pb-0 ${isGrouped ? 'border-dashed' : ''}`}
+                            style={{ borderColor: color }}
+                          >
+                            <div
+                              className='absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full border-2 bg-background'
+                              style={{ borderColor: color }}
+                            />
+                            <div className='flex items-center gap-2 flex-wrap'>
+                              {isStatus && t.oldStatus ? (
+                                <div className='flex items-center gap-1.5'>
+                                  <Badge variant='outline' className='text-xs font-medium'>{t.oldStatus}</Badge>
+                                  <ArrowRight className='h-3 w-3 text-muted-foreground' />
+                                  <Badge style={{ backgroundColor: color, color: '#fff' }} className='text-xs font-medium shadow-xs'>{t.status}</Badge>
+                                </div>
+                              ) : isStatus && (
+                                <Badge style={{ backgroundColor: color, color: '#fff' }} className='text-xs font-medium shadow-xs'>{t.status}</Badge>
+                              )}
+                              {t.type === 'shipping' && (
+                                <Badge variant='outline' className='text-xs font-medium bg-muted/40'>
+                                  <ArrowRightLeft className='h-3 w-3 mr-1' />Shipping
+                                </Badge>
+                              )}
+                              {t.type === 'discount' && (
+                                <Badge variant='outline' className='text-xs font-medium bg-muted/40'>
+                                  <Tag className='h-3 w-3 mr-1' />Discount
+                                </Badge>
+                              )}
+                              {t.type === 'note' && (
+                                <Badge variant='outline' className='text-xs font-medium bg-muted/40'>
+                                  <MessageSquarePlus className='h-3 w-3 mr-1' />Note
+                                </Badge>
+                              )}
+                              {t.type === 'courier' && (
+                                <Badge variant='outline' className='text-xs font-medium bg-muted/40'>
+                                  <Truck className='h-3 w-3 mr-1' />{(t as any).courier}
+                                </Badge>
+                              )}
+                              {isPrivate && (
+                                <Badge variant='secondary' className='text-xs font-medium bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20'>
+                                  <EyeOff className='h-2.5 w-2.5 mr-1' />Private
+                                </Badge>
+                              )}
+                              {performer && performer !== 'System' && performer !== 'Customer' && (
+                                <UserBadge email={performerEmail || performer} showEmail={false} size='sm' />
+                              )}
+                              {performer === 'System' && (
+                                <Badge variant='secondary' className='text-[10px] h-4 font-normal'>Auto</Badge>
+                              )}
+                              {performer === 'Customer' && (
+                                <Badge variant='secondary' className='text-[10px] h-4 font-normal'>Customer</Badge>
+                              )}
+                              <span className='text-xs text-muted-foreground inline-flex items-center gap-1 ml-auto'>
+                                <Clock className='h-3 w-3' />{new Date(t.timestamp).toLocaleString()}
                               </span>
-                              <span className='font-semibold'>৳{nn(o.total).toFixed(0)}</span>
-                              <Badge style={{ backgroundColor: o.status?.color || '#6B7280', color: '#fff' }} className='text-[9px] px-1 py-0'>
-                                {o.status?.name}
-                              </Badge>
                             </div>
-                          ))}
-                        </div>
-                      )}
+                            {t.note && (
+                              <div className={`mt-2 rounded-lg p-3 text-xs border ${isPrivate ? 'bg-purple-500/5 border-purple-500/20 text-purple-950 dark:text-purple-200' : 'bg-muted/40 border-border/60 text-foreground'}`}>
+                                <p className='leading-relaxed font-normal'>{t.note}</p>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {/* Add note — integrated in Timeline footer */}
+                  <div className='mt-5 pt-4 border-t border-border/60'>
+                    <div className='flex items-center gap-2 bg-muted/20 border border-border/70 rounded-lg p-1.5 focus-within:ring-2 focus-within:ring-ring focus-within:border-primary transition-all'>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant={noteVisibility === 'private' ? 'secondary' : 'ghost'}
+                            size='sm'
+                            className={`h-7 px-2 text-xs font-medium gap-1.5 shrink-0 ${noteVisibility === 'private' ? 'text-purple-600 dark:text-purple-400 bg-purple-500/10' : 'text-muted-foreground'}`}
+                            onClick={() => setNoteVisibility(v => v === 'public' ? 'private' : 'public')}
+                          >
+                            {noteVisibility === 'public' ? <Eye className='h-3.5 w-3.5' /> : <EyeOff className='h-3.5 w-3.5' />}
+                            <span className='capitalize hidden sm:inline'>{noteVisibility}</span>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>{noteVisibility === 'public' ? 'Public note (visible to all staff)' : 'Private staff note'} — click to toggle</TooltipContent>
+                      </Tooltip>
+                      <Input
+                        placeholder={`Add ${noteVisibility} note… (Press Enter to post)`}
+                        className='text-xs h-7 flex-1 border-0 shadow-none focus-visible:ring-0 bg-transparent px-2'
+                        value={noteText}
+                        onChange={e => setNoteText(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && noteText.trim()) {
+                            noteMut.mutate({ id, note: noteText.trim(), visibility: noteVisibility })
+                            setNoteText('')
+                          }
+                        }}
+                      />
+                      <Button
+                        size='sm'
+                        className='h-7 px-2.5 sm:px-3 text-xs font-medium gap-1.5 shrink-0'
+                        disabled={!noteText.trim() || noteMut.isPending}
+                        onClick={() => { if (noteText.trim()) { noteMut.mutate({ id, note: noteText.trim(), visibility: noteVisibility }); setNoteText('') } }}
+                      >
+                        {noteMut.isPending ? <Loader2 className='h-3.5 w-3.5 animate-spin' /> : <Send className='h-3 w-3' />}
+                        <span className='hidden sm:inline'>Post</span>
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Dispatch History */}
+              <Card className='overflow-hidden border border-border/70 shadow-xs'>
+                <CardHeader className='bg-muted/30 border-b border-border/50 py-2.5 px-3.5 sm:py-3.5 sm:px-6'>
+                  <div className='flex items-center gap-2.5'>
+                    <div className='h-8 w-8 rounded-lg bg-blue-500/10 text-blue-500 flex items-center justify-center font-semibold'>
+                      <Truck className='h-4 w-4' />
+                    </div>
+                    <div>
+                      <CardTitle className='text-sm font-semibold tracking-tight text-foreground flex items-center gap-2'>
+                        Courier Dispatch History
+                        {(order.dispatches?.length ?? 0) > 0 && (
+                          <Badge variant='secondary' className='text-[11px] font-medium px-2 py-0.5 rounded-full'>
+                            {order.dispatches?.length}
+                          </Badge>
+                        )}
+                      </CardTitle>
+                      <p className='text-xs text-muted-foreground mt-0.5'>Consignment tracking and courier status logs</p>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className='p-0'>
+                  {order.dispatches && order.dispatches.length > 0 ? (
+                    <>
+                      {/* Desktop Table View */}
+                      <div className='hidden md:block overflow-x-auto'>
+                        <Table>
+                          <TableHeader>
+                            <TableRow className='bg-muted/15 border-b border-border/40 hover:bg-muted/15'>
+                              <TableHead className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground h-10 px-4 sm:px-6'>Courier</TableHead>
+                              <TableHead className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground h-10'>Consignment ID</TableHead>
+                              <TableHead className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground h-10'>Status</TableHead>
+                              <TableHead className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground h-10'>Tracking Code</TableHead>
+                              <TableHead className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground h-10 pr-4 sm:pr-6 text-right'>Date</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {order.dispatches.slice().reverse().map((d: any) => {
+                              const statusConfig = DISPATCH_STATUSES.find(s => s.value === d.status)
+                              return (
+                                <TableRow key={d.id} className='hover:bg-muted/30 transition-colors'>
+                                  <TableCell className='px-4 sm:px-6 font-semibold text-sm capitalize text-foreground'>
+                                    {d.courier}
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className='flex items-center gap-1.5'>
+                                      <span className='text-sm font-mono font-medium'>{d.consignmentId}</span>
+                                      <CopyButton text={d.consignmentId} label='Consignment ID' />
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge className={`text-xs font-medium shadow-xs ${statusConfig?.color || 'bg-gray-500'}`}>
+                                      {statusConfig?.label || d.status}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell>
+                                    {d.trackingCode ? (
+                                      <div className='flex items-center gap-1.5'>
+                                        <span className='font-mono text-xs bg-muted/60 px-2 py-0.5 rounded border border-border/40'>{d.trackingCode}</span>
+                                        {d.trackingUrl && (
+                                          <a href={d.trackingUrl} target='_blank' rel='noreferrer' title='Track shipment' className='text-muted-foreground hover:text-primary transition-colors'>
+                                            <ExternalLink className='h-3.5 w-3.5' />
+                                          </a>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <span className='text-sm text-muted-foreground'>—</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className='text-xs text-muted-foreground pr-4 sm:pr-6 text-right'>
+                                    {new Date(d.createdAt).toLocaleString()}
+                                  </TableCell>
+                                </TableRow>
+                              )
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+
+                      {/* Mobile Compact Card View */}
+                      <div className='md:hidden divide-y divide-border/50'>
+                        {order.dispatches.slice().reverse().map((d: any) => {
+                          const statusConfig = DISPATCH_STATUSES.find(s => s.value === d.status)
+                          return (
+                            <div key={d.id} className='p-3.5 space-y-2 bg-card'>
+                              <div className='flex items-center justify-between'>
+                                <span className='font-semibold text-sm capitalize text-foreground'>{d.courier}</span>
+                                <Badge className={`text-[11px] font-medium shadow-xs ${statusConfig?.color || 'bg-gray-500'}`}>
+                                  {statusConfig?.label || d.status}
+                                </Badge>
+                              </div>
+                              <div className='flex items-center justify-between text-xs'>
+                                <div className='flex items-center gap-1.5'>
+                                  <span className='font-mono text-xs font-medium text-foreground'>{d.consignmentId}</span>
+                                  <CopyButton text={d.consignmentId} label='Consignment ID' />
+                                </div>
+                                <span className='text-[11px] text-muted-foreground'>
+                                  {new Date(d.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} {new Date(d.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </div>
+                              {d.trackingCode && (
+                                <div className='flex items-center justify-between pt-1 border-t border-border/30 text-xs'>
+                                  <span className='text-muted-foreground text-[11px]'>Tracking:</span>
+                                  <div className='flex items-center gap-1.5'>
+                                    <span className='font-mono text-[11px] bg-muted/60 px-2 py-0.5 rounded border border-border/40'>{d.trackingCode}</span>
+                                    {d.trackingUrl && (
+                                      <a href={d.trackingUrl} target='_blank' rel='noreferrer' title='Track shipment' className='text-muted-foreground hover:text-primary transition-colors'>
+                                        <ExternalLink className='h-3.5 w-3.5' />
+                                      </a>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
                     </>
                   ) : (
-                    <p className='text-xs text-muted-foreground'>No history</p>
+                    <div className='flex flex-col items-center justify-center py-8 px-4 text-center'>
+                      <div className='h-10 w-10 rounded-full bg-muted/60 flex items-center justify-center text-muted-foreground/60 mb-2'>
+                        <Truck className='h-5 w-5' />
+                      </div>
+                      <p className='text-sm font-medium text-foreground'>Not Dispatched Yet</p>
+                      <p className='text-xs text-muted-foreground max-w-xs mt-0.5'>This order has not been handed over or booked with any delivery partner yet.</p>
+                    </div>
                   )}
+                </CardContent>
+              </Card>
+
+              {/* ── Return relationship (RTN) ─────────────────────────── */}
+              {(order.kind === 'RETURN' || rtnOrder) && (
+                <Card className={`overflow-hidden shadow-xs border ${order.kind === 'RETURN' ? 'border-pink-500/40 bg-pink-500/[0.02]' : 'border-border/70'}`}>
+                  <CardHeader className='bg-muted/30 border-b border-border/50 py-2.5 px-3.5 sm:py-3.5 sm:px-6'>
+                    <div className='flex items-center gap-2.5'>
+                      <div className='h-8 w-8 rounded-lg bg-pink-500/10 text-pink-500 flex items-center justify-center font-semibold'>
+                        <RotateCcw className='h-4 w-4' />
+                      </div>
+                      <div>
+                        <CardTitle className='text-sm font-semibold tracking-tight text-foreground flex items-center gap-2'>
+                          Return Relationship
+                        </CardTitle>
+                        <p className='text-xs text-muted-foreground mt-0.5'>Linked return order and item restitution state</p>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className='p-3 sm:p-6 flex flex-col gap-3'>
+                    {order.kind === 'RETURN' && order.returnOfOrder && (
+                      <div className='text-xs text-muted-foreground flex items-center gap-1.5'>
+                        <span>Original Order:</span>
+                        <Link to='/op/orders/$id' params={{ id: order.returnOfOrder.id }} className='font-semibold text-primary hover:underline font-mono'>
+                          {order.returnOfOrder.displayId}
+                        </Link>
+                      </div>
+                    )}
+                    {order.kind !== 'RETURN' && rtnOrder && (
+                      <div className='text-xs text-muted-foreground flex items-center gap-1.5'>
+                        <span>Linked Return Order:</span>
+                        <Link to='/op/orders/$id' params={{ id: rtnOrder.id }} className='font-semibold text-primary hover:underline font-mono'>
+                          {rtnOrder.displayId}
+                        </Link>
+                      </div>
+                    )}
+                    {rtnOrder && (
+                      <div className='grid grid-cols-2 gap-3 p-3 rounded-lg bg-muted/40 border border-border/50'>
+                        <div className='flex items-center gap-2'>
+                          <span className='text-xs text-muted-foreground'>Return Status:</span>
+                          <Badge
+                            style={{ backgroundColor: statusColors[rtnOrder.status] || '#6B7280', color: '#fff' }}
+                            className='text-xs font-medium'
+                          >
+                            {rtnOrder.status}
+                          </Badge>
+                        </div>
+                        <div className='text-xs text-muted-foreground'>
+                          Items Returned: <span className='font-semibold text-foreground'>{rtnOrder.itemCount}</span>
+                        </div>
+                        {order.dispatches && order.dispatches.length > 0 && (
+                          <div className='text-xs text-muted-foreground flex items-center gap-1.5 col-span-2'>
+                            <Truck className='h-3.5 w-3.5 text-muted-foreground' />
+                            <span>{order.dispatches[order.dispatches.length - 1].courier} — {order.dispatches[order.dispatches.length - 1].consignmentId}</span>
+                          </div>
+                        )}
+                        {rtnOrder.status === 'Returned' && (
+                          <p className='text-[11px] text-emerald-600 font-medium col-span-2'>Returned quantities have been restored to stock.</p>
+                        )}
+                        {rtnOrder.status === 'Return Pending' && (
+                          <p className='text-[11px] text-muted-foreground col-span-2'>
+                            Stock is restored when the return dispatch is confirmed (Scanner → Dispatch → Return).
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {order.kind === 'RETURN' && (
+                      <div className='text-xs text-muted-foreground flex flex-col gap-1.5 p-3 rounded-lg bg-muted/40 border border-border/50'>
+                        <span>Returned At: <strong className='text-foreground'>{order.returnedAt ? new Date(order.returnedAt).toLocaleString() : '—'}</strong></span>
+                        <span>Stock Restored: <strong className='text-foreground'>{order.stockRestored ? 'Yes' : 'No'}</strong></span>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+
+            {/* ════ RIGHT COLUMN (5/12 or 4/12) ════ */}
+            <div className='xl:col-span-5 2xl:col-span-4 space-y-3.5 sm:space-y-6'>
+
+              {/* Customer & Delivery Card (with Integrated Customer Lifetime Value) */}
+              <Card className='overflow-hidden border border-border/70 shadow-xs'>
+                <CardHeader className='bg-muted/30 border-b border-border/50 py-2.5 px-3.5 sm:py-3.5 sm:px-6'>
+                  <div className='flex items-center justify-between'>
+                    <div className='flex items-center gap-2 sm:gap-2.5'>
+                      <div className='h-7 w-7 sm:h-8 sm:w-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-semibold'>
+                        <User className='h-3.5 w-3.5 sm:h-4 sm:w-4' />
+                      </div>
+                      <div>
+                        <CardTitle className='text-xs sm:text-sm font-semibold tracking-tight text-foreground'>
+                          Customer & Delivery
+                        </CardTitle>
+                        <p className='text-[10px] sm:text-xs text-muted-foreground mt-0.5'>Profile, address & lifetime metrics</p>
+                      </div>
+                    </div>
+                    <Button variant='outline' size='sm' className='h-7 sm:h-8 text-xs font-medium shadow-none hover:bg-accent' onClick={() => setShowCustomerSheet(true)}>
+                      <Pencil className='h-3 w-3 mr-1 sm:mr-1.5' /> Edit
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className='p-3 sm:p-6 space-y-3 sm:space-y-4'>
+                  <div className='flex items-start gap-2.5 sm:gap-3'>
+                    <div className='h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-xs sm:text-sm uppercase shrink-0 ring-2 ring-primary/20'>
+                      {(getCustomerDisplayName(order) || 'G')[0]}
+                    </div>
+                    <div className='min-w-0 flex-1 space-y-0.5 sm:space-y-1'>
+                      <p className='font-semibold text-xs sm:text-sm text-foreground truncate'>
+                        {order.customerId ? (
+                          <Link
+                            to='/op/customers/$id'
+                            params={{ id: order.customerId }}
+                            className='hover:text-primary hover:underline transition-colors'
+                          >
+                            {getCustomerDisplayName(order)}
+                          </Link>
+                        ) : (
+                          getCustomerDisplayName(order)
+                        )}
+                      </p>
+                      {getCustomerEmail(order) && (
+                        <p className='text-muted-foreground text-[11px] sm:text-xs flex items-center gap-1.5'>
+                          <Mail className='h-3 w-3 shrink-0' />
+                          <span className='truncate'>{getCustomerEmail(order)}</span>
+                        </p>
+                      )}
+                      {getCustomerPhone(order) && (
+                        <div className='text-muted-foreground text-[11px] sm:text-xs flex items-center gap-1.5 sm:gap-2 flex-wrap pt-0.5'>
+                          <a href={`tel:${getCustomerPhone(order)}`} className='flex items-center gap-1 font-medium hover:text-primary transition-colors text-foreground'>
+                            <Phone className='h-3 w-3 text-muted-foreground' />
+                            <span>{getCustomerPhone(order)}</span>
+                          </a>
+                          <CustomerContactActions phone={getCustomerPhone(order)} />
+                          <button
+                            onClick={() => setBlockPhones({ phones: [getCustomerPhone(order)], contextLabel: order.displayId })}
+                            className='inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] sm:text-[11px] font-medium text-destructive hover:bg-destructive/10 transition-colors'
+                            title='Block this phone from ordering'
+                          >
+                            <Ban className='h-3 w-3' />Block
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {order.shippingAddress && (
+                    <div className='rounded-lg bg-muted/40 border border-border/50 p-2.5 sm:p-3 space-y-1'>
+                      <div className='flex items-center gap-1.5 text-xs font-semibold text-foreground'>
+                        <MapPin className='h-3.5 w-3.5 text-primary shrink-0' />
+                        <span>Delivery Address</span>
+                      </div>
+                      <div className='text-xs text-muted-foreground leading-relaxed pl-5'>
+                        {(order.shippingAddress.address || order.shippingAddress.addressLine) && (
+                          <p className='text-foreground font-normal'>{order.shippingAddress.address || order.shippingAddress.addressLine}</p>
+                        )}
+                        {(order.shippingAddress.city || order.shippingAddress.zone) && (
+                          <p className='text-[11px] sm:text-xs text-muted-foreground mt-0.5'>
+                            {[order.shippingAddress.zone?.name || order.shippingAddress.zone, order.shippingAddress.city?.name || order.shippingAddress.city].filter(Boolean).join(', ')}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {(order.customerNotes || order.officeNotes) && (
+                    <div className='space-y-2 pt-0.5'>
+                      {order.customerNotes && (
+                        <div className='bg-blue-500/5 border border-blue-500/20 rounded-lg p-2.5 sm:p-3 text-xs text-foreground'>
+                          <p className='text-blue-600 dark:text-blue-400 mb-0.5 sm:mb-1 font-semibold flex items-center gap-1.5'>
+                            <MessageSquarePlus className='h-3.5 w-3.5' /> Customer Note
+                          </p>
+                          <p className='leading-relaxed'>{order.customerNotes}</p>
+                        </div>
+                      )}
+                      {order.officeNotes && (
+                        <div className='bg-amber-500/5 border border-amber-500/20 rounded-lg p-2.5 sm:p-3 text-xs text-foreground'>
+                          <p className='text-amber-600 dark:text-amber-400 mb-0.5 sm:mb-1 font-semibold flex items-center gap-1.5'>
+                            <AlertTriangle className='h-3.5 w-3.5' /> Office Note (Internal)
+                          </p>
+                          <p className='leading-relaxed'>{order.officeNotes}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── Compact Integrated Customer Lifetime Value ── */}
+                  <div className='rounded-lg bg-muted/30 border border-border/60 p-2.5 sm:p-3 space-y-2'>
+                    <div className='flex items-center justify-between'>
+                      <div className='flex items-center gap-1.5 text-xs font-semibold text-foreground'>
+                        <ShoppingBag className='h-3.5 w-3.5 text-violet-500 shrink-0' />
+                        <span>Customer Lifetime Value</span>
+                      </div>
+                      {customerSummary?.summary?.totalOrders > 0 && (
+                        <span className='text-[10px] font-medium text-muted-foreground'>
+                          {customerSummary.summary.totalOrders} {customerSummary.summary.totalOrders === 1 ? 'order' : 'orders'} total
+                        </span>
+                      )}
+                    </div>
+
+                    {customerSummary?.customer ? (
+                      <div className='space-y-2'>
+                        <div className='grid grid-cols-3 gap-1.5 sm:gap-2'>
+                          <div className='rounded-md bg-background/80 border border-border/40 p-1.5 sm:p-2 text-center min-w-0'>
+                            <p className='text-sm sm:text-base font-bold text-foreground truncate'>{customerSummary.summary.totalOrders}</p>
+                            <p className='text-[9px] sm:text-[10px] text-muted-foreground font-medium truncate'>Orders</p>
+                          </div>
+                          <div className='rounded-md bg-background/80 border border-border/40 p-1.5 sm:p-2 text-center min-w-0'>
+                            <p className='text-sm sm:text-base font-bold text-foreground truncate'>৳{nn(customerSummary.summary.totalSpent).toFixed(0)}</p>
+                            <p className='text-[9px] sm:text-[10px] text-muted-foreground font-medium truncate'>Total Spent</p>
+                          </div>
+                          <div className='rounded-md bg-background/80 border border-border/40 p-1.5 sm:p-2 text-center min-w-0'>
+                            <p className={`text-sm sm:text-base font-bold truncate ${customerSummary.summary.successRate >= 70 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                              {customerSummary.summary.successRate}%
+                            </p>
+                            <p className='text-[9px] sm:text-[10px] text-muted-foreground font-medium truncate'>Success Rate</p>
+                          </div>
+                        </div>
+
+                        <div className='space-y-1 bg-background/60 p-2 rounded-md border border-border/40'>
+                          <div className='h-1.5 w-full rounded-full bg-muted overflow-hidden flex shadow-inner'>
+                            <div className='h-full bg-emerald-500 transition-all duration-500' style={{ width: `${customerSummary.summary.successRate}%` }} />
+                            <div className='h-full bg-rose-500 transition-all duration-500' style={{ width: `${customerSummary.summary.failRate}%` }} />
+                          </div>
+                          <div className='flex justify-between text-[10px] font-semibold'>
+                            <span className='text-emerald-600 dark:text-emerald-400 inline-flex items-center gap-1'>
+                              <span className='h-1.5 w-1.5 rounded-full bg-emerald-500' />
+                              {customerSummary.summary.delivered} Delivered
+                            </span>
+                            <span className='text-rose-600 dark:text-rose-400 inline-flex items-center gap-1'>
+                              <span className='h-1.5 w-1.5 rounded-full bg-rose-500' />
+                              {customerSummary.summary.cancelled} Cancelled
+                            </span>
+                          </div>
+                        </div>
+
+                        {customerSummary.recentOrders?.length > 0 && (
+                          <Button
+                            variant='outline'
+                            size='sm'
+                            className='w-full h-7 text-xs font-medium gap-1.5 text-muted-foreground hover:text-foreground mt-1 bg-background/80 hover:bg-background shadow-2xs'
+                            onClick={() => setShowPastOrdersDialog(true)}
+                          >
+                            <History className='h-3.5 w-3.5 text-muted-foreground' />
+                            <span>View All Past Orders ({customerSummary.recentOrders.length})</span>
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className='text-center py-2 text-muted-foreground'>
+                        <p className='text-xs font-medium'>No previous customer orders</p>
+                        <p className='text-[10px] text-muted-foreground/75 mt-0.5'>This is their first recorded purchase.</p>
+                      </div>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
 
@@ -1343,6 +1727,83 @@ function OrderDetailPage() {
           open={showRtnDialog}
           onClose={() => { setShowRtnDialog(false); setReturnQtys({}) }}
         />
+
+        {/* ── Customer Past Orders History Dialog ───────────────── */}
+        <Dialog open={showPastOrdersDialog} onOpenChange={setShowPastOrdersDialog}>
+          <DialogContent className='max-w-xl max-h-[85vh] flex flex-col p-0 overflow-hidden'>
+            <DialogHeader className='p-4 sm:p-5 border-b border-border/60 bg-muted/20'>
+              <div className='flex items-center gap-2.5'>
+                <div className='h-8 w-8 rounded-lg bg-violet-500/10 text-violet-500 flex items-center justify-center font-semibold'>
+                  <History className='h-4 w-4' />
+                </div>
+                <div>
+                  <DialogTitle className='text-base font-semibold'>Customer Order History</DialogTitle>
+                  <p className='text-xs text-muted-foreground mt-0.5'>
+                    {getCustomerDisplayName(order)} · {getCustomerPhone(order) || 'No phone'}
+                  </p>
+                </div>
+              </div>
+            </DialogHeader>
+            <div className='flex-1 overflow-y-auto p-4 space-y-2'>
+              {customerSummary?.recentOrders && customerSummary.recentOrders.length > 0 ? (
+                <div className='space-y-1.5'>
+                  {customerSummary.recentOrders.map((o: any) => (
+                    <div
+                      key={o.id}
+                      className='flex items-center justify-between p-2.5 rounded-lg border border-border/50 bg-card hover:bg-muted/30 transition-colors gap-2'
+                    >
+                      <div className='min-w-0 space-y-0.5'>
+                        <div className='flex items-center gap-1.5'>
+                          <Link
+                            to='/op/orders/$id'
+                            params={{ id: o.id }}
+                            onClick={() => setShowPastOrdersDialog(false)}
+                            className='font-mono font-medium text-xs text-foreground hover:text-primary transition-colors hover:underline truncate'
+                          >
+                            {o.displayId}
+                          </Link>
+                          <CopyButton text={o.displayId} label='Order ID' />
+                        </div>
+                        {o.createdAt && (
+                          <p className='text-[10px] text-muted-foreground'>
+                            {new Date(o.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </p>
+                        )}
+                      </div>
+                      <div className='flex items-center gap-2.5 shrink-0'>
+                        <span className='font-semibold text-xs text-foreground tabular-nums'>৳{nn(o.total).toFixed(0)}</span>
+                        <Badge
+                          style={{ backgroundColor: o.status?.color || '#6B7280', color: '#fff' }}
+                          className='text-[10px] px-2 py-0.5 font-medium shrink-0'
+                        >
+                          {o.status?.name}
+                        </Badge>
+                        <Link
+                          to='/op/orders/$id'
+                          params={{ id: o.id }}
+                          onClick={() => setShowPastOrdersDialog(false)}
+                          className='text-muted-foreground hover:text-primary transition-colors p-1'
+                          title='View Order'
+                        >
+                          <ExternalLink className='h-3.5 w-3.5' />
+                        </Link>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className='text-center py-8 text-muted-foreground text-xs'>
+                  No previous storefront orders found.
+                </div>
+              )}
+            </div>
+            <div className='p-3 border-t border-border/60 bg-muted/20 flex justify-end'>
+              <Button variant='outline' size='sm' onClick={() => setShowPastOrdersDialog(false)}>
+                Close
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* ── Dispatch Dialog ──────────────────────────────────── */}
         <Dialog open={showDispatchDialog} onOpenChange={() => { setShowDispatchDialog(false); setDispatchCourier('') }}>
