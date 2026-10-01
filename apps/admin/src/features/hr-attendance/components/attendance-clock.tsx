@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from '@tanstack/react-router'
 import {
   ArrowUpRight,
   CheckCircle2,
@@ -364,13 +365,13 @@ function ClockBody() {
               <span className='size-1.5 rounded-full bg-emerald-500' />
               Asia/Dhaka
             </span>
-            <a
-              href='/hr/my'
+            <Link
+              to='/op/my-profile'
               className='inline-flex items-center gap-1 font-medium text-primary hover:underline hover:text-primary/80 transition-colors'
             >
               <span>My Attendance & Leaves</span>
               <ArrowUpRight className='size-3' />
-            </a>
+            </Link>
           </div>
         </div>
       </PopoverContent>

@@ -5,6 +5,12 @@ import { AttendanceClock } from './attendance-clock'
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children, to, ...rest }: { children?: React.ReactNode; to: string }) => (
+    <a href={to} {...rest}>{children}</a>
+  ),
+}))
+
 const auth = vi.hoisted(() => ({
   accessToken: 'tok' as string,
   permissions: ['view_hr'] as string[],
@@ -234,6 +240,22 @@ describe('AttendanceClock actions', () => {
     trigger.click()
     await vi.waitFor(() => {
       expect(document.body.textContent).toContain('Your attendance for today is complete.')
+    })
+  })
+
+  it('links to /op/my-profile in the popover footer', async () => {
+    mockRoutes({ state: 'before_work', ...BASE })
+    wrap(<AttendanceClock />)
+    const trigger = await vi.waitFor(() => {
+      const el = document.querySelector('[aria-label="Attendance clock"]')
+      expect(el).not.toBeNull()
+      return el as HTMLElement
+    })
+    trigger.click()
+    await vi.waitFor(() => {
+      const link = document.querySelector('a[href="/op/my-profile"]')
+      expect(link).not.toBeNull()
+      expect(link?.textContent).toContain('My Attendance & Leaves')
     })
   })
 })
