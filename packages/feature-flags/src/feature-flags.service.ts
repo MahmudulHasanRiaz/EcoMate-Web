@@ -27,7 +27,9 @@ export class FeatureFlagsService {
   }
 
   getActiveFeatures(): string[] {
-    if (this.license?.features?.includes('*')) return [];
+    // Preserve the wildcard: every consumer treats '*' as "all features open".
+    // Returning [] here would silently close every feature for a '*' license.
+    if (this.license?.features?.includes('*')) return ['*'];
     if (this.license?.features) return this.license.features;
     return Array.from(this.activeFeatures);
   }
