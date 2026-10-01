@@ -14,6 +14,7 @@ import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorato
 
 import { OrdersService } from './orders.service';
 import { OrderEditLockService } from './order-edit-lock.service';
+import { OrderOthersService } from './order-others.service';
 import { OrdersEventService } from './orders-event.service';
 import {
   CreateOrderDto,
@@ -42,6 +43,7 @@ export class OrdersController {
     private readonly svc: OrdersService,
     private readonly events: OrdersEventService,
     private readonly lockSvc: OrderEditLockService,
+    private readonly othersService: OrderOthersService,
   ) {}
 
   @Roles('superadmin', 'admin', 'manager')
@@ -192,6 +194,28 @@ export class OrdersController {
   @Get(':id/remaining-fulfillment')
   remainingFulfillment(@Param('id') id: string) {
     return this.svc.getRemainingFulfillment(id);
+  }
+
+  /**
+   * Order "Others Information" — order snapshot, current customer profile,
+   * device/request context, raw + resolved attribution, tracking identifiers,
+   * and Purchase delivery evidence.
+   *
+   * Access is deliberately TIGHTER than the rest of the order surface: this
+   * response carries IP addresses, User-Agents, tracking identifiers, customer
+   * PII and provider payloads — fraud-review grade material, not day-to-day
+   * order operations. Managers are excluded here at the API, not merely hidden
+   * in the UI. All redaction is applied server-side before this returns.
+   *
+   * NOTE: reads of this endpoint are not audit-logged — the repo has no general
+   * admin audit facility (SecurityEvent is a threat-detection ledger and would
+   * misclassify a routine authorized read). Recorded as a future hardening item.
+   */
+  @Roles('superadmin', 'admin')
+  @RequiresFeature('admin_orders')
+  @Get(':id/others-info')
+  othersInfo(@Param('id') id: string) {
+    return this.othersService.getForOrder(id);
   }
 
   @Roles('superadmin', 'admin', 'manager')

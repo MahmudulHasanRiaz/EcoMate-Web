@@ -7,6 +7,8 @@ import { SafeImage } from '@/components/safe-image'
 import { CustomerContactActions } from '@/components/customer-contact-actions'
 import { CopyButton } from '@/components/copy-button'
 import { BlockPhoneDialog } from '@/features/orders/block-phone-dialog'
+import { OthersInfoDialog } from '@/features/orders/others-info-dialog'
+import { useAuthStore } from '@/stores/auth-store'
 import { UserBadge } from '@/components/user-badge'
 import { ordersApi, rtnApi, mediaUrl } from '@/features/orders/api'
 import { ReturnOrderDialog } from '@/features/orders/components/return-order-dialog'
@@ -42,7 +44,7 @@ import {
   Loader2, ArrowLeft, ArrowRight, Package, Pencil, Save, Clock, User, ChevronDown, ChevronUp,
   Truck, ExternalLink, Printer, Eye, EyeOff, MessageSquarePlus, ArrowRightLeft, Tag, Send,
   AlertTriangle, MoreHorizontal, Minus, Plus, X, MapPin, Mail, Phone, Trash2, RefreshCcw, Ban, Lock
-, RotateCcw } from 'lucide-react'
+, RotateCcw, ScanSearch } from 'lucide-react'
 import { DISPATCH_STATUSES } from '@/features/dispatch/data/data'
 import { STATUS_COLORS as statusColors } from '@/features/orders/status-transitions'
 
@@ -95,6 +97,15 @@ function OrderDetailPage() {
   // A live edit lock held by ANOTHER staff member makes the backend return
   // 409 ORDER_LOCKED on GET /orders/:id. We surface the holder here and offer
   // the override — after override the query refetches successfully.
+  const [showOthersInfo, setShowOthersInfo] = useState(false)
+
+  // Others Information exposes IP, User-Agent, tracking identifiers and customer
+  // PII — fraud-review grade data, not day-to-day order operations. Managers are
+  // excluded here and the API enforces the same rule independently.
+  const othersInfoRoles = new Set(['superadmin', 'admin'])
+  const role = useAuthStore((s) => s.auth.user?.role)
+  const canViewOthersInfo = !!role && othersInfoRoles.has(role)
+
   const [viewLock, setViewLock] = useState<{ userName?: string | null; acquiredAt?: string | null } | null>(null)
   const { data: order, isLoading } = useQuery({
     queryKey: ['order', id],
@@ -549,6 +560,23 @@ function OrderDetailPage() {
                   <RotateCcw className='h-3.5 w-3.5 mr-1' />
                   <span className='hidden xs:inline'>Create Return Order</span>
                   <span className='xs:hidden'>Return Order</span>
+                </Button>
+              )}
+
+              {/* Others Information — order snapshot vs current customer profile,
+                  device/request context, attribution and purchase delivery
+                  evidence. Exposes IP, User-Agent and customer PII, so it is
+                  gated to superadmin + admin here AND by the API's @Roles. */}
+              {canViewOthersInfo && (
+                <Button
+                  variant='outline'
+                  size='sm'
+                  className='h-8'
+                  onClick={() => setShowOthersInfo(true)}
+                >
+                  <ScanSearch className='h-3.5 w-3.5 mr-1' />
+                  <span className='hidden xs:inline'>Others Information</span>
+                  <span className='xs:hidden'>Others</span>
                 </Button>
               )}
 
@@ -1249,6 +1277,14 @@ function OrderDetailPage() {
           phones={blockPhones?.phones || []}
           contextLabel={blockPhones?.contextLabel}
         />
+
+        {canViewOthersInfo && (
+          <OthersInfoDialog
+            orderId={order.id}
+            open={showOthersInfo}
+            onOpenChange={setShowOthersInfo}
+          />
+        )}
 
         {/* ── Customer Edit Sheet ──────────────────────────────── */}
         <CustomerEditSheet

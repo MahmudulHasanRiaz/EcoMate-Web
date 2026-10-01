@@ -20,6 +20,7 @@ import { TrackingSettingsService } from '../tracking/tracking-settings.service';
 import { resolveActionSource } from '../tracking/meta-action-source';
 import { Prisma } from '@prisma/client';
 import { CommissionsService } from '../commissions/commissions.service';
+import { CustomerAddressService } from '../customers/customer-address.service';
 
 @Injectable()
 export class PosOrdersService {
@@ -34,6 +35,7 @@ export class PosOrdersService {
     private readonly trackingCapture: TrackingCaptureService,
     private readonly trackingSettings: TrackingSettingsService,
     private readonly commissionsService: CommissionsService,
+    private readonly customerAddressService: CustomerAddressService,
   ) {}
 
   private mediaUrls(value: unknown): string[] {
@@ -556,6 +558,17 @@ export class PosOrdersService {
           customerPhone: dto.guestPhone || null,
           customerFirstName: dto.guestName?.split(' ')[0] || null,
           customerLastName: dto.guestName?.split(' ').slice(1).join(' ') || null,
+          // Order-owned address snapshots. Written only when supplied — POS's
+          // free-text `deliveryAddress` is never parsed into locality fields,
+          // because guessing a thana/district would fabricate order history.
+          shippingAddress:
+            typeof dto.shippingAddress === 'object' && dto.shippingAddress
+              ? dto.shippingAddress
+              : {},
+          billingAddress:
+            typeof dto.billingAddress === 'object' && dto.billingAddress
+              ? dto.billingAddress
+              : {},
           customerNotes: dto.notes,
           paymentStatus: 'PAID',
           timeline: [
@@ -572,6 +585,27 @@ export class PosOrdersService {
           ],
         },
       });
+
+      // Customer-owned side effects of the order, inside the same transaction.
+      // A POS sale is still this customer's latest order, so the telemetry must
+      // not be storefront-only. No IP: this runs from the cashier's till, and
+      // recording that as the customer's IP would be a lie.
+      if (dto.customerId) {
+        await tx.customerProfile.updateMany({
+          where: {
+            id: dto.customerId,
+            OR: [{ lastOrderAt: null }, { lastOrderAt: { lt: order.createdAt } }],
+          },
+          data: { lastOrderAt: order.createdAt, lastOrderIp: null },
+        });
+
+        await this.customerAddressService.syncFromOrder(tx, {
+          customerProfileId: dto.customerId,
+          shippingAddress: dto.shippingAddress ?? {},
+          billingAddress: dto.billingAddress ?? {},
+          orderId: order.id,
+        });
+      }
 
       // Persist order items with authoritative DB prices
       for (const item of authItems) {

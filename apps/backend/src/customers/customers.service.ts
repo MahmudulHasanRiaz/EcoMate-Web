@@ -27,6 +27,25 @@ export class CustomersService {
     }
   }
 
+  /**
+   * True when an address is the synthetic placeholder WE generated
+   * (`cust_<phoneDigits>@<app domain>`) rather than something the customer
+   * supplied. Only a synthetic address may be replaced by an incoming order;
+   * a real address is customer-owned and stays put.
+   *
+   * The phone must match too, so a synthetic-looking address belonging to a
+   * different customer is never rewritten.
+   */
+  private isSyntheticEmail(storedEmail: string | null, phone: string): boolean {
+    if (!storedEmail) return true; // nothing real stored yet
+    const phoneDigits = (phone || '').replace(/[^\d]/g, '');
+    if (!phoneDigits) return false;
+    const domain = this.getEmailDomain();
+    return (
+      storedEmail.toLowerCase() === `cust_${phoneDigits}@${domain}`.toLowerCase()
+    );
+  }
+
   async findAll(query: { search?: string; page?: number; perPage?: number }) {
     const page =
       Number.isFinite(query.page) && query.page! > 0 ? query.page! : 1;
@@ -210,30 +229,21 @@ export class CustomersService {
     });
 
     if (existingProfile) {
-      // Ensure UserProfile exists too (update name/email if needed)
-      const existingUser = await this.prisma.userProfile.findFirst({
-        where: { phoneNumber: normalized, role: 'customer' },
-      });
-      if (existingUser) {
-        const updateData: any = {};
-        if (existingUser.firstName !== firstName || existingUser.lastName !== lastName) {
-          updateData.firstName = firstName;
-          updateData.lastName = lastName;
-        }
-        if (email && existingUser.email !== email) {
-          updateData.email = email;
-        }
-        if (clientIp && existingUser.lastIp !== clientIp) {
-          updateData.lastIp = clientIp;
-        }
-        if (Object.keys(updateData).length > 0) {
-          await this.prisma.userProfile.update({
-            where: { id: existingUser.id },
-            data: updateData,
-          });
-        }
-      }
-      if (email && existingProfile.email !== email) {
+      // OWNERSHIP: an existing customer's canonical identity is NEVER rewritten
+      // by a repeat checkout. This function's job is find-or-create, nothing
+      // more. It previously overwrote UserProfile.firstName/lastName and
+      // lastIp on EVERY guest checkout keyed only on phone, so a customer who
+      // ordered once as "Rahim Uddin" and again as "Md Rahim" was silently
+      // renamed. The order-time values belong on the order snapshot, and
+      // lastOrderIp is maintained by the order path, not here.
+      //
+      // ONE NARROW EXCEPTION — synthetic placeholder → real email. We generate
+      // `cust_<digits>@<domain>` addresses for customers who order without
+      // giving one. That value was never the customer's own data, so replacing
+      // it when they later supply a real address is enrichment, not a
+      // destructive overwrite. A REAL existing email is never replaced by an
+      // order — that stays an explicit profile-edit decision.
+      if (email && this.isSyntheticEmail(existingProfile.email, existingProfile.phone)) {
         await this.prisma.customerProfile.update({
           where: { id: existingProfile.id },
           data: { email },
@@ -248,28 +258,12 @@ export class CustomersService {
     });
 
     if (existingUser) {
-      const updateData: any = {};
-      if (existingUser.firstName !== firstName || existingUser.lastName !== lastName) {
-        updateData.firstName = firstName;
-        updateData.lastName = lastName;
-      }
-      if (email && existingUser.email !== email) {
-        updateData.email = email;
-      }
-      if (clientIp && existingUser.lastIp !== clientIp) {
-        updateData.lastIp = clientIp;
-      }
-      if (Object.keys(updateData).length > 0) {
-        await this.prisma.userProfile.update({
-          where: { id: existingUser.id },
-          data: updateData,
-        });
-      }
-      // Create CustomerProfile with same id as UserProfile
+      // Same rule as above: a legacy UserProfile keeps its own name/email.
+      // Only the missing CustomerProfile is created.
       await this.prisma.customerProfile.upsert({
         where: { id: existingUser.id },
         create: { id: existingUser.id, phone: normalized, name, ...(email ? { email } : {}) },
-        update: { name, phone: normalized, ...(email ? { email } : {}) },
+        update: { phone: normalized },
       });
       return { id: existingUser.id };
     }

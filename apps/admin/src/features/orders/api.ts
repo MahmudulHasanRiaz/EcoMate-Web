@@ -144,9 +144,154 @@ export interface ScanResult {
   details?: Record<string, any>
 }
 
+export type OthersFieldState =
+  | 'present'
+  | 'missing'
+  | 'not_collected'
+  | 'not_applicable'
+  | 'null';
+
+export interface OthersField {
+  key: string;
+  label: string;
+  value: unknown;
+  state: OthersFieldState;
+  group?: string;
+}
+
+export interface OthersDiffRow {
+  key: string;
+  label: string;
+  snapshotValue: unknown;
+  currentValue: unknown;
+}
+
+export interface CustomerAddressView {
+  id: string;
+  type: 'SHIPPING' | 'BILLING';
+  label: string | null;
+  isDefault: boolean;
+  fullName: string;
+  phone: string;
+  addressLine: string;
+  area: string | null;
+  thana: string | null;
+  district: string | null;
+  division: string | null;
+  postalCode: string | null;
+  country: string;
+  sourceOrderId: string | null;
+  createdAt: string;
+}
+
+/**
+ * Delivery evidence for one (provider, destination) pair.
+ *
+ * `attempts` (attempt-level, increments on retry) and `dispatched`
+ * (row-level, always 0 or 1) are deliberately separate axes. There is
+ * deliberately NO `attempts - accepted` field: attempts is a counter and
+ * accepted is a row-level outcome, so subtracting them produces a number with
+ * no meaning.
+ */
+export interface DispatchRow {
+  provider: string;
+  destinationId: string;
+  pixelId: string | null;
+  status: string;
+  dispatched: 0 | 1;
+  attempts: number;
+  accepted: 0 | 1;
+  rejected: 0 | 1;
+  unknown: 0 | 1;
+  acceptanceBasis: 'accepted' | 'rejected' | 'http_accepted' | 'unknown';
+  failed: 0 | 1;
+  skipped: 0 | 1;
+  /** Attempt-level, a different axis from the row counts. NULL when the
+   *  transition log has been purged — NOT 0, which would falsely imply that
+   *  no attempt ever failed. */
+  failedAttempts: number | null;
+  failedAttemptsAvailable: boolean;
+  httpStatus: number | null;
+  providerEventId: string | null;
+  errorMsg: string | null;
+  lastAttemptAt: string;
+}
+
+export interface SanitizedPayload {
+  value: unknown;
+  truncated: boolean;
+  redactedPaths: string[];
+}
+
+export interface PurchaseEventView {
+  eventId: string;
+  eventType: string;
+  eventTime: string;
+  actionSource: string | null;
+  triggerMode: string | null;
+  acceptanceColumnLabel: string;
+  dispatches: DispatchRow[];
+  outbox: { dead: number };
+  timeline: {
+    at: string;
+    provider: string | null;
+    fromStatus: string | null;
+    toStatus: string;
+    attempt: number | null;
+    message: string | null;
+  }[];
+  transitionLogAvailable: boolean;
+  payloadCaptured: unknown;
+  payloadSent: (SanitizedPayload & { provider: string; destinationId: string })[];
+  coverage: { field: string; value: string | null; state: 'present' | 'missing' }[];
+}
+
+export interface OrderOthersInfoResponse {
+  orderId: string;
+  displayId: string;
+  createdAt: string;
+  retention: {
+    transitionLogAvailable: boolean;
+    transitionLogPurgeDays: number;
+    dispatchRetentionDays: number;
+  };
+  sections: {
+    snapshot: OthersField[];
+    customerProfile: OthersField[];
+    device: OthersField[];
+    attributionRaw: OthersField[];
+    attributionResolved: OthersField[];
+    trackingIdentifiers: OthersField[];
+  };
+  customerProfile: ({
+    id: string;
+    name: string;
+    phone: string;
+    email: string | null;
+    createdAt: string;
+    lastOrderAt: string | null;
+    lastOrderIp: string | null;
+    lastOrder: { displayId: string; createdAt: string; total: unknown } | null;
+    addresses: CustomerAddressView[];
+    fieldDiffs: OthersDiffRow[];
+  } | null);
+  purchase: { events: PurchaseEventView[] };
+  raw: unknown;
+  rawMeta: { truncated: boolean; redactedPaths: string[] };
+}
+
 export const ordersApi = {
   list: (query?: any) => apiClient.get<PaginatedResponse<OrderResponse>>('/orders', { params: query }),
   get: (id: string) => apiClient.get<OrderResponse>(`/orders/${id}`),
+  /**
+   * Others Information — order snapshot, current customer profile, device /
+   * request context, raw + resolved attribution, tracking identifiers and
+   * Purchase delivery evidence.
+   *
+   * Access is `superadmin` + `admin` only; managers are rejected by the API,
+   * not merely hidden in the UI.
+   */
+  othersInfo: (id: string) => apiClient.get<OrderOthersInfoResponse>(`/orders/${id}/others-info`),
   create: (data: any) => apiClient.post<OrderResponse>('/orders', data),
   updateOrder: (id: string, data: any) => apiClient.put<OrderResponse>(`/orders/${id}`, data),
   updateStatus: (id: string, statusId: string, note?: string) => apiClient.put(`/orders/${id}/status`, { statusId, note }),

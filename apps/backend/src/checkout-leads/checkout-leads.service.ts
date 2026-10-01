@@ -7,6 +7,7 @@ import {
 import { PaymentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CustomersService } from '../customers/customers.service';
+import { CustomerAddressService } from '../customers/customer-address.service';
 import { TrackingCaptureService } from '../tracking/tracking-capture.service';
 import { TrackingSettingsService } from '../tracking/tracking-settings.service';
 import { normalizePhone } from '../common/utils/phone-utils';
@@ -26,6 +27,7 @@ export class CheckoutLeadsService {
     private readonly customersService: CustomersService,
     private readonly trackingCapture: TrackingCaptureService,
     private readonly trackingSettings: TrackingSettingsService,
+    private readonly customerAddressService: CustomerAddressService,
   ) {}
 
   async findAll(query: {
@@ -413,6 +415,12 @@ export class CheckoutLeadsService {
           discount: discountAmount,
           discountType,
           shippingAddress,
+          // Order-owned billing snapshot. Captured only when actually supplied
+          // at conversion; never derived from shippingAddress.
+          billingAddress:
+            typeof overrides?.billingAddress === 'object' && overrides.billingAddress
+              ? overrides.billingAddress
+              : {},
           customerNotes: overrides?.customerNotes ?? null,
           officeNotes: overrides?.officeNotes ?? null,
           guestName,
@@ -467,6 +475,35 @@ export class CheckoutLeadsService {
           ] as any,
         },
       });
+
+      // Customer-owned side effects of the order, inside the same transaction —
+      // identical to the storefront order path (see orders.service.ts create()).
+      if (resolvedCustomerId) {
+        // Latest-order telemetry. The max-semantics live in the WHERE clause so
+        // Postgres evaluates them atomically; an older order committing late can
+        // never clobber a newer order's telemetry. No IP here on purpose: the
+        // conversion request comes from a staff browser, so recording it as the
+        // customer's IP would be a lie.
+        await tx.customerProfile.updateMany({
+          where: {
+            id: resolvedCustomerId,
+            OR: [{ lastOrderAt: null }, { lastOrderAt: { lt: order.createdAt } }],
+          },
+          data: { lastOrderAt: order.createdAt, lastOrderIp: null },
+        });
+
+        // Enrich the customer's reusable address book. Never destructive, and it
+        // never touches the order's own snapshots.
+        await this.customerAddressService.syncFromOrder(tx, {
+          customerProfileId: resolvedCustomerId,
+          shippingAddress,
+          billingAddress:
+            typeof overrides?.billingAddress === 'object' && overrides.billingAddress
+              ? overrides.billingAddress
+              : {},
+          orderId: order.id,
+        });
+      }
 
       if (pm) {
         const paymentAmount =

@@ -19,6 +19,7 @@ import { TrackingCaptureService } from '../../tracking/tracking-capture.service'
 import { TrackingSettingsService } from '../../tracking/tracking-settings.service';
 import { TrackingContextService } from '../../tracking/tracking-context.service';
 import { CustomersService } from '../../customers/customers.service';
+import { CustomerAddressService } from '../../customers/customer-address.service';
 import { OrdersEventService } from '../orders-event.service';
 import { StockService } from '../../stock/stock.service';
 import { StockRouterService } from '../../stock/stock-router.service';
@@ -131,6 +132,7 @@ describe('OrdersService.updateOrder cost capture', () => {
         { provide: TrackingSettingsService, useValue: stub() },
         { provide: TrackingContextService, useValue: stub() },
         { provide: CustomersService, useValue: stub() },
+        { provide: CustomerAddressService, useValue: stub() },
         { provide: OrdersEventService, useValue: stub() },
         { provide: StockService, useValue: stub() },
         { provide: StockRouterService, useValue: stub() },
@@ -219,6 +221,7 @@ describe('OrdersService.verifyPayment fee capture', () => {
         { provide: TrackingSettingsService, useValue: stub() },
         { provide: TrackingContextService, useValue: stub() },
         { provide: CustomersService, useValue: stub() },
+        { provide: CustomerAddressService, useValue: stub() },
         { provide: OrdersEventService, useValue: stub() },
         { provide: StockService, useValue: stub() },
         { provide: StockRouterService, useValue: stub() },

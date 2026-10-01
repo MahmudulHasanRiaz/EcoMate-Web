@@ -9,6 +9,7 @@ import {
   TrackingProviderAdapter,
 } from './adapters';
 import { TrackingContextService } from './tracking-context.service';
+import { sanitizeDispatchPayload } from './sanitize-dispatch-payload';
 import { IdentityResolutionService } from './identity-resolution.service';
 import { getRetryBackoffMs } from './outbox-relay.service';
 import { TrackingNormalizer } from './tracking.normalizer';
@@ -619,6 +620,14 @@ export class TrackingDispatcherService {
       const status = this.classify(result);
       const errorMsg = result.ok ? null : result.rawResponse ?? 'send failed';
 
+      // Sanitized + bounded copy of what was actually sent, for debugging
+      // "what did we really POST?". NOT the exact wire payload: secrets are
+      // redacted and structure truncated, and the wrapper records `truncated`
+      // and `redactedPaths` so the UI can disclose that it is incomplete.
+      // Safe by construction: adapters hash customer PII before the wire body
+      // and credentials travel in the URL/headers, never in the payload body.
+      const sanitizedPayload = sanitizeDispatchPayload(built);
+
       await this.prisma.trackingDispatch.update({
         where: { id: dispatch.id },
         data: {
@@ -627,6 +636,7 @@ export class TrackingDispatcherService {
           providerEventId: result.providerEventId ?? dispatch.providerEventId,
           httpStatus: result.httpStatus ?? null,
           responseBody: result.rawResponse ?? null,
+          payloadSnapshot: sanitizedPayload as any,
           errorMsg,
         },
       });

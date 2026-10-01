@@ -39,7 +39,9 @@ describe('CustomersService.findOrCreateCustomer â€” email identity rules (spec Â
     prisma.customerProfile.findUnique.mockResolvedValue({
       id: 'cust-1',
       phone: '+8801812345678',
-      email: 'cust_1812345678@myeco.store', // synthetic/temporary
+      // Exactly what the generator emits: digits of the NORMALISED (E.164)
+      // phone, which carries the 880 country code.
+      email: 'cust_8801812345678@myeco.store',
     });
     prisma.userProfile.findFirst.mockResolvedValue(null);
 
@@ -56,7 +58,10 @@ describe('CustomersService.findOrCreateCustomer â€” email identity rules (spec Â
     });
   });
 
-  it('same phone + a new real email updates the existing customer (no second customer)', async () => {
+  it('never replaces a REAL profile email with a different real email', async () => {
+    // The customer already gave us a real address. A later order supplying a
+    // different one is not permission to rewrite their identity â€” that stays an
+    // explicit profile-edit decision (Part 19 / Rule 5).
     prisma.customerProfile.findUnique.mockResolvedValue({
       id: 'cust-1',
       phone: '+8801812345678',
@@ -72,10 +77,7 @@ describe('CustomersService.findOrCreateCustomer â€” email identity rules (spec Â
     );
 
     expect(prisma.customerProfile.create).not.toHaveBeenCalled();
-    expect(prisma.customerProfile.update).toHaveBeenCalledWith({
-      where: { id: 'cust-1' },
-      data: { email: 'new-real@example.com' },
-    });
+    expect(prisma.customerProfile.update).not.toHaveBeenCalled();
     expect(result.id).toBe('cust-1');
   });
 
@@ -129,7 +131,7 @@ describe('CustomersService.findOrCreateCustomer â€” email identity rules (spec Â
     prisma.customerProfile.findUnique.mockResolvedValue({
       id: 'cust-1',
       phone: '+8801712345678',
-      email: 'cust_1712345678@myeco.store',
+      email: 'cust_8801712345678@myeco.store',
     });
     prisma.userProfile.findFirst.mockResolvedValue(null);
 
@@ -144,5 +146,37 @@ describe('CustomersService.findOrCreateCustomer â€” email identity rules (spec Â
       where: { id: 'cust-1' },
       data: { email: 'rahim@example.com' },
     });
+  });
+
+  it('never replaces a synthetic-shaped email belonging to a DIFFERENT phone', async () => {
+    prisma.customerProfile.findUnique.mockResolvedValue({
+      id: 'cust-1',
+      phone: '+8801712345678',
+      email: 'cust_8809999999999@myeco.store', // another customer's placeholder
+    });
+    prisma.userProfile.findFirst.mockResolvedValue(null);
+
+    await service.findOrCreateCustomer(
+      '01712345678',
+      'Rahim Uddin',
+      undefined,
+      'rahim@example.com',
+    );
+
+    expect(prisma.customerProfile.update).not.toHaveBeenCalled();
+  });
+
+  it('does not rename an existing customer on a repeat checkout', async () => {
+    prisma.customerProfile.findUnique.mockResolvedValue({
+      id: 'cust-1',
+      phone: '+8801712345678',
+      email: 'real@example.com',
+    });
+    prisma.userProfile.findFirst.mockResolvedValue({ id: 'u-1', firstName: 'Rahim', lastName: 'Uddin' });
+
+    await service.findOrCreateCustomer('01712345678', 'Md Rahim');
+
+    // The second order's name is order-owned, not customer-owned.
+    expect(prisma.userProfile.update).not.toHaveBeenCalled();
   });
 });

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { OrdersController } from './orders.controller';
 import { OrderStatusController } from './order-status.controller';
 import { OrdersService } from './orders.service';
+import { OrderOthersService } from './order-others.service';
 import { OrderEditLockService } from './order-edit-lock.service';
 import { OrdersEventService } from './orders-event.service';
 import { TrackingModule } from '../tracking/tracking.module';
@@ -14,8 +15,8 @@ import { CommissionsModule } from '../commissions/commissions.module';
 
 @Module({
   controllers: [OrdersController, OrderStatusController],
-  providers: [OrdersService, OrdersEventService, OrderEditLockService],
-  exports: [OrdersService, OrderEditLockService, OrdersEventService],
+  providers: [OrdersService, OrdersEventService, OrderEditLockService, OrderOthersService],
+  exports: [OrdersService, OrderEditLockService, OrdersEventService, OrderOthersService],
   imports: [
     TrackingModule,
     CustomersModule,

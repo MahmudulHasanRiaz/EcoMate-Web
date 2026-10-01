@@ -2,6 +2,15 @@
  * Deterministic test: proves that order-time customer data is preserved
  * independently of later CustomerProfile mutations, and that a delayed
  * Purchase event uses the ORIGINAL order-time values.
+ *
+ * OWNERSHIP INVARIANT (plan §2.1) — order-owned historical truth, NOT
+ * immutable:
+ *  - CustomerProfile never overwrites an order snapshot, directly or by
+ *    changing itself.
+ *  - A later profile change never alters a historical order.
+ *  - Authorized staff MAY correct an order's snapshot explicitly.
+ *  - With updateCustomerProfile:true the profile write and the snapshot write
+ *    are two SEPARATE ownership operations.
  */
 describe('Order-time customer snapshot preservation', () => {
   // Mock data representing order creation at T0
@@ -22,7 +31,7 @@ describe('Order-time customer snapshot preservation', () => {
   /**
    * Simulates the customer data resolution logic from
    * buildCanonicalOrderTrackingData(), proving the field precedence:
-   * 1. Order-time customer snapshot (immutable)
+   * 1. Order-time customer snapshot (order-owned)
    * 2. shippingAddress JSON (fallback for legacy)
    * 3. CustomerProfile (fallback for legacy)
    * 4. guestName/guestPhone (fallback for legacy)
@@ -215,6 +224,77 @@ describe('Order-time customer snapshot preservation', () => {
       expect(result.city).toBe(T0_CITY);
       expect(result.state).toBe(T0_STATE);
       expect(result.zip).toBe(T0_ZIP);
+    });
+  });
+
+  // ── Corrected ownership invariant (plan §2.1) ──────────────────────────
+  // The snapshot is not "frozen forever" — authorized staff may correct it.
+  // What must never happen is the reverse: a profile change rewriting history,
+  // or a new order overwriting the profile.
+  describe('Ownership invariant (order-owned, not immutable)', () => {
+    const snapshotFields = () => ({
+      customerFirstName: 'Rahim',
+      customerLastName: 'Uddin',
+      customerEmail: T0_EMAIL,
+      customerPhone: T0_PHONE,
+    });
+
+    it('a profile mutation never alters an existing order snapshot', () => {
+      const order: any = {
+        ...snapshotFields(),
+        customer: { name: T1_NAME, email: T1_EMAIL, phone: T1_PHONE },
+      };
+      // Simulate the profile changing after the order was placed.
+      order.customer.name = T1_NAME;
+      order.customer.email = T1_EMAIL;
+
+      const result = resolveCustomerData(order);
+      // The order's own record is untouched by the profile's state.
+      expect(result.email).toBe(T0_EMAIL);
+      expect(result.phone).toBe(T0_PHONE);
+      expect(result.firstName).toBe('Rahim');
+      expect(result.lastName).toBe('Uddin');
+    });
+
+    it('an authorized order correction MAY change the snapshot', () => {
+      // Correcting the ORDER is a sanctioned mutation of order-owned data.
+      const order: any = { ...snapshotFields(), customer: null };
+      order.customerFirstName = 'Md';
+      order.customerLastName = 'Rahim';
+      const result = resolveCustomerData(order);
+      expect(result.firstName).toBe('Md');
+      expect(result.lastName).toBe('Rahim');
+    });
+
+    it('a profile update and a snapshot correction are independent operations', () => {
+      // With updateCustomerProfile:true BOTH change, but each is written on its
+      // own row — neither is a side effect of the other.
+      const order: any = { ...snapshotFields(), customer: null };
+      const profile = { name: 'Md Rahim', email: T0_EMAIL, phone: T0_PHONE };
+
+      // Correct the order snapshot only.
+      order.customerFirstName = 'Md';
+      order.customerLastName = 'Rahim';
+      expect(profile.name).toBe('Md Rahim'); // profile untouched
+      expect(resolveCustomerData(order).firstName).toBe('Md');
+
+      // Now correct the profile only — the order snapshot must not follow.
+      profile.name = 'Someone Else';
+      expect(resolveCustomerData(order).firstName).toBe('Md');
+    });
+
+    it('a new order never rewrites an earlier order snapshot', () => {
+      const order1: any = { ...snapshotFields(), customer: null };
+      // A second order carrying a different name is its own record entirely.
+      const order2: any = {
+        customerFirstName: 'Md',
+        customerLastName: 'Rahim',
+        customerEmail: 'md@example.com',
+        customerPhone: T0_PHONE,
+        customer: null,
+      };
+      expect(resolveCustomerData(order1).firstName).toBe('Rahim');
+      expect(resolveCustomerData(order2).firstName).toBe('Md');
     });
   });
 });

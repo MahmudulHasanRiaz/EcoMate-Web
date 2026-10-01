@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CustomersService } from '../../customers/customers.service';
 import { TrackingCaptureService } from '../../tracking/tracking-capture.service';
 import { TrackingSettingsService } from '../../tracking/tracking-settings.service';
+import { CustomerAddressService } from '../../customers/customer-address.service';
 
 const configSnapshotMock = {
   enabledProviders: ['meta'],
@@ -65,6 +66,11 @@ describe('CheckoutLeadsService', () => {
             systemSetting: {
               findUnique: jest.fn().mockResolvedValue(null),
             },
+            // Customer-owned side effects of a converted order run inside the
+            // transaction (latest-order telemetry).
+            customerProfile: {
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+            },
             orderCounter: {
               upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
             },
@@ -114,6 +120,10 @@ describe('CheckoutLeadsService', () => {
               .fn()
               .mockResolvedValue(configSnapshotMock),
           },
+        },
+        {
+          provide: CustomerAddressService,
+          useValue: { syncFromOrder: jest.fn().mockResolvedValue(0) },
         },
       ],
     }).compile();

@@ -6,9 +6,10 @@ import { PosOrdersService } from './pos-orders.service';
 import { MediaModule } from '../media/media.module';
 import { TrackingModule } from '../tracking/tracking.module';
 import { CommissionsModule } from '../commissions/commissions.module';
+import { CustomersModule } from '../customers/customers.module';
 
 @Module({
-  imports: [MediaModule, TrackingModule, CommissionsModule],
+  imports: [MediaModule, TrackingModule, CommissionsModule, CustomersModule],
   controllers: [SessionsController, PosOrdersController],
   providers: [SessionsService, PosOrdersService],
 })

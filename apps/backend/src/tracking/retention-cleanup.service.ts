@@ -15,10 +15,10 @@ import { TrackingSnapshotPayload } from './tracking-snapshot.types';
 const BATCH_SIZE = 1000;
 
 /** Retention windows (design §12). Raw PII is bound to 90 days; replay archives 2 years. */
-const RETENTION_ANONYMIZE_DAYS = 90; // context identifiers + snapshot payloads
-const RETENTION_OUTBOX_DAYS = 30; // terminal outboxes + their dispatch events
-const RETENTION_DISPATCH_DAYS = 365; // dispatch + dispatch-event audit rows
-const RETENTION_ARCHIVE_DAYS = 730; // snapshots → replay archive, then purge
+export const RETENTION_ANONYMIZE_DAYS = 90; // context identifiers + snapshot payloads
+export const RETENTION_OUTBOX_DAYS = 30; // terminal outboxes + their dispatch events
+export const RETENTION_DISPATCH_DAYS = 365; // dispatch + dispatch-event audit rows
+export const RETENTION_ARCHIVE_DAYS = 730; // snapshots → replay archive, then purge
 
 /** Cadence of the scheduled sweep (matches the other tracking schedulers). */
 const RUN_INTERVAL_MS = 6 * 60 * 60 * 1000;

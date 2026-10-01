@@ -261,9 +261,21 @@ model CustomerProfile {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
+  // Latest-order telemetry only — operational, NOT part of the canonical
+  // identity above. Distinct from UserProfile.lastIp (staff auth telemetry).
+  // Maintained as the MAX(Order.createdAt) for this customer; the write is a
+  // conditional update whose WHERE clause carries the max-semantics, so an
+  // older order committing late can never clobber a newer order's values.
+  // Never written by a profile edit, and never derived from an order snapshot.
+  lastOrderIp      String?
+  lastOrderAt      DateTime?
+
   betterAuthUser betterAuthUser? @relation(fields: [betterAuthUserId], references: [id], onDelete: SetNull)
   orders         Order[]
   addresses      Address[]
+  // Customer-owned, reusable address book. Independent from Order.shippingAddress
+  // / Order.billingAddress, which are order-owned historical snapshots.
+  customerAddresses CustomerAddress[]
 
   @@index([email])
   // Orders-list search matches customer name as a substring.
@@ -340,6 +352,58 @@ model Address {
   @@index([userId])
   @@index([customerProfileId])
   @@index([userId, isDefault, createdAt])
+}
+
+// ── Customer-owned address book ──────────────────────────────
+// Reusable, current customer truth. Deliberately SEPARATE from the legacy
+// `Address` model above, which is flat (street/city/state/zipCode), dual-owned
+// by UserProfile OR CustomerProfile, has no role distinction, and is never
+// written by the order flow. This model carries the BD locality shape orders
+// actually store and is written only by the order-time sync service.
+enum CustomerAddressType {
+  SHIPPING
+  BILLING
+}
+
+model CustomerAddress {
+  id                String              @id @default(uuid())
+  customerProfileId String
+  customerProfile   CustomerProfile     @relation(fields: [customerProfileId], references: [id], onDelete: Cascade)
+
+  // ROLE, not a duplicate marker: one physical address may legitimately exist
+  // as both a SHIPPING and a BILLING record with identical contents. Billing and
+  // shipping are separate business roles with separate lifecycles, so collapsing
+  // them would destroy the distinction and make a role change destructive.
+  type              CustomerAddressType @default(SHIPPING)
+  label             String?
+  isDefault         Boolean             @default(false)
+
+  fullName          String
+  phone             String
+  addressLine       String
+  area              String?
+  thana             String?
+  district          String?
+  division          String?
+  postalCode        String?
+  country           String              @default("Bangladesh")
+
+  // sha256 over normalized fullName|phone|addressLine|area|thana|district|
+  // postalCode|country. Matches only WITHIN the same `type` — thana/district
+  // alone can never identify an address, so a different house/road in the same
+  // locality hashes differently and becomes its own row. NULL disables dedup
+  // for this row rather than colliding (Postgres NULLs never conflict).
+  normalizedHash    String?
+
+  // Audit only — the order that first introduced this address. Never a relation:
+  // deleting an order must not cascade into the customer's address book.
+  sourceOrderId     String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@unique([customerProfileId, type, normalizedHash])
+  @@index([customerProfileId, type])
+  @@index([customerProfileId, isDefault])
 }
 
 model RefreshToken {
@@ -658,7 +722,13 @@ model Order {
   discount                 Decimal            @default(0) @db.Decimal(10, 2)
   discountType             String             @default("flat")
   total                    Decimal            @db.Decimal(10, 2)
+  // ORDER-OWNED HISTORICAL ADDRESS SNAPSHOTS — independent from CustomerProfile
+  // and from the customer's CustomerAddress book. Editing the customer's
+  // address book NEVER changes these; editing one of these NEVER changes the
+  // other. billingAddress is populated ONLY from data actually captured at
+  // order time — it is never derived post-hoc from shippingAddress.
   shippingAddress          Json?              @default("{}")
+  billingAddress           Json?              @default("{}")
   customerNotes            String?
   officeNotes              String?
   courierService           CourierService?
@@ -674,12 +744,18 @@ model Order {
   updatedAt                DateTime           @updatedAt
   guestName                String?
   guestPhone               String?
-  // INVARIANT: The following customer snapshot fields are set ONCE at order
-  // creation time and MUST NEVER be updated after. They preserve the customer
-  // data that was available when the order was placed, independent of later
-  // CustomerProfile mutations. All historical order display, Purchase tracking
-  // events, and print templates MUST use these fields instead of the mutable
-  // CustomerProfile relation.
+  // OWNERSHIP INVARIANT — order-owned historical truth, NOT immutable:
+  //  - A new order builds its snapshot from that order's own captured values.
+  //  - CustomerProfile NEVER overwrites these fields, directly or indirectly
+  //    by changing itself. A profile change never alters a historical order.
+  //  - Authorized staff MAY correct an order's snapshot explicitly (PUT
+  //    /orders/:id customerInfo). That is a sanctioned mutation of order-owned
+  //    data — the previous "MUST NEVER be updated" wording wrongly implied the
+  //    correction was forbidden, and contradicted the code.
+  //  - With updateCustomerProfile=true the profile write and the snapshot write
+  //    are two SEPARATE ownership operations, each written independently.
+  // All historical order display, Purchase tracking events, and print
+  // templates MUST read these fields rather than the mutable CustomerProfile.
   customerEmail            String?
   customerPhone            String?
   customerFirstName        String?
@@ -2942,6 +3018,13 @@ model TrackingDispatch {
   responseBody       String?
   errorMsg           String?
   attemptCount       Int      @default(0)
+  // SANITIZED AND BOUNDED snapshot of the provider-bound payload the adapter
+  // sent — this is NOT the exact wire payload: secrets are redacted and
+  // structure is truncated, and the sanitized form records `truncated` and
+  // `redactedPaths` so the UI can disclose that it is incomplete. Null for
+  // SKIPPED/DEDUPED (no send occurred). An exact, immutable, encrypted
+  // wire-payload audit trail is a separate mechanism, out of scope here.
+  payloadSnapshot    Json?
   adapterVersion     Int? // null for SKIPPED/DEDUPED (no send)
   providerApiVersion String? // null for SKIPPED/DEDUPED
   payloadVersion     Int? // null for SKIPPED/DEDUPED

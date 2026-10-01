@@ -7,6 +7,7 @@ import { TrackingCaptureService } from '../tracking/tracking-capture.service';
 import { TrackingSettingsService } from '../tracking/tracking-settings.service';
 import { TrackingContextService } from '../tracking/tracking-context.service';
 import { CustomersService } from '../customers/customers.service';
+import { CustomerAddressService } from '../customers/customer-address.service';
 import { StockService } from '../stock/stock.service';
 import { StockRouterService } from '../stock/stock-router.service';
 import { BlockedEntriesService } from '../blocked-entries/blocked-entries.service';
@@ -213,6 +214,9 @@ describe('OrdersService', () => {
               findFirst: jest.fn().mockResolvedValue(null),
               upsert: jest.fn().mockResolvedValue({ id: 'customer-id-1' }),
               update: jest.fn().mockResolvedValue({ id: 'customer-id-1' }),
+              create: jest.fn().mockResolvedValue({ id: 'customer-id-1' }),
+              // Race-safe latest-order telemetry write (conditional updateMany).
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
             },
             customer: {
               update: jest.fn().mockResolvedValue({ id: 'customer-id-1' }),
@@ -300,6 +304,10 @@ describe('OrdersService', () => {
               .fn()
               .mockResolvedValue({ id: 'customer-id-1' }),
           },
+        },
+        {
+          provide: CustomerAddressService,
+          useValue: { syncFromOrder: jest.fn().mockResolvedValue(0) },
         },
         {
           provide: StockService,
@@ -1577,6 +1585,7 @@ describe('OrdersService', () => {
               findUnique: jest
                 .fn()
                 .mockResolvedValue({ phone: '01700000000' }),
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
             },
           }),
       );
@@ -1693,17 +1702,11 @@ describe('OrdersService', () => {
       expect(createCall.data.customerId).toBe('customer-id-1');
       expect(createCall.data.guestName).toBe('Edited Name');
       expect(createCall.data.guestPhone).toBe('+8801712345678');
-      // The edited customer info is persisted back onto the customer profile.
-      expect(prisma.customerProfile.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: 'customer-id-1' },
-          update: expect.objectContaining({
-            name: 'Edited Name',
-            phone: '+8801712345678',
-            email: 'edited@example.com',
-          }),
-        }),
-      );
+      // OWNERSHIP: placing an order must NOT rewrite the canonical customer
+      // profile. The order-time values live on the order snapshot columns; an
+      // existing CustomerProfile is left completely untouched.
+      expect(prisma.customerProfile.upsert).not.toHaveBeenCalled();
+      expect(prisma.customerProfile.update).not.toHaveBeenCalled();
     });
 
     it('authenticated customer order is locked to their own identity', async () => {
@@ -3419,13 +3422,33 @@ describe('OrdersService', () => {
             firstName: 'Jane',
             phoneNumber: '01812345678',
           },
+          // The uniqueness guard belongs to the PROFILE write, which is
+          // opt-in. Without it the order snapshot is corrected freely and the
+          // customer's canonical phone is untouched, so there is no conflict.
+          updateCustomerProfile: true,
         }),
       ).rejects.toThrow(ConflictException);
 
       expect(prisma.customerProfile.update).not.toHaveBeenCalled();
     });
 
-    it('targets CustomerProfile (not UserProfile) so staff identity can never be overwritten', async () => {
+    it('does NOT touch the customer profile without an explicit opt-in', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.order.update as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.updateOrder('order-id-1', {
+        customerInfo: { firstName: 'Jane', email: 'free@x.com' },
+      });
+
+      // The order's OWN snapshot is corrected...
+      const orderUpdate = (prisma.order.update as jest.Mock).mock.calls[0][0];
+      expect(orderUpdate.data.customerFirstName).toBe('Jane');
+      expect(orderUpdate.data.customerEmail).toBe('free@x.com');
+      // ...but the customer-owned profile is not.
+      expect(prisma.customerProfile.update).not.toHaveBeenCalled();
+    });
+
+    it('updates the customer profile only when updateCustomerProfile is true', async () => {
       (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
       (prisma.customerProfile.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.customerProfile as any).update = jest
@@ -3435,6 +3458,46 @@ describe('OrdersService', () => {
 
       await service.updateOrder('order-id-1', {
         customerInfo: { firstName: 'Jane', email: 'free@x.com' },
+        updateCustomerProfile: true,
+      });
+
+      // Two INDEPENDENT ownership operations, both asserted.
+      const profileUpdate = (prisma.customerProfile.update as jest.Mock).mock.calls[0][0];
+      expect(profileUpdate.data).toEqual({ name: 'Jane', email: 'free@x.com' });
+      const orderUpdate = (prisma.order.update as jest.Mock).mock.calls[0][0];
+      expect(orderUpdate.data.customerFirstName).toBe('Jane');
+    });
+
+    it('writes only explicitly supplied fields to the profile', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.customerProfile.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.customerProfile as any).update = jest
+        .fn()
+        .mockResolvedValue({ id: 'customer-id-1' });
+      (prisma.order.update as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.updateOrder('order-id-1', {
+        customerInfo: { firstName: 'Jane' },
+        updateCustomerProfile: true,
+      });
+
+      // Omitted email is preserved, not blanked.
+      const updateCall = (prisma.customerProfile.update as jest.Mock).mock.calls[0][0];
+      expect(updateCall.data).toEqual({ name: 'Jane' });
+      expect(updateCall.data).not.toHaveProperty('email');
+    });
+
+    it('never writes UserProfile, so staff identity cannot be overwritten', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.customerProfile.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.customerProfile as any).update = jest
+        .fn()
+        .mockResolvedValue({ id: 'customer-id-1' });
+      (prisma.order.update as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.updateOrder('order-id-1', {
+        customerInfo: { firstName: 'Jane', email: 'free@x.com' },
+        updateCustomerProfile: true,
       });
 
       // The write must land on the order's CustomerProfile only.
@@ -3455,10 +3518,10 @@ describe('OrdersService', () => {
 
       await service.updateOrder('order-id-1', {
         customerInfo: { firstName: 'Jane', email: '' },
+        updateCustomerProfile: true,
       });
 
       // Empty email never reaches the unique-key write (no P2002/409).
-      expect(prisma.customerProfile.findFirst).not.toHaveBeenCalled();
       const updateCall = (prisma.customerProfile.update as jest.Mock).mock.calls[0][0];
       expect(updateCall.data).not.toHaveProperty('email');
       expect(updateCall.data.name).toBe('Jane');
@@ -3475,6 +3538,7 @@ describe('OrdersService', () => {
 
       await service.updateOrder('order-id-1', {
         customerInfo: { firstName: 'Jane', email: 'free@x.com' },
+        updateCustomerProfile: true,
       });
 
       const updateCall = (prisma.customerProfile.update as jest.Mock).mock.calls[0][0];

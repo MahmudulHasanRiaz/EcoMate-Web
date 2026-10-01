@@ -37,6 +37,11 @@ export class CreateOrderDto {
   @IsOptional() @IsNumber() discount?: number;
   @IsOptional() @IsIn(['flat', 'percentage']) discountType?: string;
   @IsOptional() @IsObject() shippingAddress?: any;
+  /**
+   * Order-owned historical billing snapshot. Stored ONLY when actually supplied
+   * at checkout; absent stays empty and is never derived from shippingAddress.
+   */
+  @IsOptional() @IsObject() billingAddress?: any;
   @IsOptional() @IsString() customerNotes?: string;
   @IsOptional() @IsString() officeNotes?: string;
   @IsOptional() @IsString() guestName?: string;
@@ -102,12 +107,27 @@ export class UpdateOrderDto {
   @IsOptional() @IsNumber() discount?: number;
   @IsOptional() @IsIn(['flat', 'percentage']) discountType?: string;
   @IsOptional() @IsObject() shippingAddress?: any;
+  /**
+   * Order-owned historical billing snapshot. Independent from shippingAddress:
+   * supplying one never clears or derives the other, and omitting it leaves the
+   * stored value exactly as it was. Never back-filled from shippingAddress.
+   */
+  @IsOptional() @IsObject() billingAddress?: any;
   @IsOptional() @IsString() customerNotes?: string;
   @IsOptional() @IsString() officeNotes?: string;
   @IsOptional()
   @ValidateNested()
   @Type(() => CustomerInfoDto)
   customerInfo?: CustomerInfoDto;
+  /**
+   * Opt-in to also correcting the CANONICAL customer profile.
+   *
+   * Default false: an order correction updates the order's own snapshot only.
+   * The profile is customer-owned and changes through explicit profile-edit
+   * flows — a single order edit must never silently rewrite a real person's
+   * identity. When true, only explicitly supplied fields are written.
+   */
+  @IsOptional() @IsBoolean() updateCustomerProfile?: boolean;
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

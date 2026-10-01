@@ -15,6 +15,7 @@ import { TrackingSettingsService } from '../tracking/tracking-settings.service';
 import { TrackingContextService } from '../tracking/tracking-context.service';
 import { StoredIdentifiers } from '../tracking/context-merge';
 import { CustomersService } from '../customers/customers.service';
+import { CustomerAddressService } from '../customers/customer-address.service';
 import { OrdersEventService } from './orders-event.service';
 import { buildOrderSearchFilter } from './order-search';
 import { buildOrderAttributionSnapshot } from './order-attribution-snapshot';
@@ -216,6 +217,7 @@ export class OrdersService {
     private readonly trackingSettings: TrackingSettingsService,
     private readonly trackingContext: TrackingContextService,
     private readonly customersService: CustomersService,
+    private readonly customerAddressService: CustomerAddressService,
     private readonly events: OrdersEventService,
     private readonly stockService: StockService,
     private readonly stockRouter: StockRouterService,
@@ -1045,7 +1047,16 @@ export class OrdersService {
         );
       }
       // Ensure CustomerProfile exists (order FK now references CustomerProfile).
-      // Staff-created orders may update the customer's name/email/phone.
+      //
+      // OWNERSHIP: creating an order NEVER overwrites canonical customer
+      // identity. The order-time values live in the Order.* snapshot columns
+      // (written further down), which is order-owned. Previously this was an
+      // `upsert` whose `update` branch wrote `name` unconditionally and
+      // phone/email whenever supplied, so a staff order for an existing
+      // customer silently renamed and re-phoned the real person.
+      //
+      // The row is created only when genuinely absent (the FK target must
+      // exist); an existing profile is left completely untouched.
       const desiredPhone = dto.guestPhone || linkedCustomer?.phoneNumber;
       const name =
         dto.guestName ||
@@ -1063,20 +1074,20 @@ export class OrdersService {
           });
           if (phoneOwner) phone = undefined; // conflict → keep existing profile phone
         }
-        await this.prisma.customerProfile.upsert({
+        const existingProfile = await this.prisma.customerProfile.findUnique({
           where: { id: dto.customerId },
-          create: {
-            id: dto.customerId,
-            phone: phone || desiredPhone,
-            name,
-            ...(email ? { email } : {}),
-          },
-          update: {
-            name,
-            ...(phone ? { phone } : {}),
-            ...(email ? { email } : {}),
-          },
+          select: { id: true },
         });
+        if (!existingProfile) {
+          await this.prisma.customerProfile.create({
+            data: {
+              id: dto.customerId,
+              phone: phone || desiredPhone,
+              name,
+              ...(email ? { email } : {}),
+            },
+          });
+        }
       }
     }
 
@@ -1647,6 +1658,13 @@ export class OrdersService {
           },
           customerNotes: dto.customerNotes,
           officeNotes: resolvedOfficeNotes,
+          // Order-owned billing snapshot. Stored ONLY when billing was actually
+          // captured at checkout — never derived from shippingAddress, for this
+          // order or any historical one.
+          billingAddress:
+            typeof dto.billingAddress === 'object' && dto.billingAddress
+              ? dto.billingAddress
+              : {},
           // Source dimension: a staff-created order is MANUAL, never a website
           // order. Before this, Order.source kept its ECOMMERCE default for
           // admin entries, so they were reported as (and ad-tracked like)
@@ -1663,8 +1681,10 @@ export class OrdersService {
           attribution: (attributionSnapshot as any) ?? undefined,
           guestName: dto.guestName,
           guestPhone: dto.guestPhone,
-          // Order-time customer snapshot: immutable record of customer data at
-          // order creation time. NEVER mutated after order creation.
+          // Order-time customer snapshot: order-owned historical record of the
+          // customer data known when the order was placed. Independent from
+          // CustomerProfile — a later profile change never alters it. Staff MAY
+          // correct it explicitly via PUT /orders/:id customerInfo.
           customerEmail: orderTimeEmail,
           customerPhone: orderTimePhone,
           customerFirstName: orderTimeFirstName,
@@ -1990,6 +2010,35 @@ export class OrdersService {
         }
       }
 
+      // Customer-owned side effects of the order, inside the same transaction.
+      if (created.customerId) {
+        // Latest-order telemetry. The guard lives in the WHERE clause so the
+        // max-semantics are evaluated atomically by Postgres — a read-then-write
+        // check would race, letting an older order that commits late overwrite
+        // a newer order's telemetry. IP and timestamp are written under one
+        // guard so they can never disagree. A tie keeps the incumbent.
+        await tx.customerProfile.updateMany({
+          where: {
+            id: created.customerId,
+            OR: [{ lastOrderAt: null }, { lastOrderAt: { lt: created.createdAt } }],
+          },
+          data: {
+            lastOrderAt: created.createdAt,
+            lastOrderIp: clientIp || null,
+          },
+        });
+
+        // Enrich the customer's reusable address book. Never destructive: a new
+        // address is added, an already-known one is reused, nothing is replaced
+        // or deleted, and the order's own snapshots are never touched.
+        await this.customerAddressService.syncFromOrder(tx, {
+          customerProfileId: created.customerId,
+          shippingAddress: created.shippingAddress,
+          billingAddress: created.billingAddress,
+          orderId: created.id,
+        });
+      }
+
       // Capture the purchase snapshot inside the same transaction as the order
       // insert (idempotent). DB errors propagate and roll back the entire
       // transaction — a committed order MUST have a durable Purchase intent.
@@ -2297,6 +2346,11 @@ export class OrdersService {
     if (dto.officeNotes !== undefined) data.officeNotes = dto.officeNotes;
     if (dto.shippingAddress !== undefined)
       data.shippingAddress = dto.shippingAddress;
+    // Billing is an INDEPENDENT order-owned snapshot. Supplying it never
+    // derives, clears, or overwrites the shipping snapshot, and omitting it
+    // leaves the stored billing value exactly as it was — an absent key is not
+    // an instruction to "fall back to shipping".
+    if (dto.billingAddress !== undefined) data.billingAddress = dto.billingAddress;
 
     // First manual mutation takes ownership; an existing assignment is preserved.
     if (shouldAutoAssign(opts?.userId, order.assignedToId)) {
@@ -2636,50 +2690,72 @@ export class OrdersService {
       }
 
       if (dto.customerInfo && order.customerId) {
+        // TWO SEPARATE OWNERSHIP OPERATIONS, deliberately independent:
+        //
+        //  1. The ORDER's own historical snapshot — always corrected. This is
+        //     order-owned data; staff correcting an order is a sanctioned
+        //     mutation of the order record, not a rewrite of history.
+        //  2. The CANONICAL customer profile — only when staff explicitly opt
+        //     in with `updateCustomerProfile: true`. This is customer-owned.
+        //
+        // Previously one blanket `customerProfile.update` did both, so
+        // correcting a single order silently rewrote the real person's
+        // canonical identity. The two are now separable and the profile write
+        // is strictly partial.
+
         // IMPORTANT: `order.customerId` references a CustomerProfile row, NOT a
         // UserProfile. Editing order customer info must only ever touch
         // CustomerProfile (what Order.customer relation reads) — never
         // UserProfile, which would accidentally overwrite a logged-in staff
         // member's own identity when ids collide across the two tables.
-        const firstName = String(dto.customerInfo.firstName ?? '');
-        const lastName = String(dto.customerInfo.lastName ?? '');
-        const customerData: Record<string, string> = {};
-        if (firstName || lastName) {
-          customerData.name = `${firstName} ${lastName}`.trim();
-        }
-        if (dto.customerInfo.phoneNumber !== undefined) {
-          const normalized = normalizePhone(dto.customerInfo.phoneNumber);
-          if (!normalized)
-            throw new BadRequestException('Invalid phone number');
-          const phoneOwner = await tx.customerProfile.findFirst({
-            where: { phone: normalized, id: { not: order.customerId } },
-            select: { id: true },
-          });
-          if (phoneOwner) {
-            throw new ConflictException(
-              'This phone number is already registered to another customer.',
-            );
+        const firstName = dto.customerInfo.firstName;
+        const lastName = dto.customerInfo.lastName;
+        const nameProvided = firstName !== undefined || lastName !== undefined;
+        const nextFirstName = nameProvided ? String(firstName ?? '').trim() : undefined;
+        const nextLastName = nameProvided ? String(lastName ?? '').trim() : undefined;
+
+        // ---- Operation 2: canonical profile, opt-in only, strictly partial ----
+        if (dto.updateCustomerProfile) {
+          const customerData: Record<string, string> = {};
+          // Only an explicitly supplied name pair writes a name. Omitting the
+          // field preserves the stored value rather than blanking it.
+          if (nameProvided) {
+            const full = [nextFirstName, nextLastName].filter(Boolean).join(' ');
+            if (full) customerData.name = full;
           }
-          customerData.phone = normalized;
-        }
-        if (dto.customerInfo.email !== undefined) {
-          const email = String(dto.customerInfo.email).trim();
-          if (email) customerData.email = email;
-        }
-        if (Object.keys(customerData).length > 0) {
-          await tx.customerProfile.update({
-            where: { id: order.customerId },
-            data: customerData,
-          });
+          if (dto.customerInfo.phoneNumber !== undefined) {
+            const normalized = normalizePhone(dto.customerInfo.phoneNumber);
+            if (!normalized) {
+              throw new BadRequestException('Invalid phone number');
+            }
+            const phoneOwner = await tx.customerProfile.findFirst({
+              where: { phone: normalized, id: { not: order.customerId } },
+              select: { id: true },
+            });
+            if (phoneOwner) {
+              throw new ConflictException(
+                'This phone number is already registered to another customer.',
+              );
+            }
+            customerData.phone = normalized;
+          }
+          if (dto.customerInfo.email !== undefined) {
+            const email = String(dto.customerInfo.email).trim();
+            if (email) customerData.email = email;
+          }
+          if (Object.keys(customerData).length > 0) {
+            await tx.customerProfile.update({
+              where: { id: order.customerId },
+              data: customerData,
+            });
+          }
         }
 
-        // ALSO update the Order's snapshot fields so the order detail/list
-        // shows the corrected data immediately. This is a legitimate correction
-        // of the order record, not a CustomerProfile mutation affecting history.
+        // ---- Operation 1: the order's own snapshot, always corrected ----
         const snapshotUpdate: Record<string, string | null> = {};
-        if (dto.customerInfo.firstName !== undefined || dto.customerInfo.lastName !== undefined) {
-          snapshotUpdate.customerFirstName = firstName || null;
-          snapshotUpdate.customerLastName = lastName || null;
+        if (nameProvided) {
+          snapshotUpdate.customerFirstName = nextFirstName || null;
+          snapshotUpdate.customerLastName = nextLastName || null;
         }
         if (dto.customerInfo.email !== undefined) {
           snapshotUpdate.customerEmail = String(dto.customerInfo.email).trim() || null;
@@ -2687,11 +2763,10 @@ export class OrdersService {
         if (dto.customerInfo.phoneNumber !== undefined) {
           snapshotUpdate.customerPhone = normalizePhone(dto.customerInfo.phoneNumber) || null;
         }
+        // Written directly (not via `?? undefined`, which silently dropped an
+        // intentional blank) so an explicit correction is always persisted.
         if (Object.keys(snapshotUpdate).length > 0) {
-          data.customerFirstName = snapshotUpdate.customerFirstName ?? undefined;
-          data.customerLastName = snapshotUpdate.customerLastName ?? undefined;
-          data.customerEmail = snapshotUpdate.customerEmail ?? undefined;
-          data.customerPhone = snapshotUpdate.customerPhone ?? undefined;
+          Object.assign(data, snapshotUpdate);
         }
       }
 

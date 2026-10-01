@@ -56,7 +56,15 @@ export class CreatePosOrderDto {
   @IsOptional() @IsIn(['flat', 'percentage']) discountType?: string;
 
   @IsOptional() @IsString() deliveryMethod?: string;
+  /** Free-text delivery note. Kept as-is; not parsed into an address book row. */
   @IsOptional() @IsString() deliveryAddress?: string;
+  /**
+   * Structured order-owned address snapshots. POS capture only writes them
+   * when supplied; they are never derived from `deliveryAddress`, which is
+   * free text that cannot be reliably parsed into locality fields.
+   */
+  @IsOptional() @IsObject() shippingAddress?: any;
+  @IsOptional() @IsObject() billingAddress?: any;
   @IsOptional() @IsEnum(SalesChannel) salesChannel?: SalesChannel;
   @IsOptional() @IsString() notes?: string;
 }

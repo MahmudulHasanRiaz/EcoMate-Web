@@ -20,6 +20,11 @@ export class ConvertOrderDto {
   @IsOptional() @IsString() guestName?: string;
   @IsOptional() @IsString() guestPhone?: string;
   @IsOptional() @IsObject() shippingAddress?: any;
+  /**
+   * Order-owned historical billing snapshot, independent from shippingAddress.
+   * Never derived from the shipping address.
+   */
+  @IsOptional() @IsObject() billingAddress?: any;
   @IsOptional() @IsString() paymentMethod?: string;
   @IsOptional() @IsNumber() shippingCharge?: number;
   @IsOptional() @IsNumber() discount?: number;
