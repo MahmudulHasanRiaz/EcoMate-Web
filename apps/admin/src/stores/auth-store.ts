@@ -12,7 +12,17 @@ function loadCachedUser(): AuthUser | null {
       const parsed = JSON.parse(raw)
       if (parsed.authMe) {
         const u = parsed.authMe.user || parsed.authMe
-        if (u && u.id) return { id: u.id, email: u.email, role: u.role, permissions: u.permissions || [] }
+        if (u && u.id) {
+          return {
+            id: u.id,
+            email: u.email,
+            role: u.role,
+            permissions: u.permissions || [],
+            firstName: u.firstName,
+            lastName: u.lastName,
+            username: u.username,
+          }
+        }
       }
     }
   } catch { /* fall through */ }
@@ -36,6 +46,10 @@ interface AuthUser {
   email: string
   role: string
   permissions: string[]
+  /** From /auth/me — the account holder's own profile name. */
+  firstName?: string
+  lastName?: string
+  username?: string
 }
 
 interface AuthState {
@@ -56,8 +70,11 @@ export const useAuthStore = create<AuthState>()((set) => {
       // Cached user renders instantly on reload; /auth/me refreshes it.
       user: loadCachedUser(),
       setUser: (user) => {
-        saveCachedUser(user)
-        set((state) => ({ ...state, auth: { ...state.auth, user } }))
+        // The login response has no `permissions` key — normalise so every
+        // consumer reads an array and never `undefined`.
+        const next = user ? { ...user, permissions: user.permissions || [] } : user
+        saveCachedUser(next)
+        set((state) => ({ ...state, auth: { ...state.auth, user: next } }))
       },
       accessToken: initToken,
       setAccessToken: (accessToken) =>

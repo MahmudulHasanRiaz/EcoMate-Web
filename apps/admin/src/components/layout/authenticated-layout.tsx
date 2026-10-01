@@ -10,6 +10,7 @@ import { SearchProvider } from '@/context/search-provider'
 import { PanelProvider } from '@/context/panel-provider'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/layout/app-sidebar'
+import { AttendanceClock } from '@/features/hr-attendance/components/attendance-clock'
 import { SkipToMain } from '@/components/skip-to-main'
 import { toast } from 'sonner'
 
@@ -33,10 +34,29 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
   useEffect(() => {
     if (!accessToken) return
     const { user, setUser, reset } = useAuthStore.getState().auth
-    if (user) return
+    // The login response carries no `permissions` key, so a cached user can exist
+    // while every permission-gated surface reads `undefined`. Only skip the
+    // /auth/me round-trip once permissions are actually present.
+    if (user?.permissions?.length) return
 
-    const applyUser = (u: { id: string; email: string; role: string; permissions?: string[] }) => {
-      setUser({ id: u.id, email: u.email, role: u.role, permissions: u.permissions || [] })
+    const applyUser = (u: {
+      id: string
+      email: string
+      role: string
+      permissions?: string[]
+      firstName?: string
+      lastName?: string
+      username?: string
+    }) => {
+      setUser({
+        id: u.id,
+        email: u.email,
+        role: u.role,
+        permissions: u.permissions || [],
+        firstName: u.firstName,
+        lastName: u.lastName,
+        username: u.username,
+      })
       if (u.role === 'packing_assistant') {
         const isOnPacking = window.location.pathname.startsWith('/op/packing')
         if (!isOnPacking) navigate({ to: '/op/packing', replace: true })
@@ -87,7 +107,15 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
         const u = res.data?.user || res.data
         if (u) {
           const { setUser } = useAuthStore.getState().auth
-          setUser({ id: u.id, email: u.email, role: u.role, permissions: u.permissions || [] })
+          setUser({
+            id: u.id,
+            email: u.email,
+            role: u.role,
+            permissions: u.permissions || [],
+            firstName: u.firstName,
+            lastName: u.lastName,
+            username: u.username,
+          })
         }
       } catch {
         // Silent — the interceptor handles 401 with exponential backoff.
@@ -112,13 +140,20 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
     if (!accessToken) return
     if (window.location.pathname.includes('/license/activate')) return
 
-    const applyLicenseStatus = (data: { active?: boolean; license?: { features?: string[] } }) => {
+    const applyLicenseStatus = (data: {
+      active?: boolean
+      features?: string[]
+      license?: { features?: string[] }
+    }) => {
       const isActive = data?.active
       if (!isActive) {
         navigate({ to: '/license/activate', replace: true })
         return
       }
-      const newFeatures: string[] = data?.license?.features || []
+      // /license/status returns the effective feature list at the TOP level
+      // (this is where the dev-mode '*' wildcard lives). `license.features` is
+      // the raw engine payload and is absent in dev mode.
+      const newFeatures: string[] = data?.features || data?.license?.features || []
       const { added, removed } = useLicenseStore.getState().setFeatures(newFeatures)
 
       if (added.length > 0 && removed.length > 0) {
@@ -256,6 +291,10 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
         <SidebarProvider defaultOpen={defaultOpen}>
           <div className="no-print"><SkipToMain /></div>
           <AppSidebar />
+          {/* Portals the attendance clock into whatever <Header> the current
+              page renders. Keeping it mounted here (not per-page) is what makes
+              the clock available across the whole app. */}
+          <AttendanceClock />
           <SidebarInset
             data-panel={panel}
             className={cn(

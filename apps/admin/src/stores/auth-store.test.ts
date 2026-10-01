@@ -12,6 +12,9 @@ const sampleUser = {
   role: 'admin',
 }
 
+/** POST /auth/login omits `permissions`; the store normalises it to []. */
+const normalisedUser = { ...sampleUser, permissions: [] as string[] }
+
 describe('useAuthStore', () => {
   beforeEach(() => {
     clearCookies()
@@ -54,19 +57,36 @@ describe('useAuthStore', () => {
 
     useAuthStore.getState().auth.setUser({ ...sampleUser })
 
-    expect(useAuthStore.getState().auth.user).toEqual(sampleUser)
+    // The login response carries no permissions; the store fills in an array so
+    // consumers never read `undefined`.
+    expect(useAuthStore.getState().auth.user).toEqual(normalisedUser)
+  })
+
+  it('preserves permissions when they are present', async () => {
+    const useAuthStore = await importAuthStore()
+
+    useAuthStore.getState().auth.setUser({
+      ...sampleUser,
+      permissions: ['manage_hr_settings'],
+    })
+
+    expect(useAuthStore.getState().auth.user?.permissions).toEqual([
+      'manage_hr_settings',
+    ])
   })
 
   it('caches the user in localStorage so a reload renders it instantly', async () => {
     const useAuthStore = await importAuthStore()
     useAuthStore.getState().auth.setUser({ ...sampleUser })
 
-    expect(localStorage.getItem('eco_mate_user')).toBe(JSON.stringify(sampleUser))
+    expect(localStorage.getItem('eco_mate_user')).toBe(
+      JSON.stringify(normalisedUser)
+    )
 
     vi.resetModules()
     const useAuthStoreAfterReload = await importAuthStore()
 
-    expect(useAuthStoreAfterReload.getState().auth.user).toEqual(sampleUser)
+    expect(useAuthStoreAfterReload.getState().auth.user).toEqual(normalisedUser)
   })
 
   it('reset clears user and access token and drops persistence', async () => {
