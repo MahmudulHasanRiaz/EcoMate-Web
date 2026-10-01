@@ -14,12 +14,24 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { SignOutDialog } from '@/components/sign-out-dialog'
+import { useHeaderChrome } from '@/context/header-chrome-provider'
 
+/**
+ * Legacy header account menu.
+ *
+ * The account entry point now lives only in the sidebar footer (NavUser), which
+ * shows the same real session data and the same actions. Having both left the
+ * top bar crowded and gave two competing account menus, so this renders nothing
+ * inside a <Header>. It is still exported because ~90 screens import it directly.
+ */
 export function ProfileDropdown() {
   const [open, setOpen] = useDialogState()
   const user = useAuthStore((s) => s.auth.user)
   const { pathname } = useLocation()
   const isMon = pathname.startsWith('/mon')
+  const headerRendersAccount = useHeaderChrome()
+
+  if (headerRendersAccount) return null
 
   const displayName = user?.email?.split('@')[0] || 'Admin'
   const initials = displayName.slice(0, 2).toUpperCase()

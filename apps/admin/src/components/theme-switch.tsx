@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Check, Moon, Sun } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTheme } from '@/context/theme-provider'
+import { useHeaderChrome } from '@/context/header-chrome-provider'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -10,6 +11,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
+/**
+ * Light/dark/system toggle. Rendered by <Header> inside the right-hand cluster,
+ * so screens no longer need to include it. The in-header check keeps legacy
+ * pages that still import it from rendering a second copy.
+ */
 export function ThemeSwitch() {
   const { theme, setTheme } = useTheme()
 
@@ -21,10 +27,14 @@ export function ThemeSwitch() {
     if (metaThemeColor) metaThemeColor.setAttribute('content', themeColor)
   }, [theme])
 
+  const hasHeaderToggle = useHeaderChrome()
+
+  if (hasHeaderToggle) return null
+
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
-        <Button variant='ghost' size='icon' className='scale-95 rounded-full'>
+        <Button variant='ghost' size='icon' className='scale-95 rounded-full' data-theme-toggle>
           <Sun className='size-[1.2rem] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90' />
           <Moon className='absolute size-[1.2rem] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0' />
           <span className='sr-only'>Toggle theme</span>
