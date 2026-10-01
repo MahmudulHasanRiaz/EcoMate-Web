@@ -31,6 +31,11 @@ export class HrSelfServiceController {
     return this.service.getProfile(this.assertEmployee(user));
   }
 
+  @Get('performance')
+  getPerformance(@CurrentUser() user: any) {
+    return this.service.getPerformance(this.assertEmployee(user));
+  }
+
   @Get('leave-balances')
   getLeaveBalances(@CurrentUser() user: any) {
     return this.service.getLeaveBalances(this.assertEmployee(user));

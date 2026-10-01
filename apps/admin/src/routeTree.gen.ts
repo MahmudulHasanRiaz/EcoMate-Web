@@ -36,6 +36,7 @@ import { Route as AuthenticatedMonBlockingSettingsRouteImport } from './routes/_
 import { Route as AuthenticatedMonOverviewRouteImport } from './routes/_authenticated/mon/overview'
 import { Route as AuthenticatedMonSettingsRouteRouteImport } from './routes/_authenticated/mon/settings/route'
 import { Route as AuthenticatedOpIndexRouteImport } from './routes/_authenticated/op/index'
+import { Route as AuthenticatedOpMyProfileRouteImport } from './routes/_authenticated/op/my-profile'
 import { Route as AuthenticatedOpOverviewRouteImport } from './routes/_authenticated/op/overview'
 import { Route as AuthenticatedOpPrintRouteRouteImport } from './routes/_authenticated/op/print/route'
 import { Route as AuthenticatedOpSettingsRouteRouteImport } from './routes/_authenticated/op/settings/route'
@@ -317,6 +318,12 @@ const AuthenticatedOpIndexRoute = AuthenticatedOpIndexRouteImport.update({
   path: '/op/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedOpMyProfileRoute =
+  AuthenticatedOpMyProfileRouteImport.update({
+    id: '/op/my-profile',
+    path: '/op/my-profile',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpOverviewRoute = AuthenticatedOpOverviewRouteImport.update({
   id: '/op/overview',
   path: '/op/overview',
@@ -1181,6 +1188,7 @@ export interface FileRoutesByFullPath {
   '/hr/settings': typeof AuthenticatedHrSettingsRoute
   '/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
   '/mon/overview': typeof AuthenticatedMonOverviewRoute
+  '/op/my-profile': typeof AuthenticatedOpMyProfileRoute
   '/op/overview': typeof AuthenticatedOpOverviewRoute
   '/mon/': typeof AuthenticatedMonIndexRoute
   '/op/': typeof AuthenticatedOpIndexRoute
@@ -1349,6 +1357,7 @@ export interface FileRoutesByTo {
   '/hr/settings': typeof AuthenticatedHrSettingsRoute
   '/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
   '/mon/overview': typeof AuthenticatedMonOverviewRoute
+  '/op/my-profile': typeof AuthenticatedOpMyProfileRoute
   '/op/overview': typeof AuthenticatedOpOverviewRoute
   '/mon': typeof AuthenticatedMonIndexRoute
   '/op': typeof AuthenticatedOpIndexRoute
@@ -1519,6 +1528,7 @@ export interface FileRoutesById {
   '/_authenticated/hr/settings': typeof AuthenticatedHrSettingsRoute
   '/_authenticated/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
   '/_authenticated/mon/overview': typeof AuthenticatedMonOverviewRoute
+  '/_authenticated/op/my-profile': typeof AuthenticatedOpMyProfileRoute
   '/_authenticated/op/overview': typeof AuthenticatedOpOverviewRoute
   '/_authenticated/mon/': typeof AuthenticatedMonIndexRoute
   '/_authenticated/op/': typeof AuthenticatedOpIndexRoute
@@ -1689,6 +1699,7 @@ export interface FileRouteTypes {
     | '/hr/settings'
     | '/mon/blocking-settings'
     | '/mon/overview'
+    | '/op/my-profile'
     | '/op/overview'
     | '/mon/'
     | '/op/'
@@ -1857,6 +1868,7 @@ export interface FileRouteTypes {
     | '/hr/settings'
     | '/mon/blocking-settings'
     | '/mon/overview'
+    | '/op/my-profile'
     | '/op/overview'
     | '/mon'
     | '/op'
@@ -2026,6 +2038,7 @@ export interface FileRouteTypes {
     | '/_authenticated/hr/settings'
     | '/_authenticated/mon/blocking-settings'
     | '/_authenticated/mon/overview'
+    | '/_authenticated/op/my-profile'
     | '/_authenticated/op/overview'
     | '/_authenticated/mon/'
     | '/_authenticated/op/'
@@ -2373,6 +2386,13 @@ declare module '@tanstack/react-router' {
       path: '/op'
       fullPath: '/op/'
       preLoaderRoute: typeof AuthenticatedOpIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/my-profile': {
+      id: '/_authenticated/op/my-profile'
+      path: '/op/my-profile'
+      fullPath: '/op/my-profile'
+      preLoaderRoute: typeof AuthenticatedOpMyProfileRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/op/overview': {
@@ -3493,6 +3513,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedHrSettingsRoute: typeof AuthenticatedHrSettingsRoute
   AuthenticatedMonBlockingSettingsRoute: typeof AuthenticatedMonBlockingSettingsRoute
   AuthenticatedMonOverviewRoute: typeof AuthenticatedMonOverviewRoute
+  AuthenticatedOpMyProfileRoute: typeof AuthenticatedOpMyProfileRoute
   AuthenticatedOpOverviewRoute: typeof AuthenticatedOpOverviewRoute
   AuthenticatedMonIndexRoute: typeof AuthenticatedMonIndexRoute
   AuthenticatedOpIndexRoute: typeof AuthenticatedOpIndexRoute
@@ -3627,6 +3648,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedHrSettingsRoute: AuthenticatedHrSettingsRoute,
   AuthenticatedMonBlockingSettingsRoute: AuthenticatedMonBlockingSettingsRoute,
   AuthenticatedMonOverviewRoute: AuthenticatedMonOverviewRoute,
+  AuthenticatedOpMyProfileRoute: AuthenticatedOpMyProfileRoute,
   AuthenticatedOpOverviewRoute: AuthenticatedOpOverviewRoute,
   AuthenticatedMonIndexRoute: AuthenticatedMonIndexRoute,
   AuthenticatedOpIndexRoute: AuthenticatedOpIndexRoute,

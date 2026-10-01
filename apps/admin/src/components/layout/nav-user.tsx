@@ -121,11 +121,24 @@ export function NavUser(_props: NavUserProps) {
                 size='lg'
                 className='w-full transition-all duration-150 border border-border/40 hover:bg-muted/40 rounded-lg shadow-xs data-[state=open]:bg-sidebar-accent'
               >
-                <Avatar className='h-7 w-7 rounded-md border border-border/70'>
-                  <AvatarFallback className='rounded-md bg-primary-soft text-primary-ink font-bold text-[10px]'>
-                    {initials}
-                  </AvatarFallback>
-                </Avatar>
+                <div
+                  className={employee ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}
+                  onClick={
+                    employee
+                      ? (e) => {
+                          e.stopPropagation()
+                          navigate({ to: '/op/my-profile' })
+                        }
+                      : undefined
+                  }
+                  title={employee ? 'View Employee Profile' : undefined}
+                >
+                  <Avatar className='h-7 w-7 rounded-md border border-border/70'>
+                    <AvatarFallback className='rounded-md bg-primary-soft text-primary-ink font-bold text-[10px]'>
+                      {initials}
+                    </AvatarFallback>
+                  </Avatar>
+                </div>
                 <div className='grid flex-1 text-start text-xs leading-tight ml-1.5'>
                   <span className='truncate font-bold text-foreground text-[11px]'>
                     {displayName}
@@ -138,38 +151,52 @@ export function NavUser(_props: NavUserProps) {
               </SidebarMenuButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent
-              className='w-(--radix-dropdown-menu-trigger-width) min-w-60 rounded-lg shadow-md border-border/80'
+              className='w-(--radix-dropdown-menu-trigger-width) min-w-64 rounded-lg shadow-md border-border/80'
               side={isMobile ? 'bottom' : 'right'}
               align='end'
               sideOffset={4}
             >
               <DropdownMenuLabel className='p-0 font-normal'>
-                <div className='flex items-center gap-2.5 px-2.5 py-2 text-start'>
-                  <Avatar className='h-9 w-9 rounded-md border border-border/70'>
-                    <AvatarFallback className='rounded-md bg-primary-soft text-primary-ink font-bold text-xs'>
-                      {initials}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className='grid min-w-0 flex-1 text-start text-xs leading-tight'>
-                    <span className='truncate font-semibold text-foreground'>{displayName}</span>
-                    <span className='truncate text-[10px] text-muted-foreground'>{email}</span>
-                    <span className='mt-1 inline-flex w-fit items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium capitalize text-muted-foreground'>
-                      {subtitle}
-                    </span>
-                  </div>
-                </div>
-                {employee && (
-                  <div className='border-t border-border/60 px-2.5 py-2 text-[10px] leading-relaxed text-muted-foreground'>
-                    <div>
-                      Employee{' '}
-                      <span className='font-medium text-foreground'>{employee.employeeId}</span>
-                    </div>
-                    {employee.department?.name && (
-                      <div>
-                        Department{' '}
-                        <span className='font-medium text-foreground'>{employee.department.name}</span>
+                {employee ? (
+                  <Link
+                    to="/op/my-profile"
+                    className="flex flex-col p-2.5 rounded-t-lg hover:bg-muted/50 transition-colors cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2.5 text-start">
+                      <Avatar className="h-9 w-9 rounded-md border border-border/70 group-hover:border-primary/50 transition-colors">
+                        <AvatarFallback className="rounded-md bg-primary-soft text-primary-ink font-bold text-xs">
+                          {initials}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="grid min-w-0 flex-1 text-start text-xs leading-tight">
+                        <span className="truncate font-semibold text-foreground group-hover:text-primary transition-colors">
+                          {displayName}
+                        </span>
+                        <span className="truncate text-[10px] text-muted-foreground">{email}</span>
+                        <span className="mt-1 inline-flex w-fit items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium capitalize text-muted-foreground">
+                          {subtitle}
+                        </span>
                       </div>
-                    )}
+                    </div>
+                    <div className="mt-2 pt-2 border-t border-border/50 text-[10px] flex items-center justify-between text-muted-foreground">
+                      <span>ID: <strong className="text-foreground">{employee.employeeId}</strong></span>
+                      <span className="text-primary font-medium group-hover:underline">View Profile →</span>
+                    </div>
+                  </Link>
+                ) : (
+                  <div className='flex items-center gap-2.5 px-2.5 py-2 text-start'>
+                    <Avatar className='h-9 w-9 rounded-md border border-border/70'>
+                      <AvatarFallback className='rounded-md bg-primary-soft text-primary-ink font-bold text-xs'>
+                        {initials}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className='grid min-w-0 flex-1 text-start text-xs leading-tight'>
+                      <span className='truncate font-semibold text-foreground'>{displayName}</span>
+                      <span className='truncate text-[10px] text-muted-foreground'>{email}</span>
+                      <span className='mt-1 inline-flex w-fit items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium capitalize text-muted-foreground'>
+                        {subtitle}
+                      </span>
+                    </div>
                   </div>
                 )}
               </DropdownMenuLabel>
@@ -177,6 +204,17 @@ export function NavUser(_props: NavUserProps) {
               <DropdownMenuSeparator className="bg-border/60" />
 
               <DropdownMenuGroup className="p-1 space-y-0.5">
+                {employee && (
+                  <DropdownMenuItem
+                    asChild
+                    className="rounded-md bg-primary-soft text-primary-ink focus:bg-primary-soft/80 py-1.5 px-2.5 text-xs gap-2 font-semibold cursor-pointer mb-1 border border-primary/20"
+                  >
+                    <Link to="/op/my-profile">
+                      <CircleUser className="size-3.5 text-primary" />
+                      My Employee Profile
+                    </Link>
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   asChild
                   className="rounded-md focus:bg-muted py-1.5 px-2.5 text-xs gap-2 font-medium cursor-pointer"

@@ -49,4 +49,15 @@ describe('HrSelfServiceController', () => {
       expect(methodOf('getLeaveBalances')).toBe(0);
     });
   });
+
+  describe('self performance route', () => {
+    it('exposes GET performance', () => {
+      const pathOf = (method: string) =>
+        Reflect.getMetadata('path', HrSelfServiceController.prototype[method]);
+      const methodOf = (method: string) =>
+        Reflect.getMetadata('method', HrSelfServiceController.prototype[method]);
+      expect(pathOf('getPerformance')).toBe('performance');
+      expect(methodOf('getPerformance')).toBe(0);
+    });
+  });
 });

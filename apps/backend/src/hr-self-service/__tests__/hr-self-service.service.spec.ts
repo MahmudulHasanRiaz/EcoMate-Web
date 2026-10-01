@@ -29,7 +29,15 @@ describe('HrSelfServiceService', () => {
 
   const prismaMock = {
     employee: { findFirst: jest.fn() },
-    leaveRequest: { findUnique: jest.fn() },
+    userProfile: { findFirst: jest.fn() },
+    order: { findMany: jest.fn() },
+    checkoutLead: { count: jest.fn() },
+    task: { findMany: jest.fn() },
+    attendanceDay: { findMany: jest.fn() },
+    commissionEarning: { findMany: jest.fn() },
+    employeeEarning: { findMany: jest.fn() },
+    payslip: { findFirst: jest.fn() },
+    leaveRequest: { findUnique: jest.fn(), count: jest.fn() },
   };
 
   const payrollMock = {
@@ -108,7 +116,7 @@ describe('HrSelfServiceService', () => {
           where: { betterAuthUserId: 'ba-1' },
         }),
       );
-      expect(result).toEqual(RESOLVED_EMP);
+      expect(result).toEqual({ ...RESOLVED_EMP, userProfile: undefined });
     });
   });
 
@@ -126,7 +134,7 @@ describe('HrSelfServiceService', () => {
       expect(prismaMock.employee.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({ where: { betterAuthUserId: 'ba-mgr' } }),
       );
-      expect(result).toEqual(managerEmp);
+      expect(result).toEqual({ ...managerEmp, userProfile: undefined });
     });
 
     it('staff with no Employee record get 404 on self-service (resolveEmployee) — not their data', async () => {
@@ -443,6 +451,107 @@ describe('HrSelfServiceService', () => {
       leaveMock.cancelRequest.mockResolvedValue({ id: 'lr-1', status: 'cancelled' });
       await service.cancelLeaveRequest(SESSION_USER, 'lr-1');
       expect(leaveMock.cancelRequest).toHaveBeenCalledWith('lr-1', 'user-1');
+    });
+  });
+
+  describe('getPerformance', () => {
+    it('aggregates orders, leads, tasks, attendance, financial, and leaves metrics', async () => {
+      prismaMock.userProfile.findFirst.mockResolvedValue({
+        id: 'u-1',
+        username: 'john',
+      });
+      prismaMock.order.findMany.mockResolvedValue([
+        {
+          id: 'ord-1',
+          displayId: 'ORD-001',
+          total: 1500,
+          createdAt: new Date(),
+          status: { id: 's-1', name: 'Delivered', color: '#10B981' },
+          customer: { name: 'Customer One', phoneNumber: '01711111111' },
+        },
+        {
+          id: 'ord-2',
+          displayId: 'ORD-002',
+          total: 2000,
+          createdAt: new Date(),
+          status: { id: 's-2', name: 'Processing', color: '#3B82F6' },
+          guestName: 'Guest Two',
+          guestPhone: '01822222222',
+        },
+      ]);
+      prismaMock.checkoutLead.count
+        .mockResolvedValueOnce(10) // assigned
+        .mockResolvedValueOnce(6); // converted
+      prismaMock.task.findMany.mockResolvedValue([
+        {
+          id: 't-1',
+          displayId: 'TSK-1',
+          title: 'Review invoice',
+          status: 'done',
+          priority: 'high',
+          dueDate: null,
+          createdAt: new Date(),
+        },
+      ]);
+      prismaMock.attendanceDay.findMany.mockResolvedValue([
+        { status: 'PRESENT', workedMinutes: 480 },
+        { status: 'LATE', workedMinutes: 450 },
+      ]);
+      prismaMock.commissionEarning.findMany.mockResolvedValue([
+        { amount: 500, createdAt: new Date() },
+      ]);
+      prismaMock.employeeEarning.findMany.mockResolvedValue([{ amount: 1000 }]);
+      prismaMock.payslip.findFirst.mockResolvedValue({
+        periodKey: '2026-09',
+        netPay: 45000,
+        status: 'paid',
+        paidAt: new Date(),
+      });
+      leaveMock.leaveBalances.mockResolvedValue([
+        { typeName: 'Casual', remaining: 8 },
+      ]);
+      prismaMock.leaveRequest.count.mockResolvedValue(1);
+
+      const perf = await service.getPerformance(SESSION_USER);
+
+      expect(perf.orders.totalAssignedOrders).toBe(2);
+      expect(perf.orders.deliveredOrders).toBe(1);
+      expect(perf.orders.processingOrders).toBe(1);
+      expect(perf.orders.totalDeliveredAmount).toBe(1500);
+      expect(perf.orders.deliveryRate).toBe(50);
+      expect(perf.leads.assignedLeads).toBe(10);
+      expect(perf.leads.convertedLeads).toBe(6);
+      expect(perf.leads.conversionRate).toBe(60);
+      expect(perf.tasks.totalTasks).toBe(1);
+      expect(perf.tasks.completedTasks).toBe(1);
+      expect(perf.attendance.presentDays).toBe(1);
+      expect(perf.attendance.lateDays).toBe(1);
+      expect(perf.attendance.onTimeRate).toBe(50);
+      expect(perf.financial.totalCommission).toBe(500);
+      expect(perf.financial.totalBonuses).toBe(1000);
+      expect(perf.financial.latestPayslip?.netPay).toBe(45000);
+      expect(perf.leaves.totalRemaining).toBe(8);
+      expect(perf.leaves.pendingCount).toBe(1);
+    });
+
+    it('handles employee with no userProfile or assigned data cleanly without crash', async () => {
+      prismaMock.userProfile.findFirst.mockResolvedValue(null);
+      prismaMock.attendanceDay.findMany.mockResolvedValue([]);
+      prismaMock.commissionEarning.findMany.mockResolvedValue([]);
+      prismaMock.employeeEarning.findMany.mockResolvedValue([]);
+      prismaMock.payslip.findFirst.mockResolvedValue(null);
+      leaveMock.leaveBalances.mockResolvedValue([]);
+      prismaMock.leaveRequest.count.mockResolvedValue(0);
+
+      const perf = await service.getPerformance(SESSION_USER);
+
+      expect(perf.orders.totalAssignedOrders).toBe(0);
+      expect(perf.leads.assignedLeads).toBe(0);
+      expect(perf.tasks.totalTasks).toBe(0);
+      expect(perf.attendance.presentDays).toBe(0);
+      expect(perf.financial.totalCommission).toBe(0);
+      expect(perf.financial.latestPayslip).toBeNull();
+      expect(perf.leaves.totalRemaining).toBe(0);
     });
   });
 });
