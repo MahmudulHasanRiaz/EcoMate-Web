@@ -12,6 +12,7 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { PaymentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { normalizePhone } from '../common/utils/phone-utils';
+import { LEGACY_CHANNEL_TO_V2 } from '../sales-channel/legacy-channel-map';
 import {
   ORDER_STATUSES,
   recognitionGroup,
@@ -148,6 +149,21 @@ export class AnalyticsFilterService {
 
     if (filters.source) where.source = filters.source as any;
     if (filters.salesChannel) where.salesChannel = filters.salesChannel as any;
+
+    // Canonical attribution filters. `channel` is authoritative wherever the
+    // canonical mapping has run; rows predating the migration still resolve
+    // through the legacy column, so both eras are covered by one filter.
+    if (filters.channel) {
+      where.OR = [
+        { channel: filters.channel as any },
+        ...(LEGACY_CHANNEL_TO_V2[filters.channel]
+          ? [{ channel: null, salesChannel: LEGACY_CHANNEL_TO_V2[filters.channel] as any }]
+          : []),
+      ];
+    }
+    if (filters.channelEntity) where.channelEntity = filters.channelEntity;
+    if (filters.sourceSlug) where.sourceSlug = filters.sourceSlug;
+    if (filters.acquisitionType) where.acquisitionType = filters.acquisitionType as any;
 
     if (filters.paymentMethod) {
       where.payments = {

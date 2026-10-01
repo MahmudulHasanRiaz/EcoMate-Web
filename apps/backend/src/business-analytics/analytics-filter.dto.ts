@@ -7,7 +7,7 @@
  * Order has no store/storeId/branch).
  */
 import { IsIn, IsOptional, IsString, Matches, IsEnum } from 'class-validator';
-import { SalesChannel } from '@prisma/client';
+import { SalesChannel, SalesChannelV2, AcquisitionType } from '@prisma/client';
 import type { RangePreset, Granularity } from './analytics-range.util';
 
 export const ANALYTICS_RANGE_PRESETS: readonly RangePreset[] = [
@@ -71,10 +71,37 @@ export class AnalyticsFilterDto {
   @IsIn([...ANALYTICS_SOURCES])
   source?: AnalyticsSource;
 
-  /** Sales Channel — where the sale came from (Order.salesChannel). */
+  /**
+   * Sales Channel — where the sale came from (Order.salesChannel).
+   *
+   * LEGACY filter, retained unchanged: existing clients keep working exactly
+   * as before. Prefer `channel` for new work.
+   */
   @IsOptional()
   @IsEnum(SalesChannel)
   salesChannel?: SalesChannel;
+
+  // ── Canonical sales-attribution dimensions ──────────────────────────────
+  // Four independent dimensions. `channel` is authoritative wherever the
+  // canonical mapping has run; the filter service falls back to the legacy
+  // column for rows predating the migration, so both eras resolve.
+  @IsOptional()
+  @IsEnum(SalesChannelV2)
+  channel?: SalesChannelV2;
+
+  /** Canonical venue origin (website.com | Page 1 | Office | Showroom 1). */
+  @IsOptional()
+  @IsString()
+  channelEntity?: string;
+
+  /** Canonical marketing platform slug — NOT Order.sourcePlatform. */
+  @IsOptional()
+  @IsString()
+  sourceSlug?: string;
+
+  @IsOptional()
+  @IsEnum(AcquisitionType)
+  acquisitionType?: AcquisitionType;
 
   /**
    * Marketing Source — platform slug via

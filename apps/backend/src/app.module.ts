@@ -28,6 +28,7 @@ import { MobileDownloadModule } from './mobile-download/mobile-download.module';
 import { MobileBuilderModule } from './mobile-builder/mobile-builder.module';
 import { MediaModule } from './media/media.module';
 import { CustomersModule } from './customers/customers.module';
+import { SalesChannelModule } from './sales-channel/sales-channel.module';
 import { CourierModule } from './courier/courier.module';
 import { GatewayModule } from './gateways/gateway.module';
 import { HealthModule } from './health/health.module';
@@ -130,6 +131,7 @@ import { SecurityDashboardModule } from './security-dashboard/security-dashboard
     MobileBuilderModule,
     MediaModule,
     CustomersModule,
+    SalesChannelModule,
     CourierModule,
     GatewayModule,
     HealthModule,

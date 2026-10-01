@@ -10,6 +10,7 @@ import { TrackingCaptureService } from '../../tracking/tracking-capture.service'
 import { TrackingSettingsService } from '../../tracking/tracking-settings.service';
 import { CommissionsService } from '../../commissions/commissions.service';
 import { CustomerAddressService } from '../../customers/customer-address.service';
+import { SalesChannelService } from '../../sales-channel/sales-channel.service';
 
 describe('PosOrdersService — Inventory-Aware Extensions', () => {
   let service: PosOrdersService;
@@ -147,6 +148,15 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
         {
           provide: CustomerAddressService,
           useValue: { syncFromOrder: jest.fn().mockResolvedValue(0) },
+        },
+        {
+          provide: SalesChannelService,
+          useValue: {
+            resolve: jest.fn().mockResolvedValue({
+              channel: null, channelEntity: null, sourceSlug: null,
+              acquisitionType: null, warnings: [],
+            }),
+          },
         },
       ],
     }).compile();

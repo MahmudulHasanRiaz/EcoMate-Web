@@ -21,6 +21,7 @@ import { resolveActionSource } from '../tracking/meta-action-source';
 import { Prisma } from '@prisma/client';
 import { CommissionsService } from '../commissions/commissions.service';
 import { CustomerAddressService } from '../customers/customer-address.service';
+import { SalesChannelService } from '../sales-channel/sales-channel.service';
 
 @Injectable()
 export class PosOrdersService {
@@ -36,6 +37,7 @@ export class PosOrdersService {
     private readonly trackingSettings: TrackingSettingsService,
     private readonly commissionsService: CommissionsService,
     private readonly customerAddressService: CustomerAddressService,
+    private readonly salesChannelService: SalesChannelService,
   ) {}
 
   private mediaUrls(value: unknown): string[] {
@@ -457,6 +459,36 @@ export class PosOrdersService {
     });
   }
 
+  /**
+ * Canonical attribution for a POS sale.
+ *
+ * The showroom comes from the session context, so staff never select it.
+ * Acquisition is deliberately left NULL — a POS sale is never inferred to be
+ * organic, because that would assert a marketing fact nobody established.
+ */
+private async resolveCanonicalPos(
+    dto: CreatePosOrderDto,
+    session: any,
+  ): Promise<Record<string, unknown>> {
+    const showroom = (session as any)?.showroom?.name ?? null;
+    const resolved = await this.salesChannelService.resolve(
+      {
+        channel: (dto as any).channel ?? 'POS',
+        channelEntity: (dto as any).channelEntity ?? null,
+        sourceSlug: (dto as any).sourceSlug ?? null,
+        acquisitionType: (dto as any).acquisitionType ?? null,
+      },
+      { showroomName: showroom },
+    );
+    return {
+      channel: resolved.channel,
+      channelEntity: resolved.channelEntity,
+      sourceSlug: resolved.sourceSlug,
+      acquisitionType: resolved.acquisitionType,
+      channelMappedAt: new Date(),
+    };
+  }
+
   async create(
     dto: CreatePosOrderDto,
     sessionId: string,
@@ -558,6 +590,10 @@ export class PosOrdersService {
           customerPhone: dto.guestPhone || null,
           customerFirstName: dto.guestName?.split(' ')[0] || null,
           customerLastName: dto.guestName?.split(' ').slice(1).join(' ') || null,
+          // Canonical attribution. The showroom is resolved from the POS session — the
+          // user is never asked to pick it. Acquisition stays NULL: a POS sale
+          // is never assumed to be organic.
+          ...(await this.resolveCanonicalPos(dto, session)),
           // Order-owned address snapshots. Written only when supplied — POS's
           // free-text `deliveryAddress` is never parsed into locality fields,
           // because guessing a thana/district would fabricate order history.

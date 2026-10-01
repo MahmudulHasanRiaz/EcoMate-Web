@@ -5,7 +5,9 @@ import {
   IsNumber,
   IsObject,
   IsIn,
+  IsEnum,
 } from 'class-validator';
+import { SalesChannelV2, AcquisitionType } from '@prisma/client';
 
 class ConvertItemDto {
   @IsOptional() @IsString() productId?: string;
@@ -25,6 +27,12 @@ export class ConvertOrderDto {
    * Never derived from the shipping address.
    */
   @IsOptional() @IsObject() billingAddress?: any;
+  // ── Canonical sales-attribution dimensions (all optional; an order is never
+  // rejected because an attribution field was omitted) ──
+  @IsOptional() @IsEnum(SalesChannelV2) channel?: SalesChannelV2;
+  @IsOptional() @IsString() channelEntity?: string;
+  @IsOptional() @IsString() sourceSlug?: string;
+  @IsOptional() @IsEnum(AcquisitionType) acquisitionType?: AcquisitionType;
   @IsOptional() @IsString() paymentMethod?: string;
   @IsOptional() @IsNumber() shippingCharge?: number;
   @IsOptional() @IsNumber() discount?: number;

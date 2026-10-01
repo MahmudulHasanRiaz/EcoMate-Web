@@ -161,6 +161,13 @@ export interface AnalyticsFilters {
   granularity?: string
   source?: string
   salesChannel?: string
+  // ── Canonical sales-attribution filters ──
+  // `salesChannel` above is the LEGACY enum and is retained; these four are
+  // independent dimensions that the backend resolves canonically.
+  channel?: string
+  channelEntity?: string
+  sourceSlug?: string
+  acquisitionType?: string
   marketingSource?: string
   paymentMethod?: string
   categoryId?: string

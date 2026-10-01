@@ -111,6 +111,40 @@ enum SalesChannel {
   OTHER
 }
 
+// ── Canonical sales-attribution dimensions ─────────────────────────────
+// These four are INDEPENDENT facts and are never synonyms:
+//   Channel         where the sale happened   WEBSITE | MESSAGING | PHONE_CALL | POS
+//   ChannelEntity   that venue's specific origin (website.com | Page 1 | Office | Showroom)
+//   Source          marketing platform        facebook | google | tiktok | …
+//   AcquisitionType PAID | ORGANIC | DIRECT | UNKNOWN | NULL
+//
+// Example: WEBSITE | website.com | Facebook | PAID — Channel≠Source, Source≠Acquisition.
+//
+// The legacy SalesChannel enum above stays in place and is never renamed:
+// it mixed venue, platform and contact modality into one field, which is
+// exactly what these four dimensions separate. See sales-channel.mapper.ts
+// for the deterministic legacy → canonical mapping.
+enum SalesChannelV2 {
+  WEBSITE
+  MESSAGING
+  PHONE_CALL
+  POS
+}
+
+// PAID    — explicit paid evidence (sourceType=AD / paid utm medium on an ad platform)
+// ORGANIC — a KNOWN referrer platform brought this, unpaid
+// DIRECT  — the resolver ran and established NO marketing referrer
+// UNKNOWN — classification was attempted but could not be determined reliably
+//
+// NULL is NOT an enum value: "not applicable / not captured" is stored as a
+// database NULL, which is semantically different from UNKNOWN.
+enum AcquisitionType {
+  PAID
+  ORGANIC
+  DIRECT
+  UNKNOWN
+}
+
 model UserProfile {
   id                  String     @id @default(uuid())
   firstName           String
@@ -771,6 +805,25 @@ model Order {
   sourcePlatform           String?
   sourceType               String?
   sourceEntity             String?
+  // ── Canonical sales-attribution dimensions (additive; legacy above stays) ──
+  // `source`/`salesChannel`/`sourcePlatform`/`sourceType`/`sourceEntity` are
+  // NEVER renamed, dropped or rewritten by this model, so the previous
+  // application version keeps working against a migrated database and a
+  // post-cutover rollback is an application revert, not a schema revert.
+  //
+  // channel/sourceSlug/acquisitionType are INDEPENDENT dimensions: a Channel
+  // never implies a Source, and neither ever implies an AcquisitionType.
+  channel                 SalesChannelV2?
+  channelEntity           String?
+  sourceSlug              String?
+  acquisitionType         AcquisitionType?
+  /// MIGRATION MARKER — NOT business data. Distinguishes "canonical mapping
+  /// has not run yet" from "it ran and the answer is genuinely NULL". This
+  /// is why the backfill can never use `channel IS NULL` as its guard: for 278
+  /// historical orders a NULL channel is the CORRECT answer. Excluded from
+  /// API responses and UI.
+  channelMappedAt         DateTime?
+  sourcePlatformRef       SourcePlatform?      @relation(fields: [sourceSlug], references: [slug])
   posSessionId             String?
   idempotencyKey           String?            @unique
   posSession               PosSession?        @relation(fields: [posSessionId], references: [id])
@@ -835,6 +888,11 @@ model Order {
   @@index([posSessionId])
   @@index([source])
   @@index([salesChannel])
+  // Canonical attribution dimensions: analytics filters and breakdowns group on
+  // these, and the backfill's work set is (channelMappedAt IS NULL, createdAt<=boundary).
+  @@index([channel])
+  @@index([sourceSlug])
+  @@index([channelMappedAt])
   @@index([trackingSessionId])
   @@index([trashedAt])
   @@index([ipAddress])
@@ -3142,6 +3200,34 @@ model MarketingPlatform {
   connections MarketingConnection[]
 
   @@index([slug])
+}
+
+// ── Extensible source-platform registry ────────────────────────────────
+// The canonical "Source" dimension. This is a REGISTRY, not an enum, on
+// purpose: an enum would force a schema migration for every new platform and
+// defeat the requirement that a platform can be added as data.
+// (MarketingPlatform.slug above IS an enum — that is the trap being avoided.)
+//
+// `capabilities` drives filtering, e.g. a Messaging channel may only offer
+// sources where capabilities contains MESSAGING. A registry entry existing is
+// explicitly NOT the same as an integration being connected.
+model SourcePlatform {
+  slug         String   @id // 'facebook' | 'google' | 'chatgpt' | … (lowercase)
+  displayName  String
+  enabled      Boolean  @default(true)
+  // MARKETING_SOURCE | MESSAGING | SOCIAL | AD_PLATFORM | AI_ASSISTANT
+  capabilities String[]
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  orders Order[]
+
+  // Capability filtering is a durable dependency (Messaging dropdown, channel
+  // compatibility validation), so the array carries a GIN index — an unindexed
+  // Postgres array cannot answer 'capabilities @> ARRAY[...]' efficiently.
+  @@index([capabilities], type: Gin)
+  @@index([enabled, sortOrder])
 }
 
 model MarketingConnection {

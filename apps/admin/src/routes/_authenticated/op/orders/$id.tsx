@@ -7,6 +7,7 @@ import { SafeImage } from '@/components/safe-image'
 import { CustomerContactActions } from '@/components/customer-contact-actions'
 import { CopyButton } from '@/components/copy-button'
 import { BlockPhoneDialog } from '@/features/orders/block-phone-dialog'
+import { CanonicalAttributionBadges } from '@/features/orders/canonical-attribution-badge'
 import { OthersInfoDialog } from '@/features/orders/others-info-dialog'
 import { useAuthStore } from '@/stores/auth-store'
 import { UserBadge } from '@/components/user-badge'
@@ -426,6 +427,17 @@ function OrderDetailPage() {
                 <span className='inline-flex items-center gap-1.5'>
                   {order.displayId}
                   <CopyButton text={order.displayId} label='Order ID' />
+                </span>
+                {/* Canonical Channel · Entity · Source · Acquisition — four
+                    independent facts, never collapsed into one badge. */}
+                <span className='ml-2 align-middle'>
+                  <CanonicalAttributionBadges
+                    channel={order.channel}
+                    channelEntity={order.channelEntity}
+                    sourceSlug={order.sourceSlug}
+                    sourceLabel={order.sourcePlatformName}
+                    acquisitionType={order.acquisitionType}
+                  />
                 </span>
                 {order.salesChannel || order.sourcePlatform || order.sourceType || order.sourceEntity ? (
                   <span className='ml-2 align-middle'>

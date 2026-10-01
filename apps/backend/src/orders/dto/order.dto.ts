@@ -14,7 +14,7 @@ import {
   ArrayMinSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { PaymentStatus, SalesChannel } from '@prisma/client';
+import { PaymentStatus, SalesChannel, SalesChannelV2, AcquisitionType } from '@prisma/client';
 
 export class OrderItemDto {
   @IsOptional() @IsString() productId?: string;
@@ -67,6 +67,15 @@ export class CreateOrderDto {
   @IsOptional() @IsString() sourcePlatform?: string;
   @IsOptional() @IsString() sourceType?: string;
   @IsOptional() @IsString() sourceEntity?: string;
+  // ── Canonical sales-attribution dimensions ──────────────────────────────
+  // Four INDEPENDENT facts; none implies another. All optional — an order is
+  // never rejected because an attribution field was omitted. Compatibility
+  // with the channel is validated in SalesChannelService, which clears an
+  // incompatible source and reports a warning rather than refusing the order.
+  @IsOptional() @IsEnum(SalesChannelV2) channel?: SalesChannelV2;
+  @IsOptional() @IsString() channelEntity?: string;
+  @IsOptional() @IsString() sourceSlug?: string;
+  @IsOptional() @IsEnum(AcquisitionType) acquisitionType?: AcquisitionType;
   /** Raw landing signals (utm/click-id/referrer) collected first-party by the storefront. */
   @IsOptional() @IsObject() attribution?: Record<string, unknown>;
   /**

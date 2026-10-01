@@ -105,6 +105,9 @@ export class OrderOthersService {
         shippingAddress: true, billingAddress: true,
         ipAddress: true, userAgent: true, trackingSessionId: true,
         source: true, salesChannel: true,
+        // Canonical dimensions. `channelMappedAt` is a migration marker, never
+        // business data, so it is deliberately NOT exposed here.
+        channel: true, channelEntity: true, sourceSlug: true, acquisitionType: true,
         sourcePlatform: true, sourceType: true, sourceEntity: true,
         attribution: true,
       },
@@ -212,8 +215,12 @@ export class OrderOthersService {
       f('ipAddress', 'IP address', o.ipAddress ?? null, 'Technical'),
       f('userAgent', 'User-Agent', o.userAgent ?? null, 'Technical'),
       f('trackingSessionId', 'Tracking session', o.trackingSessionId ?? null, 'Technical'),
-      f('source', 'Source', o.source ?? null, 'Technical'),
-      f('salesChannel', 'Sales channel', o.salesChannel ?? null, 'Technical'),
+      f('source', 'Source (operational)', o.source ?? null, 'Technical'),
+      f('salesChannel', 'Sales channel (legacy)', o.salesChannel ?? null, 'Technical'),
+      f('channel', 'Channel', o.channel ?? null, 'Canonical attribution'),
+      f('channelEntity', 'Channel entity', o.channelEntity ?? null, 'Canonical attribution'),
+      f('sourceSlug', 'Marketing source', o.sourceSlug ?? null, 'Canonical attribution'),
+      f('acquisitionType', 'Acquisition type', o.acquisitionType ?? null, 'Canonical attribution'),
     ];
   }
 

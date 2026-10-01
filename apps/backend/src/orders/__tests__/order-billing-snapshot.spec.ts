@@ -16,6 +16,7 @@ import { TrackingContextService } from '../../tracking/tracking-context.service'
 import { TrackingEligibilityGate } from '../../tracking/tracking-eligibility-gate';
 import { CustomersService } from '../../customers/customers.service';
 import { CustomerAddressService } from '../../customers/customer-address.service';
+import { SalesChannelService } from '../../sales-channel/sales-channel.service';
 import { StockService } from '../../stock/stock.service';
 import { StockRouterService } from '../../stock/stock-router.service';
 import { BlockedEntriesService } from '../../blocked-entries/blocked-entries.service';
@@ -95,6 +96,15 @@ describe('Order billing snapshot separation', () => {
         { provide: TrackingContextService, useValue: { getByCtxId: jest.fn().mockResolvedValue(null) } },
         { provide: CustomersService, useValue: { isPhoneBlocked: jest.fn().mockResolvedValue(false) } },
         { provide: CustomerAddressService, useValue: { syncFromOrder: jest.fn().mockResolvedValue(0) } },
+        {
+          provide: SalesChannelService,
+          useValue: {
+            resolve: jest.fn().mockResolvedValue({
+              channel: null, channelEntity: null, sourceSlug: null,
+              acquisitionType: null, warnings: [],
+            }),
+          },
+        },
         { provide: OrdersEventService, useValue: {} },
         { provide: StockService, useValue: {} },
         { provide: StockRouterService, useValue: {} },

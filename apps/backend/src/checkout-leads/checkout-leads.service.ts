@@ -8,6 +8,7 @@ import { PaymentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CustomersService } from '../customers/customers.service';
 import { CustomerAddressService } from '../customers/customer-address.service';
+import { SalesChannelService } from '../sales-channel/sales-channel.service';
 import { TrackingCaptureService } from '../tracking/tracking-capture.service';
 import { TrackingSettingsService } from '../tracking/tracking-settings.service';
 import { normalizePhone } from '../common/utils/phone-utils';
@@ -28,6 +29,7 @@ export class CheckoutLeadsService {
     private readonly trackingCapture: TrackingCaptureService,
     private readonly trackingSettings: TrackingSettingsService,
     private readonly customerAddressService: CustomerAddressService,
+    private readonly salesChannelService: SalesChannelService,
   ) {}
 
   async findAll(query: {
@@ -276,6 +278,44 @@ export class CheckoutLeadsService {
     return this.prisma.checkoutLead.update({ where: { id }, data });
   }
 
+  /**
+ * Canonical attribution for a converted lead.
+ *
+ * A lead conversion is a phone/offline sale. The channel comes from the
+ * override when staff stated one, else from the legacy salesChannel, else
+ * NULL — an unstated venue is not guessed. Acquisition is deliberately NULL:
+ * taking a phone call establishes no marketing evidence, so calling it
+ * organic would be fabrication.
+ */
+private async resolveCanonicalLead(
+    overrides: any,
+    userId: string,
+  ): Promise<Record<string, unknown>> {
+    const channel =
+      overrides?.channel ??
+      (overrides?.salesChannel === 'CALL'
+        ? 'PHONE_CALL'
+        : overrides?.salesChannel === 'WEBSITE'
+          ? 'WEBSITE'
+          : null);
+    const resolved = await this.salesChannelService.resolve(
+      {
+        channel,
+        channelEntity: overrides?.channelEntity ?? null,
+        sourceSlug: overrides?.sourceSlug ?? null,
+        acquisitionType: overrides?.acquisitionType ?? null,
+      },
+      { staffUserId: userId },
+    );
+    return {
+      channel: resolved.channel,
+      channelEntity: resolved.channelEntity,
+      sourceSlug: resolved.sourceSlug,
+      acquisitionType: resolved.acquisitionType,
+      channelMappedAt: new Date(),
+    };
+  }
+
   async convertToOrder(
     id: string,
     userId: string,
@@ -415,8 +455,10 @@ export class CheckoutLeadsService {
           discount: discountAmount,
           discountType,
           shippingAddress,
-          // Order-owned billing snapshot. Captured only when actually supplied
-          // at conversion; never derived from shippingAddress.
+          // Canonical attribution for a converted lead. Acquisition stays NULL: a phone
+          // or offline conversion is never inferred to be organic, because no
+          // marketing evidence was established by taking the call.
+          ...(await this.resolveCanonicalLead(overrides, userId)),
           billingAddress:
             typeof overrides?.billingAddress === 'object' && overrides.billingAddress
               ? overrides.billingAddress

@@ -34,6 +34,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, UserPlus, UserCheck, Calendar, Search as SearchIcon, Send, Plus, Upload, Trash2, Ban, RotateCcw } from 'lucide-react'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { OrderSourceBadges } from '@/features/orders/order-source-badge'
+import { CanonicalAttributionBadges } from '@/features/orders/canonical-attribution-badge'
 
 const fallbackStatusColors: Record<string, string> = { Pending: 'var(--warning)', Confirmed: 'var(--info)', Cancelled: 'var(--danger)', 'On Hold': 'var(--accent-violet)', Packed: 'var(--accent-cyan)', Shipped: 'var(--success)', 'In Courier': 'var(--accent-violet)', Delivered: 'var(--success)', 'Partial Return': 'var(--warning)', 'Return Pending': 'var(--accent-pink)', Returned: 'var(--danger)', Damaged: 'var(--danger)' }
 const nn = (v: number | string) => Number(v)
@@ -703,6 +704,15 @@ export function Orders() {
                               {new Date(o.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
                               <span className='text-muted-foreground/60 ml-1'>{relativeTime(o.createdAt)}</span>
                             </span>
+                            {/* Canonical dimensions first — four independent
+                                facts, each rendered as its own badge. */}
+                            <CanonicalAttributionBadges
+                              channel={o.channel}
+                              channelEntity={o.channelEntity}
+                              sourceSlug={o.sourceSlug}
+                              sourceLabel={o.sourcePlatformName}
+                              acquisitionType={o.acquisitionType}
+                            />
                             {o.salesChannel || o.sourcePlatform || o.sourceType || o.sourceEntity ? (
                               <OrderSourceBadges
                                 attribution={{

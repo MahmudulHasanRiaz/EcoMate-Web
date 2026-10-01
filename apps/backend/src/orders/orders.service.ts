@@ -16,6 +16,7 @@ import { TrackingContextService } from '../tracking/tracking-context.service';
 import { StoredIdentifiers } from '../tracking/context-merge';
 import { CustomersService } from '../customers/customers.service';
 import { CustomerAddressService } from '../customers/customer-address.service';
+import { SalesChannelService } from '../sales-channel/sales-channel.service';
 import { OrdersEventService } from './orders-event.service';
 import { buildOrderSearchFilter } from './order-search';
 import { buildOrderAttributionSnapshot } from './order-attribution-snapshot';
@@ -218,6 +219,7 @@ export class OrdersService {
     private readonly trackingContext: TrackingContextService,
     private readonly customersService: CustomersService,
     private readonly customerAddressService: CustomerAddressService,
+    private readonly salesChannelService: SalesChannelService,
     private readonly events: OrdersEventService,
     private readonly stockService: StockService,
     private readonly stockRouter: StockRouterService,
@@ -1145,6 +1147,22 @@ export class OrdersService {
       // consumers fall back to 'instant' (Purchase fires, OrderPlaced silent).
     }
 
+    // Canonical sales-attribution dimensions, resolved once before the write.
+    // Channel may be supplied explicitly (manual order); otherwise it is derived
+    // from the legacy evidence by the SAME mapper the backfill uses, so a new
+    // order and a historical one can never disagree. An omitted or incompatible
+    // source resolves to NULL with a warning — never a rejection.
+    const canonical = await this.salesChannelService.resolve({
+      channel: dto.channel ?? null,
+      channelEntity: dto.channelEntity ?? null,
+      sourceSlug: dto.sourceSlug ?? null,
+      acquisitionType: dto.acquisitionType ?? null,
+    }, { staffUserId: userId ?? undefined });
+
+    // Attribution warnings are advisory: the sale still completed, so the order
+    // is created and the caller is told what was cleared.
+    if (canonical.warnings.length > 0) warnings.push(...canonical.warnings);
+
     const order = await this.prisma.$transaction(async (tx) => {
       // Fetch and validate database prices and active statuses
       const productIds = Array.from(
@@ -1704,6 +1722,18 @@ export class OrdersService {
           sourcePlatform: resolvedSourcePlatform,
           sourceType: resolvedSourceType,
           sourceEntity: dto.sourceEntity || null,
+          // Canonical attribution dimensions. Derived through the shared
+          // service so a new order and a backfilled historical order are
+          // mapped by one set of rules. Missing/invalid values resolve to NULL
+          // with a warning — an order is never rejected over attribution.
+          channel: canonical.channel,
+          channelEntity: canonical.channelEntity,
+          sourceSlug: canonical.sourceSlug,
+          acquisitionType: canonical.acquisitionType,
+          // The new runtime writes canonical fields itself, so it marks the row
+          // as mapped. That marker is what stops the historical backfill from
+          // ever reprocessing it.
+          channelMappedAt: new Date(),
           trackingSessionId: dto.trackingSessionId ?? null,
           // Frozen technical + attribution context (never updated afterwards).
           ipAddress: clientIp || null,

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Calendar as CalendarIcon, ChevronDown, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { CHANNEL_OPTIONS, ACQUISITION_OPTIONS } from '@/features/orders/sales-channel-options'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar as CalendarComponent } from '@/components/ui/calendar'
@@ -17,7 +18,12 @@ import type { AnalyticsFilters } from '../types'
 const PRESET_KEYS = ['today', 'yesterday', 'last_7_days', 'last_30_days', 'this_month', 'this_quarter', 'this_year', 'custom'] as const
 
 const SOURCES = ['POS', 'ECOMMERCE', 'MANUAL']
+// LEGACY sales-channel list, retained because the legacy filter still works.
+// The canonical Channel list comes from the shared vocabulary instead of a
+// second hand-maintained copy of the enum.
 const SALES_CHANNELS = ['CALL', 'FACEBOOK', 'INSTAGRAM', 'TIKTOK', 'MESSENGER', 'WHATSAPP', 'THREADS', 'WALK_IN', 'WEBSITE', 'OFFLINE', 'POS', 'OTHER']
+const CANONICAL_CHANNELS = CHANNEL_OPTIONS.map((c) => ({ value: c.value, label: c.label }))
+const CANONICAL_SOURCES = ACQUISITION_OPTIONS.map((a) => ({ value: a.value, label: a.label }))
 const SEGMENTS = ['new', 'returning', 'vip']
 const OUTCOMES = ['delivered', 'returned', 'in_fulfilment', 'cancelled']
 const COLLECTION = ['online-collected', 'cod-unavailable']
@@ -192,7 +198,11 @@ export function AnalyticsFilterBar({ value, onChange }: Props) {
       <Collapsible className="flex flex-col gap-2">
         <div className="flex items-end gap-2 flex-wrap">
           <DimSelect label="Source System" value={value.source} placeholder="All sources" options={SOURCES.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ source: v })} />
-          <DimSelect label="Sales Channel" value={value.salesChannel} placeholder="All channels" options={SALES_CHANNELS.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ salesChannel: v })} />
+          {/* Canonical dimension — the four venues, no platform names mixed in. */}
+          <DimSelect label="Channel" value={value.channel} placeholder="All channels" options={CANONICAL_CHANNELS} onPick={(v) => set({ channel: v })} />
+          <DimSelect label="Acquisition" value={value.acquisitionType} placeholder="Any acquisition" options={CANONICAL_SOURCES} onPick={(v) => set({ acquisitionType: v })} />
+          {/* Legacy filter, still honoured by the backend. */}
+          <DimSelect label="Sales Channel (legacy)" value={value.salesChannel} placeholder="All legacy channels" options={SALES_CHANNELS.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ salesChannel: v })} />
           <DimSelect label="Segment" value={value.customerSegment} placeholder="All segments" options={SEGMENTS.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ customerSegment: v })} />
           <DimSelect label="Delivery Outcome" value={value.deliveryOutcome} placeholder="All outcomes" options={OUTCOMES.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ deliveryOutcome: v })} />
           <CollapsibleTrigger asChild>

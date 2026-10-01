@@ -51,6 +51,15 @@ export interface OrderResponse {
   sourcePlatform?: string | null;
   sourceType?: string | null;
   sourceEntity?: string | null;
+  // ── Canonical sales-attribution dimensions ──────────────────────────────
+  // Four independent facts. `channelMappedAt` is a migration marker and is
+  // deliberately NOT exposed to the client.
+  channel?: string | null;
+  channelEntity?: string | null;
+  sourceSlug?: string | null;
+  acquisitionType?: string | null;
+  /** Joined display name for `sourceSlug`, resolved from the registry. */
+  sourcePlatformName?: string | null;
   trashedAt?: string | null;
   createdAt: string; updatedAt: string;
   customer: { id: string; firstName: string; lastName: string; email: string; phoneNumber: string } | null;

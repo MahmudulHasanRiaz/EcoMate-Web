@@ -12,7 +12,7 @@ import {
   IsObject,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { SalesChannel } from '@prisma/client';
+import { SalesChannel, SalesChannelV2, AcquisitionType } from '@prisma/client';
 
 export class PosOrderItemDto {
   @IsOptional() @IsString() productId?: string;
@@ -65,6 +65,14 @@ export class CreatePosOrderDto {
    */
   @IsOptional() @IsObject() shippingAddress?: any;
   @IsOptional() @IsObject() billingAddress?: any;
+  // ── Canonical sales-attribution dimensions (all optional) ──
+  // POS resolves its showroom entity from the session; the cashier never
+  // selects it, and acquisition stays NULL because a POS sale is never
+  // inferred to be organic.
+  @IsOptional() @IsEnum(SalesChannelV2) channel?: SalesChannelV2;
+  @IsOptional() @IsString() channelEntity?: string;
+  @IsOptional() @IsString() sourceSlug?: string;
+  @IsOptional() @IsEnum(AcquisitionType) acquisitionType?: AcquisitionType;
   @IsOptional() @IsEnum(SalesChannel) salesChannel?: SalesChannel;
   @IsOptional() @IsString() notes?: string;
 }

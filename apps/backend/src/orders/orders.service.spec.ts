@@ -8,6 +8,7 @@ import { TrackingSettingsService } from '../tracking/tracking-settings.service';
 import { TrackingContextService } from '../tracking/tracking-context.service';
 import { CustomersService } from '../customers/customers.service';
 import { CustomerAddressService } from '../customers/customer-address.service';
+import { SalesChannelService } from '../sales-channel/sales-channel.service';
 import { StockService } from '../stock/stock.service';
 import { StockRouterService } from '../stock/stock-router.service';
 import { BlockedEntriesService } from '../blocked-entries/blocked-entries.service';
@@ -308,6 +309,15 @@ describe('OrdersService', () => {
         {
           provide: CustomerAddressService,
           useValue: { syncFromOrder: jest.fn().mockResolvedValue(0) },
+        },
+        {
+          provide: SalesChannelService,
+          useValue: {
+            resolve: jest.fn().mockResolvedValue({
+              channel: null, channelEntity: null, sourceSlug: null,
+              acquisitionType: null, warnings: [],
+            }),
+          },
         },
         {
           provide: StockService,

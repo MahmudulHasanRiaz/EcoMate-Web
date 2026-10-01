@@ -116,8 +116,23 @@ export interface OverviewResponse {
       points: TrendPoint[];
     };
     breakdowns: {
+      /**
+       * LEGACY keys — unchanged and still derived from the legacy columns.
+       * `bySalesChannel` is pinned by an existing test and must not be re-valued
+       * silently; switching it to the canonical dimension is a separate,
+       * deliberate change made after the data is validated.
+       */
       bySalesChannel: BreakdownRow[];
       bySource: BreakdownRow[];
+      // ── Canonical dimensions (new, additive) ──
+      /** Canonical Channel; 'unspecified' where no venue was established. */
+      byChannel: BreakdownRow[];
+      /** Canonical Channel Entity. */
+      byChannelEntity: BreakdownRow[];
+      /** Canonical marketing Source slug — NOT legacy Order.source. */
+      bySourcePlatform: BreakdownRow[];
+      /** Canonical AcquisitionType. */
+      byAcquisitionType: BreakdownRow[];
       byCategory: BreakdownRow[];
     };
   };
@@ -247,6 +262,11 @@ export class AnalyticsOverviewService {
           discountType: true,
           source: true,
           salesChannel: true,
+          // Canonical attribution dimensions, read alongside the legacy ones.
+          channel: true,
+          channelEntity: true,
+          sourceSlug: true,
+          acquisitionType: true,
           status: { select: { name: true } },
           timeline: true,
           createdAt: true,
@@ -494,6 +514,12 @@ export class AnalyticsOverviewService {
   ): OverviewResponse['data']['breakdowns'] {
     const byChannel = new Map<string, { netSales: number; orders: number }>();
     const bySource = new Map<string, { netSales: number; orders: number }>();
+    // Canonical dimension maps. Kept separate from `byChannel`, which is the
+    // LEGACY salesChannel breakdown and is pinned by an existing test.
+    const byCanonicalChannel = new Map<string, { netSales: number; orders: number }>();
+    const byChannelEntity = new Map<string, { netSales: number; orders: number }>();
+    const bySourcePlatform = new Map<string, { netSales: number; orders: number }>();
+    const byAcquisitionType = new Map<string, { netSales: number; orders: number }>();
     const byCategory = new Map<string, { label: string; netSales: number; orders: number }>();
     const rawById = new Map<string, any>(rawOrders.map((o: any) => [o.id, o]));
 
@@ -547,6 +573,20 @@ export class AnalyticsOverviewService {
       so.orders += 1;
       bySource.set(sourceKey, so);
 
+      // Canonical dimensions. Each is its own axis: a NULL here is the honest
+      // "not established" bucket, never folded into another dimension.
+      const bump = (m: Map<string, { netSales: number; orders: number }>, key: string | null | undefined) => {
+        const k = key ?? 'unspecified';
+        const e = m.get(k) ?? { netSales: 0, orders: 0 };
+        e.netSales += orderNet;
+        e.orders += 1;
+        m.set(k, e);
+      };
+      bump(byCanonicalChannel, raw.channel);
+      bump(byChannelEntity, raw.channelEntity);
+      bump(bySourcePlatform, raw.sourceSlug);
+      bump(byAcquisitionType, raw.acquisitionType);
+
       const rawItems: any[] = raw.items ?? [];
       order.items.forEach((item, idx) => {
         const rawItem = rawItems[idx] ?? {};
@@ -595,6 +635,11 @@ export class AnalyticsOverviewService {
     return {
       bySalesChannel: top([...byChannel.entries()].map(([k, v]) => [k, v] as [string, { netSales: number; orders: number }])),
       bySource: top([...bySource.entries()].map(([k, v]) => [k, v] as [string, { netSales: number; orders: number }])),
+      // Canonical breakdowns, added alongside the legacy keys above.
+      byChannel: top([...byCanonicalChannel.entries()].map(([k, v]) => [k, v] as [string, { netSales: number; orders: number }])),
+      byChannelEntity: top([...byChannelEntity.entries()].map(([k, v]) => [k, v] as [string, { netSales: number; orders: number }])),
+      bySourcePlatform: top([...bySourcePlatform.entries()].map(([k, v]) => [k, v] as [string, { netSales: number; orders: number }])),
+      byAcquisitionType: top([...byAcquisitionType.entries()].map(([k, v]) => [k, v] as [string, { netSales: number; orders: number }])),
       byCategory: top([...byCategory.entries()]),
     };
   }

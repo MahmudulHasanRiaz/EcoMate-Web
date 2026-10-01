@@ -20,6 +20,7 @@ import { TrackingSettingsService } from '../../tracking/tracking-settings.servic
 import { TrackingContextService } from '../../tracking/tracking-context.service';
 import { CustomersService } from '../../customers/customers.service';
 import { CustomerAddressService } from '../../customers/customer-address.service';
+import { SalesChannelService } from '../../sales-channel/sales-channel.service';
 import { OrdersEventService } from '../orders-event.service';
 import { StockService } from '../../stock/stock.service';
 import { StockRouterService } from '../../stock/stock-router.service';
@@ -133,6 +134,15 @@ describe('OrdersService.updateOrder cost capture', () => {
         { provide: TrackingContextService, useValue: stub() },
         { provide: CustomersService, useValue: stub() },
         { provide: CustomerAddressService, useValue: stub() },
+        {
+          provide: SalesChannelService,
+          useValue: {
+            resolve: jest.fn().mockResolvedValue({
+              channel: null, channelEntity: null, sourceSlug: null,
+              acquisitionType: null, warnings: [],
+            }),
+          },
+        },
         { provide: OrdersEventService, useValue: stub() },
         { provide: StockService, useValue: stub() },
         { provide: StockRouterService, useValue: stub() },
@@ -222,6 +232,15 @@ describe('OrdersService.verifyPayment fee capture', () => {
         { provide: TrackingContextService, useValue: stub() },
         { provide: CustomersService, useValue: stub() },
         { provide: CustomerAddressService, useValue: stub() },
+        {
+          provide: SalesChannelService,
+          useValue: {
+            resolve: jest.fn().mockResolvedValue({
+              channel: null, channelEntity: null, sourceSlug: null,
+              acquisitionType: null, warnings: [],
+            }),
+          },
+        },
         { provide: OrdersEventService, useValue: stub() },
         { provide: StockService, useValue: stub() },
         { provide: StockRouterService, useValue: stub() },

@@ -7,6 +7,7 @@ import { OrderEditLockService } from './order-edit-lock.service';
 import { OrdersEventService } from './orders-event.service';
 import { TrackingModule } from '../tracking/tracking.module';
 import { CustomersModule } from '../customers/customers.module';
+import { SalesChannelModule } from '../sales-channel/sales-channel.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { CouponsModule } from '../coupons/coupons.module';
 import { BlockedEntriesModule } from '../blocked-entries/blocked-entries.module';
@@ -20,6 +21,7 @@ import { CommissionsModule } from '../commissions/commissions.module';
   imports: [
     TrackingModule,
     CustomersModule,
+    SalesChannelModule,
     InventoryModule,
     BlockedEntriesModule,
     CouponsModule,

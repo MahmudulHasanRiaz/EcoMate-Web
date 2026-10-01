@@ -3,6 +3,13 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { ordersApi, mediaUrl } from './api'
+import {
+  ACQUISITION_OPTIONS,
+  CHANNEL_OPTIONS,
+  type AcquisitionType,
+  type ChannelV2,
+  type SourcePlatformView,
+} from './sales-channel-options'
 import { apiClient } from '@/lib/api-client'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -87,56 +94,38 @@ export function CreateOrder() {
   const [shippingCharge, setShippingCharge] = useState('0')
   const [discount, setDiscount] = useState('0')
   const [discountType, setDiscountType] = useState<'flat' | 'percentage'>('flat')
-  const [salesChannel, setSalesChannel] = useState('MESSENGER')
-  const [sourcePlatform, setSourcePlatform] = useState('')
-  const [sourceType, setSourceType] = useState('')
-  const [sourceEntity, setSourceEntity] = useState('')
 
-  // Showroom picker for POS-channel orders (spec §28: derive, don't expose
-  // raw taxonomy). Reuses the existing warehouses API; only type=showroom rows.
-  const { data: warehouses } = useQuery({
-    queryKey: ['warehouses'],
-    queryFn: () => apiClient.get<any[]>('/warehouses').then(r => r.data),
-    enabled: true,
+  // NOTE: the POS showroom is resolved server-side from the POS session, so
+  // this form no longer loads or asks for it — the user is never asked for
+  // something the system already knows.
+
+  // ── Canonical sales-attribution dimensions ──────────────────────────────
+  // Four INDEPENDENT facts. Every one is optional: an order is created even
+  // when all four are left empty. Vocabulary comes from the backend registry,
+  // so a new platform appears without a client change.
+  const [channel, setChannel] = useState<ChannelV2>('MESSAGING')
+  const [channelEntity, setChannelEntity] = useState('')
+  const [sourceSlug, setSourceSlug] = useState('')
+  const [acquisitionType, setAcquisitionType] = useState<AcquisitionType | ''>('')
+
+  // Messaging may only offer messaging-capable platforms. This is a
+  // convenience; the backend re-validates and clears anything incompatible.
+  const { data: messagingSources } = useQuery({
+    queryKey: ['sales-channel', 'sources', 'MESSAGING'],
+    queryFn: () =>
+      apiClient
+        .get<SourcePlatformView[]>('/sales-channel/sources', { params: { capability: 'MESSAGING' } })
+        .then(r => r.data),
+    staleTime: 5 * 60_000,
   })
-  const showrooms = useMemo(
-    () => (warehouses || []).filter((w) => w.type === 'showroom'),
-    [warehouses],
-  )
+  const { data: allSources } = useQuery({
+    queryKey: ['sales-channel', 'sources'],
+    queryFn: () =>
+      apiClient.get<SourcePlatformView[]>('/sales-channel/sources').then(r => r.data),
+    staleTime: 5 * 60_000,
+  })
 
-  // §28 contextual derivation: keep the internal four dimensions in state but
-  // drive them from a small set of human-facing controls.
-  const applyWebsiteSource = (type: 'DIRECT' | 'AD') => {
-    setSourceType(type)
-    setSourcePlatform(type === 'AD' ? sourcePlatform || 'FACEBOOK' : 'DIRECT')
-  }
-  const applyOfflineSource = (entry: string) => {
-    // Entry → {sourcePlatform, sourceType}: WhatsApp/Messenger/TikTok
-    // Chat/Facebook/Instagram/Threads = CHAT; Phone = CALL.
-    const map: Record<string, { platform: string; type: string }> = {
-      WHATSAPP: { platform: 'WHATSAPP', type: 'CHAT' },
-      MESSENGER: { platform: 'FACEBOOK', type: 'CHAT' },
-      'TIKTOK_CHAT': { platform: 'TIKTOK', type: 'CHAT' },
-      FACEBOOK: { platform: 'FACEBOOK', type: 'CHAT' },
-      INSTAGRAM: { platform: 'INSTAGRAM', type: 'CHAT' },
-      TIKTOK: { platform: 'TIKTOK', type: 'CHAT' },
-      THREADS: { platform: 'THREADS', type: 'CHAT' },
-      PHONE: { platform: 'PHONE', type: 'CALL' },
-    }
-    const mapped = map[entry]
-    if (mapped) {
-      setSourcePlatform(mapped.platform)
-      setSourceType(mapped.type)
-    } else {
-      setSourcePlatform(entry === 'OTHER' ? 'OTHER' : '')
-      setSourceType('')
-    }
-  }
-  const applyPosShowroom = (name: string) => {
-    setSourcePlatform('POS')
-    setSourceType('SHOWROOM')
-    setSourceEntity(name)
-  }
+  const sourceOptions = channel === 'MESSAGING' ? (messagingSources ?? []) : (allSources ?? [])
 
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [paymentMode, setPaymentMode] = useState<'cod' | 'full' | 'partial'>('cod')
@@ -341,10 +330,14 @@ export function CreateOrder() {
       shippingCharge: parseFloat(shippingCharge) || 0,
       discount: parseFloat(discount) || 0,
       discountType,
-      salesChannel,
-      ...(sourcePlatform ? { sourcePlatform } : {}),
-      ...(sourceType ? { sourceType } : {}),
-      ...(sourceEntity ? { sourceEntity } : {}),
+      // Canonical dimensions. Legacy salesChannel/sourcePlatform/sourceType/
+      // sourceEntity are intentionally NOT sent by the manual form any more:
+      // the canonical model supersedes them, and the backend still writes the
+      // legacy columns from the canonical values.
+      channel,
+      ...(channelEntity ? { channelEntity } : {}),
+      ...(sourceSlug ? { sourceSlug } : {}),
+      ...(acquisitionType ? { acquisitionType } : {}),
       customerNotes: customerNotes || null,
       officeNotes: officeNotes || null,
       paymentOptionType: paymentMode === 'cod' ? 'CASH_ON_DELIVERY' : paymentMode === 'full' ? 'FULL_PAYMENT' : paymentMode === 'partial' ? 'PARTIAL_PAYMENT' : undefined,
@@ -802,137 +795,90 @@ export function CreateOrder() {
             <Card>
               <CardHeader className='pb-2'>
                 <CardTitle className='text-base'>Sales Channel &amp; Source</CardTitle>
+                <CardDescription className='text-xs'>
+                  Four independent facts. None of them is implied by another — an order is
+                  created even if you leave every optional field empty.
+                </CardDescription>
               </CardHeader>
               <CardContent className='space-y-3'>
+                {/* Channel — Messaging and Phone Call first; all four retained. */}
                 <div>
                   <Label className='text-xs'>Channel</Label>
                   <select
                     className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1'
-                    value={salesChannel}
+                    value={channel}
                     onChange={e => {
                       const val = e.target.value
-                      setSalesChannel(val)
-                      // Chat platforms self-identify: derive platform+type so no
-                      // separate platform selection is needed. Website/POS keep
-                      // their own contextual controls; others clear stale values.
-                      if (['WHATSAPP', 'MESSENGER', 'FACEBOOK', 'INSTAGRAM', 'TIKTOK', 'THREADS'].includes(val)) {
-                        applyOfflineSource(val)
-                      } else {
-                        setSourcePlatform('')
-                        setSourceType('')
-                        if (val !== 'POS') setSourceEntity('')
-                      }
+                      setChannel(val)
+                      // A source valid for the previous channel may not be valid
+                      // for the next, so re-check rather than carry it blindly.
+                      if (val !== 'MESSAGING') setSourceSlug('')
+                      if (val === 'POS') setAcquisitionType('')
                     }}
                   >
-                    <option value='WEBSITE'>Website</option>
-                    <option value='POS'>POS</option>
-                    <option value='WALK_IN'>Walk-in</option>
-                    <option value='OFFLINE'>Offline</option>
-                    <option value='CALL'>Call</option>
-                    <option value='FACEBOOK'>Facebook</option>
-                    <option value='INSTAGRAM'>Instagram</option>
-                    <option value='TIKTOK'>TikTok</option>
-                    <option value='MESSENGER'>Messenger</option>
-                    <option value='WHATSAPP'>WhatsApp</option>
-                    <option value='THREADS'>Threads</option>
-                    <option value='OTHER'>Other</option>
+                    {CHANNEL_OPTIONS.map(c => (
+                      <option key={c.value} value={c.value}>{c.label}</option>
+                    ))}
                   </select>
                 </div>
 
-                {salesChannel === 'WEBSITE' && (
-                  <>
-                    <div>
-                      <Label className='text-xs'>Source</Label>
-                      <select
-                        className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1'
-                        value={sourceType || 'DIRECT'}
-                        onChange={e => applyWebsiteSource(e.target.value as 'DIRECT' | 'AD')}
-                      >
-                        <option value='DIRECT'>Direct</option>
-                        <option value='AD'>Ad</option>
-                      </select>
-                    </div>
-                    {sourceType === 'AD' && (
-                      <div>
-                        <Label className='text-xs'>Platform</Label>
-                        <select
-                          className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1'
-                          value={sourcePlatform || 'FACEBOOK'}
-                          onChange={e => setSourcePlatform(e.target.value)}
-                        >
-                          <option value='FACEBOOK'>Facebook</option>
-                          <option value='INSTAGRAM'>Instagram</option>
-                          <option value='TIKTOK'>TikTok</option>
-                          <option value='THREADS'>Threads</option>
-                        </select>
-                      </div>
-                    )}
-                    <div>
-                      <Label className='text-xs'>Storefront</Label>
-                      <Input value={sourceEntity} onChange={e => setSourceEntity(e.target.value)} className='h-9 text-sm mt-1' placeholder='E.g. EcoMate Store' />
-                    </div>
-                  </>
-                )}
-
-                {salesChannel === 'OFFLINE' && (
-                  <>
-                    <div>
-                      <Label className='text-xs'>Source</Label>
-                      <select
-                        className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1'
-                        value={
-                          sourceType === 'CALL' && sourcePlatform === 'PHONE'
-                            ? 'PHONE'
-                            : sourceType === 'CHAT' && sourcePlatform === 'TIKTOK'
-                              ? 'TIKTOK_CHAT'
-                              : sourceType === 'CHAT' && sourcePlatform === 'WHATSAPP'
-                                ? 'WHATSAPP'
-                                : sourceType === 'CHAT' && sourcePlatform === 'FACEBOOK'
-                                  ? 'FACEBOOK'
-                                  : ''
-                        }
-                        onChange={e => applyOfflineSource(e.target.value)}
-                      >
-                        <option value='WHATSAPP'>WhatsApp</option>
-                        <option value='MESSENGER'>Messenger</option>
-                        <option value='TIKTOK_CHAT'>TikTok Chat</option>
-                        <option value='FACEBOOK'>Facebook</option>
-                        <option value='PHONE'>Phone</option>
-                      </select>
-                    </div>
-                    <div>
-                      <Label className='text-xs'>Source Entity <span className='text-muted-foreground font-normal'>(optional)</span></Label>
-                      <Input value={sourceEntity} onChange={e => setSourceEntity(e.target.value)} className='h-9 text-sm mt-1' placeholder='Specific showroom / team / person' />
-                    </div>
-                  </>
-                )}
-
-                {salesChannel === 'POS' && (
+                {/* Entity — optional everywhere; POS is auto-filled from the
+                    session server-side, so the user is never asked for it. */}
+                {channel !== 'POS' && (
                   <div>
-                    <Label className='text-xs'>Showroom</Label>
-                    <select
-                      className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1'
-                      value={sourceEntity || ''}
-                      onChange={e => applyPosShowroom(e.target.value)}
-                    >
-                      <option value=''>—</option>
-                      {showrooms.map((s) => (
-                        <option key={s.id} value={s.name}>{s.name}</option>
-                      ))}
-                    </select>
-                    {showrooms.length === 0 && (
-                      <p className='text-[11px] text-muted-foreground mt-1'>No showrooms configured yet.</p>
-                    )}
+                    <Label className='text-xs'>
+                      Channel Entity{' '}
+                      <span className='text-muted-foreground font-normal'>(optional)</span>
+                    </Label>
+                    <Input
+                      value={channelEntity}
+                      onChange={e => setChannelEntity(e.target.value)}
+                      className='h-9 text-sm mt-1'
+                      placeholder={
+                        channel === 'WEBSITE' ? 'Auto-filled from the connected store'
+                        : channel === 'MESSAGING' ? 'Page or account'
+                        : 'Office'
+                      }
+                    />
                   </div>
                 )}
 
-                {(salesChannel === 'WALK_IN' || salesChannel === 'CALL' || salesChannel === 'OTHER' ||
-                  ['FACEBOOK','INSTAGRAM','TIKTOK','MESSENGER','WHATSAPP','THREADS'].includes(salesChannel)) && (
-                  <div>
-                    <Label className='text-xs'>Source Entity <span className='text-muted-foreground font-normal'>(optional)</span></Label>
-                    <Input value={sourceEntity} onChange={e => setSourceEntity(e.target.value)} className='h-9 text-sm mt-1' placeholder='Specific team / person / location' />
-                  </div>
-                )}
+                {/* Source — capability-filtered server-side. A Messaging channel
+                    can never offer a non-messaging platform such as Google. */}
+                <div>
+                  <Label className='text-xs'>
+                    Source <span className='text-muted-foreground font-normal'>(optional)</span>
+                  </Label>
+                  <select
+                    className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1'
+                    value={sourceSlug}
+                    onChange={e => setSourceSlug(e.target.value)}
+                  >
+                    <option value=''>— none —</option>
+                    {sourceOptions.map(s => (
+                      <option key={s.slug} value={s.slug}>{s.displayName}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Acquisition — for POS and Phone Call this stays empty unless
+                    staff genuinely know; it is never auto-filled with Organic. */}
+                <div>
+                  <Label className='text-xs'>
+                    Acquisition Type{' '}
+                    <span className='text-muted-foreground font-normal'>(optional)</span>
+                  </Label>
+                  <select
+                    className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1'
+                    value={acquisitionType}
+                    onChange={e => setAcquisitionType(e.target.value)}
+                  >
+                    <option value=''>— not set —</option>
+                    {ACQUISITION_OPTIONS.map(a => (
+                      <option key={a.value} value={a.value}>{a.label}</option>
+                    ))}
+                  </select>
+                </div>
               </CardContent>
             </Card>
 

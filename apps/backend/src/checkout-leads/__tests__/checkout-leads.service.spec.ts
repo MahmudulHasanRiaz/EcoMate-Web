@@ -6,6 +6,7 @@ import { CustomersService } from '../../customers/customers.service';
 import { TrackingCaptureService } from '../../tracking/tracking-capture.service';
 import { TrackingSettingsService } from '../../tracking/tracking-settings.service';
 import { CustomerAddressService } from '../../customers/customer-address.service';
+import { SalesChannelService } from '../../sales-channel/sales-channel.service';
 
 const configSnapshotMock = {
   enabledProviders: ['meta'],
@@ -124,6 +125,15 @@ describe('CheckoutLeadsService', () => {
         {
           provide: CustomerAddressService,
           useValue: { syncFromOrder: jest.fn().mockResolvedValue(0) },
+        },
+        {
+          provide: SalesChannelService,
+          useValue: {
+            resolve: jest.fn().mockResolvedValue({
+              channel: null, channelEntity: null, sourceSlug: null,
+              acquisitionType: null, warnings: [],
+            }),
+          },
         },
       ],
     }).compile();
