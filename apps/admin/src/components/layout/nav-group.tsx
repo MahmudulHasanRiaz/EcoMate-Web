@@ -1,6 +1,7 @@
 import { type CSSProperties, type ReactNode } from 'react'
 import { Link, useLocation } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import {
   Collapsible,
   CollapsibleContent,
@@ -89,7 +90,13 @@ export function NavGroup({ title, items }: NavGroupProps) {
         currentSection = s
         if (s) {
           blocks.push(
-            <SidebarGroupLabel key={`l-${n++}`} className="px-3 py-1 text-[10px] font-semibold tracking-wider text-ink-muted/85 uppercase select-none">
+            <SidebarGroupLabel
+              key={`l-${n++}`}
+              className={cn(
+                'px-2.5 text-[10px] font-semibold tracking-wider text-ink-muted/80 uppercase select-none transition-colors',
+                n > 1 ? 'pt-3 pb-1' : 'pt-1 pb-1'
+              )}
+            >
               {s}
             </SidebarGroupLabel>
           )
@@ -102,9 +109,9 @@ export function NavGroup({ title, items }: NavGroupProps) {
   }
 
   return (
-    <SidebarGroup className="py-1.5">
+    <SidebarGroup className="py-1">
       {title && (
-        <SidebarGroupLabel className="px-3 py-1 text-[10px] font-semibold tracking-wider text-ink-muted/85 uppercase">
+        <SidebarGroupLabel className="px-2.5 pt-1.5 pb-1 text-[10px] font-semibold tracking-wider text-ink-muted/80 uppercase select-none">
           {title}
         </SidebarGroupLabel>
       )}
@@ -115,7 +122,7 @@ export function NavGroup({ title, items }: NavGroupProps) {
 
 function NavBadge({ children }: { children: ReactNode }) {
   return (
-    <Badge className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold leading-none bg-primary text-primary-foreground border-none">
+    <Badge className="rounded-full px-1.5 py-0.5 text-[9px] font-bold leading-none bg-primary/15 text-primary dark:text-primary-ink border border-primary/20 shadow-2xs">
       {children}
     </Badge>
   )
@@ -135,26 +142,40 @@ function SidebarMenuLink({ item, hue, href }: { item: NavLink; hue: HueName; hre
         asChild
         isActive={isActive}
         tooltip={item.title}
-        className="nav-item h-8 px-2.5 text-[13px] font-medium"
+        className="nav-item h-[30px] px-2 text-[12.5px] font-medium rounded-md gap-2"
       >
         {isExternal ? (
-          <a href={item.url} target="_blank" rel="noopener noreferrer" onClick={() => setOpenMobile(false)} className="flex items-center gap-2.5">
+          <a
+            href={item.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => setOpenMobile(false)}
+            className="flex w-full items-center gap-2"
+          >
             {item.icon && (
               <span className="nav-chip" style={chipStyle(hue)}>
                 <item.icon className="size-3.5" />
               </span>
             )}
-            <span className="truncate flex-1" title={item.title}>{item.title}</span>
+            <span className="truncate flex-1 font-medium leading-none" title={item.title}>
+              {item.title}
+            </span>
             {item.badge && <NavBadge>{item.badge}</NavBadge>}
           </a>
         ) : (
-          <Link to={item.url} onClick={() => setOpenMobile(false)} className="flex items-center gap-2.5">
+          <Link
+            to={item.url}
+            onClick={() => setOpenMobile(false)}
+            className="flex w-full items-center gap-2"
+          >
             {item.icon && (
               <span className="nav-chip" style={chipStyle(hue)}>
                 <item.icon className="size-3.5" />
               </span>
             )}
-            <span className="truncate flex-1" title={item.title}>{item.title}</span>
+            <span className="truncate flex-1 font-medium leading-none" title={item.title}>
+              {item.title}
+            </span>
             {item.badge && <NavBadge>{item.badge}</NavBadge>}
           </Link>
         )}
@@ -185,20 +206,23 @@ function SidebarMenuCollapsible({
         <CollapsibleTrigger asChild>
           <SidebarMenuButton
             tooltip={item.title}
-            className="nav-item h-8 px-2.5 text-[13px] font-medium"
+            isActive={isActive}
+            className="nav-item h-[30px] px-2 text-[12.5px] font-medium rounded-md gap-2"
           >
             {item.icon && (
               <span className="nav-chip" style={chipStyle(hue)}>
                 <item.icon className="size-3.5" />
               </span>
             )}
-            <span className="truncate flex-1" title={item.title}>{item.title}</span>
+            <span className="truncate flex-1 font-medium leading-none" title={item.title}>
+              {item.title}
+            </span>
             {item.badge && <NavBadge>{item.badge}</NavBadge>}
-            <ChevronRight className="ms-auto size-3.5 text-ink-muted/70 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+            <ChevronRight className="ms-auto size-3 text-ink-muted/60 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
           </SidebarMenuButton>
         </CollapsibleTrigger>
         <CollapsibleContent className="CollapsibleContent">
-          <SidebarMenuSub className="border-l border-border/50 ml-4 pl-2 space-y-0.5 mt-0.5">
+          <SidebarMenuSub className="border-l border-border/60 ml-3.5 pl-2 space-y-0.5 my-0.5">
             {item.items.map((subItem) => {
               const isSubActive = checkIsActive(href, subItem)
               return (
@@ -206,15 +230,17 @@ function SidebarMenuCollapsible({
                   <SidebarMenuSubButton
                     asChild
                     isActive={isSubActive}
-                    className="nav-item h-7.5 px-2.5 text-[12px] font-medium"
+                    className="nav-sub-item h-[26px] px-2 text-[12px] font-medium rounded-md gap-2"
                   >
-                    <Link to={subItem.url} onClick={() => setOpenMobile(false)} className="flex items-center gap-2">
+                    <Link to={subItem.url} onClick={() => setOpenMobile(false)} className="flex w-full items-center gap-2">
                       {subItem.icon && (
                         <span className="nav-chip" style={chipStyle(hue)}>
                           <subItem.icon className="size-3" />
                         </span>
                       )}
-                      <span className="truncate flex-1" title={subItem.title}>{subItem.title}</span>
+                      <span className="truncate flex-1 font-medium leading-none" title={subItem.title}>
+                        {subItem.title}
+                      </span>
                       {subItem.badge && <NavBadge>{subItem.badge}</NavBadge>}
                     </Link>
                   </SidebarMenuSubButton>
@@ -246,42 +272,52 @@ function SidebarMenuCollapsedDropdown({
           <SidebarMenuButton
             tooltip={item.title}
             isActive={isActive}
-            className="nav-item h-8 px-2.5 text-[13px] font-medium"
+            className="nav-item h-[30px] px-2 text-[12.5px] font-medium rounded-md gap-2"
           >
             {item.icon && (
               <span className="nav-chip" style={chipStyle(hue)}>
                 <item.icon className="size-3.5" />
               </span>
             )}
-            <span className="truncate flex-1" title={item.title}>{item.title}</span>
+            <span className="truncate flex-1 font-medium leading-none" title={item.title}>
+              {item.title}
+            </span>
             {item.badge && <NavBadge>{item.badge}</NavBadge>}
-            <ChevronRight className="ms-auto size-3.5 text-ink-muted/70 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+            <ChevronRight className="ms-auto size-3 text-ink-muted/60 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
           </SidebarMenuButton>
         </DropdownMenuTrigger>
-        <DropdownMenuContent side="right" align="start" sideOffset={4} className="rounded-lg border-border/80 shadow-pop min-w-[200px]">
-          <DropdownMenuLabel className="px-2.5 py-1.5 text-xs font-semibold text-ink-muted">
+        <DropdownMenuContent
+          side="right"
+          align="start"
+          sideOffset={6}
+          className="rounded-xl border border-border/80 shadow-xl bg-popover/95 backdrop-blur-md min-w-[210px] p-1 animate-in fade-in zoom-in-95 duration-100"
+        >
+          <DropdownMenuLabel className="px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
             {item.title} {item.badge ? `(${item.badge})` : ''}
           </DropdownMenuLabel>
-          <DropdownMenuSeparator className="bg-border/60" />
-          <div className="space-y-0.5 p-1">
+          <DropdownMenuSeparator className="bg-border/60 my-1" />
+          <div className="space-y-0.5">
             {item.items.map((sub) => {
               const isSubActive = checkIsActive(href, sub)
               return (
                 <DropdownMenuItem key={`${sub.title}-${sub.url}`} asChild className="focus:bg-surface-raised rounded-md">
                   <Link
                     to={sub.url}
-                    className={`flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                      isSubActive ? 'bg-primary-soft text-primary-ink' : 'text-ink-muted hover:text-ink'
-                    }`}
+                    className={cn(
+                      'flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors',
+                      isSubActive ? 'bg-primary-soft text-primary-ink font-semibold' : 'text-muted-foreground hover:text-foreground hover:bg-surface-raised'
+                    )}
                   >
                     {sub.icon && (
                       <span className="nav-chip" style={chipStyle(hue)}>
                         <sub.icon className="size-3" />
                       </span>
                     )}
-                    <span className="max-w-52 text-wrap flex-1">{sub.title}</span>
+                    <span className="max-w-52 truncate flex-1">{sub.title}</span>
                     {sub.badge && (
-                      <span className="ms-auto text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-semibold">{sub.badge}</span>
+                      <span className="ms-auto text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-semibold">
+                        {sub.badge}
+                      </span>
                     )}
                   </Link>
                 </DropdownMenuItem>

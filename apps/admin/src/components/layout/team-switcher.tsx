@@ -45,21 +45,21 @@ export function TeamSwitcher() {
 
   return (
     <SidebarMenu>
-      <SidebarMenuItem className="px-1.5 pt-2">
+      <SidebarMenuItem className="px-1.5 pt-1.5">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton
-              size="lg"
-              className="w-full gap-2.5 rounded-lg border border-border/50 bg-background px-2 py-1.5 text-left transition-colors duration-150 hover:bg-surface-raised data-[state=open]:bg-surface-raised"
+              size="default"
+              className="w-full h-9 gap-2 rounded-md border border-border/60 bg-background/80 hover:bg-surface-raised px-2 py-1 text-left transition-all duration-150 data-[state=open]:bg-surface-raised shadow-2xs"
             >
-              <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary-soft text-primary-ink">
-                <active.logo className="size-4" />
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary-soft text-primary-ink">
+                <active.logo className="size-3.5" />
               </span>
               <span className="grid min-w-0 flex-1 text-start leading-tight">
                 <span className="truncate text-[12px] font-semibold text-ink">{active.name}</span>
                 <span className="truncate text-[10px] font-medium text-ink-muted">{active.plan}</span>
               </span>
-              <ChevronsUpDown className="size-3.5 shrink-0 text-ink-muted" />
+              <ChevronsUpDown className="size-3 shrink-0 text-ink-muted/70" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent

@@ -114,15 +114,15 @@ export function NavUser(_props: NavUserProps) {
   return (
     <>
       <SidebarMenu>
-        <SidebarMenuItem className="px-1.5 pb-2">
+        <SidebarMenuItem className="px-1.5 pb-1.5">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton
-                size='lg'
-                className='w-full transition-all duration-150 border border-border/40 hover:bg-muted/40 rounded-lg shadow-xs data-[state=open]:bg-sidebar-accent'
+                size='default'
+                className='w-full h-9 gap-2 px-2 py-1 transition-all duration-150 border border-border/60 hover:bg-surface-raised rounded-md shadow-2xs data-[state=open]:bg-surface-raised'
               >
                 <div
-                  className={employee ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}
+                  className={employee ? 'cursor-pointer hover:opacity-85 transition-opacity' : ''}
                   onClick={
                     employee
                       ? (e) => {
@@ -133,21 +133,21 @@ export function NavUser(_props: NavUserProps) {
                   }
                   title={employee ? 'View Employee Profile' : undefined}
                 >
-                  <Avatar className='h-7 w-7 rounded-md border border-border/70'>
+                  <Avatar className='h-6 w-6 rounded-md border border-border/70 shrink-0'>
                     <AvatarFallback className='rounded-md bg-primary-soft text-primary-ink font-bold text-[10px]'>
                       {initials}
                     </AvatarFallback>
                   </Avatar>
                 </div>
-                <div className='grid flex-1 text-start text-xs leading-tight ml-1.5'>
-                  <span className='truncate font-bold text-foreground text-[11px]'>
+                <div className='grid flex-1 text-start text-xs leading-tight'>
+                  <span className='truncate font-semibold text-ink text-[11.5px]'>
                     {displayName}
                   </span>
-                  <span className='truncate text-[10px] text-muted-foreground/80 font-medium'>
+                  <span className='truncate text-[10px] text-ink-muted font-medium'>
                     {subtitle}
                   </span>
                 </div>
-                <ChevronsUpDown className='ms-auto size-3.5 text-muted-foreground/70' />
+                <ChevronsUpDown className='ms-auto size-3 text-ink-muted/70 shrink-0' />
               </SidebarMenuButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent
