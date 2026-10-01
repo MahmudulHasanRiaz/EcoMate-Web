@@ -1,11 +1,10 @@
 import { useEffect, useCallback, useState, useRef } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useAuthStore } from '@/stores/auth-store'
-import { usePackingQueue, usePackingStats, useOpenOrder, useMarkDone, useMarkHold, usePackingHistory, useReleaseLock, useCheckOrderStatus } from './hooks'
-import { StatsBar } from './StatsBar'
+import { usePackingQueuePage, usePackingStats, useOpenOrder, useMarkDone, useMarkHold, usePackingHistory, useReleaseLock, useCheckOrderStatus } from './hooks'
 import { HoldModal } from './HoldModal'
 import { Input } from '@/components/ui/input'
-import { Html5Qrcode } from 'html5-qrcode'
+import { Html5Qrcode, type CameraDevice } from 'html5-qrcode'
 import { SafeImage } from '@/components/safe-image'
 import { mediaUrl } from '@/lib/utils'
 import {
@@ -36,9 +35,12 @@ import {
   Maximize2,
   X
 } from 'lucide-react'
-import type { QueueItem, HoldFormData } from './types'
+import type { QueueItem, HoldFormData, HistoryEntry } from './types'
 
 type TabType = 'scan' | 'packed' | 'held'
+
+// Stable empty array so `queue` keeps a constant identity between polls.
+const EMPTY_QUEUE: QueueItem[] = []
 
 export function PackingWorkspace() {
   const currentUser = useAuthStore((s) => s.auth.user)
@@ -54,7 +56,7 @@ export function PackingWorkspace() {
   const [showCustomerDetails, setShowCustomerDetails] = useState(false)
   const [verifiedQuantities, setVerifiedQuantities] = useState<Record<string, number>>({})
   const [currentProductIdx, setCurrentProductIdx] = useState(0)
-  const [zoomImage, setZoomImage] = useState<string | null>(null)
+  const [zoomImage, setZoomImage] = useState<{ src: string; fallbackSrc?: string | null } | null>(null)
   const [manualSearch, setManualSearch] = useState('')
   const [showManualSearch, setShowManualSearch] = useState(false)
 
@@ -65,49 +67,103 @@ export function PackingWorkspace() {
     toast.success(`Verification mode set to: ${mode === 'strict_scan' ? 'Strict Scan' : 'Manual'}`)
   }, [])
 
-  // Modal logs viewer states
-  const [viewedPackedOrder, setViewedPackedOrder] = useState<any | null>(null)
-  const [viewedHeldOrder, setViewedHeldOrder] = useState<any | null>(null)
+  // Modal logs viewer states (properly typed — HistoryEntry / QueueItem both
+  // exist in ./types, these were `any`.)
+  const [viewedPackedOrder, setViewedPackedOrder] = useState<HistoryEntry | null>(null)
+  const [viewedHeldOrder, setViewedHeldOrder] = useState<QueueItem | null>(null)
 
   // Camera scanner states
   const [scannerActive, setScannerActive] = useState(true)
-  const [cameras, setCameras] = useState<any[]>([])
+  const [cameras, setCameras] = useState<CameraDevice[]>([])
   const [selectedCameraId, setSelectedCameraId] = useState<string>('')
   const [scannerError, setScannerError] = useState<string | null>(null)
   const scannerRef = useRef<Html5Qrcode | null>(null)
 
-  // Load verifiedQuantities from localStorage when order changes
+  // The queue is polled every 15s. Mirroring it into a ref keeps
+  // `onScanSuccess` (and therefore the camera effect that depends on it) from
+  // getting a new identity on every poll — which used to tear the scanner down
+  // and restart the camera 4x per minute on the packing line.
+  const queueRef = useRef<QueueItem[]>([])
+
+  // Checklist persistence. `verifiedRef` is the source of truth for the current
+  // order's per-item progress; `checklistOwnerRef` is the order that progress
+  // belongs to. Load and save are deliberately NOT a pair of racing effects:
+  // a single `commitChecklist` writes synchronously against the owning order,
+  // so switching orders can never write the previous order's checklist under
+  // the new order's key.
+  const verifiedRef = useRef<Record<string, number>>({})
+  const checklistOwnerRef = useRef<string | null>(null)
+  const submittingRef = useRef(false)
+  const lastScanRef = useRef<{ code: string; at: number } | null>(null)
+  const autoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const checklistKey = useCallback(
+    (orderId: string) => `packing_checklist_v2_${orderId}`,
+    [],
+  )
+
+  const commitChecklist = useCallback(
+    (next: Record<string, number>) => {
+      verifiedRef.current = next
+      setVerifiedQuantities(next)
+      const owner = checklistOwnerRef.current
+      if (!owner) return
+      if (Object.keys(next).length === 0) {
+        localStorage.removeItem(checklistKey(owner))
+      } else {
+        localStorage.setItem(checklistKey(owner), JSON.stringify(next))
+      }
+    },
+    [checklistKey],
+  )
+
+  const clearChecklist = useCallback(
+    (orderId: string) => {
+      if (checklistOwnerRef.current === orderId) {
+        verifiedRef.current = {}
+        checklistOwnerRef.current = null
+        setVerifiedQuantities({})
+      }
+      localStorage.removeItem(checklistKey(orderId))
+    },
+    [checklistKey],
+  )
+
+  // Load verifiedQuantities from localStorage when the selected order changes
   useEffect(() => {
     if (!selectedOrderId) {
+      verifiedRef.current = {}
+      checklistOwnerRef.current = null
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setVerifiedQuantities({})
       return
     }
-    const saved = localStorage.getItem(`packing_checklist_:${selectedOrderId}`)
+    let loaded: Record<string, number> = {}
+    const saved = localStorage.getItem(checklistKey(selectedOrderId))
     if (saved) {
       try {
-        setVerifiedQuantities(JSON.parse(saved))
+        const parsed = JSON.parse(saved)
+        if (parsed && typeof parsed === 'object') loaded = parsed
       } catch (err) {
-        console.error("Failed to parse saved checklist items", err)
-        setVerifiedQuantities({})
+        console.error('Failed to parse saved checklist items', err)
       }
-    } else {
-      setVerifiedQuantities({})
     }
-  }, [selectedOrderId])
-
-  // Save verifiedQuantities to localStorage when verifiedQuantities changes
-  useEffect(() => {
-    if (!selectedOrderId) return
-    if (Object.keys(verifiedQuantities).length === 0) {
-      localStorage.removeItem(`packing_checklist_:${selectedOrderId}`)
-    } else {
-      localStorage.setItem(`packing_checklist_:${selectedOrderId}`, JSON.stringify(verifiedQuantities))
-    }
-  }, [verifiedQuantities, selectedOrderId])
+    // Claim ownership BEFORE committing so any later mutation persists against
+    // the correct order.
+    checklistOwnerRef.current = selectedOrderId
+    verifiedRef.current = loaded
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setVerifiedQuantities(loaded)
+  }, [selectedOrderId, checklistKey])
 
   // Queries & Mutations
-  const { data: queue = [], isLoading: isQueueLoading } = usePackingQueue()
+  const {
+    data: queuePage,
+    isLoading: isQueueLoading,
+    isSuccess: isQueueLoaded,
+  } = usePackingQueuePage()
+  const queue = queuePage?.orders ?? EMPTY_QUEUE
+  const photoCatalog = queuePage?.photoCatalog
   const { data: stats } = usePackingStats()
   const { data: history = [], isLoading: isHistoryLoading } = usePackingHistory(currentPackerId)
 
@@ -118,9 +174,11 @@ export function PackingWorkspace() {
   const checkStatus = useCheckOrderStatus()
 
   const activeOrder = queue.find((o) => o.id === selectedOrderId)
+  queueRef.current = queue
 
   // Open and lock order
   const openAndSelect = useCallback(async (order: QueueItem) => {
+    if (!order) return
     if (order.packingLock && order.packingLock.packerId !== currentPackerId) {
       toast.error(`This order is being packed by ${order.packingLock.packerName}`)
       return
@@ -139,23 +197,54 @@ export function PackingWorkspace() {
 
   // Release lock on back
   const handleBackAndRelease = useCallback(async () => {
-    if (selectedOrderId) {
-      localStorage.removeItem(`packing_checklist_:${selectedOrderId}`)
+    const orderId = selectedOrderId
+    if (orderId) {
       try {
-        await releaseLock.mutateAsync(selectedOrderId)
+        await releaseLock.mutateAsync(orderId)
       } catch (err) {
         console.error("Failed to release lock on exit", err)
       }
+      // Only drop the checklist once the lock release has actually settled —
+      // otherwise a failed exit would silently destroy the packer's progress.
+      clearChecklist(orderId)
       setSelectedOrderId(null)
+      setManualSearch('')
     }
-  }, [selectedOrderId, releaseLock])
+  }, [selectedOrderId, releaseLock, clearChecklist])
 
-  // Scan success trigger
+  // P0-1 recovery: if the selected order is no longer in the (polled) queue it
+  // was packed, held or un-confirmed by someone else. Without this the overlay,
+  // the back button, the camera and every hotkey all unregister at once, so the
+  // packer is left holding a 30-minute server-side lock with no way out.
+  useEffect(() => {
+    if (!selectedOrderId || activeOrder) return
+    // Wait until the first successful load so an initial empty/error response
+    // doesn't tear down a valid selection.
+    if (!isQueueLoaded) return
+    const orderId = selectedOrderId
+    toast.warning("This order left the packing queue. Lock released.")
+    setSelectedOrderId(null)
+    setManualSearch('')
+    releaseLock.mutateAsync(orderId).catch((err) => {
+      console.error("Failed to release lock for dropped order", err)
+    })
+  }, [selectedOrderId, activeOrder, isQueueLoaded, releaseLock])
+
+  // Scan success trigger. Reads the queue from a ref (not from state) so its
+  // identity stays stable across the 15s poll and the camera never restarts.
   const onScanSuccess = useCallback(async (decodedText: string) => {
+    // P2-5: html5-qrcode fires continuously while a code is in frame. Collapse
+    // repeats of the same code within a short window so one scan = one request.
+    const code = decodedText.trim()
+    const now = Date.now()
+    const last = lastScanRef.current
+    if (last && last.code === code && now - last.at < 2000) return
+    lastScanRef.current = { code, at: now }
+
     // Search in the active queue (contains both Confirmed & Packing Hold statuses!)
-    const matched = queue.find((o) => 
-      o.id.toLowerCase() === decodedText.toLowerCase() ||
-      o.displayId.toLowerCase() === decodedText.toLowerCase()
+    const matched = queueRef.current.find((o) =>
+      o.id.toLowerCase() === code.toLowerCase() ||
+      o.displayId.toLowerCase() === code.toLowerCase()
     )
 
     if (matched) {
@@ -163,10 +252,10 @@ export function PackingWorkspace() {
       openAndSelect(matched)
     } else {
       try {
-        const res = await checkStatus.mutateAsync(decodedText)
+        const res = await checkStatus.mutateAsync(code)
         if (res.exists) {
           const orderStatus = res.status || ''
-          const orderDisplayId = res.displayId || decodedText
+          const orderDisplayId = res.displayId || code
 
           if (orderStatus.toLowerCase() === 'packed' || orderStatus.toLowerCase() === 'shipped' || orderStatus.toLowerCase() === 'delivered') {
             if (navigator.vibrate) navigator.vibrate([150, 100, 150])
@@ -183,19 +272,19 @@ export function PackingWorkspace() {
           }
         } else {
           if (navigator.vibrate) navigator.vibrate([50, 50, 50])
-          toast.error(`Order "${decodedText}" was not found in the system.`, {
+          toast.error(`Order "${code}" was not found in the system.`, {
             position: 'top-center'
           })
         }
       } catch (err) {
         console.error("Failed to check order status", err)
         if (navigator.vibrate) navigator.vibrate([50, 50, 50])
-        toast.error(`Order "${decodedText}" was not found in the system.`, {
+        toast.error(`Order "${code}" was not found in the system.`, {
           position: 'top-center'
         })
       }
     }
-  }, [queue, openAndSelect, checkStatus])
+  }, [openAndSelect, checkStatus])
 
   // Get cameras list on mount
   useEffect(() => {
@@ -225,12 +314,11 @@ export function PackingWorkspace() {
     // Only run if active tab is scan, no order details drawer is open, and scanner is toggled active
     if (activeTab !== 'scan' || selectedOrderId || !scannerActive || !selectedCameraId) {
       if (scannerRef.current && scannerRef.current.isScanning) {
-        scannerRef.current.stop()
-          .then(() => {
-            scannerRef.current = null
-          })
-          .catch(err => console.error("Error stopping scanner", err))
-      }
+      const stopping = scannerRef.current
+      scannerRef.current = null
+      stopping.stop()
+        .catch(err => console.error("Error stopping scanner", err))
+    }
       return
     }
 
@@ -241,8 +329,8 @@ export function PackingWorkspace() {
     const html5QrCode = new Html5Qrcode(scannerId)
     scannerRef.current = html5QrCode
 
-    const config = { 
-      fps: 15, 
+    const config = {
+      fps: 15,
       qrbox: (width: number, height: number) => {
         const size = Math.min(width, height) * 0.75
         return { width: size, height: size }
@@ -266,26 +354,40 @@ export function PackingWorkspace() {
     return () => {
       if (html5QrCode.isScanning) {
         html5QrCode.stop()
-          .then(() => {
-            scannerRef.current = null
-          })
           .catch(err => console.error("Error stopping on clean up", err))
+          .finally(() => {
+            // P2-4: only clear the ref if it still points at THIS scanner.
+            // stop() is async; without the identity check its late .then would
+            // null out a freshly created scanner and leak the camera stream.
+            if (scannerRef.current === html5QrCode) {
+              scannerRef.current = null
+            }
+          })
       }
     }
   }, [activeTab, selectedOrderId, scannerActive, selectedCameraId, onScanSuccess])
 
   const handleDone = useCallback(async (orderId: string) => {
-    localStorage.removeItem(`packing_checklist_:${orderId}`)
+    // P0-3: a hardware scanner sends a trailing Enter, so double-submit is the
+    // norm rather than the exception. Without this guard the second call hits
+    // "Order is not opened for packing" and reports a FAILURE for an order that
+    // actually packed successfully.
+    if (submittingRef.current) return
+    submittingRef.current = true
     try {
       await markDone.mutateAsync({ orderId, verificationMode })
+      // Only discard verification progress once the server has accepted it.
+      clearChecklist(orderId)
       setSelectedOrderId(null)
       setManualSearch('')
       toast.success("Order packed successfully!")
-      // Automatically triggers camera restart
-    } catch {
-      toast.error("Failed to complete packing.")
+    } catch (err: any) {
+      const msg = err.response?.data?.message
+      toast.error(msg || "Failed to complete packing.")
+    } finally {
+      submittingRef.current = false
     }
-  }, [markDone, verificationMode])
+  }, [markDone, verificationMode, clearChecklist])
 
   const handleHold = useCallback((orderId: string) => {
     setHoldOrderId(orderId)
@@ -293,18 +395,32 @@ export function PackingWorkspace() {
 
   const handleHoldSubmit = useCallback(async (data: HoldFormData) => {
     if (!holdOrderId) return
-    localStorage.removeItem(`packing_checklist_:${holdOrderId}`)
+    if (submittingRef.current) return
+    submittingRef.current = true
     try {
       await markHold.mutateAsync({ orderId: holdOrderId, data })
+      clearChecklist(holdOrderId)
       setHoldOrderId(null)
       setSelectedOrderId(null)
       setManualSearch('')
       toast.success("Order placed on hold.")
-      // Automatically triggers camera restart
-    } catch {
-      toast.error("Failed to put order on hold.")
+    } catch (err: any) {
+      const msg = err.response?.data?.message
+      toast.error(msg || "Failed to put order on hold.")
+    } finally {
+      submittingRef.current = false
     }
-  }, [holdOrderId, markHold])
+  }, [holdOrderId, markHold, clearChecklist])
+
+  // Auto-slide to the next product. The timer is tracked and cleared so a
+  // pending slide can never fire against a different order (P2-2).
+  const scheduleAutoAdvance = useCallback((delay = 400) => {
+    if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current)
+    autoAdvanceTimerRef.current = setTimeout(() => {
+      autoAdvanceTimerRef.current = null
+      setCurrentProductIdx(prev => prev + 1)
+    }, delay)
+  }, [])
 
   // Toggle checklist item packed state
   const handleToggleVerify = (itemId: string) => {
@@ -313,7 +429,7 @@ export function PackingWorkspace() {
     if (!item) return
 
     // Block manual click verification if strict scan mode is active
-    const currentQty = verifiedQuantities[itemId] ?? 0
+    const currentQty = verifiedRef.current[itemId] ?? 0
     if (verificationMode === 'strict_scan' && currentQty < item.quantity) {
       if (navigator.vibrate) navigator.vibrate([100, 50, 100])
       toast.warning("Strict Scan Mode is enabled. Scan the product barcode/SKU to verify.", {
@@ -322,23 +438,17 @@ export function PackingWorkspace() {
       return
     }
 
-    setVerifiedQuantities(prev => {
-      const current = prev[itemId] ?? 0
-      if (current >= item.quantity) {
-        // Toggle back to 0 if clicked when fully verified
-        return { ...prev, [itemId]: 0 }
-      }
-      const nextVal = current + 1
-      const next = { ...prev, [itemId]: nextVal }
+    const current = currentQty
+    // Toggle back to 0 if clicked when fully verified, otherwise increment.
+    const nextVal = current >= item.quantity ? 0 : current + 1
+    // P2-3: computed outside the updater. Updaters must stay pure — the old
+    // code called vibrate() and setTimeout() *inside* it, so StrictMode's
+    // double-invoke fired both twice.
+    commitChecklist({ ...verifiedRef.current, [itemId]: nextVal })
 
-      // Auto-slide to next product after verification delay (400ms) if fully verified
-      if (nextVal === item.quantity && currentProductIdx < activeOrder.items.length - 1) {
-        setTimeout(() => {
-          setCurrentProductIdx(prevIdx => prevIdx + 1)
-        }, 400)
-      }
-      return next
-    })
+    if (nextVal === item.quantity && currentProductIdx < activeOrder.items.length - 1) {
+      scheduleAutoAdvance()
+    }
   }
 
   // Handle manual input search
@@ -348,14 +458,21 @@ export function PackingWorkspace() {
     onScanSuccess(manualSearch.trim())
   }
 
-  // Log list filter sets
-  const packedLogs = history.filter(h => h.status === 'Packed')
+  const openZoom = useCallback((src: string, fallbackSrc?: string | null) => {
+    setZoomImage({ src, fallbackSrc: fallbackSrc || null })
+  }, [])
+
+  // Log list filter sets. The backend returns `statusName` (not `status`) on
+  // history entries — filtering on `h.status` matched nothing and left the
+  // Packed tab permanently empty.
+  const packedLogs = history.filter(h => h.statusName === 'Packed')
   const heldLogs = queue.filter(o => o.statusName === 'Packing Hold')
 
-  // Verification helper variables
+  // Verification helper variables (read from the ref, which is always in sync
+  // with the persisted checklist even before a re-render lands)
   const totalItemCount = activeOrder?.items.reduce((sum, item) => sum + item.quantity, 0) ?? 0
-  const verifiedCount = activeOrder?.items.reduce((sum, item) => sum + (verifiedQuantities[item.id] ?? 0), 0) ?? 0
-  const isAllVerified = activeOrder ? activeOrder.items.every(item => (verifiedQuantities[item.id] ?? 0) === item.quantity) : false
+  const verifiedCount = activeOrder?.items.reduce((sum, item) => sum + (verifiedRef.current[item.id] ?? 0), 0) ?? 0
+  const isAllVerified = activeOrder ? activeOrder.items.every(item => (verifiedRef.current[item.id] ?? 0) === item.quantity) : false
 
   // Hands-free USB barcode scanner input buffer
   useEffect(() => {
@@ -449,27 +566,24 @@ export function PackingWorkspace() {
 
           if (matchIdx !== -1) {
             const matchedItem = activeOrder.items[matchIdx]
-            const currentVerified = verifiedQuantities[matchedItem.id] ?? 0
+            const currentVerified = verifiedRef.current[matchedItem.id] ?? 0
 
             if (currentVerified >= matchedItem.quantity) {
               if (navigator.vibrate) navigator.vibrate([50, 50])
               toast.info(`Product "${matchedItem.productName}" is already fully verified.`)
             } else {
-              setVerifiedQuantities(prev => {
-                const nextVal = (prev[matchedItem.id] ?? 0) + 1
-                const next = { ...prev, [matchedItem.id]: nextVal }
-
-                if (navigator.vibrate) navigator.vibrate(100)
-
-                // Auto-advance slide if this scan fully verifies the item
-                if (nextVal === matchedItem.quantity && matchIdx < activeOrder.items.length - 1) {
-                  setTimeout(() => {
-                    setCurrentProductIdx(prevIdx => prevIdx + 1)
-                  }, 450)
-                }
-
-                return next
+              if (navigator.vibrate) navigator.vibrate(100)
+              const nextVal = currentVerified + 1
+              // P2-3: no side effects inside the state updater.
+              commitChecklist({
+                ...verifiedRef.current,
+                [matchedItem.id]: nextVal,
               })
+
+              // Auto-advance slide if this scan fully verifies the item
+              if (nextVal === matchedItem.quantity && matchIdx < activeOrder.items.length - 1) {
+                scheduleAutoAdvance(450)
+              }
 
               // Focus slide on matching item
               if (currentProductIdx !== matchIdx) {
@@ -498,7 +612,18 @@ export function PackingWorkspace() {
 
     window.addEventListener('keydown', handleActiveOrderKeyDown)
     return () => window.removeEventListener('keydown', handleActiveOrderKeyDown)
-  }, [selectedOrderId, activeOrder, verifiedQuantities, currentProductIdx, isAllVerified, handleBackAndRelease, handleDone])
+  }, [selectedOrderId, activeOrder, currentProductIdx, isAllVerified, handleBackAndRelease, handleDone, commitChecklist, scheduleAutoAdvance])
+
+  // Cancel any pending carousel auto-advance when the order changes or the
+  // workspace unmounts, so it can never slide a different order (P2-2).
+  useEffect(() => {
+    return () => {
+      if (autoAdvanceTimerRef.current) {
+        clearTimeout(autoAdvanceTimerRef.current)
+        autoAdvanceTimerRef.current = null
+      }
+    }
+  }, [selectedOrderId])
 
   return (
     <div className="flex flex-col h-screen w-screen bg-[var(--canvas)] text-[var(--ink)] font-sans select-none">
@@ -821,20 +946,29 @@ export function PackingWorkspace() {
               {activeOrder.items[currentProductIdx] ? (
                 (() => {
                   const item = activeOrder.items[currentProductIdx]
-                  const currentVerifiedQty = verifiedQuantities[item.id] ?? 0
+                  const currentVerifiedQty = verifiedRef.current[item.id] ?? 0
                   const isVerified = currentVerifiedQty === item.quantity
                   const isMultiple = item.quantity > 1
                   // Canonical hierarchy: variant → color-sibling → product.
                   // A broken/missing variant image never hides which product
                   // the packer is looking at (fallback terminates at the
                   // controlled SafeImage placeholder).
-                  const catalog = activeOrder.photoCatalog?.[
-                    item.productId ?? ''
-                  ] as ProductImageSource | null
-                  const variant = catalog?.variants?.find(
-                    (v) => v.id === item.variantId,
-                  ) as ProductVariantImageSource | null
-                  const resolvedImg = resolveOrderItemImages(catalog, variant)
+                  // P1-9: only look up a catalog entry when we have BOTH ids.
+                  // Keying on `?? ''` used to silently miss and could match a
+                  // catalog variant whose id was itself null, showing the
+                  // wrong product's photo.
+                  const catalog = (item.productId
+                    ? photoCatalog?.[item.productId]
+                    : undefined) as ProductImageSource | null | undefined
+                  const variant = (item.variantId && catalog
+                    ? catalog?.variants?.find(
+                        (v) => v.id != null && v.id === item.variantId,
+                      )
+                    : undefined) as ProductVariantImageSource | null | undefined
+                  const resolvedImg = resolveOrderItemImages(
+                    catalog ?? null,
+                    variant ?? null,
+                  )
                   const primaryImage = mediaUrl(
                     resolvedImg.image ?? item.image,
                   )
@@ -854,13 +988,13 @@ export function PackingWorkspace() {
                           fallbackSrc={fallbackImage}
                           alt=""
                           className="h-full w-full object-contain cursor-zoom-in active:scale-95 transition-transform"
-                          onClick={() => zoomSource && setZoomImage(zoomSource)}
+                          onClick={() => zoomSource && openZoom(zoomSource, fallbackImage)}
                         />
 
                         {/* Zoom magnifier indicator icon */}
                         {zoomSource && (
                           <button 
-                            onClick={() => zoomSource && setZoomImage(zoomSource)}
+                            onClick={() => zoomSource && openZoom(zoomSource, fallbackImage)}
                             className="absolute right-3.5 bottom-3.5 p-2 rounded-xl bg-black/60 text-[var(--ink-muted)] border border-[var(--border)] hover:text-white transition-colors cursor-pointer"
                           >
                             <Maximize2 className="h-3.5 w-3.5" />
@@ -1034,9 +1168,14 @@ export function PackingWorkspace() {
 
               {/* Giant packed done button */}
               <button
-                disabled={activeOrder.packingLock ? activeOrder.packingLock.packerId !== currentPackerId : false}
+                disabled={
+                  markDone.isPending ||
+                  (activeOrder.packingLock
+                    ? activeOrder.packingLock.packerId !== currentPackerId
+                    : false)
+                }
                 onClick={() => handleDone(activeOrder.id)}
-                className={`flex-1 py-4.5 rounded-2xl text-sm font-extrabold text-white transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.98] ${
+                className={`flex-1 py-4.5 rounded-2xl text-sm font-extrabold text-white transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.98] disabled:opacity-60 ${
                   isAllVerified
                     ? 'bg-green-600 hover:bg-green-700 animate-pulse-subtle'
                     : 'bg-[var(--surface-raised)] hover:bg-[var(--surface-raised)] text-[var(--ink-muted)] border border-zinc-700/50'
@@ -1147,9 +1286,14 @@ export function PackingWorkspace() {
                 onClick={() => {
                   const ordId = viewedHeldOrder.id
                   setViewedHeldOrder(null)
-                  // Find in queue
+                  // P2-1: the order may no longer be in the polled queue —
+                  // don't call openAndSelect(undefined) and throw.
                   const qItem = queue.find(q => q.id === ordId)
-                  if (qItem) openAndSelect(qItem)
+                  if (qItem) {
+                    openAndSelect(qItem)
+                  } else {
+                    toast.error("This order is no longer in the packing queue.")
+                  }
                 }}
                 className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-600 rounded-xl text-xs font-extrabold text-white cursor-pointer"
               >
@@ -1169,7 +1313,7 @@ export function PackingWorkspace() {
           >
             <X className="h-6 w-6" />
           </button>
-          <SafeImage src={zoomImage} alt="" className="max-h-full max-w-full object-contain rounded-2xl shadow-2xl" />
+          <SafeImage src={zoomImage.src} fallbackSrc={zoomImage.fallbackSrc} alt="" className="max-h-full max-w-full object-contain rounded-2xl shadow-2xl" />
         </div>
       )}
 
@@ -1182,30 +1326,6 @@ export function PackingWorkspace() {
           isSubmitting={markHold.isPending}
         />
       )}
-      {/* 8. Local Animation CSS Styles */}
-      <style>{`
-        @keyframes scan-laser {
-          0% { top: 0%; }
-          50% { top: 100%; }
-          100% { top: 0%; }
-        }
-        .animate-scan-laser {
-          animation: scan-laser 2.5s infinite linear;
-        }
-        @keyframes pulse-subtle {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.95; transform: scale(0.99); }
-        }
-        .animate-pulse-subtle {
-          animation: pulse-subtle 2s infinite ease-in-out;
-        }
-        #scanner-viewport video {
-          width: 100% !important;
-          height: 100% !important;
-          object-fit: cover !important;
-          border-radius: 20px !important;
-        }
-      `}</style>
     </div>
   )
 }

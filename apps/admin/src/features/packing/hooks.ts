@@ -9,7 +9,8 @@ const PACKING_KEYS = {
   history: ['packing', 'history'] as const,
 }
 
-export function usePackingQueue(search?: string) {
+/** The queue page: the shared photo catalog plus its orders. */
+export function usePackingQueuePage(search?: string) {
   return useQuery({
     queryKey: [...PACKING_KEYS.queue, search],
     queryFn: () => packingApi.getQueue(search),

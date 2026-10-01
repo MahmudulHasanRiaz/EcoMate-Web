@@ -1,9 +1,24 @@
 import { apiClient } from '@/lib/api-client'
-import type { QueueItem, PackingStats, HoldFormData, HistoryEntry, ActiveLock } from './types'
+import type { QueueItem, PackingStats, HoldFormData, HistoryEntry, ActiveLock, ProductPhotoCatalogEntry } from './types'
+
+/** Raw photo data per product, keyed by product id. Shared across the page. */
+export type PhotoCatalog = Record<string, ProductPhotoCatalogEntry>
+
+/**
+ * `GET /packing/queue` response. The catalog is shared by every order in the
+ * page and returned once at the top level (it used to be attached to each
+ * order, serializing the whole catalog once per order).
+ */
+export interface PackingQueueResponse {
+  orders: QueueItem[]
+  photoCatalog: PhotoCatalog
+}
 
 export const packingApi = {
   getQueue: (search?: string) =>
-    apiClient.get<QueueItem[]>('/packing/queue', { params: search ? { search } : {} }).then((r) => r.data),
+    apiClient
+      .get<PackingQueueResponse>('/packing/queue', { params: search ? { search } : {} })
+      .then((r) => r.data),
 
   openOrder: (id: string) =>
     apiClient.get(`/packing/queue/${id}`).then((r) => r.data),

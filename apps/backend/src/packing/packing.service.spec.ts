@@ -4,15 +4,28 @@ import {
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
-import { PackingService } from './packing.service';
+import { PackingService, PACKING_QUEUE_PAGE_SIZE } from './packing.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { OrdersService } from '../orders/orders.service';
-import { TestingModule } from '@nestjs/testing';
 
 describe('PackingService', () => {
   let service: PackingService;
   let prisma: PrismaService;
   let ordersService: OrdersService;
+
+  // Stand-in for the interactive transaction client handed to
+  // `$transaction(cb)`. Methods are (re)wired to the top-level prisma mocks in
+  // beforeEach so assertions can target either.
+  const mockTx = {
+    $queryRaw: jest.fn(),
+    order: {
+      update: jest.fn(),
+      updateMany: jest.fn(),
+    },
+    packingLock: {
+      deleteMany: jest.fn(),
+    },
+  };
 
   const mockPrisma = {
     $transaction: jest.fn(),
@@ -22,12 +35,14 @@ describe('PackingService', () => {
       findUnique: jest.fn(),
       findFirst: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
       count: jest.fn(),
     },
     packingLock: {
       findUnique: jest.fn(),
       upsert: jest.fn(),
       delete: jest.fn(),
+      deleteMany: jest.fn(),
       findMany: jest.fn(),
     },
     systemSetting: { findUnique: jest.fn(), upsert: jest.fn() },
@@ -35,9 +50,16 @@ describe('PackingService', () => {
   };
 
   beforeEach(async () => {
-    mockPrisma.$transaction.mockImplementation(async (operations) => {
-      return Promise.all(operations);
+    // Supports both the array form and the interactive-callback form.
+    mockPrisma.$transaction.mockImplementation(async (arg) => {
+      if (typeof arg === 'function') return arg(mockTx);
+      return Promise.all(arg);
     });
+    // The interactive transaction client used by markDone / markHold.
+    mockTx.order.update = mockPrisma.order.update;
+    mockTx.order.updateMany = mockPrisma.order.updateMany;
+    mockTx.packingLock.deleteMany = mockPrisma.packingLock.deleteMany;
+    mockTx.$queryRaw.mockResolvedValue([{ id: 'order-1', statusId: 'status-confirmed' }]);
 
     const statusMap: Record<string, { id: string; name: string }> = {
       Confirmed: { id: 'status-confirmed', name: 'Confirmed' },
@@ -77,14 +99,79 @@ describe('PackingService', () => {
 
       const result = await service.getQueue();
 
-      expect(result).toEqual([]);
+      expect(result).toEqual({ orders: [], photoCatalog: {} });
       expect(prisma.order.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
             statusId: { in: ['status-confirmed', 'status-hold'] },
           }),
+          // Bounded page: the whole backlog used to ship on every 15s poll.
+          take: PACKING_QUEUE_PAGE_SIZE,
+          orderBy: { createdAt: 'asc' },
         }),
       );
+    });
+
+    it('should prune expired locks so abandoned orders are not locked forever', async () => {
+      (prisma.packingLock.deleteMany as jest.Mock).mockResolvedValue({ count: 2 });
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([]);
+
+      await service.getQueue();
+
+      expect(prisma.packingLock.deleteMany).toHaveBeenCalledWith({
+        where: { expiresAt: { not: null, lt: expect.any(Date) } },
+      });
+    });
+
+    it('should still serve the queue when pruning fails', async () => {
+      (prisma.packingLock.deleteMany as jest.Mock).mockRejectedValue(
+        new Error('lock table unavailable'),
+      );
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([]);
+
+      await expect(service.getQueue()).resolves.toEqual({
+        orders: [],
+        photoCatalog: {},
+      });
+    });
+
+    it('should return the shared catalog once at the top level, not per order', async () => {
+      const orderWithProduct = (id: string, productId: string, name: string) => ({
+        id,
+        displayId: `ORD-${id}`,
+        customer: null,
+        guestName: null,
+        guestPhone: null,
+        createdAt: new Date('2025-01-15T00:00:00.000Z'),
+        packingLock: null,
+        status: { id: 'status-confirmed', name: 'Confirmed', color: 'blue' },
+        items: [
+          {
+            id: `item-${id}`,
+            productId,
+            variantId: null,
+            quantity: 1,
+            product: {
+              id: productId,
+              name,
+              images: [`/${productId}.jpg`],
+              variants: [],
+            },
+            variant: null,
+          },
+        ],
+      });
+      (prisma.packingLock.deleteMany as jest.Mock).mockResolvedValue({ count: 0 });
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([
+        orderWithProduct('1', 'p1', 'Alpha'),
+        orderWithProduct('2', 'p2', 'Beta'),
+      ]);
+
+      const result = await service.getQueue();
+
+      expect(Object.keys(result.photoCatalog)).toEqual(['p1', 'p2']);
+      expect((result.orders[0] as Record<string, unknown>).photoCatalog).toBeUndefined();
+      expect((result.orders[1] as Record<string, unknown>).photoCatalog).toBeUndefined();
     });
 
     it('should throw NotFoundException when Confirmed status not found', async () => {
@@ -145,8 +232,8 @@ describe('PackingService', () => {
 
       const result = await service.getQueue();
 
-      expect(result).toHaveLength(1);
-      expect(result[0]).toEqual({
+      expect(result.orders).toHaveLength(1);
+      expect(result.orders[0]).toEqual({
         id: 'order-1',
         displayId: 'ORD-001',
         customer: { id: 'cust-1', name: 'John Doe', phone: '555-0100' },
@@ -168,8 +255,10 @@ describe('PackingService', () => {
         statusName: 'Confirmed',
         statusColor: 'blue',
         createdAt: mockOrder.createdAt,
-        photoCatalog: {},
       });
+      // The catalog is shared across the page and returned once at the top
+      // level, not attached to every order.
+      expect((result.orders[0] as Record<string, unknown>).photoCatalog).toBeUndefined();
     });
 
     it('should resolve name and image for a simple product item (no variant) via the item product relation', async () => {
@@ -205,7 +294,7 @@ describe('PackingService', () => {
 
       const result = await service.getQueue();
 
-      expect(result[0].items[0]).toEqual({
+      expect(result.orders[0].items[0]).toEqual({
         id: 'item-3',
         productId: 'prod-1',
         variantId: null,
@@ -216,7 +305,7 @@ describe('PackingService', () => {
         image: '/simple-1.jpg',
         fallbackImage: '/simple-1.jpg',
       });
-      expect(result[0].photoCatalog['prod-1']).toEqual({
+      expect(result.photoCatalog['prod-1']).toEqual({
         images: ['/simple-1.jpg', '/simple-2.jpg'],
         variants: [],
       });
@@ -241,7 +330,7 @@ describe('PackingService', () => {
 
       const result = await service.getQueue();
 
-      expect(result[0].customer).toEqual({
+      expect(result.orders[0].customer).toEqual({
         name: 'Jane Guest',
         phone: '555-0200',
       });
@@ -266,7 +355,7 @@ describe('PackingService', () => {
 
       const result = await service.getQueue();
 
-      expect(result[0].customer).toBeNull();
+      expect(result.orders[0].customer).toBeNull();
     });
 
     it('should return null image when product has no images', async () => {
@@ -297,7 +386,7 @@ describe('PackingService', () => {
 
       const result = await service.getQueue();
 
-      expect(result[0].items[0].image).toBeNull();
+      expect(result.orders[0].items[0].image).toBeNull();
     });
 
     it('should fall back to parent product image when variant has no image (size-only variation)', async () => {
@@ -330,7 +419,7 @@ describe('PackingService', () => {
 
       const result = await service.getQueue();
 
-      expect(result[0].items[0]).toMatchObject({
+      expect(result.orders[0].items[0]).toMatchObject({
         image: '/parent.jpg',
         fallbackImage: '/parent.jpg',
       });
@@ -369,7 +458,7 @@ describe('PackingService', () => {
 
       const result = await service.getQueue();
 
-      expect(result[0].items[0].image).toBe('/object-form.jpg');
+      expect(result.orders[0].items[0].image).toBe('/object-form.jpg');
     });
 
     it('should include packing lock info when present', async () => {
@@ -396,7 +485,7 @@ describe('PackingService', () => {
 
       const result = await service.getQueue();
 
-      expect(result[0].packingLock).toEqual({
+      expect(result.orders[0].packingLock).toEqual({
         packerId: 'packer-1',
         packerName: 'Alice Smith',
         startedAt: mockOrder.packingLock.startedAt,
@@ -562,21 +651,26 @@ describe('PackingService', () => {
   describe('markDone', () => {
     const packedStatus = { id: 'status-packed', name: 'Packed' };
 
-    it('should update order to Packed and delete lock', async () => {
-      const mockLock = { orderId: 'order-1', packerId: 'packer-1' };
-      (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue(mockLock);
-      (prisma.orderStatus.findUnique as jest.Mock)
-        .mockResolvedValueOnce(packedStatus)
-        .mockResolvedValueOnce({ id: 'status-confirmed', name: 'Confirmed' })
-        .mockResolvedValueOnce({ id: 'status-hold', name: 'Packing Hold' });
+    // Stubs the lock, the resolved statuses and a Confirmed order status, which
+    // every markDone path needs before it reaches the transaction.
+    const stubHappyPath = () => {
+      (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue({
+        orderId: 'order-1',
+        packerId: 'packer-1',
+      });
       (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
         firstName: 'Mahmudul',
         lastName: 'Riaz',
       });
-      (prisma.order.findFirst as jest.Mock)
-        .mockResolvedValueOnce({ id: 'order-1', timeline: [] })
-        .mockResolvedValueOnce({ statusId: 'status-confirmed' });
-      (prisma.packingLock.delete as jest.Mock).mockResolvedValue({});
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue({
+        id: 'order-1',
+        statusId: 'status-confirmed',
+      });
+      (prisma.packingLock.deleteMany as jest.Mock).mockResolvedValue({ count: 1 });
+    };
+
+    it('should update order to Packed and delete lock', async () => {
+      stubHappyPath();
 
       const result = await service.markDone(
         'order-1',
@@ -586,7 +680,7 @@ describe('PackingService', () => {
 
       expect(result).toEqual({ success: true, orderId: 'order-1' });
       expect(ordersService.updateStatus).toHaveBeenCalled();
-      expect(prisma.packingLock.delete).toHaveBeenCalledWith({
+      expect(mockTx.packingLock.deleteMany).toHaveBeenCalledWith({
         where: { orderId: 'order-1' },
       });
     });
@@ -602,8 +696,10 @@ describe('PackingService', () => {
     });
 
     it('should throw ConflictException when locked by different packer', async () => {
-      const mockLock = { orderId: 'order-1', packerId: 'packer-2' };
-      (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue(mockLock);
+      (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue({
+        orderId: 'order-1',
+        packerId: 'packer-2',
+      });
 
       await expect(
         service.markDone('order-1', 'packer-1', 'strict_scan'),
@@ -613,9 +709,13 @@ describe('PackingService', () => {
     });
 
     it('should throw NotFoundException when Packed status not found', async () => {
-      const mockLock = { orderId: 'order-1', packerId: 'packer-1' };
-      (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue(mockLock);
-      (prisma.orderStatus.findUnique as jest.Mock).mockImplementation(() => Promise.resolve(null));
+      (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue({
+        orderId: 'order-1',
+        packerId: 'packer-1',
+      });
+      (prisma.orderStatus.findUnique as jest.Mock).mockImplementation(() =>
+        Promise.resolve(null),
+      );
 
       await expect(
         service.markDone('order-1', 'packer-1', 'strict_scan'),
@@ -623,51 +723,73 @@ describe('PackingService', () => {
       expect(prisma.packingLock.delete).not.toHaveBeenCalled();
     });
 
-    it('should set assignedToId on done', async () => {
-      const mockLock = { orderId: 'order-1', packerId: 'packer-1' };
-      (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue(mockLock);
-      (prisma.orderStatus.findUnique as jest.Mock)
-        .mockResolvedValueOnce(packedStatus)
-        .mockResolvedValueOnce({ id: 'status-confirmed', name: 'Confirmed' })
-        .mockResolvedValueOnce({ id: 'status-hold', name: 'Packing Hold' });
-      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
-        firstName: 'Mahmudul',
-        lastName: 'Riaz',
-      });
-      (prisma.order.findFirst as jest.Mock)
-        .mockResolvedValueOnce({ id: 'order-1', timeline: [] })
-        .mockResolvedValueOnce({ statusId: 'status-confirmed' });
-      (prisma.packingLock.delete as jest.Mock).mockResolvedValue({});
+    it('should pass the transaction client and the packing note to updateStatus', async () => {
+      stubHappyPath();
 
       await service.markDone('order-1', 'packer-1', 'strict_scan');
 
       expect(ordersService.updateStatus).toHaveBeenCalledWith(
         'order-1',
-        { statusId: packedStatus.id },
+        {
+          statusId: packedStatus.id,
+          note: 'Order packed successfully. Verification mode: strict_scan.',
+        },
         'packer-1',
         expect.any(String),
+        mockTx,
       );
+    });
+
+    it('should reject when the order is no longer Confirmed or Packing Hold', async () => {
+      stubHappyPath();
+      // Status moved on between queue fetch and completion.
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue({
+        id: 'order-1',
+        statusId: 'status-packed',
+      });
+
+      await expect(
+        service.markDone('order-1', 'packer-1', 'strict_scan'),
+      ).rejects.toThrow(BadRequestException);
+      expect(ordersService.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('should not leave a stale lock when the status change fails', async () => {
+      stubHappyPath();
+      (ordersService.updateStatus as jest.Mock).mockRejectedValue(
+        new Error('db exploded'),
+      );
+
+      await expect(
+        service.markDone('order-1', 'packer-1', 'strict_scan'),
+      ).rejects.toThrow('db exploded');
+      // The lock release is part of the same transaction, so a failure aborts
+      // both — an already-Packed order can never keep blocking other packers.
+      expect(mockTx.packingLock.deleteMany).not.toHaveBeenCalled();
     });
   });
 
   describe('markHold', () => {
     const holdStatus = { id: 'status-hold', name: 'Packing Hold' };
 
-    it('should update order to Packing Hold, delete lock', async () => {
-      const mockLock = { orderId: 'order-1', packerId: 'packer-1' };
-      (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue(mockLock);
-      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
-        holdStatus,
-      );
+    const stubHappyPath = () => {
+      (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue({
+        orderId: 'order-1',
+        packerId: 'packer-1',
+      });
       (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
         firstName: 'Mahmudul',
         lastName: 'Riaz',
       });
       (prisma.order.findFirst as jest.Mock).mockResolvedValue({
         id: 'order-1',
-        timeline: [],
+        statusId: 'status-confirmed',
       });
-      (prisma.packingLock.delete as jest.Mock).mockResolvedValue({});
+      (prisma.packingLock.deleteMany as jest.Mock).mockResolvedValue({ count: 1 });
+    };
+
+    it('should update order to Packing Hold, delete lock', async () => {
+      stubHappyPath();
 
       const result = await service.markHold(
         'order-1',
@@ -681,8 +803,7 @@ describe('PackingService', () => {
         reason: 'Missing item',
         notes: undefined,
       });
-      expect(prisma.order.update).not.toHaveBeenCalled();
-      expect(prisma.packingLock.delete).toHaveBeenCalledWith({
+      expect(mockTx.packingLock.deleteMany).toHaveBeenCalledWith({
         where: { orderId: 'order-1' },
       });
     });
@@ -693,79 +814,47 @@ describe('PackingService', () => {
       await expect(
         service.markHold('order-1', 'packer-1', 'Missing item'),
       ).rejects.toThrow(BadRequestException);
-      expect(prisma.order.update).not.toHaveBeenCalled();
     });
 
     it('should throw ConflictException when locked by different packer', async () => {
-      const mockLock = { orderId: 'order-1', packerId: 'packer-2' };
-      (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue(mockLock);
+      (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue({
+        orderId: 'order-1',
+        packerId: 'packer-2',
+      });
 
       await expect(
         service.markHold('order-1', 'packer-1', 'Missing item'),
       ).rejects.toThrow(ConflictException);
-      expect(prisma.order.update).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException when Packing Hold status not found', async () => {
-      const mockLock = { orderId: 'order-1', packerId: 'packer-1' };
-      (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue(mockLock);
+      (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue({
+        orderId: 'order-1',
+        packerId: 'packer-1',
+      });
       (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(
         service.markHold('order-1', 'packer-1', 'Missing item'),
       ).rejects.toThrow(NotFoundException);
-      expect(prisma.order.update).not.toHaveBeenCalled();
     });
 
-    it('should return reason and notes', async () => {
-      const mockLock = { orderId: 'order-1', packerId: 'packer-1' };
-      (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue(mockLock);
-      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
-        holdStatus,
-      );
-      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
-        firstName: 'Mahmudul',
-        lastName: 'Riaz',
-      });
-      (prisma.order.findFirst as jest.Mock).mockResolvedValue({
-        id: 'order-1',
-        timeline: [],
-      });
-      (prisma.order.update as jest.Mock).mockResolvedValue({});
-      (prisma.packingLock.delete as jest.Mock).mockResolvedValue({});
+    it('should return the reason and notes', async () => {
+      stubHappyPath();
 
       const result = await service.markHold(
         'order-1',
         'packer-1',
-        'Damaged item',
-        'Needs replacement',
+        'Missing item',
+        'Some notes',
       );
 
-      expect(result.reason).toBe('Damaged item');
-      expect(result.notes).toBe('Needs replacement');
-      expect(prisma.order.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ officeNotes: 'Needs replacement' }),
-        }),
-      );
+      expect(result.reason).toBe('Missing item');
+      expect(result.notes).toBe('Some notes');
     });
 
     it('should set officeNotes when notes provided', async () => {
-      const mockLock = { orderId: 'order-1', packerId: 'packer-1' };
-      (prisma.packingLock.findUnique as jest.Mock).mockResolvedValue(mockLock);
-      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
-        holdStatus,
-      );
-      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
-        firstName: 'Mahmudul',
-        lastName: 'Riaz',
-      });
-      (prisma.order.findFirst as jest.Mock).mockResolvedValue({
-        id: 'order-1',
-        timeline: [],
-      });
-      (prisma.order.update as jest.Mock).mockResolvedValue({});
-      (prisma.packingLock.delete as jest.Mock).mockResolvedValue({});
+      stubHappyPath();
 
       await service.markHold('order-1', 'packer-1', 'Missing item', 'Some notes');
 
@@ -774,6 +863,21 @@ describe('PackingService', () => {
           data: expect.objectContaining({ officeNotes: 'Some notes' }),
         }),
       );
+    });
+
+    it('should reject an already-Packed order instead of dragging it backwards', async () => {
+      stubHappyPath();
+      // Packed → Packing Hold is a legal transition, so without the guard a
+      // stale lock could pull a finished order back into the packing flow.
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue({
+        id: 'order-1',
+        statusId: 'status-packed',
+      });
+
+      await expect(
+        service.markHold('order-1', 'packer-1', 'Missing item'),
+      ).rejects.toThrow(BadRequestException);
+      expect(ordersService.updateStatus).not.toHaveBeenCalled();
     });
   });
 
@@ -876,8 +980,13 @@ describe('PackingService', () => {
           updatedAt: { gte: expect.any(Date) },
         },
       });
+      // P1-7: pending must be scoped to the packer like the other two counters.
       expect(prisma.order.count).toHaveBeenNthCalledWith(3, {
-        where: { trashedAt: null, statusId: confirmedStatus.id },
+        where: {
+          assignedToId: 'packer-1',
+          trashedAt: null,
+          statusId: confirmedStatus.id,
+        },
       });
     });
 

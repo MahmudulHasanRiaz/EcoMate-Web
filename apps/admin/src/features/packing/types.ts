@@ -1,3 +1,9 @@
+/**
+ * Raw photo data per product, used by the canonical image resolver
+ * (lib/product-image.ts) to apply the variant → color-sibling → product
+ * hierarchy. Keyed by product id. Returned once at the top level of the
+ * queue response and shared by every order in the page.
+ */
 export interface ProductPhotoCatalogEntry {
   images: unknown
   variants: {
@@ -24,12 +30,6 @@ export interface QueueItem {
   statusName: string
   statusColor: string
   createdAt: string
-  /**
-   * Raw photo data per product, used by the canonical image resolver
-   * (lib/product-image.ts) to apply the variant → color-sibling → product
-   * hierarchy. Keyed by product id. Absent on legacy payloads.
-   */
-  photoCatalog?: Record<string, ProductPhotoCatalogEntry> | null
 }
 
 export interface QueueItemProduct {
@@ -63,10 +63,11 @@ export interface HoldFormData {
   notes?: string
 }
 
+/** Mirrors the `getHistory` response shape (see packing.service.ts). */
 export interface HistoryEntry {
   id: string
   displayId: string
-  status: string
+  statusName: string
   statusColor: string
   packerName: string
   updatedAt: string

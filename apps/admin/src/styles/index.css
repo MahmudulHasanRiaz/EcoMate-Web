@@ -13,6 +13,31 @@
 [data-panel='hr'] { --panel-accent: var(--accent-violet); }
 [data-panel='packing'] { --panel-accent: var(--accent-cyan); }
 
+/* ---- Packing workspace -------------------------------------------------
+   Moved out of the PackingWorkspace JSX <style> block so the scanner
+   viewport and animation keyframes are declared once, globally. ---- */
+@keyframes scan-laser {
+  0% { top: 0%; }
+  50% { top: 100%; }
+  100% { top: 0%; }
+}
+.animate-scan-laser {
+  animation: scan-laser 2.5s infinite linear;
+}
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.95; transform: scale(0.99); }
+}
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s infinite ease-in-out;
+}
+#scanner-viewport video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  border-radius: 20px !important;
+}
+
 @layer base {
   * {
     @apply border-border;

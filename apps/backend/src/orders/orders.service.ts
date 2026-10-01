@@ -2989,11 +2989,18 @@ export class OrdersService {
     });
   }
 
+  /**
+   * Optional `tx` lets a caller compose this status change into a larger
+   * transaction (the packing workspace couples it with releasing the order's
+   * packing lock, which must not be left behind if the status write fails).
+   * When omitted the method runs in its own transaction, as before.
+   */
   async updateStatus(
     id: string,
     dto: UpdateOrderStatusDto,
     userId: string,
     performedBy?: string,
+    tx?: Prisma.TransactionClient,
   ) {
     const order = await this.prisma.order.findUnique({
       where: { id },
@@ -3045,8 +3052,9 @@ export class OrdersService {
       },
     ];
 
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const u = await tx.order.update({
+    // Runs inside either this method's own transaction or a caller-supplied one.
+    const statusChange = async (client: Prisma.TransactionClient) => {
+      const u = await client.order.update({
         where: { id },
         data: {
           statusId: dto.statusId,
@@ -3064,8 +3072,8 @@ export class OrdersService {
       });
 
       if (newStatus.name === 'Confirmed') {
-        await this.takeCostSnapshot(id, tx);
-        await this.verifyStockForOrder(id, tx);
+        await this.takeCostSnapshot(id, client);
+        await this.verifyStockForOrder(id, client);
       }
 
       // A cancelled order released its reservation; a Confirmed order's
@@ -3076,19 +3084,19 @@ export class OrdersService {
         newStatus.name === 'Hold' &&
         (order.status.name === 'Cancelled' || order.status.name === 'Confirmed')
       ) {
-        await this.verifyStockForOrder(id, tx);
+        await this.verifyStockForOrder(id, client);
       }
 
       if (newStatus.name === 'Cancelled') {
-        await this.handleCancelledSideEffects(tx, id, performedBy);
+        await this.handleCancelledSideEffects(client, id, performedBy);
       }
 
       if (newStatus.name === 'Delivered') {
-        await this.handleDeliveredSideEffects(tx, u, performedBy || userId);
+        await this.handleDeliveredSideEffects(client, u, performedBy || userId);
       }
 
       if (newStatus.name === 'Returned') {
-        await this.handleReturnedSideEffects(tx, id, performedBy);
+        await this.handleReturnedSideEffects(client, id, performedBy);
       }
 
       if (newStatus.name === 'Return Pending') {
@@ -3103,7 +3111,7 @@ export class OrdersService {
       // settings; the block is wrapped so a capture-side failure can never roll
       // back the status change.
       try {
-        const withItems = await tx.order.findUnique({
+        const withItems = await client.order.findUnique({
           where: { id },
           include: {
             items: {
@@ -3128,7 +3136,7 @@ export class OrdersService {
           await this.firePurchaseValidated(
             newStatus.name,
             withItems as any,
-            tx,
+            client,
           );
           // Order-lifecycle custom event for the genuine transition
           // (prev != new is guaranteed by the transition map above; the fire
@@ -3137,12 +3145,12 @@ export class OrdersService {
             withItems as any,
             order.status.name,
             newStatus.name,
-            tx,
+            client,
           );
           if (
             ['Cancelled', 'Returned', 'Return Pending'].includes(newStatus.name)
           ) {
-            await this.fireRefundEvent(withItems as any, tx);
+            await this.fireRefundEvent(withItems as any, client);
           }
         }
       } catch (err) {
@@ -3153,7 +3161,11 @@ export class OrdersService {
       }
 
       return u;
-    });
+    };
+
+    const updated = tx
+      ? await statusChange(tx)
+      : await this.prisma.$transaction(statusChange);
 
     this.events.emit({
       type: 'order.status_changed',

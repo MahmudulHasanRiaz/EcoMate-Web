@@ -7,11 +7,15 @@ import {
   Query,
   Body,
 } from '@nestjs/common';
+import { RequiresFeature } from '@ecomate/feature-flags';
 import { PackingService } from './packing.service';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { HoldOrderDto, PackingQueueQueryDto } from './dto/packing.dto';
 
+// The `admin_packing` plan feature was declared in the license system but
+// never enforced — the workspace was reachable by role alone.
+@RequiresFeature('admin_packing')
 @Controller('packing')
 export class PackingController {
   constructor(private readonly svc: PackingService) {}
