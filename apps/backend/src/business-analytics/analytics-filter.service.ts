@@ -153,13 +153,21 @@ export class AnalyticsFilterService {
     // Canonical attribution filters. `channel` is authoritative wherever the
     // canonical mapping has run; rows predating the migration still resolve
     // through the legacy column, so both eras are covered by one filter.
+    //
+    // This is folded into where.AND rather than assigning where.OR directly:
+    // assigning OR would OVERWRITE the OR another dimension set, silently
+    // widening the whole filter. The `channel: null` branch is what lets
+    // un-backfilled historical rows match — NULL is the correct mapped value
+    // for most of them, not an "unmapped" sentinel.
+    let canonicalChannelClause: Prisma.OrderWhereInput | null = null;
     if (filters.channel) {
-      where.OR = [
-        { channel: filters.channel as any },
-        ...(LEGACY_CHANNEL_TO_V2[filters.channel]
-          ? [{ channel: null, salesChannel: LEGACY_CHANNEL_TO_V2[filters.channel] as any }]
-          : []),
-      ];
+      const legacy = LEGACY_CHANNEL_TO_V2[filters.channel];
+      canonicalChannelClause = {
+        OR: [
+          { channel: filters.channel as any },
+          ...(legacy ? [{ channel: null, salesChannel: legacy as any }] : []),
+        ],
+      };
     }
     if (filters.channelEntity) where.channelEntity = filters.channelEntity;
     if (filters.sourceSlug) where.sourceSlug = filters.sourceSlug;
@@ -255,6 +263,8 @@ export class AnalyticsFilterService {
         ],
       });
     }
+
+    if (canonicalChannelClause) and.push(canonicalChannelClause);
 
     if (and.length > 0) {
       const existing = Array.isArray(where.AND)
