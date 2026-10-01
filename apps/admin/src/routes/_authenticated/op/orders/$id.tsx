@@ -1061,7 +1061,9 @@ function OrderDetailPage() {
                       </p>
                     )}
                     {getCustomerPhone(order) && (
-                      <p className='text-muted-foreground text-xs flex items-center gap-1 mt-0.5'>
+                      // A div, not a p: CustomerContactActions renders a block
+                      // element, and a <p> may never contain a <div>.
+                      <div className='text-muted-foreground text-xs flex items-center gap-1 mt-0.5'>
                         <a href={`tel:${getCustomerPhone(order)}`} className='flex items-center gap-1 hover:text-primary transition-colors'>
                           <Phone className='h-3 w-3' />{getCustomerPhone(order)}
                         </a>
@@ -1075,7 +1077,7 @@ function OrderDetailPage() {
                             <Ban className='h-3 w-3' />Block
                           </button>
                         )}
-                      </p>
+                      </div>
                     )}
                   </div>
                   {order.shippingAddress && (

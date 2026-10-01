@@ -1189,6 +1189,36 @@ export class OrdersService {
           : [];
       const variantMap = new Map(variants.map((v) => [v.id, v]));
 
+      // A variant-only line item carries no productId, so its parent product was
+      // never in the first query and `productMap` came back empty — which made
+      // the "Parent product for variant X not found" check reject a perfectly
+      // valid order. Resolve those parents now, using the productId the variant
+      // rows already carry.
+      const missingParentIds = Array.from(
+        new Set(
+          variants
+            .map((v) => v.productId)
+            .filter((pid) => pid && !productMap.has(pid)),
+        ),
+      );
+      if (missingParentIds.length > 0) {
+        const parents = await tx.product.findMany({
+          where: { id: { in: missingParentIds } },
+          select: {
+            id: true,
+            basePrice: true,
+            salePrice: true,
+            isActive: true,
+            availabilityMode: true,
+            name: true,
+            type: true,
+            managedStockQuantity: true,
+            reservedStock: true,
+          },
+        });
+        for (const p of parents) productMap.set(p.id, p);
+      }
+
       const comboIds = Array.from(
         new Set(dto.items.filter((i) => i.comboId).map((i) => i.comboId!)),
       );

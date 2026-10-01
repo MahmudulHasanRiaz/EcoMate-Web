@@ -688,6 +688,56 @@ describe('OrdersService', () => {
   });
 
   describe('create', () => {
+    it('accepts a variant-only line item by resolving its parent product', async () => {
+      // Regression: productIds was built solely from item.productId, so a line
+      // carrying only a variantId never loaded its parent and the order was
+      // rejected with "Parent product for variant X not found".
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) =>
+          cb({
+            ...prisma,
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+          }),
+      );
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue({
+        id: 'status-pending',
+        name: 'Pending',
+        nextStatuses: [],
+      });
+      (prisma.order.create as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        items: [],
+      });
+      // Make the parent lookup deterministic: only prod-1 comes back.
+      (prisma.product.findMany as jest.Mock).mockImplementation(async (args: any) => {
+        const ids = args?.where?.id?.in;
+        if (Array.isArray(ids)) {
+          return [
+            {
+              id: 'prod-1', basePrice: 1000, salePrice: null, isActive: true,
+              availabilityMode: 'MANAGED_STOCK', name: 'Prod 1', type: 'variable',
+              managedStockQuantity: 10, reservedStock: 0,
+            },
+          ].filter((p) => ids.includes(p.id));
+        }
+        return [];
+      });
+
+      const res = await service.create({
+        items: [{ variantId: 'variant-1', quantity: 1, price: 1000 }],
+        shippingAddress: { address: '123 Test St' },
+      } as any);
+
+      expect(res).toBeDefined();
+      // The parent product must actually have been fetched for the variant.
+      const variantOnlyCall = (prisma.product.findMany as jest.Mock).mock.calls.find(
+        (c: any) => Array.isArray(c[0]?.where?.id?.in) && c[0].where.id.in.includes('prod-1'),
+      );
+      expect(variantOnlyCall).toBeDefined();
+    });
+
     const createOrderDto = {
       customerId: 'customer-id-1',
       items: [

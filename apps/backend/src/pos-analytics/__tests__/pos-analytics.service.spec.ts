@@ -156,12 +156,35 @@ describe('PosAnalyticsService', () => {
     });
 
     it('resolves previous_month to the full prior Dhaka month', async () => {
-      mockOrders([]);
-      const res = await svc.getOverview(
-        req({ preset: 'previous_month', from: undefined, to: undefined }),
-      );
-      expect(res.meta.range.from).toBe('2026-08-01');
-      expect(res.meta.range.to).toBe('2026-08-31');
+      // The clock MUST be pinned here: without it this test walks with the real
+      // date, so it silently breaks on the 1st of every month (it expects
+      // August, but in October the previous month is September). Pinning makes
+      // the expectation a statement about the resolver, not about today.
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-15T06:00:00Z'));
+      try {
+        mockOrders([]);
+        const res = await svc.getOverview(
+          req({ preset: 'previous_month', from: undefined, to: undefined }),
+        );
+        expect(res.meta.range.from).toBe('2026-08-01');
+        expect(res.meta.range.to).toBe('2026-08-31');
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('previous_month rolls back the year when the prior month is January', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-01-15T06:00:00Z'));
+      try {
+        mockOrders([]);
+        const res = await svc.getOverview(
+          req({ preset: 'previous_month', from: undefined, to: undefined }),
+        );
+        expect(res.meta.range.from).toBe('2025-12-01');
+        expect(res.meta.range.to).toBe('2025-12-31');
+      } finally {
+        jest.useRealTimers();
+      }
     });
   });
 
