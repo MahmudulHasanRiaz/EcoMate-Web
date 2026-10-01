@@ -28,7 +28,7 @@ async function main() {
   await prisma.physicalInventory.deleteMany({
     where: {
       product: {
-        slug: { in: ['e2e-simple-product', 'e2e-ic-simple-product', 'e2e-variable-product'] },
+        slug: { in: ['e2e-simple-product', 'e2e-ic-simple-product', 'e2e-variable-product', 'e2e-godown-only-variable-product'] },
       },
     },
   });
@@ -39,8 +39,14 @@ async function main() {
   });
   await prisma.product.deleteMany({
     where: {
-      slug: { in: ['e2e-simple-product', 'e2e-ic-simple-product', 'e2e-variable-product'] },
+      slug: { in: ['e2e-simple-product', 'e2e-ic-simple-product', 'e2e-variable-product', 'e2e-godown-only-variable-product'] },
     },
+  });
+
+  // The cross-warehouse fixture's godown is created by this script, so clean it
+  // up too and keep re-runs idempotent.
+  await prisma.warehouse.deleteMany({
+    where: { slug: 'main-godown' },
   });
 
   console.log('[E2E Seed] Cleaned up existing E2E test products.');
@@ -173,6 +179,71 @@ async function main() {
     },
   });
   console.log(`[E2E Seed] Created Variable Product with variants A, B, C`);
+
+  // 5b. Cross-warehouse sibling-variant fixture.
+  //
+  // Reproduces the production shape behind the 2026-10-01 "See where" incident:
+  // a variable product with NO stock in the showroom, while the godown holds it
+  // under a variant the showroom has never stocked. The alternative-location
+  // lookup used to filter on the exact variantId, so it returned nothing and
+  // the UI claimed no location had stock.
+  //
+  // This needs its OWN product: attaching the godown-only variant to the
+  // product above would not reproduce it, because that product already has
+  // showroom stock on other variants and so is not showroom-zero at the
+  // product level.
+  //
+  // Local development previously had every variant stocked in the showroom, so
+  // this shape never occurred and the bug could not be reproduced. Keeping this
+  // fixture means the regression is caught by the test suite rather than on a
+  // production site.
+  const godown = await prisma.warehouse.upsert({
+    where: { slug: 'main-godown' },
+    update: {},
+    create: {
+      name: 'Main Godown',
+      slug: 'main-godown',
+      type: 'main',
+      isActive: true,
+    },
+  });
+
+  const godownOnlyProduct = await prisma.product.create({
+    data: {
+      name: 'E2E Godown-Only Variable Product',
+      slug: 'e2e-godown-only-variable-product',
+      type: 'variable',
+      basePrice: 300,
+      availabilityMode: 'MANAGED_STOCK',
+      manageStock: true,
+      isActive: true,
+      warehouseId: godown.id,
+    },
+  });
+  const godownOnlyVariant = await prisma.productVariant.create({
+    data: {
+      productId: godownOnlyProduct.id,
+      sku: 'E2E-VAR-GODOWN-ONLY',
+      price: 300,
+      managedStockQuantity: 60,
+      isActive: true,
+      warehouseId: godown.id,
+    },
+  });
+  await prisma.physicalInventory.create({
+    data: {
+      productId: godownOnlyProduct.id,
+      variantId: godownOnlyVariant.id,
+      warehouseId: godown.id,
+      quantity: 35,
+      reservedQuantity: 0,
+    },
+  });
+  // Deliberately NO showroom row for this product at all: that absence is what
+  // made the old exact-variant filter return an empty network.
+  console.log(
+    `[E2E Seed] Cross-warehouse fixture: "E2E Godown-Only Variable Product" has NO showroom stock, 35 in ${godown.name}`,
+  );
 
   // 6. Create Combo Product
   const combo = await prisma.combo.create({
