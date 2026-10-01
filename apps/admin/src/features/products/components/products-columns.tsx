@@ -45,31 +45,51 @@ export function productsColumns(
       cell: ({ row }) => {
         const img = Array.isArray(row.original.images) ? row.original.images[0] : null
         return img
-          ? <SafeImage src={imgUrl(img)} alt='' className='w-9 h-9 rounded border object-cover' thumbWidth={40} thumbHeight={40} />
-          : <div className='w-9 h-9 rounded border bg-muted flex items-center justify-center'><Package className='h-4 w-4 text-muted-foreground' /></div>
+          ? <SafeImage src={imgUrl(img)} alt='' className='w-9.5 h-9.5 rounded-lg border border-border/70 object-cover shadow-2xs shrink-0' thumbWidth={40} thumbHeight={40} />
+          : <div className='w-9.5 h-9.5 rounded-lg border border-border/70 bg-muted/40 dark:bg-muted/20 flex items-center justify-center shadow-2xs shrink-0'><Package className='h-4 w-4 text-muted-foreground/60' /></div>
       },
       enableSorting: false,
     },
     {
       accessorKey: 'name',
       header: 'Name',
-      cell: ({ row }) => (
-        <div>
-          <p className='font-medium text-sm'>
-            {row.getValue('name')}
-            {row.original.status === 'draft' && (
-              <Badge variant='secondary' className='ml-2 text-xs'>Draft</Badge>
-            )}
-          </p>
-          {row.original.sku && <p className='text-xs text-muted-foreground'>SKU: {row.original.sku}</p>}
-        </div>
-      ),
+      cell: ({ row }) => {
+        const p = row.original
+        const hasVariants = p.type === 'variable' && p.variants?.length > 0
+        const variantSkus = hasVariants ? p.variants.map(v => v.sku).filter(Boolean) : []
+        return (
+          <div className='space-y-0.5 max-w-[320px]'>
+            <p className='font-semibold text-sm leading-snug text-foreground'>
+              {row.getValue('name')}
+              {p.status === 'draft' && (
+                <Badge variant='secondary' className='ml-2 text-xs'>Draft</Badge>
+              )}
+            </p>
+            <div className='flex items-center gap-1.5 flex-wrap text-xs text-muted-foreground'>
+              {p.sku && <span className='font-mono text-xs text-muted-foreground'>SKU: {p.sku}</span>}
+              {hasVariants && (
+                <span className='inline-flex items-center gap-1 font-mono text-[10.5px] rounded bg-muted/60 dark:bg-muted/30 px-1.5 py-0.2 border border-border/50 text-muted-foreground'>
+                  {p.variants.length} variant{p.variants.length > 1 ? 's' : ''}
+                  {variantSkus.length > 0 && (
+                    <span className='text-muted-foreground/70 truncate max-w-[140px]' title={variantSkus.join(', ')}>
+                      ({variantSkus.slice(0, 2).join(', ')}{variantSkus.length > 2 ? '…' : ''})
+                    </span>
+                  )}
+                </span>
+              )}
+              {p.category?.name && (
+                <span className='text-[11px] text-muted-foreground/60'>• {p.category.name}</span>
+              )}
+            </div>
+          </div>
+        )
+      },
     },
     {
       id: 'type',
       header: 'Type',
       accessorFn: (row) => row.type,
-      cell: ({ getValue }) => <Badge variant='outline' className='capitalize'>{getValue<string>()}</Badge>,
+      cell: ({ getValue }) => <Badge variant='outline' className='capitalize text-xs rounded-md border-border/70 shadow-2xs font-medium bg-muted/20'>{getValue<string>()}</Badge>,
     },
     {
       id: 'price',
@@ -86,7 +106,7 @@ export function productsColumns(
           const min = Math.min(...prices)
           const max = Math.max(...prices)
           return (
-            <span className='font-medium'>
+            <span className='font-mono font-semibold text-xs text-foreground'>
               ৳{min.toFixed(2)}{min !== max ? ` – ৳${max.toFixed(2)}` : ''}
             </span>
           )
@@ -94,13 +114,13 @@ export function productsColumns(
         const bp = parseFloat(String(row.original.basePrice))
         const sp = row.original.salePrice ? parseFloat(String(row.original.salePrice)) : null
         return (
-          <div>
+          <div className='font-mono text-xs'>
             {sp !== null && sp < bp ? (
               <>
-                <span className='line-through text-muted-foreground text-xs'>৳{bp.toFixed(2)}</span>
-                <span className='text-green-600 font-medium ml-1'>৳{sp.toFixed(2)}</span>
+                <span className='line-through text-muted-foreground/70 text-[11px] mr-1'>৳{bp.toFixed(2)}</span>
+                <span className='text-emerald-600 dark:text-emerald-400 font-bold'>৳{sp.toFixed(2)}</span>
               </>
-            ) : <span className='font-medium'>৳{bp.toFixed(2)}</span>}
+            ) : <span className='font-semibold text-foreground'>৳{bp.toFixed(2)}</span>}
           </div>
         )
       },
@@ -111,7 +131,7 @@ export function productsColumns(
       accessorFn: (row) => row.type === 'variable' ? row.variants.reduce((s, v) => s + v.managedStockQuantity, 0) : row.managedStockQuantity,
       cell: ({ row, getValue }) => {
         if (imEnabled && row.original.availabilityMode === 'INVENTORY_CONTROLLED') {
-          return <Badge variant="secondary" className="text-xs">PI Controlled</Badge>
+          return <Badge variant="secondary" className="text-xs rounded-md font-medium">PI Controlled</Badge>
         }
         const s = getValue<number>()
         const stockStatus = row.original.seoMeta?.stockStatus as string | undefined
@@ -121,7 +141,12 @@ export function productsColumns(
           ? s <= 0 ? 'destructive' : s <= (row.original.lowStockQty || 5) ? 'default' : 'outline'
           : stockStatus === 'instock' ? 'outline' : 'destructive'
         return (
-          <Badge variant={variant as 'destructive' | 'default' | 'outline'} className='text-xs'>
+          <Badge
+            variant={variant as 'destructive' | 'default' | 'outline'}
+            className={`text-xs rounded-md font-semibold font-mono ${
+              variant === 'outline' ? 'border-border/70 bg-muted/20 text-foreground' : ''
+            }`}
+          >
             {label}
           </Badge>
         )
@@ -148,23 +173,23 @@ export function productsColumns(
       id: 'actions',
       header: '',
       cell: ({ row }) => (
-        <div className='flex gap-1 justify-end'>
-          <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => onEdit(row.original)}>
-            <Pencil className='h-3.5 w-3.5' />
+        <div className='flex gap-1 justify-end items-center'>
+          <Button variant='ghost' size='icon' className='h-8 w-8 rounded-lg hover:bg-muted/60 dark:hover:bg-muted/30' onClick={() => onEdit(row.original)} title='Edit product'>
+            <Pencil className='h-3.5 w-3.5 text-muted-foreground hover:text-foreground' />
           </Button>
           {row.original.status === 'draft'
             ? onPublish && (
-              <Button variant='ghost' size='sm' className='h-7 text-xs' onClick={() => onPublish(row.original)} title='Publish draft'>
-                <Rocket className='h-3.5 w-3.5 mr-1' /> Publish
+              <Button variant='ghost' size='sm' className='h-8 text-xs rounded-lg text-primary hover:bg-primary/10' onClick={() => onPublish(row.original)} title='Publish draft'>
+                <Rocket className='h-3.5 w-3.5 mr-1 text-primary' /> Publish
               </Button>
             )
             : onDuplicate && (
-              <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => onDuplicate(row.original)} title='Duplicate product'>
-                <Copy className='h-3.5 w-3.5' />
+              <Button variant='ghost' size='icon' className='h-8 w-8 rounded-lg hover:bg-muted/60 dark:hover:bg-muted/30' onClick={() => onDuplicate(row.original)} title='Duplicate product'>
+                <Copy className='h-3.5 w-3.5 text-muted-foreground hover:text-foreground' />
               </Button>
             )}
-          <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => onDelete(row.original)}>
-            <Trash2 className='h-3.5 w-3.5 text-destructive' />
+          <Button variant='ghost' size='icon' className='h-8 w-8 rounded-lg hover:bg-destructive/10 text-destructive' onClick={() => onDelete(row.original)} title='Delete product'>
+            <Trash2 className='h-3.5 w-3.5' />
           </Button>
         </div>
       ),

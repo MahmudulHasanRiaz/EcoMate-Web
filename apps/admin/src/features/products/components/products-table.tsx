@@ -53,37 +53,47 @@ export function ProductsTable({ data, pageCount, totalCount, pagination, onPagin
 
   return (
     <div className='flex flex-1 flex-col gap-4'>
-      <div className='overflow-hidden rounded-md border'>
-        <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map(hg => (
-              <TableRow key={hg.id}>
-                {hg.headers.map(h => (
-                  <TableHead key={h.id} colSpan={h.colSpan} className={cn(h.column.columnDef.meta as any)}>
-                    {h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}
-                  </TableHead>
-                ))}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow><TableCell colSpan={10} className='h-24 text-center'>Loading...</TableCell></TableRow>
-            ) : table.getRowModel().rows.length ? (
-              table.getRowModel().rows.map(row => (
-                <TableRow key={row.id} data-state={row.getIsSelected() && 'selected'}>
-                  {row.getVisibleCells().map(cell => (
-                    <TableCell key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
+      <div className='rounded-xl border border-border/70 bg-card shadow-2xs overflow-hidden'>
+        <div className='overflow-x-auto'>
+          <Table>
+            <TableHeader className='bg-muted/40 dark:bg-muted/20 sticky top-0 z-10 border-b border-border/70 backdrop-blur-xs'>
+              {table.getHeaderGroups().map(hg => (
+                <TableRow key={hg.id} className='hover:bg-transparent border-b border-border/70'>
+                  {hg.headers.map(h => (
+                    <TableHead key={h.id} colSpan={h.colSpan} className={cn('text-[11px] font-semibold uppercase tracking-wider text-muted-foreground', h.column.columnDef.meta as any)}>
+                      {h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}
+                    </TableHead>
                   ))}
                 </TableRow>
-              ))
-            ) : (
-              <TableRow><TableCell colSpan={10} className='h-24 text-center text-muted-foreground'>No products found.</TableCell></TableRow>
-            )}
-          </TableBody>
-        </Table>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow><TableCell colSpan={10} className='h-32 text-center text-muted-foreground font-medium'>Loading...</TableCell></TableRow>
+              ) : table.getRowModel().rows.length ? (
+                table.getRowModel().rows.map(row => (
+                  <TableRow
+                    key={row.id}
+                    data-state={row.getIsSelected() && 'selected'}
+                    className={`group transition-colors border-b border-border/50 dark:border-border/40 ${
+                      row.getIsSelected()
+                        ? 'bg-primary/8 dark:bg-primary/15 hover:bg-primary/12 dark:hover:bg-primary/20'
+                        : 'hover:bg-muted/40 dark:hover:bg-muted/20 even:bg-muted/[0.02] dark:even:bg-muted/[0.03]'
+                    }`}
+                  >
+                    {row.getVisibleCells().map(cell => (
+                      <TableCell key={cell.id} className='py-2.5 px-3'>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow><TableCell colSpan={10} className='h-32 text-center text-muted-foreground font-medium'>No products found.</TableCell></TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </div>
       <DataTablePagination table={table} className='mt-auto' totalCount={totalCount} />
     </div>

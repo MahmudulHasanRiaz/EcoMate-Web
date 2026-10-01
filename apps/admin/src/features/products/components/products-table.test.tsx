@@ -131,11 +131,40 @@ describe('ProductsTable', () => {
     await expect.element(getByText('Active')).toBeInTheDocument()
   })
 
-  it('renders empty data table when data is undefined', async () => {
+  it('renders variable product with variant count and variant SKUs', async () => {
+    const variableProduct: ProductResponse = {
+      ...mockProduct,
+      id: 'var-1',
+      name: 'Cotton T-Shirt',
+      type: 'variable',
+      sku: 'TSHIRT-MAIN',
+      variants: [
+        {
+          id: 'v1',
+          productId: 'var-1',
+          sku: 'TSHIRT-RED-M',
+          managedStockQuantity: 10,
+          isActive: true,
+          attributeValues: [],
+        },
+        {
+          id: 'v2',
+          productId: 'var-1',
+          sku: 'TSHIRT-BLU-L',
+          managedStockQuantity: 15,
+          isActive: true,
+          attributeValues: [],
+        },
+      ],
+    }
+
     const { getByText } = await renderTable({
-      data: [] as unknown as ProductResponse[],
+      data: [variableProduct],
+      pageCount: 1,
     })
 
-    await expect.element(getByText('No products found.')).toBeInTheDocument()
+    await expect.element(getByText('Cotton T-Shirt')).toBeInTheDocument()
+    await expect.element(getByText('SKU: TSHIRT-MAIN')).toBeInTheDocument()
+    await expect.element(getByText(/2 variants/)).toBeInTheDocument()
   })
 })

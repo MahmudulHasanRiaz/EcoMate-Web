@@ -79,19 +79,33 @@ export class ProductsService {
     status?: 'active' | 'draft';
   }) {
     const where: any = {};
-    if (query.search) {
+    const rawSearch = query.search?.trim();
+    if (rawSearch) {
+      const cleanSearch = rawSearch.startsWith('#') ? rawSearch.slice(1).trim() : rawSearch;
       where.OR = [
-        { name: { contains: query.search, mode: 'insensitive' } },
-        { slug: { contains: query.search, mode: 'insensitive' } },
-        { sku: { contains: query.search, mode: 'insensitive' } },
+        { name: { contains: rawSearch, mode: 'insensitive' } },
+        { slug: { contains: rawSearch, mode: 'insensitive' } },
+        { sku: { contains: rawSearch, mode: 'insensitive' } },
         // Variant-level SKUs: many products carry their SKU on the variant
         // (Product.sku is nullable), so searching must also match those.
         {
           variants: {
-            some: { sku: { contains: query.search, mode: 'insensitive' } },
+            some: { sku: { contains: rawSearch, mode: 'insensitive' } },
           },
         },
       ];
+      if (cleanSearch && cleanSearch !== rawSearch) {
+        where.OR.push(
+          { name: { contains: cleanSearch, mode: 'insensitive' } },
+          { slug: { contains: cleanSearch, mode: 'insensitive' } },
+          { sku: { contains: cleanSearch, mode: 'insensitive' } },
+          {
+            variants: {
+              some: { sku: { contains: cleanSearch, mode: 'insensitive' } },
+            },
+          },
+        );
+      }
     }
     if (query.categoryIds && query.categoryIds.length > 0) {
       const catCondition = {

@@ -272,6 +272,34 @@ describe('ProductsService', () => {
       expect(result.data).toHaveLength(1);
     });
 
+    it('should strip leading # and trim spaces when searching', async () => {
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.product.count as jest.Mock).mockResolvedValue(0);
+
+      await service.findAll({
+        search: '  #TSH-001  ',
+        page: 1,
+        perPage: 10,
+      });
+
+      expect(prisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: expect.arrayContaining([
+              { sku: { contains: 'TSH-001', mode: 'insensitive' } },
+              {
+                variants: {
+                  some: {
+                    sku: { contains: 'TSH-001', mode: 'insensitive' },
+                  },
+                },
+              },
+            ]),
+          }),
+        }),
+      );
+    });
+
     it('should filter by categoryId, type, and isActive', async () => {
       (prisma.product.findMany as jest.Mock).mockResolvedValue([]);
       (prisma.product.count as jest.Mock).mockResolvedValue(0);
