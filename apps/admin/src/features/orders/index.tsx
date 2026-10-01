@@ -117,36 +117,36 @@ function paymentStatusBadgeClass(status: string): { variant: 'default' | 'second
 
 function OrderRowSkeleton() {
   return (
-    <TableRow>
-      <TableCell><Skeleton className='h-4 w-4' /></TableCell>
-      <TableCell><Skeleton className='h-4 w-4' /></TableCell>
-      <TableCell><div className='space-y-1'><Skeleton className='h-4 w-24' /><Skeleton className='h-3 w-16' /></div></TableCell>
-      <TableCell><div className='space-y-1'><Skeleton className='h-4 w-28' /><Skeleton className='h-3 w-24' /></div></TableCell>
-      <TableCell><Skeleton className='h-6 w-[100px] rounded-full' /></TableCell>
-      <TableCell><Skeleton className='h-5 w-24 rounded-full' /></TableCell>
+    <TableRow className='hover:bg-transparent'>
+      <TableCell className='pl-3'><Skeleton className='h-4 w-4 rounded' /></TableCell>
+      <TableCell className='px-1'><Skeleton className='h-3.5 w-3.5 rounded' /></TableCell>
+      <TableCell><div className='space-y-1.5'><Skeleton className='h-3.5 w-24 rounded' /><Skeleton className='h-3 w-16 rounded' /></div></TableCell>
+      <TableCell><div className='space-y-1.5'><Skeleton className='h-3.5 w-28 rounded' /><Skeleton className='h-3 w-20 rounded' /></div></TableCell>
+      <TableCell><Skeleton className='h-6 w-24 rounded-full' /></TableCell>
       <TableCell><Skeleton className='h-5 w-20 rounded-full' /></TableCell>
-      <TableCell><Skeleton className='h-4 w-16 ml-auto' /></TableCell>
-      <TableCell><Skeleton className='h-4 w-6 ml-auto' /></TableCell>
-      <TableCell><Skeleton className='h-7 w-7 rounded' /></TableCell>
+      <TableCell><Skeleton className='h-6 w-24 rounded-md' /></TableCell>
+      <TableCell><Skeleton className='h-3.5 w-16 ml-auto rounded' /></TableCell>
+      <TableCell className='pr-4'><Skeleton className='h-3.5 w-6 ml-auto rounded' /></TableCell>
+      <TableCell className='pr-3'><Skeleton className='h-7 w-7 rounded-md ml-auto' /></TableCell>
     </TableRow>
   )
 }
 
 function EmptyState({ search, statusFilter, onClear }: { search: string; statusFilter: string; onClear: () => void }) {
   return (
-    <div className='flex flex-col items-center justify-center py-16 px-4'>
-      <div className='h-16 w-16 rounded-full bg-muted flex items-center justify-center mb-4'>
-        <Inbox className='h-8 w-8 text-muted-foreground' />
+    <div className='flex flex-col items-center justify-center py-20 px-4 text-center'>
+      <div className='h-14 w-14 rounded-2xl bg-surface-raised border border-border/70 flex items-center justify-center mb-3.5 shadow-2xs text-muted-foreground'>
+        <Inbox className='h-7 w-7' />
       </div>
-      <h3 className='text-lg font-semibold mb-1'>No orders found</h3>
-      <p className='text-sm text-muted-foreground text-center max-w-sm'>
+      <h3 className='text-base font-semibold mb-1 text-foreground'>No orders found</h3>
+      <p className='text-xs text-muted-foreground max-w-sm leading-relaxed'>
         {(search || statusFilter !== 'all')
-          ? 'No orders match your current filters. Try adjusting your search or filters.'
-          : 'No orders have been placed yet.'}
+          ? 'No orders match your current filters. Try adjusting your search term or clearing filters.'
+          : 'No orders have been placed yet in this workspace.'}
       </p>
       {(search || statusFilter !== 'all') && (
-        <Button variant='outline' size='sm' className='mt-4' onClick={onClear}>
-          <X className='h-3.5 w-3.5 mr-1.5' /> Clear filters
+        <Button variant='outline' size='sm' className='mt-4 h-8 text-xs rounded-lg gap-1.5 shadow-2xs' onClick={onClear}>
+          <X className='h-3.5 w-3.5 mr-1' /> Clear filters
         </Button>
       )}
     </div>
@@ -479,25 +479,42 @@ export function Orders() {
     <>
       <Header fixed><GlobalSearchBar className='me-auto' /><ThemeSwitch /><ProfileDropdown /></Header>
       <Main className='flex flex-1 flex-col gap-4'>
-        <div className='flex items-end justify-between'>
+        <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3'>
           <div>
-            <div className='flex items-center gap-3'>
+            <div className='flex items-center gap-2.5'>
               <h2 className='text-2xl font-bold tracking-tight'>Orders</h2>
-              {isFetching && (
-                <div className='flex items-center gap-1.5 text-xs text-muted-foreground'>
+              {isFetching ? (
+                <div className='inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary'>
                   <Loader2 className='h-3 w-3 animate-spin' />
-                  Refreshing...
+                  <span>Refreshing</span>
+                </div>
+              ) : (
+                <div className='inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400'>
+                  <span className='size-1.5 rounded-full bg-emerald-500 animate-pulse' />
+                  <span>Live</span>
                 </div>
               )}
             </div>
-            <p className='text-muted-foreground text-sm'>{totalOrders} orders found{data?.data ? ` · ৳${fmt(totalRevenue)} total` : ''}</p>
+            <p className='text-muted-foreground text-xs mt-0.5'>
+              <span className='font-semibold text-foreground'>{totalOrders}</span> orders found{data?.data ? ` · ৳${fmt(totalRevenue)} total` : ''}
+              {selected.length > 0 && <span className='text-primary font-semibold ml-2'>({selected.length} selected)</span>}
+            </p>
           </div>
-          <div className='flex gap-2'>
-            <Button variant='outline' onClick={() => navigate({ to: '/op/import-orders' })}>
-              <Upload className='h-4 w-4 mr-1' /> Import Orders
+          <div className='flex items-center gap-2'>
+            <Button
+              variant='outline'
+              size='sm'
+              className='h-8.5 gap-1.5 rounded-lg border-border/70 hover:bg-surface-raised font-medium shadow-2xs'
+              onClick={() => navigate({ to: '/op/import-orders' })}
+            >
+              <Upload className='h-3.5 w-3.5' /> Import Orders
             </Button>
-            <Button onClick={() => navigate({ to: '/op/orders/create' })}>
-              <Plus className='h-4 w-4 mr-1' /> Create Order
+            <Button
+              size='sm'
+              className='h-8.5 gap-1.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold shadow-xs'
+              onClick={() => navigate({ to: '/op/orders/create' })}
+            >
+              <Plus className='h-3.5 w-3.5' /> Create Order
             </Button>
           </div>
         </div>
@@ -512,18 +529,40 @@ export function Orders() {
               aria-pressed={active}
               title={label}
               onClick={onClick}
-              className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer ${active ? '' : 'border-border bg-card text-muted-foreground hover:text-foreground hover:border-muted-foreground/40'}`}
-              style={active ? { borderColor: `color-mix(in srgb, ${color} 45%, transparent)`, backgroundColor: `color-mix(in srgb, ${color} 13%, transparent)` } : undefined}
+              className={`inline-flex h-7.5 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium whitespace-nowrap transition-all duration-150 cursor-pointer ${
+                active
+                  ? 'border-transparent font-semibold shadow-2xs'
+                  : 'border-border/60 bg-card text-muted-foreground hover:text-foreground hover:bg-surface-raised hover:border-border'
+              }`}
+              style={
+                active
+                  ? {
+                      borderColor: `color-mix(in srgb, ${color} 50%, transparent)`,
+                      backgroundColor: `color-mix(in srgb, ${color} 14%, transparent)`,
+                      color: color,
+                    }
+                  : undefined
+              }
             >
               <span className="size-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
               <span className="truncate max-w-32">{label}</span>
-              <span className="tabular-nums text-[11px] font-bold" style={active ? { color } : undefined}>{count}</span>
+              <span
+                className={`tabular-nums text-[10.5px] px-1.5 py-0.2 rounded-full font-semibold ${
+                  active ? 'bg-background/60 shadow-2xs' : 'bg-muted/70 text-muted-foreground'
+                }`}
+                style={active ? { color } : undefined}
+              >
+                {count}
+              </span>
             </button>
           )
           const allActive = statusFilter === 'all'
           return (
-            <div className="flex gap-2 overflow-x-auto no-scrollbar py-1" aria-label="Filter orders by status">
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5" aria-label="Filter orders by status">
               {chip('all', 'All', totalOrders, 'var(--primary)', allActive, () => { if (!allActive) { setStatusFilter('all'); setPage(1) } })}
+              
+              <div className="h-4 w-px bg-border/60 shrink-0 mx-0.5" />
+
               {([
                 ['SALE', 'Sales', 'var(--primary)'],
                 ['RETURN', 'Returns', '#EC4899'],
@@ -536,14 +575,29 @@ export function Orders() {
                     aria-pressed={active}
                     title={label}
                     onClick={() => { setKindFilter(active ? 'all' : value); setPage(1) }}
-                    className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer ${active ? '' : 'border-border bg-card text-muted-foreground hover:text-foreground hover:border-muted-foreground/40'}`}
-                    style={active ? { borderColor: `color-mix(in srgb, ${color} 45%, transparent)`, backgroundColor: `color-mix(in srgb, ${color} 13%, transparent)` } : undefined}
+                    className={`inline-flex h-7.5 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium whitespace-nowrap transition-all duration-150 cursor-pointer ${
+                      active
+                        ? 'border-transparent font-semibold shadow-2xs'
+                        : 'border-border/60 bg-card text-muted-foreground hover:text-foreground hover:bg-surface-raised hover:border-border'
+                    }`}
+                    style={
+                      active
+                        ? {
+                            borderColor: `color-mix(in srgb, ${color} 50%, transparent)`,
+                            backgroundColor: `color-mix(in srgb, ${color} 14%, transparent)`,
+                            color: color,
+                          }
+                        : undefined
+                    }
                   >
                     <span className="size-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
                     <span className="truncate max-w-32">{label}</span>
                   </button>
                 )
               })}
+
+              {visible.length > 0 && <div className="h-4 w-px bg-border/60 shrink-0 mx-0.5" />}
+
               {visible.map((s: any) => {
                 const color = getStatusColor(s.name, s.color)
                 const active = statusFilter === s.id
@@ -553,117 +607,145 @@ export function Orders() {
           )
         })()}
 
-        <Card className='border-none shadow-sm bg-muted/40 dark:bg-muted/10 backdrop-blur-sm'>
-          <CardContent className='p-3'>
-            <div className='flex flex-wrap items-center gap-2'>
-              <div className='relative w-[280px]'>
-                <SearchIcon className='absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground' />
-                <Input
-                  ref={searchInputRef}
-                  placeholder='Order ID, phone, name or SKU…'
-                  aria-label='Search orders by order ID, phone number, customer name or product SKU'
-                  title='Search by order ID, phone number (with or without country code), customer name or product SKU'
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  className='h-9 text-sm pl-9 pr-7 bg-background/70 focus:bg-background border-none shadow-sm transition-colors'
-                />
-                {search && (
-                  <button onClick={() => setSearch('')} className='absolute right-2 top-1/2 -translate-y-1/2 hover:text-foreground transition-colors'>
-                    <X className='h-3.5 w-3.5 text-muted-foreground' />
-                  </button>
-                )}
-              </div>
-              
-              <div className='w-[130px]'>
-                <Select value={courierFilter} onValueChange={v => { setCourierFilter(v); setPage(1) }}>
-                  <SelectTrigger className='h-9 text-sm bg-background/70 focus:bg-background border-none shadow-sm'>
-                    <SelectValue placeholder='Courier' />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value='all'>All Couriers</SelectItem>
-                    {['steadfast','pathao','redx','carrybee'].map(c => <SelectItem key={c} value={c} className='capitalize text-sm'>{c}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className='w-[160px]'>
-                <SearchableSelect
-                  options={[
-                    { id: 'all', label: 'All Staff' },
-                    { id: 'unassigned', label: 'Unassigned' },
-                    ...staff.map((s: any) => ({ id: s.id, label: `${s.firstName} ${s.lastName}`.trim() }))
-                  ]}
-                  value={assigneeFilter}
-                  onChange={(v) => { setAssigneeFilter(v); setPage(1) }}
-                  placeholder='Staff'
-                  searchPlaceholder='Search staff...'
-                  triggerClassName='h-9 text-sm bg-background/70 focus:bg-background border-none shadow-sm'
-                />
-              </div>
-
-              <div className='w-[90px]'>
-                <Select value={String(perPage)} onValueChange={v => { if (v === 'custom') { setShowCustomRows(true) } else { setPerPage(parseInt(v)); setPage(1) } }}>
-                  <SelectTrigger className='h-9 text-sm bg-background/70 focus:bg-background border-none shadow-sm'><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {[10,25,50,100].map(n => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}
-                    <SelectItem value='custom'>Custom...</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {showCustomRows && (
-                <div className='flex items-center gap-1 animate-in fade-in slide-in-from-left-2 duration-200'>
-                  <Input type='number' className='h-9 w-16 text-sm bg-background/70' placeholder='#' value={customRows} onChange={e => setCustomRows(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { const n = Math.max(1, Math.min(5000, parseInt(customRows) || 10)); setPerPage(n); setShowCustomRows(false); setCustomRows(''); setPage(1) } }} />
-                  <Button size='sm' variant='ghost' className='h-8 w-8 px-0 hover:bg-background/50' onClick={() => { const n = Math.max(1, Math.min(5000, parseInt(customRows) || 10)); setPerPage(n); setShowCustomRows(false); setCustomRows(''); setPage(1) }}>✓</Button>
-                </div>
-              )}
-
-              {hasActiveFilters && (
-                <Button variant='ghost' size='sm' className='h-9 text-sm text-muted-foreground hover:text-foreground hover:bg-background/50' onClick={clearAllFilters}>
-                  <X className='h-4 w-4 mr-1.5' />Reset
-                </Button>
+        <div className='rounded-xl border border-border/70 bg-card/60 backdrop-blur-md p-2.5 shadow-2xs space-y-2'>
+          <div className='flex flex-wrap items-center gap-2'>
+            <div className='relative flex-1 min-w-[240px] max-w-md'>
+              <SearchIcon className='absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70' />
+              <Input
+                ref={searchInputRef}
+                placeholder='Order ID, phone, name or SKU…'
+                aria-label='Search orders by order ID, phone number, customer name or product SKU'
+                title='Search by order ID, phone number (with or without country code), customer name or product SKU'
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className='h-8.5 text-xs pl-8.5 pr-14 bg-background/80 focus:bg-background border-border/60 focus:border-primary/50 shadow-2xs transition-colors rounded-lg'
+              />
+              {search ? (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className='absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground transition-colors'
+                >
+                  <X className='h-3.5 w-3.5' />
+                </button>
+              ) : (
+                <kbd className='pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 inline-flex h-4.5 select-none items-center gap-1 rounded border border-border/70 bg-muted/60 px-1.5 font-mono text-[9.5px] font-medium text-muted-foreground/80'>
+                  ⌘K
+                </kbd>
               )}
             </div>
-            {hasActiveFilters && (
-              <div className='flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-muted-foreground/10'>
-                {courierFilter !== 'all' && (
-                  <button onClick={() => { setCourierFilter('all'); setPage(1) }} className='inline-flex items-center gap-1.5 rounded-full bg-background px-2.5 py-1 text-xs font-medium border shadow-sm hover:bg-muted transition-colors'>
-                    <Truck className='h-3 w-3 text-muted-foreground' />{courierFilter}<X className='h-3 w-3 ml-0.5 text-muted-foreground' />
-                  </button>
-                )}
-                {assigneeFilter !== 'all' && (() => { const person = assigneeFilter === 'unassigned' ? null : staff.find((s: any) => s.id === assigneeFilter); return (
-                  <button onClick={() => { setAssigneeFilter('all'); setPage(1) }} className='inline-flex items-center gap-1.5 rounded-full bg-background px-2.5 py-1 text-xs font-medium border shadow-sm hover:bg-muted transition-colors'>
-                    <UserCheck className='h-3 w-3 text-muted-foreground' />{assigneeFilter === 'unassigned' ? 'Unassigned' : person ? `${person.firstName}` : 'Staff'}<X className='h-3 w-3 ml-0.5 text-muted-foreground' />
-                  </button>
-                ) })()}
-                {search && (
-                  <button onClick={() => setSearch('')} className='inline-flex items-center gap-1.5 rounded-full bg-background px-2.5 py-1 text-xs font-medium border shadow-sm hover:bg-muted transition-colors'>
-                    <span className='text-muted-foreground'>Search:</span> "{search.slice(0,15)}{search.length > 15 ? '...' : ''}"<X className='h-3 w-3 ml-0.5 text-muted-foreground' />
-                  </button>
-                )}
+
+            <div className='w-[135px]'>
+              <Select value={courierFilter} onValueChange={v => { setCourierFilter(v); setPage(1) }}>
+                <SelectTrigger className='h-8.5 text-xs bg-background/80 focus:bg-background border-border/60 shadow-2xs rounded-lg'>
+                  <div className='flex items-center gap-1.5 truncate'>
+                    <Truck className='h-3.5 w-3.5 text-muted-foreground/70 shrink-0' />
+                    <SelectValue placeholder='Courier' />
+                  </div>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value='all' className='text-xs font-medium'>All Couriers</SelectItem>
+                  {['steadfast','pathao','redx','carrybee'].map(c => (
+                    <SelectItem key={c} value={c} className='capitalize text-xs font-medium'>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className='w-[165px]'>
+              <SearchableSelect
+                options={[
+                  { id: 'all', label: 'All Staff' },
+                  { id: 'unassigned', label: 'Unassigned' },
+                  ...staff.map((s: any) => ({ id: s.id, label: `${s.firstName} ${s.lastName}`.trim() }))
+                ]}
+                value={assigneeFilter}
+                onChange={(v) => { setAssigneeFilter(v); setPage(1) }}
+                placeholder='Staff'
+                searchPlaceholder='Search staff...'
+                triggerClassName='h-8.5 text-xs bg-background/80 focus:bg-background border-border/60 shadow-2xs rounded-lg'
+              />
+            </div>
+
+            <div className='w-[90px]'>
+              <Select value={String(perPage)} onValueChange={v => { if (v === 'custom') { setShowCustomRows(true) } else { setPerPage(parseInt(v)); setPage(1) } }}>
+                <SelectTrigger className='h-8.5 text-xs bg-background/80 focus:bg-background border-border/60 shadow-2xs rounded-lg'>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[10,25,50,100].map(n => <SelectItem key={n} value={String(n)} className='text-xs'>{n} / page</SelectItem>)}
+                  <SelectItem value='custom' className='text-xs'>Custom...</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {showCustomRows && (
+              <div className='flex items-center gap-1 animate-in fade-in slide-in-from-left-2 duration-200'>
+                <Input type='number' className='h-8.5 w-16 text-xs bg-background/80 rounded-lg' placeholder='#' value={customRows} onChange={e => setCustomRows(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { const n = Math.max(1, Math.min(5000, parseInt(customRows) || 10)); setPerPage(n); setShowCustomRows(false); setCustomRows(''); setPage(1) } }} />
+                <Button size='sm' variant='ghost' className='h-8 w-8 px-0 hover:bg-background/70' onClick={() => { const n = Math.max(1, Math.min(5000, parseInt(customRows) || 10)); setPerPage(n); setShowCustomRows(false); setCustomRows(''); setPage(1) }}>✓</Button>
               </div>
             )}
-          </CardContent>
-        </Card>
 
-        <Card>
+            {hasActiveFilters && (
+              <Button variant='ghost' size='sm' className='h-8.5 text-xs text-muted-foreground hover:text-foreground hover:bg-background/60 rounded-lg gap-1.5' onClick={clearAllFilters}>
+                <X className='h-3.5 w-3.5' /> Reset
+              </Button>
+            )}
+          </div>
+
+          {hasActiveFilters && (
+            <div className='flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-border/50'>
+              <span className='text-[10px] font-semibold text-muted-foreground/80 uppercase tracking-wider mr-1'>Active:</span>
+              {courierFilter !== 'all' && (
+                <button onClick={() => { setCourierFilter('all'); setPage(1) }} className='inline-flex items-center gap-1.5 rounded-full bg-background/90 px-2.5 py-0.5 text-[11px] font-medium border border-border/70 shadow-2xs hover:bg-surface-raised transition-colors'>
+                  <Truck className='h-3 w-3 text-muted-foreground' />
+                  <span className='capitalize'>{courierFilter}</span>
+                  <X className='h-3 w-3 ml-0.5 text-muted-foreground' />
+                </button>
+              )}
+              {assigneeFilter !== 'all' && (() => {
+                const person = assigneeFilter === 'unassigned' ? null : staff.find((s: any) => s.id === assigneeFilter)
+                return (
+                  <button onClick={() => { setAssigneeFilter('all'); setPage(1) }} className='inline-flex items-center gap-1.5 rounded-full bg-background/90 px-2.5 py-0.5 text-[11px] font-medium border border-border/70 shadow-2xs hover:bg-surface-raised transition-colors'>
+                    <UserCheck className='h-3 w-3 text-muted-foreground' />
+                    <span>{assigneeFilter === 'unassigned' ? 'Unassigned' : person ? `${person.firstName}` : 'Staff'}</span>
+                    <X className='h-3 w-3 ml-0.5 text-muted-foreground' />
+                  </button>
+                )
+              })()}
+              {search && (
+                <button onClick={() => setSearch('')} className='inline-flex items-center gap-1.5 rounded-full bg-background/90 px-2.5 py-0.5 text-[11px] font-medium border border-border/70 shadow-2xs hover:bg-surface-raised transition-colors'>
+                  <span className='text-muted-foreground'>Search:</span>
+                  <span className='font-semibold'>"{search.slice(0,18)}{search.length > 18 ? '...' : ''}"</span>
+                  <X className='h-3 w-3 ml-0.5 text-muted-foreground' />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        <Card className='rounded-xl border border-border/70 bg-card shadow-2xs overflow-hidden'>
           <CardContent className='p-0'>
             <div className='overflow-x-auto'>
               <Table>
-                <TableHeader className='sticky top-0 bg-background z-10'>
-                  <TableRow>
-                    <TableHead className='w-10'><Checkbox checked={(data?.data?.length ?? 0) > 0 && selected.length === (data?.data?.length ?? 0)} onCheckedChange={toggleAll} /></TableHead>
-                    <TableHead className='w-8'></TableHead>
-                    <TableHead>Order</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Courier</TableHead>
-                    <TableHead>Assigned To</TableHead>
-                    <TableHead className='text-right cursor-pointer select-none' onClick={() => { setSort('total'); setOrder(order === 'asc' ? 'desc' : 'asc') }}>
-                      Total {sort === 'total' ? (order === 'asc' ? '↑' : '↓') : <ArrowUpDown className='h-3 w-3 inline ml-1' />}
+                <TableHeader className='bg-muted/35 sticky top-0 z-10 border-b border-border/60'>
+                  <TableRow className='hover:bg-transparent border-b border-border/60'>
+                    <TableHead className='w-10 pl-3'>
+                      <Checkbox checked={(data?.data?.length ?? 0) > 0 && selected.length === (data?.data?.length ?? 0)} onCheckedChange={toggleAll} />
                     </TableHead>
-                    <TableHead className='text-right'>Items</TableHead>
-                    <TableHead className='w-10'></TableHead>
+                    <TableHead className='w-7 px-1'></TableHead>
+                    <TableHead className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'>Order</TableHead>
+                    <TableHead className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'>Customer</TableHead>
+                    <TableHead className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'>Status</TableHead>
+                    <TableHead className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'>Courier</TableHead>
+                    <TableHead className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'>Assigned To</TableHead>
+                    <TableHead className='text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground cursor-pointer select-none' onClick={() => { setSort('total'); setOrder(order === 'asc' ? 'desc' : 'asc') }}>
+                      <span className='inline-flex items-center gap-1 justify-end'>
+                        Total {sort === 'total' ? (order === 'asc' ? '↑' : '↓') : <ArrowUpDown className='h-3 w-3 inline ml-1' />}
+                      </span>
+                    </TableHead>
+                    <TableHead className='text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground pr-4'>Items</TableHead>
+                    <TableHead className='w-10 pr-3'></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -678,41 +760,59 @@ export function Orders() {
                     const accentColor = getStatusColor(o.status?.name, o.status?.color)
                     const isSelected = selected.includes(o.id)
                     return [
-                      <TableRow key={o.id} className={`${isSelected ? 'bg-muted/30' : 'even:bg-muted/[0.02]'} cursor-pointer transition-colors hover:bg-muted/50`} onClick={() => toggleExpand(o.id)}
-                        style={{ borderLeftWidth: 3, borderLeftColor: accentColor }}>
-                        <TableCell onClick={e => e.stopPropagation()}><Checkbox checked={isSelected} onCheckedChange={() => toggleOne(o.id)} /></TableCell>
+                      <TableRow
+                        key={o.id}
+                        className={`group cursor-pointer transition-colors ${
+                          isSelected ? 'bg-primary/5 hover:bg-primary/8' : 'hover:bg-muted/40 even:bg-muted/[0.015]'
+                        }`}
+                        onClick={() => toggleExpand(o.id)}
+                        style={{ borderLeftWidth: 3, borderLeftColor: accentColor }}
+                      >
+                        <TableCell onClick={e => e.stopPropagation()} className='pl-3'>
+                          <Checkbox checked={isSelected} onCheckedChange={() => toggleOne(o.id)} />
+                        </TableCell>
                         <TableCell className='px-1'>
                           <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}>
-                            <ChevronRightIcon className='h-3.5 w-3.5 text-muted-foreground' />
+                            <ChevronRightIcon className='h-3.5 w-3.5 text-muted-foreground/70' />
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className='flex items-center gap-2'>
-                            <Link to='/op/orders/$id' params={{ id: o.id }} className='font-mono text-sm font-semibold text-primary hover:underline' onClick={e => e.stopPropagation()}>{o.displayId}</Link>
+                          <div className='flex items-center gap-1.5'>
+                            <Link
+                              to='/op/orders/$id'
+                              params={{ id: o.id }}
+                              className='font-mono text-xs font-bold text-primary hover:underline'
+                              onClick={e => e.stopPropagation()}
+                            >
+                              {o.displayId}
+                            </Link>
                             {o.kind === 'RETURN' && (
-                              <span className='inline-flex items-center gap-1 rounded-full border border-pink-500/40 bg-pink-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-pink-500'>
+                              <span className='inline-flex items-center gap-1 rounded-full border border-pink-500/40 bg-pink-500/10 px-1.5 py-0.2 text-[9px] font-bold text-pink-500'>
                                 <RotateCcw className='h-2.5 w-2.5' /> RTN
                               </span>
                             )}
                             <Tooltip>
-                              <TooltipTrigger asChild><button onClick={e => { e.stopPropagation(); copyToClipboard(o.displayId, 'Order ID') }} aria-label='Copy Order ID' className='opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground'><ClipboardCopy className='h-3 w-3' /></button></TooltipTrigger>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  onClick={e => { e.stopPropagation(); copyToClipboard(o.displayId, 'Order ID') }}
+                                  aria-label='Copy Order ID'
+                                  className='opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity text-muted-foreground/70 hover:text-foreground'
+                                >
+                                  <ClipboardCopy className='h-3 w-3' />
+                                </button>
+                              </TooltipTrigger>
                               <TooltipContent>Copy order ID</TooltipContent>
                             </Tooltip>
                           </div>
                           <div className='flex items-center gap-1.5 mt-0.5'>
-                            <span className='cursor-pointer text-[11px] text-muted-foreground select-none' onClick={e => { e.stopPropagation(); setSort('createdAt'); setOrder(order === 'asc' ? 'desc' : 'asc') }}>
+                            <span
+                              className='cursor-pointer text-[11px] text-muted-foreground select-none'
+                              onClick={e => { e.stopPropagation(); setSort('createdAt'); setOrder(order === 'asc' ? 'desc' : 'asc') }}
+                            >
                               {new Date(o.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
                               <span className='text-muted-foreground/60 ml-1'>{relativeTime(o.createdAt)}</span>
                             </span>
-                            {/* Canonical Channel · Entity · Source ·
-                                Acquisition. These SUPERSEDE the legacy
-                                salesChannel/sourcePlatform/sourceType/
-                                sourceEntity badges, which are deliberately
-                                not rendered alongside: showing both painted
-                                the same fact twice (e.g. "facebook" next to
-                                "FACEBOOK · AD") and made the row unreadable.
-                                The legacy columns are still stored and still
-                                feed every legacy consumer, filter and export. */}
                             <CanonicalAttributionBadges
                               channel={o.channel}
                               channelEntity={o.channelEntity}
@@ -720,9 +820,6 @@ export function Orders() {
                               sourceLabel={o.sourcePlatformName}
                               acquisitionType={o.acquisitionType}
                             />
-                            {/* Pre-migration orders have no canonical values
-                                yet, so the legacy badges are the only thing
-                                to show until the backfill has run. */}
                             {!o.channel && !o.sourceSlug && !o.acquisitionType &&
                               (o.salesChannel || o.sourcePlatform || o.sourceType || o.sourceEntity) ? (
                               <OrderSourceBadges
@@ -737,106 +834,132 @@ export function Orders() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className='text-sm font-medium leading-tight'>{getCustomerDisplayName(o)}</div>
+                          <div className='text-xs font-semibold leading-tight text-foreground'>{getCustomerDisplayName(o)}</div>
                           <div className='flex items-center gap-1.5 mt-0.5'>
-                            <a href={`tel:${getCustomerPhone(o)}`} onClick={e => e.stopPropagation()} className='text-[11px] text-muted-foreground hover:text-primary transition-colors'>{getCustomerPhone(o) || '—'}</a>
+                            <a
+                              href={`tel:${getCustomerPhone(o)}`}
+                              onClick={e => e.stopPropagation()}
+                              className='text-[11px] text-muted-foreground hover:text-primary transition-colors'
+                            >
+                              {getCustomerPhone(o) || '—'}
+                            </a>
                             <CustomerContactActions phone={getCustomerPhone(o)} />
                           </div>
                         </TableCell>
                         <TableCell onClick={e => e.stopPropagation()}>
                           {o.kind !== 'RETURN' && (
-                          <Select value={o.status.id} onValueChange={v => {
-                            const s = statusList.find((s: any) => s.id === v)
-                            if (s) { setStatusNote(''); setStatusDialog({ order: o, newStatusId: v, newStatusName: s.name }) }
-                          }}>
-                            <SelectTrigger className='h-7 w-[130px] text-xs border-0 bg-transparent hover:bg-muted' style={{ backgroundColor: accentColor + '15' }}>
-                              <SelectValue>
-                                <div className='flex items-center gap-1.5'>
-                                  <span className='h-2 w-2 rounded-full shrink-0' style={{ backgroundColor: accentColor }} />
-                                  <span className='text-xs font-medium' style={{ color: accentColor }}>{o.status.name}</span>
-                                </div>
-                              </SelectValue>
-                            </SelectTrigger>
-                            <SelectContent>
-                              {statusList.filter((s: any) => {
-                                const next = Array.isArray(o.status?.nextStatuses) ? o.status.nextStatuses : []
-                                return s.id === o.status?.id || next.includes(s.id)
-                              }).map((s: any) => (
-                                <SelectItem key={s.id} value={s.id}>
-                                  <span className='flex items-center gap-2'><span className='h-2 w-2 rounded-full shrink-0' style={{ backgroundColor: getStatusColor(s.name, s.color) }} />{s.name}</span>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                            <Select
+                              value={o.status.id}
+                              onValueChange={v => {
+                                const s = statusList.find((s: any) => s.id === v)
+                                if (s) { setStatusNote(''); setStatusDialog({ order: o, newStatusId: v, newStatusName: s.name }) }
+                              }}
+                            >
+                              <SelectTrigger
+                                className='h-6.5 w-[125px] text-xs font-medium rounded-full border border-border/40 shadow-2xs transition-all hover:opacity-90'
+                                style={{ backgroundColor: accentColor + '18', color: accentColor, borderColor: accentColor + '35' }}
+                              >
+                                <SelectValue>
+                                  <div className='flex items-center gap-1.5 truncate'>
+                                    <span className='size-1.5 rounded-full shrink-0' style={{ backgroundColor: accentColor }} />
+                                    <span className='truncate'>{o.status.name}</span>
+                                  </div>
+                                </SelectValue>
+                              </SelectTrigger>
+                              <SelectContent>
+                                {statusList.filter((s: any) => {
+                                  const next = Array.isArray(o.status?.nextStatuses) ? o.status.nextStatuses : []
+                                  return s.id === o.status?.id || next.includes(s.id)
+                                }).map((s: any) => (
+                                  <SelectItem key={s.id} value={s.id} className='text-xs'>
+                                    <span className='flex items-center gap-2'>
+                                      <span className='size-2 rounded-full shrink-0' style={{ backgroundColor: getStatusColor(s.name, s.color) }} />
+                                      {s.name}
+                                    </span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           )}
                         </TableCell>
                         <TableCell>
                           {o.courierService ? (
                             <div className='flex items-center gap-1.5'>
-                              <Badge variant='outline' className='text-xs capitalize gap-1'><Truck className='h-2.5 w-2.5' /> {o.courierService}</Badge>
+                              <Badge variant='outline' className='text-[11px] font-medium capitalize gap-1 py-0 px-2 rounded-md border-border/70 shadow-2xs'>
+                                <Truck className='size-3 text-muted-foreground/70' /> {o.courierService}
+                              </Badge>
                               {o.trackingUrl && (
-                                <button onClick={e => { e.stopPropagation(); window.open(o.trackingUrl || undefined, '_blank') }} className='text-muted-foreground hover:text-primary transition-colors' title='Track shipment'>
-                                  <ExternalLink className='h-3 w-3' />
+                                <button
+                                  type="button"
+                                  onClick={e => { e.stopPropagation(); window.open(o.trackingUrl || undefined, '_blank') }}
+                                  className='text-muted-foreground/70 hover:text-primary transition-colors p-0.5 rounded'
+                                  title='Track shipment'
+                                >
+                                  <ExternalLink className='size-3' />
                                 </button>
                               )}
                             </div>
                           ) : (
-                            <span className='text-xs text-muted-foreground/50'>Not assigned</span>
+                            <span className='text-xs text-muted-foreground/50 italic'>Not assigned</span>
                           )}
                         </TableCell>
                         <TableCell onClick={e => e.stopPropagation()}>
                           <AssigneeCell assignee={o.assignee} />
                         </TableCell>
-                        <TableCell className='text-right font-semibold text-sm'>৳{fmt(o.total)}</TableCell>
-                        <TableCell className='text-right text-sm text-muted-foreground'>{o.items.length}</TableCell>
-                        <TableCell onClick={e => e.stopPropagation()}>
+                        <TableCell className='text-right font-mono font-semibold text-xs text-foreground'>৳{fmt(o.total)}</TableCell>
+                        <TableCell className='text-right text-xs text-muted-foreground pr-4 font-mono'>{o.items.length}</TableCell>
+                        <TableCell onClick={e => e.stopPropagation()} className='pr-3'>
                           <DropdownMenu>
-                            <DropdownMenuTrigger asChild><Button variant='ghost' size='icon' className='h-7 w-7'><MoreHorizontal className='h-3.5 w-3.5' /></Button></DropdownMenuTrigger>
-                            <DropdownMenuContent align='end'>
-                              <DropdownMenuItem asChild><Link to='/op/orders/$id' params={{ id: o.id }}><Eye className='h-4 w-4 mr-2' />View Details</Link></DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => copyToClipboard(o.displayId, 'Order ID')}><ClipboardCopy className='h-4 w-4 mr-2' />Copy Order ID</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => copyToClipboard(o.customer?.phoneNumber || o.guestPhone || '', 'Phone')}><Phone className='h-4 w-4 mr-2' />Copy Phone</DropdownMenuItem>
-                              {formatAddressFull(addr) && <DropdownMenuItem onClick={() => copyToClipboard(formatAddressFull(addr), 'Address')}><MapPin className='h-4 w-4 mr-2' />Copy Address</DropdownMenuItem>}
+                            <DropdownMenuTrigger asChild>
+                              <Button variant='ghost' size='icon' className='h-7 w-7 rounded-md hover:bg-surface-raised'>
+                                <MoreHorizontal className='h-3.5 w-3.5 text-muted-foreground' />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align='end' className='min-w-44 rounded-xl border-border/80 shadow-pop'>
+                              <DropdownMenuItem asChild><Link to='/op/orders/$id' params={{ id: o.id }} className='text-xs font-medium cursor-pointer'><Eye className='h-3.5 w-3.5 mr-2 text-muted-foreground' />View Details</Link></DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => copyToClipboard(o.displayId, 'Order ID')} className='text-xs cursor-pointer'><ClipboardCopy className='h-3.5 w-3.5 mr-2 text-muted-foreground' />Copy Order ID</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => copyToClipboard(o.customer?.phoneNumber || o.guestPhone || '', 'Phone')} className='text-xs cursor-pointer'><Phone className='h-3.5 w-3.5 mr-2 text-muted-foreground' />Copy Phone</DropdownMenuItem>
+                              {formatAddressFull(addr) && <DropdownMenuItem onClick={() => copyToClipboard(formatAddressFull(addr), 'Address')} className='text-xs cursor-pointer'><MapPin className='h-3.5 w-3.5 mr-2 text-muted-foreground' />Copy Address</DropdownMenuItem>}
                               <DropdownMenuSeparator />
                               <DropdownMenuGroup className='px-2 py-1.5 text-xs text-muted-foreground'>
-                                <div className='flex items-center gap-1.5 mb-1 font-medium text-foreground'><UserPlus className='h-3.5 w-3.5' />Assign to</div>
+                                <div className='flex items-center gap-1.5 mb-1 font-semibold text-foreground text-[11px] uppercase tracking-wider'><UserPlus className='h-3 w-3' />Assign to</div>
                                 <div className='flex flex-col gap-0.5 max-h-32 overflow-y-auto'>
-                                  <button onClick={() => { ordersApi.bulkAssign([o.id], null).then(() => { queryClient.invalidateQueries({ queryKey: ['orders'] }); toast.success('Unassigned') }).catch((e) => toast.error(e?.response?.data?.message || 'Failed to unassign order')) }} className='flex items-center gap-2 rounded-sm px-2 py-1 text-sm hover:bg-accent transition-colors'>
+                                  <button onClick={() => { ordersApi.bulkAssign([o.id], null).then(() => { queryClient.invalidateQueries({ queryKey: ['orders'] }); toast.success('Unassigned') }).catch((e) => toast.error(e?.response?.data?.message || 'Failed to unassign order')) }} className='flex items-center gap-2 rounded-md px-2 py-1 text-xs hover:bg-surface-raised transition-colors cursor-pointer'>
                                     <span className='text-muted-foreground italic'>Unassign</span>
                                   </button>
                                   {staff.map((s: any) => (
-                                    <button key={s.id} onClick={() => { ordersApi.bulkAssign([o.id], s.id).then(() => { queryClient.invalidateQueries({ queryKey: ['orders'] }); toast.success(`Assigned to ${s.firstName}`) }).catch((e) => toast.error(e?.response?.data?.message || 'Failed to assign order')) }} className={`flex items-center gap-2 rounded-sm px-2 py-1 text-sm hover:bg-accent transition-colors ${o.assignee?.id === s.id ? 'bg-accent font-medium' : ''}`}>
-                                      <div className='h-5 w-5 rounded-full bg-primary/10 flex items-center justify-center text-[9px] font-semibold text-primary shrink-0'>{s.firstName?.[0]}{s.lastName?.[0]}</div>
-                                      <span>{s.firstName} {s.lastName}</span>
+                                    <button key={s.id} onClick={() => { ordersApi.bulkAssign([o.id], s.id).then(() => { queryClient.invalidateQueries({ queryKey: ['orders'] }); toast.success(`Assigned to ${s.firstName}`) }).catch((e) => toast.error(e?.response?.data?.message || 'Failed to assign order')) }} className={`flex items-center gap-2 rounded-md px-2 py-1 text-xs hover:bg-surface-raised transition-colors cursor-pointer ${o.assignee?.id === s.id ? 'bg-primary-soft text-primary-ink font-semibold' : ''}`}>
+                                      <div className='size-4.5 rounded-full bg-primary/10 flex items-center justify-center text-[8.5px] font-bold text-primary shrink-0'>{s.firstName?.[0]}{s.lastName?.[0]}</div>
+                                      <span className='truncate'>{s.firstName} {s.lastName}</span>
                                     </button>
                                   ))}
                                 </div>
                               </DropdownMenuGroup>
                               <DropdownMenuSeparator />
-                              <DropdownMenuItem className='text-destructive focus:text-destructive' onClick={() => setBlockPhones({ phones: [o.customer?.phoneNumber || o.guestPhone || ''], contextLabel: o.displayId })}><Ban className='h-4 w-4 mr-2' />Block Phone</DropdownMenuItem>
+                              <DropdownMenuItem className='text-destructive focus:text-destructive text-xs cursor-pointer' onClick={() => setBlockPhones({ phones: [o.customer?.phoneNumber || o.guestPhone || ''], contextLabel: o.displayId })}><Ban className='h-3.5 w-3.5 mr-2' />Block Phone</DropdownMenuItem>
                               <DropdownMenuSeparator />
-                              <DropdownMenuItem onClick={() => window.open(`/admin/op/print/sticker/${o.id}`, '_blank')}><Printer className='h-4 w-4 mr-2' />Print Sticker</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => window.open(`/admin/op/print/invoice/${o.id}`, '_blank')}><Receipt className='h-4 w-4 mr-2' />Print Invoice</DropdownMenuItem>
-                              {o.trackingUrl && <DropdownMenuItem onClick={() => window.open(o.trackingUrl || undefined, '_blank')}><ExternalLink className='h-4 w-4 mr-2' />Track Shipment</DropdownMenuItem>}
+                              <DropdownMenuItem onClick={() => window.open(`/admin/op/print/sticker/${o.id}`, '_blank')} className='text-xs cursor-pointer'><Printer className='h-3.5 w-3.5 mr-2 text-muted-foreground' />Print Sticker</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => window.open(`/admin/op/print/invoice/${o.id}`, '_blank')} className='text-xs cursor-pointer'><Receipt className='h-3.5 w-3.5 mr-2 text-muted-foreground' />Print Invoice</DropdownMenuItem>
+                              {o.trackingUrl && <DropdownMenuItem onClick={() => window.open(o.trackingUrl || undefined, '_blank')} className='text-xs cursor-pointer'><ExternalLink className='h-3.5 w-3.5 mr-2 text-muted-foreground' />Track Shipment</DropdownMenuItem>}
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
-                                className='text-destructive focus:text-destructive'
+                                className='text-destructive focus:text-destructive text-xs cursor-pointer'
                                 onClick={(e) => { e.stopPropagation(); trashOrderMut.mutate(o.id) }}
                               >
-                                <Trash2 className='h-4 w-4 mr-2' />Move to Trash
+                                <Trash2 className='h-3.5 w-3.5 mr-2' />Move to Trash
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>
                       </TableRow>,
                       isExpanded && (
-                        <TableRow key={`${o.id}-detail`} className='even:bg-muted/[0.02]'>
+                        <TableRow key={`${o.id}-detail`} className='bg-muted/10 hover:bg-muted/10'>
                           <TableCell colSpan={10} className='p-0 border-0'>
-                            <div className='overflow-hidden' style={{ borderTop: `2px solid ${accentColor}` }}>
-                              <div className='px-6 py-5 grid grid-cols-1 lg:grid-cols-5 gap-5'>
+                            <div className='overflow-hidden bg-muted/15 dark:bg-muted/5' style={{ borderTop: `2px solid ${accentColor}` }}>
+                              <div className='px-6 py-4.5 grid grid-cols-1 lg:grid-cols-5 gap-4.5'>
                                 <div className='lg:col-span-3 space-y-3'>
-                                  <div className='flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider'>
-                                    <Package className='h-3.5 w-3.5' /> Products
+                                  <div className='flex items-center gap-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider'>
+                                    <Package className='size-3.5' /> Products
                                     <span className='text-[10px] font-normal normal-case tracking-normal'>({o.items.length} item{o.items.length > 1 ? 's' : ''})</span>
                                   </div>
                                   <div className='space-y-1.5'>
@@ -844,85 +967,92 @@ export function Orders() {
                                       const thumb = getProductThumb(item)
                                       const lineTotal = nn(item.price) * item.quantity
                                       return (
-                                        <div key={item.id} className='flex items-center gap-3 rounded-lg border bg-background px-3 py-2.5 shadow-sm'>
+                                        <div key={item.id} className='flex items-center gap-3 rounded-lg border border-border/70 bg-card px-3 py-2 shadow-2xs hover:border-border transition-colors'>
                                           {thumb ? (
-                                            <SafeImage src={thumb} alt={item.product?.name} className='h-11 w-11 rounded-md object-cover border shrink-0' thumbWidth={48} thumbHeight={48} />
+                                            <SafeImage src={thumb} alt={item.product?.name} className='h-10 w-10 rounded-md object-cover border border-border/60 shrink-0' thumbWidth={40} thumbHeight={40} />
                                           ) : (
-                                            <div className='h-11 w-11 rounded-md border bg-muted/50 flex items-center justify-center shrink-0'>
-                                              <Package className='h-4 w-4 text-muted-foreground/60' />
+                                            <div className='h-10 w-10 rounded-md border border-border/60 bg-muted/50 flex items-center justify-center shrink-0'>
+                                              <Package className='size-4 text-muted-foreground/60' />
                                             </div>
                                           )}
                                           <div className='flex-1 min-w-0'>
-                                            <div className='text-sm font-medium truncate leading-tight'>
+                                            <div className='text-xs font-semibold truncate leading-tight text-foreground'>
                                               {item.product?.slug ? (
-                                                <Link to='/op/products' className='hover:underline' onClick={e => e.stopPropagation()}>{item.product?.name || 'Unknown Product'}</Link>
+                                                <Link to='/op/products' className='hover:underline hover:text-primary transition-colors' onClick={e => e.stopPropagation()}>{item.product?.name || 'Unknown Product'}</Link>
                                               ) : (item.product?.name || 'Unknown Product')}
                                             </div>
-                                            <div className='flex items-center gap-2.5 mt-0.5'>
-                                              <span className='text-[11px] text-muted-foreground'>৳{fmt(item.price)} each</span>
+                                            <div className='flex items-center gap-2 mt-0.5'>
+                                              <span className='text-[11px] text-muted-foreground font-mono'>৳{fmt(item.price)} each</span>
                                             </div>
                                           </div>
                                           <div className='text-right shrink-0'>
-                                            <div className='text-sm font-semibold'>৳{fmt(lineTotal)}</div>
-                                            <div className='text-[11px] text-muted-foreground'>x{item.quantity}</div>
+                                            <div className='text-xs font-bold font-mono text-foreground'>৳{fmt(lineTotal)}</div>
+                                            <div className='text-[10.5px] text-muted-foreground font-mono'>x{item.quantity}</div>
                                           </div>
                                         </div>
                                       )
                                     })}
                                   </div>
-                                  <div className='rounded-lg border bg-background p-3 shadow-sm'>
-                                    <div className='space-y-1.5 text-sm'>
-                                      <div className='flex justify-between text-muted-foreground'><span>Subtotal</span><span className='font-medium text-foreground'>৳{fmt(o.subtotal)}</span></div>
-                                      <div className='flex justify-between text-muted-foreground'><span>Shipping</span><span className='font-medium text-foreground'>৳{fmt(o.shippingCharge)}</span></div>
-                                      {nn(o.discount) > 0 && (
-                                        <div className='flex justify-between text-emerald-600 dark:text-emerald-400'>
-                                          <span className='flex items-center gap-1'><Tag className='h-3 w-3' />Discount{o.discountType === 'percentage' ? ` (${fmt(o.discount)}%)` : ''}</span>
-                                          <span className='font-medium'>-৳{fmt(o.discountType === 'percentage' ? nn(o.subtotal) * nn(o.discount) / 100 : o.discount)}</span>
-                                        </div>
-                                      )}
-                                      <div className='flex justify-between font-bold text-base pt-2 border-t'><span>Total</span><span>৳{fmt(o.total)}</span></div>
+                                  <div className='rounded-lg border border-border/70 bg-card p-3 shadow-2xs space-y-1.5 text-xs'>
+                                    <div className='flex justify-between text-muted-foreground'>
+                                      <span>Subtotal</span>
+                                      <span className='font-mono font-medium text-foreground'>৳{fmt(o.subtotal)}</span>
+                                    </div>
+                                    <div className='flex justify-between text-muted-foreground'>
+                                      <span>Shipping</span>
+                                      <span className='font-mono font-medium text-foreground'>৳{fmt(o.shippingCharge)}</span>
+                                    </div>
+                                    {nn(o.discount) > 0 && (
+                                      <div className='flex justify-between text-emerald-600 dark:text-emerald-400'>
+                                        <span className='flex items-center gap-1'><Tag className='size-3' />Discount{o.discountType === 'percentage' ? ` (${fmt(o.discount)}%)` : ''}</span>
+                                        <span className='font-mono font-semibold'>-৳{fmt(o.discountType === 'percentage' ? nn(o.subtotal) * nn(o.discount) / 100 : o.discount)}</span>
+                                      </div>
+                                    )}
+                                    <div className='flex justify-between font-bold text-sm pt-2 border-t border-border/60 text-foreground'>
+                                      <span>Total</span>
+                                      <span className='font-mono text-primary'>৳{fmt(o.total)}</span>
                                     </div>
                                   </div>
                                 </div>
 
                                 <div className='lg:col-span-2 space-y-3'>
                                   <div className='flex items-center justify-between'>
-                                    <div className='flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider'>
-                                      <MapPin className='h-3.5 w-3.5' /> Shipping & Customer
+                                    <div className='flex items-center gap-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider'>
+                                      <MapPin className='size-3.5' /> Shipping & Customer
                                     </div>
                                     {formatAddressFull(addr) && (
                                       <button onClick={() => copyToClipboard(formatAddressFull(addr), 'Address')} className='text-[11px] text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1'>
-                                        <ClipboardCopy className='h-3 w-3' /> Copy
+                                        <ClipboardCopy className='size-3' /> Copy
                                       </button>
                                     )}
                                   </div>
-                                  <div className='rounded-lg border bg-background p-3.5 shadow-sm space-y-2.5'>
-                                    <div className='font-medium text-sm'>
+                                  <div className='rounded-lg border border-border/70 bg-card p-3 shadow-2xs space-y-2 text-xs'>
+                                    <div className='font-semibold text-xs text-foreground'>
                                       {addr.name || getCustomerDisplayName(o)}
                                     </div>
                                     {(addr.line1 || addr.line2) && (
-                                      <div className='text-sm leading-relaxed'>{[addr.line1, addr.line2].filter(Boolean).join(', ')}</div>
+                                      <div className='leading-relaxed text-foreground/90'>{[addr.line1, addr.line2].filter(Boolean).join(', ')}</div>
                                     )}
                                     {[addr.city, addr.zone].filter(Boolean).length > 0 && (
-                                      <div className='text-sm text-muted-foreground'>{[addr.city, addr.zone].filter(Boolean).join(', ')}</div>
+                                      <div className='text-muted-foreground'>{[addr.city, addr.zone].filter(Boolean).join(', ')}</div>
                                     )}
                                     {addr.postcode && (
-                                      <div className='text-sm text-muted-foreground'>{addr.postcode}{addr.country && addr.country !== 'Bangladesh' ? `, ${addr.country}` : ''}</div>
+                                      <div className='text-muted-foreground'>{addr.postcode}{addr.country && addr.country !== 'Bangladesh' ? `, ${addr.country}` : ''}</div>
                                     )}
                                     {!addr.line1 && !addr.line2 && !addr.city && (
-                                      <div className='text-sm text-muted-foreground italic'>No address provided</div>
+                                      <div className='text-muted-foreground italic'>No address provided</div>
                                     )}
-                                    <div className='flex flex-col gap-1.5 pt-1 border-t'>
+                                    <div className='flex flex-col gap-1.5 pt-1.5 border-t border-border/50'>
                                       {(o.customer?.phoneNumber || o.guestPhone) && (
-                                        <div className='flex items-center gap-2 text-sm'>
-                                          <Phone className='h-3.5 w-3.5 text-muted-foreground shrink-0' />
-                                          <a href={`tel:${o.customer?.phoneNumber || o.guestPhone}`} className='hover:underline'>{o.customer?.phoneNumber || o.guestPhone}</a>
+                                        <div className='flex items-center gap-2'>
+                                          <Phone className='size-3.5 text-muted-foreground shrink-0' />
+                                          <a href={`tel:${o.customer?.phoneNumber || o.guestPhone}`} className='hover:underline font-mono'>{o.customer?.phoneNumber || o.guestPhone}</a>
                                           <CustomerContactActions phone={o.customer?.phoneNumber || o.guestPhone} />
                                         </div>
                                       )}
                                       {getCustomerEmail(o) && (
-                                        <div className='flex items-center gap-2 text-sm text-muted-foreground'>
-                                          <Mail className='h-3.5 w-3.5 shrink-0' />
+                                        <div className='flex items-center gap-2 text-muted-foreground'>
+                                          <Mail className='size-3.5 shrink-0' />
                                           <span className='truncate'>{getCustomerEmail(o)}</span>
                                         </div>
                                       )}
@@ -935,33 +1065,33 @@ export function Orders() {
                                   {(o.customerNotes || o.officeNotes) && (
                                     <div className='space-y-1.5'>
                                       {o.customerNotes && (
-                                        <div className='rounded-lg border-l-4 border-l-amber-400 bg-amber-50/50 dark:bg-amber-950/20 px-3 py-2.5 shadow-sm'>
-                                          <div className='flex items-center gap-1.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wider mb-1'>
-                                            <MessageCircle className='h-3 w-3' /> Customer Note
+                                        <div className='rounded-lg border-l-3 border-l-amber-500 bg-amber-500/10 px-3 py-2 shadow-2xs'>
+                                          <div className='flex items-center gap-1.5 text-[10.5px] font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wider mb-0.5'>
+                                            <MessageCircle className='size-3' /> Customer Note
                                           </div>
-                                          <div className='text-sm leading-relaxed'>{o.customerNotes}</div>
+                                          <div className='text-xs leading-relaxed text-foreground'>{o.customerNotes}</div>
                                         </div>
                                       )}
                                       {o.officeNotes && (
-                                        <div className='rounded-lg border-l-4 border-l-blue-400 bg-blue-50/50 dark:bg-blue-950/20 px-3 py-2.5 shadow-sm'>
-                                          <div className='flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wider mb-1'>
-                                            <FileText className='h-3 w-3' /> Office Note
+                                        <div className='rounded-lg border-l-3 border-l-blue-500 bg-blue-500/10 px-3 py-2 shadow-2xs'>
+                                          <div className='flex items-center gap-1.5 text-[10.5px] font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wider mb-0.5'>
+                                            <FileText className='size-3' /> Office Note
                                           </div>
-                                          <div className='text-sm leading-relaxed'>{o.officeNotes}</div>
+                                          <div className='text-xs leading-relaxed text-foreground'>{o.officeNotes}</div>
                                         </div>
                                       )}
                                     </div>
                                   )}
 
                                   {o.assignee && (
-                                    <div className='rounded-lg border bg-background px-3 py-2 shadow-sm'>
+                                    <div className='rounded-lg border border-border/70 bg-card px-3 py-2 shadow-2xs'>
                                       <div className='flex items-center gap-2'>
-                                        <div className='h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center text-[11px] font-semibold text-primary shrink-0'>
+                                        <div className='size-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary shrink-0'>
                                           {o.assignee.firstName?.[0]}{o.assignee.lastName?.[0]}
                                         </div>
                                         <div>
-                                          <div className='text-xs font-semibold text-muted-foreground uppercase tracking-wider'>Assigned To</div>
-                                          <div className='text-sm font-medium'>{o.assignee.firstName} {o.assignee.lastName}</div>
+                                          <div className='text-[10px] font-semibold text-muted-foreground uppercase tracking-wider'>Assigned To</div>
+                                          <div className='text-xs font-semibold text-foreground'>{o.assignee.firstName} {o.assignee.lastName}</div>
                                         </div>
                                       </div>
                                     </div>
@@ -969,20 +1099,20 @@ export function Orders() {
 
                                   {o.payments && o.payments.length > 0 && (
                                     <div className='space-y-1.5'>
-                                      <div className='text-[11px] font-semibold text-muted-foreground uppercase tracking-wider'>Payments</div>
+                                      <div className='text-[10.5px] font-semibold text-muted-foreground uppercase tracking-wider'>Payments</div>
                                       {o.payments.map((p) => {
                                         const gw = p.gatewayCode || p.method
                                         const pm = paymentMethodLabel(gw || '')
                                         const ps = paymentStatusBadgeClass(p.status)
                                         return (
-                                          <div key={p.id} className='flex items-center justify-between rounded-lg border bg-background px-3 py-2 shadow-sm'>
+                                          <div key={p.id} className='flex items-center justify-between rounded-lg border border-border/70 bg-card px-3 py-2 shadow-2xs'>
                                             <div className='flex items-center gap-2'>
-                                              <CreditCard className={`h-3.5 w-3.5 ${pm.colorClass}`} />
-                                              <span className='text-sm font-medium'>{pm.label}</span>
+                                              <CreditCard className={`size-3.5 ${pm.colorClass}`} />
+                                              <span className='text-xs font-medium'>{pm.label}</span>
                                             </div>
                                             <div className='flex items-center gap-2'>
-                                              <span className='text-sm font-semibold'>৳{fmt(p.amount)}</span>
-                                              <Badge variant={ps.variant} className={`text-[10px] ${ps.className}`}>{p.status}</Badge>
+                                              <span className='text-xs font-bold font-mono'>৳{fmt(p.amount)}</span>
+                                              <Badge variant={ps.variant} className={`text-[10px] py-0 px-1.5 ${ps.className}`}>{p.status}</Badge>
                                             </div>
                                           </div>
                                         )
@@ -1006,32 +1136,50 @@ export function Orders() {
         </Card>
 
         {totalPages > 1 && (
-          <div className='flex items-center justify-between'>
-            <span className='text-sm text-muted-foreground'>Page {page} of {totalPages} ({totalOrders} orders)</span>
+          <div className='flex flex-col sm:flex-row items-center justify-between gap-2.5 pt-1'>
+            <span className='text-xs text-muted-foreground'>
+              Page <span className='font-semibold text-foreground'>{page}</span> of <span className='font-semibold text-foreground'>{totalPages}</span> ({totalOrders} orders)
+            </span>
             <div className='flex items-center gap-1'>
-              <Button variant='outline' size='sm' disabled={page <= 1} onClick={() => setPage(p => p - 1)}><ChevronLeft className='h-4 w-4' /></Button>
+              <Button variant='outline' size='sm' className='h-8 w-8 p-0 rounded-lg shadow-2xs' disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
+                <ChevronLeft className='h-3.5 w-3.5' />
+              </Button>
               {Array.from({ length: totalPages }, (_, i) => i + 1)
                 .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 2)
                 .map((p, i, arr) => (
                   <span key={p}>
-                    {i > 0 && arr[i - 1] !== p - 1 && <span className='px-1 text-muted-foreground'>...</span>}
-                    <Button variant={p === page ? 'default' : 'outline'} size='sm' className='h-8 w-8' onClick={() => setPage(p)}>{p}</Button>
+                    {i > 0 && arr[i - 1] !== p - 1 && <span className='px-1 text-xs text-muted-foreground'>...</span>}
+                    <Button
+                      variant={p === page ? 'default' : 'outline'}
+                      size='sm'
+                      className={`h-8 w-8 p-0 text-xs rounded-lg font-semibold shadow-2xs ${p === page ? 'bg-primary text-primary-foreground' : ''}`}
+                      onClick={() => setPage(p)}
+                    >
+                      {p}
+                    </Button>
                   </span>
                 ))}
-              <Button variant='outline' size='sm' disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}><ChevronRight className='h-4 w-4' /></Button>
+              <Button variant='outline' size='sm' className='h-8 w-8 p-0 rounded-lg shadow-2xs' disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>
+                <ChevronRight className='h-3.5 w-3.5' />
+              </Button>
             </div>
           </div>
         )}
 
         {selected.length > 0 && (
-          <div className='fixed bottom-4 left-1/2 -translate-x-1/2 bg-background border rounded-lg shadow-lg px-4 py-3 flex items-center gap-4 z-50'>
-            <Button variant='ghost' size='icon' className='h-6 w-6' onClick={() => setSelected([])}><X className='h-4 w-4' /></Button>
-            <span className='text-sm font-medium'>{selected.length} selected</span>
+          <div className='fixed bottom-5 left-1/2 -translate-x-1/2 bg-popover/95 backdrop-blur-md border border-border/80 shadow-2xl rounded-2xl px-3.5 py-2 flex items-center gap-2.5 z-50 animate-in fade-in slide-in-from-bottom-3 duration-200'>
+            <Button variant='ghost' size='icon' className='h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground' onClick={() => setSelected([])}>
+              <X className='h-3.5 w-3.5' />
+            </Button>
+            <span className='inline-flex items-center rounded-full bg-primary/15 text-primary border border-primary/20 px-2 py-0.5 text-xs font-bold whitespace-nowrap shadow-2xs'>
+              {selected.length} selected
+            </span>
+            <div className='h-4 w-px bg-border/60' />
             <Select onValueChange={v => bulkStatusMut.mutate({ ids: selected, statusId: v })}>
-              <SelectTrigger className='h-8 w-[160px] text-sm'><SelectValue placeholder='Change Status' /></SelectTrigger>
-              <SelectContent>{statusList.map((s: any) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+              <SelectTrigger className='h-8 w-[145px] text-xs rounded-lg'><SelectValue placeholder='Status' /></SelectTrigger>
+              <SelectContent>{statusList.map((s: any) => <SelectItem key={s.id} value={s.id} className='text-xs'>{s.name}</SelectItem>)}</SelectContent>
             </Select>
-            <div className='flex items-center gap-2'>
+            <div className='flex items-center gap-1'>
               <SearchableSelect
                 options={[
                   { id: 'unassigned', label: 'Unassign' },
@@ -1041,35 +1189,41 @@ export function Orders() {
                 onChange={(v) => { if (v) bulkAssignMut.mutate({ ids: selected, assignedToId: v }) }}
                 placeholder='Assign to...'
                 searchPlaceholder='Search staff...'
+                triggerClassName='h-8 text-xs w-[130px] rounded-lg'
               />
               {selected.length > 0 && (
-                <Button variant='outline' size='sm' className='h-8 text-xs text-muted-foreground' onClick={() => bulkAssignMut.mutate({ ids: selected, assignedToId: '__unassign__' })} title='Unassign all selected'>
+                <Button variant='outline' size='icon' className='h-8 w-8 text-xs text-muted-foreground rounded-lg' onClick={() => bulkAssignMut.mutate({ ids: selected, assignedToId: '__unassign__' })} title='Unassign all selected'>
                   <X className='h-3 w-3' />
                 </Button>
               )}
             </div>
-            <Button variant='outline' size='sm' onClick={() => { const ids = selected.join(','); window.open(`/admin/op/print/bulk?type=sticker&ids=${ids}`, '_blank') }}><Printer className='h-3.5 w-3.5 mr-1' /> Stickers</Button>
-            <Button variant='outline' size='sm' onClick={() => { const ids = selected.join(','); window.open(`/admin/op/print/bulk?type=invoice&ids=${ids}`, '_blank') }}><Printer className='h-3.5 w-3.5 mr-1' /> Invoices</Button>
+            <div className='h-4 w-px bg-border/60' />
+            <Button variant='outline' size='sm' className='h-8 text-xs rounded-lg gap-1.5' onClick={() => { const ids = selected.join(','); window.open(`/admin/op/print/bulk?type=sticker&ids=${ids}`, '_blank') }}>
+              <Printer className='h-3 w-3' /> Stickers
+            </Button>
+            <Button variant='outline' size='sm' className='h-8 text-xs rounded-lg gap-1.5' onClick={() => { const ids = selected.join(','); window.open(`/admin/op/print/bulk?type=invoice&ids=${ids}`, '_blank') }}>
+              <Receipt className='h-3 w-3' /> Invoices
+            </Button>
             <Button
               variant='outline'
               size='sm'
-              className='h-8 text-xs text-destructive'
+              className='h-8 text-xs text-destructive hover:bg-destructive/10 rounded-lg gap-1.5'
               disabled={selectedPhones.length === 0}
               onClick={() => setBlockPhones({ phones: selectedPhones, contextLabel: `${selected.length} orders` })}
             >
-              <Ban className='h-3.5 w-3.5 mr-1' /> Block Phones
+              <Ban className='h-3 w-3' /> Block Phones
             </Button>
-            <div className='flex items-center gap-1 border-l pl-3'>
+            <div className='flex items-center gap-1.5 border-l border-border/60 pl-2.5'>
               <Select value={dispatchCourier} onValueChange={setDispatchCourier}>
-                <SelectTrigger className='h-8 w-[130px] text-xs'><SelectValue placeholder='Send to...' /></SelectTrigger>
+                <SelectTrigger className='h-8 w-[115px] text-xs rounded-lg'><SelectValue placeholder='Courier' /></SelectTrigger>
                 <SelectContent>
                   {activeCouriers.filter((c: any) => c.enabled).map((c: any) => (
-                    <SelectItem key={c.courier} value={c.courier}>{c.courier.charAt(0).toUpperCase() + c.courier.slice(1)}</SelectItem>
+                    <SelectItem key={c.courier} value={c.courier} className='text-xs'>{c.courier.charAt(0).toUpperCase() + c.courier.slice(1)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <Button size='sm' className='h-8 text-xs' disabled={!dispatchCourier || dispatchMut.isPending} onClick={() => dispatchMut.mutate({ courier: dispatchCourier, ids: selected })}>
-                {dispatchMut.isPending ? <Loader2 className='h-3 w-3 animate-spin mr-1' /> : <Send className='h-3 w-3 mr-1' />}
+              <Button size='sm' className='h-8 text-xs rounded-lg gap-1' disabled={!dispatchCourier || dispatchMut.isPending} onClick={() => dispatchMut.mutate({ courier: dispatchCourier, ids: selected })}>
+                {dispatchMut.isPending ? <Loader2 className='h-3 w-3 animate-spin' /> : <Send className='h-3 w-3' />}
                 Send
               </Button>
             </div>
