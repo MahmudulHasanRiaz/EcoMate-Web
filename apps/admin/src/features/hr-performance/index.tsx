@@ -25,33 +25,49 @@ import { employeesApi } from '@/features/employees/api'
 import { useDepartmentsQuery } from '@/features/departments/hooks'
 import { OrderPerformanceTab } from './components/order-performance-tab'
 import { TaskProductivityTab } from './components/task-productivity-tab'
+import { toDhakaDateString } from '@/lib/dhaka-time'
 import { AttendanceSummaryTab } from './components/attendance-summary-tab'
 
-function getPresetDates(preset: string): { from: string; to: string } {
+/**
+ * Preset ranges are business dates, so they must be stamped with the Dhaka
+ * calendar day. Using the browser's UTC day instead was wrong for 6 hours out
+ * of every 24: between 00:00 and 06:00 Dhaka the UTC date is still yesterday,
+ * so "Today" silently reported a full day behind, and "This Month"
+ * resolved to the last day of the previous month.
+ *
+ * The business week starts Saturday, matching the weekly-off convention used by
+ * the attendance shift rotation. (The previous code subtracted getDay() alone,
+ * which starts the week on Sunday.)
+ */
+export function getPresetDates(preset: string): { from: string; to: string } {
   const now = new Date()
-  const toISO = (d: Date) => d.toISOString().split('T')[0]
+  const dk = (d: Date) => toDhakaDateString(d)
+  const shiftDays = (days: number) => {
+    const d = new Date(now)
+    d.setDate(d.getDate() + days)
+    return d
+  }
 
   switch (preset) {
     case 'today':
-      return { from: toISO(now), to: toISO(now) }
+      return { from: dk(now), to: dk(now) }
     case 'yesterday': {
-      const y = new Date(now)
-      y.setDate(y.getDate() - 1)
-      return { from: toISO(y), to: toISO(y) }
+      const y = shiftDays(-1)
+      return { from: dk(y), to: dk(y) }
     }
     case 'this_week': {
-      const start = new Date(now)
-      start.setDate(now.getDate() - now.getDay())
-      return { from: toISO(start), to: toISO(now) }
+      // Saturday is getDay() 6 and Sunday is 0, so (getDay() + 1) % 7 maps
+      // both to a zero-day offset.
+      const start = shiftDays(-((now.getDay() + 1) % 7))
+      return { from: dk(start), to: dk(now) }
     }
     case 'this_month': {
       const start = new Date(now.getFullYear(), now.getMonth(), 1)
-      return { from: toISO(start), to: toISO(now) }
+      return { from: dk(start), to: dk(now) }
     }
     case 'last_30_days': {
-      const start = new Date(now)
-      start.setDate(now.getDate() - 30)
-      return { from: toISO(start), to: toISO(now) }
+      const start = shiftDays(-30)
+      return { from: dk(start), to: dk(now) }
     }
     default:
       return { from: '', to: '' }

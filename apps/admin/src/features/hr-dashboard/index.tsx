@@ -25,7 +25,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { riseStyle, type KpiAccent } from '@/components/ui/dashboard'
 import { cn } from '@/lib/utils'
-import { useHrOverviewQuery } from './hooks'
+import { hasPayrollPermission, useHrOverviewQuery, useHrWorkforceOverviewQuery } from './hooks'
 import { Link } from '@tanstack/react-router'
 import { formatDuration } from '@/features/hr-attendance/api'
 
@@ -73,7 +73,13 @@ function StatCard({
 }
 
 export function HrDashboard() {
-  const { data, isLoading, isError, refetch } = useHrOverviewQuery()
+  // Route to the endpoint the current user is actually allowed to read.
+  // A payroll holder gets /hr/overview; everyone else with view_hr gets
+  // /hr/overview/workforce, which omits the salary keys entirely.
+  const canViewPayroll = hasPayrollPermission()
+  const payrollQuery = useHrOverviewQuery()
+  const workforceQuery = useHrWorkforceOverviewQuery()
+  const { data, isLoading, isError, refetch } = canViewPayroll ? payrollQuery : workforceQuery
 
   const att = data?.attendance
   const tasks = data?.tasks
@@ -329,20 +335,65 @@ export function HrDashboard() {
                       </span>
                       {orderOps && (
                         <span className="text-xs font-semibold text-emerald-600 tabular-nums">
-                          ({orderOps.confirmationRate}%)
+                          {orderOps.confirmationRate}%
+                          <span className="font-normal text-muted-foreground">
+                            {' '}
+                            ({orderOps.confirmed} / {orderOps.handled})
+                          </span>
                         </span>
                       )}
                     </div>
                   </div>
                   <div className="flex items-center justify-between rounded-xl border border-border/50 bg-muted/20 px-3 py-2.5">
-                    <span className="text-xs font-medium text-muted-foreground">Delivered / Handled</span>
+                    {/* Labelled "Delivered / Confirmed": the rate beside it is
+                        deliveryRateFromConfirmed, so the previous "Delivered /
+                        Handled" label contradicted its own value. */}
+                    <span className="text-xs font-medium text-muted-foreground">Delivered / Confirmed</span>
                     <div className="flex items-center gap-1.5">
                       <span className="text-base font-bold tabular-nums text-purple-600">
                         {orderOps?.delivered ?? 0}
                       </span>
                       {orderOps && (
                         <span className="text-xs font-semibold text-purple-600 tabular-nums">
-                          ({orderOps.deliveryRateFromConfirmed}% from conf)
+                          {orderOps.deliveryRateFromConfirmed}%
+                          <span className="font-normal text-muted-foreground">
+                            {' '}
+                            ({orderOps.delivered} / {orderOps.confirmed})
+                          </span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between rounded-xl border border-border/50 bg-muted/20 px-3 py-2.5">
+                    <span className="text-xs font-medium text-muted-foreground">Returned / Delivered</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-base font-bold tabular-nums text-rose-600">
+                        {orderOps?.returned ?? 0}
+                      </span>
+                      {orderOps && (
+                        <span className="text-xs font-semibold text-rose-600 tabular-nums">
+                          {orderOps.returnRate}%
+                          <span className="font-normal text-muted-foreground">
+                            {' '}
+                            ({orderOps.returned} / {orderOps.delivered})
+                          </span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between rounded-xl border border-border/50 bg-muted/20 px-3 py-2.5">
+                    <span className="text-xs font-medium text-muted-foreground">Cancelled / Handled</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-base font-bold tabular-nums text-rose-600">
+                        {orderOps?.cancelled ?? 0}
+                      </span>
+                      {orderOps && (
+                        <span className="text-xs font-semibold text-rose-600 tabular-nums">
+                          {orderOps.cancellationRate}%
+                          <span className="font-normal text-muted-foreground">
+                            {' '}
+                            ({orderOps.cancelled} / {orderOps.handled})
+                          </span>
                         </span>
                       )}
                     </div>
@@ -352,6 +403,12 @@ export function HrDashboard() {
             </div>
 
             {/* ── 3. Payroll & Compensation Overview ── */}
+            {/* Salary figures are gated client-side on manage_payroll, matching
+                the backend's @PermissionsAny('manage_payroll') on GET /hr/overview.
+                Hiding is not the control — the API refuses without the permission —
+                but rendering a card that always 403s, or that briefly shows stale
+                cached numbers, is worse than not offering it. */}
+            {canViewPayroll && (
             <div>
               <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-2">
                 Compensation &amp; Payroll
@@ -360,32 +417,33 @@ export function HrDashboard() {
                 <StatCard
                   icon={Wallet}
                   title="Payroll Last Period"
-                  value={money(data.payroll.lastPeriodNet)}
-                  sub={data.payroll.lastPeriodKey ?? 'No paid period yet'}
+                  value={money(data.payroll!.lastPeriodNet)}
+                  sub={data.payroll!.lastPeriodKey ?? 'No paid period yet'}
                   accent="violet"
                 />
                 <StatCard
                   icon={Clock}
                   title="Pending Approvals"
-                  value={data.payroll.pendingApprovals}
+                  value={data.payroll!.pendingApprovals}
                   sub="payslips in draft/review"
                   accent="warning"
                 />
                 <StatCard
                   icon={Banknote}
                   title="Paid This Month"
-                  value={money(data.payroll.paidThisMonth)}
+                  value={money(data.payroll!.paidThisMonth)}
                   accent="success"
                 />
                 <StatCard
                   icon={BadgeDollarSign}
                   title="Payroll Payable"
-                  value={money(data.payroll.payable)}
+                  value={money(data.payroll!.payable)}
                   sub="approved, awaiting payment"
                   accent="warning"
                 />
               </div>
             </div>
+            )}
 
             {/* ── 4. Recent Payments Table & Quick Breakdown ── */}
             <div className="grid gap-4 lg:grid-cols-3 animate-rise" style={riseStyle(3)}>
@@ -399,12 +457,16 @@ export function HrDashboard() {
                   </div>
                 </CardHeader>
                 <CardContent className="px-5 pb-5 space-y-2">
-                  {data.recentPayments.length === 0 ? (
+                  {!canViewPayroll ? (
+                    <p className="py-6 text-center text-sm text-muted-foreground">
+                      Payroll figures require the payroll permission.
+                    </p>
+                  ) : data.recentPayments!.length === 0 ? (
                     <p className="py-6 text-center text-sm text-muted-foreground">
                       No payments recorded yet.
                     </p>
                   ) : (
-                    data.recentPayments.map((p) => (
+                    data.recentPayments!.map((p) => (
                       <div
                         key={p.id}
                         className="flex items-center justify-between rounded-xl border border-border/50 bg-muted/20 px-3 py-2 transition-colors duration-200 hover:bg-muted/40"

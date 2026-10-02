@@ -47,7 +47,11 @@ export function useBackfillOrderEventsMutation() {
   return useMutation({
     mutationFn: () => hrPerformanceApi.backfillOrderEvents(),
     onSuccess: (data) => {
-      toast.success(data.message || `Backfilled ${data.count} events`)
+      toast.success(
+        data.hasMore
+          ? `Scanned ${data.scanned} orders · inserted ${data.inserted} events — run again to continue`
+          : `Scanned ${data.scanned} orders · inserted ${data.inserted} events`,
+      )
       queryClient.invalidateQueries({ queryKey: ['hr-performance'] })
     },
     onError: (err: any) => {

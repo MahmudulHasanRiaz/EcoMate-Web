@@ -10,14 +10,15 @@ export interface HrOverview {
     terminated: number
     resigned: number
   }
-  payroll: {
+  /** Omitted entirely when the caller lacks manage_payroll. */
+  payroll?: {
     lastPeriodKey: string | null
     lastPeriodNet: number
     pendingApprovals: number
     paidThisMonth: number
     payable: number
   }
-  recentPayments: {
+  recentPayments?: {
     id: string
     employeeId: string
     employeeName: string
@@ -56,8 +57,15 @@ export interface HrOverview {
     confirmed: number
     confirmationRate: number
     delivered: number
+    /** Delivered / Confirmed */
     deliveryRateFromConfirmed: number
+    /** Delivered / Handled */
+    endToEndDeliveryRate: number
+    returned: number
+    /** Returned / Delivered */
+    returnRate: number
     cancelled: number
+    /** Cancelled / Handled */
     cancellationRate: number
   }
   exceptions?: {
@@ -68,6 +76,17 @@ export interface HrOverview {
 }
 
 export const hrApi = {
-  overview: () =>
-    apiClient.get<HrOverview>('/hr/overview').then((res) => res.data),
+  /**
+   * Full dashboard payload. Requires manage_payroll, because it carries salary
+   * figures.
+   */
+  overview: () => apiClient.get<HrOverview>('/hr/overview').then((res) => res.data),
+
+  /**
+   * Same dashboard without payroll figures, for view_hr-only managers.
+   * GET /hr/overview is guarded by manage_payroll so the salary fields are not
+   * merely hidden — they are never sent.
+   */
+  workforceOverview: () =>
+    apiClient.get<HrOverview>('/hr/overview/workforce').then((res) => res.data),
 }

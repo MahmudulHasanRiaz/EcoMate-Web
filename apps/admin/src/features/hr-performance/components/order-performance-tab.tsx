@@ -1,3 +1,4 @@
+import { useAuthStore } from '@/stores/auth-store'
 import { useState } from 'react'
 import {
   Table,
@@ -58,6 +59,12 @@ export function OrderPerformanceTab({
 
   const [drilldownEmp, setDrilldownEmp] = useState<{ id: string; name: string } | null>(null)
   const backfillMut = useBackfillOrderEventsMutation()
+  const permissions = useAuthStore((s) => s.auth.user?.permissions) ?? []
+
+  // Mirrors @Roles('superadmin','admin') + @PermissionsAny('manage_hr_settings')
+  // on POST /hr/performance/orders/backfill.
+  const canRunBackfill =
+    (permissions.includes('superadmin') || permissions.includes('admin') || permissions.includes('manage_hr_settings'))
 
   const summary = data?.summary
   const employees = data?.data || []
@@ -105,12 +112,12 @@ export function OrderPerformanceTab({
                 </span>
                 {summary && (
                   <span className='text-xs font-semibold text-emerald-600 tabular-nums'>
-                    ({summary.overallConfirmationRate}%)
+                    {summary.overallConfirmationRate}%
                   </span>
                 )}
               </div>
-              <p className='text-[11px] text-muted-foreground mt-0.5'>
-                Confirmed / Handled
+              <p className='text-[11px] text-muted-foreground mt-0.5 tabular-nums'>
+                {summary?.totalConfirmed ?? 0} / {summary?.totalOrdersHandled ?? 0}
               </p>
             </div>
           </CardContent>
@@ -133,12 +140,12 @@ export function OrderPerformanceTab({
                 </span>
                 {summary && (
                   <span className='text-xs font-semibold text-purple-600 tabular-nums'>
-                    ({summary.overallDeliveryRate}%)
+                    {summary.overallDeliveryRate}%
                   </span>
                 )}
               </div>
-              <p className='text-[11px] text-muted-foreground mt-0.5'>
-                Delivered / Confirmed
+              <p className='text-[11px] text-muted-foreground mt-0.5 tabular-nums'>
+                {summary?.totalDelivered ?? 0} / {summary?.totalConfirmed ?? 0}
               </p>
             </div>
           </CardContent>
@@ -161,12 +168,12 @@ export function OrderPerformanceTab({
                 </span>
                 {summary && (
                   <span className='text-xs font-semibold text-rose-600 tabular-nums'>
-                    ({summary.overallReturnRate}%)
+                    {summary.overallReturnRate}%
                   </span>
                 )}
               </div>
-              <p className='text-[11px] text-muted-foreground mt-0.5'>
-                Returned / Delivered
+              <p className='text-[11px] text-muted-foreground mt-0.5 tabular-nums'>
+                {summary?.totalReturned ?? 0} / {summary?.totalDelivered ?? 0}
               </p>
             </div>
           </CardContent>
@@ -189,12 +196,12 @@ export function OrderPerformanceTab({
                 </span>
                 {summary && (
                   <span className='text-xs font-semibold text-amber-600 tabular-nums'>
-                    ({summary.overallCancellationRate}%)
+                    {summary.overallCancellationRate}%
                   </span>
                 )}
               </div>
-              <p className='text-[11px] text-muted-foreground mt-0.5'>
-                Cancelled / Handled
+              <p className='text-[11px] text-muted-foreground mt-0.5 tabular-nums'>
+                {summary?.totalCancelled ?? 0} / {summary?.totalOrdersHandled ?? 0}
               </p>
             </div>
           </CardContent>
@@ -210,18 +217,23 @@ export function OrderPerformanceTab({
               Individual operator conversion rates with explicit denominator cohorts
             </p>
           </div>
-          <div className='flex items-center gap-2'>
-            <Button
-              variant='outline'
-              size='sm'
-              className='text-xs h-8 gap-1.5'
-              disabled={backfillMut.isPending}
-              onClick={() => backfillMut.mutate()}
-            >
-              <RotateCcw className={`h-3.5 w-3.5 ${backfillMut.isPending ? 'animate-spin' : ''}`} />
-              Sync Historical Events
-            </Button>
-          </div>
+          {/* The backend restricts this bulk write to superadmin/admin with
+              manage_hr_settings. Rendering the button for everyone else just
+              produced a guaranteed 403. */}
+          {canRunBackfill && (
+            <div className='flex items-center gap-2'>
+              <Button
+                variant='outline'
+                size='sm'
+                className='text-xs h-8 gap-1.5'
+                disabled={backfillMut.isPending}
+                onClick={() => backfillMut.mutate()}
+              >
+                <RotateCcw className={`h-3.5 w-3.5 ${backfillMut.isPending ? 'animate-spin' : ''}`} />
+                Sync Historical Events
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className='overflow-x-auto'>

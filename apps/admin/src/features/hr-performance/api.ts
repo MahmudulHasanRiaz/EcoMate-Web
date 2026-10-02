@@ -69,6 +69,15 @@ export interface TaskProductivityRow {
 
 export interface TaskProductivityResponse {
   data: TaskProductivityRow[]
+  /** Totals across the whole filtered result set, not just the returned page. */
+  summary?: {
+    totalEmployees: number
+    totalAssigned: number
+    totalCompleted: number
+    totalPending: number
+    totalTimeSpentMinutes: number
+    completionRate: number
+  }
   meta: {
     page: number
     perPage: number
@@ -135,6 +144,11 @@ export const hrPerformanceApi = {
 
   backfillOrderEvents: () =>
     apiClient
-      .post<{ count: number; message: string }>('/hr/performance/orders/backfill')
+      .post<{
+        scanned: number
+        inserted: number
+        lastOrderId: string | null
+        hasMore: boolean
+      }>('/hr/performance/orders/backfill')
       .then((res) => res.data),
 }

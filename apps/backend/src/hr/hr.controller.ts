@@ -6,6 +6,28 @@ import { HrService } from './hr.service';
 import { OrderStaffPerformanceService } from '../orders/order-staff-performance.service';
 import { TasksService } from '../tasks/tasks.service';
 
+/**
+ * Page size cap for the analytics endpoints.
+ *
+ * `perPage` came straight off the query string with no upper bound, so
+ * `?perPage=100000` widened the in-memory `id IN (...)` list in
+ * getStaffPerformance until it exceeded Postgres' bind-parameter budget. It
+ * also controls how much timeline JSONB is pulled per request. 200 covers any
+ * realistic page size for a manager-facing report.
+ */
+const MAX_PER_PAGE = 200;
+
+function toPage(value?: string): number {
+  const n = parseInt(value ?? '1', 10);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
+function toPerPage(value?: string): number {
+  const n = parseInt(value ?? '20', 10);
+  if (!Number.isFinite(n) || n <= 0) return 20;
+  return Math.min(n, MAX_PER_PAGE);
+}
+
 @Controller('hr')
 @Roles('superadmin', 'admin', 'manager')
 @PermissionsAny('view_hr')
@@ -18,8 +40,25 @@ export class HrController {
   ) {}
 
   @Get('overview')
+  @PermissionsAny('manage_payroll')
   getOverview() {
+    // Payroll figures (lastPeriodNet, paidThisMonth, payable, recentPayments
+    // netPay) are returned inside this payload. They used to be served under
+    // the class-level view_hr permission alone, so anyone who could read the HR
+    // directory could also read salary data — while hr-ledgers requires
+    // manage_payroll for exactly the same numbers. Split the two so operational
+    // HR and payroll access stay separable, as they already are everywhere else.
     return this.hrService.getOverview();
+  }
+
+  /**
+   * GET /hr/overview/workforce
+   * The same dashboard without any payroll figures, for managers who hold
+   * view_hr but not manage_payroll.
+   */
+  @Get('overview/workforce')
+  getWorkforceOverview() {
+    return this.hrService.getOverview({ includePayroll: false });
   }
 
   // ── Order Staff Performance ─────────────────────────────────────────────────
@@ -48,8 +87,8 @@ export class HrController {
       to,
       employeeId,
       departmentId,
-      page: page ? parseInt(page) : 1,
-      perPage: perPage ? parseInt(perPage) : 20,
+      page: toPage(page),
+      perPage: toPerPage(perPage),
     });
   }
 
@@ -71,16 +110,24 @@ export class HrController {
       from,
       to,
       stage: stage as any,
-      page: page ? parseInt(page) : 1,
-      perPage: perPage ? parseInt(perPage) : 20,
+      page: toPage(page),
+      perPage: toPerPage(perPage),
     });
   }
 
   /**
    * POST /hr/performance/orders/backfill
    * One-time backfill: migrate existing Order.timeline entries into OrderStaffEvent.
+   *
+   * Restricted to superadmin/admin rather than the class-level manager role.
+   * This is an unbounded bulk write (2000 orders x their timeline entries) with
+   * no rate limit, so a read-only HR viewer should not be able to trigger it —
+   * orders.controller.ts already requires superadmin/admin for the analogous
+   * backfill-view-tokens maintenance endpoint.
    */
   @Post('performance/orders/backfill')
+  @Roles('superadmin', 'admin')
+  @PermissionsAny('manage_hr_settings')
   backfillOrderEvents() {
     return this.staffPerformance.backfillFromTimeline();
   }
@@ -109,8 +156,8 @@ export class HrController {
       to,
       departmentId,
       employeeId,
-      page: page ? parseInt(page) : 1,
-      perPage: perPage ? parseInt(perPage) : 20,
+      page: toPage(page),
+      perPage: toPerPage(perPage),
     });
   }
 }

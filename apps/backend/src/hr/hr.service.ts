@@ -1,15 +1,32 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { dhakaToday, dhakaStartOfDay } from '../hr-attendance/attendance-date';
+import { OrderStaffPerformanceService } from '../orders/order-staff-performance.service';
 
 const toNumber = (value: { toString(): string } | null | undefined): number =>
   value ? Number(value) : 0;
 
 @Injectable()
 export class HrService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // The order funnel has exactly one definition, and it lives in the
+    // performance service. Counting OrderStaffEvent rows inline here would
+    // drift from it immediately — and it did: the literals below were
+    // 'ASSIGNED'/'STATUS_CHANGED', which no code path has ever written, so
+    // every number rendered as a silent 0.
+    private readonly staffPerformance: OrderStaffPerformanceService,
+  ) {}
 
-  async getOverview() {
+  /**
+   * HR dashboard payload.
+   *
+   * `includePayroll: false` skips the payroll queries entirely and omits the
+   * figures, for callers who hold view_hr but not manage_payroll. Gating only
+   * the response would still have run the queries.
+   */
+  async getOverview(opts: { includePayroll?: boolean } = {}) {
+    const includePayroll = opts.includePayroll !== false;
     const now = new Date();
     const monthStart = new Date();
     monthStart.setDate(1);
@@ -134,38 +151,56 @@ export class HrService {
       where: { day: { date: yesterdayDate }, checkOutAt: null },
     });
 
-    // Order operations KPIs for this month (from OrderStaffEvent if available)
-    const orderOpsStartDate = monthStart;
-    const orderHandled = await this.prisma.orderStaffEvent.count({
-      where: {
-        action: 'ASSIGNED',
-        createdAt: { gte: orderOpsStartDate },
-      },
-    }).catch(() => 0);
+    // Order operations KPIs for this month.
+    //
+    // Delegated to OrderStaffPerformanceService so the dashboard and the
+    // performance page can never disagree about what "confirmation rate" means.
+    // It also dedupes per order: a raw OrderStaffEvent.count() would count one
+    // order several times, once per status transition it went through.
+    const monthStartStr = `${todayStr.slice(0, 8)}01`;
+    const orderOpsRange = { from: monthStartStr, to: todayStr };
+    const firstPage = await this.staffPerformance.getStaffPerformance({
+      ...orderOpsRange,
+      page: 1,
+      perPage: 200,
+    });
 
-    const confirmedThisMonth = await this.prisma.orderStaffEvent.count({
-      where: {
-        action: 'STATUS_CHANGED',
-        toStatus: 'Confirmed',
-        createdAt: { gte: orderOpsStartDate },
-      },
-    }).catch(() => 0);
+    // getStaffPerformance clamps perPage to 200 and aggregates the summary over
+    // the employees on the returned page, so a larger workforce needs the
+    // remaining pages walked too. The dashboard tile must reflect everyone.
+    const orderOpsTotals = {
+      totalOrdersHandled: firstPage.summary.totalOrdersHandled,
+      totalConfirmed: firstPage.summary.totalConfirmed,
+      totalDelivered: firstPage.summary.totalDelivered,
+      totalReturned: firstPage.summary.totalReturned,
+      totalCancelled: firstPage.summary.totalCancelled,
+    };
+    for (let page = 2; page <= firstPage.meta.totalPages; page++) {
+      const next = await this.staffPerformance.getStaffPerformance({
+        ...orderOpsRange,
+        page,
+        perPage: 200,
+      });
+      orderOpsTotals.totalOrdersHandled += next.summary.totalOrdersHandled;
+      orderOpsTotals.totalConfirmed += next.summary.totalConfirmed;
+      orderOpsTotals.totalDelivered += next.summary.totalDelivered;
+      orderOpsTotals.totalReturned += next.summary.totalReturned;
+      orderOpsTotals.totalCancelled += next.summary.totalCancelled;
+    }
 
-    const deliveredThisMonth = await this.prisma.orderStaffEvent.count({
-      where: {
-        action: 'STATUS_CHANGED',
-        toStatus: 'Delivered',
-        createdAt: { gte: orderOpsStartDate },
-      },
-    }).catch(() => 0);
-
-    const cancelledThisMonth = await this.prisma.orderStaffEvent.count({
-      where: {
-        action: 'STATUS_CHANGED',
-        toStatus: 'Cancelled',
-        createdAt: { gte: orderOpsStartDate },
-      },
-    }).catch(() => 0);
+    const pct = (num: number, den: number) => (den > 0 ? Math.round((num / den) * 1000) / 10 : 0);
+    const orderOps = {
+      handled: orderOpsTotals.totalOrdersHandled,
+      confirmed: orderOpsTotals.totalConfirmed,
+      confirmationRate: pct(orderOpsTotals.totalConfirmed, orderOpsTotals.totalOrdersHandled),
+      delivered: orderOpsTotals.totalDelivered,
+      deliveryRateFromConfirmed: pct(orderOpsTotals.totalDelivered, orderOpsTotals.totalConfirmed),
+      endToEndDeliveryRate: pct(orderOpsTotals.totalDelivered, orderOpsTotals.totalOrdersHandled),
+      returned: orderOpsTotals.totalReturned,
+      returnRate: pct(orderOpsTotals.totalReturned, orderOpsTotals.totalDelivered),
+      cancelled: orderOpsTotals.totalCancelled,
+      cancellationRate: pct(orderOpsTotals.totalCancelled, orderOpsTotals.totalOrdersHandled),
+    };
 
     return {
       employees: {
@@ -177,21 +212,25 @@ export class HrService {
         terminated: byStatus('terminated'),
         resigned: byStatus('resigned'),
       },
-      payroll: {
-        lastPeriodKey,
-        lastPeriodNet,
-        pendingApprovals,
-        paidThisMonth: toNumber(paidThisMonth._sum.netPay),
-        payable: toNumber(payable._sum.netPay),
-      },
-      recentPayments: recentPayments.map((p) => ({
-        id: p.id,
-        employeeId: p.employee.employeeId,
-        employeeName: p.employee.betterAuthUser?.name ?? 'Unknown',
-        netPay: toNumber(p.netPay),
-        paidAt: p.paidAt,
-        periodKey: p.periodKey,
-      })),
+      ...(includePayroll
+        ? {
+            payroll: {
+              lastPeriodKey,
+              lastPeriodNet,
+              pendingApprovals,
+              paidThisMonth: toNumber(paidThisMonth._sum.netPay),
+              payable: toNumber(payable._sum.netPay),
+            },
+            recentPayments: recentPayments.map((p) => ({
+              id: p.id,
+              employeeId: p.employee.employeeId,
+              employeeName: p.employee.betterAuthUser?.name ?? 'Unknown',
+              netPay: toNumber(p.netPay),
+              paidAt: p.paidAt,
+              periodKey: p.periodKey,
+            })),
+          }
+        : {}),
       queues: {
         pendingLeaveRequests: pendingLeaves,
       },
@@ -222,14 +261,7 @@ export class HrService {
       },
       orderOperations: {
         periodLabel: 'This Month',
-        handled: orderHandled,
-        confirmed: confirmedThisMonth,
-        confirmationRate: orderHandled > 0 ? Math.round((confirmedThisMonth / orderHandled) * 1000) / 10 : 0,
-        delivered: deliveredThisMonth,
-        deliveryRateFromConfirmed: confirmedThisMonth > 0
-          ? Math.round((deliveredThisMonth / confirmedThisMonth) * 1000) / 10 : 0,
-        cancelled: cancelledThisMonth,
-        cancellationRate: orderHandled > 0 ? Math.round((cancelledThisMonth / orderHandled) * 1000) / 10 : 0,
+        ...orderOps,
       },
       exceptions: {
         missingCheckout,

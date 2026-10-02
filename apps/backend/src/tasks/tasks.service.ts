@@ -50,7 +50,9 @@ export class TasksService {
   /** Recalculates actualMinutes from all completed time entries */
   private async recalcActualMinutes(taskId: string): Promise<void> {
     const entries = await this.prisma.taskTimeEntry.findMany({
-      where: { taskId, status: 'completed' },
+      // Include paused sessions: pauseTimer records the seconds accrued before
+      // the pause, so excluding them under-reports actualMinutes.
+      where: { taskId, status: { in: ['completed', 'paused'] } },
       select: { durationSec: true },
     });
     const totalSec = entries.reduce((s, e) => s + e.durationSec, 0);
@@ -199,7 +201,13 @@ export class TasksService {
     const task = await this.prisma.task.findUnique({ where: { id: taskId } });
     if (!task) throw new NotFoundException('Task not found');
 
-    // Only one active entry per employee+task at a time
+    // Only one active entry per employee+task at a time.
+    //
+    // The findFirst is a friendly fast path, NOT the guarantee: it is a
+    // check-then-act race. The partial unique index
+    // TaskTimeEntry_one_active_per_task_employee_idx is what actually enforces
+    // the invariant, and the P2002 catch below turns a lost race into the same
+    // clear error instead of a 500.
     const existing = await this.prisma.taskTimeEntry.findFirst({
       where: { taskId, employeeId: dto.employeeId, status: 'active' },
     });
@@ -207,16 +215,24 @@ export class TasksService {
       throw new BadRequestException('A timer is already running for this task. Pause or stop it first.');
     }
 
-    const entry = await this.prisma.taskTimeEntry.create({
-      data: {
-        taskId,
-        employeeId: dto.employeeId,
-        startedAt: new Date(),
-        status: 'active',
-        source: dto.source ?? 'manual',
-        notes: dto.notes ?? null,
-      },
-    });
+    let entry;
+    try {
+      entry = await this.prisma.taskTimeEntry.create({
+        data: {
+          taskId,
+          employeeId: dto.employeeId,
+          startedAt: new Date(),
+          status: 'active',
+          source: dto.source ?? 'manual',
+          notes: dto.notes ?? null,
+        },
+      });
+    } catch (err: any) {
+      if (err?.code === 'P2002') {
+        throw new BadRequestException('A timer is already running for this task. Pause or stop it first.');
+      }
+      throw err;
+    }
 
     // Auto-assign employee to task if not already set
     if (!task.assignedEmployeeId) {
@@ -263,19 +279,34 @@ export class TasksService {
     });
     if (!paused) throw new NotFoundException('No paused timer found for this task and employee.');
 
-    // Create a new active session
-    const entry = await this.prisma.taskTimeEntry.create({
-      data: {
-        taskId,
-        employeeId: dto.employeeId,
-        startedAt: new Date(),
-        status: 'active',
-        source: paused.source,
-        notes: dto.notes ?? paused.notes,
-      },
+    // Resuming must respect the same one-active-timer rule as starting.
+    // This guard was missing entirely, so calling resume twice in a row
+    // deterministically produced two ACTIVE sessions and double-counted time.
+    const active = await this.prisma.taskTimeEntry.findFirst({
+      where: { taskId, employeeId: dto.employeeId, status: 'active' },
     });
+    if (active) {
+      throw new BadRequestException('A timer is already running for this task. Pause or stop it first.');
+    }
 
-    return entry;
+    // Create a new active session
+    try {
+      return await this.prisma.taskTimeEntry.create({
+        data: {
+          taskId,
+          employeeId: dto.employeeId,
+          startedAt: new Date(),
+          status: 'active',
+          source: paused.source,
+          notes: dto.notes ?? paused.notes,
+        },
+      });
+    } catch (err: any) {
+      if (err?.code === 'P2002') {
+        throw new BadRequestException('A timer is already running for this task. Pause or stop it first.');
+      }
+      throw err;
+    }
   }
 
   /** Stop an active timer and optionally mark task as done */
@@ -430,7 +461,11 @@ export class TasksService {
         by: ['employeeId'],
         where: {
           employeeId: { in: empIds },
-          status: 'completed',
+          // Both 'completed' AND 'paused' entries carry real elapsed time —
+          // pauseTimer writes the seconds accrued before the pause into
+          // durationSec. Filtering to 'completed' only silently dropped that
+          // time from every "time spent" figure on the page.
+          status: { in: ['completed', 'paused'] },
           startedAt: { gte: startDate, lt: endDate },
         },
         _sum: { durationSec: true },
@@ -442,6 +477,18 @@ export class TasksService {
     const assignedMap = new Map(assignedTasks.map((r) => [r.assignedEmployeeId, r._count._all]));
     const completedMap = new Map(completedTasks.map((r) => [r.assignedEmployeeId, r._count._all]));
     const timeMap = new Map(timeEntries.map((r) => [r.employeeId, r]));
+
+    // Whole-of-result-set totals. The groupBy calls above cover every employee
+    // in the filter (empIds), not just the current page, so these are true
+    // totals and cannot drift when the manager pages through the table.
+    const totalAssigned = assignedTasks.reduce((s, r) => s + r._count._all, 0);
+    const totalCompleted = completedTasks.reduce((s, r) => s + r._count._all, 0);
+    const totals = {
+      assigned: totalAssigned,
+      completed: totalCompleted,
+      pending: Math.max(0, totalAssigned - totalCompleted),
+      timeSpentSec: timeEntries.reduce((s, r) => s + (r._sum.durationSec ?? 0), 0),
+    };
 
     const rows = employees.map((emp) => {
       const assigned = assignedMap.get(emp.id) ?? 0;
@@ -473,6 +520,20 @@ export class TasksService {
 
     return {
       data: rows,
+      // Totals across the WHOLE filtered result set, not just this page.
+      // The frontend used to sum the returned page, so paging from 1 to 2
+      // changed the headline "Completion Rate" even though nothing about the
+      // underlying data had changed.
+      summary: {
+        totalAssigned: totals.assigned,
+        totalCompleted: totals.completed,
+        totalPending: totals.pending,
+        totalTimeSpentMinutes: Math.ceil(totals.timeSpentSec / 60),
+        completionRate:
+          totals.assigned > 0
+            ? Math.round((totals.completed / totals.assigned) * 1000) / 10
+            : 0,
+      },
       meta: {
         page,
         perPage,

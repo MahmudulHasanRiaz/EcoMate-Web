@@ -42,7 +42,7 @@ export function EmployeeOrdersTab({ employeeId, employeeName }: EmployeeOrdersTa
             <p className='mt-2 text-2xl font-bold tabular-nums'>
               {isLoading ? <Skeleton className='h-8 w-16' /> : (metrics?.ordersHandled ?? 0)}
             </p>
-            <p className='text-[10px] text-muted-foreground mt-0.5'>Lifetime assigned orders</p>
+            <p className='text-[10px] text-muted-foreground mt-0.5'>Orders handled this month</p>
           </CardContent>
         </Card>
 
@@ -199,12 +199,12 @@ export function EmployeeOrdersTab({ employeeId, employeeName }: EmployeeOrdersTa
               </div>
 
               <div className='p-4 rounded-xl border border-border/50 bg-muted/20'>
-                <p className='text-xs text-muted-foreground'>Verification Quality</p>
+                <p className='text-xs text-muted-foreground'>End-to-End Delivery</p>
                 <p className='text-xl font-bold tabular-nums mt-1 text-emerald-600'>
-                  {100 - metrics.returnRate}%
+                  {metrics.endToEndDeliveryRate}%
                 </p>
                 <p className='text-[10px] text-muted-foreground mt-0.5'>
-                  Non-return success rate on delivered orders
+                  {metrics.delivered} delivered out of {metrics.ordersHandled} handled
                 </p>
               </div>
             </div>

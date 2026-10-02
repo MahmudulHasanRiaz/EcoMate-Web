@@ -2,6 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { dhakaStartOfDay } from '../hr-attendance/attendance-date';
+import {
+  findDeliveredTransition,
+  resolveReturn,
+  type TimelineEntry,
+} from '../business-analytics/metric-contract';
 
 export interface StaffOrderMetrics {
   employeeId: string;
@@ -38,6 +43,48 @@ export interface StaffPerformanceSummary {
   totalRevenue: number;
 }
 
+/** Actors that appear in a timeline but are not staff, so produce no event. */
+const NON_STAFF_ACTORS = new Set(['Customer', 'customer', 'system', 'reconcile', 'Guest']);
+
+/** Maps a timeline status onto the lowercase action vocabulary writers use. */
+function actionForStatus(status: unknown): string {
+  switch (status) {
+    case 'Confirmed':
+      return 'confirmed';
+    case 'Delivered':
+      return 'delivered';
+    case 'Returned':
+    case 'Damaged':
+      return 'returned';
+    case 'Cancelled':
+      return 'cancelled';
+    default:
+      return 'status_change';
+  }
+}
+
+/** Upper bound on page size, so the order `id IN (...)` list stays bounded. */
+const MAX_PER_PAGE = 200;
+
+/** Statuses from which an order counts as having been confirmed. */
+const CONFIRMED_COHORT_STATUSES = new Set([
+  'Confirmed',
+  'Packed',
+  'Packing Hold',
+  'Shipping',
+  'Delivered',
+  'Returned',
+  'Damaged',
+]);
+
+/** Statuses that mean the order reached a delivery outcome. */
+const DELIVERED_COHORT_STATUSES = new Set(['Delivered', 'Returned', 'Damaged']);
+
+/** Normalise the loose JSON timeline column into the canonical shape. */
+function toTimeline(raw: unknown): TimelineEntry[] {
+  return Array.isArray(raw) ? (raw as TimelineEntry[]) : [];
+}
+
 @Injectable()
 export class OrderStaffPerformanceService {
   private readonly logger = new Logger(OrderStaffPerformanceService.name);
@@ -45,7 +92,17 @@ export class OrderStaffPerformanceService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Resolves canonical employee for a given userId (UserProfile.id or betterAuthUserId).
+   * Resolves canonical employee for a given actor id.
+   *
+   * Callers pass different shapes for the same human, so all three are
+   * accepted here rather than at every call site:
+   *   - a UserProfile.id          (payload.sub from @CurrentUser)
+   *   - a better-auth user id
+   *   - an email address          (the order controller passes user.email as
+   *                                the timeline `performedBy` value)
+   *
+   * Getting this wrong is silent: the event still writes, but employeeId lands
+   * as NULL and no report can ever attribute it to a person.
    */
   async resolveEmployeeByUserId(userId: string): Promise<string | null> {
     if (!userId) return null;
@@ -68,8 +125,14 @@ export class OrderStaffPerformanceService {
       where: { betterAuthUserId: baId },
       select: { id: true },
     });
+    if (emp) return emp.id;
 
-    return emp?.id ?? null;
+    // Last resort: the actor was recorded as an email address.
+    const byEmail = await this.prisma.employee.findFirst({
+      where: { betterAuthUser: { email: userId } },
+      select: { id: true },
+    });
+    return byEmail?.id ?? null;
   }
 
   /**
@@ -112,17 +175,19 @@ export class OrderStaffPerformanceService {
       const employeeId =
         data.employeeId || (await this.resolveEmployeeByUserId(data.userId));
 
-      if (data.action === 'STATUS_CHANGED' && data.toStatus) {
-        const existing = await client.orderStaffEvent.findFirst({
-          where: {
-            orderId: data.orderId,
-            action: 'STATUS_CHANGED',
-            toStatus: data.toStatus,
-          },
-        });
-        if (existing) return existing;
-      }
-
+      // No de-duplication here, deliberately.
+      //
+      // An earlier version guarded on (orderId, action='STATUS_CHANGED',
+      // toStatus). No code path has ever written the literal 'STATUS_CHANGED'
+      // (the writers use lowercase 'confirmed'/'delivered'/'status_change'),
+      // so the guard was dead code. Even had the literal matched it would have
+      // been wrong: it omitted the actor, so two different staff moving the
+      // same order to the same status would have lost one real event, and it
+      // was a check-then-act with no unique constraint behind it.
+      //
+      // The ledger is an append-only history, and every reader already
+      // de-duplicates by order (Set<orderId>) rather than by action, so
+      // duplicate rows cannot inflate any reported metric.
       return await client.orderStaffEvent.create({
         data: {
           orderId: data.orderId,
@@ -164,7 +229,14 @@ export class OrderStaffPerformanceService {
     perPage?: number;
   }) {
     const page = query.page && query.page > 0 ? Number(query.page) : 1;
-    const perPage = query.perPage && query.perPage > 0 ? Number(query.perPage) : 20;
+    // Clamped here as well as in the controller: this method builds an
+    // `id IN (...)` list whose length is driven by perPage, and an unbounded
+    // value overruns Postgres' bind-parameter budget. Defence in depth for
+    // direct service callers (e.g. the dashboard tile).
+    const perPage = Math.min(
+      query.perPage && query.perPage > 0 ? Number(query.perPage) : 20,
+      MAX_PER_PAGE,
+    );
 
     // Date range resolution
     const now = new Date();
@@ -326,30 +398,28 @@ export class OrderStaffPerformanceService {
         if (!ord) continue;
 
         const currentStatus = ord.status?.name || '';
-        const timeline = Array.isArray(ord.timeline) ? (ord.timeline as any[]) : [];
+        const timeline = toTimeline(ord.timeline);
 
-        // Check if order reached Confirmed
+        // Stage detection is delegated to the canonical metric contract. The
+        // previous inline version used timeline.some(), which is "ever reached"
+        // semantics: an order that was delivered and later cancelled or sent
+        // back to a hold still counted as delivered, and its revenue leaked
+        // into an HR figure. findDeliveredTransition is latest-wins, matching
+        // every other consumer in the codebase.
+        const deliveredAt = findDeliveredTransition(timeline)?.timestamp ?? null;
+
         const reachedConfirmed =
-          ['Confirmed', 'Packed', 'Packing Hold', 'Shipping', 'Delivered', 'Returned', 'Damaged', 'Partial'].includes(
-            currentStatus,
-          ) ||
+          CONFIRMED_COHORT_STATUSES.has(currentStatus) ||
           timeline.some((t) => t.status === 'Confirmed');
 
-        // Check if order reached Delivered
-        const reachedDelivered =
-          currentStatus === 'Delivered' ||
-          timeline.some((t) => t.status === 'Delivered') ||
-          (currentStatus === 'Returned' && timeline.some((t) => t.status === 'Delivered'));
+        const reachedDelivered = DELIVERED_COHORT_STATUSES.has(currentStatus) || deliveredAt !== null;
 
-        // Check if order reached Returned
-        const reachedReturned =
-          ['Returned', 'Damaged'].includes(currentStatus) ||
-          timeline.some((t) => t.status === 'Returned' || t.status === 'Damaged');
+        // resolveReturn decides whether a Returned/Damaged entry actually
+        // reverses this delivery, instead of counting any historical mention.
+        const reachedReturned = resolveReturn(timeline, deliveredAt).hasReturn;
 
-        // Check if order reached Cancelled
         const reachedCancelled =
-          currentStatus === 'Cancelled' ||
-          timeline.some((t) => t.status === 'Cancelled');
+          currentStatus === 'Cancelled' || timeline.some((t) => t.status === 'Cancelled');
 
         if (reachedConfirmed) {
           confirmed++;
@@ -453,7 +523,10 @@ export class OrderStaffPerformanceService {
     perPage?: number;
   }) {
     const page = query.page && query.page > 0 ? Number(query.page) : 1;
-    const perPage = query.perPage && query.perPage > 0 ? Number(query.perPage) : 20;
+    const perPage = Math.min(
+      query.perPage && query.perPage > 0 ? Number(query.perPage) : 20,
+      MAX_PER_PAGE,
+    );
     const stage = query.stage || 'handled';
 
     const now = new Date();
@@ -502,9 +575,26 @@ export class OrderStaffPerformanceService {
         id: { in: Array.from(orderIdSet) },
         trashedAt: null,
       },
-      include: {
+      select: {
+        id: true,
+        displayId: true,
+        total: true,
+        createdAt: true,
+        guestName: true,
+        guestPhone: true,
+        // The stage filter below still reads the timeline to decide which
+        // cohort this order belongs to.
+        timeline: true,
         status: { select: { id: true, name: true, color: true } },
         customer: { select: { name: true, phone: true } },
+        // The drilldown UI renders "Latest Action" and "Action Date", which
+        // were dead columns: the field was declared on the frontend type but
+        // never sent. Take the most recent one so those columns are real.
+        staffEvents: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { action: true, fromStatus: true, toStatus: true, createdAt: true },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -513,27 +603,16 @@ export class OrderStaffPerformanceService {
     const filtered = orders.filter((ord) => {
       if (stage === 'handled') return true;
       const status = ord.status?.name || '';
-      const tl = Array.isArray(ord.timeline) ? (ord.timeline as any[]) : [];
+      const tl = toTimeline(ord.timeline);
 
       if (stage === 'confirmed') {
-        return (
-          ['Confirmed', 'Packed', 'Shipping', 'Delivered', 'Returned', 'Damaged', 'Partial'].includes(
-            status,
-          ) || tl.some((t) => t.status === 'Confirmed')
-        );
+        return CONFIRMED_COHORT_STATUSES.has(status) || tl.some((t) => t.status === 'Confirmed');
       }
       if (stage === 'delivered') {
-        return (
-          status === 'Delivered' ||
-          tl.some((t) => t.status === 'Delivered') ||
-          (status === 'Returned' && tl.some((t) => t.status === 'Delivered'))
-        );
+        return DELIVERED_COHORT_STATUSES.has(status) || findDeliveredTransition(tl) !== null;
       }
       if (stage === 'returned') {
-        return (
-          ['Returned', 'Damaged'].includes(status) ||
-          tl.some((t) => t.status === 'Returned' || t.status === 'Damaged')
-        );
+        return resolveReturn(tl, findDeliveredTransition(tl)?.timestamp ?? null).hasReturn;
       }
       if (stage === 'cancelled') {
         return status === 'Cancelled' || tl.some((t) => t.status === 'Cancelled');
@@ -554,6 +633,12 @@ export class OrderStaffPerformanceService {
         status: o.status?.name || 'Pending',
         statusColor: o.status?.color || '#6B7280',
         createdAt: o.createdAt,
+        events: (o.staffEvents ?? []).map((e) => ({
+          action: e.action,
+          fromStatus: e.fromStatus,
+          toStatus: e.toStatus,
+          createdAt: e.createdAt,
+        })),
       })),
       meta: {
         page,
@@ -568,68 +653,138 @@ export class OrderStaffPerformanceService {
   /**
    * Safe idempotent backfill from Order.timeline to OrderStaffEvent for historical accuracy.
    */
-  async backfillFromTimeline(): Promise<{ scanned: number; inserted: number }> {
+  /**
+   * Backfills OrderStaffEvent from historical Order.timeline entries.
+   *
+   * The original version walked 2000 orders and issued ~4 queries per timeline
+   * entry (a findFirst dedupe, two in resolveEmployeeByUserId, then the create)
+   * with no transaction and no ordering — up to ~80k sequential round trips, and
+   * `take: 2000` with no ORDER BY returned an arbitrary slice, so re-running
+   * re-scanned the same rows instead of making progress.
+   *
+   * This version:
+   *   - pages deterministically by id so repeated runs advance,
+   *   - resolves every actor in ONE query instead of two per entry,
+   *   - de-dupes against existing events with a single set lookup,
+   *   - writes with createMany instead of one insert per event.
+   *
+   * Idempotency is by (orderId, userId, action, toStatus), matching the shape
+   * the original used, so a re-run after a partial failure does not duplicate.
+   */
+  async backfillFromTimeline(opts: { pageSize?: number } = {}) {
+    const pageSize = Math.min(opts.pageSize ?? 500, 2000);
+
     const orders = await this.prisma.order.findMany({
       where: { timeline: { not: '[]' } },
-      select: {
-        id: true,
-        timeline: true,
-        assignedToId: true,
-        createdAt: true,
-      },
-      take: 2000,
+      select: { id: true, timeline: true, assignedToId: true, createdAt: true },
+      orderBy: { id: 'asc' },
+      take: pageSize,
     });
 
-    let inserted = 0;
+    if (orders.length === 0) {
+      return { scanned: 0, inserted: 0, lastOrderId: null, hasMore: false };
+    }
 
+    const orderIds = orders.map((o) => o.id);
+
+    // Every distinct actor across every timeline entry, resolved in one pass.
+    const actors = new Set<string>();
     for (const ord of orders) {
       const timeline = Array.isArray(ord.timeline) ? (ord.timeline as any[]) : [];
       for (const entry of timeline) {
-        if (!entry.performedBy || entry.performedBy === 'customer' || entry.performedBy === 'system') {
-          continue;
-        }
-
-        const ts = entry.timestamp ? new Date(entry.timestamp) : ord.createdAt;
-        const action =
-          entry.status === 'Confirmed'
-            ? 'confirmed'
-            : entry.status === 'Delivered'
-              ? 'delivered'
-              : entry.status === 'Returned'
-                ? 'returned'
-                : entry.status === 'Cancelled'
-                  ? 'cancelled'
-                  : 'status_change';
-
-        const existing = await this.prisma.orderStaffEvent.findFirst({
-          where: {
-            orderId: ord.id,
-            userId: entry.performedBy,
-            action,
-            toStatus: entry.status ?? null,
-          },
-          select: { id: true },
-        });
-
-        if (!existing) {
-          const empId = await this.resolveEmployeeByUserId(entry.performedBy);
-          await this.prisma.orderStaffEvent.create({
-            data: {
-              orderId: ord.id,
-              userId: entry.performedBy,
-              employeeId: empId,
-              action,
-              fromStatus: entry.oldStatus ?? null,
-              toStatus: entry.status ?? null,
-              note: entry.note ?? null,
-              createdAt: isNaN(ts.getTime()) ? new Date() : ts,
-            },
-          });
-          inserted++;
-        }
+        const actor = entry?.performedBy;
+        if (!actor || NON_STAFF_ACTORS.has(String(actor))) continue;
+        actors.add(String(actor));
       }
     }
 
-    return { scanned: orders.length, inserted };
+    // Existing events for these orders, so a re-run is a no-op. One query
+    // instead of one findFirst per timeline entry.
+    const existing = await this.prisma.orderStaffEvent.findMany({
+      where: { orderId: { in: orderIds } },
+      select: { orderId: true, userId: true, action: true, toStatus: true },
+    });
+    const seen = new Set(
+      existing.map((e) => `${e.orderId}|${e.userId}|${e.action}|${e.toStatus ?? ''}`),
+    );
+
+    const employeesByActor = await this.resolveEmployeesByActors([...actors]);
+
+    const pending: Prisma.OrderStaffEventCreateManyInput[] = [];
+    for (const ord of orders) {
+      const timeline = Array.isArray(ord.timeline) ? (ord.timeline as any[]) : [];
+      for (const entry of timeline) {
+        const actor = entry?.performedBy;
+        if (!actor || NON_STAFF_ACTORS.has(String(actor))) continue;
+
+        const action = actionForStatus(entry.status);
+        const key = `${ord.id}|${actor}|${action}|${entry.status ?? ''}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        const ts = entry.timestamp ? new Date(entry.timestamp) : ord.createdAt;
+        pending.push({
+          orderId: ord.id,
+          userId: String(actor),
+          employeeId: employeesByActor.get(String(actor)) ?? null,
+          action,
+          fromStatus: entry.oldStatus ?? null,
+          toStatus: entry.status ?? null,
+          note: entry.note ?? null,
+          createdAt: isNaN(ts.getTime()) ? ord.createdAt : ts,
+        });
+      }
+    }
+
+    if (pending.length > 0) {
+      await this.prisma.orderStaffEvent.createMany({ data: pending });
+    }
+
+    const lastOrderId = orderIds[orderIds.length - 1];
+    return {
+      scanned: orders.length,
+      inserted: pending.length,
+      lastOrderId,
+      hasMore: orders.length === pageSize,
+    };
+  }
+
+  /**
+   * Resolves many actors to employee ids in one query.
+   *
+   * Actors reach the timeline as a UserProfile id, a better-auth user id, or an
+   * email, depending on which code path wrote the entry, so all three shapes
+   * are resolved together rather than one at a time.
+   */
+  private async resolveEmployeesByActors(actors: string[]): Promise<Map<string, string>> {
+    const result = new Map<string, string>();
+    if (actors.length === 0) return result;
+
+    const [byEmail, byProfile, byEmployeeId] = await Promise.all([
+      this.prisma.employee.findMany({
+        where: { betterAuthUser: { email: { in: actors } } },
+        select: { betterAuthUserId: true, betterAuthUser: { select: { email: true } } },
+      }),
+      this.prisma.employee.findMany({
+        where: { betterAuthUserId: { in: actors } },
+        select: { id: true, betterAuthUserId: true },
+      }),
+      this.prisma.employee.findMany({
+        where: { id: { in: actors } },
+        select: { id: true },
+      }),
+    ]);
+
+    for (const emp of byEmail) {
+      const email = emp.betterAuthUser?.email;
+      if (email) result.set(email, emp.betterAuthUserId!);
+    }
+    for (const emp of byProfile) {
+      result.set(emp.betterAuthUserId, emp.id);
+    }
+    for (const emp of byEmployeeId) {
+      result.set(emp.id, emp.id);
+    }
+    return result;
   }
 }

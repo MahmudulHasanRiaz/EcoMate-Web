@@ -369,6 +369,10 @@ model TaskTimeEntry {
   @@index([employeeId])
   @@index([startedAt])
   @@index([employeeId, startedAt])
+  @@index([employeeId, startedAt, status])
+  // A partial unique index (migration-only) enforces one running timer per
+  // task+employee; Prisma cannot express the WHERE clause, so it lives in SQL.
+  @@index([taskId, employeeId])
 }
 
 model UserSettings {
@@ -3738,6 +3742,7 @@ model OrderStaffEvent {
   @@index([userId, createdAt])
   @@index([action, createdAt])
   @@index([toStatus, createdAt])
+  @@index([createdAt])
 }
 
 // ---- Cost allocation ----

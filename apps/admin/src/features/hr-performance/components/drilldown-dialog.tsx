@@ -39,7 +39,10 @@ export function DrilldownDialog({
   const [stage, setStage] = useState<string>('handled')
   const [page, setPage] = useState(1)
 
-  const { data, isLoading } = useOrderDrilldownQuery(
+  // isError was never read, so a failed request fell through to the empty
+  // branch and the dialog claimed "No orders found in this stage cohort" —
+  // a confident lie on top of a 403 or 500.
+  const { data, isLoading, isError, refetch } = useOrderDrilldownQuery(
     employeeId,
     { from, to, stage, page, perPage: 10 },
     open,
@@ -112,6 +115,21 @@ export function DrilldownDialog({
                     <TableCell><Skeleton className='h-4 w-24' /></TableCell>
                   </TableRow>
                 ))
+              ) : isError ? (
+                <TableRow>
+                  <TableCell colSpan={6} className='text-center py-8'>
+                    <span className='text-sm text-destructive'>
+                      Could not load order records.
+                    </span>
+                    <button
+                      type='button'
+                      onClick={() => refetch()}
+                      className='ml-2 text-xs font-medium text-primary underline-offset-2 hover:underline'
+                    >
+                      Retry
+                    </button>
+                  </TableCell>
+                </TableRow>
               ) : orders.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className='text-center py-8 text-muted-foreground'>
@@ -141,12 +159,17 @@ export function DrilldownDialog({
                       <TableCell className='text-xs text-muted-foreground'>
                         {latestEvent ? (
                           <span>
-                            {latestEvent.action === 'STATUS_CHANGED'
-                              ? `Status → ${latestEvent.toStatus}`
-                              : latestEvent.action}
+                            {/* Writers emit lowercase actions
+                                (confirmed / delivered / returned /
+                                cancelled / status_change / assigned), so the
+                                previous 'STATUS_CHANGED' comparison was never
+                                true and this column always fell back. */}
+                            {latestEvent.toStatus
+                              ? `→ ${latestEvent.toStatus}`
+                              : latestEvent.action.replace(/_/g, ' ')}
                           </span>
                         ) : (
-                          'Assigned'
+                          'No recorded action'
                         )}
                       </TableCell>
                       <TableCell className='text-xs text-muted-foreground'>

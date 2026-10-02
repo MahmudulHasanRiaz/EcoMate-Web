@@ -41,11 +41,16 @@ export function TaskProductivityTab({
   const rows = data?.data || []
   const meta = data?.meta
 
-  const totalAssigned = rows.reduce((s, r) => s + r.assigned, 0)
-  const totalCompleted = rows.reduce((s, r) => s + r.completed, 0)
-  const totalPending = rows.reduce((s, r) => s + r.pending, 0)
-  const totalTimeMins = rows.reduce((s, r) => s + r.timeSpentMinutes, 0)
-  const overallCompletionRate = totalAssigned > 0 ? Math.round((totalCompleted / totalAssigned) * 1000) / 10 : 0
+  // Totals come from the server, which aggregates over the whole filtered
+  // result set. Summing `rows` here only covered the current 15-employee page,
+  // so the headline completion rate silently changed when paging — a number
+  // that looked global but was not.
+  const summary = data?.summary
+  const totalAssigned = summary?.totalAssigned ?? 0
+  const totalCompleted = summary?.totalCompleted ?? 0
+  const totalPending = summary?.totalPending ?? 0
+  const totalTimeMins = summary?.totalTimeSpentMinutes ?? 0
+  const overallCompletionRate = summary?.completionRate ?? 0
 
   return (
     <div className='space-y-4'>
@@ -128,8 +133,11 @@ export function TaskProductivityTab({
               <span className='text-2xl font-bold tabular-nums text-purple-600'>
                 {isLoading ? <Skeleton className='h-8 w-16' /> : `${overallCompletionRate}%`}
               </span>
-              <p className='text-[11px] text-muted-foreground mt-0.5'>
-                Completed / Assigned
+              {/* Show the counts, not just the label — a bare rate hides both
+                  the size of the cohort and the fact that "0 assigned" is
+                  indistinguishable from "0 completed" without them. */}
+              <p className='text-[11px] text-muted-foreground mt-0.5 tabular-nums'>
+                {totalCompleted} / {totalAssigned} completed
               </p>
             </div>
           </CardContent>
@@ -176,7 +184,7 @@ export function TaskProductivityTab({
                 <TableHead className='text-center'>Pending</TableHead>
                 <TableHead className='min-w-[160px]'>Completion %</TableHead>
                 <TableHead className='text-center'>Time Spent</TableHead>
-                <TableHead className='text-right'>Avg Task Duration</TableHead>
+                <TableHead className='text-right'>Avg Session Duration</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -247,9 +255,22 @@ export function TaskProductivityTab({
                             style={{ width: `${Math.min(100, row.completionRate)}%` }}
                           />
                         </div>
-                        <span className='text-xs font-semibold tabular-nums w-12 text-right'>
-                          {row.completionRate}%
-                        </span>
+                        {/* An employee with zero assigned tasks has no rate to
+                            report. Showing 0% there is indistinguishable from
+                            genuinely zero productivity. */}
+                        {row.assigned === 0 ? (
+                          <span className='text-xs text-muted-foreground tabular-nums w-24 text-right'>
+                            —
+                          </span>
+                        ) : (
+                          <span className='text-xs font-semibold tabular-nums w-24 text-right'>
+                            {row.completionRate}%
+                            <span className='font-normal text-muted-foreground'>
+                              {' '}
+                              ({row.completed}/{row.assigned})
+                            </span>
+                          </span>
+                        )}
                       </div>
                     </TableCell>
 
