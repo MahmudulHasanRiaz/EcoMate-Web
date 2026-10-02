@@ -14,8 +14,11 @@ export interface ShiftPreset {
   notes: string | null
   createdAt: string
   updatedAt: string
-  /** Present on list/get — how many live rotations currently use it. */
-  _count?: { assignments: number }
+  /**
+   * Present on list — the currently-active rotations referencing this preset.
+   * The service `include`s live assignments; there is no `_count` in the
+   * response, so do not read one here.
+   */
   assignments?: Array<{ id: string; employeeId: string }>
 }
 

@@ -440,55 +440,73 @@ export class EmployeesService {
       if (dto.shiftPresetId || (dto.shiftRotations && dto.shiftRotations.length > 0)) {
         const now = new Date();
         if (dto.shiftPresetId) {
-          const days = dto.shiftDays && dto.shiftDays.length > 0 ? dto.shiftDays : [0, 1, 2, 3, 4];
+          // An explicit empty array means "no days chosen" — only an absent
+          // shiftDays falls back to the Sun-Thu default.
+          const days = Array.isArray(dto.shiftDays) ? dto.shiftDays : [0, 1, 2, 3, 4];
           const preset = await tx.shiftPreset.findUnique({ where: { id: dto.shiftPresetId } });
-          if (preset && preset.isActive) {
-            for (const dayOfWeek of days) {
-              await tx.shiftAssignment.create({
-                data: {
-                  employeeId: employee.id,
-                  shiftPresetId: preset.id,
-                  dayOfWeek,
-                  effectiveFrom: now,
-                  createdById: actorId ?? null,
-                },
-              });
-              await tx.employmentHistory.create({
-                data: {
-                  employeeId: employee.id,
-                  field: 'shift',
-                  oldValue: null,
-                  newValue: `${dayOfWeek}:${preset.name}`,
-                  effectiveFrom: now,
-                  changedById: actorId ?? null,
-                },
-              });
-            }
+          if (!preset) {
+            throw new BadRequestException(
+              `Shift preset ${dto.shiftPresetId} does not exist`,
+            );
+          }
+          if (!preset.isActive) {
+            throw new BadRequestException(
+              'That shift preset is retired and cannot be assigned',
+            );
+          }
+          for (const dayOfWeek of days) {
+            await tx.shiftAssignment.create({
+              data: {
+                employeeId: employee.id,
+                shiftPresetId: preset.id,
+                dayOfWeek,
+                effectiveFrom: now,
+                createdById: actorId ?? null,
+              },
+            });
+            await tx.employmentHistory.create({
+              data: {
+                employeeId: employee.id,
+                field: 'shift',
+                oldValue: null,
+                newValue: `${dayOfWeek}:${preset.name}`,
+                effectiveFrom: now,
+                changedById: actorId ?? null,
+              },
+            });
           }
         } else if (dto.shiftRotations) {
           for (const item of dto.shiftRotations) {
             const preset = await tx.shiftPreset.findUnique({ where: { id: item.shiftPresetId } });
-            if (preset && preset.isActive) {
-              await tx.shiftAssignment.create({
-                data: {
-                  employeeId: employee.id,
-                  shiftPresetId: preset.id,
-                  dayOfWeek: item.dayOfWeek,
-                  effectiveFrom: now,
-                  createdById: actorId ?? null,
-                },
-              });
-              await tx.employmentHistory.create({
-                data: {
-                  employeeId: employee.id,
-                  field: 'shift',
-                  oldValue: null,
-                  newValue: `${item.dayOfWeek}:${preset.name}`,
-                  effectiveFrom: now,
-                  changedById: actorId ?? null,
-                },
-              });
+            if (!preset) {
+              throw new BadRequestException(
+                `Shift preset ${item.shiftPresetId} does not exist`,
+              );
             }
+            if (!preset.isActive) {
+              throw new BadRequestException(
+                'That shift preset is retired and cannot be assigned',
+              );
+            }
+            await tx.shiftAssignment.create({
+              data: {
+                employeeId: employee.id,
+                shiftPresetId: preset.id,
+                dayOfWeek: item.dayOfWeek,
+                effectiveFrom: now,
+                createdById: actorId ?? null,
+              },
+            });
+            await tx.employmentHistory.create({
+              data: {
+                employeeId: employee.id,
+                field: 'shift',
+                oldValue: null,
+                newValue: `${item.dayOfWeek}:${preset.name}`,
+                effectiveFrom: now,
+                changedById: actorId ?? null,
+              },
+            });
           }
         }
       }
@@ -717,7 +735,20 @@ export class EmployeesService {
       const updateData: any = { ...dto };
       delete updateData.salaryStructure;
       delete updateData.bankAccount;
+      // Identity link is immutable after creation. PartialType inherits it from
+      // CreateEmployeeDto, so without this an update could silently re-point the
+      // employee at a different login — with no history row.
+      delete updateData.betterAuthUserId;
+      // Nested shift payloads are handled in their own blocks below, never as
+      // scalar columns.
+      delete updateData.shiftRotations;
+      delete updateData.shiftDays;
+      delete updateData.shiftPresetId;
+      // joiningDate is NOT NULL. A client that sends an explicit null (e.g. an
+      // edit dialog with the field blank) used to reach Prisma and throw,
+      // failing the whole save.
       if (dto.joiningDate) updateData.joiningDate = new Date(dto.joiningDate);
+      else delete updateData.joiningDate;
       if (dto.exitDate) updateData.exitDate = new Date(dto.exitDate);
       if (dto.dateOfBirth) updateData.dateOfBirth = new Date(dto.dateOfBirth);
       if (dto.confirmationDate) {
@@ -796,10 +827,19 @@ export class EmployeesService {
         const now = new Date();
         const changedById = actorId ?? null;
         if (dto.shiftPresetId) {
-          const days = dto.shiftDays && dto.shiftDays.length > 0 ? dto.shiftDays : [0, 1, 2, 3, 4];
+          const days = Array.isArray(dto.shiftDays) ? dto.shiftDays : [0, 1, 2, 3, 4];
           const preset = await tx.shiftPreset.findUnique({ where: { id: dto.shiftPresetId } });
-          if (preset && preset.isActive) {
-            for (const dayOfWeek of days) {
+          if (!preset) {
+            throw new BadRequestException(
+              `Shift preset ${dto.shiftPresetId} does not exist`,
+            );
+          }
+          if (!preset.isActive) {
+            throw new BadRequestException(
+              'That shift preset is retired and cannot be assigned',
+            );
+          }
+          for (const dayOfWeek of days) {
               const open = await tx.shiftAssignment.findFirst({
                 where: { employeeId: id, dayOfWeek, effectiveTo: null },
                 include: { shiftPreset: true },
@@ -829,7 +869,6 @@ export class EmployeesService {
                   changedById,
                 });
               }
-            }
           }
         } else if (dto.shiftRotations) {
           for (const item of dto.shiftRotations) {
@@ -837,6 +876,17 @@ export class EmployeesService {
               where: { employeeId: id, dayOfWeek: item.dayOfWeek, effectiveTo: null },
               include: { shiftPreset: true },
             });
+            const preset = await tx.shiftPreset.findUnique({ where: { id: item.shiftPresetId } });
+            if (!preset) {
+              throw new BadRequestException(
+                `Shift preset ${item.shiftPresetId} does not exist`,
+              );
+            }
+            if (!preset.isActive) {
+              throw new BadRequestException(
+                'That shift preset is retired and cannot be assigned',
+              );
+            }
             if (open?.shiftPresetId !== item.shiftPresetId) {
               if (open) {
                 await tx.shiftAssignment.update({
@@ -844,26 +894,23 @@ export class EmployeesService {
                   data: { effectiveTo: now },
                 });
               }
-              const preset = await tx.shiftPreset.findUnique({ where: { id: item.shiftPresetId } });
-              if (preset && preset.isActive) {
-                await tx.shiftAssignment.create({
-                  data: {
-                    employeeId: id,
-                    shiftPresetId: preset.id,
-                    dayOfWeek: item.dayOfWeek,
-                    effectiveFrom: now,
-                    createdById: changedById,
-                  },
-                });
-                historyRows.push({
+              await tx.shiftAssignment.create({
+                data: {
                   employeeId: id,
-                  field: 'shift',
-                  oldValue: open ? `${open.dayOfWeek}:${open.shiftPreset.name}` : null,
-                  newValue: `${item.dayOfWeek}:${preset.name}`,
+                  shiftPresetId: preset.id,
+                  dayOfWeek: item.dayOfWeek,
                   effectiveFrom: now,
-                  changedById,
-                });
-              }
+                  createdById: changedById,
+                },
+              });
+              historyRows.push({
+                employeeId: id,
+                field: 'shift',
+                oldValue: open ? `${open.dayOfWeek}:${open.shiftPreset.name}` : null,
+                newValue: `${item.dayOfWeek}:${preset.name}`,
+                effectiveFrom: now,
+                changedById,
+              });
             }
           }
         }

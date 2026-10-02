@@ -119,30 +119,35 @@ export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: Ware
   const [editBin, setEditBin] = useState<BinLocation | null>(null)
   const [deleteBinConfirm, setDeleteBinConfirm] = useState<BinLocation | null>(null)
 
-  if (!warehouse) return null
+  // These must stay ABOVE the `if (!warehouse) return null` below. The drawer is
+  // mounted from a list page, so on a cold open the warehouse may not be
+  // resolved yet: the early return ran 4 hooks and the next render ran 8,
+  // which React rejects as "Rendered more hooks than during the previous
+  // render". Guarded with `open && !!warehouseId` instead.
+  const warehouseId = warehouse?.id
 
   const { data: activityRes, isLoading: activityLoading } = useQuery({
-    queryKey: ['warehouse-activity', warehouse.id],
-    queryFn: () => apiClient.get('/inventory/logs', { params: { warehouseId: warehouse.id, perPage: 20 } }).then(r => r.data),
-    enabled: open,
+    queryKey: ['warehouse-activity', warehouseId],
+    queryFn: () => apiClient.get('/inventory/logs', { params: { warehouseId, perPage: 20 } }).then(r => r.data),
+    enabled: open && !!warehouseId,
   })
 
   const { data: binLocations, isLoading: binsLoading } = useQuery<BinLocation[]>({
-    queryKey: ['warehouse-bins', warehouse.id],
-    queryFn: () => apiClient.get(`/warehouses/${warehouse.id}/bin-locations`).then(r => r.data),
-    enabled: open,
+    queryKey: ['warehouse-bins', warehouseId],
+    queryFn: () => apiClient.get(`/warehouses/${warehouseId}/bin-locations`).then(r => r.data),
+    enabled: open && !!warehouseId,
   })
 
   const { data: warehouseStats, isLoading: statsLoading } = useQuery({
-    queryKey: ['warehouse-stats', warehouse.id],
-    queryFn: () => apiClient.get('/inventory/physical', { params: { warehouseId: warehouse.id } }).then(r => r.data),
-    enabled: open,
+    queryKey: ['warehouse-stats', warehouseId],
+    queryFn: () => apiClient.get('/inventory/physical', { params: { warehouseId } }).then(r => r.data),
+    enabled: open && !!warehouseId,
   })
 
   const deleteBinMut = useMutation({
     mutationFn: (bin: BinLocation) => apiClient.delete(`/warehouses/${bin.warehouseId}/bin-locations/${bin.id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['warehouse-bins', warehouse.id] })
+      queryClient.invalidateQueries({ queryKey: ['warehouse-bins', warehouseId] })
       queryClient.invalidateQueries({ queryKey: ['warehouses'] })
       queryClient.invalidateQueries({ queryKey: ['all-bin-locations'] })
       setDeleteBinConfirm(null)
@@ -150,6 +155,9 @@ export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: Ware
     },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Delete failed'),
   })
+
+  // Safe to bail now: every hook above has already run on this render.
+  if (!warehouse) return null
 
   function refreshBins() {
     queryClient.invalidateQueries({ queryKey: ['warehouse-bins', warehouse.id] })

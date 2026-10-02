@@ -275,6 +275,24 @@ describe('ShiftService', () => {
       expect(args.take).toBe(1);
     });
 
+    it('resolves the NEWEST preset when the database returns a closed row first', async () => {
+      // The query relies on `orderBy: desc, take: 1`. If the ordering were
+      // flipped, the closed (superseded) row would win and an employee's
+      // rotation change would appear to have done nothing. Simulate the DB
+      // honouring the ORDER BY by returning rows in descending order and
+      // assert the NEW preset is what the service actually resolves.
+      const rows = [
+        { shiftPreset: preset({ id: 'sp-new', name: 'New', startTime: '14:00' }) },
+        { shiftPreset: preset({ id: 'sp-old', name: 'Old', startTime: '06:00' }) },
+      ];
+      prisma.shiftAssignment.findMany.mockImplementation(
+        async (args: any) => (args.orderBy?.effectiveFrom === 'desc' ? rows : rows.reverse()),
+      );
+
+      const res = await service.resolveFor('emp-1', new Date('2026-08-24T00:00:00.000Z'));
+      expect(res).toMatchObject({ startTime: '14:00' });
+    });
+
     it('resolves on the very day the shift was assigned', async () => {
       // A shift saved at 09:34 must still govern that day. Filtering on
       // effectiveFrom <= day would miss it, because the row timestamp is later
@@ -366,6 +384,46 @@ describe('ShiftService', () => {
       const res = await service.quickAssignPreset('emp-1', 'sp-1');
       expect(res.total).toBe(5);
       expect(prisma.shiftAssignment.create).toHaveBeenCalledTimes(5);
+    });
+
+    it('quickAssignPreset honours an explicitly EMPTY day list', async () => {
+      // An empty array means the admin deselected every day. Treating it as
+      // "unspecified" silently assigned Sun–Thu and the UI said otherwise.
+      prisma.shiftAssignment.findFirst.mockResolvedValue(null);
+      prisma.shiftPreset.findUnique.mockResolvedValue(preset());
+
+      const res = await service.quickAssignPreset('emp-1', 'sp-1', []);
+      expect(res.total).toBe(0);
+      expect(prisma.shiftAssignment.create).not.toHaveBeenCalled();
+    });
+
+    it('quickAssignPreset still defaults when days is undefined', async () => {
+      prisma.shiftAssignment.findFirst.mockResolvedValue(null);
+      prisma.shiftPreset.findUnique.mockResolvedValue(preset());
+
+      const res = await service.quickAssignPreset('emp-1', 'sp-1', undefined);
+      expect(res.total).toBe(5);
+    });
+
+    it('bulkSetRotation reopens the transaction for each day so a mid-run throw cannot half-apply', async () => {
+      // The transaction boundary must wrap the whole loop. If it were per-day,
+      // a failure on day 2 would leave day 1 written with no way to roll back.
+      prisma.shiftAssignment.findFirst.mockResolvedValue(null);
+      prisma.shiftPreset.findUnique.mockResolvedValue(preset());
+      let txCalls = 0;
+      prisma.$transaction.mockImplementation((fn: any) => {
+        txCalls += 1;
+        return fn(prisma);
+      });
+
+      await service.bulkSetRotation('emp-1', [
+        { dayOfWeek: 0, shiftPresetId: 'sp-1' },
+        { dayOfWeek: 1, shiftPresetId: 'sp-1' },
+        { dayOfWeek: 2, shiftPresetId: 'sp-1' },
+      ]);
+
+      expect(txCalls).toBe(1);
+      expect(prisma.shiftAssignment.create).toHaveBeenCalledTimes(3);
     });
   });
 });

@@ -152,7 +152,10 @@ describe('CreateEmployeePage — G-15 nested create flow', () => {
       employmentType: 'full_time',
     })
     expect(payload.salaryStructure).toMatchObject({ basicSalary: 50000, effectiveFrom: expect.any(String) })
-    expect(payload.bankAccount).toMatchObject({ bankName: 'DBBL', accountNumber: '9876543210', isPrimary: true })
+    expect(payload.bankAccount).toMatchObject({ bankName: 'DBBL', accountNumber: '9876543210' })
+    // The backend always makes the first account primary; the form's switch was
+    // decorative, so the field is no longer sent.
+    expect(payload.bankAccount).not.toHaveProperty('isPrimary')
     expect(navigateMock).toHaveBeenCalledWith({ to: '/hr/employees/$id', params: { id: 'new-1' } })
   })
 
@@ -215,5 +218,33 @@ describe('CreateEmployeePage — G-15 nested create flow', () => {
       emergencyContactPhone: '01711223344',
       shiftPresetId: 'sp-1',
     })
+  })
+
+  it('sends rotation items under the DTO field name shiftPresetId', async () => {
+    // This mode used to send `presetId`, which the global whitelist pipe strips,
+    // so `shiftPresetId` arrived undefined and the server rejected the request
+    // with a 400. The rotation path had no test, which is why it went unnoticed.
+    // Asserted on the builder directly: driving the full wizard to the Day-by-Day
+    // grid is brittle, and this is the exact contract that broke.
+    const { buildShiftPayload } = await import('../create-shift-payload')
+    const payload = buildShiftPayload({
+      mode: 'rotation',
+      presetId: '',
+      templateDays: [0, 1, 2, 3, 4],
+      customStartTime: '09:00',
+      customEndTime: '18:00',
+      customGraceMinutes: 10,
+      customBreakMinutes: 60,
+      customDays: [0, 1, 2, 3, 4],
+      rotation: { 1: 'sp-a', 3: 'sp-b', 5: '__none__' },
+    })
+
+    expect(payload.shiftRotations).toEqual([
+      { dayOfWeek: 1, shiftPresetId: 'sp-a' },
+      { dayOfWeek: 3, shiftPresetId: 'sp-b' },
+    ])
+    for (const item of payload.shiftRotations!) {
+      expect(item).not.toHaveProperty('presetId')
+    }
   })
 })

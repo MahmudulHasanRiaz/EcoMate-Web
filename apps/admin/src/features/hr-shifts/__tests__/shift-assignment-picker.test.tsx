@@ -24,7 +24,12 @@ vi.mock('@/lib/api-client', () => ({
               graceMinutes: 15,
               breakMinutes: 60,
               standardMinutes: 480,
+              overnight: false,
               isActive: true,
+              notes: null,
+              createdAt: '2026-01-01T00:00:00.000Z',
+              updatedAt: '2026-01-01T00:00:00.000Z',
+              assignments: [],
             },
             {
               id: 'preset-evening',
@@ -35,7 +40,12 @@ vi.mock('@/lib/api-client', () => ({
               graceMinutes: 10,
               breakMinutes: 45,
               standardMinutes: 435,
+              overnight: false,
               isActive: true,
+              notes: null,
+              createdAt: '2026-01-01T00:00:00.000Z',
+              updatedAt: '2026-01-01T00:00:00.000Z',
+              assignments: [],
             },
           ],
         })
@@ -97,5 +107,44 @@ describe('ShiftAssignmentPicker', () => {
     await expect.element(getByTestId('current-mode')).toHaveTextContent('rotation')
     await expect.element(getByText('Sunday')).toBeInTheDocument()
     await expect.element(getByText('Monday')).toBeInTheDocument()
+  })
+
+  it('seeds the default preset exactly ONCE, not on every re-render', async () => {
+    // The effect previously listed `activePresets` (a fresh array each render)
+    // and depended on `value`, so it fired on every keystroke and called
+    // onChange repeatedly — which marked the edit dialog dirty on open and made
+    // Save quick-assign a shift nobody picked.
+    const changes: ShiftSelectionValue[] = []
+
+    function CountingWrapper() {
+      const [val, setVal] = useState<ShiftSelectionValue>(DEFAULT_SHIFT_VALUE)
+      return (
+        <div>
+          <div data-testid='current-preset'>{val.presetId}</div>
+          <div data-testid='change-count'>{changes.length}</div>
+          <ShiftAssignmentPicker
+            value={val}
+            onChange={(v) => {
+              changes.push(v)
+              setVal(v)
+            }}
+          />
+        </div>
+      )
+    }
+
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { getByTestId } = await render(
+      <QueryClientProvider client={qc}>
+        <CountingWrapper />
+      </QueryClientProvider>,
+    )
+
+    await vi.waitFor(() => {
+      expect(getByTestId('current-preset').element().textContent).toBe('preset-morning')
+    })
+    // Let any lingering effect run.
+    await new Promise((r) => setTimeout(r, 300))
+    expect(getByTestId('change-count').element().textContent).toBe('1')
   })
 })

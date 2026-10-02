@@ -16,6 +16,7 @@ import { ShiftService } from './hr-shifts.service';
 import {
   CreateShiftPresetDto,
   SetShiftRotationDto,
+  ClearShiftRotationDto,
   UpdateShiftPresetDto,
   BulkSetRotationDto,
   QuickAssignPresetDto,
@@ -121,7 +122,9 @@ export class ShiftController {
   @PermissionsAny('manage_schedule')
   clearRotation(
     @Param('id') id: string,
-    @Body() dto: SetShiftRotationDto,
+    // dayOfWeek only — sending a preset here made no sense and the shared DTO
+    // required one, so every "No shift" save returned 400.
+    @Body() dto: ClearShiftRotationDto,
     @CurrentUser() user?: any,
   ) {
     return this.shifts.clearRotationDay(

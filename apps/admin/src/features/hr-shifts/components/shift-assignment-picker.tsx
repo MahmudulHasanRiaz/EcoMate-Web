@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Clock, CalendarDays, Sliders, Check, Sparkles, AlertCircle } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -54,17 +54,23 @@ interface ShiftAssignmentPickerProps {
 
 export function ShiftAssignmentPicker({ value, onChange, disabled }: ShiftAssignmentPickerProps) {
   const { data: presets = [], isLoading: presetsLoading } = useShiftPresetsQuery()
-  const activePresets = (Array.isArray(presets) ? presets : []).filter((p) => p.isActive)
+  const allPresets = Array.isArray(presets) ? presets : []
+  const activePresets = allPresets.filter((p) => p.isActive)
 
-  // Auto-select first preset if none selected
+  // Seed the first preset ONCE per mount, and only when this is genuinely a
+  // fresh form. Previously this fired on every render (a new array identity each
+  // time) and called onChange unconditionally, so merely opening the edit
+  // dialog marked it dirty and Save silently assigned a shift nobody picked.
+  const seededRef = useRef(false)
   useEffect(() => {
+    if (seededRef.current) return
     if (!value.presetId && activePresets.length > 0) {
-      onChange({
-        ...value,
-        presetId: activePresets[0].id,
-      })
+      seededRef.current = true
+      onChange({ ...value, presetId: activePresets[0].id })
     }
-  }, [activePresets, value, onChange])
+    // Only the preset list should re-trigger seeding; `value` is a new object
+    // on every keystroke and would otherwise re-run this effect constantly.
+  }, [activePresets, onChange])
 
   const selectedPreset = activePresets.find((p) => p.id === value.presetId)
 

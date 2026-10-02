@@ -76,7 +76,6 @@ export interface CreateBankAccountDto {
   accountNumber: string
   accountType?: BankAccountType
   routingNumber?: string
-  isPrimary?: boolean
   verificationStatus?: BankVerificationStatus
   verificationNote?: string
   notes?: string
@@ -109,7 +108,8 @@ export interface UpdateEmployeeDto {
   attendanceMethod?: AttendanceMethod
   shiftPresetId?: string
   shiftDays?: number[]
-  shiftRotations?: { dayOfWeek: number; presetId: string }[]
+  /** Matches ShiftRotationItemDto — the field is shiftPresetId, not presetId. */
+  shiftRotations?: { dayOfWeek: number; shiftPresetId: string }[]
 }
 
 // G-15 nested payload captured at employee creation.
@@ -161,7 +161,7 @@ export interface CreateEmployeeDto {
   bankAccount?: BankAccountInput
   shiftPresetId?: string
   shiftDays?: number[]
-  shiftRotations?: { dayOfWeek: number; presetId: string }[]
+  shiftRotations?: { dayOfWeek: number; shiftPresetId: string }[]
 }
 
 export interface SalaryStructureEntry {

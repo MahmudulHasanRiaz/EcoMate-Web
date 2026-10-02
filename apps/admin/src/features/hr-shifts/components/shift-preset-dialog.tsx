@@ -103,9 +103,12 @@ export function ShiftPresetDialog({
   )
 
   const busy = createMut.isPending || updateMut.isPending
+  // Mirrors the DTO's validator exactly. Checking only length let codes with
+  // spaces or punctuation pass the form and then 400 on save.
+  const codeValid = /^[A-Z0-9_]{2,32}$/.test(values.code.trim().toUpperCase())
   const valid =
     values.name.trim().length > 0 &&
-    values.code.trim().length >= 2 &&
+    codeValid &&
     computed !== null
 
   function submit() {
@@ -157,15 +160,20 @@ export function ShiftPresetDialog({
               <Input
                 id='sp-code'
                 placeholder='GENERAL'
+                maxLength={32}
                 value={values.code}
                 disabled={!!preset}
                 onChange={(e) => setValues((v) => ({ ...v, code: e.target.value }))}
               />
-              {preset && (
+              {preset ? (
                 <p className='text-[11px] text-muted-foreground'>
                   The code identifies this preset in reports and cannot change.
                 </p>
-              )}
+              ) : values.code.trim() && !codeValid ? (
+                <p className='text-[11px] text-destructive'>
+                  Use 2–32 letters, numbers or underscores (no spaces).
+                </p>
+              ) : null}
             </div>
           </div>
 

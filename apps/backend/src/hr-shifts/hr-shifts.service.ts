@@ -447,7 +447,12 @@ export class ShiftService {
   }
 
   /**
-   * Quick-assign a preset template to multiple days (defaults to Sun-Thu: [0,1,2,3,4]).
+   * Quick-assign a preset template to multiple days.
+   *
+   * `days: undefined` means "the caller did not choose" and falls back to the
+   * Sun-Thu default. `days: []` means "the caller chose NOTHING" and is honoured
+   * as-is — treating it as "unset" silently assigned five days the admin had
+   * explicitly deselected.
    */
   async quickAssignPreset(
     employeeId: string,
@@ -455,7 +460,7 @@ export class ShiftService {
     days?: number[],
     actorId?: string | null,
   ) {
-    const targetDays = days && days.length > 0 ? days : [0, 1, 2, 3, 4];
+    const targetDays = Array.isArray(days) ? days : [0, 1, 2, 3, 4];
     const rotations = targetDays.map((dayOfWeek) => ({
       dayOfWeek,
       shiftPresetId,

@@ -633,6 +633,18 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
     enabled: empEditOpen,
   })
 
+  // These MUST sit above the loading/error early returns below. React compares
+  // the hook count between renders: the loading branch returned before these
+  // ran, so a cold navigation went 14 hooks → 20 hooks and threw "Rendered
+  // more hooks than during the previous render", surfacing as a 500 page. It
+  // only reproduced on the first click after a reload, because once the query
+  // was cached every render already took the full path.
+  const [fullEditOpen, setFullEditOpen] = useState(false)
+  const { data: shiftRotationData, refetch: refetchRotation } = useShiftRotationQuery(employee?.id || '')
+  const { data: leaveBalances } = useBalancesQuery(employee?.id)
+  const { data: todayState } = useTodayStateQuery(employee?.id || '')
+  const { data: salaryStructure } = useSalaryStructureQuery(employee?.id || '')
+
   if (isLoading) {
     return (
       <>
@@ -700,12 +712,6 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
     dto.notes = empForm.notes || undefined
     updateEmpMut.mutate({ id: employee.id, dto }, { onSuccess: () => setEmpEditOpen(false) })
   }
-
-  const [fullEditOpen, setFullEditOpen] = useState(false)
-  const { data: shiftRotationData, refetch: refetchRotation } = useShiftRotationQuery(employee?.id || '')
-  const { data: leaveBalances } = useBalancesQuery(employee?.id)
-  const { data: todayState } = useTodayStateQuery(employee?.id || '')
-  const { data: salaryStructure } = useSalaryStructureQuery(employee?.id || '')
 
   const displayName = employee?.betterAuthUser?.name || employee?.employeeId || '—'
   const initials = displayName

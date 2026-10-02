@@ -133,6 +133,7 @@ describe('EmployeesService', () => {
         }),
       },
       employmentHistory: {
+        create: jest.fn().mockResolvedValue({}),
         createMany: jest.fn().mockResolvedValue({ count: 0 }),
         count: jest.fn().mockResolvedValue(0),
       },
@@ -173,6 +174,18 @@ describe('EmployeesService', () => {
       leaveRequest: { count: jest.fn().mockResolvedValue(0) },
       attendanceDay: { count: jest.fn().mockResolvedValue(0) },
       weeklyOff: { count: jest.fn().mockResolvedValue(0) },
+      shiftPreset: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'sp-1',
+          name: 'General',
+          isActive: true,
+        }),
+      },
+      shiftAssignment: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({ id: 'sa-1' }),
+        update: jest.fn().mockResolvedValue({ id: 'sa-1' }),
+      },
       $transaction: jest.fn(),
     };
     prismaMock.$transaction.mockImplementation(
@@ -363,6 +376,82 @@ describe('EmployeesService', () => {
         .mockResolvedValueOnce(null);
       await expect(service.create(dto)).rejects.toThrow(NotFoundException);
     });
+
+    it('rejects a retired shift preset rather than creating the employee without a shift', async () => {
+      // Previously `if (preset && preset.isActive)` fell through: the employee
+      // row was created, no shift was assigned, and the admin saw a success
+      // toast. A partial employee is worse than a clear error.
+      const base: CreateEmployeeDto = {
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+        employmentType: 'full_time',
+      };
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+        id: 'profile-1',
+        role: 'customer',
+      });
+      (prisma.shiftPreset.findUnique as jest.Mock).mockResolvedValue({
+        id: 'sp-1',
+        name: 'Old',
+        isActive: false,
+      });
+      await expect(
+        service.create({ ...base, shiftPresetId: 'sp-1' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects a shift preset that does not exist on create', async () => {
+      const base: CreateEmployeeDto = {
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+        employmentType: 'full_time',
+      };
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+        id: 'profile-1',
+        role: 'customer',
+      });
+      (prisma.shiftPreset.findUnique as jest.Mock).mockResolvedValue(null);
+      await expect(
+        service.create({ ...base, shiftPresetId: 'ghost' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('honours an explicitly empty shiftDays as "no days chosen" on create', async () => {
+      const base: CreateEmployeeDto = {
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+        employmentType: 'full_time',
+      };
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+        id: 'profile-1',
+        role: 'customer',
+      });
+      await service.create({ ...base, shiftPresetId: 'sp-1', shiftDays: [] });
+      expect(prisma.shiftAssignment.create).not.toHaveBeenCalled();
+    });
+
+    it('assigns the rotation items it was given, on the exact weekdays', async () => {
+      const base: CreateEmployeeDto = {
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+        employmentType: 'full_time',
+      };
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+        id: 'profile-1',
+        role: 'customer',
+      });
+      await service.create({
+        ...base,
+        shiftRotations: [
+          { dayOfWeek: 1, shiftPresetId: 'sp-1' },
+          { dayOfWeek: 3, shiftPresetId: 'sp-1' },
+        ],
+      });
+      const days = (prisma.shiftAssignment.create as jest.Mock).mock.calls.map(
+        (c: any) => c[0].data.dayOfWeek,
+      );
+      expect(days).toEqual([1, 3]);
+    });
   });
 
   describe('findAll', () => {
@@ -395,6 +484,68 @@ describe('EmployeesService', () => {
       expect(prisma.employee.update).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'emp-1' } }),
       );
+    });
+
+    it('drops an explicit null joiningDate instead of writing it to a NOT NULL column', async () => {
+      // Employee.joiningDate is NOT NULL. A client that sends null (an edit
+      // dialog with the date picker blank) used to reach Prisma and throw,
+      // failing the entire save.
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await service.update('emp-1', { joiningDate: null as any, notes: 'x' });
+      const data = (prisma.employee.update as jest.Mock).mock.calls[0][0].data;
+      expect(data).not.toHaveProperty('joiningDate');
+      expect(data.notes).toBe('x');
+    });
+
+    it('never rewrites the identity link from an update payload', async () => {
+      // PartialType used to inherit betterAuthUserId, so a PUT could silently
+      // re-point an employee at a different login with no audit row.
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await service.update('emp-1', {
+        betterAuthUserId: 'someone-else',
+      } as any);
+      const data = (prisma.employee.update as jest.Mock).mock.calls[0][0].data;
+      expect(data).not.toHaveProperty('betterAuthUserId');
+    });
+
+    it('never writes nested shift payloads as scalar columns', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await service.update('emp-1', {
+        shiftPresetId: 'sp-1',
+        shiftDays: [1, 2],
+      } as any);
+      const data = (prisma.employee.update as jest.Mock).mock.calls[0][0].data;
+      expect(data).not.toHaveProperty('shiftPresetId');
+      expect(data).not.toHaveProperty('shiftDays');
+    });
+
+    it('rejects assigning a retired shift preset instead of silently skipping it', async () => {
+      // `if (preset && preset.isActive)` fell through with no error: the employee
+      // saved, the shift was never assigned, and the admin saw success.
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.shiftPreset.findUnique as jest.Mock).mockResolvedValue({
+        id: 'sp-1',
+        name: 'Old',
+        isActive: false,
+      });
+      await expect(
+        service.update('emp-1', { shiftPresetId: 'sp-1' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.shiftAssignment.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a shift preset that does not exist', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.shiftPreset.findUnique as jest.Mock).mockResolvedValue(null);
+      await expect(
+        service.update('emp-1', { shiftPresetId: 'ghost' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('honours an explicitly empty shiftDays as "no days chosen"', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await service.update('emp-1', { shiftPresetId: 'sp-1', shiftDays: [] });
+      expect(prisma.shiftAssignment.create).not.toHaveBeenCalled();
     });
 
     it('should throw if employee not found', async () => {

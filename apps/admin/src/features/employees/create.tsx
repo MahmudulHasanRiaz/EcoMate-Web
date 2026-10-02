@@ -31,6 +31,7 @@ import {
   DEFAULT_SHIFT_VALUE,
   type ShiftSelectionValue,
 } from '@/features/hr-shifts/components/shift-assignment-picker'
+import { buildShiftPayload } from './create-shift-payload'
 import {
   employeesApi,
   type CreateEmployeeDto,
@@ -121,7 +122,6 @@ interface BankForm {
   accountNumber: string
   accountType: BankAccountType | ''
   routingNumber: string
-  isPrimary: boolean
 }
 
 function num(value: string): number | undefined {
@@ -197,7 +197,6 @@ export default function CreateEmployeePage() {
     accountNumber: '',
     accountType: '',
     routingNumber: '',
-    isPrimary: true,
   })
   const [submitting, setSubmitting] = useState(false)
 
@@ -253,10 +252,7 @@ export default function CreateEmployeePage() {
     }
 
     if (enableShiftAssignment) {
-      if (shiftValue.mode === 'template' && shiftValue.presetId) {
-        payload.shiftPresetId = shiftValue.presetId
-        payload.shiftDays = shiftValue.templateDays
-      } else if (shiftValue.mode === 'custom' && shiftValue.customStartTime && shiftValue.customEndTime) {
+      if (shiftValue.mode === 'custom' && shiftValue.customStartTime && shiftValue.customEndTime) {
         try {
           const customPreset = await hrShiftsApi.findOrCreateCustom({
             startTime: shiftValue.customStartTime,
@@ -270,13 +266,10 @@ export default function CreateEmployeePage() {
           toast.error('Could not configure custom shift hours')
           return
         }
-      } else if (shiftValue.mode === 'rotation') {
-        const items = Object.entries(shiftValue.rotation)
-          .filter(([_, presetId]) => presetId && presetId !== '__none__')
-          .map(([day, presetId]) => ({ dayOfWeek: Number(day), presetId }))
-        if (items.length > 0) {
-          payload.shiftRotations = items
-        }
+      } else {
+        // Template and rotation payloads are built in one tested place so the
+        // DTO field names cannot drift again.
+        Object.assign(payload, buildShiftPayload(shiftValue))
       }
     }
 
@@ -301,7 +294,9 @@ export default function CreateEmployeePage() {
         accountNumber: bank.accountNumber,
         accountType: (bank.accountType || undefined) as BankAccountType | undefined,
         routingNumber: bank.routingNumber || undefined,
-        isPrimary: bank.isPrimary,
+        // Not sent: the backend always makes the FIRST bank account primary.
+        // The form's "primary" switch could never do anything, so it is removed
+        // rather than left as a control that silently does nothing.
       }
     }
     setSubmitting(true)
@@ -716,9 +711,14 @@ export default function CreateEmployeePage() {
                     <div className='flex items-center justify-between col-span-2 rounded-lg border p-3'>
                       <div>
                         <p className='text-sm font-medium'>Primary account</p>
-                        <p className='text-xs text-muted-foreground'>First account is primary by default.</p>
+                        <p className='text-xs text-muted-foreground'>
+                          The first account added is primary. Change it later from
+                          the employee&apos;s bank accounts card.
+                        </p>
                       </div>
-                      <Switch checked={bank.isPrimary} onCheckedChange={(v) => setBank({ ...bank, isPrimary: v })} />
+                      <div className='rounded border border-border/60 px-2.5 py-1 text-xs text-muted-foreground'>
+                        Automatic
+                      </div>
                     </div>
                   </div>
                 )}

@@ -8,6 +8,7 @@ import {
   Min,
   MaxLength,
   IsArray,
+  ArrayMaxSize,
   ValidateNested,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
@@ -114,7 +115,21 @@ export class BulkSetRotationDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => RotationDayAssignmentDto)
+  // Bounded: each entry is one DB round-trip inside the transaction.
+  @ArrayMaxSize(7)
   rotations: RotationDayAssignmentDto[];
+}
+
+/**
+ * Clearing one weekday's shift. Separate from SetShiftRotationDto because the
+ * set endpoint requires a preset while clearing must not send one — sharing the
+ * DTO made `@IsString()` reject every "No shift" selection with a 400.
+ */
+export class ClearShiftRotationDto {
+  @IsInt()
+  @Min(0)
+  @Max(6)
+  dayOfWeek: number;
 }
 
 export class QuickAssignPresetDto {

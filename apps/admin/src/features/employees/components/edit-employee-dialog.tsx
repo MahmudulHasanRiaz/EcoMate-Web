@@ -51,6 +51,7 @@ import {
 import {
   ShiftAssignmentPicker,
   DEFAULT_SHIFT_VALUE,
+  type ShiftMode,
   type ShiftSelectionValue,
 } from '@/features/hr-shifts/components/shift-assignment-picker'
 import {
@@ -182,15 +183,25 @@ export function EditEmployeeDialog({
         6: '__none__',
       }
       const daysWithShifts: number[] = []
-      let dominantPresetId = ''
+      const usedPresetIds = new Set<string>()
       for (const r of rotationData.rotation) {
         rotMap[r.dayOfWeek] = r.shift.id
         daysWithShifts.push(r.dayOfWeek)
-        if (!dominantPresetId) dominantPresetId = r.shift.id
+        usedPresetIds.add(r.shift.id)
       }
+      // Restore the right editing mode. Leaving it on 'template' meant a genuine
+      // multi-preset rotation displayed as a template and, on save, collapsed
+      // every day onto one preset — silent data loss.
+      const restoredMode: ShiftMode =
+        usedPresetIds.size > 1
+          ? 'rotation'
+          : daysWithShifts.length > 0
+            ? 'template'
+            : DEFAULT_SHIFT_VALUE.mode
       setShiftValue({
         ...DEFAULT_SHIFT_VALUE,
-        presetId: dominantPresetId || DEFAULT_SHIFT_VALUE.presetId,
+        mode: restoredMode,
+        presetId: usedPresetIds.values().next().value ?? DEFAULT_SHIFT_VALUE.presetId,
         templateDays: daysWithShifts.length > 0 ? daysWithShifts : [0, 1, 2, 3, 4],
         rotation: rotMap,
       })
@@ -203,8 +214,17 @@ export function EditEmployeeDialog({
   const isTerminal = form.status === 'terminated' || form.status === 'resigned'
 
   const handleShiftChange = (val: ShiftSelectionValue) => {
+    // The picker seeds its default preset on mount. That is not a user edit, so
+    // it must not flip the footer to "unsaved changes" on a dialog nobody
+    // touched.
+    const seededOnly =
+      shiftValue.mode === val.mode &&
+      shiftValue.presetId === val.presetId &&
+      shiftValue.templateDays.length === val.templateDays.length &&
+      shiftValue.templateDays.every((d, i) => d === val.templateDays[i]) &&
+      !shiftDirty
     setShiftValue(val)
-    setShiftDirty(true)
+    if (!seededOnly) setShiftDirty(true)
   }
 
   const handleSave = async () => {
@@ -694,7 +714,7 @@ export function EditEmployeeDialog({
 
         <DialogFooter className='px-6 py-3 border-t border-border/60 bg-muted/20 flex items-center justify-between sm:justify-between'>
           <p className='text-[11px] text-muted-foreground'>
-            {shiftDirty ? 'Shift assignment has unsaved changes' : 'All changes save atomically'}
+            {shiftDirty ? 'Shift assignment has unsaved changes' : 'Employee details and shifts save together'}
           </p>
           <div className='flex items-center gap-2'>
             <Button
