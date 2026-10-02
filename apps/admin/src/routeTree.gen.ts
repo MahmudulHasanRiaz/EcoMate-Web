@@ -22,7 +22,6 @@ import { Route as errors500RouteImport } from './routes/(errors)/500'
 import { Route as errors503RouteImport } from './routes/(errors)/503'
 import { Route as errorsLicenseDeniedRouteImport } from './routes/(errors)/license-denied'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
-import { Route as authLicenseActivateRouteImport } from './routes/(auth)/license/activate'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as AuthenticatedHrAttendanceRouteImport } from './routes/_authenticated/hr/attendance'
 import { Route as AuthenticatedHrCommissionsRouteImport } from './routes/_authenticated/hr/commissions'
@@ -33,6 +32,7 @@ import { Route as AuthenticatedHrPerformanceRouteImport } from './routes/_authen
 import { Route as AuthenticatedHrPresetsRouteImport } from './routes/_authenticated/hr/presets'
 import { Route as AuthenticatedHrSettingsRouteImport } from './routes/_authenticated/hr/settings'
 import { Route as AuthenticatedHrShiftsRouteImport } from './routes/_authenticated/hr/shifts'
+import { Route as AuthenticatedLicenseActivateRouteImport } from './routes/_authenticated/license/activate'
 import { Route as AuthenticatedMonIndexRouteImport } from './routes/_authenticated/mon/index'
 import { Route as AuthenticatedMonBlockingSettingsRouteImport } from './routes/_authenticated/mon/blocking-settings'
 import { Route as AuthenticatedMonOverviewRouteImport } from './routes/_authenticated/mon/overview'
@@ -244,11 +244,6 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const authLicenseActivateRoute = authLicenseActivateRouteImport.update({
-  id: '/(auth)/license/activate',
-  path: '/license/activate',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AuthenticatedErrorsErrorRoute =
   AuthenticatedErrorsErrorRouteImport.update({
     id: '/errors/$error',
@@ -303,6 +298,12 @@ const AuthenticatedHrShiftsRoute = AuthenticatedHrShiftsRouteImport.update({
   path: '/hr/shifts',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedLicenseActivateRoute =
+  AuthenticatedLicenseActivateRouteImport.update({
+    id: '/license/activate',
+    path: '/license/activate',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedMonIndexRoute = AuthenticatedMonIndexRouteImport.update({
   id: '/mon/',
   path: '/mon/',
@@ -1190,7 +1191,6 @@ export interface FileRoutesByFullPath {
   '/mon/settings': typeof AuthenticatedMonSettingsRouteRouteWithChildren
   '/op/print': typeof AuthenticatedOpPrintRouteRouteWithChildren
   '/op/settings': typeof AuthenticatedOpSettingsRouteRouteWithChildren
-  '/license/activate': typeof authLicenseActivateRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/hr/attendance': typeof AuthenticatedHrAttendanceRoute
   '/hr/commissions': typeof AuthenticatedHrCommissionsRoute
@@ -1201,6 +1201,7 @@ export interface FileRoutesByFullPath {
   '/hr/presets': typeof AuthenticatedHrPresetsRoute
   '/hr/settings': typeof AuthenticatedHrSettingsRoute
   '/hr/shifts': typeof AuthenticatedHrShiftsRoute
+  '/license/activate': typeof AuthenticatedLicenseActivateRoute
   '/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
   '/mon/overview': typeof AuthenticatedMonOverviewRoute
   '/op/my-profile': typeof AuthenticatedOpMyProfileRoute
@@ -1361,7 +1362,6 @@ export interface FileRoutesByTo {
   '/mon/settings': typeof AuthenticatedMonSettingsRouteRouteWithChildren
   '/op/print': typeof AuthenticatedOpPrintRouteRouteWithChildren
   '/op/settings': typeof AuthenticatedOpSettingsRouteRouteWithChildren
-  '/license/activate': typeof authLicenseActivateRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/hr/attendance': typeof AuthenticatedHrAttendanceRoute
   '/hr/commissions': typeof AuthenticatedHrCommissionsRoute
@@ -1372,6 +1372,7 @@ export interface FileRoutesByTo {
   '/hr/presets': typeof AuthenticatedHrPresetsRoute
   '/hr/settings': typeof AuthenticatedHrSettingsRoute
   '/hr/shifts': typeof AuthenticatedHrShiftsRoute
+  '/license/activate': typeof AuthenticatedLicenseActivateRoute
   '/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
   '/mon/overview': typeof AuthenticatedMonOverviewRoute
   '/op/my-profile': typeof AuthenticatedOpMyProfileRoute
@@ -1534,7 +1535,6 @@ export interface FileRoutesById {
   '/_authenticated/mon/settings': typeof AuthenticatedMonSettingsRouteRouteWithChildren
   '/_authenticated/op/print': typeof AuthenticatedOpPrintRouteRouteWithChildren
   '/_authenticated/op/settings': typeof AuthenticatedOpSettingsRouteRouteWithChildren
-  '/(auth)/license/activate': typeof authLicenseActivateRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/_authenticated/hr/attendance': typeof AuthenticatedHrAttendanceRoute
   '/_authenticated/hr/commissions': typeof AuthenticatedHrCommissionsRoute
@@ -1545,6 +1545,7 @@ export interface FileRoutesById {
   '/_authenticated/hr/presets': typeof AuthenticatedHrPresetsRoute
   '/_authenticated/hr/settings': typeof AuthenticatedHrSettingsRoute
   '/_authenticated/hr/shifts': typeof AuthenticatedHrShiftsRoute
+  '/_authenticated/license/activate': typeof AuthenticatedLicenseActivateRoute
   '/_authenticated/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
   '/_authenticated/mon/overview': typeof AuthenticatedMonOverviewRoute
   '/_authenticated/op/my-profile': typeof AuthenticatedOpMyProfileRoute
@@ -1707,7 +1708,6 @@ export interface FileRouteTypes {
     | '/mon/settings'
     | '/op/print'
     | '/op/settings'
-    | '/license/activate'
     | '/errors/$error'
     | '/hr/attendance'
     | '/hr/commissions'
@@ -1718,6 +1718,7 @@ export interface FileRouteTypes {
     | '/hr/presets'
     | '/hr/settings'
     | '/hr/shifts'
+    | '/license/activate'
     | '/mon/blocking-settings'
     | '/mon/overview'
     | '/op/my-profile'
@@ -1878,7 +1879,6 @@ export interface FileRouteTypes {
     | '/mon/settings'
     | '/op/print'
     | '/op/settings'
-    | '/license/activate'
     | '/errors/$error'
     | '/hr/attendance'
     | '/hr/commissions'
@@ -1889,6 +1889,7 @@ export interface FileRouteTypes {
     | '/hr/presets'
     | '/hr/settings'
     | '/hr/shifts'
+    | '/license/activate'
     | '/mon/blocking-settings'
     | '/mon/overview'
     | '/op/my-profile'
@@ -2050,7 +2051,6 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/settings'
     | '/_authenticated/op/print'
     | '/_authenticated/op/settings'
-    | '/(auth)/license/activate'
     | '/_authenticated/errors/$error'
     | '/_authenticated/hr/attendance'
     | '/_authenticated/hr/commissions'
@@ -2061,6 +2061,7 @@ export interface FileRouteTypes {
     | '/_authenticated/hr/presets'
     | '/_authenticated/hr/settings'
     | '/_authenticated/hr/shifts'
+    | '/_authenticated/license/activate'
     | '/_authenticated/mon/blocking-settings'
     | '/_authenticated/mon/overview'
     | '/_authenticated/op/my-profile'
@@ -2219,7 +2220,6 @@ export interface RootRouteChildren {
   errors500Route: typeof errors500Route
   errors503Route: typeof errors503Route
   errorsLicenseDeniedRoute: typeof errorsLicenseDeniedRoute
-  authLicenseActivateRoute: typeof authLicenseActivateRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -2315,13 +2315,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/(auth)/license/activate': {
-      id: '/(auth)/license/activate'
-      path: '/license/activate'
-      fullPath: '/license/activate'
-      preLoaderRoute: typeof authLicenseActivateRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/_authenticated/errors/$error': {
       id: '/_authenticated/errors/$error'
       path: '/errors/$error'
@@ -2390,6 +2383,13 @@ declare module '@tanstack/react-router' {
       path: '/hr/shifts'
       fullPath: '/hr/shifts'
       preLoaderRoute: typeof AuthenticatedHrShiftsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/license/activate': {
+      id: '/_authenticated/license/activate'
+      path: '/license/activate'
+      fullPath: '/license/activate'
+      preLoaderRoute: typeof AuthenticatedLicenseActivateRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/mon/': {
@@ -3552,6 +3552,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedHrPresetsRoute: typeof AuthenticatedHrPresetsRoute
   AuthenticatedHrSettingsRoute: typeof AuthenticatedHrSettingsRoute
   AuthenticatedHrShiftsRoute: typeof AuthenticatedHrShiftsRoute
+  AuthenticatedLicenseActivateRoute: typeof AuthenticatedLicenseActivateRoute
   AuthenticatedMonBlockingSettingsRoute: typeof AuthenticatedMonBlockingSettingsRoute
   AuthenticatedMonOverviewRoute: typeof AuthenticatedMonOverviewRoute
   AuthenticatedOpMyProfileRoute: typeof AuthenticatedOpMyProfileRoute
@@ -3689,6 +3690,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedHrPresetsRoute: AuthenticatedHrPresetsRoute,
   AuthenticatedHrSettingsRoute: AuthenticatedHrSettingsRoute,
   AuthenticatedHrShiftsRoute: AuthenticatedHrShiftsRoute,
+  AuthenticatedLicenseActivateRoute: AuthenticatedLicenseActivateRoute,
   AuthenticatedMonBlockingSettingsRoute: AuthenticatedMonBlockingSettingsRoute,
   AuthenticatedMonOverviewRoute: AuthenticatedMonOverviewRoute,
   AuthenticatedOpMyProfileRoute: AuthenticatedOpMyProfileRoute,
@@ -3869,7 +3871,6 @@ const rootRouteChildren: RootRouteChildren = {
   errors500Route: errors500Route,
   errors503Route: errors503Route,
   errorsLicenseDeniedRoute: errorsLicenseDeniedRoute,
-  authLicenseActivateRoute: authLicenseActivateRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

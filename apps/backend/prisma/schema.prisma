@@ -2908,6 +2908,26 @@ model SupplierPaymentInvoice {
   payment SupplierPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 }
 
+/// Append-only audit of every license activation change. Stores fingerprints
+/// of the encrypted key rather than the key itself.
+model LicenseActivationHistory {
+  id                    String   @id @default(uuid())
+  /// activated | reactivated | deactivated
+  action                String
+  licenseKeyFingerprint  String?
+  previousKeyFingerprint String?
+  domain                String?
+  previousDomain        String?
+  actorUserId           String?
+  actorIp               String?
+  success               Boolean  @default(true)
+  error                 String?
+  createdAt             DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([actorUserId])
+}
+
 model LicenseActivation {
   id           String    @id @default(uuid())
   licenseKey   String

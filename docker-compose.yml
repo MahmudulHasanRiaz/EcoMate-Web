@@ -8,6 +8,11 @@ volumes:
   backup-data:
   redis-data:
   mobile-builds-data:
+  # Holds the generated encryption key for the license, attendance device
+  # credentials and marketing OAuth tokens. Separate from uploads, backups and
+  # mobile builds so nothing else in the container can read it. Losing this
+  # volume makes that data permanently unreadable.
+  license-data:
 
 services:
   postgres:
@@ -68,6 +73,7 @@ services:
       - uploads-data:/app/uploads
       - backup-data:/app/backup-storage
       - mobile-builds-data:/app/mobile-builds
+      - license-data:/app/license-data
     environment:
       NODE_ENV: production
       CLIENT_DOMAIN: ${CLIENT_DOMAIN}
@@ -117,6 +123,9 @@ services:
       # memory limit set in the deploy block below, or the kernel OOM-kills the
       # process before Node reaches its own ceiling.
       NODE_MAX_OLD_SPACE_SIZE: ${NODE_MAX_OLD_SPACE_SIZE:-1280}
+      # Where the generated encryption key is persisted when
+      # LICENSE_ENCRYPTION_KEY is not supplied by the environment.
+      LICENSE_DATA_DIR: /app/license-data
       # Tracking-store retention sweep (90d PII anonymisation / 30d terminal
       # outbox purge / 2y archive). Only the literal 'false' disables it.
       RETENTION_ENABLED: ${RETENTION_ENABLED:-true}

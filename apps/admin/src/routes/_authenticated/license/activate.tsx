@@ -24,7 +24,16 @@ function friendlyError(code?: string, fallback?: string): string {
   return ERROR_MESSAGES[code] || `License error: ${code}`
 }
 
-export const Route = createFileRoute('/(auth)/license/activate')({
+/**
+ * License activation.
+ *
+ * Lives under _authenticated on purpose: POST /license/activate requires an
+ * admin session, so this page must not be reachable while signed out. It
+ * previously sat in the (auth) group — the unauthenticated area — where the
+ * call would now be rejected, and where an anonymous visitor could previously
+ * have replaced the license of a live deployment.
+ */
+export const Route = createFileRoute('/_authenticated/license/activate')({
   component: LicenseActivatePage,
 })
 

@@ -2,6 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { LicenseController } from '../license.controller';
 import { LicenseService } from '../license.service';
 import { LicenseActivationService } from '../license-activation.service';
+import { ROLES_KEY } from '../../common/decorators/roles.decorator';
+import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
 
 describe('LicenseController', () => {
   let controller: LicenseController;
@@ -29,9 +31,13 @@ describe('LicenseController', () => {
     licenseService = module.get<LicenseService>(LicenseService);
   });
 
-  it('activate endpoint calls licenseService.activateWithKeymate', async () => {
+  it('activate endpoint calls licenseService.activateWithKeymate with the actor', async () => {
     const dto = { licenseKey: 'TEST-KEY' };
-    const mockReq = { hostname: 'client-store.com' };
+    const mockReq = {
+      hostname: 'client-store.com',
+      user: { userId: 'user-1' },
+      ip: '203.0.113.9',
+    };
     const mockResult = { success: true, license: { valid: true } };
     mockLicenseService.activateWithKeymate.mockResolvedValue(mockResult);
 
@@ -41,6 +47,8 @@ describe('LicenseController', () => {
       'TEST-KEY',
       'client-store.com',
       undefined,
+      'user-1',
+      '203.0.113.9',
     );
   });
 
@@ -48,5 +56,43 @@ describe('LicenseController', () => {
     mockLicenseService.getStatus.mockReturnValue({ active: true });
     const result = controller.getStatus();
     expect(result).toEqual({ active: true });
+  });
+
+  describe('authorization metadata', () => {
+    /**
+     * The activation endpoint used to be @Public(), which meant any anonymous
+     * visitor who could reach the backend could overwrite the license of a
+     * live deployment. These assertions are the regression guard for that.
+     */
+    it('requires an admin session to activate — not public', () => {
+      const roles = Reflect.getMetadata(
+        ROLES_KEY,
+        LicenseController.prototype.activate,
+      );
+      expect(roles).toEqual(expect.arrayContaining(['superadmin', 'admin']));
+
+      const isPublic = Reflect.getMetadata(
+        IS_PUBLIC_KEY,
+        LicenseController.prototype.activate,
+      );
+      expect(isPublic).toBeFalsy();
+    });
+
+    it('keeps the status endpoint public so the sign-in screen can render', () => {
+      const isPublic = Reflect.getMetadata(
+        IS_PUBLIC_KEY,
+        LicenseController.prototype.getStatus,
+      );
+      expect(isPublic).toBe(true);
+    });
+
+    it('asks for license details only when the caller is an admin', () => {
+      controller.getStatus({ role: 'admin' });
+      expect(mockLicenseService.getStatus).toHaveBeenCalledWith({ includeDetails: true });
+
+      mockLicenseService.getStatus.mockClear();
+      controller.getStatus(undefined);
+      expect(mockLicenseService.getStatus).toHaveBeenCalledWith({ includeDetails: false });
+    });
   });
 });

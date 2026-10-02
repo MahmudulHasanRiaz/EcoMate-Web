@@ -3,6 +3,7 @@ import { FeatureFlagsService } from '@ecomate/feature-flags';
 import { LicenseEngine } from '@ecomate/license-engine';
 import { ConfigService } from '@nestjs/config';
 import { EncryptionService } from '../common/utils/encryption';
+import { EncryptionKeyProvisioner } from '../common/utils/encryption-key-provisioner';
 import { LicenseController } from './license.controller';
 import { LicenseService } from './license.service';
 import { LicenseActivationService } from './license-activation.service';
@@ -23,6 +24,11 @@ function createLicenseEngine(config: ConfigService): LicenseEngine {
     LicenseActivationService,
     LicenseGuard,
     EncryptionService,
+    // Runs onModuleInit and ensures LICENSE_ENCRYPTION_KEY exists (env →
+    // persisted volume → freshly generated) before anything encrypts. Registered
+    // here because LicenseModule is @Global, so the other two consumers —
+    // attendance devices and marketing OAuth — get the same provisioned key.
+    EncryptionKeyProvisioner,
     FeatureFlagsService,
     {
       provide: LicenseEngine,
@@ -35,6 +41,8 @@ function createLicenseEngine(config: ConfigService): LicenseEngine {
     LicenseActivationService,
     LicenseGuard,
     FeatureFlagsService,
+    EncryptionService,
+    EncryptionKeyProvisioner,
   ],
 })
 export class LicenseModule {}

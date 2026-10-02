@@ -126,6 +126,8 @@ export class LicenseService implements OnModuleInit {
     licenseKey: string,
     domain: string,
     apiKey?: string,
+    actorUserId?: string,
+    actorIp?: string,
   ) {
     const keymateUrl =
       this.config.get<string>('KEYMATE_API_URL') ||
@@ -142,6 +144,10 @@ export class LicenseService implements OnModuleInit {
           domain,
           apiKey,
           licenseInfo: lic,
+          // Recorded so a license change is attributable. Previously the
+          // endpoint was anonymous and nothing recorded who changed it.
+          actorUserId,
+          actorIp,
         });
         return { success: true, license: lic };
       }
@@ -234,7 +240,14 @@ export class LicenseService implements OnModuleInit {
     }
   }
 
-  getStatus() {
+  /**
+   * @param includeDetails when false (anonymous callers) the response is reduced
+   * to what the sign-in screen needs. The full payload names the plan, its
+   * price, every unlocked feature, the usage limits and the authorised
+   * domains — useful reconnaissance for anyone who can reach the endpoint.
+   */
+  getStatus(opts: { includeDetails?: boolean } = {}) {
+    const includeDetails = opts.includeDetails !== false;
     const lic = this.featureFlags.getLicense();
     const features = this.featureFlags.getActiveFeatures();
     const isDevMode = !lic && features.length === 0;
@@ -259,13 +272,16 @@ export class LicenseService implements OnModuleInit {
     return {
       active,
       state,
+      // The feature list drives client-side gating, so the active set is
+      // always returned; it is not sensitive on its own.
       features: effectiveFeatures,
       dashboardUrl: dashboardUrlFinal,
       message: active
         ? `License active — ${lic?.plan?.name || 'custom'} plan`
         : friendlyError(lic?.code, 'License not activated'),
-      license: lic,
       code: lic?.code || null,
+      // Plan, price, limits, domains and the full license object are admin-only.
+      ...(includeDetails ? { license: lic } : {}),
     };
   }
 }
