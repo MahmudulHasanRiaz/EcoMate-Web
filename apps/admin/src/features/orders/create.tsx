@@ -28,7 +28,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Loader2, ArrowLeft, Package, Barcode, Plus, Trash2, X, User, Phone, Mail, MapPin, CreditCard, ShoppingCart, Tag, Minus, Search } from 'lucide-react'
+import { Loader2, ArrowLeft, Package, Barcode, Plus, Trash2, X, User, Phone, Mail, MapPin, CreditCard, ShoppingCart, Tag, Minus, Search, FileText, Receipt, Layers } from 'lucide-react'
 const nn = (v: number | string) => Number(v)
 
 const fmt = (v: number | string) => nn(v).toFixed(2)
@@ -254,6 +254,15 @@ export function CreateOrder() {
     setCustomerName(`${c.firstName || ''} ${c.lastName || ''}`.trim())
     setCustomerEmail(c.email || '')
     setCustomerAddress(c.address || '')
+    if (c.cityId) {
+      setCustomerCityId(String(c.cityId))
+      if (c.zoneId) setCustomerZoneId(String(c.zoneId))
+    } else if (c.city || c.district) {
+      const match = cities.find((city: any) =>
+        city.name?.toLowerCase() === (c.city || c.district || '').trim().toLowerCase()
+      )
+      if (match) setCustomerCityId(String(match.id))
+    }
     setCustomerMatched(true)
     setCustomerDropdownOpen(false)
   }
@@ -351,9 +360,10 @@ export function CreateOrder() {
   }
 
   const updateCartPrice = (index: number, price: number) => {
+    const safePrice = Math.max(0, isNaN(price) ? 0 : price)
     setCartItems(prev => {
       const updated = [...prev]
-      updated[index] = { ...updated[index], price }
+      updated[index] = { ...updated[index], price: safePrice }
       return updated
     })
   }
@@ -363,7 +373,12 @@ export function CreateOrder() {
   const calculateDiscountValue = () => {
     const subtotal = calculateSubtotal()
     const rawDiscount = parseFloat(discount) || 0
-    return discountType === 'percentage' ? subtotal * (rawDiscount / 100) : rawDiscount
+    if (rawDiscount <= 0) return 0
+    if (discountType === 'percentage') {
+      const pct = Math.min(100, Math.max(0, rawDiscount))
+      return subtotal * (pct / 100)
+    }
+    return Math.min(subtotal, Math.max(0, rawDiscount))
   }
 
   const calculateTotal = () => {
@@ -455,17 +470,24 @@ export function CreateOrder() {
       return
     }
     const normalizedPhone = normalizePhone(customerPhone)
-    if (!normalizedPhone) {
-      toast.error('Enter a valid phone number')
+    if (!normalizedPhone || normalizedPhone.length < 11) {
+      toast.error('Enter a valid 11-digit phone number (e.g. 01712345678)')
       return
     }
     if (!customerName.trim()) {
       toast.error('Customer name is required')
       return
     }
-    if (paymentMode === 'partial' && (!partialAmount || parseFloat(partialAmount) <= 0)) {
-      toast.error('Enter a partial payment amount')
-      return
+    if (paymentMode === 'partial') {
+      const pAmt = parseFloat(partialAmount) || 0
+      if (!partialAmount || pAmt <= 0) {
+        toast.error('Enter a valid partial advance amount')
+        return
+      }
+      if (pAmt >= total) {
+        toast.error('Advance amount must be less than order total (use Full Payment instead)')
+        return
+      }
     }
     createMut.mutate(buildPayload())
   }
@@ -487,38 +509,81 @@ export function CreateOrder() {
           <ThemeSwitch /><ProfileDropdown />
         </div>
       </Header>
-      <Main className='flex flex-1 flex-col gap-4 sm:gap-6 p-3 sm:p-6 max-w-7xl mx-auto w-full'>
-        <div className='flex items-center justify-between'>
-          <h1 className='text-xl sm:text-2xl font-bold tracking-tight'>Create Order</h1>
+      <Main className='flex flex-1 flex-col gap-4 sm:gap-6 p-3 sm:p-6 max-w-7xl mx-auto w-full pb-24 sm:pb-8'>
+        {/* Page Header */}
+        <div className='flex items-center justify-between gap-3 pb-1 border-b border-border/40'>
+          <div>
+            <h1 className='text-xl sm:text-2xl font-bold tracking-tight text-foreground'>Create New Order</h1>
+            <p className='text-xs sm:text-sm text-muted-foreground mt-0.5'>
+              Add customer details, select products, configure shipping and payment options
+            </p>
+          </div>
+          <div className='hidden sm:flex items-center gap-2'>
+            <Button
+              size='sm'
+              className='h-9 px-4 font-semibold text-xs shadow-xs'
+              onClick={handleSubmit}
+              disabled={createMut.isPending}
+            >
+              {createMut.isPending ? <Loader2 className='h-3.5 w-3.5 animate-spin mr-1.5' /> : <Plus className='h-3.5 w-3.5 mr-1.5' />}
+              Create Order
+            </Button>
+          </div>
         </div>
 
-        <div className='grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6'>
-          <div className='lg:col-span-2 space-y-4 sm:space-y-6'>
-            <Card>
-              <CardHeader className='pb-2'>
-                <CardTitle className='text-base flex items-center gap-2'>
-                  <Phone className='h-4 w-4' /> Customer
-                </CardTitle>
+        {/* ── Main Grid ── */}
+        <div className='grid grid-cols-1 xl:grid-cols-12 gap-4 sm:gap-6 items-start'>
+
+          {/* ════ LEFT COLUMN (Customer, Items, Notes) ════ */}
+          <div className='xl:col-span-7 2xl:col-span-8 space-y-4 sm:space-y-6'>
+
+            {/* Customer Information Card */}
+            <Card className='overflow-hidden border border-border/70 shadow-xs rounded-xl'>
+              <CardHeader className='bg-muted/30 border-b border-border/50 py-3 px-4 sm:py-3.5 sm:px-6'>
+                <div className='flex items-center justify-between'>
+                  <div className='flex items-center gap-2.5'>
+                    <div className='h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-semibold shrink-0'>
+                      <Phone className='h-4 w-4' />
+                    </div>
+                    <div>
+                      <CardTitle className='text-sm sm:text-base font-semibold tracking-tight text-foreground flex items-center gap-2'>
+                        Customer Information
+                        {customerMatched && (
+                          <Badge variant='secondary' className='text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-medium'>
+                            Existing Customer
+                          </Badge>
+                        )}
+                      </CardTitle>
+                      <p className='text-xs text-muted-foreground mt-0.5'>Search by phone or type new customer details</p>
+                    </div>
+                  </div>
+                </div>
               </CardHeader>
-              <CardContent className='space-y-3'>
+              <CardContent className='p-4 sm:p-6 space-y-4'>
                 <div className='relative' ref={customerDropdownRef}>
-                  <Phone className='absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground' />
-                  <Input
-                    value={customerPhone}
-                    onChange={e => setCustomerPhone(e.target.value)}
-                    onFocus={() => { if (customerResults.length > 0) setCustomerDropdownOpen(true) }}
-                    placeholder='Phone number (e.g. 01712345678)'
-                    className='pl-9'
-                  />
-                  {searchingCustomer && <Loader2 className='absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground' />}
+                  <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Customer Phone *</Label>
+                  <div className='relative'>
+                    <Phone className='absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground' />
+                    <Input
+                      value={customerPhone}
+                      onChange={e => setCustomerPhone(e.target.value)}
+                      onFocus={() => { if (customerResults.length > 0) setCustomerDropdownOpen(true) }}
+                      placeholder='Phone number (e.g. 01712345678)'
+                      className='pl-9 h-10 text-sm'
+                    />
+                    {searchingCustomer && <Loader2 className='absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground' />}
+                  </div>
                   {customerDropdownOpen && customerResults.length > 0 && (
-                    <div className='absolute z-30 mt-1 w-full bg-background border rounded-lg shadow-xl overflow-hidden'>
+                    <div className='absolute z-30 mt-1.5 w-full bg-background border rounded-xl shadow-xl overflow-hidden'>
+                      <div className='px-3.5 py-1.5 bg-muted/40 border-b text-[11px] text-muted-foreground font-medium'>
+                        Matching Customers ({customerResults.length})
+                      </div>
                       <div className='max-h-60 overflow-y-auto divide-y divide-border/50'>
                         {customerResults.map(c => (
                           <button
                             key={c.id}
                             type='button'
-                            className='w-full text-left px-3.5 py-2.5 text-sm hover:bg-muted flex items-center gap-2 transition-colors'
+                            className='w-full text-left px-3.5 py-2.5 text-sm hover:bg-muted/70 flex items-center gap-2 transition-colors'
                             onClick={() => selectCustomer(c)}
                           >
                             <div className='min-w-0 flex-1'>
@@ -531,21 +596,37 @@ export function CreateOrder() {
                       </div>
                     </div>
                   )}
+                  {customerMatched && (
+                    <p className='text-xs text-emerald-600 dark:text-emerald-400 mt-1 font-medium'>
+                      ✓ Auto-filled information for {customerName}
+                    </p>
+                  )}
+                  {customerPhone.length >= 11 && !customerMatched && !searchingCustomer && !customerDropdownOpen && (
+                    <p className='text-xs text-muted-foreground mt-1'>
+                      No existing record found. A new customer profile will be created with this number.
+                    </p>
+                  )}
                 </div>
-                {customerMatched && (
-                  <Badge variant='default' className='bg-green-500'>Customer found: {customerName}</Badge>
-                )}
-                {customerPhone.length >= 11 && !customerMatched && !searchingCustomer && !customerDropdownOpen && (
-                  <p className='text-xs text-muted-foreground'>No existing customer found. A new customer will be created with this phone number.</p>
-                )}
-                <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
-                  <div><Label className='text-xs'>Name</Label><Input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder='Customer name' /></div>
-                  <div><Label className='text-xs'>Email</Label><Input value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} placeholder='customer@example.com' /></div>
-                </div>
-                <div><Label className='text-xs'>Address</Label><Textarea value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} rows={2} placeholder='Customer address' /></div>
-                <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
+
+                <div className='grid grid-cols-1 sm:grid-cols-2 gap-3.5'>
                   <div>
-                    <Label className='text-xs'>City</Label>
+                    <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Full Name *</Label>
+                    <Input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder='Customer name' className='h-9.5 text-sm' />
+                  </div>
+                  <div>
+                    <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Email (Optional)</Label>
+                    <Input value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} placeholder='customer@example.com' className='h-9.5 text-sm' />
+                  </div>
+                </div>
+
+                <div>
+                  <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Delivery Address</Label>
+                  <Textarea value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} rows={2} placeholder='House/Road, Village/Area...' className='text-sm resize-none' />
+                </div>
+
+                <div className='grid grid-cols-1 sm:grid-cols-2 gap-3.5'>
+                  <div>
+                    <Label className='text-xs font-medium text-muted-foreground mb-1 block'>City / District</Label>
                     <SearchableSelect
                       options={cityOptions}
                       value={customerCityId}
@@ -555,7 +636,7 @@ export function CreateOrder() {
                     />
                   </div>
                   <div>
-                    <Label className='text-xs'>Zone</Label>
+                    <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Courier Delivery Zone</Label>
                     <SearchableSelect
                       options={zoneOptions}
                       value={customerZoneId}
@@ -566,106 +647,146 @@ export function CreateOrder() {
                     />
                   </div>
                 </div>
+
+                <div className='pt-1'>
+                  <label htmlFor='diffShipping' className='inline-flex items-center gap-2 cursor-pointer select-none text-xs font-medium text-muted-foreground hover:text-foreground'>
+                    <input
+                      type='checkbox'
+                      id='diffShipping'
+                      checked={useDiffShipping}
+                      onChange={e => setUseDiffShipping(e.target.checked)}
+                      className='h-4 w-4 rounded border-border text-primary focus:ring-primary/20'
+                    />
+                    Deliver to a different shipping address
+                  </label>
+                </div>
+
+                {useDiffShipping && (
+                  <div className='p-3.5 bg-muted/30 border border-border/60 rounded-xl space-y-3 pt-3'>
+                    <div className='flex items-center gap-1.5 text-xs font-semibold text-foreground'>
+                      <MapPin className='h-3.5 w-3.5 text-primary' />
+                      Alternative Shipping Destination
+                    </div>
+                    <div>
+                      <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Shipping Address</Label>
+                      <Textarea value={shipAddress} onChange={e => setShipAddress(e.target.value)} rows={2} placeholder='Different recipient address...' className='text-sm resize-none' />
+                    </div>
+                    <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
+                      <div>
+                        <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Shipping City</Label>
+                        <SearchableSelect
+                          options={cityOptions}
+                          value={shipCityId}
+                          onChange={val => { setShipCityId(val); setShipZoneId('') }}
+                          placeholder='Select city...'
+                          searchPlaceholder='Search cities...'
+                        />
+                      </div>
+                      <div>
+                        <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Shipping Zone</Label>
+                        <SearchableSelect
+                          options={shipZoneOptions}
+                          value={shipZoneId}
+                          onChange={setShipZoneId}
+                          placeholder='Select zone...'
+                          searchPlaceholder='Search zones...'
+                          disabled={!shipCityId}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
-            <div className='flex items-center gap-2'>
-              <input type='checkbox' id='diffShipping' checked={useDiffShipping} onChange={e => setUseDiffShipping(e.target.checked)} className='h-4 w-4 rounded border-gray-300' />
-              <Label htmlFor='diffShipping' className='text-xs cursor-pointer'>Use different shipping address</Label>
-            </div>
-
-            {useDiffShipping && (
-              <Card>
-                <CardHeader className='pb-2'>
-                  <CardTitle className='text-base flex items-center gap-2'>
-                    <MapPin className='h-4 w-4' /> Shipping Address
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className='space-y-3'>
-                  <div><Label className='text-xs'>Address</Label><Textarea value={shipAddress} onChange={e => setShipAddress(e.target.value)} rows={2} placeholder='Different shipping address' /></div>
-                  <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
-                    <div>
-                      <Label className='text-xs'>City</Label>
-                      <SearchableSelect
-                        options={cityOptions}
-                        value={shipCityId}
-                        onChange={val => { setShipCityId(val); setShipZoneId('') }}
-                        placeholder='Select city...'
-                        searchPlaceholder='Search cities...'
-                      />
+            {/* Ordered Items Card */}
+            <Card className='overflow-hidden border border-border/70 shadow-xs rounded-xl'>
+              <CardHeader className='bg-muted/30 border-b border-border/50 py-3 px-4 sm:py-3.5 sm:px-6'>
+                <div className='flex items-center justify-between'>
+                  <div className='flex items-center gap-2.5'>
+                    <div className='h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-semibold shrink-0'>
+                      <Package className='h-4 w-4' />
                     </div>
                     <div>
-                      <Label className='text-xs'>Zone</Label>
-                      <SearchableSelect
-                        options={shipZoneOptions}
-                        value={shipZoneId}
-                        onChange={setShipZoneId}
-                        placeholder='Select zone...'
-                        searchPlaceholder='Search zones...'
-                        disabled={!shipCityId}
-                      />
+                      <CardTitle className='text-sm sm:text-base font-semibold tracking-tight text-foreground flex items-center gap-2'>
+                        Ordered Items
+                        <Badge variant='secondary' className='text-[11px] font-medium px-2 py-0.5 rounded-full'>
+                          {cartItems.length} {cartItems.length === 1 ? 'item' : 'items'} ({cartItems.reduce((acc, i) => acc + i.quantity, 0)} units)
+                        </Badge>
+                      </CardTitle>
+                      <p className='text-xs text-muted-foreground mt-0.5'>Search products, adjust unit prices and quantities</p>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            )}
-
-            <Card>
-              <CardHeader className='pb-2'>
-                <CardTitle className='text-base flex items-center gap-2'>
-                  <Package className='h-4 w-4' /> Products
-                </CardTitle>
+                </div>
               </CardHeader>
-              <CardContent className='space-y-3'>
-                {/* ── Unified Smart Search Bar ── */}
+              <CardContent className='p-4 sm:p-6 space-y-4'>
+                {/* Unified Smart Search Bar */}
                 <div className='relative' ref={productDropdownRef}>
                   <div className='relative flex items-center'>
-                    <Search className='absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none z-10' />
+                    <Search className='absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none z-10' />
                     <input
                       ref={productInputRef}
                       type='text'
                       value={productSearch}
                       onChange={e => {
                         setProductSearch(e.target.value)
-                        if (!e.target.value) { setShowProductDropdown(false); }
+                        if (!e.target.value) setShowProductDropdown(false)
                       }}
                       onFocus={() => {
                         if (productResults.length > 0) setShowProductDropdown(true)
                       }}
                       onKeyDown={e => {
                         if (e.key === 'Enter' && productSearch.trim()) {
-                          // Try exact SKU match first; if none, do barcode search
                           const localExact = productResults.find((p: any) =>
                             p.sku?.toLowerCase() === productSearch.trim().toLowerCase() ||
                             p.variants?.some((v: any) => v.sku?.toLowerCase() === productSearch.trim().toLowerCase())
                           )
                           if (localExact) {
                             const matchedVariant = localExact.variants?.find((v: any) => v.sku?.toLowerCase() === productSearch.trim().toLowerCase())
-                            if (matchedVariant) { addToCart(localExact, matchedVariant); toast.success(`${localExact.name} (${matchedVariant.name || matchedVariant.sku}) added`); setProductSearch(''); setShowProductDropdown(false) }
-                            else if (localExact.type === 'variable' || localExact.variants?.length > 0) { setSelectedProductForVariants(localExact); setProductSearch(''); setShowProductDropdown(false) }
-                            else { addToCart(localExact); toast.success(`${localExact.name} added`); setProductSearch(''); setShowProductDropdown(false) }
+                            if (matchedVariant) {
+                              addToCart(localExact, matchedVariant)
+                              toast.success(`${localExact.name} (${matchedVariant.name || matchedVariant.sku}) added`)
+                              setProductSearch('')
+                              setShowProductDropdown(false)
+                            } else if (localExact.type === 'variable' || localExact.variants?.length > 0) {
+                              setSelectedProductForVariants(localExact)
+                              setProductSearch('')
+                              setShowProductDropdown(false)
+                            } else {
+                              addToCart(localExact)
+                              toast.success(`${localExact.name} added`)
+                              setProductSearch('')
+                              setShowProductDropdown(false)
+                            }
                           } else {
                             handleBarcodeSearch(productSearch.trim())
                           }
                         }
-                        if (e.key === 'Escape') { setShowProductDropdown(false); }
+                        if (e.key === 'Escape') setShowProductDropdown(false)
                       }}
-                      placeholder='Search by product name or SKU / scan barcode...'
-                      className='w-full h-11 pl-9 pr-9 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring shadow-xs'
+                      placeholder='Search by product name, SKU or scan barcode...'
+                      className='w-full h-11 pl-10 pr-10 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring shadow-2xs'
                       autoComplete='off'
                     />
-                    {productSearching
-                      ? <Loader2 className='absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground' />
-                      : productSearch && <button type='button' onClick={() => { setProductSearch(''); setShowProductDropdown(false) }} className='absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1'><X className='h-4 w-4' /></button>
-                    }
+                    {productSearching ? (
+                      <Loader2 className='absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground' />
+                    ) : productSearch ? (
+                      <button
+                        type='button'
+                        onClick={() => { setProductSearch(''); setShowProductDropdown(false) }}
+                        className='absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1'
+                      >
+                        <X className='h-4 w-4' />
+                      </button>
+                    ) : null}
                   </div>
 
-                  {/* Search results dropdown */}
+                  {/* Dropdown Menu */}
                   {showProductDropdown && productResults.length > 0 && (
                     <div className='absolute z-30 mt-1.5 w-full bg-background border rounded-xl shadow-xl overflow-hidden'>
-                      <div className='px-3 py-2 bg-muted/40 border-b flex items-center justify-between text-xs text-muted-foreground'>
+                      <div className='px-3.5 py-2 bg-muted/40 border-b flex items-center justify-between text-xs text-muted-foreground'>
                         <span>{productResults.length} product{productResults.length > 1 ? 's' : ''} found</span>
-                        <span className='text-[11px] hidden sm:inline'>Tap product or options to add</span>
+                        <span className='text-[11px] hidden sm:inline'>Tap product to add or select variant</span>
                       </div>
                       <div className='max-h-72 sm:max-h-80 overflow-y-auto divide-y divide-border/50'>
                         {productResults.map((p: any) => {
@@ -724,55 +845,40 @@ export function CreateOrder() {
                     </div>
                   )}
                 </div>
-              </CardContent>
-            </Card>
 
-            <Card>
-              <CardHeader className='pb-2'>
-                <CardTitle className='text-base flex items-center justify-between'>
-                  <span className='flex items-center gap-2'>
-                    <ShoppingCart className='h-4 w-4' /> Cart ({cartItems.length})
-                  </span>
-                  {cartItems.length > 0 && (
-                    <span className='text-xs font-normal text-muted-foreground'>
-                      {cartItems.reduce((acc, i) => acc + i.quantity, 0)} total units
-                    </span>
-                  )}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className='p-0'>
+                {/* Cart Area */}
                 {cartItems.length === 0 ? (
-                  <div className='flex flex-col items-center justify-center py-12 text-muted-foreground'>
+                  <div className='flex flex-col items-center justify-center py-12 border border-dashed rounded-xl text-muted-foreground bg-muted/10'>
                     <ShoppingCart className='h-12 w-12 mb-2 opacity-20' />
-                    <p className='text-sm font-medium'>Your cart is empty</p>
-                    <p className='text-xs text-muted-foreground mt-0.5'>Search and select products above to add items.</p>
+                    <p className='text-sm font-medium'>No products in this order</p>
+                    <p className='text-xs text-muted-foreground mt-0.5'>Search and select items above to add to cart</p>
                   </div>
                 ) : (
-                  <>
-                    {/* Desktop Cart Table (md and up) */}
-                    <div className='hidden md:block'>
+                  <div className='border border-border/70 rounded-xl overflow-hidden'>
+                    {/* Desktop Table View */}
+                    <div className='hidden md:block overflow-x-auto'>
                       <Table>
                         <TableHeader>
-                          <TableRow>
-                            <TableHead>Product</TableHead>
-                            <TableHead>Variant</TableHead>
-                            <TableHead className='text-right'>Price</TableHead>
-                            <TableHead className='text-right'>Qty</TableHead>
-                            <TableHead className='text-right'>Total</TableHead>
+                          <TableRow className='bg-muted/20 border-b border-border/50'>
+                            <TableHead className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground h-9 px-4'>Product</TableHead>
+                            <TableHead className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground h-9'>Variant</TableHead>
+                            <TableHead className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground h-9 text-right w-28'>Unit Price (৳)</TableHead>
+                            <TableHead className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground h-9 text-right w-28'>Quantity</TableHead>
+                            <TableHead className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground h-9 text-right w-28'>Total</TableHead>
                             <TableHead className='w-10'></TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {cartItems.map((item, index) => (
-                            <TableRow key={`${item.productId}-${item.variantId || ''}-${index}`}>
-                              <TableCell>
+                            <TableRow key={`${item.productId}-${item.variantId || ''}-${index}`} className='hover:bg-muted/30 transition-colors'>
+                              <TableCell className='px-4 py-3'>
                                 <div className='flex items-center gap-2.5'>
                                   {item.product.images && Array.isArray(item.product.images) && item.product.images[0] ? (
                                     <SafeImage src={mediaUrl(item.product.images[0])} alt='' className='h-9 w-9 rounded-md border object-cover shrink-0' thumbWidth={48} thumbHeight={48} />
                                   ) : (
                                     <div className='h-9 w-9 rounded-md border bg-muted flex items-center justify-center shrink-0'><Package className='h-4 w-4 text-muted-foreground' /></div>
                                   )}
-                                  <span className='text-sm font-semibold truncate max-w-[200px]'>{item.product.name}</span>
+                                  <span className='text-sm font-semibold truncate max-w-[200px] text-foreground'>{item.product.name}</span>
                                 </div>
                               </TableCell>
                               <TableCell className='text-sm text-muted-foreground'>
@@ -810,7 +916,7 @@ export function CreateOrder() {
                       </Table>
                     </div>
 
-                    {/* Mobile Cart Items (Card View for small screens) */}
+                    {/* Mobile Cart Cards View */}
                     <div className='block md:hidden divide-y divide-border/60'>
                       {cartItems.map((item, index) => (
                         <div key={`${item.productId}-${item.variantId || ''}-${index}`} className='p-3 space-y-2.5'>
@@ -881,57 +987,112 @@ export function CreateOrder() {
                         </div>
                       ))}
                     </div>
-                  </>
+                  </div>
                 )}
+              </CardContent>
+            </Card>
+
+            {/* Order Notes Card */}
+            <Card className='overflow-hidden border border-border/70 shadow-xs rounded-xl'>
+              <CardHeader className='bg-muted/30 border-b border-border/50 py-3 px-4 sm:py-3.5 sm:px-6'>
+                <div className='flex items-center gap-2.5'>
+                  <div className='h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-semibold shrink-0'>
+                    <FileText className='h-4 w-4' />
+                  </div>
+                  <div>
+                    <CardTitle className='text-sm sm:text-base font-semibold tracking-tight text-foreground'>
+                      Order Notes
+                    </CardTitle>
+                    <p className='text-xs text-muted-foreground mt-0.5'>Invoice instructions and internal staff notes</p>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className='p-4 sm:p-6 space-y-3.5'>
+                <div>
+                  <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Customer Notes (Printed on Customer Invoice)</Label>
+                  <Textarea
+                    value={customerNotes}
+                    onChange={e => setCustomerNotes(e.target.value)}
+                    rows={2}
+                    className='text-sm resize-none'
+                    placeholder='Special delivery instructions, timing or customer requests...'
+                  />
+                </div>
+                <div>
+                  <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Office Notes (Internal Staff Only)</Label>
+                  <Textarea
+                    value={officeNotes}
+                    onChange={e => setOfficeNotes(e.target.value)}
+                    rows={2}
+                    className='text-sm resize-none'
+                    placeholder='Internal remarks, confirmation details, packaging notes...'
+                  />
+                  <p className='text-[11px] text-muted-foreground mt-1'>
+                    Internal note will be automatically combined with the system default office note.
+                  </p>
+                </div>
               </CardContent>
             </Card>
 
           </div>
 
-          <div className='space-y-4 sm:space-y-6'>
-            <Card>
-              <CardHeader className='pb-2'>
-                <CardTitle className='text-base'>Order Summary</CardTitle>
-              </CardHeader>
-              <CardContent className='space-y-3'>
-                <div className='bg-muted/50 rounded-lg p-3 space-y-1.5 text-sm'>
-                  <div className='flex justify-between'>
-                    <span className='text-muted-foreground'>Subtotal</span>
-                    <span>৳{fmt(subtotal)}</span>
+          {/* ════ RIGHT COLUMN (Sidebar: Summary, Payment, Attribution) ════ */}
+          <div className='xl:col-span-5 2xl:col-span-4 space-y-4 sm:space-y-6'>
+
+            {/* Order Summary Card */}
+            <Card className='overflow-hidden border border-border/70 shadow-xs rounded-xl'>
+              <CardHeader className='bg-muted/30 border-b border-border/50 py-3 px-4 sm:py-3.5 sm:px-6'>
+                <div className='flex items-center gap-2.5'>
+                  <div className='h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-semibold shrink-0'>
+                    <Receipt className='h-4 w-4' />
                   </div>
-                  <div className='flex justify-between'>
-                    <span className='text-muted-foreground'>Shipping</span>
-                    <span>+৳{fmt(parseFloat(shippingCharge) || 0)}</span>
+                  <div>
+                    <CardTitle className='text-sm sm:text-base font-semibold tracking-tight text-foreground'>
+                      Order Summary
+                    </CardTitle>
+                    <p className='text-xs text-muted-foreground mt-0.5'>Pricing, delivery charges, and discounts</p>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className='p-4 sm:p-6 space-y-4'>
+                <div className='bg-muted/50 rounded-xl p-3.5 space-y-2 text-sm border border-border/40'>
+                  <div className='flex justify-between items-center'>
+                    <span className='text-muted-foreground'>Subtotal</span>
+                    <span className='font-medium text-foreground'>৳{fmt(subtotal)}</span>
+                  </div>
+                  <div className='flex justify-between items-center'>
+                    <span className='text-muted-foreground'>Delivery Charge</span>
+                    <span className='font-medium text-foreground'>+৳{fmt(parseFloat(shippingCharge) || 0)}</span>
                   </div>
                   {discountValue > 0 && (
-                    <div className='flex justify-between text-green-600 font-medium'>
-                      <span className='text-muted-foreground'>Discount {discountType === 'percentage' ? `(${parseFloat(discount) || 0}%)` : ''}</span>
+                    <div className='flex justify-between items-center text-emerald-600 dark:text-emerald-400 font-medium'>
+                      <span>Discount {discountType === 'percentage' ? `(${parseFloat(discount) || 0}%)` : '(Flat)'}</span>
                       <span>-৳{fmt(discountValue)}</span>
                     </div>
                   )}
-                  <div className='flex justify-between font-bold text-base pt-2 border-t'>
-                    <span>Total</span>
-                    <span className='text-primary'>৳{fmt(total)}</span>
+                  <div className='flex justify-between items-center font-bold text-base pt-2.5 border-t border-border/60'>
+                    <span>Total Amount</span>
+                    <span className='text-primary text-lg font-extrabold'>৳{fmt(total)}</span>
                   </div>
                   {paymentMode === 'partial' && parseFloat(partialAmount) > 0 && (
-                    <>
-                      <div className='flex justify-between text-emerald-600 font-medium pt-1'>
-                        <span>Advance Paid</span>
+                    <div className='pt-2 border-t border-dashed border-border/60 space-y-1.5'>
+                      <div className='flex justify-between items-center text-xs text-emerald-600 dark:text-emerald-400 font-medium'>
+                        <span>Advance Paid (Now)</span>
                         <span>-৳{fmt(parseFloat(partialAmount) || 0)}</span>
                       </div>
-                      <div className='flex justify-between font-bold text-sm sm:text-base pt-1.5 border-t border-dashed text-foreground'>
+                      <div className='flex justify-between items-center text-sm font-bold text-amber-600 dark:text-amber-500 bg-amber-500/10 dark:bg-amber-500/15 p-2 rounded-lg border border-amber-500/20'>
                         <span>Due on Delivery (COD)</span>
-                        <span className='text-amber-600 dark:text-amber-500'>
+                        <span className='text-base font-extrabold'>
                           ৳{fmt(Math.max(0, total - (parseFloat(partialAmount) || 0)))}
                         </span>
                       </div>
-                    </>
+                    </div>
                   )}
                 </div>
 
-                <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
+                <div className='grid grid-cols-1 sm:grid-cols-2 gap-3.5'>
                   <div>
-                    <Label className='text-xs'>Shipping Charge (৳)</Label>
+                    <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Shipping Charge (৳)</Label>
                     <Input
                       type='number'
                       step='0.01'
@@ -940,29 +1101,29 @@ export function CreateOrder() {
                         setShippingChargeManuallyEdited(true)
                         setShippingCharge(e.target.value)
                       }}
-                      className='h-9 text-sm mt-1'
+                      className='h-9.5 text-sm'
                     />
                     <p className='text-[11px] text-muted-foreground mt-1'>
-                      {shippingChargeManuallyEdited ? 'Custom rate applied' : 'Auto-set from city'}
+                      {shippingChargeManuallyEdited ? 'Custom rate applied' : 'Auto-calculated from city'}
                     </p>
                   </div>
                   <div>
-                    <Label className='text-xs'>Discount</Label>
-                    <div className='flex gap-1.5 mt-1'>
+                    <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Discount</Label>
+                    <div className='flex gap-1.5'>
                       <Input
                         type='number'
                         step='0.01'
                         value={discount}
                         onChange={e => setDiscount(e.target.value)}
-                        className='h-9 text-sm flex-1'
+                        className='h-9.5 text-sm flex-1'
                         placeholder='0.00'
                       />
-                      <div className='flex border rounded-md p-0.5 bg-muted/40 shrink-0'>
+                      <div className='flex border rounded-lg p-0.5 bg-muted/40 shrink-0'>
                         <Button
                           type='button'
                           variant={discountType === 'flat' ? 'default' : 'ghost'}
                           size='sm'
-                          className='h-7.5 px-2 text-xs'
+                          className='h-8 px-2.5 text-xs'
                           onClick={() => setDiscountType('flat')}
                         >
                           Flat
@@ -971,7 +1132,7 @@ export function CreateOrder() {
                           type='button'
                           variant={discountType === 'percentage' ? 'default' : 'ghost'}
                           size='sm'
-                          className='h-7.5 px-2 text-xs'
+                          className='h-8 px-2.5 text-xs'
                           onClick={() => setDiscountType('percentage')}
                         >
                           %
@@ -983,18 +1144,27 @@ export function CreateOrder() {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader className='pb-2'>
-                <CardTitle className='text-base flex items-center gap-2'>
-                  <CreditCard className='h-4 w-4' /> Payment
-                </CardTitle>
-              </CardHeader>
-              <CardContent className='space-y-3'>
-                <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
+            {/* Payment Details Card */}
+            <Card className='overflow-hidden border border-border/70 shadow-xs rounded-xl'>
+              <CardHeader className='bg-muted/30 border-b border-border/50 py-3 px-4 sm:py-3.5 sm:px-6'>
+                <div className='flex items-center gap-2.5'>
+                  <div className='h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-semibold shrink-0'>
+                    <CreditCard className='h-4 w-4' />
+                  </div>
                   <div>
-                    <Label className='text-xs'>Method</Label>
+                    <CardTitle className='text-sm sm:text-base font-semibold tracking-tight text-foreground'>
+                      Payment Details
+                    </CardTitle>
+                    <p className='text-xs text-muted-foreground mt-0.5'>Select payment gateway and payment mode</p>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className='p-4 sm:p-6 space-y-3.5'>
+                <div className='grid grid-cols-1 sm:grid-cols-2 gap-3.5'>
+                  <div>
+                    <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Payment Method</Label>
                     <select
-                      className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1'
+                      className='w-full h-9.5 rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
                       value={paymentMethod}
                       onChange={e => setPaymentMethod(e.target.value)}
                     >
@@ -1006,53 +1176,59 @@ export function CreateOrder() {
                     </select>
                   </div>
                   <div>
-                    <Label className='text-xs'>Mode</Label>
+                    <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Payment Mode</Label>
                     <select
-                      className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1'
+                      className='w-full h-9.5 rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
                       value={paymentMode}
                       onChange={e => setPaymentMode(e.target.value as any)}
                     >
                       <option value='cod'>Cash on Delivery (COD)</option>
                       <option value='full'>Full Payment</option>
-                      <option value='partial'>Partial Payment</option>
+                      <option value='partial'>Partial Payment (Advance)</option>
                     </select>
                   </div>
                 </div>
                 {paymentMode === 'partial' && (
-                  <div className='p-3 bg-muted/40 rounded-lg border border-border/60 space-y-2'>
+                  <div className='p-3.5 bg-muted/40 rounded-xl border border-border/60 space-y-2'>
                     <div>
-                      <Label className='text-xs font-semibold'>Advance Paid Amount (৳)</Label>
+                      <Label className='text-xs font-semibold block text-foreground mb-1'>Advance Paid Amount (৳) *</Label>
                       <Input
                         type='number'
                         step='0.01'
                         value={partialAmount}
                         onChange={e => setPartialAmount(e.target.value)}
-                        className='h-9 text-sm mt-1'
+                        className='h-9.5 text-sm bg-background'
                         placeholder='Amount collected in advance'
                       />
                     </div>
-                    <p className='text-xs text-muted-foreground'>
-                      Advance of ৳{fmt(parseFloat(partialAmount) || 0)} will be recorded as paid now. Balance of ৳{fmt(Math.max(0, total - (parseFloat(partialAmount) || 0)))} will be collected on delivery.
+                    <p className='text-xs text-muted-foreground leading-relaxed'>
+                      Advance of ৳{fmt(parseFloat(partialAmount) || 0)} will be recorded as paid now. Balance of ৳{fmt(Math.max(0, total - (parseFloat(partialAmount) || 0)))} will be assigned to courier collection.
                     </p>
                   </div>
                 )}
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader className='pb-2'>
-                <CardTitle className='text-base'>Sales Channel &amp; Source</CardTitle>
-                <CardDescription className='text-xs'>
-                  Four independent facts. None of them is implied by another — an order is
-                  created even if you leave every optional field empty.
-                </CardDescription>
+            {/* Sales Channel & Attribution Card */}
+            <Card className='overflow-hidden border border-border/70 shadow-xs rounded-xl'>
+              <CardHeader className='bg-muted/30 border-b border-border/50 py-3 px-4 sm:py-3.5 sm:px-6'>
+                <div className='flex items-center gap-2.5'>
+                  <div className='h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-semibold shrink-0'>
+                    <Layers className='h-4 w-4' />
+                  </div>
+                  <div>
+                    <CardTitle className='text-sm sm:text-base font-semibold tracking-tight text-foreground'>
+                      Sales Attribution
+                    </CardTitle>
+                    <p className='text-xs text-muted-foreground mt-0.5'>Order origin channel and acquisition source</p>
+                  </div>
+                </div>
               </CardHeader>
-              <CardContent className='space-y-3'>
-                {/* Channel — Messaging and Phone Call first; all four retained. */}
+              <CardContent className='p-4 sm:p-6 space-y-3.5'>
                 <div>
-                  <Label className='text-xs'>Channel</Label>
+                  <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Channel</Label>
                   <select
-                    className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1'
+                    className='w-full h-9.5 rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
                     value={channel}
                     onChange={e => {
                       const val = e.target.value as ChannelV2
@@ -1070,16 +1246,15 @@ export function CreateOrder() {
 
                 {channel !== 'POS' && (
                   <div>
-                    <Label className='text-xs'>
-                      Channel Entity{' '}
-                      <span className='text-muted-foreground font-normal'>(optional)</span>
+                    <Label className='text-xs font-medium text-muted-foreground mb-1 block'>
+                      Channel Entity <span className='text-muted-foreground/70 font-normal'>(optional)</span>
                     </Label>
                     <Input
                       value={channelEntity}
                       onChange={e => setChannelEntity(e.target.value)}
-                      className='h-9 text-sm mt-1'
+                      className='h-9.5 text-sm'
                       placeholder={
-                        channel === 'WEBSITE' ? 'Auto-filled from the connected store'
+                        channel === 'WEBSITE' ? 'Auto-filled from connected store'
                         : channel === 'MESSAGING' ? 'Page or account'
                         : 'Office'
                       }
@@ -1088,11 +1263,11 @@ export function CreateOrder() {
                 )}
 
                 <div>
-                  <Label className='text-xs'>
-                    Source <span className='text-muted-foreground font-normal'>(optional)</span>
+                  <Label className='text-xs font-medium text-muted-foreground mb-1 block'>
+                    Source <span className='text-muted-foreground/70 font-normal'>(optional)</span>
                   </Label>
                   <select
-                    className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1'
+                    className='w-full h-9.5 rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
                     value={sourceSlug}
                     onChange={e => setSourceSlug(e.target.value)}
                   >
@@ -1104,12 +1279,11 @@ export function CreateOrder() {
                 </div>
 
                 <div>
-                  <Label className='text-xs'>
-                    Acquisition Type{' '}
-                    <span className='text-muted-foreground font-normal'>(optional)</span>
+                  <Label className='text-xs font-medium text-muted-foreground mb-1 block'>
+                    Acquisition Type <span className='text-muted-foreground/70 font-normal'>(optional)</span>
                   </Label>
                   <select
-                    className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1'
+                    className='w-full h-9.5 rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
                     value={acquisitionType}
                     onChange={e =>
                       setAcquisitionType(e.target.value as AcquisitionType | '')
@@ -1124,49 +1298,43 @@ export function CreateOrder() {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader className='pb-2'>
-                <CardTitle className='text-base'>Notes</CardTitle>
-              </CardHeader>
-              <CardContent className='space-y-3'>
-                <div>
-                  <Label className='text-xs'>Customer Notes</Label>
-                  <Textarea
-                    value={customerNotes}
-                    onChange={e => setCustomerNotes(e.target.value)}
-                    rows={2}
-                    className='mt-1 text-sm'
-                    placeholder='Note visible to customer on invoice...'
-                  />
-                </div>
-                <div>
-                  <Label className='text-xs'>Office Notes</Label>
-                  <Textarea
-                    value={officeNotes}
-                    onChange={e => setOfficeNotes(e.target.value)}
-                    rows={2}
-                    className='mt-1 text-sm'
-                    placeholder='Internal notes...'
-                  />
-                  <p className='text-[11px] text-muted-foreground mt-1'>
-                    Internal note will be automatically combined with the default office note.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+            {/* Desktop Create Order CTA */}
+            <div className='hidden sm:block pt-1'>
+              <Button
+                className='w-full h-11 text-sm font-semibold shadow-xs'
+                size='lg'
+                onClick={handleSubmit}
+                disabled={createMut.isPending}
+              >
+                {createMut.isPending ? <Loader2 className='h-4 w-4 animate-spin mr-2' /> : <Plus className='h-4 w-4 mr-2' />}
+                Create Order
+              </Button>
+            </div>
 
-            <Button
-              className='w-full h-11 text-sm sm:text-base font-semibold shadow-xs'
-              size='lg'
-              onClick={handleSubmit}
-              disabled={createMut.isPending}
-            >
-              {createMut.isPending ? <Loader2 className='h-4 w-4 animate-spin mr-2' /> : <Plus className='h-4 w-4 mr-2' />}
-              Create Order
-            </Button>
           </div>
         </div>
       </Main>
+
+      {/* ── Mobile Sticky Bottom Action Bar ── */}
+      <div className='fixed bottom-0 left-0 right-0 z-40 bg-background/95 backdrop-blur-md border-t border-border/70 p-3 sm:hidden shadow-lg flex items-center justify-between gap-3'>
+        <div className='min-w-0 flex-1'>
+          <span className='text-[10px] uppercase font-semibold text-muted-foreground block tracking-wider leading-none'>Total</span>
+          <span className='text-base font-extrabold text-primary leading-tight block mt-0.5'>৳{fmt(total)}</span>
+          {paymentMode === 'partial' && parseFloat(partialAmount) > 0 && (
+            <span className='text-[10px] text-amber-600 dark:text-amber-500 font-semibold block leading-none truncate'>
+              Due: ৳{fmt(Math.max(0, total - (parseFloat(partialAmount) || 0)))}
+            </span>
+          )}
+        </div>
+        <Button
+          className='h-11 px-6 font-semibold text-sm shadow-sm shrink-0'
+          onClick={handleSubmit}
+          disabled={createMut.isPending}
+        >
+          {createMut.isPending ? <Loader2 className='h-4 w-4 animate-spin mr-1.5' /> : <Plus className='h-4 w-4 mr-1.5' />}
+          Create Order
+        </Button>
+      </div>
 
       <Dialog open={!!selectedProductForVariants} onOpenChange={() => setSelectedProductForVariants(null)}>
         <DialogContent className='max-w-md w-[95vw] sm:w-full max-h-[85vh] flex flex-col p-4 sm:p-6'>
