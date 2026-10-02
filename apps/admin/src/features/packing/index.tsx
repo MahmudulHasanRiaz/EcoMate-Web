@@ -1,7 +1,7 @@
 import { useEffect, useCallback, useState, useRef } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useAuthStore } from '@/stores/auth-store'
-import { usePackingQueuePage, usePackingStats, useOpenOrder, useMarkDone, useMarkHold, usePackingHistory, useReleaseLock, useCheckOrderStatus } from './hooks'
+import { usePackingQueuePage, usePackingStats, useOpenOrder, useOrderDetail, useMarkDone, useMarkHold, usePackingHistory, useReleaseLock, useCheckOrderStatus } from './hooks'
 import { HoldModal } from './HoldModal'
 import { Input } from '@/components/ui/input'
 import { Html5Qrcode, type CameraDevice } from 'html5-qrcode'
@@ -40,7 +40,7 @@ import {
   Maximize2,
   X
 } from 'lucide-react'
-import type { QueueItem, HoldFormData, HistoryEntry } from './types'
+import type { QueueItem, HoldFormData, HistoryEntry, ProductPhotoCatalogEntry } from './types'
 
 type TabType = 'scan' | 'packed' | 'held'
 
@@ -60,6 +60,14 @@ export function PackingWorkspace() {
   
   // Packing state
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
+  // An order opened by scanning/typing that falls beyond the capped queue page.
+  // Kept separately so the packer can still pack it instead of being told it is
+  // "not ready for packing".
+  const [outOfPageOrder, setOutOfPageOrder] = useState<QueueItem | null>(null)
+  // Photo catalog that came with the out-of-page order.
+  const [outOfPageCatalog, setOutOfPageCatalog] = useState<
+    Record<string, ProductPhotoCatalogEntry> | null
+  >(null)
   const [holdOrderId, setHoldOrderId] = useState<string | null>(null)
   const [showCustomerDetails, setShowCustomerDetails] = useState(false)
   const [verifiedQuantities, setVerifiedQuantities] = useState<Record<string, number>>({})
@@ -85,6 +93,9 @@ export function PackingWorkspace() {
   const [cameras, setCameras] = useState<CameraDevice[]>([])
   const [selectedCameraId, setSelectedCameraId] = useState<string>('')
   const [scannerError, setScannerError] = useState<string | null>(null)
+  // Bumped by the "Retry camera" button to force the start effect to re-run
+  // even when the other inputs are unchanged.
+  const [cameraRetryKey, setCameraRetryKey] = useState(0)
   const controllerRef = useRef<ScannerController | null>(null)
 
   // The queue is polled every 15s. Mirroring it into a ref keeps
@@ -171,17 +182,28 @@ export function PackingWorkspace() {
     isSuccess: isQueueLoaded,
   } = usePackingQueuePage()
   const queue = queuePage?.orders ?? EMPTY_QUEUE
-  const photoCatalog = queuePage?.photoCatalog
+  // The catalog is shared across the queue page, but an order opened by
+  // scanning/typing beyond that page carries its own catalog entries.
+  const queuePhotoCatalog = queuePage?.photoCatalog
+  const photoCatalog =
+    queuePhotoCatalog && !outOfPageOrder
+      ? queuePhotoCatalog
+      : { ...(queuePhotoCatalog ?? {}), ...(outOfPageCatalog ?? {}) }
+  const queueTotal = queuePage?.total ?? queue.length
+  const isQueueTruncated = queueTotal > queue.length
   const { data: stats } = usePackingStats()
   const { data: history = [], isLoading: isHistoryLoading } = usePackingHistory(currentPackerId)
 
   const openOrder = useOpenOrder()
+  const orderDetail = useOrderDetail()
   const markDone = useMarkDone()
   const markHold = useMarkHold()
   const releaseLock = useReleaseLock()
   const checkStatus = useCheckOrderStatus()
 
-  const activeOrder = queue.find((o) => o.id === selectedOrderId)
+  const activeOrder =
+    queue.find((o) => o.id === selectedOrderId) ??
+    (outOfPageOrder?.id === selectedOrderId ? outOfPageOrder : undefined)
   queueRef.current = queue
 
   // Open and lock order
@@ -216,6 +238,8 @@ export function PackingWorkspace() {
       // otherwise a failed exit would silently destroy the packer's progress.
       clearChecklist(orderId)
       setSelectedOrderId(null)
+      setOutOfPageOrder(null)
+      setOutOfPageCatalog(null)
       setManualSearch('')
     }
   }, [selectedOrderId, releaseLock, clearChecklist])
@@ -229,14 +253,40 @@ export function PackingWorkspace() {
     // Wait until the first successful load so an initial empty/error response
     // doesn't tear down a valid selection.
     if (!isQueueLoaded) return
-    const orderId = selectedOrderId
-    toast.warning("This order left the packing queue. Lock released.")
-    setSelectedOrderId(null)
-    setManualSearch('')
-    releaseLock.mutateAsync(orderId).catch((err) => {
-      console.error("Failed to release lock for dropped order", err)
-    })
-  }, [selectedOrderId, activeOrder, isQueueLoaded, releaseLock])
+    // The queue page is capped (see PACKING_QUEUE_PAGE_SIZE), so an order the
+    // packer opened by scanning/typing can legitimately be absent from this
+    // page even though it is still Confirmed. Releasing the lock and throwing
+    // away the overlay in that case is wrong — it looks like the order vanished
+    // mid-pack. Only treat it as "left the queue" once the backend says the
+    // order no longer exists or is no longer packable.
+    let cancelled = false
+    checkStatus
+      .mutateAsync(selectedOrderId)
+      .then((res) => {
+        if (cancelled) return
+        if (res.exists) {
+          const st = (res.status || '').toLowerCase()
+          if (st === 'confirmed' || st === 'packing hold') {
+            // Still packable and simply beyond the loaded page: keep it open.
+            return
+          }
+        }
+        toast.warning("This order left the packing queue. Lock released.")
+        setSelectedOrderId(null)
+        setOutOfPageOrder(null)
+        setOutOfPageCatalog(null)
+        setManualSearch('')
+        releaseLock.mutateAsync(selectedOrderId).catch((err) => {
+          console.error("Failed to release lock for dropped order", err)
+        })
+      })
+      .catch((err) => {
+        console.error("Failed to verify dropped order", err)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedOrderId, activeOrder, isQueueLoaded, releaseLock, checkStatus])
 
   // Scan success trigger. Reads the queue from a ref (not from state) so its
   // identity stays stable across the 15s poll and the camera never restarts.
@@ -264,6 +314,40 @@ export function PackingWorkspace() {
         if (res.exists) {
           const orderStatus = res.status || ''
           const orderDisplayId = res.displayId || code
+
+          if (orderStatus.toLowerCase() === 'confirmed' || orderStatus.toLowerCase() === 'packing hold') {
+            // The order IS packable — it just isn't in the loaded page (the queue
+            // is capped). The old code fell through to the generic "not ready for
+            // packing" branch and told the packer that a Confirmed order could
+            // not be packed, which is false and looks like the scanner is broken.
+            if (!res.id) {
+              toast.error(`Order "${orderDisplayId}" could not be loaded.`)
+              return
+            }
+            try {
+              if (navigator.vibrate) navigator.vibrate(100)
+              await openOrder.mutateAsync(res.id)
+              // Fetch the real order (items, lock, photos) rather than
+              // synthesising an empty shell.
+              const detail = await orderDetail.mutateAsync(res.id)
+              if (!detail?.orders?.[0]) {
+                toast.error(`Order "${orderDisplayId}" is no longer in the packing queue.`)
+                return
+              }
+              setOutOfPageOrder(detail.orders[0])
+              setOutOfPageCatalog(detail.photoCatalog)
+              setSelectedOrderId(res.id)
+              setCurrentProductIdx(0)
+              setShowCustomerDetails(false)
+              toast.success(`Loaded Order ${orderDisplayId}`)
+            } catch (err: any) {
+              toast.error(
+                err.response?.data?.message ||
+                  'Failed to lock order. It may be locked by another user.',
+              )
+            }
+            return
+          }
 
           if (orderStatus.toLowerCase() === 'packed' || orderStatus.toLowerCase() === 'shipped' || orderStatus.toLowerCase() === 'delivered') {
             if (navigator.vibrate) navigator.vibrate([150, 100, 150])
@@ -293,6 +377,17 @@ export function PackingWorkspace() {
       }
     }
   }, [openAndSelect, checkStatus])
+
+  // `useMutation` returns a fresh object on every render, so anything that
+  // depends on one gets a new identity each time. The camera effect below must
+  // NOT depend on `onScanSuccess` directly, or every unrelated re-render — most
+  // importantly the 15s queue poll and any mutation state flip — tears the
+  // camera down and re-issues getUserMedia. Mirroring the latest handler in a
+  // ref lets the effect depend only on stable primitives.
+  const onScanSuccessRef = useRef(onScanSuccess)
+  useEffect(() => {
+    onScanSuccessRef.current = onScanSuccess
+  }, [onScanSuccess])
 
   // Get cameras list on mount
   useEffect(() => {
@@ -336,7 +431,7 @@ export function PackingWorkspace() {
         },
       },
       {
-        onScan: (decodedText) => onScanSuccess(decodedText),
+        onScan: (decodedText) => onScanSuccessRef.current(decodedText),
         onError: (err) => {
           console.error('Camera scanner error', err)
           setScannerError('Camera is currently in use or not responding.')
@@ -350,7 +445,7 @@ export function PackingWorkspace() {
       void controller.dispose()
       if (controllerRef.current === controller) controllerRef.current = null
     }
-  }, [activeTab, selectedOrderId, scannerActive, selectedCameraId, onScanSuccess])
+  }, [activeTab, selectedOrderId, scannerActive, selectedCameraId, cameraRetryKey])
 
   const handleDone = useCallback(async (orderId: string) => {
     // P0-3: a hardware scanner sends a trailing Enter, so double-submit is the
@@ -364,6 +459,8 @@ export function PackingWorkspace() {
       // Only discard verification progress once the server has accepted it.
       clearChecklist(orderId)
       setSelectedOrderId(null)
+      setOutOfPageOrder(null)
+      setOutOfPageCatalog(null)
       setManualSearch('')
       toast.success("Order packed successfully!")
     } catch (err: any) {
@@ -387,6 +484,8 @@ export function PackingWorkspace() {
       clearChecklist(holdOrderId)
       setHoldOrderId(null)
       setSelectedOrderId(null)
+      setOutOfPageOrder(null)
+      setOutOfPageCatalog(null)
       setManualSearch('')
       toast.success("Order placed on hold.")
     } catch (err: any) {
@@ -660,6 +759,15 @@ export function PackingWorkspace() {
         {/* TAB A: Live QR/Barcode Camera Scanner */}
         {activeTab === 'scan' && (
           <div className={selectedOrderId ? "relative z-50 pointer-events-none" : "flex-1 flex flex-col p-4 space-y-4 max-w-lg mx-auto w-full"}>
+            {/* The queue page is capped so a single poll never ships the whole
+                backlog. Say so explicitly — otherwise the packer cannot tell
+                "no more orders" from "more orders exist beyond this page". */}
+            {!selectedOrderId && isQueueTruncated && (
+              <div className="p-2.5 bg-info-soft border border-info/30 rounded-xl text-xs text-info font-semibold text-center select-none">
+                Showing the {queue.length} oldest of {queueTotal} orders in the queue.
+                Scan or type any order ID to open it directly.
+              </div>
+            )}
             {/* Live Camera Frame box */}
             <div className={selectedOrderId
               ? "fixed bottom-24 right-4 z-50 w-28 h-28 md:w-36 md:h-36 rounded-full border-2 border-success bg-[var(--surface)] shadow-2xl overflow-hidden flex flex-col items-center justify-center transition-all duration-300 transform scale-100 hover:scale-105 active:scale-95 pointer-events-auto"
@@ -706,8 +814,25 @@ export function PackingWorkspace() {
               <>
                 {/* Error logs */}
                 {scannerError && (
-                  <div className="p-3 bg-danger-soft border border-danger/30 rounded-xl text-xs text-danger font-semibold text-center select-text">
-                    {scannerError}
+                  <div className="p-3 bg-danger-soft border border-danger/30 rounded-xl text-xs text-danger font-semibold text-center select-text space-y-2">
+                    <p>{scannerError}</p>
+                    <button
+                      onClick={() => {
+                        // Clear the error AND re-arm the scanner. Without this the
+                        // error was permanent: the viewport div stays unmounted,
+                        // the camera effect never re-runs, and the only recovery
+                        // was a full page reload.
+                        setScannerError(null)
+                        setScannerActive((prev) => (prev ? false : true))
+                        // Force the start effect to re-run even if scannerActive
+                        // was already true.
+                        setCameraRetryKey((k) => k + 1)
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-danger/15 border border-danger/40 text-danger hover:bg-danger/25 font-bold text-xs cursor-pointer"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      Retry camera
+                    </button>
                   </div>
                 )}
 

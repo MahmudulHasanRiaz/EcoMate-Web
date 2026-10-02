@@ -32,6 +32,17 @@ export class PackingController {
     return this.svc.openOrder(id, user.userId);
   }
 
+  /**
+   * Full detail for one order, in the same envelope as the queue. Lets a packer
+   * open an order that falls beyond the capped queue page without it being
+   * reported as "not ready for packing".
+   */
+  @Roles('packing_assistant', 'admin', 'superadmin')
+  @Get('queue/:id/detail')
+  async getOrderDetail(@Param('id') id: string) {
+    return this.svc.getOrderDetail(id);
+  }
+
   @Roles('packing_assistant', 'admin', 'superadmin')
   @Post('queue/:id/done')
   async markDone(

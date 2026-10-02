@@ -71,6 +71,10 @@ describe('PackingService', () => {
       return statusMap[name] || null;
     });
 
+    // Default for the queue's `total` count. Tests that care about truncation
+    // override it; everything else just needs it to resolve to a number.
+    mockPrisma.order.count.mockResolvedValue(0);
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PackingService,
@@ -99,7 +103,7 @@ describe('PackingService', () => {
 
       const result = await service.getQueue();
 
-      expect(result).toEqual({ orders: [], photoCatalog: {} });
+      expect(result).toEqual({ orders: [], photoCatalog: {}, total: 0 });
       expect(prisma.order.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
@@ -132,7 +136,49 @@ describe('PackingService', () => {
       await expect(service.getQueue()).resolves.toEqual({
         orders: [],
         photoCatalog: {},
+        total: 0,
       });
+    });
+
+    it('should return the total match count so the client can detect truncation', async () => {
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([]);
+      // The page is capped, but more orders than the cap match the filter.
+      (prisma.order.count as jest.Mock).mockResolvedValue(250);
+
+      const result = await service.getQueue();
+
+      // Without this the packer cannot tell "queue empty" from "more orders
+      // exist beyond the loaded page", and orders past the cap are stranded.
+      expect(result.total).toBe(250);
+      expect(result.orders).toHaveLength(0);
+      expect(prisma.order.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            statusId: { in: ['status-confirmed', 'status-hold'] },
+          }),
+        }),
+      );
+    });
+
+    it('should count with the same search filter as the page', async () => {
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.order.count as jest.Mock).mockResolvedValue(1);
+
+      await service.getQueue('ORD-123');
+
+      const searchWhere = {
+        OR: [
+          { displayId: { contains: 'ORD-123', mode: 'insensitive' } },
+          { guestName: { contains: 'ORD-123', mode: 'insensitive' } },
+          { guestPhone: { contains: 'ORD-123', mode: 'insensitive' } },
+        ],
+      };
+      expect(prisma.order.count).toHaveBeenCalledWith({
+        where: expect.objectContaining(searchWhere),
+      });
+      expect(prisma.order.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining(searchWhere) }),
+      );
     });
 
     it('should return the shared catalog once at the top level, not per order', async () => {
@@ -936,6 +982,7 @@ describe('PackingService', () => {
 
       expect(result).toEqual({
         exists: true,
+        id: 'order-123',
         displayId: 'ORD-260705-0002',
         status: 'Shipped',
       });
@@ -1202,6 +1249,89 @@ describe('PackingService', () => {
       const result = await service.getActiveLocks();
 
       expect(result).toEqual([]);
+    });
+  });
+
+  describe('getOrderDetail', () => {
+    const detailOrder = {
+      id: 'order-outside-page',
+      displayId: 'ORD-999',
+      customer: null,
+      guestName: 'Jane Guest',
+      guestPhone: '555-0200',
+      createdAt: new Date('2025-01-15'),
+      packingLock: null,
+      status: { id: 'status-confirmed', name: 'Confirmed', color: 'blue' },
+      items: [
+        {
+          id: 'item-1',
+          productId: 'prod-1',
+          variantId: null,
+          quantity: 2,
+          product: {
+            id: 'prod-1',
+            name: 'Simple Product',
+            images: ['/simple-1.jpg'],
+            variants: [],
+          },
+          variant: null,
+        },
+      ],
+    };
+
+    it('returns full items for an order beyond the capped queue page', async () => {
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue(detailOrder);
+
+      const result = await service.getOrderDetail('order-outside-page');
+
+      expect(result).not.toBeNull();
+      expect(result!.orders).toHaveLength(1);
+      // The whole point: a real item list, not an empty shell.
+      expect(result!.orders[0].items[0]).toMatchObject({
+        productName: 'Simple Product',
+        quantity: 2,
+      });
+      expect(result!.photoCatalog['prod-1']).toBeDefined();
+      expect(result!.orders[0].customer).toEqual({
+        name: 'Jane Guest',
+        phone: '555-0200',
+      });
+    });
+
+    it('returns null for an order that is not in a packable status', async () => {
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue(null);
+
+      await expect(service.getOrderDetail('nope')).resolves.toBeNull();
+      expect(prisma.order.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            id: 'nope',
+            trashedAt: null,
+            statusId: { in: ['status-confirmed', 'status-hold'] },
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('checkOrderStatus', () => {
+    it('includes the order id so the client can load an out-of-page order', async () => {
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue({
+        id: 'order-999',
+        displayId: 'ORD-999',
+        status: { name: 'Confirmed' },
+      });
+
+      const result = await service.checkOrderStatus('ORD-999');
+
+      // Without `id` the workspace cannot fetch the order it just validated and
+      // used to report a Confirmed order as "not ready for packing".
+      expect(result).toEqual({
+        exists: true,
+        id: 'order-999',
+        displayId: 'ORD-999',
+        status: 'Confirmed',
+      });
     });
   });
 });

@@ -47,6 +47,17 @@ export function useOpenOrder() {
   })
 }
 
+/**
+ * Loads one order's full detail. The queue page is capped, so an order the
+ * packer opens by scanning/typing may not be in the polled page; this fetches
+ * it directly instead of synthesising an empty order.
+ */
+export function useOrderDetail() {
+  return useMutation({
+    mutationFn: (orderId: string) => packingApi.getOrderDetail(orderId),
+  })
+}
+
 export function useMarkDone() {
   const queryClient = useQueryClient()
   return useMutation({

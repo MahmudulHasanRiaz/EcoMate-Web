@@ -85,7 +85,17 @@ export function createScanner(
         cameraId,
         config,
         (decodedText) => callbacks.onScan(decodedText),
-        // Per-frame decode misses are extremely noisy; swallow them.
+        // IMPORTANT: html5-qrcode's 4th argument is a PER-FRAME decode
+        // callback, not a fatal-error callback. It fires on every frame that
+        // contains no readable code — which is most frames, constantly. The
+        // old code wired it to the same handler as a start() failure, so a
+        // single frame without a barcode put the workspace into a permanent
+        // error state: the viewport div unmounted (the camera light stayed on
+        // with no visible video), and because the error was never reset the
+        // camera could only be recovered with a full page reload.
+        //
+        // Decode misses are normal and must be swallowed here. Only a genuine
+        // start() failure below is reported as a camera error.
         () => {},
       )
       // `start` resolves only once the surface is ready, so the library's
@@ -148,8 +158,8 @@ export function createScanner(
 export function pickDefaultCamera(devices: CameraDevice[]): string {
   const back = devices.find((d) =>
     ['back', 'environment', 'rear'].some((hint) =>
-      d.label.toLowerCase().includes(hint),
+      (d.label ?? '').toLowerCase().includes(hint),
     ),
   )
-  return (back ?? devices[0]).id
+  return (back ?? devices[0])?.id ?? ''
 }

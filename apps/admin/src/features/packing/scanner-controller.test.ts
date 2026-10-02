@@ -27,6 +27,8 @@ let failNextStart = false
 
 class MockHtml5Qrcode {
   isScanning = false
+  /** Captures the 4th arg html5-qrcode was started with. */
+  onDecodeError: ((e: string) => void) | undefined
 
   constructor(public elementId: string) {}
 
@@ -34,12 +36,13 @@ class MockHtml5Qrcode {
     cameraId: string,
     _config: unknown,
     _onSuccess: (t: string) => void,
-    _onError?: (e: string) => void,
+    onDecodeError?: (e: string) => void,
   ): Promise<void> {
     if (failNextStart) throw 'Camera is not running'
     if (transitionLockHeld) {
       throw 'Cannot transition to a new state, already under transition'
     }
+    this.onDecodeError = onDecodeError
     transitionLockHeld = true
     startCalls.push(cameraId)
 
@@ -65,8 +68,15 @@ class MockHtml5Qrcode {
   }
 }
 
+const instances: MockHtml5Qrcode[] = []
+
 vi.mock('html5-qrcode', () => ({
-  Html5Qrcode: MockHtml5Qrcode,
+  Html5Qrcode: class extends MockHtml5Qrcode {
+    constructor(elementId: string) {
+      super(elementId)
+      instances.push(this)
+    }
+  },
   getCameras: vi.fn(),
 }))
 
@@ -190,6 +200,58 @@ describe('createScanner lifecycle', () => {
   })
 })
 
+describe('per-frame decode misses never kill the camera', () => {
+  beforeEach(() => {
+    startCalls.length = 0
+    stopCalls.length = 0
+    instances.length = 0
+    transitionLockHeld = false
+    failNextStart = false
+    document.body.innerHTML = '<div id="scanner-viewport"></div>'
+    vi.resetModules()
+  })
+
+  it('swallows decode misses instead of reporting them as camera errors', async () => {
+    const { createScanner } = await importModule()
+    const onError = vi.fn()
+    const scanner = createScanner('scanner-viewport', CONFIG, {
+      onScan: vi.fn(),
+      onError,
+    })
+
+    await scanner.start('cam-1')
+    const instance = instances[instances.length - 1]
+
+    // html5-qrcode calls the 4th argument on EVERY frame with no readable code
+    // (string = "QR code parse error, error = NotFoundException"). This is the
+    // normal state of a scanner pointed at nothing.
+    expect(instance.onDecodeError).toBeTypeOf('function')
+    for (let i = 0; i < 50; i++) {
+      instance.onDecodeError!('QR code parse error, error = NotFoundException')
+    }
+
+    // Regression guard: the workspace used to render an error banner and
+    // unmount the viewport, leaving a white PiP circle and no working scanner.
+    expect(onError).not.toHaveBeenCalled()
+    expect(scanner.getState()).toBe('scanning')
+  })
+
+  it('still surfaces a genuine start() failure', async () => {
+    const { createScanner } = await importModule()
+    const onError = vi.fn()
+    const scanner = createScanner('scanner-viewport', CONFIG, {
+      onScan: vi.fn(),
+      onError,
+    })
+
+    failNextStart = true
+    await scanner.start('cam-1')
+
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(scanner.getState()).toBe('idle')
+  })
+})
+
 describe('pickDefaultCamera', () => {
   it('prefers the rear/environment camera', async () => {
     const { pickDefaultCamera } = await importModule()
@@ -204,5 +266,16 @@ describe('pickDefaultCamera', () => {
     const { pickDefaultCamera } = await importModule()
     const devices = [{ id: 'a', label: 'USB Camera' }]
     expect(pickDefaultCamera(devices)).toBe('a')
+  })
+
+  it('returns an empty id for an empty device list instead of throwing', async () => {
+    const { pickDefaultCamera } = await importModule()
+    expect(pickDefaultCamera([])).toBe('')
+  })
+
+  it('tolerates a device with no label', async () => {
+    const { pickDefaultCamera } = await importModule()
+    const devices = [{ id: 'only', label: undefined as unknown as string }]
+    expect(pickDefaultCamera(devices)).toBe('only')
   })
 })

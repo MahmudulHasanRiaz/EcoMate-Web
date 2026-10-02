@@ -14,6 +14,107 @@ import { startOfDhakaDay } from '../common/utils/dhaka-time';
 
 export const PACKING_QUEUE_PAGE_SIZE = 100;
 
+/**
+ * Everything the packing workspace needs to render one order.
+ *
+ * `items.product` is the canonical catalog source: it carries the full
+ * variant + attribute tree used for color-sibling image resolution.
+ * `variant.product` is fetched as scalars only — including the whole tree
+ * there repeated the same product/variants/attributes per line, doubling both
+ * query cost and payload for no extra information.
+ *
+ * Shared by `getQueue` and `getOrderDetail` so a single order renders
+ * identically to one inside the queue page.
+ */
+const QUEUE_ORDER_INCLUDE = {
+  items: {
+    include: {
+      product: {
+        include: {
+          variants: {
+            include: {
+              attributeValues: {
+                include: {
+                  attributeValue: {
+                    include: { attribute: { select: { name: true } } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      variant: {
+        include: {
+          product: {
+            select: { id: true, name: true, images: true },
+          },
+          attributeValues: {
+            include: {
+              attributeValue: {
+                include: { attribute: { select: { name: true } } },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  packingLock: {
+    include: {
+      packer: {
+        select: { id: true, firstName: true, lastName: true },
+      },
+    },
+  },
+  customer: { select: { id: true, name: true, phone: true } },
+  status: { select: { id: true, name: true, color: true } },
+} as const;
+
+/** Resolve an image URL from either a plain string or an object form. */
+function resolveImage(img: any): string | null {
+  if (typeof img === 'string') return img.trim() || null;
+  if (img && typeof img === 'object') {
+    return (
+      (typeof img.url === 'string' && img.url.trim()) ||
+      (typeof img.path === 'string' && img.path.trim()) ||
+      null
+    );
+  }
+  return null;
+}
+
+/** First non-empty image in a list. */
+function firstOf(list: any): string | null {
+  if (!Array.isArray(list) || list.length === 0) return null;
+  for (const entry of list) {
+    const resolved = resolveImage(entry);
+    if (resolved) return resolved;
+  }
+  return null;
+}
+
+function slimAttrs(avs: any[]) {
+  return avs.map((av: any) => ({
+    attributeValue: av?.attributeValue
+      ? {
+          value: av.attributeValue.value ?? null,
+          hexCode: av.attributeValue.hexCode ?? null,
+          attribute: { name: av.attributeValue.attribute?.name ?? null },
+        }
+      : null,
+  }));
+}
+
+function slimVariant(v: any) {
+  return {
+    id: v?.id ?? null,
+    image: typeof v?.image === 'string' ? v.image : null,
+    images: v?.images ?? null,
+    attributeValues: slimAttrs(v?.attributeValues ?? []),
+  };
+}
+
 @Injectable()
 export class PackingService {
   private readonly logger = new Logger(PackingService.name);
@@ -64,61 +165,21 @@ export class PackingService {
       ];
     }
 
-    const orders = await this.prisma.order.findMany({
-      where,
-      include: {
-        items: {
-          include: {
-            // `items.product` is the canonical catalog source: it carries the
-            // full variant + attribute tree used for color-sibling resolution.
-            // `variant.product` is fetched as scalars only — previously it
-            // repeated the same product/variants/attributes tree per line,
-            // doubling both query cost and payload for no extra information.
-            product: {
-              include: {
-                variants: {
-                  include: {
-                    attributeValues: {
-                      include: {
-                        attributeValue: {
-                          include: { attribute: { select: { name: true } } },
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-            variant: {
-              include: {
-                product: {
-                  select: { id: true, name: true, images: true },
-                },
-                attributeValues: {
-                  include: {
-                    attributeValue: {
-                      include: { attribute: { select: { name: true } } },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-        packingLock: {
-          include: {
-            packer: { select: { id: true, firstName: true, lastName: true } },
-          },
-        },
-        customer: { select: { id: true, name: true, phone: true } },
-        status: { select: { id: true, name: true, color: true } },
-      },
-      // Oldest-first: packing works the front of the backlog, and an
-      // unbounded findMany shipped the entire Confirmed+Packing-Hold backlog
-      // to every packer kiosk on every 15s poll.
-      orderBy: { createdAt: 'asc' },
-      take: PACKING_QUEUE_PAGE_SIZE,
-    });
+    // The queue is capped so a single 15s poll can never ship the whole
+    // Confirmed+Packing-Hold backlog to every packer kiosk. The cap is NOT a
+    // filter: `total` counts everything matching `where`, so the client can tell
+    // the packer that more orders exist than are loaded instead of silently
+    // stranding the ones past the limit.
+    const [orders, total] = await Promise.all([
+      this.prisma.order.findMany({
+        where,
+        include: QUEUE_ORDER_INCLUDE,
+        // Oldest-first: packing works the front of the backlog.
+        orderBy: { createdAt: 'asc' },
+        take: PACKING_QUEUE_PAGE_SIZE,
+      }),
+      this.prisma.order.count({ where }),
+    ]);
 
     // Canonical photo catalog: compact per-product variant/attribute data used
     // by the shared admin image resolver (lib/product-image.ts) to apply the
@@ -143,90 +204,69 @@ export class PackingService {
       }
     > = {};
 
-    const slimAttrs = (avs: any[]) =>
-      avs.map((av: any) => ({
-        attributeValue: av?.attributeValue
-          ? {
-              value: av.attributeValue.value ?? null,
-              hexCode: av.attributeValue.hexCode ?? null,
-              attribute: { name: av.attributeValue.attribute?.name ?? null },
-            }
-          : null,
-      }));
-
-    const slimVariant = (v: any) => ({
-      id: v?.id ?? null,
-      image: typeof v?.image === 'string' ? v.image : null,
-      images: v?.images ?? null,
-      attributeValues: slimAttrs(v?.attributeValues ?? []),
-    });
-
-    const buildCatalog = (product: any, variant: any) => {
-      if (!product?.id || photoCatalog[product.id]) return;
-      // `product.variants` is only populated on the canonical `item.product`
-      // branch; `item.variant.product` is a scalar select. When only the
-      // variant itself is available, seed the entry with it so the line can
-      // still resolve its own image.
-      photoCatalog[product.id] = {
-        images: product.images ?? null,
-        variants: (product.variants ?? []).map(slimVariant),
-      };
-      if (!photoCatalog[product.id].variants.length && variant?.id) {
-        photoCatalog[product.id].variants.push(slimVariant(variant));
-      }
-    };
-
     // The catalog is accumulated across every order in the page, but it is a
     // shared, de-duplicated structure — it is returned ONCE at the top level
     // instead of being attached by reference to each order (which serialized
     // the whole catalog once per order, i.e. O(orders x catalogSize)).
     const mappedOrders = orders.map((o) => {
       for (const i of o.items) {
-        buildCatalog(i.product ?? i.variant?.product ?? null, i.variant ?? null);
+        this.buildCatalogEntry(
+          photoCatalog,
+          i.product ?? i.variant?.product ?? null,
+          i.variant ?? null,
+        );
       }
-      return {
-        id: o.id,
-        displayId: o.displayId,
-        customer: o.customer
-          ? { id: o.customer.id, name: o.customer.name, phone: o.customer.phone }
-          : o.guestName
-            ? { name: o.guestName, phone: o.guestPhone }
-            : null,
-        items: o.items.map((i) => {
-          const product = i.product ?? i.variant?.product ?? null;
-          const variant = i.variant ?? null;
-          const variantAttrs = variant?.attributeValues
+      return this.mapQueueOrder(o);
+    });
+
+    return { orders: mappedOrders, photoCatalog, total };
+  }
+
+  /**
+   * Adds one product to the shared photo catalog, deduplicated by product id.
+   */
+  private buildCatalogEntry(
+    photoCatalog: Record<string, any>,
+    product: any,
+    variant: any,
+  ) {
+    if (!product?.id || photoCatalog[product.id]) return;
+    // `product.variants` is only populated on the canonical `item.product`
+    // branch; `item.variant.product` is a scalar select. When only the variant
+    // itself is available, seed the entry with it so the line can still resolve
+    // its own image.
+    photoCatalog[product.id] = {
+      images: product.images ?? null,
+      variants: (product.variants ?? []).map(slimVariant),
+    };
+    if (!photoCatalog[product.id].variants.length && variant?.id) {
+      photoCatalog[product.id].variants.push(slimVariant(variant));
+    }
+  }
+
+  /** Maps a Prisma order row (see QUEUE_ORDER_INCLUDE) to the queue shape. */
+  private mapQueueOrder(o: any) {
+    return {
+      id: o.id,
+      displayId: o.displayId,
+      customer: o.customer
+        ? { id: o.customer.id, name: o.customer.name, phone: o.customer.phone }
+        : o.guestName
+          ? { name: o.guestName, phone: o.guestPhone }
+          : null,
+      items: (o.items ?? []).map((i: any) => {
+        const product = i.product ?? i.variant?.product ?? null;
+        const variant = i.variant ?? null;
+        const variantAttrs = variant?.attributeValues
           ? variant.attributeValues
               .map((av: any) => av.attributeValue?.value)
               .filter(Boolean)
               .join(' / ')
           : '';
-        // Resolve an image URL from either a plain string entry or an
-        // object form ({ url } / { path }), skipping empty entries.
-        const resolveImage = (img: any): string | null => {
-          if (typeof img === 'string') return img.trim() || null;
-          if (img && typeof img === 'object') {
-            return (
-              (typeof img.url === 'string' && img.url.trim()) ||
-              (typeof img.path === 'string' && img.path.trim()) ||
-              null
-            );
-          }
-          return null;
-        };
-        const firstOf = (list: any): string | null => {
-          if (!Array.isArray(list) || list.length === 0) return null;
-          for (const entry of list) {
-            const resolved = resolveImage(entry);
-            if (resolved) return resolved;
-          }
-          return null;
-        };
-        const variantImages = variant?.images as any;
         const variantImage =
-          resolveImage(variant?.image) || firstOf(variantImages);
-        // Parent product image — used when the variant has no image of its
-        // own (e.g. size-only variations) or the variant image is broken.
+          resolveImage(variant?.image) || firstOf(variant?.images);
+        // Parent product image — used when the variant has no image of its own
+        // (e.g. size-only variations) or the variant image is broken.
         const productImage = firstOf(product?.images);
         return {
           id: i.id,
@@ -240,7 +280,10 @@ export class PackingService {
           fallbackImage: productImage,
         };
       }),
-      totalItems: o.items.reduce((sum, i) => sum + i.quantity, 0),
+      totalItems: (o.items ?? []).reduce(
+        (sum: number, i: any) => sum + i.quantity,
+        0,
+      ),
       packingLock: o.packingLock
         ? {
             packerId: o.packingLock.packerId,
@@ -249,13 +292,45 @@ export class PackingService {
             expiresAt: o.packingLock.expiresAt,
           }
         : null,
-        statusName: o.status.name,
-        statusColor: o.status.color,
-        createdAt: o.createdAt,
-      };
-    });
+      statusName: o.status.name,
+      statusColor: o.status.color,
+      createdAt: o.createdAt,
+    };
+  }
 
-    return { orders: mappedOrders, photoCatalog };
+  /**
+   * Full detail for a single order, in exactly the same shape `getQueue`
+   * returns. Used when a packer opens an order by scanning/typing that is
+   * legitimately beyond the capped queue page — without it they would get an
+   * empty item list.
+   */
+  async getOrderDetail(orderId: string) {
+    const [confirmedStatus, holdStatus] = await Promise.all([
+      this.prisma.orderStatus.findUnique({ where: { name: 'Confirmed' } }),
+      this.prisma.orderStatus.findUnique({ where: { name: 'Packing Hold' } }),
+    ]);
+    if (!confirmedStatus || !holdStatus)
+      throw new NotFoundException('Required statuses not found');
+
+    const o = await this.prisma.order.findFirst({
+      where: {
+        id: orderId,
+        trashedAt: null,
+        statusId: { in: [confirmedStatus.id, holdStatus.id] },
+      },
+      include: QUEUE_ORDER_INCLUDE,
+    });
+    if (!o) return null;
+
+    const photoCatalog: Record<string, any> = {};
+    for (const i of o.items) {
+      this.buildCatalogEntry(
+        photoCatalog,
+        i.product ?? i.variant?.product ?? null,
+        i.variant ?? null,
+      );
+    }
+    return { orders: [this.mapQueueOrder(o)], photoCatalog };
   }
 
   async openOrder(orderId: string, packerId: string) {
@@ -452,7 +527,10 @@ export class PackingService {
         tx,
       );
       if (notes) {
-        await tx.order.update({ where: { id: orderId }, data: { officeNotes: notes } });
+        await tx.order.update({
+          where: { id: orderId },
+          data: { officeNotes: notes },
+        });
       }
       await tx.packingLock.deleteMany({ where: { orderId } });
     });
@@ -527,7 +605,9 @@ export class PackingService {
       }),
       // P1-7: `pending` was missing `...where`, so a packer's "my packing" stats
       // showed the company-wide Confirmed backlog.
-      this.prisma.order.count({ where: { ...where, statusId: confirmedStatus.id, trashedAt: null } }),
+      this.prisma.order.count({
+        where: { ...where, statusId: confirmedStatus.id, trashedAt: null },
+      }),
     ]);
 
     return { packed: packedCount, held: holdCount, pending: pendingCount };
@@ -592,6 +672,7 @@ export class PackingService {
 
     return {
       exists: true,
+      id: order.id,
       displayId: order.displayId,
       status: order.status.name,
     };
