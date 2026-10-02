@@ -182,8 +182,11 @@ export const sidebarData: SidebarData = {
         // User administration lives here rather than under HR, since it governs
         // who can reach the app — not who is on payroll. Access Presets stay
         // under Employees in the HR panel, next to the employees they govern.
+        // `view_hr` is retained: it is the permission that gates employee/payroll
+        // data, and user administration is part of that surface. Dropping it
+        // would expose this group to anyone holding the feature alone.
         inSection({
-          title: 'User Management', icon: Users, feature: 'admin_users',
+          title: 'User Management', icon: Users, feature: 'admin_users', permissions: ['view_hr'],
           items: [
             { title: 'All Users', url: '/hr/users' },
             { title: 'User Creation', url: '/mon/users/create' },

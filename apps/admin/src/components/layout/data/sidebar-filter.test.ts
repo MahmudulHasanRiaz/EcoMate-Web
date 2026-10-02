@@ -191,7 +191,7 @@ describe('filterNavItems', () => {
   })
 
   it('sidebarData monitoring > User Management shows All Users when admin_users', () => {
-    const result = filterNavItems([monUserMgmt], ['admin_users'])
+    const result = filterNavItems([monUserMgmt], ['admin_users'], ['view_hr'])
     expect(result).toHaveLength(1)
     expect(result[0].title).toBe('User Management')
     const items = 'items' in result[0] ? result[0].items : []
@@ -202,14 +202,37 @@ describe('filterNavItems', () => {
     expect(items[1].url).toBe('/mon/users/create')
   })
 
+  it('sidebarData monitoring > User Management hides without view_hr permission', () => {
+    // Holding the feature alone must not expose user administration: the
+    // group is gated on BOTH the `admin_users` feature and the `view_hr`
+    // permission (feature AND permission, per filterNavItems).
+    const result = filterNavItems([monUserMgmt], ['admin_users'], [])
+    expect(result).toHaveLength(0)
+  })
+
+  it('sidebarData monitoring > User Management hides with an unrelated permission', () => {
+    const result = filterNavItems(
+      [monUserMgmt],
+      ['admin_users'],
+      ['some_other_permission'],
+    )
+    expect(result).toHaveLength(0)
+  })
+
   it('sidebarData monitoring > User Management hides without admin_users', () => {
-    expect(filterNavItems([monUserMgmt], [])).toHaveLength(0)
+    expect(filterNavItems([monUserMgmt], [], ['view_hr'])).toHaveLength(0)
   })
 
   it('sidebarData monitoring > User Management shows all children with wildcard', () => {
-    const result = filterNavItems([monUserMgmt], [EVERYTHING_FEATURE])
+    // The `*` wildcard satisfies the FEATURE gate only — the permission gate
+    // still applies, so `view_hr` must be supplied here too.
+    const result = filterNavItems([monUserMgmt], [EVERYTHING_FEATURE], ['view_hr'])
     expect(result).toHaveLength(1)
     expect('items' in result[0] ? result[0].items : []).toHaveLength(2)
+  })
+
+  it('sidebarData monitoring > User Management is hidden by wildcard without view_hr', () => {
+    expect(filterNavItems([monUserMgmt], [EVERYTHING_FEATURE], [])).toHaveLength(0)
   })
 
   it('sidebarData hr top-level items filter without crashing on production data', () => {
@@ -220,7 +243,7 @@ describe('filterNavItems', () => {
   })
 
   it('sidebarData monitoring top-level items filter without crashing on production data', () => {
-    const result = filterNavItems(monGroup.items, ['admin_users'])
+    const result = filterNavItems(monGroup.items, ['admin_users'], ['view_hr'])
     expect(result.length).toBeGreaterThanOrEqual(1)
   })
 

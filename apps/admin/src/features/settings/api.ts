@@ -24,6 +24,9 @@ export interface SettingsResponse {
     marketing_emails: boolean
     security_emails: boolean
   }
+  display: {
+    items: string[]
+  }
 }
 
 export const settingsApi = {
