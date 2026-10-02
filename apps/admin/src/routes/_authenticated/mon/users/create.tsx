@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { UserPlus, Loader2 } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { Button } from '@/components/ui/button'
@@ -23,10 +23,37 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { PasswordInput } from '@/components/password-input'
+import { PermissionCheckboxMatrix } from '@/components/permissions/PermissionCheckboxMatrix'
 import { usersApi } from '@/features/users/api'
 import { USER_ROLES } from '@/features/users/constants'
 
 export const Route = createFileRoute('/_authenticated/mon/users/create')({
+  // User creation was previously reachable only through the Users list dialog,
+  // which sits behind the `view_hr` permission. This route has no such gate, so
+  // without a guard any authenticated user could navigate straight to it and
+  // render a full account-creation form (the backend still rejects the write,
+  // but the surface must not be exposed). Matches the nav gate in
+  // sidebar-data.ts: `view_hr`.
+  beforeLoad: () => {
+    // Mirrors the gate the nav item uses (sidebar-data.ts): `view_hr`, with
+    // superadmin always allowed.
+    const isAllowed = () => {
+      try {
+        const raw = localStorage.getItem('eco_mate_user')
+        if (!raw) return false
+        const user = JSON.parse(raw) as {
+          role?: string
+          permissions?: string[]
+        }
+        if (user.role === 'superadmin') return true
+        return (user.permissions ?? []).includes('view_hr')
+      } catch {
+        return false
+      }
+    }
+    if (isAllowed()) return
+    throw redirect({ to: '/hr/users' })
+  },
   component: UserCreationPage,
 })
 
@@ -37,12 +64,31 @@ const EMPTY = {
   email: '',
   phoneNumber: '',
   password: '',
+  confirmPassword: '',
   role: 'employee',
+}
+
+/**
+ * Mirrors the rules the Users dialog enforced before this page existed. They
+ * were dropped here, which silently weakened every account an admin created.
+ * Exported so the rules stay locked in by tests.
+ */
+export function passwordError(pw: string, confirm: string): string | null {
+  if (!pw) return 'Password is required.'
+  if (pw.length < 8) return 'Password must be at least 8 characters long.'
+  if (!/[a-z]/.test(pw))
+    return 'Password must contain at least one lowercase letter.'
+  if (!/\d/.test(pw)) return 'Password must contain at least one number.'
+  if (pw !== confirm) return "Passwords don't match."
+  return null
 }
 
 function UserCreationPage() {
   const queryClient = useQueryClient()
   const [form, setForm] = useState(EMPTY)
+  // Per-user permission overrides, previously only settable through the Users
+  // dialog when creating an admin. Lost with that dialog, so restore it here.
+  const [permissions, setPermissions] = useState<string[]>([])
 
   const set = (key: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [key]: e.target.value }))
@@ -53,17 +99,22 @@ function UserCreationPage() {
       queryClient.invalidateQueries({ queryKey: ['users'] })
       toast.success('User created successfully')
       setForm(EMPTY)
+      setPermissions([])
     },
     onError: (e: any) =>
       toast.error(e?.response?.data?.message || 'Failed to create user'),
   })
 
+  const pwdError = passwordError(form.password, form.confirmPassword)
+
   const valid =
-    form.firstName.trim() &&
-    form.lastName.trim() &&
-    form.username.trim() &&
+    form.firstName.trim() !== '' &&
+    form.lastName.trim() !== '' &&
+    form.username.trim() !== '' &&
     form.email.includes('@') &&
-    form.password.length >= 6
+    form.phoneNumber.trim() !== '' &&
+    form.role !== '' &&
+    pwdError === null
 
   return (
     <>
@@ -94,7 +145,16 @@ function UserCreationPage() {
               onSubmit={(e) => {
                 e.preventDefault()
                 if (!valid) return
-                create.mutate(form)
+                create.mutate({
+                  firstName: form.firstName,
+                  lastName: form.lastName,
+                  username: form.username,
+                  email: form.email,
+                  phoneNumber: form.phoneNumber,
+                  password: form.password,
+                  role: form.role,
+                  override_permissions: permissions,
+                })
               }}
             >
               <div className='grid gap-2'>
@@ -115,12 +175,30 @@ function UserCreationPage() {
               </div>
               <div className='grid gap-2'>
                 <Label htmlFor='phoneNumber'>Phone</Label>
-                <Input id='phoneNumber' value={form.phoneNumber} onChange={set('phoneNumber')} />
+                <Input id='phoneNumber' value={form.phoneNumber} onChange={set('phoneNumber')} required />
               </div>
               <div className='grid gap-2'>
                 <Label htmlFor='password'>Password</Label>
                 <PasswordInput id='password' value={form.password} onChange={set('password')} />
-                <p className='text-xs text-muted-foreground'>At least 6 characters.</p>
+                <p className='text-xs text-muted-foreground'>
+                  At least 8 characters, with a lowercase letter and a number.
+                </p>
+                {form.password && pwdError && (
+                  <p className='text-xs text-destructive'>{pwdError}</p>
+                )}
+              </div>
+              <div className='grid gap-2'>
+                <Label htmlFor='confirmPassword'>Confirm password</Label>
+                <PasswordInput
+                  id='confirmPassword'
+                  value={form.confirmPassword}
+                  onChange={set('confirmPassword')}
+                />
+                {form.confirmPassword && form.password !== form.confirmPassword && (
+                  <p className='text-xs text-destructive'>
+                    Passwords don&apos;t match.
+                  </p>
+                )}
               </div>
               <div className='grid gap-2'>
                 <Label>Role</Label>
@@ -137,6 +215,19 @@ function UserCreationPage() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {form.role === 'admin' && (
+                <div className='sm:col-span-2 border rounded-lg p-4 space-y-3'>
+                  <Label className='font-semibold'>Permissions</Label>
+                  <p className='text-sm text-muted-foreground'>
+                    Assign permissions directly (bypasses Employee module)
+                  </p>
+                  <PermissionCheckboxMatrix
+                    selected={permissions}
+                    onChange={setPermissions}
+                  />
+                </div>
+              )}
 
               <div className='flex justify-end sm:col-span-2'>
                 <Button type='submit' disabled={!valid || create.isPending}>
