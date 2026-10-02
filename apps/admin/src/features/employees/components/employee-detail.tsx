@@ -42,6 +42,8 @@ import { useScheduleQuery, useHistoryQuery } from '@/features/hr-schedule/hooks'
 import { ScheduleEditor } from '@/features/hr-schedule/components/schedule-editor'
 import { MonthCalendar } from '@/features/hr-schedule/components/month-calendar'
 import { HistoryTable } from '@/features/hr-schedule/components/history-table'
+import { RotationEditor } from '@/features/hr-shifts/components/rotation-editor'
+import { useShiftRotationQuery } from '@/features/hr-shifts/hooks'
 import { useSalaryStructureQuery, useSetSalaryStructureMutation, usePayslipsQuery } from '@/features/payroll/hooks'
 import { PayslipDialog } from '@/features/payroll/components/payslip-dialog'
 import { PayslipDetail } from '@/features/payroll/components/payslip-detail'
@@ -568,6 +570,7 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
     refetch,
   } = useEmployeeQuery(employeeId)
   const { data: scheduleData, isError: scheduleError, refetch: refetchSchedule } = useScheduleQuery(employeeId)
+  const { data: rotationData } = useShiftRotationQuery(employeeId)
   const [historyPage, setHistoryPage] = useState(1)
   const { data: historyData, isLoading: historyLoading, isError: historyError, refetch: refetchHistory } = useHistoryQuery(employeeId, historyPage)
 
@@ -983,6 +986,18 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
             <div className='grid gap-4 lg:grid-cols-2'>
               <Card>
                 <CardHeader>
+                  <CardTitle>Shift Rotation</CardTitle>
+                  <CardDescription>
+                    Which shift this employee works on each weekday. Overtime is
+                    measured against these hours.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <RotationEditor employeeId={employee.id} />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
                   <CardTitle>Weekly Off</CardTitle>
                   <CardDescription>Days this employee does not work.</CardDescription>
                 </CardHeader>
@@ -998,21 +1013,29 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
                     <ScheduleEditor
                       employeeId={employee.id}
                       initialDays={scheduleData?.days ?? []}
-                      initialNote={null}
+                      initialNote={scheduleData?.note ?? null}
                     />
                   )}
                 </CardContent>
               </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle>Month Preview</CardTitle>
-                  <CardDescription>Current month with weekly off highlighted.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <MonthCalendar days={scheduleData?.days ?? []} />
-                </CardContent>
-              </Card>
             </div>
+            <Card>
+              <CardHeader>
+                <CardTitle>Month Preview</CardTitle>
+                <CardDescription>Weekly off and assigned shifts by month.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <MonthCalendar
+                  days={scheduleData?.days ?? []}
+                  shiftDays={Object.fromEntries(
+                    (rotationData?.rotation ?? []).map((r) => [
+                      r.dayOfWeek,
+                      r.shift.name,
+                    ]),
+                  )}
+                />
+              </CardContent>
+            </Card>
             <Card>
               <CardHeader>
                 <CardTitle>Change History</CardTitle>

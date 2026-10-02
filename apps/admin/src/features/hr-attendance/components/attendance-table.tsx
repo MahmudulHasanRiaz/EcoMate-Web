@@ -138,6 +138,8 @@ export function AttendanceTable({
               <TableHead>Check In</TableHead>
               <TableHead>Check Out</TableHead>
               <TableHead className='text-right'>Worked</TableHead>
+              <TableHead className='text-right'>Shift</TableHead>
+              <TableHead className='text-right'>OT</TableHead>
               <TableHead className='text-right'>Break</TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
@@ -167,6 +169,37 @@ export function AttendanceTable({
                   <TableCell className='text-sm text-muted-foreground'>{formatTime(times.checkOutAt)}</TableCell>
                   <TableCell className='text-right text-sm text-muted-foreground tabular-nums'>
                     {formatDuration(row.workedMinutes)}
+                  </TableCell>
+                  <TableCell className='text-right text-sm text-muted-foreground tabular-nums'>
+                    {formatDuration(row.scheduledMinutes)}
+                  </TableCell>
+                  <TableCell className='text-right'>
+                    {/* Overtime and out-of-shift work are shown separately:
+                        "worked past the shift" and "worked at a completely
+                        different time" are different facts and must not be
+                        conflated on one number. */}
+                    <span
+                      className={`text-sm tabular-nums ${
+                        (row.overtimeMinutes ?? 0) > 0
+                          ? 'font-semibold text-[var(--color-warning-ink)]'
+                          : 'text-muted-foreground'
+                      }`}
+                    >
+                      {formatDuration(row.overtimeMinutes)}
+                    </span>
+                    {row.outsideShift && (
+                      <Badge
+                        variant='secondary'
+                        className='ml-1.5 border-transparent bg-[var(--color-info-soft)] text-[10px] font-medium text-[var(--color-info-ink)]'
+                      >
+                        Outside shift
+                      </Badge>
+                    )}
+                    {(row.lateMinutes ?? 0) > 0 && (
+                      <div className='text-[10px] text-muted-foreground'>
+                        {formatDuration(row.lateMinutes)} late
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell className='text-right text-sm text-muted-foreground tabular-nums'>
                     {formatDuration(row.breakMinutes)}

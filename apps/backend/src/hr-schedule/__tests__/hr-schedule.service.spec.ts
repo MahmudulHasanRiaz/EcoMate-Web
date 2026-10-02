@@ -47,21 +47,22 @@ describe('HrScheduleService', () => {
   describe('getSchedule', () => {
     it('should return sorted deduped days from active rows', async () => {
       (prisma.weeklyOff.findMany as jest.Mock).mockResolvedValue([
-        { dayOfWeek: 3 },
-        { dayOfWeek: 0 },
-        { dayOfWeek: 3 },
+        { dayOfWeek: 3, note: 'Weekend catch-up' },
+        { dayOfWeek: 0, note: null },
+        { dayOfWeek: 3, note: null },
       ]);
       const result = await service.getSchedule('emp-1');
-      expect(result).toEqual({ days: [0, 3] });
+      expect(result).toEqual({ days: [0, 3], note: 'Weekend catch-up' });
       expect(prisma.weeklyOff.findMany).toHaveBeenCalledWith({
         where: { employeeId: 'emp-1', effectiveTo: null },
-        select: { dayOfWeek: true },
+        // note must be selected or it can never be read back by the editor.
+        select: { dayOfWeek: true, note: true },
       });
     });
 
     it('should return empty days when no schedule set', async () => {
       const result = await service.getSchedule('emp-1');
-      expect(result).toEqual({ days: [] });
+      expect(result).toEqual({ days: [], note: null });
     });
 
     it('should throw NotFound when employee missing', async () => {

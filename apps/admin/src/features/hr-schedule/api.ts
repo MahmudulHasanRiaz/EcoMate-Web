@@ -2,6 +2,8 @@ import { apiClient } from '@/lib/api-client'
 
 export interface ScheduleResponse {
   days: number[]
+  /** Saved note — previously accepted on write but never read back. */
+  note?: string | null
 }
 
 export interface HistoryEntry {

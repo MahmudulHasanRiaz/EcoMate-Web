@@ -22,12 +22,15 @@ export class HrScheduleService {
     await this.ensureEmployee(employeeId);
     const rows = await this.prisma.weeklyOff.findMany({
       where: { employeeId, effectiveTo: null },
-      select: { dayOfWeek: true },
+      select: { dayOfWeek: true, note: true },
     });
     const days = [...new Set(rows.map((r) => r.dayOfWeek))].sort(
       (a, b) => a - b,
     );
-    return { days };
+    // The note is returned so the editor can load it back. Previously it was
+    // accepted on write but never selected, making it write-only.
+    const note = rows.find((r) => r.note)?.note ?? null;
+    return { days, note };
   }
 
   async setSchedule(

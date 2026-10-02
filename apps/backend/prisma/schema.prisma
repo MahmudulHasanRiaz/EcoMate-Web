@@ -163,22 +163,23 @@ model UserProfile {
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
 
-  tasks          Task[]
-  settings       UserSettings?
-  refreshTokens  RefreshToken[]
-  addresses      Address[]
-  assignedOrders Order[]         @relation("OrderAssignee")
-  payments       Payment[]       @relation("VerifiedPayments")
-  refunds        Refund[]        @relation("RefundProcessor")
-  assignedLeads  CheckoutLead[]  @relation("CheckoutLeadAssignedTo")
-  assignedByMe   CheckoutLead[]  @relation("CheckoutLeadAssignedBy")
-  convertedLeads CheckoutLead[]  @relation("CheckoutLeadConvertedBy")
-  referrals      Referral[]
-  posSessions    PosSession[]
-  employmentHistory EmploymentHistory[] @relation("EmploymentChangedBy")
-  weeklyOffsCreated WeeklyOff[]         @relation("WeeklyOffCreatedBy")
-  packingLocks   PackingLock[]
-  orderEditLocks OrderEditLock[]
+  tasks                   Task[]
+  settings                UserSettings?
+  refreshTokens           RefreshToken[]
+  addresses               Address[]
+  assignedOrders          Order[]             @relation("OrderAssignee")
+  payments                Payment[]           @relation("VerifiedPayments")
+  refunds                 Refund[]            @relation("RefundProcessor")
+  assignedLeads           CheckoutLead[]      @relation("CheckoutLeadAssignedTo")
+  assignedByMe            CheckoutLead[]      @relation("CheckoutLeadAssignedBy")
+  convertedLeads          CheckoutLead[]      @relation("CheckoutLeadConvertedBy")
+  referrals               Referral[]
+  posSessions             PosSession[]
+  employmentHistory       EmploymentHistory[] @relation("EmploymentChangedBy")
+  weeklyOffsCreated       WeeklyOff[]         @relation("WeeklyOffCreatedBy")
+  shiftAssignmentsCreated ShiftAssignment[]   @relation("ShiftAssignmentCreatedBy")
+  packingLocks            PackingLock[]
+  orderEditLocks          OrderEditLock[]
 
   @@index([role])
   @@index([status])
@@ -301,12 +302,12 @@ model CustomerProfile {
   // conditional update whose WHERE clause carries the max-semantics, so an
   // older order committing late can never clobber a newer order's values.
   // Never written by a profile edit, and never derived from an order snapshot.
-  lastOrderIp      String?
-  lastOrderAt      DateTime?
+  lastOrderIp String?
+  lastOrderAt DateTime?
 
-  betterAuthUser betterAuthUser? @relation(fields: [betterAuthUserId], references: [id], onDelete: SetNull)
-  orders         Order[]
-  addresses      Address[]
+  betterAuthUser    betterAuthUser?   @relation(fields: [betterAuthUserId], references: [id], onDelete: SetNull)
+  orders            Order[]
+  addresses         Address[]
   // Customer-owned, reusable address book. Independent from Order.shippingAddress
   // / Order.billingAddress, which are order-owned historical snapshots.
   customerAddresses CustomerAddress[]
@@ -400,40 +401,40 @@ enum CustomerAddressType {
 }
 
 model CustomerAddress {
-  id                String              @id @default(uuid())
+  id                String          @id @default(uuid())
   customerProfileId String
-  customerProfile   CustomerProfile     @relation(fields: [customerProfileId], references: [id], onDelete: Cascade)
+  customerProfile   CustomerProfile @relation(fields: [customerProfileId], references: [id], onDelete: Cascade)
 
   // ROLE, not a duplicate marker: one physical address may legitimately exist
   // as both a SHIPPING and a BILLING record with identical contents. Billing and
   // shipping are separate business roles with separate lifecycles, so collapsing
   // them would destroy the distinction and make a role change destructive.
-  type              CustomerAddressType @default(SHIPPING)
-  label             String?
-  isDefault         Boolean             @default(false)
+  type      CustomerAddressType @default(SHIPPING)
+  label     String?
+  isDefault Boolean             @default(false)
 
-  fullName          String
-  phone             String
-  addressLine       String
-  area              String?
-  thana             String?
-  district          String?
-  division          String?
-  postalCode        String?
-  country           String              @default("Bangladesh")
+  fullName    String
+  phone       String
+  addressLine String
+  area        String?
+  thana       String?
+  district    String?
+  division    String?
+  postalCode  String?
+  country     String  @default("Bangladesh")
 
   // sha256 over normalized fullName|phone|addressLine|area|thana|district|
   // postalCode|country. Matches only WITHIN the same `type` — thana/district
   // alone can never identify an address, so a different house/road in the same
   // locality hashes differently and becomes its own row. NULL disables dedup
   // for this row rather than colliding (Postgres NULLs never conflict).
-  normalizedHash    String?
+  normalizedHash String?
 
   // Audit only — the order that first introduced this address. Never a relation:
   // deleting an order must not cascade into the customer's address book.
-  sourceOrderId     String?
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  sourceOrderId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@unique([customerProfileId, type, normalizedHash])
   @@index([customerProfileId, type])
@@ -732,7 +733,7 @@ model OrderStatus {
   sortOrder    Int      @default(0)
   createdAt    DateTime @default(now())
 
-  orders Order[]
+  orders          Order[]
   commissionRules CommissionRule[]
 }
 
@@ -797,7 +798,7 @@ model Order {
   customerCity             String?
   customerState            String?
   customerZip              String?
-  customerCountry          String?  @default("BD")
+  customerCountry          String?            @default("BD")
   paymentOptionType        PaymentOptionType? // FULL_PAYMENT | PARTIAL_PAYMENT | CASH_ON_DELIVERY
   paymentOption            PaymentOption?     @relation(fields: [paymentOptionType], references: [type])
   source                   OrderSource?       @default(ECOMMERCE)
@@ -813,17 +814,17 @@ model Order {
   //
   // channel/sourceSlug/acquisitionType are INDEPENDENT dimensions: a Channel
   // never implies a Source, and neither ever implies an AcquisitionType.
-  channel                 SalesChannelV2?
-  channelEntity           String?
-  sourceSlug              String?
-  acquisitionType         AcquisitionType?
+  channel                  SalesChannelV2?
+  channelEntity            String?
+  sourceSlug               String?
+  acquisitionType          AcquisitionType?
   /// MIGRATION MARKER — NOT business data. Distinguishes "canonical mapping
   /// has not run yet" from "it ran and the answer is genuinely NULL". This
   /// is why the backfill can never use `channel IS NULL` as its guard: for 278
   /// historical orders a NULL channel is the CORRECT answer. Excluded from
   /// API responses and UI.
-  channelMappedAt         DateTime?
-  sourcePlatformRef       SourcePlatform?      @relation(fields: [sourceSlug], references: [slug])
+  channelMappedAt          DateTime?
+  sourcePlatformRef        SourcePlatform?    @relation(fields: [sourceSlug], references: [slug])
   posSessionId             String?
   idempotencyKey           String?            @unique
   posSession               PosSession?        @relation(fields: [posSessionId], references: [id])
@@ -835,47 +836,49 @@ model Order {
   selectedShippingOptionId String?
   shippingChargeOverridden Boolean            @default(false)
   /// Actual fulfillment/courier cost (BDT). NULL = not recorded.
-  shippingCost       Decimal? @db.Decimal(10, 2)
+  shippingCost             Decimal?           @db.Decimal(10, 2)
   /// 'manual' | 'courier_default' | 'courier_invoice' — source of the actual courier cost.
   /// 'courier_invoice' is written by Courier Settlement finalization (§7, authoritative incl. when 0).
-  shippingCostSource String?
+  shippingCostSource       String?
   trashedAt                DateTime?
 
   /// First-party technical context captured when the order was created.
   /// Set ONCE (same invariant as the customer snapshot below) — never updated.
   /// Present for storefront orders; staff/POS orders carry whatever the request
   /// had. Used for fraud/duplicate review and device analytics.
-  ipAddress                String?
-  userAgent                String?
+  ipAddress   String?
+  userAgent   String?
   /// Immutable attribution snapshot: every raw landing signal that arrived with
   /// the order (utm_*, platform click ids, referrer, landing url, device block)
   /// plus the resolved platform/type. Frozen at creation so the order keeps its
   /// own answer to "where did this come from" even when the journey session is
   /// later overwritten or pruned. null = no signal at all was available.
-  attribution              Json?
+  attribution Json?
 
-  customer       CustomerProfile?     @relation(fields: [customerId], references: [id])
-  assignee       UserProfile?         @relation("OrderAssignee", fields: [assignedToId], references: [id])
-  returnOfOrder  Order?               @relation("OrderReturn", fields: [returnOfOrderId], references: [id])
-  returnOrders   Order[]              @relation("OrderReturn")
-  status         OrderStatus          @relation(fields: [statusId], references: [id])
-  items          OrderItem[]
-  payments       Payment[]
-  shipment       Shipment?
-  dispatchLogs   CourierDispatchLog[]
-  dispatches     Dispatch[]
-  refunds        Refund[]
-  couponUsages   CouponUsage[]
-  referralLeads  ReferralLead[]
-  stockCycles    OrderStockCycle[]
-  stockTransfers StockTransfer[]
-  orderAttribution    OrderAttribution?
-  marketingAllocations MarketingCostAllocation[]
-  commissionEarnings   CommissionEarning[]
+  customer                     CustomerProfile?              @relation(fields: [customerId], references: [id])
+  assignee                     UserProfile?                  @relation("OrderAssignee", fields: [assignedToId], references: [id])
+  returnOfOrder                Order?                        @relation("OrderReturn", fields: [returnOfOrderId], references: [id])
+  returnOrders                 Order[]                       @relation("OrderReturn")
+  status                       OrderStatus                   @relation(fields: [statusId], references: [id])
+  items                        OrderItem[]
+  payments                     Payment[]
+  shipment                     Shipment?
+  dispatchLogs                 CourierDispatchLog[]
+  dispatches                   Dispatch[]
+  refunds                      Refund[]
+  couponUsages                 CouponUsage[]
+  referralLeads                ReferralLead[]
+  stockCycles                  OrderStockCycle[]
+  stockTransfers               StockTransfer[]
+  orderAttribution             OrderAttribution?
+  marketingAllocations         MarketingCostAllocation[]
+  commissionEarnings           CommissionEarning[]
   courierSettlementRows        CourierSettlementRow[]
   courierSettlementExceptions  CourierSettlementException[]
   courierSettlementAdjustments CourierSettlementAdjustment[]
 
+  // One original order → at most one RTN return order (database-enforced).
+  @@unique([returnOfOrderId])
   @@index([customerId])
   @@index([statusId])
   @@index([assignedToId])
@@ -898,8 +901,6 @@ model Order {
   @@index([ipAddress])
   @@index([kind])
   @@index([returnOfOrderId])
-  // One original order → at most one RTN return order (database-enforced).
-  @@unique([returnOfOrderId])
   // Orders-list search: order number and guest name are matched as substrings.
   @@index([displayId(ops: raw("gin_trgm_ops"))], type: Gin, map: "Order_displayId_trgm_idx")
   @@index([guestName(ops: raw("gin_trgm_ops"))], type: Gin, map: "Order_guestName_trgm_idx")
@@ -954,7 +955,7 @@ model Payment {
   verifiedAt        DateTime?
   notes             String?
   /// Gateway/processing fee for THIS payment (BDT). NULL = not recorded.
-  feeAmount         Decimal? @db.Decimal(10, 2)
+  feeAmount         Decimal?      @db.Decimal(10, 2)
   createdAt         DateTime      @default(now())
 
   order    Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -1879,7 +1880,7 @@ model ExpenseCategory {
   icon        String?
   color       String?
   /// fixed | variable | unclassified. Never inferred — staff-classified only.
-  expenseKind String @default("unclassified")
+  expenseKind String    @default("unclassified")
   isActive    Boolean   @default(true)
   sortOrder   Int       @default(0)
   createdAt   DateTime  @default(now())
@@ -2095,6 +2096,7 @@ enum EmploymentHistoryField {
   reporting_manager
   employment_type
   weekly_off
+  shift
   personalInformation
   employmentInformation
   bankAccount
@@ -2125,58 +2127,59 @@ model Designation {
 }
 
 model Employee {
-  id                String         @id @default(uuid())
-  betterAuthUserId  String         @unique
-  employeeId        String         @unique
-  departmentId      String?
-  designationId     String?
-  accessPresetId    String?
-  reportingToId     String?
-  employmentType    EmploymentType @default(full_time)
-  status            EmployeeStatus @default(active)
-  joiningDate       DateTime
-  exitDate          DateTime?
-  salary            Decimal?       @db.Decimal(10, 2)
-  bankAccountNo     String?
-  bankName          String?
-  profilePictureUrl String?
-  notes             String?        @db.Text
-  dateOfBirth       DateTime?
-  gender            EmployeeGender?
-  nationality       String?
-  nidNumber         String?
-  presentAddress    String?        @db.Text
-  permanentAddress  String?        @db.Text
+  id                       String           @id @default(uuid())
+  betterAuthUserId         String           @unique
+  employeeId               String           @unique
+  departmentId             String?
+  designationId            String?
+  accessPresetId           String?
+  reportingToId            String?
+  employmentType           EmploymentType   @default(full_time)
+  status                   EmployeeStatus   @default(active)
+  joiningDate              DateTime
+  exitDate                 DateTime?
+  salary                   Decimal?         @db.Decimal(10, 2)
+  bankAccountNo            String?
+  bankName                 String?
+  profilePictureUrl        String?
+  notes                    String?          @db.Text
+  dateOfBirth              DateTime?
+  gender                   EmployeeGender?
+  nationality              String?
+  nidNumber                String?
+  presentAddress           String?          @db.Text
+  permanentAddress         String?          @db.Text
   emergencyContactName     String?
   emergencyContactPhone    String?
   emergencyContactRelation String?
-  confirmationDate  DateTime?
-  exitReason        String?        @db.Text
-  attendanceMethod  AttendanceMethod @default(APP)
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  confirmationDate         DateTime?
+  exitReason               String?          @db.Text
+  attendanceMethod         AttendanceMethod @default(APP)
+  createdAt                DateTime         @default(now())
+  updatedAt                DateTime         @updatedAt
 
-  department       Department?       @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  designation      Designation?      @relation(fields: [designationId], references: [id], onDelete: SetNull)
-  accessPreset     AccessPreset?     @relation(fields: [accessPresetId], references: [id], onDelete: SetNull)
-  betterAuthUser   betterAuthUser    @relation(fields: [betterAuthUserId], references: [id], onDelete: Cascade)
-  reportingTo      Employee?         @relation("EmployeeReports", fields: [reportingToId], references: [id], onDelete: SetNull)
-  reports          Employee[]        @relation("EmployeeReports")
-  salaryStructures SalaryStructure[]
-  earnings         EmployeeEarning[]
-  deductions       EmployeeDeduction[]
-  payslips         Payslip[]
-  history          EmploymentHistory[]
-  weeklyOffs       WeeklyOff[]
-  commissionRules  CommissionRule[]
-  commissionEarnings CommissionEarning[]
-  leaveRequests    LeaveRequest[]
-  attendanceRecords AttendanceRecord[]
-  bankAccounts     EmployeeBankAccount[]
-  attendanceDays   AttendanceDay[]
+  department            Department?             @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  designation           Designation?            @relation(fields: [designationId], references: [id], onDelete: SetNull)
+  accessPreset          AccessPreset?           @relation(fields: [accessPresetId], references: [id], onDelete: SetNull)
+  betterAuthUser        betterAuthUser          @relation(fields: [betterAuthUserId], references: [id], onDelete: Cascade)
+  reportingTo           Employee?               @relation("EmployeeReports", fields: [reportingToId], references: [id], onDelete: SetNull)
+  reports               Employee[]              @relation("EmployeeReports")
+  salaryStructures      SalaryStructure[]
+  earnings              EmployeeEarning[]
+  deductions            EmployeeDeduction[]
+  payslips              Payslip[]
+  history               EmploymentHistory[]
+  weeklyOffs            WeeklyOff[]
+  shiftAssignments      ShiftAssignment[]
+  commissionRules       CommissionRule[]
+  commissionEarnings    CommissionEarning[]
+  leaveRequests         LeaveRequest[]
+  attendanceRecords     AttendanceRecord[]
+  bankAccounts          EmployeeBankAccount[]
+  attendanceDays        AttendanceDay[]
   attendanceAdjustments AttendanceAdjustment[]
-  deviceMappings   DeviceEmployeeMapping[]
-  rawEvents        RawAttendanceEvent[]
+  deviceMappings        DeviceEmployeeMapping[]
+  rawEvents             RawAttendanceEvent[]
 
   @@index([departmentId])
   @@index([designationId])
@@ -2196,26 +2199,26 @@ enum PayslipStatus {
 }
 
 model SalaryStructure {
-  id                 String   @id @default(uuid())
+  id                 String    @id @default(uuid())
   employeeId         String
-  basicSalary        Decimal  @db.Decimal(10, 2)
-  houseAllowance     Decimal  @default(0) @db.Decimal(10, 2)
-  medicalAllowance   Decimal  @default(0) @db.Decimal(10, 2)
-  transportAllowance Decimal  @default(0) @db.Decimal(10, 2)
-  otherAllowance     Decimal  @default(0) @db.Decimal(10, 2)
-  taxDeduction       Decimal  @default(0) @db.Decimal(10, 2)
-  insuranceDeduction Decimal  @default(0) @db.Decimal(10, 2)
-  otherDeduction     Decimal  @default(0) @db.Decimal(10, 2)
-  totalEarnings      Decimal  @db.Decimal(10, 2)
-  totalDeductions    Decimal  @default(0) @db.Decimal(10, 2)
-  netSalary          Decimal  @db.Decimal(10, 2)
+  basicSalary        Decimal   @db.Decimal(10, 2)
+  houseAllowance     Decimal   @default(0) @db.Decimal(10, 2)
+  medicalAllowance   Decimal   @default(0) @db.Decimal(10, 2)
+  transportAllowance Decimal   @default(0) @db.Decimal(10, 2)
+  otherAllowance     Decimal   @default(0) @db.Decimal(10, 2)
+  taxDeduction       Decimal   @default(0) @db.Decimal(10, 2)
+  insuranceDeduction Decimal   @default(0) @db.Decimal(10, 2)
+  otherDeduction     Decimal   @default(0) @db.Decimal(10, 2)
+  totalEarnings      Decimal   @db.Decimal(10, 2)
+  totalDeductions    Decimal   @default(0) @db.Decimal(10, 2)
+  netSalary          Decimal   @db.Decimal(10, 2)
   effectiveFrom      DateTime  @default(now())
   effectiveTo        DateTime?
-  isActive           Boolean  @default(true)
+  isActive           Boolean   @default(true)
   createdById        String?
   updatedById        String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   employee Employee @relation(fields: [employeeId], references: [id])
 
@@ -2266,57 +2269,58 @@ model EmployeeEarning {
 }
 
 model EmployeeDeduction {
-  id             String         @id @default(uuid())
+  id             String        @id @default(uuid())
   employeeId     String
-  employee       Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee       Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   type           DeductionType
-  amount         Decimal        @db.Decimal(10, 2)
+  amount         Decimal       @db.Decimal(10, 2)
   reason         String
   applicableFrom DateTime?
   applicableTo   DateTime?
-  status         LedgerStatus   @default(draft)
+  status         LedgerStatus  @default(draft)
   payslipId      String?
   createdById    String?
   approvedById   String?
   approvedAt     DateTime?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   @@index([employeeId, applicableFrom])
 }
 
 model CommissionRule {
-  id             String               @id @default(uuid())
-  employeeId     String
-  employee       Employee             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  id              String               @id @default(uuid())
+  employeeId      String
+  employee        Employee             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   triggerStatusId String?
-  triggerStatus  OrderStatus?         @relation(fields: [triggerStatusId], references: [id], onDelete: SetNull)
-  amountType     CommissionAmountType
-  amount         Decimal              @db.Decimal(10, 2)
-  valueBasis     String               @default("order_total")
-  minOrderAmount Decimal?             @db.Decimal(10, 2)
-  capPerOrder    Decimal?             @db.Decimal(10, 2)
-  isActive       Boolean              @default(true)
-  createdById    String?
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
+  triggerStatus   OrderStatus?         @relation(fields: [triggerStatusId], references: [id], onDelete: SetNull)
+  amountType      CommissionAmountType
+  amount          Decimal              @db.Decimal(10, 2)
+  valueBasis      String               @default("order_total")
+  minOrderAmount  Decimal?             @db.Decimal(10, 2)
+  capPerOrder     Decimal?             @db.Decimal(10, 2)
+  isActive        Boolean              @default(true)
+  createdById     String?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
 
-  earnings       CommissionEarning[]
+  earnings CommissionEarning[]
+
   @@index([employeeId, isActive])
 }
 
 model CommissionEarning {
-  id         String       @id @default(uuid())
+  id         String         @id @default(uuid())
   employeeId String
-  employee   Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee   Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   ruleId     String
   rule       CommissionRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
   orderId    String
-  order      Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  amount     Decimal      @db.Decimal(10, 2)
-  status     LedgerStatus @default(approved)
+  order      Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount     Decimal        @db.Decimal(10, 2)
+  status     LedgerStatus   @default(approved)
   payslipId  String?
-  createdAt  DateTime     @default(now())
+  createdAt  DateTime       @default(now())
 
   reversals CommissionReversal[]
 
@@ -2344,14 +2348,14 @@ model Payslip {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  employee Employee      @relation(fields: [employeeId], references: [id])
+  employee Employee         @relation(fields: [employeeId], references: [id])
   items    PayslipItem[]
-  payments  PayrollPayment[]
+  payments PayrollPayment[]
 
+  @@unique([employeeId, periodKey])
   @@index([employeeId])
   @@index([status])
   @@index([periodStart, periodEnd])
-  @@unique([employeeId, periodKey])
 }
 
 model PayslipItem {
@@ -2367,54 +2371,103 @@ model PayslipItem {
 }
 
 model PayrollPayment {
-  id          String   @id @default(uuid())
-  payslipId   String
-  payslip     Payslip  @relation(fields: [payslipId], references: [id], onDelete: Cascade)
-  amount      Decimal  @db.Decimal(10, 2)
-  paidAt      DateTime @default(now())
-  method      String?
-  referenceNo String?
-  note        String?
+  id           String    @id @default(uuid())
+  payslipId    String
+  payslip      Payslip   @relation(fields: [payslipId], references: [id], onDelete: Cascade)
+  amount       Decimal   @db.Decimal(10, 2)
+  paidAt       DateTime  @default(now())
+  method       String?
+  referenceNo  String?
+  note         String?
   recordedById String?
-  voidedAt    DateTime?
-  voidedById  String?
-  voidReason  String?
-  createdAt   DateTime @default(now())
+  voidedAt     DateTime?
+  voidedById   String?
+  voidReason   String?
+  createdAt    DateTime  @default(now())
 
   @@index([payslipId])
 }
 
 model EmploymentHistory {
-  id            String                   @id @default(uuid())
+  id            String                 @id @default(uuid())
   employeeId    String
   field         EmploymentHistoryField
   oldValue      String?
   newValue      String?
-  effectiveFrom DateTime                 @default(now())
+  effectiveFrom DateTime               @default(now())
   changedById   String?
-  createdAt     DateTime                 @default(now())
+  createdAt     DateTime               @default(now())
 
-  employee  Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee  Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   changedBy UserProfile? @relation("EmploymentChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
 
   @@index([employeeId, effectiveFrom])
 }
 
 model WeeklyOff {
-  id            String   @id @default(uuid())
+  id            String    @id @default(uuid())
   employeeId    String
   dayOfWeek     Int
-  effectiveFrom DateTime @default(now())
+  effectiveFrom DateTime  @default(now())
   effectiveTo   DateTime?
   createdById   String?
-  note          String?  @db.Text
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  note          String?   @db.Text
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   employee  Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   createdBy UserProfile? @relation("WeeklyOffCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([employeeId, effectiveFrom])
+}
+
+/// Reusable working-hours template (e.g. "General 09:00-17:00"). Times are
+/// wall-clock strings in Asia/Dhaka, matching the attendance business day.
+model ShiftPreset {
+  id              String   @id @default(uuid())
+  name            String   @unique
+  code            String   @unique
+  startTime       String // "09:00"
+  endTime         String // "17:00"
+  graceMinutes    Int      @default(10)
+  breakMinutes    Int      @default(60)
+  /// Computed at write time: shift span minus the standard break. Stored so the
+  /// admin UI and overtime maths never disagree about what a shift is worth.
+  standardMinutes Int
+  /// endTime < startTime => the shift crosses midnight. Explicit, so night
+  /// shifts are never inferred by arithmetic guesswork at read time.
+  overnight       Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  notes           String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  assignments ShiftAssignment[]
+
+  @@index([isActive])
+}
+
+/// One weekday's shift for one employee. Effective-dated so a rotation change
+/// never rewrites historical days - the same close-and-recreate discipline as
+/// WeeklyOff.
+model ShiftAssignment {
+  id            String    @id @default(uuid())
+  employeeId    String
+  shiftPresetId String
+  dayOfWeek     Int // 0 = Sunday ... 6 = Saturday
+  effectiveFrom DateTime  @default(now())
+  effectiveTo   DateTime? // null = currently in force
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  employee    Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shiftPreset ShiftPreset  @relation(fields: [shiftPresetId], references: [id], onDelete: Restrict)
+  createdBy   UserProfile? @relation("ShiftAssignmentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([employeeId, dayOfWeek, effectiveFrom])
+  @@index([employeeId, effectiveTo])
+  @@index([shiftPresetId, effectiveTo])
 }
 
 enum AccountType {
@@ -2439,12 +2492,12 @@ model Account {
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
-  parent          Account?           @relation("AccountHierarchy", fields: [parentId], references: [id])
-  children        Account[]          @relation("AccountHierarchy")
-  openingBalances OpeningBalance[]
-  journalLines    JournalEntryLine[]
-  expenseCategory ExpenseCategory[]
-  expensePayments Expense[]
+  parent            Account?           @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children          Account[]          @relation("AccountHierarchy")
+  openingBalances   OpeningBalance[]
+  journalLines      JournalEntryLine[]
+  expenseCategory   ExpenseCategory[]
+  expensePayments   Expense[]
   marketingPayments MarketingPayment[]
 
   @@index([type])
@@ -2497,11 +2550,11 @@ model JournalEntry {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  period  FinancialPeriod    @relation(fields: [periodId], references: [id])
-  lines   JournalEntryLine[]
-  expense Expense?
-  marketingFunding MarketingFundingEntry?
-  marketingPayment MarketingPayment?
+  period                   FinancialPeriod           @relation(fields: [periodId], references: [id])
+  lines                    JournalEntryLine[]
+  expense                  Expense?
+  marketingFunding         MarketingFundingEntry?
+  marketingPayment         MarketingPayment?
   courierSettlementInvoice CourierSettlementInvoice?
 
   @@index([periodId])
@@ -2720,8 +2773,8 @@ model StockTransfer {
   createdAt         DateTime  @default(now())
   completedAt       DateTime?
 
-  sourceWarehouse Warehouse    @relation("TransferSource", fields: [sourceWarehouseId], references: [id])
-  destWarehouse   Warehouse    @relation("TransferDest", fields: [destWarehouseId], references: [id])
+  sourceWarehouse Warehouse           @relation("TransferSource", fields: [sourceWarehouseId], references: [id])
+  destWarehouse   Warehouse           @relation("TransferDest", fields: [destWarehouseId], references: [id])
   destinationLots CostingLot[]
   items           StockTransferItem[]
 
@@ -2735,14 +2788,14 @@ model StockTransfer {
 // other requester. The StockTransfer header carries source/destination and
 // lifecycle status; this table answers "what exactly is being moved".
 model StockTransferItem {
-  id         String        @id @default(uuid())
+  id         String   @id @default(uuid())
   transferId String
   productId  String
   variantId  String?
   quantity   Int
-  createdAt  DateTime      @default(now())
+  createdAt  DateTime @default(now())
 
-  transfer StockTransfer  @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  transfer StockTransfer   @relation(fields: [transferId], references: [id], onDelete: Cascade)
   product  Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
   variant  ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
 
@@ -3024,13 +3077,13 @@ model TrackingSnapshot {
   payload       Json
   createdAt     DateTime @default(now())
 
-  @@index([orderId])
-  @@index([eventType, createdAt])
-  @@index([createdAt]) // retention/replay scans
   // Exactly-once Purchase ledger: one canonical Purchase (and one Refund) per
   // business order. NULL orderIds (non-order browser events) never conflict in
   // Postgres. Deterministic eventId UNIQUE stays the first-line dedup guard.
   @@unique([orderId, eventType])
+  @@index([orderId])
+  @@index([eventType, createdAt])
+  @@index([createdAt]) // retention/replay scans
 }
 
 model TrackingOutbox {
@@ -3129,7 +3182,7 @@ model TrackingReplayArchive {
   archivedPayload Json     @default("{}") // canonical payload, PII-stripped (hashed keys only)
   configSnapshot  Json     @default("{}")
   versions        Json     @default("{}") // {schemaVersion, adapterVersion, providerApiVersion, payloadVersion, normalizerVersion}
-archivedAt   DateTime @default(now())
+  archivedAt      DateTime @default(now())
 
   @@index([eventId])
   @@index([eventType, archivedAt])
@@ -3191,11 +3244,11 @@ enum OrderAttributionMethod {
 }
 
 model MarketingPlatform {
-  id          String                @id @default(uuid())
-  name        String
-  slug        MarketingPlatformSlug @unique
-  status      String                @default("active")
-  createdAt   DateTime              @default(now())
+  id        String                @id @default(uuid())
+  name      String
+  slug      MarketingPlatformSlug @unique
+  status    String                @default("active")
+  createdAt DateTime              @default(now())
 
   connections MarketingConnection[]
 
@@ -3267,29 +3320,29 @@ model MarketingBusiness {
 }
 
 model AdAccount {
-  id                       String   @id @default(uuid())
-  connectionId             String
-  businessId               String?
-  providerAccountId        String   @unique // e.g. act_123456
-  name                     String
-  currency                 String   @default("USD")
-  timezone                 String?
-  status                   String   @default("ACTIVE")
-  isActive                 Boolean  @default(true)
-  defaultPaymentAccountId  String?  // accounting wallet for auto-preselection
-  lastSyncAt               DateTime?
-  lastError                String?  @db.Text
-  createdAt                DateTime @default(now())
-  updatedAt                DateTime @updatedAt
+  id                      String    @id @default(uuid())
+  connectionId            String
+  businessId              String?
+  providerAccountId       String    @unique // e.g. act_123456
+  name                    String
+  currency                String    @default("USD")
+  timezone                String?
+  status                  String    @default("ACTIVE")
+  isActive                Boolean   @default(true)
+  defaultPaymentAccountId String? // accounting wallet for auto-preselection
+  lastSyncAt              DateTime?
+  lastError               String?   @db.Text
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
-  connection      MarketingConnection        @relation(fields: [connectionId], references: [id])
-  business        MarketingBusiness?         @relation(fields: [businessId], references: [id])
-  campaigns       MarketingCampaign[]
-  fundingEntries  MarketingFundingEntry[]
-  fundingLedger   MarketingFundingLedger[]
-  payments        MarketingPayment[]
-  syncStatus      MarketingSyncStatus?
-  dailySummaries  MarketingDailySummary[]
+  connection     MarketingConnection      @relation(fields: [connectionId], references: [id])
+  business       MarketingBusiness?       @relation(fields: [businessId], references: [id])
+  campaigns      MarketingCampaign[]
+  fundingEntries MarketingFundingEntry[]
+  fundingLedger  MarketingFundingLedger[]
+  payments       MarketingPayment[]
+  syncStatus     MarketingSyncStatus?
+  dailySummaries MarketingDailySummary[]
 
   @@index([connectionId])
   @@index([businessId])
@@ -3316,7 +3369,7 @@ model MarketingCampaign {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  adAccount         AdAccount                    @relation(fields: [adAccountId], references: [id])
+  adAccount         AdAccount                  @relation(fields: [adAccountId], references: [id])
   adSets            MarketingAdSet[]
   insights          MarketingCampaignInsight[]
   consumptions      MarketingConsumption[]
@@ -3331,24 +3384,24 @@ model MarketingCampaign {
 }
 
 model MarketingAdSet {
-  id                 String    @id @default(uuid())
-  campaignId         String
-  providerAdSetId    String    @unique
-  name               String
-  status             String    @default("ACTIVE")
-  optimizationGoal   String?
-  billingEvent       String?
-  bidStrategy        String?
-  budget             Decimal?  @db.Decimal(14, 2)
-  startTime          DateTime?
-  endTime            DateTime?
-  isArchived         Boolean   @default(false)
-  deletedFromProvider Boolean  @default(false)
-  lastSyncedAt       DateTime?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  id                  String    @id @default(uuid())
+  campaignId          String
+  providerAdSetId     String    @unique
+  name                String
+  status              String    @default("ACTIVE")
+  optimizationGoal    String?
+  billingEvent        String?
+  bidStrategy         String?
+  budget              Decimal?  @db.Decimal(14, 2)
+  startTime           DateTime?
+  endTime             DateTime?
+  isArchived          Boolean   @default(false)
+  deletedFromProvider Boolean   @default(false)
+  lastSyncedAt        DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  campaign          MarketingCampaign        @relation(fields: [campaignId], references: [id])
+  campaign          MarketingCampaign       @relation(fields: [campaignId], references: [id])
   ads               MarketingAd[]
   insights          MarketingAdSetInsight[]
   orderAttributions OrderAttribution[]
@@ -3358,22 +3411,22 @@ model MarketingAdSet {
 }
 
 model MarketingAd {
-  id                 String    @id @default(uuid())
-  adSetId            String
-  providerAdId       String    @unique
-  name               String
-  creativeId         String?
-  creativeName       String?
-  status             String    @default("ACTIVE")
-  landingUrl         String?   @db.Text
-  previewUrl         String?   @db.Text
-  isArchived         Boolean   @default(false)
-  deletedFromProvider Boolean  @default(false)
-  lastSyncedAt       DateTime?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  id                  String    @id @default(uuid())
+  adSetId             String
+  providerAdId        String    @unique
+  name                String
+  creativeId          String?
+  creativeName        String?
+  status              String    @default("ACTIVE")
+  landingUrl          String?   @db.Text
+  previewUrl          String?   @db.Text
+  isArchived          Boolean   @default(false)
+  deletedFromProvider Boolean   @default(false)
+  lastSyncedAt        DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  adSet             MarketingAdSet      @relation(fields: [adSetId], references: [id])
+  adSet             MarketingAdSet       @relation(fields: [adSetId], references: [id])
   insights          MarketingAdInsight[]
   orderAttributions OrderAttribution[]
   sessions          MarketingSession[]
@@ -3456,32 +3509,32 @@ model MarketingAdInsight {
 // ---- Funding / marketing accounting ----
 
 model MarketingFundingEntry {
-  id              String                  @id @default(uuid())
-  platform        String                  @default("") // derived from connection.platform.slug
-  adAccountId     String
-  paymentId       String?
-  fundingType     MarketingFundingType    @default(paid)
-  fundingSource   String // BANK | DEBIT_CARD | CREDIT_CARD | WALLET | CASH | VIRTUAL_CARD
-  fundingDate     DateTime
-  currency        String                  @default("USD")
-  currencyAmount  Decimal                 @db.Decimal(14, 4)
-  baseCurrency    String                  @default("BDT")
-  baseAmount      Decimal                 @db.Decimal(14, 2)
-  effectiveRate   Decimal                 @db.Decimal(14, 4)
-  feeAmount       Decimal?                @db.Decimal(14, 4) // optional platform/processing fee in currency
-  taxAmount       Decimal?                @db.Decimal(14, 4) // optional tax in currency
-  reference       String?
-  remarks         String?                 @db.Text
-  journalEntryId  String?                 @unique
-  status          MarketingFundingStatus  @default(draft)
-  createdBy       String?
-  postedAt        DateTime?
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
+  id             String                 @id @default(uuid())
+  platform       String                 @default("") // derived from connection.platform.slug
+  adAccountId    String
+  paymentId      String?
+  fundingType    MarketingFundingType   @default(paid)
+  fundingSource  String // BANK | DEBIT_CARD | CREDIT_CARD | WALLET | CASH | VIRTUAL_CARD
+  fundingDate    DateTime
+  currency       String                 @default("USD")
+  currencyAmount Decimal                @db.Decimal(14, 4)
+  baseCurrency   String                 @default("BDT")
+  baseAmount     Decimal                @db.Decimal(14, 2)
+  effectiveRate  Decimal                @db.Decimal(14, 4)
+  feeAmount      Decimal?               @db.Decimal(14, 4) // optional platform/processing fee in currency
+  taxAmount      Decimal?               @db.Decimal(14, 4) // optional tax in currency
+  reference      String?
+  remarks        String?                @db.Text
+  journalEntryId String?                @unique
+  status         MarketingFundingStatus @default(draft)
+  createdBy      String?
+  postedAt       DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
 
-  adAccount    AdAccount                 @relation(fields: [adAccountId], references: [id])
-  payment      MarketingPayment?         @relation(fields: [paymentId], references: [id])
-  journalEntry JournalEntry?             @relation(fields: [journalEntryId], references: [id])
+  adAccount    AdAccount                @relation(fields: [adAccountId], references: [id])
+  payment      MarketingPayment?        @relation(fields: [paymentId], references: [id])
+  journalEntry JournalEntry?            @relation(fields: [journalEntryId], references: [id])
   ledger       MarketingFundingLedger[]
 
   @@index([adAccountId])
@@ -3491,29 +3544,29 @@ model MarketingFundingEntry {
 }
 
 model MarketingPayment {
-  id                String                @id @default(uuid())
+  id                String                 @id @default(uuid())
   adAccountId       String
-  providerPaymentId String?               @unique // platform's payment/charge ID
-  platformAmount    Decimal               @db.Decimal(14, 4) // what platform charged
-  platformCurrency  String                @default("USD")
-  actualCost        Decimal?              @db.Decimal(14, 2) // actual BDT debit (user-entered)
-  baseCurrency      String                @default("BDT")
-  effectiveRate     Decimal?              @db.Decimal(14, 4) // derived: actualCost / platformAmount
-  feeAmount         Decimal?              @db.Decimal(14, 4) // optional decomposition
-  taxAmount         Decimal?              @db.Decimal(14, 4) // optional decomposition
-  processingFee     Decimal?              @db.Decimal(14, 4) // optional decomposition
-  sourceAccountId   String?               // accounting wallet/account used for payment
+  providerPaymentId String?                @unique // platform's payment/charge ID
+  platformAmount    Decimal                @db.Decimal(14, 4) // what platform charged
+  platformCurrency  String                 @default("USD")
+  actualCost        Decimal?               @db.Decimal(14, 2) // actual BDT debit (user-entered)
+  baseCurrency      String                 @default("BDT")
+  effectiveRate     Decimal?               @db.Decimal(14, 4) // derived: actualCost / platformAmount
+  feeAmount         Decimal?               @db.Decimal(14, 4) // optional decomposition
+  taxAmount         Decimal?               @db.Decimal(14, 4) // optional decomposition
+  processingFee     Decimal?               @db.Decimal(14, 4) // optional decomposition
+  sourceAccountId   String? // accounting wallet/account used for payment
   paymentDate       DateTime
   status            MarketingPaymentStatus @default(pending)
-  notes             String?               @db.Text
-  journalEntryId    String?               @unique
+  notes             String?                @db.Text
+  journalEntryId    String?                @unique
   reconciledAt      DateTime?
-  createdAt         DateTime              @default(now())
-  updatedAt         DateTime              @updatedAt
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
 
-  adAccount     AdAccount              @relation(fields: [adAccountId], references: [id])
-  sourceAccount Account?               @relation(fields: [sourceAccountId], references: [id])
-  journalEntry  JournalEntry?          @relation(fields: [journalEntryId], references: [id])
+  adAccount      AdAccount               @relation(fields: [adAccountId], references: [id])
+  sourceAccount  Account?                @relation(fields: [sourceAccountId], references: [id])
+  journalEntry   JournalEntry?           @relation(fields: [journalEntryId], references: [id])
   fundingEntries MarketingFundingEntry[]
 
   @@index([adAccountId])
@@ -3545,16 +3598,16 @@ model MarketingFundingLedger {
 }
 
 model MarketingConsumption {
-  id             String   @id @default(uuid())
+  id             String    @id @default(uuid())
   ledgerId       String
   campaignId     String?
   orderId        String?
-  consumedAmount Decimal  @db.Decimal(14, 4) // spend currency units
-  effectiveRate  Decimal  @db.Decimal(14, 4)
-  calculatedCost Decimal  @db.Decimal(14, 2) // consumedAmount * effectiveRate
+  consumedAmount Decimal   @db.Decimal(14, 4) // spend currency units
+  effectiveRate  Decimal   @db.Decimal(14, 4)
+  calculatedCost Decimal   @db.Decimal(14, 2) // consumedAmount * effectiveRate
   spendDate      DateTime? @db.Date // insight date the spend belongs to
-  source         String   @default("spend_sync") // spend_sync | allocation | replay | adjustment
-  allocatedAt    DateTime @default(now())
+  source         String    @default("spend_sync") // spend_sync | allocation | replay | adjustment
+  allocatedAt    DateTime  @default(now())
 
   ledger   MarketingFundingLedger @relation(fields: [ledgerId], references: [id])
   campaign MarketingCampaign?     @relation(fields: [campaignId], references: [id])
@@ -3569,30 +3622,30 @@ model MarketingConsumption {
 // ---- Sessions / attribution ----
 
 model MarketingSession {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   visitorId    String
-  sessionToken String   @unique // stable journey id (storefront ecomate_ctx_id)
+  sessionToken String    @unique // stable journey id (storefront ecomate_ctx_id)
   fbclid       String?
-  clickId      String?  // generic click identifier (provider-agnostic)
+  clickId      String? // generic click identifier (provider-agnostic)
   utmSource    String?
   utmMedium    String?
   utmCampaign  String?
   utmContent   String?
   utmTerm      String?
-  referrer     String?  @db.Text
-  landingUrl   String?  @db.Text
+  referrer     String?   @db.Text
+  landingUrl   String?   @db.Text
   campaignId   String?
   adSetId      String?
   adId         String?
   ip           String?
   userAgent    String?
-  startedAt    DateTime @default(now())
+  startedAt    DateTime  @default(now())
   endedAt      DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  campaign          MarketingCampaign?   @relation(fields: [campaignId], references: [id])
-  ad                MarketingAd?         @relation(fields: [adId], references: [id])
+  campaign          MarketingCampaign? @relation(fields: [campaignId], references: [id])
+  ad                MarketingAd?       @relation(fields: [adId], references: [id])
   orderAttributions OrderAttribution[]
 
   @@index([visitorId])
@@ -3603,24 +3656,24 @@ model MarketingSession {
 }
 
 model OrderAttribution {
-  id                 String                @id @default(uuid())
-  orderId            String                @unique
+  id                 String                 @id @default(uuid())
+  orderId            String                 @unique
   sessionId          String?
   campaignId         String?
   adSetId            String?
   adId               String?
-  confidence         Int                   @default(0)
+  confidence         Int                    @default(0)
   method             OrderAttributionMethod
-  explanation        String?               @db.Text
-  attributionVersion Int                   @default(1)
-  attributedAt       DateTime              @default(now())
-  updatedAt          DateTime              @updatedAt
+  explanation        String?                @db.Text
+  attributionVersion Int                    @default(1)
+  attributedAt       DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
 
-  order       Order                    @relation(fields: [orderId], references: [id])
-  session     MarketingSession?        @relation(fields: [sessionId], references: [id])
-  campaign    MarketingCampaign?       @relation(fields: [campaignId], references: [id])
-  adSet       MarketingAdSet?          @relation(fields: [adSetId], references: [id])
-  ad          MarketingAd?             @relation(fields: [adId], references: [id])
+  order       Order                     @relation(fields: [orderId], references: [id])
+  session     MarketingSession?         @relation(fields: [sessionId], references: [id])
+  campaign    MarketingCampaign?        @relation(fields: [campaignId], references: [id])
+  adSet       MarketingAdSet?           @relation(fields: [adSetId], references: [id])
+  ad          MarketingAd?              @relation(fields: [adId], references: [id])
   allocations MarketingCostAllocation[]
 
   @@index([sessionId])
@@ -3632,20 +3685,20 @@ model OrderAttribution {
 // ---- Cost allocation ----
 
 model MarketingCostAllocation {
-  id                String                  @id @default(uuid())
+  id                String                    @id @default(uuid())
   orderId           String
   attributionId     String?
   campaignId        String
-  allocatedSpend    Decimal                 @db.Decimal(14, 4)
-  allocatedCurrency String                  @default("") // derived from AdAccount.currency
-  allocatedRate     Decimal                 @db.Decimal(14, 4)
-  allocatedCost     Decimal                 @db.Decimal(14, 2)
+  allocatedSpend    Decimal                   @db.Decimal(14, 4)
+  allocatedCurrency String                    @default("") // derived from AdAccount.currency
+  allocatedRate     Decimal                   @db.Decimal(14, 4)
+  allocatedCost     Decimal                   @db.Decimal(14, 2)
   allocationMethod  MarketingAllocationMethod
-  calculatedAt      DateTime                @default(now())
+  calculatedAt      DateTime                  @default(now())
 
-  order       Order                    @relation(fields: [orderId], references: [id])
-  attribution OrderAttribution?        @relation(fields: [attributionId], references: [id])
-  campaign    MarketingCampaign        @relation(fields: [campaignId], references: [id])
+  order        Order                  @relation(fields: [orderId], references: [id])
+  attribution  OrderAttribution?      @relation(fields: [attributionId], references: [id])
+  campaign     MarketingCampaign      @relation(fields: [campaignId], references: [id])
   productCosts ProductMarketingCost[]
 
   @@unique([orderId, campaignId])
@@ -3671,18 +3724,18 @@ model ProductMarketingCost {
 // ---- Sync / audit / observability ----
 
 model MarketingSyncStatus {
-  id              String   @id @default(uuid())
-  adAccountId     String   @unique
-  provider        String   @default("") // derived from connection.platform.slug
-  status          String   @default("idle") // idle | running | error | partial
+  id              String    @id @default(uuid())
+  adAccountId     String    @unique
+  provider        String    @default("") // derived from connection.platform.slug
+  status          String    @default("idle") // idle | running | error | partial
   stage           String? // businesses | ad_accounts | campaigns | adsets | ads | insights
-  progressPct     Int      @default(0)
+  progressPct     Int       @default(0)
   lastRunAt       DateTime?
   lastSuccessAt   DateTime?
-  lastError       String?  @db.Text
-  recordsImported Int      @default(0)
-  recordsUpdated  Int      @default(0)
-  updatedAt       DateTime @updatedAt
+  lastError       String?   @db.Text
+  recordsImported Int       @default(0)
+  recordsUpdated  Int       @default(0)
+  updatedAt       DateTime  @updatedAt
 
   adAccount AdAccount @relation(fields: [adAccountId], references: [id])
 }
@@ -3774,11 +3827,11 @@ model LeaveType {
 }
 
 model LeaveRequest {
-  id           String     @id @default(uuid())
+  id           String      @id @default(uuid())
   employeeId   String
-  employee     Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee     Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   typeId       String
-  type         LeaveType  @relation(fields: [typeId], references: [id], onDelete: Restrict)
+  type         LeaveType   @relation(fields: [typeId], references: [id], onDelete: Restrict)
   startDate    DateTime
   endDate      DateTime
   days         Int
@@ -3787,9 +3840,9 @@ model LeaveRequest {
   decisionNote String?
   approvedById String?
   approvedAt   DateTime?
-  createdById String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdById  String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
   @@index([employeeId, startDate])
   @@index([status])
@@ -3901,6 +3954,7 @@ model EmployeeBankAccount {
   updatedById        String?
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
+
   // NOTE(N1): one-primary-per-employee is enforced by a PostgreSQL partial
   // unique index created in migration M3 (WHERE "isPrimary") — Prisma cannot
   // express partial indexes; repo workflow is migrate deploy only.
@@ -3916,34 +3970,47 @@ model AttendanceSettings {
 }
 
 model AttendanceDay {
-  id               String             @id @default(uuid())
-  employeeId       String
-  employee         Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  date             DateTime           @db.Date
-  status           AttendanceStatus
-  attendanceMethod AttendanceMethod   @default(APP)
-  workedMinutes    Int?
-  breakMinutes     Int?
-  note             String?
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
-  sessions         AttendanceSession[]
-  adjustments      AttendanceAdjustment[]
+  id                String                 @id @default(uuid())
+  employeeId        String
+  employee          Employee               @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date              DateTime               @db.Date
+  status            AttendanceStatus
+  attendanceMethod  AttendanceMethod       @default(APP)
+  workedMinutes     Int?
+  breakMinutes      Int?
+  // ── Shift-derived metrics (all nullable: null = no shift was in effect, NOT
+  // zero). A weekly-off day, a leave day, or any day recorded before shifts
+  // existed must never accumulate phantom overtime. Readers must treat null as
+  // "not computed".
+  scheduledMinutes  Int?
+  overtimeMinutes   Int?
+  lateMinutes       Int?
+  earlyLeaveMinutes Int?
+  /// True when work happened outside the assigned shift window entirely, so it
+  /// is badged separately from ordinary in-shift overtime.
+  outsideShift      Boolean                @default(false)
+  note              String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  sessions          AttendanceSession[]
+  adjustments       AttendanceAdjustment[]
+
   @@unique([employeeId, date])
   @@index([date])
 }
 
 model AttendanceSession {
-  id         String              @id @default(uuid())
+  id         String                  @id @default(uuid())
   dayId      String
-  day        AttendanceDay       @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  day        AttendanceDay           @relation(fields: [dayId], references: [id], onDelete: Cascade)
   source     AttendanceSessionSource @default(APP)
   deviceId   String?
   checkInAt  DateTime
   checkOutAt DateTime?
-  createdAt  DateTime            @default(now())
-  updatedAt  DateTime            @updatedAt
+  createdAt  DateTime                @default(now())
+  updatedAt  DateTime                @updatedAt
   breaks     AttendanceBreak[]
+
   @@index([dayId])
 }
 
@@ -3955,73 +4022,76 @@ model AttendanceBreak {
   endedAt   DateTime?
   createdAt DateTime          @default(now())
   updatedAt DateTime          @updatedAt
+
   @@index([sessionId])
 }
 
 model AttendanceAdjustment {
-  id             String           @id @default(uuid())
+  id             String         @id @default(uuid())
   employeeId     String
-  employee       Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee       Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   dayId          String?
-  day            AttendanceDay?   @relation(fields: [dayId], references: [id], onDelete: SetNull)
+  day            AttendanceDay? @relation(fields: [dayId], references: [id], onDelete: SetNull)
   field          String
   originalValue  String?
   correctedValue String?
   reason         String
   adjustedById   String?
-  adjustedAt     DateTime         @default(now())
-  createdAt      DateTime         @default(now())
+  adjustedAt     DateTime       @default(now())
+  createdAt      DateTime       @default(now())
+
   @@index([employeeId, adjustedAt])
 }
 
 model AttendanceDevice {
-  id                  String                      @id @default(uuid())
-  name                String
-  deviceType          String
-  vendor              String?
-  identifier          String?
-  location            String?
-  connectionMethod    String                      @default("API")
-  host                String?
-  port                Int?
-  enabled             Boolean                     @default(false)
-  syncStatus          AttendanceDeviceSyncStatus  @default(IDLE)
-  lastSyncAt          DateTime?
-  lastSyncError       String?
+  id                   String                     @id @default(uuid())
+  name                 String
+  deviceType           String
+  vendor               String?
+  identifier           String?
+  location             String?
+  connectionMethod     String                     @default("API")
+  host                 String?
+  port                 Int?
+  enabled              Boolean                    @default(false)
+  syncStatus           AttendanceDeviceSyncStatus @default(IDLE)
+  lastSyncAt           DateTime?
+  lastSyncError        String?
   credentialsEncrypted String?
-  createdById         String?
-  createdAt           DateTime                    @default(now())
-  updatedAt           DateTime                    @updatedAt
-  mappings            DeviceEmployeeMapping[]
-  rawEvents           RawAttendanceEvent[]
+  createdById          String?
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+  mappings             DeviceEmployeeMapping[]
+  rawEvents            RawAttendanceEvent[]
 }
 
 model DeviceEmployeeMapping {
-  id               String            @id @default(uuid())
+  id               String           @id @default(uuid())
   deviceId         String
-  device           AttendanceDevice  @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  device           AttendanceDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
   employeeId       String
-  employee         Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee         Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   deviceEmployeeId String
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
   @@unique([deviceId, deviceEmployeeId])
   @@unique([deviceId, employeeId])
 }
 
 model RawAttendanceEvent {
-  id               String              @id @default(uuid())
+  id               String                @id @default(uuid())
   deviceId         String?
-  device           AttendanceDevice?   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  device           AttendanceDevice?     @relation(fields: [deviceId], references: [id], onDelete: Cascade)
   deviceEmployeeId String?
   employeeId       String?
-  employee         Employee?           @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  employee         Employee?             @relation(fields: [employeeId], references: [id], onDelete: SetNull)
   eventType        AttendanceEventType
   occurredAt       DateTime
   rawPayload       Json?
-  idempotencyKey   String              @unique
+  idempotencyKey   String                @unique
   status           AttendanceEventStatus @default(PROCESSED)
-  ingestedAt       DateTime            @default(now())
+  ingestedAt       DateTime              @default(now())
 
   @@index([status])
 }
@@ -4029,16 +4099,17 @@ model RawAttendanceEvent {
 // ---------- HR Production Hardening (Plan) ----------
 
 model CommissionReversal {
-  id                  String           @id @default(uuid())
+  id                  String            @id @default(uuid())
   commissionEarningId String
   commissionEarning   CommissionEarning @relation(fields: [commissionEarningId], references: [id], onDelete: Cascade)
   orderId             String?
-  amount              Decimal          @db.Decimal(10, 2)
+  amount              Decimal           @db.Decimal(10, 2)
   reason              String
-  refundedAmount      Decimal?         @db.Decimal(10, 2)
+  refundedAmount      Decimal?          @db.Decimal(10, 2)
   reversedById        String?
-  reversedAt          DateTime         @default(now())
-  createdAt           DateTime         @default(now())
+  reversedAt          DateTime          @default(now())
+  createdAt           DateTime          @default(now())
+
   // Partial-unique (orderId non-null only) created in migration SQL.
   @@index([commissionEarningId])
 }
@@ -4126,21 +4197,21 @@ enum CourierSettlementAliasOrigin {
 }
 
 model CourierSettlementInvoice {
-  id             String                          @id @default(uuid())
-  displayId      String                          @unique
-  courier        String
-  provider       String?
-  invoiceNo      String?
-  invoiceDate    DateTime
-  rowCount       Int                             @default(0)
+  id          String   @id @default(uuid())
+  displayId   String   @unique
+  courier     String
+  provider    String?
+  invoiceNo   String?
+  invoiceDate DateTime
+  rowCount    Int      @default(0)
 
   // Immutable source reference (§9 ①): original bytes preserved by StorageService,
   // never overwritten. Only derived fields change afterwards.
-  fileStorageId   String?
+  fileStorageId    String?
   fileOriginalName String?
-  fileSha256      String?
-  fileMime        String?
-  fileSize        Int?
+  fileSha256       String?
+  fileMime         String?
+  fileSize         Int?
 
   // Provider totals read from the file footer / structure (informational only).
   rawTotals       Json?
@@ -4160,20 +4231,20 @@ model CourierSettlementInvoice {
   state               CourierSettlementInvoiceState @default(UPLOADED)
   // §17 background import (async commit above threshold): stage + 0-100 progress,
   // polled by the admin while state == IMPORTING.
-  importProgress      Int      @default(0)
+  importProgress      Int                           @default(0)
   importStage         String?
   finalizingToken     String?
   finalizingStartedAt DateTime?
   finalizedAt         DateTime?
   finalizedBy         String?
 
-  journalEntryId String?  @unique
+  journalEntryId String?       @unique
   journalEntry   JournalEntry? @relation(fields: [journalEntryId], references: [id])
 
-  accountingStatus        CourierSettlementAccountingStatus @default(PENDING)
-  accountingError         String?
-  accountingAttemptedAt   DateTime?
-  accountingAttemptedBy   String?
+  accountingStatus      CourierSettlementAccountingStatus @default(PENDING)
+  accountingError       String?
+  accountingAttemptedAt DateTime?
+  accountingAttemptedBy String?
 
   version   Int      @default(1)
   createdAt DateTime @default(now())
@@ -4184,8 +4255,8 @@ model CourierSettlementInvoice {
   activities  CourierSettlementActivity[]
   adjustments CourierSettlementAdjustment[]
   snapshots   CourierSettlementFinalizationSnapshot[]
-  revisions   CourierSettlementInvoice[] @relation("InvoiceRevisionHistory")
-  revisedFrom CourierSettlementInvoice?  @relation("InvoiceRevisionHistory", fields: [revisionOfId], references: [id])
+  revisions   CourierSettlementInvoice[]              @relation("InvoiceRevisionHistory")
+  revisedFrom CourierSettlementInvoice?               @relation("InvoiceRevisionHistory", fields: [revisionOfId], references: [id])
 
   @@index([state])
   @@index([courier])
@@ -4199,29 +4270,29 @@ model CourierSettlementInvoice {
 }
 
 model CourierSettlementRow {
-  id          String  @id @default(uuid())
-  invoiceId   String
-  rowNumber   Int
-  rowClass    CourierSettlementRowClass
-  rowKind     CourierSettlementRowKind
+  id        String                    @id @default(uuid())
+  invoiceId String
+  rowNumber Int
+  rowClass  CourierSettlementRowClass
+  rowKind   CourierSettlementRowKind
 
   consignmentId String?
-  orderId      String?
-  dispatchId   String?
-  identifier   String?
+  orderId       String?
+  dispatchId    String?
+  identifier    String?
 
   // Declared (provider) values, plus the effective value after adjustments (§9 ④).
   declaredCollected  Decimal @default(0) @db.Decimal(14, 2)
   declaredCharges    Decimal @default(0) @db.Decimal(14, 2)
   declaredNet        Decimal @default(0) @db.Decimal(14, 2)
   declaredResidual   Decimal @default(0) @db.Decimal(14, 2)
-  effectiveCollected  Decimal @default(0) @db.Decimal(14, 2)
-  effectiveCharges    Decimal @default(0) @db.Decimal(14, 2)
-  effectiveNet        Decimal @default(0) @db.Decimal(14, 2)
-  effectiveResidual   Decimal @default(0) @db.Decimal(14, 2)
+  effectiveCollected Decimal @default(0) @db.Decimal(14, 2)
+  effectiveCharges   Decimal @default(0) @db.Decimal(14, 2)
+  effectiveNet       Decimal @default(0) @db.Decimal(14, 2)
+  effectiveResidual  Decimal @default(0) @db.Decimal(14, 2)
 
-  matchMethod String
-  matchedAt   DateTime?
+  matchMethod  String
+  matchedAt    DateTime?
   /// { provider, confidence, orderSource, ... } — recorded for transparency
   matchContext Json?
 
@@ -4231,20 +4302,20 @@ model CourierSettlementRow {
   hasAdjustment Boolean @default(false)
 
   /// 'green' | 'yellow' | 'red' — derived from §15 ruleset, materialised for reads.
-  reviewState   String @default("green")
+  reviewState String @default("green")
 
   // §14 revision semantics: when a later revision supersedes this row, the row
   // stops contributing to EVERY current aggregate but its raw/declared/effective
   // values and the finalization snapshot remain immutable history.
-  supersededByRowId   String?
+  supersededByRowId     String?
   supersededByInvoiceId String?
-  supersededAt        DateTime?
+  supersededAt          DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  invoice     CourierSettlementInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  order       Order?    @relation(fields: [orderId], references: [id])
+  invoice     CourierSettlementInvoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  order       Order?                        @relation(fields: [orderId], references: [id])
   exceptions  CourierSettlementException[]
   adjustments CourierSettlementAdjustment[]
 
@@ -4264,26 +4335,26 @@ model CourierSettlementRow {
 }
 
 model CourierSettlementException {
-  id           String  @id @default(uuid())
-  invoiceId    String
-  rowId        String?
-  orderId      String?
-  dispatchId   String?
-  ruleId       String
-  severity     String  @default("yellow") // 'red' | 'yellow'
-  status       String  @default("open")   // 'open' | 'acknowledged' | 'resolved'
-  blocked      Boolean @default(false)    // true when the row rule blocks finalization
-  message      String?
-  context      Json?
-  resolvedAt   DateTime?
-  resolvedBy   String?
+  id         String    @id @default(uuid())
+  invoiceId  String
+  rowId      String?
+  orderId    String?
+  dispatchId String?
+  ruleId     String
+  severity   String    @default("yellow") // 'red' | 'yellow'
+  status     String    @default("open") // 'open' | 'acknowledged' | 'resolved'
+  blocked    Boolean   @default(false) // true when the row rule blocks finalization
+  message    String?
+  context    Json?
+  resolvedAt DateTime?
+  resolvedBy String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  invoice   CourierSettlementInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  row       CourierSettlementRow?    @relation(fields: [rowId], references: [id])
-  order     Order?                   @relation(fields: [orderId], references: [id])
+  invoice CourierSettlementInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  row     CourierSettlementRow?    @relation(fields: [rowId], references: [id])
+  order   Order?                   @relation(fields: [orderId], references: [id])
 
   @@index([invoiceId])
   @@index([rowId])
@@ -4296,22 +4367,22 @@ model CourierSettlementException {
 }
 
 model CourierSettlementAdjustment {
-  id             String  @id @default(uuid())
-  invoiceId      String
-  rowId          String?
-  orderId        String?
+  id              String   @id @default(uuid())
+  invoiceId       String
+  rowId           String?
+  orderId         String?
   /// §8.1: 'source' | 'cost' | 'settlement'
   adjustmentClass String
-  field          String   // canonical column name being adjusted
-  originalValue  String?
-  adjustedValue  String?
-  difference     Decimal? @db.Decimal(14, 2)
-  reason         String?
+  field           String // canonical column name being adjusted
+  originalValue   String?
+  adjustedValue   String?
+  difference      Decimal? @db.Decimal(14, 2)
+  reason          String?
   /// §8.2 counterpart: 'net' | 'gross' | 'variance' (required when ΔR ≠ 0)
-  counterpart    String?
-  userId         String?
-  journalEntryId String? @unique // the compensating entry produced by this adjustment
-  createdAt      DateTime @default(now())
+  counterpart     String?
+  userId          String?
+  journalEntryId  String?  @unique // the compensating entry produced by this adjustment
+  createdAt       DateTime @default(now())
 
   /// a reversal points back to the adjustment it reverses (original preserved)
   reversalOfId String? @unique
@@ -4327,41 +4398,41 @@ model CourierSettlementAdjustment {
 }
 
 model CourierSettlementActivity {
-  id          String                    @id @default(uuid())
-  invoiceId   String
-  action      CourierSettlementActivityAction
-  actor       String?
-  timestamp   DateTime @default(now())
+  id        String                          @id @default(uuid())
+  invoiceId String
+  action    CourierSettlementActivityAction
+  actor     String?
+  timestamp DateTime                        @default(now())
   /// arbitrary detail kept immutable: { before, after, reason, journalEntryId, ... }
-  detail      Json?
+  detail    Json?
   /// idempotency key (§6): @@unique([invoiceId, action, dedupeKey])
-  dedupeKey   String?
+  dedupeKey String?
 
   invoice CourierSettlementInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
+  @@unique([invoiceId, action, dedupeKey])
   @@index([invoiceId])
   @@index([timestamp])
   // Timeline reads are always invoice-scoped + time-sorted.
   @@index([invoiceId, timestamp])
-  @@unique([invoiceId, action, dedupeKey])
 }
 
 /// Learned/seeded header → canonical field mapping. Ambiguous mappings stay inactive
 /// (§12) and never propagate silently.
 model CourierSettlementColumnAlias {
-  id             String  @id @default(uuid())
-  courier        String
-  sourceHeader   String
+  id               String                       @id @default(uuid())
+  courier          String
+  sourceHeader     String
   normalizedHeader String
-  field          String
-  confidence     Decimal @default(0.0) @db.Decimal(5, 2)
-  origin         CourierSettlementAliasOrigin @default(LEARNED)
-  ambiguityCount Int   @default(0)
-  active         Boolean @default(false)
-  createdBy      String?
-  lastUsedAt     DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  field            String
+  confidence       Decimal                      @default(0.0) @db.Decimal(5, 2)
+  origin           CourierSettlementAliasOrigin @default(LEARNED)
+  ambiguityCount   Int                          @default(0)
+  active           Boolean                      @default(false)
+  createdBy        String?
+  lastUsedAt       DateTime?
+  createdAt        DateTime                     @default(now())
+  updatedAt        DateTime                     @updatedAt
 
   @@unique([courier, sourceHeader])
   @@index([courier])
@@ -4373,19 +4444,19 @@ model CourierSettlementColumnAlias {
 /// Immutable point-in-time financial picture at the moment of finalization (§14.2).
 /// Reconstructible forever; never updated or deleted by any service path (test-enforced).
 model CourierSettlementFinalizationSnapshot {
-  id            String   @id @default(uuid())
-  invoiceId     String
-  version       Int
-  takenAt       DateTime @default(now())
-  takenById     String?
-  journalEntryId String? @unique
-  reason        String?
+  id             String   @id @default(uuid())
+  invoiceId      String
+  version        Int
+  takenAt        DateTime @default(now())
+  takenById      String?
+  journalEntryId String?  @unique
+  reason         String?
   /// invoice-level figures exactly as finalised: { collected, charges, net, residual, cashReceived, cashDisbursed }
-  totals        Json
+  totals         Json
   /// per-row: identity + normalized + effective figures + match info + row state
-  rows          Json
+  rows           Json
 
-  invoice       CourierSettlementInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoice CourierSettlementInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   @@unique([invoiceId, version])
   @@index([invoiceId])
@@ -4394,28 +4465,28 @@ model CourierSettlementFinalizationSnapshot {
 /// Declarative finance rule per courier/format. §11: generic/unproven providers must not
 /// finalize without approvedById set (approved rule). No formula is ever evaluated.
 model CourierSettlementFinanceRule {
-  id             String   @id @default(uuid())
-  courier        String
-  format         String?
+  id                String  @id @default(uuid())
+  courier           String
+  format            String?
   /// whitelist: 'declared_field' | 'collected_minus_charges' | 'billing_when_no_collection' | 'component_sum'
-  netRule        String
+  netRule           String
   /// ordered [{ header, field, sign }] — signs multiply the parsed header value
-  chargeComponents Json
+  chargeComponents  Json
   residualThreshold Decimal @default(100.0) @db.Decimal(12, 2)
-  tolerance           Decimal @default(1.0) @db.Decimal(12, 2)
+  tolerance         Decimal @default(1.0) @db.Decimal(12, 2)
   /// ordered candidate columns used to resolve an Order, e.g. ["consignmentId","trackingCode",...]
   identifierOrder   Json
-  isPrecedence      Int    @default(0)
+  isPrecedence      Int     @default(0)
 
   /// §12 rule governance: every approval bumps the version; the superseded
   /// configuration is archived to CourierSettlementFinanceRuleVersion, so a
   /// finalized invoice's rule version stays reconstructible.
-  version   Int    @default(1)
-  note      String?
+  version Int     @default(1)
+  note    String?
 
-  approved       Boolean @default(false)
-  approvedById   String?
-  approvedAt     DateTime?
+  approved     Boolean   @default(false)
+  approvedById String?
+  approvedAt   DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -4429,19 +4500,18 @@ model CourierSettlementFinanceRule {
 
 /// Superseded finance-rule configuration (versions 1..n-1; current lives on the rule).
 model CourierSettlementFinanceRuleVersion {
-  id          String  @id @default(uuid())
-  ruleId      String
-  version     Int
+  id           String    @id @default(uuid())
+  ruleId       String
+  version      Int
   /// Full configuration snapshot: { netRule, chargeComponents, residualThreshold,
   /// tolerance, identifierOrder, format, note }
-  snapshot    Json
+  snapshot     Json
   approvedById String?
   approvedAt   DateTime?
-  createdAt   DateTime @default(now())
+  createdAt    DateTime  @default(now())
 
   rule CourierSettlementFinanceRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
 
   @@unique([ruleId, version])
   @@index([ruleId])
 }
-

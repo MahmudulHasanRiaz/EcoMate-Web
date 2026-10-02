@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { Prisma, AttendanceStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { ShiftService } from '../hr-shifts/hr-shifts.service';
+import { deriveDayMetrics } from './attendance-derivation';
 import { dhakaDateParts } from '../common/utils/dhaka-time';
 import {
   dhakaToday,
@@ -42,7 +44,10 @@ const EMPLOYEE_SELECT = {
 
 @Injectable()
 export class HrAttendanceService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private shifts: ShiftService,
+  ) {}
 
   /**
    * Resolve a user-supplied local date string to the stored UTC-midnight
@@ -250,6 +255,33 @@ export class HrAttendanceService {
     };
   }
 
+  /**
+   * Recompute the shift-derived metrics for a day. Returns the metrics without
+   * writing, so read paths can use them too.
+   *
+   * A day with no shift resolves to all-null metrics — never zero — so a
+   * weekly-off or leave day can never accumulate phantom overtime.
+   */
+  private async metricsFor(
+    employeeId: string,
+    day: Date,
+    sessions: DayWithSessions['sessions'],
+    workedMinutes: number,
+    at: Date,
+  ) {
+    const shift = await this.shifts.resolveFor(employeeId, day);
+    return deriveDayMetrics({
+      day,
+      workedMinutes,
+      shift,
+      sessions: sessions.map((s) => ({
+        checkInAt: s.checkInAt,
+        checkOutAt: s.checkOutAt,
+      })),
+      at,
+    });
+  }
+
   private async materializeDay(
     tx: TransactionClient,
     day: DayWithSessions,
@@ -257,11 +289,47 @@ export class HrAttendanceService {
     note?: string,
   ) {
     const { workedMinutes, breakMinutes } = this.computeMinutes(day.sessions, at);
-    const data: Prisma.AttendanceDayUpdateInput = { workedMinutes, breakMinutes };
+    const metrics = await this.metricsFor(
+      day.employeeId,
+      day.date,
+      day.sessions,
+      workedMinutes,
+      at,
+    );
+
+    const data: Prisma.AttendanceDayUpdateInput = {
+      workedMinutes,
+      breakMinutes,
+      scheduledMinutes: metrics.scheduledMinutes,
+      overtimeMinutes: metrics.overtimeMinutes,
+      lateMinutes: metrics.lateMinutes,
+      earlyLeaveMinutes: metrics.earlyLeaveMinutes,
+      outsideShift: metrics.outsideShift,
+    };
     if (note !== undefined) data.note = note;
+
+    // LATE is derived, not hand-set — which finally makes the "Late" tile mean
+    // something. A manual adjustment for `status` must win, so only a day that
+    // is still at the auto-assigned PRESENT is promoted.
+    if (metrics.lateMinutes !== null && metrics.lateMinutes > 0) {
+      const manuallySet = await tx.attendanceAdjustment.findFirst({
+        where: { dayId: day.id, field: 'status' },
+        select: { id: true },
+      });
+      if (!manuallySet && (day.status === 'PRESENT' || day.status === 'LATE')) {
+        data.status = 'LATE';
+      }
+    }
+
     await tx.attendanceDay.update({ where: { id: day.id }, data });
     day.workedMinutes = workedMinutes;
     day.breakMinutes = breakMinutes;
+    day.scheduledMinutes = metrics.scheduledMinutes;
+    day.overtimeMinutes = metrics.overtimeMinutes;
+    day.lateMinutes = metrics.lateMinutes;
+    day.earlyLeaveMinutes = metrics.earlyLeaveMinutes;
+    day.outsideShift = metrics.outsideShift;
+    if (data.status) day.status = data.status as AttendanceStatus;
     return day;
   }
 
@@ -520,13 +588,40 @@ export class HrAttendanceService {
       where: { employeeId_date: { employeeId, date: d } },
       include: DAY_INCLUDE,
     });
+    const nowDate = new Date();
+
+    // Shift metrics are resolved for EVERY state, including before any punch.
+    // An employee who has not checked in yet should still see the hours they
+    // are scheduled for — that is what makes the widget useful at 08:00. With
+    // no sessions the derived metrics are all zero/null by definition.
+    const live = await this.metricsFor(
+      employeeId,
+      d,
+      day?.sessions ?? [],
+      day ? this.computeMinutes(day.sessions, nowDate).workedMinutes : 0,
+      nowDate,
+    );
+
     if (!day) {
-      return { state: 'none', workedMinutes: 0, breakMinutes: 0, missingCheckout: false, ...gate };
+      return {
+        state: 'none',
+        workedMinutes: 0,
+        breakMinutes: 0,
+        missingCheckout: false,
+        ...live,
+        ...gate,
+      };
     }
     if (day.sessions.length === 0) {
-      return { state: 'before_work', workedMinutes: 0, breakMinutes: 0, missingCheckout: false, ...gate };
+      return {
+        state: 'before_work',
+        workedMinutes: 0,
+        breakMinutes: 0,
+        missingCheckout: false,
+        ...live,
+        ...gate,
+      };
     }
-    const nowDate = new Date();
     const open = this.openSessionOf(day);
     if (open) {
       const { workedMinutes, breakMinutes } = this.computeMinutes(
@@ -539,6 +634,7 @@ export class HrAttendanceService {
         workedMinutes,
         breakMinutes,
         missingCheckout: true,
+        ...live,
         ...gate,
       };
     }
@@ -555,6 +651,16 @@ export class HrAttendanceService {
       workedMinutes: day.workedMinutes ?? workedMinutes,
       breakMinutes: day.breakMinutes ?? breakMinutes,
       missingCheckout: false,
+      // Stored metrics were written at check-out. If a shift has since been
+      // assigned for this weekday, recompute rather than reporting the stale
+      // nulls the day was checked out with.
+      ...(day.scheduledMinutes === null ? live : {
+        scheduledMinutes: day.scheduledMinutes,
+        overtimeMinutes: day.overtimeMinutes,
+        lateMinutes: day.lateMinutes,
+        earlyLeaveMinutes: day.earlyLeaveMinutes,
+        outsideShift: day.outsideShift,
+      }),
       ...gate,
     };
   }
@@ -789,11 +895,17 @@ export class HrAttendanceService {
 
   async dailyOverview(dateStr: string) {
     const date = this.resolveDate(dateStr);
-    const rows = await this.prisma.attendanceDay.groupBy({
-      by: ['status'],
-      where: { date },
-      _count: { _all: true },
-    });
+    const [rows, totals] = await Promise.all([
+      this.prisma.attendanceDay.groupBy({
+        by: ['status'],
+        where: { date },
+        _count: { _all: true },
+      }),
+      this.prisma.attendanceDay.aggregate({
+        where: { date },
+        _sum: { overtimeMinutes: true, lateMinutes: true },
+      }),
+    ]);
     const counts: Record<AttendanceStatus, number> = {
       PRESENT: 0,
       ABSENT: 0,
@@ -807,7 +919,15 @@ export class HrAttendanceService {
       counts[row.status] = row._count._all;
       total += row._count._all;
     }
-    return { date, total, counts };
+    // Days with no shift contribute NULL, which sums to zero — correct: there
+    // was no shift, so there was no overtime.
+    return {
+      date,
+      total,
+      counts,
+      overtimeMinutes: totals._sum.overtimeMinutes ?? 0,
+      lateMinutes: totals._sum.lateMinutes ?? 0,
+    };
   }
 
   async history(employeeId: string, from?: string, to?: string) {
@@ -907,6 +1027,13 @@ export class HrAttendanceService {
     let missingCheckout = 0;
     let workedMinutes = 0;
     let breakMinutes = 0;
+    let overtimeMinutes = 0;
+    let scheduledMinutes = 0;
+    let daysWithOvertime = 0;
+    let daysLate = 0;
+    let totalLateMinutes = 0;
+    let earlyLeaveMinutes = 0;
+    let daysOutsideShift = 0;
     const rows: {
       date: string;
       status: string | null;
@@ -916,6 +1043,11 @@ export class HrAttendanceService {
       workedMinutes: number;
       breakMinutes: number;
       missingCheckout: boolean;
+      scheduledMinutes: number | null;
+      overtimeMinutes: number | null;
+      lateMinutes: number | null;
+      earlyLeaveMinutes: number | null;
+      outsideShift: boolean;
     }[] = [];
     for (let t = first; t <= last; t += 86400000) {
       const key = new Date(t).toISOString().slice(0, 10);
@@ -930,6 +1062,17 @@ export class HrAttendanceService {
       if (isMissing) missingCheckout += 1;
       workedMinutes += raw?.workedMinutes ?? 0;
       breakMinutes += raw?.breakMinutes ?? 0;
+      // Shift metrics are NULL on days with no shift — those contribute nothing
+      // to the totals rather than dragging them to zero.
+      overtimeMinutes += raw?.overtimeMinutes ?? 0;
+      scheduledMinutes += raw?.scheduledMinutes ?? 0;
+      earlyLeaveMinutes += raw?.earlyLeaveMinutes ?? 0;
+      if ((raw?.overtimeMinutes ?? 0) > 0) daysWithOvertime += 1;
+      if ((raw?.lateMinutes ?? 0) > 0) {
+        daysLate += 1;
+        totalLateMinutes += raw!.lateMinutes ?? 0;
+      }
+      if (raw?.outsideShift) daysOutsideShift += 1;
       rows.push({
         date: key,
         status: raw?.status ?? null,
@@ -939,6 +1082,11 @@ export class HrAttendanceService {
         workedMinutes: raw?.workedMinutes ?? 0,
         breakMinutes: raw?.breakMinutes ?? 0,
         missingCheckout: isMissing,
+        scheduledMinutes: raw?.scheduledMinutes ?? null,
+        overtimeMinutes: raw?.overtimeMinutes ?? null,
+        lateMinutes: raw?.lateMinutes ?? null,
+        earlyLeaveMinutes: raw?.earlyLeaveMinutes ?? null,
+        outsideShift: raw?.outsideShift ?? false,
       });
     }
 
@@ -956,6 +1104,16 @@ export class HrAttendanceService {
       missingCheckout,
       workedMinutes,
       breakMinutes,
+      // Shift/overtime rollup. `hasShiftData` distinguishes "zero overtime
+      // because none was worked" from "unknown — no shift is assigned at all".
+      hasShiftData: scheduledMinutes > 0,
+      scheduledMinutes,
+      overtimeMinutes,
+      daysWithOvertime,
+      daysLate,
+      lateMinutes: totalLateMinutes,
+      earlyLeaveMinutes,
+      daysOutsideShift,
       days: rows,
     };
   }

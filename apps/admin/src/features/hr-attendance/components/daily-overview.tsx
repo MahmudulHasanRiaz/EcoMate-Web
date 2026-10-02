@@ -6,6 +6,7 @@ import { useDailyOverviewQuery } from '../hooks'
 import {
   ATTENDANCE_STATUSES,
   ATTENDANCE_STATUS_LABELS,
+  formatDuration,
   toDateKey,
 } from '../api'
 
@@ -25,9 +26,9 @@ export function DailyOverview({ date }: { date: Date }) {
   const counts = data?.counts ?? null
 
   return (
-    <div className='grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7'>
+    <div className='grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-4 xl:grid-cols-8'>
       {isLoading || !counts ? (
-        Array.from({ length: 7 }).map((_, i) => (
+        Array.from({ length: 8 }).map((_, i) => (
           <Card key={i}>
             <CardContent className='p-3'>
               <Skeleton className='h-3 w-16 mb-2' />
@@ -60,6 +61,18 @@ export function DailyOverview({ date }: { date: Date }) {
               </CardContent>
             </Card>
           ))}
+          {/* Overtime is a duration, not a headcount, so it gets its own tile
+              rather than being squeezed into the status grid. */}
+          <Card>
+            <CardContent className='p-3 bg-[var(--color-warning-soft)]'>
+              <p className='text-xs font-medium text-[var(--color-warning-ink)]/80'>
+                Overtime
+              </p>
+              <p className='mt-0.5 text-2xl font-bold tabular-nums text-[var(--color-warning-ink)]'>
+                {formatDuration(data?.overtimeMinutes ?? 0)}
+              </p>
+            </CardContent>
+          </Card>
         </>
       )}
     </div>

@@ -5,7 +5,7 @@ import {
   Building2, ShoppingCart, Receipt, Bell,
   Megaphone, UserPlus, UserCog, DollarSign, BookOpen, Store, ShieldAlert,
   HardDrive, Target, Plug, Wallet, BarChart3, CreditCard, CalendarDays,
-  CalendarCheck, LifeBuoy, ScanLine, KeyRound,
+  CalendarCheck, LifeBuoy, ScanLine, KeyRound, Clock,
 } from 'lucide-react'
 import { type SidebarData, type HueName, type NavItem } from '../types'
 
@@ -150,6 +150,7 @@ export const sidebarData: SidebarData = {
         // ── Time ──
         inSection({ title: 'Leave', url: '/hr/leave', icon: CalendarDays, feature: 'admin_hr', permissions: ['view_hr'] }, 'Time', 'cyan'),
         inSection({ title: 'Attendance', url: '/hr/attendance', icon: CalendarCheck, feature: 'admin_hr', permissions: ['manage_attendance'] }, 'Time', 'cyan'),
+        inSection({ title: 'Shifts', url: '/hr/shifts', icon: Clock, feature: 'admin_hr', permissions: ['view_hr'] }, 'Time', 'cyan'),
         // ── System ──
         inSection({ title: 'Settings', url: '/hr/settings', icon: Settings, feature: 'admin_hr', permissions: ['manage_hr_settings'] }, 'System', 'neutral'),
         inSection({ title: 'Help', url: '/hr/help', icon: LifeBuoy, feature: 'admin_hr', permissions: ['view_hr'] }, 'System', 'neutral'),

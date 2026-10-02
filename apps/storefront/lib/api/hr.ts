@@ -254,6 +254,12 @@ export interface HrDayState {
   /** False when the system mode or employee method blocks app attendance. */
   appAllowed?: boolean;
   appBlockedReason?: string;
+  /** Shift-derived. NULL = no shift assigned for that day, which is NOT zero. */
+  scheduledMinutes?: number | null;
+  overtimeMinutes?: number | null;
+  lateMinutes?: number | null;
+  earlyLeaveMinutes?: number | null;
+  outsideShift?: boolean;
 }
 
 export interface HrAttendanceDay {
@@ -263,6 +269,10 @@ export interface HrAttendanceDay {
   attendanceMethod?: string | null;
   workedMinutes?: number | null;
   breakMinutes?: number | null;
+  scheduledMinutes?: number | null;
+  overtimeMinutes?: number | null;
+  lateMinutes?: number | null;
+  outsideShift?: boolean;
   note?: string | null;
   sessions?: Array<{ checkInAt: string; checkOutAt: string | null }>;
   [key: string]: any;

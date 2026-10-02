@@ -1326,6 +1326,8 @@ function AttendanceTab() {
                     <th className="py-2 pr-4 font-semibold">Date</th>
                     <th className="py-2 pr-4 font-semibold">Status</th>
                     <th className="py-2 pr-4 font-semibold text-right">Worked</th>
+                    <th className="py-2 pr-4 font-semibold text-right">Shift</th>
+                    <th className="py-2 pr-4 font-semibold text-right">OT</th>
                     <th className="py-2 pr-4 font-semibold text-right">Break</th>
                     <th className="py-2 pr-4 font-semibold">Method</th>
                   </tr>
@@ -1339,6 +1341,33 @@ function AttendanceTab() {
                       </td>
                       <td className="py-3 pr-4 text-right text-gray-600 tabular-nums">
                         {fmtDuration(r.workedMinutes)}
+                      </td>
+                      <td className="py-3 pr-4 text-right text-gray-600 tabular-nums">
+                        {fmtDuration(r.scheduledMinutes)}
+                      </td>
+                      {/* Overtime is the employee's own record — they should see
+                          the same number the admin does. null (no shift assigned)
+                          renders as "—" rather than a misleading 0m. */}
+                      <td className="py-3 pr-4 text-right tabular-nums">
+                        <span
+                          className={
+                            (r.overtimeMinutes ?? 0) > 0
+                              ? "font-semibold text-amber-700"
+                              : "text-gray-600"
+                          }
+                        >
+                          {fmtDuration(r.overtimeMinutes)}
+                        </span>
+                        {r.outsideShift && (
+                          <span className="ml-1.5 text-[10px] text-blue-600">
+                            Outside
+                          </span>
+                        )}
+                        {(r.lateMinutes ?? 0) > 0 && (
+                          <div className="text-[10px] text-gray-500">
+                            {fmtDuration(r.lateMinutes)} late
+                          </div>
+                        )}
                       </td>
                       <td className="py-3 pr-4 text-right text-gray-600 tabular-nums">
                         {fmtDuration(r.breakMinutes)}

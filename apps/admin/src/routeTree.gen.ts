@@ -31,6 +31,7 @@ import { Route as AuthenticatedHrLeaveRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedHrOverviewRouteImport } from './routes/_authenticated/hr/overview'
 import { Route as AuthenticatedHrPresetsRouteImport } from './routes/_authenticated/hr/presets'
 import { Route as AuthenticatedHrSettingsRouteImport } from './routes/_authenticated/hr/settings'
+import { Route as AuthenticatedHrShiftsRouteImport } from './routes/_authenticated/hr/shifts'
 import { Route as AuthenticatedMonIndexRouteImport } from './routes/_authenticated/mon/index'
 import { Route as AuthenticatedMonBlockingSettingsRouteImport } from './routes/_authenticated/mon/blocking-settings'
 import { Route as AuthenticatedMonOverviewRouteImport } from './routes/_authenticated/mon/overview'
@@ -288,6 +289,11 @@ const AuthenticatedHrPresetsRoute = AuthenticatedHrPresetsRouteImport.update({
 const AuthenticatedHrSettingsRoute = AuthenticatedHrSettingsRouteImport.update({
   id: '/hr/settings',
   path: '/hr/settings',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedHrShiftsRoute = AuthenticatedHrShiftsRouteImport.update({
+  id: '/hr/shifts',
+  path: '/hr/shifts',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedMonIndexRoute = AuthenticatedMonIndexRouteImport.update({
@@ -1186,6 +1192,7 @@ export interface FileRoutesByFullPath {
   '/hr/overview': typeof AuthenticatedHrOverviewRoute
   '/hr/presets': typeof AuthenticatedHrPresetsRoute
   '/hr/settings': typeof AuthenticatedHrSettingsRoute
+  '/hr/shifts': typeof AuthenticatedHrShiftsRoute
   '/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
   '/mon/overview': typeof AuthenticatedMonOverviewRoute
   '/op/my-profile': typeof AuthenticatedOpMyProfileRoute
@@ -1355,6 +1362,7 @@ export interface FileRoutesByTo {
   '/hr/overview': typeof AuthenticatedHrOverviewRoute
   '/hr/presets': typeof AuthenticatedHrPresetsRoute
   '/hr/settings': typeof AuthenticatedHrSettingsRoute
+  '/hr/shifts': typeof AuthenticatedHrShiftsRoute
   '/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
   '/mon/overview': typeof AuthenticatedMonOverviewRoute
   '/op/my-profile': typeof AuthenticatedOpMyProfileRoute
@@ -1526,6 +1534,7 @@ export interface FileRoutesById {
   '/_authenticated/hr/overview': typeof AuthenticatedHrOverviewRoute
   '/_authenticated/hr/presets': typeof AuthenticatedHrPresetsRoute
   '/_authenticated/hr/settings': typeof AuthenticatedHrSettingsRoute
+  '/_authenticated/hr/shifts': typeof AuthenticatedHrShiftsRoute
   '/_authenticated/mon/blocking-settings': typeof AuthenticatedMonBlockingSettingsRoute
   '/_authenticated/mon/overview': typeof AuthenticatedMonOverviewRoute
   '/_authenticated/op/my-profile': typeof AuthenticatedOpMyProfileRoute
@@ -1697,6 +1706,7 @@ export interface FileRouteTypes {
     | '/hr/overview'
     | '/hr/presets'
     | '/hr/settings'
+    | '/hr/shifts'
     | '/mon/blocking-settings'
     | '/mon/overview'
     | '/op/my-profile'
@@ -1866,6 +1876,7 @@ export interface FileRouteTypes {
     | '/hr/overview'
     | '/hr/presets'
     | '/hr/settings'
+    | '/hr/shifts'
     | '/mon/blocking-settings'
     | '/mon/overview'
     | '/op/my-profile'
@@ -2036,6 +2047,7 @@ export interface FileRouteTypes {
     | '/_authenticated/hr/overview'
     | '/_authenticated/hr/presets'
     | '/_authenticated/hr/settings'
+    | '/_authenticated/hr/shifts'
     | '/_authenticated/mon/blocking-settings'
     | '/_authenticated/mon/overview'
     | '/_authenticated/op/my-profile'
@@ -2351,6 +2363,13 @@ declare module '@tanstack/react-router' {
       path: '/hr/settings'
       fullPath: '/hr/settings'
       preLoaderRoute: typeof AuthenticatedHrSettingsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/hr/shifts': {
+      id: '/_authenticated/hr/shifts'
+      path: '/hr/shifts'
+      fullPath: '/hr/shifts'
+      preLoaderRoute: typeof AuthenticatedHrShiftsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/mon/': {
@@ -3511,6 +3530,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedHrOverviewRoute: typeof AuthenticatedHrOverviewRoute
   AuthenticatedHrPresetsRoute: typeof AuthenticatedHrPresetsRoute
   AuthenticatedHrSettingsRoute: typeof AuthenticatedHrSettingsRoute
+  AuthenticatedHrShiftsRoute: typeof AuthenticatedHrShiftsRoute
   AuthenticatedMonBlockingSettingsRoute: typeof AuthenticatedMonBlockingSettingsRoute
   AuthenticatedMonOverviewRoute: typeof AuthenticatedMonOverviewRoute
   AuthenticatedOpMyProfileRoute: typeof AuthenticatedOpMyProfileRoute
@@ -3646,6 +3666,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedHrOverviewRoute: AuthenticatedHrOverviewRoute,
   AuthenticatedHrPresetsRoute: AuthenticatedHrPresetsRoute,
   AuthenticatedHrSettingsRoute: AuthenticatedHrSettingsRoute,
+  AuthenticatedHrShiftsRoute: AuthenticatedHrShiftsRoute,
   AuthenticatedMonBlockingSettingsRoute: AuthenticatedMonBlockingSettingsRoute,
   AuthenticatedMonOverviewRoute: AuthenticatedMonOverviewRoute,
   AuthenticatedOpMyProfileRoute: AuthenticatedOpMyProfileRoute,

@@ -5,6 +5,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { HrAttendanceService } from '../hr-attendance.service';
+import { ShiftService } from '../../hr-shifts/hr-shifts.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
 type BreakRow = {
@@ -186,6 +187,9 @@ describe('HrAttendanceService', () => {
       findMany: jest.fn(),
       count: jest.fn(),
       groupBy: jest.fn(),
+      aggregate: jest.fn().mockResolvedValue({
+        _sum: { overtimeMinutes: null, lateMinutes: null },
+      }),
     },
     attendanceSession: { findUnique: jest.fn() },
     attendanceBreak: { findUnique: jest.fn() },
@@ -195,11 +199,18 @@ describe('HrAttendanceService', () => {
     $transaction: jest.fn(),
   };
 
+  // Shift resolution is exercised in hr-shifts' own suite. Here it defaults to
+  // "no shift assigned", which is the same as every day before shifts existed.
+  const shiftsMock = {
+    resolveFor: jest.fn().mockResolvedValue(null),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         HrAttendanceService,
         { provide: PrismaService, useValue: prismaMock },
+        { provide: ShiftService, useValue: shiftsMock },
       ],
     }).compile();
     service = module.get<HrAttendanceService>(HrAttendanceService);
@@ -979,6 +990,26 @@ describe('HrAttendanceService', () => {
           ON_LEAVE: 0,
           WEEKLY_OFF: 0,
         },
+        // Days with no shift aggregate to zero — there was no shift, so there
+        // was no overtime.
+        overtimeMinutes: 0,
+        lateMinutes: 0,
+      });
+    });
+
+    it('reports the summed overtime and late minutes for the day', async () => {
+      prismaMock.attendanceDay.groupBy.mockResolvedValue([
+        { status: 'PRESENT', _count: { _all: 2 } },
+      ]);
+      prismaMock.attendanceDay.aggregate.mockResolvedValue({
+        _sum: { overtimeMinutes: 135, lateMinutes: 25 },
+      });
+      const res = await service.dailyOverview('2026-08-28');
+      expect(res.overtimeMinutes).toBe(135);
+      expect(res.lateMinutes).toBe(25);
+      expect(prismaMock.attendanceDay.aggregate).toHaveBeenCalledWith({
+        where: { date: new Date('2026-08-28T00:00:00.000Z') },
+        _sum: { overtimeMinutes: true, lateMinutes: true },
       });
     });
   });

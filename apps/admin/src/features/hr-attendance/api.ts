@@ -93,6 +93,14 @@ export interface AttendanceDayRow {
   attendanceMethod: AttendanceMethod | null
   workedMinutes: number | null
   breakMinutes: number | null
+  // Shift-derived. NULL = no shift was in effect for that day — which is NOT
+  // zero. Weekly-off, leave and pre-shift days all read null.
+  scheduledMinutes?: number | null
+  overtimeMinutes?: number | null
+  lateMinutes?: number | null
+  earlyLeaveMinutes?: number | null
+  /** Work happened entirely outside the assigned shift window. */
+  outsideShift?: boolean
   note: string | null
   createdAt: string
   updatedAt: string
@@ -119,6 +127,9 @@ export interface DailyOverview {
   date: string
   total: number
   counts: Record<AttendanceStatus, number>
+  /** Total overtime minutes across the day (0 when no shift is assigned). */
+  overtimeMinutes?: number
+  lateMinutes?: number
 }
 
 export interface AttendanceAdjustment {

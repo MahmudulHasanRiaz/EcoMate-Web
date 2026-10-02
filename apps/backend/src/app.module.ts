@@ -78,6 +78,7 @@ import { CampaignsModule } from './campaigns/campaigns.module';
 import { AccessPresetsModule } from './access-presets/access-presets.module';
 import { DesignationsModule } from './designations/designations.module';
 import { HrScheduleModule } from './hr-schedule/hr-schedule.module';
+import { HrShiftsModule } from './hr-shifts/hr-shifts.module';
 import { HrLedgersModule } from './hr-ledgers/hr-ledgers.module';
 import { HrLeaveModule } from './hr-leave/hr-leave.module';
 import { HrPaymentsModule } from './hr-payments/hr-payments.module';
@@ -177,6 +178,7 @@ import { SecurityDashboardModule } from './security-dashboard/security-dashboard
     PayrollModule,
     HrModule,
     HrScheduleModule,
+    HrShiftsModule,
     HrLedgersModule,
     HrLeaveModule,
     HrPaymentsModule,
