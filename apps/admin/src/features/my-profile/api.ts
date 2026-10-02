@@ -1,4 +1,5 @@
 import { apiClient } from '@/lib/api-client'
+import type { PayslipResponse } from '@/features/payroll/api'
 
 export type LeaveStatus = 'pending' | 'approved' | 'rejected' | 'cancelled'
 export type EmployeeStatus = 'active' | 'probation' | 'suspended' | 'resigned' | 'terminated'
@@ -307,6 +308,18 @@ export const myProfileApi = {
     apiClient.get<MyPayslipListResponse>('/hr/my/payslips', { params: { page, perPage } }),
   getPayslipPayments: (payslipId: string) =>
     apiClient.get<any[]>(`/hr/my/payslips/${payslipId}/payments`),
+  /**
+   * Full payslip statement for self-service.
+   *
+   * Must not be the payroll admin endpoint (GET /payroll/payslips/:id): that
+   * one is restricted to superadmin/admin/manager, so the payslip drill-down
+   * returned 403 for a plain employee. This route is scoped server-side to the
+   * caller's own employee record.
+   */
+  getPayslip: (payslipId: string) =>
+    apiClient
+      .get<PayslipResponse>(`/hr/my/payslips/${payslipId}`)
+      .then((r) => r.data),
   getCommissions: (page = 1, perPage = 20) =>
     apiClient.get<MyCommissionListResponse>('/hr/my/commissions', { params: { page, perPage } }),
   getEarnings: (page = 1, perPage = 20) =>

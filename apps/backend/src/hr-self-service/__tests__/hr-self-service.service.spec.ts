@@ -554,4 +554,56 @@ describe('HrSelfServiceService', () => {
       expect(perf.leaves.totalRemaining).toBe(0);
     });
   });
+
+
+  /**
+   * Ownership enforcement for payslip reads.
+   *
+   * The admin self-service page opened payslips through GET
+   * /payroll/payslips/:id, which is restricted to superadmin/admin/manager, so
+   * a plain `employee` got a 403 the moment they opened their own payslip. The
+   * replacement route must work for them AND must never become a way to read
+   * someone else's payslip.
+   */
+  describe('payslip self-service access', () => {
+    it('returns the caller\'s own payslip', async () => {
+      const payslip = { id: 'ps-1', employeeId: RESOLVED_EMP.id, periodKey: '2026-09' };
+      payrollMock.findPayslip.mockResolvedValue(payslip);
+
+      await expect(service.getPayslip(SESSION_USER, 'ps-1')).resolves.toBe(payslip);
+    });
+
+    it('refuses a payslip belonging to another employee', async () => {
+      payrollMock.findPayslip.mockResolvedValue({ id: 'ps-2', employeeId: 'emp-other' });
+
+      await expect(service.getPayslip(SESSION_USER, 'ps-2')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    // 404 rather than 403: otherwise a user could probe which payslip ids
+    // exist just by comparing error codes.
+    it('does not reveal that another employee\'s payslip exists', async () => {
+      payrollMock.findPayslip.mockResolvedValue({ id: 'ps-2', employeeId: 'emp-other' });
+      const foreign = await service
+        .getPayslip(SESSION_USER, 'ps-2')
+        .catch((e: Error) => e.message);
+
+      payrollMock.findPayslip.mockRejectedValue(new NotFoundException('Payslip not found'));
+      const missing = await service
+        .getPayslip(SESSION_USER, 'does-not-exist')
+        .catch((e: Error) => e.message);
+
+      expect(foreign).toBe(missing);
+    });
+
+    it('still guards the payments route', async () => {
+      payrollMock.findPayslip.mockResolvedValue({ id: 'ps-2', employeeId: 'emp-other' });
+
+      await expect(
+        service.getPayslipPayments(SESSION_USER, 'ps-2'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(payrollMock.getPayments).not.toHaveBeenCalled();
+    });
+  });
 });

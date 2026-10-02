@@ -3,7 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Wallet, Receipt, Award, CircleDollarSign, Loader2, ArrowUpRight } from 'lucide-react'
 import {
@@ -12,7 +11,7 @@ import {
   useMyCommissionsQuery,
   useMyEarningsQuery,
 } from '../hooks'
-import { PayslipDetail } from '@/features/payroll/components/payslip-detail'
+import { MyPayslipDialog } from './my-payslip-detail'
 import { PAYSLIP_STATUS_BADGE } from '@/features/payroll/components/payslip-status-badge'
 import type { MyProfileResponse } from '../api'
 
@@ -309,20 +308,19 @@ export function CompensationTab({ profile }: { profile?: MyProfileResponse }) {
         </Card>
       </div>
 
-      {/* Payslip View Dialog */}
-      <Dialog
+      {/* Payslip View Dialog.
+          Uses the self-service dialog, not the payroll admin one: that fetched
+          GET /payroll/payslips/:id, which is restricted to
+          superadmin/admin/manager, so a plain employee got a 403 the moment
+          they opened their own payslip. It also offered Review/Approve buttons,
+          which an employee must never see on their own payslip. */}
+      <MyPayslipDialog
         open={Boolean(selectedPayslipId)}
         onOpenChange={(open) => {
           if (!open) setSelectedPayslipId(null)
         }}
-      >
-        <DialogContent className="sm:max-w-[620px]">
-          <DialogHeader>
-            <DialogTitle>Payslip Statement</DialogTitle>
-          </DialogHeader>
-          {selectedPayslipId && <PayslipDetail payslipId={selectedPayslipId} />}
-        </DialogContent>
-      </Dialog>
+        payslipId={selectedPayslipId}
+      />
     </div>
   )
 }

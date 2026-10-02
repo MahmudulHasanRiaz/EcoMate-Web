@@ -67,6 +67,21 @@ export class HrSelfServiceController {
     return this.service.getPayslipPayments(this.assertEmployee(user), id);
   }
 
+  /**
+   * Full payslip statement for the employee themself.
+   *
+   * Deliberately separate from GET /payroll/payslips/:id, which is restricted to
+   * superadmin/admin/manager. The admin self-service page needs this so a plain
+   * employee can open their own payslip.
+   */
+  @Get('payslips/:id')
+  getPayslip(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+  ) {
+    return this.service.getPayslip(this.assertEmployee(user), id);
+  }
+
   @Get('commissions')
   getCommissions(
     @CurrentUser() user: any,

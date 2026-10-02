@@ -345,6 +345,30 @@ export class HrSelfServiceService {
     return this.payroll.getPayments(payslipId);
   }
 
+  /**
+   * Full payslip statement for self-service.
+   *
+   * The admin "View payslip" dialog needs the payslip plus its line items, but
+   * it was pointed at GET /payroll/payslips/:id, which is gated to
+   * superadmin/admin/manager. A plain `employee` clicking View therefore got a
+   * 403 — the list and net-pay figures rendered (they use /hr/my/payslips) but
+   * the drill-down failed. getPayslipPayments could not serve this either: it
+   * returns only payrollPayment rows, with none of the payslip's earnings and
+   * deduction lines.
+   *
+   * Ownership is checked here so a user can only ever read their own payslip.
+   */
+  async getPayslip(user: SelfUser, payslipId: string) {
+    const employee = await this.resolveEmployee(user);
+    const payslip = await this.payroll.findPayslip(payslipId);
+    if (payslip.employeeId !== employee.id) {
+      // 404 rather than 403: a payslip that exists but belongs to someone else
+      // must not be distinguishable from one that does not exist.
+      throw new NotFoundException('Payslip not found');
+    }
+    return payslip;
+  }
+
   async getCommissions(user: SelfUser, page = 1, perPage = 20) {
     const employee = await this.resolveEmployee(user);
     return this.commissions.listEarnings({ employeeId: employee.id }, page, perPage);

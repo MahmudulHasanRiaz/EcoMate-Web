@@ -39,6 +39,7 @@ const PAGES = [
   { title: 'Attendance', to: '/hr/attendance', icon: CalendarCheck, note: 'Today, Adjustments, Devices, Settings' },
   { title: 'Shifts', to: '/hr/shifts', icon: Clock, note: 'Shift Preset, Rotation, Overtime' },
   { title: 'Settings', to: '/hr/settings', icon: Settings, note: 'উপস্থিতি মোড (APP / MACHINE / BOTH)' },
+  { title: 'My Employee Profile', to: '/op/my-profile', icon: UserCog, note: 'নিজের তথ্য, ছুটি ও পেসলিপ — Storefront-এর দরকার নেই' },
 ] as const
 
 const SECTIONS: HelpSection[] = [
@@ -175,7 +176,7 @@ const SECTIONS: HelpSection[] = [
     steps: [
       '১. Employees → কর্মচারীর Compensation ট্যাবে Salary Structure সেট করুন।',
       '২. Payroll পেজ থেকে মাস নির্বাচন করে Run Payroll চাপুন।',
-      '৩. Payslips অটো তৈরি হয় — employee নিজে storefront-এর My HR থেকে দেখতে পায়।',
+      '৩. Payslips অটো তৈরি হয় — কর্মী নিজের My Employee Profile-এর Salary & Income ট্যাবে দেখতে পায়।',
       '৪. ভুল বেতন দেখালে সংশোধন করে আবার run করুন; history সংরক্ষিত থাকে।',
       '৫. Payroll দেখা ও চালানোর জন্য আলাদা permission লাগে; শুধু HR দেখলেই বেতন দেখা যায় না।',
     ],
@@ -197,7 +198,7 @@ const SECTIONS: HelpSection[] = [
     title: 'ছুটি (Leave)',
     steps: [
       '১. Leave পেজে তিনটি ট্যাব — Leave Types (প্রতি বছরে কত দিন), Requests ও Balances।',
-      '২. Employee storefront-এর My HR → Leave থেকে আবেদন করে।',
+      '২. কর্মী নিজে Admin অ্যাপের My Employee Profile → Leaves & Applications থেকে আবেদন করে (Storefront থেকেও করা যায়)।',
       '৩. Admin Leave Requests ট্যাবে Approve বা Reject করুন।',
       '৪. Balance অটো আপডেট হয় — ছুটি কাটলে পে-রোলে হিসাব হবে।',
       '৫. কর্মীর প্রোফাইলের Leave ট্যাবে balance, history ও আসন্ন ছুটি দেখা যায়।',
@@ -215,14 +216,31 @@ const SECTIONS: HelpSection[] = [
     ],
   },
   {
-    id: 'my-hr',
-    title: 'My HR (কর্মচারী সেলফ-সার্ভিস)',
+    id: 'my-profile',
+    title: 'নিজের তথ্য দেখা ও ছুটি আবেদন (My Employee Profile)',
     steps: [
-      '১. Storefront-এ লগ ইন করে Account → My HR খুলুন।',
-      '২. Profile, Salary, Payslips, Leave ও Attendance নিজে দেখুন।',
-      '৩. Attendance ট্যাব থেকে নিজের Check In / Break / Check Out করুন (নিজের মোড APP হলে)।',
-      '৪. Leave আবেদন, payslip ডাউনলোড — সব এক জায়গায়।',
-      '৫. ব্লক করা নম্বর (blocked phone) দিয়ে checkout করলে ব্যবস্থা নিতে checkout popup আসবে — অন্য নম্বর ব্যবহার করুন।',
+      '১. সবকিছু এই Admin অ্যাপেই করা যায় — Storefront-এ যাওয়ার দরকার নেই।',
+      '২. নিচের ডান-পাশের চিত্রে (avatar) → "My Employee Profile", অথবা উপরের ঘড়ি-উইজেটের popover-এ "My Attendance & Leaves" লিংকে ক্লিক করুন।',
+      '৩. পেজে ৫টি ট্যাব — Performance Overview, Leaves & Applications, Attendance & Log, Salary & Income ও Profile & Details।',
+      '৪. Attendance ট্যাবে আজকের লাইভ সময়, Check In / Break / Check Out এবং পুরো উপস্থিতির ইতিহাস — সব এক জায়গায়।',
+      '৫. Leaves ট্যাবে ব্যালেন্স দেখা ও নতুন ছুটি আবেদন করা যায় (আবেদনের সময় ব্যালেন্স যাচাই করা হয়)।',
+      '৬. Salary & Income ট্যাবে নিজের বেতন কাঠামো, পেসলিপ ও কমিশন দেখা যায়।',
+      '৭. Profile & Details ট্যাবে NID, জন্মদিন, ঠিকানা, ব্যাংক অ্যাকাউন্ট ও জরুরি যোগাযোগ — Storefront-এ এগুলো নেই।',
+      '৮. নিজের ঠিকানা বা ফোন বদলাতে চাইলে Settings → Personal থেকে করুন (পাসওয়ার্ডও এখানেই বদলানো যায়)।',
+      '৯. Storefront-এর Account → My HR-এর বিকল্প হিসেবে কাজ করে, তবে সেখানে Deductions ও Schedule আলাদা ট্যাবে আছে।',
+    ],
+  },
+  {
+    id: 'my-attendance-widget',
+    title: 'উপস্থিতি উইজেট — কোথায় পাবেন (Attendance Widget)',
+    steps: [
+      '১. Admin অ্যাপের উপরের হেডারে ঘড়ি উইজেটটি পুরো অ্যাপে কাজ করে — HR প্যানেলে থাকার দরকার নেই।',
+      '২. উইজেটে লাইভ সময় ও আপনার বর্তমান state (Working / On Break / Checked Out) দেখা যায়।',
+      '৩. উইজেটের popover থেকেই Check In / Break / Check Out করা যায়।',
+      '৪. চাইলে popover-এর নিচের লিংকে পুরো My Employee Profile পেজও খোলা যায়।',
+      '৫. নিজের attendance মোড MACHINE হলে উইজেট লুকিয়ে থাকে — কারণ অ্যাপে করার কিছু নেই। BOTH মোডে মোড APP হলেই দেখাবে।',
+      '৬. কোনো permission না থাকলেও উইজেট কাজ করে, কারণ এটি কর্মীর নিজের জন্য।',
+      '৭. Blocked phone দিয়ে checkout করলে popup আসে — অন্য নম্বর ব্যবহার করুন।',
     ],
   },
   {
