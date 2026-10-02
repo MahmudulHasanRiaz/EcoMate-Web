@@ -25,6 +25,7 @@ describe('ShiftService', () => {
     prisma = {
       shiftPreset: {
         findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue(null),
         findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue(preset()),
         update: jest.fn().mockResolvedValue(preset()),
@@ -294,6 +295,77 @@ describe('ShiftService', () => {
       const day = new Date('2026-08-24T00:00:00.000Z');
       await service.resolveFor('emp-1', day);
       expect(resolveWhere().where.OR[1].effectiveTo.gt.getTime()).toBe(day.getTime());
+    });
+  });
+
+  describe('findOrCreateCustomPreset', () => {
+    it('returns existing preset when times match an active one', async () => {
+      const match = preset({ id: 'sp-matched', startTime: '10:00', endTime: '18:00' });
+      prisma.shiftPreset.findFirst.mockResolvedValue(match);
+
+      const res = await service.findOrCreateCustomPreset({
+        startTime: '10:00',
+        endTime: '18:00',
+      });
+      expect(res.id).toBe('sp-matched');
+      expect(prisma.shiftPreset.create).not.toHaveBeenCalled();
+    });
+
+    it('creates a new custom preset when no match exists', async () => {
+      prisma.shiftPreset.findFirst.mockResolvedValue(null);
+      prisma.shiftPreset.findUnique.mockResolvedValue(null);
+      prisma.shiftPreset.create.mockResolvedValue(
+        preset({ id: 'sp-custom', name: 'Custom (11:00–19:00)', code: 'CUSTOM_1100_1900' }),
+      );
+
+      const res = await service.findOrCreateCustomPreset({
+        startTime: '11:00',
+        endTime: '19:00',
+        graceMinutes: 15,
+        breakMinutes: 45,
+      });
+
+      expect(res.id).toBe('sp-custom');
+      expect(prisma.shiftPreset.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            startTime: '11:00',
+            endTime: '19:00',
+            graceMinutes: 15,
+            breakMinutes: 45,
+            standardMinutes: 435, // 8 hours (480) - 45 = 435
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('bulkSetRotation & quickAssignPreset', () => {
+    beforeEach(() => {
+      prisma.$transaction.mockImplementation((fn: any) => fn(prisma));
+    });
+
+    it('applies assignments across multiple weekdays atomically', async () => {
+      prisma.shiftAssignment.findFirst.mockResolvedValue(null);
+      prisma.shiftPreset.findUnique.mockResolvedValue(preset());
+
+      const res = await service.bulkSetRotation('emp-1', [
+        { dayOfWeek: 0, shiftPresetId: 'sp-1' },
+        { dayOfWeek: 1, shiftPresetId: 'sp-1' },
+        { dayOfWeek: 2, shiftPresetId: null }, // clear
+      ]);
+
+      expect(res.total).toBe(3);
+      expect(prisma.shiftAssignment.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('quickAssignPreset targets workdays (Sun-Thu by default)', async () => {
+      prisma.shiftAssignment.findFirst.mockResolvedValue(null);
+      prisma.shiftPreset.findUnique.mockResolvedValue(preset());
+
+      const res = await service.quickAssignPreset('emp-1', 'sp-1');
+      expect(res.total).toBe(5);
+      expect(prisma.shiftAssignment.create).toHaveBeenCalledTimes(5);
     });
   });
 });

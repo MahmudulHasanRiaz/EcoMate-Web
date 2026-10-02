@@ -11,7 +11,11 @@ import {
   parseWallClock,
   type DerivableShift,
 } from '../hr-attendance/attendance-derivation';
-import type { CreateShiftPresetDto, UpdateShiftPresetDto } from './dto/shift.dto';
+import type {
+  CreateShiftPresetDto,
+  UpdateShiftPresetDto,
+  FindOrCreateCustomPresetDto,
+} from './dto/shift.dto';
 
 const DAY_MS = 86400000;
 
@@ -154,6 +158,56 @@ export class ShiftService {
     return this.prisma.shiftPreset.update({
       where: { id },
       data: { isActive: false },
+    });
+  }
+
+  /**
+   * Find an existing active preset with the identical shift hours and break,
+   * or auto-create a custom one. This enables custom schedules without losing
+   * the DerivableShift maths used by attendance metrics.
+   */
+  async findOrCreateCustomPreset(dto: FindOrCreateCustomPresetDto) {
+    const graceMinutes = dto.graceMinutes ?? 10;
+    const breakMinutes = dto.breakMinutes ?? 60;
+    const existing = await this.prisma.shiftPreset.findFirst({
+      where: {
+        startTime: dto.startTime,
+        endTime: dto.endTime,
+        graceMinutes,
+        breakMinutes,
+        isActive: true,
+      },
+    });
+    if (existing) return existing;
+
+    const name = dto.name?.trim() || `Custom (${dto.startTime}–${dto.endTime})`;
+    const sClean = dto.startTime.replace(':', '');
+    const eClean = dto.endTime.replace(':', '');
+    let code = `CUSTOM_${sClean}_${eClean}`;
+
+    let counter = 1;
+    while (await this.prisma.shiftPreset.findUnique({ where: { code } })) {
+      code = `CUSTOM_${sClean}_${eClean}_${counter++}`;
+    }
+
+    const standardMinutes = this.computeStandardMinutes(
+      dto.startTime,
+      dto.endTime,
+      breakMinutes,
+    );
+
+    return this.prisma.shiftPreset.create({
+      data: {
+        name,
+        code,
+        startTime: dto.startTime,
+        endTime: dto.endTime,
+        graceMinutes,
+        breakMinutes,
+        standardMinutes,
+        overnight: detectOvernight(dto.startTime, dto.endTime),
+        notes: 'Auto-created custom shift for staff scheduling',
+      },
     });
   }
 
@@ -301,6 +355,112 @@ export class ShiftService {
       });
       return { employeeId, dayOfWeek, changed: true };
     });
+  }
+
+  /**
+   * Set or clear rotation for multiple weekdays atomically.
+   */
+  async bulkSetRotation(
+    employeeId: string,
+    rotations: { dayOfWeek: number; shiftPresetId?: string | null }[],
+    actorId?: string | null,
+  ) {
+    await this.ensureEmployee(employeeId);
+    const now = new Date();
+
+    return this.prisma.$transaction(async (tx) => {
+      let changedCount = 0;
+      for (const item of rotations) {
+        const { dayOfWeek, shiftPresetId } = item;
+        const open = await tx.shiftAssignment.findFirst({
+          where: { employeeId, dayOfWeek, effectiveTo: null },
+          include: { shiftPreset: true },
+        });
+
+        if (!shiftPresetId) {
+          // Clear rotation for this day
+          if (open) {
+            await tx.shiftAssignment.update({
+              where: { id: open.id },
+              data: { effectiveTo: now },
+            });
+            await tx.employmentHistory.create({
+              data: {
+                employeeId,
+                field: 'shift',
+                oldValue: `${open.dayOfWeek}:${open.shiftPreset.name}`,
+                newValue: null,
+                effectiveFrom: now,
+                changedById: actorId ?? null,
+              },
+            });
+            changedCount++;
+          }
+          continue;
+        }
+
+        if (open?.shiftPresetId === shiftPresetId) {
+          continue; // No change
+        }
+
+        const preset = await tx.shiftPreset.findUnique({
+          where: { id: shiftPresetId },
+        });
+        if (!preset || !preset.isActive) {
+          throw new BadRequestException(
+            `Shift preset ${shiftPresetId} is invalid or retired`,
+          );
+        }
+
+        if (open) {
+          await tx.shiftAssignment.update({
+            where: { id: open.id },
+            data: { effectiveTo: now },
+          });
+        }
+
+        await tx.shiftAssignment.create({
+          data: {
+            employeeId,
+            shiftPresetId,
+            dayOfWeek,
+            effectiveFrom: now,
+            createdById: actorId ?? null,
+          },
+        });
+
+        await tx.employmentHistory.create({
+          data: {
+            employeeId,
+            field: 'shift',
+            oldValue: open ? `${open.dayOfWeek}:${open.shiftPreset.name}` : null,
+            newValue: `${dayOfWeek}:${preset.name}`,
+            effectiveFrom: now,
+            changedById: actorId ?? null,
+          },
+        });
+        changedCount++;
+      }
+
+      return { employeeId, changedCount, total: rotations.length };
+    });
+  }
+
+  /**
+   * Quick-assign a preset template to multiple days (defaults to Sun-Thu: [0,1,2,3,4]).
+   */
+  async quickAssignPreset(
+    employeeId: string,
+    shiftPresetId: string,
+    days?: number[],
+    actorId?: string | null,
+  ) {
+    const targetDays = days && days.length > 0 ? days : [0, 1, 2, 3, 4];
+    const rotations = targetDays.map((dayOfWeek) => ({
+      dayOfWeek,
+      shiftPresetId,
+    }));
+    return this.bulkSetRotation(employeeId, rotations, actorId);
   }
 
   // ── Resolution ────────────────────────────────────────────────────────

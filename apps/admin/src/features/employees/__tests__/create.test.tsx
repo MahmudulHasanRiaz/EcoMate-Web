@@ -54,6 +54,13 @@ function mockGetRoutes() {
     if (url === '/employees/search/ba-users') {
       return Promise.resolve({ data: { data: [{ id: 'u1', name: 'John Doe', email: 'john@ecomate.com', role: 'employee' }] } })
     }
+    if (url === '/hr/shifts' || url === '/hr/shifts/presets') {
+      return Promise.resolve({
+        data: [
+          { id: 'sp-1', name: 'General Shift', code: 'GEN', startTime: '09:00', endTime: '18:00', graceMinutes: 10, breakMinutes: 60, standardMinutes: 480, isActive: true },
+        ],
+      })
+    }
     return Promise.resolve({ data: {} })
   })
 }
@@ -166,5 +173,47 @@ describe('CreateEmployeePage — G-15 nested create flow', () => {
     expect(url).toBe('/employees')
     expect(payload.salaryStructure).toBeUndefined()
     expect(payload.bankAccount).toBeUndefined()
+  })
+
+  it('submits with personal details and shift preset configuration', async () => {
+    const { getByRole, getByText } = await wrap(<CreateEmployeePage />)
+
+    await pickUser()
+    await userEvent.click(getByRole('button', { name: 'FakeDate' }))
+
+    // Switch to personal tab and fill emergency contact
+    await userEvent.click(getByRole('tab', { name: /Personal & Emergency/ }))
+    const emergencyName = document.querySelector('input[placeholder="e.g. Rahim Ahmed"]') as HTMLInputElement
+    const emergencyPhone = document.querySelector('input[placeholder="017XXXXXXXX"]') as HTMLInputElement
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+    if (emergencyName && emergencyPhone) {
+      setter.call(emergencyName, 'Rahim Ahmed')
+      emergencyName.dispatchEvent(new Event('input', { bubbles: true }))
+      setter.call(emergencyPhone, '01711223344')
+      emergencyPhone.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+
+    // Switch to shift tab to mount ShiftAssignmentPicker
+    await userEvent.click(getByRole('tab', { name: /Shift & Working Hours/ }))
+
+    // Advance to review
+    await userEvent.click(getByRole('button', { name: /Continue/ }))
+    await userEvent.click(getByRole('button', { name: /Continue/ }))
+    await userEvent.click(getByRole('button', { name: /Continue/ }))
+
+    await expect.element(getByText(/Review & Create/)).toBeInTheDocument()
+    await userEvent.click(getByRole('button', { name: /Create Employee/ }))
+
+    await vi.waitFor(() => {
+      expect(mockPost).toHaveBeenCalled()
+    })
+    const [url, payload] = mockPost.mock.calls[mockPost.mock.calls.length - 1]
+    expect(url).toBe('/employees')
+    expect(payload).toMatchObject({
+      betterAuthUserId: 'u1',
+      emergencyContactName: 'Rahim Ahmed',
+      emergencyContactPhone: '01711223344',
+      shiftPresetId: 'sp-1',
+    })
   })
 })

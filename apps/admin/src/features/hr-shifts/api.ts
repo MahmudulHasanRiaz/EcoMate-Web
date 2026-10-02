@@ -63,6 +63,32 @@ export const hrShiftsApi = {
     apiClient.delete(`/hr/shifts/employees/${employeeId}/rotation`, {
       data: { dayOfWeek },
     }),
+
+  findOrCreateCustom: (dto: CustomShiftPayload) =>
+    apiClient.post<ShiftPreset>('/hr/shifts/custom-preset', dto),
+  bulkSetRotation: (employeeId: string, rotations: BulkRotationItem[]) =>
+    apiClient.post<{ employeeId: string; changedCount: number; total: number }>(
+      `/hr/shifts/employees/${employeeId}/bulk-rotation`,
+      { rotations }
+    ),
+  quickAssignPreset: (employeeId: string, shiftPresetId: string, days?: number[]) =>
+    apiClient.post<{ employeeId: string; changedCount: number; total: number }>(
+      `/hr/shifts/employees/${employeeId}/quick-assign`,
+      { shiftPresetId, days }
+    ),
+}
+
+export interface CustomShiftPayload {
+  startTime: string
+  endTime: string
+  graceMinutes?: number
+  breakMinutes?: number
+  name?: string
+}
+
+export interface BulkRotationItem {
+  dayOfWeek: number
+  shiftPresetId?: string | null
 }
 
 export const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']

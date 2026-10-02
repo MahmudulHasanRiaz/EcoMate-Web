@@ -436,6 +436,63 @@ export class EmployeesService {
         createdBank = await tx.employeeBankAccount.create({ data: bankData });
       }
 
+      // Shift assignment during creation
+      if (dto.shiftPresetId || (dto.shiftRotations && dto.shiftRotations.length > 0)) {
+        const now = new Date();
+        if (dto.shiftPresetId) {
+          const days = dto.shiftDays && dto.shiftDays.length > 0 ? dto.shiftDays : [0, 1, 2, 3, 4];
+          const preset = await tx.shiftPreset.findUnique({ where: { id: dto.shiftPresetId } });
+          if (preset && preset.isActive) {
+            for (const dayOfWeek of days) {
+              await tx.shiftAssignment.create({
+                data: {
+                  employeeId: employee.id,
+                  shiftPresetId: preset.id,
+                  dayOfWeek,
+                  effectiveFrom: now,
+                  createdById: actorId ?? null,
+                },
+              });
+              await tx.employmentHistory.create({
+                data: {
+                  employeeId: employee.id,
+                  field: 'shift',
+                  oldValue: null,
+                  newValue: `${dayOfWeek}:${preset.name}`,
+                  effectiveFrom: now,
+                  changedById: actorId ?? null,
+                },
+              });
+            }
+          }
+        } else if (dto.shiftRotations) {
+          for (const item of dto.shiftRotations) {
+            const preset = await tx.shiftPreset.findUnique({ where: { id: item.shiftPresetId } });
+            if (preset && preset.isActive) {
+              await tx.shiftAssignment.create({
+                data: {
+                  employeeId: employee.id,
+                  shiftPresetId: preset.id,
+                  dayOfWeek: item.dayOfWeek,
+                  effectiveFrom: now,
+                  createdById: actorId ?? null,
+                },
+              });
+              await tx.employmentHistory.create({
+                data: {
+                  employeeId: employee.id,
+                  field: 'shift',
+                  oldValue: null,
+                  newValue: `${item.dayOfWeek}:${preset.name}`,
+                  effectiveFrom: now,
+                  changedById: actorId ?? null,
+                },
+              });
+            }
+          }
+        }
+      }
+
       await baPrisma.betterAuthUser.update({
         where: { id: dto.betterAuthUserId },
         data: { role: 'employee' },
@@ -731,6 +788,84 @@ export class EmployeesService {
             effectiveFrom: new Date(),
             changedById,
           });
+        }
+      }
+
+      // Update shift rotation if passed in update DTO
+      if (dto.shiftPresetId || dto.shiftRotations) {
+        const now = new Date();
+        const changedById = actorId ?? null;
+        if (dto.shiftPresetId) {
+          const days = dto.shiftDays && dto.shiftDays.length > 0 ? dto.shiftDays : [0, 1, 2, 3, 4];
+          const preset = await tx.shiftPreset.findUnique({ where: { id: dto.shiftPresetId } });
+          if (preset && preset.isActive) {
+            for (const dayOfWeek of days) {
+              const open = await tx.shiftAssignment.findFirst({
+                where: { employeeId: id, dayOfWeek, effectiveTo: null },
+                include: { shiftPreset: true },
+              });
+              if (open?.shiftPresetId !== dto.shiftPresetId) {
+                if (open) {
+                  await tx.shiftAssignment.update({
+                    where: { id: open.id },
+                    data: { effectiveTo: now },
+                  });
+                }
+                await tx.shiftAssignment.create({
+                  data: {
+                    employeeId: id,
+                    shiftPresetId: preset.id,
+                    dayOfWeek,
+                    effectiveFrom: now,
+                    createdById: changedById,
+                  },
+                });
+                historyRows.push({
+                  employeeId: id,
+                  field: 'shift',
+                  oldValue: open ? `${open.dayOfWeek}:${open.shiftPreset.name}` : null,
+                  newValue: `${dayOfWeek}:${preset.name}`,
+                  effectiveFrom: now,
+                  changedById,
+                });
+              }
+            }
+          }
+        } else if (dto.shiftRotations) {
+          for (const item of dto.shiftRotations) {
+            const open = await tx.shiftAssignment.findFirst({
+              where: { employeeId: id, dayOfWeek: item.dayOfWeek, effectiveTo: null },
+              include: { shiftPreset: true },
+            });
+            if (open?.shiftPresetId !== item.shiftPresetId) {
+              if (open) {
+                await tx.shiftAssignment.update({
+                  where: { id: open.id },
+                  data: { effectiveTo: now },
+                });
+              }
+              const preset = await tx.shiftPreset.findUnique({ where: { id: item.shiftPresetId } });
+              if (preset && preset.isActive) {
+                await tx.shiftAssignment.create({
+                  data: {
+                    employeeId: id,
+                    shiftPresetId: preset.id,
+                    dayOfWeek: item.dayOfWeek,
+                    effectiveFrom: now,
+                    createdById: changedById,
+                  },
+                });
+                historyRows.push({
+                  employeeId: id,
+                  field: 'shift',
+                  oldValue: open ? `${open.dayOfWeek}:${open.shiftPreset.name}` : null,
+                  newValue: `${item.dayOfWeek}:${preset.name}`,
+                  effectiveFrom: now,
+                  changedById,
+                });
+              }
+            }
+          }
         }
       }
 

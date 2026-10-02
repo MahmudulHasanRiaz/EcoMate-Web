@@ -20,6 +20,38 @@ export const ATTENDANCE_METHOD_LABELS: Record<AttendanceMethod, string> = {
   NONE: 'None (disabled)',
 }
 
+export const STATUS_BADGE: Record<EmployeeStatus, string> = {
+  active: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
+  inactive: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
+  terminated: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
+  resigned: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
+  on_leave: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300',
+  suspended: 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300',
+}
+
+export const EMPLOYMENT_TYPE_BADGE: Record<EmploymentType, string> = {
+  full_time: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
+  part_time: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',
+  contract: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300',
+  internship: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300',
+}
+
+export const EMPLOYMENT_TYPE_LABELS: Record<EmploymentType, string> = {
+  full_time: 'Full Time',
+  part_time: 'Part Time',
+  contract: 'Contract',
+  internship: 'Internship',
+}
+
+export const STATUS_LABELS: Record<EmployeeStatus, string> = {
+  active: 'Active',
+  inactive: 'Inactive',
+  terminated: 'Terminated',
+  resigned: 'Resigned',
+  on_leave: 'On Leave',
+  suspended: 'Suspended',
+}
+
 export interface EmployeeBankAccount {
   id: string
   employeeId: string
@@ -52,10 +84,12 @@ export interface CreateBankAccountDto {
 
 export interface UpdateEmployeeDto {
   status?: EmployeeStatus
+  joiningDate?: string | null
   exitDate?: string | null
   reportingToId?: string | null
   departmentId?: string | null
   designationId?: string | null
+  accessPresetId?: string | null
   employmentType?: EmploymentType
   salary?: number
   bankName?: string
@@ -73,6 +107,9 @@ export interface UpdateEmployeeDto {
   confirmationDate?: string | null
   exitReason?: string | null
   attendanceMethod?: AttendanceMethod
+  shiftPresetId?: string
+  shiftDays?: number[]
+  shiftRotations?: { dayOfWeek: number; presetId: string }[]
 }
 
 // G-15 nested payload captured at employee creation.
@@ -110,8 +147,21 @@ export interface CreateEmployeeDto {
   exitDate?: string
   notes?: string
   attendanceMethod?: AttendanceMethod
+  dateOfBirth?: string
+  gender?: EmployeeGender
+  nationality?: string
+  nidNumber?: string
+  presentAddress?: string
+  permanentAddress?: string
+  emergencyContactName?: string
+  emergencyContactPhone?: string
+  emergencyContactRelation?: string
+  confirmationDate?: string
   salaryStructure?: SalaryStructureInput
   bankAccount?: BankAccountInput
+  shiftPresetId?: string
+  shiftDays?: number[]
+  shiftRotations?: { dayOfWeek: number; presetId: string }[]
 }
 
 export interface SalaryStructureEntry {
@@ -153,7 +203,7 @@ export interface EmployeeResponse {
   department?: { id: string; name: string; slug: string } | null
   designation?: { id: string; name: string; slug: string; level?: number | null } | null
   accessPreset?: { id: string; name: string } | null
-  betterAuthUser?: { id: string; name: string; email: string; role: string } | null
+  betterAuthUser?: { id: string; name: string; email: string; role: string; image?: string | null } | null
   reportingTo?: {
     id: string
     employeeId: string

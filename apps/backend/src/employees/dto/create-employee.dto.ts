@@ -5,6 +5,10 @@ import {
   IsEnum,
   IsDateString,
   ValidateNested,
+  IsArray,
+  IsInt,
+  Min,
+  Max,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import {
@@ -118,4 +122,31 @@ export class CreateEmployeeDto {
   @IsOptional()
   @IsEnum(AttendanceMethod)
   attendanceMethod?: AttendanceMethod;
+
+  @IsOptional()
+  @IsString()
+  shiftPresetId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(6, { each: true })
+  shiftDays?: number[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ShiftRotationItemDto)
+  shiftRotations?: ShiftRotationItemDto[];
+}
+
+export class ShiftRotationItemDto {
+  @IsInt()
+  @Min(0)
+  @Max(6)
+  dayOfWeek: number;
+
+  @IsString()
+  shiftPresetId: string;
 }

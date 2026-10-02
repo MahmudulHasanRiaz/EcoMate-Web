@@ -17,6 +17,9 @@ import {
   CreateShiftPresetDto,
   SetShiftRotationDto,
   UpdateShiftPresetDto,
+  BulkSetRotationDto,
+  QuickAssignPresetDto,
+  FindOrCreateCustomPresetDto,
 } from './dto/shift.dto';
 
 @Controller('hr/shifts')
@@ -75,6 +78,41 @@ export class ShiftController {
       id,
       dto.dayOfWeek,
       dto.shiftPresetId,
+      user?.userId ?? user?.id,
+    );
+  }
+
+  @Post('custom-preset')
+  @PermissionsAny('manage_schedule')
+  findOrCreateCustom(@Body() dto: FindOrCreateCustomPresetDto) {
+    return this.shifts.findOrCreateCustomPreset(dto);
+  }
+
+  @Post('employees/:id/bulk-rotation')
+  @PermissionsAny('manage_schedule')
+  bulkSetRotation(
+    @Param('id') id: string,
+    @Body() dto: BulkSetRotationDto,
+    @CurrentUser() user?: any,
+  ) {
+    return this.shifts.bulkSetRotation(
+      id,
+      dto.rotations,
+      user?.userId ?? user?.id,
+    );
+  }
+
+  @Post('employees/:id/quick-assign')
+  @PermissionsAny('manage_schedule')
+  quickAssign(
+    @Param('id') id: string,
+    @Body() dto: QuickAssignPresetDto,
+    @CurrentUser() user?: any,
+  ) {
+    return this.shifts.quickAssignPreset(
+      id,
+      dto.shiftPresetId,
+      dto.days,
       user?.userId ?? user?.id,
     );
   }

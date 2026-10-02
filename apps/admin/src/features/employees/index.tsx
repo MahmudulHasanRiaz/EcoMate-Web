@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { useDepartmentsQuery } from '@/features/departments/hooks'
 import { useDesignationsQuery } from '@/features/designations/hooks'
+import { EditEmployeeDialog } from './components/edit-employee-dialog'
 
 const STATUS_BADGE: Record<EmployeeStatus, string> = {
   active: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
@@ -78,14 +79,6 @@ export function Employees() {
   const [search, setSearch] = useState('')
   const [editOpen, setEditOpen] = useState(false)
   const [editing, setEditing] = useState<EmployeeResponse | null>(null)
-  const [editForm, setEditForm] = useState({
-    employmentType: '' as EmploymentType | '',
-    status: '' as EmployeeStatus | '',
-    salary: '',
-    bankAccountNo: '',
-    bankName: '',
-    notes: '',
-  })
   const [deleteTarget, setDeleteTarget] = useState<EmployeeResponse | null>(null)
 
   const { data: departments } = useDepartmentsQuery()
@@ -113,17 +106,6 @@ export function Employees() {
     queryFn: () => employeesApi.list(query).then(r => r.data),
   })
 
-  const updateMut = useMutation({
-    mutationFn: ({ id, d }: { id: string; d: any }) => employeesApi.update(id, d),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['employees'] })
-      setEditOpen(false)
-      setEditing(null)
-      toast.success('Employee updated')
-    },
-    onError: (e: any) => toast.error(e.response?.data?.message || 'Error updating employee'),
-  })
-
   const deleteMut = useMutation({
     mutationFn: (id: string) => employeesApi.delete(id),
     onSuccess: () => {
@@ -136,30 +118,7 @@ export function Employees() {
 
   function openEdit(employee: EmployeeResponse) {
     setEditing(employee)
-    setEditForm({
-      employmentType: employee.employmentType,
-      status: employee.status,
-      salary: employee.salary != null ? String(employee.salary) : '',
-      bankAccountNo: employee.bankAccountNo || '',
-      bankName: employee.bankName || '',
-      notes: employee.notes || '',
-    })
     setEditOpen(true)
-  }
-
-  function handleSave() {
-    if (!editing) return
-    updateMut.mutate({
-      id: editing.id,
-      d: {
-        employmentType: editForm.employmentType || undefined,
-        status: editForm.status || undefined,
-        salary: editForm.salary ? parseFloat(editForm.salary) : undefined,
-        bankAccountNo: editForm.bankAccountNo || undefined,
-        bankName: editForm.bankName || undefined,
-        notes: editForm.notes || undefined,
-      },
-    })
   }
 
   const listData = data?.data || []
@@ -301,8 +260,24 @@ export function Employees() {
                 ) : (
                   listData.map(employee => (
                     <TableRow key={employee.id}>
-                      <TableCell className='font-mono text-xs'>{employee.employeeId}</TableCell>
-                      <TableCell className='font-medium'>{employee.betterAuthUser?.name || '—'}</TableCell>
+                      <TableCell>
+                        <button
+                          type='button'
+                          onClick={() => navigate({ to: '/hr/employees/$id', params: { id: employee.id } })}
+                          className='font-mono text-xs font-semibold text-primary hover:underline'
+                        >
+                          {employee.employeeId}
+                        </button>
+                      </TableCell>
+                      <TableCell>
+                        <button
+                          type='button'
+                          onClick={() => navigate({ to: '/hr/employees/$id', params: { id: employee.id } })}
+                          className='font-medium text-foreground hover:text-primary hover:underline text-left'
+                        >
+                          {employee.betterAuthUser?.name || '—'}
+                        </button>
+                      </TableCell>
                       <TableCell className='text-muted-foreground'>{employee.betterAuthUser?.email || '—'}</TableCell>
                       <TableCell>{employee.designation?.name || '—'}</TableCell>
                       <TableCell>{employee.accessPreset?.name || '—'}</TableCell>
@@ -370,75 +345,14 @@ export function Employees() {
         </Card>
       </Main>
 
-      <Dialog open={editOpen} onOpenChange={o => { if (!o) { setEditOpen(false); setEditing(null) } }}>
-        <DialogContent className='sm:max-w-[500px]'>
-          <DialogHeader>
-            <DialogTitle>Edit Employee</DialogTitle>
-          </DialogHeader>
-          {editing && (
-            <div className='grid gap-4 py-4'>
-              <div className='grid grid-cols-2 gap-3'>
-                <div className='font-semibold text-sm'>Name</div>
-                <div>{editing.betterAuthUser?.name || '—'}</div>
-              </div>
-              <div className='grid grid-cols-2 gap-3'>
-                <div className='grid gap-2'>
-                  <Label>Employment Type</Label>
-                  <Select value={editForm.employmentType} onValueChange={v => setEditForm(f => ({ ...f, employmentType: v as EmploymentType }))}>
-                    <SelectTrigger><SelectValue placeholder='Select type' /></SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(EMPLOYMENT_TYPE_LABELS).map(([value, label]) => (
-                        <SelectItem key={value} value={value}>{label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className='grid gap-2'>
-                  <Label>Status</Label>
-                  <Select value={editForm.status} onValueChange={v => setEditForm(f => ({ ...f, status: v as EmployeeStatus }))}>
-                    <SelectTrigger><SelectValue placeholder='Select status' /></SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(STATUS_LABELS).map(([value, label]) => (
-                        <SelectItem key={value} value={value}>{label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className='grid grid-cols-2 gap-3'>
-                <div className='grid gap-2'>
-                  <Label>Salary</Label>
-                  <Input type='number' step='0.01' value={editForm.salary} onChange={e => setEditForm(f => ({ ...f, salary: e.target.value }))} />
-                </div>
-                <div className='grid gap-2'>
-                  <Label>Bank Account</Label>
-                  <Input value={editForm.bankAccountNo} onChange={e => setEditForm(f => ({ ...f, bankAccountNo: e.target.value }))} />
-                </div>
-              </div>
-              <div className='grid grid-cols-2 gap-3'>
-                <div className='grid gap-2'>
-                  <Label>Bank Name</Label>
-                  <Input value={editForm.bankName} onChange={e => setEditForm(f => ({ ...f, bankName: e.target.value }))} />
-                </div>
-              </div>
-              <div className='grid gap-2'>
-                <Label>Notes</Label>
-                <textarea
-                  className='flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 outline-none'
-                  value={editForm.notes}
-                  onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
-                />
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant='outline' onClick={() => { setEditOpen(false); setEditing(null) }}>Cancel</Button>
-            <Button onClick={handleSave} disabled={updateMut.isPending}>
-              Save Changes
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <EditEmployeeDialog
+        open={editOpen}
+        onOpenChange={(o) => {
+          setEditOpen(o)
+          if (!o) setEditing(null)
+        }}
+        employee={editing}
+      />
 
       <Dialog open={!!deleteTarget} onOpenChange={o => { if (!o) setDeleteTarget(null) }}>
         <DialogContent className='sm:max-w-[400px]'>

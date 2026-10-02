@@ -7,8 +7,10 @@ import {
   Max,
   Min,
   MaxLength,
+  IsArray,
+  ValidateNested,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
@@ -95,4 +97,58 @@ export class SetShiftRotationDto {
 
   @IsString()
   shiftPresetId: string;
+}
+
+export class RotationDayAssignmentDto {
+  @IsInt()
+  @Min(0)
+  @Max(6)
+  dayOfWeek: number;
+
+  @IsOptional()
+  @IsString()
+  shiftPresetId?: string | null;
+}
+
+export class BulkSetRotationDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RotationDayAssignmentDto)
+  rotations: RotationDayAssignmentDto[];
+}
+
+export class QuickAssignPresetDto {
+  @IsString()
+  shiftPresetId: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(6, { each: true })
+  days?: number[];
+}
+
+export class FindOrCreateCustomPresetDto {
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'startTime must be HH:mm' })
+  startTime: string;
+
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'endTime must be HH:mm' })
+  endTime: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(120)
+  graceMinutes?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(240)
+  breakMinutes?: number;
+
+  @IsOptional()
+  @IsString()
+  name?: string;
 }

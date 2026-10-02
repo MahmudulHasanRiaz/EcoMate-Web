@@ -90,3 +90,46 @@ export function useClearRotationDayMutation(employeeId: string) {
       toast.error(e?.response?.data?.message || 'Could not clear shift'),
   })
 }
+
+export function useBulkSetRotationMutation(employeeId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (rotations: { dayOfWeek: number; shiftPresetId?: string | null }[]) =>
+      hrShiftsApi.bulkSetRotation(employeeId, rotations).then((r) => r.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [ROTATION_KEY, employeeId] })
+      queryClient.invalidateQueries({ queryKey: ['hr-history', employeeId] })
+      toast.success('Shift rotation updated')
+    },
+    onError: (e: any) =>
+      toast.error(e?.response?.data?.message || 'Could not update shift rotation'),
+  })
+}
+
+export function useQuickAssignShiftMutation(employeeId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ shiftPresetId, days }: { shiftPresetId: string; days?: number[] }) =>
+      hrShiftsApi.quickAssignPreset(employeeId, shiftPresetId, days).then((r) => r.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [ROTATION_KEY, employeeId] })
+      queryClient.invalidateQueries({ queryKey: ['hr-history', employeeId] })
+      toast.success('Shift assigned to working days')
+    },
+    onError: (e: any) =>
+      toast.error(e?.response?.data?.message || 'Could not assign shift'),
+  })
+}
+
+export function useFindOrCreateCustomShiftMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (dto: { startTime: string; endTime: string; graceMinutes?: number; breakMinutes?: number; name?: string }) =>
+      hrShiftsApi.findOrCreateCustom(dto).then((r) => r.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [PRESETS_KEY] })
+    },
+    onError: (e: any) =>
+      toast.error(e?.response?.data?.message || 'Could not configure custom shift'),
+  })
+}

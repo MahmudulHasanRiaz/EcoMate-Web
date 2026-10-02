@@ -10,6 +10,10 @@ import {
   Percent,
   RotateCcw,
   Wallet,
+  Clock,
+  Briefcase,
+  CheckCircle2,
+  Building,
 } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -29,9 +33,11 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { DatePicker } from '@/components/date-picker'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { useEmployeeQuery, useUpdateEmployeeMutation, useBankAccountsQuery, useCreateBankAccountMutation, useUpdateBankAccountMutation, useDeleteBankAccountMutation, useSetPrimaryBankAccountMutation } from '../hooks'
 import { employeesApi, type EmployeeStatus, type EmploymentType, type UpdateEmployeeDto, type AttendanceMethod, type EmployeeResponse, type EmployeeGender, GENDER_LABELS, ATTENDANCE_METHOD_LABELS } from '../api'
 import { BankAccountsCard } from './bank-accounts-card'
+import { EditEmployeeDialog } from './edit-employee-dialog'
 import { SalaryHistoryCard } from '@/features/payroll/components/salary-history'
 import { pendingEffectiveFrom } from '@/features/payroll/lib/pending-structure'
 import { useSalaryStructureHistoryQuery, usePayrollSummaryQuery } from '@/features/payroll/hooks'
@@ -44,6 +50,8 @@ import { MonthCalendar } from '@/features/hr-schedule/components/month-calendar'
 import { HistoryTable } from '@/features/hr-schedule/components/history-table'
 import { RotationEditor } from '@/features/hr-shifts/components/rotation-editor'
 import { useShiftRotationQuery } from '@/features/hr-shifts/hooks'
+import { useBalancesQuery } from '@/features/hr-leave/hooks'
+import { useTodayStateQuery } from '@/features/hr-attendance/hooks'
 import { useSalaryStructureQuery, useSetSalaryStructureMutation, usePayslipsQuery } from '@/features/payroll/hooks'
 import { PayslipDialog } from '@/features/payroll/components/payslip-dialog'
 import { PayslipDetail } from '@/features/payroll/components/payslip-detail'
@@ -54,6 +62,18 @@ import { DeductionsTable } from '@/features/hr-ledgers/components/deductions-tab
 import { CommissionEarningsTab } from '@/features/commissions/components/earnings-table'
 import { LeaveTab } from '@/features/hr-leave'
 import { AttendanceTab } from '@/features/hr-attendance/components/attendance-tab'
+
+function computeTenure(joiningDate?: string | null) {
+  if (!joiningDate) return null
+  const start = new Date(joiningDate)
+  const now = new Date()
+  const months = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth())
+  if (months < 1) return 'New Joiner'
+  if (months < 12) return `${months} mo tenure`
+  const years = Math.floor(months / 12)
+  const rem = months % 12
+  return rem > 0 ? `${years}y ${rem}m tenure` : `${years}y tenure`
+}
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return '—'
@@ -681,6 +701,39 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
     updateEmpMut.mutate({ id: employee.id, dto }, { onSuccess: () => setEmpEditOpen(false) })
   }
 
+  const [fullEditOpen, setFullEditOpen] = useState(false)
+  const { data: shiftRotationData, refetch: refetchRotation } = useShiftRotationQuery(employee?.id || '')
+  const { data: leaveBalances } = useBalancesQuery(employee?.id)
+  const { data: todayState } = useTodayStateQuery(employee?.id || '')
+  const { data: salaryStructure } = useSalaryStructureQuery(employee?.id || '')
+
+  const displayName = employee?.betterAuthUser?.name || employee?.employeeId || '—'
+  const initials = displayName
+    .split(' ')
+    .map((n: string) => n[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+
+  const tenure = computeTenure(employee?.joiningDate)
+
+  const activeShiftName = shiftRotationData?.rotation?.[0]?.shift?.name || 'Standard Shift'
+  const activeShiftHours = shiftRotationData?.rotation?.[0]?.shift
+    ? shiftRotationData.rotation[0].shift.name
+    : 'Not configured'
+  const activeShiftWorkdays = shiftRotationData?.rotation?.length ?? 0
+
+  const totalRemainingLeaves = Array.isArray(leaveBalances)
+    ? leaveBalances.reduce((sum: number, b: any) => sum + (Number(b.remainingDays) || 0), 0)
+    : 0
+  const totalAllocatedLeaves = Array.isArray(leaveBalances)
+    ? leaveBalances.reduce((sum: number, b: any) => sum + (Number(b.allocatedDays) || 0), 0)
+    : 0
+
+  const calculatedNetSalary = salaryStructure?.basicSalary
+    ? (salaryStructure.basicSalary + (salaryStructure.houseAllowance || 0) + (salaryStructure.medicalAllowance || 0) + (salaryStructure.transportAllowance || 0) + (salaryStructure.otherAllowance || 0)) - ((salaryStructure.taxDeduction || 0) + (salaryStructure.insuranceDeduction || 0) + (salaryStructure.otherDeduction || 0))
+    : employee?.salary
+
   const isTerminal = empForm.status === 'terminated' || empForm.status === 'resigned'
 
   const overviewChips = [
@@ -698,7 +751,7 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
         <ProfileDropdown />
       </Header>
 
-      <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
+      <Main className='flex flex-1 flex-col gap-4 sm:gap-6 pb-12'>
         <Link
           to='/hr/employees'
           className='inline-flex items-center text-sm font-medium text-muted-foreground hover:text-foreground'
@@ -706,31 +759,178 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
           <ArrowLeft className='mr-2 h-4 w-4' /> Employees
         </Link>
 
-        <Card>
-          <CardContent className='flex flex-wrap items-center gap-x-4 gap-y-3 pt-6'>
-            <div className='min-w-0 flex-1'>
-              <div className='flex items-center gap-2'>
-                <h2 className='text-2xl font-bold tracking-tight truncate'>
-                  {employee.betterAuthUser?.name || '—'}
-                </h2>
-                <Badge variant='outline' className='font-mono text-xs shrink-0'>
-                  {employee.employeeId}
-                </Badge>
+        {/* Executive Hero Banner */}
+        <Card className='border-border/60 bg-linear-to-b from-card to-muted/20 shadow-xs overflow-hidden'>
+          <CardContent className='p-5 sm:p-6'>
+            <div className='flex flex-col gap-5 md:flex-row md:items-center md:justify-between'>
+              {/* Identity & Avatar */}
+              <div className='flex items-center gap-4 sm:gap-5'>
+                <Avatar className='h-16 w-16 sm:h-20 sm:w-20 rounded-2xl border-2 border-border/80 shadow-xs'>
+                  {(employee.profilePictureUrl || employee.betterAuthUser?.image) && (
+                    <AvatarImage src={(employee.profilePictureUrl || employee.betterAuthUser?.image) ?? undefined} alt={displayName} />
+                  )}
+                  <AvatarFallback className='rounded-2xl bg-primary-soft text-primary-ink font-bold text-xl sm:text-2xl'>
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
+
+                <div className='space-y-1.5 min-w-0'>
+                  <div className='flex flex-wrap items-center gap-2'>
+                    <h1 className='text-xl sm:text-2xl font-bold tracking-tight text-foreground truncate'>
+                      {displayName}
+                    </h1>
+                    <Badge variant='outline' className='font-mono text-xs px-2 py-0.5 font-semibold'>
+                      {employee.employeeId}
+                    </Badge>
+                  </div>
+
+                  <p className='text-xs sm:text-sm text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1'>
+                    <span className='font-medium text-foreground'>
+                      {employee.designation?.name || 'Staff'}
+                    </span>
+                    <span>·</span>
+                    <span>{employee.department?.name || 'General Operations'}</span>
+                    {employee.reportingTo?.betterAuthUser?.name && (
+                      <>
+                        <span>·</span>
+                        <span className='text-xs'>
+                          Reports to: <strong className='text-foreground'>{employee.reportingTo.betterAuthUser.name}</strong>
+                        </span>
+                      </>
+                    )}
+                    {tenure && (
+                      <>
+                        <span>·</span>
+                        <span className='text-xs text-primary font-medium'>{tenure}</span>
+                      </>
+                    )}
+                  </p>
+
+                  <div className='flex flex-wrap items-center gap-2 pt-0.5'>
+                    <Badge variant='secondary' className={STATUS_BADGE[employee.status]}>
+                      {STATUS_LABELS[employee.status]}
+                    </Badge>
+                    <Badge variant='secondary' className={EMPLOYMENT_TYPE_BADGE[employee.employmentType]}>
+                      {EMPLOYMENT_TYPE_LABELS[employee.employmentType]}
+                    </Badge>
+                    {employee.attendanceMethod && (
+                      <Badge variant='outline' className='text-xs'>
+                        Attendance: {ATTENDANCE_METHOD_LABELS[employee.attendanceMethod]}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
               </div>
-              <p className='mt-1 text-sm text-muted-foreground'>
-                {employee.department?.name || 'No department'} · {employee.designation?.name || 'No designation'}
-              </p>
-            </div>
-            <div className='flex items-center gap-2'>
-              <Badge variant='secondary' className={STATUS_BADGE[employee.status]}>
-                {STATUS_LABELS[employee.status]}
-              </Badge>
-              <Badge variant='secondary' className={EMPLOYMENT_TYPE_BADGE[employee.employmentType]}>
-                {EMPLOYMENT_TYPE_LABELS[employee.employmentType]}
-              </Badge>
+
+              {/* Quick Actions */}
+              <div className='flex flex-wrap items-center gap-2.5'>
+                <Button
+                  onClick={() => setFullEditOpen(true)}
+                  size='sm'
+                  className='gap-1.5 shadow-xs'
+                >
+                  <Pencil className='h-4 w-4' /> Edit Profile
+                </Button>
+                <Button
+                  variant='outline'
+                  size='sm'
+                  onClick={() => {
+                    refetch()
+                    refetchRotation()
+                  }}
+                  className='gap-1.5'
+                >
+                  <RotateCcw className='h-3.5 w-3.5' /> Refresh
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
+
+        {/* 4 Executive KPI Glance Cards */}
+        <div className='grid gap-3 grid-cols-2 sm:grid-cols-2 lg:grid-cols-4'>
+          <Card className='border-border/60 bg-card'>
+            <CardContent className='p-4'>
+              <div className='flex items-center justify-between'>
+                <span className='text-xs font-medium text-muted-foreground'>Attendance Tracking</span>
+                <div className='p-1.5 rounded-md bg-blue-500/10 text-blue-600'>
+                  <Clock className='h-4 w-4' />
+                </div>
+              </div>
+              <div className='mt-2'>
+                <span className='text-xl sm:text-2xl font-bold tracking-tight'>
+                  {todayState?.workedMinutes != null && todayState.workedMinutes > 0
+                    ? `${(todayState.workedMinutes / 60).toFixed(1)}h`
+                    : (employee.attendanceMethod ? ATTENDANCE_METHOD_LABELS[employee.attendanceMethod] : 'Not Set')}
+                </span>
+                <p className='text-[11px] text-muted-foreground mt-0.5 truncate'>
+                  {todayState?.state && todayState.state !== 'none'
+                    ? `Status: ${todayState.state.replace('_', ' ')}`
+                    : (employee.attendanceMethod ? `Method: ${ATTENDANCE_METHOD_LABELS[employee.attendanceMethod]}` : 'Attendance disabled')}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className='border-border/60 bg-card'>
+            <CardContent className='p-4'>
+              <div className='flex items-center justify-between'>
+                <span className='text-xs font-medium text-muted-foreground'>Leave Balance</span>
+                <div className='p-1.5 rounded-md bg-amber-500/10 text-amber-600'>
+                  <CalendarDays className='h-4 w-4' />
+                </div>
+              </div>
+              <div className='mt-2'>
+                <span className='text-xl sm:text-2xl font-bold tracking-tight'>
+                  {totalRemainingLeaves} Days
+                </span>
+                <p className='text-[11px] text-muted-foreground mt-0.5 truncate'>
+                  {totalAllocatedLeaves > 0
+                    ? `${totalAllocatedLeaves - totalRemainingLeaves} used of ${totalAllocatedLeaves} allocated`
+                    : 'No leave types allocated'}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className='border-border/60 bg-card'>
+            <CardContent className='p-4'>
+              <div className='flex items-center justify-between'>
+                <span className='text-xs font-medium text-muted-foreground'>Assigned Shift</span>
+                <div className='p-1.5 rounded-md bg-emerald-500/10 text-emerald-600'>
+                  <Briefcase className='h-4 w-4' />
+                </div>
+              </div>
+              <div className='mt-2'>
+                <span className='text-base sm:text-lg font-bold tracking-tight truncate block'>
+                  {activeShiftName}
+                </span>
+                <p className='text-[11px] text-muted-foreground mt-0.5 truncate'>
+                  {activeShiftHours} {activeShiftWorkdays > 0 ? `(${activeShiftWorkdays} days/wk)` : ''}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className='border-border/60 bg-card'>
+            <CardContent className='p-4'>
+              <div className='flex items-center justify-between'>
+                <span className='text-xs font-medium text-muted-foreground'>Net Compensation</span>
+                <div className='p-1.5 rounded-md bg-purple-500/10 text-purple-600'>
+                  <Wallet className='h-4 w-4' />
+                </div>
+              </div>
+              <div className='mt-2'>
+                <span className='text-xl sm:text-2xl font-bold tracking-tight'>
+                  {formatSalary(calculatedNetSalary)}
+                </span>
+                <p className='text-[11px] text-muted-foreground mt-0.5 truncate'>
+                  {employee.bankName ? `Paid via ${employee.bankName}` : 'Bank account not set'}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
         <Tabs value={empTab} onValueChange={setEmpTab}>
           <TabsList
@@ -1054,6 +1254,16 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
             </Card>
           </TabsContent>
         </Tabs>
+
+        <EditEmployeeDialog
+          open={fullEditOpen}
+          onOpenChange={setFullEditOpen}
+          employee={employee}
+          onSuccess={() => {
+            refetch()
+            refetchRotation()
+          }}
+        />
       </Main>
     </>
   )
