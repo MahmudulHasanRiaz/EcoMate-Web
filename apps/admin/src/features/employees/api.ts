@@ -76,6 +76,12 @@ export interface CreateBankAccountDto {
   accountNumber: string
   accountType?: BankAccountType
   routingNumber?: string
+  /**
+   * Backend honours this: adding a second primary demotes the existing one
+   * (employees.service.ts:990). The inline employee-create form does NOT send it
+   * — that path hardcodes the first account as primary.
+   */
+  isPrimary?: boolean
   verificationStatus?: BankVerificationStatus
   verificationNote?: string
   notes?: string
