@@ -105,8 +105,8 @@ export function CreateOrder() {
   const [showProductDropdown, setShowProductDropdown] = useState(false)
   const productInputRef = useRef<HTMLInputElement>(null)
 
-  const [shippingCharge, setShippingCharge] = useState('0')
-  const [discount, setDiscount] = useState('0')
+  const [shippingCharge, setShippingCharge] = useState('')
+  const [discount, setDiscount] = useState('')
   const [discountType, setDiscountType] = useState<'flat' | 'percentage'>('flat')
 
   // NOTE: the POS showroom is resolved server-side from the POS session, so
@@ -209,7 +209,7 @@ export function CreateOrder() {
     }
 
     // Automatically populate delivery charge from default settings for this city
-    setShippingCharge(String(defaultCharge))
+    setShippingCharge(defaultCharge > 0 ? String(defaultCharge) : '')
     setShippingChargeManuallyEdited(false)
   }, [activeCityId, cities, sysSettings, shippingZones])
 
@@ -359,11 +359,10 @@ export function CreateOrder() {
     })
   }
 
-  const updateCartPrice = (index: number, price: number) => {
-    const safePrice = Math.max(0, isNaN(price) ? 0 : price)
+  const updateCartPrice = (index: number, price: number | string) => {
     setCartItems(prev => {
       const updated = [...prev]
-      updated[index] = { ...updated[index], price: safePrice }
+      updated[index] = { ...updated[index], price }
       return updated
     })
   }
@@ -887,10 +886,19 @@ export function CreateOrder() {
                               <TableCell className='text-right'>
                                 <Input
                                   type='number'
-                                  value={item.price}
-                                  onChange={e => updateCartPrice(index, parseFloat(e.target.value) || 0)}
-                                  className='w-20 text-right h-8 text-sm ml-auto'
                                   step='0.01'
+                                  min='0'
+                                  value={item.price === 0 || item.price === '0' || item.price === '' ? '' : item.price}
+                                  onChange={e => updateCartPrice(index, e.target.value)}
+                                  onFocus={e => {
+                                    if (e.target.value === '0' || item.price === 0 || item.price === '0') {
+                                      updateCartPrice(index, '')
+                                    } else {
+                                      e.target.select()
+                                    }
+                                  }}
+                                  placeholder='0'
+                                  className='w-20 text-right h-8 text-sm ml-auto'
                                 />
                               </TableCell>
                               <TableCell className='text-right'>
@@ -953,10 +961,19 @@ export function CreateOrder() {
                               <span className='text-muted-foreground'>৳</span>
                               <Input
                                 type='number'
-                                value={item.price}
-                                onChange={e => updateCartPrice(index, parseFloat(e.target.value) || 0)}
-                                className='w-20 text-right h-8 text-xs font-medium'
                                 step='0.01'
+                                min='0'
+                                value={item.price === 0 || item.price === '0' || item.price === '' ? '' : item.price}
+                                onChange={e => updateCartPrice(index, e.target.value)}
+                                onFocus={e => {
+                                  if (e.target.value === '0' || item.price === 0 || item.price === '0') {
+                                    updateCartPrice(index, '')
+                                  } else {
+                                    e.target.select()
+                                  }
+                                }}
+                                placeholder='0'
+                                className='w-20 text-right h-8 text-xs font-medium'
                               />
                             </div>
 
@@ -1096,11 +1113,20 @@ export function CreateOrder() {
                     <Input
                       type='number'
                       step='0.01'
-                      value={shippingCharge}
+                      min='0'
+                      value={shippingCharge === '0' ? '' : shippingCharge}
                       onChange={e => {
                         setShippingChargeManuallyEdited(true)
                         setShippingCharge(e.target.value)
                       }}
+                      onFocus={e => {
+                        if (e.target.value === '0' || shippingCharge === '0') {
+                          setShippingCharge('')
+                        } else {
+                          e.target.select()
+                        }
+                      }}
+                      placeholder='0'
                       className='h-9.5 text-sm'
                     />
                     <p className='text-[11px] text-muted-foreground mt-1'>
@@ -1113,10 +1139,18 @@ export function CreateOrder() {
                       <Input
                         type='number'
                         step='0.01'
-                        value={discount}
+                        min='0'
+                        value={discount === '0' ? '' : discount}
                         onChange={e => setDiscount(e.target.value)}
+                        onFocus={e => {
+                          if (e.target.value === '0' || discount === '0') {
+                            setDiscount('')
+                          } else {
+                            e.target.select()
+                          }
+                        }}
                         className='h-9.5 text-sm flex-1'
-                        placeholder='0.00'
+                        placeholder='0'
                       />
                       <div className='flex border rounded-lg p-0.5 bg-muted/40 shrink-0'>
                         <Button
@@ -1195,10 +1229,18 @@ export function CreateOrder() {
                       <Input
                         type='number'
                         step='0.01'
-                        value={partialAmount}
+                        min='0'
+                        value={partialAmount === '0' ? '' : partialAmount}
                         onChange={e => setPartialAmount(e.target.value)}
+                        onFocus={e => {
+                          if (e.target.value === '0' || partialAmount === '0') {
+                            setPartialAmount('')
+                          } else {
+                            e.target.select()
+                          }
+                        }}
                         className='h-9.5 text-sm bg-background'
-                        placeholder='Amount collected in advance'
+                        placeholder='0'
                       />
                     </div>
                     <p className='text-xs text-muted-foreground leading-relaxed'>
