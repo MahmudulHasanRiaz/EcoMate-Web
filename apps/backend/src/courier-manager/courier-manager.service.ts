@@ -137,6 +137,7 @@ export class CourierManagerService {
           },
         },
         items: { include: { product: { select: { name: true } } } },
+        payments: true,
       },
     });
 
@@ -198,6 +199,26 @@ export class CourierManagerService {
     }
   }
 
+  getCollectableAmount(order: any): number {
+    if (
+      order.paymentStatus === 'PAID' ||
+      order.paymentOptionType === 'FULL_PAYMENT'
+    ) {
+      return 0;
+    }
+    const orderTotal = Number(order.total || 0);
+    const paidSum = (order.payments || [])
+      .filter((p: any) => p.status === 'PAID')
+      .reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
+    if (paidSum > 0) {
+      return Math.max(0, orderTotal - paidSum);
+    }
+    if (order.paymentOptionType === 'PARTIAL_PAYMENT' && order.partialAmount) {
+      return Math.max(0, orderTotal - Number(order.partialAmount));
+    }
+    return orderTotal;
+  }
+
   private async dispatchSteadfast(creds: any, base: string, order: any) {
     const apiKey = creds.apiKey || creds.credentials?.['apiKey'];
     const secretKey = creds.secretKey || creds.credentials?.['secretKey'];
@@ -206,7 +227,7 @@ export class CourierManagerService {
 
     const recipient = order.customer;
     const phone = this.normalizePhone(recipient?.phone || order.guestPhone);
-    const total = Number(order.total);
+    const collectAmount = this.getCollectableAmount(order);
     const address = order.shippingAddress as Record<string, unknown> | null;
 
     const itemDescription =
@@ -220,7 +241,7 @@ export class CourierManagerService {
         recipient?.name || order.guestName || 'Customer',
       recipient_phone: phone,
       recipient_address: formatCourierAddress(address) ?? 'Dhaka',
-      cod_amount: total,
+      cod_amount: collectAmount,
       note: order.officeNotes || undefined,
       item_description: itemDescription,
       delivery_type: address?.deliveryType === 'hub' ? 1 : 0,
@@ -377,7 +398,7 @@ export class CourierManagerService {
     const storeId = creds.storeId || creds.credentials?.['storeId'] || '1';
     const recipient = order.customer;
     const phone = this.normalizePhone(recipient?.phone || order.guestPhone);
-    const total = Number(order.total);
+    const total = this.getCollectableAmount(order);
     const address = order.shippingAddress as Record<string, unknown> | null;
 
     const itemDescription =
@@ -563,7 +584,7 @@ export class CourierManagerService {
       delivery_area_id: Number(deliveryAreaId) || 1,
       customer_address: formatCourierAddress(address) ?? 'N/A',
       merchant_order_amount: total,
-      cash_collection_amount: total,
+      cash_collection_amount: this.getCollectableAmount(order),
       parcel_weight_in_gram: 500,
       instruction: order.officeNotes || '',
       value: total,
@@ -687,7 +708,7 @@ export class CourierManagerService {
       city: address?.district || 'Dhaka',
       area: address?.area || '',
       merchant_order_id: order.displayId,
-      amount_to_collect: Math.round(total),
+      amount_to_collect: Math.round(this.getCollectableAmount(order)),
       package_charge: order.shippingCharge ? Number(order.shippingCharge) : 100,
       item_description: order.items?.[0]?.product?.name || 'Product',
       item_quantity: order.items?.length || 1,

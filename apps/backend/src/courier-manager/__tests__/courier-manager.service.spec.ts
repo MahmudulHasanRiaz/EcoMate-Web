@@ -183,4 +183,39 @@ describe('CourierManagerService — Steadfast dispatch error handling', () => {
     const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
     expect(body.note).toBeUndefined();
   });
+
+  describe('getCollectableAmount', () => {
+    it('returns 0 when order is already fully PAID', () => {
+      expect(service.getCollectableAmount({ total: 1000, paymentStatus: 'PAID' })).toBe(0);
+      expect(service.getCollectableAmount({ total: 1000, paymentOptionType: 'FULL_PAYMENT' })).toBe(0);
+    });
+
+    it('subtracts verified PAID advance payments from total', () => {
+      const partialOrder = {
+        total: 1000,
+        paymentStatus: 'PARTIAL_PAID',
+        paymentOptionType: 'PARTIAL_PAYMENT',
+        payments: [
+          { status: 'PAID', amount: 250 },
+          { status: 'UNPAID', amount: 750 },
+        ],
+      };
+      expect(service.getCollectableAmount(partialOrder)).toBe(750);
+    });
+
+    it('falls back to partialAmount if payment rows are not loaded', () => {
+      const partialOrder = {
+        total: 1000,
+        paymentStatus: 'PARTIAL_PAID',
+        paymentOptionType: 'PARTIAL_PAYMENT',
+        partialAmount: 300,
+      };
+      expect(service.getCollectableAmount(partialOrder)).toBe(700);
+    });
+
+    it('returns full total for unpaid COD orders', () => {
+      expect(service.getCollectableAmount({ total: 850, paymentOptionType: 'CASH_ON_DELIVERY' })).toBe(850);
+    });
+  });
 });
+

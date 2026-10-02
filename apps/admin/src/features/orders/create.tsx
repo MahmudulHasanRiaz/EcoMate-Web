@@ -27,8 +27,8 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Loader2, ArrowLeft, Package, Barcode, Plus, Trash2, X, User, Phone, Mail, MapPin, CreditCard, ShoppingCart, Tag, Minus } from 'lucide-react'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Loader2, ArrowLeft, Package, Barcode, Plus, Trash2, X, User, Phone, Mail, MapPin, CreditCard, ShoppingCart, Tag, Minus, Search } from 'lucide-react'
 const nn = (v: number | string) => Number(v)
 
 const fmt = (v: number | string) => nn(v).toFixed(2)
@@ -62,6 +62,20 @@ export function CreateOrder() {
   const [shipAddress, setShipAddress] = useState('')
   const [shipCityId, setShipCityId] = useState('')
   const [shipZoneId, setShipZoneId] = useState('')
+
+  const { data: sysSettings } = useQuery({
+    queryKey: ['system-settings'],
+    queryFn: () => apiClient.get('/system-settings').then(r => r.data),
+    staleTime: 5 * 60_000,
+  })
+
+  const { data: shippingZones } = useQuery({
+    queryKey: ['shipping-zones'],
+    queryFn: () => apiClient.get('/shipping-zones').then(r => (r.data as any[]) || []),
+    staleTime: 5 * 60_000,
+  })
+
+  const [shippingChargeManuallyEdited, setShippingChargeManuallyEdited] = useState(false)
 
   const cityOptions = useMemo(() => {
     return (cities || []).map((c: any) => ({
@@ -158,6 +172,46 @@ export function CreateOrder() {
       setShipZones([])
     }
   }, [shipCityId])
+
+  const activeCityId = useDiffShipping ? shipCityId : customerCityId
+  useEffect(() => {
+    if (!activeCityId || cities.length === 0) return
+    const selectedCity = cities.find((c: any) => String(c.id) === String(activeCityId))
+    if (!selectedCity) return
+
+    let defaultCharge = 60
+    if (sysSettings?.['delivery_charge']) {
+      defaultCharge = Number(sysSettings['delivery_charge']) || 60
+    }
+
+    const cityName = (selectedCity.name || '').trim()
+    const matchingZone = shippingZones?.find((z: any) =>
+      z.isActive !== false && Array.isArray(z.districts) && z.districts.some((d: string) => d.toLowerCase() === cityName.toLowerCase())
+    )
+
+    if (matchingZone) {
+      if (matchingZone.type === 'free_delivery') {
+        defaultCharge = 0
+      } else if (matchingZone.type === 'custom_amount' && matchingZone.amount != null) {
+        defaultCharge = Number(matchingZone.amount)
+      }
+    } else if (sysSettings?.['district_charges']) {
+      try {
+        const dc = typeof sysSettings['district_charges'] === 'string'
+          ? JSON.parse(sysSettings['district_charges'])
+          : sysSettings['district_charges']
+        if (dc && dc[cityName] !== undefined) {
+          defaultCharge = Number(dc[cityName])
+        }
+      } catch {
+        // ignore JSON parse error
+      }
+    }
+
+    // Automatically populate delivery charge from default settings for this city
+    setShippingCharge(String(defaultCharge))
+    setShippingChargeManuallyEdited(false)
+  }, [activeCityId, cities, sysSettings, shippingZones])
 
   useEffect(() => {
     const normalized = normalizePhone(customerPhone)
@@ -359,11 +413,17 @@ export function CreateOrder() {
     const shipAddr = useDiffShipping ? shipAddress : customerAddress
     const shipCity = useDiffShipping ? shipCityId : customerCityId
     const shipZone = useDiffShipping ? shipZoneId : customerZoneId
+    const selectedCity = cities.find((c: any) => String(c.id) === String(shipCity))
+    if (selectedCity?.name) {
+      payload.district = selectedCity.name
+    }
     if (shipAddr || shipCity) {
       payload.shippingAddress = {
         address: shipAddr,
         cityId: shipCity || undefined,
         zoneId: shipZone || undefined,
+        district: selectedCity?.name || undefined,
+        city: selectedCity?.name || undefined,
       }
     }
 
@@ -417,18 +477,23 @@ export function CreateOrder() {
   return (
     <>
       <Header fixed>
-        <Button variant='ghost' onClick={() => navigate({ to: '/op/orders' })}>
-          <ArrowLeft className='h-4 w-4 mr-1' /> Back to Orders
-        </Button>
-        <ThemeSwitch /><ProfileDropdown />
+        <div className='flex items-center gap-2'>
+          <Button variant='ghost' size='sm' className='h-8 px-2 sm:px-3 text-xs sm:text-sm' onClick={() => navigate({ to: '/op/orders' })}>
+            <ArrowLeft className='h-4 w-4 mr-1 shrink-0' />
+            <span className='hidden sm:inline'>Back to </span>Orders
+          </Button>
+        </div>
+        <div className='ml-auto flex items-center gap-2'>
+          <ThemeSwitch /><ProfileDropdown />
+        </div>
       </Header>
-      <Main className='flex flex-1 flex-col gap-6'>
+      <Main className='flex flex-1 flex-col gap-4 sm:gap-6 p-3 sm:p-6 max-w-7xl mx-auto w-full'>
         <div className='flex items-center justify-between'>
-          <h2 className='text-2xl font-bold tracking-tight'>Create Order</h2>
+          <h1 className='text-xl sm:text-2xl font-bold tracking-tight'>Create Order</h1>
         </div>
 
-        <div className='grid grid-cols-3 gap-6'>
-          <div className='col-span-2 space-y-6'>
+        <div className='grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6'>
+          <div className='lg:col-span-2 space-y-4 sm:space-y-6'>
             <Card>
               <CardHeader className='pb-2'>
                 <CardTitle className='text-base flex items-center gap-2'>
@@ -447,17 +512,17 @@ export function CreateOrder() {
                   />
                   {searchingCustomer && <Loader2 className='absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground' />}
                   {customerDropdownOpen && customerResults.length > 0 && (
-                    <div className='absolute z-20 mt-1 w-full bg-background border rounded-md shadow-lg overflow-hidden'>
-                      <div className='max-h-56 overflow-y-auto'>
+                    <div className='absolute z-30 mt-1 w-full bg-background border rounded-lg shadow-xl overflow-hidden'>
+                      <div className='max-h-60 overflow-y-auto divide-y divide-border/50'>
                         {customerResults.map(c => (
                           <button
                             key={c.id}
                             type='button'
-                            className='w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2 border-b last:border-0'
+                            className='w-full text-left px-3.5 py-2.5 text-sm hover:bg-muted flex items-center gap-2 transition-colors'
                             onClick={() => selectCustomer(c)}
                           >
                             <div className='min-w-0 flex-1'>
-                              <p className='text-sm font-medium truncate'>{(c.firstName || c.lastName) ? `${c.firstName || ''} ${c.lastName || ''}`.trim() : 'Customer'}</p>
+                              <p className='text-sm font-semibold truncate'>{(c.firstName || c.lastName) ? `${c.firstName || ''} ${c.lastName || ''}`.trim() : 'Customer'}</p>
                               <p className='text-xs text-muted-foreground truncate'>{c.phoneNumber}{c.address ? ` · ${c.address}` : ''}</p>
                             </div>
                             <User className='h-4 w-4 text-muted-foreground shrink-0' />
@@ -473,12 +538,12 @@ export function CreateOrder() {
                 {customerPhone.length >= 11 && !customerMatched && !searchingCustomer && !customerDropdownOpen && (
                   <p className='text-xs text-muted-foreground'>No existing customer found. A new customer will be created with this phone number.</p>
                 )}
-                <div className='grid grid-cols-2 gap-3'>
+                <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
                   <div><Label className='text-xs'>Name</Label><Input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder='Customer name' /></div>
                   <div><Label className='text-xs'>Email</Label><Input value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} placeholder='customer@example.com' /></div>
                 </div>
                 <div><Label className='text-xs'>Address</Label><Textarea value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} rows={2} placeholder='Customer address' /></div>
-                <div className='grid grid-cols-2 gap-3'>
+                <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
                   <div>
                     <Label className='text-xs'>City</Label>
                     <SearchableSelect
@@ -518,7 +583,7 @@ export function CreateOrder() {
                 </CardHeader>
                 <CardContent className='space-y-3'>
                   <div><Label className='text-xs'>Address</Label><Textarea value={shipAddress} onChange={e => setShipAddress(e.target.value)} rows={2} placeholder='Different shipping address' /></div>
-                  <div className='grid grid-cols-2 gap-3'>
+                  <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
                     <div>
                       <Label className='text-xs'>City</Label>
                       <SearchableSelect
@@ -555,7 +620,7 @@ export function CreateOrder() {
                 {/* ── Unified Smart Search Bar ── */}
                 <div className='relative' ref={productDropdownRef}>
                   <div className='relative flex items-center'>
-                    <Barcode className='absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none z-10' />
+                    <Search className='absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none z-10' />
                     <input
                       ref={productInputRef}
                       type='text'
@@ -585,48 +650,76 @@ export function CreateOrder() {
                         }
                         if (e.key === 'Escape') { setShowProductDropdown(false); }
                       }}
-                      placeholder='Search by name or SKU / scan barcode → Enter to add'
-                      className='w-full h-10 pl-9 pr-9 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring'
+                      placeholder='Search by product name or SKU / scan barcode...'
+                      className='w-full h-11 pl-9 pr-9 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring shadow-xs'
                       autoComplete='off'
                     />
                     {productSearching
-                      ? <Loader2 className='absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground' />
-                      : productSearch && <button type='button' onClick={() => { setProductSearch(''); setShowProductDropdown(false) }} className='absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground'><X className='h-4 w-4' /></button>
+                      ? <Loader2 className='absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground' />
+                      : productSearch && <button type='button' onClick={() => { setProductSearch(''); setShowProductDropdown(false) }} className='absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1'><X className='h-4 w-4' /></button>
                     }
                   </div>
 
                   {/* Search results dropdown */}
                   {showProductDropdown && productResults.length > 0 && (
-                    <div className='absolute z-20 mt-1 w-full bg-background border rounded-md shadow-lg overflow-hidden'>
-                      <div className='max-h-56 overflow-y-auto'>
-                        {productResults.map((p: any) => (
-                          <button
-                            key={p.id}
-                            type='button'
-                            className='w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2 border-b last:border-0'
-                            onClick={() => {
-                              if (p.type === 'variable' || p.variants?.length > 0) {
-                                setSelectedProductForVariants(p)
-                              } else {
-                                addToCart(p)
-                                toast.success(`${p.name} added to cart`)
-                              }
-                              setProductSearch('')
-                              setShowProductDropdown(false)
-                            }}
-                          >
-                            {p.images && Array.isArray(p.images) && p.images[0] ? (
-                              <SafeImage src={mediaUrl(p.images[0])} alt='' className='h-8 w-8 rounded border object-cover shrink-0' thumbWidth={48} thumbHeight={48} />
-                            ) : (
-                              <div className='h-8 w-8 rounded border bg-muted flex items-center justify-center shrink-0'><Package className='h-4 w-4 text-muted-foreground' /></div>
-                            )}
-                            <div className='min-w-0 flex-1'>
-                              <p className='text-sm font-medium truncate'>{p.name}</p>
-                              <p className='text-xs text-muted-foreground'>{p.sku || 'No SKU'}</p>
+                    <div className='absolute z-30 mt-1.5 w-full bg-background border rounded-xl shadow-xl overflow-hidden'>
+                      <div className='px-3 py-2 bg-muted/40 border-b flex items-center justify-between text-xs text-muted-foreground'>
+                        <span>{productResults.length} product{productResults.length > 1 ? 's' : ''} found</span>
+                        <span className='text-[11px] hidden sm:inline'>Tap product or options to add</span>
+                      </div>
+                      <div className='max-h-72 sm:max-h-80 overflow-y-auto divide-y divide-border/50'>
+                        {productResults.map((p: any) => {
+                          const isVariable = p.type === 'variable' || (p.variants && p.variants.length > 0)
+                          return (
+                            <div
+                              key={p.id}
+                              className='w-full p-2.5 sm:p-3 hover:bg-muted/60 transition-colors flex items-center gap-3 cursor-pointer'
+                              onClick={() => {
+                                if (isVariable) {
+                                  setSelectedProductForVariants(p)
+                                } else {
+                                  addToCart(p)
+                                  toast.success(`${p.name} added to cart`)
+                                }
+                                setProductSearch('')
+                                setShowProductDropdown(false)
+                              }}
+                            >
+                              {p.images && Array.isArray(p.images) && p.images[0] ? (
+                                <SafeImage src={mediaUrl(p.images[0])} alt='' className='h-11 w-11 rounded-lg border object-cover shrink-0' thumbWidth={48} thumbHeight={48} />
+                              ) : (
+                                <div className='h-11 w-11 rounded-lg border bg-muted flex items-center justify-center shrink-0'>
+                                  <Package className='h-5 w-5 text-muted-foreground' />
+                                </div>
+                              )}
+                              <div className='min-w-0 flex-1'>
+                                <p className='text-sm font-semibold text-foreground line-clamp-2 leading-snug'>{p.name}</p>
+                                <div className='flex items-center gap-1.5 mt-1 flex-wrap'>
+                                  {p.sku && (
+                                    <span className='text-[11px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded'>
+                                      {p.sku}
+                                    </span>
+                                  )}
+                                  {isVariable && (
+                                    <Badge variant='outline' className='text-[10px] h-4.5 font-normal border-primary/30 text-primary'>
+                                      {p.variants?.length} options
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                              <div className='text-right shrink-0'>
+                                <div className='text-sm font-bold text-primary'>৳{fmt(ep(p))}</div>
+                                <Button
+                                  size='sm'
+                                  variant={isVariable ? 'outline' : 'secondary'}
+                                  className='h-7 text-xs px-2.5 mt-1'
+                                >
+                                  {isVariable ? 'Choose' : '+ Add'}
+                                </Button>
+                              </div>
                             </div>
-                            <div className='text-sm font-medium shrink-0'>৳{fmt(ep(p))}</div>
-                          </button>
-                        ))}
+                          )
+                        })}
                       </div>
                     </div>
                   )}
@@ -636,81 +729,166 @@ export function CreateOrder() {
 
             <Card>
               <CardHeader className='pb-2'>
-                <CardTitle className='text-base flex items-center gap-2'>
-                  <ShoppingCart className='h-4 w-4' /> Cart ({cartItems.length})
+                <CardTitle className='text-base flex items-center justify-between'>
+                  <span className='flex items-center gap-2'>
+                    <ShoppingCart className='h-4 w-4' /> Cart ({cartItems.length})
+                  </span>
+                  {cartItems.length > 0 && (
+                    <span className='text-xs font-normal text-muted-foreground'>
+                      {cartItems.reduce((acc, i) => acc + i.quantity, 0)} total units
+                    </span>
+                  )}
                 </CardTitle>
               </CardHeader>
               <CardContent className='p-0'>
                 {cartItems.length === 0 ? (
                   <div className='flex flex-col items-center justify-center py-12 text-muted-foreground'>
                     <ShoppingCart className='h-12 w-12 mb-2 opacity-20' />
-                    <p className='text-sm'>No items added yet. Search products above.</p>
+                    <p className='text-sm font-medium'>Your cart is empty</p>
+                    <p className='text-xs text-muted-foreground mt-0.5'>Search and select products above to add items.</p>
                   </div>
                 ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Product</TableHead>
-                        <TableHead>Variant</TableHead>
-                        <TableHead className='text-right'>Price</TableHead>
-                        <TableHead className='text-right'>Qty</TableHead>
-                        <TableHead className='text-right'>Total</TableHead>
-                        <TableHead className='w-10'></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
+                  <>
+                    {/* Desktop Cart Table (md and up) */}
+                    <div className='hidden md:block'>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Product</TableHead>
+                            <TableHead>Variant</TableHead>
+                            <TableHead className='text-right'>Price</TableHead>
+                            <TableHead className='text-right'>Qty</TableHead>
+                            <TableHead className='text-right'>Total</TableHead>
+                            <TableHead className='w-10'></TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {cartItems.map((item, index) => (
+                            <TableRow key={`${item.productId}-${item.variantId || ''}-${index}`}>
+                              <TableCell>
+                                <div className='flex items-center gap-2.5'>
+                                  {item.product.images && Array.isArray(item.product.images) && item.product.images[0] ? (
+                                    <SafeImage src={mediaUrl(item.product.images[0])} alt='' className='h-9 w-9 rounded-md border object-cover shrink-0' thumbWidth={48} thumbHeight={48} />
+                                  ) : (
+                                    <div className='h-9 w-9 rounded-md border bg-muted flex items-center justify-center shrink-0'><Package className='h-4 w-4 text-muted-foreground' /></div>
+                                  )}
+                                  <span className='text-sm font-semibold truncate max-w-[200px]'>{item.product.name}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell className='text-sm text-muted-foreground'>
+                                {item.variant?.name || (item.variantId ? item.variant?.sku || '—' : '—')}
+                              </TableCell>
+                              <TableCell className='text-right'>
+                                <Input
+                                  type='number'
+                                  value={item.price}
+                                  onChange={e => updateCartPrice(index, parseFloat(e.target.value) || 0)}
+                                  className='w-20 text-right h-8 text-sm ml-auto'
+                                  step='0.01'
+                                />
+                              </TableCell>
+                              <TableCell className='text-right'>
+                                <div className='flex items-center justify-end gap-1'>
+                                  <Button variant='outline' size='icon' className='h-7 w-7' onClick={() => updateCartQty(index, item.quantity - 1)}>
+                                    <Minus className='h-3 w-3' />
+                                  </Button>
+                                  <span className='w-8 text-center text-sm font-bold'>{item.quantity}</span>
+                                  <Button variant='outline' size='icon' className='h-7 w-7' onClick={() => updateCartQty(index, item.quantity + 1)}>
+                                    <Plus className='h-3 w-3' />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                              <TableCell className='text-right text-sm font-bold text-foreground'>৳{fmt(nn(item.price) * item.quantity)}</TableCell>
+                              <TableCell>
+                                <Button variant='ghost' size='icon' className='h-8 w-8 text-destructive hover:bg-destructive/10' onClick={() => removeFromCart(index)}>
+                                  <Trash2 className='h-4 w-4' />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+
+                    {/* Mobile Cart Items (Card View for small screens) */}
+                    <div className='block md:hidden divide-y divide-border/60'>
                       {cartItems.map((item, index) => (
-                        <TableRow key={`${item.productId}-${item.variantId || ''}-${index}`}>
-                          <TableCell>
-                            <div className='flex items-center gap-2'>
+                        <div key={`${item.productId}-${item.variantId || ''}-${index}`} className='p-3 space-y-2.5'>
+                          <div className='flex items-start justify-between gap-2'>
+                            <div className='flex items-center gap-2.5 min-w-0 flex-1'>
                               {item.product.images && Array.isArray(item.product.images) && item.product.images[0] ? (
-                                <SafeImage src={mediaUrl(item.product.images[0])} alt='' className='h-8 w-8 rounded border object-cover shrink-0' thumbWidth={48} thumbHeight={48} />
+                                <SafeImage src={mediaUrl(item.product.images[0])} alt='' className='h-11 w-11 rounded-lg border object-cover shrink-0' thumbWidth={48} thumbHeight={48} />
                               ) : (
-                                <div className='h-8 w-8 rounded border bg-muted flex items-center justify-center shrink-0'><Package className='h-4 w-4 text-muted-foreground' /></div>
+                                <div className='h-11 w-11 rounded-lg border bg-muted flex items-center justify-center shrink-0'>
+                                  <Package className='h-5 w-5 text-muted-foreground' />
+                                </div>
                               )}
-                              <span className='text-sm font-medium truncate max-w-[200px]'>{item.product.name}</span>
+                              <div className='min-w-0 flex-1'>
+                                <p className='text-xs font-semibold text-foreground line-clamp-1'>{item.product.name}</p>
+                                {(item.variant?.name || item.variantId) && (
+                                  <Badge variant='outline' className='text-[10px] mt-0.5 font-normal'>
+                                    {item.variant?.name || item.variant?.sku || 'Variant'}
+                                  </Badge>
+                                )}
+                              </div>
                             </div>
-                          </TableCell>
-                          <TableCell className='text-sm text-muted-foreground'>
-                            {item.variant?.name || (item.variantId ? item.variant?.sku || '—' : '—')}
-                          </TableCell>
-                          <TableCell className='text-right'>
-                            <Input
-                              type='number'
-                              value={item.price}
-                              onChange={e => updateCartPrice(index, parseFloat(e.target.value) || 0)}
-                              className='w-20 text-right h-8 text-sm ml-auto'
-                              step='0.01'
-                            />
-                          </TableCell>
-                          <TableCell className='text-right'>
-                            <div className='flex items-center justify-end gap-1'>
-                              <Button variant='outline' size='icon' className='h-6 w-6' onClick={() => updateCartQty(index, item.quantity - 1)}>
-                                <Minus className='h-3 w-3' />
-                              </Button>
-                              <span className='w-8 text-center text-sm font-medium'>{item.quantity}</span>
-                              <Button variant='outline' size='icon' className='h-6 w-6' onClick={() => updateCartQty(index, item.quantity + 1)}>
-                                <Plus className='h-3 w-3' />
-                              </Button>
-                            </div>
-                          </TableCell>
-                          <TableCell className='text-right text-sm font-medium'>৳{fmt(nn(item.price) * item.quantity)}</TableCell>
-                          <TableCell>
-                            <Button variant='ghost' size='icon' className='h-7 w-7 text-destructive hover:text-destructive' onClick={() => removeFromCart(index)}>
+                            <Button
+                              variant='ghost'
+                              size='icon'
+                              className='h-8 w-8 text-destructive hover:bg-destructive/10 shrink-0'
+                              onClick={() => removeFromCart(index)}
+                            >
                               <Trash2 className='h-4 w-4' />
                             </Button>
-                          </TableCell>
-                        </TableRow>
+                          </div>
+
+                          <div className='flex items-center justify-between gap-2 pt-1 border-t border-border/40 text-xs'>
+                            <div className='flex items-center gap-1.5'>
+                              <span className='text-muted-foreground'>৳</span>
+                              <Input
+                                type='number'
+                                value={item.price}
+                                onChange={e => updateCartPrice(index, parseFloat(e.target.value) || 0)}
+                                className='w-20 text-right h-8 text-xs font-medium'
+                                step='0.01'
+                              />
+                            </div>
+
+                            <div className='flex items-center gap-1'>
+                              <Button
+                                variant='outline'
+                                size='icon'
+                                className='h-8 w-8'
+                                onClick={() => updateCartQty(index, item.quantity - 1)}
+                              >
+                                <Minus className='h-3.5 w-3.5' />
+                              </Button>
+                              <span className='w-7 text-center text-xs font-bold'>{item.quantity}</span>
+                              <Button
+                                variant='outline'
+                                size='icon'
+                                className='h-8 w-8'
+                                onClick={() => updateCartQty(index, item.quantity + 1)}
+                              >
+                                <Plus className='h-3.5 w-3.5' />
+                              </Button>
+                            </div>
+
+                            <div className='text-right'>
+                              <span className='font-bold text-sm text-foreground'>৳{fmt(nn(item.price) * item.quantity)}</span>
+                            </div>
+                          </div>
+                        </div>
                       ))}
-                    </TableBody>
-                  </Table>
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>
 
           </div>
 
-          <div className='space-y-6'>
+          <div className='space-y-4 sm:space-y-6'>
             <Card>
               <CardHeader className='pb-2'>
                 <CardTitle className='text-base'>Order Summary</CardTitle>
@@ -726,34 +904,81 @@ export function CreateOrder() {
                     <span>+৳{fmt(parseFloat(shippingCharge) || 0)}</span>
                   </div>
                   {discountValue > 0 && (
-                    <div className='flex justify-between text-green-600'>
+                    <div className='flex justify-between text-green-600 font-medium'>
                       <span className='text-muted-foreground'>Discount {discountType === 'percentage' ? `(${parseFloat(discount) || 0}%)` : ''}</span>
                       <span>-৳{fmt(discountValue)}</span>
                     </div>
                   )}
-                  <div className='flex justify-between font-bold text-base pt-1.5 border-t'>
+                  <div className='flex justify-between font-bold text-base pt-2 border-t'>
                     <span>Total</span>
-                    <span>৳{fmt(total)}</span>
+                    <span className='text-primary'>৳{fmt(total)}</span>
                   </div>
+                  {paymentMode === 'partial' && parseFloat(partialAmount) > 0 && (
+                    <>
+                      <div className='flex justify-between text-emerald-600 font-medium pt-1'>
+                        <span>Advance Paid</span>
+                        <span>-৳{fmt(parseFloat(partialAmount) || 0)}</span>
+                      </div>
+                      <div className='flex justify-between font-bold text-sm sm:text-base pt-1.5 border-t border-dashed text-foreground'>
+                        <span>Due on Delivery (COD)</span>
+                        <span className='text-amber-600 dark:text-amber-500'>
+                          ৳{fmt(Math.max(0, total - (parseFloat(partialAmount) || 0)))}
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
 
-                <div className='grid grid-cols-2 gap-3'>
+                <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
                   <div>
-                    <Label className='text-xs'>Shipping Charge</Label>
-                    <Input type='number' step='0.01' value={shippingCharge} onChange={e => setShippingCharge(e.target.value)} className='h-9 text-sm mt-1' />
+                    <Label className='text-xs'>Shipping Charge (৳)</Label>
+                    <Input
+                      type='number'
+                      step='0.01'
+                      value={shippingCharge}
+                      onChange={e => {
+                        setShippingChargeManuallyEdited(true)
+                        setShippingCharge(e.target.value)
+                      }}
+                      className='h-9 text-sm mt-1'
+                    />
+                    <p className='text-[11px] text-muted-foreground mt-1'>
+                      {shippingChargeManuallyEdited ? 'Custom rate applied' : 'Auto-set from city'}
+                    </p>
                   </div>
                   <div>
                     <Label className='text-xs'>Discount</Label>
-                    <Input type='number' step='0.01' value={discount} onChange={e => setDiscount(e.target.value)} className='h-9 text-sm mt-1' />
+                    <div className='flex gap-1.5 mt-1'>
+                      <Input
+                        type='number'
+                        step='0.01'
+                        value={discount}
+                        onChange={e => setDiscount(e.target.value)}
+                        className='h-9 text-sm flex-1'
+                        placeholder='0.00'
+                      />
+                      <div className='flex border rounded-md p-0.5 bg-muted/40 shrink-0'>
+                        <Button
+                          type='button'
+                          variant={discountType === 'flat' ? 'default' : 'ghost'}
+                          size='sm'
+                          className='h-7.5 px-2 text-xs'
+                          onClick={() => setDiscountType('flat')}
+                        >
+                          Flat
+                        </Button>
+                        <Button
+                          type='button'
+                          variant={discountType === 'percentage' ? 'default' : 'ghost'}
+                          size='sm'
+                          className='h-7.5 px-2 text-xs'
+                          onClick={() => setDiscountType('percentage')}
+                        >
+                          %
+                        </Button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div className='flex gap-1 border rounded-md p-0.5 w-fit'>
-                  <Button variant={discountType === 'flat' ? 'default' : 'ghost'} size='sm' className='h-7 text-xs' onClick={() => setDiscountType('flat')}>
-                    <Tag className='h-3 w-3 mr-1' />Flat
-                  </Button>
-                  <Button variant={discountType === 'percentage' ? 'default' : 'ghost'} size='sm' className='h-7 text-xs' onClick={() => setDiscountType('percentage')}>
-                                    %
-                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -765,28 +990,50 @@ export function CreateOrder() {
                 </CardTitle>
               </CardHeader>
               <CardContent className='space-y-3'>
-                <div>
-                  <Label className='text-xs'>Method</Label>
-                  <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1' value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
-                    <option value='cash'>Cash</option>
-                    <option value='bkash'>bKash</option>
-                    <option value='nagad'>Nagad</option>
-                    <option value='bank'>Bank</option>
-                    <option value='card'>Card</option>
-                  </select>
-                </div>
-                <div>
-                  <Label className='text-xs'>Mode</Label>
-                  <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1' value={paymentMode} onChange={e => setPaymentMode(e.target.value as any)}>
-                    <option value='cod'>COD</option>
-                    <option value='full'>Full Payment</option>
-                    <option value='partial'>Partial Payment</option>
-                  </select>
+                <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
+                  <div>
+                    <Label className='text-xs'>Method</Label>
+                    <select
+                      className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1'
+                      value={paymentMethod}
+                      onChange={e => setPaymentMethod(e.target.value)}
+                    >
+                      <option value='cash'>Cash</option>
+                      <option value='bkash'>bKash</option>
+                      <option value='nagad'>Nagad</option>
+                      <option value='bank'>Bank Transfer</option>
+                      <option value='card'>Card</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label className='text-xs'>Mode</Label>
+                    <select
+                      className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1'
+                      value={paymentMode}
+                      onChange={e => setPaymentMode(e.target.value as any)}
+                    >
+                      <option value='cod'>Cash on Delivery (COD)</option>
+                      <option value='full'>Full Payment</option>
+                      <option value='partial'>Partial Payment</option>
+                    </select>
+                  </div>
                 </div>
                 {paymentMode === 'partial' && (
-                  <div>
-                    <Label className='text-xs'>Partial Amount</Label>
-                    <Input type='number' step='0.01' value={partialAmount} onChange={e => setPartialAmount(e.target.value)} className='h-9 text-sm mt-1' placeholder='Amount to collect' />
+                  <div className='p-3 bg-muted/40 rounded-lg border border-border/60 space-y-2'>
+                    <div>
+                      <Label className='text-xs font-semibold'>Advance Paid Amount (৳)</Label>
+                      <Input
+                        type='number'
+                        step='0.01'
+                        value={partialAmount}
+                        onChange={e => setPartialAmount(e.target.value)}
+                        className='h-9 text-sm mt-1'
+                        placeholder='Amount collected in advance'
+                      />
+                    </div>
+                    <p className='text-xs text-muted-foreground'>
+                      Advance of ৳{fmt(parseFloat(partialAmount) || 0)} will be recorded as paid now. Balance of ৳{fmt(Math.max(0, total - (parseFloat(partialAmount) || 0)))} will be collected on delivery.
+                    </p>
                   </div>
                 )}
               </CardContent>
@@ -808,14 +1055,8 @@ export function CreateOrder() {
                     className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1'
                     value={channel}
                     onChange={e => {
-                      // The <select> only offers CHANNEL_OPTIONS, so the value
-                      // is a ChannelV2 by construction.
                       const val = e.target.value as ChannelV2
                       setChannel(val)
-                      // Re-check the source rather than carrying it blindly: a
-                      // platform valid for the previous channel may not be
-                      // valid for the next. Messaging keeps Facebook, which is
-                      // where most messaging orders actually originate.
                       if (val === 'MESSAGING') setSourceSlug('facebook')
                       else setSourceSlug('')
                       if (val === 'POS') setAcquisitionType('')
@@ -827,8 +1068,6 @@ export function CreateOrder() {
                   </select>
                 </div>
 
-                {/* Entity — optional everywhere; POS is auto-filled from the
-                    session server-side, so the user is never asked for it. */}
                 {channel !== 'POS' && (
                   <div>
                     <Label className='text-xs'>
@@ -848,8 +1087,6 @@ export function CreateOrder() {
                   </div>
                 )}
 
-                {/* Source — capability-filtered server-side. A Messaging channel
-                    can never offer a non-messaging platform such as Google. */}
                 <div>
                   <Label className='text-xs'>
                     Source <span className='text-muted-foreground font-normal'>(optional)</span>
@@ -866,8 +1103,6 @@ export function CreateOrder() {
                   </select>
                 </div>
 
-                {/* Acquisition — for POS and Phone Call this stays empty unless
-                    staff genuinely know; it is never auto-filled with Organic. */}
                 <div>
                   <Label className='text-xs'>
                     Acquisition Type{' '}
@@ -896,16 +1131,36 @@ export function CreateOrder() {
               <CardContent className='space-y-3'>
                 <div>
                   <Label className='text-xs'>Customer Notes</Label>
-                  <Textarea value={customerNotes} onChange={e => setCustomerNotes(e.target.value)} rows={2} className='mt-1 text-sm' placeholder='Note visible to customer on invoice...' />
+                  <Textarea
+                    value={customerNotes}
+                    onChange={e => setCustomerNotes(e.target.value)}
+                    rows={2}
+                    className='mt-1 text-sm'
+                    placeholder='Note visible to customer on invoice...'
+                  />
                 </div>
                 <div>
                   <Label className='text-xs'>Office Notes</Label>
-                  <Textarea value={officeNotes} onChange={e => setOfficeNotes(e.target.value)} rows={2} className='mt-1 text-sm' placeholder='Internal notes...' />
+                  <Textarea
+                    value={officeNotes}
+                    onChange={e => setOfficeNotes(e.target.value)}
+                    rows={2}
+                    className='mt-1 text-sm'
+                    placeholder='Internal notes...'
+                  />
+                  <p className='text-[11px] text-muted-foreground mt-1'>
+                    Internal note will be automatically combined with the default office note.
+                  </p>
                 </div>
               </CardContent>
             </Card>
 
-            <Button className='w-full' size='lg' onClick={handleSubmit} disabled={createMut.isPending}>
+            <Button
+              className='w-full h-11 text-sm sm:text-base font-semibold shadow-xs'
+              size='lg'
+              onClick={handleSubmit}
+              disabled={createMut.isPending}
+            >
               {createMut.isPending ? <Loader2 className='h-4 w-4 animate-spin mr-2' /> : <Plus className='h-4 w-4 mr-2' />}
               Create Order
             </Button>
@@ -914,38 +1169,56 @@ export function CreateOrder() {
       </Main>
 
       <Dialog open={!!selectedProductForVariants} onOpenChange={() => setSelectedProductForVariants(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Select Variant</DialogTitle></DialogHeader>
-          <div className='space-y-3 py-2'>
-            <p className='text-sm font-medium'>{selectedProductForVariants?.name}</p>
-            <div className='space-y-2 max-h-60 overflow-y-auto'>
-              {selectedProductForVariants?.variants?.map((v: any) => (
+        <DialogContent className='max-w-md w-[95vw] sm:w-full max-h-[85vh] flex flex-col p-4 sm:p-6'>
+          <DialogHeader className='pb-2 text-left'>
+            <DialogTitle className='text-base sm:text-lg'>Select Variant</DialogTitle>
+            <DialogDescription className='text-xs'>
+              {selectedProductForVariants?.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className='flex-1 overflow-y-auto space-y-2 py-2 -mx-1 px-1 max-h-[55vh] divide-y divide-border/40'>
+            {selectedProductForVariants?.variants?.map((v: any) => {
+              const label = variantLabel(v)
+              const price = v.salePrice ?? v.price ?? ep(selectedProductForVariants)
+              const thumb = variantThumbUrl(v, selectedProductForVariants)
+              return (
                 <div
                   key={v.id}
-                  className='flex items-center justify-between p-2 border rounded-md hover:bg-muted cursor-pointer'
+                  className='flex items-center justify-between p-2.5 sm:p-3 border rounded-lg hover:bg-muted/70 active:bg-muted transition-colors cursor-pointer gap-2.5 min-h-[52px]'
                   onClick={() => {
                     addToCart(selectedProductForVariants, v)
                     setSelectedProductForVariants(null)
-                    toast.success(`${selectedProductForVariants.name} (${variantLabel(v)}) added to cart`)
+                    toast.success(`${selectedProductForVariants.name} (${label}) added to cart`)
                   }}
                 >
-                  <div className='flex items-center gap-2'>
-                    {variantThumbUrl(v, selectedProductForVariants) ? (
-                      <SafeImage src={mediaUrl(variantThumbUrl(v, selectedProductForVariants)!)} alt='' className='h-8 w-8 rounded border object-cover' thumbWidth={48} thumbHeight={48} />
+                  <div className='flex items-center gap-2.5 min-w-0 flex-1'>
+                    {thumb ? (
+                      <SafeImage src={mediaUrl(thumb)} alt='' className='h-10 w-10 rounded-md border object-cover shrink-0' thumbWidth={48} thumbHeight={48} />
                     ) : (
-                      <div className='h-8 w-8 rounded border bg-muted flex items-center justify-center'><Package className='h-4 w-4 text-muted-foreground' /></div>
+                      <div className='h-10 w-10 rounded-md border bg-muted flex items-center justify-center shrink-0'>
+                        <Package className='h-5 w-5 text-muted-foreground' />
+                      </div>
                     )}
-                    <div>
-                      <p className='text-sm font-medium'>{variantLabel(v)}</p>
-                      <p className='text-xs text-muted-foreground'>{v.sku || 'No SKU'}</p>
+                    <div className='min-w-0 flex-1'>
+                      <p className='text-sm font-semibold text-foreground truncate'>{label}</p>
+                      <p className='text-xs font-mono text-muted-foreground truncate'>{v.sku || 'No SKU'}</p>
                     </div>
                   </div>
-                  <div className='text-sm font-medium'>৳{fmt(v.salePrice ?? v.price ?? ep(selectedProductForVariants))}</div>
+                  <div className='text-right shrink-0'>
+                    <div className='text-sm font-bold text-primary'>৳{fmt(price)}</div>
+                    <Button size='sm' variant='secondary' className='h-6 text-[11px] px-2 mt-1'>
+                      + Select
+                    </Button>
+                  </div>
                 </div>
-              ))}
-            </div>
+              )
+            })}
           </div>
-          <div className='flex justify-end'><Button variant='outline' onClick={() => setSelectedProductForVariants(null)}>Cancel</Button></div>
+          <DialogFooter className='pt-2 border-t flex flex-row justify-end'>
+            <Button variant='outline' size='sm' className='w-full sm:w-auto' onClick={() => setSelectedProductForVariants(null)}>
+              Cancel
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

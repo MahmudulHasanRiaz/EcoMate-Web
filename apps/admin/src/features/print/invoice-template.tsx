@@ -114,6 +114,26 @@ export function InvoiceTemplate({ order }: { order: any }) {
           <div className="flex justify-between font-bold text-base border-t border-double pt-2 mt-1">
             <span>Total</span><span className="text-lg">{currencySymbol}{fmt(order.total)}</span>
           </div>
+          {(() => {
+            const paid = (order.payments || [])
+              .filter((p: any) => p.status === 'PAID')
+              .reduce((sum: number, p: any) => sum + nm(p.amount), 0)
+            if (paid > 0 && paid < nm(order.total)) {
+              return (
+                <>
+                  <div className="flex justify-between text-green-700 font-medium pt-1">
+                    <span>Paid (Advance)</span>
+                    <span>-{currencySymbol}{fmt(paid)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-base border-t border-black pt-1.5 text-red-600">
+                    <span>Due on Delivery</span>
+                    <span className="text-lg">{currencySymbol}{fmt(Math.max(0, nm(order.total) - paid))}</span>
+                  </div>
+                </>
+              )
+            }
+            return null
+          })()}
         </div>
       </div>
 
