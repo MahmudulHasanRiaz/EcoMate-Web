@@ -113,6 +113,10 @@ services:
       SEED_DUMMY_DATA: ${SEED_DUMMY_DATA:-false}
       RUN_SEED: ${RUN_SEED:-false}
       STOCK_RECONCILE_ON_BOOT: ${STOCK_RECONCILE_ON_BOOT:-false}
+      # Node heap ceiling, consumed by startup.sh. Must stay below the container
+      # memory limit set in the deploy block below, or the kernel OOM-kills the
+      # process before Node reaches its own ceiling.
+      NODE_MAX_OLD_SPACE_SIZE: ${NODE_MAX_OLD_SPACE_SIZE:-1280}
       # Tracking-store retention sweep (90d PII anonymisation / 30d terminal
       # outbox purge / 2y archive). Only the literal 'false' disables it.
       RETENTION_ENABLED: ${RETENTION_ENABLED:-true}
@@ -137,9 +141,15 @@ services:
       resources:
         limits:
           cpus: '1.0'
-          memory: 512M
+          # Raised from 512M: startup died with "JavaScript heap out of memory"
+          # while Prisma loaded the 186-table schema. Node's heap has to fit
+          # inside this limit, otherwise the kernel OOM-kills the process before
+          # Node's own ceiling is reached. startup.sh sets --max-old-space-size
+          # to 1280, leaving ~256M for the container's non-heap allocations
+          # (Prisma engine, buffers, native).
+          memory: 1536M
         reservations:
-          memory: 256M
+          memory: 512M
 
   # backend-migrate is removed — migrations run automatically in backend service startup.sh
 

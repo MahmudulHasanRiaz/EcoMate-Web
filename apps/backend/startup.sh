@@ -40,4 +40,21 @@ if [ "$RUN_SEED" = "true" ]; then
 fi
 
 echo "[Startup] Starting server..."
-exec su -s /bin/sh nestjs -c "node dist/src/main"
+
+# Heap ceiling.
+#
+# Without this, Node uses its default old-space (~256MB here) and the process is
+# killed during startup with "Ineffective mark-compacts near heap limit /
+# JavaScript heap out of memory" while Prisma loads the 186-table schema. The
+# crash happened during route mapping, before the server ever accepted traffic,
+# so it presented as an unexplained migration/redeploy failure.
+#
+# Overridable so a larger host can raise it without editing this file. Must stay
+# below the container memory limit in docker-compose.yml, or the kernel OOM-kills
+# the process before Node's own ceiling is reached. Pass the flag through `su`
+# so it reaches node, not just the shell.
+: "${NODE_MAX_OLD_SPACE_SIZE:=1280}"
+export NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE} ${NODE_OPTIONS:-}"
+echo "[Startup] NODE_OPTIONS=${NODE_OPTIONS}"
+
+exec su -s /bin/sh nestjs -c "NODE_OPTIONS='${NODE_OPTIONS}' node dist/src/main"
