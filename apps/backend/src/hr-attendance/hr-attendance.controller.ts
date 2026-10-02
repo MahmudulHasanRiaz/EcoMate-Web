@@ -65,6 +65,8 @@ export class HrAttendanceController {
   @Get('attendance')
   findAll(
     @Query('date') date?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
     @Query('employeeId') employeeId?: string,
     @Query('status') status?: string,
     @Query('departmentId') departmentId?: string,
@@ -72,7 +74,7 @@ export class HrAttendanceController {
     @Query('perPage') perPage?: string,
   ) {
     return this.hrAttendanceService.findAll(
-      { date, employeeId, status, departmentId },
+      { date, from, to, employeeId, status, departmentId },
       page ? parseInt(page, 10) : 1,
       perPage ? parseInt(perPage, 10) : 20,
     );

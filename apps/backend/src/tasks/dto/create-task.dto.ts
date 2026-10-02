@@ -4,6 +4,7 @@ import {
   IsOptional,
   IsDateString,
   IsEnum,
+  IsNumber,
 } from 'class-validator';
 import { TaskStatus, TaskLabel, TaskPriority } from '@prisma/client';
 
@@ -24,6 +25,14 @@ export class CreateTaskDto {
   @IsOptional()
   @IsString()
   assignee?: string;
+
+  @IsOptional()
+  @IsString()
+  assignedEmployeeId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  estimatedMinutes?: number;
 
   @IsOptional()
   @IsString()

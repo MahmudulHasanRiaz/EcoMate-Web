@@ -15,11 +15,32 @@ import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { BulkDeleteTasksDto, BulkUpdateTasksDto } from './dto/bulk-task.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { LogTaskTimeDto, StartTaskTimerDto, StopTaskTimerDto } from './dto/time-entry.dto';
 
 @Controller('tasks')
 @RequiresFeature('admin_tasks')
 export class TasksController {
   constructor(private readonly tasksService: TasksService) {}
+
+  @Roles('superadmin', 'admin', 'manager')
+  @Get('productivity-report')
+  async getProductivityReport(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('departmentId') departmentId?: string,
+    @Query('employeeId') employeeId?: string,
+    @Query('page') page?: string,
+    @Query('perPage') perPage?: string,
+  ) {
+    return this.tasksService.getProductivityReport({
+      from,
+      to,
+      departmentId,
+      employeeId,
+      page: page ? parseInt(page) : undefined,
+      perPage: perPage ? parseInt(perPage) : undefined,
+    });
+  }
 
   @Roles('superadmin', 'admin', 'manager')
   @Get()
@@ -32,6 +53,7 @@ export class TasksController {
     @Query('priority') priority?: string,
     @Query('sort') sort?: string,
     @Query('order') order?: string,
+    @Query('assignedEmployeeId') assignedEmployeeId?: string,
   ) {
     return this.tasksService.findAll({
       page: page ? parseInt(page) : undefined,
@@ -42,6 +64,7 @@ export class TasksController {
       priority,
       sort,
       order,
+      assignedEmployeeId,
     });
   }
 
@@ -84,6 +107,82 @@ export class TasksController {
     return this.tasksService.bulkUpdate(dto.ids, {
       status: dto.status,
       priority: dto.priority,
+    });
+  }
+
+  // ── Time tracking endpoints ─────────────────────────────────────────────────
+
+  @Roles('superadmin', 'admin', 'manager')
+  @Post(':id/timer/start')
+  async startTimer(
+    @Param('id') id: string,
+    @Body() dto: StartTaskTimerDto,
+  ) {
+    return this.tasksService.startTimer(id, dto);
+  }
+
+  @Roles('superadmin', 'admin', 'manager')
+  @Post(':id/timer/pause')
+  async pauseTimer(
+    @Param('id') id: string,
+    @Body() body: { employeeId: string; notes?: string },
+  ) {
+    return this.tasksService.pauseTimer(id, body);
+  }
+
+  @Roles('superadmin', 'admin', 'manager')
+  @Post(':id/timer/resume')
+  async resumeTimer(
+    @Param('id') id: string,
+    @Body() body: { employeeId: string; notes?: string },
+  ) {
+    return this.tasksService.resumeTimer(id, body);
+  }
+
+  @Roles('superadmin', 'admin', 'manager')
+  @Post(':id/timer/stop')
+  async stopTimer(
+    @Param('id') id: string,
+    @Body() dto: StopTaskTimerDto,
+  ) {
+    return this.tasksService.stopTimer(id, dto);
+  }
+
+  @Roles('superadmin', 'admin', 'manager')
+  @Post(':id/time-entries')
+  async logTime(
+    @Param('id') id: string,
+    @Body() dto: LogTaskTimeDto,
+  ) {
+    return this.tasksService.logTime(id, dto);
+  }
+
+  @Roles('superadmin', 'admin', 'manager')
+  @Get(':id/time-entries')
+  async getTimeEntries(
+    @Param('id') id: string,
+    @Query('page') page?: string,
+    @Query('perPage') perPage?: string,
+  ) {
+    return this.tasksService.getTimeEntries(
+      id,
+      page ? parseInt(page) : 1,
+      perPage ? parseInt(perPage) : 20,
+    );
+  }
+
+  @Roles('superadmin', 'admin', 'manager')
+  @Get('employee/:employeeId')
+  async getEmployeeTaskList(
+    @Param('employeeId') employeeId: string,
+    @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('perPage') perPage?: string,
+  ) {
+    return this.tasksService.getEmployeeTaskList(employeeId, {
+      status,
+      page: page ? parseInt(page) : 1,
+      perPage: perPage ? parseInt(perPage) : 20,
     });
   }
 }

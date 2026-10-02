@@ -5,6 +5,8 @@ import { PERMISSIONS_ANY_KEY } from '../common/decorators/permissions.decorator'
 import { REQUIRES_FEATURE_KEY } from '@ecomate/feature-flags';
 import { HrController } from './hr.controller';
 import { HrService } from './hr.service';
+import { OrderStaffPerformanceService } from '../orders/order-staff-performance.service';
+import { TasksService } from '../tasks/tasks.service';
 
 describe('HrController', () => {
   let controller: HrController;
@@ -15,6 +17,20 @@ describe('HrController', () => {
       controllers: [HrController],
       providers: [
         { provide: HrService, useValue: { getOverview: jest.fn() } },
+        {
+          provide: OrderStaffPerformanceService,
+          useValue: {
+            getStaffPerformance: jest.fn(),
+            getStaffOrderDrilldown: jest.fn(),
+            backfillFromTimeline: jest.fn(),
+          },
+        },
+        {
+          provide: TasksService,
+          useValue: {
+            getProductivityReport: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -53,5 +69,15 @@ describe('HrController', () => {
     expect(path).toBe('overview');
     const method = Reflect.getMetadata('method', HrController.prototype.getOverview);
     expect(method).toBe(0); // GET
+  });
+
+  it('should expose GET /hr/performance/orders', () => {
+    const path = Reflect.getMetadata('path', HrController.prototype.getOrderPerformance);
+    expect(path).toBe('performance/orders');
+  });
+
+  it('should expose GET /hr/performance/tasks', () => {
+    const path = Reflect.getMetadata('path', HrController.prototype.getTaskPerformance);
+    expect(path).toBe('performance/tasks');
   });
 });

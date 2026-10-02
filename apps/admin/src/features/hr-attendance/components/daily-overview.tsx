@@ -26,54 +26,100 @@ export function DailyOverview({ date }: { date: Date }) {
   const counts = data?.counts ?? null
 
   return (
-    <div className='grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-4 xl:grid-cols-8'>
-      {isLoading || !counts ? (
-        Array.from({ length: 8 }).map((_, i) => (
-          <Card key={i}>
-            <CardContent className='p-3'>
-              <Skeleton className='h-3 w-16 mb-2' />
-              <Skeleton className='h-6 w-8' />
-            </CardContent>
-          </Card>
-        ))
-      ) : isError ? (
-        <Card className='col-span-full'>
-          <CardContent className='flex flex-col items-center gap-3 py-8 text-center'>
-            <p className='text-sm text-muted-foreground'>Could not load daily overview.</p>
-            <Button variant='outline' size='sm' onClick={() => refetch()}>
-              <RotateCcw className='h-4 w-4 mr-1' /> Retry
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <>
-          <Card>
-            <CardContent className='p-3'>
-              <p className='text-xs font-medium text-muted-foreground'>Total Records</p>
-              <p className='mt-0.5 text-2xl font-bold tabular-nums'>{data?.total ?? 0}</p>
-            </CardContent>
-          </Card>
-          {ATTENDANCE_STATUSES.map((s) => (
-            <Card key={s}>
-              <CardContent className={`p-3 ${STATUS_COUNT_BADGE[s]}`}>
-                <p className='text-xs font-medium opacity-80'>{ATTENDANCE_STATUS_LABELS[s]}</p>
-                <p className='mt-0.5 text-2xl font-bold tabular-nums'>{counts[s] ?? 0}</p>
+    <div className='space-y-3'>
+      {/* Primary Status Counts */}
+      <div className='grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-4 xl:grid-cols-8'>
+        {isLoading || !counts ? (
+          Array.from({ length: 8 }).map((_, i) => (
+            <Card key={i}>
+              <CardContent className='p-3'>
+                <Skeleton className='h-3 w-16 mb-2' />
+                <Skeleton className='h-6 w-8' />
               </CardContent>
             </Card>
-          ))}
-          {/* Overtime is a duration, not a headcount, so it gets its own tile
-              rather than being squeezed into the status grid. */}
-          <Card>
-            <CardContent className='p-3 bg-[var(--color-warning-soft)]'>
-              <p className='text-xs font-medium text-[var(--color-warning-ink)]/80'>
-                Overtime
-              </p>
-              <p className='mt-0.5 text-2xl font-bold tabular-nums text-[var(--color-warning-ink)]'>
-                {formatDuration(data?.overtimeMinutes ?? 0)}
-              </p>
+          ))
+        ) : isError ? (
+          <Card className='col-span-full'>
+            <CardContent className='flex flex-col items-center gap-3 py-8 text-center'>
+              <p className='text-sm text-muted-foreground'>Could not load daily overview.</p>
+              <Button variant='outline' size='sm' onClick={() => refetch()}>
+                <RotateCcw className='h-4 w-4 mr-1' /> Retry
+              </Button>
             </CardContent>
           </Card>
-        </>
+        ) : (
+          <>
+            <Card>
+              <CardContent className='p-3'>
+                <p className='text-xs font-medium text-muted-foreground'>Total Records</p>
+                <p className='mt-0.5 text-2xl font-bold tabular-nums'>{data?.total ?? 0}</p>
+              </CardContent>
+            </Card>
+            {ATTENDANCE_STATUSES.map((s) => (
+              <Card key={s}>
+                <CardContent className={`p-3 ${STATUS_COUNT_BADGE[s]}`}>
+                  <p className='text-xs font-medium opacity-80'>{ATTENDANCE_STATUS_LABELS[s]}</p>
+                  <p className='mt-0.5 text-2xl font-bold tabular-nums'>{counts[s] ?? 0}</p>
+                </CardContent>
+              </Card>
+            ))}
+            <Card>
+              <CardContent className='p-3 bg-[var(--color-warning-soft)]'>
+                <p className='text-xs font-medium text-[var(--color-warning-ink)]/80'>
+                  Overtime
+                </p>
+                <p className='mt-0.5 text-2xl font-bold tabular-nums text-[var(--color-warning-ink)]'>
+                  {formatDuration(data?.overtimeMinutes ?? 0)}
+                </p>
+              </CardContent>
+            </Card>
+          </>
+        )}
+      </div>
+
+      {/* Live Session State Chips (if data available) */}
+      {data && (
+        <div className='flex flex-wrap items-center gap-3 px-3 py-2 rounded-xl border border-border/60 bg-muted/20 text-xs'>
+          <span className='font-semibold text-muted-foreground'>Live Shift Telemetry:</span>
+          <div className='flex items-center gap-1.5'>
+            <span className='h-2 w-2 rounded-full bg-emerald-500 animate-pulse' />
+            <span className='text-muted-foreground'>Working Now:</span>
+            <span className='font-bold tabular-nums text-emerald-600'>
+              {data.currentlyWorking ?? 0}
+            </span>
+          </div>
+          <span className='text-border'>|</span>
+          <div className='flex items-center gap-1.5'>
+            <span className='h-2 w-2 rounded-full bg-cyan-500' />
+            <span className='text-muted-foreground'>On Break:</span>
+            <span className='font-bold tabular-nums text-cyan-600'>
+              {data.onBreak ?? 0}
+            </span>
+          </div>
+          <span className='text-border'>|</span>
+          <div className='flex items-center gap-1.5'>
+            <span className='text-muted-foreground'>Total Worked Time:</span>
+            <span className='font-bold tabular-nums'>
+              {formatDuration(data.workedMinutes ?? 0)}
+            </span>
+          </div>
+          <span className='text-border'>|</span>
+          <div className='flex items-center gap-1.5'>
+            <span className='text-muted-foreground'>Break Duration:</span>
+            <span className='font-bold tabular-nums text-muted-foreground'>
+              {formatDuration(data.breakMinutes ?? 0)}
+            </span>
+          </div>
+          {(data.missingCheckout ?? 0) > 0 && (
+            <>
+              <span className='text-border'>|</span>
+              <div className='flex items-center gap-1.5 text-rose-600 font-semibold'>
+                <span>Missing Checkout:</span>
+                <span className='tabular-nums'>{data.missingCheckout}</span>
+              </div>
+            </>
+          )}
+        </div>
       )}
     </div>
   )

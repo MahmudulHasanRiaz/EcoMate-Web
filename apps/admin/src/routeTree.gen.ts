@@ -29,6 +29,7 @@ import { Route as AuthenticatedHrCommissionsRouteImport } from './routes/_authen
 import { Route as AuthenticatedHrHelpRouteImport } from './routes/_authenticated/hr/help'
 import { Route as AuthenticatedHrLeaveRouteImport } from './routes/_authenticated/hr/leave'
 import { Route as AuthenticatedHrOverviewRouteImport } from './routes/_authenticated/hr/overview'
+import { Route as AuthenticatedHrPerformanceRouteImport } from './routes/_authenticated/hr/performance'
 import { Route as AuthenticatedHrPresetsRouteImport } from './routes/_authenticated/hr/presets'
 import { Route as AuthenticatedHrSettingsRouteImport } from './routes/_authenticated/hr/settings'
 import { Route as AuthenticatedHrShiftsRouteImport } from './routes/_authenticated/hr/shifts'
@@ -281,6 +282,12 @@ const AuthenticatedHrOverviewRoute = AuthenticatedHrOverviewRouteImport.update({
   path: '/hr/overview',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedHrPerformanceRoute =
+  AuthenticatedHrPerformanceRouteImport.update({
+    id: '/hr/performance',
+    path: '/hr/performance',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedHrPresetsRoute = AuthenticatedHrPresetsRouteImport.update({
   id: '/hr/presets',
   path: '/hr/presets',
@@ -1190,6 +1197,7 @@ export interface FileRoutesByFullPath {
   '/hr/help': typeof AuthenticatedHrHelpRoute
   '/hr/leave': typeof AuthenticatedHrLeaveRoute
   '/hr/overview': typeof AuthenticatedHrOverviewRoute
+  '/hr/performance': typeof AuthenticatedHrPerformanceRoute
   '/hr/presets': typeof AuthenticatedHrPresetsRoute
   '/hr/settings': typeof AuthenticatedHrSettingsRoute
   '/hr/shifts': typeof AuthenticatedHrShiftsRoute
@@ -1360,6 +1368,7 @@ export interface FileRoutesByTo {
   '/hr/help': typeof AuthenticatedHrHelpRoute
   '/hr/leave': typeof AuthenticatedHrLeaveRoute
   '/hr/overview': typeof AuthenticatedHrOverviewRoute
+  '/hr/performance': typeof AuthenticatedHrPerformanceRoute
   '/hr/presets': typeof AuthenticatedHrPresetsRoute
   '/hr/settings': typeof AuthenticatedHrSettingsRoute
   '/hr/shifts': typeof AuthenticatedHrShiftsRoute
@@ -1532,6 +1541,7 @@ export interface FileRoutesById {
   '/_authenticated/hr/help': typeof AuthenticatedHrHelpRoute
   '/_authenticated/hr/leave': typeof AuthenticatedHrLeaveRoute
   '/_authenticated/hr/overview': typeof AuthenticatedHrOverviewRoute
+  '/_authenticated/hr/performance': typeof AuthenticatedHrPerformanceRoute
   '/_authenticated/hr/presets': typeof AuthenticatedHrPresetsRoute
   '/_authenticated/hr/settings': typeof AuthenticatedHrSettingsRoute
   '/_authenticated/hr/shifts': typeof AuthenticatedHrShiftsRoute
@@ -1704,6 +1714,7 @@ export interface FileRouteTypes {
     | '/hr/help'
     | '/hr/leave'
     | '/hr/overview'
+    | '/hr/performance'
     | '/hr/presets'
     | '/hr/settings'
     | '/hr/shifts'
@@ -1874,6 +1885,7 @@ export interface FileRouteTypes {
     | '/hr/help'
     | '/hr/leave'
     | '/hr/overview'
+    | '/hr/performance'
     | '/hr/presets'
     | '/hr/settings'
     | '/hr/shifts'
@@ -2045,6 +2057,7 @@ export interface FileRouteTypes {
     | '/_authenticated/hr/help'
     | '/_authenticated/hr/leave'
     | '/_authenticated/hr/overview'
+    | '/_authenticated/hr/performance'
     | '/_authenticated/hr/presets'
     | '/_authenticated/hr/settings'
     | '/_authenticated/hr/shifts'
@@ -2349,6 +2362,13 @@ declare module '@tanstack/react-router' {
       path: '/hr/overview'
       fullPath: '/hr/overview'
       preLoaderRoute: typeof AuthenticatedHrOverviewRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/hr/performance': {
+      id: '/_authenticated/hr/performance'
+      path: '/hr/performance'
+      fullPath: '/hr/performance'
+      preLoaderRoute: typeof AuthenticatedHrPerformanceRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/hr/presets': {
@@ -3528,6 +3548,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedHrHelpRoute: typeof AuthenticatedHrHelpRoute
   AuthenticatedHrLeaveRoute: typeof AuthenticatedHrLeaveRoute
   AuthenticatedHrOverviewRoute: typeof AuthenticatedHrOverviewRoute
+  AuthenticatedHrPerformanceRoute: typeof AuthenticatedHrPerformanceRoute
   AuthenticatedHrPresetsRoute: typeof AuthenticatedHrPresetsRoute
   AuthenticatedHrSettingsRoute: typeof AuthenticatedHrSettingsRoute
   AuthenticatedHrShiftsRoute: typeof AuthenticatedHrShiftsRoute
@@ -3664,6 +3685,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedHrHelpRoute: AuthenticatedHrHelpRoute,
   AuthenticatedHrLeaveRoute: AuthenticatedHrLeaveRoute,
   AuthenticatedHrOverviewRoute: AuthenticatedHrOverviewRoute,
+  AuthenticatedHrPerformanceRoute: AuthenticatedHrPerformanceRoute,
   AuthenticatedHrPresetsRoute: AuthenticatedHrPresetsRoute,
   AuthenticatedHrSettingsRoute: AuthenticatedHrSettingsRoute,
   AuthenticatedHrShiftsRoute: AuthenticatedHrShiftsRoute,

@@ -116,6 +116,8 @@ export interface AttendanceListResponse {
 
 export interface AttendanceListParams {
   date?: string
+  from?: string
+  to?: string
   employeeId?: string
   status?: AttendanceStatus
   departmentId?: string
@@ -127,6 +129,11 @@ export interface DailyOverview {
   date: string
   total: number
   counts: Record<AttendanceStatus, number>
+  currentlyWorking?: number
+  onBreak?: number
+  missingCheckout?: number
+  workedMinutes?: number
+  breakMinutes?: number
   /** Total overtime minutes across the day (0 when no shift is assigned). */
   overtimeMinutes?: number
   lateMinutes?: number

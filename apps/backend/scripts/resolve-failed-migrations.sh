@@ -548,6 +548,36 @@ probe_ddl() {
       fi
       ;;
 
+    20261001000100_hr_shift_preset_and_overtime)
+      table_count="$(
+        psql "$DATABASE_URL" -t -A -c \
+          "SELECT count(*) FROM information_schema.tables
+           WHERE table_schema = 'public' AND table_name = 'ShiftPreset';"
+      )"
+      if [ "$table_count" = "1" ]; then
+        echo "APPLIED"
+      elif [ "$table_count" = "0" ]; then
+        echo "NOT_APPLIED"
+      else
+        echo "UNKNOWN"
+      fi
+      ;;
+
+    20261002000100_hr_tasks_and_order_staff_performance)
+      table_count="$(
+        psql "$DATABASE_URL" -t -A -c \
+          "SELECT count(*) FROM information_schema.tables
+           WHERE table_schema = 'public' AND table_name = 'TaskTimeEntry';"
+      )"
+      if [ "$table_count" = "1" ]; then
+        echo "APPLIED"
+      elif [ "$table_count" = "0" ]; then
+        echo "NOT_APPLIED"
+      else
+        echo "UNKNOWN"
+      fi
+      ;;
+
     *)
       echo "UNKNOWN"
       ;;

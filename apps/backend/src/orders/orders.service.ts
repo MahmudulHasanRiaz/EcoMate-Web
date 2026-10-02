@@ -55,6 +55,7 @@ import { MarketingAttributionService } from '../marketing/marketing-attribution.
 import { CommissionsService } from '../commissions/commissions.service';
 import { TrackingEligibilityGate } from '../tracking/tracking-eligibility-gate';
 import { CacheService } from '../cache/cache.service';
+import { OrderStaffPerformanceService } from './order-staff-performance.service';
 
 // Order-status transition rules live in one place — the runtime gate and the
 // seed share the same map (see order-transitions.ts for the Partial rule).
@@ -237,6 +238,8 @@ export class OrdersService {
     private readonly marketingAttribution?: MarketingAttributionService,
     @Optional()
     private readonly cache?: CacheService,
+    @Optional()
+    private readonly staffPerformance?: OrderStaffPerformanceService,
   ) {}
 
   /**
@@ -3071,6 +3074,31 @@ export class OrdersService {
         },
       });
 
+      if (this.staffPerformance && (performedBy || userId)) {
+        const actor = performedBy || userId;
+        const action =
+          newStatus.name === 'Confirmed'
+            ? 'confirmed'
+            : newStatus.name === 'Delivered'
+              ? 'delivered'
+              : newStatus.name === 'Returned'
+                ? 'returned'
+                : newStatus.name === 'Cancelled'
+                  ? 'cancelled'
+                  : 'status_change';
+        await this.staffPerformance.recordStaffEvent(
+          {
+            orderId: id,
+            userId: actor,
+            action,
+            fromStatus: order.status.name,
+            toStatus: newStatus.name,
+            note: dto.note || '',
+          },
+          client,
+        );
+      }
+
       if (newStatus.name === 'Confirmed') {
         await this.takeCostSnapshot(id, client);
         await this.verifyStockForOrder(id, client);
@@ -3720,6 +3748,30 @@ export class OrdersService {
             where: { id: order.id },
             data: { timeline: tl as any },
           });
+
+          if (this.staffPerformance && userId) {
+            const action =
+              targetStatus.name === 'Confirmed'
+                ? 'confirmed'
+                : targetStatus.name === 'Delivered'
+                  ? 'delivered'
+                  : targetStatus.name === 'Returned'
+                    ? 'returned'
+                    : targetStatus.name === 'Cancelled'
+                      ? 'cancelled'
+                      : 'status_change';
+            await this.staffPerformance.recordStaffEvent(
+              {
+                orderId: order.id,
+                userId,
+                action,
+                fromStatus: order.status?.name,
+                toStatus: targetStatus.name,
+                note: `Bulk status changed to ${targetStatus.name}`,
+              },
+              tx,
+            );
+          }
         }
 
         // Capture tracking snapshots for every order the bulk change touched.
@@ -3840,6 +3892,18 @@ export class OrdersService {
             data,
           })
         : { count: 0 };
+
+    if (this.staffPerformance && assignedToId && foundIds.length > 0) {
+      for (const orderId of foundIds) {
+        await this.staffPerformance.recordStaffEvent({
+          orderId,
+          userId: assignedToId,
+          action: 'assigned',
+          note: 'Assigned to staff',
+        });
+      }
+    }
+
     return { updated: res.count, total: ids.length };
   }
 

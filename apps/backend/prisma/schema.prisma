@@ -51,6 +51,12 @@ enum TaskPriority {
   critical
 }
 
+enum TaskTimeEntryStatus {
+  active
+  paused
+  completed
+}
+
 enum PaymentOptionType {
   FULL_PAYMENT
   PARTIAL_PAYMENT
@@ -318,24 +324,51 @@ model CustomerProfile {
 }
 
 model Task {
-  id          String       @id @default(uuid())
-  displayId   String       @unique
-  title       String
-  status      TaskStatus   @default(todo)
-  label       TaskLabel    @default(feature)
-  priority    TaskPriority @default(medium)
-  assignee    String?
-  description String?
-  dueDate     DateTime?
-  createdById String
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id                 String          @id @default(uuid())
+  displayId          String          @unique
+  title              String
+  status             TaskStatus      @default(todo)
+  label              TaskLabel       @default(feature)
+  priority           TaskPriority    @default(medium)
+  assignee           String?
+  assignedEmployeeId String?
+  description        String?
+  dueDate            DateTime?
+  estimatedMinutes   Int?
+  actualMinutes      Int             @default(0)
+  createdById        String
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
 
-  createdBy UserProfile @relation(fields: [createdById], references: [id])
+  createdBy        UserProfile     @relation(fields: [createdById], references: [id])
+  assignedEmployee Employee?       @relation("EmployeeAssignedTasks", fields: [assignedEmployeeId], references: [id], onDelete: SetNull)
+  timeEntries      TaskTimeEntry[]
 
   @@index([createdById])
   @@index([assignee])
+  @@index([assignedEmployeeId])
   @@index([status])
+}
+
+model TaskTimeEntry {
+  id          String              @id @default(uuid())
+  taskId      String
+  task        Task                @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  employeeId  String
+  employee    Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  startedAt   DateTime            @default(now())
+  endedAt     DateTime?
+  durationSec Int                 @default(0)
+  status      TaskTimeEntryStatus @default(completed)
+  notes       String?
+  source      String              @default("manual")
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([taskId])
+  @@index([employeeId])
+  @@index([startedAt])
+  @@index([employeeId, startedAt])
 }
 
 model UserSettings {
@@ -876,6 +909,7 @@ model Order {
   courierSettlementRows        CourierSettlementRow[]
   courierSettlementExceptions  CourierSettlementException[]
   courierSettlementAdjustments CourierSettlementAdjustment[]
+  staffEvents                  OrderStaffEvent[]
 
   // One original order → at most one RTN return order (database-enforced).
   @@unique([returnOfOrderId])
@@ -2180,6 +2214,9 @@ model Employee {
   attendanceAdjustments AttendanceAdjustment[]
   deviceMappings        DeviceEmployeeMapping[]
   rawEvents             RawAttendanceEvent[]
+  assignedTasks         Task[]                  @relation("EmployeeAssignedTasks")
+  taskTimeEntries       TaskTimeEntry[]
+  orderStaffEvents      OrderStaffEvent[]
 
   @@index([departmentId])
   @@index([designationId])
@@ -3680,6 +3717,27 @@ model OrderAttribution {
   @@index([campaignId])
   @@index([adId])
   @@index([attributedAt])
+}
+
+model OrderStaffEvent {
+  id         String    @id @default(uuid())
+  orderId    String
+  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  employeeId String?
+  employee   Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  userId     String
+  action     String
+  fromStatus String?
+  toStatus   String?
+  note       String?
+  metadata   Json?     @default("{}")
+  createdAt  DateTime  @default(now())
+
+  @@index([orderId])
+  @@index([employeeId, createdAt])
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@index([toStatus, createdAt])
 }
 
 // ---- Cost allocation ----

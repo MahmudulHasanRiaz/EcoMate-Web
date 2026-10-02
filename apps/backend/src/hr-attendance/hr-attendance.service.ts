@@ -850,6 +850,8 @@ export class HrAttendanceService {
   async findAll(
     filter: {
       date?: string;
+      from?: string;
+      to?: string;
       employeeId?: string;
       status?: string;
       departmentId?: string;
@@ -862,7 +864,11 @@ export class HrAttendanceService {
     const where: Prisma.AttendanceDayWhereInput = {};
     if (filter.employeeId) where.employeeId = filter.employeeId;
     if (filter.status) where.status = filter.status as AttendanceStatus;
-    if (filter.date) {
+    if (filter.from || filter.to) {
+      where.date = {};
+      if (filter.from) (where.date as any).gte = this.resolveDate(filter.from);
+      if (filter.to) (where.date as any).lte = this.resolveDate(filter.to);
+    } else if (filter.date) {
       const start = this.resolveDate(filter.date);
       where.date = { gte: start, lt: new Date(start.getTime() + 86400000) };
     }
@@ -895,7 +901,7 @@ export class HrAttendanceService {
 
   async dailyOverview(dateStr: string) {
     const date = this.resolveDate(dateStr);
-    const [rows, totals] = await Promise.all([
+    const [rows, totals, activeSessions, missingCheckoutCount] = await Promise.all([
       this.prisma.attendanceDay.groupBy({
         by: ['status'],
         where: { date },
@@ -903,7 +909,14 @@ export class HrAttendanceService {
       }),
       this.prisma.attendanceDay.aggregate({
         where: { date },
-        _sum: { overtimeMinutes: true, lateMinutes: true },
+        _sum: { overtimeMinutes: true, lateMinutes: true, workedMinutes: true, breakMinutes: true },
+      }),
+      this.prisma.attendanceSession.findMany({
+        where: { day: { date }, checkOutAt: null },
+        include: { breaks: { where: { endedAt: null }, select: { id: true } } },
+      }),
+      this.prisma.attendanceSession.count({
+        where: { day: { date: new Date(date.getTime() - 86400000) }, checkOutAt: null },
       }),
     ]);
     const counts: Record<AttendanceStatus, number> = {
@@ -919,12 +932,19 @@ export class HrAttendanceService {
       counts[row.status] = row._count._all;
       total += row._count._all;
     }
-    // Days with no shift contribute NULL, which sums to zero — correct: there
-    // was no shift, so there was no overtime.
+
+    const onBreak = activeSessions.filter((s) => s.breaks.length > 0).length;
+    const currentlyWorking = activeSessions.length - onBreak;
+
     return {
       date,
       total,
       counts,
+      currentlyWorking,
+      onBreak,
+      missingCheckout: missingCheckoutCount,
+      workedMinutes: totals._sum.workedMinutes ?? 0,
+      breakMinutes: totals._sum.breakMinutes ?? 0,
       overtimeMinutes: totals._sum.overtimeMinutes ?? 0,
       lateMinutes: totals._sum.lateMinutes ?? 0,
     };

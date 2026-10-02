@@ -38,6 +38,8 @@ import { useEmployeeQuery, useUpdateEmployeeMutation, useBankAccountsQuery, useC
 import { employeesApi, type EmployeeStatus, type EmploymentType, type UpdateEmployeeDto, type AttendanceMethod, type EmployeeResponse, type EmployeeGender, GENDER_LABELS, ATTENDANCE_METHOD_LABELS } from '../api'
 import { BankAccountsCard } from './bank-accounts-card'
 import { EditEmployeeDialog } from './edit-employee-dialog'
+import { EmployeeTasksTab } from './employee-tasks-tab'
+import { EmployeeOrdersTab } from './employee-orders-tab'
 import { SalaryHistoryCard } from '@/features/payroll/components/salary-history'
 import { pendingEffectiveFrom } from '@/features/payroll/lib/pending-structure'
 import { useSalaryStructureHistoryQuery, usePayrollSummaryQuery } from '@/features/payroll/hooks'
@@ -955,6 +957,8 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
             <TabsTrigger value='leave'>Leave</TabsTrigger>
             <TabsTrigger value='attendance'>Attendance</TabsTrigger>
             <TabsTrigger value='schedule'>Schedule &amp; History</TabsTrigger>
+            <TabsTrigger value='tasks'>Tasks</TabsTrigger>
+            <TabsTrigger value='orders'>Orders</TabsTrigger>
           </TabsList>
 
           <TabsContent value='overview' className='space-y-4'>
@@ -1258,6 +1262,14 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
                 />
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value='tasks' className='space-y-4'>
+            <EmployeeTasksTab employeeId={employee.id} />
+          </TabsContent>
+
+          <TabsContent value='orders' className='space-y-4'>
+            <EmployeeOrdersTab employeeId={employee.id} employeeName={displayName} />
           </TabsContent>
         </Tabs>
 

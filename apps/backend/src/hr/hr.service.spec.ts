@@ -36,6 +36,31 @@ describe('HrService', () => {
         findFirst: jest.fn().mockResolvedValue({ periodKey: '2026-08' }),
         findMany: jest.fn().mockResolvedValue(mockPayments),
       },
+      attendanceDay: {
+        groupBy: jest.fn().mockResolvedValue([
+          { status: 'PRESENT', _count: { _all: 2 } },
+          { status: 'LATE', _count: { _all: 1 } },
+        ]),
+        aggregate: jest.fn().mockResolvedValue({
+          _sum: { workedMinutes: 960, breakMinutes: 60, overtimeMinutes: 30 },
+        }),
+      },
+      attendanceSession: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 's1', checkOutAt: null, breaks: [] },
+          { id: 's2', checkOutAt: null, breaks: [{ id: 'b1' }] },
+        ]),
+        count: jest.fn().mockResolvedValue(0),
+      },
+      leaveRequest: {
+        count: jest.fn().mockResolvedValue(0),
+      },
+      task: {
+        count: jest.fn().mockResolvedValue(0),
+      },
+      orderStaffEvent: {
+        count: jest.fn().mockResolvedValue(0),
+      },
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -76,7 +101,7 @@ describe('HrService', () => {
     const result = await service.getOverview();
     expect(result.payroll.paidThisMonth).toBe(150000);
     const aggregateCall = prisma.payslip.aggregate.mock.calls.find(
-      (call) => call[0].where.status === 'paid',
+      (call: any[]) => call[0].where.status === 'paid',
     );
     expect(aggregateCall).toBeTruthy();
     expect(aggregateCall[0].where.paidAt.gte).toBeInstanceOf(Date);
@@ -128,5 +153,13 @@ describe('HrService', () => {
     const result = await service.getOverview();
     expect(result.payroll.lastPeriodKey).toBeNull();
     expect(result.payroll.lastPeriodNet).toBe(0);
+  });
+
+  it('should include live attendance metrics in overview', async () => {
+    const result = await service.getOverview();
+    expect(result.attendance).toBeDefined();
+    expect(result.attendance.currentlyWorking).toBe(1);
+    expect(result.attendance.onBreak).toBe(1);
+    expect(result.attendance.present).toBe(3); // PRESENT (2) + LATE (1)
   });
 });

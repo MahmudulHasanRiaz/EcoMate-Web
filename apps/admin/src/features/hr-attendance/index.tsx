@@ -14,11 +14,13 @@ import { AdjustmentsTab } from './components/adjustments-tab'
 import { DevicesTab } from './components/devices-tab'
 import { SettingsTab } from './components/settings-tab'
 import { AddDayAction } from './components/add-day'
+import { AttendanceSummaryTab } from '@/features/hr-performance/components/attendance-summary-tab'
 import { dhakaTodayDate, type AttendanceStatus } from './api'
 
 const SUB_TABS = [
   { value: 'today', label: 'Today' },
   { value: 'calendar', label: 'Calendar' },
+  { value: 'report', label: 'Date Range Report' },
   { value: 'adjustments', label: 'Adjustments' },
   { value: 'devices', label: 'Devices' },
   { value: 'settings', label: 'Settings' },
@@ -95,6 +97,10 @@ export function AttendancePage({ initialTab }: { initialTab?: string }) {
                 />
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value='report' className='space-y-4'>
+            <AttendanceSummaryTab />
           </TabsContent>
 
           <TabsContent value='adjustments' className='space-y-4'>

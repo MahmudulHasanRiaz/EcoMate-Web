@@ -188,10 +188,14 @@ describe('HrAttendanceService', () => {
       count: jest.fn(),
       groupBy: jest.fn(),
       aggregate: jest.fn().mockResolvedValue({
-        _sum: { overtimeMinutes: null, lateMinutes: null },
+        _sum: { overtimeMinutes: null, lateMinutes: null, workedMinutes: null, breakMinutes: null },
       }),
     },
-    attendanceSession: { findUnique: jest.fn() },
+    attendanceSession: {
+      findUnique: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(0),
+    },
     attendanceBreak: { findUnique: jest.fn() },
     attendanceAdjustment: { create: jest.fn(), findMany: jest.fn(), count: jest.fn() },
     leaveRequest: { findMany: jest.fn() },
@@ -990,8 +994,11 @@ describe('HrAttendanceService', () => {
           ON_LEAVE: 0,
           WEEKLY_OFF: 0,
         },
-        // Days with no shift aggregate to zero — there was no shift, so there
-        // was no overtime.
+        currentlyWorking: 0,
+        onBreak: 0,
+        missingCheckout: 0,
+        workedMinutes: 0,
+        breakMinutes: 0,
         overtimeMinutes: 0,
         lateMinutes: 0,
       });
@@ -1002,14 +1009,16 @@ describe('HrAttendanceService', () => {
         { status: 'PRESENT', _count: { _all: 2 } },
       ]);
       prismaMock.attendanceDay.aggregate.mockResolvedValue({
-        _sum: { overtimeMinutes: 135, lateMinutes: 25 },
+        _sum: { overtimeMinutes: 135, lateMinutes: 25, workedMinutes: 480, breakMinutes: 60 },
       });
       const res = await service.dailyOverview('2026-08-28');
       expect(res.overtimeMinutes).toBe(135);
       expect(res.lateMinutes).toBe(25);
+      expect(res.workedMinutes).toBe(480);
+      expect(res.breakMinutes).toBe(60);
       expect(prismaMock.attendanceDay.aggregate).toHaveBeenCalledWith({
         where: { date: new Date('2026-08-28T00:00:00.000Z') },
-        _sum: { overtimeMinutes: true, lateMinutes: true },
+        _sum: { overtimeMinutes: true, lateMinutes: true, workedMinutes: true, breakMinutes: true },
       });
     });
   });
