@@ -1,119 +1,155 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import {
-  commissionsApi,
-  type CreateCommissionRuleDto,
-  type UpdateCommissionRuleDto,
-  type ReverseEarningDto,
-} from './api'
+import { commissionsApi } from './api'
+import type { CommissionRuleV2Input } from './api'
 
-function invalidateRules(queryClient: ReturnType<typeof useQueryClient>) {
-  queryClient.invalidateQueries({ queryKey: ['commission-rules'] })
+/** Statuses a commission rule may be built against. */
+export function useCommissionPurposes() {
+  return useQuery({
+    queryKey: ['commissions', 'purposes'],
+    queryFn: () => commissionsApi.listPurposes(),
+    staleTime: 10 * 60 * 1000, // order statuses are effectively static
+  })
 }
 
-function invalidateEarnings(queryClient: ReturnType<typeof useQueryClient>) {
-  queryClient.invalidateQueries({ queryKey: ['commission-earnings'] })
+export function useCommissionRulesV2(params?: { employeeId?: string; isActive?: boolean }) {
+  return useQuery({
+    queryKey: ['commissions', 'rules-v2', params],
+    queryFn: () => commissionsApi.listRulesV2(params),
+  })
 }
 
-export function useCommissionRulesQuery({
-  employeeId,
-  isActive,
-}: {
+export function useCommissionReport(params?: {
   employeeId?: string
-  isActive?: boolean
+  departmentId?: string
+  from?: string
+  to?: string
 }) {
   return useQuery({
-    queryKey: ['commission-rules', employeeId, isActive],
-    queryFn: () => commissionsApi.listRules({ employeeId, isActive }).then((r) => r.data),
+    queryKey: ['commissions', 'report', params],
+    queryFn: () => commissionsApi.report(params),
   })
 }
 
-export function useCreateRuleMutation() {
+export function useCommissionByRule(params?: { employeeId?: string; from?: string; to?: string }) {
+  return useQuery({
+    queryKey: ['commissions', 'report-by-rule', params],
+    queryFn: () => commissionsApi.reportByRule(params),
+  })
+}
+
+export function useCommissionDrilldown(
+  params: {
+    employeeId: string
+    purpose?: string
+    from?: string
+    to?: string
+    page?: number
+    perPage?: number
+  } | null,
+) {
+  return useQuery({
+    queryKey: ['commissions', 'drilldown', params],
+    queryFn: () => commissionsApi.drilldown(params!),
+    enabled: !!params?.employeeId,
+  })
+}
+
+export function useEarningDetail(id: string | null) {
+  return useQuery({
+    queryKey: ['commissions', 'earning', id],
+    queryFn: () => commissionsApi.earningDetail(id!),
+    enabled: !!id,
+  })
+}
+
+function invalidate(queryClient: ReturnType<typeof useQueryClient>) {
+  queryClient.invalidateQueries({ queryKey: ['commissions'] })
+}
+
+export function useCreateRuleV2Mutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (dto: CreateCommissionRuleDto) => commissionsApi.createRule(dto).then((r) => r.data),
-    onSuccess: () => {
-      invalidateRules(queryClient)
+    mutationFn: (dto: CommissionRuleV2Input) => commissionsApi.createRuleV2(dto),
+    onSuccess: (rule) => {
+      invalidate(queryClient)
       toast.success('Commission rule created')
+      return rule
     },
-    onError: (e: any) => toast.error(e.response?.data?.message || 'Error creating rule'),
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Could not create the rule')
+    },
   })
 }
 
-export function useUpdateRuleMutation() {
+export function useUpdateRuleV2Mutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, dto }: { id: string; dto: UpdateCommissionRuleDto }) =>
-      commissionsApi.updateRule(id, dto).then((r) => r.data),
+    mutationFn: ({ id, dto }: { id: string; dto: Partial<CommissionRuleV2Input> & { isActive?: boolean } }) =>
+      commissionsApi.updateRuleV2(id, dto),
     onSuccess: () => {
-      invalidateRules(queryClient)
+      invalidate(queryClient)
       toast.success('Commission rule updated')
     },
-    onError: (e: any) => toast.error(e.response?.data?.message || 'Error updating rule'),
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Could not update the rule')
+    },
   })
 }
 
-export function useSetRuleActiveMutation() {
+export function useSetRuleActiveV2Mutation() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
-      commissionsApi.setRuleActive(id, isActive).then((r) => r.data),
-    onSuccess: () => {
-      invalidateRules(queryClient)
-      toast.success('Rule status updated')
+      commissionsApi.setRuleActiveV2(id, isActive),
+    onSuccess: (rule) => {
+      invalidate(queryClient)
+      // Deactivation never rewrites history, so this is safe to state plainly.
+      toast.success(
+        rule.isActive
+          ? 'Rule reactivated — it applies to future qualifying orders only'
+          : 'Rule deactivated — past earnings are unchanged',
+      )
     },
-    onError: (e: any) => toast.error(e.response?.data?.message || 'Error updating rule'),
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Could not change the rule state')
+    },
   })
 }
 
-export function useDeleteRuleMutation() {
-  const queryClient = useQueryClient()
+export function usePreviewRuleMutation() {
   return useMutation({
-    mutationFn: (id: string) => commissionsApi.deleteRule(id).then(() => id),
-    onSuccess: () => {
-      invalidateRules(queryClient)
-      toast.success('Commission rule deleted')
-    },
-    onError: (e: any) => toast.error(e.response?.data?.message || 'Error deleting rule'),
+    mutationFn: (dto: CommissionRuleV2Input) => commissionsApi.previewRule(dto),
   })
 }
 
-export function useCommissionEarningsQuery({
-  employeeId,
-  reversed,
-  inPayroll,
-  page = 1,
-}: {
-  employeeId?: string
-  reversed?: string
-  inPayroll?: string
-  page: number
-}) {
-  return useQuery({
-    queryKey: ['commission-earnings', employeeId, reversed, inPayroll, page],
-    queryFn: () =>
-      commissionsApi
-        .listEarnings({
-          employeeId,
-          reversed,
-          inPayroll,
-          page,
-          perPage: 20,
-        })
-        .then((r) => r.data),
-  })
-}
+// ── Legacy (v1) mutations, still used by the existing earnings table ─────────
 
 export function useReverseEarningMutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, dto }: { id: string; dto: ReverseEarningDto }) =>
-      commissionsApi.reverseEarning(id, dto).then((r) => r.data),
+    mutationFn: ({ id, dto }: { id: string; dto: { orderId?: string; reason: string; refundedAmount?: number } }) =>
+      commissionsApi.reverseEarning(id, dto).then((r: any) => r.data),
     onSuccess: () => {
-      invalidateEarnings(queryClient)
-      toast.success('Commission reversal recorded')
+      invalidate(queryClient)
+      toast.success('Commission reversed')
     },
-    onError: (e: any) =>
-      toast.error(e.response?.data?.message || 'Error reversing commission'),
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Could not reverse the commission')
+    },
+  })
+}
+
+/** Legacy v1 earnings list, still used by the earnings/reversal table. */
+export function useCommissionEarningsQuery(params: {
+  employeeId?: string
+  reversed?: string
+  inPayroll?: string
+  page?: number
+  perPage?: number
+}) {
+  return useQuery({
+    queryKey: ['commissions', 'earnings-v1', params],
+    queryFn: () => commissionsApi.listEarnings(params).then((r) => r.data),
   })
 }

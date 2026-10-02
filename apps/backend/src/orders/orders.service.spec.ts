@@ -1429,7 +1429,131 @@ describe('OrdersService', () => {
 
       expect(
         (prisma.order.create as jest.Mock).mock.calls[0][0].data.officeNotes,
-      ).toBe('Override');
+      ).toBe('Override default-note');
+    });
+
+    it('respects staff manual shipping charge override on order creation', async () => {
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) =>
+          cb({
+            ...prisma,
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+            shippingZoneGroup: {
+              findMany: jest.fn().mockResolvedValue([]),
+            },
+          }),
+      );
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        mockInitialStatus,
+      );
+      (prisma.systemSetting.findUnique as jest.Mock).mockImplementation(
+        async ({ where: { key } }) => {
+          if (key === 'delivery_charge') return { value: '60' };
+          return null;
+        },
+      );
+      (prisma.order.create as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.productVariant.update as jest.Mock).mockResolvedValue({});
+
+      // Staff specifies shippingCharge = 120 (differing from default 60)
+      await service.create(
+        { ...createOrderDto, shippingCharge: 120 },
+        undefined,
+        { userId: 'staff-1', role: 'admin' },
+      );
+
+      const createdData = (prisma.order.create as jest.Mock).mock.calls[0][0].data;
+      expect(createdData.shippingCharge).toBe(120);
+      expect(createdData.shippingChargeOverridden).toBe(true);
+    });
+
+    it('applies and saves manual discount when creating an order', async () => {
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) =>
+          cb({
+            ...prisma,
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+            shippingZoneGroup: {
+              findMany: jest.fn().mockResolvedValue([]),
+            },
+          }),
+      );
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        mockInitialStatus,
+      );
+      (prisma.systemSetting.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.order.create as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.productVariant.update as jest.Mock).mockResolvedValue({});
+
+      await service.create(
+        { ...createOrderDto, discount: 50, discountType: 'flat' },
+        undefined,
+        { userId: 'staff-1', role: 'admin' },
+      );
+
+      const createdData = (prisma.order.create as jest.Mock).mock.calls[0][0].data;
+      expect(createdData.discount).toBe(50);
+      expect(createdData.discountType).toBe('flat');
+    });
+
+    it('records advance paid payment and sets PARTIAL_PAID for staff partial payment create', async () => {
+      const createdPayments: any[] = [];
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) =>
+          cb({
+            ...prisma,
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+            shippingZoneGroup: {
+              findMany: jest.fn().mockResolvedValue([]),
+            },
+            payment: {
+              create: jest.fn().mockImplementation((args) => {
+                createdPayments.push(args.data);
+                return Promise.resolve({ id: 'p-' + createdPayments.length, ...args.data });
+              }),
+            },
+          }),
+      );
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        mockInitialStatus,
+      );
+      (prisma.systemSetting.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.order.create as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.productVariant.update as jest.Mock).mockResolvedValue({});
+
+      await service.create(
+        {
+          ...createOrderDto,
+          paymentOptionType: 'PARTIAL_PAYMENT',
+          partialAmount: 200,
+          gatewayCode: 'bkash',
+        },
+        undefined,
+        { userId: 'staff-1', role: 'admin' },
+      );
+
+      const createdData = (prisma.order.create as jest.Mock).mock.calls[0][0].data;
+      expect(createdData.paymentOptionType).toBe('PARTIAL_PAYMENT');
+      expect(createdData.partialAmount).toBe(200);
+      expect(createdData.paymentStatus).toBe('PARTIAL_PAID');
+
+      // Verify advance payment is marked PAID
+      expect(createdPayments[0]).toMatchObject({
+        gatewayCode: 'bkash',
+        amount: 200,
+        status: 'PAID',
+      });
+      // Verify remainder is created as UNPAID COD
+      expect(createdPayments[1]).toMatchObject({
+        gatewayCode: 'cash',
+        status: 'UNPAID',
+      });
     });
 
     it('creates COD cash payment rows as UNPAID so the Delivered path can verify them', async () => {

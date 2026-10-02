@@ -125,6 +125,12 @@ describe('PayrollService', () => {
       findMany: jest.fn().mockResolvedValue([]),
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
+    // Commission Engine v2 ledger. Pays NET of reversals, so a partially
+    // reversed earning contributes its remainder rather than being dropped.
+    commissionLedgerV2: {
+      findMany: jest.fn().mockResolvedValue([]),
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
     payrollPayment: {
       findMany: jest.fn().mockResolvedValue([]),
       aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }),
@@ -134,6 +140,16 @@ describe('PayrollService', () => {
   };
 
   beforeEach(async () => {
+    // Spies installed with jest.spyOn on the shared mock persist across tests
+    // unless reset, which would leak a $transaction override into later specs.
+    jest.restoreAllMocks();
+    // clearAllMocks also drops the module-scope mockResolvedValue defaults
+    // (e.g. prismaMock.commissionLedgerV2.findMany), so re-seed them here.
+    jest.clearAllMocks();
+    prismaMock.commissionLedgerV2.findMany.mockResolvedValue([]);
+    prismaMock.commissionLedgerV2.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.commissionEarning.findMany.mockResolvedValue([]);
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PayrollService,
@@ -844,6 +860,7 @@ describe('PayrollService', () => {
       },
       payslipItem: { createMany: jest.fn().mockResolvedValue({ count: 10 }) },
       commissionEarning: { updateMany: jest.fn().mockResolvedValue({ count: 2 }) },
+      commissionLedgerV2: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
     });
 
     it('adds approved, un-payslipped, non-reversed commission as a distinct item and claims it', async () => {
@@ -928,6 +945,73 @@ describe('PayrollService', () => {
 
       expect(tx.commissionEarning.updateMany).not.toHaveBeenCalled();
     });
+
+    /**
+     * v2 pays NET of reversals.
+     *
+     * v1 filtered with `reversals: { none: {} }`, which drops a PARTIALLY
+     * reversed earning entirely: a 25% reversal on a ৳100 commission removed
+     * all ৳100 from the payslip. v2 must instead contribute the remainder.
+     */
+    it('pays a partially reversed v2 earning at its net amount', async () => {
+      const tx = txFor();
+      (prismaMock.commissionLedgerV2.findMany as jest.Mock).mockResolvedValue([
+        { id: 'l1', amount: '100.00', reversals: [{ amount: '25.00' }] },
+      ]);
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb: any) => cb(tx));
+
+      const result = await service.generatePayslip(
+        'emp-net',
+        new Date('2025-06-01'),
+        new Date('2025-06-30'),
+      );
+
+      // Assert on the rows actually written, the same way the sibling test does.
+      const written = (tx.payslipItem.createMany as jest.Mock).mock.calls[0][0].data;
+      const commission = written.find((i: { label: string }) => i.label === 'Commission');
+      // 100 gross - 25 reversed = 75, not 0 (v1's drop-the-whole) and not 100.
+      expect(Number(commission?.amount)).toBeCloseTo(75, 2);
+    });
+
+    it('drops a fully reversed v2 earning entirely', async () => {
+      const tx = txFor();
+      (prismaMock.commissionLedgerV2.findMany as jest.Mock).mockResolvedValue([
+        { id: 'l1', amount: '100.00', reversals: [{ amount: '100.00' }] },
+      ]);
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb: any) => cb(tx));
+
+      const result = await service.generatePayslip(
+        'emp-full-rev',
+        new Date('2025-06-01'),
+        new Date('2025-06-30'),
+      );
+
+      const written = (tx.payslipItem.createMany as jest.Mock).mock.calls[0][0].data;
+      const commission = written.find((i: { label: string }) => i.label === 'Commission');
+      expect(Number(commission?.amount ?? 0)).toBe(0);
+    });
+
+    it('claims v2 ledger rows so a later payslip cannot pay them twice', async () => {
+      const tx = txFor();
+      tx.commissionLedgerV2.updateMany = jest.fn().mockResolvedValue({ count: 1 });
+      (prismaMock.commissionLedgerV2.findMany as jest.Mock).mockResolvedValue([
+        { id: 'l1', amount: '40.00', reversals: [] },
+      ]);
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb: any) => cb(tx));
+
+      await service.generatePayslip(
+        'emp-claim',
+        new Date('2025-06-01'),
+        new Date('2025-06-30'),
+      );
+
+      expect(tx.commissionLedgerV2.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ payslipId: null }),
+        }),
+      );
+    });
+
   });
 
   describe('findAllPayslips — meta summary (G-23)', () => {

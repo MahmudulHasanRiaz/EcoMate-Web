@@ -1,12 +1,22 @@
 import { Module } from '@nestjs/common';
 import { CommissionsService } from './commissions.service';
 import { CommissionsController } from './commissions.controller';
+import { CommissionEngineService } from './commission-engine.service';
+import { CommissionRulesService } from './commission-rules.service';
+import { CommissionReportsService } from './commission-reports.service';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
   imports: [PrismaModule],
   controllers: [CommissionsController],
-  providers: [CommissionsService],
-  exports: [CommissionsService],
+  providers: [
+    CommissionsService,
+    CommissionEngineService,
+    CommissionRulesService,
+    CommissionReportsService,
+  ],
+  // CommissionEngineService is exported because OrdersModule writes status
+  // transitions and must feed the engine from every one of them.
+  exports: [CommissionsService, CommissionEngineService],
 })
 export class CommissionsModule {}

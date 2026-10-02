@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -17,13 +18,112 @@ import { CreateCommissionRuleDto } from './dto/create-commission-rule.dto';
 import { UpdateCommissionRuleDto } from './dto/update-commission-rule.dto';
 import { SetCommissionRuleActiveDto } from './dto/update-commission-rule.dto';
 import { ReverseEarningDto } from './dto/reverse-earning.dto';
+import { CommissionEngineService } from './commission-engine.service';
+import { CommissionRulesService } from './commission-rules.service';
+import { CommissionReportsService } from './commission-reports.service';
+import {
+  CreateCommissionRuleV2Dto,
+  UpdateCommissionRuleV2Dto,
+  SetRuleActiveDto,
+  PreviewRuleDto,
+  CommissionRangeQueryDto,
+  CommissionDrilldownQueryDto,
+} from './dto/commission-rule-v2.dto';
 
 @Controller('hr')
 @Roles('superadmin', 'admin', 'manager')
 @PermissionsAny('manage_commissions')
 @RequiresFeature('admin_hr')
 export class CommissionsController {
-  constructor(private readonly commissionsService: CommissionsService) {}
+  constructor(
+    private readonly commissionsService: CommissionsService,
+    private readonly engine: CommissionEngineService,
+    private readonly rules: CommissionRulesService,
+    private readonly reports: CommissionReportsService,
+  ) {}
+
+  // ── Commission Engine v2 ────────────────────────────────────────────────────
+  // Action-scoped rules: an employee earns for a specific operational action
+  // (Confirmed / Packed / Shipping / Delivered / Returned / Cancelled), and only
+  // the FIRST person to move an order into that action is credited.
+
+  /** Statuses an admin may build a rule against. */
+  @Get('commissions/v2/purposes')
+  listPurposes() {
+    return this.rules.listCommissionablePurposes();
+  }
+
+  @Get('commissions/v2/rules')
+  listRulesV2(@Query() query: { employeeId?: string; isActive?: string }) {
+    return this.rules.list({
+      employeeId: query.employeeId,
+      isActive: query.isActive === undefined ? undefined : query.isActive === 'true',
+    });
+  }
+
+  @Get('commissions/v2/rules/:id')
+  getRuleV2(@Param('id') id: string) {
+    return this.rules.get(id);
+  }
+
+  /** Explain a rule in plain language before it is saved. */
+  @Post('commissions/v2/rules/preview')
+  previewRule(@Body() dto: PreviewRuleDto) {
+    return this.rules.preview(dto);
+  }
+
+  @Post('commissions/v2/rules')
+  createRuleV2(@Body() dto: CreateCommissionRuleV2Dto, @CurrentUser() user: any) {
+    return this.rules.create({ ...dto, createdById: user?.userId ?? null });
+  }
+
+  @Patch('commissions/v2/rules/:id')
+  updateRuleV2(@Param('id') id: string, @Body() dto: UpdateCommissionRuleV2Dto) {
+    return this.rules.update(id, dto);
+  }
+
+  /**
+   * Deactivate/reactivate a rule. There is no delete: historical ledger rows
+   * reference the rule and carry their own calculation snapshot, so past
+   * earnings must remain auditable.
+   */
+  @Post('commissions/v2/rules/:id/active')
+  setRuleActiveV2(@Param('id') id: string, @Body() dto: SetRuleActiveDto) {
+    return this.rules.setActive(id, dto.isActive);
+  }
+
+  /** Employee-wise totals with a purpose breakdown and paid/unpaid split. */
+  @Get('commissions/v2/report')
+  report(@Query() query: CommissionRangeQueryDto) {
+    return this.reports.summary(query);
+  }
+
+  @Get('commissions/v2/report/by-rule')
+  reportByRule(@Query() query: CommissionRangeQueryDto) {
+    return this.reports.byRule(query);
+  }
+
+  @Get('commissions/v2/report/trend')
+  trend(@Query() query: CommissionRangeQueryDto & { days?: string }) {
+    return this.reports.trend({ ...query, days: query.days ? Number(query.days) : undefined });
+  }
+
+  /** Order-level drilldown for one employee and purpose. */
+  @Get('commissions/v2/report/drilldown')
+  drilldown(@Query() query: CommissionDrilldownQueryDto) {
+    // employeeId is required for a drilldown; reject rather than silently
+    // reporting an organisation-wide list under a per-employee URL.
+    if (!query.employeeId) {
+      throw new BadRequestException('employeeId is required');
+    }
+    return this.reports.drilldown({ ...query, employeeId: query.employeeId });
+  }
+
+  /** Full audit trail for a single earning: why was this paid? */
+  @Get('commissions/v2/earnings/:id')
+  earningDetail(@Param('id') id: string) {
+    return this.reports.earningDetail(id);
+  }
 
   @Post('commissions/rules')
   createRule(

@@ -227,7 +227,7 @@ export class PayrollService {
       ],
     };
 
-    const [approvedEarnings, approvedDeductions, commissionEarnings] =
+    const [approvedEarnings, approvedDeductions, commissionEarnings, ledgerV2Earnings] =
       await Promise.all([
         this.prisma.employeeEarning.findMany({ where: ledgerWhere }),
         this.prisma.employeeDeduction.findMany({ where: ledgerWhere }),
@@ -235,6 +235,12 @@ export class PayrollService {
         // commission earnings feed the payslip as distinct 'Commission' items.
         // payslipId is set inside the create tx (snapshot lock) so earnings
         // already claimed by an earlier payslip are never double-included.
+        //
+        // NOTE the v1 limitation this carries: `reversals: { none: {} }` drops a
+        // PARTIALLY reversed earning entirely rather than paying the net, so a
+        // 25% reversal on a ৳100 earning removed all ৳100. v2 (below) nets
+        // properly; this legacy path is left as-is so existing payslip behaviour
+        // does not change retroactively.
         this.prisma.commissionEarning.findMany({
           where: {
             employeeId,
@@ -244,6 +250,22 @@ export class PayrollService {
             reversals: { none: {} },
           },
           select: { id: true, amount: true },
+        }),
+        // Commission Engine v2. Net of reversals: an earning that was 25%
+        // reversed contributes 75%, not 0%. Fully reversed rows contribute
+        // nothing and are filtered out here.
+        this.prisma.commissionLedgerV2.findMany({
+          where: {
+            employeeId,
+            status: LedgerStatus.approved,
+            payslipId: null,
+            qualifiedAt: { gte: periodStart, lte: periodEnd },
+          },
+          select: {
+            id: true,
+            amount: true,
+            reversals: { select: { amount: true } },
+          },
         }),
       ]);
 
@@ -263,10 +285,27 @@ export class PayrollService {
       amount: Number(c.amount),
     }));
 
+    // v2 contributes the NET of each earning and its reversals, so a partial
+    // reversal reduces the payslip by the reversed share instead of removing
+    // the whole amount.
+    const ledgerV2Items = ledgerV2Earnings
+      .map((row) => {
+        const gross = Number(row.amount);
+        const reversed = row.reversals.reduce((sum, r) => sum + Number(r.amount), 0);
+        return { net: Math.round((gross - reversed) * 100) / 100 };
+      })
+      .filter((r) => r.net > 0)
+      .map((r) => ({
+        type: 'earnings' as const,
+        label: 'Commission',
+        amount: r.net,
+      }));
+
     const grossEarnings =
       proratedEarnings.reduce((s, e) => s + e.amount, 0) +
       ledgerEarningItems.reduce((s, e) => s + e.amount, 0) +
-      commissionItems.reduce((s, e) => s + e.amount, 0);
+      commissionItems.reduce((s, e) => s + e.amount, 0) +
+      ledgerV2Items.reduce((s, e) => s + e.amount, 0);
     const totalDeductions =
       structureDeductions.reduce((s, d) => s + d.amount, 0) +
       ledgerDeductionItems.reduce((s, d) => s + d.amount, 0);
@@ -282,6 +321,7 @@ export class PayrollService {
       ...ledgerEarningItems,
       ...ledgerDeductionItems,
       ...commissionItems,
+      ...ledgerV2Items,
     ];
 
     return this.prisma.$transaction(async (tx) => {
@@ -314,6 +354,18 @@ export class PayrollService {
       await tx.payslipItem.createMany({
         data: items.map((item) => ({ ...item, payslipId: payslip.id })),
       });
+
+      // Same snapshot lock for the v2 ledger. Without this a v2 earning would be
+      // picked up again by the next payslip and paid twice.
+      if (ledgerV2Earnings.length > 0) {
+        await tx.commissionLedgerV2.updateMany({
+          where: {
+            id: { in: ledgerV2Earnings.map((c) => c.id) },
+            payslipId: null,
+          },
+          data: { payslipId: payslip.id },
+        });
+      }
 
       // Snapshot lock (Decision #2): claim every commission earning that fed
       // this payslip. Guarded by `payslipId: null` so a concurrent generation

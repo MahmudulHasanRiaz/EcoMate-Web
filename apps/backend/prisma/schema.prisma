@@ -910,6 +910,8 @@ model Order {
   orderAttribution             OrderAttribution?
   marketingAllocations         MarketingCostAllocation[]
   commissionEarnings           CommissionEarning[]
+  statusTransitions            OrderStatusTransition[]
+  commissionLedgerV2           CommissionLedgerV2[]
   courierSettlementRows        CourierSettlementRow[]
   courierSettlementExceptions  CourierSettlementException[]
   courierSettlementAdjustments CourierSettlementAdjustment[]
@@ -2211,6 +2213,11 @@ model Employee {
   shiftAssignments      ShiftAssignment[]
   commissionRules       CommissionRule[]
   commissionEarnings    CommissionEarning[]
+  commissionRulesV2   CommissionRuleV2[]
+  commissionLedgerV2  CommissionLedgerV2[] @relation("EmployeeLedger")
+  orderStatusTransitions OrderStatusTransition[]
+  actedCommissionLedger   CommissionLedgerV2[] @relation("ActorLedger")
+  thresholdCounters    CommissionThresholdCounter[]
   leaveRequests         LeaveRequest[]
   attendanceRecords     AttendanceRecord[]
   bankAccounts          EmployeeBankAccount[]
@@ -4160,6 +4167,173 @@ model RawAttendanceEvent {
 }
 
 // ---------- HR Production Hardening (Plan) ----------
+
+
+model OrderStatusTransition {
+  id              String    @id @default(uuid())
+  orderId         String
+  order           Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  // Canonical OrderStatus.name. Stored as text, not an enum: statuses are rows
+  // in OrderStatus and an installation may add its own.
+  fromStatus      String?
+  toStatus        String    @map("toStatus")
+
+  // Always a UserProfile.id (payload.sub) — the only actor identifier this
+  // codebase can guarantee. System-driven transitions (webhooks, dispatch) use
+  // a reserved constant.
+  actorUserId     String?
+  actorEmployeeId String?
+  actorEmployee   Employee? @relation(fields: [actorEmployeeId], references: [id], onDelete: SetNull)
+  actorType       String    @default("staff")
+
+  // True for the earliest transition INTO toStatus for this order. Maintained
+  // by the writer inside the same transaction, so "first actor" is a database
+  // guarantee rather than an ordering accident when two transitions share a
+  // timestamp.
+  isFirstForStatus Boolean   @default(false)
+
+  // Application-supplied idempotency key; a duplicate submit is a no-op.
+  idempotencyKey  String?
+  note            String?
+  metadata        Json      @default("{}")
+
+  // When the transition happened, per the application clock.
+  occurredAt      DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+
+  commissionLedger CommissionLedgerV2[]
+
+  @@index([orderId, occurredAt, id], map: "OrderStatusTransition_orderId_occurredAt_idx")
+  @@index([orderId, toStatus, occurredAt, id], map: "OrderStatusTransition_orderId_toStatus_occurredAt_idx")
+  @@index([actorEmployeeId, occurredAt], map: "OrderStatusTransition_actorEmployeeId_occurredAt_idx")
+}
+
+model CommissionRuleV2 {
+  id         String               @id @default(uuid())
+  employeeId String
+  employee   Employee             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  name       String?
+  /// Canonical OrderStatus.name this rule pays for. Validated against
+  /// OrderStatus by the API; never free text.
+  purpose    String
+  amountType CommissionAmountType
+  amount     Decimal              @db.Decimal(10, 2)
+
+  /// Which order figure a percentage applies to: order_total (canonical,
+  /// matches every existing commission calculation) or subtotal.
+  valueBasis String               @default("order_total")
+
+  /// Optional per-order amount gate, carried over from v1 minOrderAmount.
+  /// Distinct from the count threshold below.
+  minOrderAmount Decimal?          @db.Decimal(10, 2)
+  /// Optional ceiling for a single order's commission.
+  capPerOrder    Decimal?          @db.Decimal(10, 2)
+
+  /// NULL = no minimum: every qualifying order pays.
+  minimumCount   Int?
+  /// daily | weekly | monthly | yearly. NULL when minimumCount is NULL.
+  thresholdPeriod String?
+
+  effectiveFrom DateTime?
+  effectiveTo   DateTime?
+
+  isActive    Boolean  @default(true)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  ledger CommissionLedgerV2[]
+
+  @@index([employeeId, isActive])
+  @@index([employeeId, purpose, isActive])
+}
+
+model CommissionLedgerV2 {
+  id         String            @id @default(uuid())
+  employeeId String
+  employee   Employee          @relation("EmployeeLedger", fields: [employeeId], references: [id], onDelete: Restrict)
+  orderId    String
+  order      Order             @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  ruleId     String
+  rule       CommissionRuleV2  @relation(fields: [ruleId], references: [id], onDelete: Restrict)
+
+  /// The status this credit is for.
+  purpose String
+
+  /// The transition that earned it. Ties money to the event.
+  transitionId String
+  transition   OrderStatusTransition @relation(fields: [transitionId], references: [id], onDelete: Restrict)
+  actorEmployeeId String?
+  actorEmployee   Employee? @relation("ActorLedger", fields: [actorEmployeeId], references: [id], onDelete: SetNull)
+  qualifiedAt  DateTime
+
+  /// Calculation snapshot. Historical earnings must not move when a rule is
+  /// edited, so every input to the arithmetic is copied here at credit time.
+  amountType   CommissionAmountType
+  ruleAmount   Decimal        @db.Decimal(10, 2)
+  valueBasis   String
+  sourceAmount Decimal        @db.Decimal(10, 2)
+  amount       Decimal        @db.Decimal(10, 2)
+  capApplied   Boolean        @default(false)
+
+  /// Threshold evidence: why this qualified, when it was gated.
+  minimumCount         Int?
+  thresholdPeriod      String?
+  countAtQualification Int?
+
+  /// Period bucket key (e.g. 2026-10-02 for daily) so reports and payroll do
+  /// not recompute timezone maths per row.
+  periodKey String
+
+  status    LedgerStatus @default(approved)
+  payslipId String?
+  createdAt DateTime     @default(now())
+
+  reversals CommissionReversalV2[]
+
+  /// The idempotency guarantee: one credit per order per purpose, forever.
+  /// A webhook retry, double-click or concurrent evaluation cannot produce two.
+  @@unique([orderId, purpose], map: "CommissionLedgerV2_order_purpose_unique")
+  @@index([employeeId, qualifiedAt])
+  @@index([employeeId, purpose, qualifiedAt])
+  @@index([payslipId, status, qualifiedAt])
+  @@index([ruleId, qualifiedAt])
+  @@index([periodKey], map: "CommissionLedgerV2_periodKey_idx")
+}
+
+model CommissionThresholdCounter {
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  purpose    String
+  /// e.g. 2026-10-02 for daily, 2026-W41 for weekly, 2026-10 for monthly.
+  periodKey  String
+  count      Int      @default(0)
+  lastQualifiedAt DateTime?
+  updatedAt  DateTime @default(now()) @updatedAt
+
+  /// The primary key IS the duplicate guard: re-processing an event cannot
+  /// increment the same bucket twice.
+  @@id([employeeId, purpose, periodKey])
+  @@index([periodKey], map: "CommissionThresholdCounter_periodKey_idx")
+}
+
+model CommissionReversalV2 {
+  id             String           @id @default(uuid())
+  ledgerId       String
+  ledger         CommissionLedgerV2 @relation(fields: [ledgerId], references: [id], onDelete: Restrict)
+  orderId        String?
+  amount         Decimal          @db.Decimal(10, 2)
+  refundedAmount Decimal?         @db.Decimal(10, 2)
+  reason         String
+  reversedById   String?
+  reversedAt     DateTime         @default(now())
+  createdAt      DateTime         @default(now())
+
+  @@unique([ledgerId, orderId], map: "CommissionReversalV2_ledger_order_unique")
+  @@index([ledgerId], map: "CommissionReversalV2_ledgerId_idx")
+}
 
 model CommissionReversal {
   id                  String            @id @default(uuid())

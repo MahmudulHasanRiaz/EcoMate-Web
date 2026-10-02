@@ -56,6 +56,7 @@ import { CommissionsService } from '../commissions/commissions.service';
 import { TrackingEligibilityGate } from '../tracking/tracking-eligibility-gate';
 import { CacheService } from '../cache/cache.service';
 import { OrderStaffPerformanceService } from './order-staff-performance.service';
+import { CommissionEngineService } from '../commissions/commission-engine.service';
 
 // Order-status transition rules live in one place — the runtime gate and the
 // seed share the same map (see order-transitions.ts for the Partial rule).
@@ -240,6 +241,10 @@ export class OrdersService {
     private readonly cache?: CacheService,
     @Optional()
     private readonly staffPerformance?: OrderStaffPerformanceService,
+    // Commission Engine v2. Optional so existing unit tests that build
+    // OrdersService without it keep working; production always wires it.
+    @Optional()
+    private readonly commissionEngine?: CommissionEngineService,
   ) {}
 
   /**
@@ -1116,14 +1121,19 @@ export class OrdersService {
       }
     }
 
-    // Courier office note (Hotfix 2, business rule): at CREATE, an empty/blank nose
-    // is treated as "no value provided", so the current default office note is
-    // copied into the order. Only a non-empty dto.officeNotes overrides it.
-    // (Update/Edit is the authoritative path: an explicit '' there clears the note.)
-    const resolvedOfficeNotes =
-      dto.officeNotes && dto.officeNotes.trim().length > 0
-        ? dto.officeNotes
-        : await this.getDefaultOfficeNote();
+    // Courier office note: at CREATE, if user provides a note, merge it with
+    // the system default office note (user note + default office note).
+    // If no user note is provided, copy the default office note.
+    const userNote = dto.officeNotes?.trim();
+    const defaultNote = (await this.getDefaultOfficeNote())?.trim();
+    let resolvedOfficeNotes: string | null = null;
+    if (userNote && defaultNote) {
+      resolvedOfficeNotes = userNote.includes(defaultNote)
+        ? userNote
+        : `${userNote} ${defaultNote}`;
+    } else {
+      resolvedOfficeNotes = userNote || defaultNote || null;
+    }
 
     // Pre-fetch tracking purchase-mode settings OUTSIDE the transaction so a
     // settings-table failure never rolls back the order. Passed to
@@ -1511,9 +1521,21 @@ export class OrdersService {
         }
       }
 
+      // Shipping charge: if staff explicitly provided shippingCharge (or if provided in DTO),
+      // respect that amount. Otherwise fall back to derivedShippingCharge from settings.
+      let finalShippingCharge = derivedShippingCharge;
+      let isShippingOverridden = false;
+      if (dto.shippingCharge !== undefined && !isNaN(Number(dto.shippingCharge))) {
+        const explicitShipping = Number(dto.shippingCharge);
+        if (isStaffCreate || explicitShipping >= 0) {
+          finalShippingCharge = explicitShipping;
+          isShippingOverridden = Math.abs(finalShippingCharge - derivedShippingCharge) > 0.01;
+        }
+      }
+
       const { subtotal } = this.recalculate(
         dto.items,
-        derivedShippingCharge,
+        finalShippingCharge,
         0,
         'flat',
       );
@@ -1589,11 +1611,23 @@ export class OrdersService {
           effectiveDiscountType = 'flat';
           effectiveDiscountMonetary = effectiveDiscount;
         }
+      } else if (dto.discount !== undefined && Number(dto.discount) > 0) {
+        // Staff-entered or direct manual discount
+        const discVal = Number(dto.discount);
+        const discType = dto.discountType === 'percentage' ? 'percentage' : 'flat';
+        effectiveDiscountType = discType;
+        if (discType === 'percentage') {
+          effectiveDiscount = Math.min(100, Math.max(0, discVal));
+          effectiveDiscountMonetary = Number(subtotal) * (effectiveDiscount / 100);
+        } else {
+          effectiveDiscount = Math.min(Number(subtotal), Math.max(0, discVal));
+          effectiveDiscountMonetary = effectiveDiscount;
+        }
       }
 
       const { subtotal: finalSubtotal, total: finalTotal } = this.recalculate(
         dto.items,
-        derivedShippingCharge,
+        finalShippingCharge,
         effectiveDiscount,
         effectiveDiscountType,
       );
@@ -1692,7 +1726,8 @@ export class OrdersService {
           customerId: dto.customerId ?? null,
           statusId: initialStatus.id,
           subtotal: finalSubtotal,
-          shippingCharge: derivedShippingCharge,
+          shippingCharge: finalShippingCharge,
+          shippingChargeOverridden: isShippingOverridden,
           selectedShippingOptionId: dto.selectedShippingOptionId || null,
           discount: effectiveDiscount,
           discountType: effectiveDiscountType,
@@ -1760,7 +1795,9 @@ export class OrdersService {
           paymentStatus:
             dto.paymentOptionType === 'CASH_ON_DELIVERY'
               ? PaymentStatus.UNPAID
-              : PaymentStatus.PAYMENT_PENDING,
+              : dto.paymentOptionType === 'PARTIAL_PAYMENT' && isStaffCreate && dto.partialAmount && Number(dto.partialAmount) > 0
+                ? (Number(dto.partialAmount) >= Number(finalTotal) ? PaymentStatus.PAID : PaymentStatus.PARTIAL_PAID)
+                : PaymentStatus.PAYMENT_PENDING,
           // Analytics cost capture (P2 §3.2): staff-entered fulfillment cost.
           ...resolveShippingCostFields(dto),
           partialAmount:
@@ -1878,27 +1915,60 @@ export class OrdersService {
       }
 
       if (dto.paymentOptionType) {
-        const paymentAmount =
-          dto.paymentOptionType === 'PARTIAL_PAYMENT' && dto.partialAmount
-            ? dto.partialAmount
-            : finalTotal;
-        const gatewayCode =
-          dto.gatewayCode ||
-          (dto.paymentOptionType === 'CASH_ON_DELIVERY' ? 'cash' : undefined);
-        if (gatewayCode) {
+        if (
+          isStaffCreate &&
+          dto.paymentOptionType === 'PARTIAL_PAYMENT' &&
+          dto.partialAmount &&
+          Number(dto.partialAmount) > 0
+        ) {
+          const advancePaid = Number(dto.partialAmount);
+          const advanceGateway = dto.gatewayCode || 'cash';
           await tx.payment.create({
             data: {
               orderId: created.id,
-              gatewayCode,
-              amount: paymentAmount,
-              // COD cash rows are created UNPAID so the Delivered path can
-              // mark them PAID; in-progress online payments stay PENDING.
-              status:
-                gatewayCode === 'cash'
-                  ? PaymentStatus.UNPAID
-                  : PaymentStatus.PENDING,
+              gatewayCode: advanceGateway,
+              amount: advancePaid,
+              status: PaymentStatus.PAID,
+              verifiedAt: new Date(),
+              verifiedBy: userId,
+              notes: 'Advance payment collected during order creation',
             },
           });
+          const remaining = Math.max(0, Number(finalTotal) - advancePaid);
+          if (remaining > 0) {
+            await tx.payment.create({
+              data: {
+                orderId: created.id,
+                gatewayCode: 'cash',
+                amount: remaining,
+                status: PaymentStatus.UNPAID,
+                notes: 'Remaining balance to collect on delivery',
+              },
+            });
+          }
+        } else {
+          const paymentAmount =
+            dto.paymentOptionType === 'PARTIAL_PAYMENT' && dto.partialAmount
+              ? dto.partialAmount
+              : finalTotal;
+          const gatewayCode =
+            dto.gatewayCode ||
+            (dto.paymentOptionType === 'CASH_ON_DELIVERY' ? 'cash' : undefined);
+          if (gatewayCode) {
+            await tx.payment.create({
+              data: {
+                orderId: created.id,
+                gatewayCode,
+                amount: paymentAmount,
+                // COD cash rows are created UNPAID so the Delivered path can
+                // mark them PAID; in-progress online payments stay PENDING.
+                status:
+                  gatewayCode === 'cash'
+                    ? PaymentStatus.UNPAID
+                    : PaymentStatus.PENDING,
+              },
+            });
+          }
         }
       }
 
@@ -3204,6 +3274,32 @@ export class OrdersService {
         statusName: newStatus.name,
       },
     });
+
+    // Commission Engine v2.
+    //
+    // Recorded for EVERY status transition, not just Confirmed: "first actor
+    // wins" is only meaningful if the ledger holds every transition, because a
+    // later transition into a status must be able to tell that it was not the
+    // first. The engine decides whether this particular transition earns
+    // anything; this call only supplies the event.
+    //
+    // Resilient — a commission failure must never roll back an order update.
+    if (this.commissionEngine) {
+      try {
+        await this.commissionEngine.recordTransition({
+          orderId: updated.id,
+          fromStatus: order.status.name,
+          toStatus: newStatus.name,
+          actorUserId: userId ?? null,
+          note: dto.note || null,
+        });
+      } catch (err) {
+        this.logger.error(
+          `Commission v2 evaluation failed for order ${updated.id} → ${newStatus.name}:`,
+          err,
+        );
+      }
+    }
 
     // Commission hook (decision #5): when an order reaches the Confirmed
     // status, evaluate its active commission rules. Resilient — never breaks
