@@ -63,6 +63,10 @@ export default async function (phase: string) {
     async rewrites() {
       const list = [
         {
+          source: '/orders/:id',
+          destination: '/orders?id=:id',
+        },
+        {
           source: '/api/:path*',
           destination: `${apiOrigin}/api/:path*`,
         },

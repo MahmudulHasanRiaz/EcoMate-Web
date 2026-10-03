@@ -3,7 +3,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { User, Phone, MapPin } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
-import { mediaUrl } from '@/lib/utils'
+import { mediaUrl, getStorefrontUrl } from '@/lib/utils'
 import { getCustomerDisplayName, getCustomerPhone } from '@/lib/order-display'
 
 function fmt(v: number | string): string {
@@ -229,6 +229,7 @@ export function StickerTemplate({ order }: { order: any }) {
   const storefrontFavicon = settings?.branding?.storefrontFavicon || ''
   const display = settings?.systems?.[0]?.display || 'name'
   const currencySymbol = settings?.currency?.symbol || '৳'
+  const storefrontBase = getStorefrontUrl(settings?.storefrontUrl)
 
   const customerName = getCustomerDisplayName(order)
   const customerPhone = getCustomerPhone(order)
@@ -394,7 +395,7 @@ export function StickerTemplate({ order }: { order: any }) {
           <div className="flex items-center gap-1.5 pr-1.5 border-r border-dashed border-gray-300">
             <div className="flex-shrink-0 bg-white p-0.5 rounded">
               <QRCodeSVG
-                value={order.displayId || order.id || 'ORDER'}
+                value={`${storefrontBase}/orders/${order.displayId || order.id || 'ORDER'}`}
                 size={36}
                 level="M"
                 marginSize={0}

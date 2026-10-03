@@ -1,4 +1,5 @@
 import { normalizePhone } from '../common/utils/phone-utils';
+import { extractScanIdentifier } from '../scanner/scanner-resolver';
 
 /** Digits, optional leading `+`, and the separators people paste. Nothing else. */
 const PHONE_SHAPED = /^[+\d][\d\s()+-]*$/;
@@ -38,8 +39,9 @@ export function phoneSpellings(e164: string): string[] {
 export function buildOrderSearchFilter(
   search?: string | null,
 ): { OR: any[] } | undefined {
-  const q = (search || '').trim();
-  if (!q) return undefined;
+  const raw = (search || '').trim();
+  if (!raw) return undefined;
+  const q = extractScanIdentifier(raw);
 
   const or: any[] = [
     { displayId: { contains: q, mode: 'insensitive' } },

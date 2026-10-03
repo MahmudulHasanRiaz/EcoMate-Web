@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { StatusBadge, riseStyle } from '@/components/ui/dashboard'
 import { StagedList, displayCustomer, orderMeta, type StagedRow } from '@/features/scanner/staged-list'
+import { extractOrderScanCode } from '@/lib/order-display'
 import {
   scannerApi, ScanPurposeDescriptor, ScanResult, ScanDispatchPreview,
 } from '@/features/orders/api'
@@ -41,23 +42,23 @@ const TASK_ICONS: Record<string, any> = {
 const TASK_HELP: Record<string, { title: string; accept: string; empty: string }> = {
   DISPATCH_HANDED_OVER: {
     title: 'Hand over dispatch',
-    accept: 'Scan a courier dispatch ID, tracking code, or order number.',
-    empty: 'Scan a courier ID or order number to begin.',
+    accept: 'Scan a courier dispatch ID, tracking code, or order QR/barcode.',
+    empty: 'Scan a courier ID or order QR/barcode to begin.',
   },
   DISPATCH_RETURN: {
     title: 'Process return',
-    accept: 'Scan a returned courier dispatch ID, tracking code, or order number.',
-    empty: 'Scan a returned courier ID or order number to begin.',
+    accept: 'Scan a returned courier dispatch ID, tracking code, or order QR/barcode.',
+    empty: 'Scan a returned courier ID or order QR/barcode to begin.',
   },
   ORDER_STATUS: {
     title: 'Update order status',
-    accept: 'Scan one or more order numbers (ORD-…).',
-    empty: 'Scan an order number to begin.',
+    accept: 'Scan one or more order QR codes / barcodes (ORD-…).',
+    empty: 'Scan an order QR code or barcode to begin.',
   },
   STICKER_PRINT: {
     title: 'Print sticker',
-    accept: 'Scan an order number (ORD-…).',
-    empty: 'Scan an order number to begin.',
+    accept: 'Scan an order QR code / barcode (ORD-…).',
+    empty: 'Scan an order QR code or barcode to begin.',
   },
 }
 
@@ -256,7 +257,7 @@ export default function ScannerPage() {
   // ── Scan: resolve → execute immediately (or stage when the task needs
   //    a follow-up choice: dispatch selection, target status) ─────────────
   const handleScan = useCallback(async (raw: string) => {
-    const identifier = raw.trim()
+    const identifier = extractOrderScanCode(raw)
     if (!identifier || busy) return
     setInput('')
     setBusy(true)

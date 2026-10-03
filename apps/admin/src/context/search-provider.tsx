@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { apiClient } from '@/lib/api-client'
 import { CommandPalette } from '@/components/command-palette'
+import { extractOrderScanCode } from '@/lib/order-display'
 
 interface SearchResultItem {
   id: string
@@ -117,11 +118,12 @@ export function SearchProvider({ children }: SearchProviderProps) {
   }, [open])
 
   const search = (q: string) => {
-    setQuery(q)
+    const cleanQ = extractOrderScanCode(q)
+    setQuery(cleanQ)
     if (debounceRef.current) clearTimeout(debounceRef.current)
     abortRef.current?.abort()
 
-    if (q.length < 2) {
+    if (cleanQ.length < 2) {
       setResults({ orders: [], products: [], customers: [] })
       setError(null)
       setIsLoading(false)
@@ -134,7 +136,7 @@ export function SearchProvider({ children }: SearchProviderProps) {
       setIsLoading(true)
       abortRef.current = new AbortController()
       apiClient.get<SearchResults>('/admin/search', {
-        params: { q, limit: 5 },
+        params: { q: cleanQ, limit: 5 },
         signal: abortRef.current.signal,
       })
         .then(res => setResults(res.data))

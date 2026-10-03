@@ -293,11 +293,31 @@ export function PackingWorkspace() {
   const onScanSuccess = useCallback(async (decodedText: string) => {
     // P2-5: html5-qrcode fires continuously while a code is in frame. Collapse
     // repeats of the same code within a short window so one scan = one request.
-    const code = decodedText.trim()
+    const raw = decodedText.trim()
+    // If the QR encodes a full storefront tracking URL (e.g. https://…/orders/ORD-260930-0001 or ?id=ORD-…),
+    // extract just the order identifier so downstream matching works with plain IDs.
+    let code = raw
+    try {
+      if (/^https?:\/\//i.test(raw)) {
+        const url = new URL(raw)
+        const queryId =
+          url.searchParams.get('id') ||
+          url.searchParams.get('displayId') ||
+          url.searchParams.get('orderId') ||
+          url.searchParams.get('order')
+        if (queryId) {
+          code = queryId.trim()
+        } else {
+          const segments = url.pathname.split('/').filter(Boolean)
+          const last = segments[segments.length - 1]
+          if (last && last.toLowerCase() !== 'orders') code = last
+        }
+      }
+    } catch { /* not a URL — use raw value */ }
     const now = Date.now()
     const last = lastScanRef.current
-    if (last && last.code === code && now - last.at < 2000) return
-    lastScanRef.current = { code, at: now }
+    if (last && last.code === raw && now - last.at < 2000) return
+    lastScanRef.current = { code: raw, at: now }
 
     // Search in the active queue (contains both Confirmed & Packing Hold statuses!)
     const matched = queueRef.current.find((o) =>

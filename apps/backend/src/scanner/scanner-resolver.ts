@@ -11,8 +11,36 @@ import { DispatchPreview, OrderPreview, ResolveOutcome } from './scanner.types';
 
 const ORDER_NUMBER = /^(ORD|RTN)-\d{6}-\d{4}$/;
 
+/**
+ * If the scanned value is a storefront tracking URL (e.g. https://…/orders/ORD-260930-0001),
+ * extract just the order identifier from the last path segment.
+ * This makes QR codes that embed a full URL backward-compatible with every
+ * scanner input path — plain displayId values are returned untouched.
+ */
+export function extractScanIdentifier(raw: string): string {
+  const trimmed = (raw || '').trim();
+  try {
+    if (/^https?:\/\//i.test(trimmed)) {
+      const url = new URL(trimmed);
+      const queryId =
+        url.searchParams.get('id') ||
+        url.searchParams.get('displayId') ||
+        url.searchParams.get('orderId') ||
+        url.searchParams.get('order');
+      if (queryId) return queryId.trim();
+
+      const segments = url.pathname.split('/').filter(Boolean);
+      const last = segments[segments.length - 1] ?? '';
+      if (last && last.toLowerCase() !== 'orders') return last;
+    }
+  } catch {
+    // Not a valid URL — fall through and return as-is.
+  }
+  return trimmed;
+}
+
 export function normalizeScanIdentifier(raw: string): string {
-  return (raw || '').trim().toUpperCase().replace(/\s+/g, ' ');
+  return extractScanIdentifier(raw).toUpperCase().replace(/\s+/g, ' ');
 }
 
 /** Alphanumeric core — tolerates spacing/punctuation variants of one id. */

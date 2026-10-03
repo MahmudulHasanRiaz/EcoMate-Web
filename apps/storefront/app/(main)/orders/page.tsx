@@ -128,7 +128,13 @@ export default function OrdersPage() {
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      const id = params.get('id');
+      let id = params.get('id');
+      if (!id) {
+        const segments = window.location.pathname.split('/').filter(Boolean);
+        if (segments.length >= 2 && segments[0] === 'orders') {
+          id = decodeURIComponent(segments[1]);
+        }
+      }
       if (id) {
         let cleanId = id.trim();
         if (cleanId.startsWith('#')) {

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { extractScanIdentifier } from '../scanner/scanner-resolver';
 
 export interface SearchResult {
   orders: Array<{
@@ -31,7 +32,8 @@ export class SearchService {
   constructor(private prisma: PrismaService) {}
 
   async search(query: string, limit = 5): Promise<SearchResult> {
-    const sanitized = query.replace(/[%_\\]/g, ' ').trim();
+    const cleanQuery = extractScanIdentifier(query || '');
+    const sanitized = cleanQuery.replace(/[%_\\]/g, ' ').trim();
     if (sanitized.length < 2) {
       return { orders: [], products: [], customers: [] };
     }

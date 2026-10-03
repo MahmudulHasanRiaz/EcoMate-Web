@@ -11,6 +11,7 @@ import { OrderStockDeductService } from '../stock/order-stock-deduct.service';
 import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
 import { OrdersService } from '../orders/orders.service';
 import { CourierTrackingService } from '../courier-manager/courier-tracking.service';
+import { extractScanIdentifier } from '../scanner/scanner-resolver';
 import {
   isSupportedCourier,
   mapCourierStatusToDispatchStatus,
@@ -156,21 +157,22 @@ export class DispatchService {
     if (query.courier) where.courier = query.courier as any;
     if (query.status) where.status = query.status as any;
     if (query.search) {
+      const term = extractScanIdentifier(query.search);
       where.OR = [
-        { consignmentId: { contains: query.search, mode: 'insensitive' } },
-        { trackingCode: { contains: query.search, mode: 'insensitive' } },
+        { consignmentId: { contains: term, mode: 'insensitive' } },
+        { trackingCode: { contains: term, mode: 'insensitive' } },
         {
-          order: { displayId: { contains: query.search, mode: 'insensitive' } },
+          order: { displayId: { contains: term, mode: 'insensitive' } },
         },
         {
           order: {
-            guestPhone: { contains: query.search, mode: 'insensitive' },
+            guestPhone: { contains: term, mode: 'insensitive' },
           },
         },
         {
           order: {
             customer: {
-              phone: { contains: query.search, mode: 'insensitive' },
+              phone: { contains: term, mode: 'insensitive' },
             },
           },
         },

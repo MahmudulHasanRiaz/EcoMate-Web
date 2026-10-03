@@ -31,6 +31,22 @@ describe('buildOrderSearchFilter', () => {
     );
   });
 
+  it('unwraps scanned QR code tracking URLs into the exact order number', () => {
+    const orPath = buildOrderSearchFilter('https://store.example.com/orders/ORD-260930-0001')!.OR;
+    expect(orPath).toEqual(
+      expect.arrayContaining([
+        { displayId: { contains: 'ORD-260930-0001', mode: 'insensitive' } },
+      ]),
+    );
+
+    const orQuery = buildOrderSearchFilter('https://store.example.com/orders?id=ORD-260930-0002')!.OR;
+    expect(orQuery).toEqual(
+      expect.arrayContaining([
+        { displayId: { contains: 'ORD-260930-0002', mode: 'insensitive' } },
+      ]),
+    );
+  });
+
   it('matches a product or variant SKU through an EXISTS subquery, never a join', () => {
     const or = buildOrderSearchFilter('ECO-TSHIRT-M')!.OR;
     const sku = or.find((c: any) => c.items);

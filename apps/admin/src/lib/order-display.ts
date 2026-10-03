@@ -107,3 +107,30 @@ export function getCustomerCountry(order: OrderCustomerSnapshot): string {
   if (addr?.country) return addr.country
   return 'BD'
 }
+
+/**
+ * If the input is a scanned storefront tracking URL (e.g. https://…/orders/ORD-260930-0001 or ?id=ORD-…),
+ * extract just the clean order identifier.
+ * Safe for direct typing, barcode scanner input, and 2D QR code scanner input.
+ */
+export function extractOrderScanCode(raw: string): string {
+  const trimmed = (raw || '').trim()
+  try {
+    if (/^https?:\/\//i.test(trimmed)) {
+      const url = new URL(trimmed)
+      const queryId =
+        url.searchParams.get('id') ||
+        url.searchParams.get('displayId') ||
+        url.searchParams.get('orderId') ||
+        url.searchParams.get('order')
+      if (queryId) return queryId.trim()
+
+      const segments = url.pathname.split('/').filter(Boolean)
+      const last = segments[segments.length - 1]
+      if (last && last.toLowerCase() !== 'orders') return last
+    }
+  } catch {
+    // Not a valid URL — return trimmed
+  }
+  return trimmed
+}

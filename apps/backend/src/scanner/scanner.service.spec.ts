@@ -9,7 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { DispatchService } from '../dispatch/dispatch.service';
 import { RtnService } from '../rtn/rtn.service';
 import { OrdersService } from '../orders/orders.service';
-import { normalizeScanIdentifier, resolveScanIdentifier } from './scanner-resolver';
+import { normalizeScanIdentifier, extractScanIdentifier, resolveScanIdentifier } from './scanner-resolver';
 
 const actor = { userId: 'user-1', email: 'staff@ecomate.com' };
 
@@ -75,6 +75,54 @@ describe('scanner-resolver — normalizeScanIdentifier', () => {
   it('trims, uppercases and collapses whitespace', () => {
     expect(normalizeScanIdentifier('  ord-260930-0001 ')).toBe('ORD-260930-0001');
     expect(normalizeScanIdentifier('cons\u00A0 100')).toBe('CONS 100');
+  });
+});
+
+describe('scanner-resolver — extractScanIdentifier (QR URL unwrapping)', () => {
+  it('returns the order ID from a full storefront tracking URL', () => {
+    expect(extractScanIdentifier('https://store.example.com/orders/ORD-260930-0001'))
+      .toBe('ORD-260930-0001');
+  });
+
+  it('handles URLs with trailing slash', () => {
+    expect(extractScanIdentifier('https://store.example.com/orders/ORD-260930-0002/'))
+      .toBe('ORD-260930-0002');
+  });
+
+  it('handles http (non-HTTPS) tracking URLs', () => {
+    expect(extractScanIdentifier('http://localhost:3000/orders/ORD-260930-0003'))
+      .toBe('ORD-260930-0003');
+  });
+
+  it('returns plain displayId untouched when no URL is present', () => {
+    expect(extractScanIdentifier('ORD-260930-0004')).toBe('ORD-260930-0004');
+  });
+
+  it('returns courier consignment ID untouched when no URL is present', () => {
+    expect(extractScanIdentifier('CONS-12345')).toBe('CONS-12345');
+  });
+
+  it('returns the raw string when the input is not a valid URL despite starting with http', () => {
+    expect(extractScanIdentifier('http://[invalid')).toBe('http://[invalid');
+  });
+
+  it('returns the order ID from a URL with query param ?id=', () => {
+    expect(extractScanIdentifier('https://store.example.com/orders?id=ORD-260930-0005'))
+      .toBe('ORD-260930-0005');
+  });
+
+  it('returns the order ID from thank-you URL with query param ?orderId=', () => {
+    expect(extractScanIdentifier('https://store.example.com/checkout/thank-you?orderId=ORD-260930-0006&t=tok123'))
+      .toBe('ORD-260930-0006');
+  });
+
+  it('does not treat the path segment "orders" as an order ID when no ID is provided', () => {
+    expect(extractScanIdentifier('https://store.example.com/orders')).toBe('https://store.example.com/orders');
+  });
+
+  it('normalizeScanIdentifier uppercases after URL extraction', () => {
+    expect(normalizeScanIdentifier('https://store.example.com/orders/ord-260930-0001'))
+      .toBe('ORD-260930-0001');
   });
 });
 

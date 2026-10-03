@@ -94,4 +94,30 @@ describe('SearchService', () => {
     expect(result.products).toHaveLength(0);
     expect(result.customers).toHaveLength(0);
   });
+
+  it('unwraps scanned QR code tracking URLs and searches with extracted order ID', async () => {
+    const mockOrder = {
+      id: '1',
+      displayId: 'ORD-260930-0001',
+      total: 100,
+      status: 'Confirmed',
+      customerName: 'Test',
+      phone: null,
+    };
+
+    prisma.$queryRawUnsafe
+      .mockResolvedValueOnce([mockOrder])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const result = await service.search('https://store.example.com/orders/ORD-260930-0001');
+
+    expect(prisma.$queryRawUnsafe).toHaveBeenCalledWith(
+      expect.any(String),
+      '%ORD-260930-0001%',
+      5,
+    );
+    expect(result.orders).toHaveLength(1);
+    expect(result.orders[0].displayId).toBe('ORD-260930-0001');
+  });
 });

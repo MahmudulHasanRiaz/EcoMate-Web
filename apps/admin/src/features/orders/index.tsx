@@ -12,7 +12,7 @@ import { useLicenseStore } from '@/stores/license-store'
 import { useOrdersFilterStore } from '@/stores/orders-filter-store'
 import { copyToClipboard } from '@/lib/clipboard'
 import { resolveOrderItemImages } from '@/lib/product-image'
-import { getCustomerDisplayName, getCustomerPhone, getCustomerEmail } from '@/lib/order-display'
+import { getCustomerDisplayName, getCustomerPhone, getCustomerEmail, extractOrderScanCode } from '@/lib/order-display'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -617,7 +617,7 @@ export function Orders() {
                 aria-label='Search orders by order ID, phone number, customer name or product SKU'
                 title='Search by order ID, phone number (with or without country code), customer name or product SKU'
                 value={search}
-                onChange={e => setSearch(e.target.value)}
+                onChange={e => setSearch(extractOrderScanCode(e.target.value))}
                 className='h-8.5 text-xs pl-8.5 pr-14 bg-background/80 focus:bg-background border-border/60 focus:border-primary/50 shadow-2xs transition-colors rounded-lg'
               />
               {search ? (

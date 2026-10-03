@@ -13,6 +13,7 @@ import {
 } from '@tanstack/react-table'
 import { Trash2, Eye, ExternalLink, RefreshCw, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { extractOrderScanCode } from '@/lib/order-display'
 import { useAuthStore } from '@/stores/auth-store'
 import {
   Table,
@@ -410,7 +411,7 @@ export function DispatchTable({
           <Input
             placeholder='Search by order, consignment, phone...'
             value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
+            onChange={(e) => onSearchChange(extractOrderScanCode(e.target.value))}
             className='h-8 w-37.5 lg:w-62.5'
           />
           <div className='flex gap-x-2'>

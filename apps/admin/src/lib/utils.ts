@@ -43,10 +43,24 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export function getStorefrontUrl(): string {
+export function getStorefrontUrl(fallbackFromConfig?: string): string {
+  if (fallbackFromConfig && typeof fallbackFromConfig === 'string' && fallbackFromConfig.trim()) {
+    return fallbackFromConfig.trim().replace(/\/+$/, '')
+  }
   const configured = import.meta.env.VITE_STOREFRONT_URL
   if (configured) return configured.replace(/\/+$/, '')
-  if (typeof window !== 'undefined') return window.location.origin.replace(/\/+$/, '')
+  if (typeof window !== 'undefined') {
+    const { hostname, port, protocol } = window.location
+    // In local dev, admin runs on 5173 / 8080 while storefront runs on 3000
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return `http://${hostname}:3000`
+    }
+    // If admin is on an admin subdomain (e.g. admin.domain.com), storefront is on domain.com
+    if (hostname.startsWith('admin.')) {
+      return `${protocol}//${hostname.replace(/^admin\./, '')}${port ? `:${port}` : ''}`
+    }
+    return window.location.origin.replace(/\/+$/, '')
+  }
   return 'http://localhost:3000'
 }
 

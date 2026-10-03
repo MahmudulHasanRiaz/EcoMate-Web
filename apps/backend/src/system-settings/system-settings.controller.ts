@@ -376,6 +376,10 @@ export class SystemSettingsController {
       }
 
       const result = {
+        storefrontUrl:
+          map['storefront_url'] ||
+          process.env.STOREFRONT_URL ||
+          (process.env.CLIENT_DOMAIN ? `https://${process.env.CLIENT_DOMAIN}` : 'http://localhost:3000'),
         homepageSections,
         store: {
           name: map['store_name'] || 'EcoMate',
