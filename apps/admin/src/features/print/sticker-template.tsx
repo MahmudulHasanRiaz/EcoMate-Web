@@ -309,6 +309,12 @@ export function StickerTemplate({ order }: { order: any }) {
           max-width: 8mm;
           object-fit: contain;
         }
+        .sticker-container svg {
+          shape-rendering: crispEdges !important;
+          image-rendering: -webkit-optimize-contrast !important;
+          image-rendering: crisp-edges !important;
+          image-rendering: pixelated !important;
+        }
       `}</style>
 
       {/* Top Header & Customer Details */}
@@ -390,34 +396,38 @@ export function StickerTemplate({ order }: { order: any }) {
         </div>
 
         {/* Codes Section: Order QR Code (left) + Courier Barcode (right) */}
-        <div className="bg-[#f8fafc] rounded-xl px-2 py-1 my-1 grid grid-cols-2 gap-2 items-center">
+        <div className="bg-[#f8fafc] rounded-xl px-2 py-1.5 my-1 grid grid-cols-[1.14fr_0.86fr] gap-1.5 items-center">
           {/* Left: QR Code + Order Info */}
-          <div className="flex items-center gap-1.5 pr-1.5 border-r border-dashed border-gray-300">
-            <div className="flex-shrink-0 bg-white p-0.5 rounded">
+          <div className="flex items-center gap-1.5 pr-1.5 border-r border-dashed border-gray-300 min-w-0">
+            <div className="flex-shrink-0 bg-white p-0.5 rounded-md border border-gray-200/80 shadow-2xs">
               <QRCodeSVG
                 value={`${storefrontBase}/orders/${order.displayId || order.id || 'ORDER'}`}
-                size={36}
+                size={44}
                 level="M"
                 marginSize={0}
+                fgColor="#000000"
+                bgColor="#FFFFFF"
+                shapeRendering="crispEdges"
+                className="block"
               />
             </div>
             <div className="flex flex-col items-center justify-center flex-1 text-center min-w-0">
               <span className="text-[7px] font-bold text-gray-500 uppercase tracking-widest leading-none mb-0.5">
                 ORDER
               </span>
-              <span className="text-[8px] font-black text-black tracking-tight leading-tight whitespace-nowrap">
+              <span className="text-[7.5px] font-black text-black tracking-tight leading-tight whitespace-nowrap">
                 {order.displayId || order.id}
               </span>
-              <div className="w-full border-t border-gray-200 my-0.5" />
-              <span className="text-[6.5px] font-medium text-gray-500 leading-tight">
+              <div className="w-full border-t border-gray-200 my-1" />
+              <span className="text-[6.5px] font-semibold text-gray-500 leading-tight">
                 Scan to view<br />order details
               </span>
             </div>
           </div>
 
           {/* Right: Courier Barcode Box */}
-          <div className="flex flex-col items-center justify-center min-h-[46px] overflow-hidden">
-            <span className="text-[6.5px] font-bold tracking-tight text-gray-800 uppercase text-center mb-0.5 truncate max-w-full">
+          <div className="flex flex-col items-center justify-center min-h-[48px] overflow-hidden">
+            <span className="text-[7px] font-bold tracking-tight text-gray-800 uppercase text-center mb-0.5 truncate max-w-full">
               {courierInfo.title}
             </span>
             {courierInfo.isDispatched ? (
@@ -426,14 +436,14 @@ export function StickerTemplate({ order }: { order: any }) {
                   <Barcode
                     value={courierInfo.barcodeValue}
                     format="CODE128"
-                    width={0.88}
-                    height={18}
+                    width={0.92}
+                    height={20}
                     displayValue={false}
                     margin={0}
                     background="transparent"
                   />
                 </div>
-                <span className="text-[8px] font-black text-black tracking-wider text-center mt-0.5">
+                <span className="text-[8.5px] font-black text-black tracking-wider text-center mt-0.5">
                   {courierInfo.barcodeValue}
                 </span>
               </>
