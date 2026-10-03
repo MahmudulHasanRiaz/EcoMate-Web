@@ -1,4 +1,4 @@
-FROM node:22-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 COPY packages/ packages/
@@ -27,7 +27,7 @@ WORKDIR /app/apps/backend
 RUN npx prisma generate
 RUN npm run build
 
-FROM node:22-alpine AS obfuscator
+FROM node:24-alpine AS obfuscator
 WORKDIR /app
 RUN --mount=type=cache,target=/root/.npm npm install -g javascript-obfuscator@^4.1.1
 COPY --from=builder /app/apps/backend/dist ./dist
@@ -41,7 +41,7 @@ RUN javascript-obfuscator dist/ \
 COPY --from=builder /app/apps/backend/dist ./dist-base
 RUN cp -r dist-base/feed/data/ dist/feed/data/ 2>/dev/null; rm -rf dist-base
 
-FROM node:22-alpine AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 RUN apk add --no-cache unzip postgresql-client && \
     addgroup --system --gid 1001 nodejs && \
