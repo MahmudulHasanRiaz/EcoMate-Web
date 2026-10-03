@@ -134,7 +134,23 @@ export interface PublicDisplayItem {
   product: { name: string; slug: string; images: string[] } | null;
 }
 
-/** Public display-only tracking order — strictly no PII. */
+/** One public timeline step — status, when it happened, and the customer-facing note. */
+export interface PublicTimelineEntry {
+  status: string;
+  timestamp: string;
+  note?: string;
+}
+
+/**
+ * Public display-only tracking order — no PII.
+ *
+ * timeline/shipment/shippingAddress are included because the storefront
+ * tracking page renders them; without them that page silently showed an empty
+ * rail and a permanent "No shipping address available". They are limited to
+ * what a status timeline needs: performedBy (a staff email) is never exposed,
+ * entries marked `visibility: 'private'` are dropped, and the address is
+ * city/district only — no street address and no phone.
+ */
 export interface PublicDisplayOrder {
   id: string;
   displayId: string;
@@ -143,6 +159,9 @@ export interface PublicDisplayOrder {
   items: PublicDisplayItem[];
   total: number;
   trackingUrl: string | null;
+  timeline: PublicTimelineEntry[];
+  shipment: { courier: string | null; trackingCode: string | null } | null;
+  shippingAddress: { city: string | null; district: string | null } | null;
 }
 
 /** Guest token-based tracking — minimally richer but still no staff/payment/internal fields. */
@@ -158,6 +177,13 @@ const PUBLIC_DISPLAY_SELECT = {
   displayId: true,
   createdAt: true,
   total: true,
+  timeline: true,
+  // shippingAddress is a scalar String column, not a relation, so it cannot
+  // take a nested select. The column is selected whole and only city/district
+  // are ever read out of it by toPublicDisplayDto — the street address and
+  // phone it also contains never leave the service. This endpoint is reachable
+  // by anyone who knows the order number.
+  shippingAddress: true,
   courierService: true,
   courierTrackingCode: true,
   courierConsignmentId: true,
@@ -4030,9 +4056,16 @@ export class OrdersService {
   }
 
   /**
-   * Strictest public tracking DTO — for displayId / phone-number lookups.
-   * Absolutely no PII: no customer name, no shipping address, no timeline notes,
-   * no payment/staff/internal fields.
+   * Public tracking DTO for displayId / phone-number lookups.
+   *
+   * No customer name, no street address, no phone, no payment/staff/internal
+   * fields. The timeline is reduced to what a status tracker needs: the
+   * status, when it happened, and the customer-facing note. `performedBy` is
+   * dropped because it is a staff email address, and entries explicitly
+   * marked private are excluded.
+   *
+   * Ordered oldest → newest so the storefront can draw its rail top-to-bottom
+   * with the current step last.
    * Type: PublicDisplayOrder.
    */
   private toPublicDisplayDto(order: any): PublicDisplayOrder {
@@ -4063,7 +4096,59 @@ export class OrdersService {
           order.courierTrackingCode,
           order.courierConsignmentId,
         ),
+      timeline: this.toPublicTimeline(order.timeline),
+      shipment:
+        order.courierService || order.courierTrackingCode
+          ? {
+              courier: order.courierService || null,
+              trackingCode: order.courierTrackingCode || null,
+            }
+          : null,
+      shippingAddress:
+        order.shippingAddress &&
+        typeof order.shippingAddress === 'object'
+          ? {
+              city: order.shippingAddress.city || null,
+              district: order.shippingAddress.district || null,
+            }
+          : null,
     };
+  }
+
+  /**
+   * Reduce the stored order timeline to its public entries.
+   *
+   * The column is Json and is written by many code paths with differing
+   * shapes, so anything unrecognised is skipped rather than passed through.
+   * Only `status`, `timestamp` and `note` survive; `performedBy`, `oldValue`,
+   * `newValue` and any other internal field are dropped. Status-change rows
+   * carry no `visibility` field and are public by default, whereas notes a
+   * staff member explicitly marked private are not.
+   */
+  private toPublicTimeline(timeline: unknown): PublicTimelineEntry[] {
+    if (!Array.isArray(timeline)) return [];
+
+    return timeline
+      .filter((t: any) => t && typeof t === 'object' && t.visibility !== 'private')
+      .map((t: any) => ({
+        status: typeof t.status === 'string' ? t.status : '',
+        timestamp:
+          t.timestamp instanceof Date
+            ? t.timestamp.toISOString()
+            : typeof t.timestamp === 'string'
+              ? t.timestamp
+              : '',
+        ...(typeof t.note === 'string' && t.note.trim() ? { note: t.note } : {}),
+      }))
+      .filter((t) => t.status || t.note)
+      .sort((a, b) => {
+        // Unparseable timestamps sort last rather than corrupting the order.
+        const at = Date.parse(a.timestamp);
+        const bt = Date.parse(b.timestamp);
+        if (Number.isNaN(at)) return 1;
+        if (Number.isNaN(bt)) return -1;
+        return at - bt;
+      });
   }
 
   /**
@@ -4084,9 +4169,13 @@ export class OrdersService {
               district: order.shippingAddress.district || '',
             }
           : null,
-      timeline: (Array.isArray(order.timeline) ? order.timeline : []).map(
-        (t: any) => ({ status: t.status, timestamp: t.timestamp }),
-      ),
+      // Same redaction as the display DTO: a token is a bearer secret found in
+      // a customer's own order link, not a licence to expose staff identities.
+      timeline: this.toPublicTimeline(order.timeline).map((t) => ({
+        status: t.status,
+        timestamp: t.timestamp,
+        ...(t.note ? { note: t.note } : {}),
+      })),
     };
   }
 

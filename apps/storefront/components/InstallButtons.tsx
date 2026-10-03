@@ -8,12 +8,28 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
-function getPlatform(): 'android' | 'ios' | 'other' {
-  if (typeof navigator === 'undefined') return 'other';
-  const ua = navigator.userAgent.toLowerCase();
-  if (ua.includes('android')) return 'android';
-  if (ua.includes('iphone') || ua.includes('ipad') || ua.includes('ipod')) return 'ios';
-  return 'other';
+/**
+ * Which app store applies, or null while still unknown.
+ *
+ * Resolved in an effect rather than during render: the user agent exists only
+ * in the browser, so reading it while rendering makes the server and the
+ * first client render disagree, and React discards the server tree. That was
+ * the hydration error on mobile. `null` is rendered identically on both sides
+ * and corrected after mount.
+ */
+type Platform = 'android' | 'ios' | 'other' | null;
+
+function usePlatform(): Platform {
+  const [platform, setPlatform] = useState<Platform>(null);
+
+  useEffect(() => {
+    const ua = window.navigator.userAgent.toLowerCase();
+    if (ua.includes('android')) setPlatform('android');
+    else if (ua.includes('iphone') || ua.includes('ipad') || ua.includes('ipod')) setPlatform('ios');
+    else setPlatform('other');
+  }, []);
+
+  return platform;
 }
 
 export default function InstallButtons({
@@ -25,7 +41,7 @@ export default function InstallButtons({
 }) {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(false);
-  const platform = getPlatform();
+  const platform = usePlatform();
 
   useEffect(() => {
     if (typeof window === 'undefined') return;

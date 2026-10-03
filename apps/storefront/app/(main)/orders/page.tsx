@@ -16,12 +16,8 @@ interface OrderItem {
 }
 
 interface ShippingAddress {
-  name?: string;
-  phone?: string;
-  address?: string;
-  city?: string;
-  district?: string;
-  thana?: string;
+  city?: string | null;
+  district?: string | null;
 }
 
 interface TimelineEntry {
@@ -33,18 +29,13 @@ interface TimelineEntry {
 interface OrderData {
   id: string;
   displayId: string;
-  status: { name: string; color?: string };
+  status: { name: string; color?: string } | null;
   createdAt: string;
   items: OrderItem[];
   shippingAddress: ShippingAddress | null;
   trackingUrl: string | null;
-  shipment: {
-    courier?: string;
-    trackingCode?: string;
-    estimatedDelivery?: string;
-  } | null;
+  shipment: { courier: string | null; trackingCode: string | null } | null;
   timeline: TimelineEntry[];
-  customer?: { firstName?: string; lastName?: string; phoneNumber?: string; name?: string; phone?: string };
   total: number;
 }
 
@@ -239,9 +230,40 @@ export default function OrdersPage() {
               </div>
               <div className="text-center md:text-right">
                 <h3 className="text-gray-400 text-[13px] font-medium uppercase tracking-wider mb-0.5">Status</h3>
-                <p className="text-xl font-bold text-[#2ecc71]">{order.status.name}</p>
+                <p className="text-xl font-bold text-[#2ecc71]">{order.status?.name || 'Processing'}</p>
               </div>
             </div>
+
+            {/* Courier — shown once a courier is actually assigned, so the page
+                reflects the real order rather than a placeholder. */}
+            {(order.shipment?.courier || order.shipment?.trackingCode) && (
+              <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 bg-gray-50 rounded-2xl flex items-center justify-center text-gray-500">
+                    <Truck size={26} />
+                  </div>
+                  <div>
+                    <h3 className="text-gray-400 text-[13px] font-medium uppercase tracking-wider mb-0.5">Courier</h3>
+                    <p className="text-lg font-bold text-gray-800">{order.shipment?.courier || 'Assigned'}</p>
+                    {order.shipment?.trackingCode && (
+                      <p className="text-[13px] text-gray-500 mt-0.5">
+                        Tracking: <span className="font-mono font-medium text-gray-700">{order.shipment.trackingCode}</span>
+                      </p>
+                    )}
+                  </div>
+                </div>
+                {order.trackingUrl && (
+                  <a
+                    href={order.trackingUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 text-brand-blue font-semibold text-[14px] hover:underline"
+                  >
+                    Track on courier site <ExternalLink size={16} />
+                  </a>
+                )}
+              </div>
+            )}
 
             {/* Tracking Button */}
             {order.trackingUrl && (
@@ -269,17 +291,25 @@ export default function OrdersPage() {
             <div className="bg-white rounded-2xl border border-gray-100 p-6 md:p-10 shadow-sm">
               <div className="relative">
                 <div className="absolute left-[23px] top-6 bottom-6 w-0.5 bg-gray-100"></div>
-                
+
                 <div className="space-y-12">
-                  {(order.timeline || []).map((entry, index) => (
-                    <div key={index} className="relative flex gap-6 md:gap-10">
-                      <div className="relative z-10 w-12 h-12 rounded-2xl flex items-center justify-center shadow-sm bg-brand-blue text-white">
-                        <Package size={24} />
+                  {(order.timeline || []).map((entry, index, all) => (
+                    <div key={`${entry.status}-${entry.timestamp}-${index}`} className="relative flex gap-6 md:gap-10">
+                      <div
+                        className={`relative z-10 w-12 h-12 rounded-2xl flex items-center justify-center shadow-sm ${
+                          index === all.length - 1
+                            ? 'bg-brand-blue text-white'
+                            : 'bg-white text-gray-300 border border-gray-100'
+                        }`}
+                      >
+                        {index === all.length - 1 ? <CheckCircle2 size={24} /> : <Package size={24} />}
                       </div>
-                      
+
                       <div className="flex-1 pt-1">
                         <div className="flex flex-col md:flex-row md:items-center justify-between mb-1">
-                          <h4 className="text-lg font-bold text-gray-800">{entry.status}</h4>
+                          <h4 className={`text-lg font-bold ${index === all.length - 1 ? 'text-gray-800' : 'text-gray-500'}`}>
+                            {entry.status}
+                          </h4>
                           <span className="text-[13px] font-medium text-gray-400">{formatDate(entry.timestamp)}</span>
                         </div>
                         <div className="flex items-center gap-1.5 text-gray-500 mb-2">
@@ -293,6 +323,22 @@ export default function OrdersPage() {
                     </div>
                   ))}
                 </div>
+
+                {/* The rail alone would read as a rendering bug, so an order with
+                    no recorded steps gets a plain statement instead. */}
+                {(order.timeline || []).length === 0 && (
+                  <div className="relative flex gap-6 md:gap-10">
+                    <div className="relative z-10 w-12 h-12 rounded-2xl flex items-center justify-center shadow-sm bg-gray-50 text-gray-400">
+                      <Clock size={24} />
+                    </div>
+                    <div className="flex-1 pt-1">
+                      <h4 className="text-lg font-bold text-gray-500">No updates yet</h4>
+                      <p className="text-[14px] text-gray-500">
+                        This order has been placed but no status changes have been recorded yet. Please check back shortly.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -300,27 +346,25 @@ export default function OrdersPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
                 <div className="flex items-center gap-3 mb-6 border-l-4 border-brand-blue pl-3">
-                  <h3 className="font-bold text-gray-800">Shipping To</h3>
+                  <h3 className="font-bold text-gray-800">Delivering To</h3>
                 </div>
                 <div className="flex gap-4">
                   <div className="w-10 h-10 bg-gray-50 rounded-lg flex items-center justify-center text-gray-400">
                     <MapPin size={20} />
                   </div>
                   <div>
-                    <h4 className="font-bold text-gray-800 mb-1">
-                      {order.customer?.firstName} {order.customer?.lastName}
-                    </h4>
-                    <p className="text-[14px] text-gray-500 leading-relaxed">
-                      {order.shippingAddress ? (
-                        <>
-                          {order.shippingAddress.address && <>{order.shippingAddress.address}<br /></>}
-                          {[order.shippingAddress.thana, order.shippingAddress.district, order.shippingAddress.city].filter(Boolean).join(', ')}
-                          <br />
-                          Phone: {order.shippingAddress.phone || order.customer?.phone || order.customer?.phoneNumber || ''}
-                        </>
-                      ) : (
-                        'No shipping address available'
-                      )}
+                    {/* City-level only. The public endpoint deliberately does not
+                        return the street address or phone number, because anyone
+                        who knows the order number can reach this page. */}
+                    <p className="text-[15px] font-bold text-gray-800 mb-1">
+                      {[order.shippingAddress?.city, order.shippingAddress?.district]
+                        .filter(Boolean)
+                        .join(', ') || 'Address not available'}
+                    </p>
+                    <p className="text-[13px] text-gray-500 leading-relaxed">
+                      {order.shippingAddress?.city || order.shippingAddress?.district
+                        ? 'For your safety, the full address and phone number are shown on your order confirmation.'
+                        : 'No delivery location recorded for this order.'}
                     </p>
                   </div>
                 </div>
@@ -381,12 +425,12 @@ export default function OrdersPage() {
                       <span 
                         className="text-[12px] px-2.5 py-0.5 rounded-full font-semibold border"
                         style={{ 
-                          borderColor: item.status.color || '#e2e8f0', 
-                          color: item.status.color || '#4a5568',
-                          backgroundColor: (item.status.color ? item.status.color + '10' : '#f7fafc')
+                          borderColor: item.status?.color || '#e2e8f0', 
+                          color: item.status?.color || '#4a5568',
+                          backgroundColor: (item.status?.color ? item.status.color + '10' : '#f7fafc')
                         }}
                       >
-                        {item.status.name}
+                        {item.status?.name || 'Processing'}
                       </span>
                     </div>
 
