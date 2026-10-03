@@ -47,3 +47,6 @@ scratch/
 query_*.js
 # Local E2E scratch: throwaway probe scripts, screenshots (never committed)
 .tmp-e2e/
+
+# Generated license encryption key (never committed — see EncryptionKeyProvisioner)
+.license-data/

@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { EncryptionService } from './encryption';
 
@@ -28,7 +29,49 @@ import { EncryptionService } from './encryption';
  *
  * The volume is not shared with uploads, backups or mobile builds, so it is
  * not readable by anything else in the container.
+ *
+ * Local development:
+ *
+ *   The container path /app/license-data is not creatable on a developer
+ *   machine — /app does not exist at the filesystem root and cannot be
+ *   created without root. Provisioning therefore threw ENOENT during
+ *   onModuleInit, which killed the Nest process before it ever bound its
+ *   port. Because `nest --watch` keeps the dead child alive, the symptom was
+ *   a silent failure with nothing listening on :4000, every frontend waiting
+ *   on scripts/wait-for-backend.js timing out, and the license activation
+ *   page reporting "Unable to reach server" — which reads like a license
+ *   server outage but is actually a boot crash.
+ *
+ *   So the default is resolved to a directory inside the project, which is
+ *   writable without privileges and needs no environment variable. LICENSE_DATA_DIR
+ *   still wins when set, so docker-compose keeps using its dedicated volume
+ *   and this is a no-op in production. The key file is chmod 0600 and the
+ *   directory is gitignored.
  */
+
+/**
+ * Resolve where the license key is stored when LICENSE_DATA_DIR is unset.
+ *
+ * The container path is not usable off Docker: /app does not exist at the
+ * filesystem root and cannot be created without elevated privileges, so the
+ * original hard-coded default made every local `npm run dev` crash at boot.
+ * Falling back to a directory inside the project keeps the same flow working
+ * locally with no environment variable, while docker-compose still supplies
+ * LICENSE_DATA_DIR=/app/license-data and is unaffected.
+ */
+function defaultLicenseDataDir(): string {
+  const inContainer = path.join(process.cwd(), '.license-data');
+  try {
+    fs.mkdirSync(inContainer, { recursive: true });
+    return inContainer;
+  } catch {
+    // Fall back to the OS temp dir only if even the project dir is unwritable
+    // (read-only checkout, restricted sandbox). It survives restarts on macOS
+    // and Linux, and is still better than crashing at boot.
+    return path.join(os.tmpdir(), 'ecomate-license-data');
+  }
+}
+
 @Injectable()
 export class EncryptionKeyProvisioner implements OnModuleInit {
   private readonly logger = new Logger(EncryptionKeyProvisioner.name);
@@ -37,7 +80,7 @@ export class EncryptionKeyProvisioner implements OnModuleInit {
   private readonly keyFile: string;
 
   constructor(private readonly encryption: EncryptionService) {
-    const dir = process.env.LICENSE_DATA_DIR || '/app/license-data';
+    const dir = process.env.LICENSE_DATA_DIR || defaultLicenseDataDir();
     this.keyFile = path.join(dir, 'encryption.key');
   }
 

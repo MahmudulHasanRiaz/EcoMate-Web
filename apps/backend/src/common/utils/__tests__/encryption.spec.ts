@@ -140,4 +140,67 @@ describe('EncryptionKeyProvisioner', () => {
     const mode = fs.statSync(path.join(dir, 'encryption.key')).mode & 0o777;
     expect(mode).toBe(0o600);
   });
+
+  /**
+   * Regression guard: provisioning must not crash on a developer machine.
+   *
+   * The directory defaulted to /app/license-data, a container path that does
+   * not exist at the filesystem root of a dev machine and cannot be created
+   * without elevated privileges. mkdir therefore threw ENOENT inside
+   * onModuleInit, which killed Nest before it bound its port. `nest --watch`
+   * keeps the dead child alive, so nothing was listening on :4000, each
+   * frontend's scripts/wait-for-backend.js timed out and took the whole
+   * `npm run dev` group down, and the license activation page reported
+   * "Unable to reach server" — which looked like a license server outage but
+   * was a boot crash.
+   *
+   * So with no LICENSE_DATA_DIR set, provisioning has to resolve to a path
+   * that actually exists and works off Docker.
+   */
+  describe('without LICENSE_DATA_DIR', () => {
+    const originalCwd = process.cwd();
+
+    beforeEach(() => {
+      delete process.env.LICENSE_DATA_DIR;
+    });
+
+    afterEach(() => {
+      process.chdir(originalCwd);
+    });
+
+    it('provisions a key off Docker instead of throwing', () => {
+      // A temp cwd stands in for the repo root on a developer machine.
+      const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'license-cwd-'));
+      process.chdir(cwd);
+      try {
+        expect(() =>
+          new EncryptionKeyProvisioner(encryption).onModuleInit(),
+        ).not.toThrow();
+        expect(process.env.LICENSE_ENCRYPTION_KEY).toMatch(/^[0-9a-f]{64}$/);
+        expect(fs.existsSync(path.join(cwd, '.license-data', 'encryption.key'))).toBe(
+          true,
+        );
+      } finally {
+        fs.rmSync(cwd, { recursive: true, force: true });
+      }
+    });
+
+    it('never falls back to the unwritable container path', () => {
+      const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'license-cwd-'));
+      process.chdir(cwd);
+      try {
+        new EncryptionKeyProvisioner(encryption).onModuleInit();
+        const stored = process.env.LICENSE_ENCRYPTION_KEY;
+        delete process.env.LICENSE_ENCRYPTION_KEY;
+
+        // A second boot must reuse the same key from the local directory.
+        new EncryptionKeyProvisioner(encryption).onModuleInit();
+        expect(process.env.LICENSE_ENCRYPTION_KEY).toBe(stored);
+        expect(stored).not.toBeUndefined();
+      } finally {
+        process.chdir(originalCwd);
+        fs.rmSync(cwd, { recursive: true, force: true });
+      }
+    });
+  });
 });

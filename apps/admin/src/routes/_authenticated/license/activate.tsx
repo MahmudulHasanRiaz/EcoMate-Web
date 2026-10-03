@@ -25,6 +25,45 @@ function friendlyError(code?: string, fallback?: string): string {
 }
 
 /**
+ * Turn a failed activation request into something the user can act on.
+ *
+ * The generic 'Unable to reach server' this used to fall back to was actively
+ * misleading: it fired for every transport-level failure, so a backend that
+ * failed to boot was indistinguishable from the license server being down.
+ * The error name tells the two apart, and the server's own message (when it
+ * sent one) is preferred over anything we could guess.
+ */
+function describeActivationError(err: any): string {
+  // A real response from our backend — trust its message.
+  const serverMessage = err?.response?.data?.message;
+  if (serverMessage) return serverMessage;
+
+  const code = err?.code;
+  const detail = err?.message;
+
+  if (code === 'ECONNREFUSED') {
+    return (
+      'Could not reach the EcoMate server — it is not running or is not accepting connections. ' +
+      'Start it with "npm run dev" from the project root (or "npm run start" in production) and try again.'
+    );
+  }
+  if (code === 'ECONNABORTED' || code === 'ETIMEDOUT') {
+    return 'The server took too long to respond. It may still be starting up — wait a few seconds and try again.';
+  }
+  if (typeof code === 'string' && code.startsWith('ERR_BAD_RESPONSE')) {
+    return 'The server sent a malformed response. Check that the backend is running and reachable.';
+  }
+  if (code === 'ERR_NETWORK') {
+    return (
+      'Could not reach the EcoMate server. Check your internet connection, and that the server ' +
+      'address is correct.'
+    );
+  }
+  if (detail) return detail;
+  return 'Unable to reach server. Please try again.';
+}
+
+/**
  * License activation.
  *
  * Lives under _authenticated on purpose: POST /license/activate requires an
@@ -65,7 +104,7 @@ function LicenseActivatePage() {
         setError(backendMessage || friendlyError(code, 'Activation failed. Please check your license key.'))
       }
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Unable to reach server. Please try again.')
+      setError(describeActivationError(err))
     } finally {
       setLoading(false)
     }
