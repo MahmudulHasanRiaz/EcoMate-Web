@@ -3724,9 +3724,24 @@ export class OrdersService {
         status: true,
         items: {
           include: {
-            product: { select: { id: true, name: true, images: true } },
+            product: { select: { id: true, name: true, images: true, sku: true } },
+            variant: {
+              include: {
+                attributeValues: {
+                  include: {
+                    attributeValue: {
+                      include: {
+                        attribute: { select: { name: true } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
           },
         },
+        payments: true,
+        dispatches: { orderBy: { createdAt: 'desc' } },
       },
       orderBy: { createdAt: 'desc' },
     });
