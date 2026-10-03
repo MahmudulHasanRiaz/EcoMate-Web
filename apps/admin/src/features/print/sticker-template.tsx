@@ -81,13 +81,17 @@ export function getCourierInfo(order: any) {
   }
 }
 
-function formatItemTitle(item: any): string {
-  const productName = item.product?.name || item.name || 'Item'
+export function getItemProductInfo(item: any): {
+  baseName: string
+  variantBadge: string
+  fullTitle: string
+} {
+  const baseName = item.product?.name || item.name || 'Item'
 
   let variantText = ''
   if (Array.isArray(item.variant?.attributeValues) && item.variant.attributeValues.length > 0) {
     variantText = item.variant.attributeValues
-      .map((av: any) => av?.attributeValue?.value)
+      .map((av: any) => av?.attributeValue?.value || av?.value)
       .filter(Boolean)
       .join(', ')
   } else if (item.variant?.name) {
@@ -96,9 +100,14 @@ function formatItemTitle(item: any): string {
     variantText = item.variantTitle
   }
 
-  const sku = item.variant?.sku || item.product?.sku || item.sku || ''
-  const baseTitle = variantText ? `${productName} – ${variantText}` : productName
-  return sku ? `${baseTitle} (${sku})` : baseTitle
+  const variantBadge = variantText ? `(${variantText})` : ''
+  const fullTitle = variantBadge ? `${baseName} ${variantBadge}` : baseName
+
+  return { baseName, variantBadge, fullTitle }
+}
+
+export function formatItemTitle(item: any): string {
+  return getItemProductInfo(item).fullTitle
 }
 
 function CodHandBoxIcon({ className }: { className?: string }) {
@@ -451,19 +460,24 @@ export function StickerTemplate({ order }: { order: any }) {
         {/* Product Items List */}
         <div className="space-y-0.5 overflow-hidden flex-1">
           {items.slice(0, 8).map((item: any, i: number) => {
-            const title = formatItemTitle(item)
+            const { baseName, variantBadge, fullTitle } = getItemProductInfo(item)
             const qty = Number(item.quantity) || 1
             const price = Number(item.price) || 0
             const amount = qty * price
             return (
               <div key={item.id || i} className="flex items-center text-[7.5px] leading-tight text-gray-900 py-[1px]">
-                <span className="w-4 text-left text-gray-600 font-medium">{i + 1}</span>
-                <span className="flex-1 text-left truncate font-medium pr-1" title={title}>
-                  {title}
-                </span>
-                <span className="w-7 text-right font-medium">×{qty}</span>
-                <span className="w-11 text-right font-medium">{currencySymbol}{fmt(price)}</span>
-                <span className="w-11 text-right font-medium">{currencySymbol}{fmt(amount)}</span>
+                <span className="w-4 text-left text-gray-600 font-medium flex-shrink-0">{i + 1}</span>
+                <div className="flex-1 text-left min-w-0 flex items-center pr-1 overflow-hidden" title={fullTitle}>
+                  <span className="truncate font-medium">{baseName}</span>
+                  {variantBadge && (
+                    <span className="flex-shrink-0 font-bold text-gray-900 ml-1 whitespace-nowrap">
+                      {variantBadge}
+                    </span>
+                  )}
+                </div>
+                <span className="w-7 text-right font-medium flex-shrink-0">×{qty}</span>
+                <span className="w-11 text-right font-medium flex-shrink-0">{currencySymbol}{fmt(price)}</span>
+                <span className="w-11 text-right font-medium flex-shrink-0">{currencySymbol}{fmt(amount)}</span>
               </div>
             )
           })}

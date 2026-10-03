@@ -173,15 +173,42 @@ describe('StickerTemplate Component', () => {
     await expect.element(getByText('Not yet dispatched to courier')).toBeInTheDocument()
   })
 
-  it('renders products table with variant attributes, SKU, quantity, and amounts', async () => {
+  it('renders products table with variant attributes in brackets, quantity, and amounts', async () => {
     const { getByText } = await renderSticker()
 
-    await expect.element(getByText('Low Cut Baggy – Light Grey (LCB-103)')).toBeInTheDocument()
-    await expect.element(getByText('Premium Cotton T-Shirt – Black (TS-201)')).toBeInTheDocument()
+    await expect.element(getByText('Low Cut Baggy')).toBeInTheDocument()
+    await expect.element(getByText('(Light Grey)')).toBeInTheDocument()
+    await expect.element(getByText('Premium Cotton T-Shirt')).toBeInTheDocument()
+    await expect.element(getByText('(Black)')).toBeInTheDocument()
     await expect.element(getByText('×1')).toBeInTheDocument()
     await expect.element(getByText('×2')).toBeInTheDocument()
     await expect.element(getByText('৳890').first()).toBeInTheDocument()
     await expect.element(getByText('৳900')).toBeInTheDocument()
+  })
+
+  it('renders long product titles with separate base name and preserved variant badge at the end', async () => {
+    const longTitleOrder = {
+      ...sampleOrder,
+      items: [
+        {
+          id: 'item-long',
+          quantity: 1,
+          price: 1200,
+          product: { name: 'Super Ultra Long Combed Organic Cotton Oversized Heavyweight Drop Shoulder T-Shirt' },
+          variant: {
+            sku: 'TS-LONG-BLK-L',
+            attributeValues: [
+              { attributeValue: { value: 'Black' } },
+              { attributeValue: { value: 'L' } },
+            ],
+          },
+        },
+      ],
+    }
+    const { getByText } = await renderSticker(longTitleOrder)
+
+    await expect.element(getByText('Super Ultra Long Combed Organic Cotton Oversized Heavyweight Drop Shoulder T-Shirt')).toBeInTheDocument()
+    await expect.element(getByText('(Black, L)')).toBeInTheDocument()
   })
 
   it('renders bottom bill summary with COD as due amount, paid amount, shipping, and total', async () => {
