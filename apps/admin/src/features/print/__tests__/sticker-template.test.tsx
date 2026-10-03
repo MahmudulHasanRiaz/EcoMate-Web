@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render } from 'vitest-browser-react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import '@/styles/index.css'
 import { StickerTemplate, getCourierInfo } from '../sticker-template'
 
 const mockGet = vi.hoisted(() => vi.fn())

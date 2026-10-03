@@ -182,6 +182,30 @@ function CoinsStackIcon({ className }: { className?: string }) {
   )
 }
 
+function CalendarDateIcon({ className = 'h-5 w-5', size = 20 }: { className?: string; size?: number }) {
+  return (
+    <svg
+      className={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <rect x="3" y="4" width="18" height="17" rx="3" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M3 9H21" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M7 2V5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M17 2V5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <circle cx="8" cy="13" r="1.1" fill="currentColor" />
+      <circle cx="12" cy="13" r="1.1" fill="currentColor" />
+      <circle cx="16" cy="13" r="1.1" fill="currentColor" />
+      <circle cx="8" cy="17" r="1.1" fill="currentColor" />
+      <circle cx="12" cy="17" r="1.1" fill="currentColor" />
+      <circle cx="16" cy="17" r="1.1" fill="currentColor" />
+    </svg>
+  )
+}
+
 export function StickerTemplate({ order }: { order: any }) {
   const { data: settings } = useQuery({
     queryKey: ['storefront-config'],
@@ -279,53 +303,76 @@ export function StickerTemplate({ order }: { order: any }) {
 
       {/* Top Header & Customer Details */}
       <div className="flex-shrink-0">
-        {/* Store Branding Header (Preserves existing display logic) */}
-        <div className="text-center">
-          {display === 'logo' ? (
-            storeLogo ? (
-              <img src={mediaUrl(storeLogo)} alt={storeName || 'store'} className="sticker-logo" />
+        {/* Store Branding Header (Left) + Vertical Divider + Order Date (Right) */}
+        <div className="flex items-center justify-between gap-1">
+          {/* Left: Store Branding (Preserves existing display logic) */}
+          <div className="flex-1 min-w-0 flex flex-col items-center justify-center text-center">
+            {display === 'logo' ? (
+              storeLogo ? (
+                <img src={mediaUrl(storeLogo)} alt={storeName || 'store'} className="sticker-logo" />
+              ) : (
+                <div className="font-extrabold text-sm text-black tracking-tight">{storeName}</div>
+              )
+            ) : display === 'name+logo' ? (
+              <div className="flex items-center justify-center gap-1.5">
+                {storefrontFavicon ? (
+                  <img src={mediaUrl(storefrontFavicon)} alt="" className="sticker-favicon" />
+                ) : null}
+                <span className="font-extrabold text-sm text-black tracking-tight">{storeName || '—'}</span>
+              </div>
             ) : (
-              <div className="font-extrabold text-sm text-black tracking-tight">{storeName}</div>
-            )
-          ) : display === 'name+logo' ? (
-            <div className="flex items-center justify-center gap-1.5">
-              {storefrontFavicon ? (
-                <img src={mediaUrl(storefrontFavicon)} alt="" className="sticker-favicon" />
-              ) : null}
-              <span className="font-extrabold text-sm text-black tracking-tight">{storeName || '—'}</span>
+              <div className="font-extrabold text-sm text-black tracking-tight">{storeName || '—'}</div>
+            )}
+            {storePhone && (
+              <div className="text-[8.5px] font-semibold text-center text-gray-800 tracking-tight mt-0.5">
+                {storePhone}
+              </div>
+            )}
+          </div>
+
+          {/* Vertical divider */}
+          <div className="w-px h-8 bg-gray-300 mx-1 flex-shrink-0" />
+
+          {/* Right: Order Date */}
+          <div className="flex items-center gap-1.5 flex-shrink-0 pr-1">
+            <CalendarDateIcon className="h-5 w-5 text-black flex-shrink-0" />
+            <div className="flex flex-col">
+              <span className="text-[7.5px] font-medium text-gray-500 leading-none">Order Date</span>
+              <span className="text-[10px] font-black text-black tracking-tight mt-0.5 leading-none">
+                {orderDate || '—'}
+              </span>
             </div>
-          ) : (
-            <div className="font-extrabold text-sm text-black tracking-tight">{storeName || '—'}</div>
-          )}
-          {storePhone && (
-            <div className="text-[8.5px] font-semibold text-center text-gray-800 tracking-tight mt-0.5">
-              {storePhone}
-            </div>
-          )}
+          </div>
         </div>
 
         {/* Dashed divider */}
-        <div className="border-t border-dashed border-gray-300 my-1.5" />
+        <div className="border-t border-dashed border-gray-300 my-1" />
 
-        {/* Customer Information */}
-        <div className="space-y-1">
-          <div className="flex items-center justify-between text-[9px] font-bold text-black">
-            <div className="flex items-center gap-1.5">
+        {/* Customer Information Card */}
+        <div className="bg-[#f8fafc] border border-gray-100 rounded-xl px-2 py-1 space-y-0.5">
+          {/* Row 1: Name (left 50%) + Divider + Phone (right 50%) */}
+          <div className="flex items-center justify-between gap-1">
+            {/* Left half: Customer Name */}
+            <div className="flex items-center gap-1.5 flex-1 min-w-0">
               <User className="h-3.5 w-3.5 text-black flex-shrink-0" strokeWidth={2} />
-              <span>{customerName}</span>
+              <span className="text-[9.5px] font-bold text-black truncate">{customerName}</span>
             </div>
-            {orderDate && (
-              <span className="text-[8.5px] font-medium text-gray-700 flex-shrink-0">{orderDate}</span>
-            )}
-          </div>
-          {customerPhone && (
-            <div className="flex items-center gap-1.5 text-[8.5px] font-semibold text-black">
+
+            {/* Vertical divider */}
+            <div className="w-px h-3.5 bg-gray-300 mx-1 flex-shrink-0" />
+
+            {/* Right half: Customer Phone */}
+            <div className="flex items-center gap-1.5 flex-1 min-w-0 justify-start">
               <Phone className="h-3.5 w-3.5 text-black flex-shrink-0" strokeWidth={2} />
-              <span>{customerPhone}</span>
+              <span className="text-[9px] font-bold text-black tracking-tight truncate">
+                {customerPhone || '—'}
+              </span>
             </div>
-          )}
+          </div>
+
+          {/* Row 2: Customer Address full width */}
           {customerAddress && (
-            <div className="flex items-start gap-1.5 text-[8px] font-medium text-gray-800 leading-tight">
+            <div className="flex items-start gap-1.5 text-[8px] font-medium text-gray-800 leading-tight pt-0.5">
               <MapPin className="h-3.5 w-3.5 text-black flex-shrink-0 mt-0.5" strokeWidth={2} />
               <span className="line-clamp-2">{customerAddress}</span>
             </div>
@@ -333,31 +380,34 @@ export function StickerTemplate({ order }: { order: any }) {
         </div>
 
         {/* Codes Section: Order QR Code (left) + Courier Barcode (right) */}
-        <div className="grid grid-cols-2 gap-2 my-2 items-center">
+        <div className="bg-[#f8fafc] rounded-xl px-2 py-1 my-1 grid grid-cols-2 gap-2 items-center">
           {/* Left: QR Code + Order Info */}
-          <div className="flex items-center gap-2 pr-2 border-r border-dashed border-gray-300">
-            <div className="flex-shrink-0 bg-white p-0.5">
+          <div className="flex items-center gap-1.5 pr-1.5 border-r border-dashed border-gray-300">
+            <div className="flex-shrink-0 bg-white p-0.5 rounded">
               <QRCodeSVG
                 value={order.displayId || order.id || 'ORDER'}
-                size={52}
+                size={36}
                 level="M"
                 marginSize={0}
               />
             </div>
-            <div className="flex flex-col justify-center">
-              <span className="text-[7.5px] font-bold text-gray-500 uppercase tracking-wider leading-none">ORDER</span>
-              <span className="text-[10px] font-bold text-black tracking-tight leading-tight my-0.5">
+            <div className="flex flex-col items-center justify-center flex-1 text-center min-w-0">
+              <span className="text-[7px] font-bold text-gray-500 uppercase tracking-widest leading-none mb-0.5">
+                ORDER
+              </span>
+              <span className="text-[8px] font-black text-black tracking-tight leading-tight whitespace-nowrap">
                 {order.displayId || order.id}
               </span>
-              <span className="text-[6.5px] text-gray-500 leading-tight">
+              <div className="w-full border-t border-gray-200 my-0.5" />
+              <span className="text-[6.5px] font-medium text-gray-500 leading-tight">
                 Scan to view<br />order details
               </span>
             </div>
           </div>
 
           {/* Right: Courier Barcode Box */}
-          <div className="bg-[#f3f4f6] rounded-lg p-1.5 flex flex-col items-center justify-center min-h-[56px]">
-            <span className="text-[7.5px] font-bold tracking-wider text-gray-800 uppercase text-center mb-0.5">
+          <div className="flex flex-col items-center justify-center min-h-[46px] overflow-hidden">
+            <span className="text-[6.5px] font-bold tracking-tight text-gray-800 uppercase text-center mb-0.5 truncate max-w-full">
               {courierInfo.title}
             </span>
             {courierInfo.isDispatched ? (
@@ -366,14 +416,14 @@ export function StickerTemplate({ order }: { order: any }) {
                   <Barcode
                     value={courierInfo.barcodeValue}
                     format="CODE128"
-                    width={1.1}
-                    height={22}
+                    width={0.88}
+                    height={18}
                     displayValue={false}
                     margin={0}
                     background="transparent"
                   />
                 </div>
-                <span className="text-[8.5px] font-bold text-black tracking-wider text-center mt-0.5">
+                <span className="text-[8px] font-black text-black tracking-wider text-center mt-0.5">
                   {courierInfo.barcodeValue}
                 </span>
               </>
