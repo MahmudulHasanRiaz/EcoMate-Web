@@ -372,14 +372,14 @@ export default function OrdersPage() {
       {/* 1. Track Your Order Header + Compact Search Row */}
       <div className="bg-white border-b border-gray-100 py-4 md:py-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
         <div className="max-w-3xl mx-auto px-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
+          <div className="flex flex-col items-center text-center md:flex-row md:items-center md:justify-between md:text-left gap-2 md:gap-3 mb-3">
             <div>
               <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight">Track Your Order</h1>
               <p className="text-xs md:text-sm text-gray-500 mt-0.5">
                 Real-time delivery status for your package
               </p>
             </div>
-            <nav className="flex items-center gap-1.5 text-xs text-gray-400 font-medium self-start md:self-auto">
+            <nav className="flex items-center justify-center gap-1.5 text-xs text-gray-400 font-medium">
               <button 
                 onClick={() => router.push('/')} 
                 className="hover:text-brand-blue transition-colors"
