@@ -250,6 +250,31 @@ describe('cohorts (acquisition month × retention × cumulative CLR)', () => {
     ).toEqual(['2025-12', '2026-01']);
     expect(monthKey(D('2026-09-10T10:00:00+06:00'))).toBe('2026-09');
   });
+
+  // ── Machine-timezone independence (CI failure 2026-10-04) ──────────────
+  // monthKey/windowMonths read Dhaka wall time, never the host timezone: on a
+  // UTC host Sep 1 00:30 +06:00 is Aug 31 18:30Z, which getMonth() reports as
+  // August (phantom month + passed history gate). These instants pin Dhaka.
+  it('keys a Dhaka-midnight instant to the Dhaka month on any host TZ', () => {
+    expect(monthKey(D('2026-08-31T18:30:00.000Z'))).toBe('2026-09');
+    expect(monthKey(D('2026-09-30T17:59:59.999Z'))).toBe('2026-09');
+    expect(monthKey(D('2026-09-30T18:00:00.000Z'))).toBe('2026-10');
+  });
+
+  it('windows a Dhaka-anchored range without host-TZ leakage', () => {
+    expect(
+      windowMonths({
+        start: D('2026-09-01T00:00:00+06:00'),
+        end: D('2026-09-15T23:59:59.999+06:00'),
+      }),
+    ).toEqual(['2026-09']);
+    expect(
+      windowMonths({
+        start: D('2026-08-01T00:00:00+06:00'),
+        end: D('2026-09-30T23:59:59.999+06:00'),
+      }),
+    ).toEqual(['2026-08', '2026-09']);
+  });
 });
 
 // ─── segments ──────────────────────────────────────────────────────────────

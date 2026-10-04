@@ -35,6 +35,7 @@ import {
   customersPagination,
   type CustomersQueryDto,
 } from './analytics-customers.dto';
+import { dhakaDateParts } from '../common/utils/dhaka-time';
 import {
   buildMeta,
   analyticsCacheKey,
@@ -233,20 +234,36 @@ export function computeCustomerMetrics(input: {
 // Cohorts: acquisition month × retention × cumulative CLR.
 // ---------------------------------------------------------------------------
 
+/**
+ * Dhaka calendar month key ("YYYY-MM") of an instant.
+ *
+ * MUST use Dhaka wall time (via dhaka-time, never hand-rolled): the business
+ * month is a Dhaka month. `getFullYear()/getMonth()` read the MACHINE timezone,
+ * so on a UTC host a Dhaka-midnight instant (e.g. Sep 1 00:30 +06:00 = Aug 31
+ * 18:30Z) reported the previous month — cohorts gained a phantom month and a
+ * sub-two-month window passed the history gate (CI failure 2026-10-04).
+ */
 export function monthKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const p = dhakaDateParts(d);
+  return `${p.year}-${String(p.month).padStart(2, '0')}`;
 }
 
-/** Distinct calendar months touched by the window, ascending. */
+/** Distinct Dhaka calendar months touched by the window, ascending. */
 export function windowMonths(range: CustomerRange): string[] {
   const months: string[] = [];
-  const cursor = new Date(range.start.getFullYear(), range.start.getMonth(), 1);
+  const s = dhakaDateParts(range.start);
+  let y = s.year;
+  let m = s.month;
   const last = monthKey(range.end);
   for (;;) {
-    const key = monthKey(cursor);
+    const key = `${y}-${String(m).padStart(2, '0')}`;
     months.push(key);
     if (key === last) break;
-    cursor.setMonth(cursor.getMonth() + 1);
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
   }
   return months;
 }
