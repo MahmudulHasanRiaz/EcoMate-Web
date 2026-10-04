@@ -217,5 +217,47 @@ describe('CourierManagerService — Steadfast dispatch error handling', () => {
       expect(service.getCollectableAmount({ total: 850, paymentOptionType: 'CASH_ON_DELIVERY' })).toBe(850);
     });
   });
+
+  describe('bulkCreateSteadfastOrders COD amount', () => {
+    it('sends actual remaining due amount (not full total) when order has advance payment', async () => {
+      const mockOrderWithAdvance = {
+        id: 'ord-bulk-1',
+        displayId: 'ORD-BULK-001',
+        total: 1500,
+        paymentStatus: 'PARTIAL_PAID',
+        paymentOptionType: 'PARTIAL_PAYMENT',
+        partialAmount: 500,
+        payments: [{ status: 'PAID', amount: 500 }],
+        shippingAddress: { address: 'Mirpur, Dhaka' },
+        officeNotes: null,
+      };
+
+      (prisma.courierCredentials.findUnique as jest.Mock).mockResolvedValue({
+        courier: 'steadfast',
+        enabled: true,
+        apiKey: 'test-api-key',
+        secretKey: 'test-secret-key',
+      });
+
+      mockFetch(
+        new Response(
+          JSON.stringify({
+            status: 200,
+            data: [{ invoice: 'ORD-BULK-001', status: 'success', consignment_id: '123' }],
+          }),
+          { status: 200 },
+        ),
+      );
+
+      await service.bulkCreateSteadfastOrders([mockOrderWithAdvance]);
+
+      const postCall = (global.fetch as jest.Mock).mock.calls.find((c) =>
+        c[0].includes('/create_order/bulk-order'),
+      );
+      expect(postCall).toBeDefined();
+      const body = JSON.parse(postCall[1].body);
+      expect(body.data[0].cod_amount).toBe(1000); // 1500 - 500 = 1000, NOT 1500
+    });
+  });
 });
 

@@ -23,7 +23,13 @@ import { apiClient } from '@/lib/api-client'
 import { variantLabel, variantThumbUrl } from '@/lib/product-variant'
 import { resolveOrderItemImages } from '@/lib/product-image'
 import { byExactMatchFirst } from '@/lib/search-products'
-import { getCustomerDisplayName, getCustomerPhone, getCustomerEmail } from '@/lib/order-display'
+import {
+  getCustomerDisplayName,
+  getCustomerPhone,
+  getCustomerEmail,
+  getOrderPaidAmount,
+  getOrderDueAmount,
+} from '@/lib/order-display'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
@@ -1020,6 +1026,8 @@ function OrderDetailPage() {
                 shippingCostSource={order.shippingCostSource ?? null}
                 onSaveFulfillmentCost={handleSaveFulfillmentCost}
                 isSaving={updateMut.isPending}
+                paidAmount={getOrderPaidAmount(order)}
+                dueAmount={getOrderDueAmount(order)}
               />
 
               {/* Payment Details Card */}
@@ -1092,6 +1100,19 @@ function OrderDetailPage() {
                             <span className='font-bold text-foreground'>৳{fmt(order.partialAmount)}</span>
                           </div>
                         )}
+                        {(() => {
+                          const paid = getOrderPaidAmount(order)
+                          const due = getOrderDueAmount(order)
+                          if (paid > 0 || (order.paymentOptionType === 'PARTIAL_PAYMENT' && due > 0)) {
+                            return (
+                              <div className='flex items-center justify-between pt-2 border-t border-dashed border-border/60 text-amber-600 dark:text-amber-500 font-bold'>
+                                <span>Due on Delivery (COD):</span>
+                                <span className='text-sm font-extrabold'>৳{fmt(due)}</span>
+                              </div>
+                            )
+                          }
+                          return null
+                        })()}
                       </div>
                     )}
 
@@ -1820,6 +1841,28 @@ function OrderDetailPage() {
                   ))}
                 </select>
               </div>
+              {(() => {
+                const due = getOrderDueAmount(order)
+                const paid = getOrderPaidAmount(order)
+                return (
+                  <div className='rounded-lg bg-muted/40 border border-border/60 p-3 space-y-1.5 text-xs mt-2'>
+                    <div className='flex justify-between items-center text-muted-foreground'>
+                      <span>Order Total:</span>
+                      <span className='font-medium text-foreground'>৳{fmt(order?.total ?? 0)}</span>
+                    </div>
+                    {paid > 0 && (
+                      <div className='flex justify-between items-center text-emerald-600 dark:text-emerald-400'>
+                        <span>Paid (Advance):</span>
+                        <span className='font-medium'>-৳{fmt(paid)}</span>
+                      </div>
+                    )}
+                    <div className='flex justify-between items-center text-amber-600 dark:text-amber-500 font-bold pt-1 border-t border-border/50 text-sm'>
+                      <span>COD to Collect by Courier:</span>
+                      <span className='font-extrabold text-base'>৳{fmt(due)}</span>
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
             <div className='flex justify-end gap-2'>
               <Button variant='outline' onClick={() => { setShowDispatchDialog(false); setDispatchCourier('') }}>Cancel</Button>

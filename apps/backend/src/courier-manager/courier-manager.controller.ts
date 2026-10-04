@@ -253,6 +253,7 @@ export class CourierManagerController {
           },
         },
         items: { include: { product: { select: { name: true } } } },
+        payments: true,
       },
     });
     return this.svc.bulkCreateSteadfastOrders(orders);

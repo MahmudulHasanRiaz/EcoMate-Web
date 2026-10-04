@@ -922,7 +922,7 @@ export class CourierManagerService {
         formatCourierAddress(
           order.shippingAddress as Record<string, unknown>,
         ) ?? 'Dhaka',
-      cod_amount: Number(order.total),
+      cod_amount: this.getCollectableAmount(order),
       note: order.officeNotes || null,
     }));
 

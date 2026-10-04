@@ -134,3 +134,54 @@ export function extractOrderScanCode(raw: string): string {
   }
   return trimmed
 }
+
+export interface OrderPaymentSummarySource {
+  total?: number | string | null
+  paymentStatus?: string | null
+  paymentOptionType?: string | null
+  partialAmount?: number | string | null
+  payments?: Array<{
+    amount?: number | string | null
+    status?: string | null
+  }> | null
+}
+
+/**
+ * Calculate the verified / paid amount on an order.
+ * Considers payments with status paid/verified/completed, or if paymentStatus is PAID,
+ * falls back to total.
+ */
+export function getOrderPaidAmount(order: OrderPaymentSummarySource | null | undefined): number {
+  if (!order) return 0
+  const total = Number(order.total || 0)
+  if (Array.isArray(order.payments) && order.payments.length > 0) {
+    const verifiedSum = order.payments
+      .filter((p) => {
+        const s = (p.status || '').toLowerCase()
+        return s === 'paid' || s === 'verified' || s === 'completed'
+      })
+      .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+    if (verifiedSum > 0) return verifiedSum
+  }
+  if (order.paymentStatus === 'PAID' || order.paymentOptionType === 'FULL_PAYMENT') {
+    return total
+  }
+  if (order.paymentOptionType === 'PARTIAL_PAYMENT' && order.partialAmount) {
+    return Number(order.partialAmount)
+  }
+  return 0
+}
+
+/**
+ * Calculate the actual remaining due amount (amount collectable on delivery / COD).
+ * Guarantees due = max(0, total - paid).
+ */
+export function getOrderDueAmount(order: OrderPaymentSummarySource | null | undefined): number {
+  if (!order) return 0
+  if (order.paymentStatus === 'PAID' || order.paymentOptionType === 'FULL_PAYMENT') {
+    return 0
+  }
+  const total = Number(order.total || 0)
+  const paid = getOrderPaidAmount(order)
+  return Math.max(0, total - paid)
+}
