@@ -126,6 +126,10 @@ export interface OrderAttribution {
   sourcePlatform?: string | null
   sourceType?: string | null
   sourceEntity?: string | null
+  channel?: string | null
+  channelEntity?: string | null
+  sourceSlug?: string | null
+  acquisitionType?: string | null
 }
 
 export interface AttributionBadge {
@@ -138,32 +142,68 @@ export interface AttributionBadge {
 
 /**
  * Builds the compact attribution badge set (lightweight Shopify-style) for an
- * order. Primary badge = the sales channel ("where the sale completed");
- * secondary badge = source entity when present (storefront/showroom identity),
- * otherwise `Platform · Type` (e.g. "Facebook · Ad", "WhatsApp · Chat").
+ * order. Primary badge = the canonical channel ("where the sale completed");
+ * secondary badge = source platform when present (e.g. "Facebook · Ad"),
+ * otherwise the channel entity.
  */
 export function resolveOrderAttribution(
   attribution: OrderAttribution,
 ): AttributionBadge[] {
   const badges: AttributionBadge[] = []
 
-  const salesChannel = (attribution.salesChannel || '').trim()
-  const channel = resolveOrderSource(salesChannel)
+  // Canonical channel (preferred) — the four venues.
+  const channel = (attribution.channel || '').trim()
   if (channel) {
+    const channelKey = channel.toUpperCase()
+    const channelLabel = channelKey in ORDER_SOURCE_LABELS ? ORDER_SOURCE_LABELS[channelKey] : titleCase(channel)
     badges.push({
-      label: channel.label,
-      Icon: channel.Icon,
-      tone: channel.tone,
+      label: channelLabel,
+      Icon: ICONS[channelKey] ?? FALLBACK_ICON,
+      tone: TONES[channelKey] ?? FALLBACK_TONE,
       kind: 'channel',
     })
   }
 
+  // Legacy salesChannel — only when the canonical channel is absent.
+  if (!channel) {
+    const salesChannel = (attribution.salesChannel || '').trim()
+    const legacy = resolveOrderSource(salesChannel)
+    if (legacy) {
+      badges.push({
+        label: legacy.label,
+        Icon: legacy.Icon,
+        tone: legacy.tone,
+        kind: 'channel',
+      })
+    }
+  }
+
+  // Channel entity — the specific origin within a venue.
+  const channelEntity = (attribution.channelEntity || '').trim()
+  if (channelEntity) {
+    badges.push({
+      label: channelEntity,
+      Icon: Store,
+      tone: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
+      kind: 'source',
+    })
+  }
+
+  // Source platform — the marketing platform that brought the order.
+  const sourceSlug = (attribution.sourceSlug || '').trim()
   const platform = (attribution.sourcePlatform || '').trim()
   const type = (attribution.sourceType || '').trim()
   const entity = (attribution.sourceEntity || '').trim()
 
-  if (entity) {
-    // Showroom / storefront identity — the strongest source signal.
+  if (sourceSlug) {
+    const slugLabel = titleCase(sourceSlug)
+    badges.push({
+      label: slugLabel,
+      Icon: FALLBACK_ICON,
+      tone: FALLBACK_TONE,
+      kind: 'source',
+    })
+  } else if (entity) {
     badges.push({
       label: entity,
       Icon: Store,
@@ -172,10 +212,6 @@ export function resolveOrderAttribution(
     })
   }
 
-  // The platform badge is shown alongside the entity badge, not only when the
-  // entity is missing: how the customer arrived (Facebook · Ad, Google · Ad,
-  // Direct) is the answer to "where did this order come from" and used to be
-  // hidden for every order that carried an entity.
   if (platform || type) {
     const platformKey = platform.toUpperCase()
     const platformLabel = platformKey in ORDER_SOURCE_LABELS ? ORDER_SOURCE_LABELS[platformKey] : titleCase(platform)

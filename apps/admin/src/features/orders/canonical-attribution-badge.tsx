@@ -11,7 +11,6 @@ const CHANNEL_ICON: Record<ChannelV2, typeof Globe> = {
 const ACQUISITION_ICON: Record<string, typeof Megaphone> = {
   PAID: Megaphone,
   ORGANIC: Search,
-  DIRECT: CircleSlash,
   UNKNOWN: CircleSlash,
 }
 

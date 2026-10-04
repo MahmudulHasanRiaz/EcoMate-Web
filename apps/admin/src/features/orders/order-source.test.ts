@@ -36,6 +36,25 @@ describe('resolveOrderAttribution', () => {
   it('returns nothing when the order carries no attribution', () => {
     expect(resolveOrderAttribution({})).toEqual([])
   })
+
+  it('prefers the canonical channel over the legacy salesChannel', () => {
+    const badges = resolveOrderAttribution({
+      salesChannel: 'FACEBOOK',
+      channel: 'MESSAGING',
+      sourceSlug: 'direct',
+    })
+
+    expect(badges.map(b => b.label)).toEqual(['Messaging', 'Direct'])
+    expect(badges.map(b => b.label)).not.toContain('Facebook')
+    expect(badges[0].kind).toBe('channel')
+  })
+
+  it('renders the sourceSlug "direct" as a Direct badge', () => {
+    const badges = resolveOrderAttribution({ channel: 'WEBSITE', sourceSlug: 'direct' })
+
+    expect(badges.map(b => b.label)).toEqual(['Website', 'Direct'])
+    expect(badges[1].kind).toBe('source')
+  })
 })
 
 describe('resolveOrderSource', () => {

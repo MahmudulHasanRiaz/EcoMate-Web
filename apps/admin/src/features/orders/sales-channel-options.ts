@@ -8,7 +8,7 @@
  */
 
 export type ChannelV2 = 'WEBSITE' | 'MESSAGING' | 'PHONE_CALL' | 'POS';
-export type AcquisitionType = 'PAID' | 'ORGANIC' | 'DIRECT' | 'UNKNOWN';
+export type AcquisitionType = 'PAID' | 'ORGANIC' | 'UNKNOWN';
 
 export interface SourcePlatformView {
   slug: string;
@@ -35,7 +35,6 @@ export const CHANNEL_LABELS: Record<ChannelV2, string> = Object.fromEntries(
 export const ACQUISITION_OPTIONS: { value: AcquisitionType; label: string }[] = [
   { value: 'PAID', label: 'Paid' },
   { value: 'ORGANIC', label: 'Organic' },
-  { value: 'DIRECT', label: 'Direct' },
   { value: 'UNKNOWN', label: 'Unknown' },
 ];
 
