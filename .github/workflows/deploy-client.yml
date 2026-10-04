@@ -1,11 +1,16 @@
 name: Deploy Client
 
-# MANUAL deployment only — CI never deploys. Tick one or more clients, run,
-# and each ticked stack is redeployed via its Portainer webhook (which pulls
-# the images CI already built). Nothing here builds anything.
+# MANUAL deployment only — CI never deploys. Tick All or one or more clients,
+# run, and each selected stack is redeployed via its Portainer webhook (which
+# pulls the images CI already built). Nothing here builds anything.
 on:
   workflow_dispatch:
     inputs:
+      all:
+        description: 'Deploy ALL clients in one click?'
+        required: false
+        default: false
+        type: boolean
       ecomate_web:
         description: 'Deploy main stack (ecomate-web)?'
         required: false
@@ -28,13 +33,13 @@ jobs:
     steps:
       - name: Validate selection
         run: |
-          if [ "${{ inputs.ecomate_web }}" != "true" ] && [ "${{ inputs.fixedplus }}" != "true" ]; then
-            echo "No client selected — tick at least one."
+          if [ "${{ inputs.all }}" != "true" ] && [ "${{ inputs.ecomate_web }}" != "true" ] && [ "${{ inputs.fixedplus }}" != "true" ]; then
+            echo "No client selected — tick All or at least one client."
             exit 1
           fi
 
       - name: Deploy ecomate-web
-        if: inputs.ecomate_web == true
+        if: inputs.all == true || inputs.ecomate_web == true
         env:
           WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_ECOMATE_WEB }}
         run: |
@@ -66,7 +71,7 @@ jobs:
           fi
 
       - name: Deploy FIXEDPLUS
-        if: inputs.fixedplus == true
+        if: inputs.all == true || inputs.fixedplus == true
         env:
           WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_FIXEDPLUS }}
         run: |
