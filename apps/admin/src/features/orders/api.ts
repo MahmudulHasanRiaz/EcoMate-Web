@@ -316,11 +316,60 @@ export const ordersApi = {
 
 export const rtnApi = {
   forOrder: (orderId: string) => apiClient.get<RtnOrderPreview | null>(`/rtn/order/${orderId}`).then(r => r.data),
+  /** Every return order ever raised against an original (newest first). */
+  allForOrder: (orderId: string) =>
+    apiClient
+      .get<{ id: string; displayId: string; status: string; itemCount: number; createdAt: string; isOpen: boolean }[]>(
+        `/rtn/order/${orderId}/all`,
+      )
+      .then(r => r.data),
   get: (id: string) => apiClient.get<RtnOrderResponse>(`/rtn/${id}`).then(r => r.data),
-  create: (orderId: string, items: { orderItemId: string; quantity: number }[]) =>
-    apiClient.post<RtnOrderResponse>(`/rtn/from-order/${orderId}`, { items }).then(r => r.data),
+  create: (orderId: string, items: { orderItemId: string; quantity: number }[], extra?: {
+    reason?: string
+    adjustOriginalDiscount?: number
+    adjustOriginalDiscountType?: 'flat' | 'percentage'
+    adjustOriginalShippingCharge?: number
+    deliverRemainingImmediately?: boolean
+  }) =>
+    apiClient
+      .post<RtnOrderResponse>(`/rtn/from-order/${orderId}`, { items, ...(extra ?? {}) })
+      .then(r => r.data),
   finalizeDispatch: (dispatchId: string) =>
     apiClient.post(`/rtn/dispatch/${dispatchId}/finalize-return`).then(r => r.data),
+}
+
+export interface ExchangeSettlement {
+  originalPaid: number
+  availableCredit: number
+  exchangeTotal: number
+  creditApplied: number
+  delta: number
+  status: 'SETTLED_DUE' | 'SETTLED_EXACT' | 'SETTLED_REFUND'
+  refundId: string | null
+}
+
+export const exchangeApi = {
+  /** What the customer already paid, minus what sibling exchanges consumed. */
+  settlementPreview: (orderId: string) =>
+    apiClient
+      .get<{ orderId: string; displayId: string; orderTotal: number; originalPaid: number; creditAvailable: number }>(
+        `/exchange/settlement-preview/${orderId}`,
+      )
+      .then(r => r.data),
+  create: (orderId: string, data: {
+    items: { productId: string; variantId?: string; quantity: number; price: number }[]
+    discount?: number
+    discountType?: 'flat' | 'percentage'
+    shippingCharge?: number
+    customerNotes?: string
+    officeNotes?: string
+  }) =>
+    apiClient
+      .post<{ exchange: OrderResponse; settlement: ExchangeSettlement }>(
+        `/exchange/from-order/${orderId}`,
+        data,
+      )
+      .then(r => r.data),
 }
 
 export const scannerApi = {

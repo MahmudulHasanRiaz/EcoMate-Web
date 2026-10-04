@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
-import { ordersApi, mediaUrl } from './api'
+import { ordersApi, exchangeApi, mediaUrl } from './api'
 import {
   ACQUISITION_OPTIONS,
   CHANNEL_OPTIONS,
@@ -32,7 +32,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Loader2, ArrowLeft, Package, Barcode, Plus, Trash2, X, User, Phone, Mail, MapPin, CreditCard, ShoppingCart, Tag, Minus, Search, FileText, Receipt, Layers, Save, AlertTriangle } from 'lucide-react'
+import { Loader2, ArrowLeft, ArrowRightLeft, Package, Barcode, Plus, Trash2, X, User, Phone, Mail, MapPin, CreditCard, ShoppingCart, Tag, Minus, Search, FileText, Receipt, Layers, Save, AlertTriangle } from 'lucide-react'
 const nn = (v: number | string) => Number(v)
 
 const fmt = (v: number | string) => nn(v).toFixed(2)
@@ -44,17 +44,22 @@ const ep = (p: any) => {
   return nn(p.salePrice ?? p.basePrice ?? 0)
 }
 
-export type OrderFormMode = 'create' | 'edit'
+export type OrderFormMode = 'create' | 'edit' | 'exchange'
 
 export interface OrderFormPageProps {
   mode?: OrderFormMode
-  /** Required in edit mode — the order whose fields are pre-filled and saved. */
+  /** Required in edit/exchange mode — the order whose fields are pre-filled. */
   orderId?: string
 }
 
 export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  // Exchange pre-fills from the original too, but its customer block is
+  // read-only (identity is inherited) and its items start empty.
   const isEdit = mode === 'edit'
+  const isExchange = mode === 'exchange'
+  const isPrefilled = isEdit || isExchange
 
   const [customerPhone, setCustomerPhone] = useState('')
   const [customerName, setCustomerName] = useState('')
@@ -165,11 +170,11 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
   const [updateCustomerProfile, setUpdateCustomerProfile] = useState(false)
 
   // ── Edit mode: load the order and pre-fill every field ────────────
-  const [hydrated, setHydrated] = useState(!isEdit)
+  const [hydrated, setHydrated] = useState(!isPrefilled)
   const { data: editOrder, isLoading: editLoading } = useQuery({
     queryKey: ['order', orderId],
     queryFn: () => ordersApi.get(orderId!).then(r => r.data as any),
-    enabled: isEdit && !!orderId,
+    enabled: isPrefilled && !!orderId,
     // The detail page already fetched this; reuse it and never overwrite an
     // in-progress edit with a background refetch.
     staleTime: 30_000,
@@ -183,6 +188,16 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
   const itemsBlocked = isEdit && !!editStatusName && ITEM_EDIT_BLOCKED_STATUSES.includes(editStatusName)
   const itemsWarn = isEdit && !!editStatusName && ITEM_EDIT_WARNING_STATUSES.includes(editStatusName)
 
+  // ── Exchange: what the customer already paid on the original ──────────
+  // Drives the live settlement readout: only the difference is ever collected,
+  // and the original's paid amount is never collected twice.
+  const { data: settlementPreview } = useQuery({
+    queryKey: ['exchange-settlement', orderId],
+    queryFn: () => exchangeApi.settlementPreview(orderId!),
+    enabled: isExchange && !!orderId,
+    staleTime: 30_000,
+  })
+
   // Pre-fill the form from the loaded order. Runs ONCE per order: `hydrated`
 // guards against clobbering the user's in-progress edits if the query
 // refetches in the background.
@@ -190,7 +205,7 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
   // resolved to a real id — but never block forever if the lookup fails.
   const [citiesFailed, setCitiesFailed] = useState(false)
   useEffect(() => {
-    if (!isEdit || !editOrder || hydrated) return
+    if (!isPrefilled || !editOrder || hydrated) return
     if (cities.length === 0 && !citiesFailed) return
     const o = editOrder as any
   const sa = (o.shippingAddress && typeof o.shippingAddress === 'object') ? o.shippingAddress : {}
@@ -223,29 +238,43 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
   setShipCityId('')
   setShipZoneId('')
 
+  // An EDIT carries the original's lines forward. An EXCHANGE starts EMPTY —
+  // it is a brand-new replacement order, not a copy of what is being returned.
   setCartItems(
-    (o.items || []).map((i: any) => ({
-      itemId: i.id,
-      productId: i.productId,
-      variantId: i.variantId || null,
-      product: i.product
-        ? { ...i.product, name: i.variant ? `${i.product.name} (${variantLabel(i.variant)})` : i.product.name }
-        : { name: i.product?.name || 'Product' },
-      variant: i.variant || null,
-      quantity: i.quantity,
-      price: Number(i.price),
-    })),
+    isExchange
+      ? []
+      : (o.items || []).map((i: any) => ({
+          itemId: i.id,
+          productId: i.productId,
+          variantId: i.variantId || null,
+          product: i.product
+            ? { ...i.product, name: i.variant ? `${i.product.name} (${variantLabel(i.variant)})` : i.product.name }
+            : { name: i.product?.name || 'Product' },
+          variant: i.variant || null,
+          quantity: i.quantity,
+          price: Number(i.price),
+        })),
   )
 
-  setShippingCharge(o.shippingCharge != null ? String(Number(o.shippingCharge)) : '')
+  // Money is inherited on an EDIT but starts fresh on an EXCHANGE (§2: no
+  // charge is copied from the original). Shipping defaults to 0.
+  setShippingCharge(
+    isExchange
+      ? ''
+      : o.shippingCharge != null ? String(Number(o.shippingCharge)) : '',
+  )
   // The stored charge is authoritative on an edit — never let the city-based
   // auto-calc overwrite what the order already agreed with the customer.
   setShippingChargeManuallyEdited(true)
-  setDiscount(o.discount != null && Number(o.discount) > 0 ? String(Number(o.discount)) : '')
-  setDiscountType(o.discountType === 'percentage' ? 'percentage' : 'flat')
+  setDiscount(
+    isExchange
+      ? ''
+      : o.discount != null && Number(o.discount) > 0 ? String(Number(o.discount)) : '',
+  )
+  setDiscountType(!isExchange && o.discountType === 'percentage' ? 'percentage' : 'flat')
 
-  setCustomerNotes(o.customerNotes || '')
-  setOfficeNotes(o.officeNotes || '')
+  setCustomerNotes(isExchange ? '' : o.customerNotes || '')
+  setOfficeNotes(isExchange ? '' : o.officeNotes || '')
 
   const optType = o.paymentOptionType
   setPaymentMode(
@@ -265,7 +294,7 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
   setSelectedCustomerId(o.customerId || null)
   setCustomerMatched(!!o.customerId)
   setHydrated(true)
-  }, [isEdit, editOrder, hydrated, cities, citiesFailed])
+  }, [isPrefilled, editOrder, hydrated, cities, citiesFailed])
 
   const productSearchRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const productDropdownRef = useRef<HTMLDivElement>(null)
@@ -300,10 +329,9 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
   const activeCityId = useDiffShipping ? shipCityId : customerCityId
   useEffect(() => {
     if (!activeCityId || cities.length === 0) return
-    // On an EDIT the stored delivery charge is already agreed with the
-    // customer — never silently reprice the order because a zone table changed.
-    // Only an explicit edit in the field overrides it.
-    if (isEdit) return
+    // On an EDIT or EXCHANGE the stored delivery charge is already agreed with the
+    // customer — never silently reprice because a zone table changed.
+    if (isPrefilled) return
     const selectedCity = cities.find((c: any) => String(c.id) === String(activeCityId))
     if (!selectedCity) return
 
@@ -339,13 +367,13 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
     // Automatically populate delivery charge from default settings for this city
     setShippingCharge(defaultCharge > 0 ? String(defaultCharge) : '')
     setShippingChargeManuallyEdited(false)
-  }, [activeCityId, cities, sysSettings, shippingZones, isEdit])
+  }, [activeCityId, cities, sysSettings, shippingZones, isPrefilled])
 
   useEffect(() => {
     // While an order is being hydrated the phone arrives from the server, not
     // from the user. Without this guard the lookup below would fire on mount
     // and immediately clear the customer link we just restored.
-    if (isEdit && !hydrated) return
+    if (isPrefilled && !hydrated) return
     const normalized = normalizePhone(customerPhone)
     if (!normalized || customerPhone.length < 11) {
       setSearchingCustomer(false)
@@ -379,7 +407,7 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
       }
     }, 500)
     return () => clearTimeout(timer)
-  }, [customerPhone, isEdit, hydrated])
+  }, [customerPhone, isPrefilled, hydrated])
 
   const selectCustomer = (c: any) => {
     setSelectedCustomerId(c.id)
@@ -595,7 +623,9 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
     if (selectedCity?.name) {
       payload.district = selectedCity.name
     }
-    if (shipAddr || shipCity) {
+    // An exchange inherits the ORIGINAL's identity and address server-side, so
+    // sending them again would only risk a second source of truth.
+    if (!isExchange && (shipAddr || shipCity)) {
       payload.shippingAddress = {
         address: shipAddr,
         cityId: shipCity || undefined,
@@ -609,9 +639,44 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
   }
 
   const submitMut = useMutation({
-    mutationFn: (data: any) =>
-      isEdit ? ordersApi.updateOrder(orderId!, data) : ordersApi.create(data),
+    mutationFn: (data: any) => {
+      if (isExchange) {
+        // The exchange endpoint takes its own, much smaller payload — no
+        // customer/shipping (inherited server-side) and no attribution.
+        const { items, discount: d, discountType: dt, shippingCharge: sc, customerNotes: cn, officeNotes: on } = data
+        return exchangeApi.create(orderId!, {
+          items,
+          ...(d ? { discount: d } : {}),
+          ...(dt ? { discountType: dt } : {}),
+          ...(sc ? { shippingCharge: sc } : {}),
+          ...(cn ? { customerNotes: cn } : {}),
+          ...(on ? { officeNotes: on } : {}),
+        })
+      }
+      return isEdit ? ordersApi.updateOrder(orderId!, data) : ordersApi.create(data)
+    },
     onSuccess: (res: any) => {
+      if (isExchange) {
+        // The exchange response carries its own settlement breakdown, which is
+        // the whole point of the flow — surface it instead of a bare "created".
+        const s = res?.settlement
+        const exId = res?.exchange?.id
+        if (s?.status === 'SETTLED_DUE') {
+          toast.warning(
+            `Collect ৳${Number(s.delta).toFixed(2)} — the customer paid ৳${Number(s.originalPaid).toFixed(2)} on the original, the exchange costs ৳${Number(s.exchangeTotal).toFixed(2)}.`,
+            { duration: 9000 },
+          )
+        } else if (s?.status === 'SETTLED_REFUND') {
+          toast.warning(
+            `Refund ৳${Number(s.delta).toFixed(2)} — unused credit from the original order. A refund has been raised for review.`,
+            { duration: 9000 },
+          )
+        }
+        toast.success('Exchange Order created — original moved to Return Pending')
+        queryClient.invalidateQueries({ queryKey: ['order', orderId] })
+        navigate({ to: '/op/orders/$id', params: { id: exId || orderId! } })
+        return
+      }
       const savedId = res.data?.id || res.id || orderId
       // Only creation reports staff-context warnings (blocked phone/IP). An
       // update never produces them, so read defensively rather than assuming.
@@ -626,11 +691,26 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
       navigate({ to: '/op/orders/$id', params: { id: savedId } })
     },
     onError: (err: any) => {
-      toast.error(err?.response?.data?.message || (isEdit ? 'Failed to update order' : 'Failed to create order'))
+      toast.error(
+        err?.response?.data?.message ||
+          (isExchange
+            ? 'Failed to create the exchange order'
+            : isEdit ? 'Failed to update order' : 'Failed to create order'),
+      )
     },
   })
 
   const handleSubmit = async () => {
+    if (isExchange) {
+      // An exchange needs only replacement items — customer details are
+      // inherited, so the create-mode identity rules do not apply.
+      if (cartItems.length === 0) {
+        toast.error('Add at least one replacement item')
+        return
+      }
+      submitMut.mutate(buildPayload())
+      return
+    }
     if (itemsBlocked) {
       toast.error(
         `Items of a "${editStatusName}" order can no longer be changed — the goods have already left the warehouse.`,
@@ -668,13 +748,14 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
   const discountValue = calculateDiscountValue()
   const total = calculateTotal()
 
-  const submitLabel = isEdit ? 'Update Order' : 'Create Order'
+  const submitLabel =
+    isExchange ? 'Create Exchange Order' : isEdit ? 'Update Order' : 'Create Order'
 
-  if (isEdit && (editLoading || !hydrated)) {
+  if (isPrefilled && (editLoading || !hydrated)) {
     return (
       <div className='flex items-center justify-center min-h-[60vh] gap-2 text-sm text-muted-foreground'>
         <Loader2 className='h-4 w-4 animate-spin' />
-        Loading order for editing…
+        {isExchange ? 'Loading order for exchange…' : 'Loading order for editing…'}
       </div>
     )
   }
@@ -688,15 +769,15 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
             size='sm'
             className='h-8 px-2 sm:px-3 text-xs sm:text-sm'
             onClick={() =>
-              isEdit
+              isPrefilled
                 ? navigate({ to: '/op/orders/$id', params: { id: orderId! } })
                 : navigate({ to: '/op/orders' })
             }
           >
             <ArrowLeft className='h-4 w-4 mr-1 shrink-0' />
-            <span className='hidden sm:inline'>{isEdit ? 'Back to order' : 'Back to '}</span>
+            <span className='hidden sm:inline'>{isPrefilled ? 'Back to order' : 'Back to '}</span>
             <span className='sm:hidden'>Back</span>
-            {!isEdit && <span className='hidden sm:inline'>Orders</span>}
+            {!isPrefilled && <span className='hidden sm:inline'>Orders</span>}
           </Button>
         </div>
         <div className='ml-auto flex items-center gap-2'>
@@ -708,12 +789,14 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
         <div className='flex items-center justify-between gap-3 pb-1 border-b border-border/40'>
           <div>
             <h1 className='text-xl sm:text-2xl font-bold tracking-tight text-foreground'>
-              {isEdit ? 'Edit Order' : 'Create New Order'}
+              {isExchange ? 'Create Exchange Order' : isEdit ? 'Edit Order' : 'Create New Order'}
             </h1>
             <p className='text-xs sm:text-sm text-muted-foreground mt-0.5'>
-              {isEdit
-                ? `Updating ${(editOrder as any)?.displayId || orderId} — stock adjusts automatically when you change items`
-                : 'Add customer details, select products, configure shipping and payment options'}
+              {isExchange
+                ? `Exchanging against ${(editOrder as any)?.displayId || orderId} — customer details are carried over, add the replacement items`
+                : isEdit
+                  ? `Updating ${(editOrder as any)?.displayId || orderId} — stock adjusts automatically when you change items`
+                  : 'Add customer details, select products, configure shipping and payment options'}
             </p>
           </div>
           <div className='hidden sm:flex items-center gap-2'>
@@ -855,17 +938,17 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                 <div className='grid grid-cols-1 sm:grid-cols-2 gap-3.5'>
                   <div>
                     <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Full Name *</Label>
-                    <Input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder='Customer name' className='h-9.5 text-sm' />
+                    <Input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder='Customer name' className='h-9.5 text-sm' disabled={isExchange} />
                   </div>
                   <div>
                     <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Email (Optional)</Label>
-                    <Input value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} placeholder='customer@example.com' className='h-9.5 text-sm' />
+                    <Input value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} placeholder='customer@example.com' className='h-9.5 text-sm' disabled={isExchange} />
                   </div>
                 </div>
 
                 <div>
                   <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Delivery Address</Label>
-                  <Textarea value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} rows={2} placeholder='House/Road, Village/Area...' className='text-sm resize-none' />
+                  <Textarea value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} rows={2} placeholder='House/Road, Village/Area...' className='text-sm resize-none' disabled={isExchange} />
                 </div>
 
                 <div className='grid grid-cols-1 sm:grid-cols-2 gap-3.5'>
@@ -877,6 +960,7 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                       onChange={val => { setCustomerCityId(val); setCustomerZoneId('') }}
                       placeholder='Select city...'
                       searchPlaceholder='Search cities...'
+                      disabled={isExchange}
                     />
                   </div>
                   <div>
@@ -887,10 +971,16 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                       onChange={setCustomerZoneId}
                       placeholder='Select zone...'
                       searchPlaceholder='Search zones...'
-                      disabled={!customerCityId}
+                      disabled={isExchange || !customerCityId}
                     />
                   </div>
                 </div>
+
+                {isExchange && (
+                  <p className='text-[11px] text-muted-foreground bg-muted/40 rounded-lg px-3 py-2'>
+                    Customer and delivery details are carried over from the original order and cannot be changed here.
+                  </p>
+                )}
 
                 <div className='pt-1'>
                   <label htmlFor='diffShipping' className='inline-flex items-center gap-2 cursor-pointer select-none text-xs font-medium text-muted-foreground hover:text-foreground'>
@@ -1423,6 +1513,56 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                 </div>
               </CardContent>
             </Card>
+
+            {/* Exchange settlement preview (§4) */}
+            {isExchange && settlementPreview && (
+              <Card className='overflow-hidden border border-primary/30 shadow-xs rounded-xl'>
+                <CardHeader className='bg-primary/5 border-b border-primary/20 py-3 px-4 sm:py-3.5 sm:px-6'>
+                  <div className='flex items-center gap-2.5'>
+                    <div className='h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-semibold shrink-0'>
+                      <ArrowRightLeft className='h-4 w-4' />
+                    </div>
+                    <div>
+                      <CardTitle className='text-sm sm:text-base font-semibold tracking-tight text-foreground'>
+                        Settlement
+                      </CardTitle>
+                      <p className='text-xs text-muted-foreground mt-0.5'>
+                        Settled against what the customer already paid
+                      </p>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className='p-4 sm:p-6 space-y-3'>
+                  <div className='bg-muted/50 rounded-xl p-3.5 space-y-2 text-sm border border-border/40'>
+                    <div className='flex justify-between items-center'>
+                      <span className='text-muted-foreground'>Paid on {settlementPreview.displayId}</span>
+                      <span className='font-medium text-foreground'>৳{fmt(nn(settlementPreview.originalPaid))}</span>
+                    </div>
+                    <div className='flex justify-between items-center'>
+                      <span className='text-muted-foreground'>This exchange</span>
+                      <span className='font-medium text-foreground'>৳{fmt(total)}</span>
+                    </div>
+                    <div className='flex justify-between items-center font-bold text-base pt-2.5 border-t border-border/60'>
+                      <span>To collect</span>
+                      <span className='text-primary text-lg font-extrabold'>
+                        ৳{fmt(Math.max(0, total - nn(settlementPreview.creditAvailable)))}
+                      </span>
+                    </div>
+                    {total < nn(settlementPreview.creditAvailable) && (
+                      <div className='flex justify-between items-center text-xs font-semibold text-amber-600 dark:text-amber-400 pt-1.5 border-t border-dashed border-border/60'>
+                        <span>Refund due (unused credit)</span>
+                        <span>৳{fmt(nn(settlementPreview.creditAvailable) - total)}</span>
+                      </div>
+                    )}
+                  </div>
+                  <p className='text-[11px] text-muted-foreground leading-relaxed'>
+                    Only the difference above is collected from the customer — the amount already paid
+                    on the original is never collected again. Any unused credit is raised as a refund
+                    against the original.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Payment Details Card */}
             <Card className='overflow-hidden border border-border/70 shadow-xs rounded-xl'>

@@ -77,8 +77,46 @@ describe('ReturnOrderDialog', () => {
     const plusA = getByRole('button', { name: 'Increase return quantity for Product A' })
     await userEvent.click(plusA)
     await userEvent.click(getByRole('button', { name: 'Create Return Order' }))
+    // The financial adjustment is always sent (defaults to the original's own
+    // values, so omitting it changes nothing) and the delivered choice is
+    // explicit — both are part of the required split contract.
     expect(mockPost).toHaveBeenCalledWith('/rtn/from-order/order-1', {
       items: [{ orderItemId: 'item-1', quantity: 1 }],
+      adjustOriginalDiscount: 0,
+      adjustOriginalDiscountType: 'flat',
+      adjustOriginalShippingCharge: 0,
+      deliverRemainingImmediately: true,
+    })
+  })
+
+  it('submits the reason and the staff financial adjustment', async () => {
+    mockPost.mockResolvedValue({
+      data: { id: 'rtn-1', displayId: 'RTN-260930-0001', status: { name: 'Return Pending' } },
+    })
+    const { getByRole, getByLabelText } = await renderDialog({
+      ...partialOrder,
+      discount: 200,
+      shippingCharge: 60,
+    })
+    await userEvent.click(getByRole('button', { name: 'Increase return quantity for Product A' }))
+    await userEvent.fill(getByLabelText(/Return reason/i), 'Wrong size')
+    // Staff lowers the discount and reduces the delivery charge.
+    await userEvent.fill(getByLabelText(/Discount \(৳\)/i), '100')
+    await userEvent.fill(getByLabelText(/Delivery charge \(৳\)/i), '40')
+    // And answers "no" to the delivered prompt.
+    const deliverBox = document.getElementById('rtn-deliver-now') as HTMLInputElement
+    expect(deliverBox).not.toBeNull()
+    await userEvent.click(deliverBox)
+
+    await userEvent.click(getByRole('button', { name: 'Create Return Order' }))
+
+    expect(mockPost).toHaveBeenCalledWith('/rtn/from-order/order-1', {
+      items: [{ orderItemId: 'item-1', quantity: 1 }],
+      reason: 'Wrong size',
+      adjustOriginalDiscount: 100,
+      adjustOriginalDiscountType: 'flat',
+      adjustOriginalShippingCharge: 40,
+      deliverRemainingImmediately: false,
     })
   })
 

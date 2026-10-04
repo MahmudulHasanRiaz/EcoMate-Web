@@ -622,6 +622,13 @@ function OrderDetailPage() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align='end' className='w-48'>
+                    {!order.trashedAt && order.kind === 'SALE' && (
+                      <DropdownMenuItem asChild>
+                        <Link to='/op/orders/$id/exchange' params={{ id }}>
+                          <ArrowRightLeft className='h-4 w-4 mr-2' /> Create Exchange Order
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem onClick={() => window.open(`/admin/op/print/sticker/${order.id}`, '_blank')}>
                       <Printer className='h-4 w-4 mr-2' /> Print Sticker
                     </DropdownMenuItem>

@@ -173,6 +173,7 @@ import { Route as AuthenticatedOpMarketingReportsIndexRouteImport } from './rout
 import { Route as AuthenticatedOpMarketingSpendSnapshotsIndexRouteImport } from './routes/_authenticated/op/marketing/spend-snapshots/index'
 import { Route as AuthenticatedOpOrdersIncompleteLeadsIndexRouteImport } from './routes/_authenticated/op/orders/incomplete-leads/index'
 import { Route as AuthenticatedOpOrdersIdEditRouteImport } from './routes/_authenticated/op/orders_/$id/edit'
+import { Route as AuthenticatedOpOrdersIdExchangeRouteImport } from './routes/_authenticated/op/orders_/$id/exchange'
 import { Route as AuthenticatedOpPrintBulkIndexRouteImport } from './routes/_authenticated/op/print/bulk/index'
 import { Route as AuthenticatedOpPrintInvoiceIdRouteImport } from './routes/_authenticated/op/print/invoice/$id'
 import { Route as AuthenticatedOpPrintPriceLabelsIndexRouteImport } from './routes/_authenticated/op/print/price-labels/index'
@@ -1139,6 +1140,12 @@ const AuthenticatedOpOrdersIdEditRoute =
     path: '/op/orders/$id/edit',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOpOrdersIdExchangeRoute =
+  AuthenticatedOpOrdersIdExchangeRouteImport.update({
+    id: '/op/orders_/$id/exchange',
+    path: '/op/orders/$id/exchange',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpPrintBulkIndexRoute =
   AuthenticatedOpPrintBulkIndexRouteImport.update({
     id: '/bulk/',
@@ -1314,6 +1321,7 @@ export interface FileRoutesByFullPath {
   '/op/inventory/physical/reservations': typeof AuthenticatedOpInventoryPhysicalReservationsRoute
   '/op/marketing/campaigns/$id': typeof AuthenticatedOpMarketingCampaignsIdRoute
   '/op/orders/$id/edit': typeof AuthenticatedOpOrdersIdEditRoute
+  '/op/orders/$id/exchange': typeof AuthenticatedOpOrdersIdExchangeRoute
   '/op/print/invoice/$id': typeof AuthenticatedOpPrintInvoiceIdRoute
   '/op/print/sticker/$id': typeof AuthenticatedOpPrintStickerIdRoute
   '/mon/analytics/products/': typeof AuthenticatedMonAnalyticsProductsIndexRoute
@@ -1486,6 +1494,7 @@ export interface FileRoutesByTo {
   '/op/inventory/physical/reservations': typeof AuthenticatedOpInventoryPhysicalReservationsRoute
   '/op/marketing/campaigns/$id': typeof AuthenticatedOpMarketingCampaignsIdRoute
   '/op/orders/$id/edit': typeof AuthenticatedOpOrdersIdEditRoute
+  '/op/orders/$id/exchange': typeof AuthenticatedOpOrdersIdExchangeRoute
   '/op/print/invoice/$id': typeof AuthenticatedOpPrintInvoiceIdRoute
   '/op/print/sticker/$id': typeof AuthenticatedOpPrintStickerIdRoute
   '/mon/analytics/products': typeof AuthenticatedMonAnalyticsProductsIndexRoute
@@ -1660,6 +1669,7 @@ export interface FileRoutesById {
   '/_authenticated/op/inventory/physical/reservations': typeof AuthenticatedOpInventoryPhysicalReservationsRoute
   '/_authenticated/op/marketing/campaigns/$id': typeof AuthenticatedOpMarketingCampaignsIdRoute
   '/_authenticated/op/orders_/$id/edit': typeof AuthenticatedOpOrdersIdEditRoute
+  '/_authenticated/op/orders_/$id/exchange': typeof AuthenticatedOpOrdersIdExchangeRoute
   '/_authenticated/op/print/invoice/$id': typeof AuthenticatedOpPrintInvoiceIdRoute
   '/_authenticated/op/print/sticker/$id': typeof AuthenticatedOpPrintStickerIdRoute
   '/_authenticated/mon/analytics/products/': typeof AuthenticatedMonAnalyticsProductsIndexRoute
@@ -1834,6 +1844,7 @@ export interface FileRouteTypes {
     | '/op/inventory/physical/reservations'
     | '/op/marketing/campaigns/$id'
     | '/op/orders/$id/edit'
+    | '/op/orders/$id/exchange'
     | '/op/print/invoice/$id'
     | '/op/print/sticker/$id'
     | '/mon/analytics/products/'
@@ -2006,6 +2017,7 @@ export interface FileRouteTypes {
     | '/op/inventory/physical/reservations'
     | '/op/marketing/campaigns/$id'
     | '/op/orders/$id/edit'
+    | '/op/orders/$id/exchange'
     | '/op/print/invoice/$id'
     | '/op/print/sticker/$id'
     | '/mon/analytics/products'
@@ -2179,6 +2191,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/inventory/physical/reservations'
     | '/_authenticated/op/marketing/campaigns/$id'
     | '/_authenticated/op/orders_/$id/edit'
+    | '/_authenticated/op/orders_/$id/exchange'
     | '/_authenticated/op/print/invoice/$id'
     | '/_authenticated/op/print/sticker/$id'
     | '/_authenticated/mon/analytics/products/'
@@ -3385,6 +3398,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpOrdersIdEditRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/op/orders_/$id/exchange': {
+      id: '/_authenticated/op/orders_/$id/exchange'
+      path: '/op/orders/$id/exchange'
+      fullPath: '/op/orders/$id/exchange'
+      preLoaderRoute: typeof AuthenticatedOpOrdersIdExchangeRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/print/bulk/': {
       id: '/_authenticated/op/print/bulk/'
       path: '/bulk'
@@ -3676,6 +3696,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpInventoryPhysicalReservationsRoute: typeof AuthenticatedOpInventoryPhysicalReservationsRoute
   AuthenticatedOpMarketingCampaignsIdRoute: typeof AuthenticatedOpMarketingCampaignsIdRoute
   AuthenticatedOpOrdersIdEditRoute: typeof AuthenticatedOpOrdersIdEditRoute
+  AuthenticatedOpOrdersIdExchangeRoute: typeof AuthenticatedOpOrdersIdExchangeRoute
   AuthenticatedMonAnalyticsProductsIndexRoute: typeof AuthenticatedMonAnalyticsProductsIndexRoute
   AuthenticatedMonMarketingCatalogIndexRoute: typeof AuthenticatedMonMarketingCatalogIndexRoute
   AuthenticatedOpDispatchDuplicateReviewIndexRoute: typeof AuthenticatedOpDispatchDuplicateReviewIndexRoute
@@ -3843,6 +3864,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpMarketingCampaignsIdRoute:
     AuthenticatedOpMarketingCampaignsIdRoute,
   AuthenticatedOpOrdersIdEditRoute: AuthenticatedOpOrdersIdEditRoute,
+  AuthenticatedOpOrdersIdExchangeRoute: AuthenticatedOpOrdersIdExchangeRoute,
   AuthenticatedMonAnalyticsProductsIndexRoute:
     AuthenticatedMonAnalyticsProductsIndexRoute,
   AuthenticatedMonMarketingCatalogIndexRoute:
