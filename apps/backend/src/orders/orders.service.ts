@@ -290,6 +290,36 @@ export class OrdersService {
     }
   }
 
+  /**
+   * Apply a stock operation for ONE line, routing through the same
+   * StockRouterService the order lifecycle uses.
+   *
+   * Public because other order-domain services (Exchange) must reserve and
+   * release stock with identical semantics — re-deriving the router decision
+   * in a second place is exactly how the two paths drift apart.
+   */
+  async applyStockForLine(
+    opType: 'reserve' | 'release' | 'deduct' | 'add',
+    productId: string | null | undefined,
+    variantId: string | null | undefined,
+    quantity: number,
+    reference: string,
+    tx: Prisma.TransactionClient,
+    options?: {
+      comboId?: string;
+      comboSelection?: any;
+      warehouseId?: string;
+      orderId?: string;
+      orderItemId?: string;
+      performedBy?: string;
+      ledgerType?: string;
+    },
+  ) {
+    return this.resolveAndApplyStock(
+      opType, productId, variantId, quantity, reference, tx, options,
+    );
+  }
+
   private async resolveAndApplyStock(
     opType: 'reserve' | 'release' | 'deduct' | 'add',
     productId: string | null | undefined,

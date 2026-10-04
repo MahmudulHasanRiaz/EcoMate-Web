@@ -96,10 +96,12 @@ enum OrderSource {
 
 /// Order kind: SALE = normal customer sale; RETURN = RTN return transaction
 /// derived from a Partial original order (never a sale, never counted in
-/// revenue/analytics/marketing attribution).
+/// revenue/analytics/marketing attribution); EXCHANGE = replacement sale
+/// raised against an existing order.
 enum OrderKind {
   SALE
   RETURN
+  EXCHANGE
 }
 
 enum SalesChannel {
@@ -785,6 +787,9 @@ model Order {
   /// Returned, the original may be split again, so this is deliberately NOT a
   /// plain unique constraint (one original may accumulate several RTNs).
   returnOfOrderId          String?
+  /// Original order this EXCHANGE was raised against. One original may have
+  /// MANY exchanges, so this is a plain index, never unique.
+  exchangeOfOrderId        String?
   /// Set when the RTN order itself reached 'Returned' (stock restored).
   returnedAt               DateTime?
   /// Idempotency guard for RTN stock restoration: once true, the exact RTN
@@ -882,6 +887,22 @@ model Order {
   shippingCostSource       String?
   trashedAt                DateTime?
 
+  // ── Exchange settlement (kind = EXCHANGE only; NULL for every other order) ──
+  /// Portion of the ORIGINAL order's actual paid amount consumed as credit
+  /// against this exchange. Stored so the same credit can never be consumed
+  /// twice by a second exchange — the audit anchor for the settlement split.
+  exchangedCreditAmount    Decimal?           @db.Decimal(10, 2)
+  /// SETTLED_DUE (exchange cost > original paid; only the difference is
+  /// collected) | SETTLED_EXACT (equal; nothing to collect or refund) |
+  /// SETTLED_REFUND (exchange cost < original paid; difference refunded).
+  settlementStatus         String?
+  /// Extra collection this exchange still owes, or the refund it owes back
+  /// (positive = collect, negative = refund). NULL until settlement runs.
+  settlementDelta          Decimal?           @db.Decimal(10, 2)
+  /// Set when the exchange lifecycle has been fully reconciled (refund
+  /// completed / difference collected). Prevents re-running settlement.
+  settlementSettledAt      DateTime?
+
   /// First-party technical context captured when the order was created.
   /// Set ONCE (same invariant as the customer snapshot below) — never updated.
   /// Present for storefront orders; staff/POS orders carry whatever the request
@@ -898,7 +919,9 @@ model Order {
   customer                     CustomerProfile?              @relation(fields: [customerId], references: [id])
   assignee                     UserProfile?                  @relation("OrderAssignee", fields: [assignedToId], references: [id])
   returnOfOrder                Order?                        @relation("OrderReturn", fields: [returnOfOrderId], references: [id])
+  exchangeOfOrder              Order?                        @relation("OrderExchange", fields: [exchangeOfOrderId], references: [id])
   returnOrders                 Order[]                       @relation("OrderReturn")
+  exchanges                    Order[]                       @relation("OrderExchange")
   status                       OrderStatus                   @relation(fields: [statusId], references: [id])
   items                        OrderItem[]
   payments                     Payment[]
@@ -906,6 +929,8 @@ model Order {
   dispatchLogs                 CourierDispatchLog[]
   dispatches                   Dispatch[]
   refunds                      Refund[]
+  exchangeRefunds             Refund[]                       @relation("RefundExchangeOrder")
+  sourcePayments              Payment[]                      @relation("PaymentSourceOrder")
   couponUsages                 CouponUsage[]
   referralLeads                ReferralLead[]
   stockCycles                  OrderStockCycle[]
@@ -924,6 +949,7 @@ model Order {
   // unique is impossible: one original may legitimately accumulate several
   // RTNs over time once earlier ones are closed. Enforced in SQL by the
   // partial unique index `Order_returnOfOrderId_open_key` (see migration).
+  @@index([exchangeOfOrderId])
   @@index([customerId])
   @@index([statusId])
   @@index([assignedToId])
@@ -1001,15 +1027,24 @@ model Payment {
   notes             String?
   /// Gateway/processing fee for THIS payment (BDT). NULL = not recorded.
   feeAmount         Decimal?      @db.Decimal(10, 2)
+  /// EXCHANGE settlement only: the ORIGINAL order whose paid amount this
+  /// payment consumed as credit. NULL for every ordinary payment.
+  sourceOrderId     String?
+  /// Portion of THIS payment that was settled by carried-over credit rather
+  /// than fresh money. NULL = a plain full-value payment (every normal order).
+  appliedCreditAmount Decimal?    @db.Decimal(10, 2)
   createdAt         DateTime      @default(now())
 
   order    Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sourceOrder Order?    @relation("PaymentSourceOrder", fields: [sourceOrderId], references: [id])
   verifier UserProfile? @relation("VerifiedPayments", fields: [verifiedBy], references: [id])
+  sourceRefunds Refund[] @relation("RefundSourcePayment")
 
   @@unique([transactionId, gatewayCode])
   @@index([orderId])
   @@index([gatewayCode])
   @@index([transactionId])
+  @@index([sourceOrderId])
 }
 
 model CheckoutLead {
@@ -1453,13 +1488,25 @@ model Refund {
   processedBy String?
   processedAt DateTime?
   notes       String?   @db.Text
+  /// EXCHANGE settlement only: the exchange that produced this refund. The
+  /// refund is still raised against `orderId` (the ORIGINAL whose money is
+  /// being returned) — this column is the traceability link back to the
+  /// exchange, so a refund is never an orphan row.
+  exchangeOrderId String?
+  /// EXCHANGE settlement only: the specific payment row the money came back
+  /// from. Lets a refund be reconciled against the exact collection instead of
+  /// the order total.
+  sourcePaymentId  String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
   order     Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  exchangeOrder Order?   @relation("RefundExchangeOrder", fields: [exchangeOrderId], references: [id])
+  sourcePayment Payment? @relation("RefundSourcePayment", fields: [sourcePaymentId], references: [id])
   processor UserProfile? @relation("RefundProcessor", fields: [processedBy], references: [id])
 
   @@index([orderId])
+  @@index([exchangeOrderId])
 }
 
 model InventoryLog {

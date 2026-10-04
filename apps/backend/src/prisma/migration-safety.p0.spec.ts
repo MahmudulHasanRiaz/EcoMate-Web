@@ -44,6 +44,13 @@ const ALLOWED_DESTRUCTIVE: Record<string, RegExp[]> = {
   // finalization (test/draft artifacts only; no finalized invoice, journal or
   // reconciliation row is touched). Pre-dates this pattern's addition.
   '20260928000400_purge_discarded_invoices': [/^\s*DELETE\s+FROM\b/im],
+  // Multi-split / Exchange Orders: the blanket
+  // `Order_returnOfOrderId_key` unique is replaced by the partial unique
+  // `Order_returnOfOrderId_open_key` (one OPEN RTN per original). The dropped
+  // index is NOT data loss — an index holds no rows, and it is recreated in a
+  // strictly narrower form immediately below. Verified before shipping: every
+  // existing order had at most one RTN, so no row can violate the new index.
+  '20261004150000_exchange_orders_and_multi_split': [/^\s*DROP\s+INDEX\b/im],
 };
 
 function postP0Migrations(migrationsDir: string): string[] {
