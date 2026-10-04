@@ -75,9 +75,13 @@ export class RtnService {
   // ---------------------------------------------------------------------------
 
   async findForOriginalOrder(originalOrderId: string): Promise<RtnOrderPreview | null> {
+    // The OPEN return order — the one still awaiting physical receipt. A
+    // Returned RTN no longer blocks a fresh split, so the latest row is not
+    // necessarily the relevant one.
     const rtn = await this.prisma.order.findFirst({
-      where: { returnOfOrderId: originalOrderId },
+      where: { returnOfOrderId: originalOrderId, returnedAt: null },
       include: { status: true, _count: { select: { items: true } } },
+      orderBy: { createdAt: 'desc' },
     });
     if (!rtn) return null;
     return {
@@ -86,6 +90,23 @@ export class RtnService {
       status: rtn.status.name,
       itemCount: rtn._count.items,
     };
+  }
+
+  /** Every return order ever raised against an original, newest first. */
+  async findAllForOriginalOrder(originalOrderId: string) {
+    const rows = await this.prisma.order.findMany({
+      where: { returnOfOrderId: originalOrderId },
+      include: { status: true, _count: { select: { items: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      displayId: r.displayId,
+      status: r.status.name,
+      itemCount: r._count.items,
+      createdAt: r.createdAt,
+      isOpen: r.returnedAt === null,
+    }));
   }
 
   async findById(id: string) {
@@ -169,13 +190,16 @@ export class RtnService {
       throw new BadRequestException('A Return Order cannot be created from another Return Order.');
     }
 
-    // One original → one RTN. Checked BEFORE the status gate so an
-    // already-resolved order gets the specific 409 (the DB unique constraint
-    // on returnOfOrderId remains the concurrency guard).
+    // One original → at most one OPEN RTN. A Returned RTN frees the original for
+    // a fresh split (requirements: repeated partial returns must be possible).
+    // Checked BEFORE the status gate so an already-resolved order gets the
+    // specific 409; the partial unique index
+    // `Order_returnOfOrderId_open_key` is the database-level backstop.
     const existing = await this.findForOriginalOrder(originalOrderId);
     if (existing) {
       throw new ConflictException(
-        `A Return Order already exists for this order (${existing.displayId}).`,
+        `An open Return Order already exists for this order (${existing.displayId}). ` +
+          `Resolve it first, then create another return.`,
       );
     }
 
@@ -203,6 +227,39 @@ export class RtnService {
 
     const rtnDisplayId = this.deriveRtnDisplayId(original.displayId);
 
+    // ---- Resolve the ORIGINAL's financial adjustment ---------------------
+    // Defaults to the original's current values, so a caller that sends nothing
+    // gets exactly today's behaviour. These values are applied ONLY to the
+    // original; the RTN is created with zero shipping and zero discount so the
+    // money exists in exactly one place (§3, §6).
+    const adjShipping = dto.adjustOriginalShippingCharge ?? Number(original.shippingCharge);
+    const adjDiscount = dto.adjustOriginalDiscount ?? Number(original.discount);
+    const adjDiscountType = dto.adjustOriginalDiscountType ?? original.discountType ?? 'flat';
+
+    if (adjShipping < 0) {
+      throw new BadRequestException('Shipping charge cannot be negative.');
+    }
+    if (adjDiscount < 0) {
+      throw new BadRequestException('Discount cannot be negative.');
+    }
+
+    // A flat discount larger than the remaining subtotal would make the bill
+    // negative; `recalculate` clamps the total to 0 but the stored discount
+    // would then exceed the sale, which is not a meaningful adjustment.
+    const remainingSubtotal = original.items.reduce((sum, item) => {
+      const line = lines.find((l) => l.line.orderItemId === item.id);
+      const remainingQty = item.quantity - (line?.line.quantity ?? 0);
+      return remainingQty > 0 ? sum + Number(item.price) * remainingQty : sum;
+    }, 0);
+    if (adjDiscountType === 'flat' && adjDiscount > remainingSubtotal) {
+      throw new BadRequestException(
+        `Discount (${adjDiscount}) cannot exceed the remaining order amount (${remainingSubtotal.toFixed(2)}).`,
+      );
+    }
+
+    // Whether the remaining original quantity is delivered now (§5).
+    const deliverImmediately = dto.deliverRemainingImmediately !== false;
+
     try {
       const rtn = await this.prisma.$transaction(async (tx) => {
         // Re-read inside the transaction: a concurrent creator must not slip
@@ -218,11 +275,13 @@ export class RtnService {
           );
         }
         const race = await tx.order.findFirst({
-          where: { returnOfOrderId: originalOrderId },
-          select: { id: true },
+          where: { returnOfOrderId: originalOrderId, returnedAt: null },
+          select: { id: true, displayId: true },
         });
         if (race) {
-          throw new ConflictException('A Return Order already exists for this order.');
+          throw new ConflictException(
+            `An open Return Order already exists for this order (${race.displayId}).`,
+          );
         }
 
         const [returnPending, delivered] = await Promise.all([
@@ -264,6 +323,9 @@ export class RtnService {
             guestName: original.guestName,
             guestPhone: original.guestPhone,
             shippingAddress: original.shippingAddress as any,
+            // §2: ONE overall reason for the whole return, stored as the RTN's
+            // office note. No per-item reasons exist by design.
+            ...(dto.reason ? { officeNotes: dto.reason } : {}),
             timeline: [
               {
                 status: 'Return Pending',
@@ -271,6 +333,7 @@ export class RtnService {
                 timestamp: now,
                 note: `Return Order created from ${original.displayId} (partial return).`,
                 performedBy: actor.email,
+                ...(dto.reason ? { reason: dto.reason } : {}),
               },
             ] as any,
           },
@@ -366,53 +429,126 @@ export class RtnService {
           }
         }
 
-        // ---- Original order: Partial → Delivered + timeline + totals ------
-        // This is the ONLY legitimate Partial → Delivered path: the generic
-        // status machine no longer exposes it (see migration
-        // 20260930010000_rtn_return_orders). No stock side effects run here —
-        // the accepted portion's stock was already handled by the original
-        // order's own lifecycle (dispatch deduction).
+        // ---- Original order: totals, optional status change, timeline ----------
+        // No stock side effects run here — the accepted portion's stock was
+        // already handled by the original order's own lifecycle (dispatch
+        // deduction). The returned portion is restored only when the RTN is
+        // physically received (§5).
         const totals = this.ordersService.recalculate(
           remainingItems,
-          Number(original.shippingCharge),
-          Number(original.discount),
-          original.discountType || 'flat',
+          adjShipping,
+          adjDiscount,
+          adjDiscountType,
         );
-        const originalTimelineEntry = {
-          status: 'Delivered',
-          oldStatus: 'Partial',
-          timestamp: now,
-          note: `Return Order ${rtnDisplayId} created — returned quantities removed from this order.`,
-          performedBy: actor.email,
-        };
+
+        // Only write the financial columns when they actually differ, so an
+        // untouched split leaves the original's discount/shipping untouched.
+        const financialUpdate: Record<string, unknown> = {};
+        if (adjShipping !== Number(original.shippingCharge)) {
+          financialUpdate.shippingCharge = adjShipping;
+        }
+        if (adjDiscount !== Number(original.discount)) {
+          financialUpdate.discount = adjDiscount;
+        }
+        if (adjDiscountType !== (original.discountType || 'flat')) {
+          financialUpdate.discountType = adjDiscountType;
+        }
+
+        const timelineEntries: any[] = [];
+        if (adjShipping !== Number(original.shippingCharge)) {
+          timelineEntries.push({
+            type: 'shipping',
+            visibility: 'public',
+            timestamp: now,
+            oldValue: Number(original.shippingCharge),
+            newValue: adjShipping,
+            note: `Shipping adjusted on split: ৳${Number(original.shippingCharge)} → ৳${adjShipping}`,
+            performedBy: actor.email,
+          });
+        }
+        if (
+          adjDiscount !== Number(original.discount) ||
+          adjDiscountType !== (original.discountType || 'flat')
+        ) {
+          timelineEntries.push({
+            type: 'discount',
+            visibility: 'public',
+            timestamp: now,
+            oldValue: Number(original.discount),
+            newValue: adjDiscount,
+            discountType: adjDiscountType,
+            note: `Discount adjusted on split: ৳${Number(original.discount)} (${original.discountType || 'flat'}) → ৳${adjDiscount} (${adjDiscountType})`,
+            performedBy: actor.email,
+          });
+        }
+
+        if (deliverImmediately) {
+          // This is the ONLY legitimate Partial → Delivered path: the generic
+          // status machine no longer exposes it (see migration
+          // 20260930010000_rtn_return_orders).
+          financialUpdate.statusId = delivered.id;
+          timelineEntries.push({
+            status: 'Delivered',
+            oldStatus: 'Partial',
+            timestamp: now,
+            note: `Return Order ${rtnDisplayId} created — returned quantities removed and the remaining items marked delivered.`,
+            performedBy: actor.email,
+          });
+        } else {
+          // §5: the remaining quantity continues its courier lifecycle; the
+          // webhook will drive the final status.
+          timelineEntries.push({
+            status: 'Partial',
+            oldStatus: 'Partial',
+            timestamp: now,
+            note: `Return Order ${rtnDisplayId} created — returned quantities removed. Remaining items stay Partial and will be resolved by the courier.`,
+            performedBy: actor.email,
+          });
+        }
+        if (dto.reason) {
+          timelineEntries.push({
+            type: 'return-reason',
+            visibility: 'private',
+            timestamp: now,
+            note: `Return reason: ${dto.reason}`,
+            performedBy: actor.email,
+          });
+        }
+
         await tx.order.update({
           where: { id: original.id },
           data: {
-            statusId: delivered.id,
             subtotal: totals.subtotal,
             total: totals.total,
+            ...financialUpdate,
           },
         });
         // Atomic append: a timeline read outside this transaction must never
         // overwrite entries written concurrently (notes, status changes).
-        await appendOrderTimeline(tx, original.id, [originalTimelineEntry]);
+        await appendOrderTimeline(tx, original.id, timelineEntries);
 
         return created;
       });
 
       this.emitStatusChanged(rtn.id, rtn.displayId, 'Return Pending');
-      this.emitStatusChanged(original.id, original.displayId, 'Delivered');
+      this.emitStatusChanged(
+        original.id,
+        original.displayId,
+        deliverImmediately ? 'Delivered' : 'Partial',
+      );
       this.invalidateAnalytics();
 
       return this.findById(rtn.id);
     } catch (err) {
-      // Database-level one-original-one-RTN enforcement: the unique
-      // constraint on returnOfOrderId rejects the second concurrent creator.
+      // Database-level enforcement of the one-OPEN-RTN-per-original rule: the
+      // partial unique index rejects the second concurrent creator.
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&
         err.code === 'P2002'
       ) {
-        throw new ConflictException('A Return Order already exists for this order.');
+        throw new ConflictException(
+          'An open Return Order already exists for this order.',
+        );
       }
       throw err;
     }

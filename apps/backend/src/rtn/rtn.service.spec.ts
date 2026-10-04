@@ -71,15 +71,32 @@ function makePrismaFake(state: {
         return found ? withItems(found) : null;
       },
       findFirst: async ({ where }: any) => {
+        // `returnedAt: null` is the "still open" filter — honour it, otherwise
+        // the fake reports a closed RTN as blocking a new split.
+        const matchesOpen =
+          where.returnOfOrderId === undefined || where.returnedAt === undefined
+            ? () => true
+            : (o: any) =>
+                where.returnedAt === null ? o.returnedAt == null : o.returnedAt === where.returnedAt;
         const found = where.returnOfOrderId
-          ? orders.find((o) => o.returnOfOrderId === where.returnOfOrderId)
+          ? orders.find(
+              (o) => o.returnOfOrderId === where.returnOfOrderId && matchesOpen(o),
+            )
           : where.id
             ? orders.find((o) => o.id === where.id)
             : null;
         return found ? withItems(found) : null;
       },
-      findMany: async ({ where }: any) =>
-        items.filter((i) => i.orderId === where.orderId),
+      findMany: async ({ where }: any) => {
+        // order.findMany returns ORDERS (findAllForOriginalOrder); the item
+        // lookup uses orderItem.findMany instead.
+        if (where?.returnOfOrderId !== undefined) {
+          return orders
+            .filter((o) => o.returnOfOrderId === where.returnOfOrderId)
+            .map((o) => withItems(o));
+        }
+        return items.filter((i) => i.orderId === where?.orderId);
+      },
       create: async ({ data }: any) => {
         if (state.failOnRtnCreate) {
           const err: any = new Prisma.PrismaClientKnownRequestError(
@@ -522,6 +539,208 @@ describe('RtnService — createFromPartialOrder', () => {
     expect(order.timeline).toHaveLength(3);
     expect(order.timeline[0].note).toBe('Customer called about delivery');
     expect(order.timeline[2].status).toBe('Delivered');
+  });
+
+  // ── §2: ONE overall reason ───────────────────────────────────────────
+  it('stores a single overall reason on the RTN and both timelines', async () => {
+    const order = makePartialOrder();
+    const store = await setup(order, simpleItems.map((i) => ({ ...i })));
+
+    await service.createFromPartialOrder(
+      'order-1',
+      {
+        items: [{ orderItemId: 'item-1', quantity: 2 }],
+        reason: 'Customer rejected two units — wrong size',
+      },
+      actor,
+    );
+
+    const rtn = store.orders[0];
+    expect(rtn.officeNotes).toBe('Customer rejected two units — wrong size');
+    expect(rtn.timeline[0].reason).toBe('Customer rejected two units — wrong size');
+    expect(order.timeline.some((t: any) => t.note?.includes('Customer rejected two units'))).toBe(true);
+  });
+
+  // ── §3: original financial adjustment ───────────────────────────────
+  it('applies an explicit discount reduction to the ORIGINAL only', async () => {
+    const order = makePartialOrder({ discount: 200, subtotal: 1000, total: 860 });
+    const store = await setup(order, simpleItems.map((i) => ({ ...i })));
+
+    await service.createFromPartialOrder(
+      'order-1',
+      {
+        items: [{ orderItemId: 'item-1', quantity: 2 }],
+        // Returning 2×100 = 200 of goods, so halve the discount.
+        adjustOriginalDiscount: 100,
+      },
+      actor,
+    );
+
+    // Remaining items: item-1 ×3 @100 = 300, item-2 ×3 @200 = 600 → 900.
+    expect(order.subtotal).toBe(900);
+    expect(order.discount).toBe(100);
+    expect(order.total).toBe(900 + 60 - 100);
+    // The RTN never carries the discount — the money lives in one place only.
+    expect(store.orders[0].discount).toBe(0);
+    expect(store.orders[0].shippingCharge).toBe(0);
+    expect(order.timeline.some((t: any) => t.type === 'discount')).toBe(true);
+  });
+
+  it('adjusts the original shipping charge independently of the discount', async () => {
+    const order = makePartialOrder({ shippingCharge: 60 });
+    const store = await setup(order, simpleItems.map((i) => ({ ...i })));
+
+    await service.createFromPartialOrder(
+      'order-1',
+      { items: [{ orderItemId: 'item-1', quantity: 2 }], adjustOriginalShippingCharge: 0 },
+      actor,
+    );
+
+    expect(order.shippingCharge).toBe(0);
+    expect(order.total).toBe(900 - 0);
+    expect(store.orders[0].shippingCharge).toBe(0);
+    expect(order.timeline.some((t: any) => t.type === 'shipping')).toBe(true);
+  });
+
+  it('leaves the original financials untouched when no adjustment is supplied', async () => {
+    const order = makePartialOrder({ discount: 50, shippingCharge: 60 });
+    await setup(order, simpleItems.map((i) => ({ ...i })));
+
+    await service.createFromPartialOrder(
+      'order-1',
+      { items: [{ orderItemId: 'item-1', quantity: 2 }] },
+      actor,
+    );
+
+    expect(order.discount).toBe(50);
+    expect(order.shippingCharge).toBe(60);
+    // Remaining 900 + 60 − 50 = 910 (the discount survives on the smaller bill,
+    // which is exactly the pre-existing behaviour).
+    expect(order.total).toBe(910);
+    expect(order.timeline.some((t: any) => t.type === 'discount')).toBe(false);
+  });
+
+  it('rejects a discount larger than the remaining order amount', async () => {
+    const order = makePartialOrder({ discount: 0 });
+    await setup(order, simpleItems.map((i) => ({ ...i })));
+
+    await expect(
+      service.createFromPartialOrder(
+        'order-1',
+        { items: [{ orderItemId: 'item-1', quantity: 2 }], adjustOriginalDiscount: 5000 },
+        actor,
+      ),
+    ).rejects.toThrow(/cannot exceed the remaining order amount/i);
+  });
+
+  it('rejects a negative shipping adjustment', async () => {
+    const order = makePartialOrder();
+    await setup(order, simpleItems.map((i) => ({ ...i })));
+
+    await expect(
+      service.createFromPartialOrder(
+        'order-1',
+        { items: [{ orderItemId: 'item-1', quantity: 1 }], adjustOriginalShippingCharge: -10 },
+        actor,
+      ),
+    ).rejects.toThrow(/cannot be negative/i);
+  });
+
+  // ── §5: "is the remaining quantity delivered?" ──────────────────────
+  it('leaves the original Partial when deliverRemainingImmediately is false', async () => {
+    const order = makePartialOrder();
+    await setup(order, simpleItems.map((i) => ({ ...i })));
+
+    await service.createFromPartialOrder(
+      'order-1',
+      { items: [{ orderItemId: 'item-1', quantity: 2 }], deliverRemainingImmediately: false },
+      actor,
+    );
+
+    expect(order.statusId).toBe('status-partial');
+    const last = order.timeline[order.timeline.length - 1];
+    expect(last.note).toMatch(/stay Partial/i);
+  });
+
+  it('marks the original Delivered by default (back-compat)', async () => {
+    const order = makePartialOrder();
+    await setup(order, simpleItems.map((i) => ({ ...i })));
+
+    await service.createFromPartialOrder(
+      'order-1',
+      { items: [{ orderItemId: 'item-1', quantity: 2 }] },
+      actor,
+    );
+
+    expect(order.statusId).toBe('status-delivered');
+  });
+
+  // ── A5: several RTNs per original, one OPEN at a time ──────────────
+  it('blocks a second RTN while one is still open', async () => {
+    const order = makePartialOrder();
+    const store = await setup(order, simpleItems.map((i) => ({ ...i })));
+
+    await service.createFromPartialOrder(
+      'order-1',
+      { items: [{ orderItemId: 'item-1', quantity: 1 }] },
+      actor,
+    );
+
+    // Second attempt while the first RTN has not been received.
+    await expect(
+      service.createFromPartialOrder(
+        'order-1',
+        { items: [{ orderItemId: 'item-2', quantity: 1 }] },
+        actor,
+      ),
+    ).rejects.toThrow(/open Return Order already exists/i);
+    expect(store.orders).toHaveLength(1);
+  });
+
+  it('allows a new split once the previous RTN was received (returnedAt set)', async () => {
+    const order = makePartialOrder();
+    const store = await setup(order, simpleItems.map((i) => ({ ...i })));
+
+    await service.createFromPartialOrder(
+      'order-1',
+      { items: [{ orderItemId: 'item-1', quantity: 1 }] },
+      actor,
+    );
+    expect(store.orders).toHaveLength(1);
+
+    // The first RTN is physically received → no longer open.
+    store.orders[0].returnedAt = new Date();
+    store.orders[0].status = { id: 'status-returned', name: 'Returned', nextStatuses: [] };
+
+    // Put the original back into Partial so it is eligible again.
+    order.statusId = 'status-partial';
+    order.status = { id: 'status-partial', name: 'Partial', nextStatuses: [] };
+
+    await service.createFromPartialOrder(
+      'order-1',
+      { items: [{ orderItemId: 'item-2', quantity: 1 }] },
+      actor,
+    );
+
+    expect(store.orders).toHaveLength(2);
+  });
+
+  it('ignores a Returned RTN when reporting the open one', async () => {
+    const order = makePartialOrder();
+    const store = await setup(order, simpleItems.map((i) => ({ ...i })));
+    store.orders.push({
+      id: 'rtn-old',
+      displayId: 'RTN-260930-0001',
+      kind: 'RETURN',
+      returnOfOrderId: 'order-1',
+      statusId: 'status-returned',
+      status: { id: 'status-returned', name: 'Returned' },
+      returnedAt: new Date(),
+      items: [],
+    });
+
+    await expect(service.findForOriginalOrder('order-1')).resolves.toBeNull();
+    await expect(service.findAllForOriginalOrder('order-1')).resolves.toHaveLength(1);
   });
 });
 

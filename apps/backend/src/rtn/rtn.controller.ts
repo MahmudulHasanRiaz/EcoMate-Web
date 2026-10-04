@@ -31,6 +31,18 @@ export class RtnController {
     return this.rtnService.findForOriginalOrder(orderId);
   }
 
+  /**
+   * Every return order ever raised against an original (newest first). An
+   * original may accumulate several RTNs over its life, so the detail page
+   * needs the full list, not just the open one.
+   */
+  @Roles('superadmin', 'admin', 'manager')
+  @RequiresFeature('admin_orders')
+  @Get('order/:orderId/all')
+  findAllForOriginalOrder(@Param('orderId') orderId: string) {
+    return this.rtnService.findAllForOriginalOrder(orderId);
+  }
+
   @Roles('superadmin', 'admin', 'manager')
   @RequiresFeature('admin_orders')
   @Get(':id')
