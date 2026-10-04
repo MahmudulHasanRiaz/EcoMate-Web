@@ -323,6 +323,278 @@ function CourierQuickView({ phone }: { phone: string }) {
   return null;
 }
 
+function OrdersStatusFilterBar({
+  statusList,
+  statusCountMap,
+  totalOrders,
+  statusFilter,
+  setStatusFilter,
+  kindFilter,
+  setKindFilter,
+  setPage,
+}: {
+  statusList: any[]
+  statusCountMap: Record<string, number>
+  totalOrders: number
+  statusFilter: string
+  setStatusFilter: (s: string) => void
+  kindFilter: 'all' | 'SALE' | 'RETURN'
+  setKindFilter: (k: 'all' | 'SALE' | 'RETURN') => void
+  setPage: (p: number) => void
+}) {
+  const visible = statusList.filter((s: any) => (statusCountMap[s.id] || 0) > 0)
+  if (visible.length === 0 && totalOrders === 0) return null
+
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(false)
+  const isDraggingRef = useRef(false)
+  const startXRef = useRef(0)
+  const scrollStartLeftRef = useRef(0)
+  const hasDraggedRef = useRef(false)
+
+  const checkScroll = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const { scrollLeft, scrollWidth, clientWidth } = el
+    setCanScrollLeft(scrollLeft > 4)
+    setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 4)
+  }, [])
+
+  useEffect(() => {
+    checkScroll()
+    const el = scrollRef.current
+    if (!el) return
+
+    const ro = new ResizeObserver(() => checkScroll())
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [checkScroll, visible.length, totalOrders])
+
+  const scrollByAmount = (amount: number) => {
+    if (!scrollRef.current) return
+    scrollRef.current.scrollBy({ left: amount, behavior: 'smooth' })
+  }
+
+  // Mouse drag handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    // Only drag with primary mouse button
+    if (e.button !== 0 || !scrollRef.current) return
+    isDraggingRef.current = true
+    hasDraggedRef.current = false
+    startXRef.current = e.pageX - scrollRef.current.offsetLeft
+    scrollStartLeftRef.current = scrollRef.current.scrollLeft
+  }
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDraggingRef.current || !scrollRef.current) return
+    e.preventDefault()
+    const x = e.pageX - scrollRef.current.offsetLeft
+    const walk = (x - startXRef.current) * 1.2
+    if (Math.abs(walk) > 4) {
+      hasDraggedRef.current = true
+    }
+    scrollRef.current.scrollLeft = scrollStartLeftRef.current - walk
+    checkScroll()
+  }
+
+  const handleMouseUpOrLeave = () => {
+    isDraggingRef.current = false
+  }
+
+  // Horizontal mouse wheel navigation
+  const handleWheel = (e: React.WheelEvent) => {
+    const el = scrollRef.current
+    if (!el) return
+    if (e.deltaY !== 0 && !e.shiftKey) {
+      // Allow user to scroll horizontally with vertical mouse wheel
+      if (el.scrollWidth > el.clientWidth) {
+        el.scrollLeft += e.deltaY
+        checkScroll()
+      }
+    }
+  }
+
+  const renderChip = (
+    key: string,
+    label: string,
+    count: number,
+    color: string,
+    active: boolean,
+    onClick: () => void
+  ) => (
+    <button
+      key={key}
+      type="button"
+      aria-pressed={active}
+      title={`${label} (${count})`}
+      onClick={() => {
+        if (!hasDraggedRef.current) onClick()
+      }}
+      className={`group relative inline-flex h-8 shrink-0 items-center gap-2 rounded-full border px-3 text-xs font-medium whitespace-nowrap transition-all duration-200 select-none cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+        active
+          ? 'font-semibold shadow-xs ring-1 ring-border/20'
+          : 'border-border/60 bg-card/80 text-muted-foreground hover:text-foreground hover:bg-card hover:border-border/90 hover:shadow-2xs active:scale-[0.98]'
+      }`}
+      style={
+        active
+          ? {
+              borderColor: `color-mix(in srgb, ${color} 55%, transparent)`,
+              backgroundColor: `color-mix(in srgb, ${color} 12%, transparent)`,
+              color: color,
+            }
+          : undefined
+      }
+    >
+      <span
+        className={`size-2 rounded-full shrink-0 transition-transform duration-200 ${
+          active ? 'scale-110 shadow-xs' : 'opacity-70 group-hover:opacity-100 group-hover:scale-105'
+        }`}
+        style={{
+          backgroundColor: color,
+          boxShadow: active ? `0 0 8px color-mix(in srgb, ${color} 60%, transparent)` : undefined,
+        }}
+      />
+      <span className="truncate max-w-36 tracking-tight">{label}</span>
+      <span
+        className={`tabular-nums text-[11px] px-1.5 py-0.5 min-w-[20px] text-center rounded-full font-bold transition-colors ${
+          active
+            ? 'bg-background/80 shadow-2xs border border-border/40'
+            : 'bg-muted/80 text-muted-foreground/90 group-hover:bg-muted group-hover:text-foreground'
+        }`}
+        style={active ? { color } : undefined}
+      >
+        {count}
+      </span>
+    </button>
+  )
+
+  const allActive = statusFilter === 'all'
+
+  return (
+    <div className="relative group/status-bar flex items-center w-full min-w-0" aria-label="Filter orders by status">
+      {/* Left scroll chevron button */}
+      <div
+        className={`absolute left-0 z-10 flex items-center pr-2 transition-opacity duration-200 ${
+          canScrollLeft ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        }`}
+      >
+        <div className="absolute inset-y-0 -left-1 w-12 bg-gradient-to-r from-background via-background/90 to-transparent pointer-events-none" />
+        <button
+          type="button"
+          onClick={() => scrollByAmount(-220)}
+          aria-label="Scroll statuses left"
+          className="relative size-7 rounded-full bg-card/95 hover:bg-card text-muted-foreground hover:text-foreground border border-border/80 shadow-sm flex items-center justify-center cursor-pointer transition-transform hover:scale-105 active:scale-95"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* Scrollable chip container */}
+      <div
+        ref={scrollRef}
+        onScroll={checkScroll}
+        onWheel={handleWheel}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUpOrLeave}
+        onMouseLeave={handleMouseUpOrLeave}
+        className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1 w-full min-w-0 cursor-grab active:cursor-grabbing select-none scroll-smooth px-0.5"
+      >
+        {renderChip('all', 'All', totalOrders, 'var(--primary)', allActive, () => {
+          if (!allActive) {
+            setStatusFilter('all')
+            setPage(1)
+          }
+        })}
+
+        <div className="h-4.5 w-px bg-border/70 shrink-0 mx-1" />
+
+        {([
+          ['SALE', 'Sales', 'var(--primary)'],
+          ['RETURN', 'Returns', '#EC4899'],
+        ] as const).map(([value, label, color]) => {
+          const active = kindFilter === value
+          return (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={active}
+              title={label}
+              onClick={() => {
+                if (!hasDraggedRef.current) {
+                  setKindFilter(active ? 'all' : value)
+                  setPage(1)
+                }
+              }}
+              className={`group relative inline-flex h-8 shrink-0 items-center gap-2 rounded-full border px-3 text-xs font-medium whitespace-nowrap transition-all duration-200 select-none cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                active
+                  ? 'font-semibold shadow-xs ring-1 ring-border/20'
+                  : 'border-border/60 bg-card/80 text-muted-foreground hover:text-foreground hover:bg-card hover:border-border/90 hover:shadow-2xs active:scale-[0.98]'
+              }`}
+              style={
+                active
+                  ? {
+                      borderColor: `color-mix(in srgb, ${color} 55%, transparent)`,
+                      backgroundColor: `color-mix(in srgb, ${color} 12%, transparent)`,
+                      color: color,
+                    }
+                  : undefined
+              }
+            >
+              <span
+                className={`size-2 rounded-full shrink-0 transition-transform duration-200 ${
+                  active ? 'scale-110 shadow-xs' : 'opacity-70 group-hover:opacity-100 group-hover:scale-105'
+                }`}
+                style={{
+                  backgroundColor: color,
+                  boxShadow: active ? `0 0 8px color-mix(in srgb, ${color} 60%, transparent)` : undefined,
+                }}
+              />
+              <span className="truncate max-w-36 tracking-tight">{label}</span>
+            </button>
+          )
+        })}
+
+        {visible.length > 0 && <div className="h-4.5 w-px bg-border/70 shrink-0 mx-1" />}
+
+        {visible.map((s: any) => {
+          const color = getStatusColor(s.name, s.color)
+          const active = statusFilter === s.id
+          return renderChip(
+            s.id,
+            s.name,
+            statusCountMap[s.id] || 0,
+            color,
+            active,
+            () => {
+              setStatusFilter(active ? 'all' : s.id)
+              setPage(1)
+            }
+          )
+        })}
+      </div>
+
+      {/* Right scroll chevron button */}
+      <div
+        className={`absolute right-0 z-10 flex items-center pl-2 transition-opacity duration-200 ${
+          canScrollRight ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        }`}
+      >
+        <div className="absolute inset-y-0 -right-1 w-12 bg-gradient-to-l from-background via-background/90 to-transparent pointer-events-none" />
+        <button
+          type="button"
+          onClick={() => scrollByAmount(220)}
+          aria-label="Scroll statuses right"
+          className="relative size-7 rounded-full bg-card/95 hover:bg-card text-muted-foreground hover:text-foreground border border-border/80 shadow-sm flex items-center justify-center cursor-pointer transition-transform hover:scale-105 active:scale-95"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export function Orders() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -519,93 +791,16 @@ export function Orders() {
           </div>
         </div>
 
-        {(() => {
-          const visible = statusList.filter((s: any) => (statusCountMap[s.id] || 0) > 0)
-          if (visible.length === 0 && totalOrders === 0) return null
-          const chip = (key: string, label: string, count: number, color: string, active: boolean, onClick: () => void) => (
-            <button
-              key={key}
-              type="button"
-              aria-pressed={active}
-              title={label}
-              onClick={onClick}
-              className={`inline-flex h-7.5 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium whitespace-nowrap transition-all duration-150 cursor-pointer ${
-                active
-                  ? 'border-transparent font-semibold shadow-2xs'
-                  : 'border-border/60 bg-card text-muted-foreground hover:text-foreground hover:bg-surface-raised hover:border-border'
-              }`}
-              style={
-                active
-                  ? {
-                      borderColor: `color-mix(in srgb, ${color} 50%, transparent)`,
-                      backgroundColor: `color-mix(in srgb, ${color} 14%, transparent)`,
-                      color: color,
-                    }
-                  : undefined
-              }
-            >
-              <span className="size-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-              <span className="truncate max-w-32">{label}</span>
-              <span
-                className={`tabular-nums text-[10.5px] px-1.5 py-0.2 rounded-full font-semibold ${
-                  active ? 'bg-background/60 shadow-2xs' : 'bg-muted/70 text-muted-foreground'
-                }`}
-                style={active ? { color } : undefined}
-              >
-                {count}
-              </span>
-            </button>
-          )
-          const allActive = statusFilter === 'all'
-          return (
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5" aria-label="Filter orders by status">
-              {chip('all', 'All', totalOrders, 'var(--primary)', allActive, () => { if (!allActive) { setStatusFilter('all'); setPage(1) } })}
-              
-              <div className="h-4 w-px bg-border/60 shrink-0 mx-0.5" />
-
-              {([
-                ['SALE', 'Sales', 'var(--primary)'],
-                ['RETURN', 'Returns', '#EC4899'],
-              ] as const).map(([value, label, color]) => {
-                const active = kindFilter === value
-                return (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-pressed={active}
-                    title={label}
-                    onClick={() => { setKindFilter(active ? 'all' : value); setPage(1) }}
-                    className={`inline-flex h-7.5 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium whitespace-nowrap transition-all duration-150 cursor-pointer ${
-                      active
-                        ? 'border-transparent font-semibold shadow-2xs'
-                        : 'border-border/60 bg-card text-muted-foreground hover:text-foreground hover:bg-surface-raised hover:border-border'
-                    }`}
-                    style={
-                      active
-                        ? {
-                            borderColor: `color-mix(in srgb, ${color} 50%, transparent)`,
-                            backgroundColor: `color-mix(in srgb, ${color} 14%, transparent)`,
-                            color: color,
-                          }
-                        : undefined
-                    }
-                  >
-                    <span className="size-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                    <span className="truncate max-w-32">{label}</span>
-                  </button>
-                )
-              })}
-
-              {visible.length > 0 && <div className="h-4 w-px bg-border/60 shrink-0 mx-0.5" />}
-
-              {visible.map((s: any) => {
-                const color = getStatusColor(s.name, s.color)
-                const active = statusFilter === s.id
-                return chip(s.id, s.name, statusCountMap[s.id] || 0, color, active, () => { setStatusFilter(active ? 'all' : s.id); setPage(1) })
-              })}
-            </div>
-          )
-        })()}
+        <OrdersStatusFilterBar
+          statusList={statusList}
+          statusCountMap={statusCountMap}
+          totalOrders={totalOrders}
+          statusFilter={statusFilter}
+          setStatusFilter={setStatusFilter}
+          kindFilter={kindFilter}
+          setKindFilter={setKindFilter}
+          setPage={setPage}
+        />
 
         <div className='rounded-xl border border-border/70 bg-card/60 backdrop-blur-md p-2.5 shadow-2xs space-y-2'>
           <div className='flex flex-wrap items-center gap-2'>
