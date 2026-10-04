@@ -331,26 +331,29 @@ export function OrderSummaryCard({
           </div>
 
           {/* Payment Paid & Due Breakdown (mirrors create-page and guarantees clarity) */}
-          {(() => {
+          {!editShipping && !editDiscount && (() => {
             const effectiveDue = dueAmount !== undefined
               ? dueAmount
               : Math.max(0, displayTotal - paidAmount)
+            const isFullPayment = effectiveDue === 0 && paidAmount > 0
 
             if (paidAmount > 0 || (dueAmount !== undefined && dueAmount < displayTotal)) {
               return (
                 <div className='pt-2.5 mt-2 border-t border-dashed border-border/60 space-y-1.5'>
                   {paidAmount > 0 && (
                     <div className='flex justify-between items-center text-xs text-emerald-600 dark:text-emerald-400 font-medium px-1'>
-                      <span>Paid Amount (Advance)</span>
+                      <span>Paid Amount ({isFullPayment ? 'Full' : 'Advance'})</span>
                       <span>-৳{fmt(paidAmount)}</span>
                     </div>
                   )}
-                  <div className='flex justify-between items-center text-sm font-bold text-amber-600 dark:text-amber-500 bg-amber-500/10 dark:bg-amber-500/15 p-2 rounded-lg border border-amber-500/20'>
-                    <span>Due on Delivery (COD)</span>
-                    <span className='text-base font-extrabold'>
-                      ৳{fmt(effectiveDue)}
-                    </span>
-                  </div>
+                  {!isFullPayment && (
+                    <div className='flex justify-between items-center text-sm font-bold text-amber-600 dark:text-amber-500 bg-amber-500/10 dark:bg-amber-500/15 p-2 rounded-lg border border-amber-500/20'>
+                      <span>Due on Delivery (COD)</span>
+                      <span className='text-base font-extrabold'>
+                        ৳{fmt(effectiveDue)}
+                      </span>
+                    </div>
+                  )}
                 </div>
               )
             }

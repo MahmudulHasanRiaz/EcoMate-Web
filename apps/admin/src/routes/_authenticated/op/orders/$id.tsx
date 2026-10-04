@@ -1100,19 +1100,6 @@ function OrderDetailPage() {
                             <span className='font-bold text-foreground'>৳{fmt(order.partialAmount)}</span>
                           </div>
                         )}
-                        {(() => {
-                          const paid = getOrderPaidAmount(order)
-                          const due = getOrderDueAmount(order)
-                          if (paid > 0 || (order.paymentOptionType === 'PARTIAL_PAYMENT' && due > 0)) {
-                            return (
-                              <div className='flex items-center justify-between pt-2 border-t border-dashed border-border/60 text-amber-600 dark:text-amber-500 font-bold'>
-                                <span>Due on Delivery (COD):</span>
-                                <span className='text-sm font-extrabold'>৳{fmt(due)}</span>
-                              </div>
-                            )
-                          }
-                          return null
-                        })()}
                       </div>
                     )}
 
