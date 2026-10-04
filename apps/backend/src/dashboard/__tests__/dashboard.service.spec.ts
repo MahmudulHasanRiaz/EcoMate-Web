@@ -364,7 +364,20 @@ describe('DashboardService', () => {
       await service.getRevenueByPaymentMethod('2025-06-01', '2025-06-15');
 
       const sql: string = prisma.$queryRawUnsafe.mock.calls[0][0];
-      expect(sql).toContain(`("createdAt" AT TIME ZONE 'UTC')`);
+      // The Payment table is now aliased (`p`) so the query can join Order and
+      // exclude non-sale kinds — the UTC pinning itself is unchanged.
+      expect(sql).toContain(`(p."createdAt" AT TIME ZONE 'UTC')`);
+    });
+
+    // A return/exchange order's payment must never be reported as revenue
+    // next to the sale it was derived from.
+    it('getRevenueByPaymentMethod excludes non-sale order kinds', async () => {
+      prisma.$queryRawUnsafe.mockResolvedValue([]);
+
+      await service.getRevenueByPaymentMethod('2025-06-01', '2025-06-15');
+
+      const sql: string = prisma.$queryRawUnsafe.mock.calls[0][0];
+      expect(sql).toContain(`o."kind" = 'SALE'`);
     });
   });
 

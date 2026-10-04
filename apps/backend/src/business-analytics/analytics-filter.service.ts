@@ -11,6 +11,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PaymentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { saleOrderOnlyWhere } from '../orders/order-scope';
 import { normalizePhone } from '../common/utils/phone-utils';
 import { LEGACY_CHANNEL_TO_V2 } from '../sales-channel/legacy-channel-map';
 import {
@@ -143,9 +144,10 @@ export class AnalyticsFilterService {
     filters: AnalyticsFilterDto,
     marketingOrderIds?: string[],
   ): Prisma.OrderWhereInput {
-    // RTN return orders are never sales — they must not pollute any revenue,
-    // cohort, product, customer or fulfillment analytics.
-    const where: Prisma.OrderWhereInput = { trashedAt: null, kind: 'SALE' };
+    // Only real sales count as revenue. Return (RTN) and other non-sale kinds
+    // must never pollute revenue, cohort, product, customer or fulfillment
+    // analytics — see order-scope.ts for the full rationale.
+    const where: Prisma.OrderWhereInput = { trashedAt: null, ...saleOrderOnlyWhere() };
 
     if (filters.source) where.source = filters.source as any;
     if (filters.salesChannel) where.salesChannel = filters.salesChannel as any;

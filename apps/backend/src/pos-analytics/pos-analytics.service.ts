@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import * as ExcelJS from 'exceljs';
 import { PrismaService } from '../prisma/prisma.service';
+import { SALE_ORDER_KIND, saleOrderOnlyWhere } from '../orders/order-scope';
 import {
   POS_ANALYTICS_SCOPES,
   PosAnalyticsQueryDto,
@@ -160,6 +161,9 @@ export class PosAnalyticsService {
     // real filter in production, these keep chunked scans honest).
     if (order.trashedAt != null) return null;
     if (order.source !== 'POS') return null;
+    // Non-sale kinds are never showroom revenue: a return/exchange row must not
+    // appear in gross sales, net sales or units sold next to its original.
+    if ((order.kind ?? 'SALE') !== SALE_ORDER_KIND) return null;
     if (order.paymentStatus !== 'PAID') return null;
     const statusName = String(order.status?.name ?? 'Unknown');
     if (EXCLUDED_STATUS_NAMES.has(statusName.toLowerCase())) return null;
@@ -270,6 +274,8 @@ export class PosAnalyticsService {
         where: {
           trashedAt: null,
           source: 'POS',
+          // Real filter for the report: only SALE rows are showroom revenue.
+          ...saleOrderOnlyWhere(),
           paymentStatus: 'PAID',
           createdAt: { lte: ctx.range.end },
           posSession: {

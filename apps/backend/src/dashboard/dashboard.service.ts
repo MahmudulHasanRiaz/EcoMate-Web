@@ -4,6 +4,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { SALE_ORDER_KIND, SALE_ORDER_SQL_FILTER, saleOrderOnlyWhere } from '../orders/order-scope';
 import { dhakaDayRange, endOfDhakaDay, startOfDhakaDay } from '../common/utils/dhaka-time';
 
 /**
@@ -54,15 +55,18 @@ export class DashboardService {
         totalProducts,
         recentOrders,
       ] = await Promise.all([
-        this.prisma.order.count({ where: { ...dateFilter, trashedAt: null, kind: 'SALE' } }),
+        this.prisma.order.count({ where: { ...dateFilter, trashedAt: null, ...saleOrderOnlyWhere() } }),
         this.prisma.payment.aggregate({
           _sum: { amount: true },
-          where: { ...dateFilter },
+          // PAID only: this previously summed every payment status, so
+          // uncollected/pending money was reported as revenue. Nested under the
+          // order so a non-sale order's payments can never count either.
+          where: { ...dateFilter, status: 'PAID', order: { kind: SALE_ORDER_KIND } },
         }),
         this.prisma.userProfile.count({ where: { role: 'customer' } }),
         this.prisma.product.count({ where: { isActive: true } }),
         this.prisma.order.findMany({
-          where: { ...dateFilter, trashedAt: null, kind: 'SALE' },
+          where: { ...dateFilter, trashedAt: null, ...saleOrderOnlyWhere() },
           take: 20,
           orderBy: { createdAt: 'desc' },
           include: { status: true, _count: { select: { items: true } } },
@@ -293,13 +297,15 @@ export class DashboardService {
       type RevenueRow = { method: string; revenue: string };
 
       const rows = await this.prisma.$queryRawUnsafe<RevenueRow[]>(
-        `SELECT COALESCE("gatewayCode", 'unknown') AS method,
-                SUM(amount)::text AS revenue
-         FROM "Payment"
-         WHERE status = 'PAID'
-           AND ($1::timestamp IS NULL OR ("createdAt" AT TIME ZONE 'UTC') >= ($1::timestamp AT TIME ZONE 'UTC'))
-           AND ($2::timestamp IS NULL OR ("createdAt" AT TIME ZONE 'UTC') <= ($2::timestamp AT TIME ZONE 'UTC'))
-         GROUP BY "gatewayCode"`,
+        `SELECT COALESCE(p."gatewayCode", 'unknown') AS method,
+                SUM(p.amount)::text AS revenue
+         FROM "Payment" p
+         JOIN "Order" o ON o.id = p."orderId"
+         WHERE p.status = 'PAID'
+           AND ${SALE_ORDER_SQL_FILTER}
+           AND ($1::timestamp IS NULL OR (p."createdAt" AT TIME ZONE 'UTC') >= ($1::timestamp AT TIME ZONE 'UTC'))
+           AND ($2::timestamp IS NULL OR (p."createdAt" AT TIME ZONE 'UTC') <= ($2::timestamp AT TIME ZONE 'UTC'))
+         GROUP BY p."gatewayCode"`,
         start,
         end,
       );
@@ -461,6 +467,7 @@ export class DashboardService {
            CROSS JOIN LATERAL jsonb_array_elements(COALESCE(o.timeline::jsonb, '[]'::jsonb)) e
            CROSS JOIN period p
            WHERE o."trashedAt" IS NULL
+             AND ${SALE_ORDER_SQL_FILTER}
              AND e ? 'timestamp'
              AND e->>'timestamp' ~ '^\\d{4}-\\d{2}-\\d{2}'
              AND (e->>'timestamp')::timestamptz BETWEEN p.range_start AND p.range_end

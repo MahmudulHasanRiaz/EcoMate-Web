@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { SALE_ORDER_KIND, SALE_ORDER_SQL_FILTER, saleOrderOnlyWhere } from '../orders/order-scope';
 import { CacheService } from '../cache/cache.service';
 import { dhakaDayRange } from '../common/utils/dhaka-time';
 
@@ -24,11 +25,13 @@ export class AnalyticsService {
       this.prisma.order.aggregate({
         _count: true,
         _sum: { total: true },
-        where: { ...dateFilter, trashedAt: null, kind: 'SALE' },
+        where: { ...dateFilter, trashedAt: null, ...saleOrderOnlyWhere() },
       }),
       this.prisma.payment.aggregate({
         _sum: { amount: true },
-        where: { ...dateFilter, status: 'PAID' },
+        // Nested under the order so a non-sale order's payment can never be
+        // counted as revenue alongside the sale it was derived from.
+        where: { ...dateFilter, status: 'PAID', order: { kind: SALE_ORDER_KIND } },
       }),
       this.prisma.refund.aggregate({
         _sum: { amount: true },
@@ -64,7 +67,9 @@ export class AnalyticsService {
       `SELECT DATE(p."createdAt" AT TIME ZONE 'Asia/Dhaka')::text AS date,
               SUM(p.amount)::text AS revenue
        FROM "Payment" p
+       JOIN "Order" o ON o.id = p."orderId"
        WHERE p.status = 'PAID'
+         AND ${SALE_ORDER_SQL_FILTER}
          AND ($1::timestamptz IS NULL OR p."createdAt" >= $1)
          AND ($2::timestamptz IS NULL OR p."createdAt" <= $2)
        GROUP BY DATE(p."createdAt" AT TIME ZONE 'Asia/Dhaka')
