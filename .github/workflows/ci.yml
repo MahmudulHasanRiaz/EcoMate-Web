@@ -52,7 +52,10 @@ jobs:
     name: ${{ matrix.service }}
     needs: [test]
     runs-on: [self-hosted, macos, arm64]
-    timeout-minutes: 120
+    # The backend image is large (~230MB compressed) and this runner's uplink
+    # to ghcr.io is slow; the 2026-10-04 backend job died at exactly 2h00m
+    # mid-push with every build step CACHED (no code error). Give pushes room.
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       max-parallel: 1

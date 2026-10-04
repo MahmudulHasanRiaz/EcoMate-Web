@@ -1,0 +1,16 @@
+# Build context exclusions — root .dockerignore applies to every service image.
+# SAFETY: none of the Dockerfiles COPY any of these from the host; every
+# image reinstalls node_modules and rebuilds dist/.next inside the builder
+# stage. Excluding 1.5G node_modules + .git slashes context transfer and
+# cache-hash time on the self-hosted runner.
+.git
+node_modules
+**/node_modules
+.tmp-e2e
+.commandcode
+.opencode
+.vscode
+.DS_Store
+*.log
+coverage
+.turbo
