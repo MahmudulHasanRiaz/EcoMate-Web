@@ -780,8 +780,10 @@ model Order {
   displayId                String             @unique
   kind                     OrderKind          @default(SALE)
   /// Original sale order this RTN return order was created from.
-  /// UNIQUE at the database level: one original order → at most one RTN.
-  /// NULL for every normal sale order (Postgres treats NULLs as distinct).
+  /// At most one OPEN (not yet returned) RTN per original — enforced by the
+  /// partial unique index `Order_returnOfOrderId_open_key`. Once that RTN is
+  /// Returned, the original may be split again, so this is deliberately NOT a
+  /// plain unique constraint (one original may accumulate several RTNs).
   returnOfOrderId          String?
   /// Set when the RTN order itself reached 'Returned' (stock restored).
   returnedAt               DateTime?
@@ -918,8 +920,10 @@ model Order {
   courierSettlementAdjustments CourierSettlementAdjustment[]
   staffEvents                  OrderStaffEvent[]
 
-  // One original order → at most one RTN return order (database-enforced).
-  @@unique([returnOfOrderId])
+  // At most one OPEN (not yet Returned) RTN per original order. A plain
+  // unique is impossible: one original may legitimately accumulate several
+  // RTNs over time once earlier ones are closed. Enforced in SQL by the
+  // partial unique index `Order_returnOfOrderId_open_key` (see migration).
   @@index([customerId])
   @@index([statusId])
   @@index([assignedToId])
