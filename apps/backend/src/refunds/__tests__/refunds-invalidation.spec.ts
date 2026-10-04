@@ -20,11 +20,16 @@ describe('RefundsService analytics invalidation', () => {
     refund: {
       findUnique: jest.fn(),
       create: jest.fn(),
-      findMany: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
       aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 } }),
     },
     orderStatus: { findUnique: jest.fn() },
     order: { findUnique: jest.fn(), update: jest.fn() },
+    // Refund ceiling is the PAID amount, not the order total.
+    payment: {
+      aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 1000 } }),
+      findFirst: jest.fn().mockResolvedValue({ id: 'p1' }),
+    },
     dispatch: { findFirst: jest.fn().mockResolvedValue(null) },
   };
   const mockCache: any = {
@@ -47,6 +52,7 @@ describe('RefundsService analytics invalidation', () => {
     mockPrisma.order.findUnique.mockResolvedValue({
       id: 'o1',
       total: 1000,
+      kind: 'SALE',
     });
     mockPrisma.refund.create.mockImplementation(async (args: any) => ({
       id: 'r1',

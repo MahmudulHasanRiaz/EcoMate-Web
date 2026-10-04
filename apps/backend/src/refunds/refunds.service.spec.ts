@@ -59,6 +59,12 @@ describe('RefundsService', () => {
       findUnique: jest.fn(),
       update: jest.fn(),
     },
+    // Refunds are capped by what was actually PAID, so the service reads the
+    // payment ledger rather than the order total.
+    payment: {
+      aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 2000 } }),
+      findFirst: jest.fn().mockResolvedValue({ id: 'pay-1' }),
+    },
     dispatch: {
       findFirst: jest.fn().mockResolvedValue(null),
     },
@@ -187,29 +193,83 @@ describe('RefundsService', () => {
       (prisma.order.findUnique as jest.Mock).mockResolvedValue({
         id: 'order-id-1',
         total: 2000,
+        kind: 'SALE',
+      });
+      (prisma.payment.aggregate as jest.Mock).mockResolvedValue({
+        _sum: { amount: 2000 },
       });
       (prisma.refund.aggregate as jest.Mock).mockResolvedValue({
         _sum: { amount: 0 },
       });
+      (prisma.refund.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.payment.findFirst as jest.Mock).mockResolvedValue({ id: 'pay-1' });
       (prisma.refund.create as jest.Mock).mockResolvedValue(mockRefund);
 
       const result = await service.create(createDto);
 
       expect(prisma.order.findUnique).toHaveBeenCalledWith({
         where: { id: createDto.orderId },
-        select: { id: true, total: true },
+        select: { id: true, total: true, kind: true },
       });
+      // Traceability: the refund is pinned to the exact payment it reverses.
       expect(prisma.refund.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: {
+          data: expect.objectContaining({
             orderId: createDto.orderId,
             amount: createDto.amount,
             reason: createDto.reason,
             notes: createDto.notes,
-          },
+            sourcePaymentId: 'pay-1',
+          }),
         }),
       );
       expect(result.status).toBe('pending');
+    });
+
+    it('caps the refund by the amount actually PAID, not the order total', async () => {
+      // Order worth 2000 but only 500 collected (COD). A refund of 1000 would
+      // reverse revenue that was never recognised.
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        id: 'order-id-1',
+        total: 2000,
+        kind: 'SALE',
+      });
+      (prisma.payment.aggregate as jest.Mock).mockResolvedValue({
+        _sum: { amount: 500 },
+      });
+      (prisma.refund.aggregate as jest.Mock).mockResolvedValue({ _sum: { amount: 0 } });
+
+      await expect(
+        service.create({ orderId: 'order-id-1', amount: 1000 }),
+      ).rejects.toThrow(/exceeds the amount actually paid/i);
+      expect(prisma.refund.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a refund when nothing was ever paid', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        id: 'order-id-1',
+        total: 2000,
+        kind: 'SALE',
+      });
+      (prisma.payment.aggregate as jest.Mock).mockResolvedValue({ _sum: { amount: 0 } });
+
+      await expect(
+        service.create({ orderId: 'order-id-1', amount: 100 }),
+      ).rejects.toThrow(/no completed payment/i);
+      expect(prisma.refund.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a refund against a non-sale order (return/exchange)', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        id: 'rtn-1',
+        total: 500,
+        kind: 'RETURN',
+      });
+
+      await expect(
+        service.create({ orderId: 'rtn-1', amount: 100 }),
+      ).rejects.toThrow(/only be issued against a sale order/i);
+      expect(prisma.refund.create).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException if order does not exist', async () => {
@@ -239,10 +299,16 @@ describe('RefundsService', () => {
       (prisma.order.findUnique as jest.Mock).mockResolvedValue({
         id: 'order-id-1',
         total: 1000,
+        kind: 'SALE',
+      });
+      (prisma.payment.aggregate as jest.Mock).mockResolvedValue({
+        _sum: { amount: 1000 },
       });
       (prisma.refund.aggregate as jest.Mock).mockResolvedValue({
         _sum: { amount: 0 },
       });
+      (prisma.refund.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.payment.findFirst as jest.Mock).mockResolvedValue({ id: 'pay-1' });
       (prisma.refund.create as jest.Mock).mockResolvedValue({
         ...mockRefund,
         reason: undefined,

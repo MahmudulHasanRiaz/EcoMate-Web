@@ -82,13 +82,39 @@ export class RefundsService {
   async create(dto: CreateRefundDto) {
     const order = await this.prisma.order.findUnique({
       where: { id: dto.orderId },
-      select: { id: true, total: true },
+      select: { id: true, total: true, kind: true },
     });
     if (!order) throw new NotFoundException('Order not found');
 
-    if (dto.amount > Number(order.total)) {
+    // Refunds return MONEY, so the ceiling is what was actually collected —
+    // not what the order was worth. A COD order that was never paid, or a
+    // return/exchange row that carries no collection of its own, has nothing to
+    // give back; capping at `total` (the previous behaviour) let both through
+    // and wrote a revenue reversal with no matching collection.
+    // A missing kind is treated as SALE: every row created before the column
+    // existed is a normal sale, and defaulting to non-sale would make legacy
+    // orders un-refundable.
+    if ((order.kind ?? 'SALE') !== 'SALE') {
       throw new BadRequestException(
-        `Refund amount (${dto.amount}) exceeds order total (${order.total})`,
+        'Refunds can only be issued against a sale order. This order is a ' +
+          `${order.kind} transaction — reverse it through its own return/exchange flow.`,
+      );
+    }
+
+    const paidAgg = await this.prisma.payment.aggregate({
+      where: { orderId: dto.orderId, status: 'PAID' },
+      _sum: { amount: true },
+    });
+    const paidAmount = Number(paidAgg._sum.amount || 0);
+    if (paidAmount <= 0) {
+      throw new BadRequestException(
+        'This order has no completed payment, so there is nothing to refund.',
+      );
+    }
+
+    if (dto.amount > paidAmount) {
+      throw new BadRequestException(
+        `Refund amount (${dto.amount}) exceeds the amount actually paid (${paidAmount})`,
       );
     }
 
@@ -97,11 +123,31 @@ export class RefundsService {
       _sum: { amount: true },
     });
     const refundedSoFar = Number(existing._sum.amount || 0);
-    if (refundedSoFar + dto.amount > Number(order.total)) {
-      throw new BadRequestException('Total refund would exceed order total');
+    if (refundedSoFar + dto.amount > paidAmount) {
+      throw new BadRequestException(
+        `Total refund would exceed the amount actually paid (${paidAmount})`,
+      );
     }
 
     await this.assertNoActiveDispatches(dto.orderId);
+
+    // Traceability: pin the refund to the specific collection it reverses, so
+    // the money can be followed back to the payment row rather than to an order
+    // total. Oldest first, so partial refunds consume payments in order.
+    let sourcePaymentId = dto.sourcePaymentId;
+    if (!sourcePaymentId) {
+      const alreadyRefundedPayments = await this.prisma.refund.findMany({
+        where: { orderId: dto.orderId, status: 'completed', sourcePaymentId: { not: null } },
+        select: { sourcePaymentId: true },
+      });
+      const consumed = new Set(alreadyRefundedPayments.map((r) => r.sourcePaymentId));
+      const candidate = await this.prisma.payment.findFirst({
+        where: { orderId: dto.orderId, status: 'PAID' },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      });
+      sourcePaymentId = candidate && !consumed.has(candidate.id) ? candidate.id : undefined;
+    }
 
     const refund = await this.prisma.refund.create({
       data: {
@@ -109,6 +155,10 @@ export class RefundsService {
         amount: dto.amount,
         reason: dto.reason,
         notes: dto.notes,
+        // Exchange-sourced refunds carry their lineage so the money is
+        // traceable back to the exchange that produced it.
+        ...(dto.exchangeOrderId ? { exchangeOrderId: dto.exchangeOrderId } : {}),
+        ...(sourcePaymentId ? { sourcePaymentId } : {}),
       },
       include: {
         order: { select: { displayId: true } },
