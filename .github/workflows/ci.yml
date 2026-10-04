@@ -19,9 +19,10 @@ permissions:
   packages: write
 
 # A single self-hosted runner processes one job at a time, so rapid pushes to
-# main would otherwise queue up every superseded build. Cancel the stale run;
-# its `deploy` job is cancelled with it, so the stack never redeploys from a
-# half-finished build.
+# main would otherwise queue up every superseded build. Cancel the stale run.
+# NOTE: CI never deploys — it only builds images. Deployment is manual via the
+# "Deploy Client" workflow (tick one or more clients); Portainer then pulls the
+# freshly built images.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -83,7 +84,8 @@ jobs:
 
   # Static data-safety gates. These run BEFORE the backend image is built, so a
   # destructive migration (DROP COLUMN / DELETE FROM / TRUNCATE on a post-P0
-  # migration) can never reach the published image or the stack redeploy.
+  # migration) can never reach the published image (deployment itself is manual,
+  # so the gate only needs to protect the image).
   # Only needed when the backend image will actually rebuild.
   guards:
     name: static guards
@@ -110,7 +112,7 @@ jobs:
         run: npx jest "(migration-safety|deploy-safety)"
 
   # Unit quality gate. CI previously ran ZERO unit tests: a commit breaking
-  # hundreds of jest/vitest cases still built, pushed and redeployed. Each
+  # hundreds of jest/vitest cases still built and pushed its image. Each
   # suite runs only when its service changed. Backend jest excludes the two
   # `.integration.spec.ts` files, which need a live database (verified: with a
   # dead DATABASE_URL exactly those 2 suites fail, the other 3964 pass) — so
@@ -193,39 +195,3 @@ jobs:
     uses: ./.github/workflows/build-service-image.yml
     with:
       service: pos
-
-  # Redeploys the Portainer stack AFTER images are pushed, so the stack can
-  # never pick up half-built images (the "redeployed but still old code" race).
-  # Runs only when at least one image was actually built (skipped builds don't
-  # trigger a pointless redeploy); never on failure/cancel. Skips cleanly
-  # when PORTAINER_WEBHOOK_ECOMATE_WEB is not configured.
-  deploy:
-    name: redeploy stack
-    needs: [build-backend, build-storefront, build-admin, build-pos]
-    if: ${{ !cancelled() && !failure() && (needs.build-backend.result == 'success' || needs.build-storefront.result == 'success' || needs.build-admin.result == 'success' || needs.build-pos.result == 'success') }}
-    runs-on: [self-hosted, macos, arm64]
-    timeout-minutes: 15
-    steps:
-      - name: Trigger Portainer stack redeploy
-        env:
-          WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_ECOMATE_WEB }}
-        run: |
-          if [ -z "$WEBHOOK_URL" ]; then
-            echo "No PORTAINER_WEBHOOK_ECOMATE_WEB secret configured — skipping redeploy."
-            exit 0
-          fi
-          MAX_TRIES=3
-          TRY=1
-          HTTP_CODE=0
-          while [ $TRY -le $MAX_TRIES ]; do
-            HTTP_CODE=$(curl -w "%{http_code}" -s -S -o /tmp/response.txt -X POST -k --max-time 30 "$WEBHOOK_URL") || HTTP_CODE=0
-            echo "Attempt $TRY/$MAX_TRIES → HTTP $HTTP_CODE $(cat /tmp/response.txt 2>/dev/null || true)"
-            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-              echo "Stack redeploy triggered."
-              exit 0
-            fi
-            if [ $TRY -lt $MAX_TRIES ]; then sleep $((2 ** (TRY - 1))); fi
-            TRY=$((TRY + 1))
-          done
-          echo "Portainer webhook failed with HTTP $HTTP_CODE after $MAX_TRIES attempts."
-          exit 1
