@@ -122,7 +122,7 @@ enum SalesChannel {
 //   Channel         where the sale happened   WEBSITE | MESSAGING | PHONE_CALL | POS
 //   ChannelEntity   that venue's specific origin (website.com | Page 1 | Office | Showroom)
 //   Source          marketing platform        facebook | google | tiktok | …
-//   AcquisitionType PAID | ORGANIC | DIRECT | UNKNOWN | NULL
+//   AcquisitionType PAID | ORGANIC | UNKNOWN | NULL
 //
 // Example: WEBSITE | website.com | Facebook | PAID — Channel≠Source, Source≠Acquisition.
 //
@@ -139,15 +139,16 @@ enum SalesChannelV2 {
 
 // PAID    — explicit paid evidence (sourceType=AD / paid utm medium on an ad platform)
 // ORGANIC — a KNOWN referrer platform brought this, unpaid
-// DIRECT  — the resolver ran and established NO marketing referrer
 // UNKNOWN — classification was attempted but could not be determined reliably
 //
 // NULL is NOT an enum value: "not applicable / not captured" is stored as a
 // database NULL, which is semantically different from UNKNOWN.
+//
+// DIRECT is deliberately NOT an acquisition type. "No marketing referrer" is
+// a SOURCE (the `direct` source slug), not an acquisition classification.
 enum AcquisitionType {
   PAID
   ORGANIC
-  DIRECT
   UNKNOWN
 }
 

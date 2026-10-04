@@ -79,9 +79,11 @@ function entity(value?: string | null): string | null {
 
 /**
  * Resolve a legacy `sourcePlatform` to a registry slug.
- * Operational values (POS/PHONE/EXTERNAL_STORE/DIRECT/LEAD) and unknown
- * strings resolve to NULL — they are NOT marketing platforms, and writing one
- * into the FK column would either violate the FK or assert a false platform.
+ * Operational values (POS/PHONE/EXTERNAL_STORE/LEAD) and unknown strings
+ * resolve to NULL — they are NOT marketing platforms, and writing one into
+ * the FK column would either violate the FK or assert a false platform.
+ * `DIRECT` resolves to the `direct` source slug (no marketing referrer
+ * established) — a SOURCE, never an acquisition classification.
  */
 export function resolveSourceSlug(legacyPlatform?: string | null): string | null {
   const raw = (legacyPlatform ?? '').trim();
@@ -165,7 +167,11 @@ export function mapOrderToCanonical(order: LegacyOrderShape): CanonicalMapping {
 
   if (type === 'DIRECT') {
     const slug = resolveSourceSlug(order.sourcePlatform);
-    if (slug) {
+    // 'direct' is a SOURCE (no marketing referrer established), not a
+    // referrer platform — it must take the no-signal path below, never the
+    // ORGANIC path. Only a genuine referrer platform (google, facebook, …)
+    // counts as organic evidence.
+    if (slug && slug !== 'direct') {
       // A KNOWN referrer platform brought this, unpaid → genuinely organic.
       return {
         channel: channel === 'CALL' ? 'PHONE_CALL' : 'WEBSITE',
@@ -176,12 +182,12 @@ export function mapOrderToCanonical(order: LegacyOrderShape): CanonicalMapping {
       };
     }
     // sourcePlatform is 'DIRECT'/absent — this is the resolver's NO-SIGNAL
-    // default. Reporting it as ORGANIC would fabricate a marketing fact.
+    // default. The source is Direct (no marketing referrer), NOT an acquisition type.
     return {
       channel: channel === 'CALL' ? 'PHONE_CALL' : 'WEBSITE',
       channelEntity: ent,
-      sourceSlug: null,
-      acquisitionType: 'DIRECT',
+      sourceSlug: 'direct',
+      acquisitionType: null,
       reason: 'no marketing referrer established (sourceType=DIRECT, no platform)',
     };
   }

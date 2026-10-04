@@ -24,14 +24,16 @@ describe('sales-channel.mapper', () => {
       expect(m.acquisitionType).toBe('ORGANIC');
     });
 
-    it('DIRECT + DIRECT (the resolver no-signal default) → NULL + DIRECT', () => {
+    it('DIRECT + DIRECT (the resolver no-signal default) → direct source + NULL acquisition', () => {
       const m = mapOrderToCanonical({
         salesChannel: 'WEBSITE', sourcePlatform: 'DIRECT', sourceType: 'DIRECT',
       });
-      expect(m.sourceSlug).toBeNull();
-      expect(m.acquisitionType).toBe('DIRECT');
+      expect(m.sourceSlug).toBe('direct');
+      expect(m.acquisitionType).toBeNull();
       // The critical assertion: a no-signal row is NOT reported as organic.
       expect(m.acquisitionType).not.toBe('ORGANIC');
+      // DIRECT is a SOURCE, never an acquisition value.
+      expect(m.acquisitionType).not.toBe('DIRECT' as never);
     });
 
     it('never maps any input to ORGANIC without a known platform', () => {
@@ -42,8 +44,16 @@ describe('sales-channel.mapper', () => {
         { sourceType: 'DIRECT', sourcePlatform: 'DIRECT' },
       ];
       for (const c of cases) {
-        expect(mapOrderToCanonical(c).acquisitionType).not.toBe('ORGANIC');
+        const m = mapOrderToCanonical(c);
+        expect(m.acquisitionType).not.toBe('ORGANIC');
+        expect(m.sourceSlug).toBe('direct');
       }
+    });
+
+    it('maps no-signal DIRECT to the direct source slug', () => {
+      const m = mapOrderToCanonical({ salesChannel: 'WEBSITE', sourceType: 'DIRECT' });
+      expect(m.sourceSlug).toBe('direct');
+      expect(m.acquisitionType).toBeNull();
     });
   });
 
@@ -104,9 +114,13 @@ describe('sales-channel.mapper', () => {
     });
 
     it('returns null for operational values', () => {
-      for (const v of ['POS', 'PHONE', 'EXTERNAL_STORE', 'DIRECT', 'LEAD']) {
+      for (const v of ['POS', 'PHONE', 'EXTERNAL_STORE', 'LEAD']) {
         expect(resolveSourceSlug(v)).toBeNull();
       }
+    });
+
+    it('resolves DIRECT to the direct source slug', () => {
+      expect(resolveSourceSlug('DIRECT')).toBe('direct');
     });
 
     it('returns null for an unknown custom string', () => {

@@ -8,7 +8,7 @@
  */
 
 export type SalesChannelV2 = 'WEBSITE' | 'MESSAGING' | 'PHONE_CALL' | 'POS';
-export type AcquisitionType = 'PAID' | 'ORGANIC' | 'DIRECT' | 'UNKNOWN';
+export type AcquisitionType = 'PAID' | 'ORGANIC' | 'UNKNOWN';
 
 export const CHANNELS: SalesChannelV2[] = ['WEBSITE', 'MESSAGING', 'PHONE_CALL', 'POS'];
 
@@ -34,12 +34,11 @@ export const CHANNEL_LABELS: Record<SalesChannelV2, string> = {
 export const ACQUISITION_LABELS: Record<AcquisitionType, string> = {
   PAID: 'Paid',
   ORGANIC: 'Organic',
-  DIRECT: 'Direct',
   UNKNOWN: 'Unknown',
 };
 
 /** NULL is a database NULL, never a stored string — see AcquisitionType. */
-export const ACQUISITION_VALUES: AcquisitionType[] = ['PAID', 'ORGANIC', 'DIRECT', 'UNKNOWN'];
+export const ACQUISITION_VALUES: AcquisitionType[] = ['PAID', 'ORGANIC', 'UNKNOWN'];
 
 export type SourceCapability =
   | 'MARKETING_SOURCE'
@@ -97,6 +96,8 @@ export const SOURCE_PLATFORM_SEEDS: SourcePlatformSeed[] = [
   // Marketing/AI source, deliberately NOT MESSAGING.
   { slug: 'chatgpt', displayName: 'ChatGPT', capabilities: ['MARKETING_SOURCE', 'AI_ASSISTANT'], sortOrder: 90 },
   { slug: 'other', displayName: 'Other / Custom', capabilities: ['MARKETING_SOURCE'], sortOrder: 999 },
+  // Direct — no marketing referrer established. A SOURCE, not an acquisition type.
+  { slug: 'direct', displayName: 'Direct', capabilities: ['MARKETING_SOURCE'], sortOrder: 1000 },
 ];
 
 /**
@@ -109,7 +110,6 @@ export const NON_PLATFORM_SOURCE_VALUES = new Set([
   'PHONE',      // contact modality    → Channel
   'LEAD',       // lead origin         → Channel
   'EXTERNAL_STORE', // integration    → Channel + Entity
-  'DIRECT',     // no platform established → Acquisition
 ]);
 
 /** Legacy `SalesChannel` values that were really platform names, not venues. */
@@ -140,4 +140,5 @@ export const LEGACY_PLATFORM_TO_SLUG: Record<string, string> = {
   SNAPCHAT: 'snapchat',
   REDDIT: 'reddit',
   CHATGPT: 'chatgpt',
+  DIRECT: 'direct',
 };

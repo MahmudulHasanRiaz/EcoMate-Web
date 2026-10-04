@@ -40,9 +40,14 @@ describe('legacy SalesChannel value coverage', () => {
     '%s never yields an acquisition type without explicit evidence',
     (legacy) => {
       // No legacy channel value, on its own, is evidence of paid/organic.
-      // Only sourceType / platform evidence may set acquisition.
+      // Only sourceType / platform evidence may set acquisition — and DIRECT
+      // is a SOURCE (the `direct` slug), never an acquisition value.
       const m = mapOrderToCanonical({ salesChannel: legacy });
-      if (m.acquisitionType === 'PAID' || m.acquisitionType === 'ORGANIC') {
+      if (
+        m.acquisitionType === 'PAID' ||
+        m.acquisitionType === 'ORGANIC' ||
+        (m.acquisitionType as string) === 'DIRECT'
+      ) {
         fail(`${legacy} produced ${m.acquisitionType} with no acquisition evidence`);
       }
     },

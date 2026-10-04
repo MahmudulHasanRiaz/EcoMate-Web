@@ -73,6 +73,8 @@ const REGISTRY_SEEDS: {
   { slug: 'reddit', displayName: 'Reddit', capabilities: ['MARKETING_SOURCE', 'SOCIAL'], sortOrder: 85 },
   { slug: 'chatgpt', displayName: 'ChatGPT', capabilities: ['MARKETING_SOURCE', 'AI_ASSISTANT'], sortOrder: 90 },
   { slug: 'other', displayName: 'Other / Custom', capabilities: ['MARKETING_SOURCE'], sortOrder: 999 },
+  // Direct — no marketing referrer established. A SOURCE, not an acquisition type.
+  { slug: 'direct', displayName: 'Direct', capabilities: ['MARKETING_SOURCE'], sortOrder: 1000 },
 ];
 
 /** Every slug the FK column may reference. */
@@ -85,15 +87,16 @@ const LEGACY_PLATFORM_TO_SLUG: Record<string, string> = {
   BING: 'bing', PINTEREST: 'pinterest', LINKEDIN: 'linkedin',
   TWITTER: 'x', X: 'x', SNAPCHAT: 'snapchat', REDDIT: 'reddit',
   CHATGPT: 'chatgpt',
+  DIRECT: 'direct',
 };
-const NON_PLATFORM = new Set(['POS', 'PHONE', 'LEAD', 'EXTERNAL_STORE', 'DIRECT']);
+const NON_PLATFORM = new Set(['POS', 'PHONE', 'LEAD', 'EXTERNAL_STORE']);
 const LEGACY_CHANNEL_TO_SOURCE: Record<string, string> = {
   FACEBOOK: 'facebook', INSTAGRAM: 'instagram', TIKTOK: 'tiktok',
   MESSENGER: 'facebook', WHATSAPP: 'whatsapp', THREADS: 'threads',
 };
 
 type Channel = 'WEBSITE' | 'MESSAGING' | 'PHONE_CALL' | 'POS' | null;
-type Acquisition = 'PAID' | 'ORGANIC' | 'DIRECT' | 'UNKNOWN' | null;
+type Acquisition = 'PAID' | 'ORGANIC' | 'UNKNOWN' | null;
 
 interface Mapping {
   channel: Channel;
@@ -160,14 +163,16 @@ function mapOrder(o: any): Mapping {
 
   if (type === 'DIRECT') {
     const slug = slugFor(o.sourcePlatform);
-    if (slug) {
+    // 'direct' is a SOURCE (no marketing referrer), not a referrer platform —
+    // it takes the no-signal path, never the ORGANIC path.
+    if (slug && slug !== 'direct') {
       return { channel: channel === 'CALL' ? 'PHONE_CALL' : 'WEBSITE', channelEntity: e,
         sourceSlug: slug, acquisitionType: 'ORGANIC',
         reason: 'known referrer platform, unpaid (sourceType=DIRECT)' };
     }
     // Resolver no-signal default — NOT organic.
     return { channel: channel === 'CALL' ? 'PHONE_CALL' : 'WEBSITE', channelEntity: e,
-      sourceSlug: null, acquisitionType: 'DIRECT',
+      sourceSlug: 'direct', acquisitionType: null,
       reason: 'no marketing referrer established (sourceType=DIRECT, no platform)' };
   }
 
