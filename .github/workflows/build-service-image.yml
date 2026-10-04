@@ -17,11 +17,16 @@ on:
         required: false
         type: number
         default: 120
+      runners:
+        description: JSON label array for runs-on (caller maps its runner choice)
+        required: false
+        type: string
+        default: '["self-hosted", "macos", "arm64"]'
 
 jobs:
   build:
     name: ${{ inputs.service }}
-    runs-on: [self-hosted, macos, arm64]
+    runs-on: ${{ fromJSON(inputs.runners) }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
 
     steps:
