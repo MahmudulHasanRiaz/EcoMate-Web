@@ -10,7 +10,9 @@ on:
       - 'apps/storefront/**'
       - 'apps/admin/**'
       - 'apps/pos/**'
+      - '.dockerignore'
       - '.github/workflows/ci.yml'
+      - '.github/workflows/build-service-image.yml'
 
 permissions:
   contents: read
@@ -25,11 +27,68 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Static data-safety gates. These run BEFORE any image is built, so a
+  # Per-service change detection. A push rebuilds ONLY the images whose inputs
+  # changed — e.g. an admin-only commit rebuilds just the admin image instead
+  # of all four (the backend image alone once died at the 2h timeout mid-push
+  # with every step CACHED). Shared inputs (root package*.json, .dockerignore,
+  # workflows) rebuild all services; packages/** rebuilds backend (it consumes
+  # all three local packages) and admin (shared-types) but NOT storefront/pos,
+  # which COPY no package from the host (verified against all Dockerfiles).
+  changes:
+    name: detect changes
+    runs-on: [self-hosted, macos, arm64]
+    timeout-minutes: 5
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      storefront: ${{ steps.filter.outputs.storefront }}
+      admin: ${{ steps.filter.outputs.admin }}
+      pos: ${{ steps.filter.outputs.pos }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Full history: the filter diffs base...head, which a shallow
+          # checkout cannot guarantee to contain.
+          fetch-depth: 0
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'apps/backend/**'
+              - 'packages/**'
+              - 'package*.json'
+              - '.dockerignore'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/build-service-image.yml'
+            storefront:
+              - 'apps/storefront/**'
+              - 'package*.json'
+              - '.dockerignore'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/build-service-image.yml'
+            admin:
+              - 'apps/admin/**'
+              - 'packages/shared-types/**'
+              - 'package*.json'
+              - '.dockerignore'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/build-service-image.yml'
+            pos:
+              - 'apps/pos/**'
+              - 'package*.json'
+              - '.dockerignore'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/build-service-image.yml'
+
+  # Static data-safety gates. These run BEFORE the backend image is built, so a
   # destructive migration (DROP COLUMN / DELETE FROM / TRUNCATE on a post-P0
   # migration) can never reach the published image or the stack redeploy.
-  test:
+  # Only needed when the backend image will actually rebuild.
+  guards:
     name: static guards
+    needs: [changes]
+    if: needs.changes.outputs.backend == 'true'
     runs-on: [self-hosted, macos, arm64]
     timeout-minutes: 30
     steps:
@@ -48,68 +107,46 @@ jobs:
         working-directory: apps/backend
         run: npx jest migration-safety
 
-  build:
-    name: ${{ matrix.service }}
-    needs: [test]
-    runs-on: [self-hosted, macos, arm64]
-    # The backend image is large (~230MB compressed) and this runner's uplink
-    # to ghcr.io is slow; the 2026-10-04 backend job died at exactly 2h00m
-    # mid-push with every build step CACHED (no code error). Give pushes room.
-    timeout-minutes: 360
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        service: [backend, storefront, admin, pos]
+  # One caller per image. Each runs only when its inputs changed; the backend
+  # keeps the raised 360min timeout (slow ghcr.io uplink), frontends stay 120.
+  build-backend:
+    needs: [changes, guards]
+    if: needs.changes.outputs.backend == 'true'
+    uses: ./.github/workflows/build-service-image.yml
+    with:
+      service: backend
+      timeout-minutes: 360
 
-    steps:
-      - uses: actions/checkout@v5
+  build-storefront:
+    needs: [changes]
+    if: needs.changes.outputs.storefront == 'true'
+    uses: ./.github/workflows/build-service-image.yml
+    with:
+      service: storefront
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-        with:
-          # The default `docker-container` driver is what actually pulls in the
-          # multi-platform emulation support on Apple Silicon. The `docker`
-          # driver falls back to the daemon's own binfmt handlers, which are not
-          # guaranteed to cover linux/amd64.
-          driver: docker-container
+  build-admin:
+    needs: [changes]
+    if: needs.changes.outputs.admin == 'true'
+    uses: ./.github/workflows/build-service-image.yml
+    with:
+      service: admin
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+  build-pos:
+    needs: [changes]
+    if: needs.changes.outputs.pos == 'true'
+    uses: ./.github/workflows/build-service-image.yml
+    with:
+      service: pos
 
-      - name: Docker metadata
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ghcr.io/${{ github.repository_owner }}/ecomate-${{ matrix.service }}
-          tags: |
-            type=raw,value=latest
-            type=sha,prefix=
-
-      - name: Build and push
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: apps/${{ matrix.service }}/Dockerfile
-          push: true
-          # Production runs on an amd64 VPS. This runner is arm64, so buildx
-          # emulates the target architecture instead of producing a native
-          # arm64 image the VPS could not run.
-          platforms: linux/amd64
-          tags: ${{ steps.meta.outputs.tags }}
-          cache-from: type=gha,scope=${{ matrix.service }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
-
-  # Redeploys the Portainer stack AFTER all images are pushed, so the stack can
+  # Redeploys the Portainer stack AFTER images are pushed, so the stack can
   # never pick up half-built images (the "redeployed but still old code" race).
-  # Skips cleanly when PORTAINER_WEBHOOK_ECOMATE_WEB is not configured.
+  # Runs only when at least one image was actually built (skipped builds don't
+  # trigger a pointless redeploy); never on failure/cancel. Skips cleanly
+  # when PORTAINER_WEBHOOK_ECOMATE_WEB is not configured.
   deploy:
     name: redeploy stack
-    needs: build
+    needs: [build-backend, build-storefront, build-admin, build-pos]
+    if: ${{ !cancelled() && !failure() && (needs.build-backend.result == 'success' || needs.build-storefront.result == 'success' || needs.build-admin.result == 'success' || needs.build-pos.result == 'success') }}
     runs-on: [self-hosted, macos, arm64]
     timeout-minutes: 15
     steps:
