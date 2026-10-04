@@ -3551,6 +3551,8 @@ describe('OrdersService', () => {
       expect(prisma.order.findUnique).toHaveBeenCalledWith({
         where: { id: 'order-id-1' },
         include: {
+          // `status` is required by the item-edit status gate.
+          status: { select: { name: true } },
           items: { include: { product: { select: { id: true, name: true, availabilityMode: true } } } },
         },
       });
@@ -3727,6 +3729,340 @@ describe('OrdersService', () => {
 
       const updateCall = (prisma.customerProfile.update as jest.Mock).mock.calls[0][0];
       expect(updateCall.data.email).toBe('free@x.com');
+    });
+  });
+
+  // ── Item-edit status gate ──────────────────────────────────────────
+  // Item edits re-reserve stock. Once goods have shipped or the lifecycle is
+  // financially closed the reservation no longer describes reality, so every
+  // endpoint that mutates items must refuse. Non-item edits stay open.
+  describe('item-edit status gate', () => {
+    const orderInStatus = (statusName: string, over: Record<string, any> = {}) => ({
+      ...mockOrder,
+      shippingCharge: 100,
+      discount: 50,
+      status: { name: statusName },
+      ...over,
+    });
+
+    const itemsDto = {
+      items: [{ productId: 'product-id-1', quantity: 2, price: 500 }],
+    };
+
+    const seedOrder = (statusName: string, over: Record<string, any> = {}) => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(
+        orderInStatus(statusName, over),
+      );
+      (prisma.order.update as jest.Mock).mockResolvedValue(
+        orderInStatus(statusName, over),
+      );
+    };
+
+    describe('updateOrder', () => {
+      it('rejects an item change on a Delivered order with ORDER_ITEMS_LOCKED', async () => {
+        seedOrder('Delivered');
+
+        await expect(
+          service.updateOrder('order-id-1', itemsDto),
+        ).rejects.toMatchObject({
+          response: {
+            statusCode: 409,
+            code: 'ORDER_ITEMS_LOCKED',
+            statusName: 'Delivered',
+          },
+        });
+        expect(prisma.order.update).not.toHaveBeenCalled();
+      });
+
+      it.each(['Shipping', 'Partial', 'Return Pending', 'Returned', 'Damaged'])(
+        'rejects an item change on a %s order',
+        async (statusName) => {
+          seedOrder(statusName);
+
+          await expect(
+            service.updateOrder('order-id-1', itemsDto),
+          ).rejects.toMatchObject({
+            response: { code: 'ORDER_ITEMS_LOCKED' },
+          });
+        },
+      );
+
+      it.each(['Pending', 'Payment Pending', 'Hold', 'Confirmed'])(
+        'allows an item change on a %s order',
+        async (statusName) => {
+          seedOrder(statusName);
+
+          await expect(
+            service.updateOrder('order-id-1', itemsDto),
+          ).resolves.toBeDefined();
+        },
+      );
+
+      it.each(['Packed', 'Packing Hold'])(
+        'allows an item change on a %s order (warning tier, not blocked)',
+        async (statusName) => {
+          seedOrder(statusName);
+
+          await expect(
+            service.updateOrder('order-id-1', itemsDto),
+          ).resolves.toBeDefined();
+        },
+      );
+
+      it('allows a Cancelled order to be edited — cancelling only releases the reservation', async () => {
+        seedOrder('Cancelled');
+
+        await expect(
+          service.updateOrder('order-id-1', itemsDto),
+        ).resolves.toBeDefined();
+      });
+
+      it('still allows a NON-item edit on a Delivered order', async () => {
+        seedOrder('Delivered');
+
+        await expect(
+          service.updateOrder('order-id-1', { officeNotes: 'Called customer' }),
+        ).resolves.toBeDefined();
+
+        const updateCall = (prisma.order.update as jest.Mock).mock.calls[0][0];
+        expect(updateCall.data.officeNotes).toBe('Called customer');
+      });
+
+      it('does not throw when the order has no status relation loaded', async () => {
+        (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+          ...mockOrder,
+          status: undefined,
+        });
+        (prisma.order.update as jest.Mock).mockResolvedValue(mockOrder);
+
+        await expect(
+          service.updateOrder('order-id-1', itemsDto),
+        ).resolves.toBeDefined();
+      });
+    });
+
+    describe('addItem', () => {
+      it('rejects adding a line to a Delivered order', async () => {
+        (prisma.order.findUnique as jest.Mock).mockResolvedValue(
+          orderInStatus('Delivered'),
+        );
+
+        await expect(
+          service.addItem('order-id-1', {
+            productId: 'product-id-1',
+            quantity: 1,
+            price: 100,
+          }),
+        ).rejects.toMatchObject({
+          response: { code: 'ORDER_ITEMS_LOCKED' },
+        });
+      });
+
+      it('allows adding a line to a Confirmed order', async () => {
+        (prisma.order.findUnique as jest.Mock).mockResolvedValue(
+          orderInStatus('Confirmed'),
+        );
+        (prisma.orderItem.create as jest.Mock).mockResolvedValue({
+          id: 'new-item',
+          productId: 'product-id-1',
+          quantity: 1,
+          price: 100,
+        });
+        (prisma.order.update as jest.Mock).mockResolvedValue(
+          orderInStatus('Confirmed'),
+        );
+
+        await expect(
+          service.addItem('order-id-1', {
+            productId: 'product-id-1',
+            quantity: 1,
+            price: 100,
+          }),
+        ).resolves.toBeDefined();
+      });
+    });
+
+    describe('removeItem', () => {
+      it('rejects removing a line from a Shipping order', async () => {
+        (prisma.order.findUnique as jest.Mock).mockResolvedValue(
+          orderInStatus('Shipping', {
+            items: [{ id: 'item-1', productId: 'product-id-1', quantity: 1 }],
+          }),
+        );
+
+        await expect(
+          service.removeItem('order-id-1', 'item-1'),
+        ).rejects.toMatchObject({
+          response: { code: 'ORDER_ITEMS_LOCKED' },
+        });
+      });
+
+      it('allows removing a line from a Confirmed order', async () => {
+        (prisma.order.findUnique as jest.Mock).mockResolvedValue(
+          orderInStatus('Confirmed', {
+            items: [
+              {
+                id: 'item-1',
+                productId: 'product-id-1',
+                quantity: 1,
+                managedStockDeducted: false,
+              },
+            ],
+          }),
+        );
+        (prisma.orderItem.delete as jest.Mock).mockResolvedValue({});
+        (prisma.order.update as jest.Mock).mockResolvedValue(
+          orderInStatus('Confirmed'),
+        );
+
+        // removeItem resolves with no value; the proof it ran is the delete.
+        await service.removeItem('order-id-1', 'item-1');
+        expect(prisma.orderItem.delete).toHaveBeenCalledWith({
+          where: { id: 'item-1' },
+        });
+      });
+    });
+  });
+
+  // ── Guest orders: order-owned snapshot is editable ─────────────────
+  // `updateOrder` gated the whole customer block on `order.customerId`, so a
+  // guest checkout silently dropped every name/phone/email correction even
+  // though those columns live on the Order row.
+  describe('guest order customer correction', () => {
+    const guestOrder = () => ({
+      ...mockOrder,
+      customerId: null,
+      status: { name: 'Pending' },
+      shippingCharge: 100,
+      discount: 0,
+    });
+
+    it('writes the order-owned snapshot for a guest order', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(guestOrder());
+      (prisma.order.update as jest.Mock).mockResolvedValue(guestOrder());
+
+      await service.updateOrder('order-id-1', {
+        customerInfo: {
+          firstName: 'Rahim',
+          lastName: 'Uddin',
+          phoneNumber: '01712345678',
+          email: 'rahim@x.com',
+        },
+      });
+
+      const data = (prisma.order.update as jest.Mock).mock.calls[0][0].data;
+      expect(data.customerFirstName).toBe('Rahim');
+      expect(data.customerLastName).toBe('Uddin');
+      expect(data.customerPhone).toBe('+8801712345678');
+      expect(data.customerEmail).toBe('rahim@x.com');
+    });
+
+    it('keeps the legacy guest* columns in sync so fallback readers agree', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(guestOrder());
+      (prisma.order.update as jest.Mock).mockResolvedValue(guestOrder());
+
+      await service.updateOrder('order-id-1', {
+        customerInfo: {
+          firstName: 'Rahim',
+          lastName: 'Uddin',
+          phoneNumber: '01712345678',
+          email: 'rahim@x.com',
+        },
+      });
+
+      const data = (prisma.order.update as jest.Mock).mock.calls[0][0].data;
+      expect(data.guestName).toBe('Rahim Uddin');
+      expect(data.guestPhone).toBe('+8801712345678');
+    });
+
+    // `Order` has no `guestEmail` column — writing one makes Prisma throw a
+    // validation error and the whole update 500s. Caught live, pinned here.
+    it('never writes a non-existent guestEmail column', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(guestOrder());
+      (prisma.order.update as jest.Mock).mockResolvedValue(guestOrder());
+
+      await service.updateOrder('order-id-1', {
+        customerInfo: { firstName: 'Rahim', email: 'rahim@x.com' },
+      });
+
+      const data = (prisma.order.update as jest.Mock).mock.calls[0][0].data;
+      expect(data).not.toHaveProperty('guestEmail');
+      // Email belongs to the order-owned snapshot column.
+      expect(data.customerEmail).toBe('rahim@x.com');
+    });
+
+    it('never writes a canonical profile for a guest order, even when asked', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(guestOrder());
+      (prisma.order.update as jest.Mock).mockResolvedValue(guestOrder());
+
+      await service.updateOrder('order-id-1', {
+        customerInfo: { firstName: 'Rahim', phoneNumber: '01712345678' },
+        updateCustomerProfile: true,
+      });
+
+      // Fabricating a CustomerProfile link would silently merge two identities.
+      expect(prisma.customerProfile.update).not.toHaveBeenCalled();
+    });
+
+    it('leaves guest columns alone for a linked-customer order', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        customerId: 'customer-id-1',
+        status: { name: 'Pending' },
+        shippingCharge: 100,
+      });
+      (prisma.order.update as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.updateOrder('order-id-1', {
+        customerInfo: { firstName: 'Jane' },
+      });
+
+      const data = (prisma.order.update as jest.Mock).mock.calls[0][0].data;
+      expect(data.customerFirstName).toBe('Jane');
+      expect(data).not.toHaveProperty('guestName');
+      expect(data).not.toHaveProperty('guestPhone');
+    });
+  });
+
+  // ── Explicit empty items array ────────────────────────────────────
+  // The old guard was `dto.items && dto.items.length > 0`, which made `[]`
+  // indistinguishable from "field omitted" — clearing every line silently did
+  // nothing. An explicit empty array must be honoured.
+  describe('explicit empty items array', () => {
+    it('clears all lines and releases their stock', async () => {
+      const stockService = module.get<StockService>(StockService);
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        status: { name: 'Pending' },
+      });
+      (prisma.order.update as jest.Mock).mockResolvedValue(mockOrder);
+      (module.get<StockRouterService>(StockRouterService).resolve as jest.Mock)
+        .mockReturnValue({ ms: 'release', pi: 'release' });
+
+      await service.updateOrder('order-id-1', { items: [] });
+
+      // The old line's stock must be released, not left reserved forever.
+      expect(stockService.operate).toHaveBeenCalledWith(
+        'release',
+        expect.objectContaining({ quantity: 2 }),
+      );
+      // And the line itself must actually be deleted.
+      expect(prisma.orderItem.deleteMany).toHaveBeenCalledWith({
+        where: { orderId: 'order-id-1' },
+      });
+    });
+
+    it('leaves items untouched when the field is omitted entirely', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        status: { name: 'Pending' },
+      });
+      (prisma.order.update as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.updateOrder('order-id-1', { officeNotes: 'note only' });
+
+      const data = (prisma.order.update as jest.Mock).mock.calls[0][0].data;
+      expect(data.officeNotes).toBe('note only');
     });
   });
 

@@ -61,7 +61,10 @@ import { CommissionEngineService } from '../commissions/commission-engine.servic
 // Order-status transition rules live in one place — the runtime gate and the
 // seed share the same map (see order-transitions.ts for the Partial rule).
 // Re-exported so existing internal references and tests keep working.
-import { ORDER_TRANSITIONS } from './order-transitions';
+import {
+  ORDER_TRANSITIONS,
+  ITEM_EDIT_BLOCKED_STATUSES,
+} from './order-transitions';
 export { ORDER_TRANSITIONS };
 
 /**
@@ -600,6 +603,27 @@ export class OrdersService {
       subtotal,
       total: Math.max(0, subtotal + shipping - effectiveDiscount),
     };
+  }
+
+  /**
+   * Refuse a line-item mutation once the order has left the stage where its
+   * stock reservation still describes reality. Shared by updateOrder,
+   * addItem and removeItem — all three re-reserve stock, so gating only
+   * updateOrder would leave two ways around the rule.
+   *
+   * 409 (not 400): the request is well-formed and the order exists, it is the
+   * order's current state that forbids it — the same shape the edit-lock uses.
+   */
+  private assertItemsEditable(statusName: string | undefined): void {
+    if (!statusName || !ITEM_EDIT_BLOCKED_STATUSES.has(statusName)) return;
+    throw new ConflictException({
+      statusCode: 409,
+      code: 'ORDER_ITEMS_LOCKED',
+      statusName,
+      message:
+        `Items of a "${statusName}" order can no longer be changed — the goods have already left the warehouse. ` +
+        `Use the order status or return workflow instead.`,
+    });
   }
 
   async findAll(query: {
@@ -2332,6 +2356,7 @@ export class OrdersService {
     const order = await this.prisma.order.findUnique({
       where: { id },
       include: {
+        status: { select: { name: true } },
         items: {
           include: {
             product: {
@@ -2359,6 +2384,13 @@ export class OrdersService {
           lock: live,
         });
       }
+    }
+
+    // Item-edit status gate. Non-item edits (notes, shipping, payment, customer
+    // details) stay available in every status — only a supplied `items` array
+    // re-reserves stock, and that is what this blocks.
+    if (dto.items !== undefined) {
+      this.assertItemsEditable(order.status?.name);
     }
 
     const timeline = [...this.parseTimeline(order.timeline)];
@@ -2402,7 +2434,10 @@ export class OrdersService {
       });
     }
 
-    if (dto.items && dto.items.length > 0) {
+    // An explicitly supplied `items: []` is a real instruction to clear the order,
+    // so the test is `!== undefined` rather than "has rows". Omitting `items`
+    // entirely still means "leave them alone".
+    if (dto.items !== undefined) {
       // Build a detailed diff of item changes
       const oldMap = new Map(
         order.items.map((i: any) => {
@@ -2451,7 +2486,7 @@ export class OrdersService {
     }
 
     const currentItems =
-      dto.items && dto.items.length > 0
+      dto.items !== undefined
         ? dto.items
         : order.items.map((i) => ({
             price: Number(i.price),
@@ -2518,7 +2553,7 @@ export class OrdersService {
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      if (dto.items && dto.items.length > 0) {
+      if (dto.items !== undefined) {
         // Release old items via router
         for (const item of order.items) {
           if (item.comboId) {
@@ -2848,7 +2883,7 @@ export class OrdersService {
         }
       }
 
-      if (dto.customerInfo && order.customerId) {
+      if (dto.customerInfo) {
         // TWO SEPARATE OWNERSHIP OPERATIONS, deliberately independent:
         //
         //  1. The ORDER's own historical snapshot — always corrected. This is
@@ -2874,7 +2909,11 @@ export class OrdersService {
         const nextLastName = nameProvided ? String(lastName ?? '').trim() : undefined;
 
         // ---- Operation 2: canonical profile, opt-in only, strictly partial ----
-        if (dto.updateCustomerProfile) {
+        // Requires an existing profile link. A guest order has no
+        // CustomerProfile row, and editing one order must never fabricate one —
+        // that would silently merge two identities. Guests keep their edit on
+        // the order-owned snapshot below and nothing more.
+        if (order.customerId && dto.updateCustomerProfile) {
           const customerData: Record<string, string> = {};
           // Only an explicitly supplied name pair writes a name. Omitting the
           // field preserves the stored value rather than blanking it.
@@ -2926,6 +2965,22 @@ export class OrdersService {
         // intentional blank) so an explicit correction is always persisted.
         if (Object.keys(snapshotUpdate).length > 0) {
           Object.assign(data, snapshotUpdate);
+        }
+
+        // Guest orders carry no CustomerProfile, so several readers still fall back
+        // to the legacy guest* columns. Correct them alongside the snapshot or
+        // the same correction would read differently depending on which column
+        // the caller looks at. NOTE: Order has no `guestEmail` — email lives
+        // only in `customerEmail`, which the snapshot block above already sets.
+        if (!order.customerId) {
+          if (nameProvided) {
+            const full = [nextFirstName, nextLastName].filter(Boolean).join(' ');
+            data.guestName = full || null;
+          }
+          if (dto.customerInfo.phoneNumber !== undefined) {
+            const normalized = normalizePhone(dto.customerInfo.phoneNumber);
+            data.guestPhone = normalized || null;
+          }
         }
       }
 
@@ -3557,10 +3612,11 @@ export class OrdersService {
   async addItem(orderId: string, dto: UpdateOrderItemDto, userId?: string) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      include: { items: true },
+      include: { items: true, status: { select: { name: true } } },
     });
     if (!order || order.trashedAt)
       throw new NotFoundException('Order not found');
+    this.assertItemsEditable(order.status?.name);
 
     if (dto.productId) {
       const product = await this.prisma.product.findUnique({
@@ -3656,10 +3712,11 @@ export class OrdersService {
   async removeItem(orderId: string, itemId: string, userId?: string) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      include: { items: true },
+      include: { items: true, status: { select: { name: true } } },
     });
     if (!order || order.trashedAt)
       throw new NotFoundException('Order not found');
+    this.assertItemsEditable(order.status?.name);
 
     const removedItem = order.items.find((i) => i.id === itemId);
     if (!removedItem) throw new NotFoundException('Order item not found');

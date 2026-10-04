@@ -571,6 +571,16 @@ function OrderDetailPage() {
 
               {/* Primary & Secondary Action CTAs */}
               <div className='flex items-center gap-2 flex-wrap'>
+                {!order.trashedAt && order.kind !== 'RETURN' && (
+                  <Button variant='outline' size='sm' className='h-8 gap-1.5 text-xs font-medium' asChild>
+                    <Link to='/op/orders/$id/edit' params={{ id }}>
+                      <Pencil className='h-3.5 w-3.5' />
+                      <span className='hidden sm:inline'>Edit Order</span>
+                      <span className='sm:hidden'>Edit</span>
+                    </Link>
+                  </Button>
+                )}
+
                 {!order.courierService && order.kind !== 'RETURN' && (
                   <Button variant='default' size='sm' className='h-8 gap-1.5 shadow-xs font-medium' onClick={() => setShowDispatchDialog(true)}>
                     <Send className='h-3.5 w-3.5' />

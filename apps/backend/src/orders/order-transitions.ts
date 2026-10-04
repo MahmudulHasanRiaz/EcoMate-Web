@@ -31,3 +31,37 @@ export const ORDER_TRANSITIONS: Record<string, string[]> = {
   Cancelled: ['Hold', 'Confirmed'],
   Damaged: [],
 };
+
+/**
+ * Statuses in which an order's LINE ITEMS may no longer be added, changed or
+ * removed.
+ *
+ * Item edits re-reserve stock. Once physical units have left the warehouse
+ * (Shipping) or the lifecycle has been financially closed (Delivered,
+ * Returned, …) re-reserving produces an inventory figure that never existed,
+ * so the endpoints refuse item changes outright. Non-item edits — notes,
+ * shipping, payment, customer details — remain available in every status.
+ *
+ * 'Cancelled' is deliberately absent: cancelling RELEASES the reservation, and
+ * the `Cancelled → Hold | Confirmed` transition re-establishes it through the
+ * normal status path. A cancelled order that staff revive can therefore be
+ * edited like any other.
+ */
+export const ITEM_EDIT_BLOCKED_STATUSES: ReadonlySet<string> = new Set([
+  'Shipping',
+  'Delivered',
+  'Partial',
+  'Return Pending',
+  'Returned',
+  'Damaged',
+]);
+
+/**
+ * Statuses where item edits remain possible but the goods have already been
+ * picked or are being packed. The API allows the write; the admin surfaces a
+ * confirmation banner so a mid-pack correction is never silent.
+ */
+export const ITEM_EDIT_WARNING_STATUSES: ReadonlySet<string> = new Set([
+  'Packed',
+  'Packing Hold',
+]);

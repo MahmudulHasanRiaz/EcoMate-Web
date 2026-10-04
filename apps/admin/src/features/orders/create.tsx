@@ -10,6 +10,10 @@ import {
   type ChannelV2,
   type SourcePlatformView,
 } from './sales-channel-options'
+import {
+  ITEM_EDIT_BLOCKED_STATUSES,
+  ITEM_EDIT_WARNING_STATUSES,
+} from './item-edit-policy'
 import { apiClient } from '@/lib/api-client'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -28,7 +32,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Loader2, ArrowLeft, Package, Barcode, Plus, Trash2, X, User, Phone, Mail, MapPin, CreditCard, ShoppingCart, Tag, Minus, Search, FileText, Receipt, Layers } from 'lucide-react'
+import { Loader2, ArrowLeft, Package, Barcode, Plus, Trash2, X, User, Phone, Mail, MapPin, CreditCard, ShoppingCart, Tag, Minus, Search, FileText, Receipt, Layers, Save, AlertTriangle } from 'lucide-react'
 const nn = (v: number | string) => Number(v)
 
 const fmt = (v: number | string) => nn(v).toFixed(2)
@@ -40,8 +44,17 @@ const ep = (p: any) => {
   return nn(p.salePrice ?? p.basePrice ?? 0)
 }
 
-export function CreateOrder() {
+export type OrderFormMode = 'create' | 'edit'
+
+export interface OrderFormPageProps {
+  mode?: OrderFormMode
+  /** Required in edit mode — the order whose fields are pre-filled and saved. */
+  orderId?: string
+}
+
+export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) {
   const navigate = useNavigate()
+  const isEdit = mode === 'edit'
 
   const [customerPhone, setCustomerPhone] = useState('')
   const [customerName, setCustomerName] = useState('')
@@ -148,13 +161,124 @@ export function CreateOrder() {
   const [customerNotes, setCustomerNotes] = useState('')
   const [officeNotes, setOfficeNotes] = useState('')
   const [selectedProductForVariants, setSelectedProductForVariants] = useState<any>(null)
+  // Edit-only: opt-in to rewriting the canonical CustomerProfile.
+  const [updateCustomerProfile, setUpdateCustomerProfile] = useState(false)
+
+  // ── Edit mode: load the order and pre-fill every field ────────────
+  const [hydrated, setHydrated] = useState(!isEdit)
+  const { data: editOrder, isLoading: editLoading } = useQuery({
+    queryKey: ['order', orderId],
+    queryFn: () => ordersApi.get(orderId!).then(r => r.data as any),
+    enabled: isEdit && !!orderId,
+    // The detail page already fetched this; reuse it and never overwrite an
+    // in-progress edit with a background refetch.
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  })
+
+  // Status drives whether items may change at all. Mirrors the backend gate
+  // (ITEM_EDIT_BLOCKED_STATUSES) — the API is still the authority, this only
+  // avoids showing controls that would be rejected.
+  const editStatusName: string | undefined = editOrder?.status?.name
+  const itemsBlocked = isEdit && !!editStatusName && ITEM_EDIT_BLOCKED_STATUSES.includes(editStatusName)
+  const itemsWarn = isEdit && !!editStatusName && ITEM_EDIT_WARNING_STATUSES.includes(editStatusName)
+
+  // Pre-fill the form from the loaded order. Runs ONCE per order: `hydrated`
+// guards against clobbering the user's in-progress edits if the query
+// refetches in the background.
+// Wait for the city list before hydrating so the stored city name can be
+  // resolved to a real id — but never block forever if the lookup fails.
+  const [citiesFailed, setCitiesFailed] = useState(false)
+  useEffect(() => {
+    if (!isEdit || !editOrder || hydrated) return
+    if (cities.length === 0 && !citiesFailed) return
+    const o = editOrder as any
+  const sa = (o.shippingAddress && typeof o.shippingAddress === 'object') ? o.shippingAddress : {}
+
+  // Customer identity comes from the ORDER's own snapshot, falling back to the
+  // guest columns for rows written before the snapshot existed.
+  const fullName =
+    [o.customerFirstName, o.customerLastName].filter(Boolean).join(' ') ||
+    o.customer?.name ||
+    o.guestName ||
+    ''
+  setCustomerName(fullName)
+  setCustomerPhone(o.customerPhone || o.customer?.phone || o.guestPhone || '')
+  setCustomerEmail(o.customerEmail || o.customer?.email || '')
+  setCustomerAddress(sa.address || '')
+
+  const cityName = sa.city || sa.district || o.customerCity || ''
+  const cityMatch = cities.find((c: any) => c.name?.toLowerCase() === cityName.trim().toLowerCase())
+  if (cityMatch) {
+    setCustomerCityId(String(cityMatch.id))
+    if (sa.zoneId) setCustomerZoneId(String(sa.zoneId))
+  }
+
+  // An order stores exactly ONE address snapshot (Order.shippingAddress); the
+  // "ship somewhere else" toggle only exists on the create form. So the stored
+  // address always loads as the primary one and the alternative stays off —
+  // if staff need a different destination they tick the box themselves.
+  setUseDiffShipping(false)
+  setShipAddress('')
+  setShipCityId('')
+  setShipZoneId('')
+
+  setCartItems(
+    (o.items || []).map((i: any) => ({
+      itemId: i.id,
+      productId: i.productId,
+      variantId: i.variantId || null,
+      product: i.product
+        ? { ...i.product, name: i.variant ? `${i.product.name} (${variantLabel(i.variant)})` : i.product.name }
+        : { name: i.product?.name || 'Product' },
+      variant: i.variant || null,
+      quantity: i.quantity,
+      price: Number(i.price),
+    })),
+  )
+
+  setShippingCharge(o.shippingCharge != null ? String(Number(o.shippingCharge)) : '')
+  // The stored charge is authoritative on an edit — never let the city-based
+  // auto-calc overwrite what the order already agreed with the customer.
+  setShippingChargeManuallyEdited(true)
+  setDiscount(o.discount != null && Number(o.discount) > 0 ? String(Number(o.discount)) : '')
+  setDiscountType(o.discountType === 'percentage' ? 'percentage' : 'flat')
+
+  setCustomerNotes(o.customerNotes || '')
+  setOfficeNotes(o.officeNotes || '')
+
+  const optType = o.paymentOptionType
+  setPaymentMode(
+    optType === 'CASH_ON_DELIVERY' ? 'cod'
+      : optType === 'PARTIAL_PAYMENT' ? 'partial'
+        : optType === 'FULL_PAYMENT' ? 'full'
+          : 'cod',
+  )
+  setPaymentMethod(o.payments?.[0]?.gatewayCode || o.gatewayCode || 'cash')
+  setPartialAmount(o.partialAmount != null ? String(Number(o.partialAmount)) : '')
+
+  if (o.channel) setChannel(o.channel as ChannelV2)
+  setChannelEntity(o.channelEntity || '')
+  setSourceSlug(o.sourceSlug || '')
+  setAcquisitionType((o.acquisitionType as AcquisitionType) || '')
+
+  setSelectedCustomerId(o.customerId || null)
+  setCustomerMatched(!!o.customerId)
+  setHydrated(true)
+  }, [isEdit, editOrder, hydrated, cities, citiesFailed])
 
   const productSearchRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const productDropdownRef = useRef<HTMLDivElement>(null)
   const customerDropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    apiClient.get('/couriers/cities').then(r => setCities(r.data as any[])).catch(() => toast.error('Failed to fetch cities'))
+    apiClient.get('/couriers/cities')
+      .then(r => setCities(r.data as any[]))
+      .catch(() => {
+        // Edit hydration waits on this list; release it so the form still loads.
+        setCitiesFailed(true)
+        toast.error('Failed to fetch cities')
+      })
   }, [])
 
   useEffect(() => {
@@ -176,6 +300,10 @@ export function CreateOrder() {
   const activeCityId = useDiffShipping ? shipCityId : customerCityId
   useEffect(() => {
     if (!activeCityId || cities.length === 0) return
+    // On an EDIT the stored delivery charge is already agreed with the
+    // customer — never silently reprice the order because a zone table changed.
+    // Only an explicit edit in the field overrides it.
+    if (isEdit) return
     const selectedCity = cities.find((c: any) => String(c.id) === String(activeCityId))
     if (!selectedCity) return
 
@@ -211,9 +339,13 @@ export function CreateOrder() {
     // Automatically populate delivery charge from default settings for this city
     setShippingCharge(defaultCharge > 0 ? String(defaultCharge) : '')
     setShippingChargeManuallyEdited(false)
-  }, [activeCityId, cities, sysSettings, shippingZones])
+  }, [activeCityId, cities, sysSettings, shippingZones, isEdit])
 
   useEffect(() => {
+    // While an order is being hydrated the phone arrives from the server, not
+    // from the user. Without this guard the lookup below would fire on mount
+    // and immediately clear the customer link we just restored.
+    if (isEdit && !hydrated) return
     const normalized = normalizePhone(customerPhone)
     if (!normalized || customerPhone.length < 11) {
       setSearchingCustomer(false)
@@ -247,7 +379,7 @@ export function CreateOrder() {
       }
     }, 500)
     return () => clearTimeout(timer)
-  }, [customerPhone])
+  }, [customerPhone, isEdit, hydrated])
 
   const selectCustomer = (c: any) => {
     setSelectedCustomerId(c.id)
@@ -326,6 +458,7 @@ export function CreateOrder() {
   }
 
   const addToCart = (product: any, variant?: any) => {
+    if (itemsBlocked) return
     setCartItems(prev => {
       const existing = prev.findIndex(
         (i: any) => i.productId === product.id && (i.variantId || null) === (variant?.id || null)
@@ -346,15 +479,28 @@ export function CreateOrder() {
     })
   }
 
+  // Line-item mutators are no-ops once the status gate locks items. Guarding the
+  // handlers (rather than only disabling the buttons) means keyboard, dropdown
+  // and mobile entry points are all covered by one rule.
   const removeFromCart = (index: number) => {
+    if (itemsBlocked) return
     setCartItems(prev => prev.filter((_, i) => i !== index))
   }
 
-  const updateCartQty = (index: number, qty: number) => {
-    if (qty < 1) return
+  // Relative quantity changes take a DELTA, not an absolute value. Computing the
+  // target from `item.quantity` in the click closure reads a stale render when
+  // two clicks land before React re-renders, so the second increment was
+  // silently dropped (2 → 3 instead of 2 → 4). Deriving the new value inside
+  // the state updater reads the latest committed value instead.
+  const bumpCartQty = (index: number, delta: number) => {
+    if (itemsBlocked) return
     setCartItems(prev => {
+      const current = prev[index]?.quantity
+      if (current == null) return prev
+      const next = Number(current) + delta
+      if (next < 1) return prev
       const updated = [...prev]
-      updated[index] = { ...updated[index], quantity: qty }
+      updated[index] = { ...updated[index], quantity: next }
       return updated
     })
   }
@@ -417,11 +563,29 @@ export function CreateOrder() {
     }
 
     const normalizedPhone = normalizePhone(customerPhone)
-    if (customerName) payload.guestName = customerName
-    if (normalizedPhone) payload.guestPhone = normalizedPhone
-    if (customerEmail) payload.guestEmail = customerEmail
-    if (selectedCustomerId) {
-      payload.customerId = selectedCustomerId
+    const [firstName, ...restName] = (customerName || '').trim().split(/\s+/)
+    const lastName = restName.join(' ')
+
+    if (isEdit) {
+      // An update edits an EXISTING order, so identity corrections go through
+      // `customerInfo` (the order's own snapshot). guestName/guestPhone only
+      // exist on creation. `updateCustomerProfile` stays opt-in and defaults
+      // to false — correcting one order must never silently rewrite a real
+      // person's canonical customer profile.
+      payload.customerInfo = {
+        firstName: firstName || undefined,
+        ...(lastName ? { lastName } : {}),
+        ...(normalizedPhone ? { phoneNumber: normalizedPhone } : {}),
+        ...(customerEmail ? { email: customerEmail } : {}),
+      }
+      if (updateCustomerProfile) payload.updateCustomerProfile = true
+    } else {
+      if (customerName) payload.guestName = customerName
+      if (normalizedPhone) payload.guestPhone = normalizedPhone
+      if (customerEmail) payload.guestEmail = customerEmail
+      if (selectedCustomerId) {
+        payload.customerId = selectedCustomerId
+      }
     }
 
     const shipAddr = useDiffShipping ? shipAddress : customerAddress
@@ -444,10 +608,13 @@ export function CreateOrder() {
     return payload
   }
 
-  const createMut = useMutation({
-    mutationFn: (data: any) => ordersApi.create(data),
+  const submitMut = useMutation({
+    mutationFn: (data: any) =>
+      isEdit ? ordersApi.updateOrder(orderId!, data) : ordersApi.create(data),
     onSuccess: (res: any) => {
-      const orderId = res.data?.id || res.id
+      const savedId = res.data?.id || res.id || orderId
+      // Only creation reports staff-context warnings (blocked phone/IP). An
+      // update never produces them, so read defensively rather than assuming.
       const warnings: string[] = res.data?.warnings || res.warnings || []
       if (warnings.length > 0) {
         toast.warning(
@@ -455,15 +622,21 @@ export function CreateOrder() {
           { duration: 8000 },
         )
       }
-      toast.success('Order created successfully')
-      navigate({ to: '/op/orders/$id', params: { id: orderId } })
+      toast.success(isEdit ? 'Order updated successfully' : 'Order created successfully')
+      navigate({ to: '/op/orders/$id', params: { id: savedId } })
     },
     onError: (err: any) => {
-      toast.error(err?.response?.data?.message || 'Failed to create order')
+      toast.error(err?.response?.data?.message || (isEdit ? 'Failed to update order' : 'Failed to create order'))
     },
   })
 
   const handleSubmit = async () => {
+    if (itemsBlocked) {
+      toast.error(
+        `Items of a "${editStatusName}" order can no longer be changed — the goods have already left the warehouse.`,
+      )
+      return
+    }
     if (cartItems.length === 0) {
       toast.error('Add at least one item to the cart')
       return
@@ -488,20 +661,42 @@ export function CreateOrder() {
         return
       }
     }
-    createMut.mutate(buildPayload())
+    submitMut.mutate(buildPayload())
   }
 
   const subtotal = calculateSubtotal()
   const discountValue = calculateDiscountValue()
   const total = calculateTotal()
 
+  const submitLabel = isEdit ? 'Update Order' : 'Create Order'
+
+  if (isEdit && (editLoading || !hydrated)) {
+    return (
+      <div className='flex items-center justify-center min-h-[60vh] gap-2 text-sm text-muted-foreground'>
+        <Loader2 className='h-4 w-4 animate-spin' />
+        Loading order for editing…
+      </div>
+    )
+  }
+
   return (
     <>
       <Header fixed>
         <div className='flex items-center gap-2'>
-          <Button variant='ghost' size='sm' className='h-8 px-2 sm:px-3 text-xs sm:text-sm' onClick={() => navigate({ to: '/op/orders' })}>
+          <Button
+            variant='ghost'
+            size='sm'
+            className='h-8 px-2 sm:px-3 text-xs sm:text-sm'
+            onClick={() =>
+              isEdit
+                ? navigate({ to: '/op/orders/$id', params: { id: orderId! } })
+                : navigate({ to: '/op/orders' })
+            }
+          >
             <ArrowLeft className='h-4 w-4 mr-1 shrink-0' />
-            <span className='hidden sm:inline'>Back to </span>Orders
+            <span className='hidden sm:inline'>{isEdit ? 'Back to order' : 'Back to '}</span>
+            <span className='sm:hidden'>Back</span>
+            {!isEdit && <span className='hidden sm:inline'>Orders</span>}
           </Button>
         </div>
         <div className='ml-auto flex items-center gap-2'>
@@ -512,9 +707,13 @@ export function CreateOrder() {
         {/* Page Header */}
         <div className='flex items-center justify-between gap-3 pb-1 border-b border-border/40'>
           <div>
-            <h1 className='text-xl sm:text-2xl font-bold tracking-tight text-foreground'>Create New Order</h1>
+            <h1 className='text-xl sm:text-2xl font-bold tracking-tight text-foreground'>
+              {isEdit ? 'Edit Order' : 'Create New Order'}
+            </h1>
             <p className='text-xs sm:text-sm text-muted-foreground mt-0.5'>
-              Add customer details, select products, configure shipping and payment options
+              {isEdit
+                ? `Updating ${(editOrder as any)?.displayId || orderId} — stock adjusts automatically when you change items`
+                : 'Add customer details, select products, configure shipping and payment options'}
             </p>
           </div>
           <div className='hidden sm:flex items-center gap-2'>
@@ -522,13 +721,38 @@ export function CreateOrder() {
               size='sm'
               className='h-9 px-4 font-semibold text-xs shadow-xs'
               onClick={handleSubmit}
-              disabled={createMut.isPending}
+              disabled={submitMut.isPending}
             >
-              {createMut.isPending ? <Loader2 className='h-3.5 w-3.5 animate-spin mr-1.5' /> : <Plus className='h-3.5 w-3.5 mr-1.5' />}
-              Create Order
+              {submitMut.isPending
+                ? <Loader2 className='h-3.5 w-3.5 animate-spin mr-1.5' />
+                : isEdit ? <Save className='h-3.5 w-3.5 mr-1.5' /> : <Plus className='h-3.5 w-3.5 mr-1.5' />}
+              {submitLabel}
             </Button>
           </div>
         </div>
+
+        {isEdit && itemsBlocked && (
+          <div className='flex items-start gap-2.5 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive'>
+            <AlertTriangle className='h-4 w-4 mt-0.5 shrink-0' />
+            <span>
+              <strong>Items are locked.</strong> This order is{' '}
+              <strong>{editStatusName}</strong> — the goods have already left the
+              warehouse, so its lines can no longer be added, changed or removed.
+              Customer details, notes, shipping and payment are still editable.
+            </span>
+          </div>
+        )}
+
+        {isEdit && itemsWarn && !itemsBlocked && (
+          <div className='flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400'>
+            <AlertTriangle className='h-4 w-4 mt-0.5 shrink-0' />
+            <span>
+              <strong>Heads up.</strong> This order is <strong>{editStatusName}</strong>{' '}
+              — items are already picked or being packed. Changing them now will
+              adjust stock again, so double-check before saving.
+            </span>
+          </div>
+        )}
 
         {/* ── Main Grid ── */}
         <div className='grid grid-cols-1 xl:grid-cols-12 gap-4 sm:gap-6 items-start'>
@@ -600,6 +824,27 @@ export function CreateOrder() {
                       ✓ Auto-filled information for {customerName}
                     </p>
                   )}
+                  {isEdit && !!selectedCustomerId && (
+              <label
+                htmlFor='updateCustomerProfile'
+                className='inline-flex items-start gap-2 cursor-pointer select-none text-xs text-muted-foreground hover:text-foreground pt-1'
+              >
+                <input
+                  type='checkbox'
+                  id='updateCustomerProfile'
+                  checked={updateCustomerProfile}
+                  onChange={e => setUpdateCustomerProfile(e.target.checked)}
+                  className='h-4 w-4 mt-0.5 rounded border-border text-primary focus:ring-primary/20'
+                />
+                <span>
+                  Also update this customer's saved profile
+                  <span className='block text-[11px] text-muted-foreground/80'>
+                    Off by default — corrects this order only, without rewriting
+                    their master record.
+                  </span>
+                </span>
+              </label>
+            )}
                   {customerPhone.length >= 11 && !customerMatched && !searchingCustomer && !customerDropdownOpen && (
                     <p className='text-xs text-muted-foreground mt-1'>
                       No existing record found. A new customer profile will be created with this number.
@@ -764,7 +1009,8 @@ export function CreateOrder() {
                         if (e.key === 'Escape') setShowProductDropdown(false)
                       }}
                       placeholder='Search by product name, SKU or scan barcode...'
-                      className='w-full h-11 pl-10 pr-10 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring shadow-2xs'
+                      disabled={itemsBlocked}
+                      className='w-full h-11 pl-10 pr-10 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring shadow-2xs disabled:opacity-60 disabled:cursor-not-allowed'
                       autoComplete='off'
                     />
                     {productSearching ? (
@@ -903,11 +1149,11 @@ export function CreateOrder() {
                               </TableCell>
                               <TableCell className='text-right'>
                                 <div className='flex items-center justify-end gap-1'>
-                                  <Button variant='outline' size='icon' className='h-7 w-7' onClick={() => updateCartQty(index, item.quantity - 1)}>
+                                  <Button variant='outline' size='icon' className='h-7 w-7' onClick={() => bumpCartQty(index, -1)}>
                                     <Minus className='h-3 w-3' />
                                   </Button>
                                   <span className='w-8 text-center text-sm font-bold'>{item.quantity}</span>
-                                  <Button variant='outline' size='icon' className='h-7 w-7' onClick={() => updateCartQty(index, item.quantity + 1)}>
+                                  <Button variant='outline' size='icon' className='h-7 w-7' onClick={() => bumpCartQty(index, +1)}>
                                     <Plus className='h-3 w-3' />
                                   </Button>
                                 </div>
@@ -982,7 +1228,7 @@ export function CreateOrder() {
                                 variant='outline'
                                 size='icon'
                                 className='h-8 w-8'
-                                onClick={() => updateCartQty(index, item.quantity - 1)}
+                                onClick={() => bumpCartQty(index, -1)}
                               >
                                 <Minus className='h-3.5 w-3.5' />
                               </Button>
@@ -991,7 +1237,7 @@ export function CreateOrder() {
                                 variant='outline'
                                 size='icon'
                                 className='h-8 w-8'
-                                onClick={() => updateCartQty(index, item.quantity + 1)}
+                                onClick={() => bumpCartQty(index, +1)}
                               >
                                 <Plus className='h-3.5 w-3.5' />
                               </Button>
@@ -1340,16 +1586,18 @@ export function CreateOrder() {
               </CardContent>
             </Card>
 
-            {/* Desktop Create Order CTA */}
+            {/* Desktop submit CTA */}
             <div className='hidden sm:block pt-1'>
               <Button
                 className='w-full h-11 text-sm font-semibold shadow-xs'
                 size='lg'
                 onClick={handleSubmit}
-                disabled={createMut.isPending}
+                disabled={submitMut.isPending || itemsBlocked}
               >
-                {createMut.isPending ? <Loader2 className='h-4 w-4 animate-spin mr-2' /> : <Plus className='h-4 w-4 mr-2' />}
-                Create Order
+                {submitMut.isPending
+                  ? <Loader2 className='h-4 w-4 animate-spin mr-2' />
+                  : isEdit ? <Save className='h-4 w-4 mr-2' /> : <Plus className='h-4 w-4 mr-2' />}
+                {submitLabel}
               </Button>
             </div>
 
@@ -1371,10 +1619,12 @@ export function CreateOrder() {
         <Button
           className='h-11 px-6 font-semibold text-sm shadow-sm shrink-0'
           onClick={handleSubmit}
-          disabled={createMut.isPending}
+          disabled={submitMut.isPending || itemsBlocked}
         >
-          {createMut.isPending ? <Loader2 className='h-4 w-4 animate-spin mr-1.5' /> : <Plus className='h-4 w-4 mr-1.5' />}
-          Create Order
+          {submitMut.isPending
+            ? <Loader2 className='h-4 w-4 animate-spin mr-1.5' />
+            : isEdit ? <Save className='h-4 w-4 mr-1.5' /> : <Plus className='h-4 w-4 mr-1.5' />}
+          {submitLabel}
         </Button>
       </div>
 
@@ -1433,4 +1683,9 @@ export function CreateOrder() {
       </Dialog>
     </>
   )
+}
+
+/** Create Order page — the same form, empty, posting a new order. */
+export function CreateOrder() {
+  return <OrderFormPage mode='create' />
 }
