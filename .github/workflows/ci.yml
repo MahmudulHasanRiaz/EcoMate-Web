@@ -135,6 +135,10 @@ jobs:
           # as backend above; the admin Dockerfile builds it explicitly too).
           npx tsc -p ../../packages/shared-types/tsconfig.json
           npx tsc --noEmit -p tsconfig.app.json
+          # Vitest runs in real-chromium browser mode: browsers are preinstalled
+          # on the self-hosted runner but missing on a fresh github runner.
+          # Plain install (no --with-deps: that needs apt/sudo and breaks Mac).
+          npx playwright install chromium
           npx vitest run
 
       - name: POS unit tests
