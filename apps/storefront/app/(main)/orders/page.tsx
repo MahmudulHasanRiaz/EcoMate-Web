@@ -16,7 +16,11 @@ import {
   Clock,
   Sparkles,
   ChevronDown,
-  XCircle
+  XCircle,
+  ShoppingBag,
+  CheckCircle2,
+  Boxes,
+  Home
 } from 'lucide-react';
 import Image from 'next/image';
 import apiClient from '@/lib/api-client';
@@ -78,6 +82,17 @@ export const JOURNEY_STAGES: JourneyStageConfig[] = [
   { key: 'shipping', label: 'Shipping', description: 'Handed over to courier and in transit' },
   { key: 'delivered', label: 'Delivered', description: 'Package safely delivered' },
 ];
+
+export function getStageIcon(key: string) {
+  switch (key) {
+    case 'placed': return ShoppingBag;
+    case 'confirmed': return CheckCircle2;
+    case 'packed': return Boxes;
+    case 'shipping': return Truck;
+    case 'delivered': return Home;
+    default: return Package;
+  }
+}
 
 /**
  * Statuses that end the journey early. These are terminal states, not
@@ -547,16 +562,31 @@ export default function OrdersPage() {
             )}
 
             {/* 6, 7, 9. Predefined Full Order Journey (Completed ✓, Active ●, Future ○) */}
-            <div className="bg-white rounded-xl border border-gray-200/80 p-4 md:p-5 shadow-2xs">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
-                  <Sparkles size={16} className="text-brand-blue" />
-                  <span>Tracking Journey</span>
-                </h3>
+            <div className="bg-white rounded-xl border border-gray-200/80 p-4 md:p-5 shadow-2xs overflow-hidden">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-4 pb-3 border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-blue-50 text-brand-blue flex items-center justify-center shrink-0">
+                    <Sparkles size={15} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-900 leading-tight">
+                      Tracking Journey
+                    </h3>
+                    {!terminalState && (
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        {activeStageIdx === JOURNEY_STAGES.length - 1
+                          ? 'Package successfully delivered'
+                          : `Currently at ${JOURNEY_STAGES[activeStageIdx].label}`}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
                 {!terminalState && (
-                  <span className="text-xs font-medium text-gray-400">
-                    Step {activeStageIdx + 1} of {JOURNEY_STAGES.length}
-                  </span>
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50/70 border border-brand-blue/20 text-brand-blue text-xs font-semibold">
+                    <span className="w-1.5 h-1.5 rounded-full bg-brand-blue animate-pulse"></span>
+                    <span>Step {activeStageIdx + 1} of {JOURNEY_STAGES.length}</span>
+                  </div>
                 )}
               </div>
 
@@ -575,70 +605,157 @@ export default function OrdersPage() {
                 </div>
               ) : (
                 <>
-              {/* Responsive Journey Rail */}
-              <div className="relative pl-6 space-y-4">
-                {/* Vertical connecting rail line */}
-                <div className="absolute left-[11px] top-2 bottom-2 w-0.5 bg-gray-100"></div>
-
-                {JOURNEY_STAGES.map((stage, idx) => {
-                  const isCompleted = idx < activeStageIdx;
-                  const isActive = idx === activeStageIdx;
-                  const timelineCheck = isStageInTimeline(stage.key, order.timeline);
-
-                  return (
-                    <div key={stage.key} className="relative flex items-start gap-3 text-left">
-                      {/* Node Indicator */}
-                      <div
-                        className={`absolute -left-6 top-0.5 w-[22px] h-[22px] rounded-full flex items-center justify-center text-xs font-bold transition-all z-10 ${
-                          isCompleted
-                            ? 'bg-emerald-500 text-white shadow-xs'
-                            : isActive
-                              ? 'bg-brand-blue text-white ring-4 ring-brand-blue/20 shadow-xs'
-                              : 'bg-white border-2 border-gray-200 text-transparent'
-                        }`}
-                      >
-                        {isCompleted ? (
-                          <Check size={13} strokeWidth={3} />
-                        ) : isActive ? (
-                          <div className="w-2 h-2 rounded-full bg-white"></div>
-                        ) : null}
+                  {/* Desktop Scannable Step Bar (visible on md+) */}
+                  <div className="hidden md:block mb-6 pt-2 pb-1">
+                    <div className="grid grid-cols-5 gap-0 relative">
+                      {/* Full-width track line behind connectors */}
+                      <div className="absolute top-[17px] left-[10%] right-[10%] h-[3px] bg-gray-100 rounded-full z-0">
+                        {/* Progress Fill */}
+                        <div
+                          className="h-full bg-emerald-500 rounded-full transition-all duration-500 ease-out"
+                          style={{
+                            width: `${(Math.min(activeStageIdx, JOURNEY_STAGES.length - 1) / (JOURNEY_STAGES.length - 1)) * 100}%`
+                          }}
+                        />
                       </div>
 
-                      <div className="flex-1 min-w-0 pt-0.5">
-                        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
-                          <span
-                            className={`text-xs md:text-sm font-bold ${
-                              isActive
-                                ? 'text-brand-blue'
-                                : isCompleted
-                                  ? 'text-gray-900'
-                                  : 'text-gray-400'
+                      {JOURNEY_STAGES.map((stage, idx) => {
+                        const isCompleted = idx < activeStageIdx;
+                        const isActive = idx === activeStageIdx;
+                        const Icon = getStageIcon(stage.key);
+
+                        return (
+                          <div key={`desktop-${stage.key}`} className="flex flex-col items-center text-center relative z-10 px-1">
+                            {/* Round Icon Disc */}
+                            <div
+                              className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-300 ${
+                                isCompleted
+                                  ? 'bg-emerald-500 text-white shadow-xs'
+                                  : isActive
+                                    ? 'bg-brand-blue text-white ring-4 ring-brand-blue/20 shadow-md scale-105'
+                                    : 'bg-white border-2 border-gray-200 text-gray-400'
+                              }`}
+                            >
+                              {isCompleted ? (
+                                <Check size={16} strokeWidth={3} />
+                              ) : (
+                                <Icon size={16} strokeWidth={isActive ? 2.3 : 1.8} />
+                              )}
+                            </div>
+
+                            <span
+                              className={`text-xs font-semibold mt-2 truncate w-full px-1 ${
+                                isActive
+                                  ? 'text-brand-blue font-bold'
+                                  : isCompleted
+                                    ? 'text-gray-900'
+                                    : 'text-gray-400'
+                              }`}
+                            >
+                              {stage.label}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Vertical Journey List with Stage Cards (mobile-first, polished) */}
+                  <div className="relative pl-7 md:pl-8 space-y-3">
+                    {/* Vertical connecting rail line */}
+                    <div className="absolute left-[13px] md:left-[15px] top-3 bottom-3 w-[2px] bg-gray-100 rounded-full z-0">
+                      {/* Active progress track indicator on rail */}
+                      <div
+                        className="w-full bg-emerald-500 rounded-full transition-all duration-500"
+                        style={{
+                          height: `${(Math.min(activeStageIdx, JOURNEY_STAGES.length - 1) / (JOURNEY_STAGES.length - 1)) * 100}%`
+                        }}
+                      />
+                    </div>
+
+                    {JOURNEY_STAGES.map((stage, idx) => {
+                      const isCompleted = idx < activeStageIdx;
+                      const isActive = idx === activeStageIdx;
+                      const isFuture = idx > activeStageIdx;
+                      const timelineCheck = isStageInTimeline(stage.key, order.timeline);
+                      const Icon = getStageIcon(stage.key);
+
+                      return (
+                        <div key={stage.key} className="relative flex items-start gap-3 text-left">
+                          {/* Node Icon Circle */}
+                          <div
+                            className={`absolute -left-7 md:-left-8 top-1.5 w-[26px] h-[26px] md:w-[30px] md:h-[30px] rounded-full flex items-center justify-center transition-all z-10 ${
+                              isCompleted
+                                ? 'bg-emerald-500 text-white shadow-xs'
+                                : isActive
+                                  ? 'bg-brand-blue text-white ring-4 ring-brand-blue/20 shadow-sm'
+                                  : 'bg-white border-2 border-gray-200 text-gray-300'
                             }`}
                           >
-                            {stage.label}
-                          </span>
-                          {timelineCheck.entry?.timestamp && (
-                            <span className="text-[11px] text-gray-400 font-medium">
-                              {formatDate(timelineCheck.entry.timestamp)} · {formatTime(timelineCheck.entry.timestamp)}
-                            </span>
-                          )}
+                            {isCompleted ? (
+                              <Check size={14} strokeWidth={3} />
+                            ) : (
+                              <Icon size={14} strokeWidth={isActive ? 2.2 : 1.8} />
+                            )}
+                          </div>
+
+                          {/* Stage Content Card */}
+                          <div
+                            className={`flex-1 min-w-0 rounded-lg p-2.5 md:p-3 transition-all ${
+                              isActive
+                                ? 'bg-blue-50/50 border border-brand-blue/20 shadow-2xs'
+                                : isCompleted
+                                  ? 'bg-gray-50/50 border border-gray-100'
+                                  : 'bg-transparent border border-transparent'
+                            }`}
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+                              <div className="flex items-center gap-1.5">
+                                <span
+                                  className={`text-xs md:text-sm font-bold ${
+                                    isActive
+                                      ? 'text-brand-blue'
+                                      : isCompleted
+                                        ? 'text-gray-900'
+                                        : 'text-gray-400'
+                                  }`}
+                                >
+                                  {stage.label}
+                                </span>
+                                {isActive && (
+                                  <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded-sm bg-brand-blue text-white">
+                                    Current
+                                  </span>
+                                )}
+                              </div>
+
+                              {timelineCheck.entry?.timestamp ? (
+                                <span className="text-[11px] text-gray-500 font-medium">
+                                  {formatDate(timelineCheck.entry.timestamp)} · {formatTime(timelineCheck.entry.timestamp)}
+                                </span>
+                              ) : isFuture ? (
+                                <span className="text-[11px] text-gray-300 italic font-normal">
+                                  Upcoming
+                                </span>
+                              ) : null}
+                            </div>
+
+                            <p
+                              className={`text-xs mt-0.5 leading-relaxed ${
+                                isActive
+                                  ? 'text-gray-700 font-medium'
+                                  : isCompleted
+                                    ? 'text-gray-500'
+                                    : 'text-gray-400'
+                              }`}
+                            >
+                              {stage.description}
+                            </p>
+                          </div>
                         </div>
-                        <p
-                          className={`text-xs mt-0.5 leading-relaxed ${
-                            isActive
-                              ? 'text-gray-600 font-medium'
-                              : isCompleted
-                                ? 'text-gray-500'
-                                : 'text-gray-400'
-                          }`}
-                        >
-                          {stage.description}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                      );
+                    })}
+                  </div>
                 </>
               )}
             </div>
