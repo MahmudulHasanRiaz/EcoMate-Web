@@ -16,7 +16,8 @@ permissions:
 jobs:
   deploy:
     name: Deploy ${{ github.event.inputs.client }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macos, arm64]
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 
