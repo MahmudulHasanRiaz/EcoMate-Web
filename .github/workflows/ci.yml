@@ -140,6 +140,12 @@ jobs:
         working-directory: apps/backend
         run: |
           npx prisma generate
+          # Workspace packages ship without dist/ on a fresh checkout
+          # (npm ci --ignore-scripts skips their builds); the Dockerfiles build
+          # them the same way before compiling the app.
+          npx tsc -p ../../packages/shared-types/tsconfig.json
+          npx tsc -p ../../packages/license-engine/tsconfig.json
+          npx tsc -p ../../packages/feature-flags/tsconfig.json
           npx nest build
           npx jest --no-coverage --testPathIgnorePatterns "integration"
 
@@ -154,6 +160,9 @@ jobs:
         if: needs.changes.outputs.admin == 'true'
         working-directory: apps/admin
         run: |
+          # shared-types ships without dist/ on a fresh checkout (same reason
+          # as backend above; the admin Dockerfile builds it explicitly too).
+          npx tsc -p ../../packages/shared-types/tsconfig.json
           npx tsc --noEmit -p tsconfig.app.json
           npx vitest run
 
