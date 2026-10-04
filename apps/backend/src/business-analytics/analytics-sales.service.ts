@@ -80,6 +80,8 @@ export const SALES_TREND_BUCKET_CAP = 366;
 export interface SalesOrderInput extends PnlOrderInput {
   displayId: string;
   salesChannel?: string | null;
+  /** Canonical Channel (SalesChannelV2); null where never mapped. */
+  channel?: string | null;
   source?: string | null;
 }
 
@@ -471,6 +473,7 @@ export interface CancellationBreakdown {
   dateBasis: string;
   byPriorStage: { stage: CancelPriorStage; orders: number; value: number }[];
   bySalesChannel: { key: string; label: string; orders: number; value: number }[];
+  byChannel: { key: string; label: string; orders: number; value: number }[];
 }
 
 function priorStageOf(order: SalesOrderInput): CancelPriorStage {
@@ -526,12 +529,18 @@ export function computeCancellations(
     };
   });
   const byChannel = new Map<string, { orders: number; value: number }>();
+  const byCanonicalChannel = new Map<string, { orders: number; value: number }>();
   for (const o of inRange) {
     const key = o.salesChannel ?? 'unspecified';
     const entry = byChannel.get(key) ?? { orders: 0, value: 0 };
     entry.orders += 1;
     entry.value += o.total;
     byChannel.set(key, entry);
+    const canonicalKey = o.channel ?? 'unspecified';
+    const canonicalEntry = byCanonicalChannel.get(canonicalKey) ?? { orders: 0, value: 0 };
+    canonicalEntry.orders += 1;
+    canonicalEntry.value += o.total;
+    byCanonicalChannel.set(canonicalKey, canonicalEntry);
   }
   return {
     total: inRange.length,
@@ -540,6 +549,9 @@ export function computeCancellations(
     dateBasis: 'Cancelled transition (undated cancels count, never dated)',
     byPriorStage,
     bySalesChannel: [...byChannel.entries()]
+      .map(([key, v]) => ({ key, label: key, orders: v.orders, value: v.value }))
+      .sort((a, b) => b.value - a.value),
+    byChannel: [...byCanonicalChannel.entries()]
       .map(([key, v]) => ({ key, label: key, orders: v.orders, value: v.value }))
       .sort((a, b) => b.value - a.value),
   };
@@ -982,6 +994,9 @@ export class AnalyticsSalesService {
           discountType: true,
           source: true,
           salesChannel: true,
+          // Canonical Channel for the cancellations byChannel breakdown
+          // (legacy salesChannel stays for bySalesChannel — never merged).
+          channel: true,
           status: { select: { name: true } },
           timeline: true,
           createdAt: true,
@@ -1042,6 +1057,7 @@ export class AnalyticsSalesService {
         customerPhone: o.customerPhone,
         guestPhone: o.guestPhone,
         salesChannel: o.salesChannel,
+        channel: o.channel ?? null,
         source: o.source,
         shippingCost: o.shippingCost === null ? null : Number(o.shippingCost),
         shippingCostSource: o.shippingCostSource,

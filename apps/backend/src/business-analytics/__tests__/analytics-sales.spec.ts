@@ -300,6 +300,48 @@ describe('computeCancellations', () => {
     expect(r.byPriorStage.find((s) => s.stage === 'confirmed')!.orders).toBe(1);
     expect(r.byPriorStage.find((s) => s.stage === 'intake')!.orders).toBe(1);
   });
+
+  it('carries BOTH bySalesChannel (legacy) and byChannel (canonical), never merged', () => {
+    const webPos = order({
+      id: 'cc1',
+      status: 'Cancelled',
+      timeline: [{ status: 'Cancelled', timestamp: D('2026-09-04T10:00:00+06:00') }],
+      salesChannel: 'WEBSITE',
+      channel: 'WEBSITE',
+    });
+    const posSale = order({
+      id: 'cc2',
+      status: 'Cancelled',
+      timeline: [{ status: 'Cancelled', timestamp: D('2026-09-04T10:00:00+06:00') }],
+      salesChannel: 'POS',
+      channel: 'POS',
+    });
+    const unmapped = order({
+      id: 'cc3',
+      status: 'Cancelled',
+      timeline: [{ status: 'Cancelled', timestamp: D('2026-09-04T10:00:00+06:00') }],
+      salesChannel: null,
+      channel: null,
+    });
+    const r = computeCancellations([webPos, posSale, unmapped], RANGE);
+    expect(r.total).toBe(3);
+    // Legacy axis groups by the legacy column …
+    expect(r.bySalesChannel).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'WEBSITE', orders: 1 }),
+        expect.objectContaining({ key: 'POS', orders: 1 }),
+        expect.objectContaining({ key: 'unspecified', orders: 1 }),
+      ]),
+    );
+    // … canonical axis groups by the canonical column, independently.
+    expect(r.byChannel).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'WEBSITE', orders: 1 }),
+        expect.objectContaining({ key: 'POS', orders: 1 }),
+        expect.objectContaining({ key: 'unspecified', orders: 1 }),
+      ]),
+    );
+  });
 });
 
 describe('computeReturnBreakdown (§2.2)', () => {
