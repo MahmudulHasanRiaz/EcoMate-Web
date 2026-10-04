@@ -25,6 +25,13 @@ export interface CreateOrderData {
   sourcePlatform?: string;
   sourceType?: string;
   sourceEntity?: string;
+  // Canonical attribution (optional; the storefront checkout never sends
+  // these — website identity resolves server-side from salesChannel +
+  // landing signals. Present only so typed callers CAN pass them).
+  channel?: string;
+  channelEntity?: string;
+  sourceSlug?: string;
+  acquisitionType?: string;
   attribution?: {
     utmSource?: string;
     utmMedium?: string;
