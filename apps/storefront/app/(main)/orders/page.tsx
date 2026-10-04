@@ -1,7 +1,23 @@
 "use client";
 
 import React, { useState } from 'react';
-import { Search, Package, Truck, CheckCircle2, Clock, MapPin, ChevronRight, ArrowLeft, ExternalLink } from 'lucide-react';
+import {
+  Search,
+  Package,
+  Truck,
+  Check,
+  MapPin,
+  ChevronRight,
+  ArrowLeft,
+  ExternalLink,
+  User,
+  Phone,
+  Headphones,
+  Clock,
+  Sparkles,
+  ChevronDown,
+  XCircle
+} from 'lucide-react';
 import Image from 'next/image';
 import apiClient from '@/lib/api-client';
 import { useRouter } from 'next/navigation';
@@ -16,6 +32,8 @@ interface OrderItem {
 }
 
 interface ShippingAddress {
+  // The public tracking DTO is deliberately no-PII: only city/district
+  // ever reach this page, so no other field is read from the address.
   city?: string | null;
   district?: string | null;
 }
@@ -37,21 +55,69 @@ interface OrderData {
   shipment: { courier: string | null; trackingCode: string | null } | null;
   timeline: TimelineEntry[];
   total: number;
+  customer?: { name?: string | null; phone?: string | null } | null;
+  guestName?: string | null;
+  guestPhone?: string | null;
+  customerFirstName?: string | null;
+  customerLastName?: string | null;
+  customerPhone?: string | null;
 }
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-GB', {
-    day: 'numeric', month: 'short', year: 'numeric',
-  });
+// Predefined canonical tracking journey stages, mirroring the order
+// statuses that exist in the database.
+export interface JourneyStageConfig {
+  key: string;
+  label: string;
+  description: string;
 }
 
-function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString('en-GB', {
-    hour: '2-digit', minute: '2-digit',
-  });
+export const JOURNEY_STAGES: JourneyStageConfig[] = [
+  { key: 'placed', label: 'Order Placed', description: 'Order successfully created' },
+  { key: 'confirmed', label: 'Confirmed', description: 'Order confirmed and verified' },
+  { key: 'packed', label: 'Packed', description: 'Items boxed and ready for courier' },
+  { key: 'shipping', label: 'Shipping', description: 'Handed over to courier and in transit' },
+  { key: 'delivered', label: 'Delivered', description: 'Package safely delivered' },
+];
+
+/**
+ * Statuses that end the journey early. These are terminal states, not
+ * forward progress, so the predefined journey (Placed → Delivered) is
+ * meaningless for them and a dedicated terminal view is shown instead.
+ */
+export const TERMINAL_STATUSES: Record<string, string> = {
+  cancelled: 'Order Cancelled',
+  returned: 'Order Returned',
+  damaged: 'Order Damaged',
+};
+
+export const COURIER_INFO: Record<string, { name: string; logo?: string }> = {
+  steadfast: { name: 'Steadfast Courier', logo: '/couriers/steadfast.png' },
+  pathao: { name: 'Pathao Courier', logo: '/couriers/pathao.png' },
+  redx: { name: 'RedX Delivery', logo: '/couriers/redx.webp' },
+  carrybee: { name: 'Carrybee Express', logo: '/couriers/carrybee.jpg' },
+};
+
+export function formatDate(iso: string) {
+  try {
+    return new Date(iso).toLocaleDateString('en-GB', {
+      day: 'numeric', month: 'short', year: 'numeric',
+    });
+  } catch {
+    return '';
+  }
 }
 
-function isPhoneNumber(input: string): boolean {
+export function formatTime(iso: string) {
+  try {
+    return new Date(iso).toLocaleTimeString('en-GB', {
+      hour: '2-digit', minute: '2-digit',
+    });
+  } catch {
+    return '';
+  }
+}
+
+export function isPhoneNumber(input: string): boolean {
   const cleaned = input.replace(/[^\d+]/g, '');
   return (
     (cleaned.startsWith('+8801') && cleaned.length === 14) ||
@@ -59,6 +125,141 @@ function isPhoneNumber(input: string): boolean {
     (cleaned.startsWith('01') && cleaned.length === 11) ||
     (cleaned.startsWith('1') && cleaned.length === 10 && /^1[3-9]/.test(cleaned))
   );
+}
+
+export function maskPhone(phone?: string | null): string {
+  if (!phone) return '';
+  const cleaned = phone.replace(/[^\d+]/g, '');
+  const local = cleaned.startsWith('+880') 
+    ? cleaned.slice(3) 
+    : cleaned.startsWith('880') 
+      ? cleaned.slice(2) 
+      : cleaned;
+  if (local.length === 11 && local.startsWith('01')) {
+    return local.slice(0, 3) + '***' + local.slice(7);
+  }
+  if (cleaned.length > 7) {
+    return cleaned.slice(0, 3) + '***' + cleaned.slice(-4);
+  }
+  return cleaned;
+}
+
+export function resolveCustomerInfo(order: OrderData): { name: string; phone: string } {
+  // The public tracking DTO carries no customer name and no phone, so both
+  // resolve to a neutral placeholder rather than fabricated data.
+  const name = [order.customerFirstName, order.customerLastName].filter(Boolean).join(' ')
+    || order.guestName
+    || order.customer?.name
+    || '';
+
+  const rawPhone = order.customerPhone
+    || order.guestPhone
+    || order.customer?.phone
+    || '';
+
+  // No phone is ever fabricated here. The public tracking DTO is
+  // deliberately no-PII, so a masked number is shown only when the
+  // order actually carries one.
+  return {
+    name: name.trim() || 'Customer',
+    phone: maskPhone(rawPhone),
+  };
+}
+
+/**
+ * Resolves the delivery location shown on the public tracking page.
+ *
+ * The public endpoints (`/orders/public/display/:displayId`,
+ * `/orders/public/phone/:phone`) are reachable by anyone who knows the
+ * order number, and their DTO intentionally carries only city/district —
+ * the street address and phone inside `shippingAddress` never leave the
+ * service. Only what the API actually returns is rendered, so this can
+ * never surface an address the endpoint withholds.
+ */
+export function resolveFullAddress(order: OrderData): string {
+  const addr = order.shippingAddress;
+  if (!addr || typeof addr !== 'object') return 'Address not available';
+
+  const city = addr.city || addr.district || null;
+  return city || 'Address not available';
+}
+
+/**
+ * Resolves the terminal label for a status that ends the journey early
+ * (cancelled / returned / damaged), or null when the order is progressing
+ * normally through the predefined journey.
+ */
+export function resolveTerminalState(statusName: string): string | null {
+  const normalized = (statusName || '').trim().toLowerCase();
+  return TERMINAL_STATUSES[normalized] ?? null;
+}
+
+/**
+ * Determines stage index (0 to 4) based on status name and timeline entries.
+ * 0: Placed
+ * 1: Confirmed
+ * 2: Packed
+ * 3: Shipping
+ * 4: Delivered
+ */
+export function determineActiveStageIndex(statusName: string, timeline: TimelineEntry[] = []): number {
+  const normalizedStatus = (statusName || '').trim().toLowerCase();
+
+  // A terminal order must never report forward progress. Terminal labels
+  // are resolved separately by resolveTerminalState().
+  if (TERMINAL_STATUSES[normalizedStatus]) return 0;
+
+  if (normalizedStatus.includes('deliver') && !normalizedStatus.includes('out') && !normalizedStatus.includes('failed')) {
+    return 4;
+  }
+  if (normalizedStatus.includes('shipping') || normalizedStatus.includes('in_transit') || normalizedStatus.includes('in transit') || normalizedStatus.includes('transit')) {
+    return 3;
+  }
+  if (normalizedStatus.includes('packed')) {
+    return 2;
+  }
+  if (normalizedStatus.includes('confirmed')) {
+    return 1;
+  }
+  if (normalizedStatus.includes('pending') || normalizedStatus.includes('hold') || normalizedStatus.includes('verifying')) {
+    return 0;
+  }
+
+  // Fallback: check timeline entries if current status name is custom or non-standard
+  for (let i = timeline.length - 1; i >= 0; i--) {
+    const s = (timeline[i].status || '').toLowerCase();
+    if (s.includes('deliver') && !s.includes('out') && !s.includes('failed')) return 4;
+    if (s.includes('shipping') || s.includes('transit')) return 3;
+    if (s.includes('packed')) return 2;
+    if (s.includes('confirmed')) return 1;
+  }
+
+  return 0;
+}
+
+export function isStageInTimeline(stageKey: string, timeline: TimelineEntry[] = []): { reached: boolean; entry?: TimelineEntry } {
+  for (const entry of timeline) {
+    const s = (entry.status || '').toLowerCase();
+    const n = (entry.note || '').toLowerCase();
+    switch (stageKey) {
+      case 'placed':
+        if (s.includes('pending') || s.includes('placed') || n.includes('created')) return { reached: true, entry };
+        break;
+      case 'confirmed':
+        if (s.includes('confirmed') || n.includes('confirmed')) return { reached: true, entry };
+        break;
+      case 'packed':
+        if (s.includes('packed') || n.includes('packed')) return { reached: true, entry };
+        break;
+      case 'shipping':
+        if (s.includes('shipping') || s.includes('transit') || n.includes('transit') || n.includes('shipping')) return { reached: true, entry };
+        break;
+      case 'delivered':
+        if ((s.includes('delivered') || n.includes('delivered')) && !s.includes('failed')) return { reached: true, entry };
+        break;
+    }
+  }
+  return { reached: false };
 }
 
 export default function OrdersPage() {
@@ -70,6 +271,11 @@ export default function OrdersPage() {
   const [ordersList, setOrdersList] = useState<OrderData[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedNotes, setExpandedNotes] = useState<Record<number, boolean>>({});
+
+  const toggleExpand = (idx: number) => {
+    setExpandedNotes(prev => ({ ...prev, [idx]: !prev[idx] }));
+  };
 
   const performSearch = async (num: string) => {
     let trimmed = num.trim();
@@ -137,332 +343,455 @@ export default function OrdersPage() {
     }
   }, []);
 
+  const activeStageIdx = order ? determineActiveStageIndex(order.status?.name || 'Pending', order.timeline) : 0;
+  const terminalState = order ? resolveTerminalState(order.status?.name || '') : null;
+  const customerInfo = order ? resolveCustomerInfo(order) : { name: '', phone: '' };
+  const fullAddress = order ? resolveFullAddress(order) : '';
+  const courierKey = (order?.shipment?.courier || '').toLowerCase();
+  const courierMeta = courierKey ? COURIER_INFO[courierKey] : null;
+  const courierDisplayName = courierMeta?.name || order?.shipment?.courier || 'Courier Assigned';
+  const hasCourier = Boolean(order?.shipment?.courier || order?.shipment?.trackingCode);
+
   return (
-    <div className="bg-[#f8f9fa] min-h-screen pb-20 font-sans">
-      {/* Header Section */}
-      <div className="bg-white border-b border-gray-100 py-8 md:py-12">
-        <div className="max-w-screen-xl mx-auto px-4 text-center">
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">Track Your Order</h1>
-          <nav className="flex items-center justify-center gap-2 text-[12px] md:text-[13px] text-gray-400 font-medium">
-            <button 
-              onClick={() => router.push('/')} 
-              className="hover:text-brand-blue transition-colors"
+    <div className="bg-[#f8f9fa] min-h-screen pb-12 font-sans text-gray-800">
+      {/* 1. Track Your Order Header + Compact Search Row */}
+      <div className="bg-white border-b border-gray-100 py-4 md:py-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+        <div className="max-w-3xl mx-auto px-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
+            <div>
+              <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight">Track Your Order</h1>
+              <p className="text-xs md:text-sm text-gray-500 mt-0.5">
+                Real-time delivery status for your package
+              </p>
+            </div>
+            <nav className="flex items-center gap-1.5 text-xs text-gray-400 font-medium self-start md:self-auto">
+              <button 
+                onClick={() => router.push('/')} 
+                className="hover:text-brand-blue transition-colors"
+              >
+                Home
+              </button>
+              <ChevronRight size={12} />
+              <span className="text-gray-600">Track Order</span>
+            </nav>
+          </div>
+
+          {/* Compact Input + Track Now row */}
+          <form onSubmit={handleSearch} className="flex gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={17} />
+              <input
+                type="text"
+                placeholder="Order ID (e.g. ORD-261001-0015) or Phone"
+                value={orderNumber}
+                onChange={(e) => setOrderNumber(e.target.value)}
+                className="w-full h-10 md:h-11 pl-10 pr-3 rounded-lg border border-gray-200 outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/15 transition-all text-sm bg-white"
+              />
+            </div>
+            <button
+              type="submit"
+              className="h-10 md:h-11 bg-brand-blue hover:bg-brand-blue/90 text-white px-5 rounded-lg font-semibold text-sm transition-all shadow-sm active:scale-98 flex items-center gap-1.5 shrink-0"
             >
-              Home
+              <span>Track Now</span>
             </button>
-            <ChevronRight size={14} />
-            <span className="text-gray-600">Track Order</span>
-          </nav>
+          </form>
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-4 -mt-6 md:-mt-8">
-        {/* Search Card */}
-        <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 p-6 md:p-10 mb-8">
-          <form onSubmit={handleSearch} className="max-w-2xl mx-auto">
-            <p className="text-center text-gray-500 text-[14px] md:text-[15px] mb-6">
-              Enter your order number to track your package delivery status in real-time.
-            </p>
-            <div className="flex flex-col md:flex-row gap-3">
-              <div className="relative flex-1">
-                <input
-                  type="text"
-                  placeholder="Order ID (e.g. FP-100254)"
-                  value={orderNumber}
-                  onChange={(e) => setOrderNumber(e.target.value)}
-                  className="w-full h-12 md:h-14 pl-12 pr-4 rounded-xl border border-gray-200 outline-none focus:border-brand-blue focus:ring-4 focus:ring-brand-blue/10 transition-all text-[15px]"
-                />
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-              </div>
-              <button
-                type="submit"
-                className="h-12 md:h-14 bg-brand-blue text-white px-8 rounded-xl font-bold text-[15px] hover:bg-brand-blue/90 transition-colors shadow-lg shadow-brand-blue/20 active:scale-95"
-              >
-                Track Now
-              </button>
-            </div>
-          </form>
-        </div>
-
+      <div className="max-w-3xl mx-auto px-4 pt-4 md:pt-6 space-y-4">
         {loading && (
-          <div className="text-center py-20">
-            <div className="inline-block w-8 h-8 border-2 border-brand-blue border-t-transparent rounded-full animate-spin"></div>
-            <p className="mt-4 text-gray-500 text-[14px]">Looking up your order...</p>
+          <div className="bg-white rounded-xl border border-gray-100 p-8 text-center shadow-sm">
+            <div className="inline-block w-7 h-7 border-2 border-brand-blue border-t-transparent rounded-full animate-spin"></div>
+            <p className="mt-3 text-gray-500 text-sm font-medium">Looking up your order status...</p>
           </div>
         )}
 
         {error && (
-          <div className="bg-white rounded-2xl border border-gray-100 p-10 shadow-sm text-center">
-            <Package className="mx-auto text-gray-300 mb-4" size={48} />
-            <h3 className="text-lg font-bold text-gray-800 mb-2">Order Not Found</h3>
-            <p className="text-gray-500 text-[14px] mb-6">{error}</p>
+          <div className="bg-white rounded-xl border border-gray-100 p-6 shadow-sm text-center">
+            <Package className="mx-auto text-gray-300 mb-2.5" size={40} />
+            <h3 className="text-base font-bold text-gray-800 mb-1">Order Not Found</h3>
+            <p className="text-gray-500 text-sm mb-4 max-w-sm mx-auto">{error}</p>
             <button
               onClick={() => { setError(null); setOrderNumber(''); }}
-              className="text-brand-blue text-[14px] font-medium hover:underline"
+              className="text-brand-blue text-sm font-semibold hover:underline"
             >
-              Try again
+              Try another Order ID
             </button>
           </div>
         )}
 
         {order && !loading && !error && (
-          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col">
+          <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
             {ordersList && ordersList.length > 1 && (
               <button
                 onClick={() => setOrder(null)}
-                className="flex items-center gap-2 text-gray-600 hover:text-brand-blue transition-colors font-medium text-[14px] bg-white px-4 py-2.5 rounded-xl border border-gray-100 shadow-sm self-start"
+                className="flex items-center gap-1.5 text-gray-600 hover:text-brand-blue transition-colors font-medium text-xs bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-2xs"
               >
-                <ArrowLeft size={16} />
-                <span>Back to search results</span>
+                <ArrowLeft size={14} />
+                <span>Back to {ordersList.length} search results</span>
               </button>
             )}
 
-            {/* Order Status Header */}
-            <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm flex flex-col md:flex-row justify-between items-center gap-6">
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 bg-brand-blue/10 rounded-2xl flex items-center justify-center text-brand-blue">
-                  <Truck size={28} />
-                </div>
-                <div>
-                  <h3 className="text-gray-400 text-[13px] font-medium uppercase tracking-wider mb-0.5">Order ID</h3>
-                  <p className="text-xl font-bold text-gray-800">{order.displayId}</p>
-                </div>
-              </div>
-              <div className="text-center md:text-right">
-                <h3 className="text-gray-400 text-[13px] font-medium uppercase tracking-wider mb-0.5">Status</h3>
-                <p className="text-xl font-bold text-[#2ecc71]">{order.status?.name || 'Processing'}</p>
-              </div>
-            </div>
-
-            {/* Courier — shown once a courier is actually assigned, so the page
-                reflects the real order rather than a placeholder. */}
-            {(order.shipment?.courier || order.shipment?.trackingCode) && (
-              <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 bg-gray-50 rounded-2xl flex items-center justify-center text-gray-500">
-                    <Truck size={26} />
+            {/* 2 & 3. Compact Order Overview Card */}
+            <div className="bg-white rounded-xl border border-gray-200/80 p-4 md:p-5 shadow-2xs">
+              <div className="flex items-start justify-between gap-3 pb-3 border-b border-gray-100">
+                <div className="min-w-0">
+                  <span className="text-[11px] font-semibold tracking-wider text-gray-400 uppercase block mb-0.5">
+                    Order Reference
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-base md:text-lg font-bold text-gray-900 tracking-tight">
+                      {order.displayId}
+                    </span>
+                    <span className="text-xs text-gray-400">·</span>
+                    <span className="text-xs text-gray-500 font-medium">
+                      {formatDate(order.createdAt)}
+                    </span>
                   </div>
-                  <div>
-                    <h3 className="text-gray-400 text-[13px] font-medium uppercase tracking-wider mb-0.5">Courier</h3>
-                    <p className="text-lg font-bold text-gray-800">{order.shipment?.courier || 'Assigned'}</p>
-                    {order.shipment?.trackingCode && (
-                      <p className="text-[13px] text-gray-500 mt-0.5">
-                        Tracking: <span className="font-mono font-medium text-gray-700">{order.shipment.trackingCode}</span>
-                      </p>
+                </div>
+
+                {/* Status Badge */}
+                <div className="shrink-0 text-right">
+                  <span className="text-[11px] font-semibold tracking-wider text-gray-400 uppercase block mb-0.5">
+                    Status
+                  </span>
+                  <span 
+                    className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border"
+                    style={{
+                      borderColor: order.status?.color ? order.status.color + '40' : '#3B82F640',
+                      color: order.status?.color || '#3B82F6',
+                      backgroundColor: order.status?.color ? order.status.color + '15' : '#3B82F615',
+                    }}
+                  >
+                    {order.status?.name || 'Processing'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Customer + Masked Phone + Full Delivery Address */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 text-xs md:text-sm">
+                <div className="flex items-start gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center text-gray-500 shrink-0 mt-0.5">
+                    <User size={14} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-gray-900 truncate">{customerInfo.name}</p>
+                    {customerInfo.phone && (
+                      <div className="flex items-center gap-1.5 text-gray-500 text-xs mt-0.5">
+                        <Phone size={12} className="shrink-0 text-gray-400" />
+                        <span className="font-mono">{customerInfo.phone}</span>
+                      </div>
                     )}
                   </div>
                 </div>
+
+                <div className="flex items-start gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center text-gray-500 shrink-0 mt-0.5">
+                    <MapPin size={14} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-gray-700 leading-snug break-words">
+                      {fullAddress}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 4 & 5. Unified Courier Tracking Card (one card, no duplicates) */}
+            {hasCourier && (
+              <div className="bg-white rounded-xl border border-gray-200/80 p-4 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center shrink-0 overflow-hidden relative p-1">
+                    {courierMeta?.logo ? (
+                      <Image
+                        src={courierMeta.logo}
+                        alt={courierDisplayName}
+                        width={36}
+                        height={36}
+                        className="object-contain"
+                      />
+                    ) : (
+                      <Truck size={20} className="text-brand-blue" />
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-gray-900 text-sm truncate">{courierDisplayName}</h3>
+                      <span className="text-[11px] px-2 py-0.2 rounded-md bg-blue-50 text-brand-blue font-semibold">
+                        Courier Partner
+                      </span>
+                    </div>
+                    {order.shipment?.trackingCode ? (
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Tracking ID: <span className="font-mono font-semibold text-gray-800">{order.shipment.trackingCode}</span>
+                      </p>
+                    ) : (
+                      <p className="text-xs text-gray-400 mt-0.5">Parcel booked for handover</p>
+                    )}
+                  </div>
+                </div>
+
                 {order.trackingUrl && (
                   <a
                     href={order.trackingUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-2 text-brand-blue font-semibold text-[14px] hover:underline"
+                    className="inline-flex items-center justify-center gap-1.5 text-xs font-semibold bg-brand-blue/10 hover:bg-brand-blue/20 text-brand-blue px-3.5 py-2 rounded-lg transition-colors shrink-0 self-stretch sm:self-auto"
                   >
-                    Track on courier site <ExternalLink size={16} />
+                    <span>Track on Courier</span>
+                    <ExternalLink size={13} />
                   </a>
                 )}
               </div>
             )}
 
-            {/* Tracking Button */}
-            {order.trackingUrl && (
-              <a
-                href={order.trackingUrl}
-                target="_blank"
-                className="bg-white rounded-2xl border border-brand-blue p-6 shadow-sm flex items-center justify-between gap-4 hover:shadow-md transition-all group"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 bg-brand-blue/10 rounded-2xl flex items-center justify-center text-brand-blue">
-                    <Truck size={28} />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-gray-800 text-lg">Track Your Parcel</h3>
-                    <p className="text-[14px] text-gray-500">Click to view live tracking on courier website</p>
-                  </div>
-                </div>
-                <div className="text-brand-blue group-hover:translate-x-1 transition-transform">
-                  <ExternalLink size={24} />
-                </div>
-              </a>
-            )}
-
-            {/* Tracking Steps from Timeline */}
-            <div className="bg-white rounded-2xl border border-gray-100 p-6 md:p-10 shadow-sm">
-              <div className="relative">
-                <div className="absolute left-[23px] top-6 bottom-6 w-0.5 bg-gray-100"></div>
-
-                <div className="space-y-12">
-                  {(order.timeline || []).map((entry, index, all) => (
-                    <div key={`${entry.status}-${entry.timestamp}-${index}`} className="relative flex gap-6 md:gap-10">
-                      <div
-                        className={`relative z-10 w-12 h-12 rounded-2xl flex items-center justify-center shadow-sm ${
-                          index === all.length - 1
-                            ? 'bg-brand-blue text-white'
-                            : 'bg-white text-gray-300 border border-gray-100'
-                        }`}
-                      >
-                        {index === all.length - 1 ? <CheckCircle2 size={24} /> : <Package size={24} />}
-                      </div>
-
-                      <div className="flex-1 pt-1">
-                        <div className="flex flex-col md:flex-row md:items-center justify-between mb-1">
-                          <h4 className={`text-lg font-bold ${index === all.length - 1 ? 'text-gray-800' : 'text-gray-500'}`}>
-                            {entry.status}
-                          </h4>
-                          <span className="text-[13px] font-medium text-gray-400">{formatDate(entry.timestamp)}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 text-gray-500 mb-2">
-                          <Clock size={14} />
-                          <span className="text-[13px]">{formatTime(entry.timestamp)}</span>
-                        </div>
-                        {entry.note && (
-                          <p className="text-[14px] leading-relaxed text-gray-500">{entry.note}</p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* The rail alone would read as a rendering bug, so an order with
-                    no recorded steps gets a plain statement instead. */}
-                {(order.timeline || []).length === 0 && (
-                  <div className="relative flex gap-6 md:gap-10">
-                    <div className="relative z-10 w-12 h-12 rounded-2xl flex items-center justify-center shadow-sm bg-gray-50 text-gray-400">
-                      <Clock size={24} />
-                    </div>
-                    <div className="flex-1 pt-1">
-                      <h4 className="text-lg font-bold text-gray-500">No updates yet</h4>
-                      <p className="text-[14px] text-gray-500">
-                        This order has been placed but no status changes have been recorded yet. Please check back shortly.
-                      </p>
-                    </div>
-                  </div>
+            {/* 6, 7, 9. Predefined Full Order Journey (Completed ✓, Active ●, Future ○) */}
+            <div className="bg-white rounded-xl border border-gray-200/80 p-4 md:p-5 shadow-2xs">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
+                  <Sparkles size={16} className="text-brand-blue" />
+                  <span>Tracking Journey</span>
+                </h3>
+                {!terminalState && (
+                  <span className="text-xs font-medium text-gray-400">
+                    Step {activeStageIdx + 1} of {JOURNEY_STAGES.length}
+                  </span>
                 )}
               </div>
+
+              {terminalState ? (
+                /* A cancelled / returned / damaged order never progresses
+                   toward delivery, so the forward journey is replaced by a
+                   plain terminal statement instead of a misleading rail. */
+                <div className="flex items-start gap-3 rounded-lg bg-red-50/60 border border-red-100 p-3.5">
+                  <XCircle size={20} className="text-red-500 shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-red-700">{terminalState}</p>
+                    <p className="text-xs text-gray-600 mt-0.5 leading-relaxed">
+                      This order will not continue through the delivery journey. Please contact support if you need help with this order.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <>
+              {/* Responsive Journey Rail */}
+              <div className="relative pl-6 space-y-4">
+                {/* Vertical connecting rail line */}
+                <div className="absolute left-[11px] top-2 bottom-2 w-0.5 bg-gray-100"></div>
+
+                {JOURNEY_STAGES.map((stage, idx) => {
+                  const isCompleted = idx < activeStageIdx;
+                  const isActive = idx === activeStageIdx;
+                  const timelineCheck = isStageInTimeline(stage.key, order.timeline);
+
+                  return (
+                    <div key={stage.key} className="relative flex items-start gap-3 text-left">
+                      {/* Node Indicator */}
+                      <div
+                        className={`absolute -left-6 top-0.5 w-[22px] h-[22px] rounded-full flex items-center justify-center text-xs font-bold transition-all z-10 ${
+                          isCompleted
+                            ? 'bg-emerald-500 text-white shadow-xs'
+                            : isActive
+                              ? 'bg-brand-blue text-white ring-4 ring-brand-blue/20 shadow-xs'
+                              : 'bg-white border-2 border-gray-200 text-transparent'
+                        }`}
+                      >
+                        {isCompleted ? (
+                          <Check size={13} strokeWidth={3} />
+                        ) : isActive ? (
+                          <div className="w-2 h-2 rounded-full bg-white"></div>
+                        ) : null}
+                      </div>
+
+                      <div className="flex-1 min-w-0 pt-0.5">
+                        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+                          <span
+                            className={`text-xs md:text-sm font-bold ${
+                              isActive
+                                ? 'text-brand-blue'
+                                : isCompleted
+                                  ? 'text-gray-900'
+                                  : 'text-gray-400'
+                            }`}
+                          >
+                            {stage.label}
+                          </span>
+                          {timelineCheck.entry?.timestamp && (
+                            <span className="text-[11px] text-gray-400 font-medium">
+                              {formatDate(timelineCheck.entry.timestamp)} · {formatTime(timelineCheck.entry.timestamp)}
+                            </span>
+                          )}
+                        </div>
+                        <p
+                          className={`text-xs mt-0.5 leading-relaxed ${
+                            isActive
+                              ? 'text-gray-600 font-medium'
+                              : isCompleted
+                                ? 'text-gray-500'
+                                : 'text-gray-400'
+                          }`}
+                        >
+                          {stage.description}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+                </>
+              )}
             </div>
 
-            {/* Delivery Info */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
-                <div className="flex items-center gap-3 mb-6 border-l-4 border-brand-blue pl-3">
-                  <h3 className="font-bold text-gray-800">Delivering To</h3>
-                </div>
-                <div className="flex gap-4">
-                  <div className="w-10 h-10 bg-gray-50 rounded-lg flex items-center justify-center text-gray-400">
-                    <MapPin size={20} />
-                  </div>
-                  <div>
-                    {/* City-level only. The public endpoint deliberately does not
-                        return the street address or phone number, because anyone
-                        who knows the order number can reach this page. */}
-                    <p className="text-[15px] font-bold text-gray-800 mb-1">
-                      {[order.shippingAddress?.city, order.shippingAddress?.district]
-                        .filter(Boolean)
-                        .join(', ') || 'Address not available'}
-                    </p>
-                    <p className="text-[13px] text-gray-500 leading-relaxed">
-                      {order.shippingAddress?.city || order.shippingAddress?.district
-                        ? 'For your safety, the full address and phone number are shown on your order confirmation.'
-                        : 'No delivery location recorded for this order.'}
-                    </p>
-                  </div>
+            {/* 8 & 10. Secondary Detailed Timeline Updates (Clean & Compact) */}
+            {order.timeline && order.timeline.length > 0 && (
+              <div className="bg-white rounded-xl border border-gray-200/80 p-4 md:p-5 shadow-2xs">
+                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
+                  Activity Log & Courier Updates
+                </h3>
+                <div className="space-y-3">
+                  {order.timeline.map((entry, idx) => {
+                    const rawNote = entry.note || '';
+                    const isLongNote = rawNote.length > 90;
+                    const isExpanded = expandedNotes[idx];
+
+                    return (
+                      <div key={`${entry.status}-${entry.timestamp}-${idx}`} className="flex items-start gap-2.5 text-xs pb-2.5 border-b border-gray-50 last:border-0 last:pb-0">
+                        <div className="w-6 h-6 rounded-full bg-blue-50 text-brand-blue flex items-center justify-center shrink-0 mt-0.5">
+                          <Clock size={12} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-baseline justify-between gap-1">
+                            <span className="font-semibold text-gray-800 text-xs">
+                              {entry.status}
+                            </span>
+                            <span className="text-[11px] text-gray-400 font-mono">
+                              {formatTime(entry.timestamp)} · {formatDate(entry.timestamp)}
+                            </span>
+                          </div>
+                          {rawNote && (
+                            <div className="mt-1 text-gray-500 leading-snug">
+                              <p className={!isExpanded && isLongNote ? 'line-clamp-2' : ''}>
+                                {rawNote}
+                              </p>
+                              {isLongNote && (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleExpand(idx)}
+                                  className="text-[11px] font-semibold text-brand-blue hover:underline mt-0.5 flex items-center gap-0.5"
+                                >
+                                  <span>{isExpanded ? 'Show less' : 'View details'}</span>
+                                  <ChevronDown size={11} className={isExpanded ? 'rotate-180' : ''} />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
+            )}
 
-              <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
-                <div className="flex items-center gap-3 mb-6 border-l-4 border-brand-blue pl-3">
-                  <h3 className="font-bold text-gray-800">Support Helper</h3>
+            {/* 11 & 12. Delivering To & Support Helper (Compact Two-Column Section) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* Delivering To Card */}
+              <div className="bg-white rounded-xl border border-gray-200/80 p-4 shadow-2xs flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-gray-900 mb-2">
+                    <MapPin size={14} className="text-brand-blue shrink-0" />
+                    <span>Delivering To</span>
+                  </div>
+                  <p className="text-xs md:text-sm text-gray-700 leading-relaxed font-medium break-words">
+                    {fullAddress}
+                  </p>
                 </div>
-                <p className="text-[14px] text-gray-500 mb-4 leading-relaxed">
-                  Need any help regarding your order? Our support team is available 24/7 to assist you with any inquiries.
+                <p className="text-[11px] text-gray-400 mt-3 pt-2 border-t border-gray-100">
+                  Recipient: <span className="font-medium text-gray-600">{customerInfo.name}</span>
+                  {customerInfo.phone && ` (${customerInfo.phone})`}
                 </p>
-                <div className="flex items-center gap-3 p-3 bg-[#f8f9fa] rounded-xl border border-gray-50">
-                  <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
-                    <Image 
-                      src="/placeholder.svg" 
-                      alt="Support" 
-                      width={40} height={40}
-                      className="w-full h-full object-cover" 
-                    />
+              </div>
+
+              {/* Support Helper Card */}
+              <div className="bg-white rounded-xl border border-gray-200/80 p-4 shadow-2xs flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-gray-900 mb-1.5">
+                    <Headphones size={14} className="text-brand-blue shrink-0" />
+                    <span>Support Helper</span>
                   </div>
-                  <div>
-                    <h4 className="font-bold text-gray-800 text-[14px]">Support Agent</h4>
-                    {supportPhone && (
-                      <a href={`tel:${supportPhone.replace(/[^0-9]/g, '')}`} className="text-[12px] text-brand-blue font-medium">{supportPhone}</a>
-                    )}
-                  </div>
+                  <p className="text-xs text-gray-500 leading-snug">
+                    Need any help or modification for your parcel? Our customer care is ready to assist.
+                  </p>
+                </div>
+
+                <div className="mt-3 pt-2 border-t border-gray-100 flex items-center justify-between">
+                  <span className="text-[11px] text-gray-400 font-medium">Customer Support</span>
+                  {supportPhone ? (
+                    <a
+                      href={`tel:${supportPhone.replace(/[^0-9]/g, '')}`}
+                      className="inline-flex items-center gap-1 text-xs font-bold text-brand-blue hover:underline"
+                    >
+                      <Phone size={12} />
+                      <span>{supportPhone}</span>
+                    </a>
+                  ) : (
+                    <span className="text-xs text-gray-400">Available 24/7</span>
+                  )}
                 </div>
               </div>
             </div>
           </div>
         )}
 
+        {/* Multi-order Search Results (by phone) */}
         {ordersList && !order && !loading && !error && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
+          <div className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <div className="bg-white rounded-xl border border-gray-200/80 p-3.5 shadow-2xs flex items-center justify-between gap-3">
               <div>
-                <h3 className="text-gray-800 text-lg font-bold">Orders Found</h3>
-                <p className="text-gray-500 text-[14px]">We found {ordersList.length} orders matching your phone number.</p>
+                <h3 className="text-gray-900 text-sm font-bold">Orders Found ({ordersList.length})</h3>
+                <p className="text-gray-500 text-xs">Select an order to track delivery status</p>
               </div>
-              <div className="text-brand-blue text-sm font-semibold bg-brand-blue/10 px-4 py-2 rounded-full">
-                Phone: {orderNumber}
-              </div>
+              <span className="text-xs font-mono font-semibold text-brand-blue bg-blue-50 px-2.5 py-1 rounded-md">
+                {orderNumber}
+              </span>
             </div>
 
-            <div className="grid grid-cols-1 gap-4">
+            <div className="space-y-2">
               {ordersList.map((item) => (
                 <div 
                   key={item.id}
                   onClick={() => setOrder(item)}
-                  className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md transition-all cursor-pointer group flex flex-col md:flex-row md:items-center justify-between gap-6 border-l-4 border-l-brand-blue"
+                  className="bg-white rounded-xl border border-gray-200/80 p-3.5 shadow-2xs hover:border-brand-blue transition-all cursor-pointer group flex items-center justify-between gap-3"
                 >
-                  <div className="flex-1 space-y-3">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <span className="font-bold text-gray-800 text-lg group-hover:text-brand-blue transition-colors">
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-gray-900 text-sm group-hover:text-brand-blue transition-colors">
                         {item.displayId}
                       </span>
                       <span 
-                        className="text-[12px] px-2.5 py-0.5 rounded-full font-semibold border"
+                        className="text-[11px] px-2 py-0.2 rounded-full font-semibold border"
                         style={{ 
-                          borderColor: item.status?.color || '#e2e8f0', 
+                          borderColor: item.status?.color ? item.status.color + '40' : '#e2e8f0', 
                           color: item.status?.color || '#4a5568',
-                          backgroundColor: (item.status?.color ? item.status.color + '10' : '#f7fafc')
+                          backgroundColor: item.status?.color ? item.status.color + '15' : '#f7fafc'
                         }}
                       >
                         {item.status?.name || 'Processing'}
                       </span>
                     </div>
-
-                    <div className="flex flex-wrap items-center gap-y-2 gap-x-6 text-[14px] text-gray-500">
-                      <div className="flex items-center gap-1.5">
-                        <Clock size={16} />
-                        <span>{formatDate(item.createdAt)}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <Package size={16} />
-                        <span>
-                          {item.items.reduce((total, it) => total + it.quantity, 0)} {item.items.reduce((total, it) => total + it.quantity, 0) > 1 ? 'items' : 'item'}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="text-sm text-gray-600 line-clamp-1">
-                      {item.items.map(it => `${it.product.name} (x${it.quantity})`).join(', ')}
-                    </div>
+                    <p className="text-xs text-gray-500 flex items-center gap-2">
+                      <span>{formatDate(item.createdAt)}</span>
+                      <span>·</span>
+                      <span>{item.items.reduce((acc, it) => acc + it.quantity, 0)} items</span>
+                      <span>·</span>
+                      <span className="font-semibold text-gray-800">{formatPrice(item.total)}</span>
+                    </p>
                   </div>
 
-                  <div className="flex md:flex-col justify-between items-start md:items-end gap-2 border-t md:border-t-0 pt-4 md:pt-0">
-                    <div>
-                      <span className="text-gray-400 text-[12px] block">Total Amount</span>
-                      <span className="font-extrabold text-gray-900 text-lg">
-                        {formatPrice(item.total)}
-                      </span>
-                    </div>
-                    <span className="text-brand-blue font-semibold text-[14px] flex items-center gap-1 group-hover:translate-x-1 transition-transform mt-2">
-                      Track Details <ChevronRight size={16} />
-                    </span>
-                  </div>
+                  <span className="text-brand-blue font-semibold text-xs flex items-center gap-1 group-hover:translate-x-1 transition-transform shrink-0">
+                    Track <ChevronRight size={14} />
+                  </span>
                 </div>
               ))}
             </div>
