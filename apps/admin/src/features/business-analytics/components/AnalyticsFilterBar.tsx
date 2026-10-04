@@ -201,8 +201,6 @@ export function AnalyticsFilterBar({ value, onChange }: Props) {
           {/* Canonical dimension — the four venues, no platform names mixed in. */}
           <DimSelect label="Channel" value={value.channel} placeholder="All channels" options={CANONICAL_CHANNELS} onPick={(v) => set({ channel: v })} />
           <DimSelect label="Acquisition" value={value.acquisitionType} placeholder="Any acquisition" options={CANONICAL_SOURCES} onPick={(v) => set({ acquisitionType: v })} />
-          {/* Legacy filter, still honoured by the backend. */}
-          <DimSelect label="Sales Channel (legacy)" value={value.salesChannel} placeholder="All legacy channels" options={SALES_CHANNELS.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ salesChannel: v })} />
           <DimSelect label="Segment" value={value.customerSegment} placeholder="All segments" options={SEGMENTS.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ customerSegment: v })} />
           <DimSelect label="Delivery Outcome" value={value.deliveryOutcome} placeholder="All outcomes" options={OUTCOMES.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ deliveryOutcome: v })} />
           <CollapsibleTrigger asChild>
@@ -213,6 +211,8 @@ export function AnalyticsFilterBar({ value, onChange }: Props) {
           </CollapsibleTrigger>
         </div>
         <CollapsibleContent className="flex items-end gap-2 flex-wrap">
+          {/* Legacy filter, still honoured by the backend but hidden by default. */}
+          <DimSelect label="Sales Channel (legacy)" value={value.salesChannel} placeholder="All legacy channels" options={SALES_CHANNELS.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ salesChannel: v })} />
           <DimSelect label="Collection" value={value.collectionStatus} placeholder="All" options={COLLECTION.map((s) => ({ value: s, label: s }))} onPick={(v) => set({ collectionStatus: v })} />
           <DimSelect
             label="Category"

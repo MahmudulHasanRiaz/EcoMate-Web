@@ -63,6 +63,10 @@ describe('filter → query-key → request-params', () => {
   const ALL_DIMS: [keyof AnalyticsFilters, string][] = [
     ['source', 'POS'],
     ['salesChannel', 'WEBSITE'],
+    ['channel', 'MESSAGING'],
+    ['channelEntity', 'Gulshan Showroom'],
+    ['sourceSlug', 'facebook'],
+    ['acquisitionType', 'PAID'],
     ['marketingSource', 'facebook'],
     ['paymentMethod', 'BKASH'],
     ['categoryId', 'c1'],

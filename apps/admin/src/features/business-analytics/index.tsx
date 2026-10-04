@@ -114,18 +114,30 @@ export default function BusinessOverview() {
             <AnalyticsSection title="Where sales come from">
               <Tabs defaultValue="channel">
                 <TabsList className="tap-h max-w-full overflow-x-auto no-scrollbar">
-                  <TabsTrigger value="channel" className="tap-h">Sales Channel</TabsTrigger>
+                  <TabsTrigger value="channel" className="tap-h">Channel</TabsTrigger>
+                  <TabsTrigger value="channelEntity" className="tap-h">Channel Entity</TabsTrigger>
+                  <TabsTrigger value="sourcePlatform" className="tap-h">Source Platform</TabsTrigger>
+                  <TabsTrigger value="acquisition" className="tap-h">Acquisition</TabsTrigger>
                   <TabsTrigger value="source" className="tap-h">Source System</TabsTrigger>
                   <TabsTrigger value="category" className="tap-h">Category</TabsTrigger>
                 </TabsList>
                 <TabsContent value="channel">
-                  <BreakdownTable title="Net Sales by Sales Channel" rows={data.data.breakdowns.bySalesChannel} hint="Where the sale came from. Kept apart from how the order was placed." />
+                  <BreakdownTable title="Net Sales by Channel" rows={data.data.breakdowns.byChannel ?? []} hint="Where the sale happened (Website, Messaging, Phone Call, POS)." />
+                </TabsContent>
+                <TabsContent value="channelEntity">
+                  <BreakdownTable title="Net Sales by Channel Entity" rows={data.data.breakdowns.byChannelEntity ?? []} hint="The specific origin within a venue (website.com, Page 1, Office, Showroom)." />
+                </TabsContent>
+                <TabsContent value="sourcePlatform">
+                  <BreakdownTable title="Net Sales by Source Platform" rows={data.data.breakdowns.bySourcePlatform ?? []} hint="The marketing platform that brought the order (Facebook, Instagram, TikTok, Google, …)." />
+                </TabsContent>
+                <TabsContent value="acquisition">
+                  <BreakdownTable title="Net Sales by Acquisition Type" rows={data.data.breakdowns.byAcquisitionType ?? []} hint="Paid, Organic, or Unknown — never derived from the channel." />
                 </TabsContent>
                 <TabsContent value="source">
-                  <BreakdownTable title="Net Sales by Source System" rows={data.data.breakdowns.bySource} hint="How the order was placed (shop, online, or by staff)." />
+                  <BreakdownTable title="Net Sales by Source System" rows={data.data.breakdowns.bySource ?? []} hint="How the order was placed (shop, online, or by staff)." />
                 </TabsContent>
                 <TabsContent value="category">
-                  <BreakdownTable title="Net Sales by Category (Top 8)" rows={data.data.breakdowns.byCategory} hint="By main category. Every taka counted once. Combo packs are split." />
+                  <BreakdownTable title="Net Sales by Category (Top 8)" rows={data.data.breakdowns.byCategory ?? []} hint="By main category. Every taka counted once. Combo packs are split." />
                 </TabsContent>
               </Tabs>
             </AnalyticsSection>

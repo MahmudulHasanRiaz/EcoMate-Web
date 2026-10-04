@@ -145,7 +145,15 @@ export interface OverviewData {
   fulfillment: FulfillmentCompact
   comparison: OverviewComparison
   trend: { requestedGranularity: string; granularity: string; points: TrendPoint[] }
-  breakdowns: { bySalesChannel: BreakdownRow[]; bySource: BreakdownRow[]; byCategory: BreakdownRow[] }
+  breakdowns: {
+    bySalesChannel: BreakdownRow[]
+    bySource: BreakdownRow[]
+    byCategory: BreakdownRow[]
+    byChannel: BreakdownRow[]
+    byChannelEntity: BreakdownRow[]
+    bySourcePlatform: BreakdownRow[]
+    byAcquisitionType: BreakdownRow[]
+  }
 }
 
 export interface OverviewResponse {
@@ -390,6 +398,7 @@ export interface SalesSummaryData {
     dateBasis: string
     byPriorStage: { stage: string; orders: number; value: number }[]
     bySalesChannel: BreakdownRow[]
+    byChannel: BreakdownRow[]
   }
   returns: {
     events: number

@@ -433,6 +433,7 @@ function salesFixture(): SalesSummaryResponse {
         dateBasis: 'Order.createdAt — intake cohort',
         byPriorStage: [{ stage: 'Shipping', orders: 3, value: 6000 }],
         bySalesChannel: [],
+        byChannel: [],
       },
       returns: salesReturns(),
       refunds: {
