@@ -131,6 +131,8 @@ describe('EmployeesService', () => {
           id: 'preset-1',
           name: 'Staff',
         }),
+        // Default-preset lookup used when the hire form omits accessPresetId.
+        findFirst: jest.fn().mockResolvedValue({ id: 'system-preset-manager' }),
       },
       employmentHistory: {
         create: jest.fn().mockResolvedValue({}),
@@ -291,20 +293,7 @@ describe('EmployeesService', () => {
       });
     });
 
-    it('should not downgrade manager profile on create', async () => {
-      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
-        id: 'profile-1',
-        role: 'employee',
-      });
-      const dto: CreateEmployeeDto = {
-        betterAuthUserId: 'ba-user-test',
-        joiningDate: '2025-01-15',
-      };
-      await service.create(dto);
-      expect(prisma.userProfile.update).not.toHaveBeenCalled();
-    });
-
-    it('should not change admin profile on create', async () => {
+    it('should not change admin profile on create — admin rights come from the role, not the preset', async () => {
       (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
         id: 'profile-1',
         role: 'admin',
@@ -328,6 +317,57 @@ describe('EmployeesService', () => {
       };
       await service.create(dto);
       expect(prisma.userProfile.update).not.toHaveBeenCalled();
+    });
+
+    it.each(['cashier', 'packing_assistant'])(
+      'should demote a %s hired through HR to employee so the access preset governs them',
+      async (role) => {
+        (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+          id: 'profile-1',
+          role,
+        });
+        const dto: CreateEmployeeDto = {
+          betterAuthUserId: 'ba-user-test',
+          joiningDate: '2025-01-15',
+        };
+        await service.create(dto);
+        expect(prisma.userProfile.update).toHaveBeenCalledWith({
+          where: { id: 'profile-1' },
+          data: { role: 'employee' },
+        });
+      },
+    );
+
+    it('assigns the seeded default preset when the hire omits accessPresetId', async () => {
+      const dto: CreateEmployeeDto = {
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+      };
+      await service.create(dto);
+      // Without a preset an employee resolves to zero permissions, so a hire
+      // created without one could sign in and see nothing.
+      expect(prisma.accessPreset.findFirst).toHaveBeenCalled();
+      expect(prisma.employee.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            accessPresetId: 'system-preset-manager',
+          }),
+        }),
+      );
+    });
+
+    it('uses the explicitly chosen preset instead of the default', async () => {
+      const dto: CreateEmployeeDto = {
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+        accessPresetId: 'preset-1',
+      };
+      await service.create(dto);
+      expect(prisma.employee.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ accessPresetId: 'preset-1' }),
+        }),
+      );
     });
 
     it('should persist status and exitDate on create when provided', async () => {
@@ -875,16 +915,24 @@ describe('EmployeesService', () => {
       );
     });
 
-    it('should reset BA role to the UserProfile role', async () => {
+    it('should reset BA role and UserProfile role back to customer on remove', async () => {
       (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
       (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
         id: 'profile-1',
         role: 'employee',
       });
       await service.remove('emp-1');
+      // Symmetric with create(): removing the employment ends staff status on
+      // BOTH copies. Previously only the Better Auth copy was touched, and it
+      // was set to the profile's own 'employee' role — so the account kept
+      // staff access with no Employee row behind it.
       expect(baPrisma.betterAuthUser.update).toHaveBeenCalledWith({
         where: { id: 'ba-user-test' },
-        data: { role: 'employee' },
+        data: { role: 'customer' },
+      });
+      expect(prisma.userProfile.update).toHaveBeenCalledWith({
+        where: { id: 'profile-1' },
+        data: { role: 'customer' },
       });
     });
 

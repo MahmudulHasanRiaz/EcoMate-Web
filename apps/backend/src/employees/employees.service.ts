@@ -146,9 +146,31 @@ const EMPLOYEE_DETAIL_INCLUDE: Prisma.EmployeeInclude = {
   },
 };
 
+/**
+ * Id of the seeded system preset assigned to a hire when HR does not pick one.
+ * Matches the row inserted by migration
+ * 20261005120000_consolidate_manager_into_employee.
+ */
+export const DEFAULT_ACCESS_PRESET_ID = 'system-preset-manager';
+
 @Injectable()
 export class EmployeesService {
   constructor(private prisma: PrismaService) {}
+
+  /**
+   * The preset assigned to a hire when HR does not pick one.
+   *
+   * Prefers the seeded system "Manager" preset. Returns undefined when it is
+   * absent — e.g. a database created before the migration ran — in which case
+   * the employee is created exactly as before rather than failing.
+   */
+  private async resolveDefaultPresetId(): Promise<string | undefined> {
+    const preset = await this.prisma.accessPreset.findFirst({
+      where: { id: DEFAULT_ACCESS_PRESET_ID },
+      select: { id: true },
+    });
+    return preset?.id;
+  }
 
   async findAll(query: EmployeeListQuery = {}) {
     const page = query.page ?? 1;
@@ -303,6 +325,15 @@ export class EmployeesService {
       if (!manager) throw new NotFoundException('Employee not found');
     }
 
+    // An employee with no access preset resolves to ZERO permissions
+    // (effective-permissions returns [] when employeeLink.accessPreset is
+    // null), so a hire created without one could sign in and see nothing.
+    // Fall back to the seeded "Manager" system preset instead, which HR can
+    // narrow later — a new hire starts usable and auditable rather than
+    // mysteriously powerless.
+    const accessPresetId =
+      dto.accessPresetId || (await this.resolveDefaultPresetId());
+
     return this.prisma.$transaction(async (tx) => {
       const counter = await tx.orderCounter.upsert({
         where: { date: this.dateStr() },
@@ -323,7 +354,7 @@ export class EmployeesService {
             employeeId,
             departmentId: dto.departmentId,
             designationId: dto.designationId,
-            accessPresetId: dto.accessPresetId,
+            accessPresetId: accessPresetId,
             reportingToId: dto.reportingToId,
             employmentType: dto.employmentType || 'full_time',
             status: dto.status,
@@ -511,19 +542,42 @@ export class EmployeesService {
         }
       }
 
-      await baPrisma.betterAuthUser.update({
-        where: { id: dto.betterAuthUserId },
-        data: { role: 'employee' },
-      });
-
+      // Better Auth keeps its own free-form `role` string on
+      // better_auth_users, and the session path (better-auth/auth.config.ts
+      // customSession) reads that column — so both copies must move together.
+      //
+      // Hiring through HR puts a person under the access preset, so a role
+      // that carried its own implicit rights (cashier, packing_assistant)
+      // must become `employee` or the preset would not actually govern them.
+      // admin/superadmin are exempt: they hold their rights by role, not by
+      // preset. The previous code flipped only when the role was exactly
+      // 'customer', which left a cashier hired as an employee still gated by
+      // the cashier role instead of the preset HR chose.
       const profile = await tx.userProfile.findUnique({
         where: { betterAuthUserId: dto.betterAuthUserId },
         select: { id: true, role: true },
       });
-      if (profile && profile.role === 'customer') {
+
+      const ROLE_EXEMPT_FROM_HIRE_DEMOTION = new Set(['admin', 'superadmin']);
+      const shouldDemoteToEmployee =
+        !!profile &&
+        profile.role !== 'employee' &&
+        !ROLE_EXEMPT_FROM_HIRE_DEMOTION.has(profile.role);
+
+      if (shouldDemoteToEmployee) {
         await tx.userProfile.update({
-          where: { id: profile.id },
+          where: { id: profile!.id },
           data: { role: 'employee' },
+        });
+      }
+
+      // BA copy: keep it in step, and never leave it claiming a role the
+      // UserProfile no longer has.
+      const baRole = shouldDemoteToEmployee ? 'employee' : profile?.role;
+      if (baRole) {
+        await baPrisma.betterAuthUser.update({
+          where: { id: dto.betterAuthUserId },
+          data: { role: baRole },
         });
       }
 
@@ -948,10 +1002,25 @@ export class EmployeesService {
       }
       const profile = await tx.userProfile.findUnique({
         where: { betterAuthUserId: emp.betterAuthUserId },
+        select: { id: true, role: true },
       });
+
+      // Symmetric with create(): employment is being undone, so the account
+      // stops being a staff member. It previously only restored the Better
+      // Auth copy and left UserProfile.role at 'employee', so a re-created
+      // employee kept stale staff access with no Employee row behind it.
+      const restoredRole = profile?.role === 'employee' ? 'customer' : profile?.role;
+
+      if (profile && profile.role === 'employee') {
+        await tx.userProfile.update({
+          where: { id: profile.id },
+          data: { role: 'customer' },
+        });
+      }
+
       await baPrisma.betterAuthUser.update({
         where: { id: emp.betterAuthUserId },
-        data: { role: profile?.role ?? 'customer' },
+        data: { role: restoredRole ?? 'customer' },
       });
       try {
         return await tx.employee.delete({ where: { id } });

@@ -317,6 +317,7 @@ export default function CreateEmployeePage() {
   const departmentName = departments?.data?.find((d: any) => d.id === basics.departmentId)?.name
   const designationName = designations?.find((d: any) => d.id === basics.designationId)?.name
   const presetName = presets?.data?.find((p: any) => p.id === basics.accessPresetId)?.name
+    ?? 'Manager (default)'
   const managerName = allEmployees?.find((e: any) => e.id === basics.reportingToId)?.betterAuthUser?.name
   const selectedShiftPreset = Array.isArray(shiftPresets) ? shiftPresets.find((p) => p.id === shiftValue.presetId) : undefined
 
@@ -418,10 +419,14 @@ export default function CreateEmployeePage() {
                         <SelectDropdown
                           defaultValue={basics.accessPresetId}
                           onValueChange={(v) => setBasics({ ...basics, accessPresetId: v })}
-                          placeholder='Select preset'
+                          placeholder='Manager (default)'
                           items={(presets?.data || []).map((p: any) => ({ label: p.name, value: p.id }))}
                           isControlled
                         />
+                        <p className='text-xs text-muted-foreground'>
+                          Leave unset to grant the default Manager preset, then
+                          narrow it from Access Presets.
+                        </p>
                       </div>
                       <div className='grid gap-2'>
                         <Label>Employment Type</Label>
