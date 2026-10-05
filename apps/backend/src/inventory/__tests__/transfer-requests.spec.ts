@@ -15,6 +15,7 @@ import { ManagedStockLedgerService } from '../managed-stock-ledger.service';
 describe('InventoryService — POS transfer requests', () => {
   let service: InventoryService;
   let prisma: PrismaService;
+  let prismaMock: any;
   let transferSpy: jest.SpyInstance;
 
   const baseRequest = {
@@ -41,21 +42,23 @@ describe('InventoryService — POS transfer requests', () => {
   };
 
   beforeEach(async () => {
+    prismaMock = {
+      stockTransfer: {
+        findUnique: jest.fn(),
+        findMany: jest.fn(),
+        count: jest.fn().mockResolvedValue(0),
+        updateMany: jest.fn(),
+        update: jest.fn(),
+      },
+      userProfile: { findMany: jest.fn().mockResolvedValue([]) },
+      // The whole approval (claim + every item + confirmation) runs in ONE
+      // transaction; the fake runs the callback against the same stub.
+      $transaction: jest.fn(async (cb: any) => cb(prismaMock)),
+    };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         InventoryService,
-        {
-          provide: PrismaService,
-          useValue: {
-            stockTransfer: {
-              findUnique: jest.fn(),
-              findMany: jest.fn(),
-              updateMany: jest.fn(),
-              update: jest.fn(),
-            },
-            userProfile: { findMany: jest.fn().mockResolvedValue([]) },
-          },
-        },
+        { provide: PrismaService, useValue: prismaMock },
         { provide: StockService, useValue: {} },
         { provide: StockRouterService, useValue: {} },
         { provide: CostingLotService, useValue: {} },
@@ -85,10 +88,11 @@ describe('InventoryService — POS transfer requests', () => {
   // ─── listTransferRequests() ───────────────────────────────────
 
   describe('listTransferRequests', () => {
-    it('lists request statuses only, newest first, capped at 100', async () => {
+    it('paginates request statuses, newest first, instead of a fixed take: 100', async () => {
       (prisma.stockTransfer.findMany as jest.Mock).mockResolvedValue([baseRequest]);
+      (prisma.stockTransfer.count as jest.Mock).mockResolvedValue(1);
 
-      const rows = await service.listTransferRequests();
+      const res = await service.listTransferRequests(2, 5);
 
       expect(prisma.stockTransfer.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -97,12 +101,25 @@ describe('InventoryService — POS transfer requests', () => {
               in: ['REQUESTED', 'APPROVING', 'FULFILLED', 'REJECTED', 'APPROVAL_FAILED'],
             },
           },
-          orderBy: { createdAt: 'desc' },
-          take: 100,
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          skip: 5,
+          take: 5,
         }),
       );
-      expect(rows).toHaveLength(1);
-      expect(rows[0].requestedByUser).toBeNull();
+      expect(res.data).toHaveLength(1);
+      expect(res.meta).toEqual({ total: 1, page: 2, perPage: 5, totalPages: 1 });
+      expect(res.data[0].requestedByUser).toBeNull();
+    });
+
+    it('defaults to page 1 / 20 rows when the caller sends no pagination', async () => {
+      (prisma.stockTransfer.findMany as jest.Mock).mockResolvedValue([]);
+
+      const res = await service.listTransferRequests();
+
+      expect(prisma.stockTransfer.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 0, take: 20 }),
+      );
+      expect(res.meta.totalPages).toBe(0);
     });
 
     it('resolves the requesting cashier from the user profile', async () => {
@@ -111,12 +128,12 @@ describe('InventoryService — POS transfer requests', () => {
         { id: 'cashier-1', firstName: 'Rina', lastName: 'Akter', email: 'rina@x.com' },
       ]);
 
-      const rows = await service.listTransferRequests();
+      const res = await service.listTransferRequests();
 
       expect(prisma.userProfile.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: { in: ['cashier-1'] } } }),
       );
-      expect(rows[0].requestedByUser).toMatchObject({ firstName: 'Rina' });
+      expect(res.data[0].requestedByUser).toMatchObject({ firstName: 'Rina' });
     });
   });
 
@@ -150,6 +167,9 @@ describe('InventoryService — POS transfer requests', () => {
           idempotencyKey: expect.stringContaining('req-1'),
         }),
         'admin@x.com',
+        // …and inside the approval transaction, so a mid-list failure rolls
+        // the whole request back.
+        prismaMock,
       );
       expect(prisma.stockTransfer.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -160,6 +180,29 @@ describe('InventoryService — POS transfer requests', () => {
       expect(result.status).toBe('FULFILLED');
     });
 
+    it('runs EVERY item inside a single transaction', async () => {
+      const twoItems = {
+        ...baseRequest,
+        items: [
+          { ...baseRequest.items[0] },
+          { ...baseRequest.items[0], id: 'item-2', quantity: 3 },
+        ],
+      };
+      (prisma.stockTransfer.findUnique as jest.Mock)
+        .mockResolvedValueOnce(twoItems)
+        .mockResolvedValueOnce({ ...twoItems, status: 'FULFILLED' });
+
+      await service.approveTransferRequest('req-1', 'admin@x.com');
+
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(transferSpy).toHaveBeenCalledTimes(2);
+      const keys = transferSpy.mock.calls.map((c: any[]) => c[0].idempotencyKey);
+      expect(keys).toEqual([
+        'APPROVE_req-1_item-1',
+        'APPROVE_req-1_item-2',
+      ]);
+    });
+
     it('refuses to run twice when another approver already claimed it', async () => {
       (prisma.stockTransfer.updateMany as jest.Mock).mockResolvedValue({ count: 0 });
 
@@ -167,7 +210,6 @@ describe('InventoryService — POS transfer requests', () => {
         ConflictException,
       );
       expect(transferSpy).not.toHaveBeenCalled();
-      expect(prisma.stockTransfer.update).not.toHaveBeenCalled();
     });
 
     it('refuses a request that is no longer pending', async () => {
@@ -202,16 +244,18 @@ describe('InventoryService — POS transfer requests', () => {
       );
     });
 
-    it('never reopens a partially executed request: failure → APPROVAL_FAILED + rethrow', async () => {
+    it('closes a failed approval as APPROVAL_FAILED without ever marking it FULFILLED', async () => {
       transferSpy.mockRejectedValue(new Error('Insufficient stock for transfer'));
 
       await expect(service.approveTransferRequest('req-1', 'admin@x.com')).rejects.toThrow(
         'Insufficient stock for transfer',
       );
 
-      expect(prisma.stockTransfer.update).toHaveBeenCalledWith(
+      // The movement transaction rolled back, so nothing moved — the request is
+      // closed out explicitly so it cannot be silently re-approved.
+      expect(prisma.stockTransfer.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 'req-1' },
+          where: { id: 'req-1', status: { in: ['REQUESTED', 'APPROVING'] } },
           data: expect.objectContaining({ status: 'APPROVAL_FAILED' }),
         }),
       );

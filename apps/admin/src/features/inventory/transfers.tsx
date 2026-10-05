@@ -14,13 +14,11 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Command, CommandInput, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
-import { Plus, ArrowRight, Truck, Search, Eye, AlertCircle, Loader2, Check, ChevronsUpDown, X, Send } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { Plus, ArrowRight, Truck, Search, Eye, AlertCircle, Loader2, Check, X, Send } from 'lucide-react'
 import { UserBadge } from '@/components/user-badge'
+import { ProductSkuCombobox, type LookupRow } from './components/product-sku-combobox'
 
 interface Warehouse {
   id: string
@@ -110,14 +108,6 @@ const REQUEST_STATUS_META: Record<string, { label: string; variant: 'warning' | 
   APPROVAL_FAILED: { label: 'Approval failed', variant: 'danger' },
 }
 
-interface Product {
-  id: string
-  name: string
-  sku: string
-  type: string
-  variants?: { id: string; name: string; sku: string }[]
-}
-
 export function Transfers() {
   const queryClient = useQueryClient()
   const [newTransferOpen, setNewTransferOpen] = useState(false)
@@ -177,19 +167,13 @@ export function Transfers() {
     enabled: !!formDest,
   })
 
-  const [productSearch, setProductSearch] = useState('')
-  const [productSearchOpen, setProductSearchOpen] = useState(false)
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+  /**
+   * Stock unit chosen in the picker. A SIMPLE product carries `variantId: null`;
+   * a VARIABLE product is only ever chosen as one of its variants (the lookup
+   * never returns a bare parent row), so `variantId` is set for those.
+   */
+  const [selectedProduct, setSelectedProduct] = useState<LookupRow | null>(null)
   const [selectedVariantId, setSelectedVariantId] = useState<string>('')
-
-  const { data: productResults, isFetching: searchingProducts } = useQuery({
-    queryKey: ['product-search', productSearch],
-    queryFn: () =>
-      apiClient
-        .get<{ data: Product[] }>('/products', { params: { search: productSearch, perPage: 50 } })
-        .then(r => r.data.data ?? r.data),
-    enabled: productSearch.length > 0,
-  })
 
   const [quantity, setQuantity] = useState('')
   const [notes, setNotes] = useState('')
@@ -266,7 +250,6 @@ export function Transfers() {
     setFormDestBin('')
     setSelectedProduct(null)
     setSelectedVariantId('')
-    setProductSearch('')
     setQuantity('')
     setNotes('')
   }
@@ -279,7 +262,7 @@ export function Transfers() {
     if (!quantity || parseInt(quantity) < 1) { toast.error('Enter a valid quantity'); return }
     const idempotencyKey = `TRF-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     createTransferMut.mutate({
-      productId: selectedProduct.id,
+      productId: selectedProduct.productId,
       variantId: selectedVariantId || undefined,
       sourceLocation: formSource,
       destinationLocation: formDest,
@@ -734,58 +717,17 @@ export function Transfers() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label>Product</Label>
-              <Popover open={productSearchOpen} onOpenChange={setProductSearchOpen}>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" role="combobox" aria-expanded={productSearchOpen} className="w-full justify-between">
-                    {selectedProduct ? selectedProduct.name : 'Search product...'}
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-                  <Command>
-                    <CommandInput placeholder="Search products..." value={productSearch} onValueChange={setProductSearch} />
-                    <CommandEmpty>{searchingProducts ? 'Searching...' : 'No product found.'}</CommandEmpty>
-                    <CommandGroup>
-                      {productResults?.map(p => (
-                        <CommandItem
-                          key={p.id}
-                          value={p.id}
-                          onSelect={() => {
-                            setSelectedProduct(p)
-                            setProductSearchOpen(false)
-                          }}
-                        >
-                          <Check className={cn('mr-2 h-4 w-4', selectedProduct?.id === p.id ? 'opacity-100' : 'opacity-0')} />
-                          <div>
-                            <div>{p.name}</div>
-                            <div className="text-xs text-muted-foreground">{p.sku}</div>
-                          </div>
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-            </div>
-
-            {selectedProduct && selectedProduct.variants && selectedProduct.variants.length > 0 && (
-              <div className="space-y-2">
-                <Label>Variant (optional)</Label>
-                <Select value={selectedVariantId} onValueChange={setSelectedVariantId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="All variants (product-level)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">All variants (product-level)</SelectItem>
-                    {selectedProduct.variants.map(v => (
-                      <SelectItem key={v.id} value={v.id}>{v.name} ({v.sku})</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+            <ProductSkuCombobox
+              selected={selectedProduct}
+              warehouseId={formSource}
+              onSelect={(row) => {
+                setSelectedProduct(row)
+                // The lookup is variant-level, so the variant is decided HERE,
+                // in one step, instead of by a second dropdown that could be
+                // left unset (which would have transferred product-level stock).
+                setSelectedVariantId(row?.variantId ?? '')
+              }}
+            />
 
             <div className="space-y-2">
               <Label>Quantity</Label>
@@ -813,7 +755,15 @@ export function Transfers() {
                 {selectedProduct ? (
                   <>
                     <div className="flex items-center justify-between text-sm">
-                      <div className="font-medium">{selectedProduct.name}</div>
+                      <div className="font-medium">
+                        {selectedProduct.productName}
+                        {selectedProduct.variantName && (
+                          <span className="font-normal text-muted-foreground"> — {selectedProduct.variantName}</span>
+                        )}
+                        {selectedProduct.sku && (
+                          <span className="ml-1.5 text-[10px] font-mono text-muted-foreground">{selectedProduct.sku}</span>
+                        )}
+                      </div>
                       <Badge variant="outline">Qty: {quantity || '0'}</Badge>
                     </div>
                     <div className="grid grid-cols-2 gap-4">

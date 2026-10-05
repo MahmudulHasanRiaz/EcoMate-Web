@@ -7,7 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stock/stock.service';
 import { StockRouterService } from '../stock/stock-router.service';
-import { CostingLotService } from '../stock/costing-lot.service';
+import { CostingLotService, CostingLotShortfallError } from '../stock/costing-lot.service';
 import { CacheService } from '../cache/cache.service';
 import { ManagedStockLedgerService } from './managed-stock-ledger.service';
 import {
@@ -19,8 +19,41 @@ import {
 import { ValuationQueryDto, StockTransferDto } from './dto/valuation.dto';
 import { LedgerQueryDto } from './dto/ledger-query.dto';
 
+/**
+ * Shape the product lookup needs: identity + the two stock figures it can fall
+ * back to. Deliberately narrow — the old `GET /products` search pulled images,
+ * pricing and every relation, then threw most of it away.
+ */
+const PRODUCT_LOOKUP_SELECT = {
+  id: true,
+  name: true,
+  sku: true,
+  type: true,
+  managedStockQuantity: true,
+  reservedStock: true,
+  variants: {
+    where: { isActive: { not: false } },
+    orderBy: [{ sortOrder: 'asc' as const }, { sku: 'asc' as const }],
+    select: {
+      id: true,
+      sku: true,
+      managedStockQuantity: true,
+      reservedStock: true,
+      attributeValues: {
+        include: { attributeValue: { select: { value: true } } },
+      },
+    },
+  },
+} satisfies Prisma.ProductSelect;
+
+type ProductLookupRow = Prisma.ProductGetPayload<{
+  select: typeof PRODUCT_LOOKUP_SELECT;
+}>;
+
 @Injectable()
 export class InventoryService {
+  /** Hard ceiling on lookup rows — a combobox never needs more than this. */
+  private static readonly LOOKUP_MAX_PER_PAGE = 50;
   constructor(
     private readonly prisma: PrismaService,
     private readonly stockService: StockService,
@@ -359,12 +392,31 @@ export class InventoryService {
       : [];
 
     const headerIds = [...rows.map((r) => r.id), ...children.map((c) => c.id)];
+
+    // Index-friendly leg lookup.
+    //
+    // A leg's reason is "Transfer <id> to <warehouse>", so matching the legs of
+    // a page means a MIDDLE substring match — `reason LIKE '%<id>%'` — which no
+    // B-tree can serve. With an unbounded ledger and a 30s UI poll that is a
+    // sequential scan per poll. Two things make it index-friendly:
+    //
+    //  1. `contains` (ILIKE '%…%') is served by the pg_trgm GIN index added in
+    //     migration 20261006090000_ledger_reason_trgm_index — same predicate,
+    //     now an index scan instead of a table scan.
+    //  2. The query is additionally narrowed to the warehouses on this page
+    //     (every transfer leg is written to its transfer's own source or
+    //     destination warehouse, so this drops nothing) which bounds the rows
+    //     considered before the trigram match is applied.
+    const legWarehouseIds = [
+      ...new Set(rows.flatMap((r) => [r.sourceWarehouseId, r.destWarehouseId])),
+    ];
     const legs = headerIds.length
       ? await this.prisma.physicalInventoryLedger.findMany({
           where: {
             AND: [
               { OR: headerIds.map((id) => ({ reason: { contains: id } })) },
               { type: { in: ['transfer', 'TRANSFER', 'TRANSFER_IN', 'TRANSFER_OUT'] } },
+              { warehouseId: { in: legWarehouseIds } },
             ],
           },
           include: {
@@ -477,6 +529,20 @@ export class InventoryService {
 
   /** Share of an item's available managed stock a single adjustment may remove. */
   private static readonly DESTRUCTIVE_RATIO = 0.9;
+
+  /**
+   * Fallback `available` for a lookup row with no PhysicalInventory rows:
+   * managed on-hand minus reserved, floored at 0. `productLookup` overrides it
+   * with real physical availability whenever the aggregate has a row for the
+   * unit, so this only surfaces for items tracked purely in managed stock.
+   */
+  private managedAvailable(
+    _unit: 'product' | 'variant',
+    onHand: number,
+    reserved?: number | null,
+  ): number {
+    return Math.max((onHand ?? 0) - (reserved ?? 0), 0);
+  }
 
   /**
    * Refuse a negative managed-stock adjustment that would remove (nearly) all
@@ -1216,6 +1282,185 @@ export class InventoryService {
     };
   }
 
+  /**
+   * Variant-level product lookup for the stock-transfer modal.
+   *
+   * Why this exists: the transfers modal used to search `GET /products`, which
+   * runs `enrichProductsWithAvailableStock` + a `PhysicalInventory.groupBy`
+   * across 50 rows per keystroke and, worse, returns the PARENT of a variable
+   * product (whose `Product.sku` is null) as a selectable row. This endpoint
+   * answers the question the UI actually asks — "which stock unit does this
+   * term refer to?" — with one row per selectable unit.
+   *
+   * Matching (all case-insensitive substrings; the SKU columns are trigram
+   * indexed via `Product_sku_trgm_idx` / `ProductVariant_sku_trgm_idx`):
+   *   - product name
+   *   - Product.sku          (the parent SKU of a variable product)
+   *   - ProductVariant.sku   (the per-variant code a scanner prints)
+   *
+   * An exact SKU hit (product- or variant-level) is hoisted to the front: a
+   * warehouse scanner emits a full code, and "12 matches, right one buried in
+   * the middle" is never acceptable there.
+   *
+   * A VARIABLE product fans out into one row per ACTIVE variant — never a bare
+   * parent row — so a parent-SKU search forces the user to pick a variant
+   * instead of silently transferring product-level stock. SIMPLE products emit
+   * a single row with `variantId: null`.
+   *
+   * There is no separate product-code/barcode column in the schema:
+   * `Product.sku` and `ProductVariant.sku` are the only codes.
+   */
+  async productLookup(params: {
+    q?: string;
+    warehouseId?: string;
+    perPage?: number;
+  }) {
+    const perPage = Math.min(
+      Math.max(params.perPage ?? 25, 1),
+      InventoryService.LOOKUP_MAX_PER_PAGE,
+    );
+    const q = (params.q ?? '').trim();
+
+    // No term → no results. Without this the popover would return the first N
+    // products of the whole catalogue the moment it opened.
+    if (!q) {
+      return { data: [], meta: { total: 0, perPage } };
+    }
+
+    const lowered = q.toLowerCase();
+    const matches: Array<{
+      key: string;
+      productId: string;
+      productName: string;
+      productSku: string | null;
+      variantId: string | null;
+      variantName: string | null;
+      sku: string | null;
+      type: 'product' | 'variant';
+      available: number;
+      /** True when `sku` or the parent `Product.sku` is an exact hit. */
+      exactSku: boolean;
+    }> = [];
+
+    const where: Prisma.ProductWhereInput = {
+      isActive: true,
+      OR: [
+        { name: { contains: q, mode: 'insensitive' } },
+        { sku: { contains: q, mode: 'insensitive' } },
+        { variants: { some: { sku: { contains: q, mode: 'insensitive' } } } },
+      ],
+    };
+
+    // Cursors, not skip/take: fanning a variable product out into its variants
+    // changes the row count, so page offsets would drop or repeat rows. The
+    // product cursor is capped well below the row cap so a handful of
+    // 40-variant products can never blow past LOOKUP_MAX_PER_PAGE rows.
+    const maxProducts = Math.max(1, Math.ceil(perPage / 2));
+    const pageSize = Math.min(perPage, maxProducts);
+    let cursor: string | undefined;
+    const seen = new Set<string>();
+
+    while (matches.length < perPage && seen.size < maxProducts) {
+      const page: ProductLookupRow[] = await this.prisma.product.findMany({
+        where,
+        take: pageSize,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        orderBy: { id: 'asc' },
+        select: PRODUCT_LOOKUP_SELECT,
+      });
+      // Page through with a cursor until the products run out (a short page) or
+      // the row cap is reached. The row cap is checked on `matches`, never on
+      // `page.length` — a variable product contributes several rows per product,
+      // so the product count can lag well behind the row count.
+      for (const p of page) {
+        seen.add(p.id);
+
+        // A VARIABLE product fans out per ACTIVE variant and NEVER emits a bare
+        // parent row — that parent row is what used to be silently selectable.
+        if (p.type === 'variable') {
+          for (const v of p.variants) {
+            const key = `${p.id}:${v.id}`;
+            if (matches.length >= perPage) break;
+            matches.push({
+              key,
+              productId: p.id,
+              productName: p.name,
+              productSku: p.sku,
+              variantId: v.id,
+              variantName:
+                v.attributeValues
+                  .map((av) => av.attributeValue?.value)
+                  .filter(Boolean)
+                  .join(' / ') || v.sku,
+              sku: v.sku,
+              type: 'variant',
+              available: this.managedAvailable('variant', v.managedStockQuantity, v.reservedStock),
+              exactSku: v.sku.toLowerCase() === lowered || p.sku?.toLowerCase() === lowered,
+            });
+          }
+          continue;
+        }
+
+        // Simple product: one row, the product-level stock unit. Variants on a
+        // non-variable product stay out — they are not stock units here.
+        matches.push({
+          key: `${p.id}:`,
+          productId: p.id,
+          productName: p.name,
+          productSku: p.sku,
+          variantId: null,
+          variantName: null,
+          sku: p.sku,
+          type: 'product',
+          available: this.managedAvailable('product', p.managedStockQuantity, p.reservedStock),
+          exactSku: p.sku?.toLowerCase() === lowered,
+        });
+      }
+
+      // Short page → no more products behind the cursor.
+      if (page.length < pageSize) break;
+      cursor = page[page.length - 1].id;
+    }
+
+    // Physical availability (quantity − reserved) for the resolved rows only:
+    // ONE grouped aggregate keyed by (productId, variantId), optionally scoped
+    // to a warehouse. Replaces the per-keystroke enrich + groupBy over 50 rows.
+    const physicalByKey = new Map<string, number>();
+    if (matches.length > 0) {
+      const physical = await this.prisma.physicalInventory.groupBy({
+        by: ['productId', 'variantId'],
+        where: {
+          productId: { in: [...new Set(matches.map((m) => m.productId))] },
+          ...(params.warehouseId ? { warehouseId: params.warehouseId } : {}),
+        },
+        _sum: { quantity: true, reservedQuantity: true },
+      });
+      for (const s of physical) {
+        physicalByKey.set(
+          `${s.productId}:${s.variantId ?? ''}`,
+          (s._sum.quantity ?? 0) - (s._sum.reservedQuantity ?? 0),
+        );
+      }
+    }
+
+    // Exact-SKU hits first, then name matches. A scanner always prints a code.
+    matches.sort((a, b) => {
+      if (a.exactSku !== b.exactSku) return a.exactSku ? -1 : 1;
+      const byName = a.productName.localeCompare(b.productName);
+      if (byName !== 0) return byName;
+      return (a.sku ?? '').localeCompare(b.sku ?? '');
+    });
+
+    const data = matches.map(({ key, exactSku, productSku, ...row }) => ({
+      ...row,
+      // No PhysicalInventory rows for this unit → keep the managed figure.
+      available: physicalByKey.has(key) ? physicalByKey.get(key)! : row.available,
+    }));
+
+    return { data, meta: { total: data.length, perPage } };
+  }
+
+
   async bulkAdjust(
     items: {
       productId?: string;
@@ -1407,19 +1652,42 @@ export class InventoryService {
     });
   }
 
-  async transfer(dto: StockTransferDto, performedBy?: string) {
-    const product = await this.prisma.product.findUnique({
-      where: { id: dto.productId },
-      select: { id: true, name: true, managedStockQuantity: true },
-    });
-    if (!product) throw new NotFoundException('Product not found');
+  /**
+   * Move stock between two warehouses.
+   *
+   * Correctness rules this method now upholds:
+   *  · A variable product must be transferred AT VARIANT level — a product-level
+   *    transfer creates PhysicalInventory rows with variantId NULL that no
+   *    variant can ever consume (orphaned stock).
+   *  · Source deduction always goes through StockService.deductPhysical, so
+   *    the availability checks (ALWAYS_IN/OUT_OF_STOCK) and the reserved-aware
+   *    ledger are identical whether or not a source bin was named. A transfer
+   *    never reserved anything, so reservedQuantity is left alone.
+   *  · The deduction is guarded: a concurrent movement cannot drive the bin
+   *    negative.
+   *  · FIFO costing must cover the whole movement. A cost shortfall surfaces as
+   *    a PARTIAL transfer, never a silent COMPLETED one with lost valuation.
+   *  · Idempotency is enforced INSIDE the transaction (unique key + P2002
+   *    recovery), so two concurrent requests with one key cannot both execute.
+   */
+  async transfer(
+    dto: StockTransferDto,
+    performedBy?: string,
+    tx?: Prisma.TransactionClient,
+  ) {
+    const prisma = tx ?? this.prisma;
 
-    const [sourceWarehouse, destWarehouse] = await Promise.all([
-      this.prisma.warehouse.findUnique({ where: { id: dto.sourceLocation } }),
-      this.prisma.warehouse.findUnique({
+    const [product, sourceWarehouse, destWarehouse] = await Promise.all([
+      prisma.product.findUnique({
+        where: { id: dto.productId },
+        select: { id: true, name: true, managedStockQuantity: true, type: true },
+      }),
+      prisma.warehouse.findUnique({ where: { id: dto.sourceLocation } }),
+      prisma.warehouse.findUnique({
         where: { id: dto.destinationLocation },
       }),
     ]);
+    if (!product) throw new NotFoundException('Product not found');
     if (!sourceWarehouse) {
       throw new NotFoundException(
         `Source warehouse ${dto.sourceLocation} not found`,
@@ -1431,87 +1699,97 @@ export class InventoryService {
       );
     }
 
-    // Idempotency check
-    const existing = await this.prisma.stockTransfer.findUnique({
+    // Variable products hold their stock on variants. A transfer without a
+    // variantId would write PhysicalInventory rows with variantId NULL that no
+    // variant can ever consume — stock that exists in the warehouse but is
+    // invisible to (and undeductible by) every variant-level path. Same guard
+    // as the physical-adjust path (physical-inventory.controller.ts).
+    if (!dto.variantId && product.type === 'variable') {
+      throw new BadRequestException(
+        'Variable products use variant-level stock management. Select a specific variant to transfer instead.',
+      );
+    }
+
+    // Idempotency check — INSIDE the transaction, so two concurrent requests
+    // carrying the same key cannot both pass it. The unique index on
+    // idempotencyKey is the real arbiter; P2002 is handled below.
+    const existing = await prisma.stockTransfer.findUnique({
       where: { idempotencyKey: dto.idempotencyKey },
     });
     if (existing) return existing;
 
-    return this.prisma.$transaction(async (tx) => {
-      // Create StockTransfer header
-      const transfer = await tx.stockTransfer.create({
-        data: {
-          idempotencyKey: dto.idempotencyKey,
-          sourceWarehouseId: dto.sourceLocation,
-          destWarehouseId: dto.destinationLocation,
-          status: 'IN_PROGRESS',
-          notes: dto.notes,
-          performedBy,
-        },
-      });
-
-      // Deduct physical stock from source
-      if (dto.sourceBinId) {
-        await this.stockService.deductPhysical({
-          productId: dto.productId,
-          variantId: dto.variantId,
-          quantity: dto.quantity,
-          warehouseId: dto.sourceLocation,
-          binLocationId: dto.sourceBinId,
-          reference: `Transfer ${transfer.id} to ${destWarehouse.name}`,
-          performedBy,
-          ledgerType: 'TRANSFER_OUT',
-          tx,
+    try {
+      return await this.executeTransfer(dto, product, sourceWarehouse, destWarehouse, performedBy, prisma);
+    } catch (err) {
+      // Two concurrent requests, same key: this one lost the unique index
+      // race. The winner's transfer IS the answer — return it rather than
+      // reporting a failure for a movement that already happened.
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002' &&
+        this.isStockTransferIdempotencyConflict(err)
+      ) {
+        const winner = await this.prisma.stockTransfer.findUnique({
+          where: { idempotencyKey: dto.idempotencyKey },
         });
-      } else {
-        const eligible = await tx.physicalInventory.findMany({
-          where: {
-            productId: dto.productId,
-            ...(dto.variantId && { variantId: dto.variantId }),
-            warehouseId: dto.sourceLocation,
-          },
-          orderBy: { updatedAt: 'asc' },
-        });
-
-        let remaining = dto.quantity;
-        for (const pi of eligible) {
-          if (remaining <= 0) break;
-          const available = pi.quantity - pi.reservedQuantity;
-          if (available <= 0) continue;
-
-          const deductQty = Math.min(remaining, available);
-          await tx.physicalInventory.update({
-            where: { id: pi.id },
-            data: { quantity: { decrement: deductQty } },
-          });
-
-          await tx.physicalInventoryLedger.create({
-            data: {
-              productId: dto.productId,
-              variantId: dto.variantId,
-              warehouseId: dto.sourceLocation,
-              quantity: deductQty,
-              direction: 'OUT',
-              stockBefore: pi.quantity,
-              stockAfter: pi.quantity - deductQty,
-              type: 'TRANSFER_OUT',
-              reason: `Transfer ${transfer.id} to ${destWarehouse.name}`,
-              performedBy,
-            },
-          });
-
-          remaining -= deductQty;
-        }
-
-        if (remaining > 0) {
-          throw new BadRequestException(
-            `Insufficient stock for transfer. Requested: ${dto.quantity}, available: ${dto.quantity - remaining}`,
-          );
-        }
+        if (winner) return winner;
       }
+      throw err;
+    }
+  }
 
-      // Consume FIFO costing lots from source warehouse with exact lineage
-      const consumedLots = await this.costingLotService.consumeFIFO({
+  /**
+   * Was this unique violation on StockTransfer.idempotencyKey (as opposed to
+   * some other constraint failing in the same transaction)?
+   */
+  private isStockTransferIdempotencyConflict(
+    err: Prisma.PrismaClientKnownRequestError,
+  ): boolean {
+    const target = (err.meta as { target?: unknown } | undefined)?.target;
+    const fields = Array.isArray(target) ? target.map(String) : [String(target ?? '')];
+    return fields.some((f) => f.includes('idempotencyKey'));
+  }
+
+  private async executeTransfer(
+    dto: StockTransferDto,
+    product: { id: string; name: string },
+    sourceWarehouse: { id: string; name: string },
+    destWarehouse: { id: string; name: string },
+    performedBy: string | undefined,
+    prisma: Prisma.TransactionClient,
+  ) {
+    // Create StockTransfer header
+    const transfer = await prisma.stockTransfer.create({
+      data: {
+        idempotencyKey: dto.idempotencyKey,
+        sourceWarehouseId: dto.sourceLocation,
+        destWarehouseId: dto.destinationLocation,
+        status: 'IN_PROGRESS',
+        notes: dto.notes,
+        performedBy,
+      },
+    });
+
+    const result = {
+      id: transfer.id,
+      productId: product.id,
+      productName: product.name,
+      quantity: dto.quantity,
+      source: dto.sourceLocation,
+      destination: dto.destinationLocation,
+    };
+
+    // Consume FIFO costing lots from source warehouse with exact lineage.
+    // This runs BEFORE the physical moves so a cost shortfall aborts the whole
+    // transfer (nothing has moved yet) rather than leaving stock moved with no
+    // cost basis.
+    let consumedLots: {
+      lotId: string;
+      quantity: number;
+      unitCost: Prisma.Decimal;
+    }[];
+    try {
+      consumedLots = await this.costingLotService.consumeFIFO({
         productId: dto.productId,
         variantId: dto.variantId ?? null,
         warehouseId: dto.sourceLocation,
@@ -1519,80 +1797,110 @@ export class InventoryService {
         type: 'TRANSFER_OUT',
         referenceType: 'STOCK_TRANSFER',
         referenceId: transfer.id,
-        tx,
+        tx: prisma,
       });
-
-      // Create destination CostingLots with exact cost from source
-      for (const consumed of consumedLots) {
-        const sourceLot = await tx.costingLot.findUnique({
-          where: { id: consumed.lotId },
-        });
-        const destLotNumber = `TRF-${transfer.id.slice(0, 8)}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-        await tx.costingLot.create({
+    } catch (err) {
+      // Costing lots do not cover the movement. Record the transfer as
+      // PARTIAL (visible to reconciliation + the transfers screen) and tell the
+      // caller the stock was NOT moved — never a silent COMPLETED transfer with
+      // understated valuation.
+      if (err instanceof CostingLotShortfallError) {
+        await prisma.stockTransfer.update({
+          where: { id: transfer.id },
           data: {
-            productId: dto.productId,
-            variantId: dto.variantId,
-            warehouseId: dto.destinationLocation,
-            lotNumber: destLotNumber,
-            unitCost: consumed.unitCost,
-            totalCost: consumed.unitCost.mul(consumed.quantity),
-            quantity: consumed.quantity,
-            remainingQty: consumed.quantity,
-            receivedAt: new Date(),
-            transferId: transfer.id,
-            sourceConsumptionId: (
-              await tx.costingLotConsumption.findFirst({
-                where: {
-                  costingLotId: consumed.lotId,
-                  type: 'TRANSFER_OUT',
-                  referenceType: 'STOCK_TRANSFER',
-                  referenceId: transfer.id,
-                },
-              })
-            )?.id,
+            status: 'PARTIAL',
+            completedAt: new Date(),
+            notes:
+              `${dto.notes ?? ''} — not executed: ${err.shortfall} of ${dto.quantity} unit(s) have no cost basis at ${sourceWarehouse.name}. ${err.message}`.trim(),
           },
         });
       }
+      throw err;
+    }
 
-      // Add physical stock to destination
-      await this.stockService.addPhysical({
-        productId: dto.productId,
-        variantId: dto.variantId,
-        quantity: dto.quantity,
-        warehouseId: dto.destinationLocation,
-        binLocationId: dto.destinationBinId,
-        reference: `Transfer ${transfer.id} from ${sourceWarehouse.name}`,
-        performedBy,
-        ledgerType: 'TRANSFER_IN',
-        tx,
+    // Deduct physical stock from the source.
+    //
+    // ONE path for both cases: with a source bin the stock comes from that bin,
+    // without one the warehouse's PhysicalInventory rows supply it. deductPhysical
+    // is the single gateway (availability checks + guarded decrement +
+    // reserved-aware ledger), so the no-bin case can no longer diverge from the
+    // bin case.
+    //
+    // consumesReservation:false — a transfer moves stock that was never
+    // reserved, so reservedQuantity must stay untouched (see operatePhysical).
+    await this.stockService.deductPhysical({
+      productId: dto.productId,
+      variantId: dto.variantId,
+      quantity: dto.quantity,
+      warehouseId: dto.sourceLocation,
+      binLocationId: dto.sourceBinId,
+      reference: `Transfer ${transfer.id} to ${destWarehouse.name}`,
+      performedBy,
+      ledgerType: 'TRANSFER_OUT',
+      consumesReservation: false,
+      tx: prisma,
+    });
+
+    // Create destination CostingLots with exact cost from source
+    for (const consumed of consumedLots) {
+      const destLotNumber = `TRF-${transfer.id.slice(0, 8)}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const consumption = await prisma.costingLotConsumption.findFirst({
+        where: {
+          costingLotId: consumed.lotId,
+          type: 'TRANSFER_OUT',
+          referenceType: 'STOCK_TRANSFER',
+          referenceId: transfer.id,
+        },
+        select: { id: true },
       });
-
-      await tx.inventoryLog.create({
+      await prisma.costingLot.create({
         data: {
           productId: dto.productId,
           variantId: dto.variantId,
-          quantity: dto.quantity,
-          type: 'transfer',
-          reason: `Transferred ${dto.quantity} units from ${sourceWarehouse.name} to ${destWarehouse.name}${dto.notes ? ': ' + dto.notes : ''}`,
-          performedBy,
+          warehouseId: dto.destinationLocation,
+          lotNumber: destLotNumber,
+          unitCost: consumed.unitCost,
+          totalCost: consumed.unitCost.mul(consumed.quantity),
+          quantity: consumed.quantity,
+          remainingQty: consumed.quantity,
+          receivedAt: new Date(),
+          transferId: transfer.id,
+          sourceConsumptionId: consumption?.id,
         },
       });
+    }
 
-      // Mark transfer complete
-      await tx.stockTransfer.update({
-        where: { id: transfer.id },
-        data: { status: 'COMPLETED', completedAt: new Date() },
-      });
-
-      return {
-        id: transfer.id,
-        productId: product.id,
-        productName: product.name,
-        quantity: dto.quantity,
-        source: dto.sourceLocation,
-        destination: dto.destinationLocation,
-      };
+    // Add physical stock to destination
+    await this.stockService.addPhysical({
+      productId: dto.productId,
+      variantId: dto.variantId,
+      quantity: dto.quantity,
+      warehouseId: dto.destinationLocation,
+      binLocationId: dto.destinationBinId,
+      reference: `Transfer ${transfer.id} from ${sourceWarehouse.name}`,
+      performedBy,
+      ledgerType: 'TRANSFER_IN',
+      tx: prisma,
     });
+
+    await prisma.inventoryLog.create({
+      data: {
+        productId: dto.productId,
+        variantId: dto.variantId,
+        quantity: dto.quantity,
+        type: 'transfer',
+        reason: `Transferred ${dto.quantity} units from ${sourceWarehouse.name} to ${destWarehouse.name}${dto.notes ? ': ' + dto.notes : ''}`,
+        performedBy,
+      },
+    });
+
+    // Mark transfer complete
+    await prisma.stockTransfer.update({
+      where: { id: transfer.id },
+      data: { status: 'COMPLETED', completedAt: new Date() },
+    });
+
+    return result;
   }
 
   /**
@@ -1625,25 +1933,40 @@ export class InventoryService {
     }));
   }
 
-  /** POS transfer requests, newest first (pending + recently handled). */
-  async listTransferRequests() {
-    const rows = await this.prisma.stockTransfer.findMany({
-      where: { status: { in: InventoryService.REQUEST_STATUSES } },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-      include: {
-        sourceWarehouse: { select: { id: true, name: true, type: true } },
-        destWarehouse: { select: { id: true, name: true, type: true } },
-        items: {
-          include: {
-            product: { select: { id: true, name: true, sku: true } },
-            variant: { select: { id: true, sku: true } },
+  /**
+   * POS transfer requests, newest first (pending + recently handled).
+   *
+   * Paginated: an unpaginated `take: 100` silently truncates once more than
+   * 100 requests exist, so an older pending request becomes invisible and can
+   * never be approved. The caller gets a page plus meta like every other list
+   * endpoint here.
+   */
+  async listTransferRequests(page = 1, perPage = 20) {
+    const where = { status: { in: InventoryService.REQUEST_STATUSES } };
+    const [rows, total] = await Promise.all([
+      this.prisma.stockTransfer.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (page - 1) * perPage,
+        take: perPage,
+        include: {
+          sourceWarehouse: { select: { id: true, name: true, type: true } },
+          destWarehouse: { select: { id: true, name: true, type: true } },
+          items: {
+            include: {
+              product: { select: { id: true, name: true, sku: true } },
+              variant: { select: { id: true, sku: true } },
+            },
+            orderBy: { createdAt: 'asc' },
           },
-          orderBy: { createdAt: 'asc' },
         },
-      },
-    });
-    return this.attachRequesters(rows);
+      }),
+      this.prisma.stockTransfer.count({ where }),
+    ]);
+    return {
+      data: await this.attachRequesters(rows),
+      meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) },
+    };
   }
 
   private async getTransferRequest(id: string) {
@@ -1669,69 +1992,86 @@ export class InventoryService {
    * Execute a POS transfer request: claims it with a compare-and-swap so two
    * approvers can never both move the stock, then runs the regular transfer()
    * pipeline (source deduction + ledger + FIFO costing lots + destination add)
-   * once per item.
+   * once per item — ALL ITEMS IN ONE TRANSACTION, so a failure on item N cannot
+   * leave items 1..N-1 already moved.
    */
   async approveTransferRequest(id: string, performedBy: string) {
-    const request = await this.prisma.stockTransfer.findUnique({
-      where: { id },
-      include: { items: true },
-    });
-    if (!request) throw new NotFoundException('Transfer request not found');
-    if (request.items.length === 0) {
-      throw new BadRequestException('Transfer request has no items to move');
-    }
-    if (request.status !== 'REQUESTED') {
-      throw new ConflictException(
-        `Transfer request is already ${request.status.toLowerCase().replace('_', ' ')}`,
-      );
-    }
-
-    const claimed = await this.prisma.stockTransfer.updateMany({
-      where: { id, status: 'REQUESTED' },
-      data: { status: 'APPROVING' },
-    });
-    if (claimed.count !== 1) {
-      throw new ConflictException('Transfer request was already handled');
-    }
-
+    // Claim → move every item → confirm, all inside ONE transaction.
+    //
+    // Previously each item ran its own transaction, so an N-item request that
+    // failed on item N had already moved N-1 items' stock: a rejected shelf
+    // quantity left the source warehouse short with no way to unwind it, and
+    // the request was left APPROVAL_FAILED with a partial movement nobody could
+    // reconcile. One transaction means all-or-nothing: a failure rolls back
+    // every deduction, destination add and costing-lot movement together.
     const executed: string[] = [];
+    let requestItems: any[] = [];
     try {
-      for (const item of request.items) {
-        const movement = await this.transfer(
-          {
-            productId: item.productId,
-            variantId: item.variantId ?? undefined,
-            sourceLocation: request.sourceWarehouseId,
-            destinationLocation: request.destWarehouseId,
-            quantity: item.quantity,
-            notes: `Approved POS transfer request ${request.id}`,
-            idempotencyKey: `APPROVE_${request.id}_${item.id}`,
+      await this.prisma.$transaction(async (tx) => {
+        const request = await tx.stockTransfer.findUnique({
+          where: { id },
+          include: { items: true },
+        });
+        if (!request) throw new NotFoundException('Transfer request not found');
+        if (request.items.length === 0) {
+          throw new BadRequestException('Transfer request has no items to move');
+        }
+        if (request.status !== 'REQUESTED') {
+          throw new ConflictException(
+            `Transfer request is already ${request.status.toLowerCase().replace('_', ' ')}`,
+          );
+        }
+        requestItems = request.items;
+
+        // Compare-and-swap claim: two approvers can never both move the stock.
+        const claimed = await tx.stockTransfer.updateMany({
+          where: { id, status: 'REQUESTED' },
+          data: { status: 'APPROVING' },
+        });
+        if (claimed.count !== 1) {
+          throw new ConflictException('Transfer request was already handled');
+        }
+
+        for (const item of request.items) {
+          const movement = await this.transfer(
+            {
+              productId: item.productId,
+              variantId: item.variantId ?? undefined,
+              sourceLocation: request.sourceWarehouseId,
+              destinationLocation: request.destWarehouseId,
+              quantity: item.quantity,
+              notes: `Approved POS transfer request ${request.id}`,
+              idempotencyKey: `APPROVE_${request.id}_${item.id}`,
+            },
+            performedBy,
+            tx,
+          );
+          executed.push(movement.id);
+        }
+
+        await tx.stockTransfer.update({
+          where: { id },
+          data: {
+            status: 'FULFILLED',
+            completedAt: new Date(),
+            notes: `${request.notes ?? ''} — fulfilled: ${executed.join(', ')}`.trim(),
           },
-          performedBy,
-        );
-        executed.push(movement.id);
-      }
+        });
+      });
     } catch (err) {
-      // Part of the request may already have moved — never silently reopen it.
+      // The movement transaction rolled back, so no stock moved. The request is
+      // closed out explicitly (outside the rolled-back transaction) so it is
+      // never silently left APPROVING and re-approvable.
       const failure = (err as Error).message ?? 'unknown error';
-      await this.prisma.stockTransfer.update({
-        where: { id },
+      await this.prisma.stockTransfer.updateMany({
+        where: { id, status: { in: ['REQUESTED', 'APPROVING'] } },
         data: {
           status: 'APPROVAL_FAILED',
-          notes: `${request.notes ?? ''} — approval stopped after ${executed.length}/${request.items.length} item(s): ${failure}`.trim(),
+          notes: `approval failed, no stock moved (0/${requestItems.length || '?'} item(s)): ${failure}`.trim(),
         },
       });
       throw err;
     }
-
-    await this.prisma.stockTransfer.update({
-      where: { id },
-      data: {
-        status: 'FULFILLED',
-        completedAt: new Date(),
-        notes: `${request.notes ?? ''} — fulfilled: ${executed.join(', ')}`.trim(),
-      },
-    });
 
     return this.getTransferRequest(id);
   }

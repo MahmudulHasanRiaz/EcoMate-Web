@@ -1,6 +1,8 @@
 import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { InventoryEnabledGuard } from '../stock/inventory-enabled.guard';
@@ -22,6 +24,7 @@ export class InventoryController {
   constructor(
     private readonly inventoryService: InventoryService,
     private readonly reconciliation: StockReconciliationService,
+    private readonly prisma: PrismaService,
   ) {}
 
   /** Parse a client perPage into 1..MAX_PER_PAGE (fallback on garbage input). */
@@ -106,6 +109,28 @@ export class InventoryController {
     });
   }
 
+  /**
+   * Variant-level product lookup for the stock-transfer picker.
+   *
+   * One row per SELECTABLE stock unit — a variable product fans out into its
+   * active variants and never exposes a bare parent row, so a parent-SKU
+   * search always forces a variant choice. See InventoryService.productLookup.
+   */
+  @Roles('superadmin', 'admin', 'employee')
+  @Permissions('manage_stock')
+  @Get('product-lookup')
+  async productLookup(
+    @Query('q') q?: string,
+    @Query('warehouseId') warehouseId?: string,
+    @Query('perPage') perPage?: string,
+  ) {
+    return this.inventoryService.productLookup({
+      q,
+      warehouseId,
+      perPage: this.clampPerPage(perPage, 25),
+    });
+  }
+
   @Roles('superadmin', 'admin', 'employee')
   @Post('adjust')
   async adjust(
@@ -157,7 +182,13 @@ export class InventoryController {
     @Body() body: StockTransferDto,
     @CurrentUser() user: { email: string },
   ) {
-    return this.inventoryService.transfer(body, user.email);
+    // The whole movement (header, source deduction, FIFO costing, destination
+    // add) is ONE transaction. Passing the tx into transfer() also puts the
+    // idempotency check inside it, so two concurrent requests with the same key
+    // cannot both pass the check and move stock twice.
+    return this.prisma.$transaction((tx) =>
+      this.inventoryService.transfer(body, user.email, tx),
+    );
   }
 
   /**
@@ -167,8 +198,14 @@ export class InventoryController {
    */
   @Roles('superadmin', 'admin', 'employee')
   @Get('transfer-requests')
-  async transferRequests() {
-    return this.inventoryService.listTransferRequests();
+  async transferRequests(
+    @Query('page') page?: string,
+    @Query('perPage') perPage?: string,
+  ) {
+    return this.inventoryService.listTransferRequests(
+      this.clampPage(page),
+      this.clampPerPage(perPage),
+    );
   }
 
   @Roles('superadmin', 'admin', 'employee')

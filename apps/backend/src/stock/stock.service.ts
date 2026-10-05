@@ -1,6 +1,7 @@
 import {
   Injectable,
   BadRequestException,
+  ConflictException,
   NotFoundException,
   Logger,
 } from '@nestjs/common';
@@ -25,6 +26,50 @@ export interface StockOperationParams {
   referenceType?: ReferenceEntity;
   referenceId?: string;
   skipCostingLotDeduct?: boolean;
+  /**
+   * Reservation-awareness for `deductPhysical`.
+   *
+   * A deduction that CONSUMES a reservation (a dispatched order, reservation
+   * fulfilled) must also release that hold, so `reservedQuantity` is
+   * decremented alongside `quantity` — the default.
+   *
+   * A deduction that never reserved anything (a warehouse TRANSFER moving
+   * already-available stock) must NOT touch `reservedQuantity`: nothing was
+   * held, so the decrement would only drive it negative and inflate the
+   * available quantity that the stock router reads. Set this to true for
+   * those callers.
+   *
+   * Equivalent to the legacy `isNegative` behaviour (a negative-quantity
+   * deduction, i.e. a manual removal).
+   */
+  consumesReservation?: boolean;
+}
+
+/** A single PhysicalInventory row an operation reads or writes. */
+export interface PhysicalTarget {
+  productId: string;
+  variantId?: string | null;
+  warehouseId: string;
+  qty: number;
+  binLocationId?: string;
+}
+
+/**
+ * The observed state of the PhysicalInventory row an operation changed, and
+ * the ledger leg that describes it. Produced by applyPhysicalChange so the
+ * ledger can never disagree with the row that was really updated.
+ */
+export interface PhysicalChangeSnapshot {
+  physicalInventoryId: string;
+  productId: string;
+  variantId: string | null;
+  binLocationId: string | null;
+  /** quantity + reservedQuantity as the row read them, before the change. */
+  before: { quantity: number; reservedQuantity: number };
+  /** The same pair after the change — null when the row was created. */
+  after: { quantity: number; reservedQuantity: number } | null;
+  /** How much this call moved on this field. */
+  moved: number;
 }
 
 interface StockTarget {
@@ -291,106 +336,81 @@ export class StockService {
     }
   }
 
-  private async logPhysicalInventoryLedger(
-    targets: StockTarget[],
-    warehouseId: string,
-    direction: Prisma.$PhysicalInventoryLedgerPayload['scalars']['direction'],
-    type: string,
-    reference: string,
-    performedBy: string | undefined,
-    unitCost: number | undefined,
-    tx: Prisma.TransactionClient,
-    binLocationId?: string,
-    _referenceType?: ReferenceEntity,
-    _referenceId?: string,
-    reservedBefore?: number,
-    reservedAfter?: number,
-  ) {
-    for (const t of targets) {
-      const whereClause: any = {
-        productId: t.productId,
-        variantId: t.variantId || null,
-        warehouseId,
-      };
-      if (binLocationId) {
-        whereClause.binLocationId = binLocationId;
-      } else {
-        whereClause.binLocationId = null;
+  /**
+   * Write one ledger leg per PhysicalInventory row that actually changed.
+   *
+   * The before/after pairs come from the change snapshots produced by
+   * applyPhysicalChange, so the ledger can never disagree with the row that was
+   * really updated — the old code re-queried with a `findFirst` that could land
+   * on a different row (and forced binLocationId to null whenever the request
+   * carried no bin). The snapshot's bin is the row's real bin.
+   *
+   * When one call touched a row twice (a reservation-consuming `deduct`
+   * decrements quantity and then reservedQuantity) the snapshots are folded
+   * into ONE leg: the before pair comes from the FIRST write and the after
+   * pair from the LAST, so stockBefore/stockAfter describe the whole movement
+   * instead of double-counting the reserved-only write into the quantity.
+   */
+  private async logPhysicalInventoryLedger(params: {
+    snapshots: PhysicalChangeSnapshot[];
+    warehouseId: string;
+    direction: Prisma.$PhysicalInventoryLedgerPayload['scalars']['direction'];
+    type: string;
+    reference: string;
+    performedBy: string | undefined;
+    unitCost?: number;
+    tx: Prisma.TransactionClient;
+  }) {
+    const { tx } = params;
+
+    // Fold the per-call snapshots: several applyPhysicalChange calls (quantity
+    // then reservedQuantity) hit the same row and must yield ONE ledger leg.
+    const merged = new Map<
+      string,
+      PhysicalChangeSnapshot & { firstAt: number }
+    >();
+    params.snapshots.forEach((snap, idx) => {
+      const key = `${snap.physicalInventoryId}|${snap.productId}|${snap.variantId ?? ''}`;
+      const existing = merged.get(key);
+      if (existing) {
+        // `moved` is NOT summed: the second write moved reservedQuantity, and
+        // the leg's quantity already covers the whole movement. Summing it
+        // would report 2× the quantity for a reservation-consuming deduction.
+        // The after pair from the last write is kept — it is the row's real
+        // final state.
+        existing.after = snap.after;
+        return;
       }
+      merged.set(key, { ...snap, firstAt: idx });
+    });
 
-      const pi = await tx.physicalInventory.findFirst({
-        where: whereClause,
-        select: { quantity: true, reservedQuantity: true },
-      });
-      const currentQuantity = pi?.quantity ?? 0;
-      const currentReserved = pi?.reservedQuantity ?? 0;
-      const stockAfter = currentQuantity;
-      const stockBefore =
-        direction === 'IN' ? currentQuantity - t.qty : currentQuantity + t.qty;
+    const ordered = [...merged.values()].sort((a, b) => a.firstAt - b.firstAt);
 
-      // Always capture reserved transition. Callers may pass explicit before/after
-      // (e.g. reservation-based deduction); otherwise reserved unchanged.
-      const resAfter = reservedAfter ?? currentReserved;
-      const resBefore = reservedBefore ?? currentReserved;
-
+    for (const snapshot of ordered) {
+      // NOTE: PhysicalInventoryLedger has no binLocationId column. The snapshot
+      // still carries it so callers/tests can assert WHICH row was changed;
+      // adding the column is a separate schema change.
       await tx.physicalInventoryLedger.create({
         data: {
-          productId: t.productId,
-          variantId: t.variantId || null,
-          warehouseId,
-          quantity: t.qty,
-          direction,
-          stockBefore,
-          stockAfter,
-          reservedBefore: resBefore,
-          reservedAfter: resAfter,
-          type,
-          reason: reference,
-          performedBy,
-          unitCost: unitCost != null ? new Prisma.Decimal(unitCost) : null,
+          productId: snapshot.productId,
+          variantId: snapshot.variantId ?? null,
+          warehouseId: params.warehouseId,
+          quantity: snapshot.moved,
+          direction: params.direction,
+          stockBefore: snapshot.before.quantity,
+          stockAfter: snapshot.after?.quantity ?? 0,
+          reservedBefore: snapshot.before.reservedQuantity,
+          reservedAfter: snapshot.after?.reservedQuantity ?? 0,
+          type: params.type,
+          reason: params.reference,
+          performedBy: params.performedBy,
+          unitCost:
+            params.unitCost != null
+              ? new Prisma.Decimal(params.unitCost)
+              : null,
         },
       });
     }
-  }
-
-  private async logPhysicalTargetReservation(
-    targets: StockTarget[],
-    params: StockOperationParams,
-    tx: Prisma.TransactionClient,
-    direction: Prisma.$PhysicalInventoryLedgerPayload['scalars']['direction'],
-    type: string,
-  ) {
-    if (!targets.length || !params.warehouseId) return;
-    const firstTarget = targets[0];
-    const wc: any = {
-      productId: firstTarget.productId,
-      variantId: firstTarget.variantId || null,
-      warehouseId: params.warehouseId,
-    };
-    if (params.binLocationId) wc.binLocationId = params.binLocationId;
-    else wc.binLocationId = null;
-    const pi = await tx.physicalInventory.findFirst({
-      where: wc,
-      select: { reservedQuantity: true },
-    });
-    const reservedAfter = pi?.reservedQuantity ?? 0;
-    const reservedBefore =
-      direction === 'OUT' ? reservedAfter - firstTarget.qty : reservedAfter + firstTarget.qty;
-    await this.logPhysicalInventoryLedger(
-      targets,
-      params.warehouseId,
-      direction,
-      type,
-      params.reference,
-      params.performedBy,
-      params.unitCost,
-      tx,
-      params.binLocationId,
-      params.referenceType,
-      params.referenceId,
-      reservedBefore,
-      reservedAfter,
-    );
   }
 
   private async logManagedStockLedger(
@@ -460,13 +480,23 @@ export class StockService {
     }
   }
 
+  /**
+   * Apply one +/- move to the PhysicalInventory rows the targets resolve to.
+   *
+   * Returns one PhysicalChangeSnapshot per row actually written — the ledger
+   * records these instead of re-querying, so stockBefore/stockAfter can never
+   * disagree with the row that changed.
+   *
+   * Decrements are guarded (see below) and run on the caller's transaction.
+   */
   private async applyPhysicalChange(
-    targets: { productId: string; variantId?: string | null; warehouseId: string; qty: number; binLocationId?: string }[],
+    targets: PhysicalTarget[],
     op: 'increment' | 'decrement',
     field: 'quantity' | 'reservedQuantity',
     tx: Prisma.TransactionClient,
-  ) {
-    const deduped = new Map<string, typeof targets[0]>();
+  ): Promise<PhysicalChangeSnapshot[]> {
+    const snapshots: PhysicalChangeSnapshot[] = [];
+    const deduped = new Map<string, PhysicalTarget>();
     for (const t of targets) {
       const key = `${t.productId}|${t.variantId || ''}|${t.warehouseId}|${t.binLocationId || ''}`;
       const existing = deduped.get(key);
@@ -519,12 +549,57 @@ export class StockService {
       }
 
       if (existing) {
-        await tx.physicalInventory.update({
-          where: { id: existing.id },
-          data: { [field]: { [op]: t.qty } },
+        const before = {
+          quantity: Number(existing.quantity ?? 0),
+          reservedQuantity: Number(existing.reservedQuantity ?? 0),
+        };
+
+        if (op === 'decrement') {
+          // Guarded decrement. A bare `update({ where: {id} })` re-reads the
+          // row and decrements whatever it finds, so two concurrent movements
+          // out of the same bin both succeed and the row ends up NEGATIVE —
+          // unrecoverable, because every later movement treats the negative as
+          // real available stock. The `quantity >= qty` predicate makes the
+          // write atomic: the loser of the race updates 0 rows and is rejected.
+          const claimed = await tx.physicalInventory.updateMany({
+            where: {
+              id: existing.id,
+              [field]: { gte: t.qty },
+            },
+            data: { [field]: { decrement: t.qty } },
+          });
+          if (claimed.count === 0) {
+            throw new ConflictException(
+              `Insufficient physical stock for product ${t.productId}${t.variantId ? ` variant ${t.variantId}` : ''} in warehouse ${t.warehouseId}${t.binLocationId ? ` bin ${t.binLocationId}` : ''}. ` +
+                `Tried to remove ${t.qty}, only ${before[field]} available. Another stock movement consumed it first — retry.`,
+            );
+          }
+        } else {
+          await tx.physicalInventory.update({
+            where: { id: existing.id },
+            data: { [field]: { increment: t.qty } },
+          });
+        }
+
+        const after = {
+          quantity:
+            field === 'quantity' ? before.quantity + (op === 'decrement' ? -t.qty : t.qty) : before.quantity,
+          reservedQuantity:
+            field === 'reservedQuantity'
+              ? before.reservedQuantity + (op === 'decrement' ? -t.qty : t.qty)
+              : before.reservedQuantity,
+        };
+        snapshots.push({
+          physicalInventoryId: existing.id,
+          productId: t.productId,
+          variantId: t.variantId || null,
+          binLocationId: existing.binLocationId ?? t.binLocationId ?? null,
+          before,
+          after,
+          moved: t.qty,
         });
       } else {
-        await tx.physicalInventory.create({
+        const created = await tx.physicalInventory.create({
           data: {
             productId: t.productId,
             variantId: t.variantId || null,
@@ -534,9 +609,26 @@ export class StockService {
             reservedQuantity:
               field === 'reservedQuantity' ? (op === 'increment' ? t.qty : 0) : 0,
           },
+          select: { id: true, binLocationId: true },
+        });
+        const zero = { quantity: 0, reservedQuantity: 0 };
+        const seeded = {
+          quantity: field === 'quantity' ? t.qty : 0,
+          reservedQuantity: field === 'reservedQuantity' ? t.qty : 0,
+        };
+        snapshots.push({
+          physicalInventoryId: created.id,
+          productId: t.productId,
+          variantId: t.variantId || null,
+          binLocationId: created.binLocationId ?? null,
+          before: zero,
+          after: seeded,
+          moved: t.qty,
         });
       }
     }
+
+    return snapshots;
   }
 
   async operatePhysical(
@@ -589,102 +681,96 @@ export class StockService {
       }));
 
       if (effectiveOperation === 'reserve') {
-        await this.applyPhysicalChange(
+        const snaps = await this.applyPhysicalChange(
           physicalTargets,
           'increment',
           'reservedQuantity',
           tx,
         );
-        await this.logPhysicalTargetReservation(
-          targets,
-          params,
+        await this.logPhysicalInventoryLedger({
+          snapshots: snaps,
+          warehouseId: params.warehouseId!,
+          direction: 'OUT',
+          type: params.ledgerType || 'RESERVE',
+          reference: params.reference,
+          performedBy: params.performedBy,
+          unitCost: params.unitCost,
           tx,
-          'OUT',
-          params.ledgerType || 'RESERVE',
-        );
+        });
       } else if (effectiveOperation === 'release') {
-        await this.applyPhysicalChange(
+        const snaps = await this.applyPhysicalChange(
           physicalTargets,
           'decrement',
           'reservedQuantity',
           tx,
         );
-        await this.logPhysicalTargetReservation(
-          targets,
-          params,
+        await this.logPhysicalInventoryLedger({
+          snapshots: snaps,
+          warehouseId: params.warehouseId!,
+          direction: 'IN',
+          type: params.ledgerType || 'RELEASE',
+          reference: params.reference,
+          performedBy: params.performedBy,
+          unitCost: params.unitCost,
           tx,
-          'IN',
-          params.ledgerType || 'RELEASE',
-        );
+        });
       } else if (effectiveOperation === 'deduct') {
-        await this.applyPhysicalChange(
+        // A deduction normally CONSUMES a reservation (a dispatched order), so
+        // the hold is released alongside the stock. A caller that never
+        // reserved anything — a warehouse TRANSFER moving already-available
+        // stock, or a manual negative adjustment — must not decrement
+        // reservedQuantity: there is no hold to release, and the decrement
+        // would drive the column negative and inflate the available quantity
+        // the stock router reads (quantity - reservedQuantity).
+        const consumesReservation =
+          params.consumesReservation ?? (!isNegative && operation === 'deduct');
+
+        const qtySnaps = await this.applyPhysicalChange(
           physicalTargets,
           'decrement',
           'quantity',
           tx,
         );
-        if (!isNegative) {
-          await this.applyPhysicalChange(
-            physicalTargets,
-            'decrement',
-            'reservedQuantity',
-            tx,
+        const snapshots = [...qtySnaps];
+        if (consumesReservation) {
+          snapshots.push(
+            ...(await this.applyPhysicalChange(
+              physicalTargets,
+              'decrement',
+              'reservedQuantity',
+              tx,
+            )),
           );
         }
-        // Capture reserved state after decrement (for DEDUCTION type)
-        let physReservedBefore = 0;
-        let physReservedAfter = 0;
-        if (targets.length > 0 && !isNegative) {
-          const firstTarget = targets[0];
-          const wc: any = {
-            productId: firstTarget.productId,
-            variantId: firstTarget.variantId || null,
-            warehouseId: params.warehouseId!,
-          };
-          if (params.binLocationId) wc.binLocationId = params.binLocationId;
-          else wc.binLocationId = null;
-          const pi = await tx.physicalInventory.findFirst({
-            where: wc,
-            select: { reservedQuantity: true },
-          });
-          physReservedAfter = pi?.reservedQuantity ?? 0;
-          physReservedBefore = physReservedAfter + targets[0].qty;
-        }
-        await this.logPhysicalInventoryLedger(
-          targets,
-          params.warehouseId!,
-          'OUT',
-          params.ledgerType || (isNegative ? 'PHYSICAL_ADJUSTMENT' : 'DEDUCTION'),
-          params.reference,
-          params.performedBy,
-          params.unitCost,
+        await this.logPhysicalInventoryLedger({
+          snapshots,
+          warehouseId: params.warehouseId!,
+          direction: 'OUT',
+          type:
+            params.ledgerType ||
+            (isNegative ? 'PHYSICAL_ADJUSTMENT' : 'DEDUCTION'),
+          reference: params.reference,
+          performedBy: params.performedBy,
+          unitCost: params.unitCost,
           tx,
-          params.binLocationId,
-          params.referenceType,
-          params.referenceId,
-          physReservedBefore,
-          physReservedAfter,
-        );
+        });
       } else if (effectiveOperation === 'add') {
-        await this.applyPhysicalChange(
+        const snaps = await this.applyPhysicalChange(
           physicalTargets,
           'increment',
           'quantity',
           tx,
         );
-        await this.logPhysicalInventoryLedger(
-          targets,
-          params.warehouseId!,
-          'IN',
-          params.ledgerType || 'ADD',
-          params.reference,
-          params.performedBy,
-          params.unitCost,
+        await this.logPhysicalInventoryLedger({
+          snapshots: snaps,
+          warehouseId: params.warehouseId!,
+          direction: 'IN',
+          type: params.ledgerType || 'ADD',
+          reference: params.reference,
+          performedBy: params.performedBy,
+          unitCost: params.unitCost,
           tx,
-          params.binLocationId,
-          params.referenceType,
-          params.referenceId,
-        );
+        });
         // Update bin location on variant if provided
         if (params.binLocationId) {
           for (const t of targets) {
@@ -1440,10 +1526,17 @@ export class StockService {
       productId: params.productId,
       variantId: params.variantId ?? null,
       warehouseId: params.warehouseId,
-      quantity: params.quantity,
+      // ConsumeFIFO decrements lots; callers pass a signed adjustment quantity
+      // (negative = removal), so the magnitude is what must be consumed.
+      quantity: Math.abs(params.quantity),
       type: 'ADJUSTMENT',
       referenceType: 'ADJUSTMENT',
       referenceId: `ADJ-${Date.now()}`,
+      // A manual adjustment corrects physical stock, which may legitimately be
+      // ahead of the received/received-costed quantity. Failing the adjustment
+      // would leave stock that is demonstrably there un-recorded; the cost gap
+      // is logged at ERROR and stays visible to reconciliation.
+      allowShortfall: true,
     });
   }
 
@@ -1505,23 +1598,22 @@ export class StockService {
         }));
 
         if (finalOp === 'deduct') {
-          await this.applyPhysicalChange(
+          const snaps = await this.applyPhysicalChange(
             physicalTargets,
             'decrement',
             'quantity',
             tx,
           );
-          await this.logPhysicalInventoryLedger(
-            finalTargets,
-            params.warehouseId,
-            'OUT',
-            'PHYSICAL_ADJUSTMENT',
-            params.reason,
-            undefined,
-            item.unitCost,
+          await this.logPhysicalInventoryLedger({
+            snapshots: snaps,
+            warehouseId: params.warehouseId,
+            direction: 'OUT',
+            type: 'PHYSICAL_ADJUSTMENT',
+            reference: params.reason,
+            performedBy: undefined,
+            unitCost: item.unitCost,
             tx,
-            item.binLocationId,
-          );
+          });
           await this.deductCostingLotsForAdjustment({
             productId: item.productId,
             variantId: item.variantId,
@@ -1529,23 +1621,22 @@ export class StockService {
             quantity: Math.abs(item.quantity),
           });
         } else if (finalOp === 'add') {
-          await this.applyPhysicalChange(
+          const snaps = await this.applyPhysicalChange(
             physicalTargets,
             'increment',
             'quantity',
             tx,
           );
-          await this.logPhysicalInventoryLedger(
-            finalTargets,
-            params.warehouseId,
-            'IN',
-            'PHYSICAL_ADJUSTMENT',
-            params.reason,
-            undefined,
-            item.unitCost,
+          await this.logPhysicalInventoryLedger({
+            snapshots: snaps,
+            warehouseId: params.warehouseId,
+            direction: 'IN',
+            type: 'PHYSICAL_ADJUSTMENT',
+            reference: params.reason,
+            performedBy: undefined,
+            unitCost: item.unitCost,
             tx,
-            item.binLocationId,
-          );
+          });
           if (item.unitCost) {
             await this.createCostingLotForAdjustment({
               productId: item.productId,

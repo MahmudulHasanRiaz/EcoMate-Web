@@ -2,6 +2,55 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, CostingLotConsumptionType } from '@prisma/client';
 
+/**
+ * The costing lots at a location do not cover the requested movement.
+ *
+ * Distinguished from a plain BadRequestException so a caller can tell a COST
+ * problem (no cost basis for the movement) apart from a STOCK problem (not
+ * enough units), and react differently — e.g. a transfer marks the movement
+ * PARTIAL instead of treating it as an ordinary validation failure.
+ */
+export class CostingLotShortfallError extends BadRequestException {
+  readonly productId: string;
+  readonly variantId: string | null;
+  readonly warehouseId: string;
+  readonly requested: number;
+  readonly consumed: number;
+  readonly shortfall: number;
+  readonly referenceType: string;
+  readonly referenceId: string;
+
+  constructor(details: {
+    productId: string;
+    variantId: string | null;
+    warehouseId: string;
+    requested: number;
+    consumed: number;
+    shortfall: number;
+    referenceType: string;
+    referenceId: string;
+    type: CostingLotConsumptionType;
+  }) {
+    super(
+      `Insufficient costing lots for product ${details.productId}` +
+        `${details.variantId ? ` variant ${details.variantId}` : ''} at warehouse ${details.warehouseId}: ` +
+        `requested ${details.requested}, costed ${details.consumed}, ` +
+        `${details.shortfall} unit(s) have no cost basis. ` +
+        `Reference ${details.referenceType}:${details.referenceId}. ` +
+        `Receive or re-cost the missing quantity before moving stock.`,
+    );
+    this.name = 'CostingLotShortfallError';
+    this.productId = details.productId;
+    this.variantId = details.variantId;
+    this.warehouseId = details.warehouseId;
+    this.requested = details.requested;
+    this.consumed = details.consumed;
+    this.shortfall = details.shortfall;
+    this.referenceType = details.referenceType;
+    this.referenceId = details.referenceId;
+  }
+}
+
 @Injectable()
 export class CostingLotService {
   private readonly logger = new Logger(CostingLotService.name);
@@ -11,6 +60,14 @@ export class CostingLotService {
   /**
    * Warehouse-scoped FIFO deduction. Returns lots consumed in order.
    * Creates CostingLotConsumption records for each lot consumed.
+   *
+   * THROWS on a shortfall. A partial consumption means part of the movement has
+   * NO cost basis: stock has moved but its valuation has not, so any caller that
+   * continued would complete the movement with understated valuation. Failing
+   * loudly lets the caller's transaction roll the movement back (or mark the
+   * movement partial) instead of silently losing cost lineage. Pass
+   * `allowShortfall: true` only for callers that deliberately tolerate a
+   * movement without cost basis.
    */
   async consumeFIFO(params: {
     productId: string;
@@ -21,6 +78,7 @@ export class CostingLotService {
     referenceType: string;
     referenceId: string;
     tx?: Prisma.TransactionClient;
+    allowShortfall?: boolean;
   }): Promise<{ lotId: string; quantity: number; unitCost: Prisma.Decimal }[]> {
     const client = params.tx ?? this.prisma;
     let remaining = params.quantity;
@@ -41,6 +99,19 @@ export class CostingLotService {
 
       if (!lot) {
         this.logShortfall(params, remaining, skippedLotIds.length);
+        if (!params.allowShortfall) {
+          throw new CostingLotShortfallError({
+            productId: params.productId,
+            variantId: params.variantId ?? null,
+            warehouseId: params.warehouseId,
+            requested: params.quantity,
+            consumed: params.quantity - remaining,
+            shortfall: remaining,
+            referenceType: params.referenceType,
+            referenceId: params.referenceId,
+            type: params.type,
+          });
+        }
         break;
       }
 

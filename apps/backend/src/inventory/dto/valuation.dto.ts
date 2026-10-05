@@ -1,4 +1,10 @@
-import { IsOptional, IsString, IsNumber, Min } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsInt,
+  IsNumber,
+  Min,
+} from 'class-validator';
 
 export class ValuationQueryDto {
   @IsOptional()
@@ -24,7 +30,12 @@ export class StockTransferDto {
   @IsString()
   destinationLocation: string;
 
+  // StockTransferItem.quantity, PhysicalInventory.quantity and CostingLot
+  // quantities are Int columns. Without @IsInt a fractional quantity (2.5)
+  // passes validation and Prisma rejects it deep inside the transaction,
+  // after the transfer header is created. Reject it at the edge instead.
   @IsNumber()
+  @IsInt()
   @Min(1)
   quantity: number;
 
