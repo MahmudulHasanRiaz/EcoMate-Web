@@ -29,7 +29,7 @@ function toPerPage(value?: string): number {
 }
 
 @Controller('hr')
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 @PermissionsAny('view_hr')
 @RequiresFeature('admin_hr')
 export class HrController {
@@ -119,7 +119,7 @@ export class HrController {
    * POST /hr/performance/orders/backfill
    * One-time backfill: migrate existing Order.timeline entries into OrderStaffEvent.
    *
-   * Restricted to superadmin/admin rather than the class-level manager role.
+   * Restricted to superadmin/admin rather than the class-level employee role.
    * This is an unbounded bulk write (2000 orders x their timeline entries) with
    * no rate limit, so a read-only HR viewer should not be able to trigger it —
    * orders.controller.ts already requires superadmin/admin for the analogous

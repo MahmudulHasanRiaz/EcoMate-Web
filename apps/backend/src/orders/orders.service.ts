@@ -916,7 +916,7 @@ export class OrdersService {
     const isAdmin =
       opts.role === 'superadmin' ||
       opts.role === 'admin' ||
-      opts.role === 'manager';
+      opts.role === 'employee';
     if (!ownsOrder && !hasValidToken && !isAdmin) {
       throw new NotFoundException('Order not found');
     }
@@ -1024,7 +1024,7 @@ export class OrdersService {
 
     // ── Authenticated identity override ──
     // Only a logged-in customer placing their own storefront order is locked to
-    // their own identity. Staff (admin/manager/cashier/...) creating orders on
+    // their own identity. Staff (admin/employee/cashier/...) creating orders on
     // behalf of customers must keep the client-supplied customer/guest data.
     if (userId && isCustomer) {
       dto.customerId = userId;
@@ -1045,7 +1045,7 @@ export class OrdersService {
       dto.guestPhone = normalized;
     }
 
-    // Staff-created orders (admin/manager/cashier acting on behalf of a
+    // Staff-created orders (admin/employee/cashier acting on behalf of a
     // customer) are exempt from storefront block rules — the restriction is
     // a storefront-ordering concern, not an absolute ban on serving the
     // customer. The exemption is context-bound (an authenticated staff actor
@@ -4134,7 +4134,7 @@ export class OrdersService {
   async getStaff() {
     return this.prisma.userProfile.findMany({
       where: {
-        role: { in: ['admin', 'manager', 'cashier', 'superadmin'] },
+        role: { in: ['admin', 'employee', 'cashier', 'superadmin'] },
         status: 'active',
       },
       select: { id: true, firstName: true, lastName: true, role: true },

@@ -21,14 +21,14 @@ export class ExchangeController {
    * What the customer already paid on the original, minus whatever sibling
    * exchanges have consumed. Drives the live settlement preview in the UI (§4).
    */
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Get('settlement-preview/:orderId')
   settlementPreview(@Param('orderId') orderId: string) {
     return this.exchangeService.getSettlementPreview(orderId);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Get(':id')
   findById(@Param('id') id: string) {
@@ -39,7 +39,7 @@ export class ExchangeController {
    * Create an Exchange Order from an existing order. Any sale order qualifies,
    * including one already marked Delivered (§1).
    */
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Post('from-order/:orderId')
   createFromOrder(

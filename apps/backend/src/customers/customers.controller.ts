@@ -16,7 +16,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 export class CustomersController {
   constructor(private readonly svc: CustomersService) {}
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get()
   async findAll(
     @Query('search') search?: string,
@@ -30,7 +30,7 @@ export class CustomersController {
     });
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('order-summary')
   async getOrderSummary(@Query('phone') phone: string) {
     if (!phone) throw new BadRequestException('Phone number required');
@@ -39,7 +39,7 @@ export class CustomersController {
     return summary;
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get(':id')
   async findOne(@Param('id') id: string) {
     const result = await this.svc.findOne(id);
@@ -47,14 +47,14 @@ export class CustomersController {
     return result;
   }
 
-  @Roles('superadmin', 'admin', 'manager', 'cashier')
+  @Roles('superadmin', 'admin', 'employee', 'cashier')
   @Post(':id/block')
   async blockPhone(@Param('id') id: string) {
     await this.svc.blockPhone(id);
     return { success: true };
   }
 
-  @Roles('superadmin', 'admin', 'manager', 'cashier')
+  @Roles('superadmin', 'admin', 'employee', 'cashier')
   @Post(':id/unblock')
   async unblockPhone(@Param('id') id: string) {
     await this.svc.unblockPhone(id);

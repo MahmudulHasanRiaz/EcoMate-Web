@@ -3,7 +3,7 @@
  *
  * Repo convention: @Controller('business-analytics') (no leading slash; the
  * app sets a global 'api' prefix) + class @RequiresFeature('admin_analytics')
- * + @Roles('superadmin','admin','manager'), mirroring analytics.controller.ts.
+ * + @Roles('superadmin','admin','employee'), mirroring analytics.controller.ts.
  *
  * PermissionsGuard gotcha: getAllAndOverride([handler, class]) means handler
  * metadata REPLACES class metadata. The class carries the general
@@ -35,7 +35,7 @@ import { AnalyticsReconciliationService } from './analytics-reconciliation.servi
 
 @Controller('business-analytics')
 @RequiresFeature('admin_analytics')
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 @Permissions('view_analytics')
 export class BusinessAnalyticsController {
   constructor(

@@ -153,12 +153,11 @@ function EmptyState({ search, statusFilter, onClear }: { search: string; statusF
   )
 }
 
-const ASSIGNEE_ROLE_VARIANT: Record<string, 'danger' | 'violet' | 'info' | 'cyan' | 'success' | 'warning' | 'outline'> = {
+const ASSIGNEE_ROLE_VARIANT: Record<string, 'danger' | 'violet' | 'info' | 'success' | 'warning' | 'outline'> = {
   superadmin: 'danger',
   admin: 'violet',
-  manager: 'info',
-  moderator: 'cyan',
-  sales_executive: 'success',
+  employee: 'info',
+  packing_assistant: 'success',
   cashier: 'warning',
 }
 

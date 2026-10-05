@@ -11,7 +11,7 @@ describe('CommissionsController', () => {
     expect(Reflect.getMetadata(ROLES_KEY, CommissionsController)).toEqual([
       'superadmin',
       'admin',
-      'manager',
+      'employee',
     ]);
   });
 

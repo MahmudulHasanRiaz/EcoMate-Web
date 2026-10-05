@@ -9,7 +9,7 @@ import { SearchQueryDto } from './dto/search-query.dto';
 export class SearchController {
   constructor(private searchService: SearchService) {}
 
-  @Roles('admin', 'manager', 'superadmin', 'cashier')
+  @Roles('admin', 'employee', 'superadmin', 'cashier')
   @Get()
   async search(
     @Query(new ValidationPipe({ transform: true, whitelist: true }))

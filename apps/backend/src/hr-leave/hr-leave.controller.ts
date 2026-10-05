@@ -19,7 +19,7 @@ import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { DecideLeaveRequestDto } from './dto/decide-leave-request.dto';
 
 @Controller('hr')
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 @PermissionsAny('manage_leave')
 @RequiresFeature('admin_hr')
 export class HrLeaveController {

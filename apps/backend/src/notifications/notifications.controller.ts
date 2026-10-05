@@ -21,19 +21,19 @@ import { SendNotificationDto } from './dto/send-notification.dto';
 export class NotificationsController {
   constructor(private readonly svc: NotificationsService) {}
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('settings')
   findAllSettings() {
     return this.svc.findAllSettings();
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Post('settings')
   createSetting(@Body() dto: CreateNotificationSettingDto) {
     return this.svc.createSetting(dto);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Put('settings/:id')
   updateSetting(
     @Param('id') id: string,
@@ -42,19 +42,19 @@ export class NotificationsController {
     return this.svc.updateSetting(id, dto);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Delete('settings/:id')
   removeSetting(@Param('id') id: string) {
     return this.svc.removeSetting(id);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Post('send')
   sendNotification(@Body() dto: SendNotificationDto, @CurrentUser() user: any) {
     return this.svc.sendNotification(dto, user?.userId);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('logs')
   findAllLogs(
     @Query('page') page?: string,

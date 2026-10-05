@@ -20,7 +20,7 @@ import { UpdateAttendanceDeviceDto } from './dto/update-attendance-device.dto';
 import { CreateDeviceMappingDto } from './dto/create-device-mapping.dto';
 
 @Controller('hr')
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 @PermissionsAny('manage_attendance_devices')
 @RequiresFeature('admin_hr')
 export class AttendanceDevicesController {

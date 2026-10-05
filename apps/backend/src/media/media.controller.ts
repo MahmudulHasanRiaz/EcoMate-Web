@@ -17,7 +17,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 export class MediaController {
   constructor(private readonly svc: MediaService) {}
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get()
   findAll(
     @Query('page') page?: string,
@@ -35,32 +35,32 @@ export class MediaController {
     });
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get(':id/attachments')
   getAttachments(@Param('id') id: string) {
     return this.svc.getAttachments(id);
   }
 
   @Patch(':id')
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   updateMeta(@Param('id') id: string, @Body() dto: { alt?: string }) {
     return this.svc.updateMeta(id, dto);
   }
 
   @Delete(':id')
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   remove(@Param('id') id: string, @Query('force') force?: string) {
     return this.svc.remove(id, force === 'true' || force === '1');
   }
 
   @Post(':id/attach')
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   attach(
     @Param('id') id: string,
     @Body() dto: { entityType: string; entityId: string },
@@ -69,7 +69,7 @@ export class MediaController {
   }
 
   @Post(':id/detach')
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   detach(
     @Param('id') id: string,
     @Body() dto: { entityType: string; entityId: string },
@@ -78,7 +78,7 @@ export class MediaController {
   }
 
   @Post('bulk-delete')
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   bulkRemove(@Body() dto: { ids: string[]; force?: boolean }) {
     return this.svc.bulkRemove(dto.ids, dto.force ?? false);
   }

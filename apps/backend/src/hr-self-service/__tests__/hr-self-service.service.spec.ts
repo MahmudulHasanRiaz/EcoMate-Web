@@ -124,7 +124,7 @@ describe('HrSelfServiceService', () => {
     const MANAGER_session = {
       betterAuthUserId: 'ba-mgr',
       userId: 'mgr-1',
-      role: 'manager',
+      role: 'employee',
     };
 
     it('returns the manager their own profile when an Employee record is linked', async () => {

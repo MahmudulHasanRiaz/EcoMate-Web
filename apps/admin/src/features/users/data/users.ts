@@ -25,7 +25,7 @@ export const users = Array.from({ length: 500 }, () => {
       'superadmin',
       'admin',
       'cashier',
-      'manager',
+      'employee',
     ]),
     createdAt: faker.date.past(),
     updatedAt: faker.date.recent(),

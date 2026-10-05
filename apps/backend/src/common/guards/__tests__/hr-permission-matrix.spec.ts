@@ -36,42 +36,42 @@ const ADMIN_HR_CONTROLLERS: { name: string; ctor: Function; feature: string; rol
     name: 'HrAttendanceController',
     ctor: HrAttendanceController,
     feature: 'admin_hr',
-    roles: ['superadmin', 'admin', 'manager'],
+    roles: ['superadmin', 'admin', 'employee'],
     perms: ['manage_attendance'],
   },
   {
     name: 'HrLeaveController',
     ctor: HrLeaveController,
     feature: 'admin_hr',
-    roles: ['superadmin', 'admin', 'manager'],
+    roles: ['superadmin', 'admin', 'employee'],
     perms: ['manage_leave'],
   },
   {
     name: 'CommissionsController',
     ctor: CommissionsController,
     feature: 'admin_hr',
-    roles: ['superadmin', 'admin', 'manager'],
+    roles: ['superadmin', 'admin', 'employee'],
     perms: ['manage_commissions'],
   },
   {
     name: 'HrScheduleController',
     ctor: HrScheduleController,
     feature: 'admin_hr',
-    roles: ['superadmin', 'admin', 'manager'],
+    roles: ['superadmin', 'admin', 'employee'],
     perms: ['view_hr'],
   },
   {
     name: 'HrLedgersController',
     ctor: HrLedgersController,
     feature: 'admin_hr',
-    roles: ['superadmin', 'admin', 'manager'],
+    roles: ['superadmin', 'admin', 'employee'],
     perms: ['manage_payroll', 'manage_employees'],
   },
   {
     name: 'AttendanceDevicesController',
     ctor: AttendanceDevicesController,
     feature: 'admin_hr',
-    roles: ['superadmin', 'admin', 'manager'],
+    roles: ['superadmin', 'admin', 'employee'],
     perms: ['manage_attendance_devices'],
   },
 ];
@@ -81,21 +81,21 @@ const OTHER_CONTROLLERS = [
     name: 'HrPaymentsController',
     ctor: HrPaymentsController,
     feature: 'admin_payroll',
-    roles: ['superadmin', 'admin', 'manager'],
+    roles: ['superadmin', 'admin', 'employee'],
     perms: ['manage_payroll'],
   },
   {
     name: 'PayrollController',
     ctor: PayrollController,
     feature: 'admin_payroll',
-    roles: ['superadmin', 'admin', 'manager'],
+    roles: ['superadmin', 'admin', 'employee'],
     perms: ['view_hr'],
   },
   {
     name: 'EmployeesController',
     ctor: EmployeesController,
     feature: 'admin_employees',
-    roles: ['superadmin', 'admin', 'manager'],
+    roles: ['superadmin', 'admin', 'employee'],
     perms: ['view_hr'],
   },
 ];
@@ -144,7 +144,7 @@ describe('G-10 + §22 — HR permission matrix (static introspection)', () => {
   describe('HrSelfServiceController', () => {
     it('@Roles includes employee + cashier (plus admin roles)', () => {
       const meta = classMeta(ROLES_KEY, HrSelfServiceController);
-      expect(meta).toEqual(expect.arrayContaining(['employee', 'cashier', 'superadmin', 'admin', 'manager']));
+      expect(meta).toEqual(expect.arrayContaining(['employee', 'cashier', 'superadmin', 'admin', 'employee']));
     });
 
     it('has NO @RequiresFeature decorator (open to all authenticated)', () => {

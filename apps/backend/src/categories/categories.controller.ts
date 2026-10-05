@@ -41,21 +41,21 @@ export class CategoriesController {
     return this.svc.findOne(id);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @Post()
   async create(@Body() dto: CreateCategoryDto) {
     return this.svc.create(dto);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @Put(':id')
   async update(@Param('id') id: string, @Body() dto: UpdateCategoryDto) {
     return this.svc.update(id, dto);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @Delete(':id')
   async remove(@Param('id') id: string) {

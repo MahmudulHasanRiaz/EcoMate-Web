@@ -9,7 +9,7 @@ import { CreateOrUpdateShipmentDto } from './dto/shipment.dto';
 export class ShipmentController {
   constructor(private readonly svc: ShipmentService) {}
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get()
   findAll(
     @Query('page') page?: string,
@@ -27,13 +27,13 @@ export class ShipmentController {
     });
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('order/:orderId')
   findByOrderId(@Param('orderId') orderId: string) {
     return this.svc.findByOrderId(orderId);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Put('order/:orderId')
   createOrUpdate(
     @Param('orderId') orderId: string,

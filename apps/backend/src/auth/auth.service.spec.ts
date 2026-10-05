@@ -241,7 +241,7 @@ describe('AuthService', () => {
     });
 
     it('login user payload reports isEmployee true for a manager with an Employee record', async () => {
-      const manager = { ...mockUser, role: 'manager', betterAuthUserId: 'ba-mgr' };
+      const manager = { ...mockUser, role: 'employee', betterAuthUserId: 'ba-mgr' };
       (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(manager);
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
       (jwtService.sign as jest.Mock)
@@ -261,7 +261,7 @@ describe('AuthService', () => {
       expect(result.user).toEqual({
         id: mockUser.id,
         email: mockUser.email,
-        role: 'manager',
+        role: 'employee',
         isEmployee: true,
       });
     });
@@ -328,6 +328,35 @@ describe('AuthService', () => {
 
   describe('adminLogin', () => {
     const loginDto = { email: 'test@example.com', password: 'password123' };
+
+    it('issues a distinct refresh token per login so a second login in the same second does not collide', async () => {
+      // Regression guard for the duplicate-refresh-token 409: the refresh JWT
+      // must carry a per-session jti. Without it two logins inside one clock
+      // second sign identical payloads and the second insert violates
+      // RefreshToken.token's @unique.
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+        ...mockUser,
+        role: 'admin',
+        betterAuthUserId: null,
+      });
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      (prisma.refreshToken.create as jest.Mock).mockResolvedValue(
+        mockTokenRecord,
+      );
+
+      const jtis: unknown[] = [];
+      let n = 0;
+      (jwtService.sign as jest.Mock).mockImplementation((payload: any) => {
+        if (payload && payload.jti) jtis.push(payload.jti);
+        return `token-${++n}`;
+      });
+
+      await service.login(loginDto);
+      await service.login(loginDto);
+
+      expect(jtis).toHaveLength(2);
+      expect(jtis[0]).not.toEqual(jtis[1]);
+    });
 
     function mockSuccessfulLogin(user: any) {
       (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(user);
@@ -515,7 +544,7 @@ describe('AuthService', () => {
     it('sets isEmployee true when an Employee record exists for betterAuthUserId (manager with Employee → true)', async () => {
       (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
         ...mockUser,
-        role: 'manager',
+        role: 'employee',
         betterAuthUserId: 'ba-1',
       });
       (prisma.employee.findFirst as jest.Mock).mockResolvedValue({ id: 'emp-1' });

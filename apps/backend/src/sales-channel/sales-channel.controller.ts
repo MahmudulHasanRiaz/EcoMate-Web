@@ -15,7 +15,7 @@ import {
 } from './sales-channel.constants';
 
 @Controller('sales-channel')
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 export class SalesChannelController {
   constructor(private readonly sourcePlatforms: SourcePlatformsService) {}
 

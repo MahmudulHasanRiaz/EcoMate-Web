@@ -52,7 +52,7 @@ describe('BusinessAnalyticsController RBAC', () => {
       BusinessAnalyticsController,
     ]);
     expect(roles).toEqual(
-      expect.arrayContaining(['superadmin', 'admin', 'manager']),
+      expect.arrayContaining(['superadmin', 'admin', 'employee']),
     );
     const feature = reflector.getAllAndOverride<string>(
       'requires_feature',

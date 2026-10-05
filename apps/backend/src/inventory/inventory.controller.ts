@@ -37,20 +37,20 @@ export class InventoryController {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('low-stock')
   async lowStock() {
     return this.inventoryService.lowStock();
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @UseGuards(InventoryEnabledGuard)
   @Get('replenishment')
   async physicalReplenishment() {
     return this.inventoryService.physicalReplenishment();
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('logs')
   async logs(
     @Query('page') page?: string,
@@ -68,7 +68,7 @@ export class InventoryController {
     );
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('transfers')
   async transfers(
     @Query('page') page?: string,
@@ -84,7 +84,7 @@ export class InventoryController {
     );
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('stock-overview')
   async stockOverview(
     @Query('page') page?: string,
@@ -106,7 +106,7 @@ export class InventoryController {
     });
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Post('adjust')
   async adjust(
     @Body() body: AdjustInventoryDto,
@@ -123,7 +123,7 @@ export class InventoryController {
     );
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Post('bulk-adjust')
   async bulkAdjust(
     @Body() body: BulkAdjustInventoryDto,
@@ -132,25 +132,25 @@ export class InventoryController {
     return this.inventoryService.bulkAdjust(body.items, user.email);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('valuation')
   async valuation(@Query() query: ValuationQueryDto) {
     return this.inventoryService.valuation(query);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('valuation/managed')
   async managedStockValue(@Query() query: ValuationQueryDto) {
     return this.inventoryService.managedStockValue(query);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('ledger')
   async getLedger(@Query() query: LedgerQueryDto) {
     return this.inventoryService.getLedger(query);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @UseGuards(InventoryEnabledGuard)
   @Post('transfer')
   async transfer(
@@ -165,13 +165,13 @@ export class InventoryController {
    * A request is a StockTransfer row with items but no stock movement yet;
    * approving it runs the transfer() pipeline, rejecting it closes it out.
    */
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('transfer-requests')
   async transferRequests() {
     return this.inventoryService.listTransferRequests();
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @UseGuards(InventoryEnabledGuard)
   @Post('transfer-requests/:id/approve')
   async approveTransferRequest(
@@ -181,7 +181,7 @@ export class InventoryController {
     return this.inventoryService.approveTransferRequest(id, user.email);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Post('transfer-requests/:id/reject')
   async rejectTransferRequest(
     @Param('id') id: string,
@@ -201,7 +201,7 @@ export class InventoryController {
    * deducted, cancelled-but-not-released, returned-but-not-restored).
    * Idempotent. Optional ?orderId=... to heal a single order.
    */
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Post('reconcile')
   async reconcile(
     @Query('orderId') orderId?: string,

@@ -55,7 +55,7 @@ interface User {
 
 @Controller('courier-settlement')
 @RequiresFeature('admin_courier_settlement')
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 export class CourierSettlementController {
   constructor(
     private readonly importer: CourierSettlementImportService,

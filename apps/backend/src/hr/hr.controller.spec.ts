@@ -46,7 +46,7 @@ describe('HrController', () => {
     const roles = reflector.getAllAndOverride<string[]>(ROLES_KEY, [
       HrController,
     ]);
-    expect(roles).toEqual(['superadmin', 'admin', 'manager']);
+    expect(roles).toEqual(['superadmin', 'admin', 'employee']);
   });
 
   it('should require view_hr permission at class level', () => {

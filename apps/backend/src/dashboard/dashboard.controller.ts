@@ -8,7 +8,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('stats')
   async getStats(
     @Query('startDate') startDate?: string,
@@ -17,7 +17,7 @@ export class DashboardController {
     return this.dashboardService.getStats(startDate, endDate);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('analytics')
   async getAnalytics(
     @Query('startDate') startDate?: string,
@@ -26,7 +26,7 @@ export class DashboardController {
     return this.dashboardService.getAnalytics(startDate, endDate);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('pending-orders')
   async getPendingOrders(
     @Query('startDate') startDate?: string,
@@ -35,13 +35,13 @@ export class DashboardController {
     return this.dashboardService.getPendingOrders(startDate, endDate);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('low-stock')
   async getLowStockProducts() {
     return this.dashboardService.getLowStockProducts();
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('top-products')
   async getTopProducts(
     @Query('startDate') startDate?: string,
@@ -55,7 +55,7 @@ export class DashboardController {
     );
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('order-status-distribution')
   async getOrderStatusDistribution(
     @Query('startDate') startDate?: string,
@@ -64,7 +64,7 @@ export class DashboardController {
     return this.dashboardService.getOrderStatusDistribution(startDate, endDate);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('revenue-by-payment')
   async getRevenueByPaymentMethod(
     @Query('startDate') startDate?: string,
@@ -73,7 +73,7 @@ export class DashboardController {
     return this.dashboardService.getRevenueByPaymentMethod(startDate, endDate);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('new-customers')
   async getNewCustomers(
     @Query('startDate') startDate?: string,
@@ -82,31 +82,31 @@ export class DashboardController {
     return this.dashboardService.getNewCustomers(startDate, endDate);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('pending-refunds')
   async getPendingRefunds() {
     return this.dashboardService.getPendingRefunds();
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('pending-dispatch')
   async getPendingDispatch() {
     return this.dashboardService.getPendingDispatch();
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('pending-payments')
   async getPendingPayments() {
     return this.dashboardService.getPendingPayments();
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('today-kpi')
   async getTodayKpi() {
     return this.dashboardService.getTodayKpi();
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('operational-kpis')
   async getOperationalKpis(
     @Query('startDate') startDate?: string,
@@ -115,7 +115,7 @@ export class DashboardController {
     return this.dashboardService.getOperationalKpis(startDate, endDate);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('operational-pipeline-kpis')
   async getOperationalPipelineKpis(
     @Query('startDate') startDate?: string,
@@ -124,7 +124,7 @@ export class DashboardController {
     return this.dashboardService.getOperationalPipelineKpis(startDate, endDate);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('activity-log')
   async getActivityLog() {
     return this.dashboardService.getActivityLog();

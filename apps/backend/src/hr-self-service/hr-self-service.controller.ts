@@ -15,7 +15,7 @@ import { CreateSelfLeaveRequestDto } from './dto/create-self-leave-request.dto';
 import { SelfAttendanceActionDto } from './dto/self-attendance-action.dto';
 
 @Controller('hr/my')
-@Roles('superadmin', 'admin', 'manager', 'cashier', 'employee')
+@Roles('superadmin', 'admin', 'employee', 'cashier')
 export class HrSelfServiceController {
   constructor(private readonly service: HrSelfServiceService) {}
 
@@ -71,8 +71,8 @@ export class HrSelfServiceController {
    * Full payslip statement for the employee themself.
    *
    * Deliberately separate from GET /payroll/payslips/:id, which is restricted to
-   * superadmin/admin/manager. The admin self-service page needs this so a plain
-   * employee can open their own payslip.
+   * superadmin/admin. The admin self-service page needs this so any employee
+   * can open their own payslip.
    */
   @Get('payslips/:id')
   getPayslip(

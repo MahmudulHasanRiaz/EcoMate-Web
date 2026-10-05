@@ -11,7 +11,7 @@ describe('HrAttendanceController', () => {
     expect(Reflect.getMetadata(ROLES_KEY, HrAttendanceController)).toEqual([
       'superadmin',
       'admin',
-      'manager',
+      'employee',
     ]);
   });
 

@@ -10,7 +10,7 @@ import { ClaimReferralDto } from './dto/claim-referral.dto';
 export class ReferralsController {
   constructor(private readonly referralsService: ReferralsService) {}
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_referrals')
   @Get()
   async findAll(
@@ -28,7 +28,7 @@ export class ReferralsController {
     return this.referralsService.getOrCreateReferral(user.userId);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_referrals')
   @Get(':id')
   async findOne(@Param('id') id: string) {
@@ -41,7 +41,7 @@ export class ReferralsController {
     return this.referralsService.claimReferral(dto);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_referrals')
   @Get(':id/leads')
   async findLeads(

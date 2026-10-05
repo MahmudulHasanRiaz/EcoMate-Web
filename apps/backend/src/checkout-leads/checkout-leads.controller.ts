@@ -22,7 +22,7 @@ import { UpsertLeadDto } from './dto/upsert-lead.dto';
 export class CheckoutLeadsController {
   constructor(private readonly svc: CheckoutLeadsService) {}
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_checkout_leads')
   @Get()
   findAll(
@@ -45,14 +45,14 @@ export class CheckoutLeadsController {
     });
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_checkout_leads')
   @Get('summary')
   summary() {
     return this.svc.getSummary();
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_checkout_leads')
   @Get(':id')
   findOne(@Param('id') id: string) {
@@ -78,7 +78,7 @@ export class CheckoutLeadsController {
     });
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_checkout_leads')
   @Patch(':id/status')
   updateStatus(
@@ -89,7 +89,7 @@ export class CheckoutLeadsController {
     return this.svc.updateStatus(id, status, user?.userId);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_checkout_leads')
   @Patch(':id/assign')
   assign(
@@ -100,7 +100,7 @@ export class CheckoutLeadsController {
     return this.svc.assign(id, assignedToId, user.userId);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_checkout_leads')
   @Post(':id/convert')
   convert(
@@ -113,7 +113,7 @@ export class CheckoutLeadsController {
     return this.svc.convertToOrder(id, user.userId, dto, clientIp);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_checkout_leads')
   @Post('bulk/assign')
   bulkAssign(
@@ -124,7 +124,7 @@ export class CheckoutLeadsController {
     return this.svc.bulkAssign(ids, assignedToId, user.userId);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_checkout_leads')
   @Post('bulk/status')
   bulkStatus(@Body('ids') ids: string[], @Body('status') status: string) {

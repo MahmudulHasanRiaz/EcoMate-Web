@@ -24,7 +24,7 @@ export class RtnController {
     return { userId: user.userId, email: user.email };
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Get('order/:orderId')
   findForOriginalOrder(@Param('orderId') orderId: string) {
@@ -36,14 +36,14 @@ export class RtnController {
    * original may accumulate several RTNs over its life, so the detail page
    * needs the full list, not just the open one.
    */
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Get('order/:orderId/all')
   findAllForOriginalOrder(@Param('orderId') orderId: string) {
     return this.rtnService.findAllForOriginalOrder(orderId);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Get(':id')
   findById(@Param('id') id: string) {
@@ -54,7 +54,7 @@ export class RtnController {
    * Create the RTN return order from a Partial original order.
    * Body: { items: [{ orderItemId, quantity }] }.
    */
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Post('from-order/:orderId')
   createFromPartialOrder(
@@ -70,7 +70,7 @@ export class RtnController {
    * and admin re-scan entry point). Full return → original Returned;
    * Partial return → RTN Returned + exact stock restoration.
    */
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Post('dispatch/:dispatchId/finalize-return')
   finalizeDispatchReturn(

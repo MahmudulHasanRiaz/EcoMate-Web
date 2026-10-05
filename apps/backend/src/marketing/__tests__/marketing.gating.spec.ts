@@ -21,13 +21,13 @@ describe('MarketingController — license gating', () => {
 
   it('main controller requires staff roles (never customer) at class level', () => {
     const roles = Reflect.getMetadata(ROLES_KEY, MarketingController);
-    expect(roles).toEqual(['superadmin', 'admin', 'manager']);
+    expect(roles).toEqual(['superadmin', 'admin', 'employee']);
     expect(roles).not.toContain('customer');
   });
 
   it('analysis controller requires staff roles (never customer)', () => {
     const roles = Reflect.getMetadata(ROLES_KEY, MarketingAnalysisController);
-    expect(roles).toEqual(['superadmin', 'admin', 'manager']);
+    expect(roles).toEqual(['superadmin', 'admin', 'employee']);
     expect(roles).not.toContain('customer');
   });
 

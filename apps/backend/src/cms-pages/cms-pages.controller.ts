@@ -29,35 +29,35 @@ export class CmsPagesController {
     return this.svc.findBySlug(slug);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_cms')
   @Get()
   async findAll() {
     return this.svc.findAll();
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_cms')
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_cms')
   @Post()
   async create(@Body() dto: CreateCmsPageDto) {
     return this.svc.create(dto);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_cms')
   @Put(':id')
   async update(@Param('id') id: string, @Body() dto: UpdateCmsPageDto) {
     return this.svc.update(id, dto);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_cms')
   @Delete(':id')
   async remove(@Param('id') id: string) {

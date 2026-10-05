@@ -28,7 +28,7 @@ import {
   SetCampaignAliasesDto,
 } from './dto/marketing.dto';
 
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 @Controller('marketing')
 @RequiresFeature('marketing_attribution')
 export class MarketingController {

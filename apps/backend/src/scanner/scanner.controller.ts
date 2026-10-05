@@ -14,7 +14,7 @@ import { RequiresFeature } from '@ecomate/feature-flags';
  * no scanner-specific role bypass.
  */
 @Controller('scanner')
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 @RequiresFeature('admin_barcode_search')
 export class ScannerController {
   constructor(private readonly scannerService: ScannerService) {}

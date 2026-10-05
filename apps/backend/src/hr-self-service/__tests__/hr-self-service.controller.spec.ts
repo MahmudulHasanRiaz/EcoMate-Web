@@ -6,9 +6,8 @@ describe('HrSelfServiceController', () => {
     expect(Reflect.getMetadata(ROLES_KEY, HrSelfServiceController)).toEqual([
       'superadmin',
       'admin',
-      'manager',
-      'cashier',
       'employee',
+      'cashier',
     ]);
   });
 

@@ -11,7 +11,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { MarketingAnalysisService } from './marketing-analysis.service';
 import { MarketingSyncService } from './marketing-sync.service';
 
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 @Controller('marketing/analysis')
 @RequiresFeature('marketing_attribution')
 export class MarketingAnalysisController {

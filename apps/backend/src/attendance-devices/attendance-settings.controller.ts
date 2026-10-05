@@ -7,7 +7,7 @@ import { AttendanceSettingsService } from './attendance-settings.service';
 import { UpdateAttendanceSettingsDto } from './dto/update-attendance-settings.dto';
 
 @Controller('hr')
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 @PermissionsAny('manage_attendance', 'manage_hr_settings')
 @RequiresFeature('admin_hr')
 export class AttendanceSettingsController {

@@ -22,14 +22,14 @@ describe('computeEffectivePermissions', () => {
   it('manager with employeeLink + accessPreset → preset permissions', () => {
     const presetPerms = ['view_orders', 'create_orders'];
     const perms = computeEffectivePermissions({
-      role: 'manager',
+      role: 'employee',
       employeeLink: { accessPreset: { permissions: presetPerms } },
     });
     expect(perms).toEqual(presetPerms);
   });
 
   it('manager without employeeLink → []', () => {
-    const perms = computeEffectivePermissions({ role: 'manager' });
+    const perms = computeEffectivePermissions({ role: 'employee' });
     expect(perms).toEqual([]);
   });
 

@@ -350,7 +350,7 @@ export class HrSelfServiceService {
    *
    * The admin "View payslip" dialog needs the payslip plus its line items, but
    * it was pointed at GET /payroll/payslips/:id, which is gated to
-   * superadmin/admin/manager. A plain `employee` clicking View therefore got a
+   * superadmin/admin/employee. An `employee` clicking View therefore got a
    * 403 — the list and net-pay figures rendered (they use /hr/my/payslips) but
    * the drill-down failed. getPayslipPayments could not serve this either: it
    * returns only payrollPayment rows, with none of the payslip's earnings and

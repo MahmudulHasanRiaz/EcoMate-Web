@@ -44,7 +44,7 @@ export class ReviewsController {
     return this.svc.findLatest(limit ? parseInt(limit) : 6);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_reviews')
   @Get()
   async findAll(
@@ -61,7 +61,7 @@ export class ReviewsController {
     });
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_reviews')
   @Patch(':id/approve')
   async approve(@Param('id') id: string) {

@@ -3,7 +3,7 @@ import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 import { MarketingSnapshotService } from './marketing-snapshot.service';
 
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 @Controller('marketing/snapshots')
 @RequiresFeature('marketing_attribution')
 export class MarketingSnapshotController {

@@ -46,7 +46,7 @@ export class OrdersController {
     private readonly othersService: OrderOthersService,
   ) {}
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get()
   findAll(
     @Query('page') page?: string,
@@ -189,7 +189,7 @@ export class OrdersController {
     });
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Get(':id/remaining-fulfillment')
   remainingFulfillment(@Param('id') id: string) {
@@ -218,7 +218,7 @@ export class OrdersController {
     return this.othersService.getForOrder(id);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Post(':id/verify-payment')
   async verifyPayment(
@@ -234,14 +234,14 @@ export class OrdersController {
     return this.svc.cancelByCustomer(id, dto.token);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Post(':id/rotate-view-token')
   rotateViewToken(@Param('id') id: string) {
     return this.svc.rotateViewToken(id);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Put(':id')
   updateOrder(
@@ -255,7 +255,7 @@ export class OrdersController {
     });
   }
 
-  @Roles('superadmin', 'admin', 'manager', 'employee')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Put(':id/status')
   updateStatus(
@@ -266,7 +266,7 @@ export class OrdersController {
     return this.svc.updateStatus(id, dto, user.userId, user.email);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Post(':id/items')
   addItem(
@@ -276,7 +276,7 @@ export class OrdersController {
   ) {
     return this.svc.addItem(id, dto, user.userId);
   }
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Delete(':id/items/:itemId')
   removeItem(
@@ -286,7 +286,7 @@ export class OrdersController {
   ) {
     return this.svc.removeItem(id, itemId, user.userId);
   }
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Post(':id/note')
   addNote(
@@ -303,14 +303,14 @@ export class OrdersController {
     );
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Post('bulk')
   async bulkOrders(@Body() dto: BulkOrdersDto) {
     const orders = await this.svc.bulkOrders(dto.ids || []);
     return { orders };
   }
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Post('bulk/status')
   async bulkStatus(@Body() dto: BulkStatusDto, @CurrentUser() user: any) {
@@ -322,7 +322,7 @@ export class OrdersController {
   }
 
   /** Acquire edit lock. 409-equivalent result is a normal 200 with { acquired: false, heldBy }. */
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Post(':id/lock/acquire')
   acquireLock(
@@ -333,7 +333,7 @@ export class OrdersController {
   }
 
   /** Force-takeover of the lock (audit entry is written to order timeline by caller/UI flow). */
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Post(':id/lock/override')
   overrideLock(
@@ -344,7 +344,7 @@ export class OrdersController {
   }
 
   /** Heartbeat: renew the lock TTL. */
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Post(':id/lock/heartbeat')
   heartbeatLock(
@@ -355,7 +355,7 @@ export class OrdersController {
   }
 
   /** Release the lock (holder only). */
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Delete(':id/lock')
   releaseLock(
@@ -366,14 +366,14 @@ export class OrdersController {
   }
 
   /** Current live lock info, if any. */
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Get(':id/lock')
   getLock(@Param('id') id: string) {
     return this.lockSvc.getLock(id);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Post('bulk/dispatch')
   async bulkDispatch(
@@ -382,13 +382,13 @@ export class OrdersController {
   ) {
     return this.svc.bulkDispatch(dto.courier, dto.ids, user.userId);
   }
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Post('bulk/assign')
   async bulkAssign(@Body() dto: BulkAssignDto) {
     return this.svc.bulkAssign(dto.ids, dto.assignedToId);
   }
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Post(':id/trash')
   trashOrder(
@@ -398,14 +398,14 @@ export class OrdersController {
     return this.svc.trash(id, user.email || user.userId);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Post(':id/restore')
   restoreOrder(@Param('id') id: string) {
     return this.svc.restore(id);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Get('staff/list')
   async staffList() {

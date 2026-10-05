@@ -733,19 +733,28 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     role: string;
     betterAuthUserId?: string | null;
   }) {
-    const payload = { sub: user.id, email: user.email, role: user.role };
     const accessExpiresIn = (process.env['JWT_EXPIRES_IN'] ||
       '60m') as StringValue;
     const refreshExpiresIn = (process.env['JWT_REFRESH_EXPIRES_IN'] ||
       '7d') as StringValue;
 
-    const accessToken = this.jwtService.sign(payload, {
-      secret: process.env['JWT_SECRET'],
-      expiresIn: ms(accessExpiresIn) / 1000,
-    });
+    const accessToken = this.jwtService.sign(
+      { sub: user.id, email: user.email, role: user.role },
+      {
+        secret: process.env['JWT_SECRET'],
+        expiresIn: ms(accessExpiresIn) / 1000,
+      },
+    );
 
+    // A per-session `jti` is required, not cosmetic. Without it, two logins
+    // for the same account inside the same clock second produce a
+    // byte-identical refresh token ({sub, email} + matching iat/exp), and the
+    // second insert violates RefreshToken.token's @unique — the user sees
+    // "A record with this value already exists" (409) instead of a session.
+    // Revoking a session also only worked by accident: the stored row was
+    // keyed to a token shared by every session started in that second.
     const refreshToken = this.jwtService.sign(
-      { sub: user.id, email: user.email },
+      { sub: user.id, email: user.email, jti: randomUUID() },
       {
         secret: process.env['JWT_REFRESH_SECRET'],
         expiresIn: ms(refreshExpiresIn) / 1000,

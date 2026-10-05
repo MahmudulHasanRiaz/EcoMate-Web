@@ -17,7 +17,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('purchases')
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 @RequiresFeature('admin_purchases')
 export class PurchasesController {
   constructor(private readonly purchasesService: PurchasesService) {}

@@ -15,7 +15,7 @@ import { CreateDesignationDto } from './dto/create-designation.dto';
 import { UpdateDesignationDto } from './dto/update-designation.dto';
 
 @Controller('designations')
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 @PermissionsAny('view_hr')
 @RequiresFeature('admin_employees')
 export class DesignationsController {

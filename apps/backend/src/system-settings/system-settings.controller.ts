@@ -180,7 +180,7 @@ export class SystemSettingsController {
   ) {}
 
   @Get()
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_settings')
   async getAll() {
     const settings = await this.prisma.systemSetting.findMany();
@@ -727,7 +727,7 @@ export class SystemSettingsController {
   }
 
   @Post(':key')
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_settings')
   async set(@Param('key') key: string, @Body() body: { value: string }) {
     if (!key || typeof key !== 'string' || !key.trim()) {

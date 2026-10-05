@@ -17,7 +17,7 @@ import { CreateSizeChartDto, UpdateSizeChartDto } from './dto/size-chart.dto';
 export class SizeChartsController {
   constructor(private readonly svc: SizeChartsService) {}
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_size_charts')
   @Get()
   async findAll() {
@@ -32,7 +32,7 @@ export class SizeChartsController {
     return result;
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_size_charts')
   @Get(':id')
   async findOne(@Param('id') id: string) {

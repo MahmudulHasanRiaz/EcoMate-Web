@@ -14,7 +14,7 @@ describe('BlockedEntriesController', () => {
     expect(featureKey).toBe('admin_blocking');
   });
 
-  const STAFF_ROLES = ['superadmin', 'admin', 'manager', 'cashier'];
+  const STAFF_ROLES = ['superadmin', 'admin', 'employee', 'cashier'];
 
   it.each(['findAll', 'create', 'unblock', 'toggleWhitelist'])(
     '%s is allowed for all roles except customer',

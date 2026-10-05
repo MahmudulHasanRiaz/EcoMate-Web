@@ -31,7 +31,7 @@ import {
 } from './dto/commission-rule-v2.dto';
 
 @Controller('hr')
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 @PermissionsAny('manage_commissions')
 @RequiresFeature('admin_hr')
 export class CommissionsController {

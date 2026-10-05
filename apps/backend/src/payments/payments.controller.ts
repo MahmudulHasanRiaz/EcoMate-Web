@@ -11,7 +11,7 @@ import { RequiresFeature } from '@ecomate/feature-flags';
 export class PaymentsController {
   constructor(private readonly svc: PaymentsService) {}
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_payments')
   @Get()
   findAll(
@@ -41,7 +41,7 @@ export class PaymentsController {
     return this.svc.create(orderId, dto, { userId: user?.userId, token: dto.token });
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_payments')
   @Put(':id/verify')
   verify(

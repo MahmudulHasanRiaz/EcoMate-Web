@@ -24,7 +24,7 @@ describe('AttendanceSettingsController', () => {
 
   it('has class-level Roles(superadmin, admin, manager) metadata', () => {
     expect(Reflect.getMetadata(ROLES_KEY, AttendanceSettingsController)).toEqual(
-      ['superadmin', 'admin', 'manager'],
+      ['superadmin', 'admin', 'employee'],
     );
   });
 

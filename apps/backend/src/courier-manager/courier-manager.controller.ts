@@ -8,7 +8,7 @@ import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 import { WebhookAttemptOutcome } from '@prisma/client';
 
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 @Controller('couriers')
 @RequiresFeature('admin_courier')
 export class CourierManagerController {

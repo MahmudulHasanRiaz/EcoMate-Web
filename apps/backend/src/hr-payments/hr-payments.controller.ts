@@ -14,7 +14,7 @@ import { CreatePaymentDto } from './dto/create-payment.dto';
 import { VoidPaymentDto } from './dto/void-payment.dto';
 
 @Controller('payroll')
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 @PermissionsAny('manage_payroll')
 @RequiresFeature('admin_payroll')
 export class HrPaymentsController {

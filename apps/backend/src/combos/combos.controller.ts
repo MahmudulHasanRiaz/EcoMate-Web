@@ -56,21 +56,21 @@ export class CombosController {
     return this.combosService.findOne(id);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_combos')
   @Post()
   async create(@Body() dto: CreateComboDto) {
     return this.combosService.create(dto);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_combos')
   @Put(':id')
   async update(@Param('id') id: string, @Body() dto: UpdateComboDto) {
     return this.combosService.update(id, dto);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_combos')
   @Delete(':id')
   async remove(@Param('id') id: string) {

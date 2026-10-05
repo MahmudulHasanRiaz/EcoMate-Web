@@ -11,7 +11,7 @@ describe('CustomersController', () => {
     expect(featureKey).toBe('admin_customers');
   });
 
-  const BLOCK_ROLES = ['superadmin', 'admin', 'manager', 'cashier'];
+  const BLOCK_ROLES = ['superadmin', 'admin', 'employee', 'cashier'];
 
   it.each(['blockPhone', 'unblockPhone'])(
     '%s is allowed for all staff roles',

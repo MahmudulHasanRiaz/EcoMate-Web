@@ -17,7 +17,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 @Controller('expenses')
 @RequiresFeature('admin_expenses')
 export class ExpensesController {

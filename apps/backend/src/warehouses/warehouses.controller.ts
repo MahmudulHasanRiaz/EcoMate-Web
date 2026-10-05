@@ -27,13 +27,13 @@ import {
 export class WarehousesController {
   constructor(private readonly svc: WarehousesService) {}
 
-  @Roles('superadmin', 'admin', 'manager', 'cashier')
+  @Roles('superadmin', 'admin', 'employee', 'cashier')
   @Get()
   findAll(@Query('type') type?: string) {
     return this.svc.findAll(type);
   }
 
-  @Roles('superadmin', 'admin', 'manager', 'cashier')
+  @Roles('superadmin', 'admin', 'employee', 'cashier')
   @Get('bin-locations')
   findAllBinLocations(
     @Query('warehouseId') warehouseId?: string,
@@ -46,7 +46,7 @@ export class WarehousesController {
     return this.svc.findAllBins(warehouseId, search, isActive, zoneId, rackId, shelfId);
   }
 
-  @Roles('superadmin', 'admin', 'manager', 'cashier')
+  @Roles('superadmin', 'admin', 'employee', 'cashier')
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
@@ -72,14 +72,14 @@ export class WarehousesController {
 
   /* ── Bin Locations ── */
 
-  @Roles('superadmin', 'admin', 'manager', 'cashier')
+  @Roles('superadmin', 'admin', 'employee', 'cashier')
   @Get(':id/bin-locations')
   listBinLocations(@Param('id') warehouseId: string) {
     return this.svc.listBinLocations(warehouseId);
   }
 
   @Post(':id/bin-locations')
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   createBinLocation(
     @Param('id') warehouseId: string,
     @Body() dto: CreateBinLocationDto,
@@ -88,7 +88,7 @@ export class WarehousesController {
   }
 
   @Put(':id/bin-locations/:binId')
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   updateBinLocation(
     @Param('binId') binId: string,
     @Body() dto: UpdateBinLocationDto,
@@ -97,21 +97,21 @@ export class WarehousesController {
   }
 
   @Delete(':id/bin-locations/:binId')
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   deleteBinLocation(@Param('binId') binId: string) {
     return this.svc.deleteBinLocation(binId);
   }
 
   /* ── Zones ── */
 
-  @Roles('superadmin', 'admin', 'manager', 'cashier')
+  @Roles('superadmin', 'admin', 'employee', 'cashier')
   @Get(':id/zones')
   listZones(@Param('id') warehouseId: string) {
     return this.svc.listZones(warehouseId);
   }
 
   @Post(':id/zones')
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   createZone(
     @Param('id') warehouseId: string,
     @Body() dto: CreateZoneDto,
@@ -120,7 +120,7 @@ export class WarehousesController {
   }
 
   @Put(':id/zones/:zoneId')
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   updateZone(
     @Param('zoneId') zoneId: string,
     @Body() dto: UpdateZoneDto,
@@ -129,21 +129,21 @@ export class WarehousesController {
   }
 
   @Delete(':id/zones/:zoneId')
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   deleteZone(@Param('zoneId') zoneId: string) {
     return this.svc.deleteZone(zoneId);
   }
 
   /* ── Racks ── */
 
-  @Roles('superadmin', 'admin', 'manager', 'cashier')
+  @Roles('superadmin', 'admin', 'employee', 'cashier')
   @Get(':id/zones/:zoneId/racks')
   listRacks(@Param('zoneId') zoneId: string) {
     return this.svc.listRacks(zoneId);
   }
 
   @Post(':id/zones/:zoneId/racks')
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   createRack(
     @Param('zoneId') zoneId: string,
     @Body() dto: CreateRackDto,
@@ -152,7 +152,7 @@ export class WarehousesController {
   }
 
   @Put(':id/zones/:zoneId/racks/:rackId')
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   updateRack(
     @Param('rackId') rackId: string,
     @Body() dto: UpdateRackDto,
@@ -161,21 +161,21 @@ export class WarehousesController {
   }
 
   @Delete(':id/zones/:zoneId/racks/:rackId')
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   deleteRack(@Param('rackId') rackId: string) {
     return this.svc.deleteRack(rackId);
   }
 
   /* ── Shelves ── */
 
-  @Roles('superadmin', 'admin', 'manager', 'cashier')
+  @Roles('superadmin', 'admin', 'employee', 'cashier')
   @Get(':id/zones/:zoneId/racks/:rackId/shelves')
   listShelves(@Param('rackId') rackId: string) {
     return this.svc.listShelves(rackId);
   }
 
   @Post(':id/zones/:zoneId/racks/:rackId/shelves')
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   createShelf(
     @Param('rackId') rackId: string,
     @Body() dto: CreateShelfDto,
@@ -184,7 +184,7 @@ export class WarehousesController {
   }
 
   @Put(':id/zones/:zoneId/racks/:rackId/shelves/:shelfId')
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   updateShelf(
     @Param('shelfId') shelfId: string,
     @Body() dto: UpdateShelfDto,
@@ -193,7 +193,7 @@ export class WarehousesController {
   }
 
   @Delete(':id/zones/:zoneId/racks/:rackId/shelves/:shelfId')
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   deleteShelf(@Param('shelfId') shelfId: string) {
     return this.svc.deleteShelf(shelfId);
   }

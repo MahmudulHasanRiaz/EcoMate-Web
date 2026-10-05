@@ -22,7 +22,7 @@ import { LogTaskTimeDto, StartTaskTimerDto, StopTaskTimerDto } from './dto/time-
 export class TasksController {
   constructor(private readonly tasksService: TasksService) {}
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('productivity-report')
   async getProductivityReport(
     @Query('from') from?: string,
@@ -42,7 +42,7 @@ export class TasksController {
     });
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get()
   async findAll(
     @Query('page') page?: string,
@@ -68,13 +68,13 @@ export class TasksController {
     });
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.tasksService.findOne(id);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Post()
   async create(
     @Body() dto: CreateTaskDto,
@@ -83,25 +83,25 @@ export class TasksController {
     return this.tasksService.create(dto, user.userId);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Put(':id')
   async update(@Param('id') id: string, @Body() dto: UpdateTaskDto) {
     return this.tasksService.update(id, dto);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Delete(':id')
   async remove(@Param('id') id: string) {
     return this.tasksService.remove(id);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Post('bulk-delete')
   async bulkDelete(@Body() dto: BulkDeleteTasksDto) {
     return this.tasksService.bulkDelete(dto.ids);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Post('bulk-update')
   async bulkUpdate(@Body() dto: BulkUpdateTasksDto) {
     return this.tasksService.bulkUpdate(dto.ids, {
@@ -112,7 +112,7 @@ export class TasksController {
 
   // ── Time tracking endpoints ─────────────────────────────────────────────────
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Post(':id/timer/start')
   async startTimer(
     @Param('id') id: string,
@@ -121,7 +121,7 @@ export class TasksController {
     return this.tasksService.startTimer(id, dto);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Post(':id/timer/pause')
   async pauseTimer(
     @Param('id') id: string,
@@ -130,7 +130,7 @@ export class TasksController {
     return this.tasksService.pauseTimer(id, body);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Post(':id/timer/resume')
   async resumeTimer(
     @Param('id') id: string,
@@ -139,7 +139,7 @@ export class TasksController {
     return this.tasksService.resumeTimer(id, body);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Post(':id/timer/stop')
   async stopTimer(
     @Param('id') id: string,
@@ -148,7 +148,7 @@ export class TasksController {
     return this.tasksService.stopTimer(id, dto);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Post(':id/time-entries')
   async logTime(
     @Param('id') id: string,
@@ -157,7 +157,7 @@ export class TasksController {
     return this.tasksService.logTime(id, dto);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get(':id/time-entries')
   async getTimeEntries(
     @Param('id') id: string,
@@ -171,7 +171,7 @@ export class TasksController {
     );
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('employee/:employeeId')
   async getEmployeeTaskList(
     @Param('employeeId') employeeId: string,

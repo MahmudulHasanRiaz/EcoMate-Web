@@ -168,7 +168,7 @@ describe('MarketingSnapshotController — license gating', () => {
 
   it('requires staff roles (never customer) at class level', () => {
     const roles = Reflect.getMetadata(ROLES_KEY, MarketingSnapshotController);
-    expect(roles).toEqual(['superadmin', 'admin', 'manager']);
+    expect(roles).toEqual(['superadmin', 'admin', 'employee']);
     expect(roles).not.toContain('customer');
   });
 

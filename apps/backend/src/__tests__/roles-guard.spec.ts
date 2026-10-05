@@ -33,7 +33,7 @@ describe('OrdersController role guards', () => {
     expect(roles).toBeDefined();
     expect(roles).toContain('superadmin');
     expect(roles).toContain('admin');
-    expect(roles).toContain('manager');
+    expect(roles).toContain('employee');
   });
 
   it('POST /orders/:id/verify-payment requires superadmin/admin/manager', () => {
@@ -41,7 +41,7 @@ describe('OrdersController role guards', () => {
     expect(roles).toBeDefined();
     expect(roles).toContain('superadmin');
     expect(roles).toContain('admin');
-    expect(roles).toContain('manager');
+    expect(roles).toContain('employee');
   });
 
   // Owner-accessible routes must NOT have roles:
@@ -103,7 +103,7 @@ describe('DispatchController role guards', () => {
       expect(roles).toBeDefined();
       expect(roles).toContain('superadmin');
       expect(roles).toContain('admin');
-      expect(roles).toContain('manager');
+      expect(roles).toContain('employee');
     });
   }
 
@@ -134,7 +134,7 @@ describe('WarehousesController role guards', () => {
       expect(roles).toBeDefined();
       expect(roles).toContain('superadmin');
       expect(roles).toContain('admin');
-      expect(roles).toContain('manager');
+      expect(roles).toContain('employee');
       expect(roles).toContain('cashier');
     });
   }
@@ -147,7 +147,7 @@ describe('WarehousesController role guards', () => {
 
   it('POST /warehouses/:id/bin-locations requires superadmin/admin/manager', () => {
     const roles = getRoles(WarehousesController, 'createBinLocation');
-    expect(roles).toEqual(['superadmin', 'admin', 'manager']);
+    expect(roles).toEqual(['superadmin', 'admin', 'employee']);
   });
 });
 
@@ -187,7 +187,7 @@ describe('CouponsController role guards', () => {
     expect(roles).toBeDefined();
     expect(roles).toContain('superadmin');
     expect(roles).toContain('admin');
-    expect(roles).toContain('manager');
+    expect(roles).toContain('employee');
   });
 
   // Validate endpoint is used by storefront — no roles:
@@ -205,7 +205,7 @@ describe('OrderStatusController role guards', () => {
     expect(roles).toBeDefined();
     expect(roles).toContain('superadmin');
     expect(roles).toContain('admin');
-    expect(roles).toContain('manager');
+    expect(roles).toContain('employee');
   });
 });
 
@@ -217,7 +217,7 @@ describe('TasksController role guards', () => {
     expect(roles).toBeDefined();
     expect(roles).toContain('superadmin');
     expect(roles).toContain('admin');
-    expect(roles).toContain('manager');
+    expect(roles).toContain('employee');
   });
 
   it('GET /tasks/:id requires superadmin/admin/manager', () => {
@@ -225,6 +225,6 @@ describe('TasksController role guards', () => {
     expect(roles).toBeDefined();
     expect(roles).toContain('superadmin');
     expect(roles).toContain('admin');
-    expect(roles).toContain('manager');
+    expect(roles).toContain('employee');
   });
 });

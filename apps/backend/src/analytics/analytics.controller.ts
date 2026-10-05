@@ -8,7 +8,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 export class AnalyticsController {
   constructor(private readonly analytics: AnalyticsService) {}
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('sales-kpi')
   async getSalesKpi(
     @Query('startDate') startDate?: string,
@@ -17,7 +17,7 @@ export class AnalyticsController {
     return this.analytics.getSalesKpi(startDate, endDate);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('revenue-trend')
   async getRevenueTrend(
     @Query('startDate') startDate?: string,
@@ -26,7 +26,7 @@ export class AnalyticsController {
     return this.analytics.getRevenueTrend(startDate, endDate);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('marketing-kpi')
   async getMarketingKpi(
     @Query('startDate') startDate?: string,
@@ -35,7 +35,7 @@ export class AnalyticsController {
     return this.analytics.getMarketingKpi(startDate, endDate);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('traffic-sources')
   async getTrafficSources(
     @Query('startDate') startDate?: string,

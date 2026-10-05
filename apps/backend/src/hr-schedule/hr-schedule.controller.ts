@@ -14,7 +14,7 @@ import { HrScheduleService } from './hr-schedule.service';
 import { SetScheduleDto } from './dto/set-schedule.dto';
 
 @Controller('hr/employees')
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 @PermissionsAny('view_hr')
 @RequiresFeature('admin_hr')
 export class HrScheduleController {

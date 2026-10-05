@@ -16,7 +16,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { PermissionsAny } from '../common/decorators/permissions.decorator';
 
 @Controller('departments')
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 @PermissionsAny('view_hr')
 @RequiresFeature('admin_employees')
 export class DepartmentsController {

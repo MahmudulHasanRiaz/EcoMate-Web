@@ -17,7 +17,6 @@ enum UserRole {
   superadmin
   admin
   cashier
-  manager
   packing_assistant
   customer
   employee
@@ -277,6 +276,9 @@ model AccessPreset {
   name        String   @unique
   description String?  @db.Text
   permissions String[]
+  /// Seeded, admin-facing templates that ship with the product. Marked so the
+  /// preset editor can protect them from deletion and renaming.
+  isSystem    Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

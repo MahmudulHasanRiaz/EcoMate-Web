@@ -11,6 +11,7 @@ import { UsersPrimaryButtons } from './components/users-primary-buttons'
 import { UsersProvider } from './components/users-provider'
 import { UsersTable } from './components/users-table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { USER_ROLES } from './constants'
 
 export function Users() {
   const [pagination, setPagination] = useState<PaginationState>({
@@ -57,11 +58,9 @@ export function Users() {
             <SelectContent>
               <SelectItem value='all_except_customer'>All (Customer Excluded)</SelectItem>
               <SelectItem value='all'>All Users</SelectItem>
-              <SelectItem value='superadmin'>Super Admin</SelectItem>
-              <SelectItem value='admin'>Admin</SelectItem>
-              <SelectItem value='cashier'>Cashier</SelectItem>
-              <SelectItem value='manager'>Manager</SelectItem>
-              <SelectItem value='customer'>Customer</SelectItem>
+              {USER_ROLES.map((r) => (
+                <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>

@@ -294,7 +294,7 @@ describe('EmployeesService', () => {
     it('should not downgrade manager profile on create', async () => {
       (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
         id: 'profile-1',
-        role: 'manager',
+        role: 'employee',
       });
       const dto: CreateEmployeeDto = {
         betterAuthUserId: 'ba-user-test',
@@ -879,12 +879,12 @@ describe('EmployeesService', () => {
       (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
       (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
         id: 'profile-1',
-        role: 'manager',
+        role: 'employee',
       });
       await service.remove('emp-1');
       expect(baPrisma.betterAuthUser.update).toHaveBeenCalledWith({
         where: { id: 'ba-user-test' },
-        data: { role: 'manager' },
+        data: { role: 'employee' },
       });
     });
 

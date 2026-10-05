@@ -19,7 +19,7 @@ import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('shipping')
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 @RequiresFeature('admin_shipments')
 export class ShippingController {
   constructor(private readonly shippingService: ShippingService) {}

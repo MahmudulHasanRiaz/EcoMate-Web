@@ -4,7 +4,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { CourierCustomerHistoryService } from './courier-customer-history.service';
 import { RefreshCustomerHistoryDto } from './dto/refresh-customer-history.dto';
 
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 @Controller('couriers/customer-history')
 @RequiresFeature('admin_courier')
 export class CourierCustomerHistoryController {

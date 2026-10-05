@@ -9,7 +9,7 @@ import { Loader2, Unlock, AlertTriangle, ShieldAlert } from 'lucide-react'
 
 const HEARTBEAT_MS = 25_000
 
-const LOCKABLE_ROLES = new Set(['superadmin', 'admin', 'manager'])
+const LOCKABLE_ROLES = new Set(['superadmin', 'admin', 'employee'])
 
 interface LockInfo {
   orderId: string

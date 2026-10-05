@@ -35,11 +35,11 @@ describe('/mon/users/create route guard', () => {
 
       // Permissions without view_hr → redirect. This page previously had no
       // guard at all, so any authenticated user could render the create form.
-      setup({ role: 'manager', permissions: ['view_orders'] })
+      setup({ role: 'employee', permissions: ['view_orders'] })
       expect(() => beforeLoad!()).toThrow()
 
       // view_hr → allowed.
-      setup({ role: 'manager', permissions: ['view_hr'] })
+      setup({ role: 'employee', permissions: ['view_hr'] })
       expect(() => beforeLoad!()).not.toThrow()
 
       // superadmin → allowed regardless of permissions.

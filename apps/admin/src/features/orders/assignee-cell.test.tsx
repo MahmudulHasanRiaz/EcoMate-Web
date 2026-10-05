@@ -15,7 +15,7 @@ vi.mock('@/features/users/api', () => ({
           email: 'sara@example.com',
           phoneNumber: '+8801000000001',
           status: 'active',
-          role: 'manager',
+          role: 'employee',
           createdAt: '2024-06-01T00:00:00Z',
           updatedAt: '2024-06-01T00:00:00Z',
         },
@@ -52,6 +52,6 @@ describe('AssigneeCell', () => {
     await getByRole('button').click()
     expect(vi.mocked(usersApi.get)).toHaveBeenCalledWith('u1')
     await expect.element(getByText('sara@example.com')).toBeInTheDocument()
-    await expect.element(getByText('manager')).toBeInTheDocument()
+    await expect.element(getByText('employee')).toBeInTheDocument()
   })
 })

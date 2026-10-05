@@ -11,7 +11,7 @@ describe('BlockSettingsController', () => {
     expect(featureKey).toBe('admin_blocking');
   });
 
-  const STAFF_ROLES = ['superadmin', 'admin', 'manager', 'cashier'];
+  const STAFF_ROLES = ['superadmin', 'admin', 'employee', 'cashier'];
 
   it.each(['get', 'update'])(
     '%s is allowed for all roles except customer',

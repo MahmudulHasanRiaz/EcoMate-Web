@@ -1,6 +1,18 @@
 import type { ComponentType } from 'react'
 
-export type RoleKey = 'superadmin' | 'admin' | 'manager' | 'moderator' | 'sales_executive' | 'cashier' | 'customer'
+/**
+ * Roles that can exist in the system. `moderator` and `sales_executive` were
+ * phantom values here — they never existed in the backend `UserRole` enum, so
+ * any widget gated on them could only ever be hidden. `manager` was
+ * consolidated into `employee`.
+ */
+export type RoleKey =
+  | 'superadmin'
+  | 'admin'
+  | 'employee'
+  | 'cashier'
+  | 'packing_assistant'
+  | 'customer'
 
 export type DatePresetKey = 'today' | 'yesterday' | 'last_7_days' | 'last_30_days' | 'this_month' | 'last_month' | 'this_quarter' | 'this_year' | 'all_time' | 'custom'
 

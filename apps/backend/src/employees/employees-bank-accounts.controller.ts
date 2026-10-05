@@ -8,7 +8,7 @@ import { PermissionsAny } from '../common/decorators/permissions.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('employees')
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 @PermissionsAny('view_hr')
 @RequiresFeature('admin_employees')
 export class EmployeeBankAccountsController {

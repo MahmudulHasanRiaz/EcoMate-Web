@@ -15,7 +15,7 @@ import { CreatePaymentDto } from './dto/create-payment.dto';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 @Controller('suppliers')
 @RequiresFeature('admin_suppliers')
 export class SuppliersController {

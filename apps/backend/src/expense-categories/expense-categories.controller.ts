@@ -15,7 +15,7 @@ import {
   UpdateExpenseCategoryDto,
 } from './dto/expense-category.dto';
 
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 @Controller('expense-categories')
 @RequiresFeature('admin_expenses')
 export class ExpenseCategoriesController {

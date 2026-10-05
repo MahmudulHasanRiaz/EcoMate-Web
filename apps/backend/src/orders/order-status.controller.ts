@@ -17,7 +17,7 @@ import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 export class OrderStatusController {
   constructor(private readonly prisma: PrismaService) {}
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get()
   findAll() {
     return this.prisma.orderStatus.findMany({ orderBy: { sortOrder: 'asc' } });

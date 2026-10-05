@@ -16,7 +16,7 @@ import { CreateDeductionDto } from './dto/create-deduction.dto';
 import { LedgerStatus } from '@prisma/client';
 
 @Controller('hr')
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 @PermissionsAny('manage_payroll', 'manage_employees')
 @RequiresFeature('admin_hr')
 export class HrLedgersController {

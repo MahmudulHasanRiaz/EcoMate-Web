@@ -18,7 +18,7 @@ import { CreateAttendanceDayDto } from './dto/create-day.dto';
 import { CloseSessionDto } from './dto/close-session.dto';
 
 @Controller('hr')
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 @PermissionsAny('manage_attendance')
 @RequiresFeature('admin_hr')
 export class HrAttendanceController {

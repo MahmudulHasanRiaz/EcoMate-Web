@@ -125,46 +125,46 @@ export class ProductsController {
   findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
   }
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @Post('bulk/delete')
   bulkRemove(@Body() body: { ids: string[] }) {
     return this.svc.bulkRemove(body.ids);
   }
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @Post('bulk/update')
   bulkUpdate(@Body() body: { ids: string[]; data: UpdateProductDto }) {
     return this.svc.bulkUpdate(body.ids, body.data);
   }
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @Post('draft')
   createDraft(@Body() dto: UpdateProductDto) {
     return this.svc.createDraft(dto);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @Put('draft/:id')
   updateDraft(@Param('id') id: string, @Body() dto: UpdateProductDto) {
     return this.svc.updateDraft(id, dto);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @Post('draft/:id/publish')
   publishDraft(@Param('id') id: string, @Body() dto: UpdateProductDto) {
     return this.svc.publishDraft(id, dto);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @Post()
   create(@Body() dto: CreateProductDto) {
     return this.svc.create(dto);
   }
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @Put(':id')
   update(
@@ -174,19 +174,19 @@ export class ProductsController {
   ) {
     return this.svc.update(id, dto, user.email);
   }
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.svc.remove(id);
   }
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @Post(':id/variants/generate')
   generateVariants(@Param('id') id: string, @Body() dto: GenerateVariantsDto) {
     return this.svc.generateVariants(id, dto);
   }
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @Put(':id/variants/:variantId')
   updateVariant(
@@ -196,7 +196,7 @@ export class ProductsController {
   ) {
     return this.svc.updateVariant(id, variantId, dto);
   }
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @Put(':id/variants/reorder')
   reorderVariants(
@@ -205,13 +205,13 @@ export class ProductsController {
   ) {
     return this.svc.reorderVariants(id, body.orderedIds);
   }
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @Delete(':id/variants')
   removeAllVariants(@Param('id') id: string) {
     return this.svc.removeAllVariants(id);
   }
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @Delete(':id/variants/:variantId')
   removeVariant(@Param('id') id: string, @Param('variantId') variantId: string) {

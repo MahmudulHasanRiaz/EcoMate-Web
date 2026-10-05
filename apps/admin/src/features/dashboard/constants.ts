@@ -4,9 +4,8 @@ import { startOfDhakaDay, endOfDhakaDay } from '@/lib/dhaka-time'
 export const ROLE_HIERARCHY: Record<RoleKey, number> = {
   superadmin: 100,
   admin: 80,
-  manager: 60,
-  moderator: 40,
-  sales_executive: 20,
+  employee: 60,
+  packing_assistant: 50,
   cashier: 10,
   customer: 0,
 }

@@ -25,7 +25,7 @@ export class UploadController {
 
   @Post('image')
   @RateLimitPolicy('api')
-  @Roles('superadmin', 'admin', 'manager', 'cashier')
+  @Roles('superadmin', 'admin', 'employee', 'cashier')
   async uploadImage(
     @Req() req: fastify.FastifyRequest,
     @CurrentUser() user: { userId: string } | null,
@@ -67,7 +67,7 @@ export class UploadController {
 
   @Post('images')
   @RateLimitPolicy('api')
-  @Roles('superadmin', 'admin', 'manager', 'cashier')
+  @Roles('superadmin', 'admin', 'employee', 'cashier')
   async uploadImages(
     @Req() req: fastify.FastifyRequest,
     @CurrentUser() user: { userId: string } | null,
@@ -138,7 +138,7 @@ export class UploadController {
 
   @Post('from-url')
   @RateLimitPolicy('api')
-  @Roles('superadmin', 'admin', 'manager', 'cashier')
+  @Roles('superadmin', 'admin', 'employee', 'cashier')
   async uploadFromUrl(
     @Body('url') url: string,
     @Body('filename') filename: string | undefined,

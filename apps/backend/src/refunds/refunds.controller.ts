@@ -10,7 +10,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 export class RefundsController {
   constructor(private readonly svc: RefundsService) {}
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get()
   findAll(
     @Query('page') page?: string,
@@ -26,19 +26,19 @@ export class RefundsController {
     });
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Post()
   create(@Body() dto: CreateRefundDto) {
     return this.svc.create(dto);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Put(':id/status')
   updateStatus(
     @Param('id') id: string,

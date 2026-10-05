@@ -13,7 +13,7 @@ describe('DepartmentsController', () => {
     expect(Reflect.getMetadata(ROLES_KEY, DepartmentsController)).toEqual([
       'superadmin',
       'admin',
-      'manager',
+      'employee',
     ]);
   });
 });

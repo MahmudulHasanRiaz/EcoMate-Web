@@ -22,7 +22,7 @@ import { MergeTagsDto } from './dto/merge-tags.dto';
 export class TagsController {
   constructor(private readonly svc: TagsService) {}
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @Get()
   async findAll(@Query('search') search?: string) {
@@ -35,14 +35,14 @@ export class TagsController {
     return this.svc.findAll();
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @Post()
   async create(
@@ -52,7 +52,7 @@ export class TagsController {
     return this.svc.create(dto);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @Put(':id')
   async update(
@@ -63,14 +63,14 @@ export class TagsController {
     return this.svc.update(id, dto);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @Delete(':id')
   async remove(@Param('id') id: string) {
     return this.svc.remove(id);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @Post('bulk-delete')
   async bulkDelete(
@@ -80,7 +80,7 @@ export class TagsController {
     return this.svc.bulkDelete(dto.ids);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @Post('merge')
   async merge(

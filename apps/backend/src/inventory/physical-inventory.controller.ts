@@ -109,7 +109,7 @@ export class PhysicalInventoryController {
     `;
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @UseGuards(InventoryEnabledGuard)
   @Get()
   async list(
@@ -120,7 +120,7 @@ export class PhysicalInventoryController {
     return this.stockService.listPhysical(productId, warehouseId, binLocationId);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @UseGuards(InventoryEnabledGuard)
   @Post('adjust')
   async adjust(
@@ -237,7 +237,7 @@ export class PhysicalInventoryController {
     return { ok: true };
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @UseGuards(InventoryEnabledGuard)
   @Post('bulk-adjust')
   async bulkAdjust(
@@ -381,7 +381,7 @@ export class PhysicalInventoryController {
     return { ok: true };
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Get('reservations')
   async reservations(
     @Query('warehouseId') warehouseId?: string,
@@ -390,7 +390,7 @@ export class PhysicalInventoryController {
     return this.stockService.listReservations(warehouseId, productId);
   }
 
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Delete('reservations/:id')
   async releaseReservation(@Param('id') id: string) {
     // 1. Try physical inventory reservation record

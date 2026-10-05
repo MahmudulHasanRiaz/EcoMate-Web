@@ -10,7 +10,7 @@ import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorato
 export class BlockedEntriesController {
   constructor(private readonly svc: BlockedEntriesService) {}
 
-  @Roles('superadmin', 'admin', 'manager', 'cashier')
+  @Roles('superadmin', 'admin', 'employee', 'cashier')
   @Get()
   async findAll(
     @Query('type') type?: string,
@@ -19,7 +19,7 @@ export class BlockedEntriesController {
     return this.svc.findAll(type, search);
   }
 
-  @Roles('superadmin', 'admin', 'manager', 'cashier')
+  @Roles('superadmin', 'admin', 'employee', 'cashier')
   @Post()
   async create(
     @Body()
@@ -37,14 +37,14 @@ export class BlockedEntriesController {
     });
   }
 
-  @Roles('superadmin', 'admin', 'manager', 'cashier')
+  @Roles('superadmin', 'admin', 'employee', 'cashier')
   @Post(':type/:id/unblock')
   async unblock(@Param('type') type: string, @Param('id') id: string) {
     await this.svc.unblock(type, id);
     return { success: true };
   }
 
-  @Roles('superadmin', 'admin', 'manager', 'cashier')
+  @Roles('superadmin', 'admin', 'employee', 'cashier')
   @Post(':type/:id/whitelist')
   async toggleWhitelist(@Param('type') type: string, @Param('id') id: string) {
     await this.svc.toggleWhitelist(type, id);

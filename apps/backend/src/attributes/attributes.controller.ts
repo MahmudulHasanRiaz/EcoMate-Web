@@ -27,27 +27,27 @@ export class AttributesController {
   @Get(':id') findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
   }
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Post()
   create(@Body() dto: CreateAttributeDto) {
     return this.svc.create(dto);
   }
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Put(':id')
   update(@Param('id') id: string, @Body() dto: UpdateAttributeDto) {
     return this.svc.update(id, dto);
   }
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.svc.remove(id);
   }
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Post(':id/values')
   addValue(@Param('id') id: string, @Body() dto: CreateAttributeValueDto) {
     return this.svc.addValue(id, dto);
   }
-  @Roles('superadmin', 'admin', 'manager')
+  @Roles('superadmin', 'admin', 'employee')
   @Delete(':id/values/:valueId')
   removeValue(@Param('valueId') valueId: string) {
     return this.svc.removeValue(valueId);

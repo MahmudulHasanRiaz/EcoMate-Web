@@ -24,7 +24,7 @@ import {
 } from './dto/shift.dto';
 
 @Controller('hr/shifts')
-@Roles('superadmin', 'admin', 'manager')
+@Roles('superadmin', 'admin', 'employee')
 @RequiresFeature('admin_hr')
 export class ShiftController {
   constructor(private readonly shifts: ShiftService) {}
