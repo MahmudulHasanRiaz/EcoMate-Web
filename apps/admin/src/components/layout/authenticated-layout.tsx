@@ -147,7 +147,15 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
     }) => {
       const isActive = data?.active
       if (!isActive) {
-        navigate({ to: '/license/activate', replace: true })
+        // License genuinely needed: send the user straight to the standalone
+        // activation page (no sidebar shell, no half-hidden menus) and return
+        // them to the page they were on once the license is active again.
+        const currentPath = window.location.pathname + window.location.search
+        navigate({
+          to: '/license/activate',
+          search: { redirect: currentPath },
+          replace: true,
+        })
         return
       }
       // /license/status returns the effective feature list at the TOP level
@@ -191,7 +199,9 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
     } catch { /* fall through to API call */ }
 
     apiClient.get('/license/status').then(r => applyLicenseStatus(r.data)).catch(() => {
-      useLicenseStore.getState().setFeatures([])
+      // A transient network failure must NOT look like "no license": clearing
+      // features here used to collapse the whole sidebar on a momentary blip.
+      // Only an authoritative `active: false` response redirects/clears.
     })
   }, [accessToken, navigate])
 
@@ -204,7 +214,16 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
         if (res.data?.state === 'expired' || res.data?.state === 'invalid') {
           useLicenseStore.getState().setFeatures([])
           toast.error('Your license has expired. Redirecting to license page...')
-          setTimeout(() => navigate({ to: '/license/activate', replace: true }), 3000)
+          const currentPath = window.location.pathname + window.location.search
+          setTimeout(
+            () =>
+              navigate({
+                to: '/license/activate',
+                search: { redirect: currentPath },
+                replace: true,
+              }),
+            3000
+          )
         }
       } catch {
         // Silently fail — network issues shouldn't interrupt work

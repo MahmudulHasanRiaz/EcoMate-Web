@@ -30,6 +30,25 @@ const LICENSE_ERROR_MESSAGES: Record<string, string> = {
   not_verified: 'License not yet verified. Please try again shortly.',
 };
 
+/**
+ * Session endpoints that must keep working while the license is invalid.
+ *
+ * `/auth/me` hydrates the current user's profile and permissions for the
+ * admin layout, and `/auth/logout` lets a user end their session cleanly.
+ * Without these exemptions an invalid license locked users inside a broken
+ * shell: every page 403'd, the menus collapsed, and signing out 403'd too.
+ * All other authenticated routes remain license-gated.
+ */
+function isLicenseExemptPath(pathname: string): boolean {
+  const p = pathname.split('?', 1)[0];
+  return (
+    p === '/api/auth/me' ||
+    p === '/auth/me' ||
+    p === '/api/auth/logout' ||
+    p === '/auth/logout'
+  );
+}
+
 @Injectable()
 export class LicenseGuard implements CanActivate {
   constructor(
@@ -52,6 +71,9 @@ export class LicenseGuard implements CanActivate {
       [context.getHandler(), context.getClass()],
     );
     if (skipLicense) return true;
+
+    const request = context.switchToHttp().getRequest();
+    if (isLicenseExemptPath(request?.url || '')) return true;
 
     try {
       const activation = await this.licenseActivation.find();

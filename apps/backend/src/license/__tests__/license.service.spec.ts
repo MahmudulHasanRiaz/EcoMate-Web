@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { LicenseService } from '../license.service';
+import { LicenseService, normalizeDomain } from '../license.service';
 import { FeatureFlagsService } from '@ecomate/feature-flags';
 import { ConfigService } from '@nestjs/config';
 import { LicenseActivationService } from '../license-activation.service';
@@ -22,16 +22,25 @@ describe('LicenseService', () => {
       findFirst: jest.fn(),
       upsert: jest.fn(),
     },
+    isRestoreWriteBlocked: jest.fn().mockResolvedValue(false),
+  };
+
+  /** Engine stub whose verify() result is set per test. */
+  const mockEngine = {
+    verify: jest.fn(),
+    canUseFeature: (license: any, key: string) =>
+      license?.features?.includes(key) ?? false,
   };
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockPrisma.isRestoreWriteBlocked.mockResolvedValue(false);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LicenseService,
         {
           provide: FeatureFlagsService,
-          useFactory: () => new FeatureFlagsService(),
+          useFactory: () => new FeatureFlagsService(mockEngine as any),
         },
         { provide: ConfigService, useValue: { get: () => null } },
         { provide: LicenseActivationService, useValue: mockActivation },
@@ -52,9 +61,119 @@ describe('LicenseService', () => {
   });
 
   it('activateWithKeymate handles engine unavailable', async () => {
-    const result = await service.activateWithKeymate('test-key', 'test.com');
+    // No LicenseEngine injected — initializeWithEngine reports engine_unavailable.
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        LicenseService,
+        {
+          provide: FeatureFlagsService,
+          useFactory: () => new FeatureFlagsService(),
+        },
+        { provide: ConfigService, useValue: { get: () => null } },
+        { provide: LicenseActivationService, useValue: mockActivation },
+        { provide: PrismaService, useValue: mockPrisma },
+      ],
+    }).compile();
+    const svc = module.get<LicenseService>(LicenseService);
+    const result = await svc.activateWithKeymate('test-key', 'test.com');
     expect(result.success).toBe(false);
     expect(result.error).toBe('engine_unavailable');
+  });
+
+  describe('normalizeDomain', () => {
+    it('lowercases and strips the port', () => {
+      expect(normalizeDomain('Store.Example.com:4000')).toBe(
+        'store.example.com',
+      );
+    });
+
+    it('keeps IPv6 literals intact', () => {
+      expect(normalizeDomain('[::1]:4000')).toBe('[::1]');
+    });
+
+    it('returns undefined for empty input', () => {
+      expect(normalizeDomain('')).toBeUndefined();
+      expect(normalizeDomain(null)).toBeUndefined();
+    });
+  });
+
+  describe('sync()', () => {
+    const validLicense = {
+      valid: true,
+      features: ['admin_hr'],
+      plan: { name: 'Test' },
+      expiry: null,
+    };
+
+    beforeEach(() => {
+      mockActivation.find.mockResolvedValue({
+        id: 'singleton',
+        status: 'invalid',
+        errorMessage: 'unreachable',
+      });
+      mockActivation.getDecryptedCredentials.mockResolvedValue({
+        licenseKey: 'KEY-1',
+        keymateUrl: 'https://keymate',
+        domain: 'licensed.example.com',
+        apiKey: undefined,
+        licenseInfo: null,
+        status: 'invalid',
+        errorMessage: 'unreachable',
+      });
+    });
+
+    it('recovers from status=invalid and re-validates the stored key', async () => {
+      mockEngine.verify.mockResolvedValue(validLicense);
+      const result = await service.sync('current.example.com');
+
+      expect(result.success).toBe(true);
+      // The deadlock guard: the stored key was re-verified even though the row
+      // was invalid, and the success was persisted with a fresh check-in.
+      expect(mockActivation.activate).toHaveBeenCalledWith(
+        expect.objectContaining({ licenseKey: 'KEY-1' }),
+      );
+      expect(mockActivation.updateLicenseInfo).toHaveBeenCalled();
+    });
+
+    it('tries the current domain first and falls back to the stored domain on mismatch', async () => {
+      mockEngine.verify
+        .mockResolvedValueOnce({ valid: false, code: 'domain_mismatch' })
+        .mockResolvedValueOnce(validLicense);
+
+      const result = await service.sync('current.example.com');
+
+      expect(result.success).toBe(true);
+      expect(mockEngine.verify.mock.calls[0][1]).toBe('current.example.com');
+      expect(mockEngine.verify.mock.calls[1][1]).toBe('licensed.example.com');
+    });
+
+    it('persists only terminal failures; transient codes leave the row untouched', async () => {
+      mockEngine.verify.mockResolvedValue({
+        valid: false,
+        code: 'unreachable',
+      });
+      const result = await service.sync('current.example.com');
+
+      expect(result.success).toBe(false);
+      expect(mockActivation.deactivate).not.toHaveBeenCalled();
+    });
+
+    it('persists terminal failures like expired', async () => {
+      mockEngine.verify.mockResolvedValue({ valid: false, code: 'expired' });
+      const result = await service.sync('current.example.com');
+
+      expect(result.success).toBe(false);
+      expect(mockActivation.deactivate).toHaveBeenCalledWith('expired');
+    });
+
+    it('reports not_found honestly when no row exists', async () => {
+      mockActivation.find.mockResolvedValue(null);
+      const result = await service.sync();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('not_found');
+      expect(mockEngine.verify).not.toHaveBeenCalled();
+    });
   });
 
   describe("'*' wildcard license", () => {

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { apiClient } from '@/lib/api-client'
+import { useLicenseStore } from '@/stores/license-store'
 import { toast } from 'sonner'
 import { Loader2, RefreshCw, Key, ShieldCheck, Calendar, Globe, Award, HelpCircle, ArrowUpCircle, DollarSign, ListChecks } from 'lucide-react'
 import { UpgradeDialog } from './components/UpgradeDialog'
@@ -45,10 +46,12 @@ export function LicenseSettings() {
     onSuccess: (res) => {
       if (res.success) {
         toast.success('License synced and revalidated successfully!')
+        const features: string[] = res.license?.features ?? []
+        useLicenseStore.getState().setFeatures(features)
         queryClient.invalidateQueries({ queryKey: ['license-status'] })
         refetch()
       } else {
-        toast.error(`Sync failed: ${res.message || res.error}`)
+        toast.error(`Revalidation failed (${res.error || 'unknown'}): ${res.message || 'Please check your license key.'}`)
       }
     },
     onError: (err: any) => {

@@ -179,15 +179,27 @@ export class LicenseActivationService {
       .slice(0, 16);
   }
 
+  /**
+   * Read the stored credentials regardless of the row's status.
+   *
+   * Status is a *conclusion* of the last verification attempt, not a
+   * precondition for reading the key. Gating the read on `status === 'active'`
+   * made revalidation impossible: once anything wrote `invalid`, sync() could
+   * never decrypt the key again and bailed with a misleading `not_found`
+   * before the key was ever verified. The caller decides what to do with a
+   * stale status; we just return it alongside the credentials.
+   */
   async getDecryptedCredentials() {
     const activation = await this.find();
-    if (!activation || activation.status !== 'active') return null;
+    if (!activation) return null;
     return {
       licenseKey: this.encryption.decrypt(activation.licenseKey),
       keymateUrl: activation.keymateUrl,
       domain: activation.domain,
       apiKey: activation.apiKey ? this.encryption.decrypt(activation.apiKey) : undefined,
       licenseInfo: activation.licenseInfo,
+      status: activation.status,
+      errorMessage: activation.errorMessage,
     };
   }
 

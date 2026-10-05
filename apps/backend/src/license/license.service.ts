@@ -26,6 +26,45 @@ const ERROR_MESSAGES: Record<string, string> = {
     'License server unreachable — using cached license. Some features may be limited.',
 };
 
+/**
+ * Verification codes that describe the licence itself rather than the state of
+ * the connection to the licence server. Only these may persist
+ * `status: 'invalid'` on the activation row.
+ *
+ * The transient codes (`unreachable`, `offline_cache`, `not_verified`,
+ * `engine_unavailable`) describe a temporarily unavailable server or a
+ * not-yet-finished startup. Persisting them as terminal `invalid` used to
+ * permanently brick the licence after a momentary KeyMate outage, which forced
+ * a manual re-submit — the opposite of the log message ("will retry on next
+ * request") that claimed a retry existed.
+ */
+const TERMINAL_CODES = new Set([
+  'expired',
+  'domain_mismatch',
+  'unauthorized',
+  'invalid_api_key',
+  'validation_failed',
+  'invalid_token',
+  'not_found',
+]);
+
+/**
+ * Normalise a hostname for licence verification: lowercase and port-stripped.
+ * Handles IPv6 literals (`[::1]:4000`) by leaving the bracketed form intact.
+ */
+export function normalizeDomain(host?: string | null): string | undefined {
+  if (!host) return undefined;
+  let h = host.trim().toLowerCase();
+  const ipv6 = h.startsWith('[');
+  if (ipv6) {
+    const close = h.indexOf(']');
+    return close >= 0 ? h.slice(0, close + 1) : h;
+  }
+  const portIdx = h.lastIndexOf(':');
+  if (portIdx > 0) h = h.slice(0, portIdx);
+  return h || undefined;
+}
+
 function friendlyError(code?: string, fallback?: string): string {
   if (!code) return fallback || 'An unknown error occurred.';
   return ERROR_MESSAGES[code] || `License error: ${code}`;
@@ -54,7 +93,7 @@ export class LicenseService implements OnModuleInit {
 
     try {
       const activation = await this.licenseActivation.find();
-      if (!activation || activation.status !== 'active') {
+      if (!activation) {
         const msg =
           process.env.NODE_ENV === 'production'
             ? '[License] NO ACTIVE LICENSE — gating all routes'
@@ -93,13 +132,39 @@ export class LicenseService implements OnModuleInit {
           `[License] Validated — plan: ${lic.plan?.name || 'custom'}`,
         );
         if (!(await this.prisma.isRestoreWriteBlocked())) {
-          await this.licenseActivation.updateLicenseInfo(lic);
+          if (activation.status === 'active') {
+            await this.licenseActivation.updateLicenseInfo(lic);
+          } else {
+            // A previously invalid row re-verified successfully (e.g. after a
+            // transient outage or a renewed key on the licence server). Reactivate
+            // it so the guard stops gating — no manual re-submit required.
+            this.logger.log(
+              '[License] Previously invalid license re-validated — reactivating',
+            );
+            await this.licenseActivation.activate({
+              licenseKey,
+              keymateUrl: creds.keymateUrl,
+              domain: domain ?? undefined,
+              apiKey,
+              licenseInfo: lic,
+            });
+          }
         }
       } else if (process.env.SKIP_LICENSE_CHECK !== 'true') {
         const code = lic?.code || 'unknown';
-        this.logger.warn(`[License] ${friendlyError(code)}`);
-        if (!(await this.prisma.isRestoreWriteBlocked())) {
-          await this.licenseActivation.deactivate(code);
+        if (TERMINAL_CODES.has(code)) {
+          this.logger.warn(`[License] ${friendlyError(code)}`);
+          if (!(await this.prisma.isRestoreWriteBlocked())) {
+            await this.licenseActivation.deactivate(code);
+          }
+        } else {
+          // Transient failure (server unreachable, engine still loading, ...).
+          // Leave the stored row untouched: it may still be 'active', and once
+          // the licence server is reachable again the next startup or sync
+          // recovers without re-entering the key.
+          this.logger.warn(
+            `[License] Transient verification failure (${code}) — retry will happen on next startup or sync`,
+          );
         }
       }
     } catch (err: any) {
@@ -109,7 +174,7 @@ export class LicenseService implements OnModuleInit {
         err?.message?.toLowerCase().includes('network')
       ) {
         this.logger.warn(
-          '[License] KeyMate server unreachable — will retry on next request',
+          '[License] KeyMate server unreachable — will retry on next startup or sync',
         );
       } else if (err?.message?.toLowerCase().includes('decrypt')) {
         this.logger.warn('[License] Failed to decrypt stored credentials');
@@ -172,13 +237,30 @@ export class LicenseService implements OnModuleInit {
     }
   }
 
-  async sync() {
+  /**
+   * Re-verify the stored license ("Sync & Revalidate").
+   *
+   * Reads the stored key regardless of the row's current status — the old
+   * `status === 'active'` gate made this a permanent deadlock: once anything
+   * wrote `invalid`, the key could never be read again and sync always
+   * reported `not_found` before verification even happened.
+   *
+   * Domain handling is self-healing: the licence server is asked about the
+   * *current* hostname first (so a redeploy behind a new host works), and if it
+   * answers `domain_mismatch` the *stored* domain is retried (so installs whose
+   * licensed domain is not the current Host header keep working). Only when
+   * both fail is the failure persisted.
+   *
+   * Transient failures (server unreachable, engine loading) never persist
+   * `invalid`; terminal failures (expired, domain mismatch, bad API key) do.
+   */
+  async sync(currentDomain?: string) {
     const activation = await this.licenseActivation.find();
     if (!activation) {
       return {
         success: false,
         error: 'not_found',
-        message: 'No active license found to sync.',
+        message: 'No license found to sync.',
       };
     }
     let creds;
@@ -200,17 +282,48 @@ export class LicenseService implements OnModuleInit {
     }
 
     const oldFeatures = this.featureFlags.getActiveFeatures();
-    const { licenseKey, domain, apiKey } = creds;
-    const result = await this.activateWithKeymate(
+    const { licenseKey, keymateUrl, domain: storedDomain, apiKey } = creds;
+
+    const current = normalizeDomain(currentDomain);
+    const stored = normalizeDomain(storedDomain);
+
+    let result = await this.activateWithKeymate(
       licenseKey,
-      domain,
+      current ?? stored ?? '',
       apiKey || undefined,
     );
 
+    if (
+      !result.success &&
+      result.error === 'domain_mismatch' &&
+      stored &&
+      stored !== current
+    ) {
+      result = await this.activateWithKeymate(
+        licenseKey,
+        stored,
+        apiKey || undefined,
+      );
+    }
+
     if (result.success) {
+      // activateWithKeymate already reset status to 'active' via the upsert;
+      // this records a fresh check-in so the audit trail shows the revalidation.
+      if (!(await this.prisma.isRestoreWriteBlocked())) {
+        await this.licenseActivation.updateLicenseInfo(result.license);
+      }
       const newFeatures = result.license?.features ?? [];
       await this.handleDowngrade(oldFeatures, newFeatures);
+      return result;
     }
+
+    if (result.error && TERMINAL_CODES.has(result.error)) {
+      if (!(await this.prisma.isRestoreWriteBlocked())) {
+        await this.licenseActivation.deactivate(result.error);
+      }
+    }
+    // Transient failures: return the honest result and leave the stored row
+    // untouched — the next sync or restart can still recover.
 
     return result;
   }

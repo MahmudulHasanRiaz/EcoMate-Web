@@ -12,6 +12,7 @@ describe('LicenseController', () => {
   const mockLicenseService = {
     getStatus: jest.fn(),
     activateWithKeymate: jest.fn(),
+    sync: jest.fn(),
   };
 
   const mockActivationService = {
@@ -49,6 +50,37 @@ describe('LicenseController', () => {
       undefined,
       'user-1',
       '203.0.113.9',
+    );
+  });
+
+  it('activate normalises the hostname (lowercase, port stripped)', async () => {
+    const dto = { licenseKey: 'TEST-KEY' };
+    const mockReq = {
+      hostname: 'Client-Store.Example.com:4000',
+      user: { userId: 'user-1' },
+      ip: '203.0.113.9',
+    };
+    mockLicenseService.activateWithKeymate.mockResolvedValue({
+      success: true,
+    });
+
+    await controller.activate(dto, mockReq as any);
+    expect(mockLicenseService.activateWithKeymate).toHaveBeenCalledWith(
+      'TEST-KEY',
+      'client-store.example.com',
+      undefined,
+      'user-1',
+      '203.0.113.9',
+    );
+  });
+
+  it('sync passes the current (normalised) hostname so a redeploy behind a new host can revalidate', async () => {
+    const mockReq = { hostname: 'New-Host.Example.com:4000' };
+    mockLicenseService.sync.mockResolvedValue({ success: true });
+
+    await controller.sync(mockReq as any);
+    expect(mockLicenseService.sync).toHaveBeenCalledWith(
+      'new-host.example.com',
     );
   });
 

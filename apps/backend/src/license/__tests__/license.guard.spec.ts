@@ -28,6 +28,7 @@ describe('LicenseGuard', () => {
     ({
       getHandler: () => {},
       getClass: () => {},
+      switchToHttp: () => ({ getRequest: () => ({ url: '/api/some-route' }) }),
     }) as any;
 
   beforeEach(async () => {
@@ -102,5 +103,37 @@ describe('LicenseGuard', () => {
     });
     const result = await guard.canActivate(createMockContext());
     expect(result).toBe(true);
+  });
+
+  describe('session endpoint exemptions', () => {
+    const contextForUrl = (url: string): ExecutionContext =>
+      ({
+        getHandler: () => {},
+        getClass: () => {},
+        switchToHttp: () => ({ getRequest: () => ({ url }) }),
+      }) as any;
+
+    beforeEach(() => {
+      mockReflector.getAllAndOverride.mockReturnValue(null);
+      mockActivation.find.mockResolvedValue({
+        status: 'invalid',
+        errorMessage: 'expired',
+      });
+    });
+
+    it.each(['/api/auth/me', '/auth/me', '/api/auth/logout', '/auth/logout'])(
+      'exempts %s so a session can hydrate and sign out with an invalid license',
+      async (url) => {
+        await expect(guard.canActivate(contextForUrl(url))).resolves.toBe(
+          true,
+        );
+      },
+    );
+
+    it('still blocks every other route with the same invalid license', async () => {
+      await expect(
+        guard.canActivate(contextForUrl('/api/products')),
+      ).rejects.toThrow(ForbiddenException);
+    });
   });
 });

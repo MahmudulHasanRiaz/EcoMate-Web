@@ -1,6 +1,8 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, useNavigate, redirect } from '@tanstack/react-router'
 import { useState } from 'react'
+import { z } from 'zod'
 import { apiClient } from '@/lib/api-client'
+import { useAuthStore } from '@/stores/auth-store'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -66,23 +68,48 @@ function describeActivationError(err: any): string {
 /**
  * License activation.
  *
- * Lives under _authenticated on purpose: POST /license/activate requires an
- * admin session, so this page must not be reachable while signed out. It
- * previously sat in the (auth) group — the unauthenticated area — where the
- * call would now be rejected, and where an anonymous visitor could previously
- * have replaced the license of a live deployment.
+ * Deliberately OUTSIDE the authenticated shell: when the license is invalid
+ * every page 403s and the sidebar collapses, so this page must render
+ * standalone (full-screen, no menus) and be reachable by typing nothing —
+ * the app redirects here automatically. It keeps the two security properties
+ * the _authenticated placement provided:
+ *
+ *   1. A session is required (no token ⇒ sign-in with a return path).
+ *      POST /license/activate stays @Roles('superadmin','admin') server-side.
+ *   2. Anonymous visitors never see an activation form — the page was moved
+ *      out of the (auth) group previously precisely because an anonymous
+ *      visitor could replace a live deployment's license.
  */
-export const Route = createFileRoute('/_authenticated/license/activate')({
+export const Route = createFileRoute('/license/activate')({
+  validateSearch: z.object({
+    redirect: z.string().optional(),
+  }),
+  beforeLoad: ({ search }) => {
+    const { accessToken } = useAuthStore.getState().auth
+    if (!accessToken) {
+      throw redirect({
+        to: '/sign-in',
+        search: { redirect: search.redirect || '/license/activate' },
+        replace: true,
+      })
+    }
+  },
   component: LicenseActivatePage,
 })
 
+const ADMIN_ROLES = ['superadmin', 'admin']
+
 function LicenseActivatePage() {
   const navigate = useNavigate()
+  const { redirect: returnTo } = Route.useSearch()
+  const role = useAuthStore((s) => s.auth.user?.role)
   const [licenseKey, setLicenseKey] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
+
+  const isAdmin = role ? ADMIN_ROLES.includes(role) : false
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -97,7 +124,7 @@ function LicenseActivatePage() {
 
       if (res.data?.success) {
         setSuccess(true)
-        setTimeout(() => navigate({ to: '/' }), 2000)
+        setTimeout(() => navigate({ to: returnTo || '/' }), 2000)
       } else {
         const code = res.data?.error
         const backendMessage = res.data?.message
@@ -117,7 +144,23 @@ function LicenseActivatePage() {
           <CardHeader>
             <CardTitle className="text-center text-green-600">License Activated!</CardTitle>
             <CardDescription className="text-center">
-              Redirecting to dashboard...
+              Redirecting back to the app...
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    )
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <CardTitle>License Activation Required</CardTitle>
+            <CardDescription>
+              This EcoMate installation needs a valid license. License activation
+              requires an administrator account — please contact your administrator.
             </CardDescription>
           </CardHeader>
         </Card>

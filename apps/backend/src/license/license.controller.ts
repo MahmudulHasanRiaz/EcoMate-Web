@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Body, Req } from '@nestjs/common';
-import { LicenseService } from './license.service';
+import { LicenseService, normalizeDomain } from './license.service';
 import { ActivateLicenseDto } from './dto/activate-license.dto';
 import { SkipLicenseCheck } from '../common/decorators/skip-license-check.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -31,22 +31,27 @@ export class LicenseController {
   @Post('activate')
   @Roles('superadmin', 'admin')
   async activate(@Body() dto: ActivateLicenseDto, @Req() req: any) {
-    const domain = req.hostname;
+    const domain = normalizeDomain(req?.hostname) || undefined;
     return this.licenseService.activateWithKeymate(
       dto.licenseKey,
-      domain,
+      domain || '',
       dto.apiKey,
       req.user?.userId,
       req.ip,
     );
   }
 
-  /** Re-verify the stored license against the license server. */
+  /**
+   * Re-verify the stored license against the license server.
+   *
+   * Passes the *current* hostname so a redeploy behind a different host can
+   * re-validate; the service falls back to the stored domain on a mismatch.
+   */
   @SkipLicenseCheck()
   @Post('sync')
   @Roles('superadmin', 'admin')
-  async sync() {
-    return this.licenseService.sync();
+  async sync(@Req() req: any) {
+    return this.licenseService.sync(normalizeDomain(req?.hostname));
   }
 
   /**
