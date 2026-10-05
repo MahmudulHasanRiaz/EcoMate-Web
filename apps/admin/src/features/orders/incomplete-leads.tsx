@@ -26,7 +26,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
   ChevronLeft, ChevronRight, Phone, MapPin, ShoppingCart,
-  MoreHorizontal, Inbox, X, UserPlus, ArrowRightLeft, ChevronRight as ChevronRightIcon,
+  MoreHorizontal, Inbox, X, ArrowRightLeft, ChevronRight as ChevronRightIcon,
   Package, Edit3, Trash2, Search as SearchIcon, Clock, CheckCircle2, ShoppingBag,
   XCircle, AlertCircle, RefreshCcw, Ban, ExternalLink, ArrowUpDown, UserCheck, ArrowLeft
 } from 'lucide-react'
@@ -957,39 +957,6 @@ export function IncompleteLeads() {
                                     </DropdownMenuItem>
                                   </>
                                 )}
-                                <DropdownMenuSeparator />
-                                <div className='px-2 py-1.5'>
-                                  <p className='text-xs font-semibold text-muted-foreground mb-1 flex items-center gap-1'>
-                                    <UserPlus className='h-3 w-3' /> Assign to
-                                  </p>
-                                  <div className='flex flex-col gap-0.5 max-h-36 overflow-y-auto'>
-                                    <button
-                                      type='button'
-                                      onClick={() => assignMut.mutate({ id: l.id, assignedToId: null })}
-                                      className='flex items-center gap-2 rounded-sm px-2 py-1 text-xs hover:bg-accent transition-colors'
-                                    >
-                                      <span className='text-muted-foreground italic'>Unassign</span>
-                                    </button>
-                                    {staff.map((s: any) => (
-                                      <button
-                                        key={s.id}
-                                        type='button'
-                                        onClick={() => assignMut.mutate({ id: l.id, assignedToId: s.id })}
-                                        className={`flex items-center gap-2 rounded-sm px-2 py-1 text-xs hover:bg-accent transition-colors ${
-                                          l.assignedTo?.id === s.id ? 'bg-accent font-medium text-foreground' : ''
-                                        }`}
-                                      >
-                                        <div className='h-4.5 w-4.5 rounded-full bg-primary/10 flex items-center justify-center text-[8.5px] font-semibold text-primary shrink-0'>
-                                          {s.firstName?.[0]}
-                                          {s.lastName?.[0]}
-                                        </div>
-                                        <span className='truncate'>
-                                          {s.firstName} {s.lastName}
-                                        </span>
-                                      </button>
-                                    ))}
-                                  </div>
-                                </div>
                                 {l.convertedOrder && (
                                   <>
                                     <DropdownMenuSeparator />

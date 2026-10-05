@@ -29,9 +29,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuGroup } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, UserPlus, UserCheck, Calendar, Search as SearchIcon, Send, Plus, Upload, Trash2, Ban, RotateCcw } from 'lucide-react'
+import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, UserCheck, Calendar, Search as SearchIcon, Send, Plus, Upload, Trash2, Ban, RotateCcw } from 'lucide-react'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { OrderSourceBadges } from '@/features/orders/order-source-badge'
 import { CanonicalAttributionBadges } from '@/features/orders/canonical-attribution-badge'
@@ -1120,21 +1120,6 @@ export function Orders() {
                               <DropdownMenuItem onClick={() => copyToClipboard(o.customer?.phoneNumber || o.guestPhone || '', 'Phone')} className='text-xs cursor-pointer'><Phone className='h-3.5 w-3.5 mr-2 text-muted-foreground' />Copy Phone</DropdownMenuItem>
                               {formatAddressFull(addr) && <DropdownMenuItem onClick={() => copyToClipboard(formatAddressFull(addr), 'Address')} className='text-xs cursor-pointer'><MapPin className='h-3.5 w-3.5 mr-2 text-muted-foreground' />Copy Address</DropdownMenuItem>}
                               <DropdownMenuSeparator />
-                              <DropdownMenuGroup className='px-2 py-1.5 text-xs text-muted-foreground'>
-                                <div className='flex items-center gap-1.5 mb-1 font-semibold text-foreground text-[11px] uppercase tracking-wider'><UserPlus className='h-3 w-3' />Assign to</div>
-                                <div className='flex flex-col gap-0.5 max-h-32 overflow-y-auto'>
-                                  <button onClick={() => { ordersApi.bulkAssign([o.id], null).then(() => { queryClient.invalidateQueries({ queryKey: ['orders'] }); toast.success('Unassigned') }).catch((e) => toast.error(e?.response?.data?.message || 'Failed to unassign order')) }} className='flex items-center gap-2 rounded-md px-2 py-1 text-xs hover:bg-surface-raised transition-colors cursor-pointer'>
-                                    <span className='text-muted-foreground italic'>Unassign</span>
-                                  </button>
-                                  {staff.map((s: any) => (
-                                    <button key={s.id} onClick={() => { ordersApi.bulkAssign([o.id], s.id).then(() => { queryClient.invalidateQueries({ queryKey: ['orders'] }); toast.success(`Assigned to ${s.firstName}`) }).catch((e) => toast.error(e?.response?.data?.message || 'Failed to assign order')) }} className={`flex items-center gap-2 rounded-md px-2 py-1 text-xs hover:bg-surface-raised transition-colors cursor-pointer ${o.assignee?.id === s.id ? 'bg-primary-soft text-primary-ink font-semibold' : ''}`}>
-                                      <div className='size-4.5 rounded-full bg-primary/10 flex items-center justify-center text-[8.5px] font-bold text-primary shrink-0'>{s.firstName?.[0]}{s.lastName?.[0]}</div>
-                                      <span className='truncate'>{s.firstName} {s.lastName}</span>
-                                    </button>
-                                  ))}
-                                </div>
-                              </DropdownMenuGroup>
-                              <DropdownMenuSeparator />
                               <DropdownMenuItem className='text-destructive focus:text-destructive text-xs cursor-pointer' onClick={() => setBlockPhones({ phones: [o.customer?.phoneNumber || o.guestPhone || ''], contextLabel: o.displayId })}><Ban className='h-3.5 w-3.5 mr-2' />Block Phone</DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem onClick={() => window.open(`/admin/op/print/sticker/${o.id}`, '_blank')} className='text-xs cursor-pointer'><Printer className='h-3.5 w-3.5 mr-2 text-muted-foreground' />Print Sticker</DropdownMenuItem>
@@ -1385,7 +1370,7 @@ export function Orders() {
                   ...staff.map((s: any) => ({ id: s.id, label: `${s.firstName} ${s.lastName}`.trim() }))
                 ]}
                 value={''}
-                onChange={(v) => { if (v) bulkAssignMut.mutate({ ids: selected, assignedToId: v }) }}
+                onChange={(v) => { if (v) bulkAssignMut.mutate({ ids: selected, assignedToId: v === 'unassigned' ? null : v }) }}
                 placeholder='Assign to...'
                 searchPlaceholder='Search staff...'
                 triggerClassName='h-8 text-xs w-[130px] rounded-lg'
