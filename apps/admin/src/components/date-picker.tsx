@@ -12,12 +12,20 @@ type DatePickerProps = {
   selected: Date | undefined
   onSelect: (date: Date | undefined) => void
   placeholder?: string
+  /**
+   * Allow choosing a date in the future. Off by default, because most dates in
+   * this app describe something that has already happened (a joining date, an
+   * attendance day). A start date is the exception — it legitimately points
+   * ahead, so the commission rule editor opts in.
+   */
+  allowFuture?: boolean
 }
 
 export function DatePicker({
   selected,
   onSelect,
   placeholder = 'Pick a date',
+  allowFuture = false,
 }: DatePickerProps) {
   return (
     <Popover>
@@ -42,7 +50,9 @@ export function DatePicker({
           selected={selected}
           onSelect={onSelect}
           disabled={(date: Date) =>
-            date > new Date() || date < new Date('1900-01-01')
+            allowFuture
+              ? date < new Date('1900-01-01')
+              : date > new Date() || date < new Date('1900-01-01')
           }
         />
       </PopoverContent>

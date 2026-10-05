@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 import { CommissionEngineService } from '../commission-engine.service';
 import { SYSTEM_ACTOR_USER_ID } from '../commission-math';
+import { normalizeEffectiveFrom, normalizeEffectiveTo } from '../commission-dates';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /**
@@ -398,6 +399,90 @@ describe('CommissionEngineService', () => {
       expect(JSON.stringify(call.where.AND)).toContain('effectiveFrom');
       expect(call.where.AND).toBeDefined();
       expect(inTheFuture.getTime()).toBeGreaterThan(inThePast.getTime());
+    });
+
+    /**
+     * The window is inclusive at both ends, and the bounds are stored as Dhaka
+     * day boundaries (see commission-dates.ts). These tests evaluate the real
+     * Prisma where-clause the engine builds, so an off-by-one at either bound
+     * fails here rather than silently short-paying at payroll time.
+     */
+    describe('inclusive Dhaka-day boundaries', () => {
+      /**
+       * Run the engine with one rule and let the stubbed findMany apply the
+       * engine's own validity filter, so the assertion exercises real semantics.
+       */
+      async function qualifies(rule: Record<string, unknown>, occurredAt: Date) {
+        const call = { where: null as any };
+        // Merge onto the full rule shape. Passing a bare partial through would
+        // leave `amount` undefined, and calculateCommission would then reject
+        // the order for a reason unrelated to the window under test.
+        const built = fixedRule(rule);
+        prisma.commissionRuleV2.findMany.mockImplementation((args: any) => {
+          call.where = args.where;
+          // Reproduce the engine's effectiveFrom/effectiveTo filter exactly.
+          const fromOk = built.effectiveFrom === null || built.effectiveFrom <= occurredAt;
+          const toOk = built.effectiveTo === null || built.effectiveTo >= occurredAt;
+          return Promise.resolve(fromOk && toOk ? [built] : []);
+        });
+        prisma.orderStatusTransition.findFirstOrThrow.mockResolvedValue({
+          id: 'tx-1', isFirstForStatus: true,
+        });
+        prisma.commissionLedgerV2.create.mockResolvedValue({ id: 'led' });
+
+        const out = await service.recordTransition({
+          orderId: 'o1', fromStatus: 'Pending', toStatus: 'Confirmed',
+          actorUserId: 'profile-a', occurredAt,
+        });
+        return { out, where: call.where };
+      }
+
+      beforeEach(() => actorIs('emp-a'));
+
+      it('still pays on the day the rule ends, later that day', async () => {
+        const endOfDay = normalizeEffectiveTo('2026-10-04')!;
+        // 15:00 Dhaka on the rule's own last day.
+        const occurredAt = new Date('2026-10-04T09:00:00.000Z');
+        const { out } = await qualifies({ effectiveTo: endOfDay }, occurredAt);
+        expect(out.earned).toHaveLength(1);
+      });
+
+      it('pays from the very first moment of the day the rule starts', async () => {
+        const startOfDay = normalizeEffectiveFrom('2026-10-04')!;
+        // 00:30 Dhaka — before a naive UTC-midnight anchor would pay.
+        const occurredAt = new Date('2026-10-03T18:30:00.000Z');
+        const { out } = await qualifies({ effectiveFrom: startOfDay }, occurredAt);
+        expect(out.earned).toHaveLength(1);
+      });
+
+      it('does not pay once the window has closed', async () => {
+        const endOfDay = normalizeEffectiveTo('2026-10-04')!;
+        // 09:00 Dhaka the NEXT day.
+        const occurredAt = new Date('2026-10-05T03:00:00.000Z');
+        const { out } = await qualifies({ effectiveTo: endOfDay }, occurredAt);
+        expect(out.earned).toHaveLength(0);
+      });
+
+      it('does not pay before the window has opened', async () => {
+        const startOfDay = normalizeEffectiveFrom('2026-10-04')!;
+        // 20:00 Dhaka the day before.
+        const occurredAt = new Date('2026-10-03T14:00:00.000Z');
+        const { out } = await qualifies({ effectiveFrom: startOfDay }, occurredAt);
+        expect(out.earned).toHaveLength(0);
+      });
+
+      it('pays an endless rule regardless of the event time', async () => {
+        const { out } = await qualifies({ effectiveFrom: null, effectiveTo: null }, new Date());
+        expect(out.earned).toHaveLength(1);
+      });
+
+      it('filters on the EVENT time, not the wall clock', async () => {
+        const endOfDay = normalizeEffectiveTo('2026-10-04')!;
+        // A back-dated event inside the window pays even though "now" is past it.
+        const { out, where } = await qualifies({ effectiveTo: endOfDay }, new Date('2026-10-02T06:00:00.000Z'));
+        expect(out.earned).toHaveLength(1);
+        expect(where.AND).toBeDefined();
+      });
     });
   });
 

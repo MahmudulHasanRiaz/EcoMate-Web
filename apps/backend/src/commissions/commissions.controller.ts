@@ -92,6 +92,16 @@ export class CommissionsController {
     return this.rules.setActive(id, dto.isActive);
   }
 
+  /**
+   * End a rule today (Dhaka). Closes the validity window while keeping the rule
+   * visible and auditable, and still paying for today's qualifying orders —
+   * distinct from deactivating, which leaves the window open.
+   */
+  @Post('commissions/v2/rules/:id/end')
+  endRuleV2(@Param('id') id: string) {
+    return this.rules.endNow(id);
+  }
+
   /** Employee-wise totals with a purpose breakdown and paid/unpaid split. */
   @Get('commissions/v2/report')
   report(@Query() query: CommissionRangeQueryDto) {

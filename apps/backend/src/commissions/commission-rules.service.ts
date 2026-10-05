@@ -13,6 +13,12 @@ import {
   type ThresholdPeriod,
   type ValueBasis,
 } from './commission-math';
+import {
+  normalizeEffectiveFrom,
+  normalizeEffectiveTo,
+  toDhakaDateString,
+  validityWindowsOverlap,
+} from './commission-dates';
 
 const VALID_PERIODS: ThresholdPeriod[] = ['daily', 'weekly', 'monthly', 'yearly'];
 const VALID_BASES: ValueBasis[] = ['order_total', 'subtotal'];
@@ -37,16 +43,23 @@ export interface RuleInput {
 /**
  * CRUD for Commission Engine v2 rules.
  *
- * Two rules govern everything here:
+ * Three rules govern everything here:
  *
  *   1. `purpose` must be a real, commissionable order status. Not free text —
  *      an admin cannot invent a status, and cannot pay for one that is not a
  *      meaningful operational action.
  *
- *   2. Two active rules for the same employee and purpose may not overlap in
- *      time. Stacking is not implicit; if a business genuinely wants two rules
- *      on one purpose they must be given disjoint validity windows, which is a
- *      deliberate and reviewable choice rather than an accident of ordering.
+ *   2. An employee holds at most ONE active rule per purpose. A second active
+ *      rule for the same employee + action is rejected by the database
+ *      (partial unique index `CommissionRuleV2_no_overlapping_active_idx`) and
+ *      pre-empted here with a message that names the conflict. Stacking is
+ *      deliberately not implicit: changing the rate is done by editing the
+ *      amount on the live rule, which leaves already-credited earnings untouched
+ *      because the ledger snapshots every calculation input.
+ *
+ *   3. Validity windows are Dhaka calendar days, inclusive at both ends. A rule
+ *      with no end date keeps applying until it is explicitly ended; a rule
+ *      with no start date has always applied. See ./commission-dates.
  */
 @Injectable()
 export class CommissionRulesService {
@@ -277,25 +290,37 @@ export class CommissionRulesService {
       }
     }
 
-    if (dto.effectiveFrom && dto.effectiveTo) {
-      if (new Date(dto.effectiveTo) < new Date(dto.effectiveFrom)) {
-        throw new BadRequestException('End date cannot be before the start date');
-      }
+    // Compare the NORMALISED bounds: a start of 2026-11-01 and an end of
+    // 2026-11-01 are the same Dhaka day, so the rule is valid (one day long).
+    const fromDate = normalizeEffectiveFrom(dto.effectiveFrom ?? null);
+    const toDate = normalizeEffectiveTo(dto.effectiveTo ?? null);
+    if (fromDate && toDate && toDate < fromDate) {
+      throw new BadRequestException('End date cannot be before the start date');
     }
 
     await this.assertNoOverlap(
       dto.employeeId,
       dto.purpose,
       undefined,
-      dto.effectiveFrom ?? null,
-      dto.effectiveTo ?? null,
+      fromDate,
+      toDate,
       dto.isActive !== false,
     );
   }
 
   /**
    * Reject an active rule that overlaps an existing active rule for the same
-   * employee + purpose. Two rules with no date bounds always overlap.
+   * employee + purpose.
+   *
+   * The database enforces the same invariant via the partial unique index
+   * `CommissionRuleV2_no_overlapping_active_idx` on (employeeId, purpose,
+   * isActive) WHERE isActive = true — that is what makes "one active rule per
+   * employee per action" a guarantee rather than a convention. This check runs
+   * first only so the admin gets a message naming the clash instead of a bare
+   * constraint violation.
+   *
+   * Both bounds are inclusive and a null bound is unbounded, so a rule with no
+   * dates intersects every active rule for its employee + purpose.
    */
   private async assertNoOverlap(
     employeeId: string,
@@ -307,8 +332,8 @@ export class CommissionRulesService {
   ) {
     if (!isActive) return;
 
-    const fromDate = from ? new Date(from) : null;
-    const toDate = to ? new Date(to) : null;
+    const fromDate = from ? normalizeEffectiveFrom(from) : null;
+    const toDate = to ? normalizeEffectiveTo(to) : null;
 
     const existing = await this.prisma.commissionRuleV2.findMany({
       where: {
@@ -320,19 +345,16 @@ export class CommissionRulesService {
       select: { id: true, effectiveFrom: true, effectiveTo: true },
     });
 
-    const clashes = existing.filter((e) => {
-      // Standard half-open interval overlap: [aFrom, aTo] ∩ [bFrom, bTo).
-      // A null bound means unbounded on that side.
-      const aFrom = e.effectiveFrom;
-      const aTo = e.effectiveTo;
-      const startsBeforeOtherEnds = aTo === null || (toDate !== null && aTo >= toDate);
-      const endsAfterOtherStarts = aFrom === null || (fromDate !== null && aFrom <= fromDate);
-      return startsBeforeOtherEnds && endsAfterOtherStarts;
-    });
+    const clash = existing.find((e) =>
+      validityWindowsOverlap(
+        { effectiveFrom: fromDate, effectiveTo: toDate },
+        { effectiveFrom: e.effectiveFrom, effectiveTo: e.effectiveTo },
+      ),
+    );
 
-    if (clashes.length > 0) {
+    if (clash) {
       throw new ConflictException(
-        'Another active rule already covers this action for this employee during the selected period.',
+        'This employee already has an active commission rule for that action. Edit or deactivate the existing rule instead of adding a second one.',
       );
     }
   }
@@ -355,8 +377,8 @@ export class CommissionRulesService {
           : null,
       minimumCount: dto.minimumCount ?? null,
       thresholdPeriod: dto.thresholdPeriod ?? null,
-      effectiveFrom: dto.effectiveFrom ? new Date(dto.effectiveFrom) : null,
-      effectiveTo: dto.effectiveTo ? new Date(dto.effectiveTo) : null,
+      effectiveFrom: normalizeEffectiveFrom(dto.effectiveFrom ?? null),
+      effectiveTo: normalizeEffectiveTo(dto.effectiveTo ?? null),
       isActive: dto.isActive !== false,
     };
   }
@@ -378,13 +400,50 @@ export class CommissionRulesService {
     if (dto.minimumCount !== undefined) data.minimumCount = dto.minimumCount;
     if (dto.thresholdPeriod !== undefined) data.thresholdPeriod = dto.thresholdPeriod;
     if (dto.effectiveFrom !== undefined) {
-      data.effectiveFrom = dto.effectiveFrom ? new Date(dto.effectiveFrom) : null;
+      data.effectiveFrom = normalizeEffectiveFrom(dto.effectiveFrom);
     }
     if (dto.effectiveTo !== undefined) {
-      data.effectiveTo = dto.effectiveTo ? new Date(dto.effectiveTo) : null;
+      data.effectiveTo = normalizeEffectiveTo(dto.effectiveTo);
     }
     if (dto.isActive !== undefined) data.isActive = dto.isActive;
     return data;
+  }
+
+  /**
+   * End a rule today, in the business timezone.
+   *
+   * This is deliberately NOT the same as deactivating:
+   *
+   *   - "End now" closes the validity window, so the rule stops applying after
+   *     today while remaining fully visible and auditable, with its complete
+   *     configuration intact. The record is the history of what was agreed.
+   *   - "Deactivate" removes it from future qualification but leaves the window
+   *     open, so re-activating restores exactly the previous behaviour.
+   *
+   * The end date is set to the END of the current Dhaka day, so the rule still
+   * pays for every qualifying order that happens today — the operator asked to
+   * end it now, not to retroactively cancel today's work.
+   *
+   * Already-credited earnings are untouched: the ledger snapshots the
+   * calculation inputs, so no historical amount can move.
+   */
+  async endNow(id: string) {
+    const rule = await this.prisma.commissionRuleV2.findUnique({
+      where: { id },
+      select: { id: true, effectiveTo: true, effectiveFrom: true },
+    });
+    if (!rule) throw new NotFoundException('Commission rule not found');
+
+    // Idempotent: re-ending an already-ended rule is a no-op, not an error, and
+    // must never shorten a window the operator set deliberately in the future.
+    if (rule.effectiveTo !== null) return this.decorate(id);
+
+    const today = toDhakaDateString(new Date());
+    await this.prisma.commissionRuleV2.update({
+      where: { id },
+      data: { effectiveTo: normalizeEffectiveTo(today) },
+    });
+    return this.decorate(id);
   }
 
   /** Load a rule with its employee for display. */
@@ -433,8 +492,11 @@ export class CommissionRulesService {
       capPerOrder: rule.capPerOrder !== null ? Number(rule.capPerOrder) : null,
       minimumCount: rule.minimumCount,
       thresholdPeriod: rule.thresholdPeriod,
-      effectiveFrom: rule.effectiveFrom,
-      effectiveTo: rule.effectiveTo,
+      // Emitted as the Dhaka calendar day the operator configured, not as a raw
+      // ISO timestamp. Without this every consumer would have to re-derive the
+      // timezone, and slicing the UTC form would display the previous day.
+      effectiveFrom: toDhakaDateString(rule.effectiveFrom),
+      effectiveTo: toDhakaDateString(rule.effectiveTo),
       isActive: rule.isActive,
       createdAt: rule.createdAt,
       summary: describeRule({

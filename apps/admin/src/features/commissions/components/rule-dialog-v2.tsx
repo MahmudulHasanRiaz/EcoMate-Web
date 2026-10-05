@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Loader2, Info } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Loader2, Plus, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -11,461 +11,385 @@ import {
   DialogTrigger,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { Checkbox } from '@/components/ui/checkbox'
-import { employeesApi } from '@/features/employees/api'
+import { SearchableSelect, type SearchableOption } from '@/components/ui/searchable-select'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { employeesApi, type EmployeeResponse } from '@/features/employees/api'
 import {
   COMMISSION_PURPOSES,
-  THRESHOLD_PERIODS,
-  VALUE_BASES,
-  type CommissionAmountType,
   type CommissionPurpose,
   type CommissionRuleV2,
-  type CommissionRuleV2Input,
-  type ThresholdPeriod,
-  type ValueBasis,
 } from '../api'
-import { useCreateRuleV2Mutation, useUpdateRuleV2Mutation } from '../hooks'
+import { useCommissionRulesV2, useCreateRuleV2Mutation, useEndRuleV2Mutation, useUpdateRuleV2Mutation } from '../hooks'
+import { RuleEditor, draftFromRule, emptyDraft, type RuleDraft } from './rule-editor'
 
-function useEmployeeOptions() {
-  return useQuery({
-    queryKey: ['employees', 'commission-picker'],
-    queryFn: () => employeesApi.list({ page: 1, perPage: 200 }).then((r) => r.data.data),
-  })
-}
+/**
+ * Employee-centric commission rule editor.
+ *
+ * One employee, one list, many rules. Picking the employee loads every rule
+ * they already have; "Add another rule" appends a new, fully-configured block
+ * inside the same dialog, and every block saves independently. That is the
+ * whole point: configuring an employee's commission should never require
+ * leaving this dialog, and their rules should never appear scattered across a
+ * flat table.
+ *
+ * Used from two places — the page header (create) and an employee card
+ * ("Edit rules", where the employee is already known and locked).
+ */
 
-const NO_MIN = '__none__'
+const EMPLOYEE_PAGE_SIZE = 20
 
-export function RuleDialogV2({ rule }: { rule?: CommissionRuleV2 | null }) {
-  const isEdit = !!rule
-  const [open, setOpen] = useState(false)
-
-  const [employeeId, setEmployeeId] = useState('')
-  const [purpose, setPurpose] = useState<CommissionPurpose>('Confirmed')
-  const [amountType, setAmountType] = useState<CommissionAmountType>('fixed')
-  const [amount, setAmount] = useState('')
-  const [valueBasis, setValueBasis] = useState<ValueBasis>('order_total')
-  const [useMinAmount, setUseMinAmount] = useState(false)
-  const [minOrderAmount, setMinOrderAmount] = useState('')
-  const [useCap, setUseCap] = useState(false)
-  const [capPerOrder, setCapPerOrder] = useState('')
-  const [useMinimumCount, setUseMinimumCount] = useState(false)
-  const [minimumCount, setMinimumCount] = useState('')
-  const [thresholdPeriod, setThresholdPeriod] = useState<ThresholdPeriod>('daily')
-  const [effectiveFrom, setEffectiveFrom] = useState('')
-  const [effectiveTo, setEffectiveTo] = useState('')
-
-  const { data: employees } = useEmployeeOptions()
-  const createMut = useCreateRuleV2Mutation()
-  const updateMut = useUpdateRuleV2Mutation()
+function useEmployeeSearch() {
+  const [search, setSearch] = useState('')
+  const [debounced, setDebounced] = useState('')
 
   useEffect(() => {
-    if (!open) return
-    setEmployeeId(rule?.employeeId ?? '')
-    setPurpose((rule?.purpose as CommissionPurpose) ?? 'Confirmed')
-    setAmountType(rule?.amountType ?? 'fixed')
-    setAmount(rule ? String(rule.amount) : '')
-    setValueBasis((rule?.valueBasis as ValueBasis) ?? 'order_total')
-    setUseMinAmount(rule?.minOrderAmount != null)
-    setMinOrderAmount(rule?.minOrderAmount != null ? String(rule.minOrderAmount) : '')
-    setUseCap(rule?.capPerOrder != null)
-    setCapPerOrder(rule?.capPerOrder != null ? String(rule.capPerOrder) : '')
-    setUseMinimumCount(rule?.minimumCount != null)
-    setMinimumCount(rule?.minimumCount != null ? String(rule.minimumCount) : '')
-    setThresholdPeriod(rule?.thresholdPeriod ?? 'daily')
-    setEffectiveFrom(rule?.effectiveFrom ? rule.effectiveFrom.slice(0, 10) : '')
-    setEffectiveTo(rule?.effectiveTo ? rule.effectiveTo.slice(0, 10) : '')
-  }, [open, rule])
+    const t = setTimeout(() => setDebounced(search), 250)
+    return () => clearTimeout(t)
+  }, [search])
 
-  const num = (v: string) => {
-    const n = Number(v)
-    return Number.isFinite(n) && n >= 0 ? n : null
-  }
+  const { data, isFetching } = useQuery({
+    // Keyed on the debounced term so each keystroke does not re-request, and the
+    // result set is complete for the term rather than a truncated first page.
+    queryKey: ['employees', 'commission-search', debounced],
+    queryFn: () =>
+      employeesApi
+        .list({ page: 1, perPage: EMPLOYEE_PAGE_SIZE, search: debounced || undefined })
+        .then((r) => r.data.data),
+    staleTime: 30 * 1000,
+  })
 
-  const payload = useMemo((): CommissionRuleV2Input | null => {
-    if (!employeeId) return null
-    const parsedAmount = num(amount)
-    if (parsedAmount === null || parsedAmount <= 0) return null
+  return { search, setSearch, employees: data ?? [], isFetching }
+}
 
-    return {
-      employeeId,
-      purpose,
-      amountType,
-      amount: parsedAmount,
-      valueBasis,
-      minOrderAmount: useMinAmount ? num(minOrderAmount) : null,
-      capPerOrder: useCap ? num(capPerOrder) : null,
-      minimumCount: useMinimumCount ? num(minimumCount) : null,
-      thresholdPeriod: useMinimumCount ? thresholdPeriod : null,
-      effectiveFrom: effectiveFrom || null,
-      effectiveTo: effectiveTo || null,
-    }
-  }, [
-    employeeId, purpose, amountType, amount, valueBasis,
-    useMinAmount, minOrderAmount, useCap, capPerOrder,
-    useMinimumCount, minimumCount, thresholdPeriod, effectiveFrom, effectiveTo,
-  ])
+interface RuleDialogProps {
+  /** Preselect and lock an employee (used from the employee card). */
+  employee?: EmployeeResponse | null
+  trigger?: React.ReactNode
+  open?: boolean
+  onOpenChange?: (v: boolean) => void
+}
+
+export function RuleDialogV2({ employee, trigger, open: controlledOpen, onOpenChange }: RuleDialogProps) {
+  const isControlled = controlledOpen !== undefined
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
+  const open = isControlled ? controlledOpen : uncontrolledOpen
+
+  const setOpen = useCallback(
+    (v: boolean) => {
+      if (!isControlled) setUncontrolledOpen(v)
+      onOpenChange?.(v)
+    },
+    [isControlled, onOpenChange],
+  )
+
+  const [employeeId, setEmployeeId] = useState<string>(employee?.id ?? '')
+  const [drafts, setDrafts] = useState<RuleDraft[]>([])
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [savingIds, setSavingIds] = useState<Record<string, boolean>>({})
+  const [loadedFor, setLoadedFor] = useState<string | null>(null)
+
+  const { search, setSearch, employees, isFetching } = useEmployeeSearch()
+  const createMut = useCreateRuleV2Mutation()
+  const updateMut = useUpdateRuleV2Mutation()
+  const endMut = useEndRuleV2Mutation()
+
+  // Only load rules once an employee is actually chosen. Passing the id through
+  // to the query would fire a request for the empty string on first render.
+  const { data: rules, isLoading: rulesLoading } = useCommissionRulesV2(
+    employeeId ? { employeeId } : undefined,
+  )
+
+  const selectedEmployee: EmployeeResponse | null = useMemo(() => {
+    if (employeeId && employee?.id === employeeId) return employee
+    return employees.find((e) => e.id === employeeId) ?? null
+  }, [employeeId, employee, employees])
+
+  const employeeName =
+    selectedEmployee?.betterAuthUser?.name ?? selectedEmployee?.employeeId ?? 'this employee'
 
   /**
-   * Plain-language preview of what this rule will do. Rendered before saving so
-   * the admin reads exactly what they are configuring — including the threshold
-   * rule, which is the part most easily misunderstood.
+   * Seed the draft list from the server exactly once per employee, so a later
+   * refetch (or a save invalidating the query) cannot discard edits in progress.
    */
-  const summary = useMemo(() => {
-    const employeeName = employees?.find((e) => e.id === employeeId)?.betterAuthUser?.name
-    const a = num(amount)
-    if (!employeeName || a === null || a <= 0) return null
+  useEffect(() => {
+    if (!open || !employeeId || loadedFor === employeeId) return
+    if (rulesLoading) return
+    setDrafts((rules ?? []).map(draftFromRule))
+    setErrors({})
+    setLoadedFor(employeeId)
+  }, [open, employeeId, rules, rulesLoading, loadedFor])
 
-    const value =
-      amountType === 'fixed'
-        ? `৳${a.toFixed(2)} per qualifying ${purpose} order`
-        : `${a.toFixed(2)}% of the ${valueBasis === 'subtotal' ? 'subtotal' : 'order total'} for each qualifying ${purpose} order`
+  // A fresh dialog must not inherit the previous employee's unsaved blocks.
+  useEffect(() => {
+    if (open) return
+    setEmployeeId(employee?.id ?? '')
+    setDrafts([])
+    setErrors({})
+    setLoadedFor(null)
+    setSearch('')
+  }, [open, employee])
 
-    const parts: string[] = [`${employeeName} earns ${value}`]
+  const savedByLocalId = useMemo(() => {
+    const map: Record<string, CommissionRuleV2> = {}
+    for (const r of rules ?? []) map[`rule-${r.id}`] = r
+    return map
+  }, [rules])
 
-    const min = useMinimumCount ? num(minimumCount) : null
-    if (min !== null && min > 0) {
-      parts.push(
-        `after completing ${min} qualifying ${purpose} orders each ${thresholdPeriod} ` +
-          `(the first ${min} do not pay; commission starts from #${min + 1})`,
-      )
-    }
-    const minAmt = useMinAmount ? num(minOrderAmount) : null
-    if (minAmt !== null) parts.push(`for orders of at least ৳${minAmt.toFixed(2)}`)
-    const cap = useCap ? num(capPerOrder) : null
-    if (cap !== null) parts.push(`(capped at ৳${cap.toFixed(2)} per order)`)
+  /** Purposes already used by another block in this dialog, so none can repeat. */
+  const usedPurposes = useMemo(() => {
+    const counts = new Map<CommissionPurpose, number>()
+    for (const d of drafts) counts.set(d.rule.purpose, (counts.get(d.rule.purpose) ?? 0) + 1)
+    return counts
+  }, [drafts])
 
-    return parts.join(' ') + '.'
-  }, [
-    employees, employeeId, amount, amountType, purpose, valueBasis,
-    useMinimumCount, minimumCount, thresholdPeriod, useMinAmount, minOrderAmount,
-    useCap, capPerOrder,
-  ])
+  const purposesInUse = useMemo(
+    () => [...usedPurposes.entries()].filter(([, n]) => n > 0).map(([p]) => p),
+    [usedPurposes],
+  )
 
-  const canSave = !!payload && !createMut.isPending && !updateMut.isPending
+  const availablePurposes = useMemo(
+    () => COMMISSION_PURPOSES.filter((p) => !purposesInUse.includes(p.value)),
+    [purposesInUse],
+  )
 
-  function handleSubmit() {
-    if (!payload) return
-    const mutate = isEdit && rule ? updateMut.mutate : createMut.mutate
-    if (isEdit && rule) {
-      updateMut.mutate({ id: rule.id, dto: payload }, { onSuccess: () => setOpen(false) })
-    } else {
-      createMut.mutate(payload, { onSuccess: () => setOpen(false) })
+  function selectEmployee(id: string) {
+    setEmployeeId(id)
+    setDrafts([])
+    setErrors({})
+    setLoadedFor(null)
+  }
+
+  function addNewRule() {
+    const next = availablePurposes[0]?.value ?? COMMISSION_PURPOSES[0].value
+    setDrafts((d) => [...d, emptyDraft(employeeId, next)])
+  }
+
+  function updateDraft(localId: string, next: RuleDraft) {
+    setDrafts((d) => d.map((x) => (x.localId === localId ? next : x)))
+  }
+
+  function removeDraft(localId: string) {
+    setDrafts((d) => d.filter((x) => x.localId !== localId))
+    setErrors((e) => {
+      const { [localId]: _removed, ...rest } = e
+      return rest
+    })
+  }
+
+  /**
+   * Save one block. Errors are recorded against that block only — a failed rule
+   * must never be reported as a blanket success, and must never stop the other
+   * blocks from saving.
+   */
+  async function saveDraft(draft: RuleDraft): Promise<boolean> {
+    setSavingIds((s) => ({ ...s, [draft.localId]: true }))
+    setErrors((e) => ({ ...e, [draft.localId]: '' }))
+
+    try {
+      if (draft.id === null) {
+        const created = await createMut.mutateAsync(draft.rule)
+        // Replace the unsaved block with the persisted one, keeping its position
+        // so the operator's ordering and any sibling edits are preserved.
+        setDrafts((d) =>
+          d.map((x) =>
+            x.localId === draft.localId
+              ? { ...draftFromRule(created), localId: draft.localId }
+              : x,
+          ),
+        )
+        setLoadedFor(employeeId)
+        return true
+      }
+
+      await updateMut.mutateAsync({ id: draft.id, dto: draft.rule })
+      setDrafts((d) => d.map((x) => (x.localId === draft.localId ? draft : x)))
+      return true
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Could not save this rule'
+      setErrors((e) => ({ ...e, [draft.localId]: msg }))
+      return false
+    } finally {
+      setSavingIds((s) => ({ ...s, [draft.localId]: false }))
     }
   }
+
+  /** Save every block; the dialog closes only when all of them succeeded. */
+  async function saveAll() {
+    const results = await Promise.all(drafts.map((d) => saveDraft(d)))
+    if (results.every(Boolean)) setOpen(false)
+  }
+
+  async function endNow(draft: RuleDraft) {
+    if (!draft.id) return
+    setSavingIds((s) => ({ ...s, [draft.localId]: true }))
+    try {
+      const updated = await endMut.mutateAsync(draft.id)
+      setDrafts((d) =>
+        d.map((x) =>
+          x.localId === draft.localId
+            ? { ...draft, rule: { ...draft.rule, effectiveTo: updated.effectiveTo } }
+            : x,
+        ),
+      )
+    } catch (err: any) {
+      setErrors((e) => ({
+        ...e,
+        [draft.localId]: err?.response?.data?.message || 'Could not end the rule',
+      }))
+    } finally {
+      setSavingIds((s) => ({ ...s, [draft.localId]: false }))
+    }
+  }
+
+  const employeeOptions: SearchableOption[] = useMemo(
+    () =>
+      employees.map((e) => ({
+        id: e.id,
+        label: e.betterAuthUser?.name ?? e.employeeId,
+        subLabel: e.department?.name ?? e.employeeId,
+      })),
+    [employees],
+  )
+
+  const isSavingAny = Object.values(savingIds).some(Boolean)
+  const hasDrafts = drafts.length > 0
+  const allValid = drafts.every((d) => {
+    const taken = usedPurposes.get(d.rule.purpose) ?? 0
+    return d.rule.amount > 0 && (taken <= 1 || d.id !== null)
+  })
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {isEdit && rule ? (
-          <span />
-        ) : (
-          <Button>
-            <Info className='me-2 h-4 w-4' />
-            New Commission Rule
-          </Button>
-        )}
-      </DialogTrigger>
+      {!isControlled && (
+        <DialogTrigger asChild>
+          {trigger ?? (
+            <Button>
+              <Plus className='me-2 h-4 w-4' />
+              New Commission Rule
+            </Button>
+          )}
+        </DialogTrigger>
+      )}
 
-      <DialogContent className='sm:max-w-[620px] max-h-[85vh] overflow-y-auto'>
+      {/* `overflow-x-hidden` is a guard, not decoration: at narrow widths a single
+          wide child (a segmented control, a long employee name) would otherwise
+          push the whole dialog into horizontal overflow. */}
+      <DialogContent className='sm:max-w-[760px] max-h-[88vh] overflow-y-auto overflow-x-hidden'>
         <DialogHeader>
-          <DialogTitle>{isEdit ? 'Edit Commission Rule' : 'New Commission Rule'}</DialogTitle>
+          <DialogTitle>Commission Rules</DialogTitle>
           <DialogDescription>
-            Commission is credited to whoever FIRST moves an order into this action. A second
-            person doing the same action on the same order earns nothing for it.
+            Commission is credited to whoever FIRST moves an order into an action. A second person
+            doing the same action on the same order earns nothing for it.
           </DialogDescription>
         </DialogHeader>
 
-        <div className='grid gap-4'>
-          <div className='grid gap-2'>
-            <Label htmlFor='cr-employee'>Employee</Label>
-            <Select value={employeeId} onValueChange={setEmployeeId} disabled={isEdit}>
-              <SelectTrigger id='cr-employee'>
-                <SelectValue placeholder='Select an employee' />
-              </SelectTrigger>
-              <SelectContent>
-                {(employees ?? []).map((e) => (
-                  <SelectItem key={e.id} value={e.id}>
-                    {e.betterAuthUser?.name ?? e.employeeId}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        {/* ── Employee ── */}
+        {employee && employee.id === employeeId ? (
+          <div className='flex items-center gap-3 rounded-lg border p-3'>
+            <Avatar className='h-9 w-9'>
+              {selectedEmployee?.profilePictureUrl && (
+                <AvatarImage src={selectedEmployee.profilePictureUrl} alt='' />
+              )}
+              <AvatarFallback>
+                <User className='h-4 w-4' />
+              </AvatarFallback>
+            </Avatar>
+            <div className='min-w-0'>
+              <p className='truncate text-sm font-medium'>{employeeName}</p>
+              <p className='text-xs text-muted-foreground'>{employee.employeeId}</p>
+            </div>
           </div>
-
+        ) : (
           <div className='grid gap-2'>
-            <Label htmlFor='cr-purpose'>Commission For</Label>
-            <Select value={purpose} onValueChange={(v) => setPurpose(v as CommissionPurpose)}>
-              <SelectTrigger id='cr-purpose'>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {COMMISSION_PURPOSES.map((p) => (
-                  <SelectItem key={p.value} value={p.value}>
-                    {p.label} — {p.hint}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className='grid gap-2'>
-            <Label>Commission Type</Label>
-            <RadioGroup
-              value={amountType}
-              onValueChange={(v) => setAmountType(v as CommissionAmountType)}
-              className='flex gap-4'
-            >
-              <div className='flex items-center gap-2'>
-                <RadioGroupItem value='fixed' id='cr-type-fixed' />
-                <Label htmlFor='cr-type-fixed' className='font-normal'>
-                  Fixed Amount
-                </Label>
-              </div>
-              <div className='flex items-center gap-2'>
-                <RadioGroupItem value='percent' id='cr-type-percent' />
-                <Label htmlFor='cr-type-percent' className='font-normal'>
-                  Percentage
-                </Label>
-              </div>
-            </RadioGroup>
-          </div>
-
-          <div className='grid gap-2'>
-            <Label htmlFor='cr-amount'>
-              {amountType === 'fixed' ? 'Amount per qualifying order (৳)' : 'Percentage (%)'}
-            </Label>
-            <Input
-              id='cr-amount'
-              type='number'
-              min='0'
-              step='0.01'
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder={amountType === 'fixed' ? '10' : '1.00'}
+            <label htmlFor='cr-employee' className='text-sm font-medium'>
+              Employee
+            </label>
+            <SearchableSelect
+              options={employeeOptions}
+              value={employeeId || undefined}
+              onChange={selectEmployee}
+              placeholder={isFetching ? 'Searching…' : 'Select an employee'}
+              searchPlaceholder='Search by name or code…'
+              emptyMessage='No employees found'
             />
+            {employeeId && !selectedEmployee && !isFetching && (
+              <p className='text-xs text-muted-foreground'>
+                Searching for this employee’s name…
+              </p>
+            )}
           </div>
+        )}
 
-          {amountType === 'percent' && (
-            <div className='grid gap-2'>
-              <Label htmlFor='cr-basis'>Percentage is measured against</Label>
-              <Select value={valueBasis} onValueChange={(v) => setValueBasis(v as ValueBasis)}>
-                <SelectTrigger id='cr-basis'>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {VALUE_BASES.map((b) => (
-                    <SelectItem key={b.value} value={b.value}>
-                      {b.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {/* ── Threshold: a COUNT of qualifying orders, per period ── */}
-          <div className='grid gap-3 rounded-lg border p-3'>
-            <div className='flex items-center gap-2'>
-              <Checkbox
-                id='cr-use-min-count'
-                checked={useMinimumCount}
-                onCheckedChange={(v) => setUseMinimumCount(!!v)}
-              />
-              <Label htmlFor='cr-use-min-count' className='font-normal'>
-                Require a minimum number of qualifying orders before paying
-              </Label>
-            </div>
-
-            {useMinimumCount && (
-              <div className='grid gap-3 ps-6'>
-                <div className='grid gap-2'>
-                  <Label htmlFor='cr-min-count'>Minimum qualifying orders</Label>
-                  <Input
-                    id='cr-min-count'
-                    type='number'
-                    min='1'
-                    step='1'
-                    value={minimumCount}
-                    onChange={(e) => setMinimumCount(e.target.value)}
-                    placeholder='50'
-                  />
-                </div>
-                <div className='grid gap-2'>
-                  <Label htmlFor='cr-period'>Period</Label>
-                  <Select
-                    value={thresholdPeriod}
-                    onValueChange={(v) => setThresholdPeriod(v as ThresholdPeriod)}
-                  >
-                    <SelectTrigger id='cr-period'>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {THRESHOLD_PERIODS.map((p) => (
-                        <SelectItem key={p.value} value={p.value}>
-                          {p.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <p className='text-xs text-muted-foreground'>
-                  The first {minimumCount || 'N'} qualifying {purpose} orders each {thresholdPeriod} only
-                  qualify — they do not pay. Commission starts from order #{minimumCount ? Number(minimumCount) + 1 : 'N+1'}.
-                  Counts are tracked per employee, per action, in Dhaka time.
+        {/* ── Rules ── */}
+        {employeeId ? (
+          <div className='grid gap-3'>
+            {rulesLoading && drafts.length === 0 ? (
+              <div className='flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground'>
+                <Loader2 className='h-4 w-4 animate-spin' />
+                Loading rules…
+              </div>
+            ) : !hasDrafts ? (
+              <div className='rounded-lg border border-dashed py-8 text-center'>
+                <p className='text-sm text-muted-foreground'>
+                  {employeeName} has no commission rules yet.
+                </p>
+                <p className='mt-1 text-xs text-muted-foreground'>
+                  Add one to start paying for an action they perform.
                 </p>
               </div>
+            ) : (
+              <>
+                <p className='text-xs text-muted-foreground'>
+                  {drafts.length} rule{drafts.length === 1 ? '' : 's'} for {employeeName}. Each one
+                  pays for a different action, with its own amount, conditions and dates.
+                </p>
+
+                {drafts.map((d) => (
+                  <RuleEditor
+                    key={d.localId}
+                    draft={d}
+                    saved={savedByLocalId[d.localId] ?? null}
+                    employeeName={employeeName}
+                    usedPurposes={purposesInUse.filter((p) => p !== d.rule.purpose)}
+                    onChange={(next) => updateDraft(d.localId, next)}
+                    onSave={() => saveDraft(d)}
+                    onEndNow={d.id ? () => endNow(d) : undefined}
+                    onRemove={hasDrafts ? () => removeDraft(d.localId) : undefined}
+                    isSaving={!!savingIds[d.localId]}
+                    error={errors[d.localId] || null}
+                  />
+                ))}
+              </>
             )}
-          </div>
 
-          {/* ── Optional per-order amount gate: a DIFFERENT condition ── */}
-          <div className='grid gap-3 rounded-lg border p-3'>
-            <div className='flex items-center gap-2'>
-              <Checkbox
-                id='cr-use-min-amount'
-                checked={useMinAmount}
-                onCheckedChange={(v) => setUseMinAmount(!!v)}
-              />
-              <Label htmlFor='cr-use-min-amount' className='font-normal'>
-                Only pay on orders above a minimum amount
-              </Label>
-            </div>
-            {useMinAmount && (
-              <div className='grid gap-2 ps-6'>
-                <Label htmlFor='cr-min-amount'>Minimum order amount (৳)</Label>
-                <Input
-                  id='cr-min-amount'
-                  type='number'
-                  min='0'
-                  step='0.01'
-                  value={minOrderAmount}
-                  onChange={(e) => setMinOrderAmount(e.target.value)}
-                  placeholder='500'
-                />
-              </div>
-            )}
+            <Button
+              variant='outline'
+              size='sm'
+              className='justify-start'
+              onClick={addNewRule}
+              disabled={isSavingAny}
+              data-add-rule
+            >
+              <Plus className='me-2 h-4 w-4' />
+              Add another rule
+            </Button>
           </div>
-
-          <div className='grid gap-3 rounded-lg border p-3'>
-            <div className='flex items-center gap-2'>
-              <Checkbox id='cr-use-cap' checked={useCap} onCheckedChange={(v) => setUseCap(!!v)} />
-              <Label htmlFor='cr-use-cap' className='font-normal'>
-                Cap the commission for a single order
-              </Label>
-            </div>
-            {useCap && (
-              <div className='grid gap-2 ps-6'>
-                <Label htmlFor='cr-cap'>Maximum commission per order (৳)</Label>
-                <Input
-                  id='cr-cap'
-                  type='number'
-                  min='0'
-                  step='0.01'
-                  value={capPerOrder}
-                  onChange={(e) => setCapPerOrder(e.target.value)}
-                  placeholder='100'
-                />
-              </div>
-            )}
-          </div>
-
-          <div className='grid grid-cols-2 gap-3'>
-            <div className='grid gap-2'>
-              <Label htmlFor='cr-from'>Start date (optional)</Label>
-              <Input
-                id='cr-from'
-                type='date'
-                value={effectiveFrom}
-                onChange={(e) => setEffectiveFrom(e.target.value)}
-              />
-            </div>
-            <div className='grid gap-2'>
-              <Label htmlFor='cr-to'>End date (optional)</Label>
-              <Input
-                id='cr-to'
-                type='date'
-                value={effectiveTo}
-                onChange={(e) => setEffectiveTo(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {summary && (
-            <div className='rounded-lg border border-primary/25 bg-primary/5 p-3'>
-              <p className='text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1'>
-                What this rule does
-              </p>
-              <p className='text-sm leading-relaxed'>{summary}</p>
-            </div>
-          )}
-        </div>
+        ) : (
+          <p className='py-6 text-center text-sm text-muted-foreground'>
+            Select an employee to see their commission rules.
+          </p>
+        )}
 
         <DialogFooter>
           <Button variant='outline' onClick={() => setOpen(false)}>
-            Cancel
+            Close
           </Button>
-          <Button onClick={handleSubmit} disabled={!canSave}>
-            {(createMut.isPending || updateMut.isPending) && (
-              <Loader2 className='me-2 h-4 w-4 animate-spin' />
-            )}
-            {isEdit ? 'Save Changes' : 'Create Rule'}
+          <Button onClick={saveAll} disabled={!hasDrafts || !allValid || isSavingAny}>
+            {isSavingAny && <Loader2 className='me-2 h-4 w-4 animate-spin' />}
+            Save all
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
-}
-
-/** Small wrapper so the row action can open the same dialog pre-filled. */
-export function EditRuleDialog({ rule, trigger }: { rule: CommissionRuleV2; trigger: React.ReactNode }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className='sm:max-w-[620px]'>
-        <DialogHeader>
-          <DialogTitle>Edit Commission Rule</DialogTitle>
-        </DialogHeader>
-        <RuleEditBody rule={rule} onDone={() => setOpen(false)} />
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function RuleEditBody({ rule, onDone }: { rule: CommissionRuleV2; onDone: () => void }) {
-  const updateMut = useUpdateRuleV2Mutation()
-  return (
-    <div className='grid gap-3'>
-      <p className='text-sm text-muted-foreground'>{rule.summary}</p>
-      <p className='text-xs text-muted-foreground'>
-        Editing a rule only affects future qualifying orders. Earnings already recorded keep the
-        values that were in force when they were credited.
-      </p>
-      <div className='flex justify-end gap-2'>
-        <Button variant='outline' onClick={onDone}>
-          Close
-        </Button>
-        <Button
-          disabled={updateMut.isPending}
-          onClick={() =>
-            updateMut.mutate(
-              { id: rule.id, dto: { isActive: !rule.isActive } },
-              { onSuccess: onDone },
-            )
-          }
-        >
-          {rule.isActive ? 'Deactivate' : 'Reactivate'}
-        </Button>
-      </div>
-    </div>
   )
 }

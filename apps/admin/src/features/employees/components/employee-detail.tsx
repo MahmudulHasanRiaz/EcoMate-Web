@@ -62,6 +62,7 @@ import { PAYSLIP_STATUS_BADGE } from '@/features/payroll/components/payslip-stat
 import { EarningsTable } from '@/features/hr-ledgers/components/earnings-table'
 import { DeductionsTable } from '@/features/hr-ledgers/components/deductions-table'
 import { CommissionEarningsTab } from '@/features/commissions/components/earnings-table'
+import { EmployeeRulesPanel } from '@/features/commissions/components/employee-rules-card'
 import { LeaveTab } from '@/features/hr-leave'
 import { AttendanceTab } from '@/features/hr-attendance/components/attendance-tab'
 
@@ -1175,8 +1176,12 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
           <TabsContent value='payments'>
             <PaymentsPanel employeeId={employee.id} />
           </TabsContent>
-          <TabsContent value='commission'>
-            <CommissionEarningsTab employeeId={employee.id} />
+          <TabsContent value='commission' className='space-y-4'>
+            <EmployeeRulesPanel employee={employee} />
+            <div>
+              <h3 className='mb-2 text-sm font-semibold'>Earned commission</h3>
+              <CommissionEarningsTab employeeId={employee.id} />
+            </div>
           </TabsContent>
           <TabsContent value='earnings'>
             <EarningsTable employeeId={employee.id} />

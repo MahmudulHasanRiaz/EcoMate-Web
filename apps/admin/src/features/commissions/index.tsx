@@ -1,22 +1,19 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { GlobalSearchBar } from '@/components/global-search-bar'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useCommissionRulesV2, useSetRuleActiveV2Mutation } from './hooks'
+import { useCommissionRulesV2 } from './hooks'
 import { RuleDialogV2 } from './components/rule-dialog-v2'
+import { EmployeeRulesCard, groupRulesByEmployee } from './components/employee-rules-card'
 import { CommissionReportTable } from './components/commission-report'
 import { EarningsTable } from './components/earnings-table'
 import { dhakaTodayString, toDhakaDateString } from '@/lib/dhaka-time'
-import type { CommissionRuleV2 } from './api'
-import { money } from './components/money'
 
 const RANGES = [
   { value: 'today', label: 'Today' },
@@ -48,20 +45,15 @@ function rangeFor(preset: string, customFrom: string, customTo: string) {
   }
 }
 
-function formatRuleAmount(rule: CommissionRuleV2) {
-  return rule.amountType === 'percent' ? `${rule.amount}%` : money(rule.amount)
-}
-
 export function CommissionsPage() {
   const { data: rules, isLoading, isError, refetch } = useCommissionRulesV2({})
-  const setActiveMut = useSetRuleActiveV2Mutation()
 
   const [preset, setPreset] = useState<string>('month')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
 
   const { from, to } = rangeFor(preset, customFrom, customTo)
-  const rows = rules ?? []
+  const groups = useMemo(() => groupRulesByEmployee(rules ?? []), [rules])
 
   return (
     <>
@@ -96,14 +88,15 @@ export function CommissionsPage() {
               <CardHeader className='px-5 py-4'>
                 <CardTitle className='text-base'>Commission Rules</CardTitle>
                 <CardDescription>
-                  One employee can hold several rules for different actions; they are independent.
+                  One row per employee. An employee can hold several rules for different actions; each
+                  one carries its own amount, conditions and dates.
                 </CardDescription>
               </CardHeader>
               <CardContent className='px-5 pb-5'>
                 {isLoading ? (
                   <div className='grid gap-2'>
                     {Array.from({ length: 4 }).map((_, i) => (
-                      <Skeleton key={i} className='h-12 w-full' />
+                      <Skeleton key={i} className='h-14 w-full' />
                     ))}
                   </div>
                 ) : isError ? (
@@ -113,70 +106,17 @@ export function CommissionsPage() {
                       Retry
                     </Button>
                   </div>
-                ) : rows.length === 0 ? (
-                  <p className='py-8 text-center text-sm text-muted-foreground'>
-                    No rules yet. Create one to start paying commission for an action.
-                  </p>
+                ) : groups.length === 0 ? (
+                  <div className='py-8 text-center'>
+                    <p className='text-sm text-muted-foreground'>
+                      No rules yet. Pick an employee to start paying commission for an action.
+                    </p>
+                  </div>
                 ) : (
-                  <div className='overflow-x-auto'>
-                    <Table>
-                      <TableHeader className='bg-muted/30'>
-                        <TableRow>
-                          <TableHead>Employee</TableHead>
-                          <TableHead>Action</TableHead>
-                          <TableHead className='text-right'>Commission</TableHead>
-                          <TableHead>Conditions</TableHead>
-                          <TableHead>Valid</TableHead>
-                          <TableHead className='w-[110px]'>State</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {rows.map((rule) => (
-                          <TableRow key={rule.id}>
-                            <TableCell>
-                              <p className='text-sm font-medium'>{rule.employeeName ?? '-'}</p>
-                              <p className='text-[11px] text-muted-foreground'>
-                                {rule.employeeCode ?? ''}
-                              </p>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant='outline' className='text-[10px]'>
-                                {rule.purpose}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className='text-right font-semibold tabular-nums'>
-                              {formatRuleAmount(rule)}
-                            </TableCell>
-                            <TableCell>
-                              <Conditions rule={rule} />
-                            </TableCell>
-                            <TableCell className='text-[11px] text-muted-foreground'>
-                              {rule.effectiveFrom ? (
-                                <>
-                                  {rule.effectiveFrom.slice(0, 10)}
-                                  {rule.effectiveTo ? ` to ${rule.effectiveTo.slice(0, 10)}` : ' to'}
-                                </>
-                              ) : (
-                                'Always'
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <Button
-                                variant='outline'
-                                size='sm'
-                                className='h-7 text-[11px]'
-                                disabled={setActiveMut.isPending}
-                                onClick={() =>
-                                  setActiveMut.mutate({ id: rule.id, isActive: !rule.isActive })
-                                }
-                              >
-                                {rule.isActive ? 'Deactivate' : 'Reactivate'}
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                  <div className='grid gap-2'>
+                    {groups.map((g) => (
+                      <EmployeeRulesCard key={g.employeeId} group={g} />
+                    ))}
                   </div>
                 )}
               </CardContent>
@@ -250,29 +190,5 @@ export function CommissionsPage() {
         </Tabs>
       </Main>
     </>
-  )
-}
-
-/** Render the rule's conditions as chips rather than prose. */
-function Conditions({ rule }: { rule: CommissionRuleV2 }) {
-  const bits: string[] = []
-  if (rule.minimumCount) {
-    bits.push(`after ${rule.minimumCount} ${rule.purpose}/${rule.thresholdPeriod}`)
-  }
-  if (rule.minOrderAmount != null) bits.push(`order >= ${money(rule.minOrderAmount)}`)
-  if (rule.capPerOrder != null) bits.push(`cap ${money(rule.capPerOrder)}`)
-  if (rule.amountType === 'percent' && rule.valueBasis === 'subtotal') bits.push('on subtotal')
-
-  if (bits.length === 0) {
-    return <span className='text-xs text-muted-foreground'>Every qualifying order</span>
-  }
-  return (
-    <div className='flex flex-wrap gap-1'>
-      {bits.map((b) => (
-        <span key={b} className='rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground'>
-          {b}
-        </span>
-      ))}
-    </div>
   )
 }

@@ -48,6 +48,12 @@ export interface CommissionRuleV2 {
   capPerOrder: number | null
   minimumCount: number | null
   thresholdPeriod: ThresholdPeriod | null
+  /**
+   * Dhaka calendar day as `YYYY-MM-DD`, or null for endless. These are NOT ISO
+   * timestamps — the server resolves them to exact instants, and returning the
+   * day rather than an instant is what stops a UTC slice from displaying the
+   * previous date.
+   */
   effectiveFrom: string | null
   effectiveTo: string | null
   isActive: boolean
@@ -67,6 +73,7 @@ export interface CommissionRuleV2Input {
   capPerOrder?: number | null
   minimumCount?: number | null
   thresholdPeriod?: ThresholdPeriod | null
+  /** Dhaka calendar day as `YYYY-MM-DD`; null means endless. */
   effectiveFrom?: string | null
   effectiveTo?: string | null
 }
@@ -291,6 +298,13 @@ export const commissionsApi = {
 
   setRuleActiveV2: (id: string, isActive: boolean) =>
     unwrap(apiClient.post<CommissionRuleV2>(`/hr/commissions/v2/rules/${id}/active`, { isActive })),
+
+  /**
+   * End a rule today (Dhaka): closes the validity window at the end of today
+   * while keeping the rule visible and auditable, and still paying for today's
+   * orders. Distinct from setRuleActiveV2, which leaves the window open.
+   */
+  endRuleV2: (id: string) => unwrap(apiClient.post<CommissionRuleV2>(`/hr/commissions/v2/rules/${id}/end`)),
 
   report: (params?: { employeeId?: string; departmentId?: string; from?: string; to?: string }) =>
     unwrap(apiClient.get<CommissionReportResponse>('/hr/commissions/v2/report', { params })),

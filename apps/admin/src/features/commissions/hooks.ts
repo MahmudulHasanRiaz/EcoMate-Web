@@ -117,6 +117,27 @@ export function useSetRuleActiveV2Mutation() {
   })
 }
 
+/**
+ * End a rule today. Unlike deactivating, this closes the validity window while
+ * leaving the rule auditable — so the message must not claim the rule is gone,
+ * and must state that today's own earnings are unaffected.
+ */
+export function useEndRuleV2Mutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => commissionsApi.endRuleV2(id),
+    onSuccess: (rule) => {
+      invalidate(queryClient)
+      toast.success(
+        `Rule ended on ${rule.effectiveTo ?? 'today'} — it no longer applies to future orders, and past earnings are unchanged`,
+      )
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Could not end the rule')
+    },
+  })
+}
+
 export function usePreviewRuleMutation() {
   return useMutation({
     mutationFn: (dto: CommissionRuleV2Input) => commissionsApi.previewRule(dto),
