@@ -17,7 +17,17 @@ export const callTypes = new Map<UserStatus, string>([
 // features/users/constants.ts (it previously offered only 4 of 7 roles,
 // which left packing_assistant/employee/customer rows rendering a blank
 // Role cell in the table).
-export const roles = USER_ROLES.map((role) => ({
+//
+// Typed explicitly rather than `USER_ROLES.map(...) as const`: a `const`
+// assertion may only sit on an enum member or a literal, so applying it to a
+// `.map()` result is TS1355.
+export interface RoleOption {
+  label: string
+  value: string
+  icon: typeof Shield
+}
+
+export const roles: readonly RoleOption[] = USER_ROLES.map((role) => ({
   label: role.label,
   value: role.value,
   icon:
@@ -28,4 +38,4 @@ export const roles = USER_ROLES.map((role) => ({
         : role.value === 'cashier'
           ? CreditCard
           : Users,
-})) as const
+}))
