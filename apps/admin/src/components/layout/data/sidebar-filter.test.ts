@@ -13,35 +13,38 @@ import type { NavItem } from '../types'
 describe('filterNavItems', () => {
   /* ── Root-level items (flat links) ── */
 
+  // `permissions` is supplied from the signed-in user. An item with no
+  // `permissions` requirement is shown on its feature alone.
   const flatItems: NavItem[] = [
     { title: 'All Users', url: '/mon/users', feature: 'admin_users' },
     { title: 'Access Presets', url: '/mon/users/presets', feature: 'admin_access_presets' },
   ]
+  const ownPermissions: string[] = []
 
   it('shows both when both features are present', () => {
-    const result = filterNavItems(flatItems, ['admin_users', 'admin_access_presets'])
+    const result = filterNavItems(flatItems, ['admin_users', 'admin_access_presets'], ownPermissions)
     expect(result).toHaveLength(2)
   })
 
   it('shows only the item whose feature matches', () => {
-    const result = filterNavItems(flatItems, ['admin_users'])
+    const result = filterNavItems(flatItems, ['admin_users'], ownPermissions)
     expect(result).toHaveLength(1)
     expect(result[0].title).toBe('All Users')
   })
 
   it('shows only the other item when its feature matches', () => {
-    const result = filterNavItems(flatItems, ['admin_access_presets'])
+    const result = filterNavItems(flatItems, ['admin_access_presets'], ownPermissions)
     expect(result).toHaveLength(1)
     expect(result[0].title).toBe('Access Presets')
   })
 
   it('shows nothing when no features match', () => {
-    const result = filterNavItems(flatItems, [])
+    const result = filterNavItems(flatItems, [], ownPermissions)
     expect(result).toHaveLength(0)
   })
 
   it('shows everything with wildcard feature', () => {
-    const result = filterNavItems(flatItems, [EVERYTHING_FEATURE])
+    const result = filterNavItems(flatItems, [EVERYTHING_FEATURE], ownPermissions)
     expect(result).toHaveLength(2)
   })
 
@@ -58,7 +61,7 @@ describe('filterNavItems', () => {
   ]
 
   it('collapsible parent without feature shows when child matches', () => {
-    const result = filterNavItems(collapsibleItems, ['admin_users'])
+    const result = filterNavItems(collapsibleItems, ['admin_users'], ownPermissions)
     expect(result).toHaveLength(1)
     expect(result[0].title).toBe('User Management')
     expect('items' in result[0] && result[0].items).toHaveLength(1)
@@ -66,12 +69,12 @@ describe('filterNavItems', () => {
   })
 
   it('collapsible parent without feature hides when no children match', () => {
-    const result = filterNavItems(collapsibleItems, [])
+    const result = filterNavItems(collapsibleItems, [], ownPermissions)
     expect(result).toHaveLength(0)
   })
 
   it('collapsible parent without feature shows all children when all features present', () => {
-    const result = filterNavItems(collapsibleItems, [EVERYTHING_FEATURE])
+    const result = filterNavItems(collapsibleItems, [EVERYTHING_FEATURE], ownPermissions)
     expect(result).toHaveLength(1)
     expect('items' in result[0] && result[0].items).toHaveLength(2)
   })
@@ -90,19 +93,19 @@ describe('filterNavItems', () => {
   ]
 
   it('collapsible parent with feature hides completely when feature missing', () => {
-    const result = filterNavItems(gatedCollapsible, [])
+    const result = filterNavItems(gatedCollapsible, [], ownPermissions)
     expect(result).toHaveLength(0)
   })
 
   it('collapsible parent with feature shows when feature present', () => {
-    const result = filterNavItems(gatedCollapsible, ['admin_employees'])
+    const result = filterNavItems(gatedCollapsible, ['admin_employees'], ownPermissions)
     expect(result).toHaveLength(1)
   })
 
   /* ── Item without feature always shows ── */
 
   it('item without feature always passes through', () => {
-    const result = filterNavItems([{ title: 'Dashboard', url: '/op/overview' }], [])
+    const result = filterNavItems([{ title: 'Dashboard', url: '/op/overview' }], [], ownPermissions)
     expect(result).toHaveLength(1)
   })
 
@@ -141,8 +144,15 @@ describe('filterNavItems', () => {
   })
 
   it('items without permissions still show without permission list', () => {
-    const result = filterNavItems(flatItems, ['admin_users'])
+    const result = filterNavItems(flatItems, ['admin_users'], ownPermissions)
     expect(result).toHaveLength(1)
+  })
+
+  it('an omitted permission list is not treated as "holds every permission"', () => {
+    // The command palette filters on features only. A permission-gated item must
+    // not slip through that path just because no permission list was passed.
+    const result = filterNavItems(permissionItems, ['admin_hr'])
+    expect(result).toHaveLength(0)
   })
 
   /* ── Production sidebarData integration ── */
@@ -162,13 +172,14 @@ describe('filterNavItems', () => {
       'items' in i && i.items !== undefined && i.title === 'User Management',
   )!
 
-  it('sidebarData HR > Employees shows Access Presets when admin_access_presets', () => {
+  it('sidebarData HR > Employees shows Access Presets with the feature + manage_presets', () => {
     // The Employees parent is gated on admin_employees; Access Presets is a
-    // child gated on admin_access_presets. Both must be present for it to show.
+    // child gated on admin_access_presets AND manage_presets. All must be
+    // present for it to show.
     const result = filterNavItems(
       [hrEmployees],
       ['admin_employees', 'admin_access_presets'],
-      ['view_hr'],
+      ['view_hr', 'manage_presets'],
     )
     expect(result).toHaveLength(1)
     const items = 'items' in result[0] ? result[0].items : []
@@ -177,7 +188,15 @@ describe('filterNavItems', () => {
   })
 
   it('sidebarData HR > Employees hides Access Presets without admin_access_presets', () => {
-    const result = filterNavItems([hrEmployees], ['admin_employees'], ['view_hr'])
+    const result = filterNavItems([hrEmployees], ['admin_employees'], ['view_hr', 'manage_presets'])
+    const items = 'items' in result[0] ? result[0].items : []
+    expect(items.some(i => i.title === 'Access Presets')).toBe(false)
+  })
+
+  it('sidebarData HR > Employees hides Access Presets without manage_presets', () => {
+    // Feature alone is not enough: the route guard requires manage_presets too,
+    // so showing the link would only lead to a bounce off /hr/presets.
+    const result = filterNavItems([hrEmployees], ['admin_employees', 'admin_access_presets'], ['view_hr'])
     const items = 'items' in result[0] ? result[0].items : []
     expect(items.some(i => i.title === 'Access Presets')).toBe(false)
   })
@@ -309,13 +328,13 @@ describe('filterNavItems', () => {
 
   it('monitoring Analytics shows all children when admin_analytics present', () => {
     const analytics = monitoringGroup.items.find(i => i.title === 'Analytics')!
-    const result = filterNavItems([analytics], ['admin_analytics'])
+    const result = filterNavItems([analytics], ['admin_analytics'], ownPermissions)
     expect(result).toHaveLength(1)
     expect('items' in result[0] && result[0].items).toHaveLength(8)
   })
 
   it('monitoring Analytics hides completely without admin_analytics', () => {
     const analytics = monitoringGroup.items.find(i => i.title === 'Analytics')!
-    expect(filterNavItems([analytics], [])).toHaveLength(0)
+    expect(filterNavItems([analytics], [], ownPermissions)).toHaveLength(0)
   })
 })

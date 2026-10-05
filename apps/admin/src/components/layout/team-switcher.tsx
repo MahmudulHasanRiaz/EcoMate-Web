@@ -8,10 +8,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar'
 import { usePanel, type PanelType } from '@/context/panel-provider'
+import { usePermission } from '@/lib/permissions'
 import { useAuthStore } from '@/stores/auth-store'
 import { useLicenseStore } from '@/stores/license-store'
-
-const EMPTY_PERMISSIONS: string[] = []
 
 type Team = {
   name: string
@@ -26,12 +25,14 @@ export function TeamSwitcher() {
   const { isMobile } = useSidebar()
   const { activePanel, setActivePanel } = usePanel()
   const role = useAuthStore(s => s.auth.user?.role || 'admin')
-  const permissions = useAuthStore(s => s.auth.user?.permissions) ?? EMPTY_PERMISSIONS
+  const canViewHr = usePermission('view_hr')
   const hasFeature = useLicenseStore(s => s.hasFeature)
   const navigate = useNavigate()
 
+  // Both halves are required: the licence gates the HR panel, the permission
+  // gates the data inside it.
   const canAccessHr =
-    role === 'superadmin' || role === 'admin' || (hasFeature('admin_hr') && permissions.includes('view_hr'))
+    role === 'superadmin' || role === 'admin' || (hasFeature('admin_hr') && canViewHr)
 
   const allTeams: Team[] = [
     { name: 'Operational', key: 'operational', plan: 'Orders & Catalog', route: '/op', visible: true, logo: Package },

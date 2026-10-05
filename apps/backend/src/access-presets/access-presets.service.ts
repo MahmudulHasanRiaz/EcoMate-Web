@@ -2,14 +2,19 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { PermissionsService } from '../permissions/permissions.service';
 import { CreateAccessPresetDto } from './dto/create-access-preset.dto';
 import { UpdateAccessPresetDto } from './dto/update-access-preset.dto';
 
 @Injectable()
 export class AccessPresetsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private permissionsService: PermissionsService,
+  ) {}
 
   async findAll(page = 1, perPage = 20, search?: string) {
     const where = search
@@ -59,6 +64,11 @@ export class AccessPresetsService {
     if (existing)
       throw new ConflictException('Access preset name already exists');
 
+    // Fail loudly on unknown keys. They were previously stored verbatim and
+    // then stripped by sanitizePermissions at read time, so a typo produced a
+    // preset that looked granted in the editor but granted nothing at all.
+    this.permissionsService.assertKnownKeys(dto.permissions);
+
     return this.prisma.accessPreset.create({
       data: {
         name: dto.name,
@@ -69,7 +79,7 @@ export class AccessPresetsService {
   }
 
   async update(id: string, dto: UpdateAccessPresetDto) {
-    await this.findOne(id);
+    const current = await this.findOne(id);
 
     if (dto.name) {
       const existing = await this.prisma.accessPreset.findUnique({
@@ -79,6 +89,19 @@ export class AccessPresetsService {
         throw new ConflictException('Access preset name already exists');
     }
 
+    // System presets ship with the product and back the seeded defaults
+    // (including the one assigned to newly hired employees), so they cannot be
+    // renamed or emptied out from under those employees.
+    if (current.isSystem && (dto.name || dto.permissions)) {
+      throw new ForbiddenException(
+        `"${current.name}" is a built-in preset and cannot be edited. Duplicate it to make changes.`,
+      );
+    }
+
+    if (dto.permissions) {
+      this.permissionsService.assertKnownKeys(dto.permissions);
+    }
+
     return this.prisma.accessPreset.update({
       where: { id },
       data: dto,
@@ -86,7 +109,13 @@ export class AccessPresetsService {
   }
 
   async remove(id: string) {
-    await this.findOne(id);
+    const preset = await this.findOne(id);
+
+    if (preset.isSystem) {
+      throw new ForbiddenException(
+        `"${preset.name}" is a built-in preset and cannot be deleted.`,
+      );
+    }
 
     const employeeCount = await this.prisma.employee.count({
       where: { accessPresetId: id },

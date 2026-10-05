@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, beforeEach } from 'vitest'
 import { Route as MonPresetsRoute } from '../routes/_authenticated/mon/users/presets'
 import { Route as OpEmployeesPresetsRoute } from '../routes/_authenticated/op/employees/presets'
 import { Route as HrPresetsRoute } from '../routes/_authenticated/hr/presets'
@@ -18,6 +18,19 @@ import { Route as MonAnalyticsProductsIdRoute } from '../routes/_authenticated/m
 import ProductAnalytics from '../features/business-analytics/products'
 import ProductAnalyticsDetail from '../features/business-analytics/product-detail'
 import { isRedirect } from '@tanstack/react-router'
+import { useAuthStore } from '@/stores/auth-store'
+
+function signInAs(user: { role: string; permissions: string[] } | null) {
+  useAuthStore.setState((s) => ({
+    ...s,
+    auth: {
+      ...s.auth,
+      user: user
+        ? { id: 'u1', email: 'admin@ecomate.com', ...user }
+        : null,
+    },
+  }))
+}
 
 function expectRedirect(fn: ((ctx: any) => unknown) | undefined) {
   expect(fn).toBeDefined()
@@ -42,6 +55,8 @@ function redirectOptions(fn: ((ctx: any) => unknown) | undefined, ctx: any = {})
 }
 
 describe('Access Preset Route Integration', () => {
+  beforeEach(() => signInAs(null))
+
   it('hr/presets route uses AccessPresetsPage component', () => {
     expect(HrPresetsRoute.options.component).toBe(AccessPresetsPage)
   })
@@ -51,6 +66,35 @@ describe('Access Preset Route Integration', () => {
     ['legacy op/employees/presets route', OpEmployeesPresetsRoute],
   ])('%s beforeLoad redirects to /hr/presets', (_label, route) => {
     expectRedirect(route.options.beforeLoad)
+  })
+
+  /*
+   * Hiding the sidebar link is not access control: without a beforeLoad guard a
+   * user who typed /hr/presets got the full editor, and the first thing the
+   * backend would refuse is the save.
+   */
+  it('hr/presets redirects a signed-out visitor', () => {
+    expectRedirect(HrPresetsRoute.options.beforeLoad)
+  })
+
+  it('hr/presets redirects a non-admin role', () => {
+    signInAs({ role: 'manager', permissions: ['manage_presets'] })
+    expectRedirect(HrPresetsRoute.options.beforeLoad)
+  })
+
+  it('hr/presets redirects an admin without manage_presets', () => {
+    signInAs({ role: 'admin', permissions: ['view_hr'] })
+    expectRedirect(HrPresetsRoute.options.beforeLoad)
+  })
+
+  it('hr/presets redirects an admin whose permission list is missing', () => {
+    signInAs({ role: 'superadmin', permissions: undefined as unknown as string[] })
+    expectRedirect(HrPresetsRoute.options.beforeLoad)
+  })
+
+  it('hr/presets lets a superadmin holding manage_presets through', () => {
+    signInAs({ role: 'superadmin', permissions: ['view_hr', 'manage_presets'] })
+    expect(HrPresetsRoute.options.beforeLoad!({} as any)).toBeUndefined()
   })
 })
 

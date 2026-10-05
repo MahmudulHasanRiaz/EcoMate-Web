@@ -1,4 +1,4 @@
-import { useAuthStore } from '@/stores/auth-store'
+import { usePermission } from '@/lib/permissions'
 import { useState } from 'react'
 import {
   Table,
@@ -59,12 +59,12 @@ export function OrderPerformanceTab({
 
   const [drilldownEmp, setDrilldownEmp] = useState<{ id: string; name: string } | null>(null)
   const backfillMut = useBackfillOrderEventsMutation()
-  const permissions = useAuthStore((s) => s.auth.user?.permissions) ?? []
-
   // Mirrors @Roles('superadmin','admin') + @PermissionsAny('manage_hr_settings')
-  // on POST /hr/performance/orders/backfill.
-  const canRunBackfill =
-    (permissions.includes('superadmin') || permissions.includes('admin') || permissions.includes('manage_hr_settings'))
+  // on POST /hr/performance/orders/backfill. The role half of that is enforced
+  // by the API; the permission half — the only part the UI can read — used to
+  // be tested as permissions.includes('superadmin'), i.e. ROLES compared against
+  // permission keys, so it was always false and the button never rendered.
+  const canRunBackfill = usePermission('manage_hr_settings')
 
   const summary = data?.summary
   const employees = data?.data || []

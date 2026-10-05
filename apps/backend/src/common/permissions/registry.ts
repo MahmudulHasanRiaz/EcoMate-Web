@@ -1,3 +1,17 @@
+import {
+  PERMISSION_CATALOGUE,
+  getAllCatalogueKeys,
+} from '../../permissions/permission-catalogue';
+
+/**
+ * Legacy flat registry, retained as the shape existing code imports.
+ *
+ * The permission catalogue (permissions/permission-catalogue.ts) is now the
+ * single source of truth: it generates CRUD keys per module and folds in the
+ * legacy keys below so nothing already granted in a live database is stripped
+ * by `sanitizePermissions`. This object is derived from it rather than
+ * hand-maintained, which is how the two lists drifted apart before.
+ */
 export const PERMISSIONS = {
   DASHBOARD: ['view_analytics', 'view_financial_summary'],
   USER_MGMT: ['view_users', 'create_users', 'edit_users', 'delete_users'],
@@ -39,60 +53,29 @@ export const PERMISSIONS = {
   ],
 } as const;
 
-export type PermissionKey =
-  (typeof PERMISSIONS)[keyof typeof PERMISSIONS][number];
-
+/**
+ * Every grantable key. Union of the legacy groups above and the generated
+ * catalogue, so `sanitizePermissions` accepts both.
+ */
 export function getAllPermissions(): string[] {
-  return Object.values(PERMISSIONS).flat();
+  const legacy = Object.values(PERMISSIONS).flat() as string[];
+  return Array.from(new Set([...legacy, ...getAllCatalogueKeys()]));
 }
 
+/** All keys the system recognises — the authority for write validation. */
+export const ALL_PERMISSION_KEYS: ReadonlySet<string> = new Set(
+  getAllPermissions(),
+);
+
+export function isKnownPermission(key: string): boolean {
+  return ALL_PERMISSION_KEYS.has(key);
+}
+
+/** Human label for a permission key, from the catalogue where known. */
 export function getPermissionLabel(key: string): string {
-  const labels: Record<string, string> = {
-    view_analytics: 'View Analytics',
-    view_financial_summary: 'View Financial Summary',
-    view_users: 'View Users',
-    create_users: 'Create Users',
-    edit_users: 'Edit Users',
-    delete_users: 'Delete Users',
-    view_customers: 'View Customers',
-    edit_customers: 'Edit Customers',
-    delete_customers: 'Delete Customers',
-    view_employees: 'View Employees',
-    create_employees: 'Create Employees',
-    edit_employees: 'Edit Employees',
-    delete_employees: 'Delete Employees',
-    manage_designations: 'Manage Designations',
-    manage_presets: 'Manage Access Presets',
-    create_orders: 'Create Orders',
-    view_orders: 'View Orders',
-    refund_orders: 'Refund Orders',
-    apply_discounts: 'Apply Discounts',
-    view_products: 'View Products',
-    create_products: 'Create Products',
-    edit_products: 'Edit Products',
-    delete_products: 'Delete Products',
-    manage_stock: 'Manage Stock',
-    view_system_settings: 'View System Settings',
-    modify_integrations: 'Modify Integrations',
-    view_hr: 'View HR',
-    manage_employees: 'Manage Employees',
-    manage_payroll: 'Manage Payroll',
-    manage_commissions: 'Manage Commissions',
-    manage_leave: 'Manage Leave',
-    manage_schedule: 'Manage Schedule',
-    manage_attendance: 'Manage Attendance',
-    manage_hr_settings: 'Manage HR Settings',
-    manage_attendance_devices: 'Manage Attendance Devices',
-    manage_attendance_adjustments: 'Manage Attendance Adjustments',
-    view_courier_settlement: 'View Courier Settlement',
-    import_courier_settlement: 'Import Courier Settlement',
-    finalize_courier_settlement: 'Finalize Courier Settlement',
-    adjust_courier_settlement: 'Adjust Courier Settlement',
-  };
-  return (
-    labels[key] ||
-    key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-  );
+  const fromCatalogue = PERMISSION_CATALOGUE.find((e) => e.key === key);
+  if (fromCatalogue) return fromCatalogue.label;
+  return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 export function getModuleLabel(key: string): string {

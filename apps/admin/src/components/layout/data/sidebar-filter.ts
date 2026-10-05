@@ -8,8 +8,11 @@ export function filterNavItems(
   permissions: string[] = [],
 ): NavItem[] {
   const hasFeature = (key: string) => features.includes(EVERYTHING_FEATURE) || features.includes(key)
+  // Only gate on the keys we were actually given: a caller that omits the
+  // permission list is not asserting "no permissions", so items with a
+  // declared `permissions` requirement stay hidden until a list arrives.
   const hasAnyPermission = (keys?: string[]) =>
-    !keys || keys.length === 0 || keys.some((key) => permissions.includes(key))
+    !keys || keys.length === 0 || (Array.isArray(permissions) && keys.some((key) => permissions.includes(key)))
 
   return items.reduce<NavItem[]>((acc, item) => {
     if ('items' in item && item.items) {

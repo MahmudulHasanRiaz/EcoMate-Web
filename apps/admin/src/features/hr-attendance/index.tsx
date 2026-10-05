@@ -6,7 +6,7 @@ import { ThemeSwitch } from '@/components/theme-switch'
 import { GlobalSearchBar } from '@/components/global-search-bar'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { useAuthStore } from '@/stores/auth-store'
+import { usePermission } from '@/lib/permissions'
 import { TodayState } from './components/today-state'
 import { AttendanceTable } from './components/attendance-table'
 import { DailyOverview } from './components/daily-overview'
@@ -27,9 +27,8 @@ const SUB_TABS = [
 ]
 
 export function AttendancePage({ initialTab }: { initialTab?: string }) {
-  const permissions = useAuthStore((s) => s.auth.user?.permissions) ?? []
-  const canManageDevices = permissions.includes('manage_attendance_devices')
-  const canAdjustDays = permissions.includes('manage_attendance_adjustments')
+  const canManageDevices = usePermission('manage_attendance_devices')
+  const canAdjustDays = usePermission('manage_attendance_adjustments')
 
   const [tab, setTab] = useState(SUB_TABS.some((t) => t.value === initialTab) ? initialTab! : 'today')
   const [todayEmployeeId, setTodayEmployeeId] = useState('')

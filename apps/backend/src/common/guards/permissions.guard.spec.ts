@@ -1,6 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Reflector } from '@nestjs/core';
-import { ExecutionContext, ForbiddenException, Controller, Get } from '@nestjs/common';
+import {
+  ExecutionContext,
+  ForbiddenException,
+  Controller,
+  Get,
+} from '@nestjs/common';
 import { PermissionsGuard } from './permissions.guard';
 import {
   Permissions,
@@ -8,6 +13,10 @@ import {
   PERMISSIONS_KEY,
   PERMISSIONS_ANY_KEY,
 } from '../decorators/permissions.decorator';
+import {
+  Public,
+  IS_PUBLIC_KEY,
+} from '../decorators/public.decorator';
 
 @Controller('demo')
 class DemoPermissionsController {
@@ -36,6 +45,26 @@ class DemoPermissionsController {
   }
 }
 
+/**
+ * Mirrors the real `GET /products` shape: a class-level `@Permissions(...)`
+ * opt-in (as the CRUD controllers use) alongside a `@Public()` handler that
+ * serves anonymous storefront traffic.
+ */
+@Controller('demo-storefront')
+@Permissions('view_products')
+class DemoPublicController {
+  @Public()
+  @Get()
+  publicList() {
+    return 'ok';
+  }
+
+  @Get('admin')
+  protectedList() {
+    return 'ok';
+  }
+}
+
 describe('PermissionsGuard', () => {
   let guard: PermissionsGuard;
   let reflector: Reflector;
@@ -60,6 +89,30 @@ describe('PermissionsGuard', () => {
       }),
     }) as any;
 
+  /** Anonymous request — `request.user` is absent, as it is for storefront traffic. */
+  const createAnonymousContext = (
+    handler: (...args: any[]) => any,
+  ): ExecutionContext =>
+    ({
+      getHandler: () => handler,
+      getClass: () => DemoPublicController,
+      switchToHttp: () => ({
+        getRequest: () => ({}),
+      }),
+    }) as any;
+
+  const createClassContext = (
+    permissions: string[] | undefined,
+    handler: (...args: any[]) => any,
+  ): ExecutionContext =>
+    ({
+      getHandler: () => handler,
+      getClass: () => DemoPublicController,
+      switchToHttp: () => ({
+        getRequest: () => ({ user: { permissions } }),
+      }),
+    }) as any;
+
   it('passes when no permission metadata present', () => {
     const result = guard.canActivate(
       createContext(['view_orders'], DemoPermissionsController.prototype.none),
@@ -72,6 +125,55 @@ describe('PermissionsGuard', () => {
       createContext(undefined, DemoPermissionsController.prototype.none),
     );
     expect(result).toBe(true);
+  });
+
+  describe('@Public() short-circuit', () => {
+    it('passes a @Public() handler even when the user lacks the permission', () => {
+      const result = guard.canActivate(
+        createClassContext(
+          [],
+          DemoPublicController.prototype.publicList,
+        ),
+      );
+      expect(result).toBe(true);
+    });
+
+    it('passes a @Public() handler for a fully anonymous request', () => {
+      const result = guard.canActivate(
+        createAnonymousContext(DemoPublicController.prototype.publicList),
+      );
+      expect(result).toBe(true);
+    });
+
+    it('still 403s a non-public handler on the same controller', () => {
+      expect(() =>
+        guard.canActivate(
+          createClassContext(
+            ['view_orders'],
+            DemoPublicController.prototype.protectedList,
+          ),
+        ),
+      ).toThrow(ForbiddenException);
+    });
+
+    it('still allows a non-public handler when the permission is held', () => {
+      const result = guard.canActivate(
+        createClassContext(
+          ['view_products'],
+          DemoPublicController.prototype.protectedList,
+        ),
+      );
+      expect(result).toBe(true);
+    });
+
+    it('does not skip the permission check for a non-public route', () => {
+      expect(
+        reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+          DemoPublicController.prototype.protectedList,
+          DemoPublicController,
+        ]),
+      ).toBeUndefined();
+    });
   });
 
   describe('ALL-mode @Permissions', () => {

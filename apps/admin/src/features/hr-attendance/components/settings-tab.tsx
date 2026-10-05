@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Loader2, RotateCcw, Lock } from 'lucide-react'
-import { useAuthStore } from '@/stores/auth-store'
+import { usePermission } from '@/lib/permissions'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
@@ -30,8 +30,7 @@ const MODE_OPTIONS: { value: AttendanceMode; title: string; description: string 
 ]
 
 export function SettingsTab() {
-  const permissions = useAuthStore((s) => s.auth.user?.permissions) ?? []
-  const canManage = permissions.includes('manage_hr_settings')
+  const canManage = usePermission('manage_hr_settings')
 
   const { data, isLoading, isError, refetch } = useAttendanceSettingsQuery()
   const updateMut = useUpdateAttendanceSettingsMutation()

@@ -1,11 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '@/stores/auth-store'
+import { hasPermission, usePermission } from '@/lib/permissions'
 import { hrApi } from './api'
 
 /** The dashboard renders salary figures only for holders of manage_payroll. */
 export function hasPayrollPermission(): boolean {
-  const permissions = useAuthStore.getState().auth.user?.permissions ?? []
-  return permissions.includes('manage_payroll')
+  return hasPermission(useAuthStore.getState().auth.user?.permissions, 'manage_payroll')
 }
 
 function useHrDashboardQuery(enabled: boolean) {
@@ -29,5 +29,8 @@ export function useHrOverviewQuery() {
  * server-side rather than relying on the UI to hide them.
  */
 export function useHrWorkforceOverviewQuery() {
-  return useHrDashboardQuery(!hasPayrollPermission())
+  // Subscribed (not a getState() read) so a user whose permissions change while
+  // the dashboard is open lands on the workforce endpoint immediately.
+  const canViewPayroll = usePermission('manage_payroll')
+  return useHrDashboardQuery(!canViewPayroll)
 }

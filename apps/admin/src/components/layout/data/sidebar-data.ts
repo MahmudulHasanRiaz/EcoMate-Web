@@ -140,7 +140,7 @@ export const sidebarData: SidebarData = {
           items: [
             { title: 'All Employees', url: '/hr/employees' },
             { title: 'Create Employee', url: '/hr/employees/create' },
-            { title: 'Access Presets', url: '/hr/presets', feature: 'admin_access_presets' },
+            { title: 'Access Presets', url: '/hr/presets', feature: 'admin_access_presets', permissions: ['manage_presets'] },
             { title: 'Departments', url: '/hr/employees/departments', feature: 'admin_employees' },
             { title: 'Designations', url: '/hr/employees/designations' },
           ],

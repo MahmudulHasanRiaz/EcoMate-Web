@@ -9,6 +9,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { AccessPresetsService } from './access-presets.service';
 import { CreateAccessPresetDto } from './dto/create-access-preset.dto';
@@ -19,13 +20,22 @@ import { UpdateAccessPresetDto } from './dto/update-access-preset.dto';
 export class AccessPresetsController {
   constructor(private readonly accessPresetsService: AccessPresetsService) {}
 
+  /**
+   * `@Roles('superadmin', 'admin')` is deliberately kept on every handler even
+   * though `manage_presets` is now enforced as well. RolesGuard runs before
+   * PermissionsGuard in the global chain, so a preset that grants
+   * `manage_presets` still cannot hand edit rights over the presets that
+   * granted it — without the role gate, a preset could escalate itself.
+   */
   @Roles('superadmin', 'admin')
+  @Permissions('manage_presets')
   @Post()
   async create(@Body() dto: CreateAccessPresetDto) {
     return this.accessPresetsService.create(dto);
   }
 
   @Roles('superadmin', 'admin')
+  @Permissions('manage_presets')
   @Get()
   async findAll(
     @Query('page') page?: string,
@@ -38,18 +48,21 @@ export class AccessPresetsController {
   }
 
   @Roles('superadmin', 'admin')
+  @Permissions('manage_presets')
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.accessPresetsService.findOne(id);
   }
 
   @Roles('superadmin', 'admin')
+  @Permissions('manage_presets')
   @Put(':id')
   async update(@Param('id') id: string, @Body() dto: UpdateAccessPresetDto) {
     return this.accessPresetsService.update(id, dto);
   }
 
   @Roles('superadmin', 'admin')
+  @Permissions('manage_presets')
   @Delete(':id')
   async remove(@Param('id') id: string) {
     return this.accessPresetsService.remove(id);
