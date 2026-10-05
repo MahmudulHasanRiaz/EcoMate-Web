@@ -4,12 +4,40 @@ import { AuthService } from './auth.service';
 import { SecurityService } from '../security/security.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { getAllPermissions } from '../common/permissions/registry';
+import { computeEffectivePermissions } from '../common/permissions/effective-permissions';
 
 describe('AuthController — me() permission fallback', () => {
   let controller: AuthController;
   let prisma: PrismaService;
 
-  const mockAuthService = { me: jest.fn() };
+  // The real permission computation now lives in AuthService; the mock
+  // mirrors it against the prisma mock so the fallback behaviour the
+  // controller used to implement itself stays under test.
+  const mockAuthService = {
+    me: jest.fn(),
+    adminLogin: jest.fn(),
+    computePermissionsForUser: jest.fn(async (user: any) => {
+      const role = user.role || 'customer';
+      if (role === 'superadmin' || role === 'admin') {
+        return getAllPermissions();
+      }
+      if (role === 'customer' || !user.betterAuthUserId) {
+        return [];
+      }
+      const baUser = await prisma!.betterAuthUser.findUnique({
+        where: { id: user.betterAuthUserId },
+        select: {
+          override_permissions: true,
+          employee: { include: { accessPreset: true } },
+        },
+      });
+      return computeEffectivePermissions({
+        role,
+        employeeLink: baUser?.employee ?? null,
+        overridePermissions: baUser?.override_permissions,
+      });
+    }),
+  };
   const mockSecurity = { recordFailedLogin: jest.fn() };
 
   beforeEach(async () => {
@@ -126,6 +154,36 @@ describe('AuthController — me() permission fallback', () => {
       id: 'user-1',
       firstName: 'Jane',
       permissions: getAllPermissions(),
+    });
+  });
+
+  it('admin-login delegates to authService.adminLogin and sets the refresh cookie', async () => {
+    mockAuthService.adminLogin.mockResolvedValue({
+      accessToken: 'at',
+      refreshToken: 'rt',
+      user: { id: 'user-1', role: 'admin', permissions: [] },
+    });
+    const mockRes = { cookie: jest.fn() } as any;
+    const mockReq = { ip: '203.0.113.9' };
+
+    const result = await controller.adminLogin(
+      { email: 'admin@x.com', password: 'secret123' },
+      mockRes,
+      mockReq,
+    );
+
+    expect(mockAuthService.adminLogin).toHaveBeenCalledWith({
+      email: 'admin@x.com',
+      password: 'secret123',
+    });
+    expect(mockRes.cookie).toHaveBeenCalledWith(
+      'refreshToken',
+      'rt',
+      expect.objectContaining({ httpOnly: true }),
+    );
+    expect(result).toEqual({
+      accessToken: 'at',
+      user: { id: 'user-1', role: 'admin', permissions: [] },
     });
   });
 });

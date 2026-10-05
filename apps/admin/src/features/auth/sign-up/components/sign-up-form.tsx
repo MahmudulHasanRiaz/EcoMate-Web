@@ -5,7 +5,6 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useNavigate } from '@tanstack/react-router'
 import { Loader2, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
-import { useAuthStore } from '@/stores/auth-store'
 import { apiClient } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -44,7 +43,6 @@ export function SignUpForm({
 }: React.HTMLAttributes<HTMLFormElement>) {
   const [isLoading, setIsLoading] = useState(false)
   const navigate = useNavigate()
-  const { auth } = useAuthStore()
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -63,7 +61,7 @@ export function SignUpForm({
     setIsLoading(true)
 
     try {
-      const response = await apiClient.post('/auth/register', {
+      await apiClient.post('/auth/register', {
         firstName: data.firstName,
         lastName: data.lastName,
         username: data.username,
@@ -72,11 +70,11 @@ export function SignUpForm({
         password: data.password,
       })
 
-      auth.setUser(response.data.user)
-      auth.setAccessToken(response.data.accessToken)
-
-      navigate({ to: '/', replace: true })
-      toast.success(`Account created successfully!`)
+      // Registration always creates a CUSTOMER account. Do not store the
+      // returned session — a customer must never land in the admin shell.
+      // Send them to sign-in with an explanatory banner instead.
+      navigate({ to: '/sign-in', search: { registered: '1' }, replace: true })
+      toast.success('Account created successfully!')
     } catch (error: any) {
       const message =
         error.response?.data?.message || 'Registration failed'

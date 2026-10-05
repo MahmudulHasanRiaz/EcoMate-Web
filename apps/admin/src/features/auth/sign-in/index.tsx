@@ -12,7 +12,7 @@ import { AuthLayout } from '../auth-layout'
 import { UserAuthForm } from './components/user-auth-form'
 
 export function SignIn() {
-  const { redirect, expired } = useSearch({ from: '/(auth)/sign-in' })
+  const { redirect, expired, customer, registered } = useSearch({ from: '/(auth)/sign-in' })
 
   return (
     <AuthLayout>
@@ -39,6 +39,31 @@ export function SignIn() {
             >
               <CircleAlert className='h-4 w-4 mt-0.5 shrink-0' />
               <span>Your session has expired. Please sign in again.</span>
+            </div>
+          )}
+          {customer === '1' && (
+            <div
+              role='alert'
+              className='mb-4 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
+            >
+              <CircleAlert className='h-4 w-4 mt-0.5 shrink-0' />
+              <span>
+                You are signed in with a customer account. Customer accounts
+                cannot access the admin application.
+              </span>
+            </div>
+          )}
+          {registered === '1' && (
+            <div
+              role='status'
+              className='mb-4 flex items-start gap-2 rounded-md border border-green-300 bg-green-50 p-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-950/40 dark:text-green-300'
+            >
+              <CircleAlert className='h-4 w-4 mt-0.5 shrink-0' />
+              <span>
+                Account created successfully! Your account is a customer
+                account — sign in to the storefront to shop. Customer accounts
+                cannot access the admin application.
+              </span>
             </div>
           )}
           <UserAuthForm redirectTo={redirect} />

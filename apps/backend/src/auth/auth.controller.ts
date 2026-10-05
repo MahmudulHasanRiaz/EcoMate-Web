@@ -9,6 +9,7 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  ForbiddenException,
 } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 import { AuthService } from './auth.service';
@@ -25,16 +26,12 @@ import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
 import { SecurityService } from '../security/security.service';
-import { computeEffectivePermissions } from '../common/permissions/effective-permissions';
-import { getAllPermissions } from '../common/permissions/registry';
-import { PrismaService } from '../prisma/prisma.service';
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly security: SecurityService,
-    private readonly prisma: PrismaService,
   ) {}
 
   @Public()
@@ -83,6 +80,34 @@ export class AuthController {
 
   @RateLimitPolicy('auth')
   @Public()
+  @Post('admin-login')
+  @HttpCode(HttpStatus.OK)
+  async adminLogin(
+    @Body() dto: LoginDto,
+    @Res({ passthrough: true }) res: FastifyReply,
+    @Req() req: any,
+  ) {
+    try {
+      const result = await this.authService.adminLogin(dto);
+      res.cookie('refreshToken', result.refreshToken, {
+        httpOnly: true,
+        secure: process.env['NODE_ENV'] === 'production',
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        path: '/api/auth/',
+      });
+      return { accessToken: result.accessToken, user: result.user };
+    } catch (error) {
+      const ip = req?.ip || '';
+      if (ip && !(error instanceof ForbiddenException)) {
+        this.security.recordFailedLogin(ip);
+      }
+      throw error;
+    }
+  }
+
+  @RateLimitPolicy('auth')
+  @Public()
   @UseGuards(RefreshJwtGuard)
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
@@ -124,34 +149,12 @@ export class AuthController {
   async me(@CurrentUser() user: any) {
     const profile = await this.authService.me(user.userId);
     // Include permissions from BA customSession (available on BA path)
-    // or compute from role for JWT path
+    // or compute for the JWT path. Shared computation lives in AuthService.
     let permissions = user.permissions;
     if (!permissions || !Array.isArray(permissions)) {
-      permissions = await this.loadEffectivePermissions(user);
+      permissions = await this.authService.computePermissionsForUser(user);
     }
     return { ...profile, permissions };
-  }
-
-  private async loadEffectivePermissions(user: any): Promise<string[]> {
-    const role = user.role || 'customer';
-    if (role === 'superadmin' || role === 'admin') {
-      return getAllPermissions();
-    }
-    if (role === 'customer' || !user.betterAuthUserId) {
-      return [];
-    }
-    const baUser = await this.prisma.betterAuthUser.findUnique({
-      where: { id: user.betterAuthUserId },
-      select: {
-        override_permissions: true,
-        employee: { include: { accessPreset: true } },
-      },
-    });
-    return computeEffectivePermissions({
-      role,
-      employeeLink: baUser?.employee ?? null,
-      overridePermissions: baUser?.override_permissions,
-    });
   }
 
   @RateLimitPolicy('auth')

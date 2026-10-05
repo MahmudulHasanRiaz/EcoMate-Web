@@ -74,6 +74,9 @@ describe('AuthService', () => {
             employee: {
               findFirst: jest.fn(),
             },
+            betterAuthUser: {
+              findUnique: jest.fn(),
+            },
             userSettings: {
               create: jest.fn(),
             },
@@ -319,6 +322,67 @@ describe('AuthService', () => {
       );
       await expect(service.login(loginDto)).rejects.toThrow(
         'Invalid email or password',
+      );
+    });
+  });
+
+  describe('adminLogin', () => {
+    const loginDto = { email: 'test@example.com', password: 'password123' };
+
+    function mockSuccessfulLogin(user: any) {
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue(user);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      (jwtService.sign as jest.Mock)
+        .mockReturnValueOnce('access-token-mock')
+        .mockReturnValueOnce('refresh-token-mock');
+      (prisma.refreshToken.create as jest.Mock).mockResolvedValue(
+        mockTokenRecord,
+      );
+    }
+
+    it('rejects a customer account with the exact message', async () => {
+      mockSuccessfulLogin(mockUser); // mockUser.role === 'customer'
+      (prisma.refreshToken.delete as jest.Mock).mockResolvedValue(
+        mockTokenRecord,
+      );
+
+      await expect(service.adminLogin(loginDto)).rejects.toThrow(
+        'You are signed in with a customer account. Customer accounts cannot access the admin application.',
+      );
+      // The session minted by login() is revoked so no usable credentials leak.
+      expect(prisma.refreshToken.delete).toHaveBeenCalledWith({
+        where: { token: 'refresh-token-mock' },
+      });
+    });
+
+    it('accepts a staff account and returns computed permissions', async () => {
+      const cashier = { ...mockUser, role: 'cashier', betterAuthUserId: 'ba-1' };
+      mockSuccessfulLogin(cashier);
+      (prisma.betterAuthUser.findUnique as jest.Mock).mockResolvedValue({
+        override_permissions: [],
+        employee: {
+          accessPreset: { permissions: ['view_orders', 'create_orders'] },
+        },
+      });
+
+      const result = await service.adminLogin(loginDto);
+
+      expect(result.user.role).toBe('cashier');
+      expect(result.user.permissions).toEqual([
+        'view_orders',
+        'create_orders',
+      ]);
+    });
+
+    it('returns all permissions for an admin account', async () => {
+      const admin = { ...mockUser, role: 'admin', betterAuthUserId: null };
+      mockSuccessfulLogin(admin);
+
+      const result = await service.adminLogin(loginDto);
+
+      expect(result.user.role).toBe('admin');
+      expect(result.user.permissions).toEqual(
+        expect.arrayContaining(['view_orders', 'manage_payroll']),
       );
     });
   });

@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { Loader2, LogIn } from 'lucide-react'
+import { Loader2, LogIn, CircleAlert } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/auth-store'
 import axios from 'axios'
@@ -40,6 +40,7 @@ export function UserAuthForm({
   ...props
 }: UserAuthFormProps) {
   const [isLoading, setIsLoading] = useState(false)
+  const [customerBlocked, setCustomerBlocked] = useState('')
   const navigate = useNavigate()
   const { auth } = useAuthStore()
 
@@ -53,6 +54,7 @@ export function UserAuthForm({
 
   async function onSubmit(data: z.infer<typeof formSchema>) {
     setIsLoading(true)
+    setCustomerBlocked('')
 
     const API_URL = import.meta.env.VITE_API_URL || '/api'
 
@@ -60,8 +62,10 @@ export function UserAuthForm({
       // Retry on network errors (ECONNREFUSED during backend startup race)
       for (let attempt = 0; attempt <= 3; attempt++) {
         try {
+          // admin-login rejects customer accounts with a clear message —
+          // customers sign in to the storefront, never into the admin app.
           const response = await axios.post(
-            `${API_URL}/auth/login`,
+            `${API_URL}/auth/admin-login`,
             { email: data.email, password: data.password },
             { withCredentials: true, headers: { 'Content-Type': 'application/json' } },
           )
@@ -86,13 +90,18 @@ export function UserAuthForm({
         }
       }
     } catch (error: any) {
+      const status = error.response?.status
       let message = error.response?.data?.message
       if (!message) {
         message = error.response
           ? `Server error (${error.response.status})`
           : 'Network error. Please check your connection.'
       }
-      toast.error(message)
+      if (status === 403 && message.toLowerCase().includes('customer account')) {
+        setCustomerBlocked(message)
+      } else {
+        toast.error(message)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -105,6 +114,15 @@ export function UserAuthForm({
         className={cn('grid gap-3', className)}
         {...props}
       >
+        {customerBlocked && (
+          <div
+            role='alert'
+            className='flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
+          >
+            <CircleAlert className='h-4 w-4 mt-0.5 shrink-0' />
+            <span>{customerBlocked}</span>
+          </div>
+        )}
         <FormField
           control={form.control}
           name='email'

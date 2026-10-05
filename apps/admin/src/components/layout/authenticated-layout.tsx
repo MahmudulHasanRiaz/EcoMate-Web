@@ -27,9 +27,29 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
 
   useEffect(() => {
     if (!accessToken) {
-      navigate({ to: '/sign-in', replace: true })
+      // A customer session bounce sets this marker so the plain sign-in
+      // redirect (which fires when the token is cleared) carries the
+      // explanatory message instead of silently dropping it.
+      const bounce = sessionStorage.getItem('admin_customer_bounce')
+      sessionStorage.removeItem('admin_customer_bounce')
+      navigate({
+        to: '/sign-in',
+        ...(bounce ? { search: { customer: '1' } as const } : {}),
+        replace: true,
+      })
     }
   }, [accessToken, navigate])
+
+  // A customer account must never use the admin app. Any customer session —
+  // however it got here — is cleared and bounced to sign-in with an
+  // explanation.
+  useEffect(() => {
+    if (user?.role !== 'customer') return
+    const { reset } = useAuthStore.getState().auth
+    sessionStorage.setItem('admin_customer_bounce', '1')
+    reset()
+    navigate({ to: '/sign-in', search: { customer: '1' }, replace: true })
+  }, [user?.role, navigate])
 
   useEffect(() => {
     if (!accessToken) return

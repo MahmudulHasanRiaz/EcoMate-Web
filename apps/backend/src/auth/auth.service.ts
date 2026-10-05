@@ -3,6 +3,7 @@ import {
   UnauthorizedException,
   ConflictException,
   BadRequestException,
+  ForbiddenException,
   Logger,
   OnModuleDestroy,
   OnModuleInit,
@@ -18,6 +19,10 @@ import { RegisterDto } from './dto/register.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { normalizePhone } from '../common/utils/phone-utils';
+import {
+  computeEffectivePermissions,
+} from '../common/permissions/effective-permissions';
+import { getAllPermissions } from '../common/permissions/registry';
 import * as bcrypt from 'bcryptjs';
 import ms from 'ms';
 import type { StringValue } from 'ms';
@@ -263,6 +268,70 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     }
 
     return tokens;
+  }
+
+  /**
+   * Login for the ADMIN application only. Customer accounts are rejected
+   * here with a clear message — a customer can still sign in to the
+   * storefront through the universal /auth/login, but must never land in
+   * the admin shell.
+   *
+   * The response also carries the computed permissions, so the admin layout
+   * can gate menus immediately instead of waiting for the /auth/me round-trip.
+   */
+  async adminLogin(dto: LoginDto) {
+    const result = await this.login(dto);
+
+    if (result.user.role === 'customer') {
+      // login() already minted a refresh token for this session — revoke it so
+      // the rejected customer is left with no usable credentials.
+      await this.prisma.refreshToken
+        .delete({ where: { token: result.refreshToken } })
+        .catch(() => null);
+      throw new ForbiddenException(
+        'You are signed in with a customer account. Customer accounts cannot access the admin application.',
+      );
+    }
+
+    const profile = await this.prisma.userProfile.findUnique({
+      where: { id: result.user.id },
+    });
+    const permissions = profile
+      ? await this.computePermissionsForUser(profile)
+      : [];
+
+    return { ...result, user: { ...result.user, permissions } };
+  }
+
+  /**
+   * Single source of truth for permission computation on the JWT path.
+   * Mirrors DualModeAuthGuard.loadPermissionsFor so the login response and
+   * every request agree. (The controller previously carried its own copy of
+   * this logic — consolidated here.)
+   */
+  async computePermissionsForUser(user: {
+    role?: string | null;
+    betterAuthUserId?: string | null;
+  }): Promise<string[]> {
+    const role = user.role || 'customer';
+    if (role === 'superadmin' || role === 'admin') {
+      return getAllPermissions();
+    }
+    if (role === 'customer' || !user.betterAuthUserId) {
+      return [];
+    }
+    const baUser = await this.prisma.betterAuthUser.findUnique({
+      where: { id: user.betterAuthUserId },
+      select: {
+        override_permissions: true,
+        employee: { include: { accessPreset: true } },
+      },
+    });
+    return computeEffectivePermissions({
+      role,
+      employeeLink: baUser?.employee ?? null,
+      overridePermissions: baUser?.override_permissions,
+    });
   }
 
   async refresh(userId: string, refreshToken: string) {

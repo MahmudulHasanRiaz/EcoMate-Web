@@ -141,4 +141,34 @@ describe('UserAuthForm', () => {
       })
     )
   })
+
+  it('shows the customer-account alert and never sets a session on 403', async () => {
+    vi.clearAllMocks()
+    const axiosModule = await import('axios')
+    const postMock = vi.mocked(axiosModule.default.post)
+    postMock.mockRejectedValue({
+      response: {
+        status: 403,
+        data: {
+          message:
+            'You are signed in with a customer account. Customer accounts cannot access the admin application.',
+        },
+      },
+    })
+
+    const screen = await render(<UserAuthForm />)
+    await userEvent.fill(screen.getByRole('textbox', { name: /Email/i }), 'cust@b.com')
+    await userEvent.fill(screen.getByLabelText(/^Password$/i), '1234567')
+
+    await userEvent.click(screen.getByRole('button', { name: /^Sign in$/i }))
+
+    await expect
+      .element(
+        screen.getByText(/Customer accounts cannot access the admin application/i)
+      )
+      .toBeInTheDocument()
+    expect(setUserMock).not.toHaveBeenCalled()
+    expect(setAccessTokenMock).not.toHaveBeenCalled()
+    expect(navigate).not.toHaveBeenCalled()
+  })
 })
