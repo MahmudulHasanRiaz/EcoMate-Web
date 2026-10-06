@@ -34,7 +34,7 @@ export interface CourierReport {
   schemaVersion?: number;
 }
 
-const REPORT_SCHEMA_VERSION = 2;
+const REPORT_SCHEMA_VERSION = 3;
 const CALIBRATION_KEY = 'pathao_rating_calibration';
 // Last-resort normalized scale when Pathao has no counts AND no other courier
 // has cached history for the phone yet. Real production data (another courier's
@@ -167,8 +167,11 @@ export class CourierCustomerHistoryService {
     const r = raw as CourierReport | null | undefined;
     if (!r) return null;
     if (courier === 'pathao' && r.schemaVersion !== REPORT_SCHEMA_VERSION) {
-      // Legacy Pathao rows synthesized fake counts from an unknown default rating
-      // (50% success) — they carry no source metadata, so they must be refetched.
+      // Legacy Pathao rows predate actual-counts-first (v3): v1 synthesized
+      // fake counts from an unknown default rating (50% success) and v2 holds
+      // rating-calibrated estimates that Pathao's real quantities (when the
+      // merchant API reports them) must replace — both carry no usable actual
+      // counts, so they must be refetched.
       return null;
     }
     return {
@@ -325,6 +328,43 @@ export class CourierCustomerHistoryService {
     }
   }
 
+  /**
+   * Actual Pathao quantities (merchant `POST /api/v1/user/success` v2 shape):
+   * `data.customer = { total_delivery, successful_delivery }` gated by
+   * `data.show_count`. Returns a validated { total, success } pair, or null
+   * when Pathao reports no usable quantities (then the caller falls back to
+   * the rating-based smart strategy, or to no report when no rating either).
+   * `show_count === false` means Pathao itself hides the counts, so the
+   * numbers are treated as absent even when present in the payload.
+   */
+  private extractPathaoActual(d: Record<string, unknown>): { total: number; success: number } | null {
+    if ((d as any)?.show_count === false) return null;
+    const customer = (d as any)?.customer as Record<string, unknown> | undefined;
+    const num = (v: unknown): number | null => {
+      if (typeof v === 'boolean' || v == null || v === '') return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+    const total =
+      num(customer?.total_delivery) ??
+      num(customer?.total_orders) ??
+      num(customer?.total) ??
+      num((d as any)?.total_orders) ??
+      num((d as any)?.totalOrders) ??
+      num((d as any)?.total_delivery) ??
+      num((d as any)?.total);
+    const success =
+      num(customer?.successful_delivery) ??
+      num(customer?.success_delivery) ??
+      num(customer?.successful_orders) ??
+      num(customer?.delivered) ??
+      num((d as any)?.successful_delivery) ??
+      num((d as any)?.successful_orders);
+    if (total == null || success == null) return null;
+    if (total <= 0 || success < 0 || success > total) return null;
+    return { total, success };
+  }
+
   private async fetchPathaoViaMerchant(
     phone: string,
     creds: { username: string; password: string },
@@ -370,7 +410,35 @@ export class CourierCustomerHistoryService {
     if (level === 'unknown' && rating) {
       this.logger.warn(`Pathao history: unrecognized rating value "${rating}" for ${phone}`);
     }
-    const totalOrders = (d as any)?.total_orders ?? (d as any)?.totalOrders ?? (d as any)?.total_delivery ?? (d as any)?.total ?? null;
+
+    // Actual counts first: when Pathao reports real quantities, show them
+    // verbatim — the rating-calibrated smart strategy below is only a fallback
+    // for rating-without-quantities, never a replacement for real numbers.
+    const actual = this.extractPathaoActual(d);
+    if (actual) {
+      return {
+        success: actual.success,
+        cancel: actual.total - actual.success,
+        total: actual.total,
+        successRatio: Math.round((actual.success / actual.total) * 10000) / 100,
+        source: 'actual' as const,
+        rating,
+        schemaVersion: REPORT_SCHEMA_VERSION,
+      };
+    }
+
+    // Pathao's own total (legacy top-level keys, or the v2 nested customer
+    // object without a usable success split) scales the normalized estimate.
+    // Hidden counts (show_count === false) are excluded — they fall through to
+    // the cross-courier smart scale instead.
+    const countsVisible = (d as any)?.show_count !== false;
+    const customer = (d as any)?.customer as Record<string, unknown> | undefined;
+    const totalOrders =
+      (d as any)?.total_orders ??
+      (d as any)?.totalOrders ??
+      (d as any)?.total_delivery ??
+      (d as any)?.total ??
+      (countsVisible ? (customer?.total_delivery ?? customer?.total_orders ?? customer?.total ?? null) : null);
 
     if (level !== 'unknown') {
       // Rating-based response (Pathao's current format — counts are 0/absent).

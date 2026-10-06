@@ -112,7 +112,7 @@ describe('CourierCustomerHistoryService', () => {
         successRatio: null,
         source: 'new',
         rating: 'New Customer',
-        schemaVersion: 2,
+        schemaVersion: 3,
       });
     });
 
@@ -175,7 +175,7 @@ describe('CourierCustomerHistoryService', () => {
         successRatio: null,
         source: 'new',
         rating: 'new_customer',
-        schemaVersion: 2,
+        schemaVersion: 3,
       });
     });
 
@@ -305,10 +305,106 @@ describe('CourierCustomerHistoryService', () => {
     });
   });
 
+  describe('Pathao actual counts first (v2 customer object)', () => {
+    beforeEach(async () => await makeService());
+
+    function mockV2(
+      rating: string | null,
+      customer: Record<string, unknown> | undefined,
+      showCount: boolean | undefined = true,
+    ) {
+      mockPathaoApi(globalFetchSpy, rating, null, {
+        ...(showCount === undefined ? {} : { show_count: showCount }),
+        ...(customer === undefined ? {} : { customer }),
+      });
+    }
+
+    it('prefers actual counts over rating calibration when the customer object is present', async () => {
+      mockV2('good_customer', { total_delivery: 9, successful_delivery: 7 });
+      const res = await service.getCustomerHistory('pathao', PHONE);
+      expect(res.report).toMatchObject({
+        success: 7,
+        cancel: 2,
+        total: 9,
+        source: 'actual',
+        rating: 'good_customer',
+      });
+    });
+
+    it('computes the ratio from actual counts, not the calibrated 80% (7/9 = 77.78)', async () => {
+      mockV2('good_customer', { total_delivery: 9, successful_delivery: 7 });
+      const res = await service.getCustomerHistory('pathao', PHONE);
+      expect(res.report!.successRatio).toBeCloseTo(77.78, 2);
+      expect(res.report!.successRatio).not.toBe(80);
+    });
+
+    it('show_count=false falls back to the normalized smart strategy', async () => {
+      mockV2('good_customer', { total_delivery: 9, successful_delivery: 7 }, false);
+      const res = await service.getCustomerHistory('pathao', PHONE);
+      expect(res.report).toMatchObject({
+        success: 80,
+        cancel: 20,
+        total: 100,
+        successRatio: 80,
+        source: 'normalized',
+      });
+    });
+
+    it('customer object without successful_delivery falls back to normalized on Pathao own total', async () => {
+      mockV2('good_customer', { total_delivery: 9 });
+      const res = await service.getCustomerHistory('pathao', PHONE);
+      expect(res.report).toMatchObject({
+        total: 9,
+        successRatio: 80,
+        source: 'normalized',
+      });
+    });
+
+    it('success exceeding total is invalid and falls back to normalized', async () => {
+      mockV2('good_customer', { total_delivery: 5, successful_delivery: 9 });
+      const res = await service.getCustomerHistory('pathao', PHONE);
+      expect(res.report!.source).toBe('normalized');
+      expect(res.report!.successRatio).toBe(80);
+    });
+
+    it('actual counts with no rating are still actual (never neutral when a real split exists)', async () => {
+      mockV2('', { total_delivery: 9, successful_delivery: 7 });
+      const res = await service.getCustomerHistory('pathao', PHONE);
+      expect(res.report).toMatchObject({
+        success: 7,
+        cancel: 2,
+        total: 9,
+        source: 'actual',
+      });
+      expect(res.report!.successRatio).toBeCloseTo(77.78, 2);
+    });
+
+    it('empty customer object with no rating yields no report', async () => {
+      mockV2('', {});
+      const res = await service.getCustomerHistory('pathao', PHONE);
+      expect(res.report).toBeNull();
+    });
+
+    it('refetches schema-v2 cached pathao rows (normalized-only era) under actual-counts-first', async () => {
+      neverResolvedCache(prisma, {
+        courier: 'pathao',
+        phone: NOR_PHONE,
+        report: { success: 80, cancel: 20, total: 100, successRatio: 80, source: 'normalized', schemaVersion: 2 },
+        courierStatus: 'fresh',
+        fetchedAt: new Date(),
+        expiresAt: new Date(Date.now() + 100000),
+      });
+      mockV2('good_customer', { total_delivery: 9, successful_delivery: 7 });
+      const res = await service.getCustomerHistory('pathao', PHONE);
+      expect(globalFetchSpy).toHaveBeenCalled();
+      expect(res.report).toMatchObject({ success: 7, total: 9, source: 'actual' });
+    });
+  });
+
   describe('Cache handling and schema versioning', () => {
     beforeEach(async () => await makeService());
 
-    it('serves a fresh schema-v2 cached pathao report without refetching', async () => {
+    it('serves a fresh schema-v3 cached pathao report without refetching', async () => {
       neverResolvedCache(prisma, {
         courier: 'pathao',
         phone: NOR_PHONE,
@@ -319,7 +415,7 @@ describe('CourierCustomerHistoryService', () => {
           successRatio: 90,
           source: 'normalized',
           rating: 'Excellent',
-          schemaVersion: 2,
+          schemaVersion: 3,
         },
         courierStatus: 'fresh',
         fetchedAt: new Date(),
@@ -380,7 +476,7 @@ describe('CourierCustomerHistoryService', () => {
       expect(prisma.courierReportCache.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           create: expect.objectContaining({
-            report: expect.objectContaining({ schemaVersion: 2, source: 'actual' }),
+            report: expect.objectContaining({ schemaVersion: 3, source: 'actual' }),
           }),
         }),
       );
@@ -391,7 +487,7 @@ describe('CourierCustomerHistoryService', () => {
       neverResolvedCache(prisma, {
         courier: 'pathao',
         phone: NOR_PHONE,
-        report: { success: 5, cancel: 5, total: 10, successRatio: 50, source: 'normalized', schemaVersion: 2 },
+        report: { success: 5, cancel: 5, total: 10, successRatio: 50, source: 'normalized', schemaVersion: 3 },
         courierStatus: 'fresh',
         fetchedAt: oldFetched,
         expiresAt: new Date(Date.now() + 100000),
@@ -414,7 +510,7 @@ describe('CourierCustomerHistoryService', () => {
       neverResolvedCache(prisma, {
         courier: 'pathao',
         phone: NOR_PHONE,
-        report: { success: 18, cancel: 2, total: 20, successRatio: 90, source: 'normalized', schemaVersion: 2 },
+        report: { success: 18, cancel: 2, total: 20, successRatio: 90, source: 'normalized', schemaVersion: 3 },
         courierStatus: 'fresh',
         fetchedAt: oldFetched,
         expiresAt: new Date(Date.now() + 100000),
