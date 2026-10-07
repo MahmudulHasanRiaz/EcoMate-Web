@@ -18,6 +18,7 @@ export interface OrderResponse {
   assignee?: { id: string; firstName: string; lastName: string } | null;
   guestName?: string | null;
   guestPhone?: string | null;
+  secondaryPhone?: string | null;
   viewToken?: string | null;
   paymentMethod?: string | null;
   paymentMode?: string | null;

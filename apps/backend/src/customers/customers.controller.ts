@@ -40,6 +40,12 @@ export class CustomersController {
   }
 
   @Roles('superadmin', 'admin', 'employee')
+  @Get(':id/addresses')
+  async getAddresses(@Param('id') id: string) {
+    return this.svc.getAddresses(id);
+  }
+
+  @Roles('superadmin', 'admin', 'employee')
   @Get(':id')
   async findOne(@Param('id') id: string) {
     const result = await this.svc.findOne(id);

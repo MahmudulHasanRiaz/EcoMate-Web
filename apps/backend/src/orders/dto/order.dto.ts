@@ -46,6 +46,12 @@ export class CreateOrderDto {
   @IsOptional() @IsString() officeNotes?: string;
   @IsOptional() @IsString() guestName?: string;
   @IsOptional() @IsString() guestPhone?: string;
+  /**
+   * Optional second contact number for the customer (staff-entered). Stored
+   * on the order and linked to the customer via CustomerPhone — never matched
+   * implicitly. A number owned by another customer is refused (409).
+   */
+  @IsOptional() @IsString() secondaryPhone?: string;
   @IsOptional() @IsEmail() guestEmail?: string;
   @IsOptional() @IsString() couponCode?: string;
   /** Actual fulfillment/courier cost (BDT). Absent = not recorded (NULL). */
@@ -104,6 +110,15 @@ export class CustomerInfoDto {
   @IsOptional()
   @IsString()
   phoneNumber?: string;
+
+  /**
+   * Optional second contact number (staff-entered). Same link/refuse rules
+   * as order creation: stored on the order snapshot and linked via
+   * CustomerPhone, refused when owned by another customer.
+   */
+  @IsOptional()
+  @IsString()
+  secondaryPhone?: string | null;
 
   @IsOptional()
   @IsString()

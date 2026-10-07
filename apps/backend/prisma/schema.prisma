@@ -322,10 +322,32 @@ model CustomerProfile {
   // Customer-owned, reusable address book. Independent from Order.shippingAddress
   // / Order.billingAddress, which are order-owned historical snapshots.
   customerAddresses CustomerAddress[]
+  // Every phone number ever linked to this customer (primary + secondaries
+  // from staff-entered orders). `phone` is globally unique: one number belongs
+  // to exactly one customer, which is what makes "type any linked number →
+  // same customer" safe. No auto-merge ever happens through this table.
+  linkedPhones CustomerPhone[]
 
   @@index([email])
   // Orders-list search matches customer name as a substring.
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "CustomerProfile_name_trgm_idx")
+}
+
+// One row per phone number linked to a customer. The primary number mirrors
+// CustomerProfile.phone; secondaries arrive from staff-entered orders
+// (Order.secondaryPhone). `phone` is globally UNIQUE on purpose: a number can
+// only ever resolve to one customer, so cross-customer collisions are refused
+// at link time instead of silently merging two identities.
+model CustomerPhone {
+  id                String          @id @default(uuid())
+  customerProfileId String
+  customerProfile   CustomerProfile @relation(fields: [customerProfileId], references: [id], onDelete: Cascade)
+  phone             String          @unique
+  // 'primary' | 'secondary' — where the link came from.
+  source            String          @default("secondary")
+  createdAt         DateTime        @default(now())
+
+  @@index([customerProfileId])
 }
 
 model Task {
@@ -831,6 +853,10 @@ model Order {
   updatedAt                DateTime           @updatedAt
   guestName                String?
   guestPhone               String?
+  // Optional second contact number for the order (staff-entered). Normalized
+  // to the same canonical form as every other phone column. Linked to the
+  // customer via CustomerPhone — never matched implicitly.
+  secondaryPhone           String?
   // OWNERSHIP INVARIANT — order-owned historical truth, NOT immutable:
   //  - A new order builds its snapshot from that order's own captured values.
   //  - CustomerProfile NEVER overwrites these fields, directly or indirectly
@@ -966,6 +992,7 @@ model Order {
   @@index([courierTrackingCode])
   @@index([paymentOptionType])
   @@index([guestPhone])
+  @@index([secondaryPhone])
   @@index([posSessionId])
   @@index([source])
   @@index([salesChannel])

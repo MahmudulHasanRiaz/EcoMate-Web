@@ -1067,6 +1067,24 @@ export class OrdersService {
     const warnings: string[] = [];
     const isStaffCreate = !!userId && !isCustomer;
 
+    // Optional secondary contact number (staff-entered on manual orders).
+    // Normalized like every other phone. An invalid value is refused loudly
+    // for staff (they typed it) but ignored for guests (never break a
+    // storefront checkout over an optional field the storefront never sends).
+    if (dto.secondaryPhone) {
+      const normalizedSecondary = normalizePhone(dto.secondaryPhone);
+      if (!normalizedSecondary) {
+        if (isStaffCreate) {
+          throw new BadRequestException(
+            'Invalid secondary phone number format. Use 01XXXXXXXXX or +8801XXXXXXXXX.',
+          );
+        }
+        dto.secondaryPhone = undefined;
+      } else {
+        dto.secondaryPhone = normalizedSecondary;
+      }
+    }
+
     if (clientIp) {
       const orderBlockIp =
         await this.blockedEntries.findOrderBlockedIp(clientIp);
@@ -1189,6 +1207,73 @@ export class OrdersService {
               ...(email ? { email } : {}),
             },
           });
+        }
+      }
+    }
+
+    // Secondary phone: link-or-refuse (staff decision: refuse + warn).
+    // A secondary identical to the primary is redundant — drop it. Owned by
+    // ANOTHER customer → staff gets a 409; guests silently keep the number
+    // off the link table (two strangers are never merged through an order).
+    // With no customer and no primary phone, a KNOWN secondary still
+    // auto-attaches its owner ("type any linked number → same customer").
+    if (dto.secondaryPhone && dto.customerId) {
+      const primaryPhone = dto.guestPhone || linkedCustomer?.phoneNumber || null;
+      if (dto.secondaryPhone === primaryPhone) {
+        dto.secondaryPhone = undefined;
+      } else {
+        try {
+          await this.customersService.linkPhones(dto.customerId, [dto.secondaryPhone], 'secondary');
+        } catch (err) {
+          if (err instanceof ConflictException && !isStaffCreate) {
+            dto.secondaryPhone = undefined;
+          } else {
+            throw err;
+          }
+        }
+      }
+    } else if (dto.secondaryPhone && !dto.customerId && !dto.guestPhone) {
+      const resolved = await this.customersService.resolveCustomerIdByPhones([dto.secondaryPhone]);
+      if (resolved.customerId && !resolved.conflicted) {
+        dto.customerId = resolved.customerId;
+      } else {
+        dto.secondaryPhone = undefined;
+      }
+    }
+
+    // Blocked-number sweep across EVERY number tied to this order/customer —
+    // primary, secondary and previously linked — with the identical
+    // throw-for-guests / warn-for-staff outcome as the primary checks above.
+    {
+      const sweep = new Set(
+        [dto.guestPhone, dto.secondaryPhone, linkedCustomer?.phoneNumber].filter(Boolean) as string[],
+      );
+      if (dto.customerId) {
+        const linked = await this.customersService.getLinkedPhones(dto.customerId).catch(() => []);
+        for (const l of linked) sweep.add(l.phone);
+      }
+      for (const phone of sweep) {
+        if (phone === dto.guestPhone) continue; // already checked above
+        const hit = await this.blockedEntries.findBlockedPhone(phone);
+        if (hit) {
+          if (!isStaffCreate) {
+            throw new BadRequestException(
+              'This phone number has been blocked. Please contact support.',
+            );
+          }
+          warnings.push('This phone number is blocked for storefront ordering.');
+          continue;
+        }
+        const suspended = await this.customersService.isPhoneBlocked(phone);
+        if (suspended) {
+          if (!isStaffCreate) {
+            throw new BadRequestException(
+              'This phone number has been blocked. Please contact support.',
+            );
+          }
+          warnings.push(
+            'This customer account is suspended; the order was created by staff.',
+          );
         }
       }
     }
@@ -1871,6 +1956,7 @@ export class OrdersService {
           attribution: (attributionSnapshot as any) ?? undefined,
           guestName: dto.guestName,
           guestPhone: dto.guestPhone,
+          secondaryPhone: dto.secondaryPhone ?? null,
           // Order-time customer snapshot: order-owned historical record of the
           // customer data known when the order was placed. Independent from
           // CustomerProfile — a later profile change never alters it. Staff MAY
@@ -3002,6 +3088,51 @@ export class OrdersService {
         }
         if (dto.customerInfo.phoneNumber !== undefined) {
           snapshotUpdate.customerPhone = normalizePhone(dto.customerInfo.phoneNumber) || null;
+        }
+        if (dto.customerInfo.secondaryPhone !== undefined) {
+          // Secondary contact number (staff-entered, optional): normalized,
+          // stored on the order snapshot and linked via CustomerPhone.
+          // Owned by ANOTHER customer → 409 refuse (never merge). Null/blank
+          // clears it. A secondary equal to the primary is redundant.
+          const rawInput = dto.customerInfo.secondaryPhone;
+          const rawSecondary = rawInput == null ? '' : String(rawInput).trim();
+          const normalizedSecondary = rawSecondary ? normalizePhone(rawSecondary) : null;
+          if (rawSecondary && !normalizedSecondary) {
+            throw new BadRequestException(
+              'Invalid secondary phone number format. Use 01XXXXXXXXX or +8801XXXXXXXXX.',
+            );
+          }
+          const primaryPhone =
+            (dto.customerInfo.phoneNumber !== undefined
+              ? normalizePhone(dto.customerInfo.phoneNumber)
+              : null) ||
+            order.customerPhone ||
+            (!order.customerId ? order.guestPhone : null);
+          if (normalizedSecondary && normalizedSecondary === primaryPhone) {
+            data.secondaryPhone = null;
+          } else {
+            data.secondaryPhone = normalizedSecondary;
+          }
+          if (normalizedSecondary && order.customerId) {
+            const owner = await tx.customerPhone.findUnique({
+              where: { phone: normalizedSecondary },
+              select: { customerProfileId: true },
+            });
+            if (owner && owner.customerProfileId !== order.customerId) {
+              throw new ConflictException(
+                'This phone number is already linked to another customer.',
+              );
+            }
+            if (!owner) {
+              await tx.customerPhone.create({
+                data: {
+                  customerProfileId: order.customerId,
+                  phone: normalizedSecondary,
+                  source: 'secondary',
+                },
+              });
+            }
+          }
         }
         // Written directly (not via `?? undefined`, which silently dropped an
         // intentional blank) so an explicit correction is always persisted.

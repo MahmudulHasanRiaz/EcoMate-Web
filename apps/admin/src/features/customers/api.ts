@@ -41,7 +41,9 @@ interface RecentOrder {
   total: number
   statusId: string
   createdAt: string
+  secondaryPhone?: string | null
   status: OrderStatusInfo
+  _count?: { items: number }
 }
 
 interface CustomerInfo {
@@ -63,6 +65,40 @@ export interface OrderSummary {
   recentOrders: RecentOrder[]
 }
 
+export interface LinkedPhone {
+  phone: string
+  source: string
+  isPrimary: boolean
+  blocked: boolean
+  blockId: string | null
+}
+
+export interface CustomerIp {
+  ip: string
+  lastSeen: string
+  orderCount: number
+  lastOrder: string | null
+  blocked: boolean
+  blockId: string | null
+  blockReason: string | null
+}
+
+export interface CustomerAddressRow {
+  id: string
+  type: 'SHIPPING' | 'BILLING'
+  label: string | null
+  isDefault: boolean
+  fullName: string
+  phone: string
+  addressLine: string
+  area: string | null
+  thana: string | null
+  district: string | null
+  division: string | null
+  postalCode: string | null
+  createdAt: string
+}
+
 export interface CustomerDetail {
   customer: {
     id: string
@@ -81,6 +117,18 @@ export interface CustomerDetail {
     totalOrders: number
     totalSpent: number
     lastOrderDate: string | null
+  }
+  stats: {
+    delivered: number
+    cancelled: number
+    successRate: number
+    avgOrderValue: number
+  }
+  phones: LinkedPhone[]
+  ips: CustomerIp[]
+  addresses: {
+    shipping: CustomerAddressRow[]
+    billing: CustomerAddressRow[]
   }
   recentOrders: RecentOrder[]
 }
@@ -121,4 +169,12 @@ export const blockedIpsApi = {
 
   remove: (id: string) =>
     apiClient.post(`/blocked-entries/ip/${id}/unblock`).then(r => r.data),
+}
+
+export const blockedPhonesApi = {
+  create: (phone: string, reason?: string) =>
+    apiClient.post('/blocked-entries', { type: 'phone', value: phone, reason }).then(r => r.data),
+
+  remove: (id: string) =>
+    apiClient.post(`/blocked-entries/phone/${id}/unblock`).then(r => r.data),
 }

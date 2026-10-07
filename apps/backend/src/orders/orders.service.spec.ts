@@ -304,6 +304,11 @@ describe('OrdersService', () => {
             findOrCreateCustomer: jest
               .fn()
               .mockResolvedValue({ id: 'customer-id-1' }),
+            getLinkedPhones: jest.fn().mockResolvedValue([]),
+            linkPhones: jest.fn().mockImplementation(async (_id: string, phones: string[]) => phones),
+            resolveCustomerIdByPhones: jest
+              .fn()
+              .mockResolvedValue({ customerId: null, conflicted: false }),
           },
         },
         {
@@ -978,6 +983,90 @@ describe('OrdersService', () => {
       expect((result as any).warnings).toEqual([
         'This customer account is suspended; the order was created by staff.',
       ]);
+    });
+
+    describe('secondary phone linking', () => {
+      const staff = { userId: 'admin-1', role: 'admin' };
+
+      it('stores the secondary phone and links it on staff create', async () => {
+        runTx();
+        const dto = { ...makeGuestDto(), secondaryPhone: '01800000002' };
+
+        await service.create(dto, '10.0.0.1', staff);
+
+        expect(prisma.order.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ secondaryPhone: '+8801800000002' }),
+          }),
+        );
+        expect(customers.linkPhones).toHaveBeenCalledWith(
+          'customer-id-1',
+          ['+8801800000002'],
+          'secondary',
+        );
+      });
+
+      it('refuses a secondary number owned by another customer (409, no merge)', async () => {
+        runTx();
+        (customers.linkPhones as jest.Mock).mockRejectedValueOnce(
+          new ConflictException('This phone number is already linked to another customer.'),
+        );
+
+        await expect(
+          service.create({ ...makeGuestDto(), secondaryPhone: '01800000003' }, '10.0.0.1', staff),
+        ).rejects.toThrow(ConflictException);
+        expect(prisma.order.create).not.toHaveBeenCalled();
+      });
+
+      it('guest drops a conflicting secondary instead of merging strangers', async () => {
+        runTx();
+        (customers.linkPhones as jest.Mock).mockRejectedValueOnce(
+          new ConflictException('This phone number is already linked to another customer.'),
+        );
+
+        await service.create(
+          { ...makeGuestDto(), secondaryPhone: '01800000003' },
+          undefined,
+        );
+
+        expect(prisma.order.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ secondaryPhone: null }),
+          }),
+        );
+      });
+
+      it('hard-blocks guests on a blocked secondary number', async () => {
+        runTx();
+        (blockedEntries.findBlockedPhone as jest.Mock).mockImplementation(
+          async (phone: string) =>
+            phone === '+8801800000004' ? { id: 'phone-block-2' } : null,
+        );
+
+        await expect(
+          service.create({ ...makeGuestDto(), secondaryPhone: '01800000004' }, undefined),
+        ).rejects.toThrow(BadRequestException);
+        expect(prisma.order.create).not.toHaveBeenCalled();
+      });
+
+      it('warns (not blocks) staff on a blocked secondary number', async () => {
+        runTx();
+        (blockedEntries.findBlockedPhone as jest.Mock).mockImplementation(
+          async (phone: string) =>
+            phone === '+8801800000004' ? { id: 'phone-block-2' } : null,
+        );
+
+        const result = await service.create(
+          { ...makeGuestDto(), secondaryPhone: '01800000004' },
+          '10.0.0.1',
+          staff,
+        );
+
+        expect(prisma.order.create).toHaveBeenCalled();
+        expect((result as any).warnings).toContain(
+          'This phone number is blocked for storefront ordering.',
+        );
+      });
     });
 
     describe('staff identity isolation (customer snapshot)', () => {

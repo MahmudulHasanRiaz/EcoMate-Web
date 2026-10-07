@@ -261,3 +261,75 @@ describe('CourierManagerService — Steadfast dispatch error handling', () => {
   });
 });
 
+
+describe('CourierManagerService — order secondary phone to couriers', () => {
+  let service: CourierManagerService;
+  let prisma: any;
+  const originalFetch = global.fetch;
+
+  const creds = {
+    courier: 'steadfast',
+    enabled: true,
+    mode: 'production',
+    apiKey: 'test-api-key',
+    secretKey: 'test-secret-key',
+    credentials: {},
+  };
+
+  const order: any = {
+    id: 'order-1',
+    displayId: 'ORD-1',
+    total: 500,
+    guestPhone: '01712345678',
+    guestName: 'Test',
+    secondaryPhone: '+8801800000002',
+    officeNotes: null,
+    shippingAddress: { address: 'Dhaka', district: 'Dhaka', deliveryType: 'home', phone: '01999999999' },
+    customer: { name: 'Test', phone: '01712345678', email: null },
+    items: [{ product: { name: 'Item' } }],
+  };
+
+  beforeEach(() => {
+    prisma = {
+      courierCredentials: { findUnique: jest.fn().mockResolvedValue(creds) },
+      order: {
+        findMany: jest.fn().mockResolvedValue([order]),
+        update: jest.fn().mockResolvedValue(order),
+      },
+      dispatch: {
+        findMany: jest.fn().mockResolvedValue([]),
+        upsert: jest.fn().mockResolvedValue({}),
+      },
+      courierDispatchLog: { create: jest.fn().mockResolvedValue({}) },
+      systemSetting: { findUnique: jest.fn().mockResolvedValue(null) },
+    };
+    service = new CourierManagerService(prisma as any);
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  function mockFetch(res: Response) {
+    global.fetch = jest.fn().mockResolvedValue(res);
+  }
+
+  it('prefers order.secondaryPhone for Steadfast alternative_phone', async () => {
+    mockFetch(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    await service.dispatch('steadfast', ['order-1']);
+
+    const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+    expect(body.alternative_phone).toBe('01800000002');
+  });
+
+  it('falls back to the shipping address phone when no secondaryPhone exists', async () => {
+    prisma.order.findMany.mockResolvedValue([{ ...order, secondaryPhone: null }]);
+    mockFetch(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    await service.dispatch('steadfast', ['order-1']);
+
+    const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+    expect(body.alternative_phone).toBe('01999999999');
+  });
+});

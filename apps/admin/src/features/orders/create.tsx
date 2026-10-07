@@ -62,6 +62,12 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
   const isPrefilled = isEdit || isExchange
 
   const [customerPhone, setCustomerPhone] = useState('')
+  // Optional second contact number for this order. Stored on the order and
+  // linked to the customer (CustomerPhone) — typing any linked number later
+  // resolves the same customer.
+  const [secondaryPhone, setSecondaryPhone] = useState('')
+  // Edit-mode baseline: the secondary field is sent only when it differs.
+  const [secondaryInitial, setSecondaryInitial] = useState('')
   const [customerName, setCustomerName] = useState('')
   const [customerEmail, setCustomerEmail] = useState('')
   const [customerAddress, setCustomerAddress] = useState('')
@@ -219,6 +225,8 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
     ''
   setCustomerName(fullName)
   setCustomerPhone(o.customerPhone || o.customer?.phone || o.guestPhone || '')
+  setSecondaryPhone((o as any).secondaryPhone || '')
+  setSecondaryInitial((o as any).secondaryPhone || '')
   setCustomerEmail(o.customerEmail || o.customer?.email || '')
   setCustomerAddress(sa.address || '')
 
@@ -390,7 +398,10 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
         const customers = (res.data as any)?.data || []
         const matches = customers.filter((c: any) => {
           const cNormalized = normalizePhone(c.phoneNumber || '')
-          return cNormalized === normalized
+          if (cNormalized === normalized) return true
+          // Typing any linked (secondary) number resolves the same customer.
+          const linked: string[] = Array.isArray(c.linkedPhones) ? c.linkedPhones : []
+          return linked.some((p) => normalizePhone(p) === normalized)
         })
         setCustomerResults(matches)
         setCustomerDropdownOpen(matches.length > 0)
@@ -606,10 +617,20 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
         ...(normalizedPhone ? { phoneNumber: normalizedPhone } : {}),
         ...(customerEmail ? { email: customerEmail } : {}),
       }
+      // Secondary phone is sent ONLY when staff actually changed it — an
+      // untouched field must never rewrite the stored value on every save.
+      // Clearing the input clears the order's secondary number (null).
+      const normalizedSecondary = normalizePhone(secondaryPhone)
+      const normalizedSecondaryInitial = normalizePhone(secondaryInitial)
+      if ((normalizedSecondary || null) !== (normalizedSecondaryInitial || null)) {
+        payload.customerInfo.secondaryPhone = normalizedSecondary || null
+      }
       if (updateCustomerProfile) payload.updateCustomerProfile = true
     } else {
       if (customerName) payload.guestName = customerName
       if (normalizedPhone) payload.guestPhone = normalizedPhone
+      const normalizedSecondary = normalizePhone(secondaryPhone)
+      if (normalizedSecondary) payload.secondaryPhone = normalizedSecondary
       if (customerEmail) payload.guestEmail = customerEmail
       if (selectedCustomerId) {
         payload.customerId = selectedCustomerId
@@ -933,6 +954,25 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                       No existing record found. A new customer profile will be created with this number.
                     </p>
                   )}
+                </div>
+
+                <div>
+                  <Label className='text-xs font-medium text-muted-foreground mb-1 block'>
+                    Secondary Phone <span className='font-normal'>(Optional)</span>
+                  </Label>
+                  <div className='relative'>
+                    <Phone className='absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground' />
+                    <Input
+                      value={secondaryPhone}
+                      onChange={e => setSecondaryPhone(e.target.value)}
+                      placeholder='Second contact number (optional)'
+                      className='pl-9 h-10 text-sm'
+                      disabled={isExchange}
+                    />
+                  </div>
+                  <p className='text-[11px] text-muted-foreground mt-1'>
+                    Saved on the order and linked to this customer — any linked number finds them later.
+                  </p>
                 </div>
 
                 <div className='grid grid-cols-1 sm:grid-cols-2 gap-3.5'>

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { customersApi, blockedIpsApi, type CustomersQuery } from './api'
+import { customersApi, blockedIpsApi, blockedPhonesApi, type CustomersQuery } from './api'
 import { toast } from 'sonner'
 
 export function useCustomersQuery(query: CustomersQuery) {
@@ -55,12 +55,43 @@ export function useBlockedIps() {
   })
 }
 
+/** Blocked-entries phone blocks (per-number, works for secondaries too). */
+export function useBlockPhoneNumber() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { phone: string; reason?: string }) =>
+      blockedPhonesApi.create(data.phone, data.reason),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['customer-detail'] })
+      toast.success('Phone number blocked')
+    },
+    onError: (e: any) => {
+      toast.error(e?.response?.data?.message || 'Failed to block phone')
+    },
+  })
+}
+
+export function useUnblockPhoneNumber() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => blockedPhonesApi.remove(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['customer-detail'] })
+      toast.success('Phone number unblocked')
+    },
+    onError: (e: any) => {
+      toast.error(e?.response?.data?.message || 'Failed to unblock phone')
+    },
+  })
+}
+
 export function useBlockIp() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (data: { ip: string; reason?: string }) => blockedIpsApi.create(data.ip, data.reason),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['blocked-ips'] })
+      qc.invalidateQueries({ queryKey: ['customer-detail'] })
       toast.success('IP blocked')
     },
   })
@@ -72,6 +103,7 @@ export function useUnblockIp() {
     mutationFn: (id: string) => blockedIpsApi.remove(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['blocked-ips'] })
+      qc.invalidateQueries({ queryKey: ['customer-detail'] })
       toast.success('IP unblocked')
     },
   })

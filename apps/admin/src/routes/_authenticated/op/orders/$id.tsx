@@ -1576,6 +1576,23 @@ function OrderDetailPage() {
                           </button>
                         </div>
                       )}
+                      {(order as any).secondaryPhone && (
+                        <div className='text-muted-foreground text-[11px] sm:text-xs flex items-center gap-1.5 sm:gap-2 flex-wrap pt-0.5'>
+                          <a href={`tel:${(order as any).secondaryPhone}`} className='flex items-center gap-1 font-medium hover:text-primary transition-colors text-foreground'>
+                            <Phone className='h-3 w-3 text-muted-foreground' />
+                            <span>{(order as any).secondaryPhone}</span>
+                          </a>
+                          <span className='rounded border border-border/60 px-1 py-px text-[9px] sm:text-[10px] text-muted-foreground'>2nd</span>
+                          <CustomerContactActions phone={(order as any).secondaryPhone} />
+                          <button
+                            onClick={() => setBlockPhones({ phones: [(order as any).secondaryPhone], contextLabel: order.displayId })}
+                            className='inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] sm:text-[11px] font-medium text-destructive hover:bg-destructive/10 transition-colors'
+                            title='Block this phone from ordering'
+                          >
+                            <Ban className='h-3 w-3' />Block
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
 

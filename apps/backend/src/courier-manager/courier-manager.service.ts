@@ -251,8 +251,15 @@ export class CourierManagerService {
       payload.recipient_email = recipient.email;
     }
 
-    if (address?.phone && address.phone !== phone) {
-      payload.alternative_phone = this.normalizePhone(address.phone as string);
+    // Secondary contact: the order's staff-entered secondaryPhone wins;
+    // otherwise keep the legacy shippingAddress.phone fallback.
+    const secondaryPhone =
+      this.normalizePhone(order.secondaryPhone) ||
+      (address?.phone && address.phone !== phone
+        ? this.normalizePhone(address.phone as string)
+        : null);
+    if (secondaryPhone) {
+      payload.alternative_phone = secondaryPhone;
     }
 
     const maxRetries = 3;
@@ -437,10 +444,15 @@ export class CourierManagerService {
     if (address?.areaId) {
       payload.recipient_area = address.areaId;
     }
-    if (address?.phone && address.phone !== phone) {
-      payload.recipient_secondary_phone = this.normalizePhone(
-        address.phone as string,
-      );
+    // Secondary contact: the order's staff-entered secondaryPhone wins;
+    // otherwise keep the legacy shippingAddress.phone fallback.
+    const secondaryPhone =
+      this.normalizePhone(order.secondaryPhone) ||
+      (address?.phone && address.phone !== phone
+        ? this.normalizePhone(address.phone as string)
+        : null);
+    if (secondaryPhone) {
+      payload.recipient_secondary_phone = secondaryPhone;
     }
 
     const maxRetries = 3;
