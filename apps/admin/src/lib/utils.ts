@@ -64,6 +64,29 @@ export function getStorefrontUrl(fallbackFromConfig?: string): string {
   return 'http://localhost:3000'
 }
 
+export function getPosUrl(): string {
+  const withBase = (origin: string) => {
+    const trimmed = origin.replace(/\/+$/, '')
+    // The POS app is served under the /pos/ base — never produce /pos/pos.
+    return trimmed.endsWith('/pos') ? trimmed : `${trimmed}/pos`
+  }
+  const configured = import.meta.env.VITE_POS_URL
+  if (configured && String(configured).trim()) return withBase(String(configured).trim())
+  if (typeof window !== 'undefined') {
+    const { hostname, port, protocol } = window.location
+    // In local dev, admin runs on 5173 / 8080 while POS runs on 5174.
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return `http://${hostname}:5174/pos`
+    }
+    // Production runs on subdomains: admin.xyz.com -> pos.xyz.com/pos.
+    if (hostname.startsWith('admin.')) {
+      return `${protocol}//pos.${hostname.replace(/^admin\./, '')}${port ? `:${port}` : ''}/pos`
+    }
+    return withBase(window.location.origin)
+  }
+  return '/pos'
+}
+
 export function buildThankYouUrl(
   orderId: string,
   token?: string | null,

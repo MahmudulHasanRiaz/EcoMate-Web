@@ -8,6 +8,7 @@ import {
   CalendarCheck, LifeBuoy, ScanLine, KeyRound, Clock, TrendingUp,
 } from 'lucide-react'
 import { type SidebarData, type HueName, type NavItem } from '../types'
+import { getPosUrl } from '@/lib/utils'
 
 /** Section label + icon-chip hue for a group of items. */
 const sec = (label: string, hue: HueName) => ({ label, hue })
@@ -121,7 +122,10 @@ export const sidebarData: SidebarData = {
           ],
         }, 'Finance', 'warning'),
         // ── Tools ──
-        inSection({ title: 'POS Terminal', url: '/pos', icon: Store, feature: 'pos_system' }, 'Tools', 'neutral'),
+        // Absolute POS origin (pos.xyz.com/pos), never a same-origin /pos:
+        // on the admin host a relative link would 404 inside the admin app.
+        // Opens in a new tab (external-link rendering in nav-group).
+        inSection({ title: 'POS Terminal', url: getPosUrl(), icon: Store, feature: 'pos_system' }, 'Tools', 'neutral'),
         inSection({ title: 'Tasks', url: '/op/tasks', icon: ListTodo, feature: 'admin_tasks' }, 'Tools', 'neutral'),
         inSection({ title: 'Blocked', url: '/op/blocked', icon: ShieldCheck, feature: 'admin_blocking' }, 'Tools', 'neutral'),
         inSection({ title: 'Media Gallery', url: '/op/media', icon: Monitor, feature: 'admin_media' }, 'Tools', 'neutral'),

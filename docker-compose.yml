@@ -207,6 +207,9 @@ services:
     environment:
       VITE_API_URL: ${ADMIN_VITE_API_URL:-/api}
       VITE_BASE: ${ADMIN_VITE_BASE:-/admin/}
+      # POS Terminal sidebar link (e.g. https://pos.xyz.com/pos). Empty =
+      # auto-detect (admin.* host -> pos.* host, localhost -> :5174).
+      VITE_POS_URL: ${ADMIN_VITE_POS_URL:-}
     depends_on:
       - backend
     healthcheck:
