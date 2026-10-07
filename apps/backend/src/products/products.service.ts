@@ -674,6 +674,13 @@ export class ProductsService {
           },
           orderBy: { sortOrder: 'asc' },
         },
+        // Combos this product is a component of — the detail page's combo
+        // card (bundle membership for simple/variable/combo products alike).
+        comboItems: {
+          include: {
+            combo: { select: { id: true, name: true, slug: true, isActive: true } },
+          },
+        },
       },
     });
     if (!p) throw new NotFoundException('Product not found');

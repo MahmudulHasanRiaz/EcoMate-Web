@@ -671,8 +671,16 @@ export class OrdersService {
     includeTrashed?: boolean;
     kind?: 'SALE' | 'RETURN';
   }) {
-    const page = query.page || 1;
-    const perPage = query.perPage || 10;
+    // 1000-row pages are a first-class use case (daily volume in the
+    // thousands) — but an unbounded `take` with the full list include
+    // (items + payments + shipment + locks + dispatches) turns one page into
+    // a catalogue dump that hangs both the API and the table.
+    const rawPage = query.page || 1;
+    const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.floor(rawPage) : 1;
+    const rawPerPage = query.perPage || 10;
+    const perPage = Number.isFinite(rawPerPage) && rawPerPage > 0
+      ? Math.min(Math.floor(rawPerPage), 1000)
+      : 10;
     const where: any = {};
     if (!query.includeTrashed) where.trashedAt = null;
     // RTN return orders are excluded from the sales list unless explicitly
@@ -763,8 +771,12 @@ export class OrdersService {
     userId: string,
     query: { page?: number; perPage?: number; status?: string },
   ) {
-    const page = query.page || 1;
-    const perPage = query.perPage || 10;
+    const rawPage = query.page || 1;
+    const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.floor(rawPage) : 1;
+    const rawPerPage = query.perPage || 10;
+    const perPage = Number.isFinite(rawPerPage) && rawPerPage > 0
+      ? Math.min(Math.floor(rawPerPage), 1000)
+      : 10;
     const where: any = { customerId: userId, trashedAt: null, kind: 'SALE' };
     if (query.status) {
       where.status = { name: { equals: query.status, mode: 'insensitive' } };

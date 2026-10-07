@@ -600,6 +600,15 @@ export function Orders() {
   const [page, setPage] = useState(1)
   const [customRows, setCustomRows] = useState('')
   const [showCustomRows, setShowCustomRows] = useState(false)
+  // Backend clamps list pages to 1000 rows — the custom input must offer the
+  // same ceiling, or large values silently come back smaller ("custom broken").
+  const applyCustomRows = () => {
+    const n = Math.max(1, Math.min(1000, parseInt(customRows) || 10))
+    setPerPage(n)
+    setShowCustomRows(false)
+    setCustomRows('')
+    setPage(1)
+  }
   const search = useOrdersFilterStore(s => s.search)
   const setSearch = useOrdersFilterStore(s => s.setSearch)
   const statusFilter = useOrdersFilterStore(s => s.statusFilter)
@@ -868,6 +877,9 @@ export function Orders() {
                 </SelectTrigger>
                 <SelectContent>
                   {[10,25,50,100].map(n => <SelectItem key={n} value={String(n)} className='text-xs'>{n} / page</SelectItem>)}
+                  {![10,25,50,100].includes(perPage) && (
+                    <SelectItem value={String(perPage)} className='text-xs'>{perPage} / page</SelectItem>
+                  )}
                   <SelectItem value='custom' className='text-xs'>Custom...</SelectItem>
                 </SelectContent>
               </Select>
@@ -875,8 +887,8 @@ export function Orders() {
 
             {showCustomRows && (
               <div className='flex items-center gap-1 animate-in fade-in slide-in-from-left-2 duration-200'>
-                <Input type='number' className='h-8.5 w-16 text-xs bg-background/80 rounded-lg' placeholder='#' value={customRows} onChange={e => setCustomRows(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { const n = Math.max(1, Math.min(5000, parseInt(customRows) || 10)); setPerPage(n); setShowCustomRows(false); setCustomRows(''); setPage(1) } }} />
-                <Button size='sm' variant='ghost' className='h-8 w-8 px-0 hover:bg-background/70' onClick={() => { const n = Math.max(1, Math.min(5000, parseInt(customRows) || 10)); setPerPage(n); setShowCustomRows(false); setCustomRows(''); setPage(1) }}>✓</Button>
+                <Input type='number' min={1} max={1000} className='h-8.5 w-16 text-xs bg-background/80 rounded-lg' placeholder='#' value={customRows} onChange={e => setCustomRows(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') applyCustomRows() }} />
+                <Button size='sm' variant='ghost' className='h-8 w-8 px-0 hover:bg-background/70' onClick={applyCustomRows}>✓</Button>
               </div>
             )}
 
@@ -956,7 +968,9 @@ export function Orders() {
                     return [
                       <TableRow
                         key={o.id}
-                        className={`group cursor-pointer transition-colors border-b border-border/50 dark:border-border/40 ${
+                        // 1000-row pages stay smooth: off-screen rows skip
+                        // rendering but keep their scroll size.
+                        className={`group cursor-pointer transition-colors border-b border-border/50 dark:border-border/40 [content-visibility:auto] [contain-intrinsic-size:auto_72px] ${
                           isSelected ? 'bg-primary/8 dark:bg-primary/15 hover:bg-primary/12 dark:hover:bg-primary/20' : 'hover:bg-muted/40 dark:hover:bg-muted/20 even:bg-muted/[0.02] dark:even:bg-muted/[0.03]'
                         }`}
                         onClick={() => toggleExpand(o.id)}

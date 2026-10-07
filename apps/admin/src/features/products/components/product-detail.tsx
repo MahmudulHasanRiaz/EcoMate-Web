@@ -94,6 +94,7 @@ export function ProductDetail() {
   const p = product as any
   const categories = p.productCategories || []
   const isVar = product.type === 'variable'
+  const comboMemberships: any[] = Array.isArray(p.comboItems) ? p.comboItems : []
 
   return (
     <>
@@ -102,19 +103,19 @@ export function ProductDetail() {
         <ThemeSwitch />
       </Header>
       <Main>
-        <div className='mb-6 flex items-center gap-4'>
-          <Button variant='ghost' size='icon' onClick={() => navigate({ to: '/op/products' })}>
+        <div className='mb-4 sm:mb-6 flex flex-wrap items-center gap-3 sm:gap-4'>
+          <Button variant='ghost' size='icon' className='shrink-0' onClick={() => navigate({ to: '/op/products' })}>
             <ArrowLeft className='h-5 w-5' />
           </Button>
-          <div className='flex-1'>
-            <h1 className='text-2xl font-bold tracking-tight'>{product.name}</h1>
-            {product.sku && <p className='text-sm text-muted-foreground'>SKU: {product.sku}</p>}
+          <div className='flex-1 min-w-[200px]'>
+            <h1 className='text-xl sm:text-2xl font-bold tracking-tight break-words'>{product.name}</h1>
+            {product.sku && <p className='text-sm text-muted-foreground font-mono'>SKU: {product.sku}</p>}
           </div>
-          <div className='flex gap-2'>
-            <Button variant='outline' size='sm' onClick={() => setFormOpen(true)}>
+          <div className='flex gap-2 w-full sm:w-auto'>
+            <Button variant='outline' size='sm' className='flex-1 sm:flex-none' onClick={() => setFormOpen(true)}>
               <Pencil className='h-4 w-4 mr-1' /> Edit
             </Button>
-            <Button variant='destructive' size='sm' onClick={() => { if (confirm('Delete this product?')) deleteMut.mutate() }}>
+            <Button variant='destructive' size='sm' className='flex-1 sm:flex-none' onClick={() => { if (confirm('Delete this product?')) deleteMut.mutate() }}>
               <Trash2 className='h-4 w-4 mr-1' /> Delete
             </Button>
           </div>
@@ -300,6 +301,24 @@ export function ProductDetail() {
                 <CardContent className='flex flex-wrap gap-2'>
                   {categories.map((pc: any) => (
                     <Badge key={pc.categoryId} variant='secondary'>{pc.category?.name || pc.categoryId}</Badge>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+
+            {comboMemberships.length > 0 && (
+              <Card>
+                <CardHeader><CardTitle className='text-base'>Part of Combos ({comboMemberships.length})</CardTitle></CardHeader>
+                <CardContent className='flex flex-wrap gap-2'>
+                  {comboMemberships.map((ci: any) => (
+                    <Badge key={ci.id} variant='outline' className='gap-1.5 font-normal'>
+                      <Package className='h-3 w-3 text-muted-foreground' />
+                      {ci.combo?.name || ci.comboId}
+                      <span className='font-mono text-muted-foreground'>×{ci.quantity ?? 1}</span>
+                      {ci.combo && !ci.combo.isActive && (
+                        <span className='text-muted-foreground'>(inactive)</span>
+                      )}
+                    </Badge>
                   ))}
                 </CardContent>
               </Card>

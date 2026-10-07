@@ -1,4 +1,5 @@
 import { type ColumnDef } from '@tanstack/react-table'
+import { Link } from '@tanstack/react-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -59,12 +60,16 @@ export function productsColumns(
         const variantSkus = hasVariants ? p.variants.map(v => v.sku).filter(Boolean) : []
         return (
           <div className='space-y-0.5 max-w-[320px]'>
-            <p className='font-semibold text-sm leading-snug text-foreground'>
-              {row.getValue('name')}
+            <Link
+              to='/op/products/$id'
+              params={{ id: p.id }}
+              className='font-semibold text-sm leading-snug text-foreground hover:text-primary hover:underline underline-offset-2 transition-colors cursor-pointer'
+            >
+              {String(row.getValue('name') ?? '')}
               {p.status === 'draft' && (
                 <Badge variant='secondary' className='ml-2 text-xs'>Draft</Badge>
               )}
-            </p>
+            </Link>
             <div className='flex items-center gap-1.5 flex-wrap text-xs text-muted-foreground'>
               {p.sku && <span className='font-mono text-xs text-muted-foreground'>SKU: {p.sku}</span>}
               {hasVariants && (

@@ -449,8 +449,7 @@ describe('OrdersService', () => {
   });
 
   describe('findAll', () => {
-    it('should return paginated orders', async () => {
-      (prisma.order.findMany as jest.Mock).mockResolvedValue([mockOrder]);
+    it('should return paginated orders', async () => {      (prisma.order.findMany as jest.Mock).mockResolvedValue([mockOrder]);
       (prisma.order.count as jest.Mock).mockResolvedValue(1);
 
       const result = await service.findAll({ page: 1, perPage: 10 });
@@ -467,6 +466,37 @@ describe('OrdersService', () => {
         totalPages: 1,
         statusCounts: {},
       });
+    });
+
+    it('allows 1000-row pages but clamps anything larger', async () => {
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.order.count as jest.Mock).mockResolvedValue(0);
+      (prisma.order.groupBy as jest.Mock).mockResolvedValue([]);
+
+      const atCap = await service.findAll({ page: 1, perPage: 1000 });
+      expect(prisma.order.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 1000 }),
+      );
+      expect(atCap.meta.perPage).toBe(1000);
+
+      const overCap = await service.findAll({ page: 1, perPage: 5000 });
+      expect(prisma.order.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 1000 }),
+      );
+      expect(overCap.meta.perPage).toBe(1000);
+    });
+
+    it('falls back to page 1 on garbage page input', async () => {
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.order.count as jest.Mock).mockResolvedValue(0);
+      (prisma.order.groupBy as jest.Mock).mockResolvedValue([]);
+
+      const result = await service.findAll({ page: NaN } as any);
+
+      expect(prisma.order.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 0 }),
+      );
+      expect(result.meta.page).toBe(1);
     });
 
     it('should filter by search and statusId', async () => {
