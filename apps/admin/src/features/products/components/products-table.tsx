@@ -15,9 +15,10 @@ type Props = {
   onDuplicate?: (row: ProductResponse) => void;
   onPublish?: (row: ProductResponse) => void;
   selectedIds: string[]; onSelectionChange: (ids: string[]) => void;
+  pageSizeOptions?: number[];
 }
 
-export function ProductsTable({ data, pageCount, totalCount, pagination, onPaginationChange, isLoading, onEdit, onDelete, onToggleActive, onDuplicate, onPublish, selectedIds, onSelectionChange }: Props) {
+export function ProductsTable({ data, pageCount, totalCount, pagination, onPaginationChange, isLoading, onEdit, onDelete, onToggleActive, onDuplicate, onPublish, selectedIds, onSelectionChange, pageSizeOptions }: Props) {
   const { data: imEnabled = true } = useInventoryManagement()
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnVisibility] = useState<VisibilityState>({})
@@ -95,7 +96,7 @@ export function ProductsTable({ data, pageCount, totalCount, pagination, onPagin
           </Table>
         </div>
       </div>
-      <DataTablePagination table={table} className='mt-auto' totalCount={totalCount} />
+      <DataTablePagination table={table} className='mt-auto' totalCount={totalCount} pageSizeOptions={pageSizeOptions} />
     </div>
   )
 }

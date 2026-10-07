@@ -19,12 +19,18 @@ type DataTablePaginationProps<TData> = {
   table: Table<TData>
   className?: string
   totalCount?: number
+  /** Rows-per-page choices. Defaults to the compact set; wide tables
+   * (products) pass a larger ceiling. */
+  pageSizeOptions?: number[]
 }
+
+const DEFAULT_PAGE_SIZE_OPTIONS = [10, 20, 30, 40, 50]
 
 export function DataTablePagination<TData>({
   table,
   className,
   totalCount,
+  pageSizeOptions = DEFAULT_PAGE_SIZE_OPTIONS,
 }: DataTablePaginationProps<TData>) {
   const currentPage = table.getState().pagination.pageIndex + 1
   const totalPages = table.getPageCount()
@@ -57,7 +63,7 @@ export function DataTablePagination<TData>({
               <SelectValue placeholder={table.getState().pagination.pageSize} />
             </SelectTrigger>
             <SelectContent side='top'>
-              {[10, 20, 30, 40, 50].map((pageSize) => (
+              {pageSizeOptions.map((pageSize) => (
                 <SelectItem key={pageSize} value={`${pageSize}`}>
                   {pageSize}
                 </SelectItem>

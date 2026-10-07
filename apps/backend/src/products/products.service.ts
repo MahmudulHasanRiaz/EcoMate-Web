@@ -217,6 +217,19 @@ export class ProductsService {
     },
   };
 
+  /**
+   * List page-size guard: an unbounded `take` with the full list include
+   * (variants + attribute values + brand + categories + enrichments) turns one
+   * page into a full-catalogue dump at thousands scale. 100 rows is the most
+   * any list UI offers.
+   */
+  private static readonly LIST_MAX_PER_PAGE = 100;
+
+  private clampListPerPage(perPage?: number, fallback = 24): number {
+    if (!Number.isFinite(perPage as number) || (perPage as number) <= 0) return fallback;
+    return Math.min(Math.floor(perPage as number), ProductsService.LIST_MAX_PER_PAGE);
+  }
+
   async findAll(query: {
     page?: number;
     perPage?: number;
@@ -236,8 +249,9 @@ export class ProductsService {
     hasStock?: boolean;
     status?: 'active' | 'draft';
   }) {
-    const page = query.page || 1;
-    const perPage = query.perPage || 24;
+    const rawPage = query.page || 1;
+    const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.floor(rawPage) : 1;
+    const perPage = this.clampListPerPage(query.perPage);
 
     let categoryIds: string[] | undefined = undefined;
     if (query.categoryId) {
@@ -460,7 +474,7 @@ export class ProductsService {
     hasStock?: boolean;
     status?: 'active' | 'draft';
   }) {
-    const perPage = query.perPage || 24;
+    const perPage = this.clampListPerPage(query.perPage);
     const effectiveCategoryId =
       query.categoryId ||
       (query.category

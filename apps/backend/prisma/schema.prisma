@@ -615,6 +615,11 @@ model Product {
   @@index([brandId])
   // Substring SKU search on the orders list (trigram).
   @@index([sku(ops: raw("gin_trgm_ops"))], type: Gin, map: "Product_sku_trgm_idx")
+  // Substring name/slug search on the product list (`contains`, leading
+  // wildcard) — without these every keystroke is a sequential scan at
+  // thousands scale.
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "Product_name_trgm_idx")
+  @@index([slug(ops: raw("gin_trgm_ops"))], type: Gin, map: "Product_slug_trgm_idx")
 }
 
 model ProductVariant {

@@ -193,8 +193,7 @@ describe('ProductsService', () => {
   });
 
   describe('findAll', () => {
-    it('should return paginated products', async () => {
-      (prisma.product.findMany as jest.Mock).mockResolvedValue([mockProduct]);
+    it('should return paginated products', async () => {      (prisma.product.findMany as jest.Mock).mockResolvedValue([mockProduct]);
       (prisma.product.count as jest.Mock).mockResolvedValue(1);
 
       const result = await service.findAll({ page: 1, perPage: 10 });
@@ -212,6 +211,31 @@ describe('ProductsService', () => {
         hasMore: false,
         nextCursor: null,
       });
+    });
+
+    it('clamps an unbounded perPage so one page cannot dump the catalogue', async () => {
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.product.count as jest.Mock).mockResolvedValue(0);
+
+      const result = await service.findAll({ page: 1, perPage: 1000000 });
+
+      expect(prisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 100 }),
+      );
+      expect(result.meta.perPage).toBe(100);
+    });
+
+    it('falls back to page 1 / 24 rows on garbage page input', async () => {
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.product.count as jest.Mock).mockResolvedValue(0);
+
+      const result = await service.findAll({ page: NaN, perPage: NaN } as any);
+
+      expect(prisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 0, take: 24 }),
+      );
+      expect(result.meta.page).toBe(1);
+      expect(result.meta.perPage).toBe(24);
     });
 
     it('should filter by search term', async () => {
@@ -424,6 +448,18 @@ describe('ProductsService', () => {
 
       expect(result.meta.hasMore).toBe(false);
       expect(result.meta.nextCursor).toBeNull();
+    });
+
+    it('clamps an unbounded cursor perPage to the list ceiling', async () => {
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.product.count as jest.Mock).mockResolvedValue(0);
+
+      const result = await service.findAllCursor({ perPage: 999999 });
+
+      expect(prisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 100 }),
+      );
+      expect(result.meta.perPage).toBe(100);
     });
 
     it('decodes cursor and applies keyset filter to query', async () => {

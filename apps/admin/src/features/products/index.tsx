@@ -25,7 +25,17 @@ import { PriceLabelOptionsModal } from '@/features/print/components/price-label-
 
 export function Products() {
   const queryClient = useQueryClient()
-  const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 10 })
+  // Persisted page size: with thousands of products operators pick 50/100
+  // once and expect it to stick across visits — a reset-to-10 on every mount
+  // reads as "rows-per-page doesn't work".
+  const [pagination, setPagination] = useState<PaginationState>(() => {
+    let pageSize = 10
+    try {
+      const stored = Number(localStorage.getItem('products-page-size'))
+      if ([10, 20, 30, 50, 100].includes(stored)) pageSize = stored
+    } catch { /* private mode — fall back to 10 */ }
+    return { pageIndex: 0, pageSize }
+  })
   const [formOpen, setFormOpen] = useState(false)
   const [formMode, setFormMode] = useState<'add' | 'edit' | 'duplicate'>('add')
   const [editRow, setEditRow] = useState<ProductResponse | undefined>()
@@ -114,6 +124,19 @@ export function Products() {
   useEffect(() => {
     setSelectedIds([])
   }, [data])
+
+  // A page-size change always restarts from page 1 — otherwise the old index
+  // points past the last page and the table flashes empty ("per-page broken").
+  // The size itself is persisted so it survives remounts.
+  const handlePaginationChange = (next: PaginationState) => {
+    setPagination((prev) => {
+      const sizeChanged = next.pageSize !== prev.pageSize
+      if (sizeChanged) {
+        try { localStorage.setItem('products-page-size', String(next.pageSize)) } catch { /* ignore */ }
+      }
+      return sizeChanged ? { pageIndex: 0, pageSize: next.pageSize } : next
+    })
+  }
 
   // Handle page count reductions (e.g. after deletion) to avoid getting stuck on an empty page
   const totalPages = data?.meta?.totalPages || 0
@@ -425,7 +448,8 @@ export function Products() {
           pageCount={data?.meta?.totalPages || 0}
           totalCount={data?.meta?.total || 0}
           pagination={pagination}
-          onPaginationChange={setPagination}
+          onPaginationChange={handlePaginationChange}
+          pageSizeOptions={[10, 20, 30, 50, 100]}
           isLoading={isLoading}
           onEdit={(row) => { setEditRow(row); setFormMode('edit'); setFormOpen(true); }}
           onDelete={(row) => setDeleteTarget(row)}
