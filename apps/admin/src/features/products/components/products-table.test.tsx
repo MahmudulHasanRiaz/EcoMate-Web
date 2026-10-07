@@ -7,6 +7,10 @@ import { type ProductResponse } from '../api'
 
 vi.mock('../api', () => ({}))
 
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children, ...rest }: { children?: React.ReactNode }) => <a href='#' {...rest}>{children}</a>,
+}))
+
 vi.mock('@/features/inventory/hooks/use-inventory-management', () => ({
   useInventoryManagement: () => ({ data: true }),
 }))
