@@ -92,6 +92,9 @@ describe('CheckoutLeadsService', () => {
             trackingSnapshot: {
               findFirst: jest.fn().mockResolvedValue(null),
             },
+            product: {
+              findMany: jest.fn().mockResolvedValue([]),
+            },
             marketingSession: {
               findUnique: jest.fn().mockResolvedValue(null),
             },
@@ -187,13 +190,45 @@ describe('CheckoutLeadsService', () => {
       expect(input.payload).toEqual(
         expect.objectContaining({
           currency: 'BDT',
-          customer: { phone: '+8801812345678', firstName: 'Jane Doe' },
+          // Lead carries the full Purchase parameter set: value, content rows,
+          // identity — the platforms match/optimize a content-rich Lead.
+          value: 1000,
+          content_ids: ['prod-1'],
+          content_type: 'product',
+          content_name: 'Prod 1',
+          contents: [{ id: 'prod-1', quantity: 2, item_price: 500, name: 'Prod 1' }],
+          num_items: 2,
+          customer: {
+            email: 'jane@example.com',
+            phone: '+8801812345678',
+            firstName: 'Jane Doe',
+            country: 'BD',
+          },
         }),
       );
-      // A Lead carries no monetary value (design §10) so it can never be
-      // misread as a purchase — only a converted lead produces an offline Purchase.
-      expect((input.payload as any).value).toBeUndefined();
       expect(input.configSnapshot).toEqual(configSnapshotMock);
+    });
+
+    it('resolves product SKUs for Lead content parity with the later Purchase', async () => {
+      (prisma.checkoutLead.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.checkoutLead.create as jest.Mock).mockResolvedValue(mockLead);
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([
+        { id: 'prod-1', sku: 'SKU-1' },
+      ]);
+
+      await service.upsert({
+        phone: '01812345678',
+        name: 'Jane Doe',
+        items: [{ productId: 'prod-1', price: 500, quantity: 2 }],
+        ctxId: 'ctx-abc',
+      });
+      await new Promise((r) => setTimeout(r, 0));
+
+      const [input] = capture.mock.calls[0];
+      expect(input.payload.content_ids).toEqual(['SKU-1']);
+      expect(input.payload.contents).toEqual([
+        { id: 'SKU-1', quantity: 2, item_price: 500, name: 'Prod 1' },
+      ]);
     });
 
     it('skips the Lead capture when a recent lead snapshot exists (cooldown)', async () => {

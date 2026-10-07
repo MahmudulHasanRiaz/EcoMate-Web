@@ -242,8 +242,72 @@ export class CheckoutLeadsService {
     const leadName = lead.name || dto.name || undefined;
     const configSnapshot = await this.trackingSettings.buildConfigSnapshot();
 
-    // A Lead carries no monetary value (design §10): a value here could be misread
-    // as a conversion. Only a converted lead produces an offline Purchase.
+    // Lead carries the FULL Purchase parameter set (value, currency, content
+    // rows, identity): platforms optimize and match a Lead far better when it
+    // looks like the purchase it previews. Item ids from the storefront are
+    // product UUIDs, so SKUs are resolved here for content parity with the
+    // Purchase snapshot the converted order will later emit (same content_ids
+    // on Lead and Purchase = consistent catalog matching on both providers).
+    const leadItems: Array<{
+      id?: string;
+      productId?: string;
+      name?: string;
+      price?: number;
+      quantity?: number;
+      comboId?: string;
+    }> = Array.isArray((lead as any)?.items) ? (lead as any).items : [];
+    // Storefront lead items carry `id`; persisted/converted shapes may carry
+    // `productId` instead — accept both so content resolution never misses.
+    const itemIdOf = (i: (typeof leadItems)[number]) => i?.id ?? i?.productId;
+    const itemIds = [...new Set(leadItems.map((i) => itemIdOf(i)).filter(Boolean))] as string[];
+    const products = itemIds.length
+      ? await this.prisma.product.findMany({
+          where: { id: { in: itemIds } },
+          select: { id: true, sku: true },
+        })
+      : [];
+    const skuById = new Map(products.map((p) => [p.id, p.sku]));
+    const contentIds = leadItems
+      .map((i) => {
+        const rawId = itemIdOf(i);
+        return i?.comboId || (rawId ? skuById.get(rawId) || rawId : '') || '';
+      })
+      .filter(Boolean);
+    const contents = leadItems
+      .map((i) => {
+        const rawId = itemIdOf(i);
+        const id = i?.comboId || (rawId ? skuById.get(rawId) || rawId : '') || '';
+        const quantity =
+          typeof i?.quantity === 'number' && i.quantity > 0 ? i.quantity : 1;
+        const price = Number(i?.price);
+        if (!id) return null;
+        return {
+          id,
+          quantity,
+          ...(Number.isFinite(price) ? { item_price: price } : {}),
+          ...(i?.name ? { name: i.name } : {}),
+        };
+      })
+      .filter(
+        (
+          r,
+        ): r is {
+          id: string;
+          quantity: number;
+          item_price?: number;
+          name?: string;
+        } => r !== null,
+      );
+    const leadValue = leadItems.reduce((s, i) => {
+      const price = Number(i?.price);
+      const qty = typeof i?.quantity === 'number' && i.quantity > 0 ? i.quantity : 1;
+      return s + (Number.isFinite(price) ? price * qty : 0);
+    }, 0);
+    const firstItem = leadItems[0];
+    const leadAddress = ((lead as any)?.address ?? {}) as Record<string, unknown>;
+    const leadDistrict =
+      String(leadAddress.district ?? leadAddress.city ?? '') || undefined;
+
     await this.trackingCapture.capture({
       eventId: `lead_${lead.id}`,
       eventType: 'Lead',
@@ -252,11 +316,27 @@ export class CheckoutLeadsService {
       actionSource: 'website',
       payload: {
         currency: 'BDT',
+        ...(leadValue > 0 ? { value: leadValue } : {}),
+        ...(contentIds.length ? { content_ids: contentIds } : {}),
+        ...(contentIds.length ? { content_type: 'product' as const } : {}),
+        ...(firstItem?.name ? { content_name: firstItem.name } : {}),
+        ...(contents.length ? { contents } : {}),
+        ...(leadItems.length
+          ? {
+              num_items: leadItems.reduce(
+                (s, i) => s + (typeof i?.quantity === 'number' && i.quantity > 0 ? i.quantity : 1),
+                0,
+              ),
+            }
+          : {}),
         customer: {
+          email: (lead as any)?.email || undefined,
           phone: phone || undefined,
           // Canonical customer has firstName/lastName (adapter contract);
           // a lead only carries a single display name.
           firstName: leadName,
+          ...(leadDistrict ? { city: leadDistrict, state: leadDistrict } : {}),
+          country: 'BD',
         },
       },
       configSnapshot,

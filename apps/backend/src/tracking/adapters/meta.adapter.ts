@@ -112,18 +112,25 @@ export class MetaAdapter implements TrackingProviderAdapter {
     if (snapshot.content_name) custom_data.content_name = snapshot.content_name;
     if (snapshot.content_category) custom_data.content_category = snapshot.content_category;
     // 2804008 guard: contents must be a valid JSON array of objects with
-    // non-empty id, positive quantity, and numeric item_price. Filter out
-    // malformed items to prevent Meta rejecting the entire event.
+    // non-empty id and positive quantity. A bad item_price (NaN from
+    // Number(undefined) at capture, strings, Infinity) is SANITIZED to absent
+    // — NaN serializes to null and Meta rejects the row — while the row itself
+    // survives so the content still matches.
     if (snapshot.contents?.length) {
-      const validContents = snapshot.contents.filter(
-        (item) =>
-          item &&
-          typeof item.id === 'string' &&
-          item.id.length > 0 &&
-          typeof item.quantity === 'number' &&
-          item.quantity > 0 &&
-          (item.item_price === undefined || typeof item.item_price === 'number'),
-      );
+      const validContents = snapshot.contents
+        .filter(
+          (item) =>
+            item &&
+            typeof item.id === 'string' &&
+            item.id.length > 0 &&
+            typeof item.quantity === 'number' &&
+            item.quantity > 0,
+        )
+        .map((item) => ({
+          id: item.id,
+          quantity: item.quantity,
+          ...(Number.isFinite(item.item_price) ? { item_price: item.item_price } : {}),
+        }));
       if (validContents.length) custom_data.contents = validContents;
     }
     if (snapshot.num_items !== undefined) custom_data.num_items = snapshot.num_items;

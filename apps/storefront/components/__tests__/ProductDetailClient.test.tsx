@@ -299,9 +299,10 @@ describe('ProductDetailClient — ViewContent strict semantics', () => {
     expect(tiktokVC).toHaveLength(1);
     expect(tiktokVC[0][1]).toMatchObject({
       content_type: 'product',
+      // Recommended content_ids array rides alongside the translated rows.
+      content_ids: ['CWB-1'],
       contents: [{ content_id: 'CWB-1', quantity: 1, price: 4000 }],
     });
-    expect(tiktokVC[0][1]).not.toHaveProperty('content_ids');
   });
 
   it('StrictMode double-mount → still ONE ViewContent (ref guard survives)', async () => {

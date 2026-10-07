@@ -5320,11 +5320,17 @@ export class OrdersService {
     const itemsList = (order.items as any[]) || [];
     const totalValue = Number(order.total || order.subtotal || 0);
 
-    const contents = itemsList.map((i: any) => ({
-      id: i.variant?.sku || i.product?.sku || i.productId || i.comboId || '',
-      quantity: i.quantity,
-      item_price: Number(i.price),
-    }));
+    const contents = itemsList.map((i: any) => {
+      // Number(undefined) is NaN (typeof NaN === 'number') — JSON turns it into
+      // null and Meta rejects the row (2804008). Omit a non-finite price so the
+      // content row survives on every provider.
+      const price = Number(i.price);
+      return {
+        id: i.variant?.sku || i.product?.sku || i.productId || i.comboId || '',
+        quantity: i.quantity,
+        ...(Number.isFinite(price) ? { item_price: price } : {}),
+      };
+    });
 
     // content_name/content_category drive Meta catalog matching. Single values
     // from the first line item keep both sides (browser + CAPI) in lockstep.
@@ -5643,11 +5649,14 @@ export class OrdersService {
               .map((i: any) => i.variant?.sku || i.product?.sku || i.productId || i.comboId || '')
               .filter(Boolean),
             content_type: 'product',
-            contents: itemsList.map((i: any) => ({
-              id: i.variant?.sku || i.product?.sku || i.productId || i.comboId || '',
-              quantity: i.quantity,
-              item_price: Number(i.price),
-            })),
+            contents: itemsList.map((i: any) => {
+              const price = Number(i.price);
+              return {
+                id: i.variant?.sku || i.product?.sku || i.productId || i.comboId || '',
+                quantity: i.quantity,
+                ...(Number.isFinite(price) ? { item_price: price } : {}),
+              };
+            }),
             num_items: itemsList.reduce(
               (s: number, i: any) => s + (i.quantity || 0),
               0,

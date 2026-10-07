@@ -40,7 +40,7 @@ describe('tracking', () => {
 
   it('uses the provided eventId for the TikTok pixel event_id', () => {
     trackEvent('Purchase', { value: 100 }, {}, 'purchase_ord-1');
-    expect(window.ttq.track).toHaveBeenCalledWith('CompletePayment', { value: 100 }, { event_id: 'purchase_ord-1' });
+    expect(window.ttq.track).toHaveBeenCalledWith('Purchase', { value: 100 }, { event_id: 'purchase_ord-1' });
   });
 
   it('mirrors the provided eventId into the /tracking/events POST body', () => {
@@ -1158,7 +1158,7 @@ describe('tracking', () => {
       try {
         trackEvent('Purchase', { value: 100 }, {}, 'purchase_mixed-1');
         expect(window.fbq).not.toHaveBeenCalledWith('track', 'Purchase', expect.anything(), expect.anything());
-        expect(window.ttq.track).toHaveBeenCalledWith('CompletePayment', { value: 100 }, { event_id: 'purchase_mixed-1' });
+        expect(window.ttq.track).toHaveBeenCalledWith('Purchase', { value: 100 }, { event_id: 'purchase_mixed-1' });
         const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
         expect(body.eventId).toBe('purchase_mixed-1');
       } finally {
@@ -1196,7 +1196,7 @@ describe('tracking', () => {
       setTrackingConfig('instant', 'instant');
       trackEvent('Purchase', { value: 100 }, {}, 'purchase_mixed-4');
       expect(window.fbq).toHaveBeenCalledWith('track', 'Purchase', { value: 100 }, { eventID: 'purchase_mixed-4' });
-      expect(window.ttq.track).toHaveBeenCalledWith('CompletePayment', { value: 100 }, { event_id: 'purchase_mixed-4' });
+      expect(window.ttq.track).toHaveBeenCalledWith('Purchase', { value: 100 }, { event_id: 'purchase_mixed-4' });
     });
 
     it('non-Purchase events are unaffected by validated modes', () => {
@@ -1238,7 +1238,7 @@ describe('tracking — TikTok content mapping (Content ID fix)', () => {
       expect.anything(),
     );
     const data = vi.mocked(window.ttq.track).mock.calls[0][1];
-    expect(data).not.toHaveProperty('content_ids');
+    expect(data.content_ids).toEqual(['SKU-1']);
   });
 
   it('translates Meta-shaped contents rows into TikTok rows for ttq', () => {
@@ -1250,7 +1250,7 @@ describe('tracking — TikTok content mapping (Content ID fix)', () => {
     });
     const data = vi.mocked(window.ttq.track).mock.calls[0][1];
     expect(data.contents).toEqual([{ content_id: 'SKU-1', quantity: 2, price: 500 }]);
-    expect(data).not.toHaveProperty('content_ids');
+    expect(data.content_ids).toEqual(['SKU-1']);
     // Meta pixel keeps its own shape untouched.
     expect(window.fbq).toHaveBeenCalledWith(
       'track', 'AddToCart',
@@ -1263,6 +1263,19 @@ describe('tracking — TikTok content mapping (Content ID fix)', () => {
     const { toTikTokData } = await import('../tracking');
     expect(toTikTokData({ value: 100 })).toEqual({ value: 100 });
     expect(toTikTokData(undefined)).toBeUndefined();
+  });
+
+  it('toTikTokData drops a NaN row price instead of shipping null', async () => {
+    const { toTikTokData } = await import('../tracking');
+    expect(
+      toTikTokData({
+        content_ids: ['SKU-1'],
+        contents: [{ id: 'SKU-1', quantity: 1, item_price: Number(undefined) }],
+      }),
+    ).toEqual({
+      content_ids: ['SKU-1'],
+      contents: [{ content_id: 'SKU-1', quantity: 1 }],
+    });
   });
 });
 

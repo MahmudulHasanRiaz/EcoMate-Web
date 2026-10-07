@@ -757,7 +757,7 @@ describe('MetaAdapter — forensic remediation tests', () => {
       expect(payload.custom_data.contents[0].id).toBe('sku-3');
     });
 
-    it('filters out items with non-numeric item_price', () => {
+    it('keeps the row but drops a non-numeric item_price', () => {
       const badSnapshot: TrackingSnapshotPayload = {
         ...snapshot,
         contents: [
@@ -766,8 +766,27 @@ describe('MetaAdapter — forensic remediation tests', () => {
         ],
       };
       const payload = adapter.build(badSnapshot, ctx, normalizer)!;
-      expect(payload.custom_data.contents).toHaveLength(1);
-      expect(payload.custom_data.contents[0].id).toBe('sku-2');
+      expect(payload.custom_data.contents).toEqual([
+        { id: 'sku-1', quantity: 1 },
+        { id: 'sku-2', quantity: 1, item_price: 100 },
+      ]);
+    });
+
+    it('keeps the row but drops a NaN item_price (Number(undefined) at capture)', () => {
+      const badSnapshot: TrackingSnapshotPayload = {
+        ...snapshot,
+        contents: [
+          { id: 'sku-1', quantity: 1, item_price: NaN },
+          { id: 'sku-2', quantity: 1, item_price: 100 },
+        ],
+      };
+      const payload = adapter.build(badSnapshot, ctx, normalizer)!;
+      // NaN serializes to null and Meta rejects the row (2804008) — the row
+      // survives without the price instead of poisoning the whole event.
+      expect(payload.custom_data.contents).toEqual([
+        { id: 'sku-1', quantity: 1 },
+        { id: 'sku-2', quantity: 1, item_price: 100 },
+      ]);
     });
 
     it('omits contents entirely when all items are malformed', () => {

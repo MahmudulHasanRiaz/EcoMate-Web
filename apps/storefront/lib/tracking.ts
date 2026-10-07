@@ -534,11 +534,14 @@ export function trackPageView() {
 
 /**
  * Translate the shared (Meta-shaped) event data into TikTok's expected shape.
- * TikTok web events address products via `content_id` (single) or `contents`
- * (multiple rows of {content_id, quantity, price, ...}) — the `content_ids`
- * array and Meta-shaped rows ({id, item_price}) are silently ignored by
- * TikTok, so events sent without translation report "Content ID missing".
- * `content_type`/`value`/`currency` share names and pass through untouched.
+ * Per the TikTok standard-events reference (Apr 2026) the purchase event is
+ * `Purchase` (NOT `CompletePayment` — sending CompletePayment means TikTok
+ * never records the required Purchase funnel event), and Purchase/AddToCart/
+ * ViewContent recommend `content_type, quantity, description, content_ids,
+ * currency, value`. Rows are TikTok-shaped ({content_id, quantity, price}).
+ * `content_ids` is kept AND rows translated — whichever shape TikTok reads,
+ * the content is present, so events stop reporting "Content ID missing".
+ * `content_type`/`value`/`currency`/`quantity` share names and pass through.
  */
 export function toTikTokData(data?: Record<string, any>): Record<string, any> | undefined {
   if (!data) return data;
@@ -546,7 +549,10 @@ export function toTikTokData(data?: Record<string, any>): Record<string, any> | 
   const ids = Array.isArray(data.content_ids)
     ? data.content_ids.map((id) => String(id)).filter(Boolean)
     : [];
-  delete out.content_ids;
+  // Keep the documented `content_ids` array (recommended param) alongside the
+  // translated rows below.
+  if (ids.length) out.content_ids = ids;
+  else delete out.content_ids;
   if (Array.isArray(data.contents) && data.contents.length) {
     const contents = data.contents
       .filter(
@@ -556,13 +562,16 @@ export function toTikTokData(data?: Record<string, any>): Record<string, any> | 
           String(c.content_id ?? c.id).length > 0 &&
           (typeof c.quantity !== 'number' || c.quantity > 0),
       )
-      .map((c: any) => ({
-        content_id: String(c.content_id ?? c.id),
-        quantity: c.quantity ?? 1,
-        ...(c.price ?? c.item_price !== undefined ? { price: c.price ?? c.item_price } : {}),
-        ...(c.content_name ?? data.content_name ? { content_name: c.content_name ?? data.content_name } : {}),
-        ...(c.content_category ?? data.content_category ? { content_category: c.content_category ?? data.content_category } : {}),
-      }));
+      .map((c: any) => {
+        const price = c.price ?? c.item_price;
+        return {
+          content_id: String(c.content_id ?? c.id),
+          quantity: c.quantity ?? 1,
+          ...(Number.isFinite(price) ? { price } : {}),
+          ...(c.content_name ?? data.content_name ? { content_name: c.content_name ?? data.content_name } : {}),
+          ...(c.content_category ?? data.content_category ? { content_category: c.content_category ?? data.content_category } : {}),
+        };
+      });
     if (contents.length) out.contents = contents;
     else delete out.contents;
   } else if (ids.length === 1) {
@@ -602,9 +611,11 @@ export function flushQueue() {
         fbq('track', event, data, { eventID: eventId });
       }
       if (ttq && _tiktokCode && flushTiktok) {
-        const tiktokEvent = event === 'Purchase' ? 'CompletePayment' : event;
-        debug('Flushing queued TikTok event:', tiktokEvent, data);
-        ttq.track(tiktokEvent, toTikTokData(data), { event_id: eventId });
+        // Canonical event names ARE TikTok standard names (Apr 2026 reference:
+        // Purchase, AddToCart, ViewContent, ...). The old CompletePayment rename
+        // meant TikTok never saw the required Purchase funnel event.
+        debug('Flushing queued TikTok event:', event, data);
+        ttq.track(event, toTikTokData(data), { event_id: eventId });
       }
     });
     _eventQueue = [];
@@ -839,9 +850,9 @@ export function trackEvent(event: EventName, data?: Record<string, any>, userDat
       fbq('track', event, data, { eventID: resolvedEventId });
     }
     if (ttq && _tiktokCode && fireTiktokPixel) {
-      const tiktokEvent = event === 'Purchase' ? 'CompletePayment' : event;
-      debug('Firing TikTok Pixel event:', tiktokEvent, data, { event_id: resolvedEventId });
-      ttq.track(tiktokEvent, toTikTokData(data), { event_id: resolvedEventId });
+      // Canonical event names ARE TikTok standard names (Apr 2026 reference).
+      debug('Firing TikTok Pixel event:', event, data, { event_id: resolvedEventId });
+      ttq.track(event, toTikTokData(data), { event_id: resolvedEventId });
     }
     if (window.gtag) {
       const ga4Event = event === 'Purchase' ? 'purchase'

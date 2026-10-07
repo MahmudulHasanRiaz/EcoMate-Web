@@ -42,7 +42,8 @@ const UNSUPPORTED_LIFECYCLE_TYPES: readonly string[] =
  * TikTok Events API adapter (design §4.6). build() maps a canonical
  * TrackingSnapshotPayload onto the TikTok `pixel/track/` wire shape — hashing
  * PII only through the injected TrackingNormalizer, never inline. Purchase and
- * Refund both map to TikTok's `CompletePayment` event; Refund carries a negated
+ * Refund both map to TikTok's `Purchase` event (the Apr-2026 standard-events
+ * reference lists `Purchase`, not `CompletePayment`); Refund carries a negated
  * value and a distinct `refund_{orderId}` event_id so dedup never absorbs it
  * (design §4.6 refund table). send() POSTs to business-api.tiktok.com with the
  * `Access-Token` header and classifies the outcome for the dispatch retry
@@ -77,11 +78,14 @@ export class TikTokAdapter implements TrackingProviderAdapter {
       snapshot.eventType ?? (snapshot.value !== undefined ? 'Purchase' : undefined);
     if (!eventType || !this.supports(eventType)) return null;
 
-    // TikTok has no Refund event (design §4.6): send CompletePayment with a
+    // TikTok has no Refund event (design §4.6): send Purchase with a
     // negated value and a distinct event_id so refunds dedup separately.
+    // NOTE (2026-10): the purchase event name is `Purchase` — the TikTok
+    // standard-events reference (Apr 2026) lists `Purchase` and does NOT list
+    // `CompletePayment`. Sending CompletePayment meant TikTok never recorded
+    // the required Purchase funnel event ("Missing events: Purchase").
     const isRefund = eventType === 'Refund';
-    const eventName =
-      eventType === 'Purchase' || isRefund ? 'CompletePayment' : eventType;
+    const eventName = eventType === 'Purchase' || isRefund ? 'Purchase' : eventType;
     const eventId = this.resolveEventId(eventType, snapshot);
     if (!eventId) return null; // no dedup id → refuse to build
     const value =
@@ -129,6 +133,10 @@ export class TikTokAdapter implements TrackingProviderAdapter {
     if (snapshot.content_category)
       properties.content_category = snapshot.content_category;
     const ids = (snapshot.content_ids ?? []).map(String).filter(Boolean);
+    // The 2026 recommended params for Purchase name `content_ids` explicitly,
+    // so the flat array is sent alongside the translated rows below — whichever
+    // shape TikTok reads, the content is present ("Content ID missing" fix).
+    if (ids.length) properties.content_ids = ids;
     if (snapshot.contents?.length) {
       const contents = snapshot.contents
         .filter(
@@ -142,7 +150,7 @@ export class TikTokAdapter implements TrackingProviderAdapter {
         .map((item) => ({
           content_id: item.id,
           quantity: item.quantity,
-          ...(item.item_price !== undefined ? { price: item.item_price } : {}),
+          ...(Number.isFinite(item.item_price) ? { price: item.item_price } : {}),
           ...(item.name ?? snapshot.content_name
             ? { content_name: item.name ?? snapshot.content_name }
             : {}),

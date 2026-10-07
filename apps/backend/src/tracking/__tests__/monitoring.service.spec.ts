@@ -531,6 +531,48 @@ describe('MonitoringService — Phase 6 aggregate queries', () => {
       expect(metaProvider!.failed).toBe(1);
       expect(metaProvider!.skipped).toBe(0);
     });
+
+    it('matches a snapshot stored under displayId to its eligible order (UUID vs displayId)', async () => {
+      // Snapshots store orderId = displayId (ORD-…); the business side keys on
+      // the internal UUID. Matching on one form only produced Matched 0 with
+      // Missing = UUIDs and Unexpected = displayIds.
+      orderFindMany.mockResolvedValue([
+        {
+          id: 'uuid-1',
+          displayId: 'ORD-261007-0018',
+          timeline: [],
+          source: 'website',
+          salesChannel: null,
+          sourcePlatform: null,
+          sourceType: null,
+          posSessionId: null,
+          status: { name: 'Pending' },
+        },
+      ]);
+      snapshotFindMany.mockResolvedValue([
+        {
+          payload: { triggerMode: 'instant' },
+          id: 's1',
+          eventId: 'purchase_uuid-1',
+          orderId: 'ORD-261007-0018',
+          createdAt: new Date(),
+        },
+      ]);
+      systemSettingFindMany.mockResolvedValue([
+        { key: 'tracking_meta_purchase_mode', value: 'instant' },
+        { key: 'tracking_send_website_orders', value: 'true' },
+      ]);
+      orderCount.mockResolvedValue(1);
+      dispatchFindMany.mockResolvedValue([]);
+      dispatchEventCount.mockResolvedValue(0);
+
+      const result = await service.getPurchaseReconciliation(range);
+
+      expect(result.matchedPurchases).toBe(1);
+      expect(result.missingOrderIds).toEqual([]);
+      expect(result.unexpectedPurchases).toBe(0);
+      expect(result.unexpectedOrderIds).toEqual([]);
+    });
   });
 
   describe('getIdentityCoverage (incident follow-up, 2026-08-10)', () => {

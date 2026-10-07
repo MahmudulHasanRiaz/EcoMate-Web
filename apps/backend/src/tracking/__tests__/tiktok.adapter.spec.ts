@@ -51,7 +51,7 @@ const mockResponse = (status: number, body: string) => ({
 });
 
 const wirePayload = (over: Partial<ProviderPayload> = {}): ProviderPayload => ({
-  eventName: 'CompletePayment',
+  eventName: 'Purchase',
   eventId: 'purchase_ord-1001',
   eventTime: 1722600000,
   eventType: 'Purchase',
@@ -140,7 +140,7 @@ describe('TikTokAdapter (design §4.6 — TikTok Events API provider adapter)', 
     it('builds the TikTok wire-shape envelope from the snapshot', () => {
       const payload = adapter.build(snapshot, ctx, normalizer)!;
 
-      expect(payload.eventName).toBe('CompletePayment'); // Purchase → CompletePayment
+      expect(payload.eventName).toBe('Purchase'); // Purchase stays Purchase (Apr-2026 standard events)
       expect(payload.eventType).toBe('Purchase');
       expect(payload.eventId).toBe('purchase_ord-1001');
       expect(Number.isInteger(payload.eventTime)).toBe(true);
@@ -167,9 +167,9 @@ describe('TikTokAdapter (design §4.6 — TikTok Events API provider adapter)', 
 
       expect(p.value).toBe(2500);
       expect(p.currency).toBe('BDT');
-      // TikTok has no `content_ids` array — multi-item events use `contents`
-      // with TikTok-shaped rows ({content_id, quantity, price}).
-      expect(p).not.toHaveProperty('content_ids');
+      // The documented `content_ids` array rides alongside the translated
+      // `contents` rows — whichever shape TikTok reads, content is present.
+      expect(p.content_ids).toEqual(['sku-1', 'sku-2']);
       expect(p.contents).toEqual([
         { content_id: 'sku-1', quantity: 2, price: 1000 },
         { content_id: 'sku-2', quantity: 1, price: 500 },
@@ -178,6 +178,25 @@ describe('TikTokAdapter (design §4.6 — TikTok Events API provider adapter)', 
       expect(p).not.toHaveProperty('num_items');
       expect(p.search_string).toBe('organic rice');
       expect(p.order_id).toBe('ord-1001');
+    });
+
+    it('omits a non-finite row price instead of shipping null (NaN → JSON null)', () => {
+      const p = adapter.build(
+        {
+          ...snapshot,
+          contents: [
+            { id: 'sku-1', quantity: 2, item_price: Number(undefined) },
+            { id: 'sku-2', quantity: 1, item_price: 500 },
+          ],
+        },
+        ctx,
+        normalizer,
+      )!.properties;
+
+      expect(p.contents).toEqual([
+        { content_id: 'sku-1', quantity: 2 },
+        { content_id: 'sku-2', quantity: 1, price: 500 },
+      ]);
     });
 
     it('uses singular content_id for a single-item event without a contents array', () => {
@@ -189,7 +208,7 @@ describe('TikTokAdapter (design §4.6 — TikTok Events API provider adapter)', 
 
       expect(p.content_id).toBe('sku-1');
       expect(p).not.toHaveProperty('contents');
-      expect(p).not.toHaveProperty('content_ids');
+      expect(p.content_ids).toEqual(['sku-1']);
     });
 
     it('builds contents rows from bare ids when only content_ids are present', () => {
@@ -203,7 +222,7 @@ describe('TikTokAdapter (design §4.6 — TikTok Events API provider adapter)', 
         { content_id: 'sku-1', quantity: 1 },
         { content_id: 'sku-2', quantity: 1 },
       ]);
-      expect(p).not.toHaveProperty('content_ids');
+      expect(p.content_ids).toEqual(['sku-1', 'sku-2']);
     });
 
     it('passes through content_type/name/category with TikTok field names', () => {
@@ -247,14 +266,14 @@ describe('TikTokAdapter (design §4.6 — TikTok Events API provider adapter)', 
       expect(u.country).toBeUndefined();
     });
 
-    it('maps Refund to CompletePayment with a negative value and refund_ event_id', () => {
+    it('maps Refund to Purchase with a negative value and refund_ event_id', () => {
       const payload = adapter.build(
         { ...snapshot, eventType: 'Refund', eventId: 'refund_ord-1001', value: 2500 },
         ctx,
         normalizer,
       )!;
 
-      expect(payload.eventName).toBe('CompletePayment');
+      expect(payload.eventName).toBe('Purchase');
       expect(payload.eventType).toBe('Refund'); // canonical type preserved
       expect(payload.eventId).toBe('refund_ord-1001');
       expect(payload.properties.value).toBe(-2500);
@@ -299,7 +318,7 @@ describe('TikTokAdapter (design §4.6 — TikTok Events API provider adapter)', 
         normalizer,
       )!;
 
-      expect(payload.eventName).toBe('CompletePayment');
+      expect(payload.eventName).toBe('Purchase');
       expect(payload.eventId).toBe('purchase_ord-1001');
     });
 
@@ -401,7 +420,7 @@ describe('TikTokAdapter (design §4.6 — TikTok Events API provider adapter)', 
       );
       const body = JSON.parse(init.body);
       expect(body.pixel_code).toBe('PIXEL123');
-      expect(body.event).toBe('CompletePayment');
+      expect(body.event).toBe('Purchase');
       expect(body.event_id).toBe('purchase_ord-1001');
       // P0 fix: v1.3 pixel/track requires ISO 8601 STRING timestamp — a JSON
       // number is rejected with 40002 ("Invalid value for timestamp: not a

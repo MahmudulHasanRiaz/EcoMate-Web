@@ -955,6 +955,7 @@ export class MonitoringService {
       where: { trashedAt: null },
       select: {
         id: true,
+        displayId: true,
         timeline: true,
         source: true,
         salesChannel: true,
@@ -975,7 +976,7 @@ export class MonitoringService {
     let confirmedOrders = 0;
     let deliveredOrders = 0;
     const confirmedBySource = { DIRECT_WEBSITE: 0, POS: 0, INCOMPLETE_CONVERSION: 0, MANUAL: 0 };
-    const confirmedOrderDetails: Array<{ id: string; source: string; eligible: boolean; configKey: string; configValue: boolean }> = [];
+    const confirmedOrderDetails: Array<{ id: string; displayId: string | null; source: string; eligible: boolean; configKey: string; configValue: boolean }> = [];
 
     for (const order of allOrders) {
       const timeline = Array.isArray(order.timeline) ? order.timeline : [];
@@ -999,7 +1000,7 @@ export class MonitoringService {
           : source === 'POS' ? 'tracking_send_pos_orders'
             : source === 'INCOMPLETE_CONVERSION' ? 'tracking_send_incomplete_conversion_orders'
               : 'tracking_send_manual_orders';
-        confirmedOrderDetails.push({ id: order.id, source, eligible, configKey, configValue: eligible });
+        confirmedOrderDetails.push({ id: order.id, displayId: order.displayId ?? null, source, eligible, configKey, configValue: eligible });
       }
       if (enteredDelivered) deliveredOrders++;
     }
@@ -1060,18 +1061,21 @@ export class MonitoringService {
     });
 
     const canonicalPurchases = purchaseSnapshots.length;
+    // Snapshot orderId is the human-readable displayId (ORD-…), while business
+    // sets below key on the internal UUID — matching on only one side produced
+    // Matched 0 / Missing = UUIDs / Unexpected = displayIds. Match on BOTH
+    // identity forms so a snapshot stored under either one correlates.
     const purchaseOrderIds = new Set(purchaseSnapshots.map((s) => s.orderId).filter(Boolean) as string[]);
-    const eligibleOrderIds = new Set(confirmedOrderDetails.filter((d) => d.eligible).map((d) => d.id));
+
+    const toKeys = (o: { id: string; displayId?: string | null }) =>
+      [o.id, o.displayId].filter(Boolean) as string[];
+    const eligibleConfirmedOrders = confirmedOrderDetails.filter((d) => d.eligible);
+    const eligibleConfirmedKeys = new Set(eligibleConfirmedOrders.flatMap(toKeys));
 
     // For instant mode, eligible = all orders created in range (not just confirmed)
-    // We need to check which orders have Purchase snapshots
-    const allEligibleOrderIds = new Set<string>();
-    for (const order of allOrders) {
-      const source = classifySource(order);
-      if (sourceEligibility[source]) {
-        allEligibleOrderIds.add(order.id);
-      }
-    }
+    const allEligibleOrders = (allOrders as Array<{ id: string; displayId: string | null }>)
+      .filter((order) => sourceEligibility[classifySource(order)]);
+    const allEligibleKeys = new Set(allEligibleOrders.flatMap(toKeys));
 
     // Matched = Purchase snapshots that correspond to eligible orders
     let matchedPurchases = 0;
@@ -1080,18 +1084,21 @@ export class MonitoringService {
     const unexpectedOrderIds: string[] = [];
 
     // Check which eligible orders have Purchase snapshots
-    const expectedOrderIds = metaMode === 'validated' && metaStatus ? eligibleOrderIds : allEligibleOrderIds;
-    for (const orderId of expectedOrderIds) {
-      if (purchaseOrderIds.has(orderId)) {
+    const expectedOrders =
+      metaMode === 'validated' && metaStatus ? eligibleConfirmedOrders : allEligibleOrders;
+    const expectedKeys =
+      metaMode === 'validated' && metaStatus ? eligibleConfirmedKeys : allEligibleKeys;
+    for (const order of expectedOrders) {
+      if (toKeys(order).some((k) => purchaseOrderIds.has(k))) {
         matchedPurchases++;
       } else {
-        missingOrderIds.push(orderId);
+        missingOrderIds.push(order.id);
       }
     }
 
     // Check which Purchase snapshots don't correspond to eligible orders
     for (const snap of purchaseSnapshots) {
-      if (snap.orderId && !expectedOrderIds.has(snap.orderId)) {
+      if (snap.orderId && !expectedKeys.has(snap.orderId)) {
         unexpectedPurchases++;
         unexpectedOrderIds.push(snap.orderId);
       }

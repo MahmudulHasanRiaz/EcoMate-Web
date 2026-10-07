@@ -56,11 +56,16 @@ export function buildPurchaseSharedData(
     content_category: firstItem?.product?.category?.name || undefined,
     num_items: itemsList.reduce((s: number, i: any) => s + (i.quantity || 0), 0),
     order_id: order.displayId || order.id,
-    contents: itemsList.map((i: any) => ({
-      id: i.variant?.sku || i.product?.sku || i.productId || i.comboId || '',
-      quantity: i.quantity,
-      item_price: Number(i.price),
-    })),
+    contents: itemsList.map((i: any) => {
+      // Guard the Meta 2804008 / TikTok content reject: a non-finite price
+      // serializes to null and poisons the row — omit it, keep the content.
+      const price = Number(i.price);
+      return {
+        id: i.variant?.sku || i.product?.sku || i.productId || i.comboId || '',
+        quantity: i.quantity,
+        ...(Number.isFinite(price) ? { item_price: price } : {}),
+      };
+    }),
   };
 }
 
