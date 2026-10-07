@@ -127,14 +127,49 @@ describe('InventoryService — productLookup', () => {
   it('matches on product name, Product.sku and ProductVariant.sku', async () => {
     await service.productLookup({ q: 'shirt' });
 
+    // Phase 1 is the indexed exact-SKU pass (finds a buried SKU among
+    // thousands); phase 2 is the fuzzy substring fill.
     expect(findMany().mock.calls[0][0].where).toEqual({
       isActive: true,
+      OR: [
+        { sku: { equals: 'shirt', mode: 'insensitive' } },
+        { variants: { some: { sku: { equals: 'shirt', mode: 'insensitive' } } } },
+      ],
+    });
+    expect(findMany().mock.calls.length).toBeGreaterThan(1);
+    const fuzzyWhere = findMany().mock.calls[1][0].where;
+    expect(fuzzyWhere.isActive).toBe(true);
+    expect(fuzzyWhere.AND[0]).toEqual({
       OR: [
         { name: { contains: 'shirt', mode: 'insensitive' } },
         { sku: { contains: 'shirt', mode: 'insensitive' } },
         { variants: { some: { sku: { contains: 'shirt', mode: 'insensitive' } } } },
       ],
     });
+  });
+
+  it('finds a buried exact SKU without scanning the whole catalogue', async () => {
+    // Thousands of products match "shirt" fuzzily, but the exact SKU sits deep
+    // in id order. The exact phase must surface it on the first query.
+    const buried = {
+      id: 'prod-buried',
+      name: 'Buried Exact',
+      sku: 'BURIED-999',
+      type: 'simple',
+      managedStockQuantity: 5,
+      reservedStock: 0,
+      variants: [],
+    };
+    findMany().mockImplementation((args: any) => {
+      const or = args.where.OR;
+      if (or?.some((c: any) => c.sku?.equals)) return Promise.resolve([buried]);
+      return Promise.resolve([]);
+    });
+
+    const res = await service.productLookup({ q: 'BURIED-999' });
+
+    expect(res.data).toHaveLength(1);
+    expect(res.data[0]).toMatchObject({ productId: 'prod-buried', sku: 'BURIED-999' });
   });
 
   it('returns a single variantId-null row for a SIMPLE product', async () => {
@@ -153,7 +188,7 @@ describe('InventoryService — productLookup', () => {
         available: 35,
       },
     ]);
-    expect(res.meta).toEqual({ total: 1, perPage: 25 });
+    expect(res.meta).toEqual({ total: 1, perPage: 25, hasMore: false });
   });
 
   it('returns that product’s variants for a parent SKU — never a bare parent row', async () => {

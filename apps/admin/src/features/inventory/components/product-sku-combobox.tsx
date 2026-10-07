@@ -39,7 +39,7 @@ export interface LookupRow {
 
 export interface LookupResponse {
   data: LookupRow[]
-  meta: { total: number; perPage: number }
+  meta: { total: number; perPage: number; hasMore?: boolean }
 }
 
 const LOOKUP_PER_PAGE = 25
@@ -73,7 +73,7 @@ function rowKey(row: LookupRow): string {
 
 interface ProductSkuComboboxProps {
   selected: LookupRow | null
-  onSelect: (row: LookupRow) => void
+  onSelect: (row: LookupRow | null) => void
   warehouseId?: string
   placeholder?: string
   label?: string
@@ -147,7 +147,9 @@ export function ProductSkuCombobox({
   })
 
   const rows = useMemo(() => data?.data ?? [], [data])
-  const truncated = (data?.meta?.total ?? 0) > rows.length
+  // Backend sends `hasMore` when the row cap cut the list short; fall back to
+  // a full page (older builds only sent total == rows.length, always false).
+  const truncated = (data?.meta as any)?.hasMore ?? ((data?.meta?.total ?? 0) > rows.length || rows.length >= LOOKUP_PER_PAGE)
 
   useEffect(() => {
     rowsRef.current = rows
@@ -184,6 +186,10 @@ export function ProductSkuCombobox({
   // A bare Html5Qrcode throws if a start/stop overlaps ("already under
   // transition"), so every lifecycle call goes through createScanner, which
   // serialises them. Nothing here gates cleanup on `isScanning`.
+  // When the decoded code is not on the current result page yet, the lookup
+  // for that exact code is fired and `heldRef` keeps the camera on — the
+  // auto-pick effect below selects the row as soon as it lands, so one scan
+  // is enough (the backend's exact-SKU phase guarantees the hit is on page 1).
   useEffect(() => {
     if (!scanning) {
       void scannerRef.current?.dispose()
@@ -247,13 +253,42 @@ export function ProductSkuCombobox({
     if (selected) setScanning(false)
   }, [selected])
 
-  // ── USB / keyboard-wedge scanner ───────────────────────────────────────────
+  // A camera scan for a code that was not on the current page fires a lookup
+  // for that exact code (`heldRef`). Auto-pick the row the moment it lands —
+  // no second scan needed.
+  useEffect(() => {
+    if (!heldRef.current || rows.length === 0) return
+    const code = debounced.trim()
+    if (!code) return
+    const hit = rows.find((r) => !!r.sku && r.sku.toLowerCase() === code.toLowerCase())
+    if (hit) {
+      onSelect(hit)
+      setOpen(false)
+      heldRef.current = false
+      reset()
+    }
+  }, [rows, debounced, onSelect, reset])
+
+  // Typing (or wedge-scanning) a full SKU into the picker input and pressing
+  // Enter auto-selects the exact match. This is what makes a USB/keyboard-wedge
+  // scanner work: the wedge types the code into the focused input and presses
+  // Enter, and the operator typing a code by hand gets the same one-keystroke
+  // commit instead of having to find the row with the mouse.
+  const commitExactInput = useCallback(() => {
+    const code = input.trim()
+    if (!code) return false
+    return selectByCode(code)
+  }, [input, selectByCode])
+
+  // ── USB / keyboard-wedge scanner (focus NOT in a text field) ───────────────
   // A wedge scanner types the code into whatever has focus and then presses
-  // Enter. Keying off the buffer gap (not the key count) means the picker can
-  // still be open with focus inside the input: typing normally keeps the buffer
-  // growing with <200ms gaps, so Enter commits the search instead of firing a
-  // scan. Ignored while a text field has focus and while no product is chosen.
-  const rowsRefForWedge = rowsRef
+  // Enter. When focus is inside a text field the keystrokes already land in
+  // the picker input (handled by `commitExactInput` on Enter), so this global
+  // listener only covers the focus-elsewhere case — e.g. the modal body or the
+  // trigger button has focus. Keying off the buffer gap (not the key count):
+  // a fast wedge burst stays in one buffer while normal typing resets it.
+  // Works BEFORE any product is chosen: scanning is how the product gets
+  // chosen in the first place.
   const selectRef = useRef(selectByCode)
   selectRef.current = selectByCode
 
@@ -263,8 +298,9 @@ export function ProductSkuCombobox({
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null
-      // A focused text field owns every keystroke: the operator is searching,
-      // not scanning. Enter then commits the typed term normally.
+      // Keystrokes inside a text field belong to that field — the picker's own
+      // input commits them via Enter (see `commitExactInput`). Swallow here so
+      // a scan typed into the input is not double-handled.
       if (
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||
@@ -273,8 +309,6 @@ export function ProductSkuCombobox({
         buffer = ''
         return
       }
-      // Only meaningful once a product has been chosen for this transfer.
-      if (!selected) return
 
       const now = Date.now()
       if (now - lastKeyTime > WEDGE_GAP_MS) buffer = ''
@@ -291,7 +325,7 @@ export function ProductSkuCombobox({
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selected, rowsRefForWedge])
+  }, [])
 
   const selectedLabel = selected
     ? `${selected.productName}${selected.variantName ? ` — ${selected.variantName}` : ''}${
@@ -333,7 +367,7 @@ export function ProductSkuCombobox({
               size="icon"
               aria-label="Clear product"
               onClick={() => {
-                onSelect(null as unknown as LookupRow)
+                onSelect(null)
                 reset()
               }}
             >
@@ -354,9 +388,21 @@ export function ProductSkuCombobox({
         <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
           <Command shouldFilter={false}>
             <CommandInput
-              placeholder="Type name or SKU..."
+              placeholder="Type name or SKU — Enter selects the exact SKU..."
               value={input}
               onValueChange={setInput}
+              // Capture phase, before cmdk's own Enter handling: Enter commits
+              // an EXACT SKU only. cmdk would otherwise auto-pick the first
+              // (highlighted) row — typing a parent SKU like "SHIRT" and
+              // hitting Enter would silently grab SHIRT-S, the exact footgun
+              // this picker exists to prevent. Non-exact input keeps filtering
+              // and must be picked explicitly (click), never by Enter.
+              onKeyDownCapture={(e) => {
+                if (e.key !== 'Enter') return
+                e.preventDefault()
+                e.stopPropagation()
+                commitExactInput()
+              }}
             />
             <CommandList>
               {isError ? (

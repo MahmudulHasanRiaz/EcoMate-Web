@@ -79,7 +79,7 @@ function mockLookup(rows: LookupRow[] = [shirtSmall, shirtMedium, mug]) {
 const lookupTerms = () =>
   mockGet.mock.calls.filter(([url]: [string]) => url === LOOKUP_URL).map(([, cfg]: [string, any]) => cfg?.params?.q)
 
-const INPUT_PLACEHOLDER = 'Type name or SKU...'
+const INPUT_PLACEHOLDER = /Type name or SKU/
 
 type Screen = Awaited<ReturnType<typeof renderCombobox>>
 
@@ -227,14 +227,26 @@ describe('ProductSkuCombobox', () => {
     expect(screen.onSelect).toHaveBeenCalledWith(shirtMedium)
   })
 
-  it('ignores a partial or wrong-case scan code instead of picking the wrong row', async () => {
+  it('ignores a parent or unknown scan code instead of picking the wrong row', async () => {
     const screen = await openPicker()
     await userEvent.click(screen.getByRole('button', { name: 'Scan barcode' }))
     await vi.waitFor(() => expect((globalThis as any).__emitScan).toBeTypeOf('function'))
 
     ;(globalThis as any).__emitScan('SHIRT') // a parent code with no own row
-    ;(globalThis as any).__emitScan('shirt-m') // case mismatch
+    ;(globalThis as any).__emitScan('SHIRT-X') // unknown code
     expect(screen.onSelect).not.toHaveBeenCalled()
+  })
+
+  it('matches a scanned code case-insensitively', async () => {
+    const screen = await openPicker()
+    await type(screen, 'shirt')
+    await vi.waitFor(() => expect(optionRows(screen)).toHaveLength(3), { timeout: 2000 })
+    await userEvent.click(screen.getByRole('button', { name: 'Scan barcode' }))
+
+    await vi.waitFor(() => expect((globalThis as any).__emitScan).toBeTypeOf('function'))
+    ;(globalThis as any).__emitScan('shirt-m')
+
+    await vi.waitFor(() => expect(screen.onSelect).toHaveBeenCalledWith(shirtMedium))
   })
 
   it('re-runs the lookup for a scanned code that is not in the current rows', async () => {
@@ -249,9 +261,38 @@ describe('ProductSkuCombobox', () => {
     expect(screen.onSelect).not.toHaveBeenCalled()
   })
 
-  it('picks up a USB/keyboard-wedge scan once a product is selected', async () => {
+  it('auto-selects once the lookup for a scanned code lands (single scan)', async () => {
+    // The scanned code is not on the current page: the picker fires a lookup
+    // for that exact code and picks the row as soon as it arrives — the
+    // operator never scans twice.
+    mockGet.mockImplementation((url: string, cfg?: any) => {
+      if (url === LOOKUP_URL) {
+        const q = cfg?.params?.q
+        if (q === 'SHIRT-M') {
+          return Promise.resolve({
+            data: { data: [shirtMedium], meta: { total: 1, perPage: 25 } },
+          })
+        }
+        return Promise.resolve({ data: { data: [mug], meta: { total: 1, perPage: 25 } } })
+      }
+      return Promise.reject(new Error(`Unexpected URL ${url}`))
+    })
+    const screen = await openPicker()
+    await type(screen, 'mug')
+    await vi.waitFor(() => expect(optionRows(screen)).toHaveLength(1), { timeout: 2000 })
+    await userEvent.click(screen.getByRole('button', { name: 'Scan barcode' }))
+    await vi.waitFor(() => expect((globalThis as any).__emitScan).toBeTypeOf('function'))
+
+    ;(globalThis as any).__emitScan('SHIRT-M')
+    await vi.waitFor(() => expect(screen.onSelect).toHaveBeenCalledWith(shirtMedium), {
+      timeout: 3000,
+    })
+  })
+
+  it('picks up a USB/keyboard-wedge scan with nothing selected yet', async () => {
+    // Scanning is how the product gets chosen — no prior selection needed.
     mockLookup([mug])
-    const screen = await openPicker({ selected: mug })
+    const screen = await openPicker()
     await type(screen, 'MUG')
     // Wait for the row itself, not for the request: the request firing does not
     // mean the list has rendered.
@@ -260,9 +301,9 @@ describe('ProductSkuCombobox', () => {
       { timeout: 2000 },
     )
 
-    // Searching leaves focus in the input, and a focused text field owns every
-    // keystroke — so the wedge is (correctly) ignored. Dismiss the popover first,
-    // the way an operator does once the right product is on screen.
+    // Searching leaves focus in the input, and keystrokes typed there belong to
+    // the input — so dismiss the popover first, the way an operator does once
+    // the right product is on screen. The wedge burst then lands on <body>.
     await userEvent.keyboard('{Escape}')
     await vi.waitFor(() =>
       expect(screen.getByRole('combobox', { name: 'Product' }).element().getAttribute('aria-expanded')).toBe('false'),
@@ -273,13 +314,29 @@ describe('ProductSkuCombobox', () => {
     await vi.waitFor(() => expect(screen.onSelect).toHaveBeenCalledWith(mug))
   })
 
-  it('ignores a wedge scan while the search input has focus', async () => {
+  it('commits an exact SKU typed into the search input on Enter', async () => {
+    // A wedge scanner types into the focused input and presses Enter; a human
+    // typing the full SKU gets the same one-keystroke commit.
     mockLookup([mug])
-    const screen = await openPicker({ selected: mug })
-    const input = inputOf(screen)
-    await userEvent.click(input)
-    await userEvent.keyboard('MUG-001{Enter}')
+    const screen = await openPicker()
+    await type(screen, 'MUG-001')
+    await vi.waitFor(
+      () => expect(document.querySelectorAll('[data-sku="MUG-001"]').length).toBe(1),
+      { timeout: 2000 },
+    )
 
+    await userEvent.keyboard('{Enter}')
+    await vi.waitFor(() => expect(screen.onSelect).toHaveBeenCalledWith(mug))
+  })
+
+  it('does not commit a partial SKU on Enter', async () => {
+    mockLookup([shirtSmall, shirtMedium])
+    const screen = await openPicker()
+    await type(screen, 'SHIRT')
+    await vi.waitFor(() => expect(optionRows(screen)).toHaveLength(2), { timeout: 2000 })
+
+    // Parent code with no own row: Enter must keep filtering, never pick a row.
+    await userEvent.keyboard('{Enter}')
     expect(screen.onSelect).not.toHaveBeenCalled()
   })
 

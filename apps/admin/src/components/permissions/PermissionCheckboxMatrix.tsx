@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, ChevronDown, KeyRound, Loader2, RotateCcw, Search } from 'lucide-react'
 import { apiClient } from '@/lib/api-client'
@@ -90,6 +90,20 @@ export function PermissionCheckboxMatrix({ selected, onChange }: PermissionCheck
 
   const selectedCount = selected.filter((key) => catalogueKeys.has(key)).length
 
+  // Flat render order of the currently visible permissions — the axis a
+  // shift-click range is measured along. Rebuilt on every search/filter change.
+  const flatKeys = useMemo(
+    () => filtered.flatMap((g) => g.permissions.map((p) => p.key)),
+    [filtered],
+  )
+  const lastIndexRef = useRef<number | null>(null)
+
+  // A new search reorders the list, so a stale anchor would span the wrong
+  // range. Reset it whenever the visible order changes.
+  useEffect(() => {
+    lastIndexRef.current = null
+  }, [flatKeys])
+
   function emit(next: Set<string>) {
     onChange(Array.from(next))
   }
@@ -99,6 +113,38 @@ export function PermissionCheckboxMatrix({ selected, onChange }: PermissionCheck
     if (next.has(key)) next.delete(key)
     else next.add(key)
     emit(next)
+    lastIndexRef.current = flatKeys.indexOf(key)
+  }
+
+  /**
+   * Shift-click range: click one permission, shift-click another, and every
+   * visible permission between the two is selected in those two clicks (or
+   * deselected when the whole range is already on — same toggle semantics as
+   * a single click). Wired to `onClickCapture` on the row so it runs before
+   * the checkbox's own toggle and can swallow it via stopPropagation.
+   */
+  function selectRange(toKey: string) {
+    const to = flatKeys.indexOf(toKey)
+    if (to === -1) return
+    const from = lastIndexRef.current ?? to
+    const lo = Math.min(from, to)
+    const hi = Math.max(from, to)
+    const slice = flatKeys.slice(lo, hi + 1)
+    const allOn = slice.every((k) => selectedSet.has(k))
+    const next = new Set(selected)
+    for (const k of slice) {
+      if (allOn) next.delete(k)
+      else next.add(k)
+    }
+    emit(next)
+    lastIndexRef.current = to
+  }
+
+  function handleRowClickCapture(e: React.MouseEvent, key: string) {
+    if (!e.shiftKey) return
+    e.preventDefault()
+    e.stopPropagation()
+    selectRange(key)
   }
 
   /** Tri-state per module: select all, deselect all, or fill the gaps. */
@@ -110,6 +156,7 @@ export function PermissionCheckboxMatrix({ selected, onChange }: PermissionCheck
       else next.add(key)
     }
     emit(next)
+    if (keys.length > 0) lastIndexRef.current = flatKeys.indexOf(keys[keys.length - 1])
   }
 
   // A search always reveals its matches; otherwise respect the manual toggle
@@ -170,6 +217,7 @@ export function PermissionCheckboxMatrix({ selected, onChange }: PermissionCheck
         <span className='text-xs font-medium tabular-nums text-muted-foreground'>
           [{selectedCount}/{data?.total ?? 0} selected]
         </span>
+        <span className='text-[11px] text-muted-foreground'>Tip: Shift+click selects a range</span>
       </div>
 
       {filtered.length === 0 ? (
@@ -238,7 +286,11 @@ export function PermissionCheckboxMatrix({ selected, onChange }: PermissionCheck
                 <CollapsibleContent>
                   <div className='grid gap-2 border-t px-3 py-3 sm:grid-cols-2'>
                     {module.permissions.map((perm) => (
-                      <div key={perm.key} className='flex items-start gap-2'>
+                      <div
+                        key={perm.key}
+                        className='flex items-start gap-2'
+                        onClickCapture={(e) => handleRowClickCapture(e, perm.key)}
+                      >
                         <Checkbox
                           id={perm.key}
                           className='mt-0.5'

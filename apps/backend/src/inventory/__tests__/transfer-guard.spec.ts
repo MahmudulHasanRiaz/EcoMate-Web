@@ -117,6 +117,20 @@ describe('InventoryService — transfer guards', () => {
     expect((err as Error)?.message ?? '').not.toMatch(/variant/i);
   });
 
+  it('refuses a variantId that belongs to a different product', async () => {
+    (prisma.product.findUnique as jest.Mock).mockResolvedValue(variableProduct);
+    (prisma.productVariant.findUnique as jest.Mock).mockResolvedValue({
+      id: 'var-other',
+      productId: 'prod-other',
+      sku: 'OTHER-1',
+    });
+
+    await expect(
+      service.transfer({ ...baseDto, variantId: 'var-other' } as any),
+    ).rejects.toThrow(/does not belong/i);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it('still allows a product-level transfer for a SIMPLE product', async () => {
     (prisma.product.findUnique as jest.Mock).mockResolvedValue(simpleProduct);
     (prisma.stockTransfer.findUnique as jest.Mock).mockResolvedValue(null);

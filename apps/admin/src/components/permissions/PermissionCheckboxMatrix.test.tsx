@@ -269,4 +269,57 @@ describe('PermissionCheckboxMatrix', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Toggle Orders' }))
     await expect.element(screen.getByText('View Orders')).toBeInTheDocument()
   })
+
+  it('shift-click selects the whole visible range in two clicks', async () => {
+    const screen = await wrap(<ControlledMatrix />)
+    await expect.element(screen.getByText('View Orders')).toBeInTheDocument()
+
+    // Click 1 anchors on the first Orders permission...
+    await userEvent.click(screen.getByRole('checkbox', { name: /View Orders/ }))
+    // ...shift-click 2 spans to the last one, selecting everything between.
+    await userEvent.keyboard('{Shift>}')
+    await userEvent.click(screen.getByRole('checkbox', { name: /Refund Orders/ }))
+    await userEvent.keyboard('{/Shift}')
+
+    const emitted = JSON.parse(screen.getByTestId('selected').element().textContent ?? '[]') as string[]
+    expect([...emitted].sort()).toEqual(['create_orders', 'refund_orders', 'view_orders'])
+  })
+
+  it('shift-click across modules spans every visible permission between', async () => {
+    const screen = await wrap(<ControlledMatrix />)
+    await expect.element(screen.getByText('View Orders')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('checkbox', { name: /View Orders/ }))
+    await userEvent.keyboard('{Shift>}')
+    await userEvent.click(screen.getByRole('checkbox', { name: /Manage Attendance Devices/ }))
+    await userEvent.keyboard('{/Shift}')
+
+    const emitted = JSON.parse(screen.getByTestId('selected').element().textContent ?? '[]') as string[]
+    // view_orders … manage_attendance_devices in render order: the 3 Orders
+    // keys plus both Attendance Devices keys.
+    expect([...emitted].sort()).toEqual([
+      'create_orders',
+      'manage_attendance_devices',
+      'refund_orders',
+      'view_hr_attendance_devices',
+      'view_orders',
+    ])
+  })
+
+  it('shift-click a fully-selected range deselects it', async () => {
+    const screen = await wrap(
+      <ControlledMatrix initial={['view_orders', 'create_orders']} />,
+    )
+    await expect.element(screen.getByText('View Orders')).toBeInTheDocument()
+
+    // Click Refund to complete the Orders module (anchors on Refund)...
+    await userEvent.click(screen.getByRole('checkbox', { name: /Refund Orders/ }))
+    // ...then shift-click View: the whole View..Refund range is on, so it clears.
+    await userEvent.keyboard('{Shift>}')
+    await userEvent.click(screen.getByRole('checkbox', { name: /View Orders/ }))
+    await userEvent.keyboard('{/Shift}')
+
+    const emitted = JSON.parse(screen.getByTestId('selected').element().textContent ?? '[]') as string[]
+    expect(emitted).toEqual([])
+  })
 })

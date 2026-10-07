@@ -1341,85 +1341,137 @@ export class InventoryService {
       /** True when `sku` or the parent `Product.sku` is an exact hit. */
       exactSku: boolean;
     }> = [];
-
-    const where: Prisma.ProductWhereInput = {
-      isActive: true,
-      OR: [
-        { name: { contains: q, mode: 'insensitive' } },
-        { sku: { contains: q, mode: 'insensitive' } },
-        { variants: { some: { sku: { contains: q, mode: 'insensitive' } } } },
-      ],
-    };
-
-    // Cursors, not skip/take: fanning a variable product out into its variants
-    // changes the row count, so page offsets would drop or repeat rows. The
-    // product cursor is capped well below the row cap so a handful of
-    // 40-variant products can never blow past LOOKUP_MAX_PER_PAGE rows.
-    const maxProducts = Math.max(1, Math.ceil(perPage / 2));
-    const pageSize = Math.min(perPage, maxProducts);
-    let cursor: string | undefined;
     const seen = new Set<string>();
 
-    while (matches.length < perPage && seen.size < maxProducts) {
-      const page: ProductLookupRow[] = await this.prisma.product.findMany({
-        where,
-        take: pageSize,
-        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-        orderBy: { id: 'asc' },
-        select: PRODUCT_LOOKUP_SELECT,
-      });
-      // Page through with a cursor until the products run out (a short page) or
-      // the row cap is reached. The row cap is checked on `matches`, never on
-      // `page.length` — a variable product contributes several rows per product,
-      // so the product count can lag well behind the row count.
-      for (const p of page) {
-        seen.add(p.id);
+    const pushProduct = (p: ProductLookupRow) => {
+      if (seen.has(p.id)) return;
+      seen.add(p.id);
 
-        // A VARIABLE product fans out per ACTIVE variant and NEVER emits a bare
-        // parent row — that parent row is what used to be silently selectable.
-        if (p.type === 'variable') {
-          for (const v of p.variants) {
-            const key = `${p.id}:${v.id}`;
-            if (matches.length >= perPage) break;
-            matches.push({
-              key,
-              productId: p.id,
-              productName: p.name,
-              productSku: p.sku,
-              variantId: v.id,
-              variantName:
-                v.attributeValues
-                  .map((av) => av.attributeValue?.value)
-                  .filter(Boolean)
-                  .join(' / ') || v.sku,
-              sku: v.sku,
-              type: 'variant',
-              available: this.managedAvailable('variant', v.managedStockQuantity, v.reservedStock),
-              exactSku: v.sku.toLowerCase() === lowered || p.sku?.toLowerCase() === lowered,
-            });
-          }
-          continue;
+      // A VARIABLE product fans out per ACTIVE variant and NEVER emits a bare
+      // parent row — that parent row is what used to be silently selectable.
+      // A parent-SKU search therefore returns the parent's variants and forces
+      // a variant choice instead of letting the parent itself be picked.
+      if (p.type === 'variable') {
+        for (const v of p.variants) {
+          const key = `${p.id}:${v.id}`;
+          if (matches.length >= perPage) break;
+          matches.push({
+            key,
+            productId: p.id,
+            productName: p.name,
+            productSku: p.sku,
+            variantId: v.id,
+            variantName:
+              v.attributeValues
+                .map((av) => av.attributeValue?.value)
+                .filter(Boolean)
+                .join(' / ') || v.sku,
+            sku: v.sku,
+            type: 'variant',
+            available: this.managedAvailable('variant', v.managedStockQuantity, v.reservedStock),
+            exactSku:
+              (v.sku?.toLowerCase() ?? '') === lowered || (p.sku?.toLowerCase() ?? '') === lowered,
+          });
         }
-
-        // Simple product: one row, the product-level stock unit. Variants on a
-        // non-variable product stay out — they are not stock units here.
-        matches.push({
-          key: `${p.id}:`,
-          productId: p.id,
-          productName: p.name,
-          productSku: p.sku,
-          variantId: null,
-          variantName: null,
-          sku: p.sku,
-          type: 'product',
-          available: this.managedAvailable('product', p.managedStockQuantity, p.reservedStock),
-          exactSku: p.sku?.toLowerCase() === lowered,
-        });
+        return;
       }
 
-      // Short page → no more products behind the cursor.
-      if (page.length < pageSize) break;
-      cursor = page[page.length - 1].id;
+      // Simple product: one row, the product-level stock unit. Variants on a
+      // non-variable product stay out — they are not stock units here.
+      matches.push({
+        key: `${p.id}:`,
+        productId: p.id,
+        productName: p.name,
+        productSku: p.sku,
+        variantId: null,
+        variantName: null,
+        sku: p.sku,
+        type: 'product',
+        available: this.managedAvailable('product', p.managedStockQuantity, p.reservedStock),
+        exactSku: (p.sku?.toLowerCase() ?? '') === lowered,
+      });
+    };
+
+    // Phase 1 — exact SKU first (indexed equality). With thousands of products
+    // a `contains` query ordered by id can bury the exact hit hundreds of rows
+    // deep and the old 13-product scan never reached it, so typing a full SKU
+    // returned "No products found." Equality uses the sku indexes and finds the
+    // buried row no matter how large the catalogue is.
+    const exactWhere: Prisma.ProductWhereInput = {
+      isActive: true,
+      OR: [
+        { sku: { equals: q, mode: 'insensitive' } },
+        { variants: { some: { sku: { equals: q, mode: 'insensitive' } } } },
+      ],
+    };
+    const exactPage: ProductLookupRow[] = await this.prisma.product.findMany({
+      where: exactWhere,
+      take: perPage,
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+      select: PRODUCT_LOOKUP_SELECT,
+    });
+    const exactFull = exactPage.length >= perPage;
+    for (const p of exactPage) {
+      if (matches.length >= perPage) break;
+      pushProduct(p);
+    }
+
+    // Phase 2 — fuzzy substring to fill the remaining rows. Cursors, not
+    // skip/take: fanning a variable product out into its variants changes the
+    // row count, so product offsets would drop or repeat rows. Ordered by name
+    // (deterministic and useful) with an id tiebreaker; already-seen exact hits
+    // are excluded so the two phases never duplicate rows.
+    let hasMore = exactFull && matches.length >= perPage;
+    if (matches.length < perPage) {
+      const fuzzyWhere: Prisma.ProductWhereInput = {
+        isActive: true,
+        AND: [
+          {
+            OR: [
+              { name: { contains: q, mode: 'insensitive' } },
+              { sku: { contains: q, mode: 'insensitive' } },
+              { variants: { some: { sku: { contains: q, mode: 'insensitive' } } } },
+            ],
+          },
+          ...(seen.size > 0 ? [{ id: { notIn: [...seen] } }] : []),
+        ],
+      };
+
+      // Bounded scan: at most two 25-row product pages per keystroke. Enough to
+      // fill the 25-row combobox even when every product is variable, small
+      // enough to keep a keystroke cheap on a large catalogue.
+      const pageSize = Math.min(25, perPage);
+      let cursor: string | undefined;
+      hasMore = false;
+      for (let pages = 0; pages < 2 && matches.length < perPage; pages++) {
+        const page: ProductLookupRow[] = await this.prisma.product.findMany({
+          where: fuzzyWhere,
+          take: pageSize,
+          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+          orderBy: [{ name: 'asc' }, { id: 'asc' }],
+          select: PRODUCT_LOOKUP_SELECT,
+        });
+        if (page.length === 0) break;
+        let added = 0;
+        for (const p of page) {
+          const before = matches.length;
+          if (before >= perPage) break;
+          pushProduct(p);
+          if (matches.length > before) added++;
+        }
+        // Short page → no more products behind the cursor. A full page while
+        // the row cap is hit means there may be more matches left unscanned.
+        if (matches.length >= perPage) {
+          hasMore = page.length >= pageSize;
+          break;
+        }
+        if (page.length < pageSize || added === 0) break;
+        cursor = page[page.length - 1].id;
+        // A full page with room still left in the row cap: another page may
+        // hold more matches.
+        hasMore = true;
+      }
+      if (matches.length < perPage) hasMore = false;
     }
 
     // Physical availability (quantity − reserved) for the resolved rows only:
@@ -1457,7 +1509,7 @@ export class InventoryService {
       available: physicalByKey.has(key) ? physicalByKey.get(key)! : row.available,
     }));
 
-    return { data, meta: { total: data.length, perPage } };
+    return { data, meta: { total: data.length, perPage, hasMore } };
   }
 
 
@@ -1708,6 +1760,22 @@ export class InventoryService {
       throw new BadRequestException(
         'Variable products use variant-level stock management. Select a specific variant to transfer instead.',
       );
+    }
+
+    // A mismatched variantId would move variant A's stock while labelling the
+    // transfer as product B — corrupt ledger + costing lineage. The picker only
+    // ever emits matched pairs, but the API must not trust it.
+    if (dto.variantId) {
+      const variant = await prisma.productVariant.findUnique({
+        where: { id: dto.variantId },
+        select: { id: true, productId: true, sku: true },
+      });
+      if (!variant) throw new NotFoundException('Variant not found');
+      if (variant.productId !== dto.productId) {
+        throw new BadRequestException(
+          `Variant ${variant.sku} does not belong to the selected product.`,
+        );
+      }
     }
 
     // Idempotency check — INSIDE the transaction, so two concurrent requests

@@ -200,15 +200,24 @@ export function Transfers() {
   const [rejectReason, setRejectReason] = useState('')
 
   const {
-    data: requests = [],
+    data: requestsRes,
     isLoading: requestsLoading,
     isError: requestsError,
     error: requestsLoadError,
-  } = useQuery<TransferRequest[]>({
+  } = useQuery<{ data: TransferRequest[] } | TransferRequest[]>({
     queryKey: ['inventory-transfer-requests'],
     queryFn: () => apiClient.get('/inventory/transfer-requests').then(r => r.data),
     refetchInterval: 30_000,
   })
+
+  // Backend returns a paginated envelope `{ data, meta }`; older builds returned
+  // a bare array. Unwrap defensively — treating the envelope as an array crashed
+  // `requests.filter` and took the whole menu down with a 500.
+  const requests: TransferRequest[] = Array.isArray(requestsRes)
+    ? requestsRes
+    : Array.isArray((requestsRes as any)?.data)
+      ? (requestsRes as any).data
+      : []
 
   const pendingRequests = requests.filter(r => r.status === 'REQUESTED').length
 
