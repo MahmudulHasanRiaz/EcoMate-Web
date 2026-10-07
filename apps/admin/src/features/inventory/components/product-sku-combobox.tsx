@@ -11,21 +11,15 @@ import {
 import { apiClient } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command'
-import { cn } from '@/lib/utils'
-import { AlertCircle, Check, ChevronsUpDown, Loader2, Package, ScanLine, X } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { SafeImage } from '@/components/safe-image'
+import { cn, mediaUrl } from '@/lib/utils'
+import { AlertCircle, Loader2, Package, ScanLine, Search, X } from 'lucide-react'
 
 /**
  * One selectable stock unit, straight off `GET /inventory/product-lookup`.
  * `variantId` is null for a simple product and always set for a variable one.
+ * `image` is the product's first image (may be null → Package fallback).
  */
 export interface LookupRow {
   productId: string
@@ -35,6 +29,7 @@ export interface LookupRow {
   sku: string | null
   type: 'product' | 'variant'
   available: number
+  image?: string | null
 }
 
 export interface LookupResponse {
@@ -81,20 +76,15 @@ interface ProductSkuComboboxProps {
 }
 
 /**
- * Scan-to-select product picker for stock transfers.
+ * Scan-to-select product picker for stock transfers, presented like the
+ * order-create smart search: an h-11 search input with an in-flow rich
+ * dropdown (thumbnail, SKU chip, availability) instead of a Popover+cmdk
+ * combobox. The popover escaped the dialog on narrow screens (one side of the
+ * modal rendered cut off); an absolute panel inside the dialog flow cannot.
  *
- * Two things this replaces, both of which were broken in the transfers modal:
- *  1. A `<Command>` without `shouldFilter={false}` while every `CommandItem` had
- *     `value={p.id}` (a UUID). cmdk then re-filtered the already-server-filtered
- *     list against the UUID, so typing "sock" matched nothing and the picker was
- *     permanently "No product found."
- *  2. A bare `GET /products` search that returned a variable product's PARENT
- *     (blank SKU, null `Product.sku`) as a selectable row, leaving the user to
- *     hand-pick a variant afterwards.
- *
- * Here the list is variant-level from the API, filtering stays with the server
- * (`shouldFilter={false}`), and a variable product is only ever offered as its
- * individual variants — never as a selectable parent.
+ * Server contract (unchanged): the list is variant-level from the API and a
+ * variable product is only ever offered as its individual variants — never
+ * as a selectable parent. No client-side filtering happens here at all.
  */
 export function ProductSkuCombobox({
   selected,
@@ -107,6 +97,7 @@ export function ProductSkuCombobox({
   const [open, setOpen] = useState(false)
   const [input, setInput] = useState('')
   const [debounced, setDebounced] = useState('')
+  const wrapRef = useRef<HTMLDivElement>(null)
 
   // ── Camera scan ────────────────────────────────────────────────────────────
   const [scanning, setScanning] = useState(false)
@@ -124,6 +115,24 @@ export function ProductSkuCombobox({
     const t = setTimeout(() => setDebounced(input.trim()), LOOKUP_DEBOUNCE_MS)
     return () => clearTimeout(t)
   }, [input])
+
+  // Typing opens the panel; clearing the input closes it. (Order-create parity:
+  // the dropdown is driven by the search text, not by a separate trigger.)
+  useEffect(() => {
+    if (input.trim().length > 0) setOpen(true)
+    else setOpen(false)
+  }, [input])
+
+  // Outside click closes the panel (order-create parity).
+  useEffect(() => {
+    const handleOutside = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleOutside)
+    return () => document.removeEventListener('mousedown', handleOutside)
+  }, [])
 
   const term = debounced
 
@@ -327,183 +336,239 @@ export function ProductSkuCombobox({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-  const selectedLabel = selected
-    ? `${selected.productName}${selected.variantName ? ` — ${selected.variantName}` : ''}${
-        selected.sku ? ` (${selected.sku})` : ''
-      }`
-    : null
+  const showPanel = open && term.length > 0
+
+  const thumb = (row: LookupRow) =>
+    row.image ? (
+      <SafeImage
+        src={mediaUrl(row.image)}
+        alt=''
+        className='h-11 w-11 rounded-lg border object-cover shrink-0'
+        thumbWidth={48}
+        thumbHeight={48}
+      />
+    ) : (
+      <div className='h-11 w-11 rounded-lg border bg-muted flex items-center justify-center shrink-0'>
+        <Package className='h-5 w-5 text-muted-foreground' />
+      </div>
+    )
 
   return (
-    <div className={cn('space-y-2', className)}>
+    <div className={cn('space-y-2', className)} ref={wrapRef}>
       <Label>{label}</Label>
-      <Popover
-        open={open}
-        onOpenChange={(next) => {
-          setOpen(next)
-          if (!next) {
-            heldRef.current = false
-            reset()
-          }
-        }}
-      >
-        <div className="flex gap-2">
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              role="combobox"
-              aria-expanded={open}
-              aria-label={label}
-              className="w-full justify-between font-normal"
-            >
-              <span className={cn('truncate', !selectedLabel && 'text-muted-foreground')}>
-                {selectedLabel ?? placeholder}
-              </span>
-              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-            </Button>
-          </PopoverTrigger>
-          {selectedLabel && (
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Clear product"
-              onClick={() => {
-                onSelect(null)
-                reset()
-              }}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          )}
+
+      {/* Selected stock unit — order-create cart-row styling. */}
+      {selected && (
+        <div className='flex items-center gap-3 rounded-xl border bg-muted/30 p-2.5 sm:p-3'>
+          {thumb(selected)}
+          <div className='min-w-0 flex-1'>
+            <p className='text-sm font-semibold text-foreground truncate'>
+              {selected.productName}
+              {selected.variantName && (
+                <span className='font-normal text-muted-foreground'> — {selected.variantName}</span>
+              )}
+            </p>
+            <div className='flex items-center gap-1.5 mt-1 flex-wrap'>
+              {selected.sku ? (
+                <span className='text-[11px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded'>
+                  {selected.sku}
+                </span>
+              ) : (
+                <span className='text-[11px] italic text-muted-foreground'>no SKU</span>
+              )}
+              <Badge
+                variant='outline'
+                className={cn(
+                  'text-[10px] h-4.5 font-normal',
+                  selected.available > 0
+                    ? 'border-emerald-500/30 text-emerald-600'
+                    : 'border-destructive/30 text-destructive',
+                )}
+              >
+                {selected.available} available
+              </Badge>
+            </div>
+          </div>
           <Button
-            variant="outline"
-            size="icon"
-            aria-label="Scan barcode"
-            title="Scan barcode"
+            variant='ghost'
+            size='icon'
+            aria-label='Clear product'
+            className='h-8 w-8 shrink-0 cursor-pointer'
+            onClick={() => {
+              onSelect(null)
+              reset()
+            }}
+          >
+            <X className='h-4 w-4' />
+          </Button>
+        </div>
+      )}
+
+      {/* Smart search bar — order-create parity (h-11, icon, spinner/clear). */}
+      <div className='relative'>
+        <div className='relative flex items-center gap-2'>
+          <div className='relative flex-1'>
+            <Search className='absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none z-10' />
+            <input
+              type='text'
+              role='combobox'
+              aria-expanded={showPanel}
+              aria-label={label}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onFocus={() => {
+                if (rows.length > 0) setOpen(true)
+              }}
+              onKeyDown={(e) => {
+                // Enter commits an EXACT SKU only — never the first row.
+                // Typing a parent SKU like "SHIRT" and hitting Enter must not
+                // silently grab SHIRT-S; it keeps filtering until the operator
+                // picks a variant explicitly.
+                if (e.key === 'Enter' && input.trim()) {
+                  e.preventDefault()
+                  commitExactInput()
+                }
+                if (e.key === 'Escape') setOpen(false)
+              }}
+              placeholder='Type name or SKU, or scan a barcode...'
+              autoComplete='off'
+              className='w-full h-11 pl-10 pr-10 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring shadow-2xs'
+            />
+            {isFetching ? (
+              <Loader2 className='absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground' />
+            ) : input ? (
+              <button
+                type='button'
+                aria-label='Clear search'
+                onClick={() => {
+                  reset()
+                  setOpen(false)
+                }}
+                className='absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1 cursor-pointer'
+              >
+                <X className='h-4 w-4' />
+              </button>
+            ) : null}
+          </div>
+          <Button
+            variant='outline'
+            size='icon'
+            aria-label='Scan barcode'
+            title='Scan barcode'
+            className='h-11 w-11 shrink-0 rounded-xl cursor-pointer'
             onClick={() => setScanning((s) => !s)}
           >
             <ScanLine className={cn('h-4 w-4', scanning && 'text-primary')} />
           </Button>
         </div>
 
-        <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-          <Command shouldFilter={false}>
-            <CommandInput
-              placeholder="Type name or SKU — Enter selects the exact SKU..."
-              value={input}
-              onValueChange={setInput}
-              // Capture phase, before cmdk's own Enter handling: Enter commits
-              // an EXACT SKU only. cmdk would otherwise auto-pick the first
-              // (highlighted) row — typing a parent SKU like "SHIRT" and
-              // hitting Enter would silently grab SHIRT-S, the exact footgun
-              // this picker exists to prevent. Non-exact input keeps filtering
-              // and must be picked explicitly (click), never by Enter.
-              onKeyDownCapture={(e) => {
-                if (e.key !== 'Enter') return
-                e.preventDefault()
-                e.stopPropagation()
-                commitExactInput()
-              }}
-            />
-            <CommandList>
+        {/* Rich dropdown — in-flow absolute panel (never escapes the dialog). */}
+        {showPanel && (
+          <div className='absolute z-30 mt-1.5 w-full bg-background border rounded-xl shadow-xl overflow-hidden'>
+            <div className='px-3.5 py-2 bg-muted/40 border-b flex items-center justify-between text-xs text-muted-foreground'>
               {isError ? (
-                <div className="flex items-start gap-2 p-4 text-sm text-destructive">
-                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span>Lookup failed. {errorMessage(error)}</span>
-                </div>
+                <span className='text-destructive'>Lookup failed. {errorMessage(error)}</span>
               ) : (
-                <CommandEmpty>
-                  {isFetching
-                    ? 'Searching...'
-                    : term
-                      ? 'No products found.'
-                      : 'Type a name or SKU, or scan a barcode.'}
-                </CommandEmpty>
+                <>
+                  <span>
+                    {rows.length} match{rows.length === 1 ? '' : 'es'}
+                    {isFetching ? ' — searching…' : ''}
+                  </span>
+                  <span className='text-[11px] hidden sm:inline'>Exact SKU + Enter selects</span>
+                </>
               )}
-              <CommandGroup
-                // A plain heading, NOT a CommandItem: a group heading has to
-                // stay out of the keyboard selection ring so a VARIABLE
-                // product can never be picked at parent level.
-                heading="Products and variants"
-              >
+            </div>
+            {rows.length > 0 ? (
+              <div className='max-h-72 sm:max-h-80 overflow-y-auto divide-y divide-border/50'>
                 {rows.map((row) => (
-                  <CommandItem
+                  <div
                     key={rowKey(row)}
+                    role='option'
+                    aria-selected={!!selected && rowKey(selected) === rowKey(row)}
                     data-sku={row.sku ?? ''}
                     data-variant-id={row.variantId ?? ''}
-                    // A plain <div role="option"> row, deliberately NOT a
-                    // CommandItem: two roles on one node (cmdk's own "item"
-                    // plus "option") make the row invisible to
-                    // `getByRole('option')` and ambiguous for assistive tech.
-                    role="option"
-                    // NOT the row's own text: the list arrives pre-filtered from
-                    // the server, so cmdk must not re-filter it (the UUID-value
-                    // bug that made this picker permanently empty).
-                    value={rowKey(row)}
-                    onSelect={() => {
+                    onClick={() => {
                       onSelect(row)
                       close()
                     }}
+                    className='w-full p-2.5 sm:p-3 hover:bg-muted/60 transition-colors flex items-center gap-3 cursor-pointer'
                   >
-                    <Check
-                      className={cn(
-                        'mr-2 h-4 w-4',
-                        selected && rowKey(selected) === rowKey(row) ? 'opacity-100' : 'opacity-0',
-                      )}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-medium">
+                    {thumb(row)}
+                    <div className='min-w-0 flex-1'>
+                      <p className='text-sm font-semibold text-foreground line-clamp-2 leading-snug'>
                         {row.productName}
                         {row.variantName && (
-                          <span className="font-normal text-muted-foreground">
-                            {' '}
-                            — {row.variantName}
-                          </span>
+                          <span className='font-normal text-muted-foreground'> — {row.variantName}</span>
                         )}
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      </p>
+                      <div className='flex items-center gap-1.5 mt-1 flex-wrap'>
                         {row.sku ? (
-                          <span className="font-mono">{row.sku}</span>
+                          <span className='text-[11px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded'>
+                            {row.sku}
+                          </span>
                         ) : (
-                          <span className="italic">no SKU</span>
+                          <span className='text-[11px] italic text-muted-foreground'>no SKU</span>
                         )}
-                        <span>· {row.available} available</span>
+                        {row.variantId && (
+                          <Badge variant='outline' className='text-[10px] h-4.5 font-normal border-primary/30 text-primary'>
+                            Variant
+                          </Badge>
+                        )}
                       </div>
                     </div>
-                  </CommandItem>
+                    <div className='text-right shrink-0'>
+                      <div
+                        className={cn(
+                          'text-sm font-bold',
+                          row.available > 0 ? 'text-emerald-600' : 'text-destructive',
+                        )}
+                      >
+                        {row.available}
+                      </div>
+                      <div className='text-[10px] text-muted-foreground'>avail.</div>
+                    </div>
+                  </div>
                 ))}
-              </CommandGroup>
-              {truncated && (
-                <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                  Showing the first {rows.length} matches — keep typing to narrow it down.
+              </div>
+            ) : (
+              !isFetching && (
+                <div className='px-3.5 py-6 text-center text-sm text-muted-foreground'>
+                  {term ? 'No products found.' : 'Type a name or SKU, or scan a barcode.'}
                 </div>
-              )}
-            </CommandList>
-          </Command>
+              )
+            )}
+            {truncated && rows.length > 0 && (
+              <div className='px-3.5 py-2 bg-muted/40 border-t text-[11px] text-muted-foreground'>
+                Showing the first {rows.length} matches — keep typing to narrow it down.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
-          {scanning && (
-            <div className="border-t p-2">
-              <div id={SCANNER_ELEMENT_ID} className="min-h-24 w-full overflow-hidden rounded-md" />
-              {isFetching && (
-                <p className="mt-1 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-                  <Loader2 className="h-3 w-3 animate-spin" /> Looking up scanned code…
-                </p>
-              )}
-              {scanError && <p className="mt-1 text-center text-xs text-destructive">{scanError}</p>}
-              <button
-                type="button"
-                className="mt-1 w-full text-center text-xs text-muted-foreground underline"
-                onClick={() => setScanning(false)}
-              >
-                Stop camera
-              </button>
-            </div>
+      {/* Camera scanner — in-flow block under the search bar. */}
+      {scanning && (
+        <div className='rounded-xl border p-2'>
+          <div id={SCANNER_ELEMENT_ID} className='min-h-24 w-full overflow-hidden rounded-md' />
+          {isFetching && (
+            <p className='mt-1 flex items-center justify-center gap-1.5 text-xs text-muted-foreground'>
+              <Loader2 className='h-3 w-3 animate-spin' /> Looking up scanned code…
+            </p>
           )}
-        </PopoverContent>
-      </Popover>
+          {scanError && <p className='mt-1 text-center text-xs text-destructive'>{scanError}</p>}
+          <button
+            type='button'
+            className='mt-1 w-full text-center text-xs text-muted-foreground underline cursor-pointer'
+            onClick={() => setScanning(false)}
+          >
+            Stop camera
+          </button>
+        </div>
+      )}
 
       {selected?.variantId && (
-        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Package className="h-3 w-3" />
+        <p className='flex items-center gap-1.5 text-xs text-muted-foreground'>
+          <Package className='h-3 w-3' />
           Variant selected — transfers apply to this variant&apos;s stock only.
         </p>
       )}

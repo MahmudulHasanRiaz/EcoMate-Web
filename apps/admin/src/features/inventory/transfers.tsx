@@ -665,17 +665,17 @@ export function Transfers() {
       </Main>
 
       <Dialog open={newTransferOpen} onOpenChange={(v) => { if (!v) { setNewTransferOpen(false); resetForm() } }}>
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-[600px] max-h-[calc(100vh-2rem)] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Truck className="h-5 w-5" /> Initiate Stock Transfer
+            <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+              <Truck className="h-5 w-5 shrink-0" /> Initiate Stock Transfer
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-xs sm:text-sm">
               Select source and destination locations to begin transferring physical stock.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-6 py-4">
-            <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:gap-6 py-2 sm:py-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Source Warehouse</Label>
                 <Select value={formSource} onValueChange={(v) => { setFormSource(v); setFormSourceBin('') }}>
@@ -689,10 +689,10 @@ export function Transfers() {
                   </SelectContent>
                 </Select>
                 {formSource && sourceBins && sourceBins.length > 0 && (
-                  <Select value={formSourceBin} onValueChange={setFormSourceBin}>
+                  <Select value={formSourceBin || 'auto'} onValueChange={(v) => setFormSourceBin(v === 'auto' ? '' : v)}>
                     <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Source bin (auto if empty)" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Auto (LRU oldest bin)</SelectItem>
+                      <SelectItem value="auto">Auto (LRU oldest bin)</SelectItem>
                       {sourceBins.map((b: any) => (
                         <SelectItem key={b.id} value={b.id}>{b.code}{b.zone ? ` (${b.zone})` : ''}</SelectItem>
                       ))}
@@ -713,10 +713,10 @@ export function Transfers() {
                   </SelectContent>
                 </Select>
                 {formDest && destBins && destBins.length > 0 && (
-                  <Select value={formDestBin} onValueChange={setFormDestBin}>
+                  <Select value={formDestBin || 'none'} onValueChange={(v) => setFormDestBin(v === 'none' ? '' : v)}>
                     <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Dest bin (unassigned if empty)" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Unassigned</SelectItem>
+                      <SelectItem value="none">Unassigned</SelectItem>
                       {destBins.map((b: any) => (
                         <SelectItem key={b.id} value={b.id}>{b.code}{b.zone ? ` (${b.zone})` : ''}</SelectItem>
                       ))}
@@ -760,7 +760,7 @@ export function Transfers() {
 
             <div className="space-y-2">
               <Label>Stock Impact Preview</Label>
-              <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
+              <div className="rounded-xl border bg-muted/20 p-3 sm:p-4 space-y-3">
                 {selectedProduct ? (
                   <>
                     <div className="flex items-center justify-between text-sm">
@@ -775,7 +775,7 @@ export function Transfers() {
                       </div>
                       <Badge variant="outline">Qty: {quantity || '0'}</Badge>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                       <div className="space-y-1">
                         <div className="text-xs text-muted-foreground">{formSource ? warehouseNameById(formSource) : 'Source'} (Source)</div>
                         <div className="flex items-center gap-2 text-sm font-medium">
@@ -800,9 +800,9 @@ export function Transfers() {
               </div>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setNewTransferOpen(false); resetForm() }}>Cancel</Button>
-            <Button onClick={handleCreateTransfer} disabled={createTransferMut.isPending}>
+          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="outline" className="w-full sm:w-auto cursor-pointer" onClick={() => { setNewTransferOpen(false); resetForm() }}>Cancel</Button>
+            <Button className="w-full sm:w-auto cursor-pointer" onClick={handleCreateTransfer} disabled={createTransferMut.isPending}>
               {createTransferMut.isPending && <Loader2 className="animate-spin h-4 w-4 mr-2" />}
               Confirm & Dispatch Transfer
             </Button>

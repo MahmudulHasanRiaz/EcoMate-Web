@@ -196,11 +196,9 @@ describe('ProductSkuCombobox', () => {
     ])
     expect(optionRows(screen).some((el) => !el.getAttribute('data-variant-id'))).toBe(false)
 
-    // The group heading is a real group label, never a selectable item, so a
-    // variable product cannot be chosen at parent level by keyboard either.
-    expect(
-      Array.from(document.querySelectorAll('[cmdk-group-heading]')).map((h) => h.textContent),
-    ).toContain('Products and variants')
+    // The dropdown header counts matches and stays out of the selection ring,
+    // so a variable product cannot be chosen at parent level by keyboard either.
+    await expect.element(screen.getByText('2 matches')).toBeInTheDocument()
   })
 
   it('selects a simple product as a variantId-null row', async () => {
@@ -340,8 +338,28 @@ describe('ProductSkuCombobox', () => {
     expect(screen.onSelect).not.toHaveBeenCalled()
   })
 
-  it('shows an empty state when nothing matches', async () => {
-    mockLookup([])
+  it('renders the selected stock as a card with SKU and availability', async () => {
+    const screen = await openPicker({ selected: mug })
+
+    // Order-create cart-row styling: name, mono SKU chip, availability badge.
+    await expect.element(screen.getByText('Clay Mug')).toBeInTheDocument()
+    await expect.element(screen.getByText('MUG-001')).toBeInTheDocument()
+    await expect.element(screen.getByText('35 available')).toBeInTheDocument()
+  })
+
+  it('shows the product thumbnail when the lookup row carries an image', async () => {
+    const imaged: LookupRow = { ...mug, productId: 'prod-mug-img', sku: 'MUG-IMG', image: 'https://cdn.example/mug.jpg' }
+    mockLookup([imaged])
+    const screen = await openPicker()
+    await type(screen, 'MUG-IMG')
+
+    await vi.waitFor(
+      () => expect(document.querySelector('[data-sku="MUG-IMG"] img')).not.toBeNull(),
+      { timeout: 2000 },
+    )
+  })
+
+  it('shows an empty state when nothing matches', async () => {    mockLookup([])
     const screen = await openPicker()
     await type(screen, 'zzzz')
     await expect.element(screen.getByText('No products found.')).toBeInTheDocument()

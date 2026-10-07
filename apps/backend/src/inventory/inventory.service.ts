@@ -29,6 +29,7 @@ const PRODUCT_LOOKUP_SELECT = {
   name: true,
   sku: true,
   type: true,
+  images: true,
   managedStockQuantity: true,
   reservedStock: true,
   variants: {
@@ -529,6 +530,32 @@ export class InventoryService {
 
   /** Share of an item's available managed stock a single adjustment may remove. */
   private static readonly DESTRUCTIVE_RATIO = 0.9;
+
+  /**
+   * First display image for a lookup row (order-create-style thumbnails).
+   * `Product.images` is Json (`[]` default): array → first string entry,
+   * string → JSON-or-raw single URL, anything else → null (Package fallback).
+   */
+  private lookupImage(images: unknown): string | null {
+    if (!images) return null;
+    if (Array.isArray(images)) {
+      const first = images.find((i) => typeof i === 'string' && i.length > 0);
+      return (first as string) ?? null;
+    }
+    if (typeof images === 'string') {
+      try {
+        const parsed = JSON.parse(images);
+        if (Array.isArray(parsed)) {
+          const first = parsed.find((i) => typeof i === 'string' && i.length > 0);
+          return (first as string) ?? null;
+        }
+        return images;
+      } catch {
+        return images;
+      }
+    }
+    return null;
+  }
 
   /**
    * Fallback `available` for a lookup row with no PhysicalInventory rows:
@@ -1338,6 +1365,7 @@ export class InventoryService {
       sku: string | null;
       type: 'product' | 'variant';
       available: number;
+      image: string | null;
       /** True when `sku` or the parent `Product.sku` is an exact hit. */
       exactSku: boolean;
     }> = [];
@@ -1369,6 +1397,7 @@ export class InventoryService {
             sku: v.sku,
             type: 'variant',
             available: this.managedAvailable('variant', v.managedStockQuantity, v.reservedStock),
+            image: this.lookupImage((p as any).images),
             exactSku:
               (v.sku?.toLowerCase() ?? '') === lowered || (p.sku?.toLowerCase() ?? '') === lowered,
           });
@@ -1388,6 +1417,7 @@ export class InventoryService {
         sku: p.sku,
         type: 'product',
         available: this.managedAvailable('product', p.managedStockQuantity, p.reservedStock),
+        image: this.lookupImage((p as any).images),
         exactSku: (p.sku?.toLowerCase() ?? '') === lowered,
       });
     };

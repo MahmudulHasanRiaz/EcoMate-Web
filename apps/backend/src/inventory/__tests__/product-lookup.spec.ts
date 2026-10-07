@@ -186,6 +186,7 @@ describe('InventoryService — productLookup', () => {
         sku: 'MUG-001',
         type: 'product',
         available: 35,
+        image: null,
       },
     ]);
     expect(res.meta).toEqual({ total: 1, perPage: 25, hasMore: false });
@@ -311,6 +312,29 @@ describe('InventoryService — productLookup', () => {
     const groupByArgs = (prisma.physicalInventory.groupBy as jest.Mock).mock.calls[0][0];
     expect(groupByArgs.by).toEqual(['productId', 'variantId']);
     expect(groupByArgs.where.warehouseId).toBe('wh-main');
+  });
+
+  it('resolves the first product image for lookup thumbnails', async () => {
+    findMany().mockImplementation((args: any) => {
+      const or = args.where.OR;
+      // Exact phase returns the imaged product; fuzzy phase is empty.
+      if (or?.some((c: any) => c.sku?.equals)) {
+        return Promise.resolve([
+          {
+            ...simpleProduct,
+            id: 'prod-mug-img',
+            sku: 'MUG-IMG',
+            images: ['https://cdn.example/mug.jpg', 'https://cdn.example/mug2.jpg'],
+          },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const res = await service.productLookup({ q: 'MUG-IMG' });
+
+    expect(res.data).toHaveLength(1);
+    expect(res.data[0]).toMatchObject({ image: 'https://cdn.example/mug.jpg' });
   });
 
   it('caps the number of rows it returns', async () => {
