@@ -560,7 +560,7 @@ function ReceiveGrnDialog({
   onReceive: (items: { purchaseItemId: string; productId: string; variantId: string | null; receivedQty: number; acceptedQty: number; rejectedQty: number; damageResponsibility: 'supplier' | 'company'; freeOfCharge: boolean; lineWarehouseId?: string }[], notes?: string, warehouseId?: string) => void
   products?: any[]
 }) {
-  const [received, setReceived] = useState<Record<string, { receivedQty: string; acceptedQty: string; rejectedQty: string; responsibility: 'supplier' | 'company'; freeOfCharge: boolean; lineWarehouseId: string }>>({})
+  const [received, setReceived] = useState<Record<string, { receivedQty: string; acceptedQty: string; rejectedQty: string; responsibility: 'supplier' | 'company'; freeOfCharge: boolean; lineWarehouseId: string; acceptedTouched: boolean }>>({})
   const [notes, setNotes] = useState('')
   const [selectedWarehouse, setSelectedWarehouse] = useState('')
 
@@ -637,14 +637,14 @@ function ReceiveGrnDialog({
     if (!received[itemId]) {
       setReceived(prev => ({
         ...prev,
-        [itemId]: { receivedQty: '', acceptedQty: '', rejectedQty: '0', responsibility: 'supplier', freeOfCharge: false, lineWarehouseId: '' },
+        [itemId]: { receivedQty: '', acceptedQty: '', rejectedQty: '0', responsibility: 'supplier', freeOfCharge: false, lineWarehouseId: '', acceptedTouched: false },
       }))
     }
   }
 
-  const patchItem = (itemId: string, patch: Partial<{ receivedQty: string; acceptedQty: string; rejectedQty: string; responsibility: 'supplier' | 'company'; freeOfCharge: boolean; lineWarehouseId: string }>) => {
+  const patchItem = (itemId: string, patch: Partial<{ receivedQty: string; acceptedQty: string; rejectedQty: string; responsibility: 'supplier' | 'company'; freeOfCharge: boolean; lineWarehouseId: string; acceptedTouched: boolean }>) => {
     setReceived(prev => {
-      const cur = prev[itemId] || { receivedQty: '', acceptedQty: '', rejectedQty: '0', responsibility: 'supplier' as const, freeOfCharge: false, lineWarehouseId: '' }
+      const cur = prev[itemId] || { receivedQty: '', acceptedQty: '', rejectedQty: '0', responsibility: 'supplier' as const, freeOfCharge: false, lineWarehouseId: '', acceptedTouched: false }
       return { ...prev, [itemId]: { ...cur, ...patch } }
     })
   }
@@ -673,7 +673,7 @@ function ReceiveGrnDialog({
             প্রতিটি আইটেমের জন্য কতটা রিসিভ করছেন তা দিন। Accepted = ভালো কন্ডিশনে পাওয়া, Rejected = খারাপ/ড্যামেজড।
           </p>
           {purchase.items.map((item: PurchaseItem) => {
-            const r = received[item.id] || { receivedQty: '', acceptedQty: '', rejectedQty: '0', responsibility: 'supplier' as const, freeOfCharge: false, lineWarehouseId: '' }
+            const r = received[item.id] || { receivedQty: '', acceptedQty: '', rejectedQty: '0', responsibility: 'supplier' as const, freeOfCharge: false, lineWarehouseId: '', acceptedTouched: false }
             // This item's own agreed unit — never another line's lot cost.
             const unitBase = item.quantity > 0 ? Number(item.totalBill || item.totalPrice || 0) / item.quantity : 0
             const st = disposition.get(item.id) || { ordered: item.quantity, received: 0, shortClosed: 0, remaining: item.quantity }
@@ -725,11 +725,16 @@ function ReceiveGrnDialog({
                 <>
                 <div className='w-full grid grid-cols-3 gap-3'>
                   <div className='space-y-1.5'>
-                    <Label className='text-xs'>Received (now)</Label>
+                    <Label className='text-xs' htmlFor={`rec-now-${item.id}`}>Received (now)</Label>
                     <Input
+                      id={`rec-now-${item.id}`}
                       type='number'
                       value={r.receivedQty}
-                      onChange={e => patchItem(item.id, { receivedQty: e.target.value })}
+                      onChange={e => {
+                        const rec = Number(e.target.value || 0)
+                        const rej = Number(r.rejectedQty || 0)
+                        patchItem(item.id, { receivedQty: e.target.value, ...(r.acceptedTouched ? {} : { acceptedQty: String(Math.max(0, rec - rej)) }) })
+                      }}
                       onFocus={() => initItem(item.id)}
                       className='h-9 text-sm'
                       min={0}
@@ -737,11 +742,12 @@ function ReceiveGrnDialog({
                     />
                   </div>
                   <div className='space-y-1.5'>
-                    <Label className='text-xs'>Accepted</Label>
+                    <Label className='text-xs' htmlFor={`rec-acc-${item.id}`}>Accepted</Label>
                     <Input
+                      id={`rec-acc-${item.id}`}
                       type='number'
                       value={r.acceptedQty}
-                      onChange={e => patchItem(item.id, { acceptedQty: e.target.value })}
+                      onChange={e => patchItem(item.id, { acceptedQty: e.target.value, acceptedTouched: true })}
                       onFocus={() => initItem(item.id)}
                       className='h-9 text-sm'
                       min={0}
@@ -749,11 +755,16 @@ function ReceiveGrnDialog({
                     />
                   </div>
                   <div className='space-y-1.5'>
-                    <Label className='text-xs'>Rejected</Label>
+                    <Label className='text-xs' htmlFor={`rec-rej-${item.id}`}>Rejected</Label>
                     <Input
+                      id={`rec-rej-${item.id}`}
                       type='number'
                       value={r.rejectedQty}
-                      onChange={e => patchItem(item.id, { rejectedQty: e.target.value })}
+                      onChange={e => {
+                        const rec = Number(r.receivedQty || 0)
+                        const rej = Number(e.target.value || 0)
+                        patchItem(item.id, { rejectedQty: e.target.value, ...(r.acceptedTouched ? {} : { acceptedQty: String(Math.max(0, rec - rej)) }) })
+                      }}
                       onFocus={() => initItem(item.id)}
                       className='h-9 text-sm'
                       min={0}

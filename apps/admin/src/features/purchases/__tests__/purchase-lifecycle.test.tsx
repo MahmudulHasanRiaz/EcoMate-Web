@@ -151,6 +151,21 @@ describe('Purchase form variant truth', () => {
 })
 
 describe('Receive dialog disposition', () => {
+  it('auto-reduces accepted when rejected is typed (until accepted is touched)', async () => {
+    const ui = await openListWithPo()
+    await userEvent.click(ui.getByRole('button', { name: 'Receive Items' }))
+    await expect.element(ui.getByText(/Remaining:/)).toBeInTheDocument()
+
+    await userEvent.fill(ui.getByLabelText(/Received \(now\)/), '10')
+    await userEvent.fill(ui.getByLabelText(/^Rejected$/), '2')
+    await expect.element(ui.getByLabelText(/^Accepted$/)).toHaveValue(8)
+
+    // Once the operator types Accepted manually, never overwrite it
+    await userEvent.fill(ui.getByLabelText(/^Accepted$/), '9')
+    await userEvent.fill(ui.getByLabelText(/^Rejected$/), '3')
+    await expect.element(ui.getByLabelText(/^Accepted$/)).toHaveValue(9)
+  })
+
   it('shows ordered/received/remaining and posts responsibility + identity', async () => {
     const ui = await openListWithPo()
     await userEvent.click(ui.getByRole('button', { name: 'Receive Items' }))
