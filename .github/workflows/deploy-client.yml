@@ -107,14 +107,14 @@ jobs:
             HTTP_CODE=$(curl -w "%{http_code}" -s -S -o "$RESPONSE_FILE" -X POST -k --max-time 30 "$WEBHOOK_URL") || HTTP_CODE=0
             echo "HTTP Status Code: $HTTP_CODE"
             if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-              echo "Deployment triggered successfully for $LABEL! (HTTP $HTTP_CODE)"
+              echo "Redeploy trigger ACCEPTED for $LABEL (HTTP $HTTP_CODE)."
               break
             fi
             if [ $TRY -lt $MAX_TRIES ]; then sleep $((2 ** (TRY - 1))); fi
             TRY=$((TRY + 1))
           done
           if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            echo "Deployment completed (HTTP $HTTP_CODE)."
+            echo "Trigger accepted (HTTP $HTTP_CODE). NOTE: this only means Portainer accepted the request — it does NOT prove the stack redeployed. Confirm the stack is actually up in the Portainer UI."
           else
             echo "Webhook request failed for $LABEL after ${MAX_TRIES} attempts! (HTTP $HTTP_CODE)"
             exit 1
