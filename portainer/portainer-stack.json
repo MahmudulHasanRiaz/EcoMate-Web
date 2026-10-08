@@ -4,7 +4,7 @@
   "description": "EcoMate E-Commerce Platform - Full Stack Deployment",
   "note": "Deploy via Portainer UI. Configure unique local ports if running multiple clients on the same server.",
   "repository": {
-    "url": "https://github.com/your-org/ecomate-web",
+    "url": "https://github.com/MahmudulHasanRiaz/EcoMate-Web",
     "stackfile": "docker-compose.yml"
   },
   "env": [
@@ -13,6 +13,10 @@
 
     { "name": "JWT_SECRET", "label": "⭐ JWT Secret (strong random string)", "default": "" },
     { "name": "JWT_REFRESH_SECRET", "label": "⭐ JWT Refresh Secret (different from JWT_SECRET)", "default": "" },
+    { "name": "BETTER_AUTH_SECRET", "label": "⭐ Better-Auth Secret", "default": "" },
+    { "name": "ADMIN_EMAIL", "label": "First admin email (seed)", "default": "" },
+    { "name": "ADMIN_PASSWORD", "label": "First admin password (seed)", "default": "" },
+    { "name": "RUN_SEED", "label": "Run seeding on startup? (true/false)", "default": "false" },
 
     { "name": "POSTGRES_PASSWORD", "label": "⭐ PostgreSQL Password (strong password)", "default": "" },
     { "name": "POSTGRES_USER", "label": "PostgreSQL User", "default": "postgres" },
