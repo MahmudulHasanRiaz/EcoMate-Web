@@ -614,7 +614,7 @@ describe('no nested interactives', () => {
     expect(container.querySelector('a button')).toBeNull()
   })
 
-  it('DataCoverageBadge hint is a controlled tap toggle on a real button', async () => {
+  it('DataCoverageBadge hint is a tap-friendly tooltip on a real button', async () => {
     const { container, getByRole, getByText } = await renderWithClient(
       <DataCoverageBadge missing={3} label="Undated spend" title="Consumptions missing spendDate" />,
     )

@@ -24,7 +24,13 @@ const COST_STATE_LABEL: Record<CostState, string> = {
  * Per-line cost provenance (§2.3). not_applicable renders muted "N/A",
  * visually distinct from unavailable. The reason (when present) is a
  * tap-friendly tooltip on a real button — keyboard accessible, no title=.
+ * Click opens idempotently on hover-capable pointers (a toggle would race
+ * the hover-open); touch keeps tap-to-toggle. See HintTooltip.
  */
+function isTouchPointer() {
+  return typeof window !== 'undefined' && !!window.matchMedia?.('(hover: none)').matches
+}
+
 export function CostStateBadge({ state, reason }: { state: CostState; reason?: string }) {
   const [open, setOpen] = useState(false)
   const badge = <Badge variant={COST_STATE_VARIANT[state]}>{COST_STATE_LABEL[state]}</Badge>
@@ -36,7 +42,7 @@ export function CostStateBadge({ state, reason }: { state: CostState; reason?: s
         <button
           type="button"
           aria-label={`${COST_STATE_LABEL[state]}: ${plain}`}
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => setOpen((v) => (isTouchPointer() ? !v : true))}
           className="cursor-pointer rounded-full transition-opacity duration-150 hover:opacity-85 focus-visible:outline-2 focus-visible:outline-offset-2"
         >
           {badge}
@@ -72,8 +78,8 @@ export function DataCoverageBadge({
   const a11y = title ? `${label}: ${missing} missing. ${title}` : `${label}: ${missing} missing`
   if (!href) {
     if (!title) return badge
-    // Tap-friendly like CostStateBadge: controlled tooltip on a real button —
-    // hover/focus shows, tap/click toggles, Escape closes. Never hover-only.
+    // Tap-friendly like CostStateBadge: hover/focus shows, click opens
+    // idempotently (touch keeps tap-to-toggle). Never hover-only.
     return <CoverageHint a11y={a11y} title={title} badge={badge} />
   }
   const link = (
@@ -86,15 +92,16 @@ export function DataCoverageBadge({
     </a>
   )
   if (!title) return link
-  // Link target navigates on tap (the desired action there); the tooltip is
-  // still controlled so hover/focus/Escape behave like every other hint.
+  // Link target navigates on tap (the desired action there); hover/focus/Escape
+  // still behave like every other hint via onOpenChange.
   return <CoverageHint a11y={a11y} title={title} trigger={link} />
 }
 
 /**
- * Controlled tap-friendly tooltip shared by both DataCoverageBadge shapes.
- * Button triggers toggle on click; link triggers keep navigation on click
- * and use hover/focus for the hint.
+ * Tap-friendly tooltip shared by both DataCoverageBadge shapes.
+ * Button triggers open idempotently on hover-capable pointers (touch keeps
+ * tap-to-toggle); link triggers keep navigation on click and use
+ * hover/focus for the hint.
  */
 function CoverageHint({
   a11y,
@@ -115,7 +122,7 @@ function CoverageHint({
           <button
             type="button"
             aria-label={plainLine(a11y)}
-            onClick={() => setOpen((v) => !v)}
+            onClick={() => setOpen((v) => (isTouchPointer() ? !v : true))}
             className="inline-flex cursor-pointer rounded-full transition-opacity duration-150 hover:opacity-85 focus-visible:outline-2 focus-visible:outline-offset-2"
           >
             {badge}

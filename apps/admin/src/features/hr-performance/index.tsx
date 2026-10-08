@@ -47,6 +47,15 @@ export function getPresetDates(preset: string): { from: string; to: string } {
     d.setDate(d.getDate() + days)
     return d
   }
+  // Calendar fields MUST come from the Dhaka wall clock, never the host.
+  // getDay()/getMonth()/getFullYear() read the host timezone (UTC on CI), but
+  // business dates are Dhaka: between 00:00 and 06:00 Dhaka the host UTC day
+  // is still yesterday, so host-based math lands the week start on Sunday
+  // (and the month start in the previous month). Dhaka has a fixed +6h offset
+  // with no DST, so shifting the instant and reading UTC fields IS the Dhaka
+  // calendar.
+  const DHAKA_OFFSET_MS = 6 * 60 * 60 * 1000
+  const dhakaWall = new Date(now.getTime() + DHAKA_OFFSET_MS)
 
   switch (preset) {
     case 'today':
@@ -56,13 +65,18 @@ export function getPresetDates(preset: string): { from: string; to: string } {
       return { from: dk(y), to: dk(y) }
     }
     case 'this_week': {
-      // Saturday is getDay() 6 and Sunday is 0, so (getDay() + 1) % 7 maps
-      // both to a zero-day offset.
-      const start = shiftDays(-((now.getDay() + 1) % 7))
+      // Saturday is 6 and Sunday is 0, so (day + 1) % 7 maps both to a
+      // zero-day offset. Weekday read from the Dhaka wall clock (see above);
+      // instant arithmetic (Dhaka days are exactly 24h, no DST) keeps this
+      // independent of host-timezone DST steps.
+      const offsetDays = (dhakaWall.getUTCDay() + 1) % 7
+      const start = new Date(now.getTime() - offsetDays * 86400000)
       return { from: dk(start), to: dk(now) }
     }
     case 'this_month': {
-      const start = new Date(now.getFullYear(), now.getMonth(), 1)
+      // Month start in the Dhaka calendar: UTC-midnight of the Dhaka 1st is
+      // 06:00 Dhaka the same day, so it formats back to the 1st exactly.
+      const start = new Date(Date.UTC(dhakaWall.getUTCFullYear(), dhakaWall.getUTCMonth(), 1))
       return { from: dk(start), to: dk(now) }
     }
     case 'last_30_days': {

@@ -53,9 +53,18 @@ const InfoButton = forwardRef<HTMLButtonElement, InfoButtonProps>(function InfoB
 })
 
 /**
- * Tap-friendly short hint (≤2 lines): controlled tooltip — hover/focus shows,
- * tap/click toggles, Escape closes. Never hover-only, never native title=.
+ * Tap-friendly short hint (≤2 lines): controlled Radix tooltip —
+ * hover/focus shows, tap/click opens, pointer-leave/Escape closes.
+ * The click MUST be idempotent (setOpen(true)) on hover-capable pointers, NOT
+ * a toggle: hover already opens the hint, so a toggle races it (open=true
+ * then inverted to false) and a click intermittently leaves the hint closed —
+ * flaky in browser tests and broken for mouse users. Touch (hover: none)
+ * keeps the tap-to-toggle so mobile users can dismiss via the same button.
+ * Never hover-only, never native title=.
  */
+function isTouchPointer() {
+  return typeof window !== 'undefined' && !!window.matchMedia?.('(hover: none)').matches
+}
 export function HintTooltip({
   label,
   text,
@@ -71,7 +80,11 @@ export function HintTooltip({
   return (
     <Tooltip open={open} onOpenChange={setOpen}>
       <TooltipTrigger asChild>
-        <InfoButton label={label} compact={compact} onClick={() => setOpen((v) => !v)} />
+        <InfoButton
+          label={label}
+          compact={compact}
+          onClick={() => setOpen((v) => (isTouchPointer() ? !v : true))}
+        />
       </TooltipTrigger>
       <TooltipContent data-testid={contentTestId} className="max-w-[240px] text-xs">
         {text}
