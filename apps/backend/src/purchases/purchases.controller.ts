@@ -35,12 +35,14 @@ export class PurchasesController {
     @Query('perPage') perPage?: string,
     @Query('status') status?: string,
     @Query('supplierId') supplierId?: string,
+    @Query('search') search?: string,
   ) {
     return this.purchasesService.findAll(
       page ? parseInt(page, 10) : undefined,
       perPage ? parseInt(perPage, 10) : undefined,
       status,
       supplierId,
+      search,
     );
   }
 

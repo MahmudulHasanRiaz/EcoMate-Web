@@ -508,4 +508,23 @@ describe('PurchasesService lifecycle', () => {
       await expect(service.update('po-1', { items: [] } as any)).rejects.toThrow(/cancelled/i);
     });
   });
+
+  // ─── findAll search ───────────────────────────────────────────────
+  describe('findAll search', () => {
+    it('filters purchases by referenceNo or supplier name', async () => {
+      prisma.purchase.findMany = jest.fn().mockResolvedValue([]);
+      prisma.purchase.count = jest.fn().mockResolvedValue(0);
+      await service.findAll(1, 20, undefined, undefined, 'acme');
+      expect(prisma.purchase.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: [
+              { referenceNo: { contains: 'acme', mode: 'insensitive' } },
+              { supplier: { name: { contains: 'acme', mode: 'insensitive' } } },
+            ],
+          }),
+        }),
+      );
+    });
+  });
 });

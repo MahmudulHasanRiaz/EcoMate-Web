@@ -213,11 +213,17 @@ export class PurchasesService {
     });
   }
 
-  async findAll(page = 1, perPage = 10, status?: string, supplierId?: string) {
+  async findAll(page = 1, perPage = 10, status?: string, supplierId?: string, search?: string) {
     const where: Record<string, unknown> = {};
 
     if (status) where.status = status;
     if (supplierId) where.supplierId = supplierId;
+    if (search?.trim()) {
+      where.OR = [
+        { referenceNo: { contains: search, mode: 'insensitive' } },
+        { supplier: { name: { contains: search, mode: 'insensitive' } } },
+      ];
+    }
 
     const [data, total] = await Promise.all([
       this.prisma.purchase.findMany({
