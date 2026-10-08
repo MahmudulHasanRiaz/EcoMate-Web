@@ -12,6 +12,8 @@ import { PurchasesService } from './purchases.service';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { CreateGrnDto } from './dto/create-grn.dto';
 import { UpdatePurchaseDto } from './dto/update-purchase.dto';
+import { ShortClosePurchaseDto } from './dto/short-close-purchase.dto';
+import { CancelPurchaseDto } from './dto/cancel-purchase.dto';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -64,6 +66,24 @@ export class PurchasesController {
     @CurrentUser() user: { userId: string },
   ) {
     return this.purchasesService.createGrn(id, dto, user?.userId);
+  }
+
+  @Post(':id/short-close')
+  shortClose(
+    @Param('id') id: string,
+    @Body() dto: ShortClosePurchaseDto,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.purchasesService.shortClose(id, dto, user?.userId);
+  }
+
+  @Post(':id/cancel')
+  cancel(
+    @Param('id') id: string,
+    @Body() dto: CancelPurchaseDto,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.purchasesService.cancel(id, dto, user?.userId);
   }
 
   @Get(':id/grns')

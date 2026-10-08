@@ -9,6 +9,8 @@ export interface PurchaseItem {
   totalPrice: number
   totalBill: number
   receivedQty: number
+  shortClosedQty?: number
+  shortCloseReason?: string | null
   product?: { id: string; name: string; images: any; sku?: string | null }
   variant?: { id: string; sku?: string | null; attributeValues?: { attributeValue: { value: string } }[] }
 }
@@ -25,6 +27,8 @@ export interface PurchaseResponse {
   items: PurchaseItem[]
   grns?: GrnResponse[]
   costingLots?: any[]
+  summary?: PurchaseSummary
+  events?: PurchaseEvent[]
   createdAt: string
   updatedAt: string
 }
@@ -32,18 +36,60 @@ export interface PurchaseResponse {
 export interface GrnItemResponse {
   id: string
   productId: string
+  variantId?: string | null
   receivedQty: number
   acceptedQty: number
   rejectedQty: number
   unitCost: number
   totalCost: number
+  damageResponsibility?: string
+  freeOfCharge?: boolean
+  lineWarehouseId?: string | null
   purchaseItem?: { product?: { id: string; name: string; images: any } }
 }
 
+export interface PurchaseDispositionItem {
+  purchaseItemId: string
+  ordered: number
+  received: number
+  accepted: number
+  rejected: number
+  shortClosed: number
+  shortCloseReason: string | null
+  remaining: number
+  done: boolean
+  unitBase: number
+  lines: any[]
+}
+
+export interface PurchaseSummary {
+  items: PurchaseDispositionItem[]
+  totals: {
+    orderedValue: number
+    acceptedValue: number
+    shortClosedValue: number
+    supplierDamageValue: number
+    remainingQty: number
+  }
+}
+
+export interface PurchaseEvent {
+  id: string
+  type: string
+  message: string
+  data?: any
+  performedBy?: string | null
+  createdAt: string
+}
 export interface GrnResponse {
   id: string
   grnNumber: string
   purchaseId: string
+  warehouseId?: string
+  warehouse?: { id: string; name: string }
+  receivedBy?: string | null
+  receivedAt?: string
+  notes?: string | null
   status: string
   items: GrnItemResponse[]
   createdAt: string
@@ -65,10 +111,25 @@ export const purchasesApi = {
   create: (data: any) => apiClient.post<PurchaseResponse>('/purchases', data),
   update: (id: string, data: any) => apiClient.put<PurchaseResponse>(`/purchases/${id}`, data),
   delete: (id: string) => apiClient.delete(`/purchases/${id}`),
-  receiveItems: (id: string, items: { itemId: string; receivedQty: number }[]) => apiClient.post(`/purchases/${id}/receive`, { items }),
-  updateStatus: (id: string, status: string) => apiClient.put(`/purchases/${id}/status`, { status }),
-  createGrn: (id: string, data: { warehouseId: string; items: { purchaseItemId: string; productId: string; receivedQty: number; acceptedQty: number; rejectedQty: number }[]; notes?: string }) =>
-    apiClient.post<GrnResponse>(`/purchases/${id}/grn`, data),
+  createGrn: (id: string, data: {
+    warehouseId: string
+    items: {
+      purchaseItemId: string
+      productId?: string
+      variantId?: string | null
+      receivedQty: number
+      acceptedQty: number
+      rejectedQty: number
+      damageResponsibility?: 'supplier' | 'company'
+      freeOfCharge?: boolean
+      lineWarehouseId?: string
+    }[]
+    notes?: string
+  }) => apiClient.post<GrnResponse>(`/purchases/${id}/grn`, data),
+  shortClose: (id: string, data: { items: { purchaseItemId: string; qty: number; reason: string }[] }) =>
+    apiClient.post<PurchaseResponse>(`/purchases/${id}/short-close`, data),
+  cancel: (id: string, data: { reason: string }) =>
+    apiClient.post<PurchaseResponse>(`/purchases/${id}/cancel`, data),
   getGrns: (id: string) => apiClient.get<GrnResponse[]>(`/purchases/${id}/grns`),
   getGrn: (grnId: string) => apiClient.get<GrnResponse>(`/purchases/grn/${grnId}`),
 }

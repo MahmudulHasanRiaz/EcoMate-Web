@@ -1666,6 +1666,7 @@ enum ManagedStockMovementType {
   RESERVE
   RELEASE
   RETURN_HOLD
+  PURCHASE_RECEIVE
 }
 
 enum MovementDirection {
@@ -1680,6 +1681,7 @@ enum ReferenceEntity {
   MANUAL
   ADJUSTMENT
   IMPORT
+  PURCHASE
 }
 
 model ManagedStockLedger {
@@ -2066,6 +2068,7 @@ model Purchase {
   items       PurchaseItem[]
   costingLots CostingLot[]
   grns        GoodsReceiptNote[]
+  events      PurchaseEvent[]
 
   @@index([supplierId])
   @@index([status])
@@ -2083,6 +2086,10 @@ model PurchaseItem {
   totalPrice  Decimal @db.Decimal(12, 2)
   totalBill   Decimal @db.Decimal(14, 2)
   receivedQty Int     @default(0)
+  // Short-close disposition: qty the supplier will not deliver and the
+  // business will not receive. accepted + rejected + shortClosed = final.
+  shortClosedQty    Int     @default(0)
+  shortCloseReason  String? @db.Text
 
   purchase Purchase        @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
   product  Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
@@ -2090,6 +2097,30 @@ model PurchaseItem {
 
   @@index([purchaseId])
   @@index([productId])
+}
+
+// Append-only audit trail for the purchase lifecycle (created, GRN,
+// short-close, cancel, locks). Orders have timelines; purchases get events.
+model PurchaseEvent {
+  id          String   @id @default(uuid())
+  purchaseId  String
+  type        String
+  message     String   @db.Text
+  data        Json?
+  performedBy String?
+  createdAt   DateTime @default(now())
+
+  purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseId])
+  @@index([createdAt])
+}
+
+// Atomic PO numbering (same pattern as OrderCounter, separate sequence so
+// concurrent creates can never collide on referenceNo).
+model PurchaseCounter {
+  date String @id // YYMMDD
+  seq  Int
 }
 
 model Expense {
@@ -2969,6 +3000,13 @@ model GoodsReceiptNoteItem {
   rejectedQty    Int     @default(0)
   unitCost       Decimal @db.Decimal(12, 2)
   totalCost      Decimal @db.Decimal(14, 2)
+  // Who bears damage cost: 'supplier' (damage excluded from inventory value)
+  // or 'company' (damage cost allocated onto the accepted units).
+  damageResponsibility String  @default("supplier")
+  // Supplier-sent free replacement: accepted into stock at zero cost.
+  freeOfCharge Boolean @default(false)
+  // Per-line receiving location; falls back to the GRN warehouse.
+  lineWarehouseId String?
 
   grn GoodsReceiptNote @relation(fields: [grnId], references: [id], onDelete: Cascade)
 }

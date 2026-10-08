@@ -73,6 +73,8 @@ interface ProductSkuComboboxProps {
   placeholder?: string
   label?: string
   className?: string
+  /** Hide the availability badge (e.g. hydrated edit rows whose on-hand is unknown). */
+  hideAvailability?: boolean
 }
 
 /**
@@ -90,9 +92,10 @@ export function ProductSkuCombobox({
   selected,
   onSelect,
   warehouseId,
-  placeholder = 'Search or scan a product...',
+  placeholder = 'Type name or SKU, or scan a barcode...',
   label = 'Product',
   className,
+  hideAvailability = false,
 }: ProductSkuComboboxProps) {
   const [open, setOpen] = useState(false)
   const [input, setInput] = useState('')
@@ -376,17 +379,19 @@ export function ProductSkuCombobox({
               ) : (
                 <span className='text-[11px] italic text-muted-foreground'>no SKU</span>
               )}
-              <Badge
-                variant='outline'
-                className={cn(
-                  'text-[10px] h-4.5 font-normal',
-                  selected.available > 0
-                    ? 'border-emerald-500/30 text-emerald-600'
-                    : 'border-destructive/30 text-destructive',
-                )}
-              >
-                {selected.available} available
-              </Badge>
+              {!hideAvailability && (
+                <Badge
+                  variant='outline'
+                  className={cn(
+                    'text-[10px] h-4.5 font-normal',
+                    selected.available > 0
+                      ? 'border-emerald-500/30 text-emerald-600'
+                      : 'border-destructive/30 text-destructive',
+                  )}
+                >
+                  {selected.available} available
+                </Badge>
+              )}
             </div>
           </div>
           <Button
@@ -430,7 +435,7 @@ export function ProductSkuCombobox({
                 }
                 if (e.key === 'Escape') setOpen(false)
               }}
-              placeholder='Type name or SKU, or scan a barcode...'
+              placeholder={placeholder}
               autoComplete='off'
               className='w-full h-11 pl-10 pr-10 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring shadow-2xs'
             />

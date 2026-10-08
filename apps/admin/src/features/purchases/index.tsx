@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { purchasesApi, type PurchaseResponse, type PurchaseItem, type GrnResponse } from './api'
 import { suppliersApi } from '@/features/suppliers/api'
 import { productsApi } from '@/features/products/api'
+import { ProductSkuCombobox, type LookupRow } from '@/features/inventory/components/product-sku-combobox'
 import { dhakaTodayString } from '@/lib/dhaka-time'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { Header } from '@/components/layout/header'
@@ -21,7 +22,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Loader2, Plus, Pencil, Trash2, Package, X, SearchIcon, Receipt, ChevronDown } from 'lucide-react'
+import { Loader2, Plus, Pencil, Trash2, Package, X, SearchIcon, Receipt, ChevronDown, Eye, Ban, Scissors } from 'lucide-react'
 
 const statusConfig: Record<string, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; label: string; className: string }> = {
   draft: { variant: 'outline', label: 'Draft', className: 'text-gray-500 border-gray-300 dark:border-gray-600 bg-gray-100/50 dark:bg-gray-800/50' },
@@ -58,7 +59,6 @@ function PurchaseForm({
   form,
   setForm,
   suppliers,
-  products,
 }: {
   editing: PurchaseResponse | null
   form: {
@@ -66,42 +66,20 @@ function PurchaseForm({
     orderDate: string
     notes: string
     referenceNo: string
-    items: { productId: string; quantity: string; totalBill: string }[]
+    items: { productId: string; variantId: string | null; quantity: string; totalBill: string; sel: LookupRow | null; lookedUp: boolean }[]
   }
   setForm: (f: any) => void
   suppliers: { id: string; name: string; phone?: string | null }[]
-  products: { id: string; name: string; images: any; sku?: string | null }[]
 }) {
   const supplierOptions = useMemo(() =>
     suppliers.map(s => ({ id: s.id, label: s.name, subLabel: s.phone || undefined })),
     [suppliers],
   )
 
-  const productOptions = useMemo(() =>
-    products.map(p => {
-      const imgs = Array.isArray(p.images) ? p.images : []
-      const imgUrl = imgs[0]?.url || imgs[0] || ''
-      return {
-        id: p.id,
-        label: p.name,
-        subLabel: p.sku || undefined,
-        icon: imgUrl ? (
-          <img src={imgUrl} alt='' className='h-7 w-7 rounded object-cover' />
-        ) : undefined,
-      }
-    }),
-    [products],
-  )
-
-  const productMap = useMemo(() => {
-    const m = new Map(products.map(p => [p.id, p]))
-    return m
-  }, [products])
-
   const addItem = () => {
     setForm((prev: typeof form) => ({
       ...prev,
-      items: [...prev.items, { productId: '', quantity: '1', totalBill: '0' }],
+      items: [...prev.items, { productId: '', variantId: null, quantity: '1', totalBill: '0', sel: null, lookedUp: false }],
     }))
   }
 
@@ -112,10 +90,25 @@ function PurchaseForm({
     }))
   }
 
-  const updateItem = (idx: number, field: string, value: string) => {
+  const updateItem = (idx: number, field: string, value: any) => {
     setForm((prev: typeof form) => ({
       ...prev,
-      items: prev.items.map((item, i) => (i === idx ? { ...item, [field]: value } : item)),
+      items: prev.items.map((item, i) => {
+        if (i !== idx) return item
+        // Variant-level pick from the SKU combobox (server rows + scanner):
+        // a variable product only ever arrives as its variants.
+        if (field === '__sel') {
+          const row = value as LookupRow | null
+          return {
+            ...item,
+            productId: row?.productId || '',
+            variantId: row?.variantId || null,
+            sel: row,
+            lookedUp: row != null,
+          }
+        }
+        return { ...item, [field]: value }
+      }),
     }))
   }
 
@@ -167,9 +160,6 @@ function PurchaseForm({
         </div>
         <div className='space-y-3'>
           {form.items.map((item, idx) => {
-            const prod = productMap.get(item.productId)
-            const imgs = prod?.images ? (Array.isArray(prod.images) ? prod.images : []) : []
-            const imgUrl = imgs[0]?.url || imgs[0] || ''
             const qty = Number(item.quantity) || 0
             const bill = Number(item.totalBill) || 0
             const unitCost = qty > 0 ? bill / qty : 0
@@ -177,26 +167,17 @@ function PurchaseForm({
             return (
               <div key={idx} className='rounded-lg border p-3 space-y-3 bg-muted/20'>
                 <div className='flex items-start gap-3'>
-                  <div className='h-14 w-14 rounded-md bg-muted flex-shrink-0 overflow-hidden border'>
-                    {imgUrl ? (
-                      <img src={imgUrl} alt='' className='h-full w-full object-cover' />
-                    ) : (
-                      <div className='h-full w-full flex items-center justify-center text-muted-foreground'>
-                        <Package className='h-5 w-5' />
-                      </div>
-                    )}
-                  </div>
                   <div className='flex-1 min-w-0'>
-                    <SearchableSelect
-                      options={productOptions}
-                      value={item.productId}
-                      onChange={v => updateItem(idx, 'productId', v)}
-                      placeholder='Search & select product...'
-                      searchPlaceholder='Type product name or SKU...'
-                      emptyMessage='No products found'
-                      triggerClassName='h-9 text-sm'
-                      className='w-[320px]'
+                    <ProductSkuCombobox
+                      selected={item.sel}
+                      onSelect={row => updateItem(idx, '__sel', row as any)}
+                      label={idx === 0 ? 'Product / Variant' : undefined}
+                      placeholder='Search, scan, or pick a variant...'
+                      hideAvailability={item.sel != null && !item.lookedUp}
                     />
+                    {item.sel?.variantName == null && item.productId !== '' && (
+                      <p className='text-[11px] text-amber-600 mt-1'>Simple product — quantity below applies to the product itself.</p>
+                    )}
                   </div>
                   <Button variant='ghost' size='icon' className='h-8 w-8 shrink-0 mt-0.5' onClick={() => removeItem(idx)}>
                     <X className='h-4 w-4' />
@@ -204,8 +185,9 @@ function PurchaseForm({
                 </div>
                 <div className='grid grid-cols-3 gap-3'>
                   <div className='space-y-1'>
-                    <Label className='text-xs'>Quantity</Label>
+                    <Label className='text-xs' htmlFor={`po-qty-${idx}`}>Quantity</Label>
                     <Input
+                      id={`po-qty-${idx}`}
                       type='number'
                       value={item.quantity}
                       onChange={e => updateItem(idx, 'quantity', e.target.value)}
@@ -214,8 +196,9 @@ function PurchaseForm({
                     />
                   </div>
                   <div className='space-y-1'>
-                    <Label className='text-xs'>Total Bill (৳)</Label>
+                    <Label className='text-xs' htmlFor={`po-bill-${idx}`}>Total Bill (৳)</Label>
                     <Input
+                      id={`po-bill-${idx}`}
                       type='number'
                       value={item.totalBill}
                       onChange={e => updateItem(idx, 'totalBill', e.target.value)}
@@ -253,6 +236,315 @@ function PurchaseForm({
   )
 }
 
+function ShortCloseDialog({
+  open,
+  onOpenChange,
+  purchase,
+  onSubmit,
+  saving,
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  purchase: PurchaseResponse | null
+  onSubmit: (items: { purchaseItemId: string; qty: number; reason: string }[]) => void
+  saving?: boolean
+}) {
+  const [rows, setRows] = useState<Record<string, { qty: string; reason: string }>>({})
+
+  if (!purchase) return null
+
+  const remainingOf = (item: PurchaseItem) => {
+    const received = Number(item.receivedQty) || 0
+    const shortClosed = Number((item as any).shortClosedQty) || 0
+    return Math.max(0, item.quantity - received - shortClosed)
+  }
+
+  const handleSubmit = () => {
+    const items: { purchaseItemId: string; qty: number; reason: string }[] = []
+    for (const [itemId, v] of Object.entries(rows)) {
+      const qty = Number(v.qty || 0)
+      if (!(qty > 0)) continue
+      if (!v.reason.trim()) {
+        toast.error('A reason is required for every short-closed line')
+        return
+      }
+      const item = purchase.items.find(i => i.id === itemId)
+      const remaining = item ? remainingOf(item) : 0
+      if (qty > remaining) {
+        toast.error(`Short-close qty exceeds remaining (${remaining})`)
+        return
+      }
+      items.push({ purchaseItemId: itemId, qty, reason: v.reason.trim() })
+    }
+    if (items.length === 0) {
+      toast.error('Enter at least one short-close quantity with a reason')
+      return
+    }
+    onSubmit(items)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className='max-w-2xl'>
+        <DialogHeader>
+          <DialogTitle>Short Close — {purchase.referenceNo}</DialogTitle>
+          <p className='text-xs text-muted-foreground'>
+            Supplier আর দেবে না এমন বাকি quantity এখানে close করুন। Short-closed value final purchase value থেকে বাদ যাবে।
+          </p>
+        </DialogHeader>
+        <div className='space-y-3 py-2 max-h-[60vh] overflow-y-auto pr-2'>
+          {purchase.items.map(item => {
+            const remaining = remainingOf(item)
+            if (remaining <= 0) return null
+            const r = rows[item.id] || { qty: '', reason: '' }
+            const variantStr = item.variant?.attributeValues?.map(av => av.attributeValue.value).join(' / ')
+            return (
+              <div key={item.id} className='rounded-lg border p-3 space-y-2 bg-muted/10'>
+                <p className='text-sm font-medium truncate'>
+                  {item.product?.name || item.productId.slice(0, 8)}
+                  {variantStr && <span className='font-normal text-muted-foreground'> — {variantStr}</span>}
+                </p>
+                <p className='text-[11px] text-muted-foreground'>
+                  Ordered: {item.quantity} • Received: {item.receivedQty || 0} • Remaining: {remaining}
+                </p>
+                <div className='grid grid-cols-3 gap-3'>
+                  <div className='space-y-1'>
+                    <Label className='text-xs' htmlFor={`sc-qty-${item.id}`}>Short qty</Label>
+                    <Input
+                      id={`sc-qty-${item.id}`}
+                      type='number'
+                      value={r.qty}
+                      onChange={e => setRows(prev => ({ ...prev, [item.id]: { qty: e.target.value, reason: prev[item.id]?.reason || '' } }))}
+                      className='h-8 text-sm'
+                      min={0}
+                      max={remaining}
+                    />
+                  </div>
+                  <div className='space-y-1 col-span-2'>
+                    <Label className='text-xs'>Reason *</Label>
+                    <Input
+                      value={r.reason}
+                      onChange={e => setRows(prev => ({ ...prev, [item.id]: { qty: prev[item.id]?.qty || '', reason: e.target.value } }))}
+                      className='h-8 text-sm'
+                      placeholder='e.g. supplier discontinued'
+                    />
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        <DialogFooter>
+          <Button variant='outline' onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={saving}>
+            {saving && <Loader2 className='animate-spin h-4 w-4 mr-1' />}
+            <Scissors className='h-4 w-4 mr-1' /> Short Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function CancelPurchaseDialog({
+  open,
+  onOpenChange,
+  purchase,
+  onSubmit,
+  saving,
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  purchase: PurchaseResponse | null
+  onSubmit: (reason: string) => void
+  saving?: boolean
+}) {
+  const [reason, setReason] = useState('')
+
+  if (!purchase) return null
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Cancel Purchase — {purchase.referenceNo}</DialogTitle></DialogHeader>
+        <p className='text-sm text-muted-foreground'>
+          Already-received stock stays in inventory. Every outstanding remainder is short-closed
+          with your reason below, so no quantity is left silently pending.
+        </p>
+        <div className='space-y-1.5'>
+          <Label>Reason *</Label>
+          <Textarea
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            placeholder='Why is this purchase being cancelled?'
+            rows={2}
+          />
+        </div>
+        <DialogFooter>
+          <Button variant='outline' onClick={() => onOpenChange(false)}>Back</Button>
+          <Button
+            variant='destructive'
+            disabled={saving}
+            onClick={() => {
+              if (!reason.trim()) {
+                toast.error('A reason is required to cancel')
+                return
+              }
+              onSubmit(reason.trim())
+            }}
+          >
+            {saving && <Loader2 className='animate-spin h-4 w-4 mr-1' />}
+            Cancel Purchase
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function PurchaseDetailDialog({
+  open,
+  onOpenChange,
+  purchaseId,
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  purchaseId: string | null
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['purchase-detail', purchaseId],
+    queryFn: () => purchasesApi.get(purchaseId!).then(r => r.data),
+    enabled: open && !!purchaseId,
+  })
+  const p = data as (PurchaseResponse & { summary?: import('./api').PurchaseSummary; events?: import('./api').PurchaseEvent[] }) | undefined
+  const summary = p?.summary
+  const sc = p ? getStatusConfig(p.status) : null
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className='max-w-4xl'>
+        <DialogHeader>
+          <DialogTitle className='text-lg'>Purchase {p?.referenceNo || ''}</DialogTitle>
+          <p className='text-xs text-muted-foreground'>
+            {p?.supplier?.name || ''} • {p ? new Date(p.orderDate).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
+          </p>
+        </DialogHeader>
+        {isLoading || !p ? (
+          <div className='flex justify-center py-10'><Loader2 className='animate-spin h-6 w-6' /></div>
+        ) : (
+          <div className='space-y-4 py-1 max-h-[65vh] overflow-y-auto pr-1'>
+            <div className='flex items-center gap-2'>
+              {sc && <Badge variant={sc.variant} className={sc.className}>{sc.label}</Badge>}
+            </div>
+
+            {/* Summary strip */}
+            <div className='grid grid-cols-2 sm:grid-cols-4 gap-2'>
+              {[
+                ['Ordered value', `৳${fmt(summary?.totals.orderedValue ?? p.total)}`],
+                ['Accepted value', `৳${fmt(summary?.totals.acceptedValue ?? 0)}`],
+                ['Short-closed', `৳${fmt(summary?.totals.shortClosedValue ?? 0)}`],
+                ['Pending qty', `${summary?.totals.remainingQty ?? 0}`],
+              ].map(([label, value]) => (
+                <div key={label} className='rounded-lg border bg-muted/20 px-3 py-2'>
+                  <p className='text-[11px] text-muted-foreground'>{label}</p>
+                  <p className='text-sm font-semibold'>{value}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Product disposition */}
+            <div>
+              <p className='text-sm font-semibold mb-1.5'>Products</p>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className='text-xs'>Product</TableHead>
+                    <TableHead className='text-xs text-right'>Ordered</TableHead>
+                    <TableHead className='text-xs text-right'>Received</TableHead>
+                    <TableHead className='text-xs text-right'>Accepted</TableHead>
+                    <TableHead className='text-xs text-right'>Damage</TableHead>
+                    <TableHead className='text-xs text-right'>Short</TableHead>
+                    <TableHead className='text-xs text-right'>Pending</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(summary?.items || []).map((s: import('./api').PurchaseDispositionItem) => {
+                    const item = p.items.find(i => i.id === s.purchaseItemId)
+                    const variantStr = item?.variant?.attributeValues?.map(av => av.attributeValue.value).join(' / ')
+                    return (
+                      <TableRow key={s.purchaseItemId}>
+                        <TableCell className='text-xs'>
+                          <span className='font-medium'>{item?.product?.name || s.purchaseItemId.slice(0, 8)}</span>
+                          {variantStr && <span className='text-muted-foreground'> — {variantStr}</span>}
+                        </TableCell>
+                        <TableCell className='text-xs text-right'>{s.ordered}</TableCell>
+                        <TableCell className='text-xs text-right'>{s.received}</TableCell>
+                        <TableCell className='text-xs text-right text-emerald-600'>{s.accepted}</TableCell>
+                        <TableCell className='text-xs text-right text-destructive'>{s.rejected || '—'}</TableCell>
+                        <TableCell className='text-xs text-right'>{s.shortClosed || '—'}</TableCell>
+                        <TableCell className='text-xs text-right font-medium'>{s.remaining}</TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Receive history */}
+            <div>
+              <p className='text-sm font-semibold mb-1.5'>Receive History ({(p.grns || []).length})</p>
+              {(p.grns || []).length === 0 && (
+                <p className='text-xs text-muted-foreground'>No receives yet.</p>
+              )}
+              <div className='space-y-2'>
+                {(p.grns || []).map(g => (
+                  <div key={g.id} className='rounded-lg border p-3 bg-muted/10'>
+                    <div className='flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs'>
+                      <span className='font-mono font-semibold'>{g.grnNumber}</span>
+                      <span className='text-muted-foreground'>{new Date(g.receivedAt || g.createdAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                      {g.warehouse?.name && <span className='text-muted-foreground'>{g.warehouse.name}</span>}
+                      {g.receivedBy && <span className='text-muted-foreground'>by {g.receivedBy.slice(0, 8)}</span>}
+                    </div>
+                    <div className='mt-1.5 space-y-1'>
+                      {g.items.map((l: any) => (
+                        <p key={l.id} className='text-xs text-muted-foreground'>
+                          {l.acceptedQty} accepted
+                          {l.rejectedQty > 0 && <span> • {l.rejectedQty} damage ({l.damageResponsibility || 'supplier'})</span>}
+                          {l.freeOfCharge && <span> • free replacement</span>}
+                          {l.lineWarehouseId && l.lineWarehouseId !== g.warehouseId && <span> • other location</span>}
+                          {' '}• ৳{fmt(l.totalCost)}
+                        </p>
+                      ))}
+                    </div>
+                    {g.notes && <p className='text-xs text-muted-foreground mt-1 italic'>{g.notes}</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Event trail */}
+            {(p.events || []).length > 0 && (
+              <div>
+                <p className='text-sm font-semibold mb-1.5'>History</p>
+                <div className='space-y-1.5'>
+                  {p.events!.map(e => (
+                    <div key={e.id} className='flex gap-2 text-xs'>
+                      <span className='text-muted-foreground shrink-0'>
+                        {new Date(e.createdAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      <span>{e.message}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function ReceiveGrnDialog({
   open,
   onOpenChange,
@@ -263,10 +555,10 @@ function ReceiveGrnDialog({
   open: boolean
   onOpenChange: (v: boolean) => void
   purchase: PurchaseResponse | null
-  onReceive: (items: { purchaseItemId: string; productId: string; receivedQty: number; acceptedQty: number; rejectedQty: number }[], notes?: string, warehouseId?: string) => void
+  onReceive: (items: { purchaseItemId: string; productId: string; variantId: string | null; receivedQty: number; acceptedQty: number; rejectedQty: number; damageResponsibility: 'supplier' | 'company'; freeOfCharge: boolean; lineWarehouseId?: string }[], notes?: string, warehouseId?: string) => void
   products?: any[]
 }) {
-  const [received, setReceived] = useState<Record<string, { receivedQty: string; acceptedQty: string; rejectedQty: string }>>({})
+  const [received, setReceived] = useState<Record<string, { receivedQty: string; acceptedQty: string; rejectedQty: string; responsibility: 'supplier' | 'company'; freeOfCharge: boolean; lineWarehouseId: string }>>({})
   const [notes, setNotes] = useState('')
   const [selectedWarehouse, setSelectedWarehouse] = useState('')
 
@@ -275,6 +567,7 @@ function ReceiveGrnDialog({
     queryFn: () => apiClient.get('/warehouses').then(r => r.data?.data || r.data || []),
     enabled: open,
   })
+  const activeWarehouses = (warehouses || []).filter((w: any) => w.isActive)
 
   const productMap = useMemo(() => {
     return new Map(products.map(p => [p.id, p]))
@@ -282,23 +575,55 @@ function ReceiveGrnDialog({
 
   if (!purchase) return null
 
+  const lineState = (purchase: PurchaseResponse) => {
+    const out = new Map<string, { ordered: number; received: number; shortClosed: number; remaining: number }>()
+    for (const item of purchase.items) {
+      const received = Number(item.receivedQty) || 0
+      const shortClosed = Number((item as any).shortClosedQty) || 0
+      out.set(item.id, {
+        ordered: item.quantity,
+        received,
+        shortClosed,
+        remaining: Math.max(0, item.quantity - received - shortClosed),
+      })
+    }
+    return out
+  }
+  const disposition = lineState(purchase)
+
   const handleReceive = () => {
     if (!selectedWarehouse) {
       toast.error('Select a destination warehouse')
       return
     }
-    const items = Object.entries(received)
-      .filter(([, v]) => v.receivedQty && Number(v.receivedQty) > 0)
-      .map(([itemId, v]) => {
-        const item = purchase.items.find((i: PurchaseItem) => i.id === itemId)
-        return {
-          purchaseItemId: itemId,
-          productId: item?.productId || '',
-          receivedQty: Number(v.receivedQty || 0),
-          acceptedQty: Number(v.acceptedQty || v.receivedQty || 0),
-          rejectedQty: Number(v.rejectedQty || 0),
-        }
+    const items: { purchaseItemId: string; productId: string; variantId: string | null; receivedQty: number; acceptedQty: number; rejectedQty: number; damageResponsibility: 'supplier' | 'company'; freeOfCharge: boolean; lineWarehouseId?: string }[] = []
+    for (const [itemId, v] of Object.entries(received)) {
+      const rec = Number(v.receivedQty || 0)
+      if (!(rec > 0)) continue
+      const acc = Number(v.acceptedQty || 0)
+      const rej = Number(v.rejectedQty || 0)
+      if (acc + rej > rec) {
+        toast.error('Accepted + Rejected cannot exceed Received for an item')
+        return
+      }
+      const item = purchase.items.find((i: PurchaseItem) => i.id === itemId)
+      const st = disposition.get(itemId)
+      if (st && rec > st.remaining) {
+        toast.error(`Receive qty exceeds remaining (${st.remaining}) for an item`)
+        return
+      }
+      items.push({
+        purchaseItemId: itemId,
+        productId: item?.productId || '',
+        variantId: item?.variantId || null,
+        receivedQty: rec,
+        acceptedQty: v.acceptedQty === '' ? rec : acc,
+        rejectedQty: rej,
+        damageResponsibility: v.responsibility,
+        freeOfCharge: v.freeOfCharge,
+        ...(v.lineWarehouseId ? { lineWarehouseId: v.lineWarehouseId } : {}),
       })
+    }
     if (items.length === 0) {
       toast.error('Enter at least one item quantity')
       return
@@ -310,9 +635,16 @@ function ReceiveGrnDialog({
     if (!received[itemId]) {
       setReceived(prev => ({
         ...prev,
-        [itemId]: { receivedQty: '', acceptedQty: '', rejectedQty: '0' },
+        [itemId]: { receivedQty: '', acceptedQty: '', rejectedQty: '0', responsibility: 'supplier', freeOfCharge: false, lineWarehouseId: '' },
       }))
     }
+  }
+
+  const patchItem = (itemId: string, patch: Partial<{ receivedQty: string; acceptedQty: string; rejectedQty: string; responsibility: 'supplier' | 'company'; freeOfCharge: boolean; lineWarehouseId: string }>) => {
+    setReceived(prev => {
+      const cur = prev[itemId] || { receivedQty: '', acceptedQty: '', rejectedQty: '0', responsibility: 'supplier' as const, freeOfCharge: false, lineWarehouseId: '' }
+      return { ...prev, [itemId]: { ...cur, ...patch } }
+    })
   }
 
   return (
@@ -339,17 +671,18 @@ function ReceiveGrnDialog({
             প্রতিটি আইটেমের জন্য কতটা রিসিভ করছেন তা দিন। Accepted = ভালো কন্ডিশনে পাওয়া, Rejected = খারাপ/ড্যামেজড।
           </p>
           {purchase.items.map((item: PurchaseItem) => {
-            const r = received[item.id] || { receivedQty: '', acceptedQty: '', rejectedQty: '0' }
-            const cost = purchase.costingLots?.[0]?.unitCost
-              ? Number(purchase.costingLots[0].unitCost)
-              : (item.totalBill && item.quantity ? Number(item.totalBill) / item.quantity : 0)
-            
+            const r = received[item.id] || { receivedQty: '', acceptedQty: '', rejectedQty: '0', responsibility: 'supplier' as const, freeOfCharge: false, lineWarehouseId: '' }
+            // This item's own agreed unit — never another line's lot cost.
+            const unitBase = item.quantity > 0 ? Number(item.totalBill || item.totalPrice || 0) / item.quantity : 0
+            const st = disposition.get(item.id) || { ordered: item.quantity, received: 0, shortClosed: 0, remaining: item.quantity }
+
             const product = productMap.get(item.productId) || item.product
             const imgUrl = product?.images?.[0]?.url || product?.images?.[0] || ''
-            const sku = product?.sku || item.product?.sku || ''
+            const sku = item.variant?.sku || product?.sku || item.product?.sku || ''
+            const closed = st.remaining <= 0
             return (
-              <div key={item.id} className='rounded-lg border p-3 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 bg-muted/10'>
-                <div className='flex items-center gap-3 w-full sm:w-2/5 sm:flex-shrink-0'>
+              <div key={item.id} className={`rounded-lg border p-3 flex flex-col gap-3 bg-muted/10 ${closed ? 'opacity-60' : ''}`}>
+                <div className='flex items-center gap-3 w-full'>
                   <div className='w-12 h-12 rounded-md bg-muted overflow-hidden flex-shrink-0 border'>
                     {imgUrl ? (
                       <img src={imgUrl} alt='' className='w-full h-full object-cover' />
@@ -362,7 +695,7 @@ function ReceiveGrnDialog({
                   <div className='min-w-0 flex-1'>
                     <p className='text-sm font-medium truncate' title={product?.name}>{product?.name || item.productId.slice(0, 8)}</p>
                     <div className='flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-0.5 text-xs text-muted-foreground'>
-                      <span className='font-medium text-foreground'>Ordered: {item.quantity}</span>
+                      {item.variant && <span>{item.variant.attributeValues?.map(av => av.attributeValue.value).join(' / ')}</span>}
                       {sku && (
                         <>
                           <span>•</span>
@@ -371,31 +704,34 @@ function ReceiveGrnDialog({
                       )}
                       <span>•</span>
                       <span>৳{fmt(item.unitPrice)}/unit</span>
-                      <span className='hidden sm:inline'>•</span>
-                      <span className='hidden sm:inline'>Total: ৳{fmt(item.totalBill || item.totalPrice)}</span>
+                      <span>•</span>
+                      <span>Total: ৳{fmt(item.totalBill || item.totalPrice)}</span>
                     </div>
-                    {item.variant && <p className='text-xs text-muted-foreground truncate'>{item.variant.attributeValues?.map(av => av.attributeValue.value).join(' / ')}</p>}
-                    {cost > 0 && <p className='text-xs text-green-600 truncate'>Expected cost: ৳{cost.toFixed(2)}</p>}
+                    <div className='flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-[11px]'>
+                      <span className='text-muted-foreground'>Ordered: <span className='font-medium text-foreground'>{st.ordered}</span></span>
+                      <span className='text-muted-foreground'>Received: <span className='font-medium text-foreground'>{st.received}</span></span>
+                      {st.shortClosed > 0 && <span className='text-muted-foreground'>Short-closed: <span className='font-medium'>{st.shortClosed}</span></span>}
+                      <span className={st.remaining > 0 ? 'text-emerald-600 font-medium' : 'text-muted-foreground'}>
+                        Remaining: {st.remaining}{closed ? ' (done)' : ''}
+                      </span>
+                    </div>
+                    {unitBase > 0 && <p className='text-xs text-green-600 truncate'>Expected cost: ৳{unitBase.toFixed(2)}/unit</p>}
                   </div>
                 </div>
 
-                <div className='w-full sm:flex-1 grid grid-cols-3 gap-3'>
+                {!closed ? (
+                <>
+                <div className='w-full grid grid-cols-3 gap-3'>
                   <div className='space-y-1.5'>
-                    <Label className='text-xs'>Received</Label>
+                    <Label className='text-xs'>Received (now)</Label>
                     <Input
                       type='number'
                       value={r.receivedQty}
-                      onChange={e => {
-                        const val = e.target.value
-                        setReceived(prev => ({
-                          ...prev,
-                          [item.id]: { ...prev[item.id] || { acceptedQty: '', rejectedQty: '0' }, receivedQty: val },
-                        }))
-                      }}
+                      onChange={e => patchItem(item.id, { receivedQty: e.target.value })}
                       onFocus={() => initItem(item.id)}
                       className='h-9 text-sm'
                       min={0}
-                      max={item.quantity}
+                      max={st.remaining}
                     />
                   </div>
                   <div className='space-y-1.5'>
@@ -403,16 +739,11 @@ function ReceiveGrnDialog({
                     <Input
                       type='number'
                       value={r.acceptedQty}
-                      onChange={e => {
-                        const val = e.target.value
-                        setReceived(prev => ({
-                          ...prev,
-                          [item.id]: { ...prev[item.id] || { receivedQty: '', rejectedQty: '0' }, acceptedQty: val },
-                        }))
-                      }}
+                      onChange={e => patchItem(item.id, { acceptedQty: e.target.value })}
                       onFocus={() => initItem(item.id)}
                       className='h-9 text-sm'
                       min={0}
+                      placeholder='= received'
                     />
                   </div>
                   <div className='space-y-1.5'>
@@ -420,19 +751,64 @@ function ReceiveGrnDialog({
                     <Input
                       type='number'
                       value={r.rejectedQty}
-                      onChange={e => {
-                        const val = e.target.value
-                        setReceived(prev => ({
-                          ...prev,
-                          [item.id]: { ...prev[item.id] || { receivedQty: '', acceptedQty: '' }, rejectedQty: val },
-                        }))
-                      }}
+                      onChange={e => patchItem(item.id, { rejectedQty: e.target.value })}
                       onFocus={() => initItem(item.id)}
                       className='h-9 text-sm'
                       min={0}
                     />
                   </div>
                 </div>
+                <div className='flex flex-wrap items-center gap-x-4 gap-y-2 text-xs'>
+                  <label className='flex items-center gap-1.5 text-muted-foreground'>
+                    <input
+                      type='checkbox'
+                      checked={r.freeOfCharge}
+                      onChange={e => patchItem(item.id, { freeOfCharge: e.target.checked })}
+                      className='h-3.5 w-3.5'
+                    />
+                    Free replacement (0 cost)
+                  </label>
+                  {Number(r.rejectedQty || 0) > 0 && !r.freeOfCharge && (
+                    <span className='flex items-center gap-2 text-muted-foreground'>
+                      Damage cost:
+                      <label className='flex items-center gap-1'>
+                        <input
+                          type='radio'
+                          name={`resp-${item.id}`}
+                          checked={r.responsibility === 'supplier'}
+                          onChange={() => patchItem(item.id, { responsibility: 'supplier' })}
+                          className='h-3.5 w-3.5'
+                        />
+                        Supplier bears
+                      </label>
+                      <label className='flex items-center gap-1' title='Damage cost spreads onto the accepted units'>
+                        <input
+                          type='radio'
+                          name={`resp-${item.id}`}
+                          checked={r.responsibility === 'company'}
+                          onChange={() => patchItem(item.id, { responsibility: 'company' })}
+                          className='h-3.5 w-3.5'
+                        />
+                        Company bears
+                      </label>
+                    </span>
+                  )}
+                  <label className='flex items-center gap-1.5 text-muted-foreground'>
+                    Location:
+                    <select
+                      value={r.lineWarehouseId}
+                      onChange={e => patchItem(item.id, { lineWarehouseId: e.target.value })}
+                      className='h-7 rounded-md border border-input bg-background px-1.5 text-xs'
+                    >
+                      <option value=''>GRN warehouse</option>
+                      {activeWarehouses.map((w: any) => (
+                        <option key={w.id} value={w.id}>{w.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                </>
+                ) : null}
               </div>
             )
           })}
@@ -484,10 +860,15 @@ function GrnViewDialog({
           <div className='space-y-3 max-h-[60vh] overflow-y-auto'>
             {grns?.map((grn: GrnResponse) => (
               <div key={grn.id} className='rounded-lg border p-3'>
-                <div className='flex items-center justify-between mb-2'>
+                <div className='flex flex-wrap items-center gap-x-3 gap-y-0.5 mb-2'>
                   <span className='font-mono text-sm font-semibold'>{grn.grnNumber}</span>
                   <Badge variant='outline' className='text-xs'>{grn.status}</Badge>
+                  <span className='text-[11px] text-muted-foreground'>
+                    {new Date((grn as any).receivedAt || grn.createdAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                  {(grn as any).warehouse?.name && <span className='text-[11px] text-muted-foreground'>{(grn as any).warehouse.name}</span>}
                 </div>
+                {(grn as any).notes && <p className='text-[11px] text-muted-foreground italic mb-2'>{(grn as any).notes}</p>}
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -505,7 +886,17 @@ function GrnViewDialog({
                         <TableCell className='text-xs'>{gitem.purchaseItem?.product?.name || gitem.productId.slice(0, 8)}</TableCell>
                         <TableCell className='text-xs text-right'>{gitem.receivedQty}</TableCell>
                         <TableCell className='text-xs text-right'>{gitem.acceptedQty}</TableCell>
-                        <TableCell className='text-xs text-right'>{gitem.rejectedQty}</TableCell>
+                        <TableCell className='text-xs text-right'>
+                          {gitem.rejectedQty}
+                          {gitem.rejectedQty > 0 && (
+                            <span className='block text-[10px] text-muted-foreground'>
+                              {(gitem as any).damageResponsibility === 'company' ? 'co. bears' : 'sup. bears'}
+                            </span>
+                          )}
+                          {(gitem as any).freeOfCharge && (
+                            <span className='block text-[10px] text-emerald-600'>free repl.</span>
+                          )}
+                        </TableCell>
                         <TableCell className='text-xs text-right'>৳{fmt(gitem.unitCost)}</TableCell>
                         <TableCell className='text-xs text-right'>৳{fmt(gitem.totalCost)}</TableCell>
                       </TableRow>
@@ -531,6 +922,9 @@ export function Purchases() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [receiveDialog, setReceiveDialog] = useState<PurchaseResponse | null>(null)
   const [grnViewDialog, setGrnViewDialog] = useState<PurchaseResponse | null>(null)
+  const [shortCloseDialog, setShortCloseDialog] = useState<PurchaseResponse | null>(null)
+  const [cancelDialog, setCancelDialog] = useState<PurchaseResponse | null>(null)
+  const [detailDialog, setDetailDialog] = useState<PurchaseResponse | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const emptyForm = {
@@ -538,9 +932,15 @@ export function Purchases() {
     supplierId: '',
     orderDate: dhakaTodayString(),
     notes: '',
-    items: [{ productId: '', quantity: '1', totalBill: '0' }],
+    items: [{ productId: '', variantId: null, quantity: '1', totalBill: '0', sel: null, lookedUp: false }],
   }
-  const [form, setForm] = useState(emptyForm)
+  const [form, setForm] = useState<{
+    referenceNo: string
+    supplierId: string
+    orderDate: string
+    notes: string
+    items: { productId: string; variantId: string | null; quantity: string; totalBill: string; sel: LookupRow | null; lookedUp: boolean }[]
+  }>(emptyForm)
 
   const { data: suppliers } = useQuery({
     queryKey: ['suppliers'],
@@ -608,10 +1008,35 @@ export function Purchases() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['purchases'] })
       queryClient.invalidateQueries({ queryKey: ['purchase-grns', variables.id] })
+      queryClient.invalidateQueries({ queryKey: ['purchase-detail'] })
       setReceiveDialog(null)
       toast.success('Items received via GRN')
     },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Error receiving items'),
+  })
+
+  const shortCloseMut = useMutation({
+    mutationFn: ({ id, items }: { id: string; items: { purchaseItemId: string; qty: number; reason: string }[] }) =>
+      purchasesApi.shortClose(id, { items }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['purchases'] })
+      queryClient.invalidateQueries({ queryKey: ['purchase-detail'] })
+      setShortCloseDialog(null)
+      toast.success('Short-close recorded')
+    },
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Error recording short-close'),
+  })
+
+  const cancelMut = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      purchasesApi.cancel(id, { reason }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['purchases'] })
+      queryClient.invalidateQueries({ queryKey: ['purchase-detail'] })
+      setCancelDialog(null)
+      toast.success('Purchase cancelled (remainder short-closed)')
+    },
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Error cancelling purchase'),
   })
 
   const openCreate = () => {
@@ -627,11 +1052,28 @@ export function Purchases() {
       supplierId: p.supplierId,
       orderDate: p.orderDate.slice(0, 10),
       notes: p.notes || '',
-      items: p.items.map(i => ({
-        productId: i.productId,
-        quantity: String(i.quantity),
-        totalBill: String(i.totalBill || i.totalPrice || 0),
-      })),
+      // Variant linkage survives the edit round-trip: dropping variantId
+      // here used to re-post variant stock at product level on the next GRN.
+      items: p.items.map(i => {
+        const variantName = i.variant?.attributeValues?.map(av => av.attributeValue.value).join(' / ') || null
+        return {
+          productId: i.productId,
+          variantId: i.variantId || null,
+          quantity: String(i.quantity),
+          totalBill: String(i.totalBill || i.totalPrice || 0),
+          sel: {
+            productId: i.productId,
+            productName: i.product?.name || 'Product',
+            variantId: i.variantId || null,
+            variantName,
+            sku: i.variant?.sku || i.product?.sku || null,
+            type: (i.variantId ? 'variant' : 'product') as 'variant' | 'product',
+            available: 0,
+            image: Array.isArray(i.product?.images) ? (i.product.images[0]?.url || i.product.images[0] || null) : null,
+          } as LookupRow,
+          lookedUp: false,
+        }
+      }),
     })
     setOpen(true)
   }
@@ -641,13 +1083,26 @@ export function Purchases() {
       toast.error('Please select a supplier')
       return
     }
-    const items = form.items
-      .filter(i => i.productId.trim())
-      .map(i => ({
+    const items: { productId: string; variantId: string | null; quantity: number; totalBill: number }[] = []
+    for (const i of form.items) {
+      if (!i.productId.trim()) continue
+      const qty = Number(i.quantity)
+      const bill = Number(i.totalBill)
+      if (!(qty >= 1)) {
+        toast.error('Quantity must be at least 1 for every item')
+        return
+      }
+      if (!(bill >= 0)) {
+        toast.error('Total bill cannot be negative')
+        return
+      }
+      items.push({
         productId: i.productId.trim(),
-        quantity: Number(i.quantity) || 1,
-        totalBill: Number(i.totalBill) || 0,
-      }))
+        variantId: i.variantId || null,
+        quantity: qty,
+        totalBill: bill,
+      })
+    }
     if (items.length === 0) {
       toast.error('At least one item is required')
       return
@@ -773,6 +1228,15 @@ export function Purchases() {
                         </TableCell>
                         <TableCell>
                           <div className='flex gap-1'>
+                            <Button
+                              variant='ghost'
+                              size='icon'
+                              className='h-7 w-7'
+                              onClick={() => setDetailDialog(p)}
+                              title='Purchase detail & history'
+                            >
+                              <Eye className='h-3.5 w-3.5' />
+                            </Button>
                             {(p.status === 'ordered' || p.status === 'partially_received') && (
                               <Button
                                 variant='ghost'
@@ -784,6 +1248,28 @@ export function Purchases() {
                                 <Package className='h-3.5 w-3.5' />
                               </Button>
                             )}
+                            {(p.status === 'ordered' || p.status === 'partially_received') && (
+                              <Button
+                                variant='ghost'
+                                size='icon'
+                                className='h-7 w-7'
+                                onClick={() => setShortCloseDialog(p)}
+                                title='Short close remaining'
+                              >
+                                <Scissors className='h-3.5 w-3.5' />
+                              </Button>
+                            )}
+                            {(p.status === 'ordered' || p.status === 'partially_received') && (
+                              <Button
+                                variant='ghost'
+                                size='icon'
+                                className='h-7 w-7'
+                                onClick={() => setCancelDialog(p)}
+                                title='Cancel purchase'
+                              >
+                                <Ban className='h-3.5 w-3.5' />
+                              </Button>
+                            )}
                             <Button
                               variant='ghost'
                               size='icon'
@@ -793,22 +1279,26 @@ export function Purchases() {
                             >
                               <Receipt className='h-3.5 w-3.5' />
                             </Button>
-                            {(p.status === 'draft' || p.status === 'ordered') && (
+                            {/* Terms lock once goods move: the backend rejects
+                                anything but notes after the first GRN. */}
+                            {(p.grns?.length ?? 0) === 0 && (
                               <Button
                                 variant='ghost'
                                 size='icon'
                                 className='h-7 w-7'
                                 onClick={() => openEdit(p)}
+                                title='Edit purchase'
                               >
                                 <Pencil className='h-3.5 w-3.5' />
                               </Button>
                             )}
-                            {p.status === 'draft' && (
+                            {(p.grns?.length ?? 0) === 0 && (
                               <Button
                                 variant='ghost'
                                 size='icon'
                                 className='h-7 w-7'
                                 onClick={() => setDeleteConfirm(p.id)}
+                                title='Delete purchase'
                               >
                                 <Trash2 className='h-3.5 w-3.5 text-destructive' />
                               </Button>
@@ -867,6 +1357,12 @@ export function Purchases() {
                                           <p className='text-muted-foreground'>Received</p>
                                           <p className='font-medium'>{item.receivedQty || 0}</p>
                                         </div>
+                                        {Number((item as any).shortClosedQty || 0) > 0 && (
+                                          <div className='text-right'>
+                                            <p className='text-muted-foreground'>Short</p>
+                                            <p className='font-medium'>{(item as any).shortClosedQty}</p>
+                                          </div>
+                                        )}
                                       </div>
                                     </div>
                                   )
@@ -930,7 +1426,6 @@ export function Purchases() {
               form={form}
               setForm={setForm}
               suppliers={allSuppliers}
-              products={allProducts}
             />
           </div>
           <DialogFooter>
@@ -986,6 +1481,32 @@ export function Purchases() {
         open={!!grnViewDialog}
         onOpenChange={v => { if (!v) setGrnViewDialog(null) }}
         purchase={grnViewDialog}
+      />
+
+      <ShortCloseDialog
+        open={!!shortCloseDialog}
+        onOpenChange={v => { if (!v) setShortCloseDialog(null) }}
+        purchase={shortCloseDialog}
+        saving={shortCloseMut.isPending}
+        onSubmit={items => {
+          if (shortCloseDialog) shortCloseMut.mutate({ id: shortCloseDialog.id, items })
+        }}
+      />
+
+      <CancelPurchaseDialog
+        open={!!cancelDialog}
+        onOpenChange={v => { if (!v) setCancelDialog(null) }}
+        purchase={cancelDialog}
+        saving={cancelMut.isPending}
+        onSubmit={reason => {
+          if (cancelDialog) cancelMut.mutate({ id: cancelDialog.id, reason })
+        }}
+      />
+
+      <PurchaseDetailDialog
+        open={!!detailDialog}
+        onOpenChange={v => { if (!v) setDetailDialog(null) }}
+        purchaseId={detailDialog?.id || null}
       />
     </>
   )
