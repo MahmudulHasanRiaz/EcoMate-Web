@@ -1,8 +1,12 @@
 name: Deploy Client
 
-# MANUAL deployment only — CI never deploys. Tick All or one or more clients,
-# run, and each selected stack is redeployed via its Portainer webhook (which
-# pulls the images CI already built). Nothing here builds anything.
+# MANUAL deployment only — CI never deploys. Pass all=true or a
+# comma-separated `clients` list (keys from .github/clients.json), and each
+# selected stack is redeployed via its Portainer webhook (which pulls the
+# images CI already built). Nothing here builds anything.
+#
+# Adding a client = 1 line in .github/clients.json + 1 GitHub secret.
+# This workflow NEVER changes per client.
 on:
   workflow_dispatch:
     inputs:
@@ -11,44 +15,77 @@ on:
         required: false
         default: false
         type: boolean
-      ecomate_web:
-        description: 'Deploy main stack (ecomate-web)?'
+      clients:
+        description: 'Comma-separated client keys (see .github/clients.json). Ignored when All is true.'
         required: false
-        default: false
-        type: boolean
-      fixedplus:
-        description: 'Deploy FIXEDPLUS?'
-        required: false
-        default: false
-        type: boolean
+        default: ''
+        type: string
 
 permissions:
   contents: read
 
 jobs:
+  resolve:
+    name: Resolve clients
+    runs-on: [self-hosted, macos, arm64]
+    outputs:
+      matrix: ${{ steps.pick.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Pick clients
+        id: pick
+        env:
+          ALL: ${{ inputs.all }}
+          CLIENTS: ${{ inputs.clients }}
+        run: |
+          python3 - <<'EOF'
+          import json, os
+          with open('.github/clients.json') as f:
+              clients = json.load(f)
+          if os.environ.get('ALL') == 'true':
+              picked = list(clients)
+          else:
+              picked = [c.strip().lower() for c in os.environ.get('CLIENTS', '').split(',') if c.strip()]
+          unknown = [c for c in picked if c not in clients]
+          if unknown:
+              raise SystemExit(f"Unknown client(s): {', '.join(unknown)}. Available: {', '.join(clients)}")
+          if not picked:
+              raise SystemExit('No client selected — pass all=true or a clients list (see .github/clients.json).')
+          matrix = [
+              {'key': k, 'label': v['label'], 'secret': v['secret']}
+              for k, v in clients.items() if k in picked
+          ]
+          matrix.sort(key=lambda m: picked.index(m['key']))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+              out.write(f"matrix={json.dumps(matrix)}\n")
+          print(f"Selected: {', '.join(m['key'] for m in matrix)}")
+          EOF
+
   deploy:
     name: Manual deploy
+    needs: resolve
     runs-on: [self-hosted, macos, arm64]
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.resolve.outputs.matrix) }}
     steps:
-      - name: Validate selection
-        run: |
-          if [ "${{ inputs.all }}" != "true" ] && [ "${{ inputs.ecomate_web }}" != "true" ] && [ "${{ inputs.fixedplus }}" != "true" ]; then
-            echo "No client selected — tick All or at least one client."
-            exit 1
-          fi
-
-      - name: Deploy ecomate-web
-        if: inputs.all == true || inputs.ecomate_web == true
+      - name: Deploy ${{ matrix.label }}
         env:
-          WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_ECOMATE_WEB }}
+          KEY: ${{ matrix.key }}
+          LABEL: ${{ matrix.label }}
+          SECRET_NAME: ${{ matrix.secret }}
+          WEBHOOK_URL: ${{ secrets[matrix.secret] }}
         run: |
           if [ -z "$WEBHOOK_URL" ]; then
-            echo "No webhook secret PORTAINER_WEBHOOK_ECOMATE_WEB configured."
+            echo "No webhook secret $SECRET_NAME configured."
             exit 1
           fi
-          echo "Triggering Portainer Stack Redeploy for ecomate-web..."
-          RESPONSE_FILE=/tmp/response-ecomate-web.txt
+          echo "::add-mask::$WEBHOOK_URL"
+          echo "Triggering Portainer Stack Redeploy for $LABEL..."
+          RESPONSE_FILE="/tmp/response-${KEY}.txt"
           MAX_TRIES=3
           TRY=1
           HTTP_CODE=0
@@ -57,7 +94,7 @@ jobs:
             HTTP_CODE=$(curl -w "%{http_code}" -s -S -o "$RESPONSE_FILE" -X POST -k --max-time 30 "$WEBHOOK_URL") || HTTP_CODE=0
             echo "HTTP Status Code: $HTTP_CODE"
             if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-              echo "Deployment triggered successfully for ecomate-web! (HTTP $HTTP_CODE)"
+              echo "Deployment triggered successfully for $LABEL! (HTTP $HTTP_CODE)"
               break
             fi
             if [ $TRY -lt $MAX_TRIES ]; then sleep $((2 ** (TRY - 1))); fi
@@ -66,38 +103,6 @@ jobs:
           if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
             echo "Deployment completed (HTTP $HTTP_CODE)."
           else
-            echo "Webhook request failed for ecomate-web after ${MAX_TRIES} attempts! (HTTP $HTTP_CODE)"
-            exit 1
-          fi
-
-      - name: Deploy FIXEDPLUS
-        if: inputs.all == true || inputs.fixedplus == true
-        env:
-          WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_FIXEDPLUS }}
-        run: |
-          if [ -z "$WEBHOOK_URL" ]; then
-            echo "No webhook secret PORTAINER_WEBHOOK_FIXEDPLUS configured."
-            exit 1
-          fi
-          echo "Triggering Portainer Stack Redeploy for FIXEDPLUS..."
-          RESPONSE_FILE=/tmp/response-fixedplus.txt
-          MAX_TRIES=3
-          TRY=1
-          HTTP_CODE=0
-          while [ $TRY -le $MAX_TRIES ]; do
-            echo "Attempt $TRY of $MAX_TRIES..."
-            HTTP_CODE=$(curl -w "%{http_code}" -s -S -o "$RESPONSE_FILE" -X POST -k --max-time 30 "$WEBHOOK_URL") || HTTP_CODE=0
-            echo "HTTP Status Code: $HTTP_CODE"
-            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-              echo "Deployment triggered successfully for FIXEDPLUS! (HTTP $HTTP_CODE)"
-              break
-            fi
-            if [ $TRY -lt $MAX_TRIES ]; then sleep $((2 ** (TRY - 1))); fi
-            TRY=$((TRY + 1))
-          done
-          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            echo "Deployment completed (HTTP $HTTP_CODE)."
-          else
-            echo "Webhook request failed for FIXEDPLUS after ${MAX_TRIES} attempts! (HTTP $HTTP_CODE)"
+            echo "Webhook request failed for $LABEL after ${MAX_TRIES} attempts! (HTTP $HTTP_CODE)"
             exit 1
           fi

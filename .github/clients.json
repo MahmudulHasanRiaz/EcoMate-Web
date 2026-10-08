@@ -1,0 +1,5 @@
+{
+  "ecomate_web": { "label": "ecomate-web (main stack)", "secret": "PORTAINER_WEBHOOK_ECOMATE_WEB" },
+  "fixedplus": { "label": "FIXEDPLUS", "secret": "PORTAINER_WEBHOOK_FIXEDPLUS" },
+  "avelto": { "label": "Avelto BD", "secret": "PORTAINER_WEBHOOK_AVELTO" }
+}
