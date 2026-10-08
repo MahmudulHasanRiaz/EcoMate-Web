@@ -69,6 +69,7 @@ export interface PurchaseSummary {
     acceptedValue: number
     shortClosedValue: number
     supplierDamageValue: number
+    companyDamageValue?: number
     remainingQty: number
   }
 }

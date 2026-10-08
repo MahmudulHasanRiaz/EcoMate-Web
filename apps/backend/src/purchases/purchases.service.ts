@@ -722,15 +722,21 @@ export class PurchasesService {
         `GRN ${grnNumber} received (${dto.items.length} line(s), accepted value ৳${supplierIncrement.toFixed(2)})`,
         {
           grnNumber,
-          lines: dto.items.map((d) => ({
-            purchaseItemId: d.purchaseItemId,
-            receivedQty: d.receivedQty,
-            acceptedQty: d.acceptedQty,
-            rejectedQty: d.rejectedQty,
-            damageResponsibility: (d as any).__eff.responsibility,
-            freeOfCharge: (d as any).__eff.freeOfCharge,
-            warehouseId: (d as any).__eff.lineWarehouseId,
-          })),
+          lines: dto.items.map((d) => {
+            const pi = piMap.get(d.purchaseItemId)!;
+            const unitBase = pi.quantity > 0 ? Number(pi.totalBill) / Number(pi.quantity) : 0;
+            const responsibility = (d as any).__eff.responsibility;
+            return {
+              purchaseItemId: d.purchaseItemId,
+              receivedQty: d.receivedQty,
+              acceptedQty: d.acceptedQty,
+              rejectedQty: d.rejectedQty,
+              damageResponsibility: responsibility,
+              damageValue: responsibility === 'company' ? d.rejectedQty * unitBase : 0,
+              freeOfCharge: (d as any).__eff.freeOfCharge,
+              warehouseId: (d as any).__eff.lineWarehouseId,
+            };
+          }),
           status: newStatus,
         },
         userId,
@@ -963,6 +969,7 @@ export class PurchasesService {
     let acceptedValue = 0;
     let shortClosedValue = 0;
     let supplierDamageValue = 0;
+    let companyDamageValue = 0;
     const items = (purchase.items || []).map((i: any) => {
       const lines = linesByItem.get(i.id) || [];
       const received = lines.reduce((s: number, l: any) => s + l.receivedQty, 0);
@@ -974,10 +981,14 @@ export class PurchasesService {
       const lineSupplierDamage = lines
         .filter((l: any) => l.damageResponsibility !== 'company')
         .reduce((s: number, l: any) => s + l.rejectedQty * unitBase, 0);
+      const lineCompanyDamage = lines
+        .filter((l: any) => l.damageResponsibility === 'company')
+        .reduce((s: number, l: any) => s + l.rejectedQty * unitBase, 0);
       orderedValue += Number(i.totalBill);
       acceptedValue += lineAcceptedValue;
       shortClosedValue += shortClosed * unitBase;
       supplierDamageValue += lineSupplierDamage;
+      companyDamageValue += lineCompanyDamage;
       const remaining = Math.max(0, i.quantity - received - shortClosed);
       return {
         purchaseItemId: i.id,
@@ -1000,6 +1011,7 @@ export class PurchasesService {
         acceptedValue,
         shortClosedValue,
         supplierDamageValue,
+        companyDamageValue,
         remainingQty: items.reduce((s: number, i: any) => s + i.remaining, 0),
       },
     };

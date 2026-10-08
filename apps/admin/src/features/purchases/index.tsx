@@ -418,6 +418,7 @@ function PurchaseDetailDialog({
   })
   const p = data as (PurchaseResponse & { summary?: import('./api').PurchaseSummary; events?: import('./api').PurchaseEvent[] }) | undefined
   const summary = p?.summary
+  const companyDamage = summary?.totals.companyDamageValue ?? 0
   const sc = p ? getStatusConfig(p.status) : null
 
   return (
@@ -444,6 +445,7 @@ function PurchaseDetailDialog({
                 ['Accepted value', `৳${fmt(summary?.totals.acceptedValue ?? 0)}`],
                 ['Short-closed', `৳${fmt(summary?.totals.shortClosedValue ?? 0)}`],
                 ['Pending qty', `${summary?.totals.remainingQty ?? 0}`],
+                ...(companyDamage > 0 ? [['Damage (co.)', `৳${fmt(companyDamage)}`]] : []),
               ].map(([label, value]) => (
                 <div key={label} className='rounded-lg border bg-muted/20 px-3 py-2'>
                   <p className='text-[11px] text-muted-foreground'>{label}</p>

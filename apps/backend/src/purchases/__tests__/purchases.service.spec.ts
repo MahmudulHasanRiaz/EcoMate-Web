@@ -280,6 +280,33 @@ describe('PurchasesService lifecycle', () => {
       expect(lot.remainingQty).toBe(90);
     });
 
+    it('reports companyDamageValue in the summary', async () => {
+      // PO line qty 100 bill 10000; GRN 90 accepted + 10 rejected (company).
+      const tx = grnTx();
+      runTx(tx);
+      await service.createGrn(
+        'po-1',
+        grnDto({
+          items: [{ purchaseItemId: 'pi-1', receivedQty: 100, acceptedQty: 90, rejectedQty: 10, damageResponsibility: 'company' }],
+        }) as any,
+        'user-1',
+      );
+      // Per-line event damage: 10 rejected × unitBase 100 = 1000.
+      const evtArg = tx.purchaseEvent.create.mock.calls[0][0].data;
+      expect(evtArg.data.lines[0].damageValue).toBe(1000);
+      // Summary via findOne over the persisted GRN lines.
+      prisma.purchase.findUnique.mockResolvedValue({
+        ...purchase,
+        items: [poItem()],
+        grns: [{
+          grnNumber: 'GRN-261008-0001',
+          items: [{ purchaseItemId: 'pi-1', receivedQty: 100, acceptedQty: 90, rejectedQty: 10, damageResponsibility: 'company', totalCost: 10000 }],
+        }],
+      });
+      const found = await service.findOne('po-1');
+      expect((found as any).summary.totals.companyDamageValue).toBe(1000);
+    });
+
     it('keeps supplier-borne damage out of inventory value', async () => {
       const tx = grnTx();
       runTx(tx);
