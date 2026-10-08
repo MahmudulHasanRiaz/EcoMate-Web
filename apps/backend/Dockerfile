@@ -11,7 +11,7 @@ RUN --mount=type=cache,target=/root/.npm npm install
 # platform. `|| true` — if it ever fails the runtime degrades gracefully
 # (resize serves originals) instead of breaking the build.
 RUN npm install --package-lock=false --no-save --os=linux --libc=musl --cpu=x64 \
-    @img/sharp-linuxmusl-x64@0.35.3 @img/sharp-libvips-linuxmusl-x64@1.3.2 2>/dev/null || true
+    @img/sharp-linuxmusl-x64@0.35.5 @img/sharp-libvips-linuxmusl-x64@1.3.4 2>/dev/null || true
 RUN npx tsc -p packages/shared-types/tsconfig.json && \
     npx tsc -p packages/license-engine/tsconfig.json && \
     npx tsc -p packages/feature-flags/tsconfig.json
