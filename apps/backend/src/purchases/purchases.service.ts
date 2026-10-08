@@ -58,7 +58,7 @@ export class PurchasesService {
     // Atomic counter (upsert+increment in one statement): concurrent creates
     // can never read the same "last" row and collide on the unique field.
     // The legacy findFirst-based path is kept only when no tx is available.
-    if (model === 'purchase' && tx) {
+    if (tx) {
       const counter = await tx.purchaseCounter.upsert({
         where: { date: `${yy}${mm}${dd}` },
         create: { date: `${yy}${mm}${dd}`, seq: 1 },

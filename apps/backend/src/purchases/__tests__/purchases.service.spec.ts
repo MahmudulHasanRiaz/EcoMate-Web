@@ -151,6 +151,7 @@ describe('PurchasesService lifecycle', () => {
       // re-reads every line from the tx) sees the same truth as the service.
       const createdLines: any[] = [];
       return mockTx({
+        purchaseCounter: { upsert: jest.fn().mockResolvedValue({ date: '261008', seq: 3 }) },
         purchaseItem: {
           findMany: jest.fn().mockImplementation(async ({ where }: any) => {
             if (where.id) return where.id.in.includes('pi-a') ? [pi] : [pi];
@@ -220,6 +221,13 @@ describe('PurchasesService lifecycle', () => {
       );
       // IM off → physical skipped
       expect(stockService.addPhysical).not.toHaveBeenCalled();
+    });
+
+    it('numbers concurrent GRNs from the atomic counter (no findFirst race)', async () => {
+      const tx = grnTx();
+      runTx(tx);
+      await service.createGrn('po-1', grnDto() as any, 'user-1');
+      expect(tx.purchaseCounter.upsert).toHaveBeenCalled();
     });
 
     it('uses the PO line identity, rejecting a mismatched client productId', async () => {
