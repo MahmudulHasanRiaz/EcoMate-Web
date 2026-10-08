@@ -480,9 +480,9 @@ export default function ThankYouContent({
                 <div>
                   <h3 className="font-bold text-amber-800 text-sm">Delivery Area Not Selected</h3>
                   <p className="text-amber-700 text-[13px] mt-1">
-                    You did not select a delivery district/area. Your bill shows the total without delivery charge.
-                    Our call center will contact you to confirm your delivery area and add the applicable charge.
-                    Please keep your phone handy.
+                    You did not select a delivery district/area, so the maximum delivery charge was
+                    applied to your bill below. Our call center will confirm your delivery area and
+                    reduce the charge if a lower rate applies. Please keep your phone handy.
                   </p>
                 </div>
               </div>
@@ -576,9 +576,9 @@ export default function ThankYouContent({
               <div className="flex justify-between text-gray-500">
                 <span>Shipping</span>
                 <span>
-                  {hasDeliveryArea
+                  {nn(order.shippingCharge) > 0
                     ? `${config.currency.symbol}${fmt(order.shippingCharge)}`
-                    : <span className="text-amber-500">To be determined</span>}
+                    : 'Free'}
                 </span>
               </div>
               {nn(order.discount) > 0 && (

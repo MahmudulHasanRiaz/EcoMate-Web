@@ -36,6 +36,9 @@ interface OrderSummaryCardProps {
   // Payment due display
   paidAmount?: number
   dueAmount?: number
+  // Free-delivery threshold (0/unset = no threshold): lets a ৳0 shipping
+  // line say WHY — earned free delivery vs simply no charge.
+  freeDeliveryMin?: number | string
 }
 
 export function OrderSummaryCard({
@@ -56,6 +59,7 @@ export function OrderSummaryCard({
   isSaving,
   paidAmount = 0,
   dueAmount,
+  freeDeliveryMin = 0,
 }: OrderSummaryCardProps) {
   // Shipping inline edit state
   const [editShipping, setEditShipping] = useState(false)
@@ -149,6 +153,13 @@ export function OrderSummaryCard({
               <div className='flex items-center gap-1.5 text-muted-foreground'>
                 <Truck className='h-3.5 w-3.5' />
                 <span>Shipping</span>
+                {nn(shippingCharge) === 0 && !editShipping && (
+                  <span className='text-[10px] text-muted-foreground/80'>
+                    {nn(freeDeliveryMin) > 0 && subtotal >= nn(freeDeliveryMin)
+                      ? `(Free delivery — order ≥ ৳${fmt(freeDeliveryMin)})`
+                      : '(No charge)'}
+                  </span>
+                )}
               </div>
               <div className='flex items-center gap-1'>
                 {!editShipping && (

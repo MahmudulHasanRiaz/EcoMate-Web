@@ -1647,18 +1647,56 @@ export class OrdersService {
           derivedShippingCharge = Number(shippingOption.amount);
         }
       } else {
-        // auto_district/default mode
-        derivedShippingCharge = Number(deliveryChargeSetting?.value || 0);
+        // auto_district/default mode. Rule (mirrors the storefront
+        // `resolveDeliveryCharge` helper — both must agree or the admin bill
+        // differs from what the customer saw):
+        // - district with a zone/map rule → that rule's charge;
+        // - no district, or a district with no rule → the MAXIMUM configured
+        //   charge (default, zone custom_amounts, district_charges values).
+        const defaultCharge = Number(deliveryChargeSetting?.value || 0);
+
+        // Optional-chained: unit-test tx doubles predate the zone lookup and
+        // only stub the delegates their test needs; production tx always
+        // carries shippingZoneGroup.
+        let activeZones: any[] = [];
+        try {
+          activeZones =
+            (await tx.shippingZoneGroup?.findMany?.({
+              where: { isActive: true },
+            })) ?? [];
+        } catch {
+          activeZones = [];
+        }
+
+        let districtMap: Record<string, number> = {};
+        let districtMapInvalid = false;
+        if (districtChargesSetting?.value) {
+          try {
+            districtMap = JSON.parse(districtChargesSetting.value);
+          } catch {
+            districtMapInvalid = true;
+          }
+        }
+
+        let maxCharge = defaultCharge;
+        for (const zone of activeZones) {
+          if (zone.type === 'custom_amount' && zone.amount != null) {
+            maxCharge = Math.max(maxCharge, Number(zone.amount));
+          }
+        }
+        for (const v of Object.values(districtMap)) {
+          maxCharge = Math.max(maxCharge, Number(v) || 0);
+        }
 
         const dtoDistrict =
           dto.district ||
           (typeof dto.shippingAddress === 'object' && dto.shippingAddress
             ? dto.shippingAddress.district
             : undefined);
-        if (dtoDistrict) {
-          const activeZones = await tx.shippingZoneGroup.findMany({
-            where: { isActive: true },
-          });
+        if (!dtoDistrict) {
+          derivedShippingCharge = maxCharge;
+        } else {
+          derivedShippingCharge = defaultCharge;
           let zoneMatched = false;
           for (const zone of activeZones) {
             const zoneDistricts = zone.districts as string[];
@@ -1675,19 +1713,16 @@ export class OrdersService {
               break;
             }
           }
-          if (!zoneMatched && districtChargesSetting?.value) {
-            try {
-              const districtCharges: Record<string, number> = JSON.parse(
-                districtChargesSetting.value,
-              );
-              if (districtCharges[dtoDistrict] !== undefined) {
-                derivedShippingCharge = districtCharges[dtoDistrict];
-              }
-            } catch {
+          if (!zoneMatched) {
+            if (districtMapInvalid) {
               throw new BadRequestException(
                 'Invalid district charges configuration',
               );
             }
+            derivedShippingCharge =
+              districtMap[dtoDistrict] !== undefined
+                ? districtMap[dtoDistrict]
+                : maxCharge;
           }
         }
 

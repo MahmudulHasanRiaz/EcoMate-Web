@@ -1588,6 +1588,120 @@ describe('OrdersService', () => {
       expect(createdData.shippingChargeOverridden).toBe(true);
     });
 
+    describe('derived shipping charge (auto_district max rule)', () => {
+      const ZONES = [
+        { id: 'z1', type: 'custom_amount', amount: 150, districts: ['Dhaka'], isActive: true },
+      ];
+      const MAP = { Sylhet: 100 };
+
+      const runDeriveTx = (zones: any[], settings: Record<string, string | null>) => {
+        (prisma.$transaction as jest.Mock).mockImplementation(
+          async (cb: (tx: any) => Promise<any>) =>
+            cb({
+              ...prisma,
+              orderCounter: {
+                upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+              },
+              shippingZoneGroup: {
+                findMany: jest.fn().mockResolvedValue(zones),
+              },
+            }),
+        );
+        (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+          mockInitialStatus,
+        );
+        (prisma.systemSetting.findUnique as jest.Mock).mockImplementation(
+          async ({ where: { key } }: any) => {
+            const v = settings[key];
+            return v == null ? null : { value: v };
+          },
+        );
+        (prisma.order.create as jest.Mock).mockResolvedValue({ ...mockOrder });
+        (prisma.productVariant.update as jest.Mock).mockResolvedValue({
+          id: 'variant-1',
+          stock: 8,
+        });
+      };
+
+      const guestDeriveDto = (over: any = {}) => {
+        const { shippingCharge, ...rest } = createOrderDto as any;
+        return {
+          ...rest,
+          customerId: undefined,
+          guestPhone: '01712345678',
+          guestName: 'Guest Buyer',
+          ...over,
+        };
+      };
+
+      const createdShipping = () =>
+        (prisma.order.create as jest.Mock).mock.calls[0][0].data.shippingCharge;
+
+      const SETTINGS = {
+        delivery_charge: '60',
+        free_delivery_min: null,
+        district_charges: JSON.stringify(MAP),
+      };
+
+      it('charges the MAXIMUM configured amount when no district is given', async () => {
+        runDeriveTx(ZONES, SETTINGS as any);
+        const { district, ...noDistrict } = guestDeriveDto() as any;
+        delete (noDistrict.shippingAddress as any)?.district;
+        await service.create(noDistrict);
+        expect(createdShipping()).toBe(150);
+      });
+
+      it('charges the MAXIMUM for a district with no rule', async () => {
+        runDeriveTx(ZONES, SETTINGS as any);
+        await service.create(guestDeriveDto({ district: 'Barisal' }));
+        expect(createdShipping()).toBe(150);
+      });
+
+      it('uses the district_charges map when no zone matches', async () => {
+        runDeriveTx(ZONES, SETTINGS as any);
+        await service.create(guestDeriveDto({ district: 'Sylhet' }));
+        expect(createdShipping()).toBe(100);
+      });
+
+      it('prefers the zone over the district_charges map', async () => {
+        runDeriveTx(ZONES, {
+          ...SETTINGS,
+          district_charges: JSON.stringify({ Dhaka: 80, Sylhet: 100 }),
+        } as any);
+        await service.create(guestDeriveDto({ district: 'Dhaka' }));
+        expect(createdShipping()).toBe(150);
+      });
+
+      it('falls back to the default when nothing is configured', async () => {
+        runDeriveTx([], { delivery_charge: '60', free_delivery_min: null } as any);
+        const { district, ...noDistrict } = guestDeriveDto() as any;
+        await service.create(noDistrict);
+        expect(createdShipping()).toBe(60);
+      });
+
+      it('rejects an invalid district_charges JSON for an unmatched district', async () => {
+        runDeriveTx(ZONES, {
+          delivery_charge: '60',
+          free_delivery_min: null,
+          district_charges: '{oops',
+        } as any);
+        await expect(
+          service.create(guestDeriveDto({ district: 'Barisal' })),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('ignores an invalid district_charges JSON when no district is given', async () => {
+        runDeriveTx(ZONES, {
+          delivery_charge: '60',
+          free_delivery_min: null,
+          district_charges: '{oops',
+        } as any);
+        const { district, ...noDistrict } = guestDeriveDto() as any;
+        await service.create(noDistrict);
+        expect(createdShipping()).toBe(150);
+      });
+    });
+
     it('applies and saves manual discount when creating an order', async () => {
       (prisma.$transaction as jest.Mock).mockImplementation(
         async (cb: (tx: any) => Promise<any>) =>

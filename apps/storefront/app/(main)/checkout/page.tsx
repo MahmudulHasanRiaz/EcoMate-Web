@@ -12,6 +12,7 @@ import { useCart, getItemKey, VariantAttribute } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { createOrder } from '@/lib/api/orders';
+import { resolveDeliveryCharge } from '@/lib/shipping-charge';
 import { getDistricts, getThanas, getGateways } from '@/lib/api/delivery-areas';
 import { submitPayment } from '@/lib/api/payments';
 import { normalizePhone } from '@/lib/phone-utils';
@@ -565,33 +566,17 @@ export default function CheckoutPage() {
   const hasFullPayment = (checkoutCfg?.paymentOptions?.FULL_PAYMENT !== false) && gateways.some(g => g.code !== 'cash' && g.enabled);
   const hasPartialPayment = (checkoutCfg?.paymentOptions?.PARTIAL_PAYMENT !== false) && gateways.some(g => g.code !== 'cash' && g.enabled);
 
-  let deliveryCharge = 0;
-  let noDeliveryError = '';
-
-  if (config.shippingMode === 'options') {
-    if (selectedShippingOptionId) {
-      const opt = config.shippingOptions?.find(o => o.id === selectedShippingOptionId);
-      deliveryCharge = opt?.amount ?? 0;
-    } else if (config.shippingOptions?.length > 0) {
-      // Auto-fallback: use highest amount option when none selected
-      const highest = [...config.shippingOptions].sort((a, b) => Number(b.amount) - Number(a.amount))[0];
-      deliveryCharge = Number(highest.amount);
-    }
-  } else {
-    deliveryCharge = config.delivery.charge;
-    if (district) {
-      const zoneGroup = config.shippingZones?.find(z => z.districts.includes(district));
-      if (zoneGroup?.type === 'no_delivery') {
-        noDeliveryError = 'এই এলাকায় ডেলিভারি সম্ভব না';
-        deliveryCharge = 0;
-      } else if (zoneGroup?.type === 'custom_amount') {
-        deliveryCharge = zoneGroup.amount ?? config.delivery.charge;
-      }
-    }
-    if (coTotal >= config.delivery.freeDeliveryMin) {
-      deliveryCharge = 0;
-    }
-  }
+  const { charge: deliveryCharge, noDeliveryError } = resolveDeliveryCharge({
+    shippingMode: config.shippingMode,
+    shippingOptions: config.shippingOptions,
+    selectedShippingOptionId,
+    district,
+    shippingZones: config.shippingZones,
+    districtCharges: config.districtCharges,
+    defaultCharge: config.delivery.charge,
+    freeDeliveryMin: config.delivery.freeDeliveryMin,
+    subtotal: coTotal,
+  });
   const discountAmount = appliedCoupon?.valid && appliedCoupon.coupon
     ? (appliedCoupon.coupon.type === 'percentage'
       ? (coTotal * Number(appliedCoupon.coupon.value)) / 100

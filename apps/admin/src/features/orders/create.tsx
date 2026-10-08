@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { ordersApi, exchangeApi, mediaUrl } from './api'
+import { resolveCityCharge, shouldAutoFillCharge } from './shipping-charge'
 import {
   ACQUISITION_OPTIONS,
   CHANNEL_OPTIONS,
@@ -335,47 +336,32 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
   }, [shipCityId])
 
   const activeCityId = useDiffShipping ? shipCityId : customerCityId
+  // Last city the auto-fill wrote for — lets the effect tell "staff picked a
+  // new city" (refill) apart from "same city, fresh data" (keep staff edits).
+  const lastAutoCityRef = useRef<string | null>(null)
   useEffect(() => {
     if (!activeCityId || cities.length === 0) return
     // On an EDIT or EXCHANGE the stored delivery charge is already agreed with the
-    // customer — never silently reprice because a zone table changed.
-    if (isPrefilled) return
+    // customer — never silently reprice because a zone table changed. A
+    // staff-typed custom rate also survives background refetches (new array
+    // identities for the same city); picking a DIFFERENT city still refills.
+    if (!shouldAutoFillCharge({
+      isPrefilled,
+      activeCityId,
+      lastAutoCityId: lastAutoCityRef.current,
+      manuallyEdited: shippingChargeManuallyEdited,
+    })) return
     const selectedCity = cities.find((c: any) => String(c.id) === String(activeCityId))
     if (!selectedCity) return
 
-    let defaultCharge = 60
-    if (sysSettings?.['delivery_charge']) {
-      defaultCharge = Number(sysSettings['delivery_charge']) || 60
-    }
-
     const cityName = (selectedCity.name || '').trim()
-    const matchingZone = shippingZones?.find((z: any) =>
-      z.isActive !== false && Array.isArray(z.districts) && z.districts.some((d: string) => d.toLowerCase() === cityName.toLowerCase())
-    )
-
-    if (matchingZone) {
-      if (matchingZone.type === 'free_delivery') {
-        defaultCharge = 0
-      } else if (matchingZone.type === 'custom_amount' && matchingZone.amount != null) {
-        defaultCharge = Number(matchingZone.amount)
-      }
-    } else if (sysSettings?.['district_charges']) {
-      try {
-        const dc = typeof sysSettings['district_charges'] === 'string'
-          ? JSON.parse(sysSettings['district_charges'])
-          : sysSettings['district_charges']
-        if (dc && dc[cityName] !== undefined) {
-          defaultCharge = Number(dc[cityName])
-        }
-      } catch {
-        // ignore JSON parse error
-      }
-    }
+    const defaultCharge = resolveCityCharge(cityName, sysSettings as any, shippingZones as any)
 
     // Automatically populate delivery charge from default settings for this city
     setShippingCharge(defaultCharge > 0 ? String(defaultCharge) : '')
     setShippingChargeManuallyEdited(false)
-  }, [activeCityId, cities, sysSettings, shippingZones, isPrefilled])
+    lastAutoCityRef.current = activeCityId
+  }, [activeCityId, cities, sysSettings, shippingZones, isPrefilled, shippingChargeManuallyEdited])
 
   useEffect(() => {
     // While an order is being hydrated the phone arrives from the server, not

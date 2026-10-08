@@ -1037,6 +1037,7 @@ function OrderDetailPage() {
                 shippingOptions={shippingOptions as any}
                 selectedShippingOptionId={order.selectedShippingOptionId || ''}
                 shippingChargeOverridden={order.shippingChargeOverridden}
+                freeDeliveryMin={Number(sysSettings?.['free_delivery_min'] || 0)}
                 onSaveShipping={handleSaveShipping}
                 onSaveDiscount={handleSaveDiscount}
                 shippingCost={order.shippingCost ?? null}

@@ -10,7 +10,7 @@ import { CheckoutFormSection } from "./TemplateRenderer";
  * Provides controlled API surface: EcoMate.products, EcoMate.track(), EcoMate.checkout.submit().
  * Blocks dangerous APIs: eval, localStorage, sessionStorage, cookies.
  */
-function EcoMateSDK({ products, currency }: {
+export function EcoMateSDK({ products, currency }: {
   products: any[];
   currency: string;
 }) {
@@ -26,9 +26,12 @@ function EcoMateSDK({ products, currency }: {
 
   /* Checkout SDK — AI code calls this instead of raw fetch to /api/orders */
   window.EcoMate.checkout = { submit: function(d) {
+    var sc = (typeof d.shippingCharge === 'number' && d.shippingCharge >= 0) ? d.shippingCharge
+      : ((typeof d.deliveryCharge === 'number' && d.deliveryCharge >= 0) ? d.deliveryCharge : undefined);
     return fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       items:d.items||[],guestName:d.name||'',guestPhone:d.phone||'',
       shippingAddress:{fullAddress:d.address||'',deliveryZone:d.deliveryZone||''},
+      shippingCharge:sc,
       paymentOptionType:d.payment||'CASH_ON_DELIVERY',gatewayCode:d.gatewayCode||'cod'
     })}).then(function(r){return r.json().then(function(b){if(!r.ok)throw new Error(b.message||'Order failed');return b;});});
   }};
