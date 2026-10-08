@@ -461,5 +461,16 @@ describe('PurchasesService lifecycle', () => {
       await expect(service.update('po-1', { supplierId: 'other' } as any)).rejects.toThrow(/Only notes/);
       await expect(service.update('po-1', { notes: 'ok' } as any)).resolves.toBeDefined();
     });
+
+    it('blocks every change on a cancelled purchase except notes', async () => {
+      prisma.purchase.findUnique.mockResolvedValue({ id: 'po-1', status: 'cancelled' });
+      const tx = mockTx({
+        goodsReceiptNote: { count: jest.fn().mockResolvedValue(0), create: jest.fn() },
+        purchase: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn().mockResolvedValue({ id: 'po-1' }) },
+      });
+      runTx(tx);
+      await expect(service.update('po-1', { notes: 'ok' } as any)).resolves.toBeDefined();
+      await expect(service.update('po-1', { items: [] } as any)).rejects.toThrow(/cancelled/i);
+    });
   });
 });

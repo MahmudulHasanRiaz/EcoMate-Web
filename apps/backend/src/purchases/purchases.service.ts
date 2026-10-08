@@ -289,7 +289,7 @@ export class PurchasesService {
   async update(id: string, dto: UpdatePurchaseDto) {
     const purchase = await this.prisma.purchase.findUnique({
       where: { id },
-      select: { id: true },
+      select: { id: true, status: true },
     });
 
     if (!purchase) {
@@ -314,6 +314,14 @@ export class PurchasesService {
         throw new ConflictException(
           'Only notes can be updated after goods have been received',
         );
+      }
+      if (purchase.status === PurchaseStatus.cancelled && (
+        dto.supplierId !== undefined ||
+        dto.orderDate !== undefined ||
+        dto.expectedDate !== undefined ||
+        dto.items !== undefined
+      )) {
+        throw new ConflictException('Cancelled purchases are read-only except notes');
       }
 
       if (dto.supplierId !== undefined) {
