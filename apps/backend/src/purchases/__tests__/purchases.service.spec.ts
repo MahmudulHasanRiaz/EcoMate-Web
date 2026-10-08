@@ -209,11 +209,16 @@ describe('PurchasesService lifecycle', () => {
       const tx = grnTx();
       runTx(tx);
       await service.createGrn('po-1', grnDto() as any, 'user-1');
+      const createdGrn = tx.goodsReceiptNote.create.mock.calls[0][0].data;
+      // Single prefix: generateGrnNumber already returns 'GRN-…', so the
+      // ledger reference must equal it exactly (no 'GRN-GRN-…' doubling).
+      expect(createdGrn.grnNumber).toMatch(/^GRN-(?!GRN-)\d{6}-\d{4}$/);
       expect(stockService.operate).toHaveBeenCalledWith(
         'add',
         expect.objectContaining({
           productId: 'prod-1',
           quantity: 50,
+          reference: createdGrn.grnNumber,
           referenceType: 'PURCHASE',
           referenceId: 'po-1',
           ledgerType: 'PURCHASE_RECEIVE',
