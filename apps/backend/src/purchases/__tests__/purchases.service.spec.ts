@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PurchasesService } from '../purchases.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StockService } from '../../stock/stock.service';
@@ -413,6 +414,63 @@ describe('PurchasesService lifecycle', () => {
       expect(tx.costingLot.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ variantId: 'v-1' }) }),
       );
+    });
+
+    it('replays the original GRN for a repeated idempotency key (no double-post)', async () => {
+      const existing = { id: 'grn-old', grnNumber: 'GRN-261008-0009', items: [] };
+      (prisma as any).goodsReceiptNote = {
+        findUnique: jest.fn().mockResolvedValue(existing),
+      };
+      const tx = grnTx();
+      runTx(tx);
+      const res = await service.createGrn('po-1', grnDto() as any, 'user-1', 'key-abc');
+      expect(res).toBe(existing);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(tx.goodsReceiptNote.create).not.toHaveBeenCalled();
+    });
+
+    it('stores a fresh idempotency key on the created GRN', async () => {
+      (prisma as any).goodsReceiptNote = { findUnique: jest.fn().mockResolvedValue(null) };
+      const tx = grnTx();
+      runTx(tx);
+      await service.createGrn('po-1', grnDto() as any, 'user-1', 'key-new');
+      expect(tx.goodsReceiptNote.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ clientKey: 'key-new' }) }),
+      );
+    });
+
+    it('retries once on serialization conflict (P2034) then succeeds', async () => {
+      (prisma as any).goodsReceiptNote = { findUnique: jest.fn().mockResolvedValue(null) };
+      const tx = grnTx();
+      const conflict = new Prisma.PrismaClientKnownRequestError('serialization failure', {
+        code: 'P2034',
+        clientVersion: 'test',
+      } as any);
+      (prisma.$transaction as jest.Mock)
+        .mockRejectedValueOnce(conflict)
+        .mockImplementation(async (cb: any) => cb(tx));
+      await service.createGrn('po-1', grnDto() as any, 'user-1');
+      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+      expect(tx.goodsReceiptNote.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns the winning GRN when the key race loses (P2002)', async () => {
+      const winner = { id: 'grn-win', grnNumber: 'GRN-261008-0002', items: [] };
+      // Pre-tx replay misses (the race is in flight), post-race re-read hits.
+      (prisma as any).goodsReceiptNote = {
+        findUnique: jest.fn().mockResolvedValueOnce(null).mockResolvedValue(winner),
+      };
+      const tx = grnTx();
+      // Pre-tx replay misses (the race), create collides, post-race re-read hits.
+      (prisma.$transaction as jest.Mock).mockImplementation(async (cb: any) => cb(tx));
+      tx.goodsReceiptNote.create.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('unique constraint', {
+          code: 'P2002',
+          clientVersion: 'test',
+        } as any),
+      );
+      const res = await service.createGrn('po-1', grnDto() as any, 'user-1', 'key-race');
+      expect(res).toBe(winner);
     });
   });
 

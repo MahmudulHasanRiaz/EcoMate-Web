@@ -126,7 +126,11 @@ export const purchasesApi = {
       lineWarehouseId?: string
     }[]
     notes?: string
-  }) => apiClient.post<GrnResponse>(`/purchases/${id}/grn`, data),
+  }, idempotencyKey?: string) => apiClient.post<GrnResponse>(
+    `/purchases/${id}/grn`,
+    data,
+    idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : undefined,
+  ),
   shortClose: (id: string, data: { items: { purchaseItemId: string; qty: number; reason: string }[] }) =>
     apiClient.post<PurchaseResponse>(`/purchases/${id}/short-close`, data),
   cancel: (id: string, data: { reason: string }) =>

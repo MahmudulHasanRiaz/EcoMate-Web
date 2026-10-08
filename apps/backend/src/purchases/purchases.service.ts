@@ -432,7 +432,7 @@ export class PurchasesService {
     return this.prisma.purchase.delete({ where: { id } });
   }
 
-  async createGrn(purchaseId: string, dto: CreateGrnDto, userId?: string) {
+  async createGrn(purchaseId: string, dto: CreateGrnDto, userId?: string, idempotencyKey?: string) {
     const purchase = await this.prisma.purchase.findUnique({
       where: { id: purchaseId },
       include: { items: true },
@@ -446,7 +446,60 @@ export class PurchasesService {
       throw new ConflictException('Cannot create GRN for a cancelled purchase');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    // Idempotent replay: same key returns the original GRN, never re-posts.
+    const key = idempotencyKey?.trim() || undefined;
+    if (key) {
+      const existing = await this.prisma.goodsReceiptNote.findUnique({
+        where: { clientKey: key },
+        include: { items: true },
+      });
+      if (existing) return existing;
+    }
+
+    // Serializable + retry: two concurrent receives both read remaining>0
+    // under Read Committed and would double-post. Serialization aborts one
+    // (P2034) and the retry then sees the updated remaining.
+    const MAX_RETRIES = 3;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        return await this.prisma.$transaction(
+          async (tx) => this.createGrnTx(tx, purchase, purchaseId, dto, userId, key),
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        );
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2034' &&
+          attempt < MAX_RETRIES
+        ) {
+          continue;
+        }
+        if (
+          key &&
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          // Lost the clientKey race: the winner's GRN is the truth.
+          const winner = await this.prisma.goodsReceiptNote.findUnique({
+            where: { clientKey: key },
+            include: { items: true },
+          });
+          if (winner) return winner;
+        }
+        throw error;
+      }
+    }
+    throw new ConflictException('Concurrent receive in progress — please retry');
+  }
+
+  private async createGrnTx(
+    tx: Prisma.TransactionClient,
+    purchase: any,
+    purchaseId: string,
+    dto: CreateGrnDto,
+    userId: string | undefined,
+    key: string | undefined,
+  ) {
       // Receiving warehouses (header + per-line overrides) must all exist.
       const warehouseIds = Array.from(
         new Set(
@@ -579,6 +632,7 @@ export class PurchasesService {
           receivedBy: userId,
           status: 'received',
           notes: dto.notes,
+          clientKey: key ?? null,
           items: {
             create: dto.items.map((d) => {
               const pi = piMap.get(d.purchaseItemId)!;
@@ -749,7 +803,6 @@ export class PurchasesService {
       );
 
       return grn;
-    });
   }
 
   async shortClose(purchaseId: string, dto: ShortClosePurchaseDto, userId?: string) {

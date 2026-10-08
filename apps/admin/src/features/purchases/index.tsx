@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment } from 'react'
+import { useState, useMemo, useRef, useEffect, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 import { toast } from 'sonner'
@@ -553,16 +553,31 @@ function ReceiveGrnDialog({
   purchase,
   onReceive,
   products = [],
+  saving,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
   purchase: PurchaseResponse | null
-  onReceive: (items: { purchaseItemId: string; productId: string; variantId: string | null; receivedQty: number; acceptedQty: number; rejectedQty: number; damageResponsibility: 'supplier' | 'company'; freeOfCharge: boolean; lineWarehouseId?: string }[], notes?: string, warehouseId?: string) => void
+  onReceive: (items: { purchaseItemId: string; productId: string; variantId: string | null; receivedQty: number; acceptedQty: number; rejectedQty: number; damageResponsibility: 'supplier' | 'company'; freeOfCharge: boolean; lineWarehouseId?: string }[], notes?: string, warehouseId?: string, idempotencyKey?: string) => void
   products?: any[]
+  saving?: boolean
 }) {
   const [received, setReceived] = useState<Record<string, { receivedQty: string; acceptedQty: string; rejectedQty: string; responsibility: 'supplier' | 'company'; freeOfCharge: boolean; lineWarehouseId: string; acceptedTouched: boolean }>>({})
   const [notes, setNotes] = useState('')
   const [selectedWarehouse, setSelectedWarehouse] = useState('')
+  // Fresh idempotency key per dialog open: retries of the same submit reuse
+  // it (safe replay), a new open mints a new one (no cross-submit dedup).
+  const keyRef = useRef('')
+  useEffect(() => {
+    if (open) {
+      keyRef.current = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+      setReceived({})
+      setNotes('')
+      setSelectedWarehouse('')
+    }
+  }, [open, purchase?.id])
 
   const { data: warehouses } = useQuery<any[]>({
     queryKey: ['warehouses'],
@@ -630,7 +645,7 @@ function ReceiveGrnDialog({
       toast.error('Enter at least one item quantity')
       return
     }
-    onReceive(items, notes || undefined, selectedWarehouse)
+    onReceive(items, notes || undefined, selectedWarehouse, keyRef.current)
   }
 
   const initItem = (itemId: string) => {
@@ -837,7 +852,7 @@ function ReceiveGrnDialog({
         </div>
         <DialogFooter>
           <Button variant='outline' onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={handleReceive}>
+          <Button onClick={handleReceive} disabled={saving}>
             <Package className='h-4 w-4 mr-1' /> Create GRN & Receive
           </Button>
         </DialogFooter>
@@ -1016,8 +1031,8 @@ export function Purchases() {
   })
 
   const receiveMut = useMutation({
-    mutationFn: ({ id, items, notes, warehouseId }: { id: string; items: any[]; notes?: string; warehouseId: string }) =>
-      purchasesApi.createGrn(id, { warehouseId, items, notes }),
+    mutationFn: ({ id, items, notes, warehouseId, idempotencyKey }: { id: string; items: any[]; notes?: string; warehouseId: string; idempotencyKey?: string }) =>
+      purchasesApi.createGrn(id, { warehouseId, items, notes }, idempotencyKey),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['purchases'] })
       queryClient.invalidateQueries({ queryKey: ['purchase-grns', variables.id] })
@@ -1483,9 +1498,10 @@ export function Purchases() {
         onOpenChange={v => { if (!v) setReceiveDialog(null) }}
         purchase={receiveDialog}
         products={allProducts}
-        onReceive={(items, notes, warehouseId) => {
+        saving={receiveMut.isPending}
+        onReceive={(items, notes, warehouseId, idempotencyKey) => {
           if (receiveDialog && warehouseId) {
-            receiveMut.mutate({ id: receiveDialog.id, items, notes, warehouseId })
+            receiveMut.mutate({ id: receiveDialog.id, items, notes, warehouseId, idempotencyKey })
           }
         }}
       />

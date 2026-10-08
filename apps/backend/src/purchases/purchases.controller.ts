@@ -7,6 +7,7 @@ import {
   Put,
   Delete,
   Query,
+  Headers,
 } from '@nestjs/common';
 import { PurchasesService } from './purchases.service';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
@@ -66,8 +67,9 @@ export class PurchasesController {
     @Param('id') id: string,
     @Body() dto: CreateGrnDto,
     @CurrentUser() user: { userId: string },
+    @Headers('Idempotency-Key') idempotencyKey?: string,
   ) {
-    return this.purchasesService.createGrn(id, dto, user?.userId);
+    return this.purchasesService.createGrn(id, dto, user?.userId, idempotencyKey);
   }
 
   @Post(':id/short-close')

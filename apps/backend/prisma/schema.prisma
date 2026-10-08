@@ -2981,6 +2981,9 @@ model GoodsReceiptNote {
   status      String   @default("draft")
   notes       String?  @db.Text
   createdAt   DateTime @default(now())
+  // Client-supplied idempotency key (Idempotency-Key header). Replay with
+  // the same key returns the original GRN instead of double-posting stock.
+  clientKey   String?  @unique
 
   purchase    Purchase               @relation(fields: [purchaseId], references: [id])
   warehouse   Warehouse              @relation(fields: [warehouseId], references: [id])
