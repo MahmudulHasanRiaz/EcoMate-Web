@@ -1,12 +1,12 @@
 name: Deploy Client
 
-# MANUAL deployment only — CI never deploys. Pass all=true or a
-# comma-separated `clients` list (keys from .github/clients.json), and each
-# selected stack is redeployed via its Portainer webhook (which pulls the
-# images CI already built). Nothing here builds anything.
+# MANUAL deployment only — CI never deploys. Tick All or tick one/more
+# client checkboxes, and each selected stack is redeployed via its Portainer
+# webhook (which pulls the images CI already built). Nothing here builds
+# anything.
 #
-# Adding a client = 1 line in .github/clients.json + 1 GitHub secret.
-# This workflow NEVER changes per client.
+# Adding a client = 1 line in .github/clients.json + 1 checkbox input below
+# (same key) + 1 GitHub secret. The resolve/deploy jobs NEVER change.
 on:
   workflow_dispatch:
     inputs:
@@ -15,11 +15,21 @@ on:
         required: false
         default: false
         type: boolean
-      clients:
-        description: 'Comma-separated client keys (see .github/clients.json). Ignored when All is true.'
+      ecomate_web:
+        description: 'Deploy ecomate-web (main stack)?'
         required: false
-        default: ''
-        type: string
+        default: false
+        type: boolean
+      fixedplus:
+        description: 'Deploy FIXEDPLUS?'
+        required: false
+        default: false
+        type: boolean
+      avelto:
+        description: 'Deploy Avelto BD?'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -36,27 +46,27 @@ jobs:
       - name: Pick clients
         id: pick
         env:
+          # Whole inputs object as JSON: checkbox values arrive as 'true'/'false'
+          # strings. Keys matching clients.json are honoured — new clients need
+          # no change here, only their checkbox input above.
           ALL: ${{ inputs.all }}
-          CLIENTS: ${{ inputs.clients }}
+          INPUTS_JSON: ${{ toJSON(inputs) }}
         run: |
           python3 - <<'EOF'
           import json, os
           with open('.github/clients.json') as f:
               clients = json.load(f)
+          ticked = json.loads(os.environ.get('INPUTS_JSON', '{}'))
           if os.environ.get('ALL') == 'true':
               picked = list(clients)
           else:
-              picked = [c.strip().lower() for c in os.environ.get('CLIENTS', '').split(',') if c.strip()]
-          unknown = [c for c in picked if c not in clients]
-          if unknown:
-              raise SystemExit(f"Unknown client(s): {', '.join(unknown)}. Available: {', '.join(clients)}")
+              picked = [k for k in clients if str(ticked.get(k, '')).lower() == 'true']
           if not picked:
-              raise SystemExit('No client selected — pass all=true or a clients list (see .github/clients.json).')
+              raise SystemExit('No client selected — tick All or at least one client.')
           matrix = [
               {'key': k, 'label': v['label'], 'secret': v['secret']}
               for k, v in clients.items() if k in picked
           ]
-          matrix.sort(key=lambda m: picked.index(m['key']))
           with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
               out.write(f"matrix={json.dumps(matrix)}\n")
           print(f"Selected: {', '.join(m['key'] for m in matrix)}")
