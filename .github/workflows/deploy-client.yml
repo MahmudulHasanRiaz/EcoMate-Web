@@ -7,6 +7,9 @@ name: Deploy Client
 #
 # Adding a client = 1 line in .github/clients.json + 1 checkbox input below
 # (same key) + 1 GitHub secret. The resolve/deploy jobs NEVER change.
+#
+# Deploy always runs on GitHub-hosted ubuntu (curl-only job — no reason to
+# occupy the self-hosted Mac). Image builds (ci.yml) stay runner-selectable.
 on:
   workflow_dispatch:
     inputs:
@@ -37,7 +40,7 @@ permissions:
 jobs:
   resolve:
     name: Resolve clients
-    runs-on: [self-hosted, macos, arm64]
+    runs-on: [ubuntu-latest]
     outputs:
       matrix: ${{ steps.pick.outputs.matrix }}
     steps:
@@ -75,7 +78,7 @@ jobs:
   deploy:
     name: Manual deploy
     needs: resolve
-    runs-on: [self-hosted, macos, arm64]
+    runs-on: [ubuntu-latest]
     timeout-minutes: 15
     strategy:
       fail-fast: false
