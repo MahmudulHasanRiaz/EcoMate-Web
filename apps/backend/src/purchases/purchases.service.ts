@@ -377,6 +377,9 @@ export class PurchasesService {
         );
         data.subtotal = new Prisma.Decimal(subtotal);
         data.total = new Prisma.Decimal(subtotal);
+        // Replacement items start with zero received/short-closed; a stale
+        // partially_received (from a pre-edit short-close) would be a lie.
+        data.status = PurchaseStatus.ordered;
       }
 
       const updated = await tx.purchase.update({
@@ -526,8 +529,25 @@ export class PurchasesService {
         // Note: no separate accepted-cumulative guard — acceptedQty can never
         // exceed receivedQty per line, and cumulative received is capped
         // above, so cumulative accepted is capped transitively.
+
+        // A variant supplied by the client (PO line has none) must belong to
+        // the product being received — never trust it blind, or stock lands
+        // on a foreign product's variant.
+        const effProductId = pi.productId || d.productId!;
+        if (d.variantId && d.variantId !== pi.variantId) {
+          const variant = await tx.productVariant.findUnique({
+            where: { id: d.variantId },
+            select: { id: true, productId: true },
+          });
+          if (!variant || variant.productId !== effProductId) {
+            throw new BadRequestException(
+              `Variant ${d.variantId} does not belong to product ${effProductId}`,
+            );
+          }
+        }
+
         (d as any).__eff = {
-          productId: pi.productId || d.productId,
+          productId: effProductId,
           variantId: effVariantId,
           lineWarehouseId: d.lineWarehouseId || dto.warehouseId,
           responsibility: d.damageResponsibility || 'supplier',
@@ -675,39 +695,12 @@ export class PurchasesService {
         },
       });
 
-      const allItems = await tx.purchaseItem.findMany({
-        where: { purchaseId },
-      });
-
-      // Disposition gate: an item is done when every ordered unit has a final
-      // state — accepted + rejected + short-closed >= ordered. Raw "received"
-      // alone never completes an item (all-rejected is not received).
-      const itemDone = (i: any) => {
-        const key = i.id;
-        const prev = prior.get(key) || { received: 0, accepted: 0, rejected: 0 };
-        const line = dto.items.find((x) => x.purchaseItemId === key);
-        const accepted = prev.accepted + (line ? line.acceptedQty : 0);
-        const rejected = prev.rejected + (line ? line.rejectedQty : 0);
-        return accepted + rejected + (i.shortClosedQty || 0) >= i.quantity;
-      };
-      const allDone = allItems.every(itemDone);
-      const anyProgress = allItems.some((i) => {
-        const prev = prior.get(i.id) || { received: 0, accepted: 0, rejected: 0 };
-        const line = dto.items.find((x) => x.purchaseItemId === i.id);
-        return (
-          prev.received + (line ? line.receivedQty : 0) > 0 ||
-          (i.shortClosedQty || 0) > 0
-        );
-      });
-
-      let newStatus: PurchaseStatus;
-      if (allDone) {
-        newStatus = PurchaseStatus.received;
-      } else if (anyProgress) {
-        newStatus = PurchaseStatus.partially_received;
-      } else {
-        newStatus = purchase.status;
-      }
+      // Disposition gate: recomputeStatus reads EVERY GRN line of EVERY item
+      // (not just this GRN's touched lines), so an item completed in an
+      // earlier GRN counts as done. Done = accepted + rejected + short-closed
+      // >= ordered; raw "received" alone never completes an item (an
+      // all-rejected line is damage, not stock).
+      const newStatus = await this.recomputeStatus(tx, purchaseId, purchase.status);
 
       await tx.purchase.update({
         where: { id: purchaseId },

@@ -146,21 +146,37 @@ describe('PurchasesService lifecycle', () => {
 
     function grnTx(piOver: Record<string, any> = {}, priorLines: any[] = []) {
       const pi = poItem(piOver);
+      // Stateful mini-DB: lines created by goodsReceiptNote.create become
+      // visible to goodsReceiptNoteItem.findMany, so recomputeStatus (which
+      // re-reads every line from the tx) sees the same truth as the service.
+      const createdLines: any[] = [];
       return mockTx({
         purchaseItem: {
-          findMany: jest.fn().mockResolvedValue([pi]),
+          findMany: jest.fn().mockImplementation(async ({ where }: any) => {
+            if (where.id) return where.id.in.includes('pi-a') ? [pi] : [pi];
+            return [pi];
+          }),
           update: jest.fn(),
           createMany: jest.fn(),
           deleteMany: jest.fn(),
         },
-        goodsReceiptNoteItem: { findMany: jest.fn().mockResolvedValue(priorLines) },
+        goodsReceiptNoteItem: {
+          findMany: jest.fn().mockImplementation(async ({ where }: any) => {
+            const all = [...priorLines, ...createdLines];
+            const ids = where.purchaseItemId?.in;
+            return ids ? all.filter((l) => ids.includes(l.purchaseItemId)) : all;
+          }),
+        },
         goodsReceiptNote: {
-          create: jest.fn().mockImplementation(async ({ data }: any) => ({
-            id: 'grn-1',
-            grnNumber: 'GRN-261008-0001',
-            ...data,
-            items: data.items.create.map((l: any, i: number) => ({ id: `gl-${i}`, ...l })),
-          })),
+          create: jest.fn().mockImplementation(async ({ data }: any) => {
+            for (const l of data.items.create) createdLines.push(l);
+            return {
+              id: 'grn-1',
+              grnNumber: 'GRN-261008-0001',
+              ...data,
+              items: data.items.create.map((l: any, i: number) => ({ id: `gl-${i}`, ...l })),
+            };
+          }),
           count: jest.fn().mockResolvedValue(0),
           findFirst: jest.fn().mockResolvedValue(null),
         },
@@ -301,6 +317,62 @@ describe('PurchasesService lifecycle', () => {
       tx.warehouse.findUnique.mockResolvedValue(null);
       runTx(tx);
       await expect(service.createGrn('po-1', grnDto() as any)).rejects.toThrow(/Warehouse/);
+    });
+
+    it('reaches received only after EVERY item is dispositioned, including items completed in earlier GRNs', async () => {
+      // Two-item PO. GRN1 fully received item A (prior line); this GRN
+      // receives item B. The prior-lines query is scoped to the touched
+      // itemIds, so the status gate must read all items' full GRN history —
+      // not just this GRN's lines.
+      const piA = poItem({ id: 'pi-a' });
+      const piB = poItem({ id: 'pi-b', productId: 'prod-2', quantity: 50, totalBill: 5000 });
+      const tx = grnTx({}, [{ purchaseItemId: 'pi-a', receivedQty: 100, acceptedQty: 100, rejectedQty: 0 }]);
+      tx.purchaseItem.findMany.mockImplementation(async ({ where }: any) => {
+        if (where.id) return where.id.in.includes('pi-a') ? [piA] : [piB];
+        return [piA, piB];
+      });
+      tx.product.findMany.mockResolvedValue([
+        { id: 'prod-1', availabilityMode: 'MANAGED_STOCK' },
+        { id: 'prod-2', availabilityMode: 'MANAGED_STOCK' },
+      ]);
+      runTx(tx);
+      await service.createGrn(
+        'po-1',
+        grnDto({ items: [{ purchaseItemId: 'pi-b', receivedQty: 50, acceptedQty: 50, rejectedQty: 0 }] }) as any,
+        'user-1',
+      );
+      const statusUpdate = tx.purchase.update.mock.calls.find(
+        (c: any[]) => c[0]?.data?.status !== undefined,
+      )?.[0]?.data?.status;
+      expect(statusUpdate).toBe('received');
+    });
+
+    it('rejects a client variantId that does not belong to the received product', async () => {
+      const tx = grnTx();
+      tx.productVariant.findUnique.mockResolvedValue({ id: 'v-9', productId: 'other' });
+      runTx(tx);
+      await expect(
+        service.createGrn(
+          'po-1',
+          grnDto({ items: [{ purchaseItemId: 'pi-1', variantId: 'v-9', receivedQty: 10, acceptedQty: 10, rejectedQty: 0 }] }) as any,
+        ),
+      ).rejects.toThrow(/does not belong/);
+      // Nothing may hit stock or lots at the foreign variant.
+      expect(tx.costingLot.create).not.toHaveBeenCalled();
+      expect(stockService.operate).not.toHaveBeenCalled();
+    });
+
+    it('accepts a client variantId that belongs to the received product (legacy variant-less line)', async () => {
+      const tx = grnTx();
+      tx.productVariant.findUnique.mockResolvedValue({ id: 'v-1', productId: 'prod-1' });
+      runTx(tx);
+      await service.createGrn(
+        'po-1',
+        grnDto({ items: [{ purchaseItemId: 'pi-1', variantId: 'v-1', receivedQty: 10, acceptedQty: 10, rejectedQty: 0 }] }) as any,
+      );
+      expect(tx.costingLot.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ variantId: 'v-1' }) }),
+      );
     });
   });
 
