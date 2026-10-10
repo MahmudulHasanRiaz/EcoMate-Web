@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { findCustomerByPhone, quickCreateCustomer } from '../api/client'
+import { normalizePhone } from '../lib/phone'
 import { useCartStore } from '../stores/cart-store'
+import { toast } from 'sonner'
 import { User, Plus, X, Search, Check } from 'lucide-react'
 
 export function CustomerQuickAdd() {
@@ -12,23 +14,30 @@ export function CustomerQuickAdd() {
 
   const handleLookup = async () => {
     if (!phone) return
+    // Canonical form first: "017…", "+88017…", "017-…" must all resolve to
+    // the same customer instead of creating duplicates.
+    const normalized = normalizePhone(phone)
+    if (!normalized) {
+      toast.error('Enter a valid BD phone number')
+      return
+    }
     setLoading(true)
     try {
-      const res = await findCustomerByPhone(phone)
+      const res = await findCustomerByPhone(normalized)
       if (res.data?.length > 0) {
         const c = res.data[0]
         setCustomer(c.id, (c.firstName || '') + ' ' + (c.lastName || ''), c.phoneNumber)
         setName((c.firstName || '') + ' ' + (c.lastName || ''))
       } else {
-        const created = await quickCreateCustomer(phone, name || undefined)
+        const created = await quickCreateCustomer(normalized, name || undefined)
         const d = created.data
-        setCustomer(d.id, d.firstName || name, phone)
+        setCustomer(d.id, d.firstName || name, normalized)
       }
     } catch {
       try {
-        const created = await quickCreateCustomer(phone, name || undefined)
+        const created = await quickCreateCustomer(normalized, name || undefined)
         const d = created.data
-        setCustomer(d.id, d.firstName || name, phone)
+        setCustomer(d.id, d.firstName || name, normalized)
       } catch { /* fail silently */ }
     } finally {
       setLoading(false)

@@ -9,8 +9,6 @@ interface CartItem {
   sku?: string;
   price: number;
   quantity: number;
-  discount?: number;
-  discountType?: 'flat' | 'percentage';
   image?: MediaSource;
   imageVersion?: string;
   stockCheckStatus?: 'ok' | 'low' | 'out';
@@ -100,16 +98,12 @@ export const useCartStore = create<CartState>()(
       totalDiscount: () => {
         const state = get();
         const subtotal = state.items.reduce((s, i) => s + i.price * i.quantity, 0);
-        const itemDiscount = state.items.reduce((s, i) => {
-          if (!i.discount) return s;
-          const lineTotal = i.price * i.quantity;
-          return s + (i.discountType === 'percentage' ? (lineTotal * i.discount) / 100 : i.discount);
-        }, 0);
-        const afterItems = subtotal - itemDiscount;
-        const orderD = state.orderDiscount
-          ? (state.orderDiscountType === 'percentage' ? (afterItems * state.orderDiscount) / 100 : state.orderDiscount)
+        // Order-level discount only. (Per-line discount fields were removed:
+        // no UI ever set them, and the backend prices + validates the same
+        // order-level rule — a second discount path could only disagree.)
+        return state.orderDiscount
+          ? (state.orderDiscountType === 'percentage' ? (subtotal * state.orderDiscount) / 100 : state.orderDiscount)
           : 0;
-        return itemDiscount + orderD;
       },
 
       total: () => {

@@ -87,19 +87,24 @@ export function CartPanel({ onCloseSession, isMobileDrawer = false, onCloseDrawe
 
       const failedItems = validation.items
         .filter((r: any) => !r.available)
-        .map((r: any) => {
+        .flatMap((r: any) => {
           const idx = items.findIndex(
-            (i) => i.productId === r.productId && i.variantId === r.variantId,
+            (i) => i.productId === r.productId && (i.variantId ?? null) === (r.variantId ?? null),
           )
-          return {
-            index: idx >= 0 ? idx : 0,
+          // Never default to index 0: an unmappable failure must not trim or
+          // drop the wrong cart line. Drop it from the popup (it stays in the
+          // cart) so staff see the failure via the error path instead.
+          if (idx < 0) return []
+          return [{
+            index: idx,
             productId: r.productId,
             variantId: r.variantId,
             name: items[idx]?.name || 'Unknown item',
             requestedQty: r.requested,
             currentAvailable: r.currentAvailable ?? 0,
-          }
+          }]
         })
+      if (failedItems.length === 0) return 'error'
       setOosItems(failedItems)
       setOosModalOpen(true)
       return 'oos'
@@ -379,7 +384,7 @@ export function CartPanel({ onCloseSession, isMobileDrawer = false, onCloseDrawe
         </div>
       </div>
 
-      <DiscountModal open={discountOpen} onOpenChange={setDiscountOpen} currentDiscount={orderDiscount} currentType={orderDiscountType} onApply={setOrderDiscount} />
+      <DiscountModal open={discountOpen} onOpenChange={setDiscountOpen} currentDiscount={orderDiscount} currentType={orderDiscountType} onApply={setOrderDiscount} maxFlat={subtotal()} />
       <AlternativeSourcesModal
         key={oosResetKey}
         open={oosModalOpen}

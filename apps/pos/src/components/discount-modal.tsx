@@ -8,12 +8,15 @@ interface Props {
   currentDiscount: number
   currentType: 'flat' | 'percentage'
   onApply: (discount: number, type: 'flat' | 'percentage') => void
+  /** Upper bound for flat discounts (cart subtotal) — mirrors the backend cap. */
+  maxFlat?: number
 }
 
 const QUICK_PERCENTAGES = [5, 10, 15, 20]
 const QUICK_FLATS = [50, 100, 200, 500]
+const MAX_PERCENT = 100
 
-export function DiscountModal({ open, onOpenChange, currentDiscount, currentType, onApply }: Props) {
+export function DiscountModal({ open, onOpenChange, currentDiscount, currentType, onApply, maxFlat }: Props) {
   const [amount, setAmount] = useState(String(currentDiscount))
   const [type, setType] = useState<'flat' | 'percentage'>(currentType)
 
@@ -28,6 +31,15 @@ export function DiscountModal({ open, onOpenChange, currentDiscount, currentType
   const handleQuickSelect = (value: number) => {
     setAmount(String(value))
   }
+
+  // Backend caps (mirrored so staff never fill a cart that fails at pay):
+  // percentage ≤ 100, flat ≤ subtotal. Clamped on apply, not while typing.
+  const cap = type === 'percentage' ? MAX_PERCENT : maxFlat
+  const parsed = parseFloat(amount) || 0
+  const capped = cap !== undefined ? Math.min(parsed, cap) : parsed
+  const isCapped = capped < parsed
+
+  const handleApply = () => onApply(capped < 0 ? 0 : capped, type)
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -47,7 +59,7 @@ export function DiscountModal({ open, onOpenChange, currentDiscount, currentType
           {/* Segmented control tabs */}
           <div className="mb-4 flex rounded-xl bg-slate-100 p-1">
             <button
-              onClick={() => { setType('flat'); setAmount('0') }}
+              onClick={() => { setType('flat') }}
               className={`flex-1 rounded-lg py-2 text-xs font-bold transition-all cursor-pointer ${
                 type === 'flat' 
                   ? 'bg-white text-slate-900 shadow-sm' 
@@ -57,7 +69,7 @@ export function DiscountModal({ open, onOpenChange, currentDiscount, currentType
               ৳ Flat Cash
             </button>
             <button
-              onClick={() => { setType('percentage'); setAmount('0') }}
+              onClick={() => { setType('percentage') }}
               className={`flex-1 rounded-lg py-2 text-xs font-bold transition-all cursor-pointer ${
                 type === 'percentage' 
                   ? 'bg-white text-slate-900 shadow-sm' 
@@ -84,6 +96,11 @@ export function DiscountModal({ open, onOpenChange, currentDiscount, currentType
               autoFocus
             />
           </div>
+          {isCapped && (
+            <p className="mt-2 text-center text-[11px] font-bold text-orange-500">
+              Capped at {type === 'percentage' ? `${MAX_PERCENT}%` : `৳${cap?.toLocaleString()}`} (backend limit)
+            </p>
+          )}
 
           {/* Quick Selection Chips */}
           <div className="mt-4">
@@ -112,7 +129,7 @@ export function DiscountModal({ open, onOpenChange, currentDiscount, currentType
             </Dialog.Close>
             
             <Dialog.Close
-              onClick={() => onApply(parseFloat(amount) || 0, type)}
+              onClick={handleApply}
               className="flex-1 rounded-xl bg-emerald-500 py-3 text-xs font-bold text-slate-950 hover:bg-emerald-400 shadow-md border border-emerald-400 transition cursor-pointer flex items-center justify-center gap-1.5"
             >
               <Check size={14} />

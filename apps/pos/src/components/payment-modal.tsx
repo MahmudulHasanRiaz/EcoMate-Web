@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { useCartStore } from '../stores/cart-store'
 import { useSessionStore } from '../stores/session-store'
@@ -45,6 +45,17 @@ export function PaymentModal({ open, onOpenChange, onSuccess }: Props) {
     { method: 'CASH', amount: cartTotal.toFixed(2) },
   ])
   const [loading, setLoading] = useState(false)
+  // Stable idempotency key per modal open: retries of the same submit reuse
+  // it (server dedupes), so a timeout-retry can never create a duplicate
+  // order. A fresh open mints a fresh key (cart can't change mid-open).
+  const keyRef = useRef('')
+  useEffect(() => {
+    if (open) {
+      keyRef.current = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    }
+  }, [open])
 
   // Fetch enabled payment gateways from settings
   useEffect(() => {
@@ -100,7 +111,7 @@ export function PaymentModal({ open, onOpenChange, onSuccess }: Props) {
   const handlePay = async () => {
     if (!isValid) return
     setLoading(true)
-    const idempotencyKey = crypto.randomUUID()
+    const idempotencyKey = keyRef.current || crypto.randomUUID()
     try {
       const res = await createPosOrder({
         items: items.map((i) => ({

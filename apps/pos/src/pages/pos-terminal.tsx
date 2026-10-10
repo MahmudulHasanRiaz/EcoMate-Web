@@ -34,6 +34,21 @@ export function PosTerminalPage({ onCloseSession }: Props) {
   const { showroomName, showroomId, cashierName } = useSessionStore()
   const { items } = useCartStore()
   const [brandFavicon, setBrandFavicon] = useState<string | undefined>(undefined)
+  // Real connectivity (was a hardcoded "Online" pill): stock validation,
+  // lookups and checkout all degrade or fail offline, so say so honestly.
+  const [online, setOnline] = useState(
+    typeof navigator !== 'undefined' ? navigator.onLine : true,
+  )
+  useEffect(() => {
+    const goOnline = () => setOnline(true)
+    const goOffline = () => setOnline(false)
+    window.addEventListener('online', goOnline)
+    window.addEventListener('offline', goOffline)
+    return () => {
+      window.removeEventListener('online', goOnline)
+      window.removeEventListener('offline', goOffline)
+    }
+  }, [])
 
   // Store favicon for the header brand mark (public branding endpoint;
   // same priority as index.html: storefront first, then admin).
@@ -194,8 +209,8 @@ export function PosTerminalPage({ onCloseSession }: Props) {
         <div className="flex items-center gap-2">
           {/* Connection Status */}
           <div className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-bold text-slate-600 transition">
-            <Wifi size={12} className="text-emerald-500" />
-            <span className="hidden sm:inline">Online Terminal</span>
+            <Wifi size={12} className={online ? 'text-emerald-500' : 'text-rose-500'} />
+            <span className="hidden sm:inline">{online ? 'Online Terminal' : 'Offline — sales unavailable'}</span>
           </div>
 
           <div className="h-4 w-px bg-slate-200" />

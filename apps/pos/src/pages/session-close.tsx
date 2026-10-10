@@ -18,7 +18,6 @@ export function SessionClosePage({ onClosed }: Props) {
     try {
       await closeSession(sessionId!, parseFloat(closingBalance), notes || undefined)
       toast.success('Session closed successfully')
-      localStorage.removeItem('pos_session_id')
       clearSession()
       onClosed()
     } catch (err: any) {
