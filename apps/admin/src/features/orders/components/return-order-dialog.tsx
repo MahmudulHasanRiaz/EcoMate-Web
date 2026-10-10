@@ -27,10 +27,12 @@ const money = (v: number) => v.toFixed(2)
  *
  * Three things beyond the item picker (requirements §1–§5):
  *  - ONE overall reason for the whole return; no per-item reasons.
- *  - Optional adjustment of the ORIGINAL's discount / shipping. Defaults to
- *    the current values, so opening the dialog and confirming without
- *    touching anything behaves exactly as before. The Return Order itself
- *    never carries these amounts — they stay on the original only.
+ *  - Optional DELTA adjustment of the ORIGINAL's discount / shipping, both
+ *    EMPTY by default. A positive entry raises the original's charge, a
+ *    negative entry lowers it (clamped at zero); empty means "no change" and
+ *    is omitted from the payload. The current values are shown as hint text,
+ *    never pre-filled. The Return Order itself never carries these amounts —
+ *    they stay on the original only.
  *  - The "is the remaining quantity delivered?" choice.
  */
 export function ReturnOrderDialog({
@@ -45,10 +47,10 @@ export function ReturnOrderDialog({
   const queryClient = useQueryClient()
   const [returnQtys, setReturnQtys] = useState<Record<string, number>>({})
   const [reason, setReason] = useState('')
-  // Pre-filled with the original's current values; the user may change them.
-  const [discount, setDiscount] = useState(String(order?.discount ?? ''))
+  // DELTA entries: empty = no change. Positive raises, negative lowers.
+  const [discount, setDiscount] = useState('')
   const [discountType, setDiscountType] = useState<'flat' | 'percentage'>(order?.discountType === 'percentage' ? 'percentage' : 'flat')
-  const [shipping, setShipping] = useState(String(order?.shippingCharge ?? ''))
+  const [shipping, setShipping] = useState('')
   const [deliverNow, setDeliverNow] = useState(true)
 
   const rtnMut = useMutation({
@@ -77,17 +79,46 @@ export function ReturnOrderDialog({
   const items: any[] = order?.items ?? []
   const selected = items.filter((i) => (returnQtys[i.id] ?? 0) > 0)
 
+  // Current bill figures (hint text only — never written into the fields).
+  const curShipping = nn(order?.shippingCharge)
+  const curDiscount = nn(order?.discount)
+  const curDiscountType: 'flat' | 'percentage' = order?.discountType === 'percentage' ? 'percentage' : 'flat'
+
+  const round2 = (v: number) => Math.round(v * 100) / 100
+
+  // Delta → effective absolute. Empty/NaN = untouched (caller omits it).
+  const shipDelta = shipping.trim() === '' ? null : parseFloat(shipping)
+  const effShipping =
+    shipDelta === null || isNaN(shipDelta) ? curShipping : Math.max(0, round2(curShipping + shipDelta))
+  const discDelta = discount.trim() === '' ? null : parseFloat(discount)
+  const effDiscountRaw =
+    discDelta === null || isNaN(discDelta) ? curDiscount : round2(curDiscount + discDelta)
+  // Flat can never go below zero; a percentage lives in 0..100 points.
+  const effDiscount =
+    discountType === 'percentage'
+      ? Math.min(100, Math.max(0, effDiscountRaw))
+      : Math.max(0, effDiscountRaw)
+
+  const fmtCurrent = (v: number, type: 'flat' | 'percentage') =>
+    type === 'percentage' ? `${v}%` : `৳${money(v)}`
+
   // Live preview of the ORIGINAL's new bill once the returned lines are removed.
   const originalPreview = useMemo(() => {
     const subtotal = items.reduce((sum, i) => {
       const remaining = i.quantity - (returnQtys[i.id] ?? 0)
       return remaining > 0 ? sum + nn(i.price) * remaining : sum
     }, 0)
-    const ship = parseFloat(shipping) || 0
-    const rawDiscount = parseFloat(discount) || 0
+    const ship = effShipping
+    const rawDiscount = effDiscount
     const disc = discountType === 'percentage' ? (subtotal * Math.min(100, rawDiscount)) / 100 : rawDiscount
     return { subtotal, shipping: ship, discount: disc, total: Math.max(0, subtotal + ship - disc) }
-  }, [items, returnQtys, shipping, discount, discountType])
+  }, [items, returnQtys, effShipping, effDiscount, discountType])
+
+  // Full return with charges left on an empty original: flag it so staff can
+  // clear them with a negative delta instead of discovering a ৳X bill later.
+  const remainingSubtotal = originalPreview.subtotal
+  const emptyOriginalKeepsCharges =
+    selected.length > 0 && remainingSubtotal === 0 && (effShipping > 0 || effDiscount > 0)
 
   const rtnDisplay = order?.displayId
     ? order.displayId.startsWith('ORD-')
@@ -97,12 +128,17 @@ export function ReturnOrderDialog({
 
   const submit = () => {
     const lines = selected.map((i) => ({ orderItemId: i.id, quantity: returnQtys[i.id] }))
+    // Empty delta = no change (omitted; the backend defaults to current).
+    // A present delta is converted to the absolute the backend expects.
+    const shipNum = shipDelta === null || isNaN(shipDelta) ? undefined : effShipping
+    const discNum = discDelta === null || isNaN(discDelta) ? undefined : effDiscount
     rtnMut.mutate({
       items: lines,
       ...(reason.trim() ? { reason: reason.trim() } : {}),
-      adjustOriginalDiscount: parseFloat(discount) || 0,
-      adjustOriginalDiscountType: discountType,
-      adjustOriginalShippingCharge: parseFloat(shipping) || 0,
+      ...(discNum !== undefined
+        ? { adjustOriginalDiscount: discNum, adjustOriginalDiscountType: discountType }
+        : {}),
+      ...(shipNum !== undefined ? { adjustOriginalShippingCharge: shipNum } : {}),
       deliverRemainingImmediately: deliverNow,
     })
   }
@@ -194,20 +230,21 @@ export function ReturnOrderDialog({
                 Adjust the original order&rsquo;s discount &amp; delivery charge
               </div>
               <p className='text-[11px] text-muted-foreground -mt-1.5'>
-                Because items are being removed, the original&rsquo;s bill shrinks. Lower the discount
-                    if it no longer applies. These amounts stay on the original — the Return Order
-                    carries product lines only.
+                Because items are being removed, the original&rsquo;s bill shrinks. Both fields
+                start empty (no change): enter <span className='font-medium'>+amount to raise</span> or{' '}
+                <span className='font-medium'>−amount to lower</span> the original. These amounts stay
+                on the original — the Return Order carries product lines only.
               </p>
               <div className='grid grid-cols-1 sm:grid-cols-3 gap-3'>
                 <div>
-                  <Label htmlFor='rtn-adjust-discount' className='text-xs text-muted-foreground mb-1 block'>Discount (৳)</Label>
+                  <Label htmlFor='rtn-adjust-discount' className='text-xs text-muted-foreground mb-1 block'>Discount delta (৳{discountType === 'percentage' ? ', points' : ''})</Label>
                   <div className='flex gap-1.5'>
                     <Input
                       id='rtn-adjust-discount'
-                      type='number' min='0' step='0.01'
-                      value={discount === '0' ? '' : discount}
+                      type='number' step='0.01'
+                      value={discount}
                       onChange={(e) => setDiscount(e.target.value)}
-                      placeholder='0'
+                      placeholder='+ raise / − lower'
                       className='h-9 text-sm'
                     />
                     <div className='flex border rounded-lg p-0.5 bg-muted/40 shrink-0'>
@@ -223,17 +260,19 @@ export function ReturnOrderDialog({
                       >%</Button>
                     </div>
                   </div>
+                  <p className='text-[10px] text-muted-foreground mt-1'>Current: {fmtCurrent(curDiscount, curDiscountType)}</p>
                 </div>
                 <div>
-                  <Label htmlFor='rtn-adjust-shipping' className='text-xs text-muted-foreground mb-1 block'>Delivery charge (৳)</Label>
+                  <Label htmlFor='rtn-adjust-shipping' className='text-xs text-muted-foreground mb-1 block'>Delivery delta (৳)</Label>
                   <Input
                     id='rtn-adjust-shipping'
-                    type='number' min='0' step='0.01'
-                    value={shipping === '0' ? '' : shipping}
+                    type='number' step='0.01'
+                    value={shipping}
                     onChange={(e) => setShipping(e.target.value)}
-                    placeholder='0'
+                    placeholder='+ raise / − lower'
                     className='h-9 text-sm'
                   />
+                  <p className='text-[10px] text-muted-foreground mt-1'>Current: {fmtCurrent(curShipping, 'flat')}</p>
                 </div>
                 <div className='flex flex-col justify-end'>
                   <div className='text-[11px] text-muted-foreground leading-relaxed'>
@@ -245,6 +284,11 @@ export function ReturnOrderDialog({
                   </div>
                 </div>
               </div>
+              {emptyOriginalKeepsCharges && (
+                <p className='text-[11px] text-amber-600 -mt-1'>
+                  Everything is being returned but the original still carries ৳{money(effShipping + effDiscount)} in charges — enter negative deltas above to clear them, or they stay on the empty order.
+                </p>
+              )}
             </div>
 
             {selected.length > 0 && (
@@ -266,7 +310,8 @@ export function ReturnOrderDialog({
               </div>
             )}
 
-            {/* ── Delivered prompt ── */}
+            {/* ── Delivered prompt (only when something remains) ── */}
+            {remainingSubtotal > 0 && (
             <label htmlFor='rtn-deliver-now' className='flex items-start gap-2.5 cursor-pointer select-none rounded-lg border border-border p-3 hover:bg-muted/40'>
               <input
                 id='rtn-deliver-now'
@@ -284,6 +329,7 @@ export function ReturnOrderDialog({
                   : 'No — the remaining items stay Partial and the courier will update them on delivery.'}
               </span>
             </label>
+            )}
 
             <div className='flex justify-end gap-2'>
               <Button variant='outline' onClick={() => onClose()}>Cancel</Button>
