@@ -289,6 +289,15 @@ function OrderDetailPage() {
       toast.error('Enter a partial amount greater than 0')
       return
     }
+    // Collected money is a fact: mirror the backend floor so staff learn it
+    // before the server 400s (refund guidance included in both messages).
+    const collected = (order?.payments || [])
+      .filter((p: any) => p.status === 'PAID')
+      .reduce((s: number, p: any) => s + Number(p.amount || 0), 0)
+    if (paymentMode === 'partial' && partialAmount && parseFloat(partialAmount) < collected) {
+      toast.error(`৳${collected} is already collected — record a refund to lower the advance below it.`)
+      return
+    }
     try {
       await updateMut.mutateAsync({
         id,
@@ -1097,6 +1106,11 @@ function OrderDetailPage() {
                           <div>
                             <Label className='text-xs font-medium'>Partial Amount to Collect</Label>
                             <Input type='number' step='0.01' value={partialAmount} onChange={e => setPartialAmount(e.target.value)} className='h-9 text-xs mt-1 font-medium' placeholder='Amount in BDT' />
+                            {(order?.payments || []).some((p: any) => p.status === 'PAID') && (
+                              <p className='text-[11px] text-muted-foreground mt-1'>
+                                Collected ৳{fmt((order?.payments || []).filter((p: any) => p.status === 'PAID').reduce((s: number, p: any) => s + Number(p.amount || 0), 0))} so far (locked) — the remainder becomes ৳{fmt(Math.max(0, nn(order?.total) - (parseFloat(partialAmount) || 0)))}. Lowering below collected needs a refund first; the method change applies to the outstanding balance row.
+                              </p>
+                            )}
                           </div>
                         )}
                         <div className='flex gap-2 pt-1'>

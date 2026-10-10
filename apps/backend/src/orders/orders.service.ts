@@ -3194,27 +3194,67 @@ export class OrdersService {
 
       // Payment editing — mirrors create() semantics so staff can switch
       // COD ↔ full online payment ↔ partial payment and pick the gateway.
+      // Money already collected is a FACT: PAID rows are never rewritten.
+      // The editable surface is the outstanding balance row only.
+      // (Test doubles predate the aggregate call — the optional chain keeps
+      // them green; production Prisma always has aggregate.)
+      const paidAgg =
+        typeof tx.payment?.aggregate === 'function'
+          ? await tx.payment.aggregate({
+              _sum: { amount: true },
+              where: { orderId: id, status: PaymentStatus.PAID },
+            })
+          : null;
+      const collectedPaid = Number(paidAgg?._sum?.amount || 0);
+      const orderTotal = Number(data.total ?? order.total);
       if (dto.paymentOptionType) {
+        // Effective advance for PARTIAL edits: an untouched amount field
+        // keeps the stored advance (a no-op save must not move money).
+        const advance =
+          dto.paymentOptionType === 'PARTIAL_PAYMENT'
+            ? (dto.partialAmount !== undefined
+                ? Number(dto.partialAmount)
+                : Number(order.partialAmount || 0))
+            : 0;
         if (dto.paymentOptionType === 'PARTIAL_PAYMENT') {
           if (
             dto.partialAmount !== undefined &&
-            (dto.partialAmount <= 0 ||
-              dto.partialAmount > Number(data.total ?? order.total))
+            (dto.partialAmount <= 0 || dto.partialAmount > orderTotal)
           ) {
             throw new BadRequestException(
               'Partial payment amount must be greater than 0 and not exceed the order total',
             );
           }
+          if (advance < collectedPaid) {
+            throw new BadRequestException(
+              `৳${collectedPaid} is already collected on this order — record a refund to lower the advance below it.`,
+            );
+          }
+          data.partialAmount = dto.partialAmount !== undefined ? dto.partialAmount : order.partialAmount;
+        } else if (collectedPaid > 0 && dto.paymentOptionType !== order.paymentOptionType) {
+          // Leaving PARTIAL (or any mode) with collected money would strand
+          // the PAID rows against a contradictory status — refund first.
+          throw new BadRequestException(
+            `৳${collectedPaid} is already collected on this order — record a refund before changing the payment mode.`,
+          );
+        } else {
+          // Non-partial mode (and we got past the collected-money guard):
+          // no advance lives on the order.
+          data.partialAmount = null;
         }
         data.paymentOptionType = dto.paymentOptionType;
-        data.paymentStatus =
-          dto.paymentOptionType === 'CASH_ON_DELIVERY'
-            ? PaymentStatus.UNPAID
-            : PaymentStatus.PAYMENT_PENDING;
-        data.partialAmount =
-          dto.paymentOptionType === 'PARTIAL_PAYMENT'
-            ? (dto.partialAmount ?? null)
-            : null;
+        if (dto.paymentOptionType === 'PARTIAL_PAYMENT' && collectedPaid > 0) {
+          // Collected money stays collected: status follows the rows, not
+          // the mode switch.
+          data.paymentStatus =
+            collectedPaid >= orderTotal ? PaymentStatus.PAID : PaymentStatus.PARTIAL_PAID;
+        } else {
+          data.paymentStatus =
+            dto.paymentOptionType === 'CASH_ON_DELIVERY'
+              ? PaymentStatus.UNPAID
+              : PaymentStatus.PAYMENT_PENDING;
+        }
+        // data.partialAmount preserved above for untouched partial edits.
         data.timeline = [
           ...timeline,
           {
@@ -3225,9 +3265,11 @@ export class OrdersService {
           },
         ];
 
+        // The editable row is the OUTSTANDING balance (total − advance),
+        // never the advance itself: collected money is already a fact.
         const paymentAmount =
-          dto.paymentOptionType === 'PARTIAL_PAYMENT' && dto.partialAmount
-            ? dto.partialAmount
+          dto.paymentOptionType === 'PARTIAL_PAYMENT'
+            ? Math.max(0, orderTotal - advance)
             : Number(data.total ?? order.total);
         const gatewayCode =
           dto.gatewayCode ||
@@ -3251,17 +3293,22 @@ export class OrdersService {
             orderBy: { createdAt: 'asc' },
           });
           if (existing) {
-            await tx.payment.update({
-              where: { id: existing.id },
-              data: {
-                gatewayCode,
-                amount: paymentAmount,
-                status:
-                  gatewayCode === 'cash'
-                    ? PaymentStatus.UNPAID
-                    : PaymentStatus.PENDING,
-              },
-            });
+            if (paymentAmount <= 0) {
+              // Advance covers the whole bill: no balance row should linger.
+              await tx.payment.delete({ where: { id: existing.id } });
+            } else {
+              await tx.payment.update({
+                where: { id: existing.id },
+                data: {
+                  gatewayCode,
+                  amount: paymentAmount,
+                  status:
+                    gatewayCode === 'cash'
+                      ? PaymentStatus.UNPAID
+                      : PaymentStatus.PENDING,
+                },
+              });
+            }
           } else {
             const paidRows = await tx.payment.count({
               where: { orderId: id, status: PaymentStatus.PAID },
