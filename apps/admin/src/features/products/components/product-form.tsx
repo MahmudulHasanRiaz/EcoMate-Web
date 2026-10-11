@@ -15,6 +15,7 @@ const imgUrl = appUrl
 import { apiClient } from '@/lib/api-client'
 import { useInventoryManagement } from '@/features/inventory/hooks/use-inventory-management'
 import { defaultAvailabilityMode } from '@/features/products/lib/availability-defaults'
+import { isSupportedVideoUrl, cleanDetailRows, type DetailRow } from '@/features/products/lib/pdp-fields'
 import { attributesApi } from '@/features/attributes/api'
 import { categoriesApi } from '@/features/categories/api'
 import { brandsApi } from '@/features/brands/api'
@@ -110,6 +111,9 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [type, setType] = useState<string>('simple')
   const [desc, setDesc] = useState('')
   const [shortDesc, setShortDesc] = useState('')
+  const [videoUrl, setVideoUrl] = useState('')
+  const [videoUrlError, setVideoUrlError] = useState('')
+  const [detailRows, setDetailRows] = useState<DetailRow[]>([])
   const [basePrice, setBasePrice] = useState('')
   const [salePrice, setSalePrice] = useState('')
   const [sku, setSku] = useState('')
@@ -212,7 +216,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   // opened — while untouched, the persistence layers skip, so an empty form
   // never creates or overwrites any draft row.
   const snapshotOf = () => ({
-    mode, name, slug, type, desc, shortDesc, basePrice, salePrice, sku,
+    mode, name, slug, type, desc, shortDesc, videoUrl, detailRows, basePrice, salePrice, sku,
     stock, lowStockQty, categoryIds, brandId, isActive, isFeatured,
     availabilityMode, standardCost, images, tags, sizeChartId,
     seoTitle, seoDesc, seoKeywords, selectedAttrs, selectedValues, localVariants,
@@ -220,7 +224,8 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const hasFormContent = (s: any) =>
     s && (!!s.name?.trim() || !!s.sku || Number(s.basePrice) > 0 ||
       (Array.isArray(s.images) && s.images.length > 0) ||
-      !!s.shortDesc?.trim() || !!s.desc?.trim() ||
+      !!s.shortDesc?.trim() || !!s.desc?.trim() || !!s.videoUrl?.trim() ||
+      (Array.isArray(s.detailRows) && cleanDetailRows(s.detailRows).length > 0) ||
       (Array.isArray(s.localVariants) && s.localVariants.length > 0))
   const formUntouched = () => {
     try {
@@ -262,6 +267,8 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       !!payload.name?.trim() || !!payload.sku || payload.basePrice > 0 ||
       !!(payload.images && payload.images.length > 0) ||
       !!(payload.shortDesc || payload.description) ||
+      !!payload.videoUrl ||
+      !!(payload.detailRows && payload.detailRows.length > 0) ||
       !!(payload.variants && payload.variants.length > 0)
     if (!hasContent) return
     const timer = setTimeout(() => {
@@ -283,7 +290,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       }
     }, 1500)
     return () => clearTimeout(timer)
-  }, [open, isEdit, serverDraftId, mode, name, slug, type, desc, shortDesc,
+  }, [open, isEdit, serverDraftId, mode, name, slug, type, desc, shortDesc, videoUrl, detailRows,
     basePrice, salePrice, sku, stock, lowStockQty, categoryIds, brandId,
     isFeatured, availabilityMode, standardCost, images, tags, sizeChartId,
     seoTitle, seoDesc, seoKeywords, localVariants])
@@ -303,6 +310,8 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       !!payload.name?.trim() || !!payload.sku || payload.basePrice > 0 ||
       !!(payload.images && payload.images.length > 0) ||
       !!(payload.shortDesc || payload.description) ||
+      !!payload.videoUrl ||
+      !!(payload.detailRows && payload.detailRows.length > 0) ||
       !!(payload.variants && payload.variants.length > 0)
     if (!hasContent) return
     // Draft edits target the row being edited; creation targets the session's
@@ -355,6 +364,9 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       setType(currentRow.type || 'simple')
       setDesc(currentRow.description || '')
       setShortDesc(currentRow.shortDesc || '')
+      setVideoUrl((currentRow as any).videoUrl || '')
+      setVideoUrlError('')
+      setDetailRows(Array.isArray((currentRow as any).detailRows) ? (currentRow as any).detailRows : [])
       setBasePrice(String(currentRow.basePrice ?? ''))
       setSalePrice(currentRow.salePrice != null ? String(currentRow.salePrice) : '')
       setSku(currentRow.sku || '')
@@ -397,7 +409,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
   // compared against the loaded values, never stale prior state.
   useEffect(() => {
     if (open && openStateRef.current === null) openStateRef.current = snapshotOf()
-  }, [open, mode, name, slug, type, desc, shortDesc, basePrice, salePrice, sku,
+  }, [open, mode, name, slug, type, desc, shortDesc, videoUrl, detailRows, basePrice, salePrice, sku,
     stock, lowStockQty, categoryIds, brandId, isActive, isFeatured,
     availabilityMode, standardCost, images, tags, sizeChartId,
     seoTitle, seoDesc, seoKeywords, selectedAttrs, selectedValues, localVariants])
@@ -484,7 +496,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
   }, [overrideData])
 
   const reset = () => {
-    setName(''); setSlug(''); setSlugError(''); setDesc(''); setShortDesc(''); setBasePrice(''); setSalePrice('');
+      setName(''); setSlug(''); setSlugError(''); setDesc(''); setShortDesc(''); setVideoUrl(''); setVideoUrlError(''); setDetailRows([]); setBasePrice(''); setSalePrice('');
     setSku(''); setStock('0'); setLowStockQty(''); setCategoryIds([]); setBrandId(''); setIsActive(true); setIsFeatured(false);
     setAvailabilityMode('MANAGED_STOCK'); setStandardCost(''); setImages([]); setTags(''); setSizeChartId(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
     setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
@@ -664,6 +676,8 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     const payload: any = {
       name, slug: slug || name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
       description: desc || undefined, shortDesc: shortDesc || undefined,
+      videoUrl: videoUrl.trim() || undefined,
+      detailRows: (() => { const cleaned = cleanDetailRows(detailRows); return cleaned.length > 0 ? cleaned : undefined })(),
       basePrice: parseFloat(basePrice) || 0, salePrice: salePrice ? parseFloat(salePrice) : undefined,
       sku: sku || undefined, type,
       categoryId: categoryIds[0] || undefined,
@@ -905,6 +919,9 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     if (salePrice && basePrice && parseFloat(salePrice) > parseFloat(basePrice)) {
       errors.push('Sale price cannot be higher than regular price')
     }
+    if (videoUrl.trim() && !isSupportedVideoUrl(videoUrl)) {
+      errors.push('Video URL must be a YouTube or Facebook video link')
+    }
     return errors
   }
 
@@ -1114,6 +1131,40 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                 <div className='space-y-1.5'>
                   <Label>Short Description</Label>
                   <Textarea value={shortDesc} onChange={e => setShortDesc(e.target.value)} rows={3} placeholder='Brief excerpt...' />
+                </div>
+                <div className='space-y-1.5'>
+                  <Label>Video URL (optional)</Label>
+                  <Input
+                    value={videoUrl}
+                    onChange={e => { setVideoUrl(e.target.value); setVideoUrlError('') }}
+                    onBlur={() => { if (videoUrl.trim() && !isSupportedVideoUrl(videoUrl)) setVideoUrlError('Must be a YouTube or Facebook video link') }}
+                    placeholder='YouTube / Facebook video link'
+                    className={videoUrlError ? 'border-destructive' : ''}
+                  />
+                  {videoUrlError && <p className='text-xs text-destructive'>{videoUrlError}</p>}
+                </div>
+                <div className='space-y-1.5'>
+                  <Label>Product Details rows (optional)</Label>
+                  {detailRows.map((row, i) => (
+                    <div key={i} className='flex gap-2'>
+                      <Input
+                        value={row.label}
+                        onChange={e => setDetailRows(prev => prev.map((r, j) => j === i ? { ...r, label: e.target.value } : r))}
+                        placeholder='Label (e.g. Fabric)'
+                      />
+                      <Input
+                        value={row.value}
+                        onChange={e => setDetailRows(prev => prev.map((r, j) => j === i ? { ...r, value: e.target.value } : r))}
+                        placeholder='Value (e.g. China Imported Popcorn)'
+                      />
+                      <Button type='button' variant='ghost' size='icon' onClick={() => setDetailRows(prev => prev.filter((_, j) => j !== i))} aria-label={`Remove details row ${i + 1}`}>
+                        <X size={16} />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button type='button' variant='outline' size='sm' onClick={() => setDetailRows(prev => [...prev, { label: '', value: '' }])}>
+                    <Plus size={14} /> Add row
+                  </Button>
                 </div>
                 <div className='space-y-1.5'>
                   <Label>Description</Label>

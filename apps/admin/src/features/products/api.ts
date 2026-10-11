@@ -10,6 +10,7 @@ export interface ProductVariantResponse {
 export interface ProductResponse {
   id: string; name: string; slug: string; type: string;
   description?: string | null; shortDesc?: string | null;
+  videoUrl?: string | null; detailRows?: { label: string; value: string }[] | null;
   basePrice: number | string; salePrice?: number | string | null;
   sku?: string | null; managedStockQuantity: number; lowStockQty?: number | null;
   categoryId?: string | null; brandId?: string | null; tags: any; images: any; seoMeta: any;
