@@ -25,4 +25,19 @@ describe('transformBackendProduct — PDP fields', () => {
     expect(p.videoUrl).toBeUndefined();
     expect(p.detailRows).toBeUndefined();
   });
+
+  it('passes descriptionSections through for section rendering', () => {
+    const sections = {
+      tagline: 'Festive essential',
+      benefits: ['Soft & breathable'],
+      specifications: '<p>100% cotton</p>',
+      stylingTip: 'Pair it with white pajama',
+    };
+    const p = transformBackendProduct({ ...baseRaw, descriptionSections: sections });
+    expect(p.descriptionSections).toEqual(sections);
+  });
+
+  it('leaves descriptionSections undefined when absent (all sections hide)', () => {
+    expect(transformBackendProduct({ ...baseRaw }).descriptionSections).toBeUndefined();
+  });
 });
