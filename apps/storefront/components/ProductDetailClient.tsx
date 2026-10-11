@@ -16,7 +16,7 @@ import { SizeChartModal } from "./SizeChartModal";
 import VideoEmbed from "./VideoEmbed";
 import { useAuth } from "@/context/AuthContext";
 import RelatedProducts from "./RelatedProducts";
-import DOMPurify from 'isomorphic-dompurify';
+import { sanitizeProductHTML as sanitizeHTML } from '@/lib/sanitize-product';
 import apiClient from "@/lib/api-client";
 import type { SizeChartData } from "./SizeChartModal";
 import { toast } from 'sonner';
@@ -64,45 +64,6 @@ function formatDate(dateStr: string): string {
   } catch {
     return dateStr;
   }
-}
-
-function sanitizeHTML(html: string): string {
-  // Detect if content is already HTML (from TipTap rich editor)
-  const isHTML = /<[a-z][\s\S]*>/i.test(html);
-  let processed = html.replace(/##/g, '');
-  // Normalize all newline encodings first — WordPress imports often contain
-  // literal "\n" (backslash-n) sequences, lone \r, or &#10;/&#xA; entities
-  // that must become real line breaks.
-  processed = processed
-    .replace(/\\r\\n/g, '\n')
-    .replace(/\\n/g, '\n')
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .replace(/&#x0?A;/gi, '\n')
-    .replace(/&#0?10;/gi, '\n');
-  if (isHTML) {
-    // HTML content: convert remaining newlines to <br>, but skip ones that
-    // directly follow a block-close or existing <br> to avoid empty breaks.
-    processed = processed.replace(/\n/g, (_m, offset, str) => {
-      const before = str.slice(0, offset);
-      if (
-        /<\/?(p|div|h[1-6]|ul|ol|li|table|blockquote|pre)[^>]*>\s*$/.test(before) ||
-        /<br\s*\/?>\s*$/.test(before)
-      ) {
-        return '\n';
-      }
-      return '<br>';
-    });
-  } else {
-    // Plain text: collapse excessive blank lines, then convert to <br>
-    processed = processed
-      .replace(/\n{3,}/g, '\n\n')
-      .replace(/\n/g, '<br>');
-  }
-  return DOMPurify.sanitize(processed, {
-    ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'a', 'p', 'br', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'img', 'span', 'div', 'table', 'thead', 'tbody', 'tr', 'th', 'td'],
-    ALLOWED_ATTR: ['href', 'target', 'src', 'alt', 'class', 'style', 'width', 'height'],
-  });
 }
 
 function ReviewForm({ productId, onSubmitted }: { productId: string; onSubmitted: () => void }) {
