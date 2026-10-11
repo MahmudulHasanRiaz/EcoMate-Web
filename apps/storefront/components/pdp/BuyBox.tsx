@@ -216,7 +216,7 @@ export function BuyBox(props: BuyBoxProps) {
       </div>
 
       {/* 9. CTA column: ORDER NOW → ADD TO CART */}
-      <div className="flex flex-col gap-2 mb-4 w-full">
+      <div className="flex flex-col gap-2 mb-4 w-full" data-cta>
         {isOutOfStock ? (
           <button disabled
             className="w-full h-10 min-[901px]:h-11 rounded-[3px] bg-gray-200 text-gray-500 font-bold flex items-center justify-center gap-2 text-[14px] min-[901px]:text-[15px] tracking-wide cursor-not-allowed">

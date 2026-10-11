@@ -75,7 +75,7 @@ export default function RelatedProducts({ product }: Props) {
   if (loading || products.length === 0) return null;
 
   return (
-    <div className="border-t border-gray-100 pt-8 mt-8 px-4 max-w-screen-xl mx-auto">
+    <div className="border-t border-gray-100 pt-8 mt-8 px-4 min-[901px]:px-6 max-w-screen-xl mx-auto">
       <h2 className="text-[19px] font-medium text-brand-dark m-0 mb-[14px]">You May Also Like</h2>
 
       <div className="flex gap-3 overflow-x-auto hide-scrollbar min-[901px]:hidden pb-2 -mx-4 px-4">

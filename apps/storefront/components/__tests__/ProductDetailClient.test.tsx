@@ -434,7 +434,8 @@ describe('ProductDetailClient — PDP redesign matrix', () => {
   it('sticky bar opens the variant sheet without scrolling', () => {
     renderWith(simpleProduct);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    fireEvent.click(within(screen.getByTestId('sticky-bar')).getByRole('button', { name: /ADD TO CART/i }));
+    const bar = within(screen.getByTestId('sticky-bar'));
+    fireEvent.click(bar.getByRole('button', { name: /ADD TO CART/i, hidden: true }));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
@@ -443,6 +444,11 @@ describe('ProductDetailClient — PDP redesign matrix', () => {
     fireEvent.click(screen.getByRole('button', { name: /WRITE A REVIEW/i }));
     fireEvent.click(screen.getByText('SUBMIT REVIEW'));
     expect(await screen.findByText('Please enter a valid Bangladeshi mobile number.')).toBeInTheDocument();
+  });
+
+  it('sticky bar stays hidden while CTAs are visible', () => {
+    renderWith(simpleProduct);
+    expect(screen.getByTestId('sticky-bar').className).toContain('translate-y-full');
   });
 
   it('size guide tap applies the size and closes the sheet', async () => {

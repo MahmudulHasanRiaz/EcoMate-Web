@@ -90,14 +90,22 @@ describe('CartVariantSheet', () => {
 describe('StickyBar', () => {
   it('opens the sheet from both buttons without scrolling', () => {
     const onOpenSheet = vi.fn();
-    render(<StickyBar isOutOfStock={false} onOpenSheet={onOpenSheet} />);
+    render(<StickyBar isOutOfStock={false} visible onOpenSheet={onOpenSheet} />);
     fireEvent.click(screen.getByText('ADD TO CART'));
     fireEvent.click(screen.getByText('ORDER NOW'));
     expect(onOpenSheet).toHaveBeenCalledTimes(2);
   });
 
+  it('uses distinct icons per action', () => {
+    render(<StickyBar isOutOfStock={false} visible onOpenSheet={vi.fn()} />);
+    const bar = screen.getByTestId('sticky-bar');
+    const svgs = bar.querySelectorAll('svg');
+    const classes = [...svgs].map((s) => s.getAttribute('class') || '');
+    expect(new Set(classes).size).toBeGreaterThan(1);
+  });
+
   it('disables actions when out of stock', () => {
-    render(<StickyBar isOutOfStock onOpenSheet={vi.fn()} />);
+    render(<StickyBar isOutOfStock visible onOpenSheet={vi.fn()} />);
     expect(screen.getByText('Out of Stock')).toBeDefined();
     expect(screen.queryByText('ADD TO CART')).toBeNull();
   });

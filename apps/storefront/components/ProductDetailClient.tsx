@@ -129,6 +129,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
   const [showSizeHint, setShowSizeHint] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetHint, setSheetHint] = useState<string | null>(null);
+  const [showStickyBar, setShowStickyBar] = useState(false);
 
   const isVariable = product.type === 'variable' && (product.variants?.length ?? 0) > 0;
   const activeVariants = product.variants?.filter((v) => v.isActive && v.stock > 0) || [];
@@ -367,6 +368,22 @@ export default function ProductDetailClient({ product, defaultColor }: { product
     setSheetOpen(true);
   }
 
+  // Sticky bar appears only once the buy-box CTAs scroll out of view
+  // (mockup mbar) — never as a duplicate while the CTAs are visible.
+  useEffect(() => {
+    function check() {
+      const cta = document.querySelector('[data-testid="buy-box"] [data-cta]');
+      if (!cta) {
+        setShowStickyBar(false);
+        return;
+      }
+      setShowStickyBar(cta.getBoundingClientRect().bottom < 0);
+    }
+    check();
+    window.addEventListener('scroll', check, { passive: true });
+    return () => window.removeEventListener('scroll', check);
+  }, []);
+
   function handleSheetAdd() {
     const msg = missingSelectionMessage();
     if (msg) {
@@ -567,7 +584,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
         }
       `}} />
 
-      <div className="max-w-screen-xl mx-auto px-4 py-3 flex items-center gap-2 text-[14px] overflow-x-auto hide-scrollbar">
+      <div className="max-w-screen-xl mx-auto px-4 min-[901px]:px-6 py-3 flex items-center gap-2 text-[14px] overflow-x-auto hide-scrollbar">
         <Link href="/" className="text-gray-500 hover:text-gray-800 transition-colors whitespace-nowrap">Home</Link>
         <ChevronRight size={14} className="text-gray-400 flex-shrink-0" />
         {product.category ? (
@@ -589,7 +606,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
         <span className="text-gray-800 truncate">{product.name}</span>
       </div>
 
-      <div className="mx-auto grid min-[901px]:grid-cols-[1.05fr_1fr] gap-5 min-[901px]:gap-12 min-[901px]:max-w-screen-xl">
+      <div className="mx-auto grid min-[901px]:grid-cols-[1.05fr_1fr] gap-5 min-[901px]:gap-12 min-[901px]:px-6 min-[901px]:max-w-screen-xl">
         <PdpGallery
           images={itemGallery}
           productName={product.name}
@@ -640,7 +657,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
         </div>
       </div>
 
-      <div className="px-4 max-w-screen-xl mx-auto">
+      <div className="px-4 min-[901px]:px-6 max-w-screen-xl mx-auto">
         <PdpSections product={product} sizeValues={sizeValues} />
 
         <div className="hidden" aria-hidden="true">
@@ -709,7 +726,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
         />
       )}
 
-      <StickyBar isOutOfStock={isOutOfStock} onOpenSheet={handleSheetOpen} />
+      <StickyBar isOutOfStock={isOutOfStock} visible={showStickyBar} onOpenSheet={handleSheetOpen} />
     </div>
   );
 }
