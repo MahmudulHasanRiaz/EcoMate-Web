@@ -64,8 +64,6 @@ const COLOR_HEX_MAP: Record<string, string> = {
   'gold': '#FFD700', 'silver': '#C0C0C0', 'sky': '#87CEEB', 'coral': '#FF7F50',
 };
 
-const COLOR_ATTR_KEYWORDS = ['color', 'colour', 'clr', 'কালার', 'কালার্', 'রং', 'রঙ', 'ক্‌লার'];
-
 function stockLine(stock?: number): string | null {
   if (stock === undefined) return 'In Stock';
   if (stock <= 0) return null;
@@ -97,17 +95,6 @@ export function BuyBox(props: BuyBoxProps) {
   const deliveryInfo = config.deliveryInfo;
   const showDelivery = deliveryInfo?.enabled && (deliveryInfo.rows?.length ?? 0) > 0;
 
-  const colorVals = (() => {
-    const vals = new Set<string>();
-    product.variants?.forEach((v) =>
-      v.attributeValues?.forEach((av) => {
-        const n = av.attributeValue.attribute.name.toLowerCase();
-        if (COLOR_ATTR_KEYWORDS.some((k) => n.includes(k))) vals.add(av.attributeValue.value);
-      }),
-    );
-    return vals;
-  })();
-
   return (
     <div className="flex flex-col px-4 min-[901px]:px-0 pt-4 min-[901px]:pt-2" data-testid="buy-box">
       {/* 1. Code + wishlist */}
@@ -132,33 +119,6 @@ export function BuyBox(props: BuyBoxProps) {
         <p className="text-[15px] text-brand-blue italic leading-relaxed mb-3">{sections.tagline}</p>
       )}
 
-      {/* color variants nav */}
-      {colorVals.size >= 2 && (
-        <div className="flex items-center gap-2 mb-3">
-          <span className="text-[12px] text-gray-400">Colors:</span>
-          <div className="flex items-center gap-1">
-            {[...colorVals].slice(0, 5).map((c) => (
-              <Link
-                key={c}
-                href={`/products/${product.slug}/colors?color=${encodeURIComponent(c)}`}
-                className="w-5 h-5 rounded-full ring-1 ring-gray-300 hover:ring-2 hover:ring-brand-blue transition-all"
-                style={{ backgroundColor: COLOR_HEX_MAP[c.toLowerCase().trim()] || '#CBD5E1' }}
-                title={`View ${c}`}
-                aria-label={`View ${c} color`}
-              />
-            ))}
-            {colorVals.size > 5 && (
-              <Link href={`/products/${product.slug}/colors`} className="text-[11px] text-gray-400 hover:text-brand-blue ml-1 font-medium">
-                +{colorVals.size - 5} more
-              </Link>
-            )}
-          </div>
-          <Link href={`/products/${product.slug}/colors`} className="text-[11px] text-brand-blue hover:underline ml-1 font-medium">
-            All Colors
-          </Link>
-        </div>
-      )}
-
       {/* 3. Price + stock one-liner + COD */}
       <div className="flex items-center gap-3 mb-1" key={`price-${displayPrice}-${selectedVariant?.id || ''}`}>
         <span className="text-[20px] font-bold text-brand-blue" style={{ animation: 'pricePop 300ms ease' }}>
@@ -167,7 +127,7 @@ export function BuyBox(props: BuyBoxProps) {
         {displayOriginalPrice && displayOriginalPrice > displayPrice && (
           <>
             <span className="text-[16px] text-gray-400 line-through">{config.currency.symbol}{(displayOriginalPrice ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-            <div className="bg-brand-success text-white text-[12px] px-2 py-0.5 rounded-sm font-medium tracking-wide">
+            <div className="bg-brand-success text-white text-[12px] px-2 py-0.5 rounded-[3px] font-medium tracking-wide">
               Save {Math.round(((displayOriginalPrice - displayPrice) / displayOriginalPrice) * 100)}%
             </div>
           </>
@@ -175,19 +135,10 @@ export function BuyBox(props: BuyBoxProps) {
       </div>
       <div className="flex items-center gap-3 mb-3 min-h-[28px] flex-wrap">
         {isOutOfStock ? (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-medium bg-red-100 text-red-800">Out of Stock</span>
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-[3px] text-[12px] font-medium bg-red-100 text-red-800">Out of Stock</span>
         ) : (
           <>
             {line && <span className="text-[13px] font-medium text-gray-700">{line}</span>}
-            {(product.codAvailable !== false) && (
-              <span className="flex items-center gap-1.5 text-[11px] text-brand-success font-medium leading-tight">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-success opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-success" />
-                </span>
-                Cash on Delivery Available
-              </span>
-            )}
           </>
         )}
       </div>
@@ -255,7 +206,7 @@ export function BuyBox(props: BuyBoxProps) {
       {/* 8. Quantity */}
       <div className={`flex items-center gap-3 mb-4 ${isOutOfStock ? 'opacity-50' : ''}`}>
         <span className="text-[13px] text-gray-700 font-medium">Quantity:</span>
-        <div className="flex items-center h-11 border border-brand-border rounded-md overflow-hidden bg-white">
+        <div className="flex items-center h-11 border border-brand-border rounded-[3px] overflow-hidden bg-white">
           <button onClick={onDec} aria-label="Decrease quantity"
             className={`w-11 h-full flex items-center justify-center text-gray-500 transition-colors ${isOutOfStock ? 'cursor-not-allowed' : 'hover:bg-gray-50'}`} disabled={isOutOfStock}><Minus size={14} /></button>
           <div className="w-[44px] border-x border-brand-border h-full flex items-center justify-center text-[14px] font-medium select-none">{inCart ? quantity : qty}</div>
@@ -268,17 +219,17 @@ export function BuyBox(props: BuyBoxProps) {
       <div className="flex flex-col gap-2 mb-4 w-full">
         {isOutOfStock ? (
           <button disabled
-            className="w-full h-[44px] min-[901px]:h-12 rounded-[4px] bg-gray-200 text-gray-500 font-bold flex items-center justify-center gap-2 text-[14px] min-[901px]:text-[15px] tracking-wide cursor-not-allowed">
+            className="w-full h-10 min-[901px]:h-11 rounded-[3px] bg-gray-200 text-gray-500 font-bold flex items-center justify-center gap-2 text-[14px] min-[901px]:text-[15px] tracking-wide cursor-not-allowed">
             <X size={16} /> OUT OF STOCK
           </button>
         ) : (
           <>
             <button onClick={onBuyNow}
-              className="w-full h-[44px] min-[901px]:h-12 rounded-[4px] bg-brand-blue hover:bg-brand-blue-dark text-white font-bold flex items-center justify-center gap-2 transition-colors text-[14px] min-[901px]:text-[15px] tracking-wide animate-[bump_1.5s_ease-in-out_infinite]">
+              className="w-full h-10 min-[901px]:h-11 rounded-[3px] bg-brand-blue hover:bg-brand-blue-dark text-white font-bold flex items-center justify-center gap-2 transition-colors text-[14px] min-[901px]:text-[15px] tracking-wide animate-[bump_1.5s_ease-in-out_infinite]">
               ORDER NOW
             </button>
             <button onClick={onAddToCart}
-              className={`w-full h-[44px] min-[901px]:h-12 rounded-[4px] font-medium flex items-center justify-center gap-2 transition-all text-[13px] min-[901px]:text-[14px] ${
+              className={`w-full h-10 min-[901px]:h-11 rounded-[3px] font-medium flex items-center justify-center gap-2 transition-all text-[13px] min-[901px]:text-[14px] ${
                 justAdded
                   ? 'bg-brand-success text-white'
                   : inCart
@@ -305,12 +256,12 @@ export function BuyBox(props: BuyBoxProps) {
       {/* 11. WhatsApp + Call — subtle secondary row on all devices */}
       <div className="flex gap-2 mb-4">
         <a href={waHref} target="_blank" rel="noreferrer"
-          className={`flex-1 h-[44px] rounded-[3px] bg-white border border-brand-border text-brand-dark text-[13px] font-semibold flex items-center justify-center gap-2 hover:border-brand-blue transition-all active:scale-[0.98] ${!waNumber ? 'opacity-50 pointer-events-none' : ''}`}>
+          className={`flex-1 h-10 rounded-[3px] bg-white border border-brand-border text-brand-dark text-[13px] font-semibold flex items-center justify-center gap-2 hover:border-brand-blue transition-all active:scale-[0.98] ${!waNumber ? 'opacity-50 pointer-events-none' : ''}`}>
           <span className="text-[#25D366] flex items-center"><WhatsAppIcon /></span>
           <span>ORDER VIA WHATSAPP</span>
         </a>
         <a href={callHref}
-          className={`flex-1 h-[44px] rounded-[3px] bg-white border border-brand-border text-brand-dark text-[13px] font-semibold flex items-center justify-center gap-2 hover:border-brand-blue transition-all active:scale-[0.98] ${!callNumber ? 'opacity-30 pointer-events-none' : ''}`}>
+          className={`flex-1 h-10 rounded-[3px] bg-white border border-brand-border text-brand-dark text-[13px] font-semibold flex items-center justify-center gap-2 hover:border-brand-blue transition-all active:scale-[0.98] ${!callNumber ? 'opacity-30 pointer-events-none' : ''}`}>
           <span>CALL</span>
         </a>
       </div>
@@ -340,7 +291,7 @@ export function BuyBox(props: BuyBoxProps) {
           { icon: <RefreshCw size={16} />, label: 'Easy Returns', key: 'returns' },
           { icon: <ShieldCheck size={16} />, label: 'Secure Payment', key: 'payment' },
         ].map((item) => (
-          <div key={item.key} className="flex-shrink-0 flex flex-col items-center gap-1.5 bg-gray-50 rounded-lg px-4 py-3 min-w-[100px]">
+          <div key={item.key} className="flex-shrink-0 flex flex-col items-center gap-1.5 bg-gray-50 rounded-[3px] px-4 py-3 min-w-[100px]">
             <div className="text-gray-500">{item.icon}</div>
             <span className="text-[11px] text-gray-600 text-center leading-tight font-medium">{item.label}</span>
           </div>

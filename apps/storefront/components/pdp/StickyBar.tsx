@@ -17,7 +17,7 @@ export function StickyBar({ isOutOfStock, onOpenSheet }: Props) {
     <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-gray-200 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] pb-safe hidden max-[900px]:block" data-testid="sticky-bar">
       <div className="flex items-stretch gap-1.5 px-3 py-2 max-w-screen-xl mx-auto">
         {isOutOfStock ? (
-          <div className="flex-1 rounded-lg bg-gray-200 text-gray-500 text-[14px] font-bold flex items-center justify-center gap-1.5 cursor-not-allowed min-h-[44px]">
+          <div className="flex-1 rounded-[3px] bg-gray-200 text-gray-500 text-[14px] font-bold flex items-center justify-center gap-1.5 cursor-not-allowed min-h-10">
             <X size={16} strokeWidth={2.5} />
             <span>Out of Stock</span>
           </div>
@@ -25,14 +25,14 @@ export function StickyBar({ isOutOfStock, onOpenSheet }: Props) {
           <>
             <button
               onClick={onOpenSheet}
-              className="flex-1 rounded-lg border-2 border-brand-blue text-brand-blue text-[14px] font-bold flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] min-h-[44px]"
+              className="flex-1 rounded-[3px] border-2 border-brand-blue text-brand-blue text-[14px] font-bold flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] min-h-10"
             >
               <ShoppingBag size={16} strokeWidth={2.5} />
               <span>ADD TO CART</span>
             </button>
             <button
               onClick={onOpenSheet}
-              className="flex-[1.2] rounded-lg bg-brand-blue text-white text-[14px] font-bold flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] hover:bg-brand-blue-dark min-h-[44px]"
+              className="flex-[1.2] rounded-[3px] bg-brand-blue text-white text-[14px] font-bold flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] hover:bg-brand-blue-dark min-h-10"
             >
               <ShoppingBag size={16} strokeWidth={2.5} />
               <span>ORDER NOW</span>

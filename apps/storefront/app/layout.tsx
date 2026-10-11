@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Hind_Siliguri } from "next/font/google";
 import "./globals.css";
 import { CartProvider } from "@/context/CartContext";
 import { AuthProvider } from "@/context/AuthContext";
@@ -23,6 +23,17 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+// PDP mockup typeface (Hind Siliguri: Latin + Bengali in one family, so
+// bilingual PDP content renders in a single matching face). Self-hosted via
+// next/font with display:swap — no render-blocking external stylesheet.
+// Applied on PDP scope only; the rest of the site keeps its theme font.
+const hindSiliguri = Hind_Siliguri({
+  variable: "--font-pdp",
+  subsets: ["latin", "bengali"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
 });
 
 export const viewport: Viewport = {
@@ -116,7 +127,7 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable}`}
+      className={`${geistSans.variable} ${geistMono.variable} ${hindSiliguri.variable}`}
       style={initialConfig?.branding?.colors ? {
         '--color-brand-blue': initialConfig.branding.colors.primary,
         '--color-brand-blue-dark': initialConfig.branding.colors.primaryDark,

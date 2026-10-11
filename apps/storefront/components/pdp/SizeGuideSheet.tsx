@@ -119,7 +119,7 @@ export function SizeGuideSheet({ chart, onPickSize, onClose }: Props) {
             <img
               src={chart.image}
               alt={chart.name}
-              className="w-full max-h-[400px] object-contain mb-4 rounded-lg"
+              className="w-full max-h-[400px] object-contain mb-4 rounded-[3px]"
               onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE; }}
             />
           )}

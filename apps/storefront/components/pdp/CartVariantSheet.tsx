@@ -68,13 +68,13 @@ export function CartVariantSheet(props: CartVariantSheetProps) {
           <div className="flex flex-col gap-2 mt-4">
             <button
               onClick={onClose}
-              className="w-full h-[44px] rounded-[3px] border border-brand-border text-brand-dark text-[13px] font-semibold tracking-wide"
+              className="w-full h-10 rounded-[3px] border border-brand-border text-brand-dark text-[13px] font-semibold tracking-wide"
             >
               CONTINUE SHOPPING
             </button>
             <Link
               href="/cart"
-              className="w-full h-[44px] rounded-[3px] bg-brand-blue text-white text-[13px] font-semibold tracking-wide flex items-center justify-center"
+              className="w-full h-10 rounded-[3px] bg-brand-blue text-white text-[13px] font-semibold tracking-wide flex items-center justify-center"
             >
               VIEW CART
             </Link>
@@ -101,7 +101,7 @@ export function CartVariantSheet(props: CartVariantSheetProps) {
 
           <div className="flex items-center gap-3 my-4">
             <span className="text-[13px] text-gray-700 font-medium">Quantity:</span>
-            <div className="flex items-center h-11 border border-brand-border rounded-md overflow-hidden bg-white">
+            <div className="flex items-center h-11 border border-brand-border rounded-[3px] overflow-hidden bg-white">
               <button onClick={onDec} aria-label="Decrease quantity" className="w-11 h-full flex items-center justify-center text-gray-500 hover:bg-gray-50"><Minus size={14} /></button>
               <div className="w-[44px] border-x border-brand-border h-full flex items-center justify-center text-[14px] font-medium select-none">{inCart ? quantity : qty}</div>
               <button onClick={onInc} aria-label="Increase quantity" className="w-11 h-full flex items-center justify-center text-gray-500 hover:bg-gray-50"><Plus size={14} /></button>
@@ -111,13 +111,13 @@ export function CartVariantSheet(props: CartVariantSheetProps) {
           <div className="flex flex-col gap-2">
             <button
               onClick={onAddToCart}
-              className="w-full h-[44px] rounded-[3px] border-2 border-brand-blue text-brand-blue bg-white hover:bg-brand-blue/5 font-medium flex items-center justify-center gap-2 text-[13px]"
+              className="w-full h-10 rounded-[3px] border-2 border-brand-blue text-brand-blue bg-white hover:bg-brand-blue/5 font-medium flex items-center justify-center gap-2 text-[13px]"
             >
               <ShoppingBag size={16} /> ADD TO CART
             </button>
             <button
               onClick={onBuyNow}
-              className="w-full h-[44px] rounded-[3px] bg-brand-blue hover:bg-brand-blue-dark text-white font-bold flex items-center justify-center gap-2 text-[14px] tracking-wide"
+              className="w-full h-10 rounded-[3px] bg-brand-blue hover:bg-brand-blue-dark text-white font-bold flex items-center justify-center gap-2 text-[14px] tracking-wide"
             >
               ORDER NOW
             </button>

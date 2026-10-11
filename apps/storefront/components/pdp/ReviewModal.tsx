@@ -70,7 +70,7 @@ export function ReviewModal({ productId, productName, userLabel, onSubmitted, on
           <p className="mt-1 text-[14px] text-gray-700">It will appear on this page after a quick check.</p>
           <button
             onClick={onClose}
-            className="mt-4 w-full h-[44px] rounded-[3px] bg-brand-blue text-white text-[13px] font-semibold tracking-wide"
+            className="mt-4 w-full h-10 rounded-[3px] bg-brand-blue text-white text-[13px] font-semibold tracking-wide"
           >
             DONE
           </button>
@@ -156,7 +156,7 @@ export function ReviewModal({ productId, productName, userLabel, onSubmitted, on
         )}
 
         {error && (
-          <p className="text-[13px] text-brand-danger bg-red-50 rounded-lg px-4 py-2 mt-3">{error}</p>
+          <p className="text-[13px] text-brand-danger bg-red-50 rounded-[3px] px-4 py-2 mt-3">{error}</p>
         )}
 
         {!userLabel && (
@@ -168,7 +168,7 @@ export function ReviewModal({ productId, productName, userLabel, onSubmitted, on
         <button
           type="submit"
           disabled={submitting}
-          className="mt-4 w-full h-[44px] rounded-[3px] bg-brand-blue text-white text-[13px] font-semibold tracking-wide flex items-center justify-center gap-2 disabled:opacity-50"
+          className="mt-4 w-full h-10 rounded-[3px] bg-brand-blue text-white text-[13px] font-semibold tracking-wide flex items-center justify-center gap-2 disabled:opacity-50"
         >
           {submitting ? <Loader2 size={16} className="animate-spin" /> : null}
           SUBMIT REVIEW

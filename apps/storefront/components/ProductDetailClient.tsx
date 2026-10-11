@@ -71,7 +71,7 @@ function ReviewsSection({ reviews, productId, productName, userLabel, onRefresh 
 
       {hasReviews ? (
         <>
-          <div className="flex items-center gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
+          <div className="flex items-center gap-4 mb-6 p-4 bg-gray-50 rounded-[3px]">
             <div className="text-center">
               <span className="text-[36px] font-bold text-gray-800 leading-none">{avgRating.toFixed(1)}</span>
               <div className="mt-1">
@@ -94,7 +94,7 @@ function ReviewsSection({ reviews, productId, productName, userLabel, onRefresh 
           </div>
         </>
       ) : (
-        <div className="text-center py-10 px-4 bg-gray-50 rounded-lg mb-4">
+        <div className="text-center py-10 px-4 bg-gray-50 rounded-[3px] mb-4">
           <Star size={32} className="mx-auto text-gray-300 mb-3" />
           <p className="text-[14px] text-gray-500">No reviews yet. Be the first to review this product.</p>
         </div>
@@ -546,7 +546,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
   const callHref = callNumber ? `tel:+${callNumber.replace(/[^0-9]/g, '')}` : '#';
 
   return (
-    <div className="bg-white min-h-screen pb-28 min-[901px]:pb-12 overflow-x-hidden">
+    <div className="bg-white min-h-screen pb-28 min-[901px]:pb-12 overflow-x-hidden font-[var(--font-pdp)]">
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes pricePop {
           0% { transform: scale(1); }

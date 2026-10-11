@@ -154,7 +154,7 @@ export function VariantSelector({ variants, selectedVariant, selectedAttrs, onSe
                     onClick={() => isActive && handleSelect(name, value)}
                     disabled={!isActive}
                     className={[
-                      "h-11 min-w-[44px] px-3 text-[12px] rounded-md border transition-colors",
+                      "h-11 min-w-[44px] px-3 text-[12px] rounded-[3px] border transition-colors",
                       selected
                         ? "bg-brand-blue text-white border-brand-blue font-medium"
                         : isActive
