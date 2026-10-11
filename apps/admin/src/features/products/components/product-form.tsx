@@ -15,7 +15,7 @@ const imgUrl = appUrl
 import { apiClient } from '@/lib/api-client'
 import { useInventoryManagement } from '@/features/inventory/hooks/use-inventory-management'
 import { defaultAvailabilityMode } from '@/features/products/lib/availability-defaults'
-import { isSupportedVideoUrl, cleanDetailRows, type DetailRow } from '@/features/products/lib/pdp-fields'
+import { isSupportedVideoUrl, cleanDetailRows, cleanDescriptionSections, type DetailRow } from '@/features/products/lib/pdp-fields'
 import { attributesApi } from '@/features/attributes/api'
 import { categoriesApi } from '@/features/categories/api'
 import { brandsApi } from '@/features/brands/api'
@@ -114,6 +114,10 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [videoUrl, setVideoUrl] = useState('')
   const [videoUrlError, setVideoUrlError] = useState('')
   const [detailRows, setDetailRows] = useState<DetailRow[]>([])
+  const [dsTagline, setDsTagline] = useState('')
+  const [dsBenefits, setDsBenefits] = useState<string[]>([])
+  const [dsSpecs, setDsSpecs] = useState('')
+  const [dsTip, setDsTip] = useState('')
   const [basePrice, setBasePrice] = useState('')
   const [salePrice, setSalePrice] = useState('')
   const [sku, setSku] = useState('')
@@ -216,7 +220,8 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   // opened — while untouched, the persistence layers skip, so an empty form
   // never creates or overwrites any draft row.
   const snapshotOf = () => ({
-    mode, name, slug, type, desc, shortDesc, videoUrl, detailRows, basePrice, salePrice, sku,
+    mode, name, slug, type, desc, shortDesc, videoUrl, detailRows,
+    dsTagline, dsBenefits, dsSpecs, dsTip, basePrice, salePrice, sku,
     stock, lowStockQty, categoryIds, brandId, isActive, isFeatured,
     availabilityMode, standardCost, images, tags, sizeChartId,
     seoTitle, seoDesc, seoKeywords, selectedAttrs, selectedValues, localVariants,
@@ -226,6 +231,8 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       (Array.isArray(s.images) && s.images.length > 0) ||
       !!s.shortDesc?.trim() || !!s.desc?.trim() || !!s.videoUrl?.trim() ||
       (Array.isArray(s.detailRows) && cleanDetailRows(s.detailRows).length > 0) ||
+      !!s.dsTagline?.trim() || (Array.isArray(s.dsBenefits) && s.dsBenefits.some((b: string) => b?.trim())) ||
+      !!s.dsSpecs?.trim() || !!s.dsTip?.trim() ||
       (Array.isArray(s.localVariants) && s.localVariants.length > 0))
   const formUntouched = () => {
     try {
@@ -269,6 +276,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       !!(payload.shortDesc || payload.description) ||
       !!payload.videoUrl ||
       !!(payload.detailRows && payload.detailRows.length > 0) ||
+      !!payload.descriptionSections ||
       !!(payload.variants && payload.variants.length > 0)
     if (!hasContent) return
     const timer = setTimeout(() => {
@@ -290,7 +298,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       }
     }, 1500)
     return () => clearTimeout(timer)
-  }, [open, isEdit, serverDraftId, mode, name, slug, type, desc, shortDesc, videoUrl, detailRows,
+  }, [open, isEdit, serverDraftId, mode, name, slug, type, desc, shortDesc, videoUrl, detailRows, dsTagline, dsBenefits, dsSpecs, dsTip,
     basePrice, salePrice, sku, stock, lowStockQty, categoryIds, brandId,
     isFeatured, availabilityMode, standardCost, images, tags, sizeChartId,
     seoTitle, seoDesc, seoKeywords, localVariants])
@@ -312,6 +320,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       !!(payload.shortDesc || payload.description) ||
       !!payload.videoUrl ||
       !!(payload.detailRows && payload.detailRows.length > 0) ||
+      !!payload.descriptionSections ||
       !!(payload.variants && payload.variants.length > 0)
     if (!hasContent) return
     // Draft edits target the row being edited; creation targets the session's
@@ -367,6 +376,10 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       setVideoUrl((currentRow as any).videoUrl || '')
       setVideoUrlError('')
       setDetailRows(Array.isArray((currentRow as any).detailRows) ? (currentRow as any).detailRows : [])
+      setDsTagline((currentRow as any).descriptionSections?.tagline || '')
+      setDsBenefits(Array.isArray((currentRow as any).descriptionSections?.benefits) ? (currentRow as any).descriptionSections.benefits : [])
+      setDsSpecs((currentRow as any).descriptionSections?.specifications || '')
+      setDsTip((currentRow as any).descriptionSections?.stylingTip || '')
       setBasePrice(String(currentRow.basePrice ?? ''))
       setSalePrice(currentRow.salePrice != null ? String(currentRow.salePrice) : '')
       setSku(currentRow.sku || '')
@@ -409,7 +422,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
   // compared against the loaded values, never stale prior state.
   useEffect(() => {
     if (open && openStateRef.current === null) openStateRef.current = snapshotOf()
-  }, [open, mode, name, slug, type, desc, shortDesc, videoUrl, detailRows, basePrice, salePrice, sku,
+  }, [open, mode, name, slug, type, desc, shortDesc, videoUrl, detailRows, dsTagline, dsBenefits, dsSpecs, dsTip, basePrice, salePrice, sku,
     stock, lowStockQty, categoryIds, brandId, isActive, isFeatured,
     availabilityMode, standardCost, images, tags, sizeChartId,
     seoTitle, seoDesc, seoKeywords, selectedAttrs, selectedValues, localVariants])
@@ -496,7 +509,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
   }, [overrideData])
 
   const reset = () => {
-      setName(''); setSlug(''); setSlugError(''); setDesc(''); setShortDesc(''); setVideoUrl(''); setVideoUrlError(''); setDetailRows([]); setBasePrice(''); setSalePrice('');
+      setName(''); setSlug(''); setSlugError(''); setDesc(''); setShortDesc(''); setVideoUrl(''); setVideoUrlError(''); setDetailRows([]); setDsTagline(''); setDsBenefits([]); setDsSpecs(''); setDsTip(''); setBasePrice(''); setSalePrice('');
     setSku(''); setStock('0'); setLowStockQty(''); setCategoryIds([]); setBrandId(''); setIsActive(true); setIsFeatured(false);
     setAvailabilityMode('MANAGED_STOCK'); setStandardCost(''); setImages([]); setTags(''); setSizeChartId(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
     setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
@@ -678,6 +691,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       description: desc || undefined, shortDesc: shortDesc || undefined,
       videoUrl: videoUrl.trim() || undefined,
       detailRows: (() => { const cleaned = cleanDetailRows(detailRows); return cleaned.length > 0 ? cleaned : undefined })(),
+      descriptionSections: cleanDescriptionSections({ tagline: dsTagline, benefits: dsBenefits, specifications: dsSpecs, stylingTip: dsTip }),
       basePrice: parseFloat(basePrice) || 0, salePrice: salePrice ? parseFloat(salePrice) : undefined,
       sku: sku || undefined, type,
       categoryId: categoryIds[0] || undefined,
@@ -1165,6 +1179,27 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                   <Button type='button' variant='outline' size='sm' onClick={() => setDetailRows(prev => [...prev, { label: '', value: '' }])}>
                     <Plus size={14} /> Add row
                   </Button>
+                </div>
+                <div className='space-y-1.5'>
+                  <Label>Description Sections (optional)</Label>
+                  <Input value={dsTagline} onChange={e => setDsTagline(e.target.value)} placeholder='Tagline (shown under the title)' />
+                  {dsBenefits.map((b, i) => (
+                    <div key={i} className='flex gap-2'>
+                      <Input
+                        value={b}
+                        onChange={e => setDsBenefits(prev => prev.map((x, j) => j === i ? e.target.value : x))}
+                        placeholder={`Benefit ${i + 1} (Key Features grid)`}
+                      />
+                      <Button type='button' variant='ghost' size='icon' onClick={() => setDsBenefits(prev => prev.filter((_, j) => j !== i))} aria-label={`Remove benefit ${i + 1}`}>
+                        <X size={16} />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button type='button' variant='outline' size='sm' onClick={() => setDsBenefits(prev => [...prev, ''])}>
+                    <Plus size={14} /> Add benefit
+                  </Button>
+                  <Textarea value={dsSpecs} onChange={e => setDsSpecs(e.target.value)} rows={3} placeholder='Specifications HTML (fallback when detail rows are empty)' />
+                  <Input value={dsTip} onChange={e => setDsTip(e.target.value)} placeholder='Styling tip (shown under the buy box)' />
                 </div>
                 <div className='space-y-1.5'>
                   <Label>Description</Label>

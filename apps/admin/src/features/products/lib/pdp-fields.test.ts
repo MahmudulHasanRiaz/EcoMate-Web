@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSupportedVideoUrl, cleanDetailRows } from './pdp-fields';
+import { isSupportedVideoUrl, cleanDetailRows, cleanDescriptionSections } from './pdp-fields';
 
 describe('pdp-fields', () => {
   it('accepts empty (optional) + YouTube/Facebook urls', () => {
@@ -26,5 +26,26 @@ describe('pdp-fields', () => {
       { label: 'Fabric', value: 'Popcorn' },
       { label: 'Fit', value: 'Regular' },
     ]);
+  });
+
+  it('normalizes description sections and omits empties', () => {
+    expect(
+      cleanDescriptionSections({
+        tagline: ' Festive essential ',
+        benefits: [' Soft ', '', '  '],
+        specifications: '',
+        stylingTip: 'Pair it well',
+      }),
+    ).toEqual({
+      tagline: 'Festive essential',
+      benefits: ['Soft'],
+      stylingTip: 'Pair it well',
+    });
+  });
+
+  it('returns undefined when the whole sections group is empty', () => {
+    expect(
+      cleanDescriptionSections({ tagline: '  ', benefits: ['', ' '], specifications: '', stylingTip: '' }),
+    ).toBeUndefined();
   });
 });
