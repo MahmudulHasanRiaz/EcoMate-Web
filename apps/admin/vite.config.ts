@@ -1,6 +1,6 @@
 /// <reference types="vitest/config" />
 import path from 'path'
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig, loadEnv, createLogger } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
@@ -21,6 +21,26 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: process.env.VITE_BASE || '/admin/',
+    // Test runs (vitest browser mode) intentionally have no backend behind
+    // the /api proxy — every such request fails ECONNREFUSED by design (tests
+    // mock API at the client level; a few exercise real failure paths).
+    // Silence exactly that noise so real errors stay visible. Dev/build
+    // logging is untouched (argv has no 'vitest' there).
+    ...(process.argv.some((a) => a.includes('vitest'))
+      ? {
+          customLogger: (() => {
+            const base = createLogger()
+            return {
+              ...base,
+              error: (msg: string, opts?: any) => {
+                const errText = String(opts?.error?.stack || opts?.error || '')
+                if (msg.includes('http proxy error') && errText.includes('ECONNREFUSED')) return
+                base.error(msg, opts)
+              },
+            }
+          })(),
+        }
+      : {}),
     server: {
       host: '0.0.0.0',
       ...(devAllowedHosts.length > 0 ? { allowedHosts: devAllowedHosts } : {}),
@@ -93,7 +113,7 @@ export default defineConfig(({ mode }) => {
     ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, './src'),
+        '@': path.resolve(import.meta.dirname, './src'),
       },
       dedupe: ['react', 'react-dom'],
     },
