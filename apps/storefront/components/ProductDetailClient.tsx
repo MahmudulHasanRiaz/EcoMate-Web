@@ -559,7 +559,17 @@ export default function ProductDetailClient({ product, defaultColor }: { product
 
   const waNumber = config.order?.whatsapp || config.social.whatsapp;
   const callNumber = config.order?.callNumber || config.store.phone;
-  const waHref = waNumber ? `https://wa.me/${waNumber.replace(/[^0-9]/g, '')}?text=I want to order: ${product.name}${variantLabel ? ` (${variantLabel})` : ''}%0A${shareUrl}` : '#';
+  // WhatsApp order text: quantity first, then bold name/code, the selected
+  // variants (color/size when chosen), and the product link last — plus a
+  // ready-made "I want to order" line so the shopper just presses send.
+  const waMessage = [
+    'I want to order this product:',
+    `*${product.name}*`,
+    `*Code:* ${product.sku || 'N/A'}`,
+    `*Quantity:* ${inCart ? quantity : qty}`,
+    ...(variantAttributes?.map((a) => `*${a.name}:* ${a.value}`) || []),
+  ].join('\n');
+  const waHref = waNumber ? `https://wa.me/${waNumber.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`${waMessage}\n${decodeURIComponent(shareUrl || '')}`)}` : '#';
   const callHref = callNumber ? `tel:+${callNumber.replace(/[^0-9]/g, '')}` : '#';
 
   return (

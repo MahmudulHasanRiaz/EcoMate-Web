@@ -411,9 +411,9 @@ describe('ProductDetailClient — PDP redesign matrix', () => {
     localStorage.clear();
   });
 
-  const renderWith = (product: any, features: any = {}) =>
+  const renderWith = (product: any, features: any = {}, extraConfig: any = {}) =>
     render(
-      <StorefrontConfigProvider initialConfig={{ ...CONFIG, features: { ...(CONFIG as any).features, ...features } } as any}>
+      <StorefrontConfigProvider initialConfig={{ ...CONFIG, ...extraConfig, features: { ...(CONFIG as any).features, ...features } } as any}>
         <AuthProvider>
           <CartProvider>
             <WishlistProvider>
@@ -449,6 +449,19 @@ describe('ProductDetailClient — PDP redesign matrix', () => {
   it('sticky bar stays hidden while CTAs are visible', () => {
     renderWith(simpleProduct);
     expect(screen.getByTestId('sticky-bar').className).toContain('translate-y-full');
+  });
+
+  it('WhatsApp order text carries qty, bold name/code, variants, link last', () => {
+    renderWith(variantProduct, {}, { order: { whatsapp: '8801516774099', callNumber: '' } });
+    const wa = within(screen.getByTestId('buy-box')).getByText('ORDER VIA WHATSAPP').closest('a')!;
+    const text = decodeURIComponent(wa.getAttribute('href')!.split('text=')[1]);
+    const lines = text.split('\n');
+    expect(lines[0]).toMatch(/I want to order/);
+    expect(text).toContain('*Classic Boot*');
+    expect(text).toContain('*Code:* CWB-1');
+    expect(text).toContain('*Quantity:*');
+    expect(text).toContain('*Size:* 44');
+    expect(lines[lines.length - 1]).toMatch(/^https?:\/\//);
   });
 
   it('size guide tap applies the size and closes the sheet', async () => {
