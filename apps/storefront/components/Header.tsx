@@ -31,7 +31,7 @@ export default function Header({}: {}) {
 
   return (
     <>
-      <div className="w-full bg-brand-blue text-white text-center text-[12px] md:text-[13px] font-medium py-2 px-4">
+      <div className="w-full bg-brand-blue text-white text-center text-[11px] md:text-[12px] font-medium py-1 px-4">
         {freeMin > 0 ? (
           <>Free delivery over ৳{freeMin.toLocaleString()} · Cash on Delivery across Bangladesh</>
         ) : (
