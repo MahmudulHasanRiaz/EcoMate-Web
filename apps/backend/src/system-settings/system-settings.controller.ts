@@ -590,6 +590,32 @@ export class SystemSettingsController {
           subtitle: map['thanks_page_subtitle'] || '',
           description: map['thanks_page_description'] || '',
         },
+        deliveryInfo: (() => {
+          const fallback = [
+            { label: 'Inside Dhaka', value: '1–2 business days' },
+            { label: 'Outside Dhaka', value: '3–5 business days' },
+            { label: 'Payment', value: 'Cash on Delivery' },
+          ];
+          const parsed = parseJson<{ label: string; value: string }[]>(
+            map['delivery_info_rows'] || '[]',
+            [],
+          );
+          const rows = parsed
+            .filter(
+              (r) =>
+                r &&
+                typeof r.label === 'string' &&
+                r.label.trim() &&
+                typeof r.value === 'string' &&
+                r.value.trim(),
+            )
+            .map((r) => ({ label: r.label.trim(), value: r.value.trim() }));
+          return {
+            enabled: map['delivery_info_enabled'] !== '0',
+            title: map['delivery_info_title'] || '',
+            rows: rows.length > 0 ? rows : fallback,
+          };
+        })(),
         playStoreUrl: map['play_store_url'] || '',
         appStoreUrl: map['app_store_url'] || '',
         storefrontPlayStoreUrl: map['storefront_play_store_url'] || '',
