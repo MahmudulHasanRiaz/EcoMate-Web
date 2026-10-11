@@ -63,14 +63,14 @@ export function ReviewModal({ productId, productName, userLabel, onSubmitted, on
     return (
       <SheetShell title="Write a review" onClose={onClose}>
         <div className="text-center py-6">
-          <span className="mx-auto mb-3 flex w-12 h-12 items-center justify-center rounded-full bg-[#e6f6ec] text-[#12683a]">
+          <span className="mx-auto mb-3 flex w-12 h-12 items-center justify-center rounded-full bg-green-50 text-brand-success">
             <Check size={24} />
           </span>
-          <p className="m-0 text-[16px] font-semibold text-[#14202b]">Thank you for your review</p>
-          <p className="mt-1 text-[14px] text-[#33414f]">It will appear on this page after a quick check.</p>
+          <p className="m-0 text-[16px] font-semibold text-brand-dark">Thank you for your review</p>
+          <p className="mt-1 text-[14px] text-gray-700">It will appear on this page after a quick check.</p>
           <button
             onClick={onClose}
-            className="mt-4 w-full h-[44px] rounded-[3px] bg-[#0b6bbf] text-white text-[13px] font-semibold tracking-wide"
+            className="mt-4 w-full h-[44px] rounded-[3px] bg-brand-blue text-white text-[13px] font-semibold tracking-wide"
           >
             DONE
           </button>
@@ -81,10 +81,10 @@ export function ReviewModal({ productId, productName, userLabel, onSubmitted, on
 
   return (
     <SheetShell title="Write a review" onClose={onClose}>
-      <p className="m-0 mb-2 text-[14px] font-medium text-[#14202b]">{productName}</p>
+      <p className="m-0 mb-2 text-[14px] font-medium text-brand-dark">{productName}</p>
       <form onSubmit={handleSubmit}>
         <label className="block text-[13px] font-medium mt-[14px] mb-[6px]">
-          Your rating <span className="font-normal text-[#6b7885]">(optional)</span>
+          Your rating <span className="font-normal text-gray-500">(optional)</span>
         </label>
         <div className="flex items-center gap-1" role="radiogroup" aria-label="Your rating">
           {[1, 2, 3, 4, 5].map((s) => (
@@ -109,31 +109,31 @@ export function ReviewModal({ productId, productName, userLabel, onSubmitted, on
         </div>
 
         <label htmlFor="pdp-review-text" className="block text-[13px] font-medium mt-[14px] mb-[6px]">
-          Your review <span className="font-normal text-[#6b7885]">(optional)</span>
+          Your review <span className="font-normal text-gray-500">(optional)</span>
         </label>
         <textarea
           id="pdp-review-text"
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={3}
-          className="w-full border border-[#d5dde5] rounded-[3px] px-3 py-[10px] h-auto text-[14px] text-[#14202b] bg-white resize-y"
+          className="w-full border border-brand-border focus:border-brand-blue rounded-[3px] px-3 py-[10px] h-auto text-[14px] text-brand-dark bg-white resize-y"
         />
 
         <label htmlFor="pdp-review-name" className="block text-[13px] font-medium mt-[14px] mb-[6px]">
-          Name <span className="font-normal text-[#6b7885]">(optional)</span>
+          Name <span className="font-normal text-gray-500">(optional)</span>
         </label>
         <input
           id="pdp-review-name"
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="w-full border border-[#d5dde5] rounded-[3px] px-3 h-10 text-[14px] text-[#14202b] bg-white"
+          className="w-full border border-brand-border focus:border-brand-blue rounded-[3px] px-3 h-10 text-[14px] text-brand-dark bg-white"
         />
 
         {useMobile ? (
           <>
             <label htmlFor="pdp-review-mobile" className="block text-[13px] font-medium mt-[14px] mb-[6px]">
-              Mobile number <span className="text-[#b42318]">*</span>
+              Mobile number <span className="text-brand-danger">*</span>
             </label>
             <input
               id="pdp-review-mobile"
@@ -142,12 +142,12 @@ export function ReviewModal({ productId, productName, userLabel, onSubmitted, on
               value={mobile}
               onChange={(e) => setMobile(e.target.value)}
               placeholder="01XXXXXXXXX"
-              className="w-full border border-[#d5dde5] rounded-[3px] px-3 h-10 text-[14px] text-[#14202b] bg-white"
+              className="w-full border border-brand-border focus:border-brand-blue rounded-[3px] px-3 h-10 text-[14px] text-brand-dark bg-white"
             />
-            <p className="m-0 mt-1 text-[12px] text-[#6b7885]">Used only to confirm your review. Never shown publicly.</p>
+            <p className="m-0 mt-1 text-[12px] text-gray-500">Used only to confirm your review. Never shown publicly.</p>
           </>
         ) : (
-          <div className="mt-[14px] rounded-[3px] bg-[#e6f6ec] px-3 py-2 text-[13px] text-[#12683a]">
+          <div className="mt-[14px] rounded-[3px] bg-green-50 px-3 py-2 text-[13px] text-brand-success">
             ✓ Reviewing as a logged-in customer.{' '}
             <button type="button" onClick={() => setUseMobile(true)} className="underline underline-offset-2 bg-transparent border-0 p-0 text-inherit cursor-pointer text-[13px]">
               Use mobile number instead
@@ -156,19 +156,19 @@ export function ReviewModal({ productId, productName, userLabel, onSubmitted, on
         )}
 
         {error && (
-          <p className="text-[13px] text-[#b42318] bg-red-50 rounded-lg px-4 py-2 mt-3">{error}</p>
+          <p className="text-[13px] text-brand-danger bg-red-50 rounded-lg px-4 py-2 mt-3">{error}</p>
         )}
 
         {!userLabel && (
-          <p className="mt-3 text-[13px] text-[#6b7885]">
-            Have an account? <Link href="/account" className="text-[#0b6bbf] font-medium">Log in instead</Link>
+          <p className="mt-3 text-[13px] text-gray-500">
+            Have an account? <Link href="/account" className="text-brand-blue font-medium">Log in instead</Link>
           </p>
         )}
 
         <button
           type="submit"
           disabled={submitting}
-          className="mt-4 w-full h-[44px] rounded-[3px] bg-[#0b6bbf] text-white text-[13px] font-semibold tracking-wide flex items-center justify-center gap-2 disabled:opacity-50"
+          className="mt-4 w-full h-[44px] rounded-[3px] bg-brand-blue text-white text-[13px] font-semibold tracking-wide flex items-center justify-center gap-2 disabled:opacity-50"
         >
           {submitting ? <Loader2 size={16} className="animate-spin" /> : null}
           SUBMIT REVIEW

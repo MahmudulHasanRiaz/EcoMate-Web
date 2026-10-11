@@ -58,12 +58,12 @@ function ReviewsSection({ reviews, productId, productName, userLabel, onRefresh 
   const totalReviews = hasReviews ? reviews.length : 0;
 
   return (
-    <div className="mt-8 font-[var(--font-pdp)]">
+    <div className="mt-8">
       <div className="flex items-center justify-between mb-[14px]">
-        <h2 className="text-[19px] font-medium text-[#14202b] m-0">Customer Reviews</h2>
+        <h2 className="text-[19px] font-medium text-brand-dark m-0">Customer Reviews</h2>
         <button
           onClick={() => setReviewOpen(true)}
-          className="h-[38px] px-[14px] border border-[#d5dde5] rounded-[3px] text-[13px] font-semibold tracking-wide text-[#14202b] bg-white hover:border-[#0b6bbf] hover:text-[#0b6bbf] transition-colors min-h-[44px] md:min-h-0"
+          className="h-[38px] px-[14px] border border-brand-border rounded-[3px] text-[13px] font-semibold tracking-wide text-brand-dark bg-white hover:border-brand-blue hover:text-brand-blue transition-colors min-h-[44px] min-[901px]:min-h-0"
         >
           WRITE A REVIEW
         </button>
@@ -546,7 +546,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
   const callHref = callNumber ? `tel:+${callNumber.replace(/[^0-9]/g, '')}` : '#';
 
   return (
-    <div className="bg-white min-h-screen pb-28 md:pb-12 overflow-x-hidden font-[var(--font-pdp)]">
+    <div className="bg-white min-h-screen pb-28 min-[901px]:pb-12 overflow-x-hidden">
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes pricePop {
           0% { transform: scale(1); }
@@ -589,7 +589,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
         <span className="text-gray-800 truncate">{product.name}</span>
       </div>
 
-      <div className="mx-auto grid md:grid-cols-[1.05fr_1fr] gap-5 md:gap-12 md:max-w-screen-xl">
+      <div className="mx-auto grid min-[901px]:grid-cols-[1.05fr_1fr] gap-5 min-[901px]:gap-12 min-[901px]:max-w-screen-xl">
         <PdpGallery
           images={itemGallery}
           productName={product.name}
@@ -598,7 +598,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
           galleryKey={selectedVariant?.id || product.id}
         />
 
-        <div className="md:sticky md:top-4 self-start min-w-0">
+        <div className="min-[901px]:sticky min-[901px]:top-4 self-start min-w-0">
           <BuyBox
             product={product}
             config={config}

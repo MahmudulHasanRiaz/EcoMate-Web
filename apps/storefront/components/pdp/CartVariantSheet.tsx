@@ -54,27 +54,27 @@ export function CartVariantSheet(props: CartVariantSheetProps) {
           <img src={product.image} alt="" className="w-14 h-[70px] object-cover rounded-[3px]" />
         )}
         <div className="min-w-0">
-          <p className="m-0 text-[14px] font-medium text-[#14202b] truncate">{product.name}</p>
+          <p className="m-0 text-[14px] font-medium text-brand-dark truncate">{product.name}</p>
           <p className="m-0 text-[16px] font-bold text-brand-blue">৳{displayPrice.toLocaleString()}</p>
         </div>
       </div>
 
       {justAdded ? (
         <div className="text-center py-2">
-          <span className="mx-auto mb-2 flex w-12 h-12 items-center justify-center rounded-full bg-[#e6f6ec] text-[#12683a]">
+          <span className="mx-auto mb-2 flex w-12 h-12 items-center justify-center rounded-full bg-green-50 text-brand-success">
             <Check size={24} />
           </span>
-          <p className="m-0 text-[15px] font-semibold text-[#12683a]">Added to cart</p>
+          <p className="m-0 text-[15px] font-semibold text-brand-success">Added to cart</p>
           <div className="flex flex-col gap-2 mt-4">
             <button
               onClick={onClose}
-              className="w-full h-[44px] rounded-[3px] border border-[#d5dde5] text-[#14202b] text-[13px] font-semibold tracking-wide"
+              className="w-full h-[44px] rounded-[3px] border border-brand-border text-brand-dark text-[13px] font-semibold tracking-wide"
             >
               CONTINUE SHOPPING
             </button>
             <Link
               href="/cart"
-              className="w-full h-[44px] rounded-[3px] bg-[#0b6bbf] text-white text-[13px] font-semibold tracking-wide flex items-center justify-center"
+              className="w-full h-[44px] rounded-[3px] bg-brand-blue text-white text-[13px] font-semibold tracking-wide flex items-center justify-center"
             >
               VIEW CART
             </Link>
@@ -96,15 +96,15 @@ export function CartVariantSheet(props: CartVariantSheetProps) {
           )}
 
           {hintText && (
-            <p className="text-[13px] text-[#b42318] font-medium mt-2">{hintText}</p>
+            <p className="text-[13px] text-brand-danger font-medium mt-2">{hintText}</p>
           )}
 
           <div className="flex items-center gap-3 my-4">
             <span className="text-[13px] text-gray-700 font-medium">Quantity:</span>
-            <div className="flex items-center h-9 border border-gray-300 rounded-md overflow-hidden bg-white">
-              <button onClick={onDec} aria-label="Decrease quantity" className="w-9 h-full flex items-center justify-center text-gray-500 hover:bg-gray-50"><Minus size={14} /></button>
-              <div className="w-[44px] border-x border-gray-300 h-full flex items-center justify-center text-[14px] font-medium select-none">{inCart ? quantity : qty}</div>
-              <button onClick={onInc} aria-label="Increase quantity" className="w-9 h-full flex items-center justify-center text-gray-500 hover:bg-gray-50"><Plus size={14} /></button>
+            <div className="flex items-center h-11 border border-brand-border rounded-md overflow-hidden bg-white">
+              <button onClick={onDec} aria-label="Decrease quantity" className="w-11 h-full flex items-center justify-center text-gray-500 hover:bg-gray-50"><Minus size={14} /></button>
+              <div className="w-[44px] border-x border-brand-border h-full flex items-center justify-center text-[14px] font-medium select-none">{inCart ? quantity : qty}</div>
+              <button onClick={onInc} aria-label="Increase quantity" className="w-11 h-full flex items-center justify-center text-gray-500 hover:bg-gray-50"><Plus size={14} /></button>
             </div>
           </div>
 

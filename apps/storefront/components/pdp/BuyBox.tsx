@@ -49,7 +49,7 @@ export interface BuyBoxProps {
 
 function WhatsAppIcon() {
   return (
-    <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" className="text-white">
+    <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
     </svg>
   );
@@ -77,6 +77,8 @@ function stockLine(stock?: number): string | null {
  * PDP buy box (mockup §4 order). Presentation only — every state value and
  * handler comes from the orchestrator, so cart/variant/CTA behavior is
  * unchanged (§3). Sticky positioning is applied by the parent grid.
+ * Colors come from the theme (admin-configurable); only product swatch
+ * data-hex, the WhatsApp icon green, and the Facebook icon blue are literal.
  */
 export function BuyBox(props: BuyBoxProps) {
   const {
@@ -107,10 +109,10 @@ export function BuyBox(props: BuyBoxProps) {
   })();
 
   return (
-    <div className="flex flex-col px-4 md:px-0 pt-4 md:pt-2 font-[var(--font-pdp)]" data-testid="buy-box">
+    <div className="flex flex-col px-4 min-[901px]:px-0 pt-4 min-[901px]:pt-2" data-testid="buy-box">
       {/* 1. Code + wishlist */}
       <div className="flex items-center justify-between gap-3 mb-1">
-        <span className="text-[12px] text-[#6b7885]">
+        <span className="text-[12px] text-gray-500">
           {product.sku ? `Code: ${product.sku}` : ''}
         </span>
         <button
@@ -125,9 +127,9 @@ export function BuyBox(props: BuyBoxProps) {
       </div>
 
       {/* 2. Title + tagline */}
-      <h1 className="text-[22px] md:text-[26px] text-[#14202b] font-medium leading-tight mb-1">{product.name}</h1>
+      <h1 className="text-[22px] min-[901px]:text-[26px] text-brand-dark font-medium leading-tight mb-1">{product.name}</h1>
       {sections?.tagline && (
-        <p className="text-[15px] text-[#0b6bbf] italic leading-relaxed mb-3">{sections.tagline}</p>
+        <p className="text-[15px] text-brand-blue italic leading-relaxed mb-3">{sections.tagline}</p>
       )}
 
       {/* color variants nav */}
@@ -165,7 +167,7 @@ export function BuyBox(props: BuyBoxProps) {
         {displayOriginalPrice && displayOriginalPrice > displayPrice && (
           <>
             <span className="text-[16px] text-gray-400 line-through">{config.currency.symbol}{(displayOriginalPrice ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-            <div className="bg-[#21bc5c] text-white text-[12px] px-2 py-0.5 rounded-sm font-medium tracking-wide">
+            <div className="bg-brand-success text-white text-[12px] px-2 py-0.5 rounded-sm font-medium tracking-wide">
               Save {Math.round(((displayOriginalPrice - displayPrice) / displayOriginalPrice) * 100)}%
             </div>
           </>
@@ -176,12 +178,12 @@ export function BuyBox(props: BuyBoxProps) {
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-medium bg-red-100 text-red-800">Out of Stock</span>
         ) : (
           <>
-            {line && <span className="text-[13px] font-medium text-[#33414f]">{line}</span>}
+            {line && <span className="text-[13px] font-medium text-gray-700">{line}</span>}
             {(product.codAvailable !== false) && (
-              <span className="flex items-center gap-1.5 text-[11px] text-[#21bc5c] font-medium leading-tight">
+              <span className="flex items-center gap-1.5 text-[11px] text-brand-success font-medium leading-tight">
                 <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#21bc5c] opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-[#21bc5c]" />
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-success opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-success" />
                 </span>
                 Cash on Delivery Available
               </span>
@@ -192,7 +194,7 @@ export function BuyBox(props: BuyBoxProps) {
 
       {/* 4. Short description */}
       {product.shortDesc && (
-        <p className="text-[14px] text-[#33414f] leading-relaxed mb-4">{product.shortDesc}</p>
+        <p className="text-[14px] text-gray-700 leading-relaxed mb-4">{product.shortDesc}</p>
       )}
 
       {/* 5-6. Color + Size selectors (existing behavior, VariantSelector) */}
@@ -247,18 +249,18 @@ export function BuyBox(props: BuyBoxProps) {
 
       {/* 7. Inline size hint */}
       {showSizeHint && (
-        <p className="text-[13px] text-[#b42318] font-medium mb-2">Please select a size to continue.</p>
+        <p className="text-[13px] text-brand-danger font-medium mb-2">Please select a size to continue.</p>
       )}
 
       {/* 8. Quantity */}
       <div className={`flex items-center gap-3 mb-4 ${isOutOfStock ? 'opacity-50' : ''}`}>
         <span className="text-[13px] text-gray-700 font-medium">Quantity:</span>
-        <div className="flex items-center h-9 border border-gray-300 rounded-md overflow-hidden bg-white">
+        <div className="flex items-center h-11 border border-brand-border rounded-md overflow-hidden bg-white">
           <button onClick={onDec} aria-label="Decrease quantity"
-            className={`w-9 h-full flex items-center justify-center text-gray-500 transition-colors ${isOutOfStock ? 'cursor-not-allowed' : 'hover:bg-gray-50'}`} disabled={isOutOfStock}><Minus size={14} /></button>
-          <div className="w-[44px] border-x border-gray-300 h-full flex items-center justify-center text-[14px] font-medium select-none">{inCart ? quantity : qty}</div>
+            className={`w-11 h-full flex items-center justify-center text-gray-500 transition-colors ${isOutOfStock ? 'cursor-not-allowed' : 'hover:bg-gray-50'}`} disabled={isOutOfStock}><Minus size={14} /></button>
+          <div className="w-[44px] border-x border-brand-border h-full flex items-center justify-center text-[14px] font-medium select-none">{inCart ? quantity : qty}</div>
           <button onClick={onInc} aria-label="Increase quantity"
-            className={`w-9 h-full flex items-center justify-center text-gray-500 transition-colors ${isOutOfStock ? 'cursor-not-allowed' : 'hover:bg-gray-50'}`} disabled={isOutOfStock}><Plus size={14} /></button>
+            className={`w-11 h-full flex items-center justify-center text-gray-500 transition-colors ${isOutOfStock ? 'cursor-not-allowed' : 'hover:bg-gray-50'}`} disabled={isOutOfStock}><Plus size={14} /></button>
         </div>
       </div>
 
@@ -266,19 +268,19 @@ export function BuyBox(props: BuyBoxProps) {
       <div className="flex flex-col gap-2 mb-4 w-full">
         {isOutOfStock ? (
           <button disabled
-            className="w-full h-[44px] md:h-12 rounded-[4px] bg-gray-200 text-gray-500 font-bold flex items-center justify-center gap-2 text-[14px] md:text-[15px] tracking-wide cursor-not-allowed">
+            className="w-full h-[44px] min-[901px]:h-12 rounded-[4px] bg-gray-200 text-gray-500 font-bold flex items-center justify-center gap-2 text-[14px] min-[901px]:text-[15px] tracking-wide cursor-not-allowed">
             <X size={16} /> OUT OF STOCK
           </button>
         ) : (
           <>
             <button onClick={onBuyNow}
-              className="w-full h-[44px] md:h-12 rounded-[4px] bg-brand-blue hover:bg-brand-blue-dark text-white font-bold flex items-center justify-center gap-2 transition-colors text-[14px] md:text-[15px] tracking-wide animate-[bump_1.5s_ease-in-out_infinite]">
+              className="w-full h-[44px] min-[901px]:h-12 rounded-[4px] bg-brand-blue hover:bg-brand-blue-dark text-white font-bold flex items-center justify-center gap-2 transition-colors text-[14px] min-[901px]:text-[15px] tracking-wide animate-[bump_1.5s_ease-in-out_infinite]">
               ORDER NOW
             </button>
             <button onClick={onAddToCart}
-              className={`w-full h-[44px] md:h-12 rounded-[4px] font-medium flex items-center justify-center gap-2 transition-all text-[13px] md:text-[14px] ${
+              className={`w-full h-[44px] min-[901px]:h-12 rounded-[4px] font-medium flex items-center justify-center gap-2 transition-all text-[13px] min-[901px]:text-[14px] ${
                 justAdded
-                  ? 'bg-green-600 text-white'
+                  ? 'bg-brand-success text-white'
                   : inCart
                     ? 'bg-red-500 hover:bg-red-600 text-white'
                     : 'border-2 border-brand-blue text-brand-blue bg-white hover:bg-brand-blue/5'
@@ -297,34 +299,33 @@ export function BuyBox(props: BuyBoxProps) {
 
       {/* 10. added text / buy-now pending */}
       {addedText ? (
-        <p className="text-[13px] text-[#12683a] font-medium mb-2">{addedText}</p>
+        <p className="text-[13px] text-brand-success font-medium mb-2">{addedText}</p>
       ) : null}
 
-      {/* 11. WhatsApp + Call — all devices */}
+      {/* 11. WhatsApp + Call — subtle secondary row on all devices */}
       <div className="flex gap-2 mb-4">
         <a href={waHref} target="_blank" rel="noreferrer"
-          className={`flex-1 h-[44px] rounded-[3px] text-white text-[13px] font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${!waNumber ? 'opacity-50 pointer-events-none' : ''}`}
-          style={{ backgroundColor: '#25D366' }}>
-          <WhatsAppIcon />
+          className={`flex-1 h-[44px] rounded-[3px] bg-white border border-brand-border text-brand-dark text-[13px] font-semibold flex items-center justify-center gap-2 hover:border-brand-blue transition-all active:scale-[0.98] ${!waNumber ? 'opacity-50 pointer-events-none' : ''}`}>
+          <span className="text-[#25D366] flex items-center"><WhatsAppIcon /></span>
           <span>ORDER VIA WHATSAPP</span>
         </a>
         <a href={callHref}
-          className={`flex-1 h-[44px] rounded-[3px] border border-gray-300 text-gray-700 text-[13px] font-semibold flex items-center justify-center gap-2 hover:border-brand-blue hover:text-brand-blue transition-all active:scale-[0.98] ${!callNumber ? 'opacity-30 pointer-events-none' : ''}`}>
+          className={`flex-1 h-[44px] rounded-[3px] bg-white border border-brand-border text-brand-dark text-[13px] font-semibold flex items-center justify-center gap-2 hover:border-brand-blue transition-all active:scale-[0.98] ${!callNumber ? 'opacity-30 pointer-events-none' : ''}`}>
           <span>CALL</span>
         </a>
       </div>
 
       {/* 12. Delivery info card */}
       {showDelivery && (
-        <div className="border border-[#e6ebf0] rounded-[3px] mb-4 overflow-hidden">
+        <div className="border border-brand-border rounded-[3px] mb-4 overflow-hidden">
           {deliveryInfo.title ? (
-            <p className="m-0 px-[18px] py-3 text-[15px] font-medium border-b border-[#e6ebf0] bg-[#f7f9fb]">{deliveryInfo.title}</p>
+            <p className="m-0 px-[18px] py-3 text-[15px] font-medium border-b border-brand-border bg-gray-50">{deliveryInfo.title}</p>
           ) : null}
           <dl className="m-0 px-[18px]">
             {deliveryInfo.rows.map((row) => (
-              <div key={row.label} className="grid grid-cols-[130px_minmax(0,1fr)] gap-3 py-[11px] border-t border-[#eef1f4] first:border-t-0 text-[14px] items-center">
-                <dt className="text-[#6b7885] text-[13px]">{row.label}</dt>
-                <dd className="m-0 text-[#14202b] font-medium">{row.value}</dd>
+              <div key={row.label} className="grid grid-cols-[130px_minmax(0,1fr)] gap-3 py-[11px] border-t border-brand-border first:border-t-0 text-[14px] items-center">
+                <dt className="text-gray-500 text-[13px]">{row.label}</dt>
+                <dd className="m-0 text-brand-dark font-medium">{row.value}</dd>
               </div>
             ))}
           </dl>
@@ -360,7 +361,7 @@ export function BuyBox(props: BuyBoxProps) {
         </a>
         <a href={`https://wa.me/?text=${shareText}%20${shareUrl}`}
           target="_blank" rel="noreferrer" aria-label="Share on WhatsApp"
-          className="w-8 h-8 flex items-center justify-center rounded-full border border-gray-200 text-gray-400 hover:text-[#21bc5c] hover:border-[#21bc5c] transition-all">
+          className="w-8 h-8 flex items-center justify-center rounded-full border border-gray-200 text-gray-400 hover:text-[#25D366] hover:border-[#25D366] transition-all">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" /></svg>
         </a>
       </div>
