@@ -54,7 +54,7 @@ function getColorValue(value: string): string {
 
 export function VariantSelector({ variants, selectedVariant, selectedAttrs, onSelect, onSelectAttr, sizeGuideLabel, onSizeGuideClick, hiddenAttributes }: Props) {
   const attributeGroups = useMemo(() => {
-    const groups: Record<string, { value: string; variant: Variant }[]> = {};
+    const groups: Record<string, { value: string; variant: Variant; av: Variant['attributeValues'][number]['attributeValue'] | undefined }[]> = {};
     for (const v of variants) {
       if (!v.isActive) continue;
       for (const av of v.attributeValues) {
@@ -62,18 +62,21 @@ export function VariantSelector({ variants, selectedVariant, selectedAttrs, onSe
         if (hiddenAttributes?.includes(attr.name)) continue;
         if (!groups[attr.name]) groups[attr.name] = [];
         if (!groups[attr.name].some((g) => g.value === av.attributeValue.value)) {
-          groups[attr.name].push({ value: av.attributeValue.value, variant: v });
+          groups[attr.name].push({ value: av.attributeValue.value, variant: v, av: av.attributeValue });
         }
       }
     }
     for (const name of Object.keys(groups)) {
       groups[name] = sortValues(groups[name].map(g => g.value))
-        .map(v => ({ value: v, variant: groups[name].find(g => g.value === v)!.variant }));
+        .map(v => groups[name].find(g => g.value === v)!);
     }
     return groups;
   }, [variants, hiddenAttributes]);
 
-  const attrNames = Object.keys(attributeGroups);
+  // Color attributes always render before size/other attributes (mockup order).
+  const attrNames = Object.keys(attributeGroups).sort(
+    (a, b) => Number(isColorAttr(b)) - Number(isColorAttr(a)),
+  );
   const isColor = (name: string) => isColorAttr(name);
   const isSizeAttrName = (name: string) => isSizeAttr(name);
 
@@ -125,26 +128,36 @@ export function VariantSelector({ variants, selectedVariant, selectedAttrs, onSe
               )}
             </div>
             <div className="flex flex-wrap gap-1.5">
-              {attributeGroups[name].map(({ value, variant }) => {
+              {attributeGroups[name].map(({ value, variant, av }) => {
                 const isActive = variant.stock > 0;
                 const selected = isSelected(name, value, variant);
 
                 if (isColorAttr) {
-                  const colorVal = getColorValue(value);
+                  // Image swatch when the admin attached one to this value
+                  // (fit per color attribute: contain = full image,
+                  // cover = zoom-crop); otherwise the hex color box.
+                  const swatchImage = av?.image || undefined;
+                  const fit = av?.attribute?.swatchFit === 'contain' ? 'object-contain' : 'object-cover';
+                  const colorVal = av?.hexCode || getColorValue(value);
                   return (
                     <button
                       key={value}
                       onClick={() => isActive && handleSelect(name, value)}
                       disabled={!isActive}
-                      className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
+                      className={`w-10 h-10 rounded-[3px] overflow-hidden flex items-center justify-center transition-all ${
                         selected
-                          ? 'ring-2 ring-brand-blue ring-offset-1 scale-110'
+                          ? 'ring-2 ring-brand-blue ring-offset-1'
                           : 'ring-1 ring-gray-300 hover:ring-gray-400'
                       } ${!isActive ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
-                      style={{ backgroundColor: colorVal }}
+                      style={swatchImage ? undefined : { backgroundColor: colorVal }}
                       title={value}
                       aria-label={value}
-                    />
+                    >
+                      {swatchImage ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={swatchImage} alt="" className={`w-full h-full ${fit}`} />
+                      ) : null}
+                    </button>
                   );
                 }
 

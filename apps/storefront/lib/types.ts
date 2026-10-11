@@ -9,9 +9,11 @@ export interface VariantAttribute {
   id: string;
   value: string;
   image?: string;
+  hexCode?: string;
   attribute: {
     id: string;
     name: string;
+    swatchFit?: string | null;
   };
 }
 

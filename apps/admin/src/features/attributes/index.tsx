@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Trash2, Loader2, Pipette } from 'lucide-react'
+import { Plus, Trash2, Loader2, Pipette, Pencil, Check } from 'lucide-react'
 import { attributesApi, type AttributeResponse } from './api'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -14,6 +14,10 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { SafeImage } from '@/components/safe-image'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { SafeImage } from '@/components/safe-image'
 
 const COLOR_MAP: Record<string, string> = {
   red: '#EF4444', blue: '#3B82F6', green: '#22C55E', yellow: '#EAB308',
@@ -60,9 +64,13 @@ export function Attributes() {
   const [editingAttr, setEditingAttr] = useState<AttributeResponse | null>(null)
   const [valueInput, setValueInput] = useState('')
   const [hexInput, setHexInput] = useState('')
+  const [imageInput, setImageInput] = useState('')
+  const [editingValueId, setEditingValueId] = useState<string | null>(null)
+  const [editHex, setEditHex] = useState('')
+  const [editImage, setEditImage] = useState('')
 
   useEffect(() => {
-    if (editingAttr) { setValueInput(''); setHexInput('') }
+    if (editingAttr) { setValueInput(''); setHexInput(''); setImageInput(''); setEditingValueId(null) }
   }, [editingAttr?.id])
 
   useEffect(() => {
@@ -91,12 +99,13 @@ export function Attributes() {
   })
 
   const addVal = useMutation({
-    mutationFn: ({ attrId, value, hexCode }: { attrId: string; value: string; hexCode?: string }) =>
-      attributesApi.addValue(attrId, { value, hexCode }),
+    mutationFn: ({ attrId, value, hexCode, image }: { attrId: string; value: string; hexCode?: string; image?: string }) =>
+      attributesApi.addValue(attrId, { value, hexCode, image }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['attributes'] })
       setValueInput('')
       setHexInput('')
+      setImageInput('')
       toast.success('Value added')
     },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to add value'),
@@ -111,6 +120,27 @@ export function Attributes() {
     onError: (e: any) => toast.error(e.response?.data?.message || 'Failed'),
   })
 
+  const updateVal = useMutation({
+    mutationFn: ({ attrId, valueId, hexCode, image }: { attrId: string; valueId: string; hexCode?: string; image?: string }) =>
+      attributesApi.updateValue(attrId, valueId, { hexCode, image }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['attributes'] })
+      setEditingValueId(null)
+      toast.success('Value updated')
+    },
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to update value'),
+  })
+
+  const updateFit = useMutation({
+    mutationFn: ({ attrId, swatchFit }: { attrId: string; swatchFit: string }) =>
+      attributesApi.update(attrId, { swatchFit }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['attributes'] })
+      toast.success('Swatch display updated')
+    },
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to update'),
+  })
+
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault()
     const name = newName.trim()
@@ -122,7 +152,7 @@ export function Attributes() {
     e.preventDefault()
     const val = valueInput.trim()
     if (!val || !editingAttr) return
-    addVal.mutate({ attrId: editingAttr.id, value: val, hexCode: hexInput || undefined })
+    addVal.mutate({ attrId: editingAttr.id, value: val, hexCode: hexInput || undefined, image: imageInput.trim() || undefined })
   }
 
   const isValidHex = (hex: string) => /^#[0-9a-fA-F]{6}$/.test(hex)
@@ -213,27 +243,90 @@ export function Attributes() {
               <DialogTitle>{editingAttr?.name} — Values</DialogTitle>
             </DialogHeader>
 
+            <div className='flex items-center gap-2'>
+              <Label className='text-xs text-muted-foreground whitespace-nowrap'>Swatch display</Label>
+              <Select
+                value={editingAttr?.swatchFit || 'cover'}
+                onValueChange={(v) => editingAttr && updateFit.mutate({ attrId: editingAttr.id, swatchFit: v })}
+              >
+                <SelectTrigger className='h-8 text-xs'>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value='cover'>Image zoom-crop (cover)</SelectItem>
+                  <SelectItem value='contain'>Full image (contain)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <p className='text-xs text-muted-foreground -mt-1'>How value images render as color swatches on the storefront. Values without an image fall back to their color code.</p>
+
             <div className='space-y-3 py-2'>
               {editingAttr && editingAttr.values.length > 0 ? (
                 editingAttr.values.map(v => (
-                  <div key={v.id} className='flex items-center justify-between py-1'>
-                    <Badge variant='outline' className='flex items-center gap-1.5'>
-                      {v.hexCode && (
-                        <span
-                          className='inline-block h-3.5 w-3.5 rounded-full border shrink-0'
-                          style={{ backgroundColor: v.hexCode }}
+                  <div key={v.id} className='py-1'>
+                    <div className='flex items-center justify-between'>
+                      <Badge variant='outline' className='flex items-center gap-1.5'>
+                        {v.image ? (
+                          <SafeImage src={v.image} alt='' className='h-3.5 w-3.5 rounded-sm border object-cover shrink-0' thumbWidth={28} thumbHeight={28} />
+                        ) : v.hexCode ? (
+                          <span
+                            className='inline-block h-3.5 w-3.5 rounded-full border shrink-0'
+                            style={{ backgroundColor: v.hexCode }}
+                          />
+                        ) : null}
+                        {v.value}
+                      </Badge>
+                      <div className='flex gap-1'>
+                        <Button
+                          variant='ghost'
+                          size='icon'
+                          onClick={() => {
+                            setEditingValueId(editingValueId === v.id ? null : v.id)
+                            setEditHex(v.hexCode || '')
+                            setEditImage(v.image || '')
+                          }}
+                          aria-label={`Edit ${v.value}`}
+                        >
+                          <Pencil className='h-3 w-3 text-muted-foreground hover:text-foreground' />
+                        </Button>
+                        <Button
+                          variant='ghost'
+                          size='icon'
+                          disabled={removeVal.isPending}
+                          onClick={() => removeVal.mutate({ attrId: editingAttr.id, valueId: v.id })}
+                        >
+                          <Trash2 className='h-3 w-3 text-muted-foreground hover:text-destructive' />
+                        </Button>
+                      </div>
+                    </div>
+                    {editingValueId === v.id && (
+                      <div className='flex gap-2 mt-2 pl-1'>
+                        <Input
+                          placeholder='#HEX (optional)'
+                          value={editHex}
+                          onChange={e => setEditHex(e.target.value)}
+                          className='font-mono text-xs'
                         />
-                      )}
-                      {v.value}
-                    </Badge>
-                    <Button
-                      variant='ghost'
-                      size='icon'
-                      disabled={removeVal.isPending}
-                      onClick={() => removeVal.mutate({ attrId: editingAttr.id, valueId: v.id })}
-                    >
-                      <Trash2 className='h-3 w-3 text-muted-foreground hover:text-destructive' />
-                    </Button>
+                        <Input
+                          placeholder='Image URL (optional)'
+                          value={editImage}
+                          onChange={e => setEditImage(e.target.value)}
+                          className='text-xs'
+                        />
+                        <Button
+                          size='sm'
+                          disabled={updateVal.isPending}
+                          onClick={() => editingAttr && updateVal.mutate({
+                            attrId: editingAttr.id,
+                            valueId: v.id,
+                            hexCode: editHex.trim() || undefined,
+                            image: editImage.trim() || undefined,
+                          })}
+                        >
+                          {updateVal.isPending ? <Loader2 className='h-3 w-3 animate-spin' /> : <Check className='h-3 w-3' />}
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 ))
               ) : (
@@ -278,6 +371,16 @@ export function Attributes() {
                       />
                     </div>
                   </div>
+                </div>
+                <div className='space-y-1'>
+                  <Label className='text-xs text-muted-foreground'>Swatch image (optional — overrides color box)</Label>
+                  <Input
+                    placeholder='https://... image URL'
+                    value={imageInput}
+                    onChange={e => setImageInput(e.target.value)}
+                    disabled={addVal.isPending}
+                    className='text-xs'
+                  />
                 </div>
                 <Button
                   type='submit'
