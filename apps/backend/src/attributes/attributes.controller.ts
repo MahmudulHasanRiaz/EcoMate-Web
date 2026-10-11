@@ -14,6 +14,7 @@ import {
   CreateAttributeDto,
   UpdateAttributeDto,
   CreateAttributeValueDto,
+  UpdateAttributeValueDto,
 } from './dto/attribute.dto';
 
 @Controller('attributes')
@@ -46,6 +47,11 @@ export class AttributesController {
   @Post(':id/values')
   addValue(@Param('id') id: string, @Body() dto: CreateAttributeValueDto) {
     return this.svc.addValue(id, dto);
+  }
+  @Roles('superadmin', 'admin', 'employee')
+  @Put(':id/values/:valueId')
+  updateValue(@Param('valueId') valueId: string, @Body() dto: UpdateAttributeValueDto) {
+    return this.svc.updateValue(valueId, dto);
   }
   @Roles('superadmin', 'admin', 'employee')
   @Delete(':id/values/:valueId')

@@ -2,6 +2,7 @@ import {
   IsString,
   IsOptional,
   IsInt,
+  IsIn,
   IsArray,
   ValidateNested,
   MinLength,
@@ -16,8 +17,20 @@ export class CreateAttributeValueDto {
   @IsString()
   hexCode?: string;
   @IsOptional()
+  @IsString()
+  image?: string;
+  @IsOptional()
   @IsInt()
   sortOrder?: number;
+}
+
+export class UpdateAttributeValueDto {
+  @IsOptional()
+  @IsString()
+  hexCode?: string;
+  @IsOptional()
+  @IsString()
+  image?: string;
 }
 
 export class CreateAttributeDto {
@@ -36,4 +49,8 @@ export class UpdateAttributeDto {
   @IsString()
   @MinLength(1)
   name?: string;
+  @IsOptional()
+  @IsString()
+  @IsIn(['cover', 'contain'])
+  swatchFit?: string;
 }

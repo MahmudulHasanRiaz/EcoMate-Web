@@ -564,6 +564,7 @@ model Brand {
 model Attribute {
   id        String           @id @default(uuid())
   name      String           @unique
+  swatchFit String?
   values    AttributeValue[]
   createdAt DateTime         @default(now())
 }
@@ -572,6 +573,7 @@ model AttributeValue {
   id          String  @id @default(uuid())
   value       String
   hexCode     String?
+  image       String?
   attributeId String
   sortOrder   Int     @default(0)
 

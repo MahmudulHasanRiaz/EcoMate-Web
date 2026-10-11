@@ -2,12 +2,14 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CreateAttributeDto,
   UpdateAttributeDto,
   CreateAttributeValueDto,
+  UpdateAttributeValueDto,
 } from './dto/attribute.dto';
 
 const COLOR_MAP: Record<string, string> = {
@@ -122,6 +124,9 @@ export class AttributesService {
   async update(id: string, dto: UpdateAttributeDto) {
     const attr = await this.prisma.attribute.findUnique({ where: { id } });
     if (!attr) throw new NotFoundException('Attribute not found');
+    if (dto.swatchFit !== undefined && !['cover', 'contain'].includes(dto.swatchFit)) {
+      throw new BadRequestException('swatchFit must be cover or contain');
+    }
     return this.prisma.attribute.update({ where: { id }, data: dto });
   }
 
@@ -147,8 +152,23 @@ export class AttributesService {
       data: {
         value: dto.value,
         hexCode: dto.hexCode || nameToHex(dto.value),
+        image: dto.image || null,
         sortOrder: dto.sortOrder ?? 0,
         attributeId,
+      },
+    });
+  }
+
+  async updateValue(valueId: string, dto: UpdateAttributeValueDto) {
+    const existing = await this.prisma.attributeValue.findUnique({
+      where: { id: valueId },
+    });
+    if (!existing) throw new NotFoundException('Attribute value not found');
+    return this.prisma.attributeValue.update({
+      where: { id: valueId },
+      data: {
+        ...(dto.hexCode !== undefined ? { hexCode: dto.hexCode } : {}),
+        ...(dto.image !== undefined ? { image: dto.image || null } : {}),
       },
     });
   }
