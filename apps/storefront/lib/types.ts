@@ -68,6 +68,7 @@ export interface Product {
   averageRating?: number;
   videoUrl?: string;
   videoPosition?: number;
+  detailRows?: { label: string; value: string }[];
   showRelatedProducts?: boolean;
 }
 

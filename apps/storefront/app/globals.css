@@ -30,6 +30,15 @@
   --color-brand-success-dark: color-mix(in srgb, var(--color-brand-success) 85%, black);
   --color-brand-danger: #EF4444;
   --color-brand-border: #E5E7EB;
+  /* PDP redesign tokens (mockup 1440px artboard) */
+  --pdp-ink: #14202b;
+  --pdp-accent: #0b6bbf;
+  --pdp-success: #12683a;
+  --pdp-success-bg: #e6f6ec;
+  --pdp-danger: #b42318;
+  --pdp-muted: #6b7885;
+  --pdp-line: #e6ebf0;
+}
   --brand-shadow-soft: 0 8px 25px color-mix(in srgb, var(--color-brand-blue) 15%, transparent);
   --brand-shadow-strong: 0 15px 45px -5px color-mix(in srgb, var(--color-brand-blue) 35%, transparent);
 }

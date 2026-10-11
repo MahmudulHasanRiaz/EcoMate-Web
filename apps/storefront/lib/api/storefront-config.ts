@@ -40,6 +40,11 @@ export interface StorefrontConfig {
     charge: number;
     freeDeliveryMin: number;
   };
+  deliveryInfo: {
+    enabled: boolean;
+    title: string;
+    rows: { label: string; value: string }[];
+  };
   hero: {
     slides: { image: string; link?: string; alt?: string }[];
     secondaryBanner: string;
