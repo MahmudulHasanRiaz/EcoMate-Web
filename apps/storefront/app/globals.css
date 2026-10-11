@@ -38,7 +38,6 @@
   --pdp-danger: #b42318;
   --pdp-muted: #6b7885;
   --pdp-line: #e6ebf0;
-}
   --brand-shadow-soft: 0 8px 25px color-mix(in srgb, var(--color-brand-blue) 15%, transparent);
   --brand-shadow-strong: 0 15px 45px -5px color-mix(in srgb, var(--color-brand-blue) 35%, transparent);
 }
