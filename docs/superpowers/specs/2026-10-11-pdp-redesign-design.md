@@ -62,9 +62,9 @@ Sticky bar (§8 mbar) থেকে ADD TO CART / ORDER NOW → **scroll-up ছ�
 
 ## 9. Backend + Admin + CMS (§11)
 
-- **Prisma (agent schema পড়ে নেবে):** `Product.videoUrl String?`, `Product.detailRows Json?` (`[{label,value}]`), `Review.mobile String?` — প্রতিটার migration সহ; destructive flag নিষেধ।
-- **NestJS:** DTO validation — videoUrl optional URL (YouTube/Facebook host allowlist), detailRows array of `{label,value}` non-empty strings (order preserved), review mobile existing BD validator reuse; `GET product`-এ videoUrl + detailRows include; `POST /reviews` mobile accept+store।
-- **React Admin product form:** Video URL field (optional, placeholder "YouTube / Facebook video link", invalid URL-এ inline error, খালি save-এ storefront-এ কিছু নয়); Product Details rows editor (row add/remove, label input + value input, order preserved; drag-reorder optional); save/validation সহ।
+- **Prisma:** `Product.videoUrl String?`, `Product.detailRows Json?` (`[{label,value}]`), **`Product.descriptionSections Json?` (`{tagline?, benefits?[], specifications? (HTML), stylingTip?}` — সব optional, additive nullable)**, `Review.mobile String?` — প্রতিটার migration সহ; destructive flag নিষেধ।
+- **NestJS:** DTO validation — videoUrl optional URL (YouTube/Facebook host allowlist), detailRows array of `{label,value}` non-empty strings (order preserved), **descriptionSections optional object (tagline/stylingTip optional string, benefits optional string[], specifications optional string/HTML)**, review mobile existing BD validator reuse; `GET product`-এ videoUrl + detailRows **+ descriptionSections** include; `POST /reviews` mobile accept+store।
+- **React Admin product form:** Video URL field (optional, placeholder "YouTube / Facebook video link", invalid URL-এ inline error, খালি save-এ storefront-এ কিছু নয়); Product Details rows editor (row add/remove, label input + value input, order preserved); **Description Sections editor group (একই form-এ): tagline text input, benefits add/remove text list, specifications textarea/HTML, stylingTip text input — সব optional; খালি group store-এ undefined, storefront-এ সংশ্লিষ্ট সেকশন hidden**।
 - **CMS settings:** `deliveryInfo` group — enable toggle + rows[] editor (label/value, add/remove/reorder) → settings API।
 
 ## 10. §3 must-keep checklist (প্রতিটার test/checklist বাধ্যতামূলক)
@@ -85,8 +85,9 @@ Sticky bar (§8 mbar) থেকে ADD TO CART / ORDER NOW → **scroll-up ছ�
 | 12 | JSON-LD + metadata + hidden SEO div | snapshot/assert |
 | 13 | Mobile leak-absence (public review API-তে `mobile` key নেই) | API negative test |
 | 14 | detailRows render + legacy specifications fallback | render both branches |
-| 15 | deliveryInfo off → hidden | config-off render test |
-| 16 | Sheet trigger (sticky bar, no scroll-up) + focus trap/ESC | browser test |
+| 15 | descriptionSections admin write → storefront read (tagline/benefits/specifications/stylingTip render-or-hide) | backend persist spec + transform passthrough + sections render tests + live probe |
+| 16 | deliveryInfo off → hidden | config-off render test |
+| 17 | Sheet trigger (sticky bar, no scroll-up) + focus trap/ESC | browser test |
 
 ## 11. Non-functional
 

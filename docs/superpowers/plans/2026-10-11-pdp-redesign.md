@@ -358,8 +358,20 @@ DeliveryInfo editor: enable toggle + title + rows (label/value, add/remove/reord
 - [ ] **Step 4:** browser pass (dev servers): §13 checklist — section order desktop/mobile, video present/absent, 3 breaks visible, detailRows + fallback, deliveryInfo on/off, review validation/success/leak, size toggle + tap-apply, sticky→sheet no-scroll + 3-state + isolated buy-now, WA/Call both, header/footer/cards + `/colors` intact.
 - [ ] **Step 5:** `git status --porcelain` (taste file absent) → `git push -u origin feat/pdp-redesign`. NEVER main.
 
+### Task 19: descriptionSections editable (owner decision — same branch)
+
+**Files:**
+- Modify: `apps/backend/prisma/schema.prisma` + new migration `prisma/migrations/<TS>_description_sections/migration.sql` (hand-written, additive-only, P1–P8 untouched)
+- Modify: `apps/backend/src/products/dto/product.dto.ts` (`DescriptionSectionsDto`), `products.service.ts` (create + createDraft scalars; update/updateDraft/publishDraft spread covers)
+- Test: extend create spec with descriptionSections persist
+- Modify: `apps/storefront/lib/api/__tests__/pdp-transform.test.ts` (passthrough; render units already null-safe + tested)
+- Modify: `apps/admin/src/features/products/lib/pdp-fields.ts` (`cleanDescriptionSections`) + test, `product-form.tsx` (states/payload/autosave/edit-load/UI group), `api.ts` (`ProductResponse`)
+
+- [ ] Steps per file rhythm (test → fail → impl → pass → commit): migration, DTO+service, transform test, admin lib+form.
+- [ ] Commit: `feat(pdp): ...descriptionSections...` + docs update.
+
 ---
 
-## Open question for owner (single real ambiguity — everything else per directive)
+## Owner decision (resolved — implemented in Task 19)
 
-`descriptionSections` (tagline/benefits/specifications/stylingTip) has **no backend source today**: backend never sends it, admin has no editor, so those blocks are dead paths on the live PDP. Directive §11 mandates only videoUrl/detailRows/mobile. **Recommendation:** proceed with pass-through rendering (works if backend ever sends it) + `detailRows` as the real Details source + legacy `specifications` fallback preserved in code; NO new column now. If you want tagline/benefits/tip editable, say so — follow-up adds a `descriptionSections` JSON column + admin editor (same pattern as detailRows). Reply `proceed` to accept, or `add-sections` to include it in this branch.
+`descriptionSections` is now a real editable source: `Product.descriptionSections` JSONB nullable + `DescriptionSectionsDto` + admin Description Sections editor group. Pass-through rendering + `detailRows → specifications → hidden` precedence + all-sections-hide-when-empty verified by specs, transform tests, sections render tests, and a live write→read→render probe (residue purged).
