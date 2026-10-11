@@ -76,7 +76,7 @@ export default function RelatedProducts({ product }: Props) {
 
   return (
     <div className="border-t border-gray-100 pt-8 mt-8 px-4 max-w-screen-xl mx-auto">
-      <h3 className="text-[16px] font-semibold text-gray-800 mb-4">You May Also Like</h3>
+      <h2 className="text-[19px] font-medium text-[#14202b] m-0 mb-[14px]">You May Also Like</h2>
 
       <div className="flex gap-3 overflow-x-auto hide-scrollbar md:hidden pb-2 -mx-4 px-4">
         {products.map((p) => (
