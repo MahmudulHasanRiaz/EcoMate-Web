@@ -23,6 +23,7 @@ const reviewsApi = {
 interface ReviewItem {
   id: string
   customerName: string
+  mobile: string | null
   rating: number
   text: string | null
   approved: boolean
@@ -124,6 +125,7 @@ export function Reviews() {
               <TableRow>
                 <TableHead>Product</TableHead>
                 <TableHead>Customer</TableHead>
+                <TableHead>Mobile</TableHead>
                 <TableHead>Rating</TableHead>
                 <TableHead>Review</TableHead>
                 <TableHead>Date</TableHead>
@@ -133,7 +135,7 @@ export function Reviews() {
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={7} className='text-center py-12'><Loader2 className='animate-spin h-6 w-6 mx-auto' /></TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className='text-center py-12'><Loader2 className='animate-spin h-6 w-6 mx-auto' /></TableCell></TableRow>
               ) : list.length ? list.map((r: ReviewItem) => (
                 <TableRow key={r.id}>
                   <TableCell>
@@ -143,6 +145,7 @@ export function Reviews() {
                     </div>
                   </TableCell>
                   <TableCell className='text-sm'>{r.customerName}</TableCell>
+                  <TableCell className='text-sm text-muted-foreground whitespace-nowrap'>{r.mobile || <span className='italic'>—</span>}</TableCell>
                   <TableCell><StarRating rating={r.rating} /></TableCell>
                   <TableCell className='max-w-[250px]'>
                     <p className='text-sm text-muted-foreground truncate'>{r.text || <span className='italic'>No text</span>}</p>

@@ -38,7 +38,7 @@ describe('getStorefrontConfig deliveryInfo', () => {
 
   it('returns configured title/rows and honors disabled', async () => {
     const cfg = await mockController([
-      { key: 'delivery_info_enabled', value: '0' },
+      { key: 'delivery_info_enabled', value: 'false' },
       { key: 'delivery_info_title', value: 'Delivery' },
       {
         key: 'delivery_info_rows',
@@ -50,6 +50,15 @@ describe('getStorefrontConfig deliveryInfo', () => {
       title: 'Delivery',
       rows: [{ label: 'Dhaka', value: 'Same day' }],
     });
+  });
+
+  it('hides the card when rows are explicitly emptied', async () => {
+    const cfg = await mockController([
+      { key: 'delivery_info_enabled', value: 'true' },
+      { key: 'delivery_info_rows', value: '[]' },
+    ]).getStorefrontConfig();
+    expect(cfg.deliveryInfo.enabled).toBe(true);
+    expect(cfg.deliveryInfo.rows).toEqual([]);
   });
 
   it('falls back to defaults on malformed rows JSON', async () => {
