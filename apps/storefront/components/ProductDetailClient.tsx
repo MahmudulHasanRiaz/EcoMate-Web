@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { ChevronRight, Star } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
@@ -118,6 +119,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
   const { config } = useStorefrontConfig();
   const { isWishlisted, toggle } = useWishlist();
   const { user } = useAuth();
+  const router = useRouter();
   const [sizeChartOpen, setSizeChartOpen] = useState(false);
   const [sizeChartData, setSizeChartData] = useState<SizeChartData | null>(null);
   const [justAdded, setJustAdded] = useState(false);
@@ -520,7 +522,9 @@ export default function ProductDetailClient({ product, defaultColor }: { product
       stock: displayStock,
       catalogId: resolveCatalogId(product, selectedVariant),
     });
-    window.location.href = '/checkout';
+    // Client-side navigation (same as the cart flow): no full-page reload,
+    // so the app shell, providers and buy-now state carry over instantly.
+    router.push('/checkout');
   }
 
   function handleWishlistToggle() {

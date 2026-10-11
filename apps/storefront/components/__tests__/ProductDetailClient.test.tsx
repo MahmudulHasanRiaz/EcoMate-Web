@@ -451,6 +451,13 @@ describe('ProductDetailClient — PDP redesign matrix', () => {
     expect(screen.getByTestId('sticky-bar').className).toContain('translate-y-full');
   });
 
+  it('ORDER NOW navigates client-side (no full-page reload)', () => {
+    pushMock.mockClear();
+    renderWith(simpleProduct);
+    fireEvent.click(within(screen.getByTestId('buy-box')).getByRole('button', { name: /ORDER NOW/i }));
+    expect(pushMock).toHaveBeenCalledWith('/checkout');
+  });
+
   it('WhatsApp order text carries qty, bold name/code, variants, link last', () => {
     renderWith(variantProduct, {}, { order: { whatsapp: '8801516774099', callNumber: '' } });
     const wa = within(screen.getByTestId('buy-box')).getByText('ORDER VIA WHATSAPP').closest('a')!;
