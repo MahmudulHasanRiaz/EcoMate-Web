@@ -14,7 +14,7 @@ interface Props {
  */
 export function StickyBar({ isOutOfStock, onOpenSheet }: Props) {
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-gray-200 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] pb-safe md:hidden">
+    <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-gray-200 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] pb-safe md:hidden" data-testid="sticky-bar">
       <div className="flex items-stretch gap-1.5 px-3 py-2 max-w-screen-xl mx-auto">
         {isOutOfStock ? (
           <div className="flex-1 rounded-lg bg-gray-200 text-gray-500 text-[14px] font-bold flex items-center justify-center gap-1.5 cursor-not-allowed min-h-[44px]">

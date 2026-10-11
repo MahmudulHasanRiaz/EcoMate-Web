@@ -28,6 +28,7 @@ export interface BuyBoxProps {
   showSizeHint: boolean;
   addedText?: string;
   wishlisted: boolean;
+  heartPop?: boolean;
   copied: boolean;
   shareUrl: string;
   shareText: string;
@@ -83,7 +84,7 @@ export function BuyBox(props: BuyBoxProps) {
     selectedVariant, selectedAttrs, displayPrice, displayOriginalPrice,
     displayStock, isOutOfStock, qty, quantity, inCart, justAdded,
     sizeChartData, sizeChartLoading, showSizeHint, addedText,
-    wishlisted, copied, shareUrl, shareText, waHref, callHref,
+    wishlisted, heartPop, copied, shareUrl, shareText, waHref, callHref,
     waNumber, callNumber,
     onSelectVariant, onSelectAttr, onDec, onInc,
     onAddToCart, onBuyNow, onWishlist, onCopyLink, onSizeGuide,
@@ -106,7 +107,7 @@ export function BuyBox(props: BuyBoxProps) {
   })();
 
   return (
-    <div className="flex flex-col px-4 md:px-0 pt-4 md:pt-2 font-[var(--font-pdp)]">
+    <div className="flex flex-col px-4 md:px-0 pt-4 md:pt-2 font-[var(--font-pdp)]" data-testid="buy-box">
       {/* 1. Code + wishlist */}
       <div className="flex items-center justify-between gap-3 mb-1">
         <span className="text-[12px] text-[#6b7885]">
@@ -119,7 +120,7 @@ export function BuyBox(props: BuyBoxProps) {
             wishlisted ? 'bg-red-50 text-red-500' : 'bg-gray-50 text-gray-400 hover:bg-red-50 hover:text-red-500'
           }`}
         >
-          <Heart size={20} className={wishlisted ? 'fill-red-500' : ''} />
+          <Heart size={20} className={`${wishlisted ? 'fill-red-500' : ''} ${heartPop ? 'animate-[heartPop_300ms_ease]' : ''}`} />
         </button>
       </div>
 

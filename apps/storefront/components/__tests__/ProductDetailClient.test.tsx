@@ -1,11 +1,12 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { StorefrontConfigProvider } from '@/context/StorefrontConfigContext';
 import { AuthProvider } from '@/context/AuthContext';
 import { CartProvider } from '@/context/CartContext';
 import { WishlistProvider } from '@/context/WishlistContext';
 import { setPixelIds, setConsent, initMetaPixel } from '@/lib/tracking';
+import { toast } from 'sonner';
 import type { StorefrontConfig } from '@/lib/api/storefront-config';
 import ProductDetailClient from '../ProductDetailClient';
 
@@ -185,7 +186,7 @@ describe('ProductDetailClient — ViewContent strict semantics', () => {
   it('CTA click (add to cart) → NO additional ViewContent (AddToCart fires instead)', async () => {
     renderDetail(simpleProduct);
     await waitFor(() => expect(viewContentCalls()).toHaveLength(1));
-    fireEvent.click(screen.getByRole('button', { name: /ADD TO CART/i }));
+    fireEvent.click(within(screen.getByTestId('buy-box')).getByRole('button', { name: /ADD TO CART/i }));
     expect(viewContentCalls()).toHaveLength(1);
     const atc = vi.mocked(window.fbq).mock.calls.filter((c: any[]) => c[1] === 'AddToCart');
     expect(atc).toHaveLength(1);
@@ -382,8 +383,8 @@ describe('ProductDetailClient — zero/negative stock is out of stock', () => {
     });
     const cta = screen.getByRole('button', { name: /OUT OF STOCK/i });
     expect(cta).toBeDisabled();
-    expect(screen.getByText('Out of Stock')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /ADD TO CART/i })).not.toBeInTheDocument();
+    expect(within(screen.getByTestId('buy-box')).getByText('Out of Stock')).toBeInTheDocument();
+    expect(within(screen.getByTestId('buy-box')).queryByRole('button', { name: /ADD TO CART/i })).not.toBeInTheDocument();
   });
 
   it('zero stock keeps the Out of Stock state', () => {
@@ -401,6 +402,73 @@ describe('ProductDetailClient — zero/negative stock is out of stock', () => {
       stock: 10,
       availabilityMode: 'MANAGED_STOCK',
     });
-    expect(screen.getByRole('button', { name: /ADD TO CART/i })).not.toBeDisabled();
+    expect(within(screen.getByTestId('buy-box')).getByRole('button', { name: /ADD TO CART/i })).not.toBeDisabled();
+  });
+});
+
+describe('ProductDetailClient — PDP redesign matrix', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  const renderWith = (product: any, features: any = {}) =>
+    render(
+      <StorefrontConfigProvider initialConfig={{ ...CONFIG, features: { ...(CONFIG as any).features, ...features } } as any}>
+        <AuthProvider>
+          <CartProvider>
+            <WishlistProvider>
+              <ProductDetailClient product={product} />
+            </WishlistProvider>
+          </CartProvider>
+        </AuthProvider>
+      </StorefrontConfigProvider>,
+    );
+
+  it('size missing → inline hint + toast, no navigation', () => {
+    renderWith(variantProduct, { defaultVariantSelected: false });
+    fireEvent.click(within(screen.getByTestId('buy-box')).getByRole('button', { name: /ORDER NOW/i }));
+    expect(screen.getByText('Please select a size to continue.')).toBeInTheDocument();
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith(expect.stringContaining('সিলেক্ট করুন'));
+  });
+
+  it('sticky bar opens the variant sheet without scrolling', () => {
+    renderWith(simpleProduct);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.click(within(screen.getByTestId('sticky-bar')).getByRole('button', { name: /ADD TO CART/i }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('WRITE A REVIEW opens modal; submit without mobile is refused inline', async () => {
+    renderWith(simpleProduct);
+    fireEvent.click(screen.getByRole('button', { name: /WRITE A REVIEW/i }));
+    fireEvent.click(screen.getByText('SUBMIT REVIEW'));
+    expect(await screen.findByText('Please enter a valid Bangladeshi mobile number.')).toBeInTheDocument();
+  });
+
+  it('size guide tap applies the size and closes the sheet', async () => {
+    apiClientGetMock.mockImplementation((url: string) => {
+      if (String(url).includes('/size-charts/by-product/')) {
+        return Promise.resolve({
+          data: {
+            id: 'c1',
+            name: 'Size Guide',
+            description: null,
+            image: null,
+            tableData: [
+              { Size: '44', Chest: '40' },
+              { Size: '46', Chest: '42' },
+            ],
+          },
+        });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    renderWith(variantProduct, { sizeChart: true, defaultVariantSelected: false });
+    await waitFor(() => expect(screen.getAllByText('Size Guide').length).toBeGreaterThan(0));
+    fireEvent.click(screen.getAllByText('Size Guide')[0]);
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByText('44'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    apiClientGetMock.mockResolvedValue({ data: [] });
   });
 });
