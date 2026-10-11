@@ -108,6 +108,8 @@ export function transformBackendProduct(raw: any): Product {
     variants: variants.length > 0 ? variants : undefined,
     codAvailable: raw.codAvailable,
     descriptionSections: raw.descriptionSections,
+    videoUrl: raw.videoUrl || undefined,
+    detailRows: Array.isArray(raw.detailRows) ? raw.detailRows : undefined,
     rating: raw.averageRating || raw.rating || 0,
     reviewCount: raw._count?.reviews ?? raw.reviewCount,
     averageRating: raw.averageRating || raw.rating || 0,

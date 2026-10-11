@@ -573,6 +573,36 @@ describe('ProductsService', () => {
       expect(result).toEqual(mockProduct);
     });
 
+    it('persists videoUrl and detailRows scalars on create', async () => {
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.product.create as jest.Mock).mockResolvedValue(mockProduct);
+      (media.syncEntityImages as jest.Mock).mockResolvedValue([]);
+
+      await service.create({
+        ...createDto,
+        videoUrl: 'https://youtu.be/dQw4w9WgXcQ',
+        detailRows: [{ label: 'Fabric', value: 'Popcorn' }],
+        descriptionSections: {
+          tagline: 'Festive essential',
+          benefits: ['Soft & breathable'],
+          specifications: '<p>100% cotton</p>',
+          stylingTip: 'Pair it with white pajama',
+        },
+      });
+
+      const createCall = (prisma.product.create as jest.Mock).mock.calls[0][0];
+      expect(createCall.data.videoUrl).toBe('https://youtu.be/dQw4w9WgXcQ');
+      expect(createCall.data.detailRows).toEqual([
+        { label: 'Fabric', value: 'Popcorn' },
+      ]);
+      expect(createCall.data.descriptionSections).toEqual({
+        tagline: 'Festive essential',
+        benefits: ['Soft & breathable'],
+        specifications: '<p>100% cotton</p>',
+        stylingTip: 'Pair it with white pajama',
+      });
+    });
+
     it('persists an explicit availabilityMode on variable products (no force to MANAGED_STOCK)', async () => {
       (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
       (prisma.product.create as jest.Mock).mockResolvedValue(mockProduct);

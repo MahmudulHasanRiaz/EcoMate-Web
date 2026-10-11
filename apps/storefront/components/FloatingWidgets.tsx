@@ -15,6 +15,10 @@ export default function FloatingWidgets() {
 
   if (pathname && pathname.startsWith('/checkout')) return null;
 
+  // PDP mobile keeps the screen clean for buying: the support widget stays
+  // available on desktop PDP and on every other page.
+  const isPdp = !!pathname && /^\/products\/.+/.test(pathname);
+
   const wa = config.social.whatsapp.replace(/[^0-9]/g, '');
   const phoneDigits = config.store.phone.replace(/[^0-9]/g, '');
 
@@ -62,8 +66,8 @@ export default function FloatingWidgets() {
         </div>
       </div>
 
-      {/* Floating Chat Button */}
-      <div className="fixed bottom-20 md:bottom-6 right-6 z-[60] flex flex-col items-end gap-3">
+      {/* Floating Chat Button — hidden on PDP mobile */}
+      <div className={`fixed bottom-20 md:bottom-6 right-6 z-[60] flex flex-col items-end gap-3 ${isPdp ? 'max-[900px]:hidden' : ''}`}>
         <AnimatePresence>
           {isChatOpen && (
             <motion.div 

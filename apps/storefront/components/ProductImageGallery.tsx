@@ -114,7 +114,7 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
     if (containerRect.bottom < 0) return;
     const activeThumb = thumbContainer.children[activeIndex] as HTMLElement;
     if (activeThumb) {
-      activeThumb.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      activeThumb.scrollIntoView?.({ behavior: 'smooth', block: 'nearest', inline: 'center' });
     }
   }, [activeIndex]);
 
@@ -210,8 +210,8 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
 
   if (images.length === 0) {
     return (
-      <div className="md:w-[45%]">
-        <div className="aspect-square bg-gray-50 rounded-2xl flex items-center justify-center">
+      <div>
+        <div className="aspect-square bg-gray-50 rounded-[3px] flex items-center justify-center">
           <Image src={PLACEHOLDER_IMAGE} alt={productName} width={600} height={600} className="w-full h-full object-contain" />
         </div>
       </div>
@@ -220,15 +220,15 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
 
   return (
     <>
-      <div className="md:w-[45%]">
-        <div className="hidden md:flex gap-3">
+      <div className="min-w-0">
+        <div className="hidden min-[901px]:flex gap-3">
           {hasMultiple && (
-            <div ref={thumbRef} className="flex flex-col gap-2 overflow-y-auto hide-scrollbar max-h-[520px] flex-shrink-0 w-[72px]">
+            <div ref={thumbRef} className="flex flex-col gap-[10px] overflow-y-auto hide-scrollbar max-h-[520px] flex-shrink-0 w-[76px]">
               {images.map((img, i) => (
                 <button
                   key={i}
                   onClick={() => { scrollTo(i); setIsAutoPlaying(true); }}
-                  className={`relative flex-shrink-0 w-[72px] h-[72px] rounded-xl overflow-hidden border-2 transition-all duration-200 ${
+                  className={`relative flex-shrink-0 w-[76px] h-[88px] rounded-[3px] overflow-hidden border-2 transition-all duration-200 ${
                     i === activeIndex
                       ? 'border-brand-blue shadow-md shadow-brand-blue/20 scale-105'
                       : 'border-gray-200 hover:border-gray-300 opacity-70 hover:opacity-100'
@@ -237,7 +237,7 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
                   <Image
                     src={displayUrl(img, mediaMeta, 'thumbnail', !!imgErrors[i], fallbackImage, i)}
                     alt=""
-                    width={72} height={72}
+                    width={76} height={88}
                     className="w-full h-full object-cover"
                     onError={() => setImgErrors(prev => ({ ...prev, [i]: true }))}
                   />
@@ -258,12 +258,12 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
             <div
               ref={desktopScrollRef}
               onScroll={handleScroll}
-              className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar scroll-smooth rounded-2xl"
+              className="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar scroll-smooth rounded-[3px]"
             >
               {images.map((img, i) => (
                 <div
                   key={i}
-                  className="snap-center shrink-0 w-full rounded-2xl overflow-hidden bg-gray-50 relative cursor-pointer"
+                  className="snap-center shrink-0 w-full rounded-[3px] overflow-hidden bg-gray-50 relative cursor-pointer group/gal"
                   style={{ aspectRatio: '4/5' }}
                   onClick={() => { setLightboxOpen(true); setLightboxIndex(activeIndex); }}
                 >
@@ -271,7 +271,7 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
                     src={displayUrl(img, mediaMeta, 'medium', !!imgErrors[i], fallbackImage, i)}
                     alt={`${productName} ${i + 1}`}
                     fill
-                    sizes="(max-width: 768px) 100vw, 45vw"
+                    sizes="(max-width: 900px) 100vw, 50vw"
                     className="object-contain transition-transform duration-300"
                     onError={() => setImgErrors(prev => ({ ...prev, [i]: true }))}
                     draggable={false}
@@ -288,7 +288,7 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
             )}
 
             {hasMultiple && (
-              <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-sm text-white text-[11px] font-medium px-2.5 py-1 rounded-full z-10 flex items-center gap-1">
+              <div className="absolute right-[10px] bottom-[10px] bg-black/60 backdrop-blur-sm text-white text-[12px] font-medium px-2 py-0.5 rounded-[3px] z-10 flex items-center gap-1">
                 <span className="font-semibold">{activeIndex + 1}</span>
                 <span className="text-white/50">/</span>
                 <span>{images.length}</span>
@@ -300,7 +300,7 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
                 {activeIndex > 0 && (
                   <button
                     onClick={(e) => { e.stopPropagation(); goPrev(); }}
-                    className="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center bg-white/90 hover:bg-white text-gray-700 rounded-full shadow-lg transition-all z-10 hover:scale-110"
+                    className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center bg-black/45 hover:bg-black/70 text-white rounded-[3px] transition-all z-10 opacity-0 group-hover/gal:opacity-100 focus-visible:opacity-100"
                   >
                     <ChevronLeft size={18} strokeWidth={2.5} />
                   </button>
@@ -308,7 +308,7 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
                 {activeIndex < images.length - 1 && (
                   <button
                     onClick={(e) => { e.stopPropagation(); goNext(); }}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center bg-white/90 hover:bg-white text-gray-700 rounded-full shadow-lg transition-all z-10 hover:scale-110"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center bg-black/45 hover:bg-black/70 text-white rounded-[3px] transition-all z-10 opacity-0 group-hover/gal:opacity-100 focus-visible:opacity-100"
                   >
                     <ChevronRight size={18} strokeWidth={2.5} />
                   </button>
@@ -328,7 +328,7 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
           </div>
         </div>
 
-        <div className="md:hidden relative">
+        <div className="min-[901px]:hidden relative">
           <div
             ref={mobileScrollRef}
             onScroll={handleScroll}
@@ -337,7 +337,7 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
             {images.map((img, i) => (
               <div
                 key={i}
-                className="snap-center shrink-0 w-full rounded-2xl overflow-hidden bg-gray-50 relative"
+                className="snap-center shrink-0 w-full rounded-none overflow-hidden bg-gray-50 relative"
                 style={{ aspectRatio: '4/5' }}
                 onClick={() => { setLightboxOpen(true); setLightboxIndex(activeIndex); }}
               >
@@ -346,7 +346,7 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
                   alt={`${productName} image ${i + 1}`}
                   fill
                   priority={i === 0}
-                  sizes="(max-width: 768px) 100vw, 50vw"
+                  sizes="(max-width: 900px) 100vw, 50vw"
                   className="object-contain"
                   onError={() => setImgErrors(prev => ({ ...prev, [i]: true }))}
                   draggable={false}
@@ -362,7 +362,7 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
           )}
 
           {hasMultiple && (
-            <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-sm text-white text-[11px] font-medium px-2.5 py-1 rounded-full z-10">
+            <div className="absolute right-[10px] bottom-[10px] bg-black/60 backdrop-blur-sm text-white text-[12px] font-medium px-2 py-0.5 rounded-[3px] z-10">
               <span className="font-semibold">{activeIndex + 1}</span>
               <span className="text-white/50 mx-0.5">/</span>
               <span>{images.length}</span>
@@ -370,18 +370,26 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
           )}
 
           {hasMultiple && (
-            <div className="flex items-center justify-center gap-1.5 mt-3">
-              {images.map((_, i) => (
+            <div className="flex items-center gap-2 mt-3 overflow-x-auto hide-scrollbar px-4">
+              {images.map((img, i) => (
                 <button
                   key={i}
                   onClick={() => { scrollTo(i); setIsAutoPlaying(true); }}
-                  className={`rounded-full transition-all duration-300 ${
-                    i === activeIndex
-                      ? 'bg-brand-blue w-5 h-1.5'
-                      : 'bg-gray-300 hover:bg-gray-400 w-1.5 h-1.5'
-                  }`}
                   aria-label={`Go to image ${i + 1}`}
-                />
+                  className={`relative flex-shrink-0 w-14 h-[70px] rounded overflow-hidden border-2 transition-all duration-200 ${
+                    i === activeIndex
+                      ? 'border-brand-blue shadow-md shadow-brand-blue/20'
+                      : 'border-gray-200 hover:border-gray-300 opacity-70 hover:opacity-100'
+                  }`}
+                >
+                  <Image
+                    src={displayUrl(img, mediaMeta, 'thumbnail', !!imgErrors[i], fallbackImage, i)}
+                    alt=""
+                    width={56} height={70}
+                    className="w-full h-full object-cover"
+                    onError={() => setImgErrors(prev => ({ ...prev, [i]: true }))}
+                  />
+                </button>
               ))}
             </div>
           )}

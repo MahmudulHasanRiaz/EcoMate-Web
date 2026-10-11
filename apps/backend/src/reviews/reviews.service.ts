@@ -4,6 +4,19 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { normalizePhone } from '../common/utils/phone-utils';
+
+// Public review shape — `mobile` is NEVER selected here. Admin `findAll`
+// keeps full rows (mobile included, admin-only endpoint).
+const PUBLIC_REVIEW_SELECT = {
+  id: true,
+  productId: true,
+  customerName: true,
+  rating: true,
+  text: true,
+  approved: true,
+  createdAt: true,
+} as const;
 
 @Injectable()
 export class ReviewsService {
@@ -21,6 +34,7 @@ export class ReviewsService {
     const [data, total] = await Promise.all([
       this.prisma.review.findMany({
         where,
+        select: PUBLIC_REVIEW_SELECT,
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { createdAt: 'desc' },
@@ -67,24 +81,47 @@ export class ReviewsService {
 
   async create(dto: {
     productId: string;
-    customerName: string;
-    rating: number;
+    customerName?: string;
+    rating?: number;
     text?: string;
+    mobile: string;
   }) {
-    if (dto.rating < 1 || dto.rating > 5) {
+    const rating = dto.rating ?? 5;
+    if (rating < 1 || rating > 5) {
       throw new BadRequestException('Rating must be between 1 and 5');
+    }
+    const mobile = normalizePhone(dto.mobile || '');
+    if (!mobile) {
+      throw new BadRequestException(
+        'Please enter a valid Bangladeshi mobile number.',
+      );
     }
     const product = await this.prisma.product.findUnique({
       where: { id: dto.productId },
     });
     if (!product) throw new NotFoundException('Product not found');
     const existing = await this.prisma.review.findFirst({
-      where: { productId: dto.productId, customerName: dto.customerName },
+      where: {
+        productId: dto.productId,
+        OR: [
+          { mobile },
+          ...(dto.customerName ? [{ customerName: dto.customerName }] : []),
+        ],
+      },
     });
     if (existing) {
       throw new BadRequestException('You have already reviewed this product');
     }
-    return this.prisma.review.create({ data: { ...dto, approved: false } });
+    return this.prisma.review.create({
+      data: {
+        productId: dto.productId,
+        customerName: dto.customerName || 'Verified Buyer',
+        rating,
+        text: dto.text,
+        mobile,
+        approved: false,
+      },
+    });
   }
 
   async approve(id: string) {
@@ -99,7 +136,8 @@ export class ReviewsService {
   async findLatest(limit: number = 6) {
     return this.prisma.review.findMany({
       where: { approved: true },
-      include: {
+      select: {
+        ...PUBLIC_REVIEW_SELECT,
         product: { select: { id: true, name: true, slug: true, images: true } },
       },
       orderBy: { createdAt: 'desc' },

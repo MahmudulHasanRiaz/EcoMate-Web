@@ -13,6 +13,7 @@ export type SectionId =
   | 'discovery-social'
   | 'commerce-checkout'
   | 'commerce-order'
+  | 'commerce-delivery-info'
   | 'commerce-courier'
   | 'commerce-thank-you'
   | 'catalog-display'
@@ -63,7 +64,7 @@ export const CATEGORIES: CategoryMeta[] = [
     id: 'commerce',
     label: 'Commerce',
     description: 'Checkout form fields and order contact',
-    sections: ['commerce-checkout', 'commerce-order', 'commerce-thank-you', 'catalog-display'],
+    sections: ['commerce-checkout', 'commerce-order', 'commerce-delivery-info', 'commerce-thank-you', 'catalog-display'],
   },
 ]
 
@@ -152,6 +153,14 @@ export const SECTIONS: Record<SectionId, SectionMeta> = {
     description: 'WhatsApp, phone, and blocked-phone message for order-related customer contact.',
     icon: Phone,
     fields: ['order_whatsapp', 'order_call_number', 'blocked_phone_message'],
+  },
+  'commerce-delivery-info': {
+    id: 'commerce-delivery-info',
+    categoryId: 'commerce',
+    title: 'Delivery Info Card',
+    description: 'Toggle, title, and label/value rows for the delivery info card in the product buy box.',
+    icon: Phone,
+    fields: ['delivery_info_enabled', 'delivery_info_title', 'delivery_info_rows'],
   },
   'commerce-courier': {
     id: 'commerce-courier',

@@ -17,6 +17,7 @@ const DEFAULT_CONFIG: StorefrontConfig = {
   systems: [],
   currency: { code: "BDT", symbol: "৳" },
   delivery: { charge: 0, freeDeliveryMin: 0 },
+  deliveryInfo: { enabled: true, title: '', rows: [] },
   hero: { slides: [], secondaryBanner: '', secondaryBannerAlt: '' },
   social: { facebook: "", instagram: "", youtube: "", whatsapp: "", messengerUsername: "" },
   order: { whatsapp: "", callNumber: "", blockedPhoneMessage: "This phone number has been blocked. Please contact support." },

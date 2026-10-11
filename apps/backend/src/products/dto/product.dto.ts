@@ -33,6 +33,18 @@ export class CreateVariantDto {
   attributeValues?: VariantAttributeDto[];
 }
 
+export class DetailRowDto {
+  @IsString() @MinLength(1) label: string;
+  @IsString() @MinLength(1) value: string;
+}
+
+export class DescriptionSectionsDto {
+  @IsOptional() @IsString() tagline?: string;
+  @IsOptional() @IsArray() @IsString({ each: true }) benefits?: string[];
+  @IsOptional() @IsString() specifications?: string;
+  @IsOptional() @IsString() stylingTip?: string;
+}
+
 export class CreateProductDto {
   @IsString() @MinLength(1) name: string;
   @IsString() @MinLength(1) slug: string;
@@ -65,6 +77,16 @@ export class CreateProductDto {
   @IsOptional() @IsBoolean() syncManagedStock?: boolean;
   @IsOptional() @IsUUID() warehouseId?: string;
   @IsOptional() @IsUUID() sizeChartId?: string;
+  @IsOptional() @IsString() videoUrl?: string;
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DetailRowDto)
+  detailRows?: DetailRowDto[];
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DescriptionSectionsDto)
+  descriptionSections?: DescriptionSectionsDto;
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
@@ -109,6 +131,16 @@ export class UpdateProductDto {
   @IsOptional() @IsBoolean() syncManagedStock?: boolean;
   @IsOptional() @IsUUID() warehouseId?: string | null;
   @IsOptional() @IsUUID() sizeChartId?: string | null;
+  @IsOptional() @IsString() videoUrl?: string | null;
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DetailRowDto)
+  detailRows?: DetailRowDto[];
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DescriptionSectionsDto)
+  descriptionSections?: DescriptionSectionsDto;
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

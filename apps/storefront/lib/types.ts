@@ -9,9 +9,11 @@ export interface VariantAttribute {
   id: string;
   value: string;
   image?: string;
+  hexCode?: string;
   attribute: {
     id: string;
     name: string;
+    swatchFit?: string | null;
   };
 }
 
@@ -68,6 +70,7 @@ export interface Product {
   averageRating?: number;
   videoUrl?: string;
   videoPosition?: number;
+  detailRows?: { label: string; value: string }[];
   showRelatedProducts?: boolean;
 }
 

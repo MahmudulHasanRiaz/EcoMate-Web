@@ -564,6 +564,7 @@ model Brand {
 model Attribute {
   id        String           @id @default(uuid())
   name      String           @unique
+  swatchFit String?
   values    AttributeValue[]
   createdAt DateTime         @default(now())
 }
@@ -572,6 +573,7 @@ model AttributeValue {
   id          String  @id @default(uuid())
   value       String
   hexCode     String?
+  image       String?
   attributeId String
   sortOrder   Int     @default(0)
 
@@ -620,6 +622,9 @@ model Product {
   comboItems               ComboItem[]
   sizeChartId              String?
   sizeChart                SizeChart?                @relation(fields: [sizeChartId], references: [id], onDelete: SetNull)
+  videoUrl                 String?
+  detailRows               Json?
+  descriptionSections      Json?
   reviews                  Review[]
   paymentOptionOverrides   ProductPaymentOption[]
   purchaseItems            PurchaseItem[]
@@ -1723,6 +1728,7 @@ model Review {
   customerName String
   rating       Int
   text         String?  @db.Text
+  mobile       String?
   approved     Boolean  @default(false)
   createdAt    DateTime @default(now()) @map("created_at")
 

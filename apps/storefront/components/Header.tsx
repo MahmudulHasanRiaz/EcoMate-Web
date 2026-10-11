@@ -27,9 +27,18 @@ export default function Header({}: {}) {
   if (pathname && pathname.startsWith('/checkout')) return null;
 
   const navItems = config.menu?.header?.items || [];
+  const freeMin = config.delivery?.freeDeliveryMin || 0;
 
   return (
-    <header className="sticky top-0 z-50 w-full bg-white border-b border-gray-100">
+    <>
+      <div className="w-full bg-brand-blue text-white text-center text-[11px] md:text-[12px] font-medium py-1 px-4">
+        {freeMin > 0 ? (
+          <>Free delivery over ৳{freeMin.toLocaleString()} · Cash on Delivery across Bangladesh</>
+        ) : (
+          <>Cash on Delivery across Bangladesh</>
+        )}
+      </div>
+      <header className="sticky top-0 z-50 w-full bg-white border-b border-gray-100">
       {/* Top Brand Accent Bar */}
       <div className="h-[3px] w-full bg-gradient-to-r from-brand-blue/40 via-brand-blue to-brand-blue/40" />
 
@@ -118,6 +127,7 @@ export default function Header({}: {}) {
         </div>
       )}
     </header>
+    </>
   );
 }
 

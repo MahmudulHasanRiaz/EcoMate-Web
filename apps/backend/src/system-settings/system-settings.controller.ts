@@ -590,6 +590,37 @@ export class SystemSettingsController {
           subtitle: map['thanks_page_subtitle'] || '',
           description: map['thanks_page_description'] || '',
         },
+        deliveryInfo: (() => {
+          const fallback = [
+            { label: 'Inside Dhaka', value: '1–2 business days' },
+            { label: 'Outside Dhaka', value: '3–5 business days' },
+            { label: 'Payment', value: 'Cash on Delivery' },
+          ];
+          // Key never configured → out-of-box defaults. Key present but
+          // empty/invalid → honor it (empty hides the card, invalid falls
+          // back) so "খালি/off → hidden" holds once an admin touches settings.
+          const rowsRaw = map['delivery_info_rows'];
+          const parsed =
+            rowsRaw === undefined
+              ? fallback
+              : parseJson<{ label: string; value: string }[]>(rowsRaw, fallback);
+          const rows = parsed
+            .filter(
+              (r) =>
+                r &&
+                typeof r.label === 'string' &&
+                r.label.trim() &&
+                typeof r.value === 'string' &&
+                r.value.trim(),
+            )
+            .map((r) => ({ label: r.label.trim(), value: r.value.trim() }));
+          const enabledRaw = map['delivery_info_enabled'];
+          return {
+            enabled: enabledRaw === undefined ? true : enabledRaw === 'true',
+            title: map['delivery_info_title'] || '',
+            rows,
+          };
+        })(),
         playStoreUrl: map['play_store_url'] || '',
         appStoreUrl: map['app_store_url'] || '',
         storefrontPlayStoreUrl: map['storefront_play_store_url'] || '',

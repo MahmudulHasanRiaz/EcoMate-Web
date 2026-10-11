@@ -9,6 +9,7 @@ export type FieldType =
   | 'array-nav'
   | 'array-faq'
   | 'array-hours'
+  | 'array-delivery-rows'
   | 'payment-modes'
 
 export interface FieldSchema {
@@ -70,6 +71,9 @@ export const FIELD_SCHEMAS: Record<string, FieldSchema> = {
   thanks_page_subtitle:          { label: 'Thank You Page Subtitle', type: 'text', placeholder: 'Your order has been received' },
   thanks_page_description:       { label: 'Thank You Page Description', type: 'textarea', rows: 2, placeholder: 'Thank you for your order. Our team will contact you soon.' },
   hide_oos_products:             { label: 'Hide Out of Stock Products', type: 'switch', hint: 'When enabled, products with zero stock are hidden from the archive/catalog listing' },
+  delivery_info_enabled:        { label: 'Show Delivery Info Card', type: 'switch', hint: 'Show the delivery info card in the product buy box. Turn off to hide it.' },
+  delivery_info_title:          { label: 'Delivery Info Title', type: 'text', placeholder: 'Delivery Info (optional)' },
+  delivery_info_rows:            { label: 'Delivery Rows', type: 'array-delivery-rows' },
   default_variant_selected:      { label: 'Default Variant Selection', type: 'switch', hint: 'When enabled, the first variant of a product is automatically selected by default on the storefront. When disabled, the user must explicitly select color/size/attributes.' },
   show_reviews:                  { label: 'Show Product Reviews', type: 'switch', hint: 'Toggle product reviews on/off on the product details page.' },
 }

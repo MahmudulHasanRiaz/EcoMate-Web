@@ -133,7 +133,7 @@ const isVar = product.type === 'variable' && (product.variants?.length ?? 0) > 0
   const aspect = getAspectStyle(config.catalogImageRatio);
 
   return (
-    <div className="bg-white rounded-[8px] overflow-hidden flex flex-col h-full border border-gray-200 relative group transition-all select-none">
+    <div className="bg-white rounded-[3px] overflow-hidden flex flex-col h-full border border-gray-200 relative group transition-all select-none">
       {(product.saveAmount && product.originalPrice) && (
         <div className="absolute top-2 right-2 bg-brand-success-dark text-white text-[10px] md:text-[11px] px-2 py-0.5 rounded-sm z-10 font-bold shadow-sm">
           Save {Math.round((product.saveAmount / product.originalPrice) * 100)}%
