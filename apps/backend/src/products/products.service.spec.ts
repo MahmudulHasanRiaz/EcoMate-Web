@@ -582,6 +582,12 @@ describe('ProductsService', () => {
         ...createDto,
         videoUrl: 'https://youtu.be/dQw4w9WgXcQ',
         detailRows: [{ label: 'Fabric', value: 'Popcorn' }],
+        descriptionSections: {
+          tagline: 'Festive essential',
+          benefits: ['Soft & breathable'],
+          specifications: '<p>100% cotton</p>',
+          stylingTip: 'Pair it with white pajama',
+        },
       });
 
       const createCall = (prisma.product.create as jest.Mock).mock.calls[0][0];
@@ -589,6 +595,12 @@ describe('ProductsService', () => {
       expect(createCall.data.detailRows).toEqual([
         { label: 'Fabric', value: 'Popcorn' },
       ]);
+      expect(createCall.data.descriptionSections).toEqual({
+        tagline: 'Festive essential',
+        benefits: ['Soft & breathable'],
+        specifications: '<p>100% cotton</p>',
+        stylingTip: 'Pair it with white pajama',
+      });
     });
 
     it('persists an explicit availabilityMode on variable products (no force to MANAGED_STOCK)', async () => {

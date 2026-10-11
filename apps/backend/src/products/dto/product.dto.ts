@@ -38,6 +38,13 @@ export class DetailRowDto {
   @IsString() @MinLength(1) value: string;
 }
 
+export class DescriptionSectionsDto {
+  @IsOptional() @IsString() tagline?: string;
+  @IsOptional() @IsArray() @IsString({ each: true }) benefits?: string[];
+  @IsOptional() @IsString() specifications?: string;
+  @IsOptional() @IsString() stylingTip?: string;
+}
+
 export class CreateProductDto {
   @IsString() @MinLength(1) name: string;
   @IsString() @MinLength(1) slug: string;
@@ -76,6 +83,10 @@ export class CreateProductDto {
   @ValidateNested({ each: true })
   @Type(() => DetailRowDto)
   detailRows?: DetailRowDto[];
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DescriptionSectionsDto)
+  descriptionSections?: DescriptionSectionsDto;
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
@@ -126,6 +137,10 @@ export class UpdateProductDto {
   @ValidateNested({ each: true })
   @Type(() => DetailRowDto)
   detailRows?: DetailRowDto[];
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DescriptionSectionsDto)
+  descriptionSections?: DescriptionSectionsDto;
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

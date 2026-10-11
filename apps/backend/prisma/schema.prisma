@@ -622,6 +622,7 @@ model Product {
   sizeChart                SizeChart?                @relation(fields: [sizeChartId], references: [id], onDelete: SetNull)
   videoUrl                 String?
   detailRows               Json?
+  descriptionSections      Json?
   reviews                  Review[]
   paymentOptionOverrides   ProductPaymentOption[]
   purchaseItems            PurchaseItem[]
