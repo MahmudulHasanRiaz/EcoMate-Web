@@ -114,7 +114,7 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
     if (containerRect.bottom < 0) return;
     const activeThumb = thumbContainer.children[activeIndex] as HTMLElement;
     if (activeThumb) {
-      activeThumb.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      activeThumb.scrollIntoView?.({ behavior: 'smooth', block: 'nearest', inline: 'center' });
     }
   }, [activeIndex]);
 
@@ -370,18 +370,26 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
           )}
 
           {hasMultiple && (
-            <div className="flex items-center justify-center gap-1.5 mt-3">
-              {images.map((_, i) => (
+            <div className="flex items-center gap-2 mt-3 overflow-x-auto hide-scrollbar px-4">
+              {images.map((img, i) => (
                 <button
                   key={i}
                   onClick={() => { scrollTo(i); setIsAutoPlaying(true); }}
-                  className={`rounded-full transition-all duration-300 ${
-                    i === activeIndex
-                      ? 'bg-brand-blue w-5 h-1.5'
-                      : 'bg-gray-300 hover:bg-gray-400 w-1.5 h-1.5'
-                  }`}
                   aria-label={`Go to image ${i + 1}`}
-                />
+                  className={`relative flex-shrink-0 w-14 h-[70px] rounded overflow-hidden border-2 transition-all duration-200 ${
+                    i === activeIndex
+                      ? 'border-brand-blue shadow-md shadow-brand-blue/20'
+                      : 'border-gray-200 hover:border-gray-300 opacity-70 hover:opacity-100'
+                  }`}
+                >
+                  <Image
+                    src={displayUrl(img, mediaMeta, 'thumbnail', !!imgErrors[i], fallbackImage, i)}
+                    alt=""
+                    width={56} height={70}
+                    className="w-full h-full object-cover"
+                    onError={() => setImgErrors(prev => ({ ...prev, [i]: true }))}
+                  />
+                </button>
               ))}
             </div>
           )}
