@@ -25,12 +25,32 @@
 #     Added fix-p2039.sql execution before reconciliation.
 # v3: Added probes for all Courier Settlement migrations (20260927/28) so redeploy
 #     self-heals settlement migration failures without manual intervention.
+# v4: Startup ensures pgcrypto (gen_random_uuid defaults failed silently without it).
+#     Smart UNKNOWN recovery for known type-conflict migrations: when a migration
+#     failed with P3018 because a db-push-era enum type already exists while none
+#     of its tables do, the orphan type is dropped ONLY if no existing table uses
+#     it (or every dependent table is empty), then the probe re-runs and the
+#     migration resolves as rolled back so deploy retries it. Anything unsafe or
+#     unlisted still aborts (fail safe, never guess).
 
 set -e
 
 : "${DATABASE_URL:?resolve-failed-migrations.sh requires DATABASE_URL}"
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+
+# --- Step 0a: pgcrypto (idempotent; must precede every migration) -----------------
+# Some client DBs lack the extension, so CREATE TABLE with a gen_random_uuid()
+# default fails — previously a silent failure that left partial state behind.
+ensure_pgcrypto() {
+  echo "[Startup] Ensuring pgcrypto extension (gen_random_uuid() defaults)..."
+  if psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -c 'CREATE EXTENSION IF NOT EXISTS "pgcrypto";' 2>&1; then
+    echo "[Startup] pgcrypto ready."
+  else
+    echo "[Startup] FATAL: could not ensure pgcrypto extension."
+    exit 1
+  fi
+}
 
 # --- Step 0: Fix P2039 (FK constraint repair) -----------------------------------
 # Must run BEFORE reconciliation so the FK exists when reconcile checks for it.
@@ -584,8 +604,133 @@ probe_ddl() {
   esac
 }
 
+# --- Smart UNKNOWN recovery: known type-conflict migrations ----------------------
+# A failed migration whose enum type already exists (db-push era leftovers)
+# while NONE of its tables exist probes as UNKNOWN (type=1, tables=0) and used
+# to crash-loop the container. The allowlist below is the ONLY set eligible
+# for automatic recovery — anything else still aborts.
+#
+# NOTE: the directive names the courier row `20260928000000_add_courier_settlement`,
+# but no such migration directory exists; the real migration creating
+# CourierSettlementInvoiceState + CourierSettlementInvoice is
+# `20260927000100_courier_settlement_core`. Both names map to the same entry
+# (the nonexistent one can never match a real failed row).
+conflict_types_for_migration() {
+  case "$1" in
+    20260826000000_add_commissions) echo "CommissionAmountType" ;;
+    20260827000000_add_hr_leave) echo "LeaveStatus" ;;
+    20260828000000_add_attendance) echo "AttendanceStatus" ;;
+    20260829000000_add_hr_domain_enums) echo "EmployeeGender AttendanceMethod AttendanceModeSetting AttendanceSessionSource BankAccountType BankVerificationStatus AttendanceDeviceSyncStatus AttendanceEventType AttendanceEventStatus" ;;
+    20260928000000_add_courier_settlement|20260927000100_courier_settlement_core) echo "CourierSettlementInvoiceState" ;;
+    *) echo "" ;;
+  esac
+}
+
+# Tables that must ALL be absent for the drop to be considered. Any partial
+# table presence means real migration progress -> manual resolution.
+conflict_tables_for_migration() {
+  case "$1" in
+    20260826000000_add_commissions) echo "CommissionRule CommissionEarning" ;;
+    20260827000000_add_hr_leave) echo "LeaveType LeaveRequest" ;;
+    20260828000000_add_attendance) echo "AttendanceRecord" ;;
+    20260928000000_add_courier_settlement|20260927000100_courier_settlement_core) echo "CourierSettlementInvoice" ;;
+    *) echo "" ;;
+  esac
+}
+
+# safe_drop_conflicting_type <type_name> -> 0 if dropped (or already absent
+# handling is done by the caller), 1 if unsafe. NEVER drops a type that backs
+# data: zero dependents -> drop; otherwise every dependent table must be empty.
+# Postgres itself is the backstop — DROP fails if a view/default still needs
+# the type, and ON_ERROR_STOP propagates that failure.
+safe_drop_conflicting_type() {
+  drop_type="$1"
+  case "$drop_type" in
+    ''|*[!A-Za-z0-9_]*)
+      echo "[Startup] FATAL: refusing to handle suspicious type name '$drop_type'."
+      return 1
+      ;;
+  esac
+  dep_count="$(psql "$DATABASE_URL" -tAc \
+    "SELECT count(*) FROM pg_attribute a
+     JOIN pg_class c ON a.attrelid = c.oid
+     JOIN pg_type t ON a.atttypid = t.oid
+     WHERE t.typname = '$drop_type'
+     AND c.relkind = 'r' AND c.relnamespace = 'public'::regnamespace;")"
+  dep_count="$(printf '%s' "$dep_count" | tr -d '[:space:]')"
+  if [ "$dep_count" = "0" ]; then
+    echo "[Startup] Type \"$drop_type\" is used by no existing table -> safe to drop."
+    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -c "DROP TYPE IF EXISTS \"$drop_type\";"
+    return $?
+  fi
+  echo "[Startup] Type \"$drop_type\" backs $dep_count column(s); checking row counts..."
+  dep_tables="$(psql "$DATABASE_URL" -tAc \
+    "SELECT DISTINCT c.relname FROM pg_attribute a
+     JOIN pg_class c ON a.attrelid = c.oid
+     JOIN pg_type t ON a.atttypid = t.oid
+     WHERE t.typname = '$drop_type'
+     AND c.relkind = 'r' AND c.relnamespace = 'public'::regnamespace;")"
+  for dep_tbl in $dep_tables; do
+    case "$dep_tbl" in
+      ''|*[!A-Za-z0-9_]*)
+        echo "[Startup] FATAL: refusing to inspect suspicious table name '$dep_tbl'."
+        return 1
+        ;;
+    esac
+    dep_rows="$(psql "$DATABASE_URL" -tAc "SELECT count(*) FROM \"$dep_tbl\";")"
+    dep_rows="$(printf '%s' "$dep_rows" | tr -d '[:space:]')"
+    if [ "$dep_rows" != "0" ]; then
+      echo "[Startup] UNSAFE: table \"$dep_tbl\" uses type \"$drop_type\" and holds $dep_rows row(s) -> will not drop."
+      return 1
+    fi
+    echo "[Startup] Table \"$dep_tbl\" uses type \"$drop_type\" but is empty (0 rows)."
+  done
+  echo "[Startup] All dependents of \"$drop_type\" are empty -> safe to drop."
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -c "DROP TYPE IF EXISTS \"$drop_type\";"
+  return $?
+}
+
+# recover_type_conflict <migration> -> 0 if the migration is allowlisted AND
+# all of its types were safely dropped (or already absent); 1 otherwise.
+recover_type_conflict() {
+  rc_migration="$1"
+  rc_types="$(conflict_types_for_migration "$rc_migration")"
+  if [ -z "$rc_types" ]; then
+    return 1
+  fi
+  for rc_tbl in $(conflict_tables_for_migration "$rc_migration"); do
+    case "$rc_tbl" in
+      ''|*[!A-Za-z0-9_]*)
+        echo "[Startup] FATAL: refusing to inspect suspicious table name '$rc_tbl'."
+        return 1
+        ;;
+    esac
+    rc_present="$(psql "$DATABASE_URL" -tAc \
+      "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename='$rc_tbl';")"
+    rc_present="$(printf '%s' "$rc_present" | tr -d '[:space:]')"
+    if [ "$rc_present" != "0" ]; then
+      echo "[Startup] UNSAFE: table \"$rc_tbl\" already exists for failed migration '$rc_migration' -> manual resolution required."
+      return 1
+    fi
+  done
+  for rc_type in $rc_types; do
+    rc_exists="$(psql "$DATABASE_URL" -tAc \
+      "SELECT count(*) FROM pg_type WHERE typname='$rc_type';")"
+    rc_exists="$(printf '%s' "$rc_exists" | tr -d '[:space:]')"
+    if [ "$rc_exists" = "0" ]; then
+      echo "[Startup] Type \"$rc_type\" absent — nothing to drop."
+      continue
+    fi
+    safe_drop_conflicting_type "$rc_type" || return 1
+  done
+  return 0
+}
+
 # --- Main resolution logic ------------------------------------------------------
 resolve_failed() {
+  # Step 0a: pgcrypto must exist before any migration DDL runs.
+  ensure_pgcrypto
+
   # Step 0: Fix P2039 FK constraint (must happen before reconciliation)
   fix_p2039
 
@@ -615,10 +760,24 @@ resolve_failed() {
         npx prisma migrate resolve --rolled-back "$m"
         ;;
       *)
-        echo "[Startup] FATAL: cannot safely auto-resolve failed migration '$m'."
-        echo "[Startup] Resolve manually: npx prisma migrate resolve --applied|--rolled-back '$m'"
-        echo "[Startup] then redeploy."
-        exit 1
+        if recover_type_conflict "$m"; then
+          echo "[Startup] Type-conflict recovery done for '$m' — re-probing..."
+          state="$(probe_ddl "$m")"
+          if [ "$state" = "NOT_APPLIED" ]; then
+            echo "[Startup] Migration '$m': DDL is absent after recovery -> marking as rolled back (re-applies on next deploy)."
+            npx prisma migrate resolve --rolled-back "$m"
+          else
+            echo "[Startup] FATAL: migration '$m' still '$state' after type recovery."
+            echo "[Startup] Resolve manually: npx prisma migrate resolve --applied|--rolled-back '$m'"
+            echo "[Startup] then redeploy."
+            exit 1
+          fi
+        else
+          echo "[Startup] FATAL: cannot safely auto-resolve failed migration '$m'."
+          echo "[Startup] Resolve manually: npx prisma migrate resolve --applied|--rolled-back '$m'"
+          echo "[Startup] then redeploy."
+          exit 1
+        fi
         ;;
     esac
   done
@@ -626,4 +785,8 @@ resolve_failed() {
   echo "[Startup] Failed migrations resolved."
 }
 
-resolve_failed
+# Only auto-run when executed directly (not when sourced by tests, which stub
+# `psql` and call individual functions).
+if [ "${0##*/}" = "resolve-failed-migrations.sh" ]; then
+  resolve_failed
+fi
