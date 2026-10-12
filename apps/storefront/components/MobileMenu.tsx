@@ -5,6 +5,7 @@ import { X, User, LogOut, ChevronRight, ChevronDown, HelpCircle, Heart, Calendar
 import { motion, AnimatePresence } from "motion/react";
 import Link from "next/link";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
+import { hasLicenseFeature } from "@/lib/api/storefront-config";
 import { useAuth } from "@/context/AuthContext";
 import { usePathname } from "next/navigation";
 
@@ -116,7 +117,7 @@ export default function MobileMenu({}: {}) {
                   <Calendar size={18} strokeWidth={1.5} /> 
                   <span className="text-[13px] font-medium tracking-wide">Track Your Order</span>
                 </Link>
-                {config.licenseFeatures?.includes('storefront_wishlist') && (
+                {hasLicenseFeature(config, 'storefront_wishlist') && (
                   <Link 
                     href="/wishlist" 
                     onClick={closeMenu} 

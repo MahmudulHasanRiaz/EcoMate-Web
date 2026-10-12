@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { fetchCombosServer } from "@/lib/api/combos-server";
 import ComboGridClient from "./ComboGridClient";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
+import { hasLicenseFeature } from "@/lib/api/storefront-config";
 import { siteUrl } from "@/lib/site-url";
 
 // Combo stock renders via a revalidate:0 fetch — the page must be fully
@@ -31,7 +32,7 @@ export default async function CombosPage({
   searchParams: Promise<CombosSearchParams>;
 }) {
   const config = await getStorefrontConfigServer().catch(() => ({ licenseFeatures: [] as string[] }));
-  if (!config.licenseFeatures?.includes('admin_combos')) {
+  if (!hasLicenseFeature(config, 'admin_combos')) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
         <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">

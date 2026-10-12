@@ -10,6 +10,7 @@ import type { Product } from '@/lib/types';
 import { useRouter } from 'next/navigation';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
+import { hasLicenseFeature } from '@/lib/api/storefront-config';
 import { useCatalogImageStyle } from '@/lib/utils/image-ratio';
 import { useAuth } from '@/context/AuthContext';
 import { trackAddToCart } from '@/lib/tracking';
@@ -45,7 +46,7 @@ export default function WishlistPage() {
       .finally(() => setLoading(false));
   }, [ids]);
 
-  if (!config.licenseFeatures?.includes('storefront_wishlist')) {
+  if (!hasLicenseFeature(config, 'storefront_wishlist')) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
         <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">

@@ -12,6 +12,7 @@ import OfflineBanner from "@/components/OfflineBanner";
 import { Toaster } from "sonner";
 import { getStorefrontConfigServer, StorefrontConfigError } from "@/lib/api/storefront-config-server";
 import { siteUrl } from "@/lib/site-url";
+import { hasLicenseFeature } from "@/lib/api/storefront-config";
 import type { CSSProperties } from "react";
 import type { StorefrontConfig } from "@/lib/api/storefront-config";
 
@@ -99,7 +100,7 @@ export default async function RootLayout({
   const licenseActive = (initialConfig as any)?._licenseActive ?? true;
   const licenseMessage = (initialConfig as any)?._licenseMessage ?? '';
   const licenseFeatures: string[] = (initialConfig as any)?.licenseFeatures ?? [];
-  const hasMobileDistro = licenseFeatures.includes('*') || licenseFeatures.includes('mobile_distribution');
+  const hasMobileDistro = hasLicenseFeature({ licenseFeatures }, 'mobile_distribution');
 
   const BASE_URL = siteUrl() || 'https://example.com';
 

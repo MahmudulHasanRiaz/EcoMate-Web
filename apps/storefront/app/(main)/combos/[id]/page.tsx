@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import ComboDetailClient from '@/components/ComboDetailClient';
 import { getStorefrontConfigServer } from '@/lib/api/storefront-config-server';
+import { hasLicenseFeature } from '@/lib/api/storefront-config';
 
 // Combo stock is rendered on this page via a revalidate:0 fetch — the page
 // must be fully dynamic or Next.js throws DYNAMIC_SERVER_USAGE at runtime.
@@ -55,7 +56,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function ComboDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const config = await getStorefrontConfigServer().catch(() => ({ licenseFeatures: [] as string[] }));
-  if (!config.licenseFeatures?.includes('admin_combos')) {
+  if (!hasLicenseFeature(config, 'admin_combos')) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
         <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">

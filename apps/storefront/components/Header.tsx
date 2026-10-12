@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
+import { hasLicenseFeature } from "@/lib/api/storefront-config";
 import { StoreBrand } from "./StoreBrand";
 import Link from 'next/link';
 import { HeaderSearch } from "./HeaderSearch";
@@ -85,7 +86,7 @@ export default function Header({}: {}) {
             ) : (
               <HeaderAction icon={<User size={20} />} label="Sign In" hideOnMobile href="/account" />
             )}
-            {config.licenseFeatures?.includes('storefront_wishlist') && (
+            {hasLicenseFeature(config, 'storefront_wishlist') && (
               <HeaderAction icon={<Heart size={20} />} label="Wishlist" hideOnMobile href="/wishlist" />
             )}
 

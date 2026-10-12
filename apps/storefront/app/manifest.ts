@@ -1,13 +1,12 @@
 import type { MetadataRoute } from 'next'
 import { getStorefrontConfigServer } from '@/lib/api/storefront-config-server'
-
-const WILDCARD = '*';
+import { hasLicenseFeature } from '@/lib/api/storefront-config'
 
 export default async function manifest(): Promise<MetadataRoute.Manifest> {
   try {
     const config = await getStorefrontConfigServer()
     const licenseFeatures: string[] = (config as any)?.licenseFeatures ?? [];
-    const hasMobileDistro = licenseFeatures.includes(WILDCARD) || licenseFeatures.includes('mobile_distribution');
+    const hasMobileDistro = hasLicenseFeature({ licenseFeatures }, 'mobile_distribution');
 
     // Without mobile distribution: return non-installable manifest
     if (!hasMobileDistro) {

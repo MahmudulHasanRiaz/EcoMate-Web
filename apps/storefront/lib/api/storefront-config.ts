@@ -167,8 +167,12 @@ export interface StorefrontConfig {
   appStoreUrl: string;
 }
 
-export function hasLicenseFeature(config: StorefrontConfig, key: string): boolean {
-  return config.licenseFeatures?.includes(key) ?? false;
+export function hasLicenseFeature(config: { licenseFeatures?: string[] } | null | undefined, key: string): boolean {
+  const features = config?.licenseFeatures;
+  if (!features) return false;
+  // '*' opens every feature (Special Custom Plan) — every consumer must go
+  // through this helper instead of a bare .includes(key).
+  return features.includes('*') || features.includes(key);
 }
 
 let cachedConfig: StorefrontConfig | null = null;
