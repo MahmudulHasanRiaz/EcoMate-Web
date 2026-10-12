@@ -22,6 +22,6 @@ COPY --from=builder --chown=nextjs:nodejs /app/apps/storefront/.next/static ./ap
 COPY --chown=nextjs:nodejs apps/storefront/startup.sh ./apps/storefront/startup.sh
 USER nextjs
 EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/robots.txt || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 CMD ["sh", "apps/storefront/startup.sh"]
