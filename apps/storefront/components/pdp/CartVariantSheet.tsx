@@ -21,6 +21,8 @@ export interface CartVariantSheetProps {
   colorAttrName: string | null;
   defaultColor?: string;
   sizeChartData: SizeChartData | null;
+  // Feature-flag gate for the Size Guide trigger (chart loads lazily).
+  sizeGuideAvailable: boolean;
   onSelectVariant: (v: Variant | null) => void;
   onSelectAttr: (attrName: string, value: string) => void;
   onDec: () => void;
@@ -41,7 +43,7 @@ export function CartVariantSheet(props: CartVariantSheetProps) {
   const {
     product, displayPrice, selectedVariant, selectedAttrs,
     qty, quantity, inCart, justAdded, hintText, isVariable,
-    colorAttrName, defaultColor, sizeChartData,
+    colorAttrName, defaultColor, sizeChartData, sizeGuideAvailable,
     onSelectVariant, onSelectAttr, onDec, onInc,
     onAddToCart, onBuyNow, onSizeGuide, onClose,
   } = props;
@@ -90,8 +92,8 @@ export function CartVariantSheet(props: CartVariantSheetProps) {
               onSelect={onSelectVariant}
               onSelectAttr={onSelectAttr}
               hiddenAttributes={colorAttrName && defaultColor ? [colorAttrName] : undefined}
-              sizeGuideLabel={sizeChartData ? 'Size Guide' : undefined}
-              onSizeGuideClick={sizeChartData ? onSizeGuide : undefined}
+              sizeGuideLabel={sizeGuideAvailable ? 'Size Guide' : undefined}
+              onSizeGuideClick={sizeGuideAvailable ? onSizeGuide : undefined}
             />
           )}
 
@@ -109,11 +111,13 @@ export function CartVariantSheet(props: CartVariantSheetProps) {
           </div>
 
           <div className="flex flex-col gap-2">
+            {/* Same 3-state contract as the buy box: in-cart shows an
+                explicit REMOVE label, so ADD never silently removes. */}
             <button
               onClick={onAddToCart}
               className="w-full h-10 rounded-[3px] border-2 border-brand-blue text-brand-blue bg-white hover:bg-brand-blue/5 font-medium flex items-center justify-center gap-2 text-[13px]"
             >
-              <ShoppingBag size={16} /> ADD TO CART
+              {inCart ? (<><ShoppingBag size={16} /> REMOVE FROM CART</>) : (<><ShoppingBag size={16} /> ADD TO CART</>)}
             </button>
             <button
               onClick={onBuyNow}

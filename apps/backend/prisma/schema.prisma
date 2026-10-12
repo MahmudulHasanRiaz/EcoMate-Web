@@ -1726,7 +1726,7 @@ model Review {
   productId    String
   product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   customerName String
-  rating       Int
+  rating       Int?
   text         String?  @db.Text
   mobile       String?
   approved     Boolean  @default(false)

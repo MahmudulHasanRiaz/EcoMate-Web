@@ -2,12 +2,16 @@
 
 import type { Product } from '@/lib/types';
 import VideoEmbed from '../VideoEmbed';
-import { sanitizeProductHTML } from '@/lib/sanitize-product';
 
 interface Props {
   product: Product;
   /** variant size values for the `Size Available` details row */
   sizeValues: string[];
+  // Server-sanitized HTML (page.tsx runs sanitizeProductHTML on the server,
+  // so isomorphic-dompurify never ships to the browser). Required: rendering
+  // raw product HTML would be an XSS hole.
+  sanitizedDescription: string;
+  sanitizedSpecifications: string;
 }
 
 /**
@@ -15,7 +19,7 @@ interface Props {
  * features → product details → perfect-for. Every section hides when its
  * data source is absent; nothing is hardcoded. Colors are theme tokens.
  */
-export function PdpSections({ product, sizeValues }: Props) {
+export function PdpSections({ product, sizeValues, sanitizedDescription, sanitizedSpecifications }: Props) {
   const sections = product.descriptionSections;
   const rows = Array.isArray(product.detailRows) ? product.detailRows : [];
   const tags = product.tags || [];
@@ -29,7 +33,7 @@ export function PdpSections({ product, sizeValues }: Props) {
           <h2 className="text-[19px] font-medium text-brand-dark m-0 mb-[14px]">Description</h2>
           <div
             className="prose prose-sm max-w-none text-[14px] text-gray-600 leading-relaxed [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:mb-1 [&_h1]:text-xl [&_h2]:text-lg [&_h3]:text-base [&_strong]:font-semibold [&_a]:text-blue-600 [&_a]:underline"
-            dangerouslySetInnerHTML={{ __html: sanitizeProductHTML(product.description) }}
+            dangerouslySetInnerHTML={{ __html: sanitizedDescription }}
           />
         </div>
       )}
@@ -74,7 +78,7 @@ export function PdpSections({ product, sizeValues }: Props) {
             ) : (
               <div
                 className="px-0 py-3 text-[13px] text-gray-500 leading-relaxed"
-                dangerouslySetInnerHTML={{ __html: sanitizeProductHTML(sections?.specifications || '') }}
+                dangerouslySetInnerHTML={{ __html: sanitizedSpecifications }}
               />
             )}
           </div>

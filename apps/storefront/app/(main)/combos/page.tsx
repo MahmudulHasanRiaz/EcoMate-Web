@@ -1,10 +1,24 @@
+import type { Metadata } from "next";
 import { fetchCombosServer } from "@/lib/api/combos-server";
 import ComboGridClient from "./ComboGridClient";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
+import { siteUrl } from "@/lib/site-url";
 
 // Combo stock renders via a revalidate:0 fetch — the page must be fully
 // dynamic or Next.js throws DYNAMIC_SERVER_USAGE at runtime.
 export const dynamic = 'force-dynamic';
+
+export async function generateMetadata(): Promise<Metadata> {
+  let storeName = 'Store';
+  try {
+    storeName = (await getStorefrontConfigServer()).store.name;
+  } catch {}
+  return {
+    title: 'Combo Deals',
+    description: `Bundle combo deals at ${storeName}`,
+    alternates: { canonical: `${siteUrl()}/combos` },
+  };
+}
 
 type CombosSearchParams = {
   search?: string;

@@ -10,19 +10,24 @@ const base = {
   tags: ['Wedding', 'Formal'],
 } as any;
 
+const san = {
+  sanitizedDescription: '<p>Line one.<br>Line two.</p>',
+  sanitizedSpecifications: '<p>100% cotton</p>',
+};
+
 describe('PdpSections', () => {
   it('renders description heading without collapse toggle', () => {
-    render(<PdpSections product={base} sizeValues={[]} />);
+    render(<PdpSections product={base} sizeValues={[]} {...san} />);
     expect(screen.getByText('Description')).toBeDefined();
   });
 
   it('renders benefits as a check grid, hidden when absent', () => {
-    const { rerender } = render(<PdpSections product={base} sizeValues={[]} />);
+    const { rerender } = render(<PdpSections product={base} sizeValues={[]} {...san} />);
     expect(screen.queryByText('Key Features')).toBeNull();
     rerender(
       <PdpSections
         product={{ ...base, descriptionSections: { benefits: ['Soft & breathable', 'Fine stitching'] } }}
-        sizeValues={[]}
+        sizeValues={[]} {...san}
       />,
     );
     expect(screen.getByText('Key Features')).toBeDefined();
@@ -33,7 +38,7 @@ describe('PdpSections', () => {
     render(
       <PdpSections
         product={{ ...base, detailRows: [{ label: 'Fabric', value: 'Popcorn' }] }}
-        sizeValues={['M', 'L']}
+        sizeValues={['M', 'L']} {...san}
       />,
     );
     expect(screen.getByText('Product Details')).toBeDefined();
@@ -46,7 +51,7 @@ describe('PdpSections', () => {
     render(
       <PdpSections
         product={{ ...base, descriptionSections: { specifications: '<p>100% cotton</p>' } }}
-        sizeValues={[]}
+        sizeValues={[]} {...san}
       />,
     );
     expect(screen.getByText('Product Details')).toBeDefined();
@@ -54,23 +59,23 @@ describe('PdpSections', () => {
   });
 
   it('hides details entirely when neither source exists', () => {
-    render(<PdpSections product={base} sizeValues={[]} />);
+    render(<PdpSections product={base} sizeValues={[]} {...san} />);
     expect(screen.queryByText('Product Details')).toBeNull();
   });
 
   it('renders tag chips, hidden when empty', () => {
-    const { rerender } = render(<PdpSections product={base} sizeValues={[]} />);
+    const { rerender } = render(<PdpSections product={base} sizeValues={[]} {...san} />);
     expect(screen.getByText('Perfect For')).toBeDefined();
     expect(screen.getByText('Wedding')).toBeDefined();
-    rerender(<PdpSections product={{ ...base, tags: [] }} sizeValues={[]} />);
+    rerender(<PdpSections product={{ ...base, tags: [] }} sizeValues={[]} {...san} />);
     expect(screen.queryByText('Perfect For')).toBeNull();
   });
 
   it('renders video only when a URL exists', () => {
-    const { rerender } = render(<PdpSections product={base} sizeValues={[]} />);
+    const { rerender } = render(<PdpSections product={base} sizeValues={[]} {...san} />);
     expect(screen.queryByText(/product video/i)).toBeNull();
     rerender(
-      <PdpSections product={{ ...base, videoUrl: 'https://youtu.be/dQw4w9WgXcQ' }} sizeValues={[]} />,
+      <PdpSections product={{ ...base, videoUrl: 'https://youtu.be/dQw4w9WgXcQ' }} sizeValues={[]} {...san} />,
     );
     expect(screen.getByText(/product video/i)).toBeDefined();
   });

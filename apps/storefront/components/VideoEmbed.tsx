@@ -35,15 +35,44 @@ function parseVideoUrl(url: string): { type: VideoType; id: string | null } {
 }
 
 function YouTubeEmbed({ videoId }: { videoId: string }) {
+  // Click-to-play facade: the ~500KB YouTube player JS loads only after the
+  // shopper actually wants the video. Thumbnail is lazy too.
+  const [play, setPlay] = useState(false);
+  if (play) {
+    return (
+      <iframe
+        src={`https://www.youtube-nocookie.com/embed/${videoId}?rel=0&controls=1&modestbranding=1&autoplay=1`}
+        title="Product video"
+        loading="lazy"
+        allow="accelerometer; encrypted-media; gyroscope; picture-in-picture"
+        allowFullScreen
+        className="absolute inset-0 w-full h-full rounded-lg"
+        style={{ border: 'none' }}
+      />
+    );
+  }
   return (
-    <iframe
-      src={`https://www.youtube-nocookie.com/embed/${videoId}?rel=0&controls=1&modestbranding=1`}
-      title="Product video"
-      allow="accelerometer; encrypted-media; gyroscope; picture-in-picture"
-      allowFullScreen
-      className="absolute inset-0 w-full h-full rounded-lg"
-      style={{ border: 'none' }}
-    />
+    <button
+      type="button"
+      onClick={() => setPlay(true)}
+      aria-label="Play product video"
+      className="absolute inset-0 w-full h-full p-0 border-0 cursor-pointer bg-gray-100"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={`https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`}
+        alt=""
+        loading="lazy"
+        className="absolute inset-0 w-full h-full object-cover rounded-lg"
+      />
+      <span className="absolute inset-0 flex items-center justify-center" aria-hidden="true">
+        <span className="flex w-14 h-14 items-center justify-center rounded-full bg-black/60">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="#fff" aria-hidden="true">
+            <path d="M8 5v14l11-7z" />
+          </svg>
+        </span>
+      </span>
+    </button>
   );
 }
 

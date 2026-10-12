@@ -13,17 +13,37 @@ import { resolveCatalogId } from '@/lib/catalog-id';
 import { resolveVariantImage, parentImage } from '@/lib/variant-image';
 import { useAuth } from "@/context/AuthContext";
 import RelatedProducts from "./RelatedProducts";
-import { sanitizeProductHTML as sanitizeHTML } from '@/lib/sanitize-product';
 import apiClient from "@/lib/api-client";
 import type { SizeChartData } from "./SizeChartModal";
 import { toast } from 'sonner';
 import { PdpGallery } from "./pdp/PdpGallery";
 import { BuyBox } from "./pdp/BuyBox";
 import { PdpSections } from "./pdp/PdpSections";
-import { CartVariantSheet } from "./pdp/CartVariantSheet";
 import { StickyBar } from "./pdp/StickyBar";
-import { SizeGuideSheet } from "./pdp/SizeGuideSheet";
-import { ReviewModal } from "./pdp/ReviewModal";
+import dynamic from "next/dynamic";
+
+// Below-the-fold / on-demand sheets stay out of the initial PDP bundle and
+// load on first open (ssr:false — they need browser APIs anyway). The
+// trigger buttons render immediately; only the sheet content is deferred.
+function SheetLoading() {
+  return (
+    <div className="fixed inset-0 z-[100] flex items-end justify-center min-[901px]:items-center" aria-hidden="true">
+      <div className="w-8 h-8 m-auto border-2 border-gray-200 border-t-brand-blue rounded-full animate-spin" />
+    </div>
+  );
+}
+const CartVariantSheet = dynamic(
+  () => import("./pdp/CartVariantSheet").then((m) => m.CartVariantSheet),
+  { ssr: false, loading: SheetLoading },
+);
+const SizeGuideSheet = dynamic(
+  () => import("./pdp/SizeGuideSheet").then((m) => m.SizeGuideSheet),
+  { ssr: false, loading: SheetLoading },
+);
+const ReviewModal = dynamic(
+  () => import("./pdp/ReviewModal").then((m) => m.ReviewModal),
+  { ssr: false, loading: SheetLoading },
+);
 
 function cartItemKey(productId: string, variantId?: string) {
   return variantId ? `${productId}::${variantId}` : productId;
@@ -55,7 +75,9 @@ function ReviewsSection({ reviews, productId, productName, userLabel, onRefresh 
   const [reviewOpen, setReviewOpen] = useState(false);
 
   const hasReviews = reviews && reviews.length > 0;
-  const avgRating = hasReviews ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length : 0;
+  // Unrated reviews (rating null) never inflate the average.
+  const rated = hasReviews ? reviews.filter((r) => r.rating != null) : [];
+  const avgRating = rated.length ? rated.reduce((sum, r) => sum + (r.rating ?? 0), 0) / rated.length : 0;
   const totalReviews = hasReviews ? reviews.length : 0;
 
   return (
@@ -88,7 +110,7 @@ function ReviewsSection({ reviews, productId, productName, userLabel, onRefresh 
                   <span className="text-[14px] font-medium text-gray-800">{review.customerName}</span>
                   <span className="text-[11px] text-gray-400">{formatDate(review.createdAt)}</span>
                 </div>
-                <StarRating rating={review.rating} size={14} />
+                <StarRating rating={review.rating ?? 0} size={14} />
                 {review.text && <p className="text-[13px] text-gray-600 mt-1 leading-relaxed">{review.text}</p>}
               </div>
             ))}
@@ -114,7 +136,17 @@ function ReviewsSection({ reviews, productId, productName, userLabel, onRefresh 
   );
 }
 
-export default function ProductDetailClient({ product, defaultColor }: { product: Product; defaultColor?: string }) {
+export default function ProductDetailClient({ product, defaultColor, initialRelatedItems, initialReviews, sanitizedDescription, sanitizedSpecifications }: {
+  product: Product;
+  defaultColor?: string;
+  // SSR-provided data (page.tsx fetches these in parallel with the product).
+  // When present, the matching client fetch is skipped — no browser waterfall.
+  initialRelatedItems?: Product[];
+  initialReviews?: Review[];
+  // Server-sanitized HTML (required — keeps dompurify out of the client bundle).
+  sanitizedDescription: string;
+  sanitizedSpecifications: string;
+}) {
   const { items, addToCart, updateQuantity, startBuyNow } = useCart();
   const { config } = useStorefrontConfig();
   const { isWishlisted, toggle } = useWishlist();
@@ -126,7 +158,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
   const [copied, setCopied] = useState(false);
   const [sizeChartLoading, setSizeChartLoading] = useState(false);
   const [heartPop, setHeartPop] = useState(false);
-  const [reviews, setReviews] = useState<Review[] | undefined>(product.reviews);
+  const [reviews, setReviews] = useState<Review[] | undefined>(initialReviews ?? product.reviews);
   const [qty, setQty] = useState(1);
   const [showSizeHint, setShowSizeHint] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -337,25 +369,42 @@ export default function ProductDetailClient({ product, defaultColor }: { product
     });
   }, [product.id, product.name, product.category, product.price, product.sku, config.currency.code, user?.email, user?.phoneNumber, user?.firstName, user?.lastName]);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    if (config.features.sizeChart && product.slug) {
-      setSizeChartLoading(true);
-      apiClient.get(`/size-charts/by-product/${product.slug}`, { signal: controller.signal })
-        .then(res => { if (!controller.signal.aborted) setSizeChartData(res.data); })
-        .catch(() => {})
-        .finally(() => { if (!controller.signal.aborted) setSizeChartLoading(false); });
-    } else {
-      setSizeChartData(null);
+  // Size charts load lazily on first guide open — never on PDP mount.
+  // The trigger visibility comes from the feature flag (sizeGuideAvailable);
+  // existence for this product is confirmed by the fetch below.
+  const sizeChartFetchedSlug = useRef<string | null>(null);
+  const sizeGuideAvailable = config.features.sizeChart && !!product.slug;
+
+  function openSizeGuide() {
+    const slug = product.slug;
+    if (!config.features.sizeChart || !slug) return;
+    if (sizeChartFetchedSlug.current === slug) {
+      if (sizeChartData) setSizeChartOpen(true);
+      else toast.info('No size guide available for this product.');
+      return;
     }
-    return () => controller.abort();
-  }, [product.slug, config.features.sizeChart]);
+    sizeChartFetchedSlug.current = slug;
+    setSizeChartLoading(true);
+    apiClient.get(`/size-charts/by-product/${slug}`)
+      .then(res => {
+        const chart = res.data ?? null;
+        setSizeChartData(chart);
+        if (chart) setSizeChartOpen(true);
+        else toast.info('No size guide available for this product.');
+      })
+      .catch(() => {
+        sizeChartFetchedSlug.current = null;
+        setSizeChartData(null);
+        toast.info('No size guide available for this product.');
+      })
+      .finally(() => setSizeChartLoading(false));
+  }
 
   function refreshReviews() {
     if (!product.slug) return;
     const controller = new AbortController();
     apiClient.get(`/reviews/product/${product.slug}`, { signal: controller.signal })
-      .then(res => { if (!controller.signal.aborted) setReviews(res.data); })
+      .then(res => { if (!controller.signal.aborted) setReviews(Array.isArray(res.data) ? res.data : (res.data as any)?.data ?? []); })
       .catch(() => {});
   }
 
@@ -456,6 +505,10 @@ export default function ProductDetailClient({ product, defaultColor }: { product
 
   function handleAddToCart() {
     if (isOutOfStock) return;
+    // ADDED-feedback window (1.5s): ignore repeat clicks — cart state may
+    // still be propagating, and a stale inCart read would remove the item
+    // the user just added.
+    if (justAdded) return;
     const msg = missingSelectionMessage();
     if (msg) {
       setShowSizeHint(true);
@@ -577,7 +630,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
   const callHref = callNumber ? `tel:+${callNumber.replace(/[^0-9]/g, '')}` : '#';
 
   return (
-    <div className="bg-white min-h-screen pb-28 min-[901px]:pb-12 overflow-x-hidden font-[var(--font-pdp)]">
+    <div className="bg-white min-h-screen pb-28 min-[901px]:pb-12 overflow-x-clip font-[var(--font-pdp)]">
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes pricePop {
           0% { transform: scale(1); }
@@ -648,6 +701,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
             justAdded={justAdded}
             sizeChartData={sizeChartData}
             sizeChartLoading={sizeChartLoading}
+            sizeGuideAvailable={sizeGuideAvailable}
             showSizeHint={showSizeHint}
             wishlisted={isWishlisted(product.id)}
             heartPop={heartPop}
@@ -666,13 +720,13 @@ export default function ProductDetailClient({ product, defaultColor }: { product
             onBuyNow={handleBuyNow}
             onWishlist={handleWishlistToggle}
             onCopyLink={handleCopyLink}
-            onSizeGuide={() => setSizeChartOpen(true)}
+            onSizeGuide={openSizeGuide}
           />
         </div>
       </div>
 
       <div className="px-4 min-[901px]:px-6 max-w-screen-xl mx-auto">
-        <PdpSections product={product} sizeValues={sizeValues} />
+        <PdpSections product={product} sizeValues={sizeValues} sanitizedDescription={sanitizedDescription} sanitizedSpecifications={sanitizedSpecifications} />
 
         <div className="hidden" aria-hidden="true">
           {sections?.seoTags && sections.seoTags.length > 0 && (
@@ -703,7 +757,7 @@ export default function ProductDetailClient({ product, defaultColor }: { product
       </div>
 
       {product.showRelatedProducts !== false && (
-        <RelatedProducts product={product} />
+        <RelatedProducts product={product} initialItems={initialRelatedItems} />
       )}
 
       {sizeChartOpen && sizeChartData && (
@@ -729,13 +783,14 @@ export default function ProductDetailClient({ product, defaultColor }: { product
           colorAttrName={colorAttrName}
           defaultColor={defaultColor}
           sizeChartData={sizeChartData}
+          sizeGuideAvailable={sizeGuideAvailable}
           onSelectVariant={setSelectedVariant}
           onSelectAttr={handleSelectAttr}
           onDec={() => inCart ? updateQuantity(itemKey, Math.max(1, quantity - 1)) : setQty(Math.max(1, qty - 1))}
           onInc={() => inCart ? updateQuantity(itemKey, quantity + 1) : setQty(qty + 1)}
           onAddToCart={handleSheetAdd}
           onBuyNow={handleSheetBuy}
-          onSizeGuide={() => setSizeChartOpen(true)}
+          onSizeGuide={openSizeGuide}
           onClose={() => setSheetOpen(false)}
         />
       )}

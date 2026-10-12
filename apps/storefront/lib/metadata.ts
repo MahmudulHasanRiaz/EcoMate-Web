@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
+import { siteUrl } from "@/lib/site-url";
 
 export async function pageMetadata(title: string, description?: string, path?: string, ogImage?: string): Promise<Metadata> {
   try {
     const config = await getStorefrontConfigServer();
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://example.com';
+    const baseUrl = siteUrl() || 'https://example.com';
     const fullTitle = `${title} — ${config.store.name}`;
     const desc = description
       ? description.replace(/\{store\}/g, config.store.name)

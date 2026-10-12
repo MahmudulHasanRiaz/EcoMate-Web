@@ -25,6 +25,9 @@ export interface BuyBoxProps {
   justAdded: boolean;
   sizeChartData: SizeChartData | null;
   sizeChartLoading?: boolean;
+  // Feature-flag gate for the Size Guide trigger. The chart itself loads
+  // lazily on first open — visibility must not wait for the fetch.
+  sizeGuideAvailable: boolean;
   showSizeHint: boolean;
   addedText?: string;
   wishlisted: boolean;
@@ -83,7 +86,7 @@ export function BuyBox(props: BuyBoxProps) {
     product, config, isVariable, colorAttrName, defaultColor,
     selectedVariant, selectedAttrs, displayPrice, displayOriginalPrice,
     displayStock, isOutOfStock, qty, quantity, inCart, justAdded,
-    sizeChartData, sizeChartLoading, showSizeHint, addedText,
+    sizeChartData, sizeChartLoading, sizeGuideAvailable, showSizeHint, addedText,
     wishlisted, heartPop, copied, shareUrl, shareText, waHref, callHref,
     waNumber, callNumber,
     onSelectVariant, onSelectAttr, onDec, onInc,
@@ -169,8 +172,8 @@ export function BuyBox(props: BuyBoxProps) {
               onSelect={onSelectVariant}
               onSelectAttr={onSelectAttr}
               hiddenAttributes={[colorAttrName]}
-              sizeGuideLabel={sizeChartData ? 'Size Guide' : undefined}
-              onSizeGuideClick={sizeChartData ? onSizeGuide : undefined}
+              sizeGuideLabel={sizeGuideAvailable ? 'Size Guide' : undefined}
+              onSizeGuideClick={sizeGuideAvailable ? onSizeGuide : undefined}
             />
           </div>
         ) : (
@@ -180,16 +183,16 @@ export function BuyBox(props: BuyBoxProps) {
             selectedAttrs={selectedAttrs}
             onSelect={onSelectVariant}
             onSelectAttr={onSelectAttr}
-            sizeGuideLabel={sizeChartData ? 'Size Guide' : undefined}
-            onSizeGuideClick={sizeChartData ? onSizeGuide : undefined}
+            sizeGuideLabel={sizeGuideAvailable ? 'Size Guide' : undefined}
+            onSizeGuideClick={sizeGuideAvailable ? onSizeGuide : undefined}
           />
         )
       )}
 
-      {!isVariable && (sizeChartLoading || sizeChartData) && (
+      {!isVariable && (sizeGuideAvailable || sizeChartLoading || sizeChartData) && (
         <div className="flex items-center gap-2 mb-4">
           {sizeChartLoading && <span className="text-[13px] text-gray-400 italic">Loading size chart...</span>}
-          {sizeChartData && (
+          {(sizeGuideAvailable || sizeChartData) && (
             <button onClick={onSizeGuide} className="text-[12px] text-gray-400 hover:text-brand-blue flex items-center gap-1 transition-colors min-h-[44px]">
               <span>📏</span>
               <span className="underline underline-offset-2">Size Guide</span>
@@ -287,7 +290,10 @@ export function BuyBox(props: BuyBoxProps) {
       <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-1 mb-4">
         {[
           { icon: <Truck size={16} />, label: `Free Delivery${config.delivery.freeDeliveryMin > 0 ? ` (over ৳${config.delivery.freeDeliveryMin.toLocaleString()})` : ''}`, key: 'delivery' },
-          { icon: <Wallet size={16} />, label: 'Cash on Delivery', key: 'cod' },
+          // COD is a per-product capability (§4.3): hide the badge unless the
+          // product explicitly allows it. `!== false` keeps legacy products
+          // (field unset) showing the badge.
+          ...(product.codAvailable !== false ? [{ icon: <Wallet size={16} />, label: 'Cash on Delivery', key: 'cod' }] : []),
           { icon: <RefreshCw size={16} />, label: 'Easy Returns', key: 'returns' },
           { icon: <ShieldCheck size={16} />, label: 'Secure Payment', key: 'payment' },
         ].map((item) => (

@@ -1,5 +1,6 @@
+import { cache } from "react";
 import { serverFetch } from "../api-server";
-import type { Product, Variant, Category } from "../types";
+import type { Product, Variant, Category, Review } from "../types";
 import { transformBackendProduct } from "./products";
 import { getStorefrontConfigServer } from "./storefront-config-server";
 
@@ -54,15 +55,18 @@ function buildQuery(params: FetchProductsServerOpts): string {
   return qs ? `?${qs}` : "";
 }
 
-export async function fetchProductsServer(
+export const fetchProductsServer = cache(async function fetchProductsServer(
   opts: FetchProductsServerOpts = {},
 ): Promise<ServerProductsResponse> {
   const url = `/products${buildQuery(opts)}`;
   try {
     // Stock renders on listing cards — never serve from the fetch cache.
     // The backend list endpoint is uncached, so every render is a fresh read.
+    // Surge-safe: at most 1 retry with a short timeout on this hot path.
     const data = await serverFetch<any>(url, {
       revalidate: 0,
+      maxRetries: 1,
+      timeout: 5000,
     });
     return {
       data: (data.data || []).map(transformBackendProduct),
@@ -85,7 +89,7 @@ export async function fetchProductsServer(
       },
     };
   }
-}
+});
 
 export async function getCategoriesServer(): Promise<Category[]> {
   try {
@@ -145,12 +149,104 @@ export async function getPopularItemsServer(perPage = 8): Promise<Product[]> {
   return res.data;
 }
 
-export async function getProductBySlugServer(slug: string): Promise<Product | null> {
+export const getProductBySlugServer = cache(async function getProductBySlugServer(slug: string): Promise<Product | null> {
   try {
-    const data = await serverFetch<any>(`/products/slug/${encodeURIComponent(slug)}`, { revalidate: 0 });
+    // Surge-safe: at most 1 retry with a short timeout on this hot path.
+    const data = await serverFetch<any>(`/products/slug/${encodeURIComponent(slug)}`, {
+      revalidate: 0,
+      maxRetries: 1,
+      timeout: 5000,
+    });
     return data ? transformBackendProduct(data) : null;
   } catch (err) {
     console.error(`Failed to fetch product by slug ${slug} from backend:`, err);
     return null;
   }
+});
+
+function shuffleArray<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
+
+// Server-side mirror of RelatedProducts' client logic: same category fetch,
+// same tag-match priority + shuffle, top 8. Lets the PDP render related
+// items without a browser waterfall (see page.tsx Promise.all).
+export const getRelatedProductsServer = cache(async function getRelatedProductsServer(
+  product: Product,
+): Promise<Product[]> {
+  try {
+    const config = await getStorefrontConfigServer().catch(() => null);
+    const hideOos = config?.features?.hideOosFromArchive === true;
+    const res = await fetchProductsServer({
+      isActive: true,
+      perPage: 20,
+      category: product.categorySlug || product.category || undefined,
+      hasStock: hideOos || undefined,
+    });
+    let list = res.data.filter((p) => p.id !== product.id);
+    const productTags = product.tags || [];
+    if (productTags.length > 0) {
+      const tagged = list.filter((p) => (p.tags || []).some((t) => productTags.includes(t)));
+      const untagged = list.filter((p) => !(p.tags || []).some((t) => productTags.includes(t)));
+      list = [...shuffleArray(tagged), ...shuffleArray(untagged)];
+    } else {
+      list = shuffleArray(list);
+    }
+    return list.slice(0, 8);
+  } catch (err) {
+    console.error(`Failed to fetch related products for ${product.slug} from backend:`, err);
+    return [];
+  }
+});
+
+// Best-selling slugs for generateStaticParams (PDP prerender). Build-safe:
+// any backend failure resolves to [] so `next build` never needs the API.
+export const getTopProductSlugsServer = cache(async function getTopProductSlugsServer(
+  limit = 200,
+): Promise<string[]> {
+  try {
+    const res = await fetchProductsServer({
+      isActive: true,
+      perPage: limit,
+      sort: 'popularity',
+      order: 'desc',
+    });
+    return res.data.map((p) => p.slug).filter((s): s is string => Boolean(s));
+  } catch (err) {
+    console.error('Failed to fetch top product slugs from backend:', err);
+    return [];
+  }
+});
+
+// Cheap backend reachability probe for the PDP outage-vs-404 distinction.
+// Cached per request; single attempt with a short timeout — error paths only.
+export const getBackendStatusServer = cache(async function getBackendStatusServer(): Promise<boolean> {
+  try {
+    await serverFetch<any>('/system-settings/storefront', { maxRetries: 0, timeout: 3000 });
+    return true;
+  } catch {
+    return false;
+  }
+});
+
+// Public reviews endpoint returns the { data, meta } envelope — unwrap here
+// (with the same shape guard the client fallback uses) so SSR never breaks
+// on the wrapper object. Never throws: PDP must render without reviews.
+export const getReviewsServer = cache(async function getReviewsServer(slug: string): Promise<Review[]> {
+  try {
+    const body = await serverFetch<any>(`/reviews/product/${encodeURIComponent(slug)}`, {
+      maxRetries: 1,
+      timeout: 5000,
+    });
+    if (Array.isArray(body)) return body;
+    return body?.data ?? [];
+  } catch (err) {
+    console.error(`Failed to fetch reviews for ${slug} from backend:`, err);
+    return [];
+  }
+});

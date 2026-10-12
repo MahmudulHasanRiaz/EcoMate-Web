@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { getProductBySlugServer } from "@/lib/api/products-server";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
+import { sanitizeProductHTML } from "@/lib/sanitize-product";
+import { siteUrl } from "@/lib/site-url";
 import ColorCatalogGrid from "@/components/ColorCatalogGrid";
 import ProductDetailClient from "@/components/ProductDetailClient";
 import Link from "next/link";
@@ -17,18 +19,22 @@ export async function generateMetadata(props: {
   try { const c = await getStorefrontConfigServer(); storeName = c.store.name; } catch {}
   try {
     const product = await getProductBySlugServer(slug);
-    if (!product) return { title: `Product Not Found — ${storeName}` };
+    if (!product) return { title: "Product Not Found" };
+    // Bare title — the root layout template appends the store name once.
     const title = sp.color
-      ? `${product.name} (${sp.color}) — ${storeName}`
-      : `${product.name} — Colors — ${storeName}`;
+      ? `${product.name} (${sp.color})`
+      : `${product.name} — Colors`;
+    // Color views are facets of the PDP — canonical collapses them there.
+    const canonical = `${siteUrl()}/products/${slug}`;
     return {
       title,
       description: sp.color
         ? `Buy ${product.name} in ${sp.color} color — ${storeName}`
         : `Available colors for ${product.name} — ${storeName}`,
+      alternates: { canonical },
     };
   } catch {
-    return { title: `Product Not Found — ${storeName}` };
+    return { title: "Product Not Found" };
   }
 }
 
@@ -55,7 +61,14 @@ export default async function ColorsPage(props: {
 
     // Color pre-selected → render PDP with pre-selected color
     if (sp.color) {
-      return <ProductDetailClient product={product} defaultColor={sp.color} />;
+      return (
+        <ProductDetailClient
+          product={product}
+          defaultColor={sp.color}
+          sanitizedDescription={sanitizeProductHTML(product.description || '')}
+          sanitizedSpecifications={sanitizeProductHTML(product.descriptionSections?.specifications || '')}
+        />
+      );
     }
 
     // No color param → render color grid catalog

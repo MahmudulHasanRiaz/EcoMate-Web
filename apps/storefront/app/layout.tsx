@@ -11,6 +11,7 @@ import { PageViewTracker } from "@/components/PageViewTracker";
 import OfflineBanner from "@/components/OfflineBanner";
 import { Toaster } from "sonner";
 import { getStorefrontConfigServer, StorefrontConfigError } from "@/lib/api/storefront-config-server";
+import { siteUrl } from "@/lib/site-url";
 import type { CSSProperties } from "react";
 import type { StorefrontConfig } from "@/lib/api/storefront-config";
 
@@ -46,6 +47,7 @@ export async function generateMetadata(): Promise<Metadata> {
     const config = await getStorefrontConfigServer();
     const faviconUrl = config.branding?.storefrontFavicon || "";
     return {
+      metadataBase: new URL(siteUrl() || 'https://example.com'),
       title: {
         template: `%s — ${config.store.name}`,
         default: config.store.name,
@@ -99,7 +101,7 @@ export default async function RootLayout({
   const licenseFeatures: string[] = (initialConfig as any)?.licenseFeatures ?? [];
   const hasMobileDistro = licenseFeatures.includes('*') || licenseFeatures.includes('mobile_distribution');
 
-  const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://example.com';
+  const BASE_URL = siteUrl() || 'https://example.com';
 
   const jsonLd = {
     '@context': 'https://schema.org',
@@ -177,6 +179,20 @@ export default async function RootLayout({
         )}
 
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'WebSite',
+            name: initialConfig?.store.name || 'Store',
+            url: BASE_URL,
+            potentialAction: {
+              '@type': 'SearchAction',
+              target: `${BASE_URL}/products?search={query}`,
+              'query-input': 'required name=query',
+            },
+          }) }}
+        />
 
         {/* Browser trust for adaptive rate limiting — set on first visit */}
         <script

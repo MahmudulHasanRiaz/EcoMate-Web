@@ -17,10 +17,16 @@ interface Props {
  */
 export function SheetShell({ title, onClose, children }: Props) {
   const closeRef = useRef<HTMLButtonElement>(null);
+  // onClose is an inline arrow at every call site — a new identity per
+  // render. Keep the latest in a ref so the mount-once effect below never
+  // re-runs (re-running would yank focus back to ✕ on every render, e.g.
+  // while picking a size).
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') onCloseRef.current();
     };
     document.addEventListener('keydown', onKey);
     const prev = document.body.style.overflow;
@@ -30,7 +36,8 @@ export function SheetShell({ title, onClose, children }: Props) {
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prev;
     };
-  }, [onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div

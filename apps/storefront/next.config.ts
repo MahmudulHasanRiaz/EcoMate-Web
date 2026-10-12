@@ -37,7 +37,32 @@ export default async function (phase: string) {
   return {
     ...nextConfig,
     async headers() {
+      // Short shared-cache TTL for anonymous public pages (spike absorber).
+      // Browsers ignore s-maxage; a CDN (Cloudflare, 5.2) serves HITs from it.
+      // Private routes (/checkout, /cart, /orders, /wishlist, /account, /api,
+      // /landing) intentionally get NO Cache-Control — never cache those.
+      const edgeCache = [{ key: 'Cache-Control', value: 'public, s-maxage=60, stale-while-revalidate=300' }];
       return [
+        {
+          source: '/',
+          headers: edgeCache,
+        },
+        {
+          source: '/products/:path*',
+          headers: edgeCache,
+        },
+        {
+          source: '/category/:path*',
+          headers: edgeCache,
+        },
+        {
+          source: '/brand/:path*',
+          headers: edgeCache,
+        },
+        {
+          source: '/combos/:path*',
+          headers: edgeCache,
+        },
         {
           source: '/:path*',
           headers: [

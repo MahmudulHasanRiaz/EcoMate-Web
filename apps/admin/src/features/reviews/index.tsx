@@ -24,7 +24,7 @@ interface ReviewItem {
   id: string
   customerName: string
   mobile: string | null
-  rating: number
+  rating: number | null
   text: string | null
   approved: boolean
   createdAt: string
@@ -41,7 +41,8 @@ function getProductImage(product: ReviewItem['product']): string | null {
   return null
 }
 
-function StarRating({ rating, size = 14 }: { rating: number; size?: number }) {
+function StarRating({ rating, size = 14 }: { rating: number | null; size?: number }) {
+  if (rating == null) return <span className='text-gray-400'>—</span>
   return (
     <div className='flex items-center gap-0.5'>
       {[1, 2, 3, 4, 5].map(s => (

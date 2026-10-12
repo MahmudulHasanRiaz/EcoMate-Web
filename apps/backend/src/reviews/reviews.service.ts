@@ -86,8 +86,10 @@ export class ReviewsService {
     text?: string;
     mobile: string;
   }) {
-    const rating = dto.rating ?? 5;
-    if (rating < 1 || rating > 5) {
+    // Rating is optional: a missing rating stores NULL (excluded from
+    // averages) instead of an inflated 5-star default.
+    const rating = dto.rating ?? null;
+    if (rating !== null && (rating < 1 || rating > 5)) {
       throw new BadRequestException('Rating must be between 1 and 5');
     }
     const mobile = normalizePhone(dto.mobile || '');

@@ -45,6 +45,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   return {
     title: `${page.title} — ${config?.store?.name || "Offer"}`,
     description: page.title,
+    // Paid-traffic-only pages: keep them out of the organic index.
+    robots: { index: false, follow: true },
     openGraph: {
       title: page.title,
       description: page.title,

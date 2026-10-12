@@ -46,6 +46,7 @@ function sheetProps(over: any = {}) {
     isVariable: true,
     colorAttrName: null,
     sizeChartData: null,
+    sizeGuideAvailable: false,
     onSelectVariant: vi.fn(),
     onSelectAttr: vi.fn(),
     onDec: vi.fn(),
@@ -84,6 +85,17 @@ describe('CartVariantSheet', () => {
     render(<CartVariantSheet {...p} />);
     fireEvent.click(screen.getByText('CONTINUE SHOPPING'));
     expect(p.onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('mirrors the buy-box 3-state: in-cart shows explicit REMOVE, never a bare ADD', () => {
+    const { unmount } = render(<CartVariantSheet {...sheetProps({ inCart: false })} />);
+    expect(screen.getByText('ADD TO CART')).toBeDefined();
+    expect(screen.queryByText('REMOVE FROM CART')).toBeNull();
+    unmount();
+
+    render(<CartVariantSheet {...sheetProps({ inCart: true })} />);
+    expect(screen.getByText('REMOVE FROM CART')).toBeDefined();
+    expect(screen.queryByText('ADD TO CART')).toBeNull();
   });
 });
 

@@ -53,6 +53,7 @@ function props(over: Partial<BuyBoxProps> = {}): BuyBoxProps {
     inCart: false,
     justAdded: false,
     sizeChartData: null,
+    sizeGuideAvailable: false,
     showSizeHint: false,
     wishlisted: false,
     copied: false,
@@ -143,5 +144,16 @@ describe('BuyBox', () => {
     expect(p.onAddToCart).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByText('ORDER NOW'));
     expect(p.onBuyNow).toHaveBeenCalledTimes(1);
+  });
+
+  it('gates the COD trust-bar item on product.codAvailable (directive §4.3)', () => {
+    // NOTE: CONFIG.deliveryInfo rows also mention Cash on Delivery once, so
+    // the trust-bar item is the second occurrence when enabled.
+    const { unmount } = render(<BuyBox {...props()} />);
+    expect(screen.getAllByText('Cash on Delivery')).toHaveLength(2);
+    unmount();
+
+    render(<BuyBox {...props({ product: { ...baseProduct, codAvailable: false } })} />);
+    expect(screen.getAllByText('Cash on Delivery')).toHaveLength(1);
   });
 });

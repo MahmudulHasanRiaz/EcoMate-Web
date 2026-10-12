@@ -177,7 +177,7 @@ export interface Review {
   id: string;
   productId: string;
   customerName: string;
-  rating: number;
+  rating: number | null;
   text: string;
   createdAt: string;
 }

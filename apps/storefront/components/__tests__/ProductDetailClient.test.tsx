@@ -126,7 +126,7 @@ describe('ProductDetailClient — ViewContent strict semantics', () => {
         <AuthProvider>
           <CartProvider>
             <WishlistProvider>
-              <ProductDetailClient product={product} />
+              <ProductDetailClient product={product} sanitizedDescription="<p>desc</p>" sanitizedSpecifications="" />
             </WishlistProvider>
           </CartProvider>
         </AuthProvider>
@@ -166,7 +166,7 @@ describe('ProductDetailClient — ViewContent strict semantics', () => {
         <AuthProvider>
           <CartProvider>
             <WishlistProvider>
-              <ProductDetailClient product={simpleProduct} />
+              <ProductDetailClient product={simpleProduct} sanitizedDescription="<p>desc</p>" sanitizedSpecifications="" />
             </WishlistProvider>
           </CartProvider>
         </AuthProvider>
@@ -251,7 +251,7 @@ describe('ProductDetailClient — ViewContent strict semantics', () => {
         <AuthProvider>
           <CartProvider>
             <WishlistProvider>
-              <ProductDetailClient product={otherVariable} />
+              <ProductDetailClient product={otherVariable} sanitizedDescription="<p>desc</p>" sanitizedSpecifications="" />
             </WishlistProvider>
           </CartProvider>
         </AuthProvider>
@@ -271,7 +271,7 @@ describe('ProductDetailClient — ViewContent strict semantics', () => {
         <AuthProvider>
           <CartProvider>
             <WishlistProvider>
-              <ProductDetailClient product={{ ...variantProduct, price: 4500 }} />
+              <ProductDetailClient product={{ ...variantProduct, price: 4500 }} sanitizedDescription="<p>desc</p>" sanitizedSpecifications="" />
             </WishlistProvider>
           </CartProvider>
         </AuthProvider>
@@ -313,7 +313,7 @@ describe('ProductDetailClient — ViewContent strict semantics', () => {
           <AuthProvider>
             <CartProvider>
               <WishlistProvider>
-                <ProductDetailClient product={variantProduct} />
+                <ProductDetailClient product={variantProduct} sanitizedDescription="<p>desc</p>" sanitizedSpecifications="" />
               </WishlistProvider>
             </CartProvider>
           </AuthProvider>
@@ -368,7 +368,7 @@ describe('ProductDetailClient — zero/negative stock is out of stock', () => {
         <AuthProvider>
           <CartProvider>
             <WishlistProvider>
-              <ProductDetailClient product={product} />
+              <ProductDetailClient product={product} sanitizedDescription="<p>desc</p>" sanitizedSpecifications="" />
             </WishlistProvider>
           </CartProvider>
         </AuthProvider>
@@ -417,7 +417,7 @@ describe('ProductDetailClient — PDP redesign matrix', () => {
         <AuthProvider>
           <CartProvider>
             <WishlistProvider>
-              <ProductDetailClient product={product} />
+              <ProductDetailClient product={product} sanitizedDescription="<p>desc</p>" sanitizedSpecifications="" />
             </WishlistProvider>
           </CartProvider>
         </AuthProvider>
@@ -431,18 +431,19 @@ describe('ProductDetailClient — PDP redesign matrix', () => {
     expect(vi.mocked(toast.error)).toHaveBeenCalledWith(expect.stringContaining('সিলেক্ট করুন'));
   });
 
-  it('sticky bar opens the variant sheet without scrolling', () => {
+  it('sticky bar opens the variant sheet without scrolling', async () => {
     renderWith(simpleProduct);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     const bar = within(screen.getByTestId('sticky-bar'));
     fireEvent.click(bar.getByRole('button', { name: /ADD TO CART/i, hidden: true }));
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    // sheet chunk loads on demand (next/dynamic) — dialog appears async
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
   });
 
   it('WRITE A REVIEW opens modal; submit without mobile is refused inline', async () => {
     renderWith(simpleProduct);
     fireEvent.click(screen.getByRole('button', { name: /WRITE A REVIEW/i }));
-    fireEvent.click(screen.getByText('SUBMIT REVIEW'));
+    fireEvent.click(await screen.findByText('SUBMIT REVIEW'));
     expect(await screen.findByText('Please enter a valid Bangladeshi mobile number.')).toBeInTheDocument();
   });
 
@@ -495,6 +496,36 @@ describe('ProductDetailClient — PDP redesign matrix', () => {
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(within(dialog).getByText('44'));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    apiClientGetMock.mockResolvedValue({ data: [] });
+  });
+
+  it('size-chart endpoint is never hit on mount — first fetch happens on guide open', async () => {
+    apiClientGetMock.mockClear();
+    apiClientGetMock.mockImplementation((url: string) => {
+      if (String(url).includes('/size-charts/by-product/')) {
+        return Promise.resolve({
+          data: {
+            id: 'c1',
+            name: 'Size Guide',
+            description: null,
+            image: null,
+            tableData: [{ Size: '44', Chest: '40' }],
+          },
+        });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    renderWith(variantProduct, { sizeChart: true, defaultVariantSelected: false });
+
+    // trigger visible via flag, but zero network for the chart itself
+    await waitFor(() => expect(screen.getAllByText('Size Guide').length).toBeGreaterThan(0));
+    const sizeChartCalls = () =>
+      apiClientGetMock.mock.calls.filter(([u]) => String(u).includes('/size-charts/'));
+    expect(sizeChartCalls()).toHaveLength(0);
+
+    fireEvent.click(screen.getAllByText('Size Guide')[0]);
+    await screen.findByRole('dialog');
+    expect(sizeChartCalls()).toHaveLength(1);
     apiClientGetMock.mockResolvedValue({ data: [] });
   });
 });

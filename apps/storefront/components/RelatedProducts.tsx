@@ -18,15 +18,19 @@ function shuffleArray<T>(arr: T[]): T[] {
 
 interface Props {
   product: Product;
+  // SSR-provided items (page.tsx fetches these in parallel with the product).
+  // When present, the client fetch is skipped — no browser waterfall.
+  initialItems?: Product[];
 }
 
-export default function RelatedProducts({ product }: Props) {
+export default function RelatedProducts({ product, initialItems }: Props) {
   const { config } = useStorefrontConfig();
   const hideOos = config.features?.hideOosFromArchive === true;
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState<Product[]>(initialItems ?? []);
+  const [loading, setLoading] = useState(!initialItems);
 
   useEffect(() => {
+    if (initialItems) return;
     let cancelled = false;
     Promise.resolve().then(() => {
       if (!cancelled) setLoading(true);
@@ -70,7 +74,7 @@ export default function RelatedProducts({ product }: Props) {
 
     fetch();
     return () => { cancelled = true; };
-  }, [product.id, product.category, product.categorySlug, product.tags]);
+  }, [product.id, product.category, product.categorySlug, product.tags, initialItems]);
 
   if (loading || products.length === 0) return null;
 

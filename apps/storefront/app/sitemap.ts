@@ -1,7 +1,12 @@
 import type { MetadataRoute } from 'next';
+import { siteUrl } from '@/lib/site-url';
+
+// Crawler hits must not regenerate on every request: cache for an hour.
+// Product/stock freshness lives on the PDP (short TTL), not here.
+export const revalidate = 3600;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://example.com';
+  const baseUrl = siteUrl() || 'https://example.com';
 
   const staticPages: MetadataRoute.Sitemap = [
     { url: baseUrl, lastModified: new Date(), changeFrequency: 'daily' as const, priority: 1 },
@@ -20,6 +25,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   ];
 
   const apiUrl = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+  // Product images are served from the backend (/uploads/…) — resolve to
+  // absolute URLs for the image sitemap.
+  const apiOrigin = apiUrl.replace(/\/api\/?$/, '');
+  const toAbsoluteUrl = (src: string | undefined): string | undefined => {
+    if (!src) return undefined;
+    if (/^https?:\/\//.test(src)) return src;
+    return `${apiOrigin}${src.startsWith('/') ? '' : '/'}${src}`;
+  };
 
   // Fetch categories for dynamic category pages
   let categoryPages: MetadataRoute.Sitemap = [];
@@ -29,7 +42,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     const categories = data.data || data || [];
     if (Array.isArray(categories)) {
       categoryPages = categories.map((cat: any) => ({
-        url: `${baseUrl}/products?category=${cat.slug || cat.id}`,
+        url: `${baseUrl}/category/${cat.slug || cat.id}`,
         lastModified: new Date(cat.updatedAt),
         changeFrequency: 'daily' as const,
         priority: 0.7,
@@ -37,19 +50,33 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }
   } catch {}
 
-  // Fetch products for product detail pages
+  // Fetch products for product detail pages — follow cursor pagination so
+  // catalogs larger than one page are fully covered.
   let productPages: MetadataRoute.Sitemap = [];
   try {
-    const res = await fetch(`${apiUrl}/products?isActive=true&perPage=1000`);
-    const data = await res.json();
-    const products = data.data || [];
-    if (Array.isArray(products)) {
-      productPages = products.map((p: any) => ({
-        url: `${baseUrl}/products/${p.slug}`,
-        lastModified: new Date(p.updatedAt),
-        changeFrequency: 'daily' as const,
-        priority: 0.6,
-      }));
+    let cursor: string | null = null;
+    let prevCursor: string | undefined;
+    for (;;) {
+      const pageUrl: string = `${apiUrl}/products?isActive=true&perPage=500${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
+      const res: any = await fetch(pageUrl);
+      const data: any = await res.json();
+      const products = data.data || [];
+      if (Array.isArray(products)) {
+        for (const p of products) {
+          const img = toAbsoluteUrl(p.images?.[0] || p.image);
+          productPages.push({
+            url: `${baseUrl}/products/${p.slug}`,
+            lastModified: new Date(p.updatedAt),
+            changeFrequency: 'daily' as const,
+            priority: 0.6,
+            ...(img ? { images: [img] } : {}),
+          });
+        }
+      }
+      const next: string | null = data.meta?.nextCursor ?? null;
+      if (!data.meta?.hasMore || !next || next === prevCursor) break;
+      prevCursor = cursor ?? undefined;
+      cursor = next;
     }
   } catch {}
 

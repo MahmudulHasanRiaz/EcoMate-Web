@@ -1,7 +1,7 @@
 const API = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
 
 function isRetryableError(err: unknown): boolean {
-  if (err instanceof DOMException && err.name === 'AbortError') return true;
+  if (err instanceof DOMException && err.name === 'AbortError') return false;
   if (err instanceof TypeError) {
     const cause = (err as any).cause;
     if (cause?.code === 'ECONNREFUSED') return true;
@@ -15,10 +15,10 @@ function isRetryableError(err: unknown): boolean {
 
 export async function serverFetch<T = unknown>(
   path: string,
-  options?: RequestInit & { revalidate?: number; timeout?: number }
+  options?: RequestInit & { revalidate?: number; timeout?: number; maxRetries?: number }
 ): Promise<T> {
-  const { revalidate, timeout: customTimeout, ...fetchOptions } = options || {};
-  const MAX_RETRIES = 3;
+  const { revalidate, timeout: customTimeout, maxRetries: customMaxRetries, ...fetchOptions } = options || {};
+  const MAX_RETRIES = customMaxRetries ?? 3;
   const BASE_DELAY = 500;
   const TIMEOUT = customTimeout || 15000;
 

@@ -1,35 +1,73 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getProductBySlugServer } from "@/lib/api/products-server";
+import type { Product } from "@/lib/types";
+import {
+  getBackendStatusServer,
+  getProductBySlugServer,
+  getRelatedProductsServer,
+  getReviewsServer,
+  getTopProductSlugsServer,
+} from "@/lib/api/products-server";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
+import { toMetaDescription } from "@/lib/strip-html";
+import { sanitizeProductHTML } from "@/lib/sanitize-product";
+import { publicMediaUrl, siteUrl } from "@/lib/site-url";
 import ProductDetailClient from "@/components/ProductDetailClient";
 
-// Stock is rendered on this page (badge, quantity selector, CTA state),
-// so it must never be served from the ISR cache — every render reads the
-// backend product cache (10s TTL, invalidated on every stock write).
-export const dynamic = 'force-dynamic';
+// Surge-ready caching: the PDP shell (product core, related, reviews,
+// sanitized HTML) is served from the render cache for 60s, so a traffic
+// spike costs ~1 backend product read per slug per minute instead of one per
+// view. Stock/price staleness is bounded by this same 60s window (plus the
+// backend's own 10s product-cache TTL); checkout re-validates stock
+// server-side, so an oversell can never slip through a stale shell.
+export const revalidate = 60;
 export const dynamicParams = true;
+
+// Prerender the best sellers at build time; everything else renders on
+// demand and joins the 60s cache. Build-safe: an unreachable backend yields
+// [] instead of failing `next build`.
+export async function generateStaticParams() {
+  const slugs = await getTopProductSlugsServer(200);
+  return slugs.map((slug) => ({ slug }));
+}
+
+// Absolute, crawler-safe product image URL shared by OG/Twitter meta and
+// JSON-LD. Internal backend origins (http://backend:4000, localhost) are
+// rewritten to the public site origin — see publicMediaUrl.
+function ogImageAbsolute(product: Product): string | undefined {
+  return publicMediaUrl(product.image);
+}
 
 export async function generateMetadata(props: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await props.params;
   let storeName = "Store";
   try { const c = await getStorefrontConfigServer(); storeName = c.store.name; } catch {}
   try {
+    // Shared request-memoized fetch with the page below — one backend hit.
     const product = await getProductBySlugServer(slug);
-    if (!product) return { title: `Product Not Found — ${storeName}` };
-    const url = `${process.env.NEXT_PUBLIC_BASE_URL || ''}/products/${slug}`;
-    const ogImage = product.image
-      ? product.image.startsWith('http')
-        ? product.image
-        : `${(process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api$/, '')}${product.image.startsWith('/') ? '' : '/'}${product.image}`
-      : undefined;
+    if (!product) {
+      // A missing product during a backend outage must not wear a 404 title.
+      const backendUp = await getBackendStatusServer();
+      return backendUp
+        ? { title: "Product Not Found" }
+        : { title: "Service Unavailable", robots: { index: false, follow: false } };
+    }
+    const url = `${siteUrl()}/products/${slug}`;
+    // NOTE: title is the bare product name — the root layout template
+    // (`%s — Store`) appends the store name exactly once.
+    // Prefer plain-text shortDesc; otherwise strip HTML from description so
+    // meta/OG/Twitter never contain tags or mid-word cuts.
+    const description = product.shortDesc
+      ? product.shortDesc
+      : toMetaDescription(product.description, `${product.name} at ${storeName}`);
+    const ogImage = ogImageAbsolute(product);
     return {
-      title: `${product.name} — ${storeName}`,
-      description: product.description?.slice(0, 160) || `${product.name} at ${storeName}`,
+      title: product.name,
+      description,
       alternates: { canonical: url },
       openGraph: {
         title: product.name,
-        description: product.description?.slice(0, 160),
+        description,
         url,
         siteName: storeName,
         images: ogImage ? [{ url: ogImage }] : [],
@@ -37,12 +75,12 @@ export async function generateMetadata(props: { params: Promise<{ slug: string }
       twitter: {
         card: "summary_large_image",
         title: product.name,
-        description: product.description?.slice(0, 160),
+        description,
         images: ogImage ? [ogImage] : [],
       },
     };
   } catch {
-    return { title: `Product Not Found — ${storeName}` };
+    return { title: "Product Not Found" };
   }
 }
 
@@ -55,7 +93,7 @@ function ProductNotFound() {
       </p>
       <Link
         href="/products"
-        className="inline-flex items-center px-6 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors"
+        className="inline-flex items-center px-6 py-3 bg-brand-blue text-white rounded-xl hover:bg-brand-blue-dark transition-colors"
       >
         Browse Products
       </Link>
@@ -63,25 +101,101 @@ function ProductNotFound() {
   );
 }
 
+function ProductUnavailable() {
+  return (
+    <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
+      <h1 className="text-4xl font-bold text-gray-900 mb-4">Something went wrong</h1>
+      <p className="text-gray-600 mb-8 max-w-md">
+        We couldn&apos;t load this product right now. Please try again in a moment.
+      </p>
+      <div className="flex items-center gap-3">
+        <a
+          href=""
+          className="inline-flex items-center px-6 py-3 bg-brand-blue text-white rounded-xl hover:bg-brand-blue-dark transition-colors"
+        >
+          Try Again
+        </a>
+        <Link
+          href="/products"
+          className="inline-flex items-center px-6 py-3 border border-gray-200 text-gray-700 rounded-xl hover:border-gray-300 transition-colors"
+        >
+          Browse Products
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 export default async function ProductPage(props: { params: Promise<{ slug: string }> }) {
   const { slug } = await props.params;
   try {
+    // generateMetadata above already fetched this slug in the same request —
+    // React cache() dedupes it to a single backend hit.
     const product = await getProductBySlugServer(slug);
-    if (!product) return <ProductNotFound />;
-    const productJsonLd = {
+    if (!product) {
+      // Outage ≠ 404: only show "Not Found" when the backend is reachable.
+      const backendUp = await getBackendStatusServer();
+      return backendUp ? <ProductNotFound /> : <ProductUnavailable />;
+    }
+    // Related items + reviews resolve server-side in parallel: zero browser
+    // `/api/*` calls on PDP load (was: client waterfall of 2 fetches).
+    const [relatedItems, initialReviews] = await Promise.all([
+      getRelatedProductsServer(product),
+      getReviewsServer(slug),
+    ]);
+    // Sanitize on the server: the HTML arrives pre-cleaned as props, so
+    // isomorphic-dompurify never enters the PDP client bundle.
+    const sanitizedDescription = sanitizeProductHTML(product.description || '');
+    const sanitizedSpecifications = sanitizeProductHTML(product.descriptionSections?.specifications || '');
+    const pageUrl = `${siteUrl()}/products/${slug}`;
+    // AggregateRating only when ratings actually exist AND the reviews UI is
+    // visible — otherwise search engines flag it as invalid markup.
+    let reviewsVisible = true;
+    try {
+      reviewsVisible = (await getStorefrontConfigServer()).features?.showReviews !== false;
+    } catch {}
+    const ratingValue = product.averageRating || product.rating || 0;
+    const reviewCount = product.reviewCount || 0;
+    const productJsonLd: Record<string, unknown> = {
       '@context': 'https://schema.org',
       '@type': 'Product',
       name: product.name,
-      description: product.description?.slice(0, 160),
-      image: product.image || undefined,
+      description: product.shortDesc
+        ? product.shortDesc
+        : toMetaDescription(product.description, product.name),
+      image: ogImageAbsolute(product) || undefined,
+      ...(product.sku ? { sku: product.sku } : {}),
+      ...(product.brand?.name ? { brand: { '@type': 'Brand', name: product.brand.name } } : {}),
       offers: {
         '@type': 'Offer',
+        url: pageUrl,
         price: product.price,
         priceCurrency: 'BDT',
         availability: product.stock && product.stock > 0
           ? 'https://schema.org/InStock'
           : 'https://schema.org/OutOfStock',
       },
+      ...(reviewsVisible && reviewCount > 0 && ratingValue > 0
+        ? { aggregateRating: { '@type': 'AggregateRating', ratingValue, reviewCount } }
+        : {}),
+    };
+    const breadcrumbJsonLd = {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'Home', item: `${siteUrl()}/` },
+        ...(product.category
+          ? [{
+              '@type': 'ListItem',
+              position: 2,
+              name: product.category,
+              item: product.categorySlug
+                ? `${siteUrl()}/category/${product.categorySlug}`
+                : `${siteUrl()}/products`,
+            }]
+          : []),
+        { '@type': 'ListItem', position: product.category ? 3 : 2, name: product.name, item: pageUrl },
+      ],
     };
     return (
       <>
@@ -89,10 +203,14 @@ export default async function ProductPage(props: { params: Promise<{ slug: strin
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }}
         />
-        <ProductDetailClient product={product} />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+        />
+        <ProductDetailClient product={product} initialRelatedItems={relatedItems} initialReviews={initialReviews} sanitizedDescription={sanitizedDescription} sanitizedSpecifications={sanitizedSpecifications} />
       </>
     );
   } catch {
-    return <ProductNotFound />;
+    return <ProductUnavailable />;
   }
 }

@@ -76,6 +76,11 @@ export default async function HomePage() {
 
   return (
     <>
+      {/* Single h1 for the homepage (screen-reader only — zero visual change). */}
+      <h1 className="sr-only">
+        {config?.store?.name || 'Store'}
+        {config?.store?.tagline ? ` — ${config.store.tagline}` : ''}
+      </h1>
       <Hero
         slides={config?.hero?.slides || []}
         secondaryBanner={config?.hero?.secondaryBanner}

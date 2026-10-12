@@ -52,7 +52,7 @@ describe('ReviewsService (mobile)', () => {
     expect(prisma.review.create).not.toHaveBeenCalled();
   });
 
-  it('defaults missing name to Verified Buyer and rating to 5', async () => {
+  it('defaults missing name to Verified Buyer and missing rating to null (never an inflated 5)', async () => {
     prisma.product.findUnique.mockResolvedValue({ id: 'p1' });
     prisma.review.findFirst.mockResolvedValue(null);
     prisma.review.create.mockResolvedValue({ id: 'r1' });
@@ -62,9 +62,27 @@ describe('ReviewsService (mobile)', () => {
     expect(prisma.review.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         customerName: 'Verified Buyer',
-        rating: 5,
+        rating: null,
       }),
     });
+  });
+
+  it('stores a provided rating and rejects out-of-range ratings', async () => {
+    prisma.product.findUnique.mockResolvedValue({ id: 'p1' });
+    prisma.review.findFirst.mockResolvedValue(null);
+    prisma.review.create.mockResolvedValue({ id: 'r1' });
+
+    await svc.create({ productId: 'p1', mobile: '+8801712345678', rating: 4 });
+    expect(prisma.review.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ rating: 4 }),
+    });
+
+    await expect(
+      svc.create({ productId: 'p1', mobile: '+8801712345678', rating: 6 }),
+    ).rejects.toThrow('Rating must be between 1 and 5');
+    await expect(
+      svc.create({ productId: 'p1', mobile: '+8801712345678', rating: 0 }),
+    ).rejects.toThrow('Rating must be between 1 and 5');
   });
 
   it('throws already-reviewed on duplicate mobile for the same product', async () => {
