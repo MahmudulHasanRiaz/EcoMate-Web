@@ -124,7 +124,7 @@ function CategoryItem({ category, imgErrors, setImgErrors }: {
   return (
     <Link
       href={`/products?category=${category.slug}`}
-      className="flex flex-col items-center gap-3 min-w-[85px] md:min-w-[120px] snap-center group inline-block cursor-pointer"
+      className="flex flex-col items-center gap-3 min-w-[85px] md:min-w-[120px] snap-center group cursor-pointer"
     >
       <div className="relative w-[85px] h-[85px] md:w-[100px] md:h-[100px] bg-white rounded-lg shadow-[0_2px_12px_rgba(0,0,0,0.04)] border border-gray-100 flex items-center justify-center overflow-hidden group-hover:shadow-md group-hover:border-brand-blue/30 transition-all duration-300 transform group-hover:-translate-y-1">
         <div className="absolute inset-0 bg-gradient-to-tr from-brand-blue/[0.03] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
