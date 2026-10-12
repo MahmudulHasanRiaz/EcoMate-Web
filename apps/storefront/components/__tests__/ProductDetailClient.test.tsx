@@ -126,7 +126,7 @@ describe('ProductDetailClient — ViewContent strict semantics', () => {
         <AuthProvider>
           <CartProvider>
             <WishlistProvider>
-              <ProductDetailClient product={product} sanitizedDescription="<p>desc</p>" sanitizedSpecifications="" />
+              <ProductDetailClient product={product} sanitizedDescription="<p>desc</p>" sanitizedSpecifications="" sizeGuideAvailable={false} />
             </WishlistProvider>
           </CartProvider>
         </AuthProvider>
@@ -166,7 +166,7 @@ describe('ProductDetailClient — ViewContent strict semantics', () => {
         <AuthProvider>
           <CartProvider>
             <WishlistProvider>
-              <ProductDetailClient product={simpleProduct} sanitizedDescription="<p>desc</p>" sanitizedSpecifications="" />
+              <ProductDetailClient product={simpleProduct} sanitizedDescription="<p>desc</p>" sanitizedSpecifications="" sizeGuideAvailable={false} />
             </WishlistProvider>
           </CartProvider>
         </AuthProvider>
@@ -251,7 +251,7 @@ describe('ProductDetailClient — ViewContent strict semantics', () => {
         <AuthProvider>
           <CartProvider>
             <WishlistProvider>
-              <ProductDetailClient product={otherVariable} sanitizedDescription="<p>desc</p>" sanitizedSpecifications="" />
+              <ProductDetailClient product={otherVariable} sanitizedDescription="<p>desc</p>" sanitizedSpecifications="" sizeGuideAvailable={false} />
             </WishlistProvider>
           </CartProvider>
         </AuthProvider>
@@ -271,7 +271,7 @@ describe('ProductDetailClient — ViewContent strict semantics', () => {
         <AuthProvider>
           <CartProvider>
             <WishlistProvider>
-              <ProductDetailClient product={{ ...variantProduct, price: 4500 }} sanitizedDescription="<p>desc</p>" sanitizedSpecifications="" />
+              <ProductDetailClient product={{ ...variantProduct, price: 4500 }} sanitizedDescription="<p>desc</p>" sanitizedSpecifications="" sizeGuideAvailable={false} />
             </WishlistProvider>
           </CartProvider>
         </AuthProvider>
@@ -313,7 +313,7 @@ describe('ProductDetailClient — ViewContent strict semantics', () => {
           <AuthProvider>
             <CartProvider>
               <WishlistProvider>
-                <ProductDetailClient product={variantProduct} sanitizedDescription="<p>desc</p>" sanitizedSpecifications="" />
+                <ProductDetailClient product={variantProduct} sanitizedDescription="<p>desc</p>" sanitizedSpecifications="" sizeGuideAvailable={false} />
               </WishlistProvider>
             </CartProvider>
           </AuthProvider>
@@ -368,7 +368,7 @@ describe('ProductDetailClient — zero/negative stock is out of stock', () => {
         <AuthProvider>
           <CartProvider>
             <WishlistProvider>
-              <ProductDetailClient product={product} sanitizedDescription="<p>desc</p>" sanitizedSpecifications="" />
+              <ProductDetailClient product={product} sanitizedDescription="<p>desc</p>" sanitizedSpecifications="" sizeGuideAvailable={false} />
             </WishlistProvider>
           </CartProvider>
         </AuthProvider>
@@ -411,13 +411,13 @@ describe('ProductDetailClient — PDP redesign matrix', () => {
     localStorage.clear();
   });
 
-  const renderWith = (product: any, features: any = {}, extraConfig: any = {}) =>
+  const renderWith = (product: any, features: any = {}, extraConfig: any = {}, sizeGuideAvailable = false) =>
     render(
       <StorefrontConfigProvider initialConfig={{ ...CONFIG, ...extraConfig, features: { ...(CONFIG as any).features, ...features } } as any}>
         <AuthProvider>
           <CartProvider>
             <WishlistProvider>
-              <ProductDetailClient product={product} sanitizedDescription="<p>desc</p>" sanitizedSpecifications="" />
+              <ProductDetailClient product={product} sanitizedDescription="<p>desc</p>" sanitizedSpecifications="" sizeGuideAvailable={sizeGuideAvailable} />
             </WishlistProvider>
           </CartProvider>
         </AuthProvider>
@@ -490,7 +490,7 @@ describe('ProductDetailClient — PDP redesign matrix', () => {
       }
       return Promise.resolve({ data: [] });
     });
-    renderWith(variantProduct, { sizeChart: true, defaultVariantSelected: false });
+    renderWith(variantProduct, { sizeChart: true, defaultVariantSelected: false }, {}, true);
     await waitFor(() => expect(screen.getAllByText('Size Guide').length).toBeGreaterThan(0));
     fireEvent.click(screen.getAllByText('Size Guide')[0]);
     const dialog = await screen.findByRole('dialog');
@@ -515,9 +515,9 @@ describe('ProductDetailClient — PDP redesign matrix', () => {
       }
       return Promise.resolve({ data: [] });
     });
-    renderWith(variantProduct, { sizeChart: true, defaultVariantSelected: false });
+    renderWith(variantProduct, { sizeChart: true, defaultVariantSelected: false }, {}, true);
 
-    // trigger visible via flag, but zero network for the chart itself
+    // trigger visible via server assignment, but zero network for the chart itself
     await waitFor(() => expect(screen.getAllByText('Size Guide').length).toBeGreaterThan(0));
     const sizeChartCalls = () =>
       apiClientGetMock.mock.calls.filter(([u]) => String(u).includes('/size-charts/'));
@@ -527,5 +527,18 @@ describe('ProductDetailClient — PDP redesign matrix', () => {
     await screen.findByRole('dialog');
     expect(sizeChartCalls()).toHaveLength(1);
     apiClientGetMock.mockResolvedValue({ data: [] });
+  });
+
+  it('hides the Size Guide trigger entirely when no chart is assigned (Fix 2)', async () => {
+    apiClientGetMock.mockClear();
+    apiClientGetMock.mockResolvedValue({ data: [] });
+    // flag ON but server-resolved assignment false → no trigger, no fetch
+    renderWith(variantProduct, { sizeChart: true, defaultVariantSelected: false }, {}, false);
+
+    await waitFor(() => expect(screen.getByTestId('buy-box')).toBeInTheDocument());
+    expect(screen.queryByText('Size Guide')).toBeNull();
+    expect(
+      apiClientGetMock.mock.calls.filter(([u]) => String(u).includes('/size-charts/')),
+    ).toHaveLength(0);
   });
 });

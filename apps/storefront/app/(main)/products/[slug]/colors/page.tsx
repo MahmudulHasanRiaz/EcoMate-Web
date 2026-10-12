@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { getProductBySlugServer } from "@/lib/api/products-server";
+import { getProductBySlugServer, getSizeChartPresenceServer } from "@/lib/api/products-server";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import { sanitizeProductHTML } from "@/lib/sanitize-product";
 import { siteUrl } from "@/lib/site-url";
@@ -61,12 +61,18 @@ export default async function ColorsPage(props: {
 
     // Color pre-selected → render PDP with pre-selected color
     if (sp.color) {
+      let sizeChartFlag = false;
+      try {
+        sizeChartFlag = !!(await getStorefrontConfigServer()).features?.sizeChart;
+      } catch {}
+      const hasSizeChart = sizeChartFlag ? await getSizeChartPresenceServer(slug) : false;
       return (
         <ProductDetailClient
           product={product}
           defaultColor={sp.color}
           sanitizedDescription={sanitizeProductHTML(product.description || '')}
           sanitizedSpecifications={sanitizeProductHTML(product.descriptionSections?.specifications || '')}
+          sizeGuideAvailable={hasSizeChart}
         />
       );
     }

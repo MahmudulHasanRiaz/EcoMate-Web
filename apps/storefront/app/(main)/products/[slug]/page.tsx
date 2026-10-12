@@ -6,6 +6,7 @@ import {
   getProductBySlugServer,
   getRelatedProductsServer,
   getReviewsServer,
+  getSizeChartPresenceServer,
   getTopProductSlugsServer,
 } from "@/lib/api/products-server";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
@@ -137,11 +138,19 @@ export default async function ProductPage(props: { params: Promise<{ slug: strin
       const backendUp = await getBackendStatusServer();
       return backendUp ? <ProductNotFound /> : <ProductUnavailable />;
     }
-    // Related items + reviews resolve server-side in parallel: zero browser
-    // `/api/*` calls on PDP load (was: client waterfall of 2 fetches).
-    const [relatedItems, initialReviews] = await Promise.all([
+    // Related items + reviews + size-chart presence resolve server-side in
+    // parallel: zero browser `/api/*` calls on PDP load.
+    // Size-guide trigger visibility comes from actual assignment (endpoint
+    // truthiness), NOT the bare feature flag — otherwise every PDP shows a
+    // guide button for charts that don't exist (Fix 2).
+    let sizeChartFlag = false;
+    try {
+      sizeChartFlag = !!(await getStorefrontConfigServer()).features?.sizeChart;
+    } catch {}
+    const [relatedItems, initialReviews, hasSizeChart] = await Promise.all([
       getRelatedProductsServer(product),
       getReviewsServer(slug),
+      sizeChartFlag ? getSizeChartPresenceServer(slug) : Promise.resolve(false),
     ]);
     // Sanitize on the server: the HTML arrives pre-cleaned as props, so
     // isomorphic-dompurify never enters the PDP client bundle.
@@ -207,7 +216,7 @@ export default async function ProductPage(props: { params: Promise<{ slug: strin
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
         />
-        <ProductDetailClient product={product} initialRelatedItems={relatedItems} initialReviews={initialReviews} sanitizedDescription={sanitizedDescription} sanitizedSpecifications={sanitizedSpecifications} />
+        <ProductDetailClient product={product} initialRelatedItems={relatedItems} initialReviews={initialReviews} sanitizedDescription={sanitizedDescription} sanitizedSpecifications={sanitizedSpecifications} sizeGuideAvailable={hasSizeChart} />
       </>
     );
   } catch {

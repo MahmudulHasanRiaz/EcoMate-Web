@@ -136,7 +136,7 @@ function ReviewsSection({ reviews, productId, productName, userLabel, onRefresh 
   );
 }
 
-export default function ProductDetailClient({ product, defaultColor, initialRelatedItems, initialReviews, sanitizedDescription, sanitizedSpecifications }: {
+export default function ProductDetailClient({ product, defaultColor, initialRelatedItems, initialReviews, sanitizedDescription, sanitizedSpecifications, sizeGuideAvailable }: {
   product: Product;
   defaultColor?: string;
   // SSR-provided data (page.tsx fetches these in parallel with the product).
@@ -146,6 +146,9 @@ export default function ProductDetailClient({ product, defaultColor, initialRela
   // Server-sanitized HTML (required — keeps dompurify out of the client bundle).
   sanitizedDescription: string;
   sanitizedSpecifications: string;
+  // Server-resolved size-chart assignment (endpoint truthiness). The trigger
+  // shows ONLY for assigned+active charts — never from the bare flag (Fix 2).
+  sizeGuideAvailable: boolean;
 }) {
   const { items, addToCart, updateQuantity, startBuyNow } = useCart();
   const { config } = useStorefrontConfig();
@@ -370,14 +373,13 @@ export default function ProductDetailClient({ product, defaultColor, initialRela
   }, [product.id, product.name, product.category, product.price, product.sku, config.currency.code, user?.email, user?.phoneNumber, user?.firstName, user?.lastName]);
 
   // Size charts load lazily on first guide open — never on PDP mount.
-  // The trigger visibility comes from the feature flag (sizeGuideAvailable);
-  // existence for this product is confirmed by the fetch below.
+  // Trigger visibility is the server-resolved assignment prop (Fix 2), so a
+  // chartless product never shows the button even with the flag on.
   const sizeChartFetchedSlug = useRef<string | null>(null);
-  const sizeGuideAvailable = config.features.sizeChart && !!product.slug;
 
   function openSizeGuide() {
     const slug = product.slug;
-    if (!config.features.sizeChart || !slug) return;
+    if (!sizeGuideAvailable || !slug) return;
     if (sizeChartFetchedSlug.current === slug) {
       if (sizeChartData) setSizeChartOpen(true);
       else toast.info('No size guide available for this product.');

@@ -239,6 +239,25 @@ export const getBackendStatusServer = cache(async function getBackendStatusServe
   }
 });
 
+// Size-chart presence for the PDP trigger (Fix 2): the SAME truthiness the
+// pre-lazy client used (endpoint returns chart object vs null), resolved
+// server-side where ISR caches it — zero browser requests, no flag-only
+// over-display. Never throws. Inactive charts are already filtered by the
+// backend (findByProductSlug), so presence === assigned AND active.
+export const getSizeChartPresenceServer = cache(async function getSizeChartPresenceServer(
+  slug: string,
+): Promise<boolean> {
+  try {
+    const body = await serverFetch<any>(`/size-charts/by-product/${encodeURIComponent(slug)}`, {
+      maxRetries: 1,
+      timeout: 5000,
+    });
+    return body != null;
+  } catch {
+    return false;
+  }
+});
+
 // Public reviews endpoint returns the { data, meta } envelope — unwrap here
 // (with the same shape guard the client fallback uses) so SSR never breaks
 // on the wrapper object. Never throws: PDP must render without reviews.

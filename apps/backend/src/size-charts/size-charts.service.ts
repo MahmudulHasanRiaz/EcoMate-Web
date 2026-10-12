@@ -40,6 +40,9 @@ export class SizeChartsService {
     return { message: 'Size chart deleted' };
   }
 
+  // Storefront resolution: product → legacy category → multi categories.
+  // Inactive charts behave as unassigned (admin "Hidden" toggle) — findOne
+  // stays unfiltered so the admin panel can still manage inactive charts.
   async findByProductSlug(slug: string) {
     const product = await this.prisma.product.findUnique({
       where: { slug },
@@ -53,18 +56,14 @@ export class SizeChartsService {
     });
     if (!product) throw new NotFoundException('Product not found');
 
-    if (product.sizeChartId) {
-      return this.findOne(product.sizeChartId);
-    }
-
-    if (product.category?.sizeChartId) {
-      return this.findOne(product.category.sizeChartId);
-    }
-
-    for (const pc of product.productCategories) {
-      if (pc.category.sizeChartId) {
-        return this.findOne(pc.category.sizeChartId);
-      }
+    const ids = [
+      product.sizeChartId,
+      product.category?.sizeChartId,
+      ...product.productCategories.map((pc) => pc.category.sizeChartId),
+    ].filter(Boolean) as string[];
+    for (const id of ids) {
+      const chart = await this.findOne(id).catch(() => null);
+      if (chart && chart.isActive !== false) return chart;
     }
 
     return null;

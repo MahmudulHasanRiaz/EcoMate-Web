@@ -9,6 +9,7 @@ import {
   getProductBySlugServer,
   getRelatedProductsServer,
   getReviewsServer,
+  getSizeChartPresenceServer,
   getTopProductSlugsServer,
 } from '@/lib/api/products-server';
 
@@ -122,6 +123,17 @@ describe('products-server request memoization (P0-2)', () => {
 
     mocked.mockRejectedValue(new Error('backend down'));
     await expect(getTopProductSlugsServer(50)).resolves.toEqual([]);
+  });
+
+  it('getSizeChartPresenceServer mirrors endpoint truthiness and never throws (Fix 2)', async () => {
+    mocked.mockResolvedValueOnce({ id: 'c1', name: 'Guide', tableData: [] } as any);
+    await expect(getSizeChartPresenceServer('has-chart')).resolves.toBe(true);
+
+    mocked.mockResolvedValueOnce(null as any);
+    await expect(getSizeChartPresenceServer('no-chart')).resolves.toBe(false);
+
+    mocked.mockRejectedValueOnce(new Error('down'));
+    await expect(getSizeChartPresenceServer('outage')).resolves.toBe(false);
   });
 
   it('getBackendStatusServer reflects reachability with a single short probe', async () => {
