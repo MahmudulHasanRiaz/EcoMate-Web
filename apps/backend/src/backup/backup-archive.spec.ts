@@ -17,6 +17,7 @@ import {
   BACKUP_MANIFEST_FILENAME,
   BACKUP_SQL_FILENAME,
   finalizeInterruptedContentRestore,
+  isTolerableTarExit,
   listInterruptedContentRestoreIds,
   normalizeBackupIncludePaths,
   prepareBackupContentRestore,
@@ -660,5 +661,20 @@ describe('backup archive helpers', () => {
         access(join(uploadRoot, BACKUP_MANIFEST_FILENAME)),
       ).rejects.toMatchObject({ code: 'ENOENT' });
     });
+  });
+});
+
+describe('isTolerableTarExit (Fix 4)', () => {
+  it('tolerates exit code 1 (warnings only, e.g. live files changed mid-read)', () => {
+    expect(isTolerableTarExit(Object.assign(new Error('tar warning'), { code: 1 }))).toBe(true);
+  });
+
+  it('fails loudly on fatal exits, spawn errors, signals and junk', () => {
+    expect(isTolerableTarExit(Object.assign(new Error('tar failed'), { code: 2 }))).toBe(false);
+    expect(isTolerableTarExit(Object.assign(new Error('no tar'), { code: 'ENOENT' }))).toBe(false);
+    expect(isTolerableTarExit(Object.assign(new Error('killed'), { signal: 'SIGTERM' }))).toBe(false);
+    expect(isTolerableTarExit(null)).toBe(false);
+    expect(isTolerableTarExit(undefined)).toBe(false);
+    expect(isTolerableTarExit('exit 1')).toBe(false);
   });
 });

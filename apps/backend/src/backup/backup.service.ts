@@ -22,8 +22,10 @@ import {
   open,
   rename,
   rm,
+  realpath,
   stat,
   statfs,
+  symlink,
   unlink,
   writeFile,
 } from 'fs/promises';
@@ -46,6 +48,7 @@ import {
   type BackupManifest,
   extractValidatedTarBackup,
   finalizeInterruptedContentRestore,
+  isTolerableTarExit,
   listInterruptedContentRestoreIds,
   normalizeBackupIncludePaths,
   prepareBackupContentRestore,
@@ -1243,6 +1246,13 @@ export class BackupService implements OnModuleInit {
     contentPaths: string[],
     outputPath: string,
   ): Promise<void> {
+    // Production runs BusyBox tar (node:24-alpine), which honors only a SINGLE
+    // -C ("Change to DIR before operation") — the previous two--C form
+    // (workDir + process.cwd()) failed there with "No such file" while GNU tar
+    // accepted it, so content backups broke ONLY in production (after pg_dump
+    // finished, matching the "runs a while then fails" symptom). Stage a
+    // symlink so one -C covers both trees; -h dereferences it on GNU and
+    // BusyBox alike (verified on both).
     const args = [
       '--create',
       '--gzip',
@@ -1257,19 +1267,39 @@ export class BackupService implements OnModuleInit {
       '--exclude=uploads/.restore-rollback-*',
       '--exclude=uploads/.restore-created-*',
       '--exclude=uploads/.restore-db-committed-*',
+      '-h',
       '-C',
       workDir,
       BACKUP_SQL_FILENAME,
       BACKUP_MANIFEST_FILENAME,
     ];
     if (contentPaths.length > 0) {
-      args.push('-C', process.cwd(), ...contentPaths);
+      const uploadRoot = join(process.cwd(), 'uploads');
+      await symlink(await realpath(uploadRoot), join(workDir, 'uploads'));
+      args.push(...contentPaths);
     }
 
-    await execFileAsync('tar', args, {
-      timeout: this.archiveTimeout,
-      maxBuffer: 8 * 1024 * 1024,
-    });
+    try {
+      await execFileAsync('tar', args, {
+        timeout: this.archiveTimeout,
+        maxBuffer: 64 * 1024 * 1024,
+      });
+    } catch (error) {
+      if (isTolerableTarExit(error)) {
+        // Exit 1 = warnings only (live files changed mid-read). The archive
+        // is complete — keep it and log the detail for diagnosability.
+        const detail = String(
+          (error as { stderr?: unknown })?.stderr ?? '',
+        ).slice(0, 4000);
+        this.logger.warn(
+          `tar finished with warnings (exit 1); archive kept. Detail: ${detail}`,
+        );
+        return;
+      }
+      throw new Error(
+        `Failed to create content archive with tar: ${safeErrorMessage(error)}`,
+      );
+    }
   }
 
   private archiveValidationOptions() {

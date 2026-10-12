@@ -45,6 +45,17 @@ export interface ArchiveValidation {
   layout: 'uploads' | 'legacy' | 'none';
 }
 
+/**
+ * GNU/BusyBox tar exit statuses for `--create`: 0 = clean; 1 = warnings only
+ * (notably "file changed as we read it" on a live shop) — the archive itself
+ * is complete and usable. Anything else (2+ = fatal error, string codes like
+ * ENOENT, signals) must fail the backup loudly.
+ */
+export function isTolerableTarExit(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === 1;
+}
+
 function isWithin(root: string, candidate: string): boolean {
   const rel = relative(resolve(root), resolve(candidate));
   return (
