@@ -42,9 +42,11 @@ describe('products-server request memoization (P0-2)', () => {
 
     await getProductBySlugServer('y');
 
+    // revalidate MUST stay >0: the PDP is statically prerendered and a
+    // `revalidate: 0` fetch flips it to dynamic at runtime (production 500).
     expect(mocked).toHaveBeenCalledWith(
       expect.stringContaining('/products/slug/y'),
-      expect.objectContaining({ maxRetries: 1, timeout: 5000 }),
+      expect.objectContaining({ revalidate: 60, maxRetries: 1, timeout: 5000 }),
     );
   });
 

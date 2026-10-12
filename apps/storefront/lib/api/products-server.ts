@@ -60,11 +60,14 @@ export const fetchProductsServer = cache(async function fetchProductsServer(
 ): Promise<ServerProductsResponse> {
   const url = `/products${buildQuery(opts)}`;
   try {
-    // Stock renders on listing cards — never serve from the fetch cache.
-    // The backend list endpoint is uncached, so every render is a fresh read.
+    // ISR-safe: the consuming pages are statically prerendered, so a
+    // `revalidate: 0` fetch here flips them to dynamic at runtime and Next.js
+    // throws "static to dynamic". The 60s page cache bounds staleness (plus
+    // the backend's own 10s product-cache TTL); checkout re-validates stock
+    // server-side, so an oversell can never slip through a stale shell.
     // Surge-safe: at most 1 retry with a short timeout on this hot path.
     const data = await serverFetch<any>(url, {
-      revalidate: 0,
+      revalidate: 60,
       maxRetries: 1,
       timeout: 5000,
     });
@@ -151,9 +154,11 @@ export async function getPopularItemsServer(perPage = 8): Promise<Product[]> {
 
 export const getProductBySlugServer = cache(async function getProductBySlugServer(slug: string): Promise<Product | null> {
   try {
+    // ISR-safe (see fetchProductsServer above): `revalidate: 0` on this
+    // statically-prerendered PDP path throws "static to dynamic" at runtime.
     // Surge-safe: at most 1 retry with a short timeout on this hot path.
     const data = await serverFetch<any>(`/products/slug/${encodeURIComponent(slug)}`, {
-      revalidate: 0,
+      revalidate: 60,
       maxRetries: 1,
       timeout: 5000,
     });
