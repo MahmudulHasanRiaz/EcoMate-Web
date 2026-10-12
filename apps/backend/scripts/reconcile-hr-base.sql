@@ -92,6 +92,15 @@ EXCEPTION WHEN duplicate_object THEN null; END $$;
 DO $$ BEGIN CREATE TYPE "AttendanceEventStatus" AS ENUM ('PENDING','UNMAPPED','PROCESSED','FAILED','SKIPPED');
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
+-- EmploymentHistoryField BASE values (from 20260823130000_add_employment_domain).
+-- The 3 audit values (personalInformation/employmentInformation/bankAccount)
+-- belong to 20260831000000_add_hr_phase2_audit_fields — do NOT add them here,
+-- or that migration's ALTER TYPE ... ADD VALUE would fail on retry. Creating
+-- the base enum here breaks the crash loop where the audit migration fails
+-- with "type does not exist" and can never succeed on retry.
+DO $$ BEGIN CREATE TYPE "EmploymentHistoryField" AS ENUM ('status','department','designation','reporting_manager','employment_type','weekly_off');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
 -- ---- Tables (create-if-absent) ------------------------------------------------
 CREATE TABLE IF NOT EXISTS "AccessPreset" (
     "id" TEXT NOT NULL,
