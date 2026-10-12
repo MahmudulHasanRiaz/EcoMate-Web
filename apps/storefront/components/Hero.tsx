@@ -38,7 +38,7 @@ export default function Hero({
         <div className="grid grid-cols-1 md:grid-cols-12 md:gap-4">
 
           {/* Main Banner */}
-          <div className="md:col-span-8 overflow-hidden md:rounded-[20px] shadow-sm bg-white relative group">
+          <div className="md:col-span-8 overflow-hidden md:rounded-xl shadow-sm bg-white relative group">
             <div className="relative w-full aspect-[5/2] md:aspect-[5/2]">
               {slides.length > 0 ? (
                 <HeroSlideshow slides={resolvedSlides} />
@@ -54,10 +54,14 @@ export default function Hero({
             </div>
           </div>
 
-          {/* Secondary Banner */}
+          {/* Secondary Banner: fills the full row height (flex-1). A fixed
+              aspect box is ~6px shorter than the main column (grid gaps break
+              the 5/2-vs-5/4 height equality) and leaves a white strip below
+              the image — see hero.test.tsx. object-cover absorbs the tiny
+              ratio difference. */}
           {resolvedSecondary && (
-            <div className="hidden md:block md:col-span-4 overflow-hidden rounded-[20px] shadow-sm bg-white">
-              <div className="relative w-full aspect-[5/4]">
+            <div className="hidden md:flex md:flex-col md:col-span-4 overflow-hidden rounded-xl shadow-sm bg-white">
+              <div className="relative w-full flex-1 min-h-0">
                 <Image
                   src={resolvedSecondary}
                   alt={secondaryBannerAlt || 'Featured banner'}
