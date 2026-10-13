@@ -1577,6 +1577,13 @@ model Refund {
   processedBy String?
   processedAt DateTime?
   notes       String?   @db.Text
+  /// D5 (Task 9): where the money went back (gateway code / account label,
+  /// e.g. 'bkash'). Required for every refund recorded after the payment-
+  /// ledger overhaul; NULL marks a legacy pre-ledger refund. The gate uses
+  /// this to tell mirrored refunds (method set + matching negative payment
+  /// row — counted via the ledger) from legacy ones (method NULL — counted
+  /// via the Refund row) without ever double-counting.
+  method      String?
   /// EXCHANGE settlement only: the exchange that produced this refund. The
   /// refund is still raised against `orderId` (the ORIGINAL whose money is
   /// being returned) — this column is the traceability link back to the

@@ -95,10 +95,10 @@ export class RefundsService {
     return refund;
   }
 
-  async create(dto: CreateRefundDto) {
+  async create(dto: CreateRefundDto, recordedBy?: string) {
     const order = await this.prisma.order.findUnique({
       where: { id: dto.orderId },
-      select: { id: true, total: true, kind: true },
+      select: { id: true, total: true, kind: true, timeline: true },
     });
     if (!order) throw new NotFoundException('Order not found');
 
@@ -117,6 +117,19 @@ export class RefundsService {
       );
     }
 
+    // D5 input gate: destination + reason up front, before any business-rule
+    // check — a refund without a destination is an unauditable movement.
+    if (!dto.method || !String(dto.method).trim()) {
+      throw new BadRequestException(
+        'Refund method is required — where the money went back (e.g. bkash, cash).',
+      );
+    }
+    if (!dto.reason || !String(dto.reason).trim()) {
+      throw new BadRequestException(
+        'Refund reason is required — it is recorded on the ledger row.',
+      );
+    }
+
     const paidAgg = await this.prisma.payment.aggregate({
       where: { orderId: dto.orderId, status: 'PAID' },
       _sum: { amount: true },
@@ -128,20 +141,35 @@ export class RefundsService {
       );
     }
 
-    if (dto.amount > paidAmount) {
+    // Gate rule (single source of truth — shared with the cancel gate in
+    // orders.service): outstanding = netPaid − legacyRefunded, where netPaid
+    // is Σ signed PAID payment rows (Task 5 negative corrections included)
+    // and legacyRefunded is Σ approved/completed Refund rows with method
+    // NULL (recorded before ledger mirroring). Every new-flow refund carries
+    // method + a matching negative payment row, so counting new rows here
+    // would double-count — they are counted via the ledger instead.
+    const legacyAgg = await this.prisma.refund.aggregate({
+      where: {
+        orderId: dto.orderId,
+        status: { in: ['approved', 'completed'] },
+        method: null,
+      },
+      _sum: { amount: true },
+    });
+    const legacyRefunded = Number(legacyAgg._sum.amount || 0);
+    const outstanding = paidAmount - legacyRefunded;
+    if (dto.amount > outstanding) {
       throw new BadRequestException(
-        `Refund amount (${dto.amount}) exceeds the amount actually paid (${paidAmount})`,
+        `Refund amount (${dto.amount}) exceeds the amount actually paid less prior refunds (outstanding refundable: ${outstanding})`,
       );
     }
 
-    const existing = await this.prisma.refund.aggregate({
-      where: { orderId: dto.orderId, status: 'completed' },
-      _sum: { amount: true },
-    });
-    const refundedSoFar = Number(existing._sum.amount || 0);
-    if (refundedSoFar + dto.amount > paidAmount) {
+    // Atomic cancel-too requires FULL coverage: a partial refund would leave
+    // outstanding > 0 and the cancel gate would still block afterwards, so
+    // accepting it would promise an atomic cancel it cannot deliver.
+    if (dto.cancelToo && dto.amount < outstanding) {
       throw new BadRequestException(
-        `Total refund would exceed the amount actually paid (${paidAmount})`,
+        `Refund with cancel requires a FULL refund: ${outstanding - dto.amount} would still be outstanding after this partial refund of ${dto.amount}. Refund the full outstanding balance to cancel atomically.`,
       );
     }
 
@@ -165,24 +193,93 @@ export class RefundsService {
       sourcePaymentId = candidate && !consumed.has(candidate.id) ? candidate.id : undefined;
     }
 
-    const refund = await this.prisma.refund.create({
-      data: {
-        orderId: dto.orderId,
-        amount: dto.amount,
-        reason: dto.reason,
-        notes: dto.notes,
-        // Exchange-sourced refunds carry their lineage so the money is
-        // traceable back to the exchange that produced it.
-        ...(dto.exchangeOrderId ? { exchangeOrderId: dto.exchangeOrderId } : {}),
-        ...(sourcePaymentId ? { sourcePaymentId } : {}),
-      },
-      include: {
-        order: { select: { displayId: true } },
-        processor: { select: { id: true, firstName: true, lastName: true } },
-      },
+    // Single $transaction: Refund row + negative ledger row (+ optional
+    // atomic Cancelled transition) commit together or not at all — a refund
+    // must never exist without its ledger mirror, and vice versa.
+    const refund = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.refund.create({
+        data: {
+          orderId: dto.orderId,
+          amount: dto.amount,
+          method: dto.method,
+          reason: dto.reason,
+          notes: dto.notes,
+          // Exchange-sourced refunds carry their lineage so the money is
+          // traceable back to the exchange that produced it.
+          ...(dto.exchangeOrderId ? { exchangeOrderId: dto.exchangeOrderId } : {}),
+          ...(sourcePaymentId ? { sourcePaymentId } : {}),
+        },
+        include: {
+          order: { select: { displayId: true } },
+          processor: { select: { id: true, firstName: true, lastName: true } },
+        },
+      });
+
+      // Negative ledger mirror. PAID-direct (never PENDING): a refund is a
+      // staff-verified money movement by construction — created through an
+      // approve_payments-guarded endpoint — not a customer submission awaiting
+      // verification. Routing it through PENDING would understate the ledger
+      // (every reader sums Σ PAID) and strand the very refund that is
+      // supposed to unblock cancellation.
+      await tx.payment.create({
+        data: {
+          orderId: dto.orderId,
+          gatewayCode: dto.method,
+          amount: -dto.amount,
+          account: dto.method,
+          status: 'PAID',
+          notes: dto.reason,
+          recordedBy: recordedBy ? `staff:${recordedBy}` : undefined,
+          submittedBy: recordedBy ? `staff:${recordedBy}` : undefined,
+          recordedAt: new Date(),
+        },
+      });
+
+      // Atomic cancel-too: same tx moves the order to Cancelled (status
+      // lookup by name, like cancelByCustomer) with timeline entries for
+      // BOTH the refund and the cancel. cancelToo=false refunds only.
+      if (dto.cancelToo) {
+        const cancelled = await tx.orderStatus.findFirst({
+          where: { name: 'Cancelled' },
+        });
+        if (!cancelled) {
+          throw new BadRequestException('Cancelled status not configured');
+        }
+        const at = new Date().toISOString();
+        const actor = recordedBy ? `staff:${recordedBy}` : 'system';
+        const current = Array.isArray(order.timeline)
+          ? [...(order.timeline as any[])]
+          : [];
+        current.push(
+          {
+            type: 'refund',
+            amount: dto.amount,
+            method: dto.method,
+            reason: dto.reason,
+            timestamp: at,
+            performedBy: actor,
+          },
+          {
+            status: 'Cancelled',
+            timestamp: at,
+            note: `Cancelled atomically with refund (${dto.reason})`,
+            performedBy: actor,
+          },
+        );
+        await tx.order.update({
+          where: { id: dto.orderId },
+          data: {
+            statusId: cancelled.id,
+            paymentStatus: 'REFUNDED',
+            timeline: current as any,
+          },
+        });
+      }
+
+      return created;
     });
 
-    if (dto.targetStatusId) {
+    if (dto.targetStatusId && !dto.cancelToo) {
       const targetStatus = await this.prisma.orderStatus.findUnique({
         where: { id: dto.targetStatusId },
       });

@@ -3488,6 +3488,54 @@ export class OrdersService {
    * packing lock, which must not be left behind if the status write fails).
    * When omitted the method runs in its own transaction, as before.
    */
+  /**
+   * Task 9 (D5) cancel/refund gate — single source of truth, shared with
+   * refunds.service: outstanding = netPaid − legacyRefunded, where netPaid is
+   * Σ signed PAID payment rows (Task 5 negative corrections included) and
+   * legacyRefunded is Σ approved/completed Refund rows with method NULL
+   * (recorded before ledger mirroring; every new-flow refund carries method
+   * + a matching negative payment row, so counting new rows here would
+   * double-count — they are counted via the ledger instead).
+   */
+  private async outstandingRefundableBalance(
+    orderId: string,
+    client?: Prisma.TransactionClient,
+  ): Promise<number> {
+    const db = client ?? this.prisma;
+    const [paidAgg, legacyAgg] = await Promise.all([
+      db.payment.aggregate({
+        where: { orderId, status: 'PAID' },
+        _sum: { amount: true },
+      }),
+      db.refund.aggregate({
+        where: {
+          orderId,
+          status: { in: ['approved', 'completed'] },
+          method: null,
+        },
+        _sum: { amount: true },
+      }),
+    ]);
+    const netPaid = Number((paidAgg as any)?._sum?.amount || 0);
+    const legacyRefunded = Number((legacyAgg as any)?._sum?.amount || 0);
+    return netPaid - legacyRefunded;
+  }
+
+  private cancelBlockedMessage(outstanding: number): string {
+    return (
+      `আগে রিফান্ড করুন — this order still has an outstanding paid balance ` +
+      `of ${outstanding}. Record a refund first (the refund flow can cancel ` +
+      `atomically via its cancel option), then cancel.`
+    );
+  }
+
+  private async assertNoOutstandingForCancel(orderId: string): Promise<void> {
+    const outstanding = await this.outstandingRefundableBalance(orderId);
+    if (outstanding > 0) {
+      throw new BadRequestException(this.cancelBlockedMessage(outstanding));
+    }
+  }
+
   async updateStatus(
     id: string,
     dto: UpdateOrderStatusDto,
@@ -3523,6 +3571,11 @@ export class OrdersService {
       throw new BadRequestException(
         `Cannot transition from "${order.status.name}" to "${newStatus.name}". Allowed: ${allowed.join(', ') || 'none'}`,
       );
+    }
+
+    // Task 9 (D5): cancel blocked while money is still out — refund first.
+    if (newStatus.name === 'Cancelled') {
+      await this.assertNoOutstandingForCancel(id);
     }
 
     // 'Returned' is a manual-confirmation-only status: it restores stock via
@@ -4236,6 +4289,26 @@ export class OrdersService {
       failedDetails.push({ id: missingId, reason: 'Order not found' });
     }
 
+    // Task 9 (D5): bulk cancel collects per-order failures instead of
+    // throwing the whole batch — an order with money still out lands in the
+    // failed list with the gate message; the rest still cancel.
+    if (targetStatus.name === 'Cancelled') {
+      const stillValid: string[] = [];
+      for (const orderId of validIds) {
+        const outstanding = await this.outstandingRefundableBalance(orderId);
+        if (outstanding > 0) {
+          failedDetails.push({
+            id: orderId,
+            reason: this.cancelBlockedMessage(outstanding),
+          });
+        } else {
+          stillValid.push(orderId);
+        }
+      }
+      validIds.length = 0;
+      validIds.push(...stillValid);
+    }
+
     if (validIds.length > 0) {
       await this.prisma.$transaction(async (tx) => {
         await tx.order.updateMany({
@@ -4696,6 +4769,9 @@ export class OrdersService {
         `Order in "${order.status.name}" status cannot be cancelled`,
       );
     }
+    // Task 9 (D5): customer cancel blocked while money is still out — the
+    // customer must contact support for a refund first.
+    await this.assertNoOutstandingForCancel(orderId);
     const timeline = [
       ...this.parseTimeline(order.timeline),
       {

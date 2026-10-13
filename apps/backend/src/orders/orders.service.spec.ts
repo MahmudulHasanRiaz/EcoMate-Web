@@ -209,6 +209,14 @@ describe('OrdersService', () => {
               findFirst: jest.fn(),
               update: jest.fn(),
               count: jest.fn().mockResolvedValue(0),
+              // Task 9 (D5) cancel gate: netPaid side of outstanding.
+              aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 } }),
+            },
+            // Task 9 (D5) cancel gate: legacy-refund side of outstanding
+            // (approved/completed rows with method NULL). Default 0 so every
+            // pre-existing cancel test sees a settled order and passes through.
+            refund: {
+              aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 } }),
             },
             customerProfile: {
               findUnique: jest.fn().mockResolvedValue(null),
@@ -5041,6 +5049,128 @@ await service.bulkAssign(['order-1', 'trashed-1'], 'staff-1');
       await expect(
         service.cancelByCustomer('order-id-1', 'the-token'),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('Task 9 cancel/refund gate (orders side)', () => {
+    function netPaidWithLegacy(net: number, legacy: number) {
+      (prisma.payment.aggregate as jest.Mock).mockResolvedValue({
+        _sum: { amount: net },
+      });
+      (prisma.refund.aggregate as jest.Mock).mockResolvedValue({
+        _sum: { amount: legacy },
+      });
+    }
+
+    it('updateStatus → Cancelled is blocked while money is still out', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        status: { id: 'status-pending', name: 'Pending' },
+      });
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue({
+        id: 'status-cancelled',
+        name: 'Cancelled',
+      });
+      netPaidWithLegacy(2000, 0);
+
+      await expect(
+        service.updateStatus(
+          'order-id-1',
+          { statusId: 'status-cancelled' } as any,
+          'staff-1',
+        ),
+      ).rejects.toThrow(/আগে রিফান্ড/);
+      expect(prisma.order.update).not.toHaveBeenCalled();
+    });
+
+    it('cancelByCustomer is blocked while money is still out', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        viewToken: 'the-token',
+      });
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue({
+        id: 'status-cancelled',
+        name: 'Cancelled',
+      });
+      netPaidWithLegacy(1500, 0);
+
+      await expect(
+        service.cancelByCustomer('order-id-1', 'the-token'),
+      ).rejects.toThrow(/আগে রিফান্ড/);
+      expect(prisma.order.update).not.toHaveBeenCalled();
+    });
+
+    it('legacy completed refund unblocks the gate (no double-count)', async () => {
+      // Gross paid 2000, legacy completed refund 2000, no negative ledger
+      // rows yet → outstanding 0 → the customer cancel proceeds.
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        viewToken: 'the-token',
+      });
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue({
+        id: 'status-cancelled',
+        name: 'Cancelled',
+      });
+      netPaidWithLegacy(2000, 2000);
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) => {
+          const txOrderUpdate = jest.fn().mockResolvedValue({
+            ...mockOrder,
+            status: { id: 'status-cancelled', name: 'Cancelled' },
+          });
+          const tx = { ...prisma, order: { ...prisma.order, update: txOrderUpdate } };
+          await cb(tx);
+          return { ...mockOrder, status: { id: 'status-cancelled', name: 'Cancelled' } };
+        },
+      );
+
+      const result = await service.cancelByCustomer('order-id-1', 'the-token');
+
+      expect((result as any).status.name).toBe('Cancelled');
+    });
+
+    it('bulk cancel collects the gate failure per order and still cancels the settled one', async () => {
+      const settled = {
+        id: 'order-settled',
+        displayId: 'ORD-S',
+        timeline: [],
+        statusId: 'status-confirmed',
+        assignedToId: null,
+        status: { name: 'Confirmed' },
+      };
+      const owing = {
+        id: 'order-owing',
+        displayId: 'ORD-O',
+        timeline: [],
+        statusId: 'status-confirmed',
+        assignedToId: null,
+        status: { name: 'Confirmed' },
+      };
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue({
+        id: 'status-cancelled',
+        name: 'Cancelled',
+      });
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([settled, owing]);
+      (prisma.payment.aggregate as jest.Mock).mockImplementation(
+        async (args: any) => ({
+          _sum: { amount: args?.where?.orderId === 'order-owing' ? 1200 : 0 },
+        }),
+      );
+      (prisma.refund.aggregate as jest.Mock).mockResolvedValue({
+        _sum: { amount: 0 },
+      });
+
+      const result = await service.bulkStatusChange(
+        ['order-settled', 'order-owing'],
+        'status-cancelled',
+        'staff-123',
+      );
+
+      expect(result.updated).toBe(1);
+      expect(result.failed).toBe(1);
+      expect(result.failedDetails).toMatchObject([
+        { id: 'order-owing', reason: expect.stringContaining('আগে রিফান্ড') },
+      ]);
     });
   });
 
