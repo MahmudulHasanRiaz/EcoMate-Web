@@ -90,8 +90,15 @@ export class CodMismatchService {
     return out;
   }
 
-  async resolve(alertId: string, userId: string) {
-    const row = await this.prisma.codMismatchAlert.update({
+  /** List all alerts (open + resolved + cleared) for an order, newest first. */
+  async listForOrder(orderId: string) {
+    return this.prisma.codMismatchAlert.findMany({
+      where: { orderId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async resolve(alertId: string, userId: string) {    const row = await this.prisma.codMismatchAlert.update({
       where: { id: alertId },
       data: { status: RESOLVED, resolvedBy: userId, resolvedAt: new Date() },
     });

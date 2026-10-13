@@ -57,6 +57,7 @@ import { TrackingEligibilityGate } from '../tracking/tracking-eligibility-gate';
 import { CacheService } from '../cache/cache.service';
 import { OrderStaffPerformanceService } from './order-staff-performance.service';
 import { CommissionEngineService } from '../commissions/commission-engine.service';
+import { CodMismatchService } from '../cod-mismatch/cod-mismatch.service';
 
 // Order-status transition rules live in one place — the runtime gate and the
 // seed share the same map (see order-transitions.ts for the Partial rule).
@@ -274,6 +275,9 @@ export class OrdersService {
     // OrdersService without it keep working; production always wires it.
     @Optional()
     private readonly commissionEngine?: CommissionEngineService,
+    // Shared COD alert recompute (Feature A). Optional for the same reason.
+    @Optional()
+    private readonly codMismatch?: CodMismatchService,
   ) {}
 
   /**
@@ -287,6 +291,19 @@ export class OrdersService {
       await this.cache?.invalidateByPrefix('analytics:');
     } catch (err) {
       this.logger.warn(`Analytics cache invalidation failed: ${err}`);
+    }
+  }
+
+  /**
+   * Post-dispatch COD alert refresh (Feature A). Resilient — mirrors
+   * invalidateAnalytics: an alert failure must never break the mutation.
+   * No-op when the order has no dispatch (recompute skips NULL amounts).
+   */
+  private async refreshCodAlert(orderId: string): Promise<void> {
+    try {
+      await this.codMismatch?.recompute(orderId);
+    } catch (err) {
+      this.logger.warn(`COD alert recompute failed for order ${orderId}: ${err}`);
     }
   }
 
@@ -2479,6 +2496,8 @@ export class OrdersService {
     }
 
     await this.invalidateAnalytics();
+    // Harmless no-op when no dispatch exists yet (recompute skips the order).
+    await this.refreshCodAlert(order.id);
     return order;
   }
 
@@ -3361,6 +3380,9 @@ export class OrdersService {
       });
     });
     await this.invalidateAnalytics();
+    // Order edit changes the collectable (total/shipping/discount) — refresh
+    // the post-dispatch COD alert (Feature A, resilient no-op if no dispatch).
+    await this.refreshCodAlert(id);
     return updated;
   }
 
@@ -3847,6 +3869,8 @@ export class OrdersService {
     });
 
     await this.invalidateAnalytics();
+    // Verification flips PAID status — the collectable changed (Feature A).
+    await this.refreshCodAlert(orderId);
 
     // Commission hook (decision #5): verified payment lands the order on
     // 'Confirmed'; evaluate active commission rules. Resilient.
@@ -3961,6 +3985,7 @@ export class OrdersService {
       });
     });
     await this.invalidateAnalytics();
+    await this.refreshCodAlert(orderId);
     return added;
   }
 
@@ -4043,6 +4068,7 @@ export class OrdersService {
       });
     });
     await this.invalidateAnalytics();
+    await this.refreshCodAlert(orderId);
     return removed;
   }
 

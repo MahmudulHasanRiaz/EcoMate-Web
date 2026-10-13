@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { PaymentsService } from '../payments.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CodMismatchService } from '../../cod-mismatch/cod-mismatch.service';
 
 describe('PaymentsService', () => {
   let service: PaymentsService;
@@ -20,6 +21,7 @@ describe('PaymentsService', () => {
       create: jest.fn(),
       findUnique: jest.fn(),
       update: jest.fn(),
+      aggregate: jest.fn(),
     },
   };
 
@@ -118,6 +120,77 @@ describe('PaymentsService', () => {
 
       const result = await service.create(orderId, dto, { userId: 'some-other-user', token: 'view-token-1' });
       expect(result).toBeDefined();
+    });
+  });
+
+  describe('cod mismatch recompute wiring (Task 4)', () => {
+    const codOrder = {
+      id: 'order-1',
+      customerId: 'customer-1',
+      viewToken: 'view-token-1',
+      total: 1500,
+      paymentOptionType: 'CASH_ON_DELIVERY',
+      payments: [],
+    };
+    const codDto = { gatewayCode: 'bkash', amount: 1500, transactionId: 'TX1' };
+
+    function mockTxForCreate() {
+      mockPrisma.$transaction.mockImplementation(async (fn: Function) => {
+        mockPrisma.$queryRawUnsafe.mockResolvedValue(undefined);
+        mockPrisma.order.findUniqueOrThrow.mockResolvedValue(codOrder);
+        mockPrisma.payment.create.mockResolvedValue({ id: 'pay-9', ...codDto, status: 'PENDING' });
+        return fn(mockPrisma);
+      });
+    }
+
+    async function makeWiredService(recompute: jest.Mock) {
+      const mod: TestingModule = await Test.createTestingModule({
+        providers: [
+          PaymentsService,
+          { provide: PrismaService, useValue: mockPrisma },
+          { provide: CodMismatchService, useValue: { recompute } },
+        ],
+      }).compile();
+      return mod.get<PaymentsService>(PaymentsService);
+    }
+
+    it('payment-after-dispatch calls codMismatch.recompute(orderId)', async () => {
+      const recompute = jest.fn().mockResolvedValue([]);
+      const wired = await makeWiredService(recompute);
+      mockTxForCreate();
+
+      await wired.create('order-1', codDto as any, { userId: 'customer-1' });
+
+      expect(recompute).toHaveBeenCalledWith('order-1');
+    });
+
+    it('verify calls codMismatch.recompute with the payment orderId', async () => {
+      const recompute = jest.fn().mockResolvedValue([]);
+      const wired = await makeWiredService(recompute);
+      const stored = { id: 'pay-9', orderId: 'order-1', notes: null };
+      mockPrisma.$transaction.mockImplementation(async (fn: Function) => {
+        mockPrisma.$queryRawUnsafe.mockResolvedValue(undefined);
+        mockPrisma.payment.findUnique.mockResolvedValue(stored);
+        mockPrisma.payment.update.mockResolvedValue({ ...stored, orderId: 'order-1', status: 'PAID' });
+        mockPrisma.payment.aggregate.mockResolvedValue({ _sum: { amount: 1500 } });
+        mockPrisma.order.findUnique.mockResolvedValue({ total: 1500 });
+        mockPrisma.order.update.mockResolvedValue({});
+        return fn(mockPrisma);
+      });
+
+      await wired.verify('pay-9', { status: 'PAID' } as any, 'staff-1');
+
+      expect(recompute).toHaveBeenCalledWith('order-1');
+    });
+
+    it('a failed alert never breaks the payment mutation (resilient)', async () => {
+      const recompute = jest.fn().mockRejectedValue(new Error('alert boom'));
+      const wired = await makeWiredService(recompute);
+      mockTxForCreate();
+
+      await expect(
+        wired.create('order-1', codDto as any, { userId: 'customer-1' }),
+      ).resolves.toBeDefined();
     });
   });
 });

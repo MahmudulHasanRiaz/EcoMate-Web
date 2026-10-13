@@ -14,6 +14,7 @@ import { CouponsModule } from '../coupons/coupons.module';
 import { BlockedEntriesModule } from '../blocked-entries/blocked-entries.module';
 import { MarketingModule } from '../marketing/marketing.module';
 import { CommissionsModule } from '../commissions/commissions.module';
+import { CodMismatchModule } from '../cod-mismatch/cod-mismatch.module';
 
 @Module({
   controllers: [OrdersController, OrderStatusController],
@@ -40,6 +41,7 @@ import { CommissionsModule } from '../commissions/commissions.module';
     CouponsModule,
     MarketingModule,
     CommissionsModule,
+    CodMismatchModule,
   ],
 })
 export class OrdersModule {}

@@ -8,13 +8,29 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PaymentStatus } from '@prisma/client';
 import { CreatePaymentDto, VerifyPaymentDto } from '../orders/dto/order.dto';
 import { CacheService } from '../cache/cache.service';
+import { CodMismatchService } from '../cod-mismatch/cod-mismatch.service';
 
 @Injectable()
 export class PaymentsService {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly cache?: CacheService,
+    // Shared COD alert recompute (Feature A). Optional so existing unit
+    // tests that build PaymentsService without it keep working.
+    @Optional() private readonly codMismatch?: CodMismatchService,
   ) {}
+
+  /**
+   * Post-dispatch COD alert refresh. Resilient — mirrors invalidateAnalytics:
+   * an alert failure must never break the payment mutation.
+   */
+  private async refreshCodAlert(orderId: string): Promise<void> {
+    try {
+      await this.codMismatch?.recompute(orderId);
+    } catch {
+      /* alert failure must not fail payments */
+    }
+  }
 
   /**
    * Business analytics freshness (P2 §6): payment rows feed L3 cash and the
@@ -137,6 +153,7 @@ export class PaymentsService {
       });
     });
     await this.invalidateAnalytics();
+    await this.refreshCodAlert(orderId);
     return created;
   }
 
@@ -197,6 +214,7 @@ export class PaymentsService {
       return updated;
     });
     await this.invalidateAnalytics();
+    await this.refreshCodAlert(updated.orderId);
     return updated;
   }
 }

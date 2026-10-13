@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
+import { CodMismatchService } from '../cod-mismatch/cod-mismatch.service';
 
 import { Prisma } from '@prisma/client';
 import { CreateRefundDto, UpdateRefundStatusDto } from './dto/refund.dto';
@@ -22,6 +23,9 @@ export class RefundsService {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly cache?: CacheService,
+    // Shared COD alert recompute (Feature A). Optional so existing unit
+    // tests that build RefundsService without it keep working.
+    @Optional() private readonly codMismatch?: CodMismatchService,
   ) {}
 
   /**
@@ -33,6 +37,18 @@ export class RefundsService {
       await this.cache?.invalidateByPrefix('analytics:');
     } catch {
       /* cache failure must not fail refunds */
+    }
+  }
+
+  /**
+   * Post-dispatch COD alert refresh (Feature A). Resilient — mirrors
+   * invalidateAnalytics: an alert failure must never break the mutation.
+   */
+  private async refreshCodAlert(orderId: string): Promise<void> {
+    try {
+      await this.codMismatch?.recompute(orderId);
+    } catch {
+      /* alert failure must not fail refunds */
     }
   }
 
@@ -195,6 +211,8 @@ export class RefundsService {
     }
 
     await this.invalidateAnalytics();
+    // Refund changes the outstanding collectable (Feature A, resilient).
+    await this.refreshCodAlert(dto.orderId);
     return refund;
   }
 
