@@ -313,5 +313,45 @@ describe('CodMismatchService', () => {
         data: { timeline: expect.arrayContaining([expect.objectContaining({ event: expect.stringContaining('user-9') })]) },
       });
     });
+
+    it('resolve with correct orderId works', async () => {
+      mockPrisma.codMismatchAlert.findFirst.mockResolvedValue({
+        id: 'alert-1',
+        orderId: 'order-1',
+      });
+      mockPrisma.codMismatchAlert.update.mockResolvedValue({
+        id: 'alert-1',
+        orderId: 'order-1',
+        consignmentId: 'C1',
+        status: 'resolved',
+        resolvedBy: 'user-9',
+        resolvedAt: new Date(),
+      });
+      mockPrisma.order.findUnique.mockResolvedValue({ timeline: [] });
+
+      const row = await service.resolve('alert-1', 'user-9', 'order-1');
+
+      expect(mockPrisma.codMismatchAlert.findFirst).toHaveBeenCalledWith({
+        where: { id: 'alert-1', orderId: 'order-1' },
+      });
+      expect(mockPrisma.codMismatchAlert.update).toHaveBeenCalledWith({
+        where: { id: 'alert-1' },
+        data: expect.objectContaining({ status: 'resolved', resolvedBy: 'user-9' }),
+      });
+      expect(row.status).toBe('resolved');
+    });
+
+    it('resolve with wrong orderId throws NotFound and updates nothing', async () => {
+      mockPrisma.codMismatchAlert.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.resolve('alert-1', 'user-9', 'other-order'),
+      ).rejects.toThrow('COD alert alert-1 not found for order other-order');
+      expect(mockPrisma.codMismatchAlert.findFirst).toHaveBeenCalledWith({
+        where: { id: 'alert-1', orderId: 'other-order' },
+      });
+      expect(mockPrisma.codMismatchAlert.update).not.toHaveBeenCalled();
+      expect(mockPrisma.order.update).not.toHaveBeenCalled();
+    });
   });
 });

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 const OPEN = 'open';
@@ -98,7 +98,18 @@ export class CodMismatchService {
     });
   }
 
-  async resolve(alertId: string, userId: string) {    const row = await this.prisma.codMismatchAlert.update({
+  async resolve(alertId: string, userId: string, orderId?: string) {
+    if (orderId) {
+      const existing = await this.prisma.codMismatchAlert.findFirst({
+        where: { id: alertId, orderId },
+      });
+      if (!existing) {
+        throw new NotFoundException(
+          `COD alert ${alertId} not found for order ${orderId}`,
+        );
+      }
+    }
+    const row = await this.prisma.codMismatchAlert.update({
       where: { id: alertId },
       data: { status: RESOLVED, resolvedBy: userId, resolvedAt: new Date() },
     });

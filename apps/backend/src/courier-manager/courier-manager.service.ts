@@ -986,6 +986,11 @@ export class CourierManagerService {
           // Match the invoice back to the input order (carries payments) so
           // the persisted courierAmount equals the cod_amount actually sent.
           const bulkOrder = orders.find((o: any) => o.displayId === invoice);
+          if (!bulkOrder) {
+            this.logger.warn(
+              `Bulk Steadfast dispatch: no input order matched invoice ${invoice} — courierAmount omitted, COD alert coverage skipped for this consignment`,
+            );
+          }
           if (order) {
             await this.prisma.order.update({
               where: { id: order.id },

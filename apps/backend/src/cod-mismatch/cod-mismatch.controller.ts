@@ -19,10 +19,10 @@ export class CodMismatchController {
   @RequiresFeature('admin_orders')
   @Post(':id/cod-alerts/:alertId/resolve')
   resolve(
-    @Param('id') _orderId: string,
+    @Param('id') orderId: string,
     @Param('alertId') alertId: string,
     @CurrentUser() user: { userId: string },
   ) {
-    return this.svc.resolve(alertId, user.userId);
+    return this.svc.resolve(alertId, user.userId, orderId);
   }
 }

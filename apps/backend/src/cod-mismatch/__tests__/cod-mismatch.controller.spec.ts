@@ -17,11 +17,11 @@ describe('CodMismatchController', () => {
     expect(svc.listForOrder).toHaveBeenCalledWith('order-1');
   });
 
-  it('POST resolve passes the staff user id to the service', async () => {
+  it('POST resolve passes the order id and staff user id to the service', async () => {
     svc.resolve.mockResolvedValue({ id: 'a1', status: 'resolved' });
 
     await controller.resolve('order-1', 'a1', { userId: 'staff-7' } as any);
 
-    expect(svc.resolve).toHaveBeenCalledWith('a1', 'staff-7');
+    expect(svc.resolve).toHaveBeenCalledWith('a1', 'staff-7', 'order-1');
   });
 });
