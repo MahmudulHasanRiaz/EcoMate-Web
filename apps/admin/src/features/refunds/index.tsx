@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { apiClient } from '@/lib/api-client'
+import { refundsApi } from './api'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -18,12 +18,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2, Plus } from 'lucide-react'
 import type { PaginationState } from '@tanstack/react-table'
-
-const refundsApi = {
-  list: (q: any) => apiClient.get('/refunds', { params: q }),
-  create: (d: any) => apiClient.post('/refunds', d),
-  updateStatus: (id: string, status: string) => apiClient.put(`/refunds/${id}/status`, { status }),
-}
 
 export function Refunds() {
   const queryClient = useQueryClient()

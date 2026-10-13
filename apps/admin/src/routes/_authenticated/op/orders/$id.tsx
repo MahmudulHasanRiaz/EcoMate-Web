@@ -16,6 +16,9 @@ import { ReturnOrderDialog } from '@/features/orders/components/return-order-dia
 
 import { CourierCustomerHistoryCard } from '@/features/orders/courier-customer-history-card'
 import { CodMismatchBanner } from '@/features/orders/components/cod-mismatch-banner'
+import { PaymentLedgerCard } from '@/features/orders/components/payment-ledger-card'
+import { RecordPaymentModal } from '@/features/orders/components/record-payment-modal'
+import { RecordRefundModal } from '@/features/orders/components/record-refund-modal'
 import { OrderSummaryCard } from '@/features/orders/order-summary-card'
 import { OrderEditLockGuard } from '@/features/orders/order-edit-lock'
 import { OrderSourceBadges } from '@/features/orders/order-source-badge'
@@ -46,7 +49,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { PaymentLogo } from '@/components/payment-logo'
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -156,6 +158,10 @@ function OrderDetailPage() {
   const [paymentMode, setPaymentMode] = useState<'cod' | 'full' | 'partial'>('cod')
   const [partialAmount, setPartialAmount] = useState('')
 
+  // ── Ledger modals (Task 11: append-only entries, never in-place edits) ──
+  const [showRecordPayment, setShowRecordPayment] = useState(false)
+  const [showRecordRefund, setShowRecordRefund] = useState(false)
+
   // ── Timeline / Notes ─────────────────────────────────────────────
   const [noteText, setNoteText] = useState('')
   const [noteVisibility, setNoteVisibility] = useState<'public' | 'private'>('public')
@@ -195,6 +201,12 @@ function OrderDetailPage() {
 
   const shippingMode = sysSettings?.['shipping_mode'] || 'auto_district'
 
+  // S1/S2 (live in the same /system-settings map): S1 ON (default) means staff
+  // entries skip verification, so txn ID is optional; S2 OFF (default) means
+  // no edit UI for recorded payments — corrections go through new entries.
+  const staffAutoVerified = sysSettings?.['payments.staffAutoVerified'] !== 'false'
+  const paymentEditAllowed = sysSettings?.['payments.editAllowed'] === 'true'
+
   const phone = order?.customer?.phoneNumber?.replace(/[^\d]/g, '')
   const { data: customerSummary } = useQuery({ queryKey: ['customer-summary', phone], queryFn: () => apiClient.get(`/customers/order-summary?phone=${phone}`).then(r => r.data), enabled: !!phone })
 
@@ -231,7 +243,20 @@ function OrderDetailPage() {
   const statusMut = useMutation({
     mutationFn: ({ id, statusId, note }: { id: string; statusId: string; note?: string }) => ordersApi.updateStatus(id, statusId, note),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['order', id] }); toast.success('Status updated') },
-    onError: (e: unknown) => toast.error(errMsg(e)),
+    onError: (e: unknown) => {
+      const msg = errMsg(e)
+      // Cancel blocked by outstanding paid balance (D5): surface the backend
+      // message and deep-link straight into the refund flow (cancel-too can
+      // cancel atomically once the balance is refunded).
+      if (/আগে রিফান্ড/.test(msg)) {
+        toast.error(msg, { duration: 9000 })
+        setShowStatusDialog(null)
+        setStatusNote('')
+        setShowRecordRefund(true)
+        return
+      }
+      toast.error(msg)
+    },
   })
 
   const noteMut = useMutation({
@@ -1083,7 +1108,14 @@ function OrderDetailPage() {
                         </div>
                       </div>
                       {!editingPayment && (
-                        <Button variant='outline' size='sm' className='h-8 text-xs font-medium shadow-none hover:bg-accent' onClick={openPaymentEdit}>
+                        <Button
+                          variant='outline'
+                          size='sm'
+                          className='h-8 text-xs font-medium shadow-none hover:bg-accent'
+                          onClick={openPaymentEdit}
+                          disabled={!paymentEditAllowed}
+                          title={paymentEditAllowed ? undefined : 'Payment editing is disabled — record a correction entry instead'}
+                        >
                           <Pencil className='h-3 w-3 mr-1.5' /> Edit
                         </Button>
                       )}
@@ -1165,41 +1197,12 @@ function OrderDetailPage() {
                       </div>
                     )}
 
-                    {order.payments && order.payments.length > 0 && (
-                      <div className='space-y-2.5 pt-1'>
-                        <p className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'>Recorded Transactions</p>
-                        {order.payments.map((p: any) => {
-                          const ps = p.status?.toLowerCase()
-                          const statusVariant = ps === 'paid' || ps === 'verified' || ps === 'completed' ? 'default' as const : ps === 'pending' || ps === 'payment_pending' ? 'secondary' as const : ps === 'failed' || ps === 'cancelled' ? 'destructive' as const : 'outline' as const
-                          return (
-                            <div key={p.id} className='rounded-lg border border-border/60 bg-card p-3 shadow-xs space-y-2'>
-                              <div className='flex items-center justify-between'>
-                                <PaymentLogo method={p.gatewayCode || p.method} size='sm' />
-                                <Badge variant={statusVariant} className='text-[10px] font-medium shadow-xs'>{p.status}</Badge>
-                              </div>
-                              <div className='grid grid-cols-2 gap-2 text-xs pt-1.5 border-t border-border/40'>
-                                <div>
-                                  <span className='text-muted-foreground text-[10px] block'>Amount</span>
-                                  <span className='font-bold text-sm text-foreground'>৳{fmt(p.amount)}</span>
-                                </div>
-                                {p.transactionId && (
-                                  <div>
-                                    <span className='text-muted-foreground text-[10px] block'>Transaction ID</span>
-                                    <div className='flex items-center gap-1 font-mono text-[11px] font-medium text-foreground'>
-                                      <span className='truncate'>{p.transactionId}</span>
-                                      <CopyButton text={p.transactionId} label='TrxID' />
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                              {p.gatewayCode && (
-                                <p className='text-[10px] text-muted-foreground/75 font-mono'>Gateway: {p.gatewayCode}</p>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
+                    {/* Append-only ledger: signed entries, no in-place edits */}
+                    <PaymentLedgerCard
+                      payments={(order.payments || []) as any}
+                      onRecordPayment={() => setShowRecordPayment(true)}
+                      onRecordRefund={() => setShowRecordRefund(true)}
+                    />
                   </CardContent>
                 </Card>
               )}
@@ -1939,6 +1942,19 @@ function OrderDetailPage() {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* ── Ledger entry modals (Task 11) ─────────────────────── */}
+        <RecordPaymentModal
+          orderId={id}
+          open={showRecordPayment}
+          onClose={() => setShowRecordPayment(false)}
+          txnRequired={!staffAutoVerified}
+        />
+        <RecordRefundModal
+          orderId={id}
+          open={showRecordRefund}
+          onClose={() => setShowRecordRefund(false)}
+        />
 
         {/* ── Variant Picker Dialog ────────────────────────────── */}
         <Dialog open={!!selectedProductForVariants} onOpenChange={() => setSelectedProductForVariants(null)}>

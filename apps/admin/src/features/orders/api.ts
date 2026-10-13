@@ -66,7 +66,14 @@ export interface OrderResponse {
   customer: { id: string; firstName: string; lastName: string; email: string; phoneNumber: string } | null;
   status: { id: string; name: string; color: string; nextStatuses: string[] };
   items: { id: string; productId: string; variantId?: string | null; quantity: number; price: number | string; product: { id: string; name: string; images: any; slug?: string } }[];
-  payments: { id: string; method?: string; gatewayCode?: string; amount: number | string; status: string; transactionId?: string | null }[];
+  /** Append-only payment ledger rows (Task 11: account/actor/recordedAt). */
+  payments: {
+    id: string; method?: string; gatewayCode?: string; amount: number | string; status: string;
+    transactionId?: string | null; account?: string | null;
+    recordedBy?: string | null; submittedBy?: string | null; recordedAt?: string | null;
+    verifiedBy?: string | null; verifiedAt?: string | null; notes?: string | null;
+    createdAt?: string;
+  }[];
   shipment?: { id: string; trackingNo?: string | null; courier?: string | null; status: string } | null;
 }
 
