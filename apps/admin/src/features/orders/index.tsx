@@ -12,7 +12,7 @@ import { useLicenseStore } from '@/stores/license-store'
 import { useOrdersFilterStore } from '@/stores/orders-filter-store'
 import { copyToClipboard } from '@/lib/clipboard'
 import { resolveOrderItemImages } from '@/lib/product-image'
-import { getCustomerDisplayName, getCustomerPhone, getCustomerEmail, extractOrderScanCode } from '@/lib/order-display'
+import { getCustomerDisplayName, getCustomerPhone, getCustomerEmail, extractOrderScanCode, getOrderPaymentMode } from '@/lib/order-display'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -110,7 +110,8 @@ function paymentStatusBadgeClass(status: string): { variant: 'default' | 'second
   if (['paid', 'verified', 'completed'].includes(s)) return { variant: 'default', className: 'bg-success-soft text-success border-success/25' }
   if (['pending', 'payment_pending'].includes(s)) return { variant: 'secondary', className: 'bg-warning-soft text-warning border-warning/25' }
   if (['failed', 'cancelled', 'unpaid'].includes(s)) return { variant: 'destructive', className: 'bg-danger-soft text-danger border-danger/25' }
-  if (s === 'partial_paid') return { variant: 'default', className: 'bg-info-soft text-info border-info/25' }
+  if (['partial', 'partial_paid'].includes(s)) return { variant: 'default', className: 'bg-info-soft text-info border-info/25' }
+  if (s === 'credit') return { variant: 'outline', className: 'bg-accent-violet-soft text-accent-violet border-accent-violet/25' }
   if (s === 'refunded') return { variant: 'outline', className: 'bg-accent-pink-soft text-accent-pink border-accent-pink/25' }
   return { variant: 'outline', className: '' }
 }
@@ -1118,7 +1119,16 @@ export function Orders() {
                         <TableCell onClick={e => e.stopPropagation()}>
                           <AssigneeCell assignee={o.assignee} />
                         </TableCell>
-                        <TableCell className='text-right font-mono font-semibold text-xs text-foreground'>৳{fmt(o.total)}</TableCell>
+                        <TableCell className='text-right font-mono font-semibold text-xs text-foreground'>
+                          <div>৳{fmt(o.total)}</div>
+                          {(() => {
+                            const mode = getOrderPaymentMode(o)
+                            const mc = paymentStatusBadgeClass(mode)
+                            return (
+                              <Badge variant={mc.variant} className={`text-[10px] py-0 px-1.5 mt-0.5 ${mc.className}`}>{mode}</Badge>
+                            )
+                          })()}
+                        </TableCell>
                         <TableCell className='text-right text-xs text-muted-foreground pr-4 font-mono'>{o.items.length}</TableCell>
                         <TableCell onClick={e => e.stopPropagation()} className='pr-3'>
                           <DropdownMenu>

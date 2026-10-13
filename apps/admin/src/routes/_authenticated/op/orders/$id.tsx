@@ -29,6 +29,7 @@ import {
   getCustomerEmail,
   getOrderPaidAmount,
   getOrderDueAmount,
+  getOrderPaymentMode,
 } from '@/lib/order-display'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -88,6 +89,8 @@ const paymentStatusColors: Record<string, string> = {
   PAYMENT_PENDING: '#F59E0B', PENDING: '#F59E0B', PAID: '#22C55E',
   PARTIAL_PAID: '#3B82F6', UNPAID: '#EF4444', FAILED: '#DC2626',
   CANCELLED: '#6B7280', REFUNDED: '#EC4899',
+  // Derived ledger modes (getOrderPaymentMode) — the badge source of truth.
+  Unpaid: '#EF4444', Partial: '#3B82F6', Paid: '#22C55E', Credit: '#8B5CF6',
 }
 
 function PaymentStatusBadge({ status }: { status?: string | null }) {
@@ -1069,7 +1072,7 @@ function OrderDetailPage() {
                         <div>
                           <CardTitle className='text-sm font-semibold tracking-tight text-foreground flex items-center gap-2'>
                             Payment Details
-                            <PaymentStatusBadge status={order.paymentStatus} />
+                            <PaymentStatusBadge status={getOrderPaymentMode(order)} />
                           </CardTitle>
                           <p className='text-xs text-muted-foreground mt-0.5'>Settlement mode and transaction log</p>
                         </div>
@@ -1082,6 +1085,28 @@ function OrderDetailPage() {
                     </div>
                   </CardHeader>
                   <CardContent className='p-3 sm:p-6 space-y-3 sm:space-y-4'>
+                    {/* D6: three unmistakable blocks — ledger-derived, never the stored column */}
+                    {(() => {
+                      const total = nn(order.total)
+                      const paid = getOrderPaidAmount(order)
+                      const due = getOrderDueAmount(order)
+                      return (
+                        <div className='grid grid-cols-3 gap-2'>
+                          <div className='rounded-lg bg-muted/40 border border-border/50 p-2.5 text-center'>
+                            <p className='text-[10px] font-semibold uppercase tracking-wider text-muted-foreground'>মোট বিল</p>
+                            <p className='font-bold text-sm text-foreground mt-0.5'>৳{fmt(total)}</p>
+                          </div>
+                          <div className='rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-2.5 text-center'>
+                            <p className='text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400'>আদায়কৃত</p>
+                            <p className='font-bold text-sm text-emerald-600 dark:text-emerald-400 mt-0.5'>৳{fmt(paid)}</p>
+                          </div>
+                          <div className='rounded-lg bg-amber-500/10 border border-amber-500/25 p-2.5 text-center ring-1 ring-amber-500/20'>
+                            <p className='text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-500'>বকেয়া Due</p>
+                            <p className='font-extrabold text-base text-amber-600 dark:text-amber-500 mt-0.5'>৳{fmt(due)}</p>
+                          </div>
+                        </div>
+                      )
+                    })()}
                     {editingPayment ? (
                       <div className='space-y-3.5'>
                         <div>

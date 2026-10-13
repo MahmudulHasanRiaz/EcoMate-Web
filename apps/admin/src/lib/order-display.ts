@@ -148,20 +148,21 @@ export interface OrderPaymentSummarySource {
 
 /**
  * Calculate the verified / paid amount on an order.
- * Considers payments with status paid/verified/completed, or if paymentStatus is PAID,
- * falls back to total.
+ * The payment LEDGER is truth: when recorded payment rows exist, their signed
+ * sum (PAID-family statuses, negatives included for corrections/refunds) wins
+ * over the stored `paymentStatus` column. The column is kept for query/filter
+ * only. Falls back to the legacy stored-value heuristics when no rows exist.
  */
 export function getOrderPaidAmount(order: OrderPaymentSummarySource | null | undefined): number {
   if (!order) return 0
   const total = Number(order.total || 0)
   if (Array.isArray(order.payments) && order.payments.length > 0) {
-    const verifiedSum = order.payments
+    return order.payments
       .filter((p) => {
         const s = (p.status || '').toLowerCase()
         return s === 'paid' || s === 'verified' || s === 'completed'
       })
       .reduce((sum, p) => sum + Number(p.amount || 0), 0)
-    if (verifiedSum > 0) return verifiedSum
   }
   if (order.paymentStatus === 'PAID' || order.paymentOptionType === 'FULL_PAYMENT') {
     return total
@@ -174,14 +175,50 @@ export function getOrderPaidAmount(order: OrderPaymentSummarySource | null | und
 
 /**
  * Calculate the actual remaining due amount (amount collectable on delivery / COD).
- * Guarantees due = max(0, total - paid).
+ * Guarantees due = max(0, total - paid). Ledger-first: recorded rows decide,
+ * stored `paymentStatus` is only a fallback when no rows exist.
  */
 export function getOrderDueAmount(order: OrderPaymentSummarySource | null | undefined): number {
   if (!order) return 0
+  const total = Number(order.total || 0)
+  if (Array.isArray(order.payments) && order.payments.length > 0) {
+    return Math.max(0, total - getOrderPaidAmount(order))
+  }
   if (order.paymentStatus === 'PAID' || order.paymentOptionType === 'FULL_PAYMENT') {
     return 0
   }
-  const total = Number(order.total || 0)
   const paid = getOrderPaidAmount(order)
   return Math.max(0, total - paid)
+}
+
+/** Derived payment mode — the single source of truth for payment badges/cards. */
+export type OrderPaymentMode = 'Unpaid' | 'Partial' | 'Paid' | 'Credit'
+
+/** Round to paisa so float dust (0.1+0.2) never flips a boundary. */
+const toPaisa = (v: number | string): number => Math.round(Number(v || 0) * 100) / 100
+
+/**
+ * Pure mode from amounts. Boundary: paid > total → 'Credit' (overrides Paid);
+ * paid == total → 'Paid'; 0 < paid < total → 'Partial'; paid <= 0 → 'Unpaid'.
+ * Number() coercion handles Decimal-serialized strings.
+ */
+export function getPaymentModeForAmounts(
+  total: number | string,
+  paidTotal: number | string,
+): OrderPaymentMode {
+  const t = toPaisa(total)
+  const p = toPaisa(paidTotal)
+  if (p <= 0) return 'Unpaid'
+  if (p < t) return 'Partial'
+  if (p === t) return 'Paid'
+  return 'Credit'
+}
+
+/**
+ * Derived payment mode for an order — computed from the ledger sum, never
+ * from the stored `paymentStatus` column directly.
+ */
+export function getOrderPaymentMode(order: OrderPaymentSummarySource | null | undefined): OrderPaymentMode {
+  if (!order) return 'Unpaid'
+  return getPaymentModeForAmounts(order.total ?? 0, getOrderPaidAmount(order))
 }

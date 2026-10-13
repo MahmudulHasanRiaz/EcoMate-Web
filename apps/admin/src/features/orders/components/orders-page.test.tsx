@@ -159,12 +159,13 @@ describe('Orders page', () => {
     await expect.element(getByRole('cell', { name: /1234567890/ })).toBeInTheDocument()
   })
 
-  it('shows order total with currency symbol', async () => {
+  it('shows order total with currency symbol and derived payment-mode badge', async () => {
     mockSuccessfulAPIs()
 
     const { getByRole } = await renderOrders()
 
-    await expect.element(getByRole('cell', { name: /^৳210\.00$/ })).toBeInTheDocument()
+    // mockOrder has no payments → derived mode is Unpaid, shown under the total
+    await expect.element(getByRole('cell', { name: /^৳210\.00 Unpaid$/ })).toBeInTheDocument()
   })
 
   it('shows item count in the table', async () => {
