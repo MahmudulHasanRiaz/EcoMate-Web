@@ -10,6 +10,7 @@ import { PaymentStatus } from '@prisma/client';
 import { CreatePaymentDto, VerifyPaymentDto } from '../orders/dto/order.dto';
 import { CacheService } from '../cache/cache.service';
 import { CodMismatchService } from '../cod-mismatch/cod-mismatch.service';
+import { CustomerCreditService } from '../customer-credit/customer-credit.service';
 import {
   PaymentSettings,
   parsePaymentSettings,
@@ -24,6 +25,9 @@ export class PaymentsService {
     // Shared COD alert recompute (Feature A). Optional so existing unit
     // tests that build PaymentsService without it keep working.
     @Optional() private readonly codMismatch?: CodMismatchService,
+    // Task 8 — marginal overpay grant. Optional for the same reason; the
+    // grant call below is skipped when no credit service is wired.
+    @Optional() private readonly credit?: CustomerCreditService,
   ) {}
 
   /**
@@ -192,7 +196,7 @@ export class PaymentsService {
         );
       }
 
-      return tx.payment.create({
+      const created = await tx.payment.create({
         data: {
           orderId,
           gatewayCode: dto.gatewayCode,
@@ -218,6 +222,30 @@ export class PaymentsService {
           recordedAt: new Date(),
         },
       });
+
+      // Task 8 — marginal overpay grant, SAME $transaction (atomic with the
+      // payment row). paidBefore counts PAID rows only, matching the shared
+      // recompute's coverage (Σ PAID amount + Σ appliedCreditAmount); the
+      // service grants excessAfter − excessBefore so each payment grants only
+      // its own marginal overpay. Guest orders (no customerId) never grant.
+      // The grant does NOT change paidTotal, so the recompute below (which
+      // fires once, after commit) needs no second call here.
+      if (order.customerId && this.credit) {
+        const paidBefore = (order.payments ?? [])
+          .filter((p: any) => p.status === PaymentStatus.PAID)
+          .reduce((s: number, p: any) => s + Number(p.amount), 0);
+        await this.credit.grantFromOverpayment(tx, {
+          customerId: order.customerId,
+          orderId,
+          paymentId: created.id,
+          orderTotal: Number(order.total),
+          paidBefore,
+          newAmount: paymentAmount,
+          isPaid: created.status === PaymentStatus.PAID,
+        });
+      }
+
+      return created;
     });
     await this.invalidateAnalytics();
     await this.refreshCodAlert(orderId);
