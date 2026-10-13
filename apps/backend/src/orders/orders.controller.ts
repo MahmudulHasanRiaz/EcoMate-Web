@@ -35,6 +35,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { Observable } from 'rxjs';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 
 @Controller('orders')
@@ -220,12 +221,20 @@ export class OrdersController {
 
   @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
+  @Permissions('approve_payments')
   @Post(':id/verify-payment')
   async verifyPayment(
     @Param('id') id: string,
     @Body() dto: VerifyOrderPaymentDto,
+    @CurrentUser() user: { userId: string },
   ) {
-    return this.svc.verifyPayment(id, dto.verified, dto.note, dto.feeAmount);
+    return this.svc.verifyPayment(
+      id,
+      dto.verified,
+      dto.note,
+      dto.feeAmount,
+      user?.userId,
+    );
   }
 
   @Public()

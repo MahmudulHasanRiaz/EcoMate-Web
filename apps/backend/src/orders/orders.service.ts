@@ -3828,7 +3828,7 @@ export class OrdersService {
     });
   }
 
-  async verifyPayment(orderId: string, verified: boolean, note?: string, feeAmount?: number) {
+  async verifyPayment(orderId: string, verified: boolean, note?: string, feeAmount?: number, userId?: string) {
     const updated = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
@@ -3840,6 +3840,23 @@ export class OrdersService {
         throw new BadRequestException(
           'Order is not awaiting payment verification',
         );
+      }
+
+      // Self-approve block (Task 6): the order-level verify approves every
+      // PENDING row at once, so a verifier who recorded ANY of them is
+      // refused — per-row PUT /payments/:id/verify stays the granular path.
+      // userId is optional (pre-Task-6 callers omit it) — without an actor
+      // there is nobody to compare against, so the check is skipped.
+      if (userId) {
+        const pending = await tx.payment.findMany({
+          where: { orderId, status: 'PENDING' },
+          select: { recordedBy: true },
+        });
+        if (
+          pending.some((p: any) => p.recordedBy === `staff:${userId}`)
+        ) {
+          throw new ForbiddenException('Staff cannot approve their own entry');
+        }
       }
 
       const targetStatusName = verified ? 'Confirmed' : 'Payment Pending';

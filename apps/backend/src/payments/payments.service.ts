@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
   Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -227,6 +228,13 @@ export class PaymentsService {
     const updated = await this.prisma.$transaction(async (tx) => {
       const payment = await tx.payment.findUnique({ where: { id } });
       if (!payment) throw new NotFoundException('Payment not found');
+
+      // Self-approve block (Task 6): recordedBy is `staff:<userId>` for
+      // staff entries (null for customer-submitted), verifiedBy is the raw
+      // userId — same id space, so a direct comparison is exact.
+      if (payment.recordedBy === `staff:${userId}`) {
+        throw new ForbiddenException('Staff cannot approve their own entry');
+      }
 
       // Lock the order row — prevents concurrent verify races on order status
       await tx.$queryRawUnsafe(

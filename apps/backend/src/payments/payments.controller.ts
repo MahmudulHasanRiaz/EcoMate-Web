@@ -5,6 +5,7 @@ import { CreatePaymentDto, VerifyPaymentDto } from '../orders/dto/order.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 
 @Controller('payments')
@@ -51,6 +52,7 @@ export class PaymentsController {
 
   @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_payments')
+  @Permissions('approve_payments')
   @Put(':id/verify')
   verify(
     @Param('id') id: string,
