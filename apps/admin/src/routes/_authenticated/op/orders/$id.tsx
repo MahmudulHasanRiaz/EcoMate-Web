@@ -91,6 +91,7 @@ const paymentStatusColors: Record<string, string> = {
   CANCELLED: '#6B7280', REFUNDED: '#EC4899',
   // Derived ledger modes (getOrderPaymentMode) — the badge source of truth.
   Unpaid: '#EF4444', Partial: '#3B82F6', Paid: '#22C55E', Credit: '#8B5CF6',
+  Refunded: '#EC4899',
 }
 
 function PaymentStatusBadge({ status }: { status?: string | null }) {

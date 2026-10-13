@@ -140,6 +140,10 @@ export interface OrderPaymentSummarySource {
   paymentStatus?: string | null
   paymentOptionType?: string | null
   partialAmount?: number | string | null
+  /** Order-status relation (`status: { name }`) — Cancelled name per backend cancelByCustomer lookup. */
+  status?: { name?: string | null } | null
+  /** Flat status-name fallback for queue-like shapes. */
+  statusName?: string | null
   payments?: Array<{
     amount?: number | string | null
     status?: string | null
@@ -174,12 +178,40 @@ export function getOrderPaidAmount(order: OrderPaymentSummarySource | null | und
 }
 
 /**
+ * Cancelled order-status name — exact match on the backend lookup in
+ * cancelByCustomer (`orderStatus.findFirst({ where: { name: 'Cancelled' } })`).
+ */
+export const CANCELLED_STATUS_NAME = 'Cancelled'
+
+/** True when the order sits in the Cancelled status (relation or flat shape). */
+function isCancelledOrder(order: OrderPaymentSummarySource | null | undefined): boolean {
+  if (!order) return false
+  if (order.status?.name === CANCELLED_STATUS_NAME) return true
+  if (order.statusName === CANCELLED_STATUS_NAME) return true
+  return false
+}
+
+/** True when the ledger carries refund activity: any negative PAID-family row. */
+function hasRefundActivity(order: OrderPaymentSummarySource | null | undefined): boolean {
+  if (!order || !Array.isArray(order.payments)) return false
+  return order.payments.some((p) => {
+    const s = (p.status || '').toLowerCase()
+    if (s !== 'paid' && s !== 'verified' && s !== 'completed') return false
+    return Number(p.amount || 0) < 0
+  })
+}
+
+/**
  * Calculate the actual remaining due amount (amount collectable on delivery / COD).
  * Guarantees due = max(0, total - paid). Ledger-first: recorded rows decide,
  * stored `paymentStatus` is only a fallback when no rows exist.
+ *
+ * Cancelled orders always owe 0 — nothing is collectable post-cancel, even a
+ * paid-then-cancelled order with only a partial refund.
  */
 export function getOrderDueAmount(order: OrderPaymentSummarySource | null | undefined): number {
   if (!order) return 0
+  if (isCancelledOrder(order)) return 0
   const total = Number(order.total || 0)
   if (Array.isArray(order.payments) && order.payments.length > 0) {
     return Math.max(0, total - getOrderPaidAmount(order))
@@ -192,7 +224,7 @@ export function getOrderDueAmount(order: OrderPaymentSummarySource | null | unde
 }
 
 /** Derived payment mode — the single source of truth for payment badges/cards. */
-export type OrderPaymentMode = 'Unpaid' | 'Partial' | 'Paid' | 'Credit'
+export type OrderPaymentMode = 'Unpaid' | 'Partial' | 'Paid' | 'Credit' | 'Refunded'
 
 /** Round to paisa so float dust (0.1+0.2) never flips a boundary. */
 const toPaisa = (v: number | string): number => Math.round(Number(v || 0) * 100) / 100
@@ -217,8 +249,13 @@ export function getPaymentModeForAmounts(
 /**
  * Derived payment mode for an order — computed from the ledger sum, never
  * from the stored `paymentStatus` column directly.
+ *
+ * Cancelled + refund activity (any negative PAID-family row) → 'Refunded'
+ * (a paid-then-refunded order is not "Unpaid"). Cancelled without
+ * payments/refunds keeps the derived mode. Non-cancelled behavior unchanged.
  */
 export function getOrderPaymentMode(order: OrderPaymentSummarySource | null | undefined): OrderPaymentMode {
   if (!order) return 'Unpaid'
+  if (isCancelledOrder(order) && hasRefundActivity(order)) return 'Refunded'
   return getPaymentModeForAmounts(order.total ?? 0, getOrderPaidAmount(order))
 }

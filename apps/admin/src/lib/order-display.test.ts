@@ -203,6 +203,51 @@ describe('getOrderPaymentMode', () => {
   })
 })
 
+describe('cancelled orders (truthful display)', () => {
+  it('cancelled + full refund → mode Refunded + due 0', () => {
+    const order = {
+      total: 1000,
+      status: { name: 'Cancelled' },
+      payments: [
+        { amount: 1000, status: 'PAID' },
+        { amount: -1000, status: 'PAID' },
+      ],
+    }
+    expect(getOrderPaymentMode(order)).toBe('Refunded')
+    expect(getOrderDueAmount(order)).toBe(0)
+  })
+
+  it('cancelled without payments/refunds → Unpaid + due 0', () => {
+    const order = { total: 1000, status: { name: 'Cancelled' } }
+    expect(getOrderPaymentMode(order)).toBe('Unpaid')
+    expect(getOrderDueAmount(order)).toBe(0)
+  })
+
+  it('cancelled + partial refund → due 0 (nothing collectable post-cancel)', () => {
+    const order = {
+      total: 1000,
+      status: { name: 'Cancelled' },
+      payments: [
+        { amount: 1000, status: 'PAID' },
+        { amount: -400, status: 'PAID' },
+      ],
+    }
+    expect(getOrderDueAmount(order)).toBe(0)
+  })
+
+  it('non-cancelled full refund stays Unpaid (unchanged)', () => {
+    const order = {
+      total: 1000,
+      payments: [
+        { amount: 1000, status: 'PAID' },
+        { amount: -1000, status: 'PAID' },
+      ],
+    }
+    expect(getOrderPaymentMode(order)).toBe('Unpaid')
+    expect(getOrderDueAmount(order)).toBe(1000)
+  })
+})
+
 describe('due examples (D6)', () => {
   it('1620 − 1500 = 120', () => {
     expect(
