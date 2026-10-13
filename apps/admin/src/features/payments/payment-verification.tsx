@@ -7,6 +7,15 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { paymentsApi, PaymentVerificationOrder, PaymentRow } from './api';
+import { useAuthStore } from '@/stores/auth-store';
+
+/** Shorten `staff:<userId>` / `customer:<id>` actor tags for display. */
+function ledgerActor(p: Pick<PaymentRow, 'recordedBy' | 'submittedBy'>): string {
+  const raw = p.recordedBy || p.submittedBy;
+  if (!raw) return '—';
+  const m = raw.match(/^(staff|customer):(.+)$/);
+  return m ? `${m[1]} ${m[2].slice(0, 8)}` : raw;
+}
 import { Check, X, Loader2 } from 'lucide-react';
 import { PaymentLogo } from '@/components/payment-logo';
 
@@ -176,22 +185,39 @@ function statusVariant(status?: string): 'default' | 'secondary' | 'destructive'
 }
 
 // Every recorded payment row (not just the verifying queue): advances,
-// balances and gateway history staff can audit later.
+// balances and gateway history staff can audit later. Task 11 adds the
+// ledger columns (account + txn), a pending/verified quick filter, and
+// per-row approve/reject gated on self-approval.
 function AllPaymentsLedger() {
+  const qc = useQueryClient();
+  const me = useAuthStore((s) => s.auth.user?.id);
   const [page, setPage] = useState(1);
   const [gatewayCode, setGatewayCode] = useState('');
-  const [status, setStatus] = useState('');
+  const [stateFilter, setStateFilter] = useState<'all' | 'pending' | 'verified'>('all');
   const perPage = 20;
 
+  const statusParam = stateFilter === 'all' ? undefined : stateFilter === 'pending' ? 'PENDING' : 'PAID';
+
   const { data, isLoading } = useQuery({
-    queryKey: ['payments-all', page, gatewayCode, status],
+    queryKey: ['payments-all', page, gatewayCode, statusParam],
     queryFn: () =>
       paymentsApi.list({
         page,
         perPage,
         gatewayCode: gatewayCode || undefined,
-        status: status || undefined,
+        status: statusParam,
       }),
+  });
+
+  const rowMut = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: 'PAID' | 'FAILED' }) =>
+      paymentsApi.verifyRow(id, { status }),
+    onSuccess: () => {
+      toast.success('Payment verification processed');
+      qc.invalidateQueries({ queryKey: ['payments-all'] });
+      qc.invalidateQueries({ queryKey: ['orders-payment-verifying'] });
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Verification failed'),
   });
 
   const rows: PaymentRow[] = data?.data || [];
@@ -199,7 +225,7 @@ function AllPaymentsLedger() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <select
           className="h-9 rounded-md border border-input bg-background px-3 text-xs font-medium"
           value={gatewayCode}
@@ -212,21 +238,19 @@ function AllPaymentsLedger() {
           <option value="bank">Bank</option>
           <option value="card">Card</option>
         </select>
-        <select
-          className="h-9 rounded-md border border-input bg-background px-3 text-xs font-medium"
-          value={status}
-          onChange={(e) => { setStatus(e.target.value); setPage(1); }}
-        >
-          <option value="">All statuses</option>
-          <option value="PAID">Paid</option>
-          <option value="PARTIAL_PAID">Partial paid</option>
-          <option value="UNPAID">Unpaid</option>
-          <option value="PENDING">Pending</option>
-          <option value="PAYMENT_PENDING">Payment pending</option>
-          <option value="PAYMENT_VERIFYING">Verifying</option>
-          <option value="REFUNDED">Refunded</option>
-          <option value="CANCELLED">Cancelled</option>
-        </select>
+        <div className="flex gap-1 rounded-lg bg-muted p-1 w-fit">
+          {(['all', 'pending', 'verified'] as const).map((f) => (
+            <Button
+              key={f}
+              size="sm"
+              variant={stateFilter === f ? 'default' : 'ghost'}
+              className="h-7 text-xs capitalize"
+              onClick={() => { setStateFilter(f); setPage(1); }}
+            >
+              {f === 'all' ? 'All' : f === 'pending' ? 'Pending' : 'Verified'}
+            </Button>
+          ))}
+        </div>
       </div>
 
       {isLoading ? (
@@ -241,37 +265,84 @@ function AllPaymentsLedger() {
         </Card>
       ) : (
         <Card>
-          <CardContent className="p-0">
+          <CardContent className="p-0 overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-xs text-muted-foreground">
                   <th className="px-4 py-2.5 font-medium">Order</th>
                   <th className="px-4 py-2.5 font-medium">Gateway</th>
+                  <th className="px-4 py-2.5 font-medium">Account</th>
                   <th className="px-4 py-2.5 font-medium text-right">Amount</th>
+                  <th className="px-4 py-2.5 font-medium">Transaction ID</th>
                   <th className="px-4 py-2.5 font-medium">Status</th>
+                  <th className="px-4 py-2.5 font-medium">Recorded by</th>
                   <th className="px-4 py-2.5 font-medium">Verified by</th>
                   <th className="px-4 py-2.5 font-medium">Date</th>
+                  <th className="px-4 py-2.5 font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((p) => (
-                  <tr key={p.id} className="border-b last:border-0 hover:bg-muted/40">
-                    <TableCellLink orderId={p.orderId} displayId={p.order?.displayId} />
-                    <td className="px-4 py-2.5">
-                      <PaymentLogo method={p.gatewayCode} size="sm" />
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-semibold">৳{Number(p.amount).toLocaleString()}</td>
-                    <td className="px-4 py-2.5">
-                      <Badge variant={statusVariant(p.status)} className="text-[10px]">{p.status}</Badge>
-                    </td>
-                    <td className="px-4 py-2.5 text-xs text-muted-foreground">
-                      {p.verifier ? `${p.verifier.firstName} ${p.verifier.lastName}`.trim() : '—'}
-                    </td>
-                    <td className="px-4 py-2.5 text-xs text-muted-foreground">
-                      {new Date(p.createdAt).toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
+                {rows.map((p) => {
+                  const isSelf = !!me && p.recordedBy === `staff:${me}`;
+                  const isPending = (p.status || '').toUpperCase() === 'PENDING';
+                  return (
+                    <tr key={p.id} className="border-b last:border-0 hover:bg-muted/40">
+                      <TableCellLink orderId={p.orderId} displayId={p.order?.displayId} />
+                      <td className="px-4 py-2.5">
+                        <PaymentLogo method={p.gatewayCode} size="sm" />
+                      </td>
+                      <td className="px-4 py-2.5 font-mono text-xs">{p.account || '—'}</td>
+                      <td className="px-4 py-2.5 text-right font-semibold">৳{Number(p.amount).toLocaleString()}</td>
+                      <td className="px-4 py-2.5 font-mono text-xs">{p.transactionId || '—'}</td>
+                      <td className="px-4 py-2.5">
+                        <Badge variant={statusVariant(p.status)} className="text-[10px]">{p.status}</Badge>
+                      </td>
+                      <td className="px-4 py-2.5 text-xs text-muted-foreground font-mono">
+                        {ledgerActor(p)}
+                      </td>
+                      <td className="px-4 py-2.5 text-xs text-muted-foreground">
+                        {p.verifier ? `${p.verifier.firstName} ${p.verifier.lastName}`.trim() : '—'}
+                      </td>
+                      <td className="px-4 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
+                        {new Date(p.recordedAt || p.createdAt).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {isPending ? (
+                          <div className="flex flex-col gap-1">
+                            <div className="flex gap-1.5">
+                              <Button
+                                size="sm"
+                                className="h-7 text-xs"
+                                disabled={isSelf || rowMut.isPending}
+                                title={isSelf ? 'You recorded this entry — another approver must verify it' : 'Approve this payment'}
+                                onClick={() => rowMut.mutate({ id: p.id, status: 'PAID' })}
+                              >
+                                Approve
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                className="h-7 text-xs"
+                                disabled={isSelf || rowMut.isPending}
+                                title={isSelf ? 'You recorded this entry — another approver must verify it' : 'Reject this payment'}
+                                onClick={() => rowMut.mutate({ id: p.id, status: 'FAILED' })}
+                              >
+                                Reject
+                              </Button>
+                            </div>
+                            {isSelf && (
+                              <p className="text-[11px] text-muted-foreground">
+                                You recorded this entry — another approver must verify it.
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </CardContent>

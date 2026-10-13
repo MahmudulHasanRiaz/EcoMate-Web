@@ -50,4 +50,11 @@ export const paymentsApi = {
    */
   record: (orderId: string, dto: { gatewayCode: string; amount: number; account?: string; transactionId?: string; notes?: string }) =>
     apiClient.post(`/payments/${orderId}`, dto),
+  /**
+   * Per-row verify (Task 11 ledger). PAID approves, FAILED rejects.
+   * The backend blocks self-approval (recordedBy is self → 403); the UI
+   * disables those buttons with a hint instead of letting staff hit the 403.
+   */
+  verifyRow: (id: string, dto: { status: 'PAID' | 'FAILED'; notes?: string }) =>
+    apiClient.put(`/payments/${id}/verify`, dto),
 };
