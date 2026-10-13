@@ -292,9 +292,34 @@ export class PaymentsService {
       const totalPaid = Number(paidAgg._sum.amount || 0);
       const orderData = await tx.order.findUnique({
         where: { id: payment.orderId },
-        select: { total: true },
+        select: { total: true, customerId: true },
       });
       const orderTotal = Number(orderData?.total || 0);
+
+      // D2 — overpay via verification grants marginal credit, SAME $tx
+      // (atomic with the status flip). Guarded on the REAL transition
+      // PENDING→PAID: re-verify of an already-PAID row grants nothing
+      // (idempotent), and non-PAID targets (FAILED) never grant. Guest
+      // orders (no customerId) never grant. grantFromOverpayment clamps to
+      // the marginal excess, so PAID→FAILED→PAID re-grant is bounded to
+      // whatever excess is still uncovered.
+      if (
+        dto.status === PaymentStatus.PAID &&
+        (payment as any).status !== PaymentStatus.PAID &&
+        (orderData as any)?.customerId &&
+        this.credit
+      ) {
+        const paidBefore = totalPaid - Number((payment as any).amount);
+        await this.credit.grantFromOverpayment(tx, {
+          customerId: (orderData as any).customerId,
+          orderId: payment.orderId,
+          paymentId: payment.id,
+          orderTotal,
+          paidBefore,
+          newAmount: Number((payment as any).amount),
+          isPaid: true,
+        });
+      }
 
       if (totalPaid === 0) {
         await tx.order.update({

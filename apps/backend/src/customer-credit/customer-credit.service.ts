@@ -78,7 +78,7 @@ export class CustomerCreditService {
       where: { customerId },
       _sum: { amount: true },
     });
-    return Number(agg._sum.amount ?? 0);
+    return round2(Number(agg._sum.amount ?? 0));
   }
 
   /**
@@ -192,6 +192,6 @@ export class CustomerCreditService {
         orderBy: { createdAt: 'desc' },
       }),
     ]);
-    return { balance: Number(agg._sum.amount ?? 0), entries };
+    return { balance: round2(Number(agg._sum.amount ?? 0)), entries };
   }
 }

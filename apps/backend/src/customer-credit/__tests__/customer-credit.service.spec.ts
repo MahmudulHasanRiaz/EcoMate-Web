@@ -418,6 +418,136 @@ describe('PaymentsService.create credit-grant wiring (Task 8)', () => {
   });
 });
 
+describe('PaymentsService.verify credit-grant wiring (D2)', () => {
+  const mockPrisma: any = {
+    $transaction: jest.fn(),
+    $queryRawUnsafe: jest.fn(),
+    order: { findUnique: jest.fn(), update: jest.fn() },
+    payment: {
+      findUnique: jest.fn(),
+      update: jest.fn(),
+      aggregate: jest.fn(),
+    },
+  };
+  const mockCredit = { grantFromOverpayment: jest.fn() };
+  const mockCod = { recompute: jest.fn() };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    mockCredit.grantFromOverpayment.mockResolvedValue(null);
+    mockCod.recompute.mockResolvedValue([]);
+  });
+
+  async function makeService() {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        PaymentsService,
+        { provide: PrismaService, useValue: mockPrisma },
+        { provide: CustomerCreditService, useValue: mockCredit },
+        { provide: require('../../cod-mismatch/cod-mismatch.service').CodMismatchService, useValue: mockCod },
+      ],
+    }).compile();
+    return module.get<PaymentsService>(PaymentsService);
+  }
+
+  function mockVerifyTx(opts: {
+    payment: any;
+    orderTotal: number;
+    customerId: string | null;
+    paidTotalAfter: number;
+  }) {
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => {
+      mockPrisma.$queryRawUnsafe.mockResolvedValue(undefined);
+      mockPrisma.payment.findUnique.mockResolvedValue(opts.payment);
+      mockPrisma.payment.update.mockImplementation(async (args: any) => ({
+        ...opts.payment,
+        ...args.data,
+      }));
+      mockPrisma.payment.aggregate.mockResolvedValue({
+        _sum: { amount: opts.paidTotalAfter },
+      });
+      mockPrisma.order.findUnique.mockResolvedValue({
+        total: opts.orderTotal,
+        customerId: opts.customerId,
+      });
+      mockPrisma.order.update.mockImplementation(async (args: any) => ({
+        id: 'order-1',
+        ...args.data,
+      }));
+      return fn(mockPrisma);
+    });
+  }
+
+  it('PENDING→PAID overpay grants the marginal excess', async () => {
+    const svc = await makeService();
+    mockVerifyTx({
+      payment: {
+        id: 'pay-1',
+        orderId: 'order-1',
+        status: 'PENDING',
+        amount: 1500,
+        recordedBy: null,
+        notes: null,
+      },
+      orderTotal: 1000,
+      customerId: 'cust-1',
+      paidTotalAfter: 1500,
+    });
+    await svc.verify('pay-1', { status: 'PAID' } as any, 'staff-2');
+    expect(mockCredit.grantFromOverpayment).toHaveBeenCalledTimes(1);
+    expect(mockCredit.grantFromOverpayment).toHaveBeenCalledWith(
+      mockPrisma,
+      expect.objectContaining({
+        customerId: 'cust-1',
+        orderId: 'order-1',
+        paymentId: 'pay-1',
+        orderTotal: 1000,
+        paidBefore: 0,
+        newAmount: 1500,
+        isPaid: true,
+      }),
+    );
+  });
+
+  it('re-verify of an already-PAID row grants nothing (no double-grant)', async () => {
+    const svc = await makeService();
+    mockVerifyTx({
+      payment: {
+        id: 'pay-1',
+        orderId: 'order-1',
+        status: 'PAID',
+        amount: 1500,
+        recordedBy: null,
+        notes: null,
+      },
+      orderTotal: 1000,
+      customerId: 'cust-1',
+      paidTotalAfter: 1500,
+    });
+    await svc.verify('pay-1', { status: 'PAID' } as any, 'staff-2');
+    expect(mockCredit.grantFromOverpayment).not.toHaveBeenCalled();
+  });
+
+  it('non-PAID transition (PENDING→FAILED) grants nothing', async () => {
+    const svc = await makeService();
+    mockVerifyTx({
+      payment: {
+        id: 'pay-1',
+        orderId: 'order-1',
+        status: 'PENDING',
+        amount: 1500,
+        recordedBy: null,
+        notes: null,
+      },
+      orderTotal: 1000,
+      customerId: 'cust-1',
+      paidTotalAfter: 0,
+    });
+    await svc.verify('pay-1', { status: 'FAILED' } as any, 'staff-2');
+    expect(mockCredit.grantFromOverpayment).not.toHaveBeenCalled();
+  });
+});
+
 describe('CustomerCreditController guards', () => {
   it('GET :id/credit is staff-only under admin_customers', () => {
     const proto = CustomerCreditController.prototype as any;
