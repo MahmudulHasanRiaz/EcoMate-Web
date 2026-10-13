@@ -14,9 +14,9 @@ import { Loader2, Save, ChevronDown, ChevronUp, Phone, Settings2, Info, CheckCir
 import { cn } from '@/lib/utils'
 
 /**
- * Task 7 — S1/S2 toggles. Manual-gateway settings only: rendered inside
- * manual-gateway cards (`type === 'manual'` branch), never in api/cash cards.
- * Values persist as `payments.staffAutoVerified` / `payments.editAllowed`
+ * Task 7 — S1/S2 toggles. Manual-gateway settings only: rendered only when
+ * `g.type === 'manual'` (explicit guard at the call site) — never in api or
+ * cash cards. Values persist as `payments.staffAutoVerified` / `payments.editAllowed`
  * SystemSetting keys (seeded true/false; code defaults match when absent).
  */
 function ManualPaymentSettings() {
@@ -341,7 +341,7 @@ export function GatewaySettings() {
                               <Label className='text-xs font-semibold flex items-center gap-1.5'><Phone className='h-3 w-3' /> Phone Number</Label>
                               <Input className='h-9' value={d.phoneNumber || ''} onChange={e => setGatewayEditData(p => ({ ...p, [g.code]: { ...d, phoneNumber: e.target.value } }))} placeholder='01XXXXXXXXX' />
                             </div>
-                            <ManualPaymentSettings />
+                            {g.type === 'manual' && <ManualPaymentSettings />}
                             <div className='sm:col-span-2 flex justify-end'>
                               <Button size='sm' onClick={() => handleGatewaySave(g.code)} disabled={updateGatewayMut.isPending}>
                                 {updateGatewayMut.isPending ? <Loader2 className='animate-spin h-3.5 w-3.5 mr-2' /> : <Save className='h-3.5 w-3.5 mr-2' />}

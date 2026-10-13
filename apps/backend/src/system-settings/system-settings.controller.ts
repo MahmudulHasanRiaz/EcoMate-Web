@@ -6,6 +6,7 @@ import {
   Body,
   Param,
   BadRequestException,
+  ForbiddenException,
   InternalServerErrorException,
 } from '@nestjs/common';
 import { FeatureFlagsService } from '@ecomate/feature-flags';
@@ -15,6 +16,7 @@ import { MediaService } from '../media/media.service';
 import { MediaResolverService } from '../media/media-resolver.service';
 import { CacheService } from '../cache/cache.service';
 import { Public } from '../common/decorators/public.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import {
@@ -760,9 +762,25 @@ export class SystemSettingsController {
   @Post(':key')
   @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_settings')
-  async set(@Param('key') key: string, @Body() body: { value: string }) {
+  async set(
+    @Param('key') key: string,
+    @Body() body: { value: string },
+    @CurrentUser() user?: { role?: string },
+  ) {
     if (!key || typeof key !== 'string' || !key.trim()) {
       throw new BadRequestException('key must be a non-empty string');
+    }
+    // payments.* keys arm payment-edit / auto-verify behavior (PUT /orders/:id,
+    // staff verification queue). Employees with admin_settings must not flip
+    // them — admin-only, mirroring the SMTP precedent below. Other keys keep
+    // the existing employee-inclusive authz.
+    if (key.startsWith('payments.')) {
+      const role = user?.role;
+      if (role !== 'superadmin' && role !== 'admin') {
+        throw new ForbiddenException(
+          'Only admins may change payment settings',
+        );
+      }
     }
     let value = body.value ?? '';
 

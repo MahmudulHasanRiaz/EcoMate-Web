@@ -49,6 +49,20 @@ const apiGateway = {
   sortOrder: 7,
 }
 
+const cashGateway = {
+  id: 'gw-cod',
+  code: 'cod',
+  name: 'Cash on Delivery',
+  type: 'cash',
+  paymentOptionType: 'CASH_ON_DELIVERY',
+  paymentOptionName: 'Cash On Delivery',
+  enabled: true,
+  mode: 'personal',
+  phoneNumber: null,
+  credentials: {},
+  sortOrder: 1,
+}
+
 const optionsData = [
   {
     id: 'opt-full',
@@ -58,6 +72,15 @@ const optionsData = [
     enabled: true,
     sortOrder: 1,
     gateways: [manualGateway, apiGateway],
+  },
+  {
+    id: 'opt-cod',
+    type: 'CASH_ON_DELIVERY',
+    name: 'Cash On Delivery',
+    description: null,
+    enabled: true,
+    sortOrder: 3,
+    gateways: [cashGateway],
   },
 ]
 
@@ -109,5 +132,34 @@ describe('Manual gateway payment settings (S1/S2)', () => {
       const settingsCalls = mockGet.mock.calls.filter((c) => c[0] === '/system-settings')
       expect(settingsCalls.length).toBeGreaterThan(1)
     })
+  })
+
+  it('S2 renders unchecked by default (absent keys) and flipping ON POSTs editAllowed true', async () => {
+    const ui = await renderPage()
+    await userEvent.click(ui.getByText('bKash (Manual)'))
+    const s2 = ui.getByRole('switch', { name: 'Staff may edit recorded payments' })
+    // Absent key → code default OFF.
+    await expect.element(s2).not.toBeChecked()
+    await userEvent.click(s2)
+    await vi.waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith('/system-settings/payments.editAllowed', { value: 'true' })
+    })
+    await vi.waitFor(() => {
+      const settingsCalls = mockGet.mock.calls.filter((c) => c[0] === '/system-settings')
+      expect(settingsCalls.length).toBeGreaterThan(1)
+    })
+  })
+
+  it('cash gateway card never shows S1/S2 toggles', async () => {
+    const ui = await renderPage()
+    // Cash gateway section renders (group heading), as its own static card (no expand step).
+    await expect.element(ui.getByRole('heading', { name: 'Cash On Delivery Gateways' })).toBeInTheDocument()
+    await expect.element(page.getByText('Staff manual payments auto-verified')).not.toBeInTheDocument()
+    await expect.element(page.getByText('Staff may edit recorded payments')).not.toBeInTheDocument()
+    // Even with the manual card expanded, the toggles appear exactly once
+    // (inside the manual card — never duplicated into the cash card).
+    await userEvent.click(ui.getByText('bKash (Manual)'))
+    await expect.element(ui.getByText('Staff manual payments auto-verified')).toBeInTheDocument()
+    await expect.element(ui.getByText('Staff may edit recorded payments')).toBeInTheDocument()
   })
 })
