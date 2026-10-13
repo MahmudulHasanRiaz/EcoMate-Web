@@ -328,6 +328,8 @@ model CustomerProfile {
   // same customer" safe. No auto-merge ever happens through this table.
   linkedPhones CustomerPhone[]
 
+  creditEntries CustomerCreditEntry[]
+
   @@index([email])
   // Orders-list search matches customer name as a substring.
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "CustomerProfile_name_trgm_idx")
@@ -963,6 +965,8 @@ model Order {
   status                       OrderStatus                   @relation(fields: [statusId], references: [id])
   items                        OrderItem[]
   payments                     Payment[]
+  codAlerts                    CodMismatchAlert[]
+  creditEntries                CustomerCreditEntry[]
   shipment                     Shipment?
   dispatchLogs                 CourierDispatchLog[]
   dispatches                   Dispatch[]
@@ -1060,6 +1064,10 @@ model Payment {
   transactionId     String?
   providerPaymentId String?       @unique // bKash paymentID, bound at initiation
   screenshot        String?
+  account           String?
+  recordedBy        String?
+  submittedBy       String? // "staff:<userId>" | "customer:<customerId>"
+  recordedAt        DateTime      @default(now())
   status            PaymentStatus @default(PENDING)
   verifiedBy        String?
   verifiedAt        DateTime?
@@ -1078,12 +1086,51 @@ model Payment {
   sourceOrder Order?    @relation("PaymentSourceOrder", fields: [sourceOrderId], references: [id])
   verifier UserProfile? @relation("VerifiedPayments", fields: [verifiedBy], references: [id])
   sourceRefunds Refund[] @relation("RefundSourcePayment")
+  creditEntries CustomerCreditEntry[]
 
   @@unique([transactionId, gatewayCode])
   @@index([orderId])
   @@index([gatewayCode])
   @@index([transactionId])
   @@index([sourceOrderId])
+}
+
+model CodMismatchAlert {
+  id            String   @id @default(uuid())
+  orderId       String
+  courier       String
+  consignmentId String
+  courierAmount Decimal  @db.Decimal(10, 2)
+  systemDue     Decimal  @db.Decimal(10, 2)
+  status        String   @default("open") // open | resolved | cleared
+  resolvedBy    String?
+  resolvedAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, status])
+  @@index([consignmentId])
+}
+
+model CustomerCreditEntry {
+  id         String   @id @default(uuid())
+  customerId String
+  orderId    String?
+  paymentId  String?
+  amount     Decimal  @db.Decimal(10, 2) // positive = granted, negative = applied
+  reason     String
+  createdBy  String?
+  createdAt  DateTime @default(now())
+
+  customer CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  order    Order?          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  payment  Payment?        @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([customerId])
+  @@index([orderId])
+  @@index([paymentId])
 }
 
 model CheckoutLead {
@@ -1409,6 +1456,9 @@ model Dispatch {
   // and is the source for the Dispatch list "Courier Status" column.
   courierStatus   String?
   courierStatusAt DateTime?
+  /// Amount-to-collect sent to the courier at dispatch time. Source of truth
+  /// for the post-dispatch COD mismatch comparison (Feature A).
+  courierAmount   Decimal?  @db.Decimal(10, 2)
   lastSyncedAt    DateTime?
   handedOverAt    DateTime?
   pickedUpAt      DateTime?
