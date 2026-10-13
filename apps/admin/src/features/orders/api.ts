@@ -290,9 +290,29 @@ export interface OrderOthersInfoResponse {
   rawMeta: { truncated: boolean; redactedPaths: string[] };
 }
 
+export interface CodMismatchAlert {
+  id: string
+  orderId: string
+  courier: string
+  consignmentId: string
+  courierAmount: number | string
+  systemDue: number | string
+  status: 'open' | 'resolved' | 'cleared'
+  resolvedBy?: string | null
+  resolvedAt?: string | null
+  createdAt: string
+  updatedAt?: string
+}
+
+export const codAlertsApi = {
+  list: (orderId: string) =>
+    apiClient.get<CodMismatchAlert[]>(`/orders/${orderId}/cod-alerts`).then(r => r.data),
+  resolve: (orderId: string, alertId: string) =>
+    apiClient.post(`/orders/${orderId}/cod-alerts/${alertId}/resolve`).then(r => r.data),
+}
+
 export const ordersApi = {
-  list: (query?: any) => apiClient.get<PaginatedResponse<OrderResponse>>('/orders', { params: query }),
-  get: (id: string) => apiClient.get<OrderResponse>(`/orders/${id}`),
+  list: (query?: any) => apiClient.get<PaginatedResponse<OrderResponse>>('/orders', { params: query }),  get: (id: string) => apiClient.get<OrderResponse>(`/orders/${id}`),
   /**
    * Others Information — order snapshot, current customer profile, device /
    * request context, raw + resolved attribution, tracking identifiers and

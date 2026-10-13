@@ -15,6 +15,7 @@ import { ordersApi, rtnApi, mediaUrl } from '@/features/orders/api'
 import { ReturnOrderDialog } from '@/features/orders/components/return-order-dialog'
 
 import { CourierCustomerHistoryCard } from '@/features/orders/courier-customer-history-card'
+import { CodMismatchBanner } from '@/features/orders/components/cod-mismatch-banner'
 import { OrderSummaryCard } from '@/features/orders/order-summary-card'
 import { OrderEditLockGuard } from '@/features/orders/order-edit-lock'
 import { OrderSourceBadges } from '@/features/orders/order-source-badge'
@@ -440,6 +441,9 @@ function OrderDetailPage() {
         <Main className='flex flex-1 flex-col gap-3.5 sm:gap-6 p-2.5 sm:p-6 pb-24 sm:pb-32 max-w-[1600px] w-full mx-auto'>
 
           <OrderEditLockGuard orderId={order.id} disabled={!!order.trashedAt} />
+
+          {/* COD mismatch — server-driven, persistent while an open alert exists */}
+          <CodMismatchBanner orderId={order.id} due={getOrderDueAmount(order)} dispatches={order.dispatches} />
 
           {/* ── Executive Order Header Banner ──────────────────────── */}
           <div className='rounded-2xl border border-border/70 bg-card/75 backdrop-blur-md p-3 sm:p-6 shadow-2xs space-y-3 sm:space-y-4'>

@@ -148,6 +148,12 @@ export interface OrderPaymentSummarySource {
     amount?: number | string | null
     status?: string | null
   }> | null
+  /** Dispatches attached to the order (list rows carry the latest one). */
+  dispatches?: Array<{
+    consignmentId?: string | null
+    courierAmount?: number | string | null
+    status?: string | null
+  }> | null
 }
 
 /**
@@ -258,4 +264,24 @@ export function getOrderPaymentMode(order: OrderPaymentSummarySource | null | un
   if (!order) return 'Unpaid'
   if (isCancelledOrder(order) && hasRefundActivity(order)) return 'Refunded'
   return getPaymentModeForAmounts(order.total ?? 0, getOrderPaidAmount(order))
+}
+
+/**
+ * Derived COD-mismatch flag for the orders LIST — computed from data the list
+ * endpoint already returns (latest dispatch + ledger-derived due), so rows need
+ * zero extra requests. Mirrors the server recompute rule: a live (non-
+ * CANCELLED) dispatch with a stored courierAmount that differs from the system
+ * due. Steady-state agreement with server open alerts: resolving an alert
+ * re-raises it on the next recompute while the amounts still differ, and a
+ * cleared/matching dispatch drops both.
+ */
+export function hasOpenCodAlert(order: OrderPaymentSummarySource | null | undefined): boolean {
+  if (!order || !Array.isArray(order.dispatches)) return false
+  const due = toPaisa(getOrderDueAmount(order))
+  return order.dispatches.some((d) => {
+    if (!d) return false
+    if ((d.status || '').toUpperCase() === 'CANCELLED') return false
+    if (d.courierAmount === null || d.courierAmount === undefined || d.courierAmount === '') return false
+    return toPaisa(d.courierAmount) !== due
+  })
 }

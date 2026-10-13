@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getOrderPaidAmount, getOrderDueAmount, getOrderPaymentMode, getPaymentModeForAmounts } from './order-display'
+import { getOrderPaidAmount, getOrderDueAmount, getOrderPaymentMode, getPaymentModeForAmounts, hasOpenCodAlert } from './order-display'
 
 describe('getOrderPaidAmount', () => {
   it('returns 0 for a null/undefined order', () => {
@@ -275,5 +275,47 @@ describe('due examples (D6)', () => {
         payments: [{ amount: 500, status: 'PAID' }],
       }),
     ).toBe(1000)
+  })
+})
+
+describe('hasOpenCodAlert (derived list badge)', () => {
+  it('flags a live dispatch whose courier amount differs from the due', () => {
+    expect(
+      hasOpenCodAlert({
+        total: 1500,
+        payments: [{ amount: 1380, status: 'PAID' }], // due 120
+        dispatches: [{ consignmentId: 'C1', courierAmount: 1370, status: 'DISPATCHED' }],
+      }),
+    ).toBe(true)
+  })
+
+  it('is quiet when courier amount equals the due', () => {
+    expect(
+      hasOpenCodAlert({
+        total: 1500,
+        payments: [{ amount: 1380, status: 'PAID' }],
+        dispatches: [{ consignmentId: 'C1', courierAmount: 120, status: 'DISPATCHED' }],
+      }),
+    ).toBe(false)
+  })
+
+  it('ignores cancelled dispatches and missing courier amounts', () => {
+    expect(
+      hasOpenCodAlert({
+        total: 1500,
+        dispatches: [{ consignmentId: 'C1', courierAmount: 9999, status: 'CANCELLED' }],
+      }),
+    ).toBe(false)
+    expect(
+      hasOpenCodAlert({
+        total: 1500,
+        dispatches: [{ consignmentId: 'C1', courierAmount: null, status: 'DISPATCHED' }],
+      }),
+    ).toBe(false)
+  })
+
+  it('is quiet without dispatches', () => {
+    expect(hasOpenCodAlert({ total: 1500 })).toBe(false)
+    expect(hasOpenCodAlert(null)).toBe(false)
   })
 })

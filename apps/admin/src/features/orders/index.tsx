@@ -12,7 +12,7 @@ import { useLicenseStore } from '@/stores/license-store'
 import { useOrdersFilterStore } from '@/stores/orders-filter-store'
 import { copyToClipboard } from '@/lib/clipboard'
 import { resolveOrderItemImages } from '@/lib/product-image'
-import { getCustomerDisplayName, getCustomerPhone, getCustomerEmail, extractOrderScanCode, getOrderPaymentMode } from '@/lib/order-display'
+import { getCustomerDisplayName, getCustomerPhone, getCustomerEmail, extractOrderScanCode, getOrderPaymentMode, hasOpenCodAlert } from '@/lib/order-display'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -1125,7 +1125,12 @@ export function Orders() {
                             const mode = getOrderPaymentMode(o)
                             const mc = paymentStatusBadgeClass(mode)
                             return (
-                              <Badge variant={mc.variant} className={`text-[10px] py-0 px-1.5 mt-0.5 ${mc.className}`}>{mode}</Badge>
+                              <span className="inline-flex flex-col items-end gap-0.5">
+                                <Badge variant={mc.variant} className={`text-[10px] py-0 px-1.5 mt-0.5 ${mc.className}`}>{mode}</Badge>
+                                {hasOpenCodAlert(o) && (
+                                  <Badge variant="outline" className="text-[10px] py-0 px-1.5 border-amber-500/50 text-amber-600 dark:text-amber-500">COD mismatch</Badge>
+                                )}
+                              </span>
                             )
                           })()}
                         </TableCell>
