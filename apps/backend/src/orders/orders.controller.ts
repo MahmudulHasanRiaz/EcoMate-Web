@@ -233,7 +233,7 @@ export class OrdersController {
       dto.verified,
       dto.note,
       dto.feeAmount,
-      user?.userId,
+      user.userId,
     );
   }
 
