@@ -147,7 +147,7 @@ export class PaymentsService {
         }
       }
 
-      // S1/S2 settings (code defaults apply until Task 7 seeds values).
+      // S1/S2 settings (seeded in prisma/seed.ts; code defaults match).
       const settings = await readPaymentSettings(tx);
 
       // Manual gateway detection: look up by code; unknown codes are treated

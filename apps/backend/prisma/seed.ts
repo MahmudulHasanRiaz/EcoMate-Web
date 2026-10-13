@@ -973,6 +973,10 @@ async function main() {
     { key: 'about_us_text', value: 'EcoMate is a premier online grocery delivery service based in Dhaka, Bangladesh. We are committed to providing fresh, high-quality groceries at competitive prices with fast and reliable delivery.' },
     { key: 'shipping_info', value: 'We deliver across Dhaka city. Orders placed before 6 PM are delivered the same day. Delivery charge applies for orders under BDT 1,000.' },
     { key: 'payment_info', value: 'We accept Cash on Delivery, bKash, and Online Payment via credit/debit cards.' },
+    // Task 7 (payment ledger): S1 staff auto-verify default ON, S2 edit default
+    // OFF. Create-only like the rest — a reseed never overwrites staff choices.
+    { key: 'payments.staffAutoVerified', value: 'true' },
+    { key: 'payments.editAllowed', value: 'false' },
   ];
 
   for (const s of systemSettings) {
