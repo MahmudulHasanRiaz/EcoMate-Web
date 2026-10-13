@@ -23,10 +23,21 @@ describe('PaymentsService', () => {
       update: jest.fn(),
       aggregate: jest.fn(),
     },
+    paymentGateway: {
+      findUnique: jest.fn(),
+    },
+    systemSetting: {
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+    },
   };
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    // Task 5 ledger defaults: unknown gateway codes resolve as manual,
+    // settings absent → S1 ON / S2 OFF code defaults.
+    mockPrisma.paymentGateway.findUnique.mockResolvedValue(null);
+    mockPrisma.systemSetting.findMany.mockResolvedValue([]);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PaymentsService,
@@ -39,7 +50,7 @@ describe('PaymentsService', () => {
 
   describe('create (payment proof)', () => {
     const orderId = 'order-1';
-    const dto = { gatewayCode: 'manual', amount: 100, transactionId: 'tx-1' };
+    const dto = { gatewayCode: 'manual', amount: 100, transactionId: 'tx-1', account: 'acc-1' };
     const mockOrder = {
       id: orderId,
       customerId: 'customer-1',
@@ -132,7 +143,7 @@ describe('PaymentsService', () => {
       paymentOptionType: 'CASH_ON_DELIVERY',
       payments: [],
     };
-    const codDto = { gatewayCode: 'bkash', amount: 1500, transactionId: 'TX1' };
+    const codDto = { gatewayCode: 'bkash', amount: 1500, transactionId: 'TX1', account: 'acc-1' };
 
     function mockTxForCreate() {
       mockPrisma.$transaction.mockImplementation(async (fn: Function) => {

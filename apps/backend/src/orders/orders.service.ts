@@ -18,6 +18,7 @@ import { CustomersService } from '../customers/customers.service';
 import { CustomerAddressService } from '../customers/customer-address.service';
 import { SalesChannelService } from '../sales-channel/sales-channel.service';
 import { OrdersEventService } from './orders-event.service';
+import { readPaymentSettings } from '../payments/payment-settings';
 import { buildOrderSearchFilter } from './order-search';
 import { buildOrderAttributionSnapshot } from './order-attribution-snapshot';
 import { StockService } from '../stock/stock.service';
@@ -3313,20 +3314,76 @@ export class OrdersService {
           });
           if (existing) {
             if (paymentAmount <= 0) {
-              // Advance covers the whole bill: no balance row should linger.
-              await tx.payment.delete({ where: { id: existing.id } });
-            } else {
-              await tx.payment.update({
-                where: { id: existing.id },
+              // Append-only ledger: NEVER delete. The lingering balance row
+              // is neutralized by a full-reversal correction row (negative of
+              // the original) with a reason — an INSERT, so no S2 gate.
+              const actor =
+                opts?.userId != null ? `staff:${opts.userId}` : null;
+              await tx.payment.create({
                 data: {
-                  gatewayCode,
-                  amount: paymentAmount,
-                  status:
-                    gatewayCode === 'cash'
-                      ? PaymentStatus.UNPAID
-                      : PaymentStatus.PENDING,
+                  orderId: id,
+                  gatewayCode: existing.gatewayCode,
+                  amount: -Number(existing.amount),
+                  status: existing.status,
+                  notes: `Reversal of payment ${existing.id}: advance covers the full bill — auto-reversal entry, original row retained.`,
+                  recordedBy: actor,
+                  submittedBy: actor,
+                  recordedAt: new Date(),
                 },
               });
+            } else {
+              const amountChanged =
+                Number(existing.amount) !== paymentAmount;
+              const gatewayChanged = existing.gatewayCode !== gatewayCode;
+              if (amountChanged || gatewayChanged) {
+                // S2 gate (default OFF): direct amount/account edits are
+                // forbidden — staff record a correction entry instead.
+                const paymentSettings = await readPaymentSettings(tx);
+                if (!paymentSettings.editAllowed) {
+                  throw new ForbiddenException(
+                    'Payment editing is disabled — record a correction entry instead',
+                  );
+                }
+                const oldRow = {
+                  gatewayCode: existing.gatewayCode,
+                  amount: Number(existing.amount),
+                  status: existing.status,
+                };
+                const newStatus =
+                  gatewayCode === 'cash'
+                    ? PaymentStatus.UNPAID
+                    : PaymentStatus.PENDING;
+                await tx.payment.update({
+                  where: { id: existing.id },
+                  data: {
+                    gatewayCode,
+                    amount: paymentAmount,
+                    status: newStatus,
+                  },
+                });
+                // S2-ON direct edits stay auditable: append old → new + by.
+                const editedBy =
+                  opts?.userId ?? opts?.performedBy ?? 'staff';
+                data.timeline = [
+                  ...((data.timeline as any[]) ?? timeline),
+                  {
+                    type: 'payment',
+                    visibility: 'internal',
+                    timestamp: now,
+                    note: `Payment row edited ৳${oldRow.amount} → ৳${paymentAmount} (${oldRow.gatewayCode} → ${gatewayCode}) by ${editedBy}.`,
+                    old: oldRow,
+                    new: {
+                      gatewayCode,
+                      amount: paymentAmount,
+                      status: newStatus,
+                    },
+                    by: editedBy,
+                    at: now,
+                  },
+                ];
+              }
+              // No-op save (identical amount + gateway): leave the row
+              // untouched — no write, no audit, no 403.
             }
           } else {
             const paidRows = await tx.payment.count({
@@ -3346,6 +3403,11 @@ export class OrdersService {
                   gatewayCode === 'cash'
                     ? PaymentStatus.UNPAID
                     : PaymentStatus.PENDING,
+                recordedBy:
+                  opts?.userId != null ? `staff:${opts.userId}` : null,
+                submittedBy:
+                  opts?.userId != null ? `staff:${opts.userId}` : null,
+                recordedAt: new Date(),
               },
             });
           }

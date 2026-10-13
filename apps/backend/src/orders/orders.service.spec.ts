@@ -3656,9 +3656,12 @@ describe('OrdersService', () => {
       expect(result.shippingCharge).toBe(150);
     });
 
-    it('updates the payment row when the mode is switched to COD', async () => {
+    it('updates the payment row when the mode is switched to COD (S2 ON + audit)', async () => {
       const existingOrder = { ...mockOrder, shippingCharge: 100, discount: 50 };
       (prisma.order.findUnique as jest.Mock).mockResolvedValue(existingOrder);
+      (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([
+        { key: 'payments.editAllowed', value: 'true' },
+      ]);
       (prisma.order.update as jest.Mock).mockResolvedValue({
         ...existingOrder,
         paymentOptionType: 'CASH_ON_DELIVERY',
@@ -3671,10 +3674,14 @@ describe('OrdersService', () => {
         status: 'PENDING',
       });
 
-      await service.updateOrder('order-id-1', {
-        paymentOptionType: 'CASH_ON_DELIVERY',
-        gatewayCode: 'cash',
-      });
+      await service.updateOrder(
+        'order-id-1',
+        {
+          paymentOptionType: 'CASH_ON_DELIVERY',
+          gatewayCode: 'cash',
+        },
+        { userId: 'staff-1' },
+      );
 
       const paymentUpdate = (prisma.payment.update as jest.Mock).mock
         .calls[0][0];
@@ -3688,6 +3695,13 @@ describe('OrdersService', () => {
       expect(orderUpdate.data.paymentOptionType).toBe('CASH_ON_DELIVERY');
       expect(orderUpdate.data.paymentStatus).toBe('UNPAID');
       expect(orderUpdate.data.partialAmount).toBeNull();
+      const audit = (orderUpdate.data.timeline as any[]).find(
+        (e: any) => e && typeof e === 'object' && 'old' in e && 'new' in e,
+      );
+      expect(audit).toBeDefined();
+      expect(audit.old).toMatchObject({ gatewayCode: 'bkash', amount: 2050 });
+      expect(audit.new).toMatchObject({ gatewayCode: 'cash', amount: 2050 });
+      expect(audit.by).toBe('staff-1');
     });
 
     it('creates a payment row when the order had none', async () => {
@@ -3765,8 +3779,9 @@ describe('OrdersService', () => {
         status: 'UNPAID',
       });
 
-      it('no-op save keeps the remainder (total − advance), not the advance', async () => {
+      it('no-op save leaves the remainder row untouched (no write, no 403)', async () => {
         (prisma.order.findUnique as jest.Mock).mockResolvedValue(partialOrder());
+        (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([]);
         setCollected(800);
         (prisma.payment.findFirst as jest.Mock).mockResolvedValue(remainderRow());
         (prisma.order.update as jest.Mock).mockResolvedValue(partialOrder());
@@ -3777,8 +3792,9 @@ describe('OrdersService', () => {
           partialAmount: 800,
         });
 
-        const paymentUpdate = (prisma.payment.update as jest.Mock).mock.calls[0][0];
-        expect(paymentUpdate.data.amount).toBe(1250);
+        // Append-only: identical amount + gateway → no UPDATE, no correction.
+        expect(prisma.payment.update).not.toHaveBeenCalled();
+        expect(prisma.payment.create).not.toHaveBeenCalled();
         const orderUpdate = (prisma.order.update as jest.Mock).mock.calls[0][0];
         expect(orderUpdate.data.partialAmount).toBe(800);
         expect(orderUpdate.data.paymentStatus).toBe('PARTIAL_PAID');
@@ -3800,24 +3816,40 @@ describe('OrdersService', () => {
         expect(prisma.order.update).not.toHaveBeenCalled();
       });
 
-      it('recomputes the remainder when the advance is raised', async () => {
+      it('recomputes the remainder when the advance is raised (S2 ON + audit)', async () => {
         (prisma.order.findUnique as jest.Mock).mockResolvedValue(partialOrder());
+        (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([
+          { key: 'payments.editAllowed', value: 'true' },
+        ]);
         setCollected(800);
         (prisma.payment.findFirst as jest.Mock).mockResolvedValue(remainderRow());
         (prisma.order.update as jest.Mock).mockResolvedValue(partialOrder());
 
-        await service.updateOrder('order-id-1', {
-          paymentOptionType: 'PARTIAL_PAYMENT',
-          gatewayCode: 'cash',
-          partialAmount: 900,
-        });
+        await service.updateOrder(
+          'order-id-1',
+          {
+            paymentOptionType: 'PARTIAL_PAYMENT',
+            gatewayCode: 'cash',
+            partialAmount: 900,
+          },
+          { userId: 'staff-1' },
+        );
 
         const paymentUpdate = (prisma.payment.update as jest.Mock).mock.calls[0][0];
         expect(paymentUpdate.data.amount).toBe(1150);
+        const orderUpdate = (prisma.order.update as jest.Mock).mock.calls[0][0];
+        const audit = (orderUpdate.data.timeline as any[]).find(
+          (e: any) => e && typeof e === 'object' && 'old' in e && 'new' in e,
+        );
+        expect(audit).toBeDefined();
+        expect(audit.old).toMatchObject({ amount: 1250 });
+        expect(audit.new).toMatchObject({ amount: 1150 });
+        expect(audit.by).toBe('staff-1');
       });
 
-      it('deletes the remainder row when the advance covers the full total', async () => {
+      it('advance covering the full total INSERTs a reversal correction, never DELETEs', async () => {
         (prisma.order.findUnique as jest.Mock).mockResolvedValue(partialOrder());
+        (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([]);
         setCollected(2050);
         (prisma.payment.findFirst as jest.Mock).mockResolvedValue(remainderRow());
         (prisma.payment as any).delete = jest.fn().mockResolvedValue({ id: 'pay-remainder' });
@@ -3829,9 +3861,19 @@ describe('OrdersService', () => {
           partialAmount: 2050,
         });
 
-        expect(prisma.payment.delete).toHaveBeenCalledWith({
-          where: { id: 'pay-remainder' },
+        expect(prisma.payment.delete).not.toHaveBeenCalled();
+        expect(prisma.payment.update).not.toHaveBeenCalled();
+        expect(prisma.payment.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            orderId: 'order-id-1',
+            gatewayCode: 'cash',
+            amount: -1250,
+            status: 'UNPAID',
+            recordedAt: expect.any(Date),
+          }),
         });
+        const reversal = (prisma.payment.create as jest.Mock).mock.calls[0][0];
+        expect(String(reversal.data.notes)).toMatch(/reversal/i);
         const orderUpdate = (prisma.order.update as jest.Mock).mock.calls[0][0];
         expect(orderUpdate.data.paymentStatus).toBe('PAID');
       });
@@ -3848,6 +3890,136 @@ describe('OrdersService', () => {
           }),
         ).rejects.toThrow(/refund/i);
         expect(prisma.order.update).not.toHaveBeenCalled();
+        delete (prisma.payment as any).aggregate;
+      });
+    });
+
+    describe('payment ledger edit gate (Task 5)', () => {
+      const editOff: never[] = [];
+      const editOn = [{ key: 'payments.editAllowed', value: 'true' }];
+
+      it('S2 OFF (default): amount/account change on existing row → 403, no UPDATE', async () => {
+        const existingOrder = { ...mockOrder, shippingCharge: 100, discount: 50 };
+        (prisma.order.findUnique as jest.Mock).mockResolvedValue(existingOrder);
+        (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue(editOff);
+        (prisma.payment.findFirst as jest.Mock).mockResolvedValue({
+          id: 'pay-1',
+          gatewayCode: 'bkash',
+          amount: 2050,
+          status: 'PENDING',
+        });
+
+        await expect(
+          service.updateOrder('order-id-1', {
+            paymentOptionType: 'CASH_ON_DELIVERY',
+            gatewayCode: 'cash',
+          }),
+        ).rejects.toThrow(/edit.*disabled.*correction/i);
+        expect(prisma.payment.update).not.toHaveBeenCalled();
+        expect(prisma.payment.create).not.toHaveBeenCalled();
+      });
+
+      it('S2 ON: direct edit allowed + timeline audit old→new+by', async () => {
+        const existingOrder = { ...mockOrder, shippingCharge: 100, discount: 50 };
+        (prisma.order.findUnique as jest.Mock).mockResolvedValue(existingOrder);
+        (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue(editOn);
+        (prisma.payment.findFirst as jest.Mock).mockResolvedValue({
+          id: 'pay-1',
+          gatewayCode: 'bkash',
+          amount: 2050,
+          status: 'PENDING',
+        });
+        (prisma.order.update as jest.Mock).mockResolvedValue({
+          ...existingOrder,
+          paymentOptionType: 'CASH_ON_DELIVERY',
+        });
+
+        await service.updateOrder(
+          'order-id-1',
+          { paymentOptionType: 'CASH_ON_DELIVERY', gatewayCode: 'cash' },
+          { userId: 'staff-1' },
+        );
+
+        expect(prisma.payment.update).toHaveBeenCalledWith({
+          where: { id: 'pay-1' },
+          data: expect.objectContaining({
+            gatewayCode: 'cash',
+            amount: 2050,
+            status: 'UNPAID',
+          }),
+        });
+        const orderUpdate = (prisma.order.update as jest.Mock).mock.calls[0][0];
+        const audit = (orderUpdate.data.timeline as any[]).find(
+          (e: any) => e && typeof e === 'object' && 'old' in e && 'new' in e,
+        );
+        expect(audit).toBeDefined();
+        expect(audit.old).toMatchObject({ gatewayCode: 'bkash', amount: 2050 });
+        expect(audit.new).toMatchObject({ gatewayCode: 'cash', amount: 2050 });
+        expect(audit.by).toBe('staff-1');
+      });
+
+      it('no-op save leaves the row untouched (no write, no 403)', async () => {
+        const existingOrder = { ...mockOrder, shippingCharge: 100, discount: 50 };
+        (prisma.order.findUnique as jest.Mock).mockResolvedValue(existingOrder);
+        (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue(editOff);
+        (prisma.payment.findFirst as jest.Mock).mockResolvedValue({
+          id: 'pay-1',
+          gatewayCode: 'cash',
+          amount: 2050,
+          status: 'UNPAID',
+        });
+        (prisma.order.update as jest.Mock).mockResolvedValue(existingOrder);
+
+        await service.updateOrder('order-id-1', {
+          paymentOptionType: 'CASH_ON_DELIVERY',
+          gatewayCode: 'cash',
+        });
+
+        expect(prisma.payment.update).not.toHaveBeenCalled();
+        expect(prisma.payment.create).not.toHaveBeenCalled();
+        expect(prisma.order.update).toHaveBeenCalled();
+      });
+
+      it('zero-balance advance INSERTs full-reversal correction, never DELETEs', async () => {
+        const partialOrder = {
+          ...mockOrder,
+          shippingCharge: 100,
+          discount: 50,
+          paymentOptionType: 'PARTIAL_PAYMENT',
+          partialAmount: 800,
+          paymentStatus: 'PARTIAL_PAID',
+        };
+        (prisma.order.findUnique as jest.Mock).mockResolvedValue(partialOrder);
+        (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue(editOff);
+        (prisma.payment as any).aggregate = jest.fn(async () => ({
+          _sum: { amount: 2050 },
+        }));
+        (prisma.payment.findFirst as jest.Mock).mockResolvedValue({
+          id: 'pay-remainder',
+          gatewayCode: 'cash',
+          amount: 1250,
+          status: 'UNPAID',
+        });
+        (prisma.payment as any).delete = jest.fn().mockResolvedValue({ id: 'pay-remainder' });
+        (prisma.order.update as jest.Mock).mockResolvedValue(partialOrder);
+
+        await service.updateOrder('order-id-1', {
+          paymentOptionType: 'PARTIAL_PAYMENT',
+          gatewayCode: 'cash',
+          partialAmount: 2050,
+        });
+
+        expect(prisma.payment.delete).not.toHaveBeenCalled();
+        expect(prisma.payment.update).not.toHaveBeenCalled();
+        expect(prisma.payment.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            orderId: 'order-id-1',
+            amount: -1250,
+            recordedAt: expect.any(Date),
+          }),
+        });
+        const reversal = (prisma.payment.create as jest.Mock).mock.calls[0][0];
+        expect(String(reversal.data.notes)).toMatch(/reversal/i);
         delete (prisma.payment as any).aggregate;
       });
     });

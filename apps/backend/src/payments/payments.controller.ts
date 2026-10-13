@@ -36,9 +36,17 @@ export class PaymentsController {
   create(
     @Param('orderId') orderId: string,
     @Body() dto: CreatePaymentDto,
-    @CurrentUser() user: { userId: string } | null | undefined,
+    @CurrentUser() user: { userId: string; role?: string } | null | undefined,
   ) {
-    return this.svc.create(orderId, dto, { userId: user?.userId, token: dto.token });
+    // Staff recording on behalf of a customer: context-bound staff actor
+    // (logged-in non-customer), exempt from the order-ownership gate and
+    // eligible for S1 auto-verification inside the service.
+    const isStaff = !!user?.userId && user?.role !== 'customer';
+    return this.svc.create(orderId, dto, {
+      userId: user?.userId,
+      token: dto.token,
+      isStaff,
+    });
   }
 
   @Roles('superadmin', 'admin', 'employee')

@@ -185,6 +185,8 @@ export class CreatePaymentDto {
   @IsOptional() @IsString() screenshot?: string;
   @IsOptional() @IsString() notes?: string;
   @IsOptional() @IsString() token?: string;
+  /** Receiving account for manual gateways (required when entry is manual). */
+  @IsOptional() @IsString() account?: string;
 }
 
 export class VerifyPaymentDto {

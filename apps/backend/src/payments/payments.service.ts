@@ -9,6 +9,11 @@ import { PaymentStatus } from '@prisma/client';
 import { CreatePaymentDto, VerifyPaymentDto } from '../orders/dto/order.dto';
 import { CacheService } from '../cache/cache.service';
 import { CodMismatchService } from '../cod-mismatch/cod-mismatch.service';
+import {
+  PaymentSettings,
+  parsePaymentSettings,
+  readPaymentSettings,
+} from './payment-settings';
 
 @Injectable()
 export class PaymentsService {
@@ -77,10 +82,17 @@ export class PaymentsService {
     };
   }
 
+  async getPaymentSettings(): Promise<PaymentSettings> {
+    const rows = await this.prisma.systemSetting.findMany({
+      where: { key: { in: ['payments.staffAutoVerified', 'payments.editAllowed'] } },
+    });
+    return parsePaymentSettings(rows ?? []);
+  }
+
   async create(
     orderId: string,
     dto: CreatePaymentDto,
-    opts?: { userId?: string; token?: string },
+    opts?: { userId?: string; token?: string; isStaff?: boolean },
   ) {
     const created = await this.prisma.$transaction(async (tx) => {
       // Lock the order row first — prevents concurrent payment insert races
@@ -94,38 +106,32 @@ export class PaymentsService {
         include: { payments: true },
       });
 
-      // Ownership gate: user must own the order or present a valid viewToken
+      // Staff acting on any order are exempt from the ownership gate (the
+      // exemption is context-bound to an authenticated staff actor, mirroring
+      // the Q3 order-create exemption). Customers/guests keep the gate as-is.
+      const isStaff = !!opts?.isStaff;
       const ownsOrder = opts?.userId && order.customerId === opts.userId;
       const hasValidToken = opts?.token && order.viewToken === opts.token;
-      if (!ownsOrder && !hasValidToken) {
+      if (!isStaff && !ownsOrder && !hasValidToken) {
         throw new NotFoundException('Order not found');
       }
 
+      // Append-only ledger: zero is never a payment; negatives are
+      // corrections/refunds and must carry a reason (never silent).
       const paymentAmount = Number(dto.amount);
-      if (isNaN(paymentAmount) || paymentAmount <= 0) {
+      if (isNaN(paymentAmount) || paymentAmount === 0) {
         throw new BadRequestException(
-          'Payment amount must be a positive number',
+          'Payment amount must be a non-zero number',
+        );
+      }
+      if (paymentAmount < 0 && !(dto.notes && dto.notes.trim())) {
+        throw new BadRequestException(
+          'Reason (notes) is required for correction/refund entries',
         );
       }
 
-      const orderTotal = Number(order.total);
-
-      // Sum only PAID/PENDING payments for this order
-      const totalPaidOrPending = order.payments
-        .filter(
-          (p) =>
-            p.status === PaymentStatus.PAID ||
-            p.status === PaymentStatus.PENDING,
-        )
-        .reduce((sum, p) => sum + Number(p.amount), 0);
-
-      const remainingBalance = Math.max(0, orderTotal - totalPaidOrPending);
-
-      if (paymentAmount > remainingBalance) {
-        throw new BadRequestException(
-          `Payment amount of ৳${paymentAmount} exceeds the remaining order balance of ৳${remainingBalance.toFixed(2)}`,
-        );
-      }
+      // Overpayment is ALLOWED (append-only ledger; Task 8 grants the excess
+      // as customer credit). No remaining-balance throw here.
 
       if (
         order.paymentOptionType === 'PARTIAL_PAYMENT' &&
@@ -140,15 +146,75 @@ export class PaymentsService {
         }
       }
 
+      // S1/S2 settings (code defaults apply until Task 7 seeds values).
+      const settings = await readPaymentSettings(tx);
+
+      // Manual gateway detection: look up by code; unknown codes are treated
+      // as manual (safe — forces account + verification instead of silent
+      // auto-verify). Optional-chained so unit-test tx doubles without a
+      // paymentGateway delegate still resolve (as unknown → manual).
+      let gateway: { type?: string } | null = null;
+      try {
+        gateway =
+          (await (tx as any).paymentGateway?.findUnique?.({
+            where: { code: dto.gatewayCode },
+          })) ?? null;
+      } catch {
+        gateway = null;
+      }
+      const isManual = !gateway || gateway.type === 'manual';
+
+      if (isManual && !(dto.account && dto.account.trim())) {
+        throw new BadRequestException(
+          'Account is required for manual gateway payments',
+        );
+      }
+
+      // Staff entries skip the verification queue when S1 is ON (PAID
+      // directly + verifiedBy/At). Everything else stays PENDING; the live
+      // API-callback path (non-manual type) stays auto-verified as before.
+      const autoVerified = isStaff && settings.staffAutoVerified;
+      const status = isManual
+        ? autoVerified
+          ? PaymentStatus.PAID
+          : PaymentStatus.PENDING
+        : PaymentStatus.PAID;
+
+      // txnId is required exactly when the entry will sit PENDING
+      // (customer-submitted always; staff when S1 OFF), optional otherwise.
+      if (
+        status === PaymentStatus.PENDING &&
+        !(dto.transactionId && dto.transactionId.trim())
+      ) {
+        throw new BadRequestException(
+          'Transaction ID is required for payments awaiting verification',
+        );
+      }
+
       return tx.payment.create({
         data: {
           orderId,
           gatewayCode: dto.gatewayCode,
           amount: dto.amount,
+          account: dto.account,
           transactionId: dto.transactionId,
           screenshot: dto.screenshot,
           notes: dto.notes,
-          status: PaymentStatus.PENDING,
+          status,
+          ...(autoVerified && opts?.userId
+            ? { verifiedBy: opts.userId, verifiedAt: new Date() }
+            : {}),
+          recordedBy:
+            isStaff && opts?.userId ? `staff:${opts.userId}` : null,
+          submittedBy:
+            isStaff && opts?.userId
+              ? `staff:${opts.userId}`
+              : order.customerId
+                ? `customer:${order.customerId}`
+                : null,
+          // D4: server-set, always. Any client-sent recordedAt is ignored
+          // (never read — the DTO does not even declare the field).
+          recordedAt: new Date(),
         },
       });
     });
