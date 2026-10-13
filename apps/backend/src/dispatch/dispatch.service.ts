@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
+import { CourierManagerService } from '../courier-manager/courier-manager.service';
 import { OrderStockDeductService } from '../stock/order-stock-deduct.service';
 import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
 import { OrdersService } from '../orders/orders.service';
@@ -135,7 +136,29 @@ export class DispatchService {
     private readonly tracking: CourierTrackingService,
     private readonly ordersService: OrdersService,
     @Optional() private readonly cache?: CacheService,
+    // Shared collectable helper (Feature A). Optional so existing unit tests
+    // that build DispatchService without it keep working; production always
+    // wires it via CourierManagerModule's export.
+    @Optional() private readonly courierManager?: CourierManagerService,
   ) {}
+
+  /**
+   * Dispatch-time collectable for a manual dispatch row. Uses the single
+   * shared getCollectableAmount helper — never a local re-derivation.
+   * Returns undefined when the order or helper is unavailable: the column
+   * stays NULL and recompute skips the row (correct, never fabricate 0).
+   */
+  private async resolveDispatchCourierAmount(
+    orderId: string,
+  ): Promise<number | undefined> {
+    if (!this.courierManager) return undefined;
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { payments: true },
+    });
+    if (!order) return undefined;
+    return this.courierManager.getCollectableAmount(order);
+  }
 
   /**
    * Business analytics freshness (P2 §6): dispatches capture the fulfillment
@@ -312,6 +335,7 @@ export class DispatchService {
     });
 
     if (existing && existing.status !== 'CANCELLED') {
+      const courierAmount = await this.resolveDispatchCourierAmount(dto.orderId);
       const flagged = await this.prisma.dispatch.create({
         data: {
           orderId: dto.orderId,
@@ -322,6 +346,8 @@ export class DispatchService {
             []) as unknown as Prisma.InputJsonValue,
           notes: dto.notes,
           flaggedAt: new Date(),
+          // Feature A: dispatch-time collectable (shared helper, persist-only).
+          ...(courierAmount !== undefined ? { courierAmount } : {}),
         },
         include: {
           order: {
@@ -362,6 +388,7 @@ export class DispatchService {
       };
     }
 
+    const courierAmount = await this.resolveDispatchCourierAmount(dto.orderId);
     const created = await this.prisma.dispatch.create({
       data: {
         orderId: dto.orderId,
@@ -371,6 +398,8 @@ export class DispatchService {
         productMapping: (dto.productMapping ||
           []) as unknown as Prisma.InputJsonValue,
         notes: dto.notes,
+        // Feature A: dispatch-time collectable (shared helper, persist-only).
+        ...(courierAmount !== undefined ? { courierAmount } : {}),
       },
       include: {
         order: {

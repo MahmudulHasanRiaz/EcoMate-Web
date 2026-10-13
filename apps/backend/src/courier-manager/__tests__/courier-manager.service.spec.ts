@@ -108,6 +108,31 @@ describe('CourierManagerService — Steadfast dispatch error handling', () => {
     expect(prisma.dispatch.upsert).toHaveBeenCalled();
   });
 
+  it('persists dispatch-time courierAmount on the dispatch row (COD alert source of truth)', async () => {
+    mockFetch(
+      new Response(
+        JSON.stringify({
+          status: 200,
+          consignment: {
+            consignment_id: 'CID-9',
+            tracking_code: 'TC-9',
+            tracking_link: 'https://track/9',
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await service.dispatch('steadfast', ['order-1']);
+
+    // Fixture order: total 500, no payments → collectable 500 (same value as cod_amount sent).
+    expect(prisma.dispatch.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ courierAmount: 500 }),
+      }),
+    );
+  });
+
   it('surfaces a plain-text error body from jsonFetch (get_balance)', async () => {
     mockFetch(new Response('Account is not active!', { status: 401 }));
 

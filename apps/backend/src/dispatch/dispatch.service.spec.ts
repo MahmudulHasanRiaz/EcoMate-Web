@@ -6,6 +6,7 @@ import { StockRouterService } from '../stock/stock-router.service';
 import { OrderStockDeductService } from '../stock/order-stock-deduct.service';
 import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
 import { CourierTrackingService } from '../courier-manager/courier-tracking.service';
+import { CourierManagerService } from '../courier-manager/courier-manager.service';
 import { OrdersService } from '../orders/orders.service';
 import { BadRequestException } from '@nestjs/common';
 
@@ -14,6 +15,7 @@ describe('DispatchService', () => {
   let prisma: any;
   let tracking: any;
   let ordersService: any;
+  let courierManager: any;
 
   beforeEach(async () => {
     prisma = {
@@ -54,10 +56,18 @@ describe('DispatchService', () => {
       fireOrderStatusLifecycleEvent: jest.fn().mockResolvedValue(undefined),
     };
 
+    courierManager = {
+      getCollectableAmount: jest.fn().mockReturnValue(750),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DispatchService,
         { provide: PrismaService, useValue: prisma },
+        {
+          provide: CourierManagerService,
+          useValue: courierManager,
+        },
         {
           provide: CancelReturnStockService,
           useValue: {
@@ -1095,6 +1105,30 @@ describe('DispatchService', () => {
               { productVariantId: 'prod-2', productName: 'P2', quantity: 1 },
             ],
           }),
+        }),
+      );
+    });
+
+    it('persists dispatch-time courierAmount via the shared collectable helper', async () => {
+      prisma.dispatch.findUnique.mockResolvedValue(null);
+      prisma.order.findUnique.mockResolvedValue({
+        id: 'order-1',
+        total: 1000,
+        payments: [{ status: 'PAID', amount: 250 }],
+      });
+
+      await service.create({
+        orderId: 'order-1',
+        courier: 'pathao',
+        consignmentId: 'CG-AMT',
+      });
+
+      expect(courierManager.getCollectableAmount).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'order-1' }),
+      );
+      expect(prisma.dispatch.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ courierAmount: 750 }),
         }),
       );
     });

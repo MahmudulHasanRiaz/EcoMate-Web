@@ -337,6 +337,10 @@ export class CourierManagerService {
                 trackingCode,
                 trackingUrl,
                 status: 'DISPATCHED',
+                // Persist the amount actually sent as cod_amount (Feature A:
+                // post-dispatch COD mismatch source of truth). Persist-only —
+                // the getCollectableAmount calc itself is untouched.
+                courierAmount: collectAmount,
               },
             });
             await this.logDispatch({
@@ -502,6 +506,9 @@ export class CourierManagerService {
                 trackingCode: cId,
                 trackingUrl,
                 status: 'DISPATCHED',
+                // Persist the amount actually sent as amount_to_collect
+                // (Feature A). Persist-only — the calc itself is untouched.
+                courierAmount: total,
               },
             });
           } catch (dbErr) {
@@ -579,6 +586,9 @@ export class CourierManagerService {
     const total = Number(order.total);
     const address = order.shippingAddress as Record<string, unknown> | null;
     const name = recipient?.name || order.guestName || 'Customer';
+    // Hoisted single call — the payload and the persisted row share one
+    // value. The getCollectableAmount calc itself is untouched.
+    const collectable = this.getCollectableAmount(order);
 
     const district = (address?.district as string) || 'Dhaka';
     const deliveryAreaId = address?.deliveryAreaId || address?.areaId || 1;
@@ -596,7 +606,7 @@ export class CourierManagerService {
       delivery_area_id: Number(deliveryAreaId) || 1,
       customer_address: formatCourierAddress(address) ?? 'N/A',
       merchant_order_amount: total,
-      cash_collection_amount: this.getCollectableAmount(order),
+      cash_collection_amount: collectable,
       parcel_weight_in_gram: 500,
       instruction: order.officeNotes || '',
       value: total,
@@ -645,6 +655,9 @@ export class CourierManagerService {
               courier: 'redx',
               consignmentId: trackingCode,
               status: 'DISPATCHED',
+              // Persist the amount actually sent as cash_collection_amount
+              // (Feature A). Persist-only — the calc itself is untouched.
+              courierAmount: collectable,
             },
           });
           const currentOrder = await this.prisma.order.findUnique({
@@ -970,7 +983,9 @@ export class CourierManagerService {
             where: { displayId: invoice, trashedAt: null },
             select: { id: true },
           });
-
+          // Match the invoice back to the input order (carries payments) so
+          // the persisted courierAmount equals the cod_amount actually sent.
+          const bulkOrder = orders.find((o: any) => o.displayId === invoice);
           if (order) {
             await this.prisma.order.update({
               where: { id: order.id },
@@ -993,6 +1008,13 @@ export class CourierManagerService {
                 trackingCode,
                 trackingUrl,
                 status: 'DISPATCHED',
+                // Persist the amount actually sent as cod_amount for this
+                // invoice's order (Feature A). Resolved from the input orders
+                // (which carry payments); missing ⇒ omitted, never 0.
+                // Persist-only — the getCollectableAmount calc is untouched.
+                ...(bulkOrder
+                  ? { courierAmount: this.getCollectableAmount(bulkOrder) }
+                  : {}),
               },
             });
 
