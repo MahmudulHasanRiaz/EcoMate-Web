@@ -36,6 +36,10 @@ export class CodMismatchService {
         const existing = await this.prisma.codMismatchAlert.findFirst({
           where: { orderId, consignmentId: d.consignmentId, status: OPEN },
         });
+        const amountsChanged =
+          !existing ||
+          Number((existing as any).courierAmount) !== courierAmount ||
+          Number((existing as any).systemDue) !== systemDue;
         const row = existing
           ? await this.prisma.codMismatchAlert.update({
               where: { id: existing.id },
@@ -52,10 +56,15 @@ export class CodMismatchService {
               },
             });
         out.push(row);
-        await this.writeTimeline(
-          orderId,
-          `COD mismatch raised: courier ৳${courierAmount} vs due ৳${systemDue} (${d.consignmentId})`,
-        );
+        // Guard: "raised" timeline only on a new alert or a real amount
+        // change — every recompute refreshes open rows, so an unconditional
+        // write spams the timeline once all 9 mutation paths call it.
+        if (amountsChanged) {
+          await this.writeTimeline(
+            orderId,
+            `COD mismatch raised: courier ৳${courierAmount} vs due ৳${systemDue} (${d.consignmentId})`,
+          );
+        }
       }
     }
     // Clear stale open alerts: consignment gone/cancelled OR amounts match again.

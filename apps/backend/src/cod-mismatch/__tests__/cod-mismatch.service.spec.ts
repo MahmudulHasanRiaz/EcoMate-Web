@@ -170,6 +170,72 @@ describe('CodMismatchService', () => {
       });
     });
 
+    it('refresh-identical: no new timeline entry when amounts unchanged', async () => {
+      loadOrder({
+        total: 1500,
+        payments: [{ amount: 1380, status: 'PAID', appliedCreditAmount: null }],
+        dispatches: [
+          { courier: 'pathao', consignmentId: 'C1', status: 'DISPATCHED', courierAmount: 1370 },
+        ],
+      });
+      // systemDue = 1500 - 1380 = 120 — existing row already holds identical amounts
+      mockPrisma.codMismatchAlert.findFirst.mockResolvedValue({
+        id: 'alert-1',
+        orderId: 'order-1',
+        consignmentId: 'C1',
+        status: 'open',
+        courierAmount: 1370,
+        systemDue: 120,
+      });
+      mockPrisma.codMismatchAlert.findMany.mockResolvedValue([
+        { id: 'alert-1', orderId: 'order-1', consignmentId: 'C1', status: 'open' },
+      ]);
+      mockPrisma.codMismatchAlert.update.mockImplementation(async ({ data }: any) => ({
+        id: 'alert-1',
+        ...data,
+      }));
+
+      const alerts = await service.recompute('order-1');
+
+      expect(alerts).toHaveLength(1);
+      // No "raised" spam: timeline untouched on an identical refresh.
+      expect(mockPrisma.order.update).not.toHaveBeenCalled();
+    });
+
+    it('amounts-changed: timeline written when refreshed amounts differ', async () => {
+      loadOrder({
+        total: 1500,
+        payments: [{ amount: 1380, status: 'PAID', appliedCreditAmount: null }],
+        dispatches: [
+          { courier: 'pathao', consignmentId: 'C1', status: 'DISPATCHED', courierAmount: 1370 },
+        ],
+      });
+      // systemDue now 120, but the stored row still says 500 — amounts changed.
+      mockPrisma.codMismatchAlert.findFirst.mockResolvedValue({
+        id: 'alert-1',
+        orderId: 'order-1',
+        consignmentId: 'C1',
+        status: 'open',
+        courierAmount: 1370,
+        systemDue: 500,
+      });
+      mockPrisma.codMismatchAlert.findMany.mockResolvedValue([
+        { id: 'alert-1', orderId: 'order-1', consignmentId: 'C1', status: 'open' },
+      ]);
+      mockPrisma.codMismatchAlert.update.mockImplementation(async ({ data }: any) => ({
+        id: 'alert-1',
+        ...data,
+      }));
+
+      const alerts = await service.recompute('order-1');
+
+      expect(alerts).toHaveLength(1);
+      expect(mockPrisma.order.update).toHaveBeenCalledWith({
+        where: { id: 'order-1' },
+        data: { timeline: expect.arrayContaining([expect.objectContaining({ event: expect.stringContaining('C1') })]) },
+      });
+    });
+
     it('clears open alert when consignment cancelled (status cleared, not resolved)', async () => {
       loadOrder({
         total: 1500,
