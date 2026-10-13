@@ -171,6 +171,31 @@ export const blockedIpsApi = {
     apiClient.post(`/blocked-entries/ip/${id}/unblock`).then(r => r.data),
 }
 
+export interface CustomerCreditEntry {
+  id: string
+  customerId: string
+  orderId?: string | null
+  paymentId?: string | null
+  amount: number | string
+  reason: string
+  createdBy?: string | null
+  createdAt: string
+}
+
+export interface CustomerCreditProfile {
+  balance: number | string
+  entries: CustomerCreditEntry[]
+}
+
+export const creditApi = {
+  /** Live balance + mini-ledger (newest first). */
+  get: (customerId: string) =>
+    apiClient.get<CustomerCreditProfile>(`/customers/${customerId}/credit`).then(r => r.data),
+  /** Staff apply credit against an order (clamped server-side, never negative). */
+  apply: (orderId: string, amount: number) =>
+    apiClient.post(`/orders/${orderId}/apply-credit`, { amount }).then(r => r.data),
+}
+
 export const blockedPhonesApi = {
   create: (phone: string, reason?: string) =>
     apiClient.post('/blocked-entries', { type: 'phone', value: phone, reason }).then(r => r.data),
