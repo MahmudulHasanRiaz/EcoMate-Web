@@ -8,12 +8,13 @@ import { CourierTokenService } from './courier-token.service';
 import { CourierCustomerHistoryController } from './courier-customer-history.controller';
 import { CourierCustomerHistoryService } from './courier-customer-history.service';
 import { WebhookAttemptService } from './webhook-attempt.service';
+import { WebhookRawBodyCapture } from './webhook-raw-body';
 import { WebhookRateLimitCaptureMiddleware } from './webhook-rate-limit-capture.middleware';
 import { OrdersModule } from '../orders/orders.module';
 
 @Module({
   controllers: [CourierManagerController, CourierWebhookController, CourierCustomerHistoryController],
-  providers: [CourierManagerService, CourierWebhookService, CourierTrackingService, CourierTokenService, CourierCustomerHistoryService, WebhookAttemptService, WebhookRateLimitCaptureMiddleware],
+  providers: [CourierManagerService, CourierWebhookService, CourierTrackingService, CourierTokenService, CourierCustomerHistoryService, WebhookAttemptService, WebhookRateLimitCaptureMiddleware, WebhookRawBodyCapture],
   exports: [CourierManagerService, CourierTrackingService, CourierCustomerHistoryService, WebhookAttemptService],
   imports: [forwardRef(() => OrdersModule)],
 })

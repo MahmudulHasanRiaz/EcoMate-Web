@@ -320,18 +320,16 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       expect(result.status).toBe('success');
     });
 
-    it('returns Order not found only when every source misses', async () => {
+    it('throws 404 Order not found only when every source misses (Task 4: never-200 discipline)', async () => {
       prisma.order.findFirst.mockResolvedValue(null); // consignment + invoice miss
       prisma.dispatch.findFirst.mockResolvedValue(null);
 
-      const result = await service.handleSteadfast({
+      await expect(service.handleSteadfast({
         notification_type: 'delivery_status',
         consignment_id: 'UNKNOWN-99',
         invoice: 'INV-MISSING',
         status: 'delivered',
-      });
-
-      expect(result).toEqual({ status: 'error', message: 'Order not found' });
+      })).rejects.toMatchObject({ status: 404 });
       expect(prisma.dispatch.upsert).not.toHaveBeenCalled();
       expect(ordersService.updateStatus).not.toHaveBeenCalled();
     });
@@ -429,16 +427,14 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       expect(prisma.dispatch.upsert).toHaveBeenCalled();
     });
 
-    it('returns Order not found only when every source misses (incl. no merchant_order_id)', async () => {
+    it('throws 404 Order not found only when every source misses (incl. no merchant_order_id)', async () => {
       prisma.order.findFirst.mockResolvedValue(null);
       prisma.dispatch.findFirst.mockResolvedValue(null);
 
-      const result = await service.handlePathao({
+      await expect(service.handlePathao({
         event: 'order.delivered',
         consignment_id: 'UNKNOWN-99',
-      });
-
-      expect(result).toEqual({ status: 'error', message: 'Order not found' });
+      })).rejects.toMatchObject({ status: 404 });
       expect(prisma.dispatch.upsert).not.toHaveBeenCalled();
       expect(ordersService.updateStatus).not.toHaveBeenCalled();
     });
@@ -892,12 +888,10 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       prisma.dispatch.findFirst.mockResolvedValue(null);
       const warnSpy = jest.spyOn((service as any).logger, 'warn');
 
-      const result = await service.handleCarrybee({
+      await expect(service.handleCarrybee({
         event: 'order.delivered',
         consignment_id: 'CB-NOPE',
-      });
-
-      expect(result).toEqual({ status: 'error', message: 'Order not found' });
+      })).rejects.toMatchObject({ status: 404 });
       expect(prisma.dispatch.upsert).not.toHaveBeenCalled();
       expect(prisma.dispatch.update).not.toHaveBeenCalled();
       expect(warnSpy).toHaveBeenCalledWith(

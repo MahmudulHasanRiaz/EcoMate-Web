@@ -22,6 +22,7 @@ export interface LogAttemptParams {
   message?: string;
   isDuplicate?: boolean;
   durationMs?: number;
+  idempotencyKey?: string;
 }
 
 export interface WebhookAttemptSummary {
@@ -81,6 +82,7 @@ export class WebhookAttemptService implements OnModuleInit, OnModuleDestroy {
         courierEvent: params.courierEvent,
         message: params.message,
         isDuplicate: params.isDuplicate ?? false,
+        idempotencyKey: params.idempotencyKey,
         completedAt: new Date(),
         durationMs: params.durationMs,
       },
@@ -88,11 +90,18 @@ export class WebhookAttemptService implements OnModuleInit, OnModuleDestroy {
     return attempt.id;
   }
 
+  /**
+   * Task 4: open an attempt AND claim the sender's Idempotency-Key in one
+   * row. A replayed key violates UNIQUE(courier, idempotencyKey) (P2002) —
+   * the controller maps that to a 2xx no-reprocess. Pass undefined when the
+   * sender sent no key (NULLs never collide).
+   */
   async startAttempt(
     courier: string,
     path: string,
     correlationId?: string,
     sourceIp?: string,
+    idempotencyKey?: string,
   ): Promise<{ id: string; receivedAt: Date }> {
     const attempt = await this.prisma.webhookAttempt.create({
       data: {
@@ -100,6 +109,7 @@ export class WebhookAttemptService implements OnModuleInit, OnModuleDestroy {
         path,
         correlationId,
         sourceIp,
+        idempotencyKey,
         outcome: WebhookAttemptOutcome.UNKNOWN_ERROR,
       },
     });
@@ -198,6 +208,7 @@ export class WebhookAttemptService implements OnModuleInit, OnModuleDestroy {
         courierEvent: true,
         message: true,
         isDuplicate: true,
+        idempotencyKey: true,
         authResult: true,
       },
     });
@@ -226,6 +237,7 @@ export class WebhookAttemptService implements OnModuleInit, OnModuleDestroy {
         courierEvent: true,
         message: true,
         isDuplicate: true,
+        idempotencyKey: true,
       },
     });
   }

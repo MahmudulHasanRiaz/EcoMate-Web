@@ -1531,12 +1531,18 @@ model WebhookAttempt {
   courierEvent     String?
   message          String?
   isDuplicate      Boolean               @default(false)
+  // Task 4: sender-supplied Idempotency-Key. Retried deliveries carry the
+  // same key — the UNIQUE(courier, idempotencyKey) claim turns a replay into
+  // a 2xx no-reprocess instead of double-processing. NULL = sender sent no
+  // key (Postgres treats NULLs as distinct, so keyless webhooks are unaffected).
+  idempotencyKey   String?
 
   @@index([courier])
   @@index([receivedAt])
   @@index([outcome])
   @@index([correlationId])
   @@index([courier, receivedAt])
+  @@unique([courier, idempotencyKey])
 }
 
 model Coupon {

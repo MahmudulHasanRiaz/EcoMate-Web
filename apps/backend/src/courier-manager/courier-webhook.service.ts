@@ -1,4 +1,4 @@
-import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { OrdersService } from '../orders/orders.service';
@@ -185,13 +185,24 @@ export class CourierWebhookService {
     private readonly ordersService: OrdersService,
   ) {}
 
+  /**
+   * Task 4 status discipline: malformed payloads throw 400, unknown
+   * consignments throw 404. Rationale (documented choice): every courier
+   * retries ONLY 5xx/network failures and never 4xx, so a 404 ends the retry
+   * loop instead of hammering us. The residual risk (dispatch row created
+   * AFTER the webhook) is covered structurally — manual dispatch rows and
+   * the fillManualDispatchIdentifiers backfill exist precisely for that —
+   * and every miss is LOUD-logged + visible in the webhook-attempts UI for
+   * staff reconciliation. Only transient failures (DB down, etc.) surface
+   * as 5xx, via the controller's non-HttpException branch.
+   */
   async handleSteadfast(body: Record<string, unknown>) {
     const notificationType = body['notification_type'] as string;
     const consignmentId = String(body['consignment_id'] ?? '').trim();
 
     if (!consignmentId) {
       this.logger.warn('Steadfast webhook missing consignment_id');
-      return { status: 'error', message: 'Missing consignment_id' };
+      throw new BadRequestException('Missing consignment_id');
     }
 
     const order = await this.findSteadfastOrder(
@@ -200,7 +211,7 @@ export class CourierWebhookService {
     );
     if (!order) {
       this.logger.warn(`Steadfast: Order not found for consignment ${consignmentId}`);
-      return { status: 'error', message: 'Order not found' };
+      throw new NotFoundException(`Order not found for consignment ${consignmentId}`);
     }
 
     // Handle tracking_update — just add timeline entry, no status change
@@ -519,7 +530,7 @@ export class CourierWebhookService {
     const consignmentId = String(body['consignment_id'] ?? '').trim();
     if (!consignmentId) {
       this.logger.warn('Pathao webhook missing consignment_id');
-      return { status: 'error', message: 'Missing consignment_id' };
+      throw new BadRequestException('Missing consignment_id');
     }
 
     const order = await this.findPathaoOrder(
@@ -528,7 +539,7 @@ export class CourierWebhookService {
     );
     if (!order) {
       this.logger.warn(`Pathao: Order not found for consignment ${consignmentId}`);
-      return { status: 'error', message: 'Order not found' };
+      throw new NotFoundException(`Order not found for consignment ${consignmentId}`);
     }
 
     let dispatchStatus: string | null = PATHAO_DISPATCH_MAP[event] ?? null;
@@ -660,6 +671,10 @@ export class CourierWebhookService {
 
     await this.logWebhookRequest('redx', body);
 
+    if (!trackingNumber && !invoiceNumber) {
+      this.logger.warn('RedX webhook missing tracking_number and invoice_number');
+      throw new BadRequestException('Missing tracking_number');
+    }
     let order: {
       id: string;
       courierStatus: string | null;
@@ -674,7 +689,10 @@ export class CourierWebhookService {
       order = await this.prisma.order.findFirst({
         where: { displayId: invoiceNumber, courierService: 'redx', trashedAt: null },
       });
-    if (!order) return { error: 'Order not found or not a RedX order' };
+    if (!order) {
+      this.logger.warn(`RedX: Order not found for tracking ${trackingNumber || invoiceNumber}`);
+      throw new NotFoundException(`Order not found for tracking ${trackingNumber || invoiceNumber}`);
+    }
 
     let dispatchStatus: string | null = REDX_DISPATCH_MAP[status] ?? null;
 
@@ -725,7 +743,7 @@ export class CourierWebhookService {
     const consignmentId = body['consignment_id'] as string;
     if (!consignmentId) {
       this.logger.warn('Carrybee webhook missing consignment_id');
-      return { status: 'error', message: 'Missing consignment_id' };
+      throw new BadRequestException('Missing consignment_id');
     }
 
     const order = await this.findCarrybeeOrder(consignmentId);
@@ -736,7 +754,7 @@ export class CourierWebhookService {
       this.logger.warn(
         `Carrybee: UNMATCHED webhook — no Order or manual Dispatch row for consignment ${consignmentId} (courier=carrybee, event=${event}). Leaving identifiers blank; create the dispatch from admin or stamp the Order row.`,
       );
-      return { status: 'error', message: 'Order not found' };
+      throw new NotFoundException(`Order not found for consignment ${consignmentId}`);
     }
 
     let dispatchStatus: string | null = CARRYBEE_DISPATCH_MAP[event] ?? null;

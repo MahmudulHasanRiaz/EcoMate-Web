@@ -282,6 +282,29 @@ export class CourierManagerController {
     return this.tracking.getOrderTracking(orderId);
   }
 
+  @Get('webhook-status')
+  async getWebhookStatus() {
+    // Task 4 settings banner: which couriers accept webhooks WITHOUT
+    // signature verification (no token configured). RedX also honors the
+    // per-env REDX_WEBHOOK_SECRET fallback.
+    const creds = await this.prisma.courierCredentials.findMany({
+      select: { courier: true, webhookSecret: true },
+    });
+    const hasSecret = new Map(
+      creds.map((c) => [c.courier, !!c.webhookSecret?.trim()]),
+    );
+    const redxEnv = !!process.env['REDX_WEBHOOK_SECRET']?.trim();
+    const status: Record<string, { configured: boolean }> = {};
+    for (const courier of ['steadfast', 'pathao', 'redx', 'carrybee']) {
+      status[courier] = {
+        configured: courier === 'redx'
+          ? (hasSecret.get('redx') || redxEnv)
+          : !!hasSecret.get(courier),
+      };
+    }
+    return status;
+  }
+
   @Get('webhook-attempts')
   async listWebhookAttempts(
     @Query('courier') courier?: string,

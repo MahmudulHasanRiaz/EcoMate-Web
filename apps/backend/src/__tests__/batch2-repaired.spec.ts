@@ -695,12 +695,21 @@ describe('CourierWebhookController redx (real instance)', () => {
     };
   }
 
-  it('missing REDX_WEBHOOK_SECRET — throws UnauthorizedException, does not call handleRedx', async () => {
+  it('missing REDX_WEBHOOK_SECRET — ACCEPTS with a recorded warning, never silently (Task 4)', async () => {
     delete process.env['REDX_WEBHOOK_SECRET'];
-    await expect(
-      controller.redx(testBody, mockReq({ 'x-redx-signature': computeSig(testBody, testSecret) })),
-    ).rejects.toThrow(UnauthorizedException);
-    expect(handleRedxMock).not.toHaveBeenCalled();
+    const result = await controller.redx(
+      testBody,
+      mockReq({ 'x-redx-signature': computeSig(testBody, testSecret) }),
+    );
+    expect(result).toEqual({ success: true });
+    expect(handleRedxMock).toHaveBeenCalledTimes(1);
+    expect(mockAttemptSvc.completeAttempt).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        outcome: 'SUCCESS',
+        authResult: expect.stringMatching(/not configured/i),
+      }),
+    );
   });
 
   it('missing X-RedX-Signature header — throws UnauthorizedException, does not call handleRedx', async () => {
@@ -736,20 +745,20 @@ describe('CourierWebhookController redx (real instance)', () => {
     expect(result).toEqual({ success: true });
   });
 
-  it('missing secret and invalid sig throw EXACTLY THE SAME external error (both UnauthorizedException)', async () => {
-    // Both must produce the same generic error to the caller
+  it('invalid sig throws UnauthorizedException; missing secret ACCEPTS with warning (Task 4: never silent)', async () => {
+    process.env['REDX_WEBHOOK_SECRET'] = testSecret;
     const err1 = await controller
       .redx(testBody, mockReq({ 'x-redx-signature': 'aa'.repeat(32) }))
       .catch((e: any) => e);
     delete process.env['REDX_WEBHOOK_SECRET'];
-    const err2 = await controller
-      .redx(testBody, mockReq({ 'x-redx-signature': computeSig(testBody, testSecret) }))
-      .catch((e: any) => e);
+    const accepted = await controller.redx(
+      testBody,
+      mockReq({ 'x-redx-signature': computeSig(testBody, testSecret) }),
+    );
 
     expect(err1).toBeInstanceOf(UnauthorizedException);
-    expect(err2).toBeInstanceOf(UnauthorizedException);
     expect(err1.message).toBe('Invalid webhook signature');
-    expect(err2.message).toBe('Invalid webhook signature');
+    expect(accepted).toEqual({ success: true });
   });
 });
 
