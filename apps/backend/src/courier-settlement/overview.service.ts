@@ -183,7 +183,7 @@ export class CourierSettlementOverviewService {
         id: true,
         displayId: true,
         total: true,
-        payments: { select: { amount: true, status: true, appliedCreditAmount: true } },
+        payments: { select: { amount: true, status: true, appliedCreditAmount: true, gatewayCode: true } },
         status: { select: { name: true } },
         courierSettlementRows: {
           where: { supersededByRowId: null, rowClass: 'DATA', invoice: { state: { in: FINALIZED } } },
@@ -255,12 +255,14 @@ export class CourierSettlementOverviewService {
 
 function expectedCodOf(order: {
   total: unknown;
-  payments: { amount: unknown; status: string; appliedCreditAmount?: unknown }[];
+  payments: { amount: unknown; status: string; appliedCreditAmount?: unknown; gatewayCode?: unknown }[];
 }): number {
   // D-C actuals-only ledger: derived due (total − ΣPAID − ΣappliedCredit),
-  // floored at 0 — mirrors CodMismatchService systemDue, never a cash-row sum.
+  // floored at 0 — mirrors CodMismatchService systemDue, EXCEPT
+  // courier_settlement PAID rows are excluded (settlement money is already
+  // reconciled in journals; gross expectation ≠ customer remainder).
   const paid = order.payments
-    .filter((p) => p.status === 'PAID')
+    .filter((p) => p.status === 'PAID' && String((p as { gatewayCode?: unknown }).gatewayCode ?? '') !== 'courier_settlement')
     .reduce((s, p) => s + num(p.amount), 0);
   const applied = order.payments.reduce((s, p) => s + num(p.appliedCreditAmount), 0);
   return Math.max(0, round2(num(order.total) - paid - applied));

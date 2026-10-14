@@ -82,6 +82,30 @@ describe('expectedCod — derived due (D-C actuals-only ledger)', () => {
     });
     expect(r.value).toBe(0);
   });
+
+  it('excludes courier_settlement PAID rows (settled money is journal-reconciled, not a due reduction)', () => {
+    const r = expectedCod({
+      ...base,
+      total: 770,
+      paymentOptionType: 'CASH_ON_DELIVERY',
+      payments: [{ amount: 770, gatewayCode: 'courier_settlement', status: 'PAID' }],
+    });
+    // Gross courier expectation stays 770 — the settlement row must not collapse it.
+    expect(r.value).toBe(770);
+  });
+
+  it('settled order (770/770 settlement, charges 50, net 720) nets to zero balances', () => {
+    const expected = expectedCod({
+      ...base,
+      total: 770,
+      paymentOptionType: 'CASH_ON_DELIVERY',
+      payments: [{ amount: 770, gatewayCode: 'courier_settlement', status: 'PAID' }],
+    }).value;
+    const pos = codPosition({ expectedCod: expected, charges: 50, netCashMovement: 720 });
+    expect(pos).toBe(0);
+    expect(outstandingCod(pos)).toBe(0);
+    expect(payableToCourier(pos)).toBe(0);
+  });
 });
 
 describe('derivedDue (shared helper)', () => {

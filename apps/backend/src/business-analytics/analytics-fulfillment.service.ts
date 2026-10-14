@@ -543,7 +543,7 @@ export class AnalyticsFulfillmentService {
       select: {
         id: true,
         total: true,
-        payments: { select: { amount: true, status: true, appliedCreditAmount: true } },
+        payments: { select: { amount: true, status: true, appliedCreditAmount: true, gatewayCode: true } },
       },
     });
     for (const o of ordersMeta) {
@@ -569,13 +569,13 @@ export class AnalyticsFulfillmentService {
   }
 }
 
-/** expectedCod for a COD order: derived due (total − ΣPAID − ΣappliedCredit, D-C). */
+/** expectedCod for a COD order: derived due (total − ΣPAID − ΣappliedCredit, D-C, excl. courier_settlement). */
 function expectedCodFromOrder(
   total: unknown,
-  payments: { amount: unknown; status: string; appliedCreditAmount?: unknown }[],
+  payments: { amount: unknown; status: string; appliedCreditAmount?: unknown; gatewayCode?: unknown }[],
 ): number {
   const paid = (payments ?? [])
-    .filter((p) => p.status === 'PAID')
+    .filter((p) => p.status === 'PAID' && String((p as { gatewayCode?: unknown }).gatewayCode ?? '') !== 'courier_settlement')
     .reduce((s, p) => s + (Number(p.amount) || 0), 0);
   const applied = (payments ?? []).reduce(
     (s, p) => s + (Number(p.appliedCreditAmount) || 0),

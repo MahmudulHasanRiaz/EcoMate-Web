@@ -282,6 +282,12 @@ export class PaymentsService {
       const payment = await tx.payment.findUnique({ where: { id } });
       if (!payment) throw new NotFoundException('Payment not found');
 
+      // VOID rows are terminal (D-C actuals-only ledger placeholders) — they
+      // can never be resurrected to PAID via verify.
+      if ((payment as any).status === PaymentStatus.VOID) {
+        throw new BadRequestException('VOID payments cannot be verified (void rows are terminal)');
+      }
+
       // Self-approve block (Task 6): recordedBy is `staff:<userId>` for
       // staff entries (null for customer-submitted), verifiedBy is the raw
       // userId — same id space, so a direct comparison is exact.

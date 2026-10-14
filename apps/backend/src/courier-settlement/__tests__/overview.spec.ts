@@ -287,4 +287,25 @@ describe('CourierSettlementOverviewService.getBalances (§3 stock)', () => {
       }),
     );
   });
+
+  it('excludes courier_settlement PAID rows: settled 770 order nets to zero (no 770 payable)', async () => {
+    const { svc } = await makeSvc({
+      orders: [
+        codOrder(
+          'ord-settled',
+          770,
+          [{ effectiveCollected: 770, effectiveCharges: 50, effectiveNet: 720, invoiceId: 'i1' }],
+          [{ amount: 770, gatewayCode: 'courier_settlement', status: 'PAID' }],
+        ),
+      ],
+    });
+    const res = await svc.getBalances({});
+    const row = res.orders.find((o) => o.displayId === 'ORD-SETTLED');
+    expect(row?.expectedCod).toBe(770);
+    expect(row?.codPosition).toBe(0);
+    expect(row?.outstandingCod).toBe(0);
+    expect(row?.payableToCourier).toBe(0);
+    expect(res.kpis.payableToCourier).toBe(0);
+    expect(res.kpis.outstandingCod).toBe(0);
+  });
 });

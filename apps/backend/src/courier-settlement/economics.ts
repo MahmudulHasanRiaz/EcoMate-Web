@@ -43,14 +43,21 @@ const CANCELLED_STATUS = 'Cancelled';
  * D-C actuals-only ledger: the derived due shared by `expectedCod` and every
  * reader — `total − ΣPAID − ΣappliedCredit`, floored at 0. Only received
  * money reduces what the courier collects; PENDING/FAILED/CANCELLED/VOID
- * rows never do. Mirrors `CodMismatchService` systemDue exactly.
+ * rows never do. Mirrors `CodMismatchService` systemDue exactly, EXCEPT
+ * `courier_settlement` PAID rows are excluded: settlement money is already
+ * reconciled in journals (gross expectation ≠ customer remainder).
  */
 export function derivedDue(
   total: number,
-  payments: { amount: number; status: string; appliedCreditAmount?: number | null }[],
+  payments: {
+    amount: number;
+    status: string;
+    appliedCreditAmount?: number | null;
+    gatewayCode?: string | null;
+  }[],
 ): number {
   const paid = payments
-    .filter((p) => p.status === 'PAID')
+    .filter((p) => p.status === 'PAID' && p.gatewayCode !== 'courier_settlement')
     .reduce((sum, p) => sum + numberOr(p.amount, 0), 0);
   const applied = payments.reduce(
     (sum, p) => sum + numberOr(p.appliedCreditAmount ?? 0, 0),

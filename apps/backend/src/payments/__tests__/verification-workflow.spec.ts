@@ -230,6 +230,23 @@ describe('PaymentsService.verify self-approve block', () => {
     );
     expect(updated.verifiedBy).toBe('u9');
   });
+
+  it('VOID rows are terminal: verify 400s without touching the row', async () => {
+    mockTx({
+      id: 'pay-void',
+      orderId: 'order-1',
+      recordedBy: null,
+      status: PaymentStatus.VOID,
+      notes: null,
+    });
+    await expect(
+      service.verify('pay-void', { status: PaymentStatus.PAID } as any, 'u9'),
+    ).rejects.toThrow(BadRequestException);
+    await expect(
+      service.verify('pay-void', { status: PaymentStatus.PAID } as any, 'u9'),
+    ).rejects.toThrow(/void/i);
+    expect(mockPrisma.payment.update).not.toHaveBeenCalled();
+  });
 });
 
 const orderStub = (overrides: Record<string, any> = {}) => ({
