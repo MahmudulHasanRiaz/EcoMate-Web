@@ -206,6 +206,31 @@ describe('CourierWebhookService — staff-partial 15.4 exception (Task 5 Fix 9)'
         expect(call[0].data.statusId).toBeUndefined();
       }
     });
+
+    it('promotion failure records a hold timeline entry with the failure reason', async () => {
+      prisma.order.findFirst.mockResolvedValue(partialOrder);
+      prisma.order.findUnique.mockResolvedValue(partialOrder);
+      ordersService.confirmStaffPartialDelivered.mockRejectedValue(
+        new Error('Partial → Delivered requires an open staff-created partial return.'),
+      );
+
+      const result = await service.handleSteadfast({
+        notification_type: 'delivery_status',
+        consignment_id: 'CG-1',
+        status: 'partial_delivered',
+      });
+
+      expect(result.status).toBe('success');
+      const entries = timelineEntries();
+      const hold = entries.find((e: any) =>
+        String((e as any)?.remarks ?? '').includes('15.4'),
+      );
+      expect(hold).toBeDefined();
+      expect(String((hold as any).remarks)).toContain(
+        'Partial → Delivered requires an open staff-created partial return.',
+      );
+      expect(String((hold as any).remarks)).toContain('kept Partial');
+    });
   });
 
   describe('instant-delivery variant + Delivered→Partial LOCK', () => {

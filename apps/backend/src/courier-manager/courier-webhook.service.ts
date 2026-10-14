@@ -1120,9 +1120,15 @@ export class CourierWebhookService {
         await this.ordersService.confirmStaffPartialDelivered(orderId, 'system');
         return;
       } catch (e) {
+        const reason = (e as Error).message;
         this.logger.warn(
-          `Staff-partial 15.4 promotion failed for order ${orderId}: ${(e as Error).message}`,
+          `Staff-partial 15.4 promotion failed for order ${orderId}: ${reason}`,
         );
+        await this.addTimelineEntry(orderId, 'system', 'Partial', {
+          remarks:
+            `Staff-partial 15.4 promotion on hold; order kept Partial — ` +
+            `${reason} — needs staff review`,
+        });
         return;
       }
     }
