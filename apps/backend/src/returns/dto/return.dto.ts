@@ -105,6 +105,23 @@ export class ListReturnsQueryDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(40)
+  courier?: string;
+
+  @IsOptional()
+  @IsString()
+  dateFrom?: string;
+
+  @IsOptional()
+  @IsString()
+  dateTo?: string;
+
+  @IsOptional()
+  @IsUUID()
+  exchangeOrderId?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(60)
   search?: string;
 }

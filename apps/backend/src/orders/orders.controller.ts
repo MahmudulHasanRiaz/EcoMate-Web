@@ -63,7 +63,7 @@ export class OrdersController {
     @Query('sort') sort?: string,
     @Query('order') order?: string,
     @Query('includeTrashed') includeTrashed?: string,
-    @Query('kind') kind?: 'SALE' | 'RETURN',
+    @Query('kind') kind?: 'SALE' | 'RETURN' | 'EXCHANGE',
   ) {
     return this.svc.findAll({
       page: page ? parseInt(page) : undefined,
@@ -78,7 +78,7 @@ export class OrdersController {
       sort,
       order,
       includeTrashed: includeTrashed === 'true',
-      kind: kind === 'SALE' || kind === 'RETURN' ? kind : undefined,
+      kind: kind === 'SALE' || kind === 'RETURN' || kind === 'EXCHANGE' ? kind : undefined,
     });
   }
 

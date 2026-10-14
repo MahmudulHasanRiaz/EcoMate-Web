@@ -31,7 +31,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '@/components/ui/label'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, UserCheck, Calendar, Search as SearchIcon, Send, Plus, Upload, Trash2, Ban, RotateCcw } from 'lucide-react'
+import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, UserCheck, Calendar, Search as SearchIcon, Send, Plus, Upload, Trash2, Ban, RotateCcw, ArrowRightLeft } from 'lucide-react'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { OrderSourceBadges } from '@/features/orders/order-source-badge'
 import { CanonicalAttributionBadges } from '@/features/orders/canonical-attribution-badge'
@@ -341,8 +341,8 @@ function OrdersStatusFilterBar({
   totalOrders: number
   statusFilter: string
   setStatusFilter: (s: string) => void
-  kindFilter: 'all' | 'SALE' | 'RETURN'
-  setKindFilter: (k: 'all' | 'SALE' | 'RETURN') => void
+  kindFilter: 'all' | 'SALE' | 'RETURN' | 'EXCHANGE'
+  setKindFilter: (k: 'all' | 'SALE' | 'RETURN' | 'EXCHANGE') => void
   setPage: (p: number) => void
 }) {
   const visible = statusList.filter((s: any) => (statusCountMap[s.id] || 0) > 0)
@@ -516,6 +516,7 @@ function OrdersStatusFilterBar({
         {([
           ['SALE', 'Sales', 'var(--primary)'],
           ['RETURN', 'Returns', '#EC4899'],
+          ['EXCHANGE', 'Exchanges', '#8B5CF6'],
         ] as const).map(([value, label, color]) => {
           const active = kindFilter === value
           return (
@@ -651,7 +652,7 @@ export function Orders() {
   const { data: staffList } = useQuery({ queryKey: ['staff-list'], queryFn: () => apiClient.get('/orders/staff/list').then(r => r.data as any[]) })
   const staff = (Array.isArray(staffList) ? staffList : []) as any[]
 
-  const [kindFilter, setKindFilter] = useState<'all' | 'SALE' | 'RETURN'>('all')
+  const [kindFilter, setKindFilter] = useState<'all' | 'SALE' | 'RETURN' | 'EXCHANGE'>('all')
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ['orders', page, perPage, debouncedSearch, statusFilter, courierFilter, assigneeFilter, sort, order, kindFilter],
@@ -1020,6 +1021,11 @@ export function Orders() {
                             {o.kind === 'RETURN' && (
                               <span className='inline-flex items-center gap-1 rounded-full border border-pink-500/40 bg-pink-500/10 px-1.5 py-0.5 text-[9px] font-bold text-pink-600 dark:text-pink-400'>
                                 <RotateCcw className='h-2.5 w-2.5' /> RTN
+                              </span>
+                            )}
+                            {o.kind === 'EXCHANGE' && (
+                              <span className='inline-flex items-center gap-1 rounded-full border border-violet-500/40 bg-violet-500/10 px-1.5 py-0.5 text-[9px] font-bold text-violet-600 dark:text-violet-400'>
+                                <ArrowRightLeft className='h-2.5 w-2.5' /> Exchange
                               </span>
                             )}
                             <Tooltip>

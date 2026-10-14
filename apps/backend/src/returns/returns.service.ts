@@ -118,7 +118,24 @@ export class ReturnsService {
       include: { order: { select: { id: true, displayId: true } } },
     });
     if (!ret) throw new NotFoundException(`Return not found: ${id}`);
-    return ret;
+    // Task 7: detail links without extra round-trips — exchange order +
+    // refund rows are plain ids (no FK), so resolve them best-effort.
+    let exchangeOrder: { id: string; displayId: string } | null = null;
+    const exchangeOrderId = (ret as any).exchangeOrderId as string | null;
+    if (exchangeOrderId) {
+      const ex = await this.prisma.order.findUnique({
+        where: { id: exchangeOrderId },
+        select: { id: true, displayId: true },
+      });
+      if (ex) exchangeOrder = ex as { id: string; displayId: string };
+    }
+    let refund: unknown = null;
+    const refundId = (ret as any).refundId as string | null;
+    if (refundId) {
+      const rf = await this.prisma.refund.findUnique({ where: { id: refundId } });
+      if (rf) refund = rf;
+    }
+    return { ...ret, exchangeOrder, refund };
   }
 
   async list(filters: {
@@ -126,6 +143,10 @@ export class ReturnsService {
     status?: string;
     type?: string;
     source?: string;
+    courier?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    exchangeOrderId?: string;
     search?: string;
     page?: number;
     limit?: number;
@@ -137,11 +158,22 @@ export class ReturnsService {
     if (filters.status) where.status = filters.status as any;
     if (filters.type) where.type = filters.type as any;
     if (filters.source) where.source = filters.source as any;
+    // Task 7: Returns list filters — courier + created-date range +
+    // exchange-order link (Exchanges detail back-link).
+    if (filters.courier) where.courier = filters.courier;
+    if (filters.exchangeOrderId) where.exchangeOrderId = filters.exchangeOrderId;
+    if (filters.dateFrom || filters.dateTo) {
+      const createdAt: Record<string, Date> = {};
+      if (filters.dateFrom) createdAt.gte = new Date(filters.dateFrom);
+      if (filters.dateTo) createdAt.lte = new Date(filters.dateTo);
+      where.createdAt = createdAt;
+    }
     if (filters.search) where.displayId = { contains: filters.search, mode: 'insensitive' };
 
     const [data, total] = await Promise.all([
       this.prisma.return.findMany({
         where: where as any,
+        include: { order: { select: { id: true, displayId: true } } },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,

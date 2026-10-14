@@ -3,9 +3,11 @@ import { apiClient } from '@/lib/api-client'
 export interface OrderResponse {
   id: string; displayId: string; customerId?: string | null; statusId: string;
   warnings?: string[];
-  kind?: 'SALE' | 'RETURN';
+  kind?: 'SALE' | 'RETURN' | 'EXCHANGE';
   returnOfOrderId?: string | null;
   returnOfOrder?: { id: string; displayId: string; status: { id: string; name: string } } | null;
+  exchangeOfOrderId?: string | null;
+  exchangeOfOrder?: { id: string; displayId: string } | null;
   returnedAt?: string | null;
   stockRestored?: boolean;
   subtotal: number | string; shippingCharge: number | string; discount: number | string;

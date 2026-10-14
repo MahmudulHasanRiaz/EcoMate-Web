@@ -576,6 +576,7 @@ describe('OrdersService', () => {
             ],
             statusId: 'status-pending',
             trashedAt: null,
+            kind: { not: 'RETURN' },
           },
         }),
       );
@@ -635,6 +636,29 @@ describe('OrdersService', () => {
 
       expect(prisma.order.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ orderBy: { total: 'asc' } }),
+      );
+    });
+
+    it('excludes RETURN-kind orders by default (Returns live in their own menu)', async () => {
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.order.count as jest.Mock).mockResolvedValue(0);
+
+      await service.findAll({});
+
+      const where = (prisma.order.findMany as jest.Mock).mock.calls[0][0].where;
+      expect(where.kind).toEqual({ not: 'RETURN' });
+    });
+
+    it('supports kind=EXCHANGE and includes the original-order link', async () => {
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.order.count as jest.Mock).mockResolvedValue(0);
+
+      await service.findAll({ kind: 'EXCHANGE' } as any);
+
+      const args = (prisma.order.findMany as jest.Mock).mock.calls[0][0];
+      expect(args.where.kind).toBe('EXCHANGE');
+      expect(args.include.exchangeOfOrder).toEqual(
+        expect.objectContaining({ select: expect.anything() }),
       );
     });
   });

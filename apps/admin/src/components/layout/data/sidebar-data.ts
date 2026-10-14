@@ -36,6 +36,8 @@ export const sidebarData: SidebarData = {
           title: 'Orders', icon: ListTodo, feature: 'admin_orders',
           items: [
             { title: 'All Orders', url: '/op/orders' },
+            { title: 'Returns', url: '/op/returns' },
+            { title: 'Exchanges', url: '/op/exchanges' },
             { title: 'Incomplete Leads', url: '/op/orders/incomplete-leads', feature: 'admin_incomplete_orders' },
             { title: 'Reviews', url: '/op/reviews', feature: 'admin_reviews' },
           ],

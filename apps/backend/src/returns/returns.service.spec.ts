@@ -161,6 +161,50 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
       );
       expect(res.meta).toMatchObject({ total: 1 });
     });
+
+    it('list supports courier + date-range + exchangeOrderId filters with order link', async () => {
+      prisma.return.findMany.mockResolvedValueOnce([{ id: 'ret-1' }]);
+      (prisma.return as any).count = jest.fn().mockResolvedValue(1);
+      await service.list({
+        courier: 'steadfast',
+        dateFrom: '2026-10-01',
+        dateTo: '2026-10-14',
+        exchangeOrderId: 'ex-1',
+      } as any);
+      expect(prisma.return.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            courier: 'steadfast',
+            exchangeOrderId: 'ex-1',
+            createdAt: expect.objectContaining({
+              gte: expect.any(Date),
+              lte: expect.any(Date),
+            }),
+          }),
+          include: expect.objectContaining({
+            order: expect.anything(),
+          }),
+        }),
+      );
+    });
+
+    it('get includes the exchange-order and refund links', async () => {
+      prisma.return.findUnique.mockResolvedValueOnce({
+        id: 'ret-1',
+        orderId: 'order-1',
+        exchangeOrderId: 'ex-1',
+        refundId: 'refund-1',
+      });
+      prisma.order.findUnique.mockResolvedValueOnce({ id: 'ex-1', displayId: 'ORD-EX-1' });
+      (prisma.refund.findUnique as jest.Mock).mockResolvedValueOnce({
+        id: 'refund-1',
+        status: 'pending',
+      });
+      const res = await service.get('ret-1');
+      expect(res).toMatchObject({ id: 'ret-1' });
+      expect((res as any).exchangeOrder).toMatchObject({ id: 'ex-1' });
+      expect((res as any).refund).toMatchObject({ id: 'refund-1' });
+    });
   });
 
   describe('markReceived (staff-confirmed path)', () => {

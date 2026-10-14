@@ -694,7 +694,7 @@ export class OrdersService {
     sort?: string;
     order?: string;
     includeTrashed?: boolean;
-    kind?: 'SALE' | 'RETURN';
+    kind?: 'SALE' | 'RETURN' | 'EXCHANGE';
   }) {
     // 1000-row pages are a first-class use case (daily volume in the
     // thousands) — but an unbounded `take` with the full list include
@@ -709,9 +709,13 @@ export class OrdersService {
     const where: any = {};
     if (!query.includeTrashed) where.trashedAt = null;
     // RTN return orders are excluded from the sales list unless explicitly
-    // requested — they are operations records, not sales.
+    // requested — they are operations records, not sales. Task 7: the unified
+    // Returns menu owns return visibility, so a kind-less list shows SALE +
+    // EXCHANGE only (exchange orders keep their Exchange badge in the list).
     if (query.kind) {
       where.kind = query.kind;
+    } else {
+      where.kind = { not: 'RETURN' };
     }
     if (query.search) {
       // Order number · customer/guest name · product SKU · phone (exact once
@@ -756,6 +760,10 @@ export class OrdersService {
           payments: true,
           shipment: true,
           assignee: { select: { id: true, firstName: true, lastName: true } },
+          // Task 7: Exchanges list needs the original-order link without a
+          // second query; RTN rows keep their returnOf link for the badge.
+          exchangeOfOrder: { select: { id: true, displayId: true } },
+          returnOfOrder: { select: { id: true, displayId: true } },
           // One LEFT JOIN for every list row — no per-order lock queries.
           editLock: {
             include: { user: { select: { firstName: true, lastName: true } } },

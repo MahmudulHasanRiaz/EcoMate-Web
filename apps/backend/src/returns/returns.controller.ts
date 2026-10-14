@@ -28,11 +28,25 @@ export class ReturnsController {
     @Query('status') status?: string,
     @Query('type') type?: string,
     @Query('source') source?: string,
+    @Query('courier') courier?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+    @Query('exchangeOrderId') exchangeOrderId?: string,
     @Query('search') search?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
-    const q: ListReturnsQueryDto = { orderId, status, type, source, search };
+    const q: ListReturnsQueryDto = {
+      orderId,
+      status,
+      type,
+      source,
+      courier,
+      dateFrom,
+      dateTo,
+      exchangeOrderId,
+      search,
+    };
     return this.returns.list({
       ...q,
       page: page ? parseInt(page, 10) : undefined,
