@@ -1176,6 +1176,34 @@ describe('DispatchService', () => {
       expect(createdData.trackingCode ?? null).toBeNull();
     });
 
+    it('allows multiple NULL-identifier manual rows for the same courier (no P2002)', async () => {
+      // Postgres treats NULLs as distinct in @@unique([courier, consignmentId]),
+      // so any number of identifier-less manual rows may share one courier. A
+      // live-DB proof is impossible inside this mocked suite, so this locks the
+      // two code properties that make it true instead: blank inputs never reach
+      // the unique key as '' ('' would collide) and the unique-where duplicate
+      // lookup is skipped for identifier-less rows.
+      prisma.dispatch.create
+        .mockResolvedValueOnce({ id: 'd-manual-1' })
+        .mockResolvedValueOnce({ id: 'd-manual-2' });
+
+      await service.create({ orderId: 'order-1', courier: 'steadfast' } as any);
+      await service.create({
+        orderId: 'order-1',
+        courier: 'steadfast',
+        consignmentId: '  ',
+        trackingCode: '',
+      } as any);
+
+      expect(prisma.dispatch.create).toHaveBeenCalledTimes(2);
+      for (const call of prisma.dispatch.create.mock.calls) {
+        expect(call[0].data.consignmentId).toBeNull();
+      }
+      // The unique-where lookup only runs when a real consignment exists —
+      // with no lookup and no '' sent, a P2002 cannot occur.
+      expect(prisma.dispatch.findUnique).not.toHaveBeenCalled();
+    });
+
     it('identifier-less create stamps courierService but never a consignment claim', async () => {
       prisma.dispatch.create.mockResolvedValue({ id: 'd-manual' });
 

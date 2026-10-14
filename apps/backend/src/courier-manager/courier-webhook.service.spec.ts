@@ -790,6 +790,83 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       );
     });
 
+    it('pathao merchant_order_id→displayId match fills the NULL-identifier manual row', async () => {
+      const manualOrder = {
+        ...order,
+        id: 'order-9',
+        displayId: 'ORD-9',
+        courierService: 'pathao',
+        courierConsignmentId: null,
+        status: { id: 'status-packed', name: 'Packed' },
+      };
+      // Direct consignment lookup misses (manual row never stamped the order);
+      // the merchant_order_id fallback resolves via displayId.
+      prisma.order.findFirst.mockImplementation((args: any) =>
+        args?.where?.displayId ? manualOrder : null,
+      );
+      prisma.order.findUnique.mockResolvedValue(manualOrder);
+      prisma.orderStatus.findUnique.mockResolvedValue(deliveredStatus);
+      // Registry has no consignment row; exactly one NULL-identifier manual row.
+      prisma.dispatch.findFirst.mockImplementation((args: any) =>
+        args?.where?.orderId
+          ? { id: 'manual-1', orderId: 'order-9', courier: 'pathao', consignmentId: null }
+          : null,
+      );
+
+      const result = await service.handlePathao({
+        consignment_id: 'PH-9',
+        merchant_order_id: 'ORD-9',
+        event: 'order.delivered',
+      });
+
+      expect(result.status).toBe('success');
+      expect(prisma.dispatch.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'manual-1' },
+          data: expect.objectContaining({ consignmentId: 'PH-9' }),
+        }),
+      );
+    });
+
+    it('redx invoice_number→displayId match fills the NULL-identifier manual row', async () => {
+      const manualOrder = {
+        ...order,
+        id: 'order-9',
+        displayId: 'ORD-9',
+        courierService: 'redx',
+        courierConsignmentId: null,
+        courierTrackingCode: null,
+        status: { id: 'status-packed', name: 'Packed' },
+      };
+      // Direct tracking-code lookup misses (manual row never stamped the
+      // order); the invoice_number fallback resolves via displayId.
+      prisma.order.findFirst.mockImplementation((args: any) =>
+        args?.where?.displayId ? manualOrder : null,
+      );
+      prisma.order.findUnique.mockResolvedValue(manualOrder);
+      prisma.orderStatus.findUnique.mockResolvedValue(deliveredStatus);
+      // Registry has no consignment row; exactly one NULL-identifier manual row.
+      prisma.dispatch.findFirst.mockImplementation((args: any) =>
+        args?.where?.orderId
+          ? { id: 'manual-1', orderId: 'order-9', courier: 'redx', consignmentId: null }
+          : null,
+      );
+
+      const result = await service.handleRedx({
+        tracking_number: 'RX-9',
+        invoice_number: 'ORD-9',
+        status: 'delivered',
+      });
+
+      expect(result.status).toBe('success');
+      expect(prisma.dispatch.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'manual-1' },
+          data: expect.objectContaining({ consignmentId: 'RX-9' }),
+        }),
+      );
+    });
+
     it('skips the fill when a dispatch row already owns the consignment', async () => {
       prisma.order.findFirst.mockResolvedValue(order);
       // Registry/existing row owns CG-1 — the manual fill must not run.
