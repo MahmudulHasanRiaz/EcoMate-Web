@@ -45,10 +45,11 @@ export function redactSecrets(text: string): string {
     '$1"[REDACTED]"',
   );
   // Header / query / assignment style: Api-Key: <tok>, password=<tok>,
-  // Authorization: Bearer <tok>. Value must be a single token (no spaces) so
-  // ordinary prose is never mangled.
+  // Authorization: Bearer <tok>. The separator MUST contain : = or - so
+  // ordinary prose ("password must be 8 characters") is never mangled;
+  // value must be a single token (no spaces).
   out = out.replace(
-    /(api[_-]?key|secret[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|authorization|password|passwd)([\s"':=]+)(Bearer\s+)?[^\s,;&}"']+/gi,
+    /(api[_-]?key|secret[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|authorization|password|passwd)([\s"']*[:=\-][\s"':=\-]*)(Bearer\s+)?[^\s,;&}"']+/gi,
     (_m, key: string, sep: string, bearer: string) =>
       `${key}${sep}${bearer || ''}[REDACTED]`,
   );
@@ -632,8 +633,9 @@ export class CourierManagerService {
 
       if (data === null) {
         // 2xx but not JSON (proxy/captive page) — transient, retry bounded.
+        // Secrets masked like the 4xx path (Fix 5 redact consistency).
         lastError = new BadRequestException(
-          this.describeSteadfastError(res.status, rawBody),
+          this.describeSteadfastError(res.status, redactSecrets(rawBody)),
         );
         this.logger.warn(
           `Steadfast dispatch attempt ${attempt}/${maxRetries} failed (non-JSON 2xx): ${lastError.message}`,

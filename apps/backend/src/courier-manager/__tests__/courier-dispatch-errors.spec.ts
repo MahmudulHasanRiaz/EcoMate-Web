@@ -111,6 +111,32 @@ describe('CourierManagerService — Fix 5 dispatch error bodies + retry discipli
       const raw = `{"status":400,"errors":{"recipient_name":["too short"]}}`;
       expect(redactSecrets(raw)).toBe(raw);
     });
+
+    it('does not mangle prose without a separator (password must be ...)', () => {
+      expect(redactSecrets('password must be 8 characters')).toBe(
+        'password must be 8 characters',
+      );
+      expect(
+        redactSecrets("field 'recipient_name' password must be 3-100 chars"),
+      ).toBe("field 'recipient_name' password must be 3-100 chars");
+    });
+
+    it('still redacts separator-style secrets (colon / equals / bearer)', () => {
+      expect(redactSecrets('Api-Key: live-key-123')).toContain('[REDACTED]');
+      expect(redactSecrets('Api-Key: live-key-123')).not.toContain(
+        'live-key-123',
+      );
+      expect(redactSecrets('password=supersecret')).toContain('[REDACTED]');
+      expect(redactSecrets('password=supersecret')).not.toContain(
+        'supersecret',
+      );
+      expect(redactSecrets('Authorization: Bearer tok_abc')).toContain(
+        '[REDACTED]',
+      );
+      expect(redactSecrets('Authorization: Bearer tok_abc')).not.toContain(
+        'tok_abc',
+      );
+    });
   });
 
   describe('steadfast single create_order', () => {
@@ -207,6 +233,18 @@ describe('CourierManagerService — Fix 5 dispatch error bodies + retry discipli
       expect(results[0].ok).toBe(false);
       expect((global.fetch as jest.Mock).mock.calls.length).toBeGreaterThan(1);
       expect(results[0].message).toMatch(/socket hang up|failed after retries/i);
+    });
+
+    it('2xx non-JSON body is redacted (no raw secret in the failure message)', async () => {
+      mockFetchSequence([
+        new Response('gateway page Api-Key: live-secret-xyz', { status: 200 }),
+      ]);
+
+      const results = await service.dispatch('steadfast', ['order-1']);
+
+      expect(results[0].ok).toBe(false);
+      expect(results[0].message).not.toContain('live-secret-xyz');
+      expect(results[0].message).toContain('[REDACTED]');
     });
   });
 
