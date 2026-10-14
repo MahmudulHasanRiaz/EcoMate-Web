@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import type { SteadfastCredentialSetsService } from './steadfast-credential-sets.service';
 
 const CACHE_TTL_MS = 5 * 24 * 60 * 60 * 1000;
 
@@ -168,7 +169,10 @@ const DEFAULT_CALIBRATION: Record<Exclude<PathaoRatingLevel, 'new'>, number> = {
 export class CourierCustomerHistoryService {
   private readonly logger = new Logger(CourierCustomerHistoryService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly steadfastSets?: SteadfastCredentialSetsService,
+  ) {}
 
   private normalizePhone(raw?: string | null): string {
     const digits = (raw || '').replace(/\D/g, '');
@@ -411,8 +415,19 @@ export class CourierCustomerHistoryService {
   private async fetchSteadfast(phone: string): Promise<CourierReport | null> {
     const creds = await this.getCreds('steadfast');
     if (!creds?.enabled) return null;
-    const apiKey = creds.apiKey || (creds.credentials as any)?.apiKey;
-    const secretKey = creds.secretKey || (creds.credentials as any)?.secretKey;
+    // Task 8: fraud-check (no per-order record context) uses the DEFAULT
+    // set — booking-set routing applies to dispatch/tracking/webhooks.
+    let apiKey = creds.apiKey || (creds.credentials as any)?.apiKey;
+    let secretKey = creds.secretKey || (creds.credentials as any)?.secretKey;
+    if (this.steadfastSets) {
+      try {
+        const auth = await this.steadfastSets.resolveAuth({});
+        apiKey = auth.apiKey;
+        secretKey = auth.secretKey;
+      } catch {
+        return null;
+      }
+    }
     if (!apiKey || !secretKey) return null;
 
     const base = await this.getBaseUrl('steadfast');

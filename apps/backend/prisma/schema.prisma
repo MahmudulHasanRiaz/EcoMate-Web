@@ -1384,6 +1384,29 @@ model CourierCredentials {
   updatedAt               DateTime @updatedAt
 }
 
+// Task 8 (owner-locked hybrid, Steadfast-only): MULTIPLE encrypted merchant
+// accounts per courier. Keys are ciphertext (EncryptionService, AES-256-GCM);
+// the legacy CourierCredentials single row stays as the zero-friction
+// fallback while this table is empty. At most one isDefault per courier
+// (enforced in SteadfastCredentialSetsService, not the DB, so a hand-authored
+// backfill can never violate it on redeploy).
+model CourierCredentialSet {
+  id               String   @id @default(uuid())
+  courier          String   @default("steadfast")
+  label            String
+  apiKeyEnc        String?
+  secretKeyEnc     String?
+  webhookSecretEnc String?
+  isDefault        Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  dispatches Dispatch[]
+
+  @@unique([courier, label])
+  @@index([courier])
+}
+
 model CourierDispatchLog {
   id              String   @id @default(uuid())
   orderId         String
@@ -1465,6 +1488,11 @@ model Dispatch {
   /// Amount-to-collect sent to the courier at dispatch time. Source of truth
   /// for the post-dispatch COD mismatch comparison (Feature A).
   courierAmount   Decimal?  @db.Decimal(10, 2)
+  // Task 8: Steadfast booking credential-set id. NULL = legacy default
+  // (single-business rows booked before sets, or while no sets exist).
+  // Tracking / status / webhooks resolve the set from THIS record.
+  credentialSetId String?
+  credentialSet   CourierCredentialSet? @relation(fields: [credentialSetId], references: [id], onDelete: SetNull)
   lastSyncedAt    DateTime?
   handedOverAt    DateTime?
   pickedUpAt      DateTime?
@@ -1487,6 +1515,8 @@ model Dispatch {
   // (the composite unique's leading column can't serve those lookups).
   @@index([consignmentId])
   @@index([trackingCode])
+  // Task 8: booking-set lookups (webhook consignment → record → set).
+  @@index([credentialSetId])
 }
 
 enum WebhookAttemptOutcome {

@@ -10,6 +10,7 @@ import {
   InternalServerErrorException,
   HttpException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { CourierWebhookService } from './courier-webhook.service';
@@ -18,6 +19,7 @@ import { Public } from '../common/decorators/public.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { WebhookAttemptOutcome, WebhookAttemptStage } from '@prisma/client';
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import type { SteadfastCredentialSetsService } from './steadfast-credential-sets.service';
 import {
   timingSafeEqualText,
   verifyRawHmacSha256Hex,
@@ -47,6 +49,7 @@ export class CourierWebhookController {
     private readonly svc: CourierWebhookService,
     private readonly prisma: PrismaService,
     private readonly attempts: WebhookAttemptService,
+    @Optional() private readonly steadfastSets?: SteadfastCredentialSetsService,
   ) {}
 
   private extractSourceIp(req: FastifyRequest): string {
@@ -121,11 +124,40 @@ export class CourierWebhookController {
    * configured the HMAC is the ONLY accepted proof — a Bearer match alone is
    * NOT a fallback (owner: Bearer fallback ONLY when no token configured).
    * With no token configured the request is accepted with a loud warning.
+   *
+   * Task 8: ANY configured set verifies (the booking record's set is tried
+   * first via consignment lookup, then every other set, then legacy).
    */
   private async authenticateSteadfast(
     req: FastifyRequest,
     rawBody: string,
+    consignmentId?: string,
   ): Promise<AuthDecision> {
+    if (this.steadfastSets) {
+      const preferred = consignmentId
+        ? await this.steadfastSets.findSetForConsignment(consignmentId).catch(() => null)
+        : null;
+      const verdict = await this.steadfastSets.verifyWebhook(
+        rawBody,
+        req.headers['x-signature'],
+        preferred,
+      );
+      if (verdict.matched) return { result: 'MATCHED' };
+      // Distinguish "nothing configured" (accept-with-warning) from a real
+      // mismatch (401): any set secret OR the legacy secret counts.
+      const sets = await this.steadfastSets.listSets().catch(() => []);
+      const legacy = await this.storedSecret('steadfast');
+      if (sets.every((s: any) => !s.hasWebhook) && !legacy) {
+        return {
+          result: 'UNCONFIGURED',
+          detail: this.unconfiguredDetail(
+            'Steadfast',
+            'Set the webhook token in courier settings (Steadfast panel → webhook URL) to enable HMAC verification.',
+          ),
+        };
+      }
+      return { result: 'MISMATCH', detail: 'HMAC signature verification failed' };
+    }
     const secret = await this.storedSecret('steadfast');
     if (!secret) {
       return {
@@ -474,10 +506,10 @@ export class CourierWebhookController {
   ) {
     const ctx = this.baseContext(req);
     const rawBody = this.rawBodyOf(req, body);
-    const auth = await this.authenticateSteadfast(req, rawBody);
     const notificationType = (body['notification_type'] as string) || (body['status'] as string) || '';
     const consignmentId = String(body['consignment_id'] ?? '').trim();
     const invoice = String(body['invoice'] ?? '').trim();
+    const auth = await this.authenticateSteadfast(req, rawBody, consignmentId || undefined);
 
     this.logger.log(`Steadfast webhook received [${ctx.correlationId}]`);
     return this.processWebhook({

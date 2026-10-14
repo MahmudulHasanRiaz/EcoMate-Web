@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { apiClient } from '@/lib/api-client'
 import { useLicenseStore } from '@/stores/license-store'
 import { courierLogos } from './courier-logos'
+import { SteadfastSetsManager } from './steadfast-sets-manager'
 import { unconfiguredCouriers, webhookBannerCopy, type WebhookStatusPayload } from './webhook-status'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -449,6 +450,8 @@ export function CourierSettings() {
                 )}
 
                 <WebhookDiagnosticsSection courier={courier} />
+
+                {courier === 'steadfast' && <SteadfastSetsManager />}
 
                 <Button size='sm' onClick={() => handleSave(courier)} disabled={updateMut.isPending} className='w-full'>
                   <Save className='h-3.5 w-3.5 mr-1' /> Save Credentials

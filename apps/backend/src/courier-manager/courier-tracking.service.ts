@@ -1,9 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
 import { CourierTokenService } from './courier-token.service';
 import { buildTrackingUrl } from './courier-webhook.service';
 import { orderRecipientPhone } from '../orders/order-recipient';
+import type { SteadfastCredentialSetsService } from './steadfast-credential-sets.service';
 
 interface TrackingEvent {
   status: string;
@@ -52,6 +53,7 @@ export class CourierTrackingService {
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
     private readonly tokenStore: CourierTokenService,
+    @Optional() private readonly steadfastSets?: SteadfastCredentialSetsService,
   ) {}
 
   async getOrderTracking(orderId: string) {
@@ -374,10 +376,33 @@ export class CourierTrackingService {
     base: string,
     baseResult: any,
   ): Promise<CourierTrackingResult> {
+    // Task 8: tracking ALWAYS resolves the BOOKING set from the dispatch
+    // record (never the current default) — a default change after booking
+    // must not move live tracking to the wrong merchant profile.
+    if (this.steadfastSets) {
+      try {
+        const auth = await this.steadfastSets.resolveAuth({ consignmentId });
+        return this.trackSteadfastWithKeys(consignmentId, auth.apiKey, auth.secretKey, base, baseResult);
+      } catch {
+        // Unconfigured (no sets, legacy disabled) — same empty shape as the
+        // legacy missing-keys path below, never a throw out of tracking.
+        return { ...baseResult, events: [] };
+      }
+    }
     const apiKey = creds.apiKey || creds.credentials?.['apiKey'];
     const secretKey = creds.secretKey || creds.credentials?.['secretKey'];
     if (!apiKey || !secretKey)
       return { ...baseResult, events: [] };
+    return this.trackSteadfastWithKeys(consignmentId, apiKey, secretKey, base, baseResult);
+  }
+
+  private async trackSteadfastWithKeys(
+    consignmentId: string,
+    apiKey: string,
+    secretKey: string,
+    base: string,
+    baseResult: any,
+  ): Promise<CourierTrackingResult> {
 
     const STEADFAST_STATUS_MAP: Record<string, string> = {
       pending: 'pending',

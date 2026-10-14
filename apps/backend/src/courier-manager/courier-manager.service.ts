@@ -1,6 +1,7 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CourierTokenService } from './courier-token.service';
+import type { SteadfastCredentialSetsService } from './steadfast-credential-sets.service';
 import { formatCourierAddress } from './address-format';
 import {
   courierSafeRecipientName,
@@ -232,6 +233,7 @@ export class CourierManagerService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tokenStore: CourierTokenService,
+    @Optional() private readonly steadfastSets?: SteadfastCredentialSetsService,
   ) {}
 
   private async fetchWithTimeout(
@@ -284,6 +286,40 @@ export class CourierManagerService {
     if (!c || !c.enabled)
       throw new BadRequestException(`${courier} is not configured or disabled`);
     return c;
+  }
+
+  /**
+   * Task 8: Steadfast set-resolution (order override → record set → default
+   * → legacy single row). Resolves EXACTLY ONE profile upfront — callers
+   * never fall through to the next profile on 401 (fail fast with the
+   * wrong-profile hint instead of burning the lockout budget).
+   */
+  private async resolveSteadfastAuth(opts?: {
+    overrideSetId?: string | null;
+    consignmentId?: string | null;
+  }): Promise<{ apiKey: string; secretKey: string; setId: string | null }> {
+    if (this.steadfastSets) return this.steadfastSets.resolveAuth(opts);
+    const creds = await this.getCreds('steadfast');
+    const apiKey = creds.apiKey || (creds.credentials as any)?.['apiKey'];
+    const secretKey = creds.secretKey || (creds.credentials as any)?.['secretKey'];
+    if (!apiKey || !secretKey)
+      throw new BadRequestException('Steadfast API key/secret not configured');
+    return { apiKey, secretKey, setId: null };
+  }
+
+  /** Task 8: 401 hint gains the wrong-profile suffix when >1 set exists. */
+  private async steadfastProfileHint(): Promise<string> {
+    if (!this.steadfastSets) return '';
+    return this.steadfastSets.wrongProfileHint();
+  }
+
+  /**
+   * Task 8: Steadfast auth hint with the wrong-profile suffix. Computed once
+   * per failure (never a retry loop across profiles — ONE set was resolved
+   * upfront and a 401 fails fast here).
+   */
+  private async steadfastAuthHint(status: number): Promise<string> {
+    return authHint('steadfast', status) + (await this.steadfastProfileHint());
   }
 
   private describeSteadfastError(status: number, rawBody: string): string {
@@ -423,7 +459,11 @@ export class CourierManagerService {
     }
   }
 
-  async dispatch(courier: string, orderIds: string[]) {
+  async dispatch(
+    courier: string,
+    orderIds: string[],
+    opts?: { credentialSetId?: string | null },
+  ) {
     const orders = await this.prisma.order.findMany({
       where: { id: { in: orderIds }, trashedAt: null },
       include: {
@@ -466,7 +506,7 @@ export class CourierManagerService {
         continue;
       }
       try {
-        const result = await this.dispatchOne(courier, order);
+        const result = await this.dispatchOne(courier, order, opts?.credentialSetId);
         results.push({ id: order.id, ok: true, ...result });
       } catch (e: unknown) {
         // Fix 5: thread the shaped error ({courier, status, errors}) to the
@@ -492,6 +532,7 @@ export class CourierManagerService {
   private async dispatchOne(
     courier: string,
     order: any,
+    credentialSetId?: string | null,
   ): Promise<{ consignmentId?: string; trackingCode?: string }> {
     const creds = await this.getCreds(courier);
     const mode = creds?.mode || 'production';
@@ -502,7 +543,7 @@ export class CourierManagerService {
 
     switch (courier) {
       case 'steadfast':
-        return this.dispatchSteadfast(creds, base, order);
+        return this.dispatchSteadfast(creds, base, order, credentialSetId);
       case 'pathao':
         return this.dispatchPathao(creds, base, order);
       case 'redx':
@@ -534,9 +575,20 @@ export class CourierManagerService {
     return orderTotal;
   }
 
-  private async dispatchSteadfast(creds: any, base: string, order: any) {
-    const apiKey = creds.apiKey || creds.credentials?.['apiKey'];
-    const secretKey = creds.secretKey || creds.credentials?.['secretKey'];
+  private async dispatchSteadfast(
+    _legacyCreds: any,
+    base: string,
+    order: any,
+    credentialSetId?: string | null,
+  ) {
+    // Task 8: ONE profile resolved upfront (order override → default →
+    // legacy). A 401 below never falls through to the next profile.
+    const auth = await this.resolveSteadfastAuth({
+      overrideSetId: credentialSetId,
+    });
+    const apiKey = auth.apiKey;
+    const secretKey = auth.secretKey;
+    const bookingSetId = auth.setId;
     if (!apiKey || !secretKey)
       throw new BadRequestException('Steadfast API key/secret not configured');
 
@@ -699,6 +751,10 @@ export class CourierManagerService {
                 trackingCode,
                 trackingUrl,
                 status: 'DISPATCHED',
+                // Task 8: booking set id (null = legacy default). Tracking /
+                // status / webhooks resolve the set from THIS record, never
+                // the current default.
+                ...{ credentialSetId: bookingSetId },
                 // Persist the amount actually sent as cod_amount (Feature A:
                 // post-dispatch COD mismatch source of truth). Persist-only —
                 // the getCollectableAmount calc itself is untouched.
@@ -750,7 +806,7 @@ export class CourierManagerService {
         const failure = new CourierDispatchError({
           courier: 'steadfast',
           status: res.status,
-          message: msg + authHint('steadfast', res.status),
+          message: msg + (await this.steadfastAuthHint(res.status)),
           errors,
           orderId: order.id,
         });
@@ -810,7 +866,7 @@ export class CourierManagerService {
         status,
         message:
           `${this.describeSteadfastError(status, redactSecrets(rawBody))}` +
-          authHint('steadfast', status),
+          (await this.steadfastAuthHint(status)),
         orderId: order.id,
       });
     } else {
@@ -827,7 +883,7 @@ export class CourierManagerService {
       failure = new CourierDispatchError({
         courier: 'steadfast',
         status,
-        message: base + authHint('steadfast', status),
+        message: base + (await this.steadfastAuthHint(status)),
         errors,
         orderId: order.id,
       });
@@ -1828,10 +1884,14 @@ export class CourierManagerService {
     return { success: true, message: data['message'] ?? 'Cancellation confirmed' };
   }
 
-  async getSteadfastBalance(): Promise<{ current_balance: number }> {
-    const creds = await this.getCreds('steadfast');
-    const apiKey = creds.apiKey || creds.credentials?.['apiKey'];
-    const secretKey = creds.secretKey || creds.credentials?.['secretKey'];
+  async getSteadfastBalance(opts?: {
+    credentialSetId?: string | null;
+  }): Promise<{ current_balance: number }> {
+    // Task 8: balance resolves the override set or the default (no record
+    // context on a global read) — never the wrong profile silently.
+    const { apiKey, secretKey } = await this.resolveSteadfastAuth({
+      overrideSetId: opts?.credentialSetId,
+    });
     if (!apiKey || !secretKey)
       throw new BadRequestException('Steadfast API key/secret not configured');
 
@@ -1857,10 +1917,14 @@ export class CourierManagerService {
    */
   async getSteadfastReturnStatus(
     consignmentId: string,
+    opts?: { credentialSetId?: string | null },
   ): Promise<{ deliveryStatus: string }> {
-    const creds = await this.getCreds('steadfast');
-    const apiKey = creds.apiKey || creds.credentials?.['apiKey'];
-    const secretKey = creds.secretKey || creds.credentials?.['secretKey'];
+    // Task 8: return-status resolves the BOOKING set from the dispatch
+    // record (override wins when given) — never the current default.
+    const { apiKey, secretKey } = await this.resolveSteadfastAuth({
+      overrideSetId: opts?.credentialSetId,
+      consignmentId,
+    });
     if (!apiKey || !secretKey)
       throw new BadRequestException('Steadfast API key/secret not configured');
 
@@ -1889,10 +1953,14 @@ export class CourierManagerService {
     invoice?: string;
     tracking_code?: string;
     reason?: string;
+    credentialSetId?: string | null;
   }) {
-    const creds = await this.getCreds('steadfast');
-    const apiKey = creds.apiKey || creds.credentials?.['apiKey'];
-    const secretKey = creds.secretKey || creds.credentials?.['secretKey'];
+    // Task 8: return-request resolves the booking set from the record when
+    // the consignment is known (override wins when given).
+    const { apiKey, secretKey } = await this.resolveSteadfastAuth({
+      overrideSetId: params.credentialSetId,
+      consignmentId: params.consignment_id,
+    });
     if (!apiKey || !secretKey)
       throw new BadRequestException('Steadfast API key/secret not configured');
 
@@ -1914,10 +1982,13 @@ export class CourierManagerService {
     });
   }
 
-  async getSteadfastReturnRequest(id: string) {
-    const creds = await this.getCreds('steadfast');
-    const apiKey = creds.apiKey || creds.credentials?.['apiKey'];
-    const secretKey = creds.secretKey || creds.credentials?.['secretKey'];
+  async getSteadfastReturnRequest(
+    id: string,
+    opts?: { credentialSetId?: string | null },
+  ) {
+    const { apiKey, secretKey } = await this.resolveSteadfastAuth({
+      overrideSetId: opts?.credentialSetId,
+    });
     if (!apiKey || !secretKey)
       throw new BadRequestException('Steadfast API key/secret not configured');
 
@@ -1932,10 +2003,12 @@ export class CourierManagerService {
     });
   }
 
-  async getSteadfastReturnRequests() {
-    const creds = await this.getCreds('steadfast');
-    const apiKey = creds.apiKey || creds.credentials?.['apiKey'];
-    const secretKey = creds.secretKey || creds.credentials?.['secretKey'];
+  async getSteadfastReturnRequests(opts?: {
+    credentialSetId?: string | null;
+  }) {
+    const { apiKey, secretKey } = await this.resolveSteadfastAuth({
+      overrideSetId: opts?.credentialSetId,
+    });
     if (!apiKey || !secretKey)
       throw new BadRequestException('Steadfast API key/secret not configured');
 
@@ -1950,10 +2023,12 @@ export class CourierManagerService {
     });
   }
 
-  async getSteadfastPayments() {
-    const creds = await this.getCreds('steadfast');
-    const apiKey = creds.apiKey || creds.credentials?.['apiKey'];
-    const secretKey = creds.secretKey || creds.credentials?.['secretKey'];
+  async getSteadfastPayments(opts?: {
+    credentialSetId?: string | null;
+  }) {
+    const { apiKey, secretKey } = await this.resolveSteadfastAuth({
+      overrideSetId: opts?.credentialSetId,
+    });
     if (!apiKey || !secretKey)
       throw new BadRequestException('Steadfast API key/secret not configured');
 
@@ -1968,10 +2043,13 @@ export class CourierManagerService {
     });
   }
 
-  async getSteadfastPaymentWithConsignments(paymentId: string) {
-    const creds = await this.getCreds('steadfast');
-    const apiKey = creds.apiKey || creds.credentials?.['apiKey'];
-    const secretKey = creds.secretKey || creds.credentials?.['secretKey'];
+  async getSteadfastPaymentWithConsignments(
+    paymentId: string,
+    opts?: { credentialSetId?: string | null },
+  ) {
+    const { apiKey, secretKey } = await this.resolveSteadfastAuth({
+      overrideSetId: opts?.credentialSetId,
+    });
     if (!apiKey || !secretKey)
       throw new BadRequestException('Steadfast API key/secret not configured');
 
@@ -1986,10 +2064,12 @@ export class CourierManagerService {
     });
   }
 
-  async getSteadfastPoliceStations() {
-    const creds = await this.getCreds('steadfast');
-    const apiKey = creds.apiKey || creds.credentials?.['apiKey'];
-    const secretKey = creds.secretKey || creds.credentials?.['secretKey'];
+  async getSteadfastPoliceStations(opts?: {
+    credentialSetId?: string | null;
+  }) {
+    const { apiKey, secretKey } = await this.resolveSteadfastAuth({
+      overrideSetId: opts?.credentialSetId,
+    });
     if (!apiKey || !secretKey)
       throw new BadRequestException('Steadfast API key/secret not configured');
 
@@ -2004,10 +2084,16 @@ export class CourierManagerService {
     });
   }
 
-  async bulkCreateSteadfastOrders(orders: any[]) {
-    const creds = await this.getCreds('steadfast');
-    const apiKey = creds.apiKey || creds.credentials?.['apiKey'];
-    const secretKey = creds.secretKey || creds.credentials?.['secretKey'];
+  async bulkCreateSteadfastOrders(
+    orders: any[],
+    opts?: { credentialSetId?: string | null },
+  ) {
+    // Task 8: bulk resolves ONE profile upfront (override → default →
+    // legacy); per-entry booking rows below store the same booking set id.
+    const { apiKey, secretKey, setId: bulkSetId } =
+      await this.resolveSteadfastAuth({
+        overrideSetId: opts?.credentialSetId,
+      });
     if (!apiKey || !secretKey)
       throw new BadRequestException('Steadfast API key/secret not configured');
 
@@ -2122,7 +2208,7 @@ export class CourierManagerService {
           status: res.status,
           message:
             `Steadfast bulk: ${parsed ? String(parsed['message'] || 'request rejected') : (redactSecrets(rawBody) || '(empty response body)').slice(0, 500)}` +
-            authHint('steadfast', res.status),
+            (await this.steadfastAuthHint(res.status)),
           errors:
             parsed && typeof parsed['errors'] === 'object' && parsed['errors'] !== null
               ? { ...(parsed['errors'] as Record<string, unknown>) }
@@ -2212,6 +2298,8 @@ export class CourierManagerService {
                 trackingCode,
                 trackingUrl,
                 status: 'DISPATCHED',
+                // Task 8: bulk booking set id (null = legacy default).
+                ...{ credentialSetId: bulkSetId },
                 // Persist the amount actually sent as cod_amount for this
                 // invoice's order (Feature A). Resolved from the input orders
                 // (which carry payments); missing ⇒ omitted, never 0.

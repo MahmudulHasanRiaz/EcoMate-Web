@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Patch, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, Optional } from '@nestjs/common';
 import { CourierManagerService } from './courier-manager.service';
 import { CourierTrackingService } from './courier-tracking.service';
 import { CourierWebhookService } from './courier-webhook.service';
@@ -9,6 +9,7 @@ import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 import { WebhookAttemptOutcome } from '@prisma/client';
 import { CancelCarrybeeOrderDto } from './dto/cancel-carrybee-order.dto';
+import type { SteadfastCredentialSetsService } from './steadfast-credential-sets.service';
 
 @Roles('superadmin', 'admin', 'employee')
 @Controller('couriers')
@@ -20,7 +21,13 @@ export class CourierManagerController {
     private readonly prisma: PrismaService,
     private readonly webhookAttempts: WebhookAttemptService,
     private readonly webhooks: CourierWebhookService,
+    @Optional() private readonly sets?: SteadfastCredentialSetsService,
   ) {}
+
+  private requireSets(): SteadfastCredentialSetsService {
+    if (!this.sets) throw new Error('Credential sets not available');
+    return this.sets;
+  }
 
   @Get('credentials')
   async listCredentials() {
@@ -136,9 +143,12 @@ export class CourierManagerController {
   @Post('dispatch/:courier')
   async dispatch(
     @Param('courier') courier: string,
-    @Body() dto: { orderIds: string[] },
+    @Body() dto: { orderIds: string[]; credentialSetId?: string },
   ) {
-    return this.svc.dispatch(courier, dto.orderIds);
+    // Task 8: steadfast order-level override (picker shows iff >1 set).
+    return this.svc.dispatch(courier, dto.orderIds, {
+      credentialSetId: dto.credentialSetId ?? null,
+    });
   }
 
   @Get('dispatch-logs')
@@ -200,9 +210,49 @@ export class CourierManagerController {
     return { received: true };
   }
 
+  // ── Task 8: Steadfast hybrid credential sets (labels only — keys NEVER
+  // shown; list meta carries hasApiKey/hasSecret/hasWebhook flags only). ──
+  @Get('credential-sets')
+  async listCredentialSets() {
+    return this.requireSets().listSets();
+  }
+
+  @Post('credential-sets')
+  async createCredentialSet(
+    @Body()
+    dto: {
+      label: string;
+      apiKey: string;
+      secretKey: string;
+      webhookSecret?: string;
+      isDefault?: boolean;
+    },
+  ) {
+    return this.requireSets().createSet(dto);
+  }
+
+  @Put('credential-sets/:id')
+  async updateCredentialSet(
+    @Param('id') id: string,
+    @Body()
+    dto: { label?: string; apiKey?: string; secretKey?: string; webhookSecret?: string },
+  ) {
+    return this.requireSets().updateSet(id, dto);
+  }
+
+  @Delete('credential-sets/:id')
+  async deleteCredentialSet(@Param('id') id: string) {
+    return this.requireSets().deleteSet(id);
+  }
+
+  @Post('credential-sets/:id/make-default')
+  async makeCredentialSetDefault(@Param('id') id: string) {
+    return this.requireSets().setDefault(id);
+  }
+
   @Get('steadfast/balance')
-  async getSteadfastBalance() {
-    return this.svc.getSteadfastBalance();
+  async getSteadfastBalance(@Query('setId') setId?: string) {
+    return this.svc.getSteadfastBalance({ credentialSetId: setId ?? null });
   }
 
   /**
@@ -226,38 +276,41 @@ export class CourierManagerController {
       invoice?: string;
       tracking_code?: string;
       reason?: string;
+      credentialSetId?: string;
     },
   ) {
     return this.svc.createSteadfastReturnRequest(dto);
   }
 
   @Get('steadfast/return/:id')
-  async getSteadfastReturn(@Param('id') id: string) {
-    return this.svc.getSteadfastReturnRequest(id);
+  async getSteadfastReturn(@Param('id') id: string, @Query('setId') setId?: string) {
+    return this.svc.getSteadfastReturnRequest(id, { credentialSetId: setId ?? null });
   }
 
   @Get('steadfast/returns')
-  async getSteadfastReturns() {
-    return this.svc.getSteadfastReturnRequests();
+  async getSteadfastReturns(@Query('setId') setId?: string) {
+    return this.svc.getSteadfastReturnRequests({ credentialSetId: setId ?? null });
   }
 
   @Get('steadfast/payments')
-  async getSteadfastPayments() {
-    return this.svc.getSteadfastPayments();
+  async getSteadfastPayments(@Query('setId') setId?: string) {
+    return this.svc.getSteadfastPayments({ credentialSetId: setId ?? null });
   }
 
   @Get('steadfast/payment/:id')
-  async getSteadfastPayment(@Param('id') id: string) {
-    return this.svc.getSteadfastPaymentWithConsignments(id);
+  async getSteadfastPayment(@Param('id') id: string, @Query('setId') setId?: string) {
+    return this.svc.getSteadfastPaymentWithConsignments(id, { credentialSetId: setId ?? null });
   }
 
   @Get('steadfast/police-stations')
-  async getSteadfastPoliceStations() {
-    return this.svc.getSteadfastPoliceStations();
+  async getSteadfastPoliceStations(@Query('setId') setId?: string) {
+    return this.svc.getSteadfastPoliceStations({ credentialSetId: setId ?? null });
   }
 
   @Post('steadfast/bulk')
-  async bulkCreateSteadfastOrders(@Body() dto: { orderIds: string[] }) {
+  async bulkCreateSteadfastOrders(
+    @Body() dto: { orderIds: string[]; credentialSetId?: string },
+  ) {
     const orders = await this.prisma.order.findMany({
       where: { id: { in: dto.orderIds } },
       include: {
@@ -272,7 +325,9 @@ export class CourierManagerController {
         payments: true,
       },
     });
-    return this.svc.bulkCreateSteadfastOrders(orders);
+    return this.svc.bulkCreateSteadfastOrders(orders, {
+      credentialSetId: dto.credentialSetId ?? null,
+    });
   }
 
   @Get('redx/parcel/:trackingId')
@@ -326,12 +381,21 @@ export class CourierManagerController {
       creds.map((c) => [c.courier, !!c.webhookSecret?.trim()]),
     );
     const redxEnv = !!process.env['REDX_WEBHOOK_SECRET']?.trim();
+    // Task 8: steadfast counts as configured when the legacy secret OR any
+    // credential set carries a webhook token.
+    let steadfastSetsConfigured = false;
+    if (this.sets) {
+      const sets = await this.sets.listSets().catch(() => []);
+      steadfastSetsConfigured = sets.some((s: any) => s.hasWebhook);
+    }
     const status: Record<string, { configured: boolean }> = {};
     for (const courier of ['steadfast', 'pathao', 'redx', 'carrybee']) {
       status[courier] = {
         configured: courier === 'redx'
           ? (hasSecret.get('redx') || redxEnv)
-          : !!hasSecret.get(courier),
+          : courier === 'steadfast'
+            ? (!!hasSecret.get('steadfast') || steadfastSetsConfigured)
+            : !!hasSecret.get(courier),
       };
     }
     return status;

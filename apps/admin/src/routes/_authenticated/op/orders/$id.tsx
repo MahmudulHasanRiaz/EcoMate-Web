@@ -15,6 +15,7 @@ import { ordersApi, rtnApi, mediaUrl } from '@/features/orders/api'
 import { ReturnOrderDialog } from '@/features/orders/components/return-order-dialog'
 
 import { CourierCustomerHistoryCard } from '@/features/orders/courier-customer-history-card'
+import { SteadfastSetPicker } from '@/features/dispatch/steadfast-set-picker'
 import { CodMismatchBanner } from '@/features/orders/components/cod-mismatch-banner'
 import { PaymentLedgerCard } from '@/features/orders/components/payment-ledger-card'
 import { RecordPaymentModal } from '@/features/orders/components/record-payment-modal'
@@ -176,6 +177,8 @@ function OrderDetailPage() {
   // ── Dispatch ─────────────────────────────────────────────────────
   const [showDispatchDialog, setShowDispatchDialog] = useState(false)
   const [dispatchCourier, setDispatchCourier] = useState('')
+  // Task 8: steadfast order-level account override (picker shows iff >1 set).
+  const [dispatchSetId, setDispatchSetId] = useState('')
 
   // ── RTN (return order) ─────────────────────────────────────────────
   const { data: rtnOrder } = useQuery({
@@ -269,7 +272,7 @@ function OrderDetailPage() {
   })
 
   const dispatchMut = useMutation({
-    mutationFn: ({ courier, orderId }: { courier: string; orderId: string }) => apiClient.post(`/couriers/dispatch/${courier}`, { orderIds: [orderId] }),
+    mutationFn: ({ courier, orderId, credentialSetId }: { courier: string; orderId: string; credentialSetId?: string }) => apiClient.post(`/couriers/dispatch/${courier}`, { orderIds: [orderId], ...(credentialSetId ? { credentialSetId } : {}) }),
     onSuccess: (res) => {
       const results = (res as any)?.data as any[] || []
       const succeeded = results.filter((r: any) => r.ok)
@@ -279,7 +282,7 @@ function OrderDetailPage() {
       if (failed.length > 0) toast.error(formatCourierDispatchToast(failed[0] || { message: 'Dispatch failed' }), { duration: 8000 })
       if (succeeded.length > 0) {
         queryClient.invalidateQueries({ queryKey: ['order', id] })
-        setShowDispatchDialog(false); setDispatchCourier('')
+        setShowDispatchDialog(false); setDispatchCourier(''); setDispatchSetId('')
         toast.success('Order dispatched')
       }
     },
@@ -1931,20 +1934,23 @@ function OrderDetailPage() {
         </Dialog>
 
         {/* ── Dispatch Dialog ──────────────────────────────────── */}
-        <Dialog open={showDispatchDialog} onOpenChange={() => { setShowDispatchDialog(false); setDispatchCourier('') }}>
+        <Dialog open={showDispatchDialog} onOpenChange={() => { setShowDispatchDialog(false); setDispatchCourier(''); setDispatchSetId('') }}>
           <DialogContent>
             <DialogHeader><DialogTitle>Send to Courier</DialogTitle></DialogHeader>
             <div className='space-y-3 py-2'>
               <p className='text-sm text-muted-foreground'>Select a courier service to dispatch this order.</p>
               <div className='space-y-1'>
                 <Label>Courier</Label>
-                <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm' value={dispatchCourier} onChange={e => setDispatchCourier(e.target.value)}>
+                <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm' value={dispatchCourier} onChange={e => { setDispatchCourier(e.target.value); setDispatchSetId('') }}>
                   <option value=''>Select...</option>
                   {activeCouriers.map((c: any) => (
                     <option key={c.courier} value={c.courier}>{c.courier.charAt(0).toUpperCase() + c.courier.slice(1)}</option>
                   ))}
                 </select>
               </div>
+              {dispatchCourier === 'steadfast' && (
+                <SteadfastSetPicker value={dispatchSetId} onChange={setDispatchSetId} />
+              )}
               {(() => {
                 const due = getOrderDueAmount(order)
                 const paid = getOrderPaidAmount(order)
@@ -1969,8 +1975,8 @@ function OrderDetailPage() {
               })()}
             </div>
             <div className='flex justify-end gap-2'>
-              <Button variant='outline' onClick={() => { setShowDispatchDialog(false); setDispatchCourier('') }}>Cancel</Button>
-              <Button disabled={!dispatchCourier || dispatchMut.isPending} onClick={() => dispatchMut.mutate({ courier: dispatchCourier, orderId: id })}>
+              <Button variant='outline' onClick={() => { setShowDispatchDialog(false); setDispatchCourier(''); setDispatchSetId('') }}>Cancel</Button>
+              <Button disabled={!dispatchCourier || dispatchMut.isPending} onClick={() => dispatchMut.mutate({ courier: dispatchCourier, orderId: id, ...(dispatchCourier === 'steadfast' && dispatchSetId ? { credentialSetId: dispatchSetId } : {}) })}>
                 {dispatchMut.isPending ? <Loader2 className='h-4 w-4 animate-spin mr-1' /> : <Send className='h-4 w-4 mr-1' />}
                 Dispatch
               </Button>

@@ -5,6 +5,8 @@ import { CourierWebhookController } from './courier-webhook.controller';
 import { CourierWebhookService } from './courier-webhook.service';
 import { CourierTrackingService } from './courier-tracking.service';
 import { CourierTokenService } from './courier-token.service';
+import { SteadfastCredentialSetsService } from './steadfast-credential-sets.service';
+import { EncryptionService } from '../common/utils/encryption';
 import { CourierCustomerHistoryController } from './courier-customer-history.controller';
 import { CourierCustomerHistoryService } from './courier-customer-history.service';
 import { WebhookAttemptService } from './webhook-attempt.service';
@@ -14,8 +16,8 @@ import { OrdersModule } from '../orders/orders.module';
 
 @Module({
   controllers: [CourierManagerController, CourierWebhookController, CourierCustomerHistoryController],
-  providers: [CourierManagerService, CourierWebhookService, CourierTrackingService, CourierTokenService, CourierCustomerHistoryService, WebhookAttemptService, WebhookRateLimitCaptureMiddleware, WebhookRawBodyCapture],
-  exports: [CourierManagerService, CourierWebhookService, CourierTrackingService, CourierCustomerHistoryService, WebhookAttemptService],
+  providers: [CourierManagerService, CourierWebhookService, CourierTrackingService, CourierTokenService, CourierCustomerHistoryService, WebhookAttemptService, WebhookRateLimitCaptureMiddleware, WebhookRawBodyCapture, EncryptionService, SteadfastCredentialSetsService],
+  exports: [CourierManagerService, CourierWebhookService, CourierTrackingService, CourierCustomerHistoryService, WebhookAttemptService, SteadfastCredentialSetsService],
   imports: [forwardRef(() => OrdersModule)],
 })
 export class CourierManagerModule implements NestModule {
