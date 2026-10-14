@@ -42,4 +42,11 @@ describe('courier settlement — Task 5 settle exclusion (classification)', () =
   it('confirmed delivered still classifies as DELIVERY (no over-blocking)', () => {
     expect(resolveRowKind('delivered', steadfastKinds)).toBe('DELIVERY');
   });
+
+  it('confirmed partial_delivered classifies as DELIVERY (real collected money books)', () => {
+    for (const provider of ['steadfast', 'carrybee', 'pathao'] as const) {
+      const kinds = getDescriptor(provider).kindMap;
+      expect(resolveRowKind('partial_delivered', kinds)).toBe('DELIVERY');
+    }
+  });
 });

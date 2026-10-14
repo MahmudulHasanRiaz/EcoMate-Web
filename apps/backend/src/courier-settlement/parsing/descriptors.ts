@@ -105,6 +105,7 @@ export const PROVIDERS: ProviderDescriptor[] = [
     kindHeader: 'Invoice type',
     kindMap: {
       delivery: 'DELIVERY',
+      partial_delivered: 'DELIVERY',
       insta_fee: 'FEE_ONLY',
       return: 'RETURN',
       'return request': 'RETURN',
@@ -143,6 +144,7 @@ export const PROVIDERS: ProviderDescriptor[] = [
     kindHeader: 'Delivery Status',
     kindMap: {
       delivered: 'DELIVERY',
+      partial_delivered: 'DELIVERY',
       returned: 'RETURN',
       return: 'RETURN',
       cancelled: 'UNKNOWN',
@@ -217,6 +219,7 @@ export const PROVIDERS: ProviderDescriptor[] = [
     kindHeader: 'Delivery_status',
     kindMap: {
       delivered: 'DELIVERY',
+      partial_delivered: 'DELIVERY',
       returned: 'RETURN',
       returned_rto: 'RETURN',
       cancelled: 'UNKNOWN',

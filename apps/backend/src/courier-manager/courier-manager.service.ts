@@ -12,7 +12,6 @@ import {
 import {
   COURIER_FIELD_LIMITS,
   sanitizeCourierText,
-  normalizeCourierKey,
 } from './courier-settle-guard';
 
 const BASE_URLS: Record<string, Record<string, string>> = {

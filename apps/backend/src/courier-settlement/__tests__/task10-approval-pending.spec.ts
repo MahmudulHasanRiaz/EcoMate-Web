@@ -2,6 +2,8 @@ import { expectedCod } from '../economics';
 import { sanitizeCourierText } from '../../courier-manager/courier-settle-guard';
 import { CodMismatchService } from '../../cod-mismatch/cod-mismatch.service';
 import { CourierSettlementImportService } from '../courier-settlement-import.service';
+import { resolveRowKind } from '../parsing/helpers';
+import { getDescriptor } from '../parsing/descriptors';
 
 /**
  * Task 10 — approval_pending exclusion in all three surfaces
@@ -166,5 +168,67 @@ describe('Task 10 — settlement booking skips non-DELIVERY rows', () => {
     await (svc as any).bookSettlementPayments(tx, 'inv-1', 'steadfast', prepared);
     expect(created).toHaveLength(1);
     expect(created[0]).toMatchObject({ orderId: 'o1', amount: 770, status: 'PAID' });
+  });
+
+  it('a partial_delivered row with collected>0 books a REAL payment row', async () => {
+    const kinds = getDescriptor('steadfast').kindMap;
+    const rowKind = resolveRowKind('partial_delivered', kinds);
+    expect(rowKind).toBe('DELIVERY');
+    const svc = Object.create(CourierSettlementImportService.prototype);
+    (svc as any).credit = null;
+    const created: any[] = [];
+    const tx: any = {
+      payment: {
+        findMany: jest.fn().mockResolvedValue([]),
+        create: jest.fn().mockImplementation(async ({ data }: any) => {
+          const row = { id: `pay-${created.length + 1}`, ...data };
+          created.push(row);
+          return row;
+        }),
+      },
+      order: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const prepared: any = {
+      rowRecords: [{ row: { rowClass: 'DATA', rowKind, effectiveCollected: 500 }, match: { orderId: 'o1' } }],
+    };
+    await (svc as any).bookSettlementPayments(tx, 'inv-1', 'steadfast', prepared);
+    expect(created).toHaveLength(1);
+    expect(created[0]).toMatchObject({ orderId: 'o1', amount: 500, status: 'PAID' });
+  });
+
+  it('approval_pending rows resolve NON-bookable and skip booking', async () => {
+    const kinds = getDescriptor('steadfast').kindMap;
+    for (const status of ['delivered_approval_pending', 'partial_delivered_approval_pending']) {
+      expect(resolveRowKind(status, kinds)).not.toBe('DELIVERY');
+    }
+    const svc = Object.create(CourierSettlementImportService.prototype);
+    (svc as any).credit = null;
+    const created: any[] = [];
+    const tx: any = {
+      payment: {
+        findMany: jest.fn().mockResolvedValue([]),
+        create: jest.fn().mockImplementation(async ({ data }: any) => {
+          const row = { id: `pay-${created.length + 1}`, ...data };
+          created.push(row);
+          return row;
+        }),
+      },
+      order: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const prepared: any = {
+      rowRecords: [
+        {
+          row: {
+            rowClass: 'DATA',
+            rowKind: resolveRowKind('partial_delivered_approval_pending', kinds),
+            effectiveCollected: 500,
+          },
+          match: { orderId: 'o1' },
+        },
+      ],
+    };
+    await (svc as any).bookSettlementPayments(tx, 'inv-1', 'steadfast', prepared);
+    expect(created).toHaveLength(0);
+    expect(tx.payment.create).not.toHaveBeenCalled();
   });
 });
