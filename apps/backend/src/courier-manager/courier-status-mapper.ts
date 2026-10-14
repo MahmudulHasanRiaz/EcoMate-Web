@@ -85,11 +85,16 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     'order.updated': null,
     'order.pickup-requested': null,
     'order.assigned-for-pickup': null,
-    'order.pickup-failed': null,
+    // Task 3 (owner-locked F7): pickup-failed is a real PICKUP_FAILED
+    // workflow state (record attempt + reason + alert, order Shipping) —
+    // never the skip path. delivery-failed stays record-only (null).
+    'order.pickup-failed': 'PICKUP_FAILED',
     'order.picked': 'PICKED_UP',
     'order.at-the-sorting-hub': 'IN_TRANSIT',
     'order.in-transit': 'IN_TRANSIT',
-    'order.received-at-last-mile-hub': 'ASSIGNED_TO_RIDER',
+    // Task 3 (owner-locked F7): last-mile-hub is its own ASSIGNED_TO_HUB
+    // state — ASSIGNED_TO_RIDER is ONLY for assigned-for-delivery.
+    'order.received-at-last-mile-hub': 'ASSIGNED_TO_HUB',
     'order.assigned-for-delivery': 'ASSIGNED_TO_RIDER',
     'order.delivery-failed': null,
     'order.delivered': 'DELIVERED',
@@ -115,15 +120,17 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     'assigned for pickup': null,
     // 'assigned for delivery' → ASSIGNED_TO_RIDER, NOT the `deliver` keyword.
     'assigned for delivery': 'ASSIGNED_TO_RIDER',
-    // 'pickup failed' / 'delivery failed' are "skip" statuses like their
-    // webhook equivalents; the generic /fail|error/ guard below covers them,
-    // listed here explicitly so the intent is visible.
-    'pickup failed': null,
+    // Task 3 (owner-locked F7): 'pickup failed' is the PICKUP_FAILED state
+    // (mirrors 'order.pickup-failed'); 'delivery failed' stays record-only.
+    // The generic /fail|error/ guard below covers any other failure label.
+    'pickup failed': 'PICKUP_FAILED',
+    'pickup-failed': 'PICKUP_FAILED',
     'delivery failed': null,
     'payment invoice': null,
     'at the sorting hub': 'IN_TRANSIT',
     'in transit': 'IN_TRANSIT',
-    'received at last mile hub': 'ASSIGNED_TO_RIDER',
+    // Task 3 (owner-locked F7): hub state, NOT the rider state.
+    'received at last mile hub': 'ASSIGNED_TO_HUB',
     'partial delivery': 'PARTIAL',
     'on hold': 'HOLD',
     delivered: 'DELIVERED',
@@ -171,13 +178,17 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     'order.updated': null,
     'order.pickup-requested': null,
     'order.assigned-for-pickup': null,
-    'order.pickup-failed': null,
+    // Task 3 (owner-locked F7): pickup-failed → PICKUP_FAILED (same as
+    // Pathao); delivery-failed stays record-only (null).
+    'order.pickup-failed': 'PICKUP_FAILED',
     'order.picked': 'PICKED_UP',
     'order.at-the-sorting-hub': 'IN_TRANSIT',
     'order.on-the-way-to-central-warehouse': 'IN_TRANSIT',
     'order.at-central-warehouse': 'IN_TRANSIT',
     'order.in-transit': 'IN_TRANSIT',
-    'order.received-at-last-mile-hub': 'ASSIGNED_TO_RIDER',
+    // Task 3 (owner-locked F7): hub state — ASSIGNED_TO_RIDER is ONLY for
+    // assigned-for-delivery.
+    'order.received-at-last-mile-hub': 'ASSIGNED_TO_HUB',
     'order.assigned-for-delivery': 'ASSIGNED_TO_RIDER',
     'order.delivery-on-hold': 'HOLD',
     'order.delivery-failed': null,
@@ -195,6 +206,11 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     'paid': 'DELIVERED',
     'order.create-failed': 'CANCELLED',
     'order.pickup-cancelled': 'CANCELLED',
+    // Task 3 (owner-locked F7): plain tracking-API failure labels (Pathao
+    // vocabulary mirror) — pickup-failed is the PICKUP_FAILED state;
+    // delivery-failed stays record-only via the /fail|error/ guard below.
+    'pickup-failed': 'PICKUP_FAILED',
+    'pickup failed': 'PICKUP_FAILED',
   },
 };
 
@@ -203,9 +219,12 @@ const COURIER_TRACKING_STATUS_MAP: Record<
  * Ordering matters: more specific keywords must be tested first
  * ("partial" before "deliver", "returned" before "return").
  *
- * Any "failed/error" label is deliberately excluded before fallback: the
- * webhooks map delivery/pickup failures to null (skip), and a failed
- * consignment must never be promoted to DELIVERED/PICKED_UP.
+ * Any "failed/error" label NOT in the exact maps above is deliberately
+ * excluded before fallback: the webhooks map delivery failures to null
+ * (skip), and a failed consignment must never be promoted to
+ * DELIVERED/PICKED_UP. (Task 3 owner-locked exception: exact-mapped
+ * pickup-failed → PICKUP_FAILED returns from the exact map above, before
+ * this guard runs.)
  */
 const KEYWORD_RULES: Array<{ match: RegExp; status: DispatchStatus }> = [
   { match: /partial/i, status: 'PARTIAL' },

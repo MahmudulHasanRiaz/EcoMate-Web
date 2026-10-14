@@ -1461,6 +1461,13 @@ enum DispatchStatus {
   PICKED_UP
   IN_TRANSIT
   ASSIGNED_TO_RIDER
+  // Task 3 / Fix 7 (courier FINAL follow-up, owner-locked): pickup-failed
+  // (Pathao + Carrybee) → record attempt + reason + alert, order Shipping;
+  // staff can retry/update the same dispatch.
+  PICKUP_FAILED
+  // Task 3 / Fix 7: received-at-last-mile-hub (Pathao + Carrybee) → order
+  // Shipping. ASSIGNED_TO_RIDER is ONLY for assigned-for-delivery.
+  ASSIGNED_TO_HUB
   HOLD
   DELIVERED
   PARTIAL

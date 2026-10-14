@@ -51,14 +51,16 @@ describe('mapCourierStatusToDispatchStatus', () => {
     expect(mapCourierStatusToDispatchStatus('pathao', 'Pickup Requested')).toBeNull();
     expect(mapCourierStatusToDispatchStatus('pathao', 'At the Sorting Hub')).toBe('IN_TRANSIT');
     expect(mapCourierStatusToDispatchStatus('pathao', 'In Transit')).toBe('IN_TRANSIT');
-    expect(mapCourierStatusToDispatchStatus('pathao', 'Received at Last Mile Hub')).toBe('ASSIGNED_TO_RIDER');
+    expect(mapCourierStatusToDispatchStatus('pathao', 'Received at Last Mile Hub')).toBe('ASSIGNED_TO_HUB');
     expect(mapCourierStatusToDispatchStatus('pathao', 'Partial Delivery')).toBe('PARTIAL');
     expect(mapCourierStatusToDispatchStatus('pathao', 'On Hold')).toBe('HOLD');
     expect(mapCourierStatusToDispatchStatus('pathao', 'Return')).toBe('RETURN_PENDING');
     expect(mapCourierStatusToDispatchStatus('pathao', 'Paid Return')).toBe('RETURN_PENDING');
     expect(mapCourierStatusToDispatchStatus('pathao', 'Exchange')).toBe('DELIVERED');
-    // Skip labels from the info vocabulary never get promoted.
-    expect(mapCourierStatusToDispatchStatus('pathao', 'Pickup Failed')).toBeNull();
+    // Task 3 (owner-locked F7): pickup-failed is a real workflow state
+    // (PICKUP_FAILED), delivery-failed stays record-only (null).
+    expect(mapCourierStatusToDispatchStatus('pathao', 'Pickup Failed')).toBe('PICKUP_FAILED');
+    expect(mapCourierStatusToDispatchStatus('carrybee', 'Pickup Failed')).toBe('PICKUP_FAILED');
     expect(mapCourierStatusToDispatchStatus('pathao', 'Delivery Failed')).toBeNull();
     expect(mapCourierStatusToDispatchStatus('pathao', 'Payment Invoice')).toBeNull();
     expect(mapCourierStatusToDispatchStatus('pathao', 'Pending')).toBe('DISPATCHED');
@@ -68,11 +70,12 @@ describe('mapCourierStatusToDispatchStatus', () => {
 
   it('webhook-skip statuses map to null (never promoted by keyword fallback)', () => {
     // Pathao/Carrybee webhooks explicitly map these to null ("skip").
+    // Task 3 (owner-locked F7): order.pickup-failed is NOT skip anymore — it
+    // is a real PICKUP_FAILED workflow state (asserted here + below).
     const skipLabels = [
       'order.updated',
       'order.pickup-requested',
       'order.assigned-for-pickup',
-      'order.pickup-failed',
       'order.delivery-failed',
     ];
     for (const label of skipLabels) {
@@ -80,11 +83,32 @@ describe('mapCourierStatusToDispatchStatus', () => {
       expect(mapCourierStatusToDispatchStatus('carrybee', label)).toBeNull();
     }
     // Plain (non event-prefixed) failure labels from tracking timelines must
-    // never collide with `deliver`/`pickup` keyword rules.
+    // never collide with `deliver`/`pickup` keyword rules. delivery-failed
+    // stays record-only; pickup-failed is the PICKUP_FAILED state.
     expect(mapCourierStatusToDispatchStatus('pathao', 'delivery-failed')).toBeNull();
-    expect(mapCourierStatusToDispatchStatus('pathao', 'pickup failed')).toBeNull();
+    expect(mapCourierStatusToDispatchStatus('pathao', 'pickup failed')).toBe('PICKUP_FAILED');
     expect(mapCourierStatusToDispatchStatus('carrybee', 'Delivery Failed')).toBeNull();
+    expect(mapCourierStatusToDispatchStatus('carrybee', 'pickup-failed')).toBe('PICKUP_FAILED');
     expect(mapCourierStatusToDispatchStatus('redx', 'delivery-failed')).toBeNull();
+  });
+
+  // Task 3 (owner-locked F7): pickup-failed → PICKUP_FAILED (Pathao +
+  // Carrybee, event + plain labels); received-at-last-mile-hub →
+  // ASSIGNED_TO_HUB; ASSIGNED_TO_RIDER is ONLY for assigned-for-delivery.
+  it('maps pickup-failed → PICKUP_FAILED and last-mile-hub → ASSIGNED_TO_HUB', () => {
+    for (const courier of ['pathao', 'carrybee']) {
+      expect(mapCourierStatusToDispatchStatus(courier, 'order.pickup-failed')).toBe('PICKUP_FAILED');
+      expect(mapCourierStatusToDispatchStatus(courier, 'order.received-at-last-mile-hub')).toBe('ASSIGNED_TO_HUB');
+      expect(mapCourierStatusToDispatchStatus(courier, 'order.assigned-for-delivery')).toBe('ASSIGNED_TO_RIDER');
+      // delivery-failed stays record-only (never a workflow state).
+      expect(mapCourierStatusToDispatchStatus(courier, 'order.delivery-failed')).toBeNull();
+    }
+    // ASSIGNED_TO_RIDER producers for pathao/carrybee: assigned-for-delivery
+    // ONLY — hub + pickup-failed must never yield it.
+    expect(mapCourierStatusToDispatchStatus('pathao', 'order.received-at-last-mile-hub')).not.toBe('ASSIGNED_TO_RIDER');
+    expect(mapCourierStatusToDispatchStatus('pathao', 'order.pickup-failed')).not.toBe('ASSIGNED_TO_RIDER');
+    expect(mapCourierStatusToDispatchStatus('carrybee', 'order.received-at-last-mile-hub')).not.toBe('ASSIGNED_TO_RIDER');
+    expect(mapCourierStatusToDispatchStatus('carrybee', 'order.pickup-failed')).not.toBe('ASSIGNED_TO_RIDER');
   });
 
   it('steadfast "unknown" maps to null + alert (never CANCELLED)', () => {

@@ -78,6 +78,10 @@ const DISPATCH_TO_ORDER_STATUS: Record<string, string | null> = {
   IN_TRANSIT: 'Shipping',
   HOLD: 'Shipping',
   ASSIGNED_TO_RIDER: 'Shipping',
+  // Task 3 (owner-locked F7): pickup-failed + last-mile-hub keep the order
+  // at Shipping (never Delivered/Partial/Cancelled side effects).
+  PICKUP_FAILED: 'Shipping',
+  ASSIGNED_TO_HUB: 'Shipping',
   DELIVERED: 'Delivered',
   PARTIAL: 'Partial',
   RETURN_PENDING: 'Return Pending',
@@ -91,11 +95,16 @@ const PATHAO_DISPATCH_MAP: Record<string, string | null> = {
   'order.pickup-requested': null,
   'order.assigned-for-pickup': null,
   'order.picked': 'PICKED_UP',
-  'order.pickup-failed': null,
+  // Task 3 (owner-locked F7): pickup-failed is a real PICKUP_FAILED workflow
+  // state (record attempt + reason + alert, order Shipping); delivery-failed
+  // stays record-only (null).
+  'order.pickup-failed': 'PICKUP_FAILED',
   'order.pickup-cancelled': 'CANCELLED',
   'order.at-the-sorting-hub': 'IN_TRANSIT',
   'order.in-transit': 'IN_TRANSIT',
-  'order.received-at-last-mile-hub': 'ASSIGNED_TO_RIDER',
+  // Task 3 (owner-locked F7): hub state — ASSIGNED_TO_RIDER is ONLY for
+  // assigned-for-delivery.
+  'order.received-at-last-mile-hub': 'ASSIGNED_TO_HUB',
   'order.assigned-for-delivery': 'ASSIGNED_TO_RIDER',
   'order.delivered': 'DELIVERED',
   'order.partial-delivery': 'PARTIAL',
@@ -119,6 +128,9 @@ const PATHAO_DISPATCH_TO_ORDER: Record<string, string | null> = {
   IN_TRANSIT: 'Shipping',
   HOLD: 'Shipping',
   ASSIGNED_TO_RIDER: 'Shipping',
+  // Task 3 (owner-locked F7): failed-pickup + hub states keep Shipping.
+  PICKUP_FAILED: 'Shipping',
+  ASSIGNED_TO_HUB: 'Shipping',
   DELIVERED: 'Delivered',
   PARTIAL: 'Partial',
   RETURN_PENDING: 'Return Pending',
@@ -134,13 +146,18 @@ const CARRYBEE_DISPATCH_MAP: Record<string, string | null> = {
   'order.pickup-requested': null,
   'order.assigned-for-pickup': null,
   'order.picked': 'PICKED_UP',
-  'order.pickup-failed': null,
+  // Task 3 (owner-locked F7): pickup-failed is a real PICKUP_FAILED workflow
+  // state (record attempt + reason + alert, order Shipping); delivery-failed
+  // stays record-only (null).
+  'order.pickup-failed': 'PICKUP_FAILED',
   'order.pickup-cancelled': 'CANCELLED',
   'order.at-the-sorting-hub': 'IN_TRANSIT',
   'order.on-the-way-to-central-warehouse': 'IN_TRANSIT',
   'order.at-central-warehouse': 'IN_TRANSIT',
   'order.in-transit': 'IN_TRANSIT',
-  'order.received-at-last-mile-hub': 'ASSIGNED_TO_RIDER',
+  // Task 3 (owner-locked F7): hub state — ASSIGNED_TO_RIDER is ONLY for
+  // assigned-for-delivery.
+  'order.received-at-last-mile-hub': 'ASSIGNED_TO_HUB',
   'order.assigned-for-delivery': 'ASSIGNED_TO_RIDER',
   'order.delivery-on-hold': 'HOLD',
   'order.delivered': 'DELIVERED',
@@ -162,6 +179,9 @@ const CARRYBEE_DISPATCH_TO_ORDER: Record<string, string | null> = {
   IN_TRANSIT: 'Shipping',
   HOLD: 'Shipping',
   ASSIGNED_TO_RIDER: 'Shipping',
+  // Task 3 (owner-locked F7): failed-pickup + hub states keep Shipping.
+  PICKUP_FAILED: 'Shipping',
+  ASSIGNED_TO_HUB: 'Shipping',
   DELIVERED: 'Delivered',
   PARTIAL: 'Partial',
   RETURN_PENDING: 'Return Pending',
@@ -204,6 +224,10 @@ const REDX_DISPATCH_TO_ORDER: Record<string, string | null> = {
   IN_TRANSIT: 'Shipping',
   HOLD: 'Shipping',
   ASSIGNED_TO_RIDER: 'Shipping',
+  // Task 3 (owner-locked F7): completeness — RedX never emits these, but the
+  // states keep Shipping wherever they appear.
+  PICKUP_FAILED: 'Shipping',
+  ASSIGNED_TO_HUB: 'Shipping',
   DELIVERED: 'Delivered',
   PARTIAL: 'Partial',
   RETURN_PENDING: 'Return Pending',
@@ -717,7 +741,10 @@ export class CourierWebhookService {
     const hasProgress = await this.prisma.dispatch.findFirst({
       where: {
         orderId,
-        status: { in: ['HANDED_OVER', 'PICKED_UP', 'IN_TRANSIT', 'ASSIGNED_TO_RIDER', 'DELIVERED', 'PARTIAL'] },
+        // Task 3 (owner-locked F7): ASSIGNED_TO_HUB counts as progress (the
+        // parcel reached the last-mile hub → cancel becomes RETURN_PENDING);
+        // PICKUP_FAILED counts as NO progress (pickup never happened).
+        status: { in: ['HANDED_OVER', 'PICKED_UP', 'IN_TRANSIT', 'ASSIGNED_TO_HUB', 'ASSIGNED_TO_RIDER', 'DELIVERED', 'PARTIAL'] },
       },
     });
     return hasProgress ? 'RETURN_PENDING' : 'CANCELLED';
@@ -982,11 +1009,13 @@ export class CourierWebhookService {
     let dispatchStatus: string | null = PATHAO_DISPATCH_MAP[event] ?? null;
 
     if (!dispatchStatus) {
-      // Skip-statuses (order.updated, pickup-failed, delivery-failed, …):
+      // Skip-statuses (order.updated, delivery-failed, …):
       // persist the raw courier state so the Dispatch list "Courier Status"
       // column and the order reflect what really happened, but NEVER force a
       // workflow change (no CANCELLED, no RETURN_PENDING, no cancellation —
-      // these events carry no delivery outcome).
+      // these events carry no delivery outcome). Task 3 (owner-locked F7):
+      // order.pickup-failed is NOT skip anymore — it maps to PICKUP_FAILED
+      // above and rides the normal workflow path below.
       this.logger.log(`Pathao: ${consignmentId} event "${event}" → recorded, workflow unchanged`);
       await this.prisma.order.update({
         where: { id: order.id },
@@ -1044,6 +1073,11 @@ export class CourierWebhookService {
 
     const extra: Record<string, unknown> = {};
     if (body['reason']) extra.reason = body['reason'];
+    // Task 3 (owner-locked F7): pickup-failed attempt/agent details ride the
+    // timeline entry (staff alert surface) alongside the reason.
+    if (body['attempt'] != null) extra.attempt = body['attempt'];
+    if (body['agent_name']) extra.agent_name = body['agent_name'];
+    if (body['agent_phone']) extra.agent_phone = body['agent_phone'];
     const pathaoDefinite = this.definitePaidAmount(body);
     if (pathaoDefinite != null) extra.collected_amount = pathaoDefinite;
     if (body['return_type']) extra.return_type = body['return_type'];
@@ -1058,6 +1092,17 @@ export class CourierWebhookService {
     const orderStatusName = PATHAO_DISPATCH_TO_ORDER[dispatchStatus];
     if (orderStatusName) {
       await this.tryAdvanceOrderStatus(order.id, orderStatusName);
+    }
+
+    // Task 3 (owner-locked F7): pickup failure is staff-actionable — loud log
+    // (timeline entry above is the staff alert surface; the SAME dispatch row
+    // keeps PICKUP_FAILED so staff can retry/update it, never a new row).
+    if (event === 'order.pickup-failed') {
+      this.logger.warn(
+        `Pathao PICKUP FAILED: ${consignmentId} (order ${order.id}) — ` +
+          `reason: ${String(body['reason'] || 'unknown')}; ` +
+          `dispatch=PICKUP_FAILED order=${orderStatusName || '-'}; staff can retry/update the same dispatch`,
+      );
     }
 
     this.logger.log(`Pathao: ${consignmentId} → dispatch=${dispatchStatus} order=${orderStatusName || '-'}`);
@@ -1307,12 +1352,13 @@ export class CourierWebhookService {
 
     let dispatchStatus: string | null = CARRYBEE_DISPATCH_MAP[event] ?? null;
 
-    // Task 7 (owner-locked): failed delivery/pickup attempts are NOT
-    // cancellations — record attempt+reason+remarks + timeline, change NO
-    // state (no dispatch status write, no order advancement). CANCELLED /
-    // RETURNED happen only on explicit events (order.pickup-cancelled,
-    // order.returned*, …).
-    if (event === 'order.pickup-failed' || event === 'order.delivery-failed') {
+    // Task 3 (owner-locked F7): ONLY failed DELIVERY attempts stay
+    // record-only here. Failed PICKUP attempts are the real PICKUP_FAILED
+    // workflow state (CARRYBEE_DISPATCH_MAP above) and ride the normal path
+    // below: record attempt+reason+remarks + timeline, upsert PICKUP_FAILED,
+    // advance the order to Shipping. CANCELLED / RETURNED happen only on
+    // explicit events (order.pickup-cancelled, order.returned*, …).
+    if (event === 'order.delivery-failed') {
       return this.recordCarrybeeAttemptOnly(order.id, consignmentId, event, body);
     }
 
@@ -1354,6 +1400,17 @@ export class CourierWebhookService {
     const orderStatusName = CARRYBEE_DISPATCH_TO_ORDER[dispatchStatus];
     if (orderStatusName) {
       await this.tryAdvanceOrderStatus(order.id, orderStatusName);
+    }
+
+    // Task 3 (owner-locked F7): pickup failure is staff-actionable — loud log
+    // (timeline entry above is the staff alert surface; the SAME dispatch row
+    // keeps PICKUP_FAILED so staff can retry/update it, never a new row).
+    if (event === 'order.pickup-failed') {
+      this.logger.warn(
+        `Carrybee PICKUP FAILED: ${consignmentId} (order ${order.id}) — ` +
+          `reason: ${String(body['reason'] || 'unknown')}; ` +
+          `dispatch=PICKUP_FAILED order=${orderStatusName || '-'}; staff can retry/update the same dispatch`,
+      );
     }
 
     this.logger.log(`Carrybee: ${consignmentId} → dispatch=${dispatchStatus} order=${orderStatusName || '-'}`);
@@ -1427,7 +1484,8 @@ export class CourierWebhookService {
   }
 
   /**
-   * Task 7 (owner-locked): record-only path for failed Carrybee attempts.
+   * Record-only path for failed Carrybee DELIVERY attempts (Task 3 owner-
+   * locked: pickup-failed left this path for the real PICKUP_FAILED state).
    * Mirrors the Pathao skip-status pattern: persist the raw courier state on
    * the order + existing dispatch row (courierStatus only, never the workflow
    * `status`) and a timeline entry carrying attempt/reason/remarks — but

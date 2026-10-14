@@ -451,23 +451,55 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       prisma.order.findFirst.mockResolvedValue(order);
     });
 
-    it('order.pickup-failed: records courierStatus + timeline, never cancels the dispatch', async () => {
+    // Task 3 (owner-locked F7): pickup-failed is a real PICKUP_FAILED
+    // workflow state (record attempt + reason + alert, order Shipping) — no
+    // longer the record-only skip path. delivery-failed stays record-only.
+    it('order.pickup-failed: upserts PICKUP_FAILED + advances the order to Shipping', async () => {
+      prisma.order.findFirst.mockResolvedValue({
+        ...order,
+        status: { id: 'status-packed', name: 'Packed' },
+        timeline: [],
+      });
+      prisma.order.findUnique.mockResolvedValue({
+        ...order,
+        status: { id: 'status-packed', name: 'Packed' },
+      });
+      prisma.orderStatus.findUnique.mockResolvedValue({
+        id: 'status-shipping',
+        name: 'Shipping',
+      });
+
       const result = await service.handlePathao({
         event: 'order.pickup-failed',
         consignment_id: 'CG-1',
+        reason: 'Rider could not reach pickup point',
+        attempt: 1,
       });
 
       expect(result.status).toBe('success');
       // Order courier status recorded verbatim…
       const orderUpdate = (prisma.order.update as jest.Mock).mock.calls[0];
       expect(orderUpdate[0].data.courierStatus).toBe('order.pickup-failed');
-      // …touched in before they existed? dispatch.upsert must not carry a
-      // status change (no CANCELLED / no forced status).
-      const upsertCalls = (prisma.dispatch.upsert as jest.Mock).mock.calls;
-      if (upsertCalls.length > 0) {
-        expect(upsertCalls[0][0].update.status).toBeUndefined();
-      }
-      expect(ordersService.updateStatus).not.toHaveBeenCalled();
+      // …dispatch moves to the PICKUP_FAILED workflow state (same row —
+      // staff can retry/update it; never CANCELLED)…
+      expect(prisma.dispatch.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({ status: 'PICKUP_FAILED' }),
+        }),
+      );
+      // …timeline carries the attempt + reason (staff alert surface)…
+      const timelineWrite = (prisma.order.update as jest.Mock).mock.calls.find(
+        (c: any) => c[0]?.data?.timeline,
+      );
+      const notes = JSON.stringify(timelineWrite[0].data.timeline);
+      expect(notes).toContain('Rider could not reach pickup point');
+      expect(notes).toContain('1');
+      // …and the order advances to Shipping.
+      expect(ordersService.updateStatus).toHaveBeenCalledWith(
+        'order-1',
+        { statusId: 'status-shipping' },
+        'system',
+      );
     });
 
     it('order.delivery-failed: records courierStatus + timeline, never forces RETURN_PENDING', async () => {

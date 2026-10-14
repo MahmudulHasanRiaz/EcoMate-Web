@@ -1,0 +1,14 @@
+-- Rollback for 20261014000500_dispatch_pickup_failed_assigned_to_hub.
+--
+-- Postgres cannot DROP an enum value that is still referenced by any row.
+-- Steps (run in order; stop if any step reports remaining references):
+--   1. Re-point rows: UPDATE "Dispatch" SET status = 'DISPATCHED'
+--      WHERE status IN ('PICKUP_FAILED', 'ASSIGNED_TO_HUB');
+--   2. Recreate the enum without the two values (ADD VALUE has no inverse):
+--      CREATE TYPE "DispatchStatus_old" AS ENUM ('DISPATCHED','HANDED_OVER',
+--        'PICKED_UP','IN_TRANSIT','ASSIGNED_TO_RIDER','HOLD','DELIVERED',
+--        'PARTIAL','RETURN_PENDING','RETURNED','CANCELLED');
+--      ALTER TABLE "Dispatch" ALTER COLUMN status TYPE "DispatchStatus_old"
+--        USING status::text::"DispatchStatus_old";
+--      DROP TYPE "DispatchStatus";
+--      ALTER TYPE "DispatchStatus_old" RENAME TO "DispatchStatus";

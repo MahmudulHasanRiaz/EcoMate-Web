@@ -36,15 +36,23 @@ function isAutomatedActorId(actor?: string | null): boolean {
 }
 
 const DISPATCH_TRANSITIONS: Record<string, string[]> = {
-  DISPATCHED: ['HANDED_OVER', 'HOLD', 'CANCELLED'],
-  HANDED_OVER: ['PICKED_UP', 'HOLD', 'CANCELLED'],
+  DISPATCHED: ['HANDED_OVER', 'HOLD', 'CANCELLED', 'PICKUP_FAILED'],
+  HANDED_OVER: ['PICKED_UP', 'HOLD', 'CANCELLED', 'PICKUP_FAILED'],
   PICKED_UP: ['IN_TRANSIT', 'HOLD', 'CANCELLED'],
-  IN_TRANSIT: ['ASSIGNED_TO_RIDER', 'HOLD', 'CANCELLED'],
+  // Task 3 (owner-locked F7): hub scan lands between transit and rider
+  // assignment; a failed pickup keeps its own retryable state.
+  IN_TRANSIT: ['ASSIGNED_TO_HUB', 'ASSIGNED_TO_RIDER', 'HOLD', 'CANCELLED'],
   ASSIGNED_TO_RIDER: ['HOLD', 'DELIVERED', 'CANCELLED'],
+  // Task 3 (owner-locked F7): PICKUP_FAILED is retryable — staff re-books /
+  // updates the SAME dispatch (→ PICKED_UP), or holds/cancels it.
+  PICKUP_FAILED: ['PICKED_UP', 'HOLD', 'CANCELLED'],
+  ASSIGNED_TO_HUB: ['ASSIGNED_TO_RIDER', 'HOLD', 'DELIVERED', 'CANCELLED'],
   HOLD: [
     'PICKED_UP',
     'IN_TRANSIT',
+    'ASSIGNED_TO_HUB',
     'ASSIGNED_TO_RIDER',
+    'PICKUP_FAILED',
     'DELIVERED',
     'CANCELLED',
   ],
@@ -105,6 +113,9 @@ const SYNC_DISPATCH_TO_ORDER: Record<string, string | null> = {
   IN_TRANSIT: 'Shipping',
   HOLD: 'Shipping',
   ASSIGNED_TO_RIDER: 'Shipping',
+  // Task 3 (owner-locked F7): failed-pickup + hub states keep Shipping.
+  PICKUP_FAILED: 'Shipping',
+  ASSIGNED_TO_HUB: 'Shipping',
   DELIVERED: 'Delivered',
   PARTIAL: 'Partial',
   RETURN_PENDING: 'Return Pending',
@@ -609,6 +620,9 @@ export class DispatchService {
       IN_TRANSIT: 'Shipping',
       HOLD: 'Shipping',
       ASSIGNED_TO_RIDER: 'Shipping',
+      // Task 3 (owner-locked F7): failed-pickup + hub states keep Shipping.
+      PICKUP_FAILED: 'Shipping',
+      ASSIGNED_TO_HUB: 'Shipping',
       DELIVERED: 'Delivered',
       PARTIAL: 'Partial',
       RETURN_PENDING: 'Return Pending',
@@ -1078,11 +1092,14 @@ export class DispatchService {
     const hasProgress = await this.prisma.dispatch.findFirst({
       where: {
         orderId,
+        // Task 3 (owner-locked F7): ASSIGNED_TO_HUB counts as progress (hub
+        // stage → RETURN_PENDING on cancel); PICKUP_FAILED is NO progress.
         status: {
           in: [
             'HANDED_OVER',
             'PICKED_UP',
             'IN_TRANSIT',
+            'ASSIGNED_TO_HUB',
             'ASSIGNED_TO_RIDER',
             'DELIVERED',
             'PARTIAL',

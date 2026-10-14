@@ -4,6 +4,8 @@ export const DISPATCH_STATUSES = [
   { value: 'PICKED_UP', label: 'Picked Up', color: 'bg-accent-cyan' },
   { value: 'IN_TRANSIT', label: 'In Transit', color: 'bg-accent-violet' },
   { value: 'ASSIGNED_TO_RIDER', label: 'Assigned to Rider', color: 'bg-accent-pink' },
+  { value: 'PICKUP_FAILED', label: 'Pickup Failed', color: 'bg-danger' },
+  { value: 'ASSIGNED_TO_HUB', label: 'At Last-Mile Hub', color: 'bg-accent-violet' },
   { value: 'HOLD', label: 'Hold', color: 'bg-warning' },
   { value: 'DELIVERED', label: 'Delivered', color: 'bg-success' },
   { value: 'PARTIAL', label: 'Partial', color: 'bg-warning' },

@@ -460,17 +460,51 @@ describe('Carrybee v2 rewrite (Task 7, doc-exact mocked shapes)', () => {
       expect(ordersService.updateStatus).not.toHaveBeenCalled();
     });
 
-    it('order.pickup-failed records with NO state change', async () => {
+    // Task 3 (owner-locked F7): pickup-failed is a real PICKUP_FAILED
+    // workflow state (record attempt + reason, order Shipping) — staff can
+    // retry/update the same dispatch. delivery-failed stays record-only.
+    it('order.pickup-failed upserts PICKUP_FAILED + advances the order to Shipping', async () => {
+      prisma.order.findFirst.mockResolvedValue({
+        ...cbOrder,
+        status: { id: 'status-packed', name: 'Packed' },
+        timeline: [],
+      });
+      prisma.order.findUnique.mockResolvedValue({
+        ...cbOrder,
+        status: { id: 'status-packed', name: 'Packed' },
+      });
+      (prisma as any).orderStatus = {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'status-shipping',
+          name: 'Shipping',
+        }),
+      };
+
       const result = await webhook.handleCarrybee({
         event: 'order.pickup-failed',
         consignment_id: 'CBX-1',
         merchant_order_id: 'ORD-1',
         attempt: 1,
+        reason: 'Shop closed at pickup time',
       });
 
       expect(result.status).toBe('success');
-      expect(prisma.dispatch.upsert).not.toHaveBeenCalled();
-      expect(ordersService.updateStatus).not.toHaveBeenCalled();
+      expect(prisma.dispatch.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({ status: 'PICKUP_FAILED' }),
+        }),
+      );
+      const timelineWrite = prisma.order.update.mock.calls.find(
+        (c: any) => c[0]?.data?.timeline,
+      );
+      const notes = JSON.stringify(timelineWrite[0].data.timeline);
+      expect(notes).toContain('Shop closed at pickup time');
+      expect(notes).toContain('1');
+      expect(ordersService.updateStatus).toHaveBeenCalledWith(
+        'order-1',
+        { statusId: 'status-shipping' },
+        'system',
+      );
     });
 
     it('falls back to merchant_order_id → displayId when the consignment is unknown', async () => {

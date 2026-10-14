@@ -20,6 +20,13 @@ describe('DISPATCH_STATUSES', () => {
     expect(new Set(values).size).toBe(values.length);
     expect(values).toContain('PICKED_UP');
   });
+
+  // Task 3 / Fix 7: PICKUP_FAILED + ASSIGNED_TO_HUB filter options exist.
+  it('includes the PICKUP_FAILED + ASSIGNED_TO_HUB workflow states', () => {
+    const byValue = new Map(DISPATCH_STATUSES.map((s) => [s.value, s.label]));
+    expect(byValue.get('PICKUP_FAILED')).toBe('Pickup Failed');
+    expect(byValue.get('ASSIGNED_TO_HUB')).toBe('At Last-Mile Hub');
+  });
 });
 
 describe('getDispatchIdentifierLabels', () => {
