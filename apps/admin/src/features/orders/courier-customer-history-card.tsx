@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -18,6 +18,17 @@ const courierMeta: Record<string, { name: string }> = {
 
 type ReportSource = 'actual' | 'normalized' | 'new' | 'none'
 
+interface SteadfastFraudDetail {
+  deliveryRatio: number | null
+  cancellationRatio: number | null
+  volumeBand: string | null
+  volumeRange: string | null
+  deliveredCount: number | null
+  cancelledCount: number | null
+  totalReports: number
+  fraudCategories: Record<string, number>
+}
+
 interface CourierReport {
   success: number
   cancel: number
@@ -25,6 +36,7 @@ interface CourierReport {
   successRatio: number | null
   source: ReportSource
   rating?: string
+  steadfastFraud?: SteadfastFraudDetail | null
 }
 
 interface CourierHistoryEntry {
@@ -155,11 +167,22 @@ export function CourierCustomerHistoryCard({ phone }: { phone?: string | null })
             {Object.entries(courierMeta).map(([key, meta]) => {
               const entry = couriers[key]
               const report = entry?.report
+              // Steadfast fraud record (GET /fraud_check/score): the two ratios
+              // are independent whole percents — the cancelled cell MUST read
+              // cancellationRatio, never 100 - delivery (that rounds up).
+              const fraud = key === 'steadfast' ? (report?.steadfastFraud ?? null) : null
               const rated = report && report.successRatio != null
-              const status = !report || report.source === 'none' ? 'No History' : report.source === 'new' ? 'New Customer' : null
+              // Fraud rows explain themselves in the detail block below
+              // (তথ্য নেই for nulls) — never a bare 'No History'.
+              const status = !report || (report.source === 'none' && !fraud)
+                ? 'No History'
+                : report.source === 'new'
+                  ? 'New Customer'
+                  : null
 
               return (
-                <div key={key} className={`${GRID} py-1 px-1 -mx-1 rounded-md hover:bg-muted/30 transition-colors`}>
+                <Fragment key={key}>
+                <div className={`${GRID} py-1 px-1 -mx-1 rounded-md hover:bg-muted/30 transition-colors`}>
                   <div className='flex min-w-0 items-center gap-2'>
                     <img
                       src={courierLogos[key]}
@@ -174,7 +197,22 @@ export function CourierCustomerHistoryCard({ phone }: { phone?: string | null })
 
                   <span className='text-right text-[11px] tabular-nums font-medium text-foreground/90'>{report?.total ?? '—'}</span>
 
-                  {rated ? (
+                  {fraud ? (
+                    <>
+                      <span className='flex items-center justify-end gap-1 text-right'>
+                        <b className='text-[11px] tabular-nums font-semibold text-emerald-600 dark:text-emerald-400'>{fraud.deliveredCount ?? '—'}</b>
+                        <span className='text-[10px] tabular-nums text-muted-foreground'>
+                          ({fraud.deliveryRatio != null ? `${fraud.deliveryRatio}%` : '—'})
+                        </span>
+                      </span>
+                      <span className='flex items-center justify-end gap-1 text-right'>
+                        <b className='text-[11px] tabular-nums font-semibold text-rose-600 dark:text-rose-400'>{fraud.cancelledCount ?? '—'}</b>
+                        <span className='text-[10px] tabular-nums text-muted-foreground'>
+                          ({fraud.cancellationRatio != null ? `${fraud.cancellationRatio}%` : '—'})
+                        </span>
+                      </span>
+                    </>
+                  ) : rated ? (
                     <>
                       <span className='flex items-center justify-end gap-1 text-right'>
                         <b className='text-[11px] tabular-nums font-semibold text-emerald-600 dark:text-emerald-400'>{report.success}</b>
@@ -197,6 +235,29 @@ export function CourierCustomerHistoryCard({ phone }: { phone?: string | null })
                     </>
                   )}
                 </div>
+                {fraud && (
+                  <div className='ml-7 -mt-0.5 mb-1 flex flex-col gap-0.5 rounded-md bg-muted/30 px-2 py-1.5'>
+                    <span className='text-[10px] tabular-nums text-foreground/90'>
+                      ডেলিভারি {fraud.deliveryRatio != null ? `${fraud.deliveryRatio}%` : 'তথ্য নেই'} · বাতিল{' '}
+                      {fraud.cancellationRatio != null ? `${fraud.cancellationRatio}%` : 'তথ্য নেই'}
+                    </span>
+                    <span className='text-[10px] tabular-nums text-muted-foreground'>
+                      {fraud.volumeBand ?? 'তথ্য নেই'}
+                      {fraud.volumeRange ? ` · ${fraud.volumeRange}` : ''} ·{' '}
+                      {fraud.deliveredCount != null ? `${fraud.deliveredCount} delivered` : 'তথ্য নেই'} ·{' '}
+                      {fraud.cancelledCount != null ? `${fraud.cancelledCount} cancelled` : 'তথ্য নেই'} ·{' '}
+                      {fraud.totalReports} reports
+                    </span>
+                    {Object.keys(fraud.fraudCategories).length > 0 && (
+                      <span className='text-[10px] tabular-nums text-muted-foreground'>
+                        {Object.entries(fraud.fraudCategories)
+                          .map(([code, times]) => `${code} ×${times}`)
+                          .join(' · ')}
+                      </span>
+                    )}
+                  </div>
+                )}
+                </Fragment>
               )
             })}
 

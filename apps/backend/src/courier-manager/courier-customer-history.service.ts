@@ -24,6 +24,30 @@ const BASE_URLS: Record<string, Record<string, string>> = {
 
 export type CourierReportSource = 'actual' | 'normalized' | 'new' | 'none';
 
+export type SteadfastVolumeBand = 'none' | 'low' | 'medium' | 'high' | 'very_high';
+
+/**
+ * Owner-locked fraud spec (Steadfast `GET /fraud_check/score/{phone}` — the
+ * same stored record the dashboard customer check reads).
+ * - Ratios are whole percents, each rounded DOWN on its own (sums of 99 are
+ *   deliberate — never derive one side as 100 minus the other).
+ * - Counts are null when not shown (no regular booking) — null is "not
+ *   shown", never 0. Ratios are null when nothing finished — "we do not
+ *   know", never a clean record.
+ * - `score`/`level`/`reasons` are always null/empty upstream (scoring
+ *   disabled) and are NEVER persisted.
+ */
+export interface SteadfastFraudDetail {
+  deliveryRatio: number | null;
+  cancellationRatio: number | null;
+  volumeBand: SteadfastVolumeBand | null;
+  volumeRange: string | null;
+  deliveredCount: number | null;
+  cancelledCount: number | null;
+  totalReports: number;
+  fraudCategories: Record<string, number>;
+}
+
 export interface CourierReport {
   success: number;
   cancel: number;
@@ -32,9 +56,99 @@ export interface CourierReport {
   source: CourierReportSource;
   rating?: string;
   schemaVersion?: number;
+  steadfastFraud?: SteadfastFraudDetail | null;
 }
 
 const REPORT_SCHEMA_VERSION = 3;
+const STEADFAST_VOLUME_BANDS: readonly SteadfastVolumeBand[] = [
+  'none',
+  'low',
+  'medium',
+  'high',
+  'very_high',
+];
+
+/**
+ * Parse the exact `GET /fraud_check/score/{phone}` field names
+ * (delivery_ratio, cancellation_ratio, volume_band, volume_range,
+ * delivered_count, cancelled_count, total_reports, fraud_categories).
+ * `fraud_categories` arrives as code => times (worst first) or `[]` when
+ * empty; its sum may sit below `total_reports` (pre-category reports) and is
+ * never validated. `score`/`level`/`reasons` are dropped on the floor.
+ */
+export function parseSteadfastScoreResponse(
+  data: Record<string, unknown>,
+): SteadfastFraudDetail {
+  const numOrNull = (v: unknown): number | null => {
+    if (v == null || v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const deliveryRaw = numOrNull(data['delivery_ratio']);
+  const cancellationRaw = numOrNull(data['cancellation_ratio']);
+  const bandRaw =
+    typeof data['volume_band'] === 'string' ? data['volume_band'] : null;
+  const rangeRaw = data['volume_range'];
+  const deliveredCount = numOrNull(data['delivered_count']);
+  const cancelledCount = numOrNull(data['cancelled_count']);
+  const totalReportsRaw = numOrNull(data['total_reports']);
+  let fraudCategories: Record<string, number> = {};
+  const fc = data['fraud_categories'];
+  if (fc && typeof fc === 'object' && !Array.isArray(fc)) {
+    for (const [k, v] of Object.entries(fc as Record<string, unknown>)) {
+      const n = Number(v);
+      if (Number.isFinite(n)) fraudCategories[k] = Math.max(0, Math.floor(n));
+    }
+  }
+  return {
+    deliveryRatio: deliveryRaw == null ? null : Math.floor(deliveryRaw),
+    cancellationRatio:
+      cancellationRaw == null ? null : Math.floor(cancellationRaw),
+    volumeBand: STEADFAST_VOLUME_BANDS.includes(bandRaw as SteadfastVolumeBand)
+      ? (bandRaw as SteadfastVolumeBand)
+      : null,
+    volumeRange:
+      typeof rangeRaw === 'string'
+        ? rangeRaw
+        : rangeRaw == null
+          ? null
+          : String(rangeRaw),
+    deliveredCount,
+    cancelledCount,
+    totalReports:
+      totalReportsRaw == null ? 0 : Math.max(0, Math.floor(totalReportsRaw)),
+    fraudCategories,
+  };
+}
+
+/**
+ * Build the stored Steadfast report from the parsed fraud detail.
+ * Top-level success/cancel/total mirror the exact counts when shown (0
+ * placeholders when null — the nulls themselves live in `steadfastFraud`
+ * and the UI renders them as "তথ্য নেই", never as a clean 0). `successRatio`
+ * mirrors the floored delivery ratio so cross-courier aggregates keep
+ * working; null ratios stay null so the row is excluded, never clean.
+ */
+export function buildSteadfastReport(
+  detail: SteadfastFraudDetail,
+): CourierReport {
+  const success = detail.deliveredCount ?? 0;
+  const cancel = detail.cancelledCount ?? 0;
+  const hasSignal =
+    detail.deliveryRatio != null ||
+    detail.deliveredCount != null ||
+    detail.totalReports > 0 ||
+    Object.keys(detail.fraudCategories).length > 0;
+  return {
+    success,
+    cancel,
+    total: success + cancel,
+    successRatio: detail.deliveryRatio,
+    source: hasSignal ? 'actual' : 'none',
+    schemaVersion: REPORT_SCHEMA_VERSION,
+    steadfastFraud: detail,
+  };
+}
 const CALIBRATION_KEY = 'pathao_rating_calibration';
 // Last-resort normalized scale when Pathao has no counts AND no other courier
 // has cached history for the phone yet. Real production data (another courier's
@@ -166,6 +280,7 @@ export class CourierCustomerHistoryService {
   private coerceCached(courier: string, raw: unknown): CourierReport | null {
     const r = raw as CourierReport | null | undefined;
     if (!r) return null;
+    if (courier === 'steadfast') return this.readCachedSteadfastReport(raw);
     if (courier === 'pathao' && r.schemaVersion !== REPORT_SCHEMA_VERSION) {
       // Legacy Pathao rows predate actual-counts-first (v3): v1 synthesized
       // fake counts from an unknown default rating (50% success) and v2 holds
@@ -183,6 +298,71 @@ export class CourierCustomerHistoryService {
       rating: r.rating,
       schemaVersion: REPORT_SCHEMA_VERSION,
     };
+  }
+
+  /**
+   * SINGLE READER for the stored Steadfast record. Both the customer-history
+   * endpoint (`getCustomerHistory('steadfast')`) and the dashboard check
+   * (`getSteadfastCheck`) coerce the SAME cached JSON through this function,
+   * so the two can never disagree — per the doc, "they read the same stored
+   * record". Null fraud fields are preserved as null (never coerced to 0);
+   * legacy rows without `steadfastFraud` keep their counts verbatim.
+   */
+  private readCachedSteadfastReport(raw: unknown): CourierReport | null {
+    const r = raw as (CourierReport & Record<string, unknown>) | null | undefined;
+    if (!r || typeof r !== 'object') return null;
+    const numOrNull = (v: unknown): number | null => {
+      if (v == null || v === '') return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+    let fraud: SteadfastFraudDetail | null = null;
+    const fraudRaw = (r as Record<string, unknown>)['steadfastFraud'];
+    if (fraudRaw && typeof fraudRaw === 'object' && !Array.isArray(fraudRaw)) {
+      const f = fraudRaw as Record<string, unknown>;
+      const bandRaw = typeof f['volumeBand'] === 'string' ? f['volumeBand'] : null;
+      const rangeRaw = f['volumeRange'];
+      let categories: Record<string, number> = {};
+      const fc = f['fraudCategories'];
+      if (fc && typeof fc === 'object' && !Array.isArray(fc)) {
+        for (const [k, v] of Object.entries(fc as Record<string, unknown>)) {
+          const n = Number(v);
+          if (Number.isFinite(n)) categories[k] = n;
+        }
+      }
+      fraud = {
+        deliveryRatio: numOrNull(f['deliveryRatio']),
+        cancellationRatio: numOrNull(f['cancellationRatio']),
+        volumeBand: STEADFAST_VOLUME_BANDS.includes(
+          bandRaw as SteadfastVolumeBand,
+        )
+          ? (bandRaw as SteadfastVolumeBand)
+          : null,
+        volumeRange:
+          typeof rangeRaw === 'string'
+            ? rangeRaw
+            : rangeRaw == null
+              ? null
+              : String(rangeRaw),
+        deliveredCount: numOrNull(f['deliveredCount']),
+        cancelledCount: numOrNull(f['cancelledCount']),
+        totalReports: (() => {
+          const n = numOrNull(f['totalReports']);
+          return n == null ? 0 : Math.max(0, Math.floor(n));
+        })(),
+        fraudCategories: categories,
+      };
+    }
+    const out: CourierReport = {
+      success: Number(r.success ?? 0),
+      cancel: Number(r.cancel ?? 0),
+      total: Number(r.total ?? 0),
+      successRatio: r.successRatio != null ? Number(r.successRatio) : null,
+      source: r.source ?? 'actual',
+      schemaVersion: REPORT_SCHEMA_VERSION,
+    };
+    if (fraud) out.steadfastFraud = fraud;
+    return out;
   }
 
   private stampReport(courier: string, report: CourierReport | null): CourierReport | null {
@@ -215,6 +395,19 @@ export class CourierCustomerHistoryService {
     }
   }
 
+  /**
+   * Dashboard customer check. Reads the SAME stored Steadfast record as the
+   * customer-history endpoint (delegates to `getCustomerHistory`, which
+   * coerces the cached JSON through the single `readCachedSteadfastReport`
+   * reader) — the two cannot disagree.
+   */
+  async getSteadfastCheck(
+    rawPhone: string,
+    opts: { force?: boolean } = {},
+  ): Promise<{ report: CourierReport | null; cached: boolean; fresh: boolean; fetchedAt: Date | null }> {
+    return this.getCustomerHistory('steadfast', rawPhone, opts);
+  }
+
   private async fetchSteadfast(phone: string): Promise<CourierReport | null> {
     const creds = await this.getCreds('steadfast');
     if (!creds?.enabled) return null;
@@ -223,19 +416,45 @@ export class CourierCustomerHistoryService {
     if (!apiKey || !secretKey) return null;
 
     const base = await this.getBaseUrl('steadfast');
-    const res = await this.fetchWithTimeout(`${base}/fraud_check/${phone}`, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Api-Key': apiKey,
-        'Secret-Key': secretKey,
-      },
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const success = Number(data['total_delivered'] ?? 0);
-    const cancel = Number(data['total_cancelled'] ?? 0);
-    const total = success + cancel;
-    return { success, cancel, total, successRatio: total > 0 ? Math.round((success / total) * 10000) / 100 : 0, source: 'actual' as const };
+    // The old /fraud_check/{phone} counts path is deleted (retired upstream;
+    // limit shared with this endpoint) — exactly ONE call shape per refresh.
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const res = await this.fetchWithTimeout(`${base}/fraud_check/score/${phone}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Api-Key': apiKey,
+          'Secret-Key': secretKey,
+        },
+      });
+      if (res.status === 429) {
+        // Shared rate limit (roughly four checks per parcel on the busiest
+        // day + ten): back off, never loop hot.
+        if (attempt < maxAttempts) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, 250 * 2 ** (attempt - 1)),
+          );
+          continue;
+        }
+        this.logger.warn(
+          `Steadfast fraud-check rate limited (429) for ${phone} — backing off`,
+        );
+        return null;
+      }
+      if (!res.ok) return null;
+      let data: Record<string, unknown>;
+      try {
+        data = (await res.json()) as Record<string, unknown>;
+      } catch {
+        return null;
+      }
+      if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+      return this.stampReport(
+        'steadfast',
+        buildSteadfastReport(parseSteadfastScoreResponse(data)),
+      );
+    }
+    return null;
   }
 
   private normalizeRatingLabel(raw: string): string {
