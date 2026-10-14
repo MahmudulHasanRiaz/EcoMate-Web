@@ -135,6 +135,19 @@ function authHint(courier: string, status: number): string {
   return '';
 }
 
+/**
+ * Task 6: doc-optional RedX pickup_store_id. No dedicated column exists on
+ * CourierCredentials, so it is read from the free-form credentials JSON
+ * and omitted entirely when unconfigured.
+ */
+function redxPickupStoreId(creds: any): string | undefined {
+  const raw =
+    creds?.credentials?.['pickupStoreId'] ?? creds?.credentials?.['pickup_store_id'];
+  if (raw === undefined || raw === null || String(raw).trim() === '')
+    return undefined;
+  return String(raw);
+}
+
 /** First human-readable rule per field, for `field 'x' <rule>` segments. */
 function firstRule(value: unknown): string {
   if (typeof value === 'string') return value;
@@ -1178,23 +1191,45 @@ export class CourierManagerService {
         .join(', ') || 'Product';
 
     const payload: Record<string, unknown> = {
+      // Task 6 doc-literal payload (REDx API and Webhook Documentation.md,
+      // Create Parcel table + sample). Choices, one per ambiguity:
+      // - parcel_weight: doc table says STRING grams (sample shows a bare
+      //   {{parcel_weight}} placeholder) → send String grams. Renamed from
+      //   the non-doc key parcel_weight_in_gram.
+      // - value: doc table says STRING (sample bare {{value}}) → String.
+      // - cash_collection_amount: doc table says STRING → String.
+      // - merchant_order_amount: NOT in doc → DROPPED (value + cash
+      //   collection already carry declared value and COD).
+      // - is_closed_box: NOT in the doc table but IS in the doc sample →
+      //   KEPT (sample-literal).
+      // - parcel_details_json: doc table prose says "object" but the sample
+      //   sends an ARRAY of {name, category, value} and the Parcel Details
+      //   Object table describes item objects → ARRAY (sample-literal);
+      //   item value stays INTEGER per the detail table.
+      // - pickup_store_id: doc OPTIONAL string; no config field exists, so
+      //   it is sent only when set in creds.credentials.pickupStoreId.
+      // - type: doc OPTIONAL, reverse-shipments only → omitted (we never
+      //   book reverse). merchant_invoice_id=displayId kept (doc optional).
       merchant_invoice_id: order.displayId,
       customer_name: safeName,
       customer_phone: phone,
       delivery_area: district,
       delivery_area_id: Number(deliveryAreaId) || 1,
       customer_address: formatCourierAddress(address) ?? 'N/A',
-      merchant_order_amount: total,
-      cash_collection_amount: collectable,
-      parcel_weight_in_gram: 500,
+      cash_collection_amount: String(collectable),
+      parcel_weight: String(500),
       instruction: order.officeNotes || '',
-      value: total,
+      value: String(total),
       is_closed_box: false,
       parcel_details_json: order.items?.map((item: any) => ({
         name: item.product?.name || 'Product',
         category: 'Apparel',
         value: Number(item.price || 0),
       })) || [{ name: itemDescription, category: 'Apparel', value: total }],
+      // Doc-optional: include only when the merchant configured a store.
+      ...(redxPickupStoreId(creds) !== undefined
+        ? { pickup_store_id: redxPickupStoreId(creds) }
+        : {}),
     };
 
     // Fix 5: FULL body text is read before parsing (never `res.json()` blind —
@@ -1259,10 +1294,16 @@ export class CourierManagerService {
         continue;
       }
 
-        if (data['data']?.['tracking_id']) {
-          const trackingCode = String(
-            (data['data'] as Record<string, unknown>)['tracking_id'],
-          );
+        // Task 6 tolerant parse: doc sample returns TOP-LEVEL {tracking_id};
+        // older integrations observed nested data.tracking_id — accept either,
+        // doc shape first.
+        const nested =
+          data['data'] && typeof data['data'] === 'object'
+            ? (data['data'] as Record<string, unknown>)['tracking_id']
+            : undefined;
+        const rawTrackingId = data['tracking_id'] ?? nested;
+        if (typeof rawTrackingId === 'string' && rawTrackingId.trim() !== '') {
+          const trackingCode = rawTrackingId;
           await this.prisma.order.update({
             where: { id: order.id },
             data: { courierService: 'redx', courierTrackingCode: trackingCode },
@@ -2116,6 +2157,13 @@ export class CourierManagerService {
     });
   }
 
+  /**
+   * Task 6: RedX parcel update is PATCH /parcels (doc Update Parcel section) —
+   * the old PUT path is deleted (controller route too). The cancel flow is
+   * property_name=status / new_value=cancelled per the doc sample. The doc
+   * response is {success, message}: success:false throws, otherwise the
+   * parsed shape is returned.
+   */
   async cancelRedxParcel(trackingId: string, reason: string) {
     const creds = await this.getCreds('redx');
     const apiToken = creds.apiKey || creds.credentials?.['apiKey'];
@@ -2123,8 +2171,8 @@ export class CourierManagerService {
       throw new BadRequestException('RedX API token not configured');
 
     const base = await this.getBaseUrl('redx');
-    return this.jsonFetch(`${base}/parcels`, {
-      method: 'PUT',
+    const data = await this.jsonFetch(`${base}/parcels`, {
+      method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
         'API-ACCESS-TOKEN': `Bearer ${apiToken}`,
@@ -2139,6 +2187,15 @@ export class CourierManagerService {
         },
       }),
     });
+    if (data['success'] === false) {
+      throw new BadRequestException(
+        `RedX parcel update rejected: ${String(data['message'] || 'request not accepted')}`,
+      );
+    }
+    return {
+      success: data['success'] ?? true,
+      message: data['message'],
+    };
   }
 
   async getCities() {

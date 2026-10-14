@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Body, Param, Query } from '@nestjs/common';
 import { CourierManagerService } from './courier-manager.service';
 import { CourierTrackingService } from './courier-tracking.service';
 import { CourierWebhookService } from './courier-webhook.service';
@@ -284,7 +284,8 @@ export class CourierManagerController {
     return this.svc.trackRedxParcel(trackingId);
   }
 
-  @Put('redx/cancel/:trackingId')
+  // Task 6: RedX update is PATCH /parcels per doc — the old PUT route is deleted.
+  @Patch('redx/cancel/:trackingId')
   async cancelRedxParcel(
     @Param('trackingId') trackingId: string,
     @Body() dto: { reason: string },
