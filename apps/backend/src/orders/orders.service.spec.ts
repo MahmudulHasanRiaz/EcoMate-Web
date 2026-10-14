@@ -631,7 +631,13 @@ describe('OrdersService', () => {
 
   describe('findOne', () => {
     it('should return an order by id when a matching token is provided', async () => {
-      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        customerFirstName: 'John',
+        customerLastName: 'Doe',
+        customerPhone: '+1234567890',
+        customerEmail: 'john@example.com',
+      });
 
       const result = await service.findOne('order-id-1', {
         token: 'mock-view-token',
@@ -640,7 +646,23 @@ describe('OrdersService', () => {
       expect(prisma.order.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'order-id-1' } }),
       );
-      expect(result).toEqual(mockOrder);
+      // D-A: customer is built from the snapshot (stale profile ignored).
+      expect(result).toEqual({
+        ...mockOrder,
+        customerFirstName: 'John',
+        customerLastName: 'Doe',
+        customerPhone: '+1234567890',
+        customerEmail: 'john@example.com',
+        customer: {
+          id: 'customer-id-1',
+          name: 'John Doe',
+          email: 'john@example.com',
+          phone: '+1234567890',
+          firstName: 'John',
+          lastName: 'Doe',
+          phoneNumber: '+1234567890',
+        },
+      });
     });
 
     it('loads product.category + combo relations so the browser Purchase can map content metadata (F1)', async () => {
@@ -5837,6 +5859,11 @@ await service.bulkAssign(['order-1', 'trashed-1'], 'staff-1');
           createdAt: new Date('2025-01-15'),
           total: 2050,
           shippingCharge: 100,
+          customerId: 'cust-1',
+          customerFirstName: 'John',
+          customerLastName: 'Doe',
+          customerPhone: '+8801711111111',
+          customerEmail: 'john@example.com',
           guestName: 'Guest Buyer',
           guestPhone: '+8801712345678',
           shippingAddress: {
@@ -5846,9 +5873,9 @@ await service.bulkAssign(['order-1', 'trashed-1'], 'staff-1');
           },
           customer: {
             id: 'cust-1',
-            name: 'John Doe',
-            email: 'john@example.com',
-            phone: '+8801711111111',
+            name: 'STALE PROFILE',
+            email: 'stale@x.com',
+            phone: 'STALE',
           },
           status: { name: 'Pending' },
           items: [
@@ -5869,14 +5896,54 @@ await service.bulkAssign(['order-1', 'trashed-1'], 'staff-1');
         expect.objectContaining({ where: { id: { in: ['order-1'] } } }),
       );
       const order = result[0] as any;
-      // transformOrder maps single-name customer to firstName/phoneNumber
-      expect(order.customer.firstName).toBe('John Doe');
+      // transformOrder maps the snapshot (profile ignored): full name split
+      // into firstName/lastName, snapshot phone into phoneNumber.
+      expect(order.customer.firstName).toBe('John');
+      expect(order.customer.lastName).toBe('Doe');
+      expect(order.customer.name).toBe('John Doe');
       expect(order.customer.phoneNumber).toBe('+8801711111111');
       // shippingAddress gains an address key derived from addressLine
       expect(order.shippingAddress.address).toBe('House 12, Road 5');
       // guest fields remain for template fallback
       expect(order.guestName).toBe('Guest Buyer');
       expect(order.guestPhone).toBe('+8801712345678');
+    });
+
+    it('builds customer from snapshot fields, ignoring the stale profile (D-A)', async () => {
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([
+        {
+          id: 'order-snap-1',
+          displayId: 'ORD-250115-0002',
+          createdAt: new Date('2025-01-15'),
+          total: 1000,
+          shippingCharge: 0,
+          customerId: 'cust-1',
+          customerFirstName: 'MR',
+          customerLastName: 'Joy',
+          customerPhone: '01712345678',
+          customerEmail: 'mr.joy@example.com',
+          guestName: null,
+          guestPhone: null,
+          shippingAddress: { district: 'Dhaka' },
+          customer: {
+            id: 'cust-1',
+            name: 'STALE PROFILE',
+            email: 'stale@x.com',
+            phone: 'STALE',
+          },
+          status: { name: 'Pending' },
+          items: [],
+        },
+      ]);
+
+      const result = await service.bulkOrders(['order-snap-1']);
+
+      const customer = (result[0] as any).customer;
+      expect(customer.firstName).toBe('MR');
+      expect(customer.lastName).toBe('Joy');
+      expect(customer.phoneNumber).toBe('01712345678');
+      expect(customer.name).toBe('MR Joy');
+      expect(customer.email).toBe('mr.joy@example.com');
     });
   });
 

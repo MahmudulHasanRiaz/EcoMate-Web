@@ -20,6 +20,7 @@ import { SalesChannelService } from '../sales-channel/sales-channel.service';
 import { OrdersEventService } from './orders-event.service';
 import { readPaymentSettings } from '../payments/payment-settings';
 import { buildOrderSearchFilter } from './order-search';
+import { orderSnapshotCustomer } from './order-recipient';
 import { buildOrderAttributionSnapshot } from './order-attribution-snapshot';
 import { StockService } from '../stock/stock.service';
 import { StockRouterService } from '../stock/stock-router.service';
@@ -600,14 +601,10 @@ export class OrdersService {
       ...order,
       dispatches,
       editLock,
-      customer: order.customer
-        ? {
-            ...order.customer,
-            firstName: order.customer.name || '',
-            lastName: '',
-            phoneNumber: order.customer.phone || '',
-          }
-        : order.customer,
+      // D-A: `customer` is built FROM the order snapshot so the UI keeps
+      // working while the source flips to snapshot. The linked
+      // CustomerProfile is never read here.
+      customer: orderSnapshotCustomer(order),
       shippingAddress: normalizedAddress,
       timeline: Array.isArray(order.timeline) ? order.timeline : [],
       trackingUrl:

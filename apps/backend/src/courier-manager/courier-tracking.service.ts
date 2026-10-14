@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
 import { CourierTokenService } from './courier-token.service';
 import { buildTrackingUrl } from './courier-webhook.service';
+import { orderRecipientPhone } from '../orders/order-recipient';
 
 interface TrackingEvent {
   status: string;
@@ -58,16 +59,15 @@ export class CourierTrackingService {
       where: { id: orderId },
       select: {
         customerId: true,
-        customer: { select: { phone: true } },
+        customerPhone: true,
         guestPhone: true,
         dispatches: { orderBy: { createdAt: 'desc' } },
       },
     });
     if (!order) return { orderId, trackers: [] };
 
-    const phone = this.normalizePhone(
-      order.customer?.phone || order.guestPhone,
-    );
+    // D-A: snapshot phone is the source of truth; the profile is never read.
+    const phone = this.normalizePhone(orderRecipientPhone(order));
 
     const trackers = await Promise.all(
       order.dispatches.map((d) =>

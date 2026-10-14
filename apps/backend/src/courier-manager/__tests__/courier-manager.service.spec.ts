@@ -358,3 +358,166 @@ describe('CourierManagerService — order secondary phone to couriers', () => {
     expect(body.alternative_phone).toBe('01999999999');
   });
 });
+
+describe('CourierManagerService — order snapshot is recipient source of truth (D-A)', () => {
+  let service: CourierManagerService;
+  let prisma: any;
+  const originalFetch = global.fetch;
+
+  const creds = {
+    courier: 'pathao',
+    enabled: true,
+    mode: 'sandbox',
+    apiKey: 'test-api-key',
+    secretKey: 'test-secret-key',
+    clientId: 'client-id',
+    clientSecret: 'client-secret',
+    username: 'user@merchant.com',
+    password: 'pass',
+    credentials: {},
+  };
+
+  // Snapshot updated by staff (PUT /orders/:id customerInfo); the linked
+  // CustomerProfile still carries pre-correction values and must be ignored.
+  const order: any = {
+    id: 'order-snap-1',
+    displayId: 'ORD-SNAP-1',
+    total: 1000,
+    payments: [],
+    customerFirstName: 'MR',
+    customerLastName: 'Joy',
+    customerPhone: '01712345678',
+    customerEmail: 'mr.joy@example.com',
+    guestName: null,
+    guestPhone: null,
+    secondaryPhone: null,
+    officeNotes: null,
+    shippingAddress: { address: 'Dhaka', district: 'Dhaka' },
+    customer: { name: 'STALE PROFILE', phone: 'STALE', email: 'stale@x.com' },
+    items: [{ product: { name: 'Item' } }],
+  };
+
+  const tokenStore: any = {
+    getAccessToken: jest.fn().mockResolvedValue('TOK'),
+  };
+
+  beforeEach(() => {
+    prisma = {
+      courierCredentials: { findUnique: jest.fn().mockResolvedValue(creds) },
+      order: {
+        findMany: jest.fn().mockResolvedValue([order]),
+        update: jest.fn().mockResolvedValue(order),
+      },
+      dispatch: {
+        findMany: jest.fn().mockResolvedValue([]),
+        upsert: jest.fn().mockResolvedValue({}),
+        create: jest.fn().mockResolvedValue({}),
+      },
+      courierDispatchLog: { create: jest.fn().mockResolvedValue({}) },
+      systemSetting: { findUnique: jest.fn().mockResolvedValue(null) },
+    };
+    service = new CourierManagerService(prisma as any, tokenStore as any);
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  function mockFetch(res: Response) {
+    global.fetch = jest.fn().mockResolvedValue(res);
+  }
+
+  it('pathao recipient_name uses order snapshot full name, not profile', async () => {
+    mockFetch(
+      new Response(
+        JSON.stringify({ data: { consignment_id: 'CID-P1' } }),
+        { status: 200 },
+      ),
+    );
+
+    await service.dispatch('pathao', ['order-snap-1']);
+
+    const orderCall = (global.fetch as jest.Mock).mock.calls.find((c) =>
+      String(c[0]).includes('/aladdin/api/v1/orders'),
+    );
+    expect(orderCall).toBeDefined();
+    const body = JSON.parse(orderCall[1].body);
+    expect(body.recipient_name).toBe('MR Joy');
+    expect(body.recipient_phone).toBe('01712345678');
+  });
+
+  it('steadfast recipient uses snapshot name/phone/email, not profile', async () => {
+    mockFetch(
+      new Response(
+        JSON.stringify({
+          status: 200,
+          consignment: {
+            consignment_id: 'CID-S1',
+            tracking_code: 'TC-S1',
+            tracking_link: 'https://track/s1',
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await service.dispatch('steadfast', ['order-snap-1']);
+
+    const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+    expect(body.recipient_name).toBe('MR Joy');
+    expect(body.recipient_phone).toBe('01712345678');
+    expect(body.recipient_email).toBe('mr.joy@example.com');
+  });
+
+  it('bulk steadfast recipient uses snapshot, not profile', async () => {
+    (prisma.courierCredentials.findUnique as jest.Mock).mockResolvedValue({
+      courier: 'steadfast',
+      enabled: true,
+      apiKey: 'test-api-key',
+      secretKey: 'test-secret-key',
+    });
+    mockFetch(
+      new Response(
+        JSON.stringify({
+          status: 200,
+          data: [{ invoice: 'ORD-SNAP-1', status: 'success', consignment_id: '123' }],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await service.bulkCreateSteadfastOrders([order]);
+
+    const postCall = (global.fetch as jest.Mock).mock.calls.find((c) =>
+      String(c[0]).includes('/create_order/bulk-order'),
+    );
+    expect(postCall).toBeDefined();
+    const body = JSON.parse(postCall[1].body);
+    expect(body.data[0].recipient_name).toBe('MR Joy');
+    expect(body.data[0].recipient_phone).toBe('01712345678');
+  });
+
+  it('falls back to guestPhone when snapshot phone is empty', async () => {
+    prisma.order.findMany.mockResolvedValue([
+      { ...order, customerPhone: null, guestPhone: '01999999999' },
+    ]);
+    mockFetch(
+      new Response(
+        JSON.stringify({
+          status: 200,
+          consignment: {
+            consignment_id: 'CID-S2',
+            tracking_code: 'TC-S2',
+            tracking_link: 'https://track/s2',
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await service.dispatch('steadfast', ['order-snap-1']);
+
+    const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+    expect(body.recipient_phone).toBe('01999999999');
+  });
+});

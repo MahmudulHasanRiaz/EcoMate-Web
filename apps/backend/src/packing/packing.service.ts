@@ -10,6 +10,7 @@ import {
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { OrdersService } from '../orders/orders.service';
+import { orderRecipientPhone } from '../orders/order-recipient';
 import { startOfDhakaDay } from '../common/utils/dhaka-time';
 
 export const PACKING_QUEUE_PAGE_SIZE = 100;
@@ -67,7 +68,6 @@ const QUEUE_ORDER_INCLUDE = {
       },
     },
   },
-  customer: { select: { id: true, name: true, phone: true } },
   status: { select: { id: true, name: true, color: true } },
 } as const;
 
@@ -246,14 +246,27 @@ export class PackingService {
 
   /** Maps a Prisma order row (see QUEUE_ORDER_INCLUDE) to the queue shape. */
   private mapQueueOrder(o: any) {
+    // D-A: queue customer comes from the order snapshot, never the profile.
+    // Null when the order carries no identity at all (matches legacy shape).
+    const queueName =
+      [o.customerFirstName, o.customerLastName]
+        .filter(Boolean)
+        .join(' ')
+        .trim() ||
+      o.guestName ||
+      null;
+    const queuePhone = orderRecipientPhone(o) || null;
     return {
       id: o.id,
       displayId: o.displayId,
-      customer: o.customer
-        ? { id: o.customer.id, name: o.customer.name, phone: o.customer.phone }
-        : o.guestName
-          ? { name: o.guestName, phone: o.guestPhone }
-          : null,
+      customer:
+        !queueName && !queuePhone
+          ? null
+          : {
+              ...(o.customerId ? { id: o.customerId } : {}),
+              ...(queueName ? { name: queueName } : {}),
+              ...(queuePhone ? { phone: queuePhone } : {}),
+            },
       items: (o.items ?? []).map((i: any) => {
         const product = i.product ?? i.variant?.product ?? null;
         const variant = i.variant ?? null;

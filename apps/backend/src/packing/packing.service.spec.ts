@@ -250,10 +250,14 @@ describe('PackingService', () => {
       const mockOrder = {
         id: 'order-1',
         displayId: 'ORD-001',
+        customerId: 'cust-1',
+        customerFirstName: 'John',
+        customerLastName: 'Doe',
+        customerPhone: '555-0100',
         guestName: null,
         guestPhone: null,
         createdAt: new Date('2025-01-15'),
-        customer: { id: 'cust-1', name: 'John Doe', phone: '555-0100' },
+        customer: { id: 'cust-1', name: 'STALE PROFILE', phone: 'STALE' },
         items: [
           {
             id: 'item-1',
@@ -379,6 +383,36 @@ describe('PackingService', () => {
       expect(result.orders[0].customer).toEqual({
         name: 'Jane Guest',
         phone: '555-0200',
+      });
+    });
+
+    it('maps queue customer from snapshot fields, ignoring the stale profile (D-A)', async () => {
+      const mockOrder = {
+        id: 'order-snap-1',
+        displayId: 'ORD-SNAP-1',
+        customerId: 'cust-1',
+        customerFirstName: 'MR',
+        customerLastName: 'Joy',
+        customerPhone: '01712345678',
+        guestName: null,
+        guestPhone: null,
+        createdAt: new Date('2025-01-15'),
+        customer: { id: 'cust-1', name: 'STALE PROFILE', phone: 'STALE' },
+        items: [],
+        packingLock: null,
+        status: { id: 'status-confirmed', name: 'Confirmed', color: 'blue' },
+      };
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        confirmedStatus,
+      );
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([mockOrder]);
+
+      const result = await service.getQueue();
+
+      expect(result.orders[0].customer).toEqual({
+        id: 'cust-1',
+        name: 'MR Joy',
+        phone: '01712345678',
       });
     });
 

@@ -2,6 +2,11 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CourierTokenService } from './courier-token.service';
 import { formatCourierAddress } from './address-format';
+import {
+  orderRecipientName,
+  orderRecipientPhone,
+  orderRecipientEmail,
+} from '../orders/order-recipient';
 
 const BASE_URLS: Record<string, Record<string, string>> = {
   steadfast: {
@@ -225,8 +230,9 @@ export class CourierManagerService {
     if (!apiKey || !secretKey)
       throw new BadRequestException('Steadfast API key/secret not configured');
 
-    const recipient = order.customer;
-    const phone = this.normalizePhone(recipient?.phone || order.guestPhone);
+    // D-A: the order snapshot is the recipient source of truth — the linked
+    // CustomerProfile is never read here (it may hold pre-correction values).
+    const phone = this.normalizePhone(orderRecipientPhone(order));
     const collectAmount = this.getCollectableAmount(order);
     const address = order.shippingAddress as Record<string, unknown> | null;
 
@@ -237,8 +243,7 @@ export class CourierManagerService {
 
     const payload: Record<string, unknown> = {
       invoice: order.displayId,
-      recipient_name:
-        recipient?.name || order.guestName || 'Customer',
+      recipient_name: orderRecipientName(order),
       recipient_phone: phone,
       recipient_address: formatCourierAddress(address) ?? 'Dhaka',
       cod_amount: collectAmount,
@@ -247,8 +252,9 @@ export class CourierManagerService {
       delivery_type: address?.deliveryType === 'hub' ? 1 : 0,
     };
 
-    if (recipient?.email) {
-      payload.recipient_email = recipient.email;
+    const recipientEmail = orderRecipientEmail(order);
+    if (recipientEmail) {
+      payload.recipient_email = recipientEmail;
     }
 
     // Secondary contact: the order's staff-entered secondaryPhone wins;
@@ -407,8 +413,9 @@ export class CourierManagerService {
       throw new BadRequestException('Pathao credentials not configured');
 
     const storeId = creds.storeId || creds.credentials?.['storeId'] || '1';
-    const recipient = order.customer;
-    const phone = this.normalizePhone(recipient?.phone || order.guestPhone);
+    // D-A: the order snapshot is the recipient source of truth — the linked
+    // CustomerProfile is never read here (it may hold pre-correction values).
+    const phone = this.normalizePhone(orderRecipientPhone(order));
     const total = this.getCollectableAmount(order);
     const address = order.shippingAddress as Record<string, unknown> | null;
 
@@ -419,8 +426,7 @@ export class CourierManagerService {
 
     const payload: Record<string, unknown> = {
       store_id: parseInt(storeId),
-      recipient_name:
-        recipient?.name || order.guestName || 'Customer',
+      recipient_name: orderRecipientName(order),
       recipient_phone: phone,
       recipient_address: formatCourierAddress(address) ?? 'Dhaka',
       delivery_type: 48,
@@ -581,11 +587,12 @@ export class CourierManagerService {
     if (!apiToken)
       throw new BadRequestException('RedX API token not configured');
 
-    const recipient = order.customer;
-    const phone = this.normalizePhone(recipient?.phone || order.guestPhone);
+    // D-A: the order snapshot is the recipient source of truth — the linked
+    // CustomerProfile is never read here (it may hold pre-correction values).
+    const phone = this.normalizePhone(orderRecipientPhone(order));
     const total = Number(order.total);
     const address = order.shippingAddress as Record<string, unknown> | null;
-    const name = recipient?.name || order.guestName || 'Customer';
+    const name = orderRecipientName(order);
     // Hoisted single call — the payload and the persisted row share one
     // value. The getCollectableAmount calc itself is untouched.
     const collectable = this.getCollectableAmount(order);
@@ -720,11 +727,12 @@ export class CourierManagerService {
     if (!clientId || !clientSecret)
       throw new BadRequestException('Carrybee credentials not configured');
 
-    const recipient = order.customer;
-    const phone = this.normalizePhone(recipient?.phone || order.guestPhone);
+    // D-A: the order snapshot is the recipient source of truth — the linked
+    // CustomerProfile is never read here (it may hold pre-correction values).
+    const phone = this.normalizePhone(orderRecipientPhone(order));
     const total = Number(order.total);
     const address = order.shippingAddress;
-    const name = recipient?.name || order.guestName || 'Customer';
+    const name = orderRecipientName(order);
 
     const payload = {
       full_name: name || 'Customer',
@@ -940,9 +948,9 @@ export class CourierManagerService {
     const base = await this.getBaseUrl('steadfast');
     const bodyData = orders.map((order) => ({
       invoice: order.displayId,
-      recipient_name:
-        order.customer?.name || order.guestName || 'Customer',
-      recipient_phone: this.normalizePhone(order.customer?.phone || order.guestPhone),
+      // D-A: snapshot authority — never the linked CustomerProfile.
+      recipient_name: orderRecipientName(order),
+      recipient_phone: this.normalizePhone(orderRecipientPhone(order)),
       recipient_address:
         formatCourierAddress(
           order.shippingAddress as Record<string, unknown>,

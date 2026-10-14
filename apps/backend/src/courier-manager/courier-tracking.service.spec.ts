@@ -402,4 +402,42 @@ describe('CourierTrackingService.getDispatchTracking', () => {
       expect(tokenCalls.length).toBe(1);
     });
   });
+
+  describe('getOrderTracking — order snapshot is the phone source of truth (D-A)', () => {
+    it('uses customerPhone snapshot, not the stale profile phone', async () => {
+      (prisma as any).order = {
+        findUnique: jest.fn().mockResolvedValue({
+          customerId: 'cust-1',
+          customer: { phone: 'STALE' },
+          customerPhone: '01711111111',
+          guestPhone: null,
+          dispatches: [],
+        }),
+      };
+
+      const result = await service.getOrderTracking('order-1');
+
+      expect((prisma as any).order.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'order-1' } }),
+      );
+      expect(result.phone).toBe('01711111111');
+      expect(result.trackers).toEqual([]);
+    });
+
+    it('falls back to guestPhone when the snapshot phone is empty', async () => {
+      (prisma as any).order = {
+        findUnique: jest.fn().mockResolvedValue({
+          customerId: null,
+          customer: null,
+          customerPhone: null,
+          guestPhone: '01999999999',
+          dispatches: [],
+        }),
+      };
+
+      const result = await service.getOrderTracking('order-1');
+
+      expect(result.phone).toBe('01999999999');
+    });
+  });
 });
