@@ -104,10 +104,20 @@ interface StagedOrder {
   orderTotal: number
 }
 
+/** Fallback label where a dispatch identifier would display but the courier
+ *  webhook hasn't filled the consignment id yet (dispatch-table language). */
+export const PENDING_WEBHOOK_LABEL = 'Pending webhook'
+
 interface QueuedDispatch {
   key: string
-  identifier: string
-  label: string
+  /**
+   * Null until the courier webhook fills the consignment id. Display sites
+   * must fall back to PENDING_WEBHOOK_LABEL; scan matching stays key-based
+   * (`key === dispatch.id`), so null rows still dedupe — never match-exempt.
+   */
+  identifier: string | null
+  /** Display label — same nullability, same fallback rule. */
+  label: string | null
   sub: string
   /** 'order' for sticker rows, 'dispatch' for handover/return rows. */
   rowKind: 'order' | 'dispatch'
@@ -139,12 +149,13 @@ function orderStagedRow(s: StagedOrder): StagedRow {
 function queueStagedRow(q: QueuedDispatch): StagedRow {
   const isDispatch = q.rowKind === 'dispatch'
   const who = displayCustomer(q.customerName, q.customerPhone)
-  const hay = `${q.label} ${q.orderDisplayId} ${q.customerName} ${q.customerPhone} ${who} ${q.courier} ${q.dispatchStatus} ${q.sub}`.toLowerCase()
+  const label = q.label ?? PENDING_WEBHOOK_LABEL
+  const hay = `${label} ${q.orderDisplayId} ${q.customerName} ${q.customerPhone} ${who} ${q.courier} ${q.dispatchStatus} ${q.sub}`.toLowerCase()
   return {
     key: q.key,
     orderId: q.orderId,
-    primary: q.label,
-    secondary: isDispatch && q.orderDisplayId && q.orderDisplayId !== q.label ? q.orderDisplayId : undefined,
+    primary: label,
+    secondary: isDispatch && q.orderDisplayId && q.orderDisplayId !== label ? q.orderDisplayId : undefined,
     customerName: who,
     meta: isDispatch ? q.courier : orderMeta(q.itemCount, q.orderTotal),
     status: isDispatch ? q.dispatchStatus : q.sub,
@@ -323,14 +334,14 @@ export default function ScannerPage() {
       if (batchRef.current) {
         setQueue((q) => {
           if (q.some((i) => i.key === d.id)) {
-            record({ status: 'duplicate', identifier, title: `${d.consignmentId} — Already staged`, message: 'This dispatch is already staged in the batch.' })
+            record({ status: 'duplicate', identifier, title: `${d.consignmentId ?? PENDING_WEBHOOK_LABEL} — Already staged`, message: 'This dispatch is already staged in the batch.' })
             return q
           }
           return [{ key: d.id, identifier: d.consignmentId, label: d.consignmentId, sub: `${d.courier} — ${d.status} — Order ${d.orderDisplayId}`, rowKind: 'dispatch' as const, orderId: d.orderId, orderDisplayId: d.orderDisplayId, customerName: d.customerName ?? '', customerPhone: d.customerPhone ?? '', itemCount: d.itemCount ?? 0, orderTotal: d.orderTotal ?? 0, courier: d.courier, dispatchStatus: d.status }, ...q]
         })
         return
       }
-      await runExecute({ identifier: d.consignmentId, dispatchId: d.id }, { customerName: d.customerName, customerPhone: d.customerPhone, orderDisplayId: d.orderDisplayId })
+      await runExecute({ identifier: d.consignmentId ?? d.orderDisplayId, dispatchId: d.id }, { customerName: d.customerName, customerPhone: d.customerPhone, orderDisplayId: d.orderDisplayId })
     } catch (e) {
       toast.error(errMsg(e))
     } finally {
@@ -349,7 +360,7 @@ export default function ScannerPage() {
           ? q
           : [{ key: d.id, identifier: d.consignmentId, label: d.consignmentId, sub: `${d.courier} — ${d.status} — Order ${d.orderDisplayId}`, rowKind: 'dispatch' as const, orderId: d.orderId, orderDisplayId: d.orderDisplayId, customerName: d.customerName ?? '', customerPhone: d.customerPhone ?? '', itemCount: d.itemCount ?? 0, orderTotal: d.orderTotal ?? 0, courier: d.courier, dispatchStatus: d.status }, ...q])
       } else {
-        await runExecute({ identifier: d.consignmentId, dispatchId: d.id }, { customerName: d.customerName, customerPhone: d.customerPhone, orderDisplayId: d.orderDisplayId })
+        await runExecute({ identifier: d.consignmentId ?? d.orderDisplayId, dispatchId: d.id }, { customerName: d.customerName, customerPhone: d.customerPhone, orderDisplayId: d.orderDisplayId })
       }
       setSelection(null)
     } catch (e) {
@@ -378,7 +389,7 @@ export default function ScannerPage() {
         setQueue([])
         return
       }
-      await runExecute({ identifier: queue[0]?.identifier ?? '', dispatchIds: queue.map((q) => q.key) })
+      await runExecute({ identifier: queue[0]?.identifier ?? queue[0]?.orderDisplayId ?? '', dispatchIds: queue.map((q) => q.key) })
       setQueue([])
     } catch (e) {
       toast.error(errMsg(e))
@@ -677,14 +688,14 @@ export default function ScannerPage() {
                         <div key={d.id} className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2">
                           <div className="flex-1 min-w-0">
                             <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{d.courier}</p>
-                            <p className="font-mono text-sm font-semibold truncate">{d.consignmentId}</p>
+                            <p className="font-mono text-sm font-semibold truncate">{d.consignmentId ?? PENDING_WEBHOOK_LABEL}</p>
                             <p className="text-[11px] text-muted-foreground truncate">{d.status} · Order {d.orderDisplayId}</p>
                           </div>
                           <Button
                             size="sm"
                             className="tap-h press shrink-0"
                             disabled={busy}
-                            aria-label={`Select ${d.consignmentId} (${d.courier})`}
+                            aria-label={`Select ${d.consignmentId ?? PENDING_WEBHOOK_LABEL} (${d.courier})`}
                             onClick={() => void resolveSelection(d)}
                           >
                             Select <ArrowRight className="h-3.5 w-3.5 ml-1" />
