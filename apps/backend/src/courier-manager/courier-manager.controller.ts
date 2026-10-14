@@ -293,6 +293,21 @@ export class CourierManagerController {
     return this.svc.cancelRedxParcel(trackingId, dto.reason);
   }
 
+  // Task 7: Carrybee v2 details + cancel (doc: GET .../details,
+  // POST .../cancel + cancellation_reason → 202).
+  @Get('carrybee/details/:consignmentId')
+  async getCarrybeeOrderDetails(@Param('consignmentId') consignmentId: string) {
+    return this.svc.getCarrybeeOrderDetails(consignmentId);
+  }
+
+  @Post('carrybee/cancel/:consignmentId')
+  async cancelCarrybeeOrder(
+    @Param('consignmentId') consignmentId: string,
+    @Body() dto: { reason: string },
+  ) {
+    return this.svc.cancelCarrybeeOrder(consignmentId, dto.reason);
+  }
+
   @Get('order-tracking/:orderId')
   async getOrderTracking(@Param('orderId') orderId: string) {
     return this.tracking.getOrderTracking(orderId);

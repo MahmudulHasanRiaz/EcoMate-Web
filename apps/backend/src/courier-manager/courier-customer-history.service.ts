@@ -18,7 +18,7 @@ const BASE_URLS: Record<string, Record<string, string>> = {
   },
   carrybee: {
     production: 'https://developers.carrybee.com',
-    sandbox: 'https://developers.carrybee.com',
+    sandbox: 'https://sandbox.carrybee.com',
   },
 };
 

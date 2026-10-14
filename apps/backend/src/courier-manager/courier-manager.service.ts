@@ -24,7 +24,7 @@ const BASE_URLS: Record<string, Record<string, string>> = {
   },
   carrybee: {
     production: 'https://developers.carrybee.com',
-    sandbox: 'https://developers.carrybee.com',
+    sandbox: 'https://sandbox.carrybee.com',
   },
 };
 
@@ -1434,39 +1434,80 @@ export class CourierManagerService {
   }
 
   private async dispatchCarrybee(creds: any, base: string, order: any) {
-    const clientId = creds.clientId || creds.credentials?.['clientId'];
-    const clientSecret =
-      creds.clientSecret || creds.credentials?.['clientSecret'];
-    const clientContext =
-      creds.clientContext || creds.credentials?.['clientContext'] || 'merchant';
-    if (!clientId || !clientSecret)
-      throw new BadRequestException('Carrybee credentials not configured');
+    const headers = this.carrybeeHeaders(creds);
+
+    // Task 7 (owner-locked): store_id is REQUIRED — fail fast with a shaped
+    // field error (Fix 5 shape) instead of letting the API 422.
+    const storeId = creds.storeId || creds.credentials?.['storeId'];
+    if (!storeId || String(storeId).trim() === '') {
+      throw new CourierDispatchError({
+        courier: 'carrybee',
+        status: 0,
+        message: `Carrybee: field 'store_id' is required — configure the Store ID in courier settings`,
+        errors: { store_id: ['required'] },
+        orderId: order.id,
+      });
+    }
 
     // D-A: the order snapshot is the recipient source of truth — the linked
     // CustomerProfile is never read here (it may hold pre-correction values).
     const phone = this.normalizePhone(orderRecipientPhone(order));
-    const total = Number(order.total);
-    const address = order.shippingAddress;
+    const address = order.shippingAddress as Record<string, unknown> | null;
     // Fix 5a: Carrybee-exempt safe name (verbatim, truncated to 99, never Mx.).
     const { sent: safeName, raw: rawName } = this.resolveCourierName(
       order,
       'carrybee',
-      'full_name',
+      'recipient_name',
     );
 
-    const payload = {
-      full_name: safeName,
-      mobile: phone,
-      address: formatCourierAddress(address) ?? 'Dhaka',
-      city: address?.district || 'Dhaka',
-      area: address?.area || '',
+    // Task 7: v2 dispatch payload, doc-literal field names
+    // (CarryBee API Docs.md, POST /api/v2/orders). delivery_type 1=Normal,
+    // product_type 1=Parcel (doc defaults; no per-order override UI exists).
+    // `recipient_secendary_phone` keeps the doc's spelling verbatim.
+    const payload: Record<string, unknown> = {
+      store_id: String(storeId),
       merchant_order_id: order.displayId,
-      amount_to_collect: Math.round(this.getCollectableAmount(order)),
-      package_charge: order.shippingCharge ? Number(order.shippingCharge) : 100,
-      item_description: order.items?.[0]?.product?.name || 'Product',
-      item_quantity: order.items?.length || 1,
-      instruction: order.officeNotes || '',
+      delivery_type: 1,
+      product_type: 1,
+      recipient_phone: phone,
+      recipient_name: safeName,
+      recipient_address: this.resolveCarrybeeAddress(order),
+      item_weight: this.resolveCarrybeeWeightGrams(order),
+      item_quantity: Math.min(
+        200,
+        Math.max(1, order.items?.length || 1),
+      ),
+      collectable_amount: Math.min(
+        100000,
+        Math.max(0, Math.round(this.getCollectableAmount(order))),
+      ),
     };
+    // Secondary contact: the order's staff-entered secondaryPhone wins;
+    // otherwise keep the legacy shippingAddress.phone fallback.
+    const secondaryPhone =
+      this.normalizePhone(order.secondaryPhone) ||
+      (address?.phone && address.phone !== phone
+        ? this.normalizePhone(address.phone as string)
+        : null);
+    if (secondaryPhone) {
+      payload.recipient_secendary_phone = secondaryPhone;
+    }
+    const cityId = Number(address?.cityId);
+    if (Number.isFinite(cityId)) payload.city_id = cityId;
+    const zoneId = Number(address?.zoneId);
+    if (Number.isFinite(zoneId)) payload.zone_id = zoneId;
+    const areaId = Number(address?.areaId);
+    if (Number.isFinite(areaId)) payload.area_id = areaId;
+    if (order.officeNotes) {
+      payload.special_instruction = String(order.officeNotes).slice(0, 254);
+    }
+    const itemDescription =
+      order.items
+        ?.map((item: any) => item.product?.name || 'Product')
+        .join(', ') || undefined;
+    if (itemDescription) {
+      payload.product_description = itemDescription.slice(0, 254);
+    }
 
     // Fix 5: same discipline as the other couriers — FULL body text first,
     // retry ONLY 5xx/network with exponential backoff, NEVER 4xx. The doc's
@@ -1478,14 +1519,9 @@ export class CourierManagerService {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       let res: Response;
       try {
-        res = await this.fetchWithTimeout(`${base}/api/shipments/create`, {
+        res = await this.fetchWithTimeout(`${base}/api/v2/orders`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Client-ID': clientId,
-            'Client-Secret': clientSecret,
-            'Client-Context': clientContext,
-          },
+          headers,
           body: JSON.stringify(payload),
         });
       } catch (netErr: unknown) {
@@ -1532,10 +1568,16 @@ export class CourierManagerService {
         }
         continue;
       }
-      if (data['success'] && data['data']?.['consignment_id']) {
-        const cId = String(
-          (data['data'] as Record<string, unknown>)['consignment_id'],
-        );
+      // Task 7: v2 success is 201 `{error:false,
+      // data:{order:{consignment_id}}}` (any 2xx with that shape accepted).
+      const orderNode =
+        data && typeof data['data'] === 'object' && data['data'] !== null
+          ? ((data['data'] as Record<string, unknown>)['order'] as
+              | Record<string, unknown>
+              | undefined)
+          : undefined;
+      if (data?.['error'] === false && orderNode?.['consignment_id']) {
+        const cId = String(orderNode['consignment_id']);
         await this.prisma.order.update({
           where: { id: order.id },
           data: { courierService: 'carrybee', courierConsignmentId: cId },
@@ -1627,6 +1669,133 @@ export class CourierManagerService {
     });
     await this.noteDispatchFailure(order.id, 'carrybee', failure.message);
     return failure;
+  }
+
+  /**
+   * Task 7: v2 auth headers for every Carrybee request (doc: Client-ID,
+   * Client-Secret, Client-Context on ALL endpoints). The legacy `apiKey`
+   * query-param style is dead — nothing reads creds.apiKey on this path.
+   */
+  private carrybeeHeaders(creds: any): Record<string, string> {
+    const clientId = creds.clientId || creds.credentials?.['clientId'];
+    const clientSecret =
+      creds.clientSecret || creds.credentials?.['clientSecret'];
+    const clientContext =
+      creds.clientContext || creds.credentials?.['clientContext'] || 'merchant';
+    if (!clientId || !clientSecret)
+      throw new BadRequestException('Carrybee credentials not configured');
+    return {
+      'Content-Type': 'application/json',
+      'Client-ID': String(clientId),
+      'Client-Secret': String(clientSecret),
+      'Client-Context': String(clientContext),
+    };
+  }
+
+  /**
+   * Task 7: `recipient_address` must be 10–200 chars. The shared formatter
+   * can return a short string (e.g. district-only 'Dhaka' dedupes to 5
+   * chars), so pad with wider components + 'Bangladesh' before sending
+   * rather than eating a 422. Capped at 200.
+   */
+  private resolveCarrybeeAddress(order: any): string {
+    const address = order.shippingAddress as Record<string, unknown> | null;
+    let out = formatCourierAddress(address) ?? '';
+    const included = (s: string) =>
+      out.toLowerCase().includes(s.toLowerCase());
+    const extras = [
+      address?.district,
+      address?.division,
+      address?.country,
+      'Bangladesh',
+    ];
+    for (const extra of extras) {
+      if (out.length >= 10) break;
+      if (typeof extra !== 'string' || !extra.trim()) continue;
+      if (included(extra.trim())) continue;
+      out = out ? `${out}, ${extra.trim()}` : extra.trim();
+    }
+    return out.slice(0, 200);
+  }
+
+  /**
+   * Task 7: `item_weight` is REQUIRED, integer grams 1–25000. No weight
+   * column exists on Order/Product (checked schema 2026-10-14), so read an
+   * explicit per-order/per-item gram value when present (summed over items)
+   * and default to 500g otherwise. Rounded + clamped to the doc range.
+   */
+  private resolveCarrybeeWeightGrams(order: any): number {
+    const num = (v: unknown): number | null => {
+      const n = Number(v);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    };
+    let grams =
+      num(order?.shippingWeightGram) ?? num(order?.totalWeightGram) ?? 0;
+    if (!grams && Array.isArray(order?.items)) {
+      for (const item of order.items) {
+        const w = num(item?.weightGram) ?? num(item?.product?.weightGram);
+        if (w) grams += w * (Number(item?.quantity) || 1);
+      }
+    }
+    if (!grams) grams = 500;
+    return Math.min(25000, Math.max(1, Math.round(grams)));
+  }
+
+  /**
+   * Task 7: v2 order details — GET /api/v2/orders/{id}/details. Accepts the
+   * Carrybee consignment ID or the merchant tracking ID (doc). Returns the
+   * `data` object verbatim; `{error:true}` throws.
+   */
+  async getCarrybeeOrderDetails(consignmentId: string) {
+    const creds = await this.getCreds('carrybee');
+    const headers = this.carrybeeHeaders(creds);
+    const base = await this.getBaseUrl('carrybee');
+    const data = await this.jsonFetch(
+      `${base}/api/v2/orders/${encodeURIComponent(consignmentId)}/details`,
+      { headers },
+    );
+    if (data['error'] === true) {
+      throw new BadRequestException(
+        `Carrybee details rejected: ${String(data['message'] || 'request not accepted')}`,
+      );
+    }
+    return data['data'] ?? data;
+  }
+
+  /**
+   * Task 7: v2 cancel — POST /api/v2/orders/{id}/cancel +
+   * `{cancellation_reason}` (required, <200 chars) → 202. `{error:true}`
+   * throws; transport failures throw via jsonFetch.
+   */
+  async cancelCarrybeeOrder(consignmentId: string, reason: string) {
+    const cancellation_reason = String(reason || '').trim();
+    if (!cancellation_reason) {
+      throw new BadRequestException(
+        'Carrybee cancellation_reason is required',
+      );
+    }
+    if (cancellation_reason.length >= 200) {
+      throw new BadRequestException(
+        'Carrybee cancellation_reason must be shorter than 200 chars',
+      );
+    }
+    const creds = await this.getCreds('carrybee');
+    const headers = this.carrybeeHeaders(creds);
+    const base = await this.getBaseUrl('carrybee');
+    const data = await this.jsonFetch(
+      `${base}/api/v2/orders/${encodeURIComponent(consignmentId)}/cancel`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ cancellation_reason }),
+      },
+    );
+    if (data['error'] === true) {
+      throw new BadRequestException(
+        `Carrybee cancel rejected: ${String(data['message'] || 'request not accepted')}`,
+      );
+    }
+    return { success: true, message: data['message'] ?? 'Cancellation confirmed' };
   }
 
   async getSteadfastBalance(): Promise<{ current_balance: number }> {

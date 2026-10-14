@@ -332,7 +332,7 @@ export class CourierTrackingService {
       },
       carrybee: {
         production: 'https://developers.carrybee.com',
-        sandbox: 'https://developers.carrybee.com',
+        sandbox: 'https://sandbox.carrybee.com',
       },
     };
     const mode = creds?.mode || 'production';
@@ -607,50 +607,59 @@ export class CourierTrackingService {
     };
   }
 
+  /**
+   * Task 7: v2 details — GET /api/v2/orders/{id}/details with the 3
+   * Client-* headers (the legacy `?api_key=` style is dead; creds.apiKey is
+   * never read here). Accepts the consignment ID or merchant tracking ID.
+   * The doc details shape carries a single `transfer_status` (+ attempt /
+   * reason / remarks / updated_at), surfaced as one event.
+   */
   private async trackCarrybee(
     consignmentId: string,
     creds: any,
     base: string,
     baseResult: any,
   ): Promise<CourierTrackingResult> {
-    const apiKey = creds.apiKey || creds.credentials?.['apiKey'];
-    if (!apiKey)
+    const clientId = creds.clientId || creds.credentials?.['clientId'];
+    const clientSecret =
+      creds.clientSecret || creds.credentials?.['clientSecret'];
+    const clientContext =
+      creds.clientContext || creds.credentials?.['clientContext'] || 'merchant';
+    if (!clientId || !clientSecret)
       return { ...baseResult, events: [] };
 
-    const url = `${base}/api/shipments/${consignmentId}/track?api_key=${encodeURIComponent(apiKey)}`;
-    const data = await this.jsonFetch(url);
-
-    const events: TrackingEvent[] = [];
-    const trackData = data?.['data'] || data;
-    const trackHistory = trackData?.['tracking'] || trackData?.['tracking_history'] || trackData?.['events'] || [];
-
-    if (Array.isArray(trackHistory)) {
-      for (const t of trackHistory) {
-        events.push({
-          status: String(t['status'] || t['event'] || ''),
-          message: String(t['message'] || t['note'] || t['remarks'] || ''),
-          timestamp: String(t['timestamp'] || t['time'] || t['date'] || t['created_at'] || ''),
-          location: t['location'] ? String(t['location']) : undefined,
-        });
-      }
-    }
-
-    if (events.length === 0) {
-      events.push({
-        status: String(trackData?.['status'] || ''),
-        message: String(trackData?.['message'] || trackData?.['status_message'] || ''),
-        timestamp: String(trackData?.['updated_at'] || trackData?.['created_at'] || new Date().toISOString()),
-      });
-    }
-
-    events.sort(
-      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+    const data = await this.jsonFetch(
+      `${base}/api/v2/orders/${encodeURIComponent(consignmentId)}/details`,
+      {
+        headers: {
+          'Client-ID': String(clientId),
+          'Client-Secret': String(clientSecret),
+          'Client-Context': String(clientContext),
+        },
+      },
     );
+
+    const d = (data?.['data'] || data) as Record<string, unknown>;
+    const status = String(d?.['transfer_status'] || '');
+    const reason = String(d?.['reason'] || '');
+    const remarks = String(d?.['remarks'] || '');
+    const attempt = d?.['attempt'];
+    const messageParts = [reason, remarks].filter(Boolean);
+    if (attempt != null && String(attempt) !== '') {
+      messageParts.push(`attempt ${String(attempt)}`);
+    }
+    const message = messageParts.join(' — ') || status;
+    const timestamp = String(d?.['updated_at'] || new Date().toISOString());
+
+    const events: TrackingEvent[] = status
+      ? [{ status, message, timestamp }]
+      : [];
 
     return {
       ...baseResult,
-      currentStatus: String(trackData?.['status'] || ''),
-      currentMessage: String(trackData?.['message'] || trackData?.['status_message'] || events[events.length - 1]?.message || ''),
+      currentStatus: status,
+      currentMessage:
+        message || String(d?.['message'] || ''),
       events,
     };
   }

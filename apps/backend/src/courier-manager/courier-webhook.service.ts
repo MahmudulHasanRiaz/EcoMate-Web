@@ -971,7 +971,10 @@ export class CourierWebhookService {
       throw new BadRequestException('Missing consignment_id');
     }
 
-    const order = await this.findCarrybeeOrder(consignmentId);
+    const order = await this.findCarrybeeOrder(
+      consignmentId,
+      (body['merchant_order_id'] as string) || undefined,
+    );
     if (!order) {
       // Portal-side bookings never stamp the Order row and carry no invoice
       // fallback — nothing can be matched. Say so LOUDLY and leave the manual
@@ -984,8 +987,13 @@ export class CourierWebhookService {
 
     let dispatchStatus: string | null = CARRYBEE_DISPATCH_MAP[event] ?? null;
 
-    if (['order.pickup-failed', 'order.delivery-failed'].includes(event)) {
-      dispatchStatus = await this.resolveCancelledStatus(order.id);
+    // Task 7 (owner-locked): failed delivery/pickup attempts are NOT
+    // cancellations — record attempt+reason+remarks + timeline, change NO
+    // state (no dispatch status write, no order advancement). CANCELLED /
+    // RETURNED happen only on explicit events (order.pickup-cancelled,
+    // order.returned*, …).
+    if (event === 'order.pickup-failed' || event === 'order.delivery-failed') {
+      return this.recordCarrybeeAttemptOnly(order.id, consignmentId, event, body);
     }
 
     if (!dispatchStatus) {
@@ -1021,14 +1029,63 @@ export class CourierWebhookService {
   }
 
   /**
+   * Task 7 (owner-locked): record-only path for failed Carrybee attempts.
+   * Mirrors the Pathao skip-status pattern: persist the raw courier state on
+   * the order + existing dispatch row (courierStatus only, never the workflow
+   * `status`) and a timeline entry carrying attempt/reason/remarks — but
+   * NEVER force a workflow change (no CANCELLED, no RETURN_PENDING).
+   */
+  private async recordCarrybeeAttemptOnly(
+    orderId: string,
+    consignmentId: string,
+    event: string,
+    body: Record<string, unknown>,
+  ) {
+    this.logger.log(
+      `Carrybee: ${consignmentId} event "${event}" → recorded, workflow unchanged (failed attempts never cancel)`,
+    );
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: { courierStatus: event, courierService: 'carrybee' },
+    });
+
+    const existing = await this.prisma.dispatch.findFirst({
+      where: { courier: 'carrybee' as any, consignmentId },
+      select: { id: true },
+    });
+    if (existing) {
+      await this.prisma.dispatch.update({
+        where: { id: existing.id },
+        data: { courierStatus: event, lastSyncedAt: new Date() },
+      });
+    } else {
+      await this.fillManualDispatchIdentifiers(orderId, 'carrybee', consignmentId);
+    }
+
+    const extra: Record<string, unknown> = {};
+    if (body['reason']) extra.reason = body['reason'];
+    if (body['collected_amount'] != null) extra.collected_amount = body['collected_amount'];
+    if (body['remarks']) extra.remarks = body['remarks'];
+    if (body['attempt'] != null) extra.attempt = body['attempt'];
+    if (body['agent_name']) extra.agent_name = body['agent_name'];
+    if (body['agent_phone']) extra.agent_phone = body['agent_phone'];
+    await this.addTimelineEntry(orderId, 'carrybee', event, extra);
+    return { status: 'success', message: 'Delivery attempt recorded — no status change' };
+  }
+
+  /**
    * Resolve the order for a Carrybee webhook by consignment id:
    * 1. Order.courierConsignmentId — automated API dispatch.
    * 2. Dispatch registry — staff pre-created rows carrying identifiers whose
    *    order claim was skipped (claimed by a different consignment).
+   * 3. merchant_order_id — the documented webhook identifier; the v2 API
+   *    dispatch flow sends Order.displayId as merchant_order_id (portal
+   *    bookings resolve this way too).
    * Portal bookings with neither stay unmatchable by design (loud warn above).
    */
   private async findCarrybeeOrder(
     consignmentId: string,
+    merchantOrderId?: string,
   ): Promise<{ id: string } | null> {
     const direct = await this.prisma.order.findFirst({
       where: { courierConsignmentId: consignmentId, trashedAt: null },
@@ -1048,6 +1105,17 @@ export class CourierWebhookService {
         where: { id: dispatch.orderId },
       });
       if (viaDispatch && !viaDispatch.trashedAt) return viaDispatch;
+    }
+
+    if (merchantOrderId) {
+      const viaMerchantId = await this.prisma.order.findFirst({
+        where: {
+          displayId: merchantOrderId,
+          courierService: 'carrybee',
+          trashedAt: null,
+        },
+      });
+      if (viaMerchantId) return viaMerchantId;
     }
 
     return null;

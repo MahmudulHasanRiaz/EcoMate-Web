@@ -542,6 +542,8 @@ describe('CourierManagerService — Fix 5a Mx. prefix for short names', () => {
     secretKey: 'test-secret-key',
     clientId: 'client-id',
     clientSecret: 'client-secret',
+    clientContext: 'merchant',
+    storeId: '1',
     username: 'user@merchant.com',
     password: 'pass',
     credentials: {},
@@ -706,8 +708,12 @@ describe('CourierManagerService — Fix 5a Mx. prefix for short names', () => {
   it('sends a Carrybee short name verbatim (exempt from Mx. prefix)', async () => {
     mockFetch(
       new Response(
-        JSON.stringify({ success: true, data: { consignment_id: 'CB-1' } }),
-        { status: 200 },
+        JSON.stringify({
+          error: false,
+          message: 'Order created successfully',
+          data: { order: { consignment_id: 'CB-1' } },
+        }),
+        { status: 201 },
       ),
     );
 
@@ -715,8 +721,8 @@ describe('CourierManagerService — Fix 5a Mx. prefix for short names', () => {
 
     expect(results[0].ok).toBe(true);
     const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
-    expect(body.full_name).toBe('Jo');
-    expect(body.full_name).not.toContain('Mx.');
+    expect(body.recipient_name).toBe('Jo');
+    expect(body.recipient_name).not.toContain('Mx.');
   });
 
   it('surfaces a field error for a missing name instead of sending a placeholder', async () => {

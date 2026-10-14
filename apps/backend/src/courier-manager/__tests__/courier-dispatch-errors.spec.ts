@@ -359,8 +359,12 @@ describe('CourierManagerService — Fix 5 dispatch error bodies + retry discipli
       mockFetchSequence([
         new Response('carrybee down', { status: 500 }),
         new Response(
-          JSON.stringify({ success: true, data: { consignment_id: 'CB-9' } }),
-          { status: 200 },
+          JSON.stringify({
+            error: false,
+            message: 'Order created successfully',
+            data: { order: { consignment_id: 'CB-9' } },
+          }),
+          { status: 201 },
         ),
       ]);
 
