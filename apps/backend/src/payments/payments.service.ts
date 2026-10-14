@@ -72,7 +72,11 @@ export class PaymentsService {
     const perPage = query.perPage || 10;
     const where: any = {};
     if (query.gatewayCode) where.gatewayCode = query.gatewayCode;
+    // D-C actuals-only ledger: legacy cash/UNPAID placeholders are
+    // VOID-marked by migration (never deleted). The list shows real rows
+    // only — VOID is excluded by default, auditable via status=VOID.
     if (query.status) where.status = query.status;
+    else where.status = { not: PaymentStatus.VOID };
     if (query.orderNumber) {
       const order = await this.prisma.order.findUnique({
         where: { displayId: query.orderNumber },

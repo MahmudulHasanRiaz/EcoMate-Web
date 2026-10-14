@@ -183,7 +183,7 @@ export class CourierSettlementOverviewService {
         id: true,
         displayId: true,
         total: true,
-        payments: { select: { amount: true, gatewayCode: true, status: true } },
+        payments: { select: { amount: true, status: true, appliedCreditAmount: true } },
         status: { select: { name: true } },
         courierSettlementRows: {
           where: { supersededByRowId: null, rowClass: 'DATA', invoice: { state: { in: FINALIZED } } },
@@ -255,13 +255,15 @@ export class CourierSettlementOverviewService {
 
 function expectedCodOf(order: {
   total: unknown;
-  payments: { amount: unknown; gatewayCode: string; status: string }[];
+  payments: { amount: unknown; status: string; appliedCreditAmount?: unknown }[];
 }): number {
-  const cash = order.payments.filter(
-    (p) => p.gatewayCode === 'cash' && p.status !== 'FAILED' && p.status !== 'CANCELLED',
-  );
-  if (cash.length === 0) return num(order.total);
-  return round2(cash.reduce((s, p) => s + num(p.amount), 0));
+  // D-C actuals-only ledger: derived due (total − ΣPAID − ΣappliedCredit),
+  // floored at 0 — mirrors CodMismatchService systemDue, never a cash-row sum.
+  const paid = order.payments
+    .filter((p) => p.status === 'PAID')
+    .reduce((s, p) => s + num(p.amount), 0);
+  const applied = order.payments.reduce((s, p) => s + num(p.appliedCreditAmount), 0);
+  return Math.max(0, round2(num(order.total) - paid - applied));
 }
 
 function num(v: unknown): number {

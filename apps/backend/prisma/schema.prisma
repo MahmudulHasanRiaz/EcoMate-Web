@@ -73,6 +73,10 @@ enum PaymentStatus {
   CANCELLED
   REFUNDED
   PAYMENT_VERIFYING
+  // D-C actuals-only ledger: legacy cash/UNPAID placeholder rows (no money
+  // ever moved) are VOID-marked by migration, never deleted. Excluded from
+  // the payment list by default; auditable via an explicit status filter.
+  VOID
 }
 
 enum WarehouseType {

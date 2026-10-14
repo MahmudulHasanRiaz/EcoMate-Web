@@ -1812,14 +1812,12 @@ describe('OrdersService', () => {
         amount: 200,
         status: 'PAID',
       });
-      // Verify remainder is created as UNPAID COD
-      expect(createdPayments[1]).toMatchObject({
-        gatewayCode: 'cash',
-        status: 'UNPAID',
-      });
+      // D-C actuals-only ledger: the uncollected remainder is DERIVED
+      // (total − ΣPAID), never a placeholder row — no second payment.
+      expect(createdPayments).toHaveLength(1);
     });
 
-    it('creates COD cash payment rows as UNPAID so the Delivered path can verify them', async () => {
+    it('creates COD orders with NO placeholder payment row (due is derived)', async () => {
       (prisma.$transaction as jest.Mock).mockImplementation(
         async (cb: (tx: any) => Promise<any>) =>
           cb({
@@ -1840,14 +1838,9 @@ describe('OrdersService', () => {
         paymentOptionType: 'CASH_ON_DELIVERY',
       } as any);
 
-      expect(prisma.payment.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            gatewayCode: 'cash',
-            status: 'UNPAID',
-          }),
-        }),
-      );
+      // D-C: no cash/UNPAID placeholder — the courier collects against the
+      // derived due, and settlement import writes the real PAID row later.
+      expect(prisma.payment.create).not.toHaveBeenCalled();
     });
 
     it('should throw BadRequestException if no initial status configured', async () => {
@@ -3734,7 +3727,7 @@ describe('OrdersService', () => {
       expect(audit.by).toBe('staff-1');
     });
 
-    it('creates a payment row when the order had none', async () => {
+    it('creates NO payment row when the order had none (due is derived, D-C)', async () => {
       const existingOrder = { ...mockOrder, shippingCharge: 100, discount: 50 };
       (prisma.order.findUnique as jest.Mock).mockResolvedValue(existingOrder);
       (prisma.order.update as jest.Mock).mockResolvedValue({
@@ -3748,14 +3741,10 @@ describe('OrdersService', () => {
         gatewayCode: 'bkash',
       });
 
-      const paymentCreate = (prisma.payment.create as jest.Mock).mock
-        .calls[0][0];
-      expect(paymentCreate.data).toMatchObject({
-        orderId: 'order-id-1',
-        gatewayCode: 'bkash',
-        amount: 2050,
-        status: 'PENDING',
-      });
+      // D-C actuals-only ledger: switching the method with no money received
+      // records nothing — no UNPAID/PENDING placeholder. The due stays
+      // derived (total − ΣPAID). Real money enters via payment endpoints.
+      expect(prisma.payment.create).not.toHaveBeenCalled();
     });
 
     it('rejects partial payment amounts outside the valid range', async () => {

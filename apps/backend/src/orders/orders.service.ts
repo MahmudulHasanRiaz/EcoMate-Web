@@ -2162,41 +2162,16 @@ export class OrdersService {
               notes: 'Advance payment collected during order creation',
             },
           });
-          const remaining = Math.max(0, Number(finalTotal) - advancePaid);
-          if (remaining > 0) {
-            await tx.payment.create({
-              data: {
-                orderId: created.id,
-                gatewayCode: 'cash',
-                amount: remaining,
-                status: PaymentStatus.UNPAID,
-                notes: 'Remaining balance to collect on delivery',
-              },
-            });
-          }
+          // D-C actuals-only ledger: the uncollected remainder is DERIVED
+          // (total − ΣPAID), never a placeholder row. The courier collects
+          // against the derived due; settlement import writes the real PAID
+          // row when the money arrives.
         } else {
-          const paymentAmount =
-            dto.paymentOptionType === 'PARTIAL_PAYMENT' && dto.partialAmount
-              ? dto.partialAmount
-              : finalTotal;
-          const gatewayCode =
-            dto.gatewayCode ||
-            (dto.paymentOptionType === 'CASH_ON_DELIVERY' ? 'cash' : undefined);
-          if (gatewayCode) {
-            await tx.payment.create({
-              data: {
-                orderId: created.id,
-                gatewayCode,
-                amount: paymentAmount,
-                // COD cash rows are created UNPAID so the Delivered path can
-                // mark them PAID; in-progress online payments stay PENDING.
-                status:
-                  gatewayCode === 'cash'
-                    ? PaymentStatus.UNPAID
-                    : PaymentStatus.PENDING,
-              },
-            });
-          }
+          // D-C actuals-only ledger: order creation records NO payment row
+          // unless money was actually received (the staff-partial advance
+          // above). COD cash and in-progress online intents leave no row —
+          // the due stays derived (total − ΣPAID) and real money enters via
+          // the payment endpoints / gateway callbacks.
         }
       }
 
@@ -3304,6 +3279,9 @@ export class OrdersService {
                   PaymentStatus.REFUNDED,
                   PaymentStatus.PARTIAL_REFUNDED,
                   PaymentStatus.CANCELLED,
+                  // D-C: legacy cash/UNPAID placeholders are VOID-marked, never
+                  // money — skip them like every other terminal row.
+                  PaymentStatus.VOID,
                 ],
               },
             },
@@ -3391,22 +3369,10 @@ export class OrdersService {
                 'Payment was already completed — change the gateway via a refund instead of editing the order',
               );
             }
-            await tx.payment.create({
-              data: {
-                orderId: id,
-                gatewayCode,
-                amount: paymentAmount,
-                status:
-                  gatewayCode === 'cash'
-                    ? PaymentStatus.UNPAID
-                    : PaymentStatus.PENDING,
-                recordedBy:
-                  opts?.userId != null ? `staff:${opts.userId}` : null,
-                submittedBy:
-                  opts?.userId != null ? `staff:${opts.userId}` : null,
-                recordedAt: new Date(),
-              },
-            });
+            // D-C actuals-only ledger: switching the method with no money
+            // received records nothing — no UNPAID/PENDING placeholder. The
+            // due stays derived (total − ΣPAID); real money enters via the
+            // payment endpoints.
           }
         }
       }

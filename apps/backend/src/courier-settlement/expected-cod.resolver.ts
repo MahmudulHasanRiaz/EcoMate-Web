@@ -27,7 +27,7 @@ export class ExpectedCodResolver {
         trashedAt: true,
         total: true,
         status: { select: { name: true } },
-        payments: { select: { amount: true, gatewayCode: true, status: true } },
+        payments: { select: { amount: true, gatewayCode: true, status: true, appliedCreditAmount: true } },
       },
     });
     if (!order) return null;
@@ -40,6 +40,7 @@ export class ExpectedCodResolver {
         amount: toNumber(p.amount),
         gatewayCode: p.gatewayCode,
         status: String(p.status),
+        appliedCreditAmount: toNumber((p as { appliedCreditAmount?: unknown }).appliedCreditAmount),
       })),
     });
   }

@@ -26,11 +26,13 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { AccountingModule } from '../accounting/accounting.module';
 import { CacheModule } from '../cache/cache.module';
+import { CustomerCreditModule } from '../customer-credit/customer-credit.module';
 
 @Module({
   imports: [
     AccountingModule,
     CacheModule,
+    CustomerCreditModule,
     BullModule.registerQueue({ name: 'courier-settlement-import' }),
   ],
   controllers: [CourierSettlementController],

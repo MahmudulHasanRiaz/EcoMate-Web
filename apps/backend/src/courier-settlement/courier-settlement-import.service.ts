@@ -23,10 +23,12 @@ import {
   CourierSettlementInvoiceState,
   CourierSettlementRowClass,
   CourierSettlementRowKind,
+  PaymentStatus,
 } from '@prisma/client';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { CustomerCreditService } from '../customer-credit/customer-credit.service';
 import { parseInvoiceFile, type ParseAlias } from './parsing/invoice-parser.service';
 import { getDescriptor } from './parsing/descriptors';
 import type { ParsedInvoice, ParsedRow, Provider, RawRow } from './parsing/types';
@@ -203,6 +205,10 @@ export class CourierSettlementImportService {
     private readonly prisma: PrismaService,
     private readonly activity: CourierSettlementActivityService,
     @Optional() @Inject(StorageService) private readonly storage?: StorageService,
+    // D-C settlement real rows: marginal over-settlement grants customer
+    // credit via the shared helper (same $tx as the payment row). Optional
+    // so unit tests and queue-less environments resolve without it.
+    @Optional() private readonly credit?: CustomerCreditService,
     // §17 async threshold: registered by the module; optional so unit tests and
     // queue-less environments fall back to the synchronous import path.
     @Optional() @InjectQueue('courier-settlement-import') private readonly importQueue?: Queue,
@@ -427,6 +433,7 @@ export class CourierSettlementImportService {
         throw new ConflictException('This invoice has already been imported.');
       }
       await this.persistRows(tx, invoiceId, prepared);
+      await this.bookSettlementPayments(tx, invoiceId, prepared.courier, prepared, actor);
       return tx.courierSettlementInvoice.update({
         where: { id: invoiceId },
         data: {
@@ -677,6 +684,98 @@ export class CourierSettlementImportService {
       await tx.courierSettlementException.createMany({
         data: exceptionInputs.slice(i, i + INSERT_BATCH_SIZE),
       });
+    }
+  }
+
+  /**
+   * D-C actuals-only ledger: every matched order with collected > 0 books ONE
+   * real `courier_settlement` PAID payment in the SAME $tx as the rows, so the
+   * ledger reflects money the courier actually collected. The amount is the
+   * Σ EFFECTIVE collected (field name on the row model is `effectiveCollected`;
+   * there is no `settledNet` column — net is what the courier remits to us,
+   * collected is what the customer paid). Partial settlement leaves the
+   * remainder due (nothing else to do — due is derived); over-settlement
+   * grants the marginal excess as customer credit via the shared helper.
+   *
+   * Idempotent per (batch, order): transactionId `<invoiceId>:<orderId>` fits
+   * the existing @@unique([transactionId, gatewayCode]); the pre-check skips
+   * orders already booked by an earlier attempt of the same batch.
+   */
+  private async bookSettlementPayments(
+    tx: Prisma.TransactionClient,
+    invoiceId: string,
+    courier: string,
+    prepared: Prepared,
+    actor?: string | null,
+  ): Promise<void> {
+    const settledByOrder = new Map<string, number>();
+    for (const rec of prepared.rowRecords) {
+      if (rec.row.rowClass !== 'DATA' || !rec.match.orderId) continue;
+      const collected = num(rec.row.effectiveCollected);
+      if (!(collected > 0)) continue;
+      settledByOrder.set(
+        rec.match.orderId,
+        round((settledByOrder.get(rec.match.orderId) ?? 0) + collected),
+      );
+    }
+    if (settledByOrder.size === 0) return;
+
+    const txnIds = [...settledByOrder.keys()].map(
+      (orderId) => `${invoiceId}:${orderId}`,
+    );
+    const already = await tx.payment.findMany({
+      where: { transactionId: { in: txnIds }, gatewayCode: 'courier_settlement' },
+      select: { transactionId: true },
+    });
+    const booked = new Set((already ?? []).map((p) => p.transactionId));
+
+    // Due facts for the marginal overpay grant (same $tx, one query).
+    const dueOrders = await tx.order.findMany({
+      where: { id: { in: [...settledByOrder.keys()] } },
+      select: {
+        id: true,
+        total: true,
+        customerId: true,
+        payments: { select: { amount: true, status: true } },
+      },
+    });
+    const dueById = new Map(dueOrders.map((o) => [o.id, o]));
+
+    for (const [orderId, settled] of settledByOrder) {
+      const transactionId = `${invoiceId}:${orderId}`;
+      if (booked.has(transactionId)) continue;
+      const created = await tx.payment.create({
+        data: {
+          orderId,
+          gatewayCode: 'courier_settlement',
+          account: courier,
+          amount: settled,
+          status: PaymentStatus.PAID,
+          transactionId,
+          recordedBy: actor ? `staff:${actor}` : null,
+          recordedAt: new Date(),
+          notes: `Courier settlement ${invoiceId}: ${courier} collected ${settled}`,
+        },
+      });
+      // Over-settlement grants the marginal excess as customer credit (same
+      // $tx, atomic with the payment row). Guest orders never grant.
+      const due = dueById.get(orderId) as
+        | { total: unknown; customerId: string | null; payments: { amount: unknown; status: unknown }[] }
+        | undefined;
+      if (due?.customerId && this.credit) {
+        const paidBefore = (due.payments ?? [])
+          .filter((p) => String(p.status) === 'PAID')
+          .reduce((s, p) => s + Number(p.amount ?? 0), 0);
+        await this.credit.grantFromOverpayment(tx, {
+          customerId: due.customerId,
+          orderId,
+          paymentId: created.id,
+          orderTotal: Number(due.total ?? 0),
+          paidBefore,
+          newAmount: settled,
+          isPaid: true,
+        });
+      }
     }
   }
 
@@ -994,7 +1093,7 @@ export class CourierSettlementImportService {
         trashedAt: true,
         total: true,
         status: { select: { name: true } },
-        payments: { select: { amount: true, gatewayCode: true, status: true } },
+        payments: { select: { amount: true, gatewayCode: true, status: true, appliedCreditAmount: true } },
       },
     });
     for (const order of orders) {
@@ -1007,6 +1106,7 @@ export class CourierSettlementImportService {
           amount: num(p.amount),
           gatewayCode: p.gatewayCode,
           status: String(p.status),
+          appliedCreditAmount: num((p as { appliedCreditAmount?: unknown }).appliedCreditAmount),
         })),
       });
       map.set(order.id, { value: res.value, divergence: res.divergence });

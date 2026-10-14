@@ -243,10 +243,11 @@ describe('CourierSettlementOverviewService.getBalances (§3 stock)', () => {
     expect(res.orders.reduce((s, o) => s + o.outstandingCod, 0)).toBe(res.kpis.outstandingCod);
   });
 
-  it('prefers cash payments over Order.total for expected COD, and falls back when absent', async () => {
+  it('derives expected COD as total − ΣPAID (D-C actuals-only ledger)', async () => {
     const { svc, prisma } = await makeSvc({
       orders: [
-        codOrder('ord1', 999, [], [{ amount: 770, gatewayCode: 'cash', status: 'PAID' }]),
+        // 770 received on a 999 order → 229 still due for the courier.
+        codOrder('ord1', 999, [], [{ amount: 770, gatewayCode: 'bkash', status: 'PAID' }]),
         codOrder('ord2', 500, []),
       ],
     });
@@ -254,7 +255,7 @@ describe('CourierSettlementOverviewService.getBalances (§3 stock)', () => {
     const rows = prisma.order.findMany.mock.calls[0][0].select;
     expect(rows.payments).toBeDefined();
     const res = await svc.getBalances({});
-    expect(res.orders.find((o) => o.displayId === 'ORD1')?.expectedCod).toBe(770);
+    expect(res.orders.find((o) => o.displayId === 'ORD1')?.expectedCod).toBe(229);
     expect(res.orders.find((o) => o.displayId === 'ORD2')?.expectedCod).toBe(500);
   });
 

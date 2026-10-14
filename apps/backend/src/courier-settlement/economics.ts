@@ -14,6 +14,8 @@ export interface ExpectedCodPaymentInput {
   amount: number;
   gatewayCode: string;
   status: string;
+  /** credit applied against the order — mirrors the cod-mismatch systemDue formula. */
+  appliedCreditAmount?: number | null;
 }
 
 export interface ExpectedCodOrderInput {
@@ -36,12 +38,33 @@ export interface ExpectedCodResult {
 }
 
 const CANCELLED_STATUS = 'Cancelled';
-const NON_COUNTED_PAYMENT_STATUSES = new Set(['FAILED', 'CANCELLED']);
+
+/**
+ * D-C actuals-only ledger: the derived due shared by `expectedCod` and every
+ * reader — `total − ΣPAID − ΣappliedCredit`, floored at 0. Only received
+ * money reduces what the courier collects; PENDING/FAILED/CANCELLED/VOID
+ * rows never do. Mirrors `CodMismatchService` systemDue exactly.
+ */
+export function derivedDue(
+  total: number,
+  payments: { amount: number; status: string; appliedCreditAmount?: number | null }[],
+): number {
+  const paid = payments
+    .filter((p) => p.status === 'PAID')
+    .reduce((sum, p) => sum + numberOr(p.amount, 0), 0);
+  const applied = payments.reduce(
+    (sum, p) => sum + numberOr(p.appliedCreditAmount ?? 0, 0),
+    0,
+  );
+  return Math.max(0, round2(numberOr(total, 0) - paid - applied));
+}
 
 /**
  * §2.1 `expectedCod(order)` — the gross COD the courier is expected to collect.
- * Cash `Payment` rows are authoritative; `Order.total` is only a flagged
- * fallback for imported COD orders that carry no cash payment row (§2.3).
+ * D-C actuals-only ledger: placeholder rows are gone (VOID-marked, never
+ * counted), so the expectation is the DERIVED due, not a cash-row sum.
+ * `Order.total` stays the flagged fallback only for COD orders that carry no
+ * payment row at all yet (identical value to the derived formula).
  */
 export function expectedCod(order: ExpectedCodOrderInput): ExpectedCodResult {
   const orderTotal = numberOr(order.total, 0);
@@ -55,16 +78,8 @@ export function expectedCod(order: ExpectedCodOrderInput): ExpectedCodResult {
     return { value: 0, source: 'not_cod', divergence: false, cashPaymentSum: null, orderTotal };
   }
 
-  const cashRows = order.payments.filter(
-    (p) =>
-      p.gatewayCode === 'cash' && !NON_COUNTED_PAYMENT_STATUSES.has(p.status),
-  );
-  const cashPaymentSum = round2(
-    cashRows.reduce((sum, p) => sum + numberOr(p.amount, 0), 0),
-  );
-
-  if (cashRows.length === 0) {
-    // Imported COD order with no cash Payment row — flagged fallback.
+  if (order.payments.length === 0) {
+    // COD order with no payment row yet — flagged fallback (== derived due).
     return {
       value: orderTotal,
       source: 'order_total_fallback',
@@ -74,12 +89,11 @@ export function expectedCod(order: ExpectedCodOrderInput): ExpectedCodResult {
     };
   }
 
-  const divergence = Math.abs(cashPaymentSum - orderTotal) > MONEY_EPSILON;
   return {
-    value: cashPaymentSum,
+    value: derivedDue(orderTotal, order.payments),
     source: 'cash_payments',
-    divergence,
-    cashPaymentSum,
+    divergence: false,
+    cashPaymentSum: null,
     orderTotal,
   };
 }
