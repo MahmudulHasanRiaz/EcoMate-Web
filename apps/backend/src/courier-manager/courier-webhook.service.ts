@@ -368,7 +368,12 @@ export class CourierWebhookService {
 
     const orderStatusName = DISPATCH_TO_ORDER_STATUS[dispatchStatus];
     if (orderStatusName) {
-      await this.tryAdvanceOrderStatus(order.id, orderStatusName);
+      // Task 5 (Fix 9, Rule 15.4): only a CONFIRMED partial-delivery may
+      // promote a staff-Partial order (partial_delivered, never
+      // partial_delivered_approval_pending — the rider's word, not ours).
+      await this.tryAdvanceOrderStatus(order.id, orderStatusName, {
+        confirmedPartial: rawStatus === 'partial_delivered',
+      });
     }
 
     this.logger.log(`Steadfast: ${consignmentId} → dispatch=${dispatchStatus} order=${orderStatusName || '-'}`);
@@ -1085,12 +1090,42 @@ export class CourierWebhookService {
     }
   }
 
-  private async tryAdvanceOrderStatus(orderId: string, targetName: string) {
+  private async tryAdvanceOrderStatus(
+    orderId: string,
+    targetName: string,
+    opts?: { confirmedPartial?: boolean },
+  ) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: { status: true },
     });
     if (!order || order.trashedAt) return;
+
+    // Task 5 (Fix 9, owner-locked Rule 15.4): the ONLY automated Partial →
+    // Delivered path — an explicit exception to the flow-index block below
+    // (Partial sorts after Delivered, so the generic index check would
+    // early-return) AND to the OrdersService automation-stop / transition
+    // locks (delegated to confirmStaffPartialDelivered, which re-verifies the
+    // open staff PARTIAL Return fail-closed — a generic Partial without one
+    // stays locked). Conditions, ALL required:
+    // - order still Partial (NO instant-delivery marked — instant orders are
+    //   already Delivered, and a partial webhook there is a no-op by the
+    //   Delivered→Partial transition lock);
+    // - the arriving event targets Partial (a confirmed partial-delivery);
+    // - opts.confirmedPartial (NEVER approval-pending: approval-pending
+    //   affects SETTLEMENT only and must NEVER Deliver).
+    // Failure keeps the lock (warn + return — never fall through).
+    if (order.status.name === 'Partial' && targetName === 'Partial' && opts?.confirmedPartial) {
+      try {
+        await this.ordersService.confirmStaffPartialDelivered(orderId, 'system');
+        return;
+      } catch (e) {
+        this.logger.warn(
+          `Staff-partial 15.4 promotion failed for order ${orderId}: ${(e as Error).message}`,
+        );
+        return;
+      }
+    }
 
     const currentIdx = ORDER_STATUS_FLOW.indexOf(order.status.name);
     const targetIdx = ORDER_STATUS_FLOW.indexOf(targetName);
@@ -1337,7 +1372,11 @@ export class CourierWebhookService {
 
     const orderStatusName = PATHAO_DISPATCH_TO_ORDER[dispatchStatus];
     if (orderStatusName) {
-      await this.tryAdvanceOrderStatus(order.id, orderStatusName);
+      // Task 5 (Fix 9, Rule 15.4): Pathao carries no approval-pending partial
+      // vocabulary — every PARTIAL arrival here is a confirmed partial.
+      await this.tryAdvanceOrderStatus(order.id, orderStatusName, {
+        confirmedPartial: dispatchStatus === 'PARTIAL',
+      });
     }
 
     // Task 6 (Fix 13): order.return-id-created ALSO creates/links the unified
@@ -1495,7 +1534,10 @@ export class CourierWebhookService {
 
     const orderStatusName = REDX_DISPATCH_TO_ORDER[dispatchStatus];
     if (orderStatusName) {
-      await this.tryAdvanceOrderStatus(order.id, orderStatusName);
+      // Task 5 (Fix 9, Rule 15.4): same confirmed-partial rule as Pathao.
+      await this.tryAdvanceOrderStatus(order.id, orderStatusName, {
+        confirmedPartial: dispatchStatus === 'PARTIAL',
+      });
     }
 
     this.logger.log(`RedX: ${trackingNumber || invoiceNumber} → dispatch=${dispatchStatus} order=${orderStatusName || '-'}${messageEn ? ` (${messageEn})` : ''}`);
@@ -1660,7 +1702,10 @@ export class CourierWebhookService {
 
     const orderStatusName = CARRYBEE_DISPATCH_TO_ORDER[dispatchStatus];
     if (orderStatusName) {
-      await this.tryAdvanceOrderStatus(order.id, orderStatusName);
+      // Task 5 (Fix 9, Rule 15.4): same confirmed-partial rule as Pathao.
+      await this.tryAdvanceOrderStatus(order.id, orderStatusName, {
+        confirmedPartial: dispatchStatus === 'PARTIAL',
+      });
     }
 
     // Task 3 (owner-locked F7): pickup failure is staff-actionable — loud log

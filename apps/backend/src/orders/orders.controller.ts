@@ -24,6 +24,7 @@ import {
   CancelOrderDto,
   VerifyOrderPaymentDto,
 } from './dto/order.dto';
+import { StaffPartialReturnDto } from './dto/staff-partial-return.dto';
 import {
   BulkOrdersDto,
   BulkStatusDto,
@@ -261,6 +262,20 @@ export class OrdersController {
     return this.svc.updateOrder(id, dto, {
       userId: user.userId,
       performedBy: user.email,
+    });
+  }
+
+  @Roles('superadmin', 'admin', 'employee')
+  @RequiresFeature('admin_orders')
+  @Post(':id/staff-partial-return')
+  createStaffPartialReturn(
+    @Param('id') id: string,
+    @Body() dto: StaffPartialReturnDto,
+    @CurrentUser() user: { userId: string; email: string },
+  ) {
+    return this.svc.createStaffPartialReturn(id, dto, {
+      userId: user.userId,
+      email: user.email,
     });
   }
 

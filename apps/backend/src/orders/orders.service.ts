@@ -71,6 +71,16 @@ import {
 export { ORDER_TRANSITIONS };
 
 /**
+ * Task 5 (Fix 9, owner-locked Rule 15): the staff-partial button lives on
+ * Shipping AND Partial orders only. Every other status 400s (the menu mirrors
+ * this with a disabled reason; the backend enforces it).
+ */
+export const STAFF_PARTIAL_ALLOWED_STATUSES: readonly string[] = [
+  'Shipping',
+  'Partial',
+];
+
+/**
  * Order status name → lifecycle custom tracking event. Only genuinely
  * transitioned-into statuses emit; every other status (Hold, Packed,
  * Shipping, Payment *, Partial, Return Pending, Damaged, ...) emits nothing.
@@ -3505,6 +3515,7 @@ export class OrdersService {
     userId: string,
     performedBy?: string,
     tx?: Prisma.TransactionClient,
+    internalOpts?: { allowStaffPartialToDelivered?: boolean },
   ) {
     const order = await this.prisma.order.findUnique({
       where: { id },
@@ -3518,19 +3529,29 @@ export class OrdersService {
     });
     if (!newStatus) throw new NotFoundException('Status not found');
 
+    // Task 5 (Fix 9, owner-locked Rule 15.4): the ONLY automated Partial →
+    // Delivered path. confirmStaffPartialDelivered() verifies the open
+    // staff-created PARTIAL Return fail-closed BEFORE setting this flag, so a
+    // direct updateStatus caller can never smuggle it in via the DTO (the flag
+    // is a method parameter, not request input).
+    const staffPartialBypass =
+      internalOpts?.allowStaffPartialToDelivered === true &&
+      order.status.name === 'Partial' &&
+      newStatus.name === 'Delivered';
+
     // AUTHORITATIVE RULE: 'Partial' is an automation-stopped state. Once an
     // order is Partial, only manual staff action may change its status —
     // courier webhooks, webhook replays, the manual courier sync and
     // reconciliation must never transition it. Manual staff members pass a
     // real user id and are unaffected.
-    if (order.status.name === 'Partial' && isAutomatedActor(userId)) {
+    if (order.status.name === 'Partial' && isAutomatedActor(userId) && !staffPartialBypass) {
       throw new BadRequestException(
         'Order is Partial: automated processes cannot change its status. It must be changed manually.',
       );
     }
 
     const allowed = ORDER_TRANSITIONS[order.status.name] || [];
-    if (!allowed.includes(newStatus.name)) {
+    if (!allowed.includes(newStatus.name) && !staffPartialBypass) {
       throw new BadRequestException(
         `Cannot transition from "${order.status.name}" to "${newStatus.name}". Allowed: ${allowed.join(', ') || 'none'}`,
       );
@@ -3780,6 +3801,299 @@ export class OrdersService {
 
     await this.invalidateAnalytics();
     return updated;
+  }
+
+  /**
+   * Task 5 (Fix 9, owner-locked Rule 15): staff-partial creation.
+   *
+   * Button 'Create Partial Return Order' on Shipping AND Partial orders →
+   * creates Return(PARTIAL, items=marked products, source STAFF) → order →
+   * Partial, DISPATCH UNCHANGED. There is deliberately NO dispatch write
+   * anywhere in this method: a staff action never rewrites the dispatch
+   * (locked by test — dispatch.update/updateMany/upsert/create uncalled).
+   *
+   * T4 rows adopted: the Return shape here is exactly ReturnsService.create's
+   * standalone shape (RTN-YYMMDD-NNNN via the shared ReturnCounter), so rows
+   * created by the T4 menu entry need no migration.
+   *
+   * - Shipping (no instantDelivery) → order → Partial via updateStatus.
+   * - Already Partial (no instantDelivery) → Return created, status kept.
+   * - instantDelivery → the kept remainder is already delivered: Shipping →
+   *   Delivered via updateStatus (legal transition), Partial → Delivered via
+   *   confirmStaffPartialDelivered (the Return created above satisfies its
+   *   staff-Return check). A later courier partial webhook is then a no-op.
+   */
+  async createStaffPartialReturn(
+    orderId: string,
+    dto: { items: unknown; reason?: string; instantDelivery?: boolean },
+    actor: { userId: string; email?: string },
+  ) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        status: true,
+        items: { select: { productId: true, variantId: true, quantity: true } },
+      },
+    });
+    if (!order || (order as any).trashedAt) {
+      throw new NotFoundException('Order not found');
+    }
+    if ((order as any).kind === 'RETURN') {
+      throw new BadRequestException(
+        'A partial return cannot be created from a Return Order.',
+      );
+    }
+    const statusName = (order as any)?.status?.name as string | undefined;
+    if (!STAFF_PARTIAL_ALLOWED_STATUSES.includes(statusName as string)) {
+      throw new BadRequestException(
+        'A partial return can only be created from an order in Shipping or ' +
+          `Partial status (current: ${statusName ?? 'unknown'}).`,
+      );
+    }
+    const items = this.validateStaffPartialItems(
+      dto.items,
+      ((order as any).items ?? []) as {
+        productId: string | null;
+        variantId: string | null;
+        quantity: number;
+      }[],
+    );
+
+    const displayId = await this.generateStaffPartialDisplayId();
+    const ret = await (this.prisma as any).return.create({
+      data: {
+        orderId,
+        displayId,
+        type: 'PARTIAL',
+        status: 'REQUESTED',
+        source: 'STAFF',
+        items: items as unknown as Prisma.InputJsonValue,
+        reason: dto.reason?.trim() ? dto.reason.trim() : null,
+      },
+    });
+    this.logger.log(
+      `Staff partial return ${displayId} created for order ${(order as any).displayId ?? orderId} ` +
+        `by=${actor.email ?? actor.userId} (dispatch unchanged)`,
+    );
+
+    const performedBy = actor.email ?? actor.userId;
+    if (dto.instantDelivery) {
+      if (statusName === 'Shipping') {
+        const delivered = await this.prisma.orderStatus.findUnique({
+          where: { name: 'Delivered' },
+        });
+        if (!delivered) {
+          throw new BadRequestException('Order status configuration is incomplete');
+        }
+        const updated = await this.updateStatus(
+          orderId,
+          {
+            statusId: delivered.id,
+            note:
+              `Staff partial return ${displayId} created — remaining items ` +
+              `marked instantly delivered.`,
+          },
+          actor.userId,
+          performedBy,
+        );
+        return { return: ret, order: updated };
+      }
+      const updated = await this.confirmStaffPartialDelivered(
+        orderId,
+        actor.userId,
+        `Staff partial return ${displayId} created — remaining items marked ` +
+          `instantly delivered.`,
+        performedBy,
+      );
+      return { return: ret, order: updated };
+    }
+
+    if (statusName === 'Shipping') {
+      const partial = await this.prisma.orderStatus.findUnique({
+        where: { name: 'Partial' },
+      });
+      if (!partial) {
+        throw new BadRequestException('Order status configuration is incomplete');
+      }
+      const updated = await this.updateStatus(
+        orderId,
+        {
+          statusId: partial.id,
+          note:
+            `Staff partial return ${displayId} created — ` +
+            `order moved to Partial; dispatch unchanged.`,
+        },
+        actor.userId,
+        performedBy,
+      );
+      return { return: ret, order: updated };
+    }
+
+    // Already Partial: the Return is the record; the status stays. Leave a
+    // staff-visible timeline note so the creation is auditable.
+    const timeline = [
+      ...this.parseTimeline((order as any).timeline),
+      {
+        status: 'Partial',
+        oldStatus: 'Partial',
+        timestamp: new Date().toISOString(),
+        note: `Staff partial return ${displayId} created — order stays Partial; dispatch unchanged.`,
+        performedBy,
+      },
+    ];
+    const updated = await this.prisma.order.update({
+      where: { id: orderId },
+      data: { timeline: timeline as any },
+      include: { status: true },
+    });
+    return { return: ret, order: updated };
+  }
+
+  /**
+   * Task 5 (Fix 9, owner-locked Rule 15.4): the ONLY automated Partial →
+   * Delivered path — an explicit exception to the flow-index block in
+   * CourierWebhookService.tryAdvanceOrderStatus AND to the updateStatus
+   * automation-stop / transition locks (via the internal bypass flag, which
+   * is set ONLY here after the fail-closed checks below — never from request
+   * input).
+   *
+   * Fail-closed: throws unless the order is Partial AND an OPEN
+   * staff-created PARTIAL Return exists (CLOSED legs never qualify).
+   * Approval-pending partials never reach this method (the webhook passes
+   * confirmedPartial=false for them); instant-delivery orders never reach it
+   * either (they are already Delivered — the webhook is a no-op there).
+   */
+  async confirmStaffPartialDelivered(
+    orderId: string,
+    performedBy?: string,
+    note?: string,
+    performedByEmail?: string,
+  ) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { status: true },
+    });
+    if (!order || (order as any).trashedAt) {
+      throw new NotFoundException('Order not found');
+    }
+    if ((order as any)?.status?.name !== 'Partial') {
+      throw new BadRequestException(
+        'Only a Partial order can be confirmed Delivered through a staff partial return.',
+      );
+    }
+    const db = this.prisma as any;
+    const staffReturn =
+      typeof db?.return?.findFirst === 'function'
+        ? await db.return.findFirst({
+            where: {
+              orderId,
+              source: 'STAFF',
+              type: 'PARTIAL',
+              status: { not: 'CLOSED' },
+            },
+          })
+        : null;
+    if (!staffReturn) {
+      throw new BadRequestException(
+        'Partial → Delivered requires an open staff-created partial return.',
+      );
+    }
+    const delivered = await this.prisma.orderStatus.findUnique({
+      where: { name: 'Delivered' },
+    });
+    if (!delivered) {
+      throw new BadRequestException('Order status configuration is incomplete');
+    }
+    return this.updateStatus(
+      orderId,
+      {
+        statusId: delivered.id,
+        note:
+          note ??
+          `Staff partial return ${(staffReturn as any)?.displayId ?? (staffReturn as any)?.id} ` +
+            `confirmed — kept remainder delivered (Rule 15.4).`,
+      },
+      'system',
+      performedByEmail ?? performedBy ?? 'system',
+      undefined,
+      { allowStaffPartialToDelivered: true },
+    );
+  }
+
+  /**
+   * Staff-partial item validation: ReturnsService shape rules (productId
+   * required, quantity a positive integer, no duplicate lines) PLUS the
+   * exchange qty-cap rules (each line must belong to the original order and
+   * never exceed its ordered quantity — direct-POST inflation guard).
+   */
+  private validateStaffPartialItems(
+    items: unknown,
+    orderLines: { productId: string | null; variantId: string | null; quantity: number }[],
+  ): { productId: string; variantId: string | null; quantity: number }[] {
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new BadRequestException('Select at least one product to return.');
+    }
+    const orderedQtyByKey = new Map<string, number>();
+    const inOriginal = new Set<string>();
+    for (const line of orderLines ?? []) {
+      if (!line?.productId) continue;
+      const key = `${line.productId}::${line.variantId ?? ''}`;
+      inOriginal.add(key);
+      orderedQtyByKey.set(key, (orderedQtyByKey.get(key) ?? 0) + Number(line.quantity ?? 0));
+    }
+    const seen = new Set<string>();
+    return (items as any[]).map((it, i) => {
+      const productId = String((it as any)?.productId ?? '').trim();
+      const variantId = (it as any)?.variantId ? String((it as any).variantId) : null;
+      const quantity = Number((it as any)?.quantity);
+      if (!productId) {
+        throw new BadRequestException(`Return items[${i}].productId is required`);
+      }
+      if (!Number.isInteger(quantity) || quantity <= 0) {
+        throw new BadRequestException(
+          `Return items[${i}].quantity must be a positive integer`,
+        );
+      }
+      const key = `${productId}::${variantId ?? ''}`;
+      if (seen.has(key)) {
+        throw new BadRequestException(`Duplicate return line: ${productId}`);
+      }
+      seen.add(key);
+      if (inOriginal.size > 0 && !inOriginal.has(key)) {
+        throw new BadRequestException(
+          'A returning item is not part of the original order.',
+        );
+      }
+      const ordered = orderedQtyByKey.get(key);
+      if (ordered !== undefined && quantity > ordered) {
+        throw new BadRequestException(
+          `Returning quantity (${quantity}) exceeds the ordered quantity (${ordered}).`,
+        );
+      }
+      return { productId, variantId, quantity };
+    });
+  }
+
+  /**
+   * RTN-YYMMDD-NNNN — mirrors ReturnsService.generateDisplayId (shared
+   * ReturnCounter, so T4-created and T5-created rows number in one sequence).
+   */
+  private async generateStaffPartialDisplayId(): Promise<string> {
+    const { year, month, day } = dhakaDateParts();
+    const yy = String(year).slice(2);
+    const mm = String(month).padStart(2, '0');
+    const dd = String(day).padStart(2, '0');
+    const dateStr = `${yy}${mm}${dd}`;
+    const prefix = `RTN-${dateStr}`;
+
+    return this.prisma.$transaction(async (tx) => {
+      const counter = await tx.returnCounter.upsert({
+        where: { date: dateStr },
+        create: { date: dateStr, seq: 1 },
+        update: { seq: { increment: 1 } },
+      });
+      return `${prefix}-${String(counter.seq).padStart(4, '0')}`;
+    });
   }
 
   async submitPaymentProof(

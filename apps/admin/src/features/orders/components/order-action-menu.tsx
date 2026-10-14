@@ -40,6 +40,30 @@ export function exchangeBlockedReason(order: any): string | null {
   return null
 }
 
+/**
+ * Task 5 (Fix 9, owner-locked Rule 15): the staff-partial button lives on
+ * Shipping AND Partial orders only (mirrors the backend
+ * STAFF_PARTIAL_ALLOWED_STATUSES gate — kind-only creation would force the
+ * order past ORDER_TRANSITIONS).
+ */
+export const PARTIAL_ALLOWED_STATUSES: readonly string[] = [
+  'Shipping',
+  'Partial',
+]
+
+/** Non-null reason when the order's status disallows staff-partial creation. */
+export function partialBlockedReason(order: any): string | null {
+  if (order?.kind === 'RETURN') return null // kind gate hides instead
+  const status = order?.status?.name as string | undefined
+  if (!PARTIAL_ALLOWED_STATUSES.includes(status as string)) {
+    return (
+      'Partial returns are allowed only from Shipping or Partial status ' +
+      `(current: ${status ?? 'unknown'}).`
+    )
+  }
+  return null
+}
+
 export interface OrderActionDef {
   key: 'create-return' | 'create-exchange' | 'create-partial-return' | string
   label: string
@@ -116,6 +140,8 @@ export function OrderActionMenu({ order }: { order: any }) {
       label: ORDER_ACTION_LABELS.createPartialReturn,
       icon: <Scissors className='h-4 w-4 mr-2' />,
       visible: (o) => o.kind !== 'RETURN',
+      disabled: (o) => partialBlockedReason(o) !== null,
+      disabledReason: (o) => partialBlockedReason(o),
       run: () => setPartialOpen(true),
     },
   ]

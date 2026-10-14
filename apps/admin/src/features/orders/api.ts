@@ -342,6 +342,17 @@ export const ordersApi = {
   removeItem: (orderId: string, itemId: string) => apiClient.delete(`/orders/${orderId}/items/${itemId}`),
   bulkAssign: (ids: string[], assignedToId: string | null) => apiClient.post('/orders/bulk/assign', { ids, assignedToId }),
   rotateViewToken: (orderId: string) => apiClient.post<{ id: string; viewToken: string; displayId: string }>(`/orders/${orderId}/rotate-view-token`),
+  /**
+   * Task 5 (Fix 9, Rule 15): staff-partial flow — creates Return(PARTIAL,
+   * items) + moves the order to Partial (or Delivered with instantDelivery),
+   * dispatch UNCHANGED. Replaces the direct /returns POST for the Plus-menu
+   * partial entry (T4 rows are adopted as-is, same record shape).
+   */
+  createStaffPartialReturn: (id: string, data: {
+    items: { productId: string; variantId?: string | null; quantity: number }[]
+    reason?: string
+    instantDelivery?: boolean
+  }) => apiClient.post<{ return: ReturnRecord; order: OrderResponse }>(`/orders/${id}/staff-partial-return`, data).then(r => r.data),
   backfillViewTokens: () => apiClient.post<{ updated: number; total: number }>('/orders/backfill-view-tokens'),
   trash: (id: string) => apiClient.post(`/orders/${id}/trash`),
   restore: (id: string) => apiClient.post(`/orders/${id}/restore`),

@@ -95,23 +95,107 @@ describe('OrderActionMenu (Task 4 Fix 8)', () => {
     expect(mockPost).not.toHaveBeenCalled()
   })
 
-  it('Create Partial Return Order picks items and posts PARTIAL to /returns', async () => {
-    mockPost.mockResolvedValue({ data: { id: 'ret-2', displayId: 'RTN-260930-0002' } })
-    const { getByRole, getByText } = await renderMenu()
+  it('Create Partial Return Order picks items and posts the staff-partial flow (order → Partial, dispatch untouched)', async () => {
+    mockPost.mockResolvedValue({ data: { return: { id: 'ret-2', displayId: 'RTN-260930-0002' }, order: { id: 'order-1', status: { name: 'Partial' } } } })
+    const { getByRole, getByText } = await renderMenu({
+      ...saleOrder,
+      status: { id: 'st-shipping', name: 'Shipping' },
+    })
     await userEvent.click(getByRole('button', { name: 'Order actions' }))
     await userEvent.click(getByText('Create Partial Return Order', { exact: true }))
     // Simple multi-select over the original lines.
     await userEvent.click(getByRole('button', { name: 'Increase return quantity for Widget' }))
     await userEvent.click(getByRole('button', { name: 'Create partial return' }))
     expect(mockPost).toHaveBeenCalledWith(
-      '/returns',
+      '/orders/order-1/staff-partial-return',
       expect.objectContaining({
-        orderId: 'order-1',
-        type: 'PARTIAL',
-        source: 'STAFF',
         items: [{ productId: 'p1', variantId: null, quantity: 1 }],
       }),
     )
+    // No bare /returns POST anymore — the flow endpoint owns Return + status.
+    for (const [url] of mockPost.mock.calls) {
+      expect(String(url)).not.toBe('/returns')
+    }
+  })
+
+  it('Create Partial Return Order with instant delivery posts instantDelivery:true', async () => {
+    mockPost.mockResolvedValue({ data: { return: { id: 'ret-3', displayId: 'RTN-260930-0003' }, order: { id: 'order-1', status: { name: 'Delivered' } } } })
+    const { getByRole, getByText } = await renderMenu({
+      ...saleOrder,
+      status: { id: 'st-shipping', name: 'Shipping' },
+    })
+    await userEvent.click(getByRole('button', { name: 'Order actions' }))
+    await userEvent.click(getByText('Create Partial Return Order', { exact: true }))
+    await userEvent.click(getByRole('button', { name: 'Increase return quantity for Widget' }))
+    await userEvent.click(getByRole('checkbox', { name: 'Remaining items already delivered' }))
+    await userEvent.click(getByRole('button', { name: 'Create partial return' }))
+    expect(mockPost).toHaveBeenCalledWith(
+      '/orders/order-1/staff-partial-return',
+      expect.objectContaining({
+        items: [{ productId: 'p1', variantId: null, quantity: 1 }],
+        instantDelivery: true,
+      }),
+    )
+  })
+
+  it.each(['Delivered', 'Confirmed', 'Packed', 'Return Pending', 'Returned'])(
+    'disables the partial action on %s status with a surfaced reason (Shipping AND Partial only)',
+    async (status) => {
+      const { getByRole, getByText } = (await renderMenu({
+        ...saleOrder,
+        status: { id: `st-${status}`, name: status },
+      })) as any
+      await userEvent.click(getByRole('button', { name: 'Order actions' }))
+      const item = getByText('Create Partial Return Order', { exact: true })
+      const el = Array.from(document.querySelectorAll('[role="menuitem"]')).find((n) =>
+        n.textContent?.includes('Create Partial Return Order'),
+      ) as HTMLElement | undefined
+      expect(el).toBeDefined()
+      const disabledAttr =
+        el!.getAttribute('aria-disabled') === 'true' ||
+        el!.getAttribute('data-disabled') === 'true' ||
+        el!.hasAttribute('disabled')
+      expect(disabledAttr).toBe(true)
+      const host: HTMLElement = (el!.closest('[title]') as HTMLElement | null) ?? el!
+      const reason =
+        host.getAttribute('title') ?? document.body.textContent ?? ''
+      expect(reason).toMatch(/shipping|partial/i)
+      expect(item).not.toBeNull()
+    },
+  )
+
+  it.each(['Shipping', 'Partial'])(
+    'shows an enabled partial action on %s status',
+    async (status) => {
+      const { getByRole, getByText } = (await renderMenu({
+        ...saleOrder,
+        status: { id: `st-${status}`, name: status },
+      })) as any
+      await userEvent.click(getByRole('button', { name: 'Order actions' }))
+      const item = getByText('Create Partial Return Order', { exact: true })
+      expect(item).not.toBeNull()
+      const el = Array.from(document.querySelectorAll('[role="menuitem"]')).find((n) =>
+        n.textContent?.includes('Create Partial Return Order'),
+      ) as HTMLElement | undefined
+      expect(el).toBeDefined()
+      const disabledAttr =
+        el!.getAttribute('aria-disabled') === 'true' ||
+        el!.getAttribute('data-disabled') === 'true' ||
+        el!.hasAttribute('disabled')
+      expect(disabledAttr).toBe(false)
+    },
+  )
+
+  it('hides the partial action for return-kind orders', async () => {
+    const { getByRole, getByText } = (await renderMenu({
+      ...saleOrder,
+      kind: 'RETURN',
+      status: { id: 'st-shipping', name: 'Shipping' },
+    })) as any
+    // RETURN kind hides every Plus entry (return + exchange + partial), so the
+    // menu button itself is gone.
+    await expect.element(getByRole('button', { name: 'Order actions' })).not.toBeInTheDocument()
+    await expect.element(getByText('Create Partial Return Order', { exact: true })).not.toBeInTheDocument()
   })
 
   it('hides the exchange action for non-sale orders', async () => {
