@@ -48,6 +48,25 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     return_pending: 'RETURN_PENDING',
     returned: 'RETURNED',
     hold: 'HOLD',
+    // Task 5 (owner-locked): `exceptional` = lost, damaged or otherwise off
+    // the normal path. There is NO EXCEPTION value in the DispatchStatus
+    // enum (schema.prisma), so this yields null — keep the previous status,
+    // never HOLD/DELIVERED/settle. The webhook raises the staff alert.
+    exceptional: null,
+    // Task 5 (owner-locked): return-endpoint vocabulary — ONLY sourced from
+    // GET /status_with_return_status_by_cid (Steadfast webhooks never carry
+    // these; see SteadFast Webhooks Docs delivery_status list). Spellings are
+    // doc-literal ("proccessing"); the corrected spelling is accepted too.
+    // cancelled_* ride the RETURNED/CANCELLED path (in-flight → RETURN_PENDING,
+    // back-with-us → RETURNED); partial_* keep PARTIAL with a return state.
+    'cancelled_return_proccessing': 'RETURN_PENDING',
+    'cancelled_return_processing': 'RETURN_PENDING',
+    'cancelled_return_rider_assigned': 'RETURN_PENDING',
+    'cancelled_return_received': 'RETURNED',
+    'partial_delivered_return_proccessing': 'PARTIAL',
+    'partial_delivered_return_processing': 'PARTIAL',
+    'partial_delivered_return_rider_assigned': 'PARTIAL',
+    'partial_delivered_return_received': 'PARTIAL',
     // Webhook parity: the Steadfast webhook treats "unknown" as cancelled.
     unknown: 'CANCELLED',
     // Unknown awaiting admin approval — needs support; never force a status.
@@ -113,6 +132,13 @@ const COURIER_TRACKING_STATUS_MAP: Record<
   },
   // RedX: tracking API and webhook share the same status vocabulary.
   redx: {
+    // Task 5 (owner-locked): `pickup-pending` = just booked, awaiting pickup
+    // (the /parcel/info answer for a fresh parcel) = internal DISPATCHED —
+    // verified: Dispatch.status defaults to DISPATCHED at booking, and
+    // order.created → DISPATCHED for Pathao/Carrybee. Underscore variant
+    // accepted (same tolerance as the rest of this map).
+    'pickup-pending': 'DISPATCHED',
+    pickup_pending: 'DISPATCHED',
     'ready-for-delivery': 'PICKED_UP',
     'delivery-in-progress': 'ASSIGNED_TO_RIDER',
     delivered: 'DELIVERED',
@@ -171,8 +197,7 @@ const KEYWORD_RULES: Array<{ match: RegExp; status: DispatchStatus }> = [
   { match: /pending|review/i, status: 'DISPATCHED' },
 ];
 
-export function mapCourierStatusToDispatchStatus(
-  courier: string,
+export function mapCourierStatusToDispatchStatus(  courier: string,
   rawStatus: string | null | undefined,
 ): DispatchStatus | null {
   const normalized = String(rawStatus || '').trim().toLowerCase();
@@ -193,4 +218,49 @@ export function mapCourierStatusToDispatchStatus(
   }
 
   return null;
+}
+
+/**
+ * Task 5 (owner-locked): Steadfast return-status reconciliation.
+ *
+ * The 6 return statuses exist ONLY in the
+ * GET /status_with_return_status_by_cid/{id} vocabulary (doc: "Only from
+ * /status_with_return_status_by_cid/{id}, and only for a parcel that did not
+ * fully arrive"). cancelled_* ride the RETURNED/CANCELLED path; partial_*
+ * keep PARTIAL with a return state; *_received means the parcel is physically
+ * back ("you have it back") → reconcile stock via the existing return-stock
+ * hook, and NO COD is owed (a returned parcel collects nothing).
+ *
+ * `codOwed` is always false by construction — the settle-exclusion lock:
+ * no return status may ever settle. Non-return input yields null (the normal
+ * tracking/webhook sync owns those labels).
+ */
+export interface SteadfastReturnMapping {
+  dispatchStatus: DispatchStatus;
+  /** Order advancement the reconcile may attempt (null = dispatch-level only;
+   * 'Returned' is manual-confirmation-only, never set here). */
+  advanceOrder: string | null;
+  /** True only for *_received (parcel physically back with the merchant). */
+  reconcileStock: boolean;
+  /** Always false — no return status ever settles. */
+  codOwed: false;
+}
+
+const STEADFAST_RETURN_MAP: Record<string, SteadfastReturnMapping> = {
+  'cancelled_return_proccessing': { dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Return Pending', reconcileStock: false, codOwed: false },
+  'cancelled_return_processing': { dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Return Pending', reconcileStock: false, codOwed: false },
+  'cancelled_return_rider_assigned': { dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Return Pending', reconcileStock: false, codOwed: false },
+  'cancelled_return_received': { dispatchStatus: 'RETURNED', advanceOrder: null, reconcileStock: true, codOwed: false },
+  'partial_delivered_return_proccessing': { dispatchStatus: 'PARTIAL', advanceOrder: 'Partial', reconcileStock: false, codOwed: false },
+  'partial_delivered_return_processing': { dispatchStatus: 'PARTIAL', advanceOrder: 'Partial', reconcileStock: false, codOwed: false },
+  'partial_delivered_return_rider_assigned': { dispatchStatus: 'PARTIAL', advanceOrder: 'Partial', reconcileStock: false, codOwed: false },
+  'partial_delivered_return_received': { dispatchStatus: 'PARTIAL', advanceOrder: 'Partial', reconcileStock: true, codOwed: false },
+};
+
+export function mapSteadfastReturnStatus(
+  rawStatus: string | null | undefined,
+): SteadfastReturnMapping | null {
+  const normalized = String(rawStatus || '').trim().toLowerCase();
+  if (!normalized) return null;
+  return STEADFAST_RETURN_MAP[normalized] ?? null;
 }

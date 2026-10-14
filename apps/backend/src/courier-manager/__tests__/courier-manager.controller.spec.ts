@@ -13,6 +13,7 @@ const createController = () => {
     {} as any,
     prisma as any,
     {} as any,
+    { reconcileSteadfastReturn: jest.fn() } as any,
   );
   return { controller, prisma, svc };
 };

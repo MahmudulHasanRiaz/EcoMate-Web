@@ -1,4 +1,4 @@
-import { mapCourierStatusToDispatchStatus, isSupportedCourier } from './courier-status-mapper';
+import { mapCourierStatusToDispatchStatus, isSupportedCourier, mapSteadfastReturnStatus } from './courier-status-mapper';
 
 describe('mapCourierStatusToDispatchStatus', () => {
   it('maps Steadfast tracking-normalized statuses', () => {
@@ -124,5 +124,83 @@ describe('mapCourierStatusToDispatchStatus', () => {
     expect(isSupportedCourier('carrybee')).toBe(true);
     expect(isSupportedCourier('hoorin')).toBe(false);
     expect(isSupportedCourier('')).toBe(false);
+  });
+
+  // Task 5 (owner-locked): Steadfast return statuses come ONLY from
+  // GET /status_with_return_status_by_cid. cancelled_* ride the
+  // RETURNED/CANCELLED path, partial_* keep PARTIAL with a return state.
+  it('maps the 6 Steadfast return statuses (return endpoint vocabulary)', () => {
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'cancelled_return_proccessing')).toBe('RETURN_PENDING');
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'cancelled_return_rider_assigned')).toBe('RETURN_PENDING');
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'cancelled_return_received')).toBe('RETURNED');
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'partial_delivered_return_proccessing')).toBe('PARTIAL');
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'partial_delivered_return_rider_assigned')).toBe('PARTIAL');
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'partial_delivered_return_received')).toBe('PARTIAL');
+  });
+
+  // Task 5 (owner-locked): exceptional → keep previous status. There is no
+  // EXCEPTION value in the DispatchStatus enum, so the mapper yields null
+  // (no forced change) and the webhook raises the staff alert instead.
+  it('maps Steadfast exceptional to null (never HOLD/DELIVERED/settle)', () => {
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'exceptional')).toBeNull();
+  });
+
+  // Task 5 (owner-locked): RedX pickup-pending = booked awaiting pickup =
+  // internal DISPATCHED (Dispatch default status; order.created → DISPATCHED).
+  it('maps RedX pickup-pending to DISPATCHED', () => {
+    expect(mapCourierStatusToDispatchStatus('redx', 'pickup-pending')).toBe('DISPATCHED');
+    expect(mapCourierStatusToDispatchStatus('redx', 'pickup_pending')).toBe('DISPATCHED');
+  });
+
+  // Task 5 (owner-locked): settle exclusion — exceptional and every
+  // *_approval_pending label must NEVER resolve to DELIVERED.
+  it('never maps exceptional/approval-pending labels to DELIVERED', () => {
+    const neverDelivered = [
+      'exceptional',
+      'delivered_approval_pending',
+      'partial_delivered_approval_pending',
+      'cancelled_approval_pending',
+      'unknown_approval_pending',
+    ];
+    for (const label of neverDelivered) {
+      expect(mapCourierStatusToDispatchStatus('steadfast', label)).not.toBe('DELIVERED');
+    }
+  });
+});
+
+describe('mapSteadfastReturnStatus', () => {
+  it('routes cancelled returns through RETURN_PENDING until the parcel is back', () => {
+    expect(mapSteadfastReturnStatus('cancelled_return_proccessing')).toEqual(
+      expect.objectContaining({ dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Return Pending', reconcileStock: false, codOwed: false }),
+    );
+    expect(mapSteadfastReturnStatus('cancelled_return_rider_assigned')).toEqual(
+      expect.objectContaining({ dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Return Pending', reconcileStock: false, codOwed: false }),
+    );
+  });
+
+  it('routes cancelled_return_received to RETURNED with a stock reconcile and no COD', () => {
+    expect(mapSteadfastReturnStatus('cancelled_return_received')).toEqual(
+      expect.objectContaining({ dispatchStatus: 'RETURNED', reconcileStock: true, codOwed: false }),
+    );
+  });
+
+  it('keeps PARTIAL for partial-delivered returns and reconciles stock only on receipt', () => {
+    expect(mapSteadfastReturnStatus('partial_delivered_return_proccessing')).toEqual(
+      expect.objectContaining({ dispatchStatus: 'PARTIAL', advanceOrder: 'Partial', reconcileStock: false, codOwed: false }),
+    );
+    expect(mapSteadfastReturnStatus('partial_delivered_return_rider_assigned')).toEqual(
+      expect.objectContaining({ dispatchStatus: 'PARTIAL', advanceOrder: 'Partial', reconcileStock: false, codOwed: false }),
+    );
+    expect(mapSteadfastReturnStatus('partial_delivered_return_received')).toEqual(
+      expect.objectContaining({ dispatchStatus: 'PARTIAL', advanceOrder: 'Partial', reconcileStock: true, codOwed: false }),
+    );
+  });
+
+  it('returns null for non-return statuses (normal sync owns those)', () => {
+    expect(mapSteadfastReturnStatus('delivered')).toBeNull();
+    expect(mapSteadfastReturnStatus('exceptional')).toBeNull();
+    expect(mapSteadfastReturnStatus('delivered_approval_pending')).toBeNull();
+    expect(mapSteadfastReturnStatus('')).toBeNull();
+    expect(mapSteadfastReturnStatus(null)).toBeNull();
   });
 });

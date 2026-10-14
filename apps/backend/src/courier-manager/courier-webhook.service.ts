@@ -2,6 +2,9 @@ import { Injectable, Logger, Inject, forwardRef, BadRequestException, NotFoundEx
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { OrdersService } from '../orders/orders.service';
+import { CourierManagerService } from './courier-manager.service';
+import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
+import { mapSteadfastReturnStatus } from './courier-status-mapper';
 import { impliesPickup } from '../dispatch/dispatch-timestamps';
 
 const ORDER_TRANSITIONS: Record<string, string[]> = {
@@ -148,6 +151,11 @@ const CARRYBEE_DISPATCH_TO_ORDER: Record<string, string | null> = {
 
 // RedX webhook status → DispatchStatus
 const REDX_DISPATCH_MAP: Record<string, string | null> = {
+  // Task 5 (owner-locked): booked awaiting pickup = DISPATCHED (verified:
+  // Dispatch defaults to DISPATCHED; order.created → DISPATCHED). The
+  // DISPATCHED → order map below is null, so the order is never moved.
+  'pickup-pending': 'DISPATCHED',
+  pickup_pending: 'DISPATCHED',
   'ready-for-delivery': 'PICKED_UP',
   'delivery-in-progress': 'ASSIGNED_TO_RIDER',
   delivered: 'DELIVERED',
@@ -183,6 +191,8 @@ export class CourierWebhookService {
     private readonly prisma: PrismaService,
     @Inject(forwardRef(() => OrdersService))
     private readonly ordersService: OrdersService,
+    private readonly manager: CourierManagerService,
+    private readonly cancelReturnStock: CancelReturnStockService,
   ) {}
 
   /**
@@ -238,6 +248,18 @@ export class CourierWebhookService {
       dispatchStatus = await this.resolveCancelledStatus(order.id);
     }
 
+    // Task 5 (owner-locked): `exceptional` = lost, damaged or otherwise off
+    // the normal path. No EXCEPTION value exists in DispatchStatus, so the
+    // previous workflow status is KEPT (never HOLD/DELIVERED/settle) with a
+    // loud log + staff alert. Return statuses never arrive via webhook (the
+    // SteadFast Webhooks Docs delivery_status vocabulary is only
+    // pending/delivered/partial_delivered/cancelled/unknown) — those
+    // reconcile solely through reconcileSteadfastReturn (return-status
+    // endpoint), never here.
+    if (rawStatus === 'exceptional') {
+      return this.handleExceptional(order.id, consignmentId, body);
+    }
+
     if (!dispatchStatus) {
       this.logger.log(`Steadfast: ${consignmentId} status "${rawStatus}" → skipped`);
       return { status: 'success', message: 'No status change needed' };
@@ -265,6 +287,147 @@ export class CourierWebhookService {
 
     this.logger.log(`Steadfast: ${consignmentId} → dispatch=${dispatchStatus} order=${orderStatusName || '-'}`);
     return { status: 'success', message: 'Webhook received successfully.' };
+  }
+
+  /**
+   * Task 5 (owner-locked): Steadfast `exceptional` — lost, damaged or
+   * otherwise off the normal path ("Contact support").
+   *
+   * No EXCEPTION value exists in the DispatchStatus enum (verified in
+   * schema.prisma), so the previous workflow status is KEPT: no Dispatch
+   * status write, no order advancement, no settlement effect. The alert
+   * surface is the order timeline + the raw `courierStatus` (visible in the
+   * Dispatch list "Courier Status" column) + a loud error log. A dedicated
+   * admin badge was considered and rejected: Dispatch.flaggedAt drives the
+   * duplicate-dispatch resolve flow (accept/accessories/cancel) and
+   * CodMismatchBanner is COD-specific — overloading either would corrupt
+   * its semantics.
+   */
+  private async handleExceptional(
+    orderId: string,
+    consignmentId: string,
+    body: Record<string, unknown>,
+  ) {
+    const prev = await this.prisma.dispatch.findFirst({
+      where: {
+        orderId,
+        courier: 'steadfast' as any,
+        consignmentId,
+      },
+      select: { id: true, status: true },
+    });
+    if (prev) {
+      await this.prisma.dispatch.update({
+        where: { id: prev.id },
+        data: { courierStatus: 'exceptional', lastSyncedAt: new Date() },
+      });
+    }
+
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: { courierStatus: 'exceptional', courierService: 'steadfast' },
+    });
+
+    await this.fillManualDispatchIdentifiers(
+      orderId,
+      'steadfast',
+      consignmentId,
+      (body['tracking_code'] as string) || undefined,
+    );
+    await this.addTimelineEntry(orderId, 'steadfast', 'exceptional', {
+      remarks:
+        `Parcel lost, damaged or off the normal path — dispatch status kept ` +
+        `(${prev?.status ?? 'unknown'}); contact Steadfast support`,
+    });
+
+    this.logger.error(
+      `Steadfast EXCEPTION: consignment ${consignmentId} (order ${orderId}) ` +
+        `is off the normal path — workflow status kept (${prev?.status ?? 'unknown'}), ` +
+        `staff alert raised on the order timeline`,
+    );
+    return { status: 'success', message: 'Exception recorded — status kept, staff alerted' };
+  }
+
+  /**
+   * Task 5 (owner-locked): Steadfast return reconciliation, sourced ONLY
+   * from GET /status_with_return_status_by_cid (the only endpoint that
+   * reports how far back a parcel has got).
+   *
+   * - cancelled in-flight (processing/rider_assigned) → RETURN_PENDING.
+   * - cancelled received ("you have it back") → RETURNED + stock reconcile.
+   * - partial_* keep PARTIAL + return state; received → stock reconcile.
+   * - *_received never marks COD owed (a returned parcel collects nothing).
+   * - 'Returned' stays manual-confirmation-only: the reconcile never sets
+   *   the order status to Returned (OrdersService blocks automated actors);
+   *   staff confirms it from the order detail page afterwards. Stock is
+   *   restored now because the courier API itself confirms physical receipt.
+   */
+  async reconcileSteadfastReturn(input: { consignmentId: string }) {
+    const consignmentId = String(input?.consignmentId ?? '').trim();
+    if (!consignmentId) {
+      throw new BadRequestException('Missing consignment_id');
+    }
+
+    const { deliveryStatus } = await this.manager.getSteadfastReturnStatus(consignmentId);
+    const rawStatus = String(deliveryStatus || '').toLowerCase();
+    const mapped = mapSteadfastReturnStatus(rawStatus);
+    if (!mapped) {
+      return {
+        reconciled: false as const,
+        deliveryStatus: rawStatus,
+        reason: 'Not a return status — use the normal courier sync for this label',
+      };
+    }
+
+    const order = await this.findSteadfastOrder(consignmentId);
+    if (!order) {
+      this.logger.warn(`Steadfast return-reconcile: order not found for consignment ${consignmentId}`);
+      throw new NotFoundException(`Order not found for consignment ${consignmentId}`);
+    }
+
+    await this.prisma.order.update({
+      where: { id: order.id },
+      data: { courierStatus: rawStatus, courierService: 'steadfast' },
+    });
+
+    await this.fillManualDispatchIdentifiers(order.id, 'steadfast', consignmentId);
+    await this.upsertDispatch(order.id, 'steadfast', consignmentId, mapped.dispatchStatus, {}, rawStatus);
+
+    await this.addTimelineEntry(order.id, 'steadfast', mapped.dispatchStatus, {
+      return_type: rawStatus,
+      remarks: mapped.reconcileStock
+        ? 'Parcel back with the merchant — stock reconciled; confirm Returned manually'
+        : 'Return in progress — stock held, nothing restored yet',
+    });
+
+    if (mapped.advanceOrder) {
+      await this.tryAdvanceOrderStatus(order.id, mapped.advanceOrder);
+    }
+
+    let stockReconciled = false;
+    if (mapped.reconcileStock) {
+      await this.prisma.$transaction(async (tx) => {
+        await this.cancelReturnStock.restoreForOrder({
+          orderId: order.id,
+          referencePrefix: 'return',
+          performedBy: 'system',
+          tx: tx as Prisma.TransactionClient,
+        });
+      });
+      stockReconciled = true;
+    }
+
+    this.logger.log(
+      `Steadfast return-reconcile: ${consignmentId} → dispatch=${mapped.dispatchStatus} ` +
+        `stock=${stockReconciled ? 'reconciled' : 'held'} codOwed=false`,
+    );
+    return {
+      reconciled: true as const,
+      deliveryStatus: rawStatus,
+      dispatchStatus: mapped.dispatchStatus,
+      stockReconciled,
+      codOwed: false as const,
+    };
   }
 
   /**
@@ -504,6 +667,9 @@ export class CourierWebhookService {
     if (extra?.collected_amount != null) entry.collectedAmount = extra.collected_amount;
     if (extra?.return_type) entry.returnType = extra.return_type;
     if (extra?.return_consignment_id) entry.returnConsignmentId = extra.return_consignment_id;
+    // Task 5: RedX `paid` money event — the merchant invoice id rides the
+    // timeline entry so the settlement feed can match it (no new tables).
+    if (extra?.invoice_number) entry.invoiceNumber = extra.invoice_number;
     if (extra?.remarks) entry.remarks = extra.remarks;
     if (extra?.attempt != null) entry.attempt = extra.attempt;
     if (extra?.agent_name) entry.agentName = extra.agent_name;
@@ -703,6 +869,15 @@ export class CourierWebhookService {
       dispatchStatus = 'PARTIAL';
     }
 
+    // Task 5 (owner-locked): RedX `paid` is a MONEY event, not a delivery
+    // event. It feeds settlement (the merchant invoice id is stored on the
+    // timeline entry + the WebhookAttempt row via the controller meta) and
+    // must NEVER change the delivery workflow: no Dispatch status write,
+    // no order advancement.
+    if (status === 'paid') {
+      return this.handleRedxPaid(order.id, trackingNumber, invoiceNumber, body);
+    }
+
     if (!dispatchStatus) {
       this.logger.log(`RedX: ${trackingNumber || invoiceNumber} status "${status}" → skipped`);
       return { status: 'success', message: 'No status change needed' };
@@ -733,6 +908,53 @@ export class CourierWebhookService {
 
     this.logger.log(`RedX: ${trackingNumber || invoiceNumber} → dispatch=${dispatchStatus} order=${orderStatusName || '-'}${messageEn ? ` (${messageEn})` : ''}`);
     return { status: 'success', message: 'Webhook received successfully.' };
+  }
+
+  /**
+   * Task 5 (owner-locked): RedX `paid` money event → settlement feed.
+   * Stores the merchant invoice id (settlement matching key) on the raw
+   * courier state + timeline; the delivery workflow is untouched.
+   */
+  private async handleRedxPaid(
+    orderId: string,
+    trackingNumber: string | undefined,
+    invoiceNumber: string | undefined,
+    body: Record<string, unknown>,
+  ) {
+    const consignmentId = trackingNumber || invoiceNumber || '';
+
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        courierStatus: 'paid',
+        courierTrackingCode: trackingNumber || undefined,
+        courierService: 'redx',
+      },
+    });
+
+    const existing = await this.prisma.dispatch.findFirst({
+      where: { courier: 'redx' as any, consignmentId },
+      select: { id: true },
+    });
+    if (existing) {
+      await this.prisma.dispatch.update({
+        where: { id: existing.id },
+        data: { courierStatus: 'paid', lastSyncedAt: new Date() },
+      });
+    } else {
+      await this.fillManualDispatchIdentifiers(orderId, 'redx', consignmentId);
+    }
+
+    await this.addTimelineEntry(orderId, 'redx', 'paid', {
+      invoice_number: invoiceNumber,
+      remarks: body['message_en'] as string | undefined,
+    });
+
+    this.logger.log(
+      `RedX MONEY event: parcel ${consignmentId} paid (invoice ${invoiceNumber || 'unknown'}) — ` +
+        `recorded for settlement, no delivery-status change`,
+    );
+    return { status: 'success', message: 'Payment recorded — no delivery-status change' };
   }
 
   async handleCarrybee(body: Record<string, unknown>) {

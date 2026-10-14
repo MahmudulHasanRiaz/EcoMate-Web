@@ -853,3 +853,66 @@ describe('CourierManagerService — Fix 5a Mx. prefix for short names', () => {
     expect(createArg).not.toHaveProperty('notes');
   });
 });
+
+describe('CourierManagerService — Steadfast return-status client (Task 5)', () => {
+  let service: CourierManagerService;
+  let prisma: any;
+  const originalFetch = global.fetch;
+
+  const creds = {
+    courier: 'steadfast',
+    enabled: true,
+    mode: 'production',
+    apiKey: 'test-api-key',
+    secretKey: 'test-secret-key',
+    credentials: {},
+  };
+
+  beforeEach(() => {
+    prisma = {
+      courierCredentials: { findUnique: jest.fn().mockResolvedValue(creds) },
+    };
+    service = new CourierManagerService(prisma as any);
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('GETs /status_with_return_status_by_cid and returns the doc-shaped delivery_status', async () => {
+    global.fetch = jest.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ status: 200, delivery_status: 'cancelled_return_rider_assigned' }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await service.getSteadfastReturnStatus('123456');
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/status_with_return_status_by_cid/123456'),
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'Api-Key': 'test-api-key', 'Secret-Key': 'test-secret-key' }),
+      }),
+    );
+    expect(result).toEqual({ deliveryStatus: 'cancelled_return_rider_assigned' });
+  });
+
+  it('throws when Steadfast is not configured (never an unauthenticated call)', async () => {
+    prisma.courierCredentials.findUnique.mockResolvedValue(null);
+    global.fetch = jest.fn();
+
+    await expect(service.getSteadfastReturnStatus('123456')).rejects.toThrow();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('throws when the answer carries no delivery_status (fail-closed)', async () => {
+    global.fetch = jest.fn().mockResolvedValue(
+      new Response(JSON.stringify({ status: 200 }), { status: 200 }),
+    );
+
+    await expect(service.getSteadfastReturnStatus('123456')).rejects.toThrow(
+      /delivery_status/,
+    );
+  });
+});

@@ -15,7 +15,7 @@ import { OrdersModule } from '../orders/orders.module';
 @Module({
   controllers: [CourierManagerController, CourierWebhookController, CourierCustomerHistoryController],
   providers: [CourierManagerService, CourierWebhookService, CourierTrackingService, CourierTokenService, CourierCustomerHistoryService, WebhookAttemptService, WebhookRateLimitCaptureMiddleware, WebhookRawBodyCapture],
-  exports: [CourierManagerService, CourierTrackingService, CourierCustomerHistoryService, WebhookAttemptService],
+  exports: [CourierManagerService, CourierWebhookService, CourierTrackingService, CourierCustomerHistoryService, WebhookAttemptService],
   imports: [forwardRef(() => OrdersModule)],
 })
 export class CourierManagerModule implements NestModule {

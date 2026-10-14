@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Put, Body, Param, Query } from '@nestjs/common';
 import { CourierManagerService } from './courier-manager.service';
 import { CourierTrackingService } from './courier-tracking.service';
+import { CourierWebhookService } from './courier-webhook.service';
 import { WebhookAttemptService } from './webhook-attempt.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { randomBytes } from 'node:crypto';
@@ -17,6 +18,7 @@ export class CourierManagerController {
     private readonly tracking: CourierTrackingService,
     private readonly prisma: PrismaService,
     private readonly webhookAttempts: WebhookAttemptService,
+    private readonly webhooks: CourierWebhookService,
   ) {}
 
   @Get('credentials')
@@ -200,6 +202,19 @@ export class CourierManagerController {
   @Get('steadfast/balance')
   async getSteadfastBalance() {
     return this.svc.getSteadfastBalance();
+  }
+
+  /**
+   * Task 5 (owner-locked): staff-triggered return reconciliation (no UI).
+   * Reads GET /status_with_return_status_by_cid for one consignment and
+   * applies the owner-approved return mapping (RETURNED/PARTIAL + return
+   * state, stock reconcile on *_received, never COD-owed).
+   */
+  @Post('steadfast/reconcile-return')
+  async reconcileSteadfastReturn(@Body() dto: { consignmentId?: string }) {
+    return this.webhooks.reconcileSteadfastReturn({
+      consignmentId: dto?.consignmentId ?? '',
+    });
   }
 
   @Post('steadfast/return')

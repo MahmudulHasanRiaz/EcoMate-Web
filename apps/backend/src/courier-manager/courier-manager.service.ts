@@ -1607,6 +1607,43 @@ export class CourierManagerService {
     return { current_balance: Number(data['current_balance'] || 0) };
   }
 
+  /**
+   * Task 5 (owner-locked): Steadfast return-status read.
+   * GET /status_with_return_status_by_cid/{id} — the ONLY endpoint that tells
+   * whether a returned parcel is actually back with the merchant (doc:
+   * "Use this one if you reconcile stock"). Feeds reconcileSteadfastReturn;
+   * never called from the hot tracking path (status answers are cached
+   * 60s server-side; reconcile is on-demand).
+   */
+  async getSteadfastReturnStatus(
+    consignmentId: string,
+  ): Promise<{ deliveryStatus: string }> {
+    const creds = await this.getCreds('steadfast');
+    const apiKey = creds.apiKey || creds.credentials?.['apiKey'];
+    const secretKey = creds.secretKey || creds.credentials?.['secretKey'];
+    if (!apiKey || !secretKey)
+      throw new BadRequestException('Steadfast API key/secret not configured');
+
+    const base = await this.getBaseUrl('steadfast');
+    const data = await this.jsonFetch(
+      `${base}/status_with_return_status_by_cid/${encodeURIComponent(consignmentId)}`,
+      {
+        method: 'GET',
+        headers: {
+          'Api-Key': apiKey,
+          'Secret-Key': secretKey,
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+    const deliveryStatus = String(data?.['delivery_status'] ?? '').trim();
+    if (!deliveryStatus)
+      throw new BadRequestException(
+        'Steadfast return-status answer carried no delivery_status',
+      );
+    return { deliveryStatus };
+  }
+
   async createSteadfastReturnRequest(params: {
     consignment_id?: string;
     invoice?: string;

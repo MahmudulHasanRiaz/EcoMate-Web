@@ -1,8 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
 import { CourierWebhookService } from './courier-webhook.service';
+import { CourierManagerService } from './courier-manager.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { OrdersService } from '../orders/orders.service';
+import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
 
 /**
  * AUTHORITATIVE BUSINESS RULE (PARTIAL):
@@ -59,6 +61,8 @@ describe('CourierWebhookService — PARTIAL rules', () => {
         CourierWebhookService,
         { provide: PrismaService, useValue: prisma },
         { provide: OrdersService, useValue: ordersService },
+        { provide: CourierManagerService, useValue: { getSteadfastReturnStatus: jest.fn() } },
+        { provide: CancelReturnStockService, useValue: { restoreForOrder: jest.fn() } },
       ],
     }).compile();
 

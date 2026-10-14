@@ -556,6 +556,10 @@ export class CourierWebhookController {
     const rawBody = this.rawBodyOf(req, body);
     const auth = await this.authenticateRedx(req, rawBody);
     const trackingNumber = String(body['tracking_number'] ?? '').trim();
+    // Task 5: the RedX `paid` money event carries the merchant invoice id —
+    // store it on the WebhookAttempt row (dedicated store, no new tables) so
+    // the settlement feed can match the payment to the order.
+    const invoiceNumber = String(body['invoice_number'] ?? '').trim();
 
     this.logger.log(`RedX webhook received [${ctx.correlationId}]`);
     return this.processWebhook({
@@ -569,6 +573,7 @@ export class CourierWebhookController {
       successStatus: 200,
       meta: {
         consignmentId: trackingNumber || undefined,
+        invoice: invoiceNumber || undefined,
       },
       run: () => this.svc.handleRedx(body),
     });
