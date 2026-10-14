@@ -28,6 +28,189 @@ const BASE_URLS: Record<string, Record<string, string>> = {
   },
 };
 
+/**
+ * Fix 5: mask credential-shaped values inside raw courier body text before the
+ * text is embedded in an error message, timeline note, or log row.
+ * The object-key redactor (`sanitizeDispatchPayload`) cannot cover free-form
+ * text (headers, query strings, HTML error pages), so this works on strings:
+ * `Api-Key: live…` / `"secret_key": "…"` / `password=…` / Bearer tokens.
+ * Field names and validation sentences are left intact (never redacted).
+ */
+export function redactSecrets(text: string): string {
+  if (!text) return text;
+  let out = text;
+  // JSON string values under secret-shaped keys: "api_key": "..." etc.
+  out = out.replace(
+    /("(?:api[_-]?key|secret[_-]?key|client[_-]?secret|app[_-]?secret|access[_-]?token|refresh[_-]?token|password|passwd|authorization|webhook[_-]?secret)"\s*:\s*)"[^"]*"/gi,
+    '$1"[REDACTED]"',
+  );
+  // Header / query / assignment style: Api-Key: <tok>, password=<tok>,
+  // Authorization: Bearer <tok>. Value must be a single token (no spaces) so
+  // ordinary prose is never mangled.
+  out = out.replace(
+    /(api[_-]?key|secret[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|authorization|password|passwd)([\s"':=]+)(Bearer\s+)?[^\s,;&}"']+/gi,
+    (_m, key: string, sep: string, bearer: string) =>
+      `${key}${sep}${bearer || ''}[REDACTED]`,
+  );
+  return out;
+}
+
+const COURIER_DISPLAY: Record<string, string> = {
+  steadfast: 'Steadfast',
+  pathao: 'Pathao',
+  redx: 'RedX',
+  carrybee: 'Carrybee',
+};
+
+/**
+ * Fix 5: the thrown shape for every courier dispatch failure.
+ * `{courier, status, message, errors, orderId}` — `status` is the HTTP status
+ * (0 when the request was never sent: local validation or exhausted network
+ * retries), `errors` is the courier's field-level object verbatim
+ * (Steadfast `errors`, Pathao envelope extras, RedX `errors`, Carrybee
+ * `causes`), `message` names the exact field+rule for toasts/timeline.
+ */
+export class CourierDispatchError extends BadRequestException {
+  readonly courier: string;
+  readonly statusCode: number;
+  readonly errors?: Record<string, unknown>;
+  readonly orderId?: string;
+
+  constructor(init: {
+    courier: string;
+    status: number;
+    message: string;
+    errors?: Record<string, unknown>;
+    orderId?: string;
+  }) {
+    super({
+      courier: init.courier,
+      status: init.status,
+      message: init.message,
+      errors: init.errors,
+      orderId: init.orderId,
+    });
+    this.courier = init.courier;
+    this.statusCode = init.status;
+    this.errors = init.errors;
+    this.orderId = init.orderId;
+    // BadRequestException defaults message to 'Bad Request Exception' —
+    // dispatch() reads e.message, so it must be OUR field+rule text.
+    this.message = init.message;
+  }
+}
+
+/**
+ * Fix 5: retry discipline. ONLY 5xx or network-level failures (no HTTP
+ * response at all) may be retried. NEVER 4xx — including 401 (wrong/revoked
+ * keys: retrying only burns the Steadfast 10-failures/5min → 429-for-60min
+ * lockout budget) and 429 (already locked out: back off, do not loop).
+ */
+function isRetryableStatus(status: number | null): boolean {
+  if (status === null) return true;
+  return status >= 500;
+}
+
+function backoffMs(attempt: number): number {
+  return Math.min(1000 * 2 ** (attempt - 1), 8000);
+}
+
+function authHint(courier: string, status: number): string {
+  const display = COURIER_DISPLAY[courier] || courier;
+  if (status === 401)
+    return (
+      ` Fix the ${display} API keys — do not retry.` +
+      (courier === 'steadfast'
+        ? ' (Steadfast locks out after 10 failures in 5 minutes — 429 for 60 minutes, correct keys included.)'
+        : '')
+    );
+  if (status === 429)
+    return (
+      ` Rate limited / locked out — back off, do not retry in a loop.` +
+      (courier === 'steadfast'
+        ? ' (Steadfast refuses for 60 minutes after 10 failures in 5 minutes.)'
+        : '')
+    );
+  return '';
+}
+
+/** First human-readable rule per field, for `field 'x' <rule>` segments. */
+function firstRule(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    const first = value[0];
+    if (typeof first === 'string') return first;
+    if (first && typeof first === 'object') {
+      const rec = first as Record<string, unknown>;
+      if (typeof rec['type'] === 'string') return String(rec['type']);
+      return JSON.stringify(first).slice(0, 160);
+    }
+    return String(first ?? '');
+  }
+  if (value && typeof value === 'object') {
+    const rec = value as Record<string, unknown>;
+    if (typeof rec['type'] === 'string') return String(rec['type']);
+    return JSON.stringify(value).slice(0, 160);
+  }
+  return String(value ?? '');
+}
+
+function fieldSegments(errors: Record<string, unknown>): string {
+  return Object.entries(errors)
+    .map(([field, rule]) => `field '${field}' ${firstRule(rule)}`)
+    .join('; ');
+}
+
+function parseJsonBody(
+  rawBody: string,
+): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(rawBody) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+      return parsed as Record<string, unknown>;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** What lands in courierDispatchLog.responsePayload (secrets masked). */
+function responsePayloadFor(
+  rawBody: string,
+  parsed: Record<string, unknown> | null,
+): unknown {
+  if (parsed) return parsed;
+  return { raw: redactSecrets(rawBody).slice(0, 4000) };
+}
+
+/**
+ * Steadfast bulk per-entry error codes → `field 'x' <rule>` sentences.
+ * From the Steadfast API doc error-codes table (bulk entries carry
+ * `status: null` + `error`, a JSON-encoded ARRAY of these codes).
+ */
+const STEADFAST_BULK_ERROR_RULES: Record<string, string> = {
+  INVOICE_IS_REQUIRED: "field 'invoice' is required",
+  INVOICE_MUST_BE_ALPHA_NUM_DASH_UNDERSCORE:
+    "field 'invoice' must use only letters, digits, hyphens and underscores",
+  INVOICE_LENGTH_SHOULD_BE_LESS_THAN_100_CHARS:
+    "field 'invoice' must be shorter than 100 chars",
+  THIS_INVOICE_ALREADY_EXISTS:
+    "field 'invoice' already booked — safe to skip, a retry will not double-book",
+  RECEIVER_NAME_IS_REQUIRED: "field 'recipient_name' is required",
+  RECEIVER_NAME_LENGTH_SHOULD_BE_LESS_THAN_100_CHARS:
+    "field 'recipient_name' must be shorter than 100 chars",
+  RECEIVER_PHONE_IS_REQUIRED: "field 'recipient_phone' is required",
+  RECEIVER_PHONE_LENGTH_SHOULD_BE_LESS_THAN_40_CHARS:
+    "field 'recipient_phone' must be shorter than 40 chars",
+  RECEIVER_ADDRESS_IS_REQUIRED: "field 'recipient_address' is required",
+  RECEIVER_ADDRESS_LENGTH_SHOULD_BE_LESS_THAN_500_CHARS:
+    "field 'recipient_address' must be shorter than 500 chars",
+  RECEIVER_NOTE_LENGTH_SHOULD_BE_LESS_THAN_500_CHARS:
+    "field 'note' must be shorter than 500 chars",
+  COD_AMOUNT_ERROR: "field 'cod_amount' is required",
+  ERROR: "field 'cod_amount' must be a number",
+};
+
 @Injectable()
 export class CourierManagerService {
   private readonly logger = new Logger(CourierManagerService.name);
@@ -136,7 +319,8 @@ export class CourierManagerService {
    * Carrybee exempt — verbatim), long names are truncated per courier max,
    * and the STORED order/customer is never mutated (pure helper — payload +
    * dispatch record carry the transformed value only). Empty/missing →
-   * throws a field error (never prefixed, never a 'Customer' placeholder).
+   * throws a Fix 5 field error (never prefixed, never a 'Customer'
+   * placeholder), shaped so dispatch() can thread it to the UI untouched.
    */
   private resolveCourierName(
     order: any,
@@ -146,9 +330,13 @@ export class CourierManagerService {
     const raw = orderRecipientRawName(order);
     const sent = courierSafeRecipientName(order, courier);
     if (!sent) {
-      throw new BadRequestException(
-        `Courier: field '${payloadField}' is required — order '${order.displayId || order.id}' has no recipient name`,
-      );
+      throw new CourierDispatchError({
+        courier,
+        status: 0,
+        message: `Courier: field '${payloadField}' is required — order '${order.displayId || order.id}' has no recipient name`,
+        errors: { [payloadField]: ['required'] },
+        orderId: order.id,
+      });
     }
     return { sent, raw };
   }
@@ -191,6 +379,36 @@ export class CourierManagerService {
     }
   }
 
+  /** Timeline note for a FAILED dispatch — same field+rule text as the toast. */
+  private async noteDispatchFailure(
+    orderId: string,
+    courier: string,
+    message: string,
+  ): Promise<void> {
+    try {
+      const current = await this.prisma.order.findUnique({
+        where: { id: orderId },
+        select: { timeline: true },
+      });
+      const timeline = ((current?.timeline as unknown[]) || []) as any[];
+      timeline.push({
+        type: 'courier',
+        courier,
+        status: 'DISPATCH_FAILED',
+        timestamp: new Date().toISOString(),
+        note: message,
+      });
+      await this.prisma.order.update({
+        where: { id: orderId },
+        data: { timeline: timeline as any },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Courier failure timeline note skipped: ${(err as Error).message}`,
+      );
+    }
+  }
+
   async dispatch(courier: string, orderIds: string[]) {
     const orders = await this.prisma.order.findMany({
       where: { id: { in: orderIds }, trashedAt: null },
@@ -224,6 +442,9 @@ export class CourierManagerService {
       message?: string;
       consignmentId?: string;
       trackingCode?: string;
+      courier?: string;
+      status?: number;
+      errors?: Record<string, unknown>;
     }[] = [];
     for (const order of orders) {
       if (alreadyDispatched.has(order.id)) {
@@ -234,8 +455,21 @@ export class CourierManagerService {
         const result = await this.dispatchOne(courier, order);
         results.push({ id: order.id, ok: true, ...result });
       } catch (e: unknown) {
+        // Fix 5: thread the shaped error ({courier, status, errors}) to the
+        // admin UI untouched — toasts/timeline name the exact field+rule.
+        if (e instanceof CourierDispatchError) {
+          results.push({
+            id: order.id,
+            ok: false,
+            message: e.message,
+            courier: e.courier,
+            status: e.statusCode,
+            errors: e.errors,
+          });
+          continue;
+        }
         const msg = e instanceof Error ? e.message : 'Dispatch failed';
-        results.push({ id: order.id, ok: false, message: msg });
+        results.push({ id: order.id, ok: false, message: msg, courier });
       }
     }
     return results;
@@ -337,13 +571,20 @@ export class CourierManagerService {
       payload.alternative_phone = secondaryPhone;
     }
 
+    // Fix 5 retry discipline: ONLY 5xx/network are retried (exponential
+    // backoff); NEVER 4xx (401/429 carry a fix-keys/back-off hint instead —
+    // retrying 401 burns the 10-failures/5min → 429-for-60min lockout budget).
+    // Retry safety: every attempt sends the SAME payload with the SAME
+    // invoice (order.displayId) — duplicate invoices are refused, so a retry
+    // cannot double-book (per the Steadfast doc: "Retry with the same
+    // invoice").
     const maxRetries = 3;
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      let permanent = false;
+      let res: Response;
       try {
-        const res = await this.fetchWithTimeout(`${base}/create_order`, {
+        res = await this.fetchWithTimeout(`${base}/create_order`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -352,25 +593,56 @@ export class CourierManagerService {
           },
           body: JSON.stringify(payload),
         });
-
-        if (res.status >= 400) permanent = true;
-
-        // Read the body once as text: a failed res.json() consumes the body,
-        // so a plain-text error (e.g. "Account is not active!") must be
-        // captured before attempting to parse.
-        const rawBody = await res.text().catch(() => '');
-        let data: Record<string, unknown> | null = null;
-        try {
-          data = JSON.parse(rawBody) as Record<string, unknown>;
-        } catch {
-          data = null;
+      } catch (netErr: unknown) {
+        // No HTTP response (timeout/reset) — retryable.
+        lastError = netErr instanceof Error ? netErr : new Error(String(netErr));
+        this.logger.warn(
+          `Steadfast dispatch attempt ${attempt}/${maxRetries} failed (network): ${lastError.message}`,
+        );
+        if (attempt < maxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, backoffMs(attempt)));
         }
+        continue;
+      }
 
-        if (data === null) {
-          throw new BadRequestException(
-            this.describeSteadfastError(res.status, rawBody),
+      // Read the body once as text: a failed JSON.parse must not consume the
+      // body, so a plain-text error (e.g. "Account is not active!") is
+      // captured before attempting to parse. The FULL body is kept (never
+      // just `message`) and secrets are masked before it reaches any message.
+      const rawBody = await res.text().catch(() => '');
+      const data = parseJsonBody(rawBody);
+
+      if (!res.ok) {
+        if (isRetryableStatus(res.status)) {
+          lastError = new Error(
+            `Steadfast API error (HTTP ${res.status}): ${redactSecrets(rawBody).slice(0, 500) || '(empty response body)'}`,
           );
+          this.logger.warn(
+            `Steadfast dispatch attempt ${attempt}/${maxRetries} failed (retryable HTTP ${res.status}): ${lastError.message}`,
+          );
+          if (attempt < maxRetries) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, backoffMs(attempt)),
+            );
+          }
+          continue;
         }
+        throw await this.permanentSteadfastError(res.status, rawBody, data, order, payload);
+      }
+
+      if (data === null) {
+        // 2xx but not JSON (proxy/captive page) — transient, retry bounded.
+        lastError = new BadRequestException(
+          this.describeSteadfastError(res.status, rawBody),
+        );
+        this.logger.warn(
+          `Steadfast dispatch attempt ${attempt}/${maxRetries} failed (non-JSON 2xx): ${lastError.message}`,
+        );
+        if (attempt < maxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, backoffMs(attempt)));
+        }
+        continue;
+      }
 
         const consignment = data['consignment'] as
           | Record<string, unknown>
@@ -449,40 +721,112 @@ export class CourierManagerService {
           return { consignmentId, trackingCode };
         }
         const apiMsg = String(data['message'] || data['error'] || '');
-        const msg = apiMsg
-          ? `Steadfast: ${apiMsg}`
-          : `Steadfast API error (HTTP ${res.status}): ${JSON.stringify(data).slice(0, 200)}`;
+        const errors =
+          data['errors'] && typeof data['errors'] === 'object'
+            ? (data['errors'] as Record<string, unknown>)
+            : undefined;
+        // Fix 5: business-level rejection (HTTP 200 with no consignment, or a
+        // parsed error envelope) is permanent — never retried.
+        const msg = errors
+          ? `Steadfast: ${apiMsg || 'request rejected'} — ${fieldSegments(errors)}`
+          : apiMsg
+            ? `Steadfast: ${apiMsg}`
+            : `Steadfast API error (HTTP ${res.status}): ${JSON.stringify(data).slice(0, 500)}`;
+        const failure = new CourierDispatchError({
+          courier: 'steadfast',
+          status: res.status,
+          message: msg + authHint('steadfast', res.status),
+          errors,
+          orderId: order.id,
+        });
         await this.logDispatch({
           orderId: order.id,
           courier: 'steadfast',
           status: 'failed',
-          message: msg,
+          message: failure.message,
           requestPayload: payload,
-          responsePayload: data,
+          responsePayload: responsePayloadFor(rawBody, data),
         });
-        throw new BadRequestException(msg);
-      } catch (e: unknown) {
-        lastError = e instanceof Error ? e : new Error(String(e));
-        this.logger.warn(
-          `Steadfast dispatch attempt ${attempt}/${maxRetries} failed: ${lastError.message}`,
-        );
-        if (permanent) break;
-        if (attempt < maxRetries) {
-          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
-        }
-      }
+        await this.noteDispatchFailure(order.id, 'steadfast', failure.message);
+        throw failure;
     }
 
+    const exhausted = new CourierDispatchError({
+      courier: 'steadfast',
+      status: 0,
+      message:
+        lastError instanceof CourierDispatchError
+          ? lastError.message
+          : `Steadfast: ${lastError?.message || 'dispatch failed after retries'} (retried ${maxRetries} attempts with the same invoice '${order.displayId}' — no double booking)`,
+      errors:
+        lastError instanceof CourierDispatchError
+          ? lastError.errors
+          : undefined,
+      orderId: order.id,
+    });
     await this.logDispatch({
       orderId: order.id,
       courier: 'steadfast',
       status: 'failed',
-      message: lastError?.message || 'All retry attempts failed',
+      message: exhausted.message,
       requestPayload: payload,
     });
-    throw new BadRequestException(
-      lastError?.message || 'Steadfast dispatch failed after retries',
-    );
+    await this.noteDispatchFailure(order.id, 'steadfast', exhausted.message);
+    throw exhausted;
+  }
+
+  /**
+   * Fix 5: permanent (never-retried) Steadfast 4xx. Reads the FULL body —
+   * JSON `errors` (field names per the doc: `{"status":400,"errors":{...}}`)
+   * or plain text ("Account is not active!") — masks secrets, and names the
+   * exact field+rule for the admin toast + order timeline.
+   */
+  private async permanentSteadfastError(
+    status: number,
+    rawBody: string,
+    data: Record<string, unknown> | null,
+    order: any,
+    payload: unknown,
+  ): Promise<CourierDispatchError> {
+    let failure: CourierDispatchError;
+    if (data === null) {
+      failure = new CourierDispatchError({
+        courier: 'steadfast',
+        status,
+        message:
+          `${this.describeSteadfastError(status, redactSecrets(rawBody))}` +
+          authHint('steadfast', status),
+        orderId: order.id,
+      });
+    } else {
+      const apiMsg = String(data['message'] || data['error'] || '');
+      const errors =
+        data['errors'] && typeof data['errors'] === 'object'
+          ? (data['errors'] as Record<string, unknown>)
+          : undefined;
+      const base = errors
+        ? `Steadfast: ${apiMsg || 'request rejected'} — ${fieldSegments(errors)}`
+        : apiMsg
+          ? `Steadfast: ${apiMsg}`
+          : `Steadfast API error (HTTP ${status}): ${redactSecrets(rawBody).slice(0, 500) || '(empty response body)'}`;
+      failure = new CourierDispatchError({
+        courier: 'steadfast',
+        status,
+        message: base + authHint('steadfast', status),
+        errors,
+        orderId: order.id,
+      });
+    }
+    await this.logDispatch({
+      orderId: order.id,
+      courier: 'steadfast',
+      status: 'failed',
+      message: failure.message,
+      requestPayload: payload,
+      responsePayload: responsePayloadFor(rawBody, data),
+    });
+    await this.noteDispatchFailure(order.id, 'steadfast', failure.message);
+    return failure;
   }
 
   private async dispatchPathao(creds: any, base: string, order: any) {
@@ -554,20 +898,42 @@ export class CourierManagerService {
       payload.recipient_secondary_phone = secondaryPhone;
     }
 
+    // Fix 5: `res.ok` is checked BEFORE parsing — error bodies are read as
+    // FULL text and parsed into the Pathao error envelope
+    // `{message, type, code}` (+ field `errors` when present) instead of
+    // throwing a raw SyntaxError inside the retry loop. Retry ONLY
+    // 5xx/network with exponential backoff; NEVER 4xx.
     const maxRetries = 3;
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      let token: string;
       try {
-        const token = await this.getPathaoToken(
+        token = await this.getPathaoToken(
           base,
           clientId,
           clientSecret,
           username,
           password,
         );
+      } catch (tokErr: unknown) {
+        if (tokErr instanceof CourierDispatchError) throw tokErr;
+        // Token-endpoint failure (usually network) — bounded retries only,
+        // never an unbounded loop.
+        lastError =
+          tokErr instanceof Error ? tokErr : new Error(String(tokErr));
+        this.logger.warn(
+          `Pathao dispatch attempt ${attempt}/${maxRetries} failed (token): ${lastError.message}`,
+        );
+        if (attempt < maxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, backoffMs(attempt)));
+        }
+        continue;
+      }
 
-        const res = await this.fetchWithTimeout(
+      let res: Response;
+      try {
+        res = await this.fetchWithTimeout(
           `${base}/aladdin/api/v1/orders`,
           {
             method: 'POST',
@@ -578,7 +944,50 @@ export class CourierManagerService {
             body: JSON.stringify(payload),
           },
         );
-        const data = (await res.json()) as Record<string, unknown>;
+      } catch (netErr: unknown) {
+        lastError = netErr instanceof Error ? netErr : new Error(String(netErr));
+        this.logger.warn(
+          `Pathao dispatch attempt ${attempt}/${maxRetries} failed (network): ${lastError.message}`,
+        );
+        if (attempt < maxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, backoffMs(attempt)));
+        }
+        continue;
+      }
+
+      const rawBody = await res.text().catch(() => '');
+      const data = parseJsonBody(rawBody);
+
+      if (!res.ok) {
+        if (isRetryableStatus(res.status)) {
+          lastError = new Error(
+            `Pathao API error (HTTP ${res.status}): ${redactSecrets(rawBody).slice(0, 500) || '(empty response body)'}`,
+          );
+          this.logger.warn(
+            `Pathao dispatch attempt ${attempt}/${maxRetries} failed (retryable HTTP ${res.status}): ${lastError.message}`,
+          );
+          if (attempt < maxRetries) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, backoffMs(attempt)),
+            );
+          }
+          continue;
+        }
+        throw await this.permanentPathaoError(res.status, rawBody, data, order, payload);
+      }
+
+      if (data === null) {
+        lastError = new BadRequestException(
+          `Pathao API returned non-JSON (HTTP ${res.status}): ${(redactSecrets(rawBody) || '(empty response body)').slice(0, 500)}`,
+        );
+        this.logger.warn(
+          `Pathao dispatch attempt ${attempt}/${maxRetries} failed (non-JSON 2xx): ${lastError.message}`,
+        );
+        if (attempt < maxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, backoffMs(attempt)));
+        }
+        continue;
+      }
         if (data['data']?.['consignment_id']) {
           const cId = String(
             (data['data'] as Record<string, unknown>)['consignment_id'],
@@ -632,38 +1041,92 @@ export class CourierManagerService {
           });
           return { consignmentId: cId, trackingCode: cId };
         }
-        const msg = String(data['message'] || 'Pathao dispatch failed');
-        await this.logDispatch({
-          orderId: order.id,
-          courier: 'pathao',
-          status: 'failed',
-          message: msg,
-          requestPayload: payload,
-          responsePayload: data,
-        });
-        throw new BadRequestException(msg);
-      } catch (e: unknown) {
-        if (e instanceof BadRequestException && attempt === maxRetries) throw e;
-        lastError = e instanceof Error ? e : new Error(String(e));
-        this.logger.warn(
-          `Pathao dispatch attempt ${attempt}/${maxRetries} failed: ${lastError.message}`,
-        );
-        if (attempt < maxRetries) {
-          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
-        }
-      }
+        // Fix 5: business-level rejection (HTTP 200 without a consignment) is
+        // permanent — the envelope names the exact field+rule.
+        throw await this.permanentPathaoError(res.status, rawBody, data, order, payload);
     }
 
+    const exhausted = new CourierDispatchError({
+      courier: 'pathao',
+      status: 0,
+      message:
+        lastError instanceof CourierDispatchError
+          ? lastError.message
+          : `Pathao: ${lastError?.message || 'dispatch failed after retries'} (retried ${maxRetries} attempts)`,
+      errors:
+        lastError instanceof CourierDispatchError
+          ? lastError.errors
+          : undefined,
+      orderId: order.id,
+    });
     await this.logDispatch({
       orderId: order.id,
       courier: 'pathao',
       status: 'failed',
-      message: lastError?.message || 'All retry attempts failed',
+      message: exhausted.message,
       requestPayload: payload,
     });
-    throw new BadRequestException(
-      lastError?.message || 'Pathao dispatch failed after retries',
-    );
+    await this.noteDispatchFailure(order.id, 'pathao', exhausted.message);
+    throw exhausted;
+  }
+
+  /**
+   * Fix 5: permanent (never-retried) Pathao 4xx / business rejection. Parses
+   * the doc's error envelope `{message, type, code}` plus a field-level
+   * `errors` object when the courier sends one, into the shared error shape.
+   */
+  private async permanentPathaoError(
+    status: number,
+    rawBody: string,
+    data: Record<string, unknown> | null,
+    order: any,
+    payload: unknown,
+  ): Promise<CourierDispatchError> {
+    const envelope = data
+      ? String(data['message'] || 'Pathao dispatch failed')
+      : `Pathao API error (HTTP ${status}): ${(redactSecrets(rawBody) || '(empty response body)').slice(0, 500)}`;
+    const fieldErrors =
+      data &&
+      typeof data['errors'] === 'object' &&
+      data['errors'] !== null
+        ? (data['errors'] as Record<string, unknown>)
+        : undefined;
+    const type = data?.['type'];
+    const code = data?.['code'];
+    const envelopeRef =
+      type !== undefined || code !== undefined
+        ? ` (type: ${String(type ?? '?')}, code: ${String(code ?? '?')})`
+        : '';
+    const message =
+      `Pathao: ${envelope}` +
+      (fieldErrors ? ` — ${fieldSegments(fieldErrors)}` : '') +
+      envelopeRef +
+      authHint('pathao', status);
+    const errors: Record<string, unknown> | undefined = fieldErrors
+      ? { ...fieldErrors }
+      : type !== undefined || code !== undefined
+        ? {
+            ...(type !== undefined ? { type } : {}),
+            ...(code !== undefined ? { code } : {}),
+          }
+        : undefined;
+    const failure = new CourierDispatchError({
+      courier: 'pathao',
+      status,
+      message,
+      errors,
+      orderId: order.id,
+    });
+    await this.logDispatch({
+      orderId: order.id,
+      courier: 'pathao',
+      status: 'failed',
+      message: failure.message,
+      requestPayload: payload,
+      responsePayload: responsePayloadFor(rawBody, data),
+    });
+    await this.noteDispatchFailure(order.id, 'pathao', failure.message);
+    return failure;
   }
 
   private async getPathaoToken(
@@ -732,12 +1195,16 @@ export class CourierManagerService {
       })) || [{ name: itemDescription, category: 'Apparel', value: total }],
     };
 
+    // Fix 5: FULL body text is read before parsing (never `res.json()` blind —
+    // an error body threw a raw SyntaxError inside the retry loop). Retry
+    // ONLY 5xx/network with exponential backoff; NEVER 4xx.
     const maxRetries = 3;
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      let res: Response;
       try {
-        const res = await this.fetchWithTimeout(`${base}/parcel`, {
+        res = await this.fetchWithTimeout(`${base}/parcel`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -745,7 +1212,50 @@ export class CourierManagerService {
           },
           body: JSON.stringify(payload),
         });
-        const data = (await res.json()) as Record<string, unknown>;
+      } catch (netErr: unknown) {
+        lastError = netErr instanceof Error ? netErr : new Error(String(netErr));
+        this.logger.warn(
+          `RedX dispatch attempt ${attempt}/${maxRetries} failed (network): ${lastError.message}`,
+        );
+        if (attempt < maxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, backoffMs(attempt)));
+        }
+        continue;
+      }
+
+      const rawBody = await res.text().catch(() => '');
+      const data = parseJsonBody(rawBody);
+
+      if (!res.ok) {
+        if (isRetryableStatus(res.status)) {
+          lastError = new Error(
+            `RedX API error (HTTP ${res.status}): ${redactSecrets(rawBody).slice(0, 500) || '(empty response body)'}`,
+          );
+          this.logger.warn(
+            `RedX dispatch attempt ${attempt}/${maxRetries} failed (retryable HTTP ${res.status}): ${lastError.message}`,
+          );
+          if (attempt < maxRetries) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, backoffMs(attempt)),
+            );
+          }
+          continue;
+        }
+        throw await this.permanentRedxError(res.status, rawBody, data, order, payload);
+      }
+
+      if (data === null) {
+        lastError = new BadRequestException(
+          `RedX API returned non-JSON (HTTP ${res.status}): ${(redactSecrets(rawBody) || '(empty response body)').slice(0, 500)}`,
+        );
+        this.logger.warn(
+          `RedX dispatch attempt ${attempt}/${maxRetries} failed (non-JSON 2xx): ${lastError.message}`,
+        );
+        if (attempt < maxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, backoffMs(attempt)));
+        }
+        continue;
+      }
 
         if (data['data']?.['tracking_id']) {
           const trackingCode = String(
@@ -809,37 +1319,75 @@ export class CourierManagerService {
           });
           return { trackingCode };
         }
-        const msg = String(data['message'] || 'RedX dispatch failed');
-        await this.logDispatch({
-          orderId: order.id,
-          courier: 'redx',
-          status: 'failed',
-          message: msg,
-          requestPayload: payload,
-          responsePayload: data,
-        });
-        throw new BadRequestException(msg);
-      } catch (e: unknown) {
-        lastError = e instanceof Error ? e : new Error(String(e));
-        this.logger.warn(
-          `RedX dispatch attempt ${attempt}/${maxRetries} failed: ${lastError.message}`,
-        );
-        if (attempt < maxRetries) {
-          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
-        }
-      }
+        // Fix 5: business-level rejection (HTTP 200 without a tracking_id) is
+        // permanent — the envelope names the exact field+rule.
+        throw await this.permanentRedxError(res.status, rawBody, data, order, payload);
     }
 
+    const exhausted = new CourierDispatchError({
+      courier: 'redx',
+      status: 0,
+      message:
+        lastError instanceof CourierDispatchError
+          ? lastError.message
+          : `RedX: ${lastError?.message || 'dispatch failed after retries'} (retried ${maxRetries} attempts)`,
+      errors:
+        lastError instanceof CourierDispatchError
+          ? lastError.errors
+          : undefined,
+      orderId: order.id,
+    });
     await this.logDispatch({
       orderId: order.id,
       courier: 'redx',
       status: 'failed',
-      message: lastError?.message || 'All retry attempts failed',
+      message: exhausted.message,
       requestPayload: payload,
     });
-    throw new BadRequestException(
-      lastError?.message || 'RedX dispatch failed after retries',
-    );
+    await this.noteDispatchFailure(order.id, 'redx', exhausted.message);
+    throw exhausted;
+  }
+
+  /**
+   * Fix 5: permanent (never-retried) RedX 4xx / business rejection. Reads the
+   * FULL body — `{message}` plus a field-level `errors` object when the
+   * courier sends one — into the shared error shape.
+   */
+  private async permanentRedxError(
+    status: number,
+    rawBody: string,
+    data: Record<string, unknown> | null,
+    order: any,
+    payload: unknown,
+  ): Promise<CourierDispatchError> {
+    const envelope = data
+      ? String(data['message'] || data['error'] || 'RedX dispatch failed')
+      : `RedX API error (HTTP ${status}): ${(redactSecrets(rawBody) || '(empty response body)').slice(0, 500)}`;
+    const fieldErrors =
+      data && typeof data['errors'] === 'object' && data['errors'] !== null
+        ? (data['errors'] as Record<string, unknown>)
+        : undefined;
+    const message =
+      `RedX: ${envelope}` +
+      (fieldErrors ? ` — ${fieldSegments(fieldErrors)}` : '') +
+      authHint('redx', status);
+    const failure = new CourierDispatchError({
+      courier: 'redx',
+      status,
+      message,
+      errors: fieldErrors ? { ...fieldErrors } : undefined,
+      orderId: order.id,
+    });
+    await this.logDispatch({
+      orderId: order.id,
+      courier: 'redx',
+      status: 'failed',
+      message: failure.message,
+      requestPayload: payload,
+      responsePayload: responsePayloadFor(rawBody, data),
+    });
+    await this.noteDispatchFailure(order.id, 'redx', failure.message);
+    return failure;
   }
 
   private async dispatchCarrybee(creds: any, base: string, order: any) {
@@ -877,18 +1425,70 @@ export class CourierManagerService {
       instruction: order.officeNotes || '',
     };
 
-    try {
-      const res = await this.fetchWithTimeout(`${base}/api/shipments/create`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Client-ID': clientId,
-          'Client-Secret': clientSecret,
-          'Client-Context': clientContext,
-        },
-        body: JSON.stringify(payload),
-      });
-      const data = (await res.json()) as Record<string, unknown>;
+    // Fix 5: same discipline as the other couriers — FULL body text first,
+    // retry ONLY 5xx/network with exponential backoff, NEVER 4xx. The doc's
+    // error shape is `{error, message}` + 422 `causes`
+    // (`{field: [{type, attribute}]}`) → field-level `errors`.
+    const maxRetries = 3;
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      let res: Response;
+      try {
+        res = await this.fetchWithTimeout(`${base}/api/shipments/create`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Client-ID': clientId,
+            'Client-Secret': clientSecret,
+            'Client-Context': clientContext,
+          },
+          body: JSON.stringify(payload),
+        });
+      } catch (netErr: unknown) {
+        lastError = netErr instanceof Error ? netErr : new Error(String(netErr));
+        this.logger.warn(
+          `Carrybee dispatch attempt ${attempt}/${maxRetries} failed (network): ${lastError.message}`,
+        );
+        if (attempt < maxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, backoffMs(attempt)));
+        }
+        continue;
+      }
+
+      const rawBody = await res.text().catch(() => '');
+      const data = parseJsonBody(rawBody);
+
+      if (!res.ok) {
+        if (isRetryableStatus(res.status)) {
+          lastError = new Error(
+            `Carrybee API error (HTTP ${res.status}): ${redactSecrets(rawBody).slice(0, 500) || '(empty response body)'}`,
+          );
+          this.logger.warn(
+            `Carrybee dispatch attempt ${attempt}/${maxRetries} failed (retryable HTTP ${res.status}): ${lastError.message}`,
+          );
+          if (attempt < maxRetries) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, backoffMs(attempt)),
+            );
+          }
+          continue;
+        }
+        throw await this.permanentCarrybeeError(res.status, rawBody, data, order, payload);
+      }
+
+      if (data === null) {
+        lastError = new BadRequestException(
+          `Carrybee API returned non-JSON (HTTP ${res.status}): ${(redactSecrets(rawBody) || '(empty response body)').slice(0, 500)}`,
+        );
+        this.logger.warn(
+          `Carrybee dispatch attempt ${attempt}/${maxRetries} failed (non-JSON 2xx): ${lastError.message}`,
+        );
+        if (attempt < maxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, backoffMs(attempt)));
+        }
+        continue;
+      }
       if (data['success'] && data['data']?.['consignment_id']) {
         const cId = String(
           (data['data'] as Record<string, unknown>)['consignment_id'],
@@ -915,20 +1515,75 @@ export class CourierManagerService {
         );
         return { consignmentId: cId };
       }
-      const msg = String(data['message'] || 'Carrybee dispatch failed');
-      await this.logDispatch({
-        orderId: order.id,
-        courier: 'carrybee',
-        status: 'failed',
-        message: msg,
-        requestPayload: payload,
-        responsePayload: data,
-      });
-      throw new BadRequestException(msg);
-    } catch (e: unknown) {
-      if (e instanceof BadRequestException) throw e;
-      throw new BadRequestException((e as Error).message);
+      // Fix 5: business-level rejection (HTTP 200 with error:true) is
+      // permanent — `causes` names the exact field+rule.
+      throw await this.permanentCarrybeeError(res.status, rawBody, data, order, payload);
     }
+
+    const exhausted = new CourierDispatchError({
+      courier: 'carrybee',
+      status: 0,
+      message:
+        lastError instanceof CourierDispatchError
+          ? lastError.message
+          : `Carrybee: ${lastError?.message || 'dispatch failed after retries'} (retried ${maxRetries} attempts)`,
+      errors:
+        lastError instanceof CourierDispatchError
+          ? lastError.errors
+          : undefined,
+      orderId: order.id,
+    });
+    await this.logDispatch({
+      orderId: order.id,
+      courier: 'carrybee',
+      status: 'failed',
+      message: exhausted.message,
+      requestPayload: payload,
+    });
+    await this.noteDispatchFailure(order.id, 'carrybee', exhausted.message);
+    throw exhausted;
+  }
+
+  /**
+   * Fix 5: permanent (never-retried) Carrybee 4xx / business rejection.
+   * Parses the doc's `{error, message}` + 422 `causes`
+   * (`{field: [{type, attribute}]}`) into the shared error shape.
+   */
+  private async permanentCarrybeeError(
+    status: number,
+    rawBody: string,
+    data: Record<string, unknown> | null,
+    order: any,
+    payload: unknown,
+  ): Promise<CourierDispatchError> {
+    const envelope = data
+      ? String(data['message'] || 'Carrybee dispatch failed')
+      : `Carrybee API error (HTTP ${status}): ${(redactSecrets(rawBody) || '(empty response body)').slice(0, 500)}`;
+    const causes =
+      data && typeof data['causes'] === 'object' && data['causes'] !== null
+        ? (data['causes'] as Record<string, unknown>)
+        : undefined;
+    const message =
+      `Carrybee: ${envelope}` +
+      (causes ? ` — ${fieldSegments(causes)}` : '') +
+      authHint('carrybee', status);
+    const failure = new CourierDispatchError({
+      courier: 'carrybee',
+      status,
+      message,
+      errors: causes ? { ...causes } : undefined,
+      orderId: order.id,
+    });
+    await this.logDispatch({
+      orderId: order.id,
+      courier: 'carrybee',
+      status: 'failed',
+      message: failure.message,
+      requestPayload: payload,
+      responsePayload: responsePayloadFor(rawBody, data),
+    });
+    await this.noteDispatchFailure(order.id, 'carrybee', failure.message);
+    return failure;
   }
 
   async getSteadfastBalance(): Promise<{ current_balance: number }> {
@@ -1084,10 +1739,15 @@ export class CourierManagerService {
 
     const base = await this.getBaseUrl('steadfast');
     // Per-entry name errors must NOT abort the batch: an order with no
-    // recipient name becomes a failed entry (same {orderId, message} shape
-    // the response loop below produces) and the rest still dispatch.
+    // recipient name becomes a failed entry (same {orderId, message, courier,
+    // errors} shape the response loop below produces) and the rest dispatch.
     const bodyData: Record<string, unknown>[] = [];
-    const preFailed: { orderId: string; message: string }[] = [];
+    const preFailed: {
+      orderId: string;
+      message: string;
+      courier: string;
+      errors?: Record<string, unknown>;
+    }[] = [];
     for (const order of orders) {
       try {
         // D-A: snapshot authority — never the linked CustomerProfile.
@@ -1109,10 +1769,21 @@ export class CourierManagerService {
           note: order.officeNotes || null,
         });
       } catch (e: unknown) {
+        // Fix 5: resolveCourierName throws the shaped field error already.
+        if (e instanceof CourierDispatchError) {
+          preFailed.push({
+            orderId: order.displayId ?? order.id ?? 'unknown',
+            message: e.message,
+            courier: e.courier,
+            errors: e.errors,
+          });
+          continue;
+        }
         const msg = e instanceof Error ? e.message : 'Dispatch failed';
         preFailed.push({
           orderId: order.displayId ?? order.id ?? 'unknown',
           message: msg,
+          courier: 'steadfast',
         });
       }
     }
@@ -1121,15 +1792,83 @@ export class CourierManagerService {
       return { success: [], failed: preFailed };
     }
 
-    const response = await this.jsonFetch(`${base}/create_order/bulk-order`, {
-      method: 'POST',
-      headers: {
-        'Api-Key': apiKey,
-        'Secret-Key': secretKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ data: bodyData }),
-    });
+    // Fix 5: transport with the same retry discipline as single dispatch —
+    // ONLY 5xx/network are retried, NEVER 4xx (with the fix-keys hint).
+    // Retry safety: the retried body carries the SAME invoices, and duplicate
+    // invoices are refused, so a retry cannot double-book (per the doc:
+    // "Retry with the same invoice; duplicate invoices are refused").
+    const bulkBody = JSON.stringify({ data: bodyData });
+    const bulkHeaders = {
+      'Api-Key': apiKey,
+      'Secret-Key': secretKey,
+      'Content-Type': 'application/json',
+    };
+    const bulkMaxRetries = 3;
+    let response: Record<string, unknown> | null = null;
+    let bulkStatus = 0;
+    for (let attempt = 1; attempt <= bulkMaxRetries; attempt++) {
+      let res: Response;
+      try {
+        res = await this.fetchWithTimeout(`${base}/create_order/bulk-order`, {
+          method: 'POST',
+          headers: bulkHeaders,
+          body: bulkBody,
+        });
+      } catch (netErr: unknown) {
+        this.logger.warn(
+          `Steadfast bulk dispatch attempt ${attempt}/${bulkMaxRetries} failed (network): ${(netErr as Error).message}`,
+        );
+        if (attempt < bulkMaxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, backoffMs(attempt)));
+        }
+        continue;
+      }
+      bulkStatus = res.status;
+      const rawBody = await res.text().catch(() => '');
+      const parsed = parseJsonBody(rawBody);
+      if (!res.ok) {
+        if (isRetryableStatus(res.status)) {
+          this.logger.warn(
+            `Steadfast bulk dispatch attempt ${attempt}/${bulkMaxRetries} failed (retryable HTTP ${res.status})`,
+          );
+          if (attempt < bulkMaxRetries) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, backoffMs(attempt)),
+            );
+          }
+          continue;
+        }
+        throw new CourierDispatchError({
+          courier: 'steadfast',
+          status: res.status,
+          message:
+            `Steadfast bulk: ${parsed ? String(parsed['message'] || 'request rejected') : (redactSecrets(rawBody) || '(empty response body)').slice(0, 500)}` +
+            authHint('steadfast', res.status),
+          errors:
+            parsed && typeof parsed['errors'] === 'object' && parsed['errors'] !== null
+              ? { ...(parsed['errors'] as Record<string, unknown>) }
+              : undefined,
+        });
+      }
+      if (parsed === null) {
+        this.logger.warn(
+          `Steadfast bulk dispatch attempt ${attempt}/${bulkMaxRetries} failed (non-JSON 2xx)`,
+        );
+        if (attempt < bulkMaxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, backoffMs(attempt)));
+        }
+        continue;
+      }
+      response = parsed;
+      break;
+    }
+    if (response === null) {
+      throw new CourierDispatchError({
+        courier: 'steadfast',
+        status: bulkStatus || 0,
+        message: `Steadfast bulk: no usable response after ${bulkMaxRetries} attempts with the same invoices (HTTP ${bulkStatus || 'network failure'}) — safe to retry, duplicate invoices are refused`,
+      });
+    }
 
     const results = (response['data'] as Array<Record<string, unknown>>) || [];
     const successResults: {
@@ -1138,7 +1877,12 @@ export class CourierManagerService {
       trackingCode: string;
       trackingUrl: string;
     }[] = [];
-    const failedResults: { orderId: string; message: string }[] = [];
+    const failedResults: {
+      orderId: string;
+      message: string;
+      courier: string;
+      errors?: Record<string, unknown>;
+    }[] = [];
 
     for (const result of results) {
       const invoice = result['invoice'] as string;
@@ -1231,17 +1975,74 @@ export class CourierManagerService {
           });
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : 'Failed to process';
-          failedResults.push({ orderId: invoice, message: msg });
+          failedResults.push({ orderId: invoice, message: msg, courier: 'steadfast' });
         }
       } else {
+        // Fix 5: read the per-entry `error` codes — a failed legacy-bulk
+        // entry carries `status: null` + `error`, a JSON-encoded ARRAY of
+        // codes (e.g. '["THIS_INVOICE_ALREADY_EXISTS"]'), NOT `message`
+        // (which is absent → the old code surfaced a literal 'Failed').
+        // The extended endpoint instead sends `status: "error"` + `error`
+        // as readable sentences. Both land here, verbatim, with field+rule
+        // naming for the admin UI.
+        const entry = this.describeSteadfastBulkEntry(result);
         failedResults.push({
           orderId: invoice,
-          message: String(result['message'] || 'Failed'),
+          message: entry.message,
+          courier: 'steadfast',
+          errors: entry.errors,
         });
       }
     }
 
     return { success: successResults, failed: [...preFailed, ...failedResults] };
+  }
+
+  /**
+   * Fix 5: surface a failed Steadfast bulk entry's `error` codes/sentences.
+   * Legacy shape: `{status: null, error: '["CODE", ...]'}` (JSON-encoded
+   * string). Extended shape: `{status: "error", error: ["sentence", ...]}`.
+   * Known codes map to `field 'x' <rule>` sentences; unknown codes and
+   * sentences pass through verbatim (never a bare 'Failed').
+   */
+  private describeSteadfastBulkEntry(result: Record<string, unknown>): {
+    message: string;
+    errors: Record<string, unknown>;
+  } {
+    const invoice = String(result['invoice'] ?? '');
+    const rawErr = result['error'];
+    let codes: string[] = [];
+    if (Array.isArray(rawErr)) {
+      codes = rawErr.map((c) => String(c));
+    } else if (typeof rawErr === 'string' && rawErr.trim()) {
+      try {
+        const parsed = JSON.parse(rawErr) as unknown;
+        codes = Array.isArray(parsed)
+          ? parsed.map((c) => String(c))
+          : [rawErr];
+      } catch {
+        codes = [rawErr];
+      }
+    }
+    if (codes.length > 0) {
+      const rules = codes.map(
+        (c) => STEADFAST_BULK_ERROR_RULES[c] ?? c,
+      );
+      // Keep the raw codes alongside the readable rules — staff search logs
+      // by code, humans read the rule.
+      const known = codes.some((c) => STEADFAST_BULK_ERROR_RULES[c]);
+      return {
+        message:
+          `Steadfast [${invoice}]: ${rules.join('; ')}` +
+          (known ? ` (${codes.join(', ')})` : ''),
+        errors: { codes, invoice },
+      };
+    }
+    const msg = String(result['message'] || 'Failed');
+    return {
+      message: `Steadfast [${invoice}]: ${msg}`,
+      errors: { invoice },
+    };
   }
 
   async getRedxParcelDetails(trackingId: string) {

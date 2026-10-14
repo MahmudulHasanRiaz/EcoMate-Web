@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { dispatchApi } from './api'
+import { formatCourierDispatchToast } from './courier-errors'
 
 export function useDispatchList(params?: any) {
   return useQuery({
@@ -27,8 +28,18 @@ export function useDispatchMutations() {
         toast.success('Dispatch created')
         qc.invalidateQueries({ queryKey: ['dispatches'] })
       },
-      onError: (e: any) =>
-        toast.error(e?.response?.data?.message || 'Failed to create dispatch'),
+      // Fix 5: thread server field errors (message + errors object) into the
+      // toast with exact field+rule naming, same as courier dispatch paths.
+      onError: (e: any) => {
+        const d = e?.response?.data
+        toast.error(
+          formatCourierDispatchToast({
+            message: d?.message || 'Failed to create dispatch',
+            errors: d?.errors,
+          }),
+          { duration: 8000 },
+        )
+      },
     }),
     updateStatus: useMutation({
       mutationFn: ({ id, status }: { id: string; status: string }) =>

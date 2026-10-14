@@ -35,6 +35,7 @@ import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDo
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { OrderSourceBadges } from '@/features/orders/order-source-badge'
 import { CanonicalAttributionBadges } from '@/features/orders/canonical-attribution-badge'
+import { formatCourierDispatchToast } from '@/features/dispatch/courier-errors'
 
 const fallbackStatusColors: Record<string, string> = { Pending: 'var(--warning)', Confirmed: 'var(--info)', Cancelled: 'var(--danger)', 'On Hold': 'var(--accent-violet)', Packed: 'var(--accent-cyan)', Shipped: 'var(--success)', 'In Courier': 'var(--accent-violet)', Delivered: 'var(--success)', 'Partial Return': 'var(--warning)', 'Return Pending': 'var(--accent-pink)', Returned: 'var(--danger)', Damaged: 'var(--danger)' }
 const nn = (v: number | string) => Number(v)
@@ -709,14 +710,27 @@ export function Orders() {
       const failed = results.filter((r: any) => !r.ok)
       if (failed.length > 0) {
         toast.error(`${failed.length} order(s) failed to dispatch`)
-        failed.forEach((r: any) => toast.error(r.message || 'Unknown error', { id: r.id }))
+        // Fix 5: each failure names the EXACT courier field+rule
+        // (shaped backend error threaded through untouched).
+        failed.forEach((r: any) => toast.error(formatCourierDispatchToast(r), { id: r.id, duration: 8000 }))
       }
       if (succeeded.length > 0) toast.success(`${succeeded.length} order(s) dispatched to courier`)
       queryClient.invalidateQueries({ queryKey: ['orders'] })
       setSelected([])
       setDispatchCourier('')
     },
-    onError: (e: unknown) => { toast.error((e as Error).message || 'Dispatch failed') },
+    onError: (e: any) => {
+      // Fix 5: a whole-batch transport rejection can also carry the shaped
+      // error ({message, errors}) — surface it with exact field+rule naming.
+      const d = e?.response?.data
+      toast.error(
+        formatCourierDispatchToast({
+          message: d?.message || (e as Error)?.message || 'Dispatch failed',
+          errors: d?.errors,
+        }),
+        { duration: 8000 },
+      )
+    },
   })
 
   const trashOrderMut = useMutation({

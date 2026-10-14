@@ -58,6 +58,7 @@ import {
   RotateCcw, ScanSearch, Calendar, CreditCard, CheckCircle2, ShoppingBag, History
 } from 'lucide-react'
 import { DISPATCH_STATUSES, getDispatchIdentifierLabels } from '@/features/dispatch/data/data'
+import { formatCourierDispatchToast } from '@/features/dispatch/courier-errors'
 import { STATUS_COLORS as statusColors } from '@/features/orders/status-transitions'
 
 const nn = (v: number | string) => Number(v)
@@ -273,14 +274,27 @@ function OrderDetailPage() {
       const results = (res as any)?.data as any[] || []
       const succeeded = results.filter((r: any) => r.ok)
       const failed = results.filter((r: any) => !r.ok)
-      if (failed.length > 0) toast.error(failed[0]?.message || 'Dispatch failed')
+      // Fix 5: the failure names the EXACT courier field+rule
+      // (shaped backend error threaded through untouched).
+      if (failed.length > 0) toast.error(formatCourierDispatchToast(failed[0] || { message: 'Dispatch failed' }), { duration: 8000 })
       if (succeeded.length > 0) {
         queryClient.invalidateQueries({ queryKey: ['order', id] })
         setShowDispatchDialog(false); setDispatchCourier('')
         toast.success('Order dispatched')
       }
     },
-    onError: (e: unknown) => toast.error(errMsg(e)),
+    onError: (e: unknown) => {
+      // Fix 5: a whole-batch transport rejection can also carry the shaped
+      // error ({message, errors}) — surface it with exact field+rule naming.
+      const d = (e as any)?.response?.data
+      toast.error(
+        formatCourierDispatchToast({
+          message: d?.message || errMsg(e),
+          errors: d?.errors,
+        }),
+        { duration: 8000 },
+      )
+    },
   })
 
   const trashMut = useMutation({
