@@ -216,7 +216,7 @@ describe('CourierWebhookService — Task 5 owner-approved status mappings', () =
       );
       const entries = timelineEntries();
       const paid = entries.find(
-        (e) => e?.courier === 'redx' && (e?.status === 'DELIVERED' || e?.status === 'paid'),
+        (e) => e?.courier === 'redx' && e?.status === 'DELIVERED',
       );
       expect(paid).toBeDefined();
       // The merchant invoice id rides the timeline entry (no new tables).

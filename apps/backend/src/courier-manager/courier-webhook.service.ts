@@ -1044,7 +1044,8 @@ export class CourierWebhookService {
 
     const extra: Record<string, unknown> = {};
     if (body['reason']) extra.reason = body['reason'];
-    if (body['collected_amount'] != null) extra.collected_amount = body['collected_amount'];
+    const pathaoDefinite = this.definitePaidAmount(body);
+    if (pathaoDefinite != null) extra.collected_amount = pathaoDefinite;
     if (body['return_type']) extra.return_type = body['return_type'];
     if (body['return_consignment_id']) extra.return_consignment_id = body['return_consignment_id'];
     // Task 1 (owner-locked, paid = DELIVERED + money): the Pathao order.paid
@@ -1249,17 +1250,21 @@ export class CourierWebhookService {
   /**
    * Task 1: definite-amount gate for paid money recording. Returns the
    * numeric amount ONLY when the payload carries an explicit finite number
-   * (or numeric string); otherwise null (identifiers only — never infer
-   * from the order total). Checked keys cover the known paid vocabularies:
-   * collected_amount (pathao/carrybee), amount, cash_collected/cash_paid
-   * (redx settlement vocabulary).
+   * > 0 (number or numeric string); otherwise null (identifiers only —
+   * never infer from the order total). Rejects booleans, arrays, objects,
+   * blank strings, NaN and non-positive values. Checked keys cover the
+   * known paid vocabularies: collected_amount (pathao/carrybee), amount,
+   * cash_collected/cash_paid (redx settlement vocabulary).
    */
   private definitePaidAmount(body: Record<string, unknown>): number | null {
     for (const key of ['collected_amount', 'amount', 'cash_collected', 'cash_paid']) {
       const raw = body[key];
-      if (raw == null || raw === '') continue;
+      if (raw == null) continue;
+      if (typeof raw !== 'number' && typeof raw !== 'string') continue;
+      if (typeof raw === 'string' && raw.trim() === '') continue;
       const num = Number(raw);
-      if (Number.isFinite(num)) return num;
+      if (!Number.isFinite(num) || num <= 0) continue;
+      return num;
     }
     return null;
   }
@@ -1327,7 +1332,8 @@ export class CourierWebhookService {
 
     const extra: Record<string, unknown> = {};
     if (body['reason']) extra.reason = body['reason'];
-    if (body['collected_amount'] != null) extra.collected_amount = body['collected_amount'];
+    const carrybeeDefinite = this.definitePaidAmount(body);
+    if (carrybeeDefinite != null) extra.collected_amount = carrybeeDefinite;
     if (body['remarks']) extra.remarks = body['remarks'];
     if (body['attempt'] != null) extra.attempt = body['attempt'];
     if (body['agent_name']) extra.agent_name = body['agent_name'];
