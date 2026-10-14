@@ -272,7 +272,7 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
     o.guestName ||
     ''
   setCustomerName(fullName)
-  setCustomerPhone(o.customerPhone || o.customer?.phone || o.guestPhone || '')
+  setCustomerPhone(o.customerPhone || o.guestPhone || o.customer?.phone || '')
   setSecondaryPhone((o as any).secondaryPhone || '')
   setSecondaryInitial((o as any).secondaryPhone || '')
   setCustomerEmail(o.customerEmail || o.customer?.email || '')

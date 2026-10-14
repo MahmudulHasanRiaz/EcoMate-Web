@@ -19,6 +19,8 @@ interface OrderCustomerSnapshot {
     name?: string | null
     email?: string | null
     phone?: string | null
+    /** Canonical profile field (OrderResponse.customer.phoneNumber). */
+    phoneNumber?: string | null
     firstName?: string | null
     lastName?: string | null
   } | null
@@ -51,9 +53,10 @@ export function getCustomerDisplayName(order: OrderCustomerSnapshot): string {
 /**
  * Resolve customer phone from order-time snapshot.
  * Priority: snapshot phone > guestPhone > CustomerProfile phone
+ * (either the snapshot-mapped `phone` or the canonical `phoneNumber`).
  */
 export function getCustomerPhone(order: OrderCustomerSnapshot): string {
-  return order.customerPhone || order.guestPhone || order.customer?.phone || ''
+  return order.customerPhone || order.guestPhone || order.customer?.phone || order.customer?.phoneNumber || ''
 }
 
 /**

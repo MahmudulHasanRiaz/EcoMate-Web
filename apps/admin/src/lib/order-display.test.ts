@@ -28,6 +28,16 @@ describe('customer snapshot authority (D-A)', () => {
     expect(getCustomerPhone(order)).toBe('01900000000')
     expect(getCustomerEmail(order)).toBe('old@example.com')
   })
+
+  it('reads the phoneNumber profile shape (OrderResponse.customer)', () => {
+    const order = { customer: { phoneNumber: '01900000000' } }
+    expect(getCustomerPhone(order)).toBe('01900000000')
+  })
+
+  it('prefill order: guest phone beats profile phone (snapshot > guest > profile)', () => {
+    const order = { guestPhone: '01822222222', customer: { phone: '01900000000', phoneNumber: '01900000000' } }
+    expect(getCustomerPhone(order)).toBe('01822222222')
+  })
 })
 
 describe('getOrderPaidAmount', () => {

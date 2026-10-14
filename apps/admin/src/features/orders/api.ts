@@ -68,7 +68,7 @@ export interface OrderResponse {
   sourcePlatformName?: string | null;
   trashedAt?: string | null;
   createdAt: string; updatedAt: string;
-  customer: { id: string; firstName: string; lastName: string; email: string; phoneNumber: string } | null;
+  customer: { id: string; firstName: string; lastName: string; email: string; phoneNumber: string; name?: string; phone?: string } | null;
   status: { id: string; name: string; color: string; nextStatuses: string[] };
   items: { id: string; productId: string; variantId?: string | null; quantity: number; price: number | string; product: { id: string; name: string; images: any; slug?: string } }[];
   /** Append-only payment ledger rows (Task 11: account/actor/recordedAt). */
