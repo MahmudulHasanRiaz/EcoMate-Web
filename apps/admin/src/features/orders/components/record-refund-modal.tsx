@@ -11,22 +11,39 @@ import { refundsApi } from '@/features/refunds/api'
 
 export const REFUND_CANCEL_QUESTION = 'এই অর্ডারটি কি ক্যান্সেলও হয়ে যাবে?'
 
+export interface RefundSourceContext {
+  id: string
+  gatewayCode: string
+  amount: number
+  remainder: number
+}
+
 /**
  * Record a refund (D5). Writes a Refund row + a negative ledger row; with
  * cancelToo the same transaction also cancels the order atomically (a partial
  * amount is rejected server-side — the cancel gate would still block).
+ *
+ * D-B: also usable from the payment ledger — pass `initialAmount` (the summed
+ * remainder), `sourcePaymentIds` (the selected PAID rows) and `sourceContext`
+ * (the same rows for display) to prefill the modal.
  */
 export function RecordRefundModal({
   orderId,
   open,
   onClose,
+  initialAmount,
+  sourcePaymentIds,
+  sourceContext,
 }: {
   orderId: string
   open: boolean
   onClose: () => void
+  initialAmount?: number
+  sourcePaymentIds?: string[]
+  sourceContext?: RefundSourceContext[]
 }) {
   const queryClient = useQueryClient()
-  const [amount, setAmount] = useState('')
+  const [amount, setAmount] = useState(initialAmount !== undefined ? String(initialAmount) : '')
   const [method, setMethod] = useState('')
   const [reason, setReason] = useState('')
   const [cancelToo, setCancelToo] = useState(false)
@@ -39,13 +56,16 @@ export function RecordRefundModal({
         method: method.trim(),
         reason: reason.trim(),
         cancelToo,
+        ...(sourcePaymentIds?.length ? { sourcePaymentIds } : {}),
       }),
     onSuccess: () => {
       toast.success(cancelToo ? 'Refund recorded and order cancelled' : 'Refund recorded')
       queryClient.invalidateQueries({ queryKey: ['order', orderId] })
       queryClient.invalidateQueries({ queryKey: ['orders'] })
+      queryClient.invalidateQueries({ queryKey: ['payments-all'] })
+      queryClient.invalidateQueries({ queryKey: ['refunds'] })
       onClose()
-      setAmount('')
+      setAmount(initialAmount !== undefined ? String(initialAmount) : '')
       setMethod('')
       setReason('')
       setCancelToo(false)
@@ -80,6 +100,16 @@ export function RecordRefundModal({
           <DialogTitle>Record refund</DialogTitle>
         </DialogHeader>
         <div className="space-y-3 py-2">
+          {sourceContext?.length ? (
+            <div className="rounded-lg border border-border/60 bg-muted/30 p-3 space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Refunding from {sourceContext.length} payment row{sourceContext.length > 1 ? 's' : ''}</p>
+              {sourceContext.map((s) => (
+                <p key={s.id} className="text-xs font-mono">
+                  {s.gatewayCode} ৳{Number(s.amount).toLocaleString()} → remainder ৳{Number(s.remainder).toLocaleString()}
+                </p>
+              ))}
+            </div>
+          ) : null}
           <div>
             <Label htmlFor="record-refund-amount">Amount (৳)</Label>
             <Input

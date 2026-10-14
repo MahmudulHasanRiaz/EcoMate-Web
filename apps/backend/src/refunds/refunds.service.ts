@@ -175,11 +175,30 @@ export class RefundsService {
 
     await this.assertNoActiveDispatches(dto.orderId);
 
+    // D-B: explicit source rows (payment-list selection). Validated BEFORE any
+    // write — same order, PAID-only, per-row remainder cap. The requested total
+    // is distributed across the rows in the given order (first row first); a
+    // repeated refund of the same row 400s via the cap. The legacy single
+    // `sourcePaymentId` (exchange flow) goes through the same validation.
+    let allocations: { paymentId: string; amount: number }[] | undefined;
+    const explicitIds = dto.sourcePaymentIds?.length
+      ? [...new Set(dto.sourcePaymentIds)]
+      : dto.sourcePaymentId
+        ? [dto.sourcePaymentId]
+        : undefined;
+    if (explicitIds) {
+      allocations = await this.resolveSourceAllocations(
+        dto.orderId,
+        dto.amount,
+        explicitIds,
+      );
+    }
+
     // Traceability: pin the refund to the specific collection it reverses, so
     // the money can be followed back to the payment row rather than to an order
     // total. Oldest first, so partial refunds consume payments in order.
     let sourcePaymentId = dto.sourcePaymentId;
-    if (!sourcePaymentId) {
+    if (!sourcePaymentId && !allocations) {
       const alreadyRefundedPayments = await this.prisma.refund.findMany({
         where: { orderId: dto.orderId, status: 'completed', sourcePaymentId: { not: null } },
         select: { sourcePaymentId: true },
@@ -193,51 +212,83 @@ export class RefundsService {
       sourcePaymentId = candidate && !consumed.has(candidate.id) ? candidate.id : undefined;
     }
 
-    // Single $transaction: Refund row + negative ledger row (+ optional
+    // Single $transaction: Refund row(s) + negative ledger row(s) (+ optional
     // atomic Cancelled transition) commit together or not at all — a refund
-    // must never exist without its ledger mirror, and vice versa.
+    // must never exist without its ledger mirror, and vice versa. Every refund
+    // also leaves a timeline entry (previously only cancelToo refunds did).
+    const isBulk = !!allocations && allocations.length > 1;
     const refund = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.refund.create({
-        data: {
-          orderId: dto.orderId,
-          amount: dto.amount,
+      const createdRefunds: any[] = [];
+      const refundEntries: any[] = [];
+      const at = new Date().toISOString();
+      const actor = recordedBy ? `staff:${recordedBy}` : 'system';
+
+      const writeRefundSlice = async (amount: number, pinId?: string) => {
+        const created = await tx.refund.create({
+          data: {
+            orderId: dto.orderId,
+            amount,
+            method: dto.method,
+            reason: dto.reason,
+            notes: dto.notes,
+            // Exchange-sourced refunds carry their lineage so the money is
+            // traceable back to the exchange that produced it.
+            ...(dto.exchangeOrderId ? { exchangeOrderId: dto.exchangeOrderId } : {}),
+            ...(pinId ? { sourcePaymentId: pinId } : {}),
+          },
+          include: {
+            order: { select: { displayId: true } },
+            processor: { select: { id: true, firstName: true, lastName: true } },
+          },
+        });
+
+        // Negative ledger mirror. PAID-direct (never PENDING): a refund is a
+        // staff-verified money movement by construction — created through an
+        // approve_payments-guarded endpoint — not a customer submission awaiting
+        // verification. Routing it through PENDING would understate the ledger
+        // (every reader sums Σ PAID) and strand the very refund that is
+        // supposed to unblock cancellation.
+        await tx.payment.create({
+          data: {
+            orderId: dto.orderId,
+            gatewayCode: dto.method,
+            amount: -amount,
+            account: dto.method,
+            status: 'PAID',
+            notes: dto.reason,
+            recordedBy: recordedBy ? `staff:${recordedBy}` : undefined,
+            submittedBy: recordedBy ? `staff:${recordedBy}` : undefined,
+            recordedAt: new Date(),
+          },
+        });
+
+        refundEntries.push({
+          type: 'refund',
+          amount,
           method: dto.method,
           reason: dto.reason,
-          notes: dto.notes,
-          // Exchange-sourced refunds carry their lineage so the money is
-          // traceable back to the exchange that produced it.
-          ...(dto.exchangeOrderId ? { exchangeOrderId: dto.exchangeOrderId } : {}),
-          ...(sourcePaymentId ? { sourcePaymentId } : {}),
-        },
-        include: {
-          order: { select: { displayId: true } },
-          processor: { select: { id: true, firstName: true, lastName: true } },
-        },
-      });
+          ...(pinId ? { sourcePaymentId: pinId } : {}),
+          timestamp: at,
+          performedBy: actor,
+        });
+        createdRefunds.push(created);
+      };
 
-      // Negative ledger mirror. PAID-direct (never PENDING): a refund is a
-      // staff-verified money movement by construction — created through an
-      // approve_payments-guarded endpoint — not a customer submission awaiting
-      // verification. Routing it through PENDING would understate the ledger
-      // (every reader sums Σ PAID) and strand the very refund that is
-      // supposed to unblock cancellation.
-      await tx.payment.create({
-        data: {
-          orderId: dto.orderId,
-          gatewayCode: dto.method,
-          amount: -dto.amount,
-          account: dto.method,
-          status: 'PAID',
-          notes: dto.reason,
-          recordedBy: recordedBy ? `staff:${recordedBy}` : undefined,
-          submittedBy: recordedBy ? `staff:${recordedBy}` : undefined,
-          recordedAt: new Date(),
-        },
-      });
+      if (allocations?.length) {
+        for (const alloc of allocations) {
+          await writeRefundSlice(alloc.amount, alloc.paymentId);
+        }
+      } else {
+        await writeRefundSlice(dto.amount, sourcePaymentId);
+      }
+
+      const current = Array.isArray(order.timeline)
+        ? [...(order.timeline as any[])]
+        : [];
 
       // Atomic cancel-too: same tx moves the order to Cancelled (status
       // lookup by name, like cancelByCustomer) with timeline entries for
-      // BOTH the refund and the cancel. cancelToo=false refunds only.
+      // BOTH the refund(s) and the cancel. cancelToo=false refunds only.
       if (dto.cancelToo) {
         const cancelled = await tx.orderStatus.findFirst({
           where: { name: 'Cancelled' },
@@ -245,27 +296,12 @@ export class RefundsService {
         if (!cancelled) {
           throw new BadRequestException('Cancelled status not configured');
         }
-        const at = new Date().toISOString();
-        const actor = recordedBy ? `staff:${recordedBy}` : 'system';
-        const current = Array.isArray(order.timeline)
-          ? [...(order.timeline as any[])]
-          : [];
-        current.push(
-          {
-            type: 'refund',
-            amount: dto.amount,
-            method: dto.method,
-            reason: dto.reason,
-            timestamp: at,
-            performedBy: actor,
-          },
-          {
-            status: 'Cancelled',
-            timestamp: at,
-            note: `Cancelled atomically with refund (${dto.reason})`,
-            performedBy: actor,
-          },
-        );
+        current.push(...refundEntries, {
+          status: 'Cancelled',
+          timestamp: at,
+          note: `Cancelled atomically with refund (${dto.reason})`,
+          performedBy: actor,
+        });
         await tx.order.update({
           where: { id: dto.orderId },
           data: {
@@ -274,9 +310,15 @@ export class RefundsService {
             timeline: current as any,
           },
         });
+      } else {
+        current.push(...refundEntries);
+        await tx.order.update({
+          where: { id: dto.orderId },
+          data: { timeline: current as any },
+        });
       }
 
-      return created;
+      return isBulk ? createdRefunds : createdRefunds[0];
     });
 
     if (dto.targetStatusId && !dto.cancelToo) {
@@ -311,6 +353,73 @@ export class RefundsService {
     // Refund changes the outstanding collectable (Feature A, resilient).
     await this.refreshCodAlert(dto.orderId);
     return refund;
+  }
+
+  /**
+   * D-B: validate explicit source rows and split the requested total across
+   * them in the given order (first row first). 400s on unknown ids,
+   * cross-order ids, non-PAID rows, or an over-remainder total. The per-row
+   * remainder (row.amount − Σ non-rejected refunds by sourcePaymentId) also
+   * makes a repeated refund of the same row a 400 — the remainder is already
+   * consumed, so the cap rejects it (idempotent double-refund block).
+   */
+  private async resolveSourceAllocations(
+    orderId: string,
+    total: number,
+    ids: string[],
+  ): Promise<{ paymentId: string; amount: number }[]> {
+    const rows = await this.prisma.payment.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, orderId: true, status: true, amount: true },
+    });
+    if (rows.length !== ids.length) {
+      throw new BadRequestException(
+        'One or more source payments were not found.',
+      );
+    }
+    for (const row of rows) {
+      if (row.orderId !== orderId) {
+        throw new BadRequestException(
+          'All source payments must belong to the same order.',
+        );
+      }
+      if ((row.status as string) !== 'PAID') {
+        throw new BadRequestException(
+          'pending rows must be approved or failed first — only PAID payment rows can be refunded.',
+        );
+      }
+    }
+    const remainders = new Map<string, number>();
+    let totalRemainder = 0;
+    for (const row of rows) {
+      const agg = await this.prisma.refund.aggregate({
+        where: {
+          sourcePaymentId: row.id,
+          status: { in: ['pending', 'approved', 'completed'] },
+        },
+        _sum: { amount: true },
+      });
+      const remainder =
+        Number(row.amount) - Number((agg._sum as any)?.amount || 0);
+      remainders.set(row.id, remainder);
+      totalRemainder += remainder;
+    }
+    if (total > totalRemainder) {
+      throw new BadRequestException(
+        `Refund amount (${total}) exceeds the remaining refundable amount for the selected payment rows (remainder: ${totalRemainder}).`,
+      );
+    }
+    const allocations: { paymentId: string; amount: number }[] = [];
+    let remaining = total;
+    for (const id of ids) {
+      if (remaining <= 0) break;
+      const take = Math.min(remainders.get(id) ?? 0, remaining);
+      if (take > 0) {
+        allocations.push({ paymentId: id, amount: take });
+        remaining -= take;
+      }
+    }
+    return allocations;
   }
 
   private async assertNoActiveDispatches(orderId: string): Promise<void> {

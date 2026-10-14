@@ -65,4 +65,33 @@ describe('RecordRefundModal (D5)', () => {
     await userEvent.click(ui.getByRole('button', { name: /^Record refund$/ }))
     expect(mockPost).toHaveBeenCalledWith('/refunds', expect.objectContaining({ cancelToo: false }))
   })
+
+  it('prefills amount + source rows from payment-list selection (D-B)', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    const ui = await render(
+      <QueryClientProvider client={client}>
+        <RecordRefundModal
+          orderId="order-1"
+          open
+          onClose={() => {}}
+          initialAmount={1300}
+          sourcePaymentIds={['pay-full', 'pay-partial']}
+          sourceContext={[
+            { id: 'pay-full', gatewayCode: 'bkash', amount: 1000, remainder: 1000 },
+            { id: 'pay-partial', gatewayCode: 'bkash', amount: 1000, remainder: 300 },
+          ]}
+        />
+      </QueryClientProvider>,
+    )
+    await expect.element(ui.getByText(/Refunding from 2 payment rows/)).toBeInTheDocument()
+    await userEvent.fill(ui.getByLabelText(/Refund to/), 'bkash 017XX')
+    await userEvent.fill(ui.getByLabelText(/Reason/), 'bulk return')
+    await userEvent.click(ui.getByRole('button', { name: /^Record refund$/ }))
+    // The prefilled 1300 (1000 + 300 remainders) posts straight through.
+    expect(mockPost).toHaveBeenCalledWith('/refunds', expect.objectContaining({
+      orderId: 'order-1',
+      amount: 1300,
+      sourcePaymentIds: ['pay-full', 'pay-partial'],
+    }))
+  })
 })

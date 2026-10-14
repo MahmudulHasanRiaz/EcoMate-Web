@@ -8,6 +8,22 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { paymentsApi, PaymentVerificationOrder, PaymentRow } from './api';
 import { useAuthStore } from '@/stores/auth-store';
+import { RecordRefundModal } from '@/features/orders/components/record-refund-modal';
+
+/**
+ * D-B: per-row remainder = collected − Σ non-rejected linked refunds
+ * (Refund.sourcePaymentId links, read from the payment include).
+ */
+export function paymentRemainder(p: PaymentRow): number {
+  const refunded = (p.sourceRefunds || [])
+    .filter((r) => r.status !== 'rejected')
+    .reduce((s, r) => s + Number(r.amount || 0), 0);
+  return Number(p.amount) - refunded;
+}
+
+function isPaidRow(p: PaymentRow): boolean {
+  return (p.status || '').toUpperCase() === 'PAID';
+}
 
 /** Shorten `staff:<userId>` / `customer:<id>` actor tags for display. */
 function ledgerActor(p: Pick<PaymentRow, 'recordedBy' | 'submittedBy'>): string {
@@ -194,18 +210,34 @@ function AllPaymentsLedger() {
   const [page, setPage] = useState(1);
   const [gatewayCode, setGatewayCode] = useState('');
   const [stateFilter, setStateFilter] = useState<'all' | 'pending' | 'verified'>('all');
+  // D-B: order-number search (displayId, e.g. ORD-260818-0013). Draft edits
+  // locally; Search applies it to the query. `?order=` deep-links from the
+  // Refunds menu with the number prefilled.
+  const initialOrder = () => {
+    try {
+      return new URLSearchParams(window.location.search).get('order') || '';
+    } catch {
+      return '';
+    }
+  };
+  const [orderDraft, setOrderDraft] = useState(initialOrder);
+  const [orderNumber, setOrderNumber] = useState(initialOrder);
+  // D-B: checkbox selection of PAID rows for refund via RecordRefundModal.
+  const [selected, setSelected] = useState<string[]>([]);
+  const [refundOpen, setRefundOpen] = useState(false);
   const perPage = 20;
 
   const statusParam = stateFilter === 'all' ? undefined : stateFilter === 'pending' ? 'PENDING' : 'PAID';
 
   const { data, isLoading } = useQuery({
-    queryKey: ['payments-all', page, gatewayCode, statusParam],
+    queryKey: ['payments-all', page, gatewayCode, statusParam, orderNumber],
     queryFn: () =>
       paymentsApi.list({
         page,
         perPage,
         gatewayCode: gatewayCode || undefined,
         status: statusParam,
+        orderNumber: orderNumber || undefined,
       }),
   });
 
@@ -223,13 +255,42 @@ function AllPaymentsLedger() {
   const rows: PaymentRow[] = data?.data || [];
   const meta = data?.meta;
 
+  const toggleSelect = (id: string) =>
+    setSelected((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));
+  const selectedRows = rows.filter((r) => selected.includes(r.id));
+  const sameOrder = new Set(selectedRows.map((r) => r.orderId)).size <= 1;
+  const totalRemainder = selectedRows.reduce((s, r) => s + paymentRemainder(r), 0);
+  const allHaveRemainder = selectedRows.every((r) => paymentRemainder(r) > 0);
+  const canRefund = selectedRows.length > 0 && sameOrder && allHaveRemainder;
+  const refundableRows = rows.filter((r) => isPaidRow(r) && paymentRemainder(r) > 0);
+  const hasPendingRows = rows.some((r) => !isPaidRow(r));
+
+  const resetPage = () => { setPage(1); setSelected([]); };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="text"
+          aria-label="Search order number"
+          value={orderDraft}
+          onChange={(e) => setOrderDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { setOrderNumber(orderDraft.trim()); resetPage(); } }}
+          placeholder="Search order number (e.g. ORD-260818-0013)"
+          className="h-9 w-72 rounded-md border border-input bg-background px-3 text-xs"
+        />
+        <Button size="sm" variant="outline" className="h-9 text-xs" onClick={() => { setOrderNumber(orderDraft.trim()); resetPage(); }}>
+          Search
+        </Button>
+        {orderNumber && (
+          <Button size="sm" variant="ghost" className="h-9 text-xs" onClick={() => { setOrderDraft(''); setOrderNumber(''); resetPage(); }}>
+            Clear
+          </Button>
+        )}
         <select
           className="h-9 rounded-md border border-input bg-background px-3 text-xs font-medium"
           value={gatewayCode}
-          onChange={(e) => { setGatewayCode(e.target.value); setPage(1); }}
+          onChange={(e) => { setGatewayCode(e.target.value); resetPage(); }}
         >
           <option value="">All gateways</option>
           <option value="cash">Cash</option>
@@ -245,13 +306,31 @@ function AllPaymentsLedger() {
               size="sm"
               variant={stateFilter === f ? 'default' : 'ghost'}
               className="h-7 text-xs capitalize"
-              onClick={() => { setStateFilter(f); setPage(1); }}
+              onClick={() => { setStateFilter(f); resetPage(); }}
             >
               {f === 'all' ? 'All' : f === 'pending' ? 'Pending' : 'Verified'}
             </Button>
           ))}
         </div>
       </div>
+
+      {selectedRows.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+          <span className="text-xs text-muted-foreground">{selectedRows.length} selected</span>
+          <Button size="sm" className="h-7 text-xs" disabled={!canRefund} onClick={() => setRefundOpen(true)}>
+            Refund (৳{totalRemainder})
+          </Button>
+          {!sameOrder && (
+            <span className="text-[11px] text-muted-foreground">Select rows from a single order — refunds stay within one order.</span>
+          )}
+          {sameOrder && !allHaveRemainder && (
+            <span className="text-[11px] text-muted-foreground">Some rows have no remaining balance.</span>
+          )}
+        </div>
+      )}
+      {hasPendingRows && (
+        <p className="text-[11px] text-muted-foreground">Pending rows must be approved or failed first — only PAID rows can be refunded.</p>
+      )}
 
       {isLoading ? (
         <div className="flex items-center justify-center h-40">
@@ -269,6 +348,22 @@ function AllPaymentsLedger() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-xs text-muted-foreground">
+                  <th className="px-4 py-2.5 font-medium">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all payments"
+                      checked={refundableRows.length > 0 && refundableRows.every((r) => selected.includes(r.id))}
+                      disabled={refundableRows.length === 0}
+                      onChange={() => {
+                        const ids = refundableRows.map((r) => r.id);
+                        setSelected((prev) =>
+                          ids.every((id) => prev.includes(id))
+                            ? prev.filter((id) => !ids.includes(id))
+                            : [...new Set([...prev, ...ids])],
+                        );
+                      }}
+                    />
+                  </th>
                   <th className="px-4 py-2.5 font-medium">Order</th>
                   <th className="px-4 py-2.5 font-medium">Gateway</th>
                   <th className="px-4 py-2.5 font-medium">Account</th>
@@ -285,8 +380,31 @@ function AllPaymentsLedger() {
                 {rows.map((p) => {
                   const isSelf = !!me && p.recordedBy === `staff:${me}`;
                   const isPending = (p.status || '').toUpperCase() === 'PENDING';
+                  // D-B: checkbox + Refunded badge are DERIVED from the PAID
+                  // state and the linked-refund remainder — pending rows stay
+                  // disabled until approved/failed, spent rows stay disabled.
+                  const paid = isPaidRow(p);
+                  const remainder = paymentRemainder(p);
+                  const fullyRefunded = paid && remainder <= 0;
+                  const partiallyRefunded = paid && remainder > 0 && remainder < Number(p.amount);
+                  const selectable = paid && remainder > 0;
+                  const selectTitle = !paid
+                    ? 'Pending rows must be approved or failed first'
+                    : remainder <= 0
+                      ? 'Already fully refunded'
+                      : 'Select for refund';
                   return (
                     <tr key={p.id} className="border-b last:border-0 hover:bg-muted/40">
+                      <td className="px-4 py-2.5">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select payment ${p.id}`}
+                          checked={selected.includes(p.id)}
+                          disabled={!selectable}
+                          title={selectTitle}
+                          onChange={() => toggleSelect(p.id)}
+                        />
+                      </td>
                       <TableCellLink orderId={p.orderId} displayId={p.order?.displayId} />
                       <td className="px-4 py-2.5">
                         <PaymentLogo method={p.gatewayCode} size="sm" />
@@ -295,7 +413,11 @@ function AllPaymentsLedger() {
                       <td className="px-4 py-2.5 text-right font-semibold">৳{Number(p.amount).toLocaleString()}</td>
                       <td className="px-4 py-2.5 font-mono text-xs">{p.transactionId || '—'}</td>
                       <td className="px-4 py-2.5">
-                        <Badge variant={statusVariant(p.status)} className="text-[10px]">{p.status}</Badge>
+                        <div className="flex items-center gap-1.5">
+                          <Badge variant={statusVariant(p.status)} className="text-[10px]">{p.status}</Badge>
+                          {fullyRefunded && <Badge className="text-[10px]">Refunded</Badge>}
+                          {partiallyRefunded && <Badge variant="secondary" className="text-[10px]">Partially refunded</Badge>}
+                        </div>
                       </td>
                       <td className="px-4 py-2.5 text-xs text-muted-foreground font-mono">
                         {ledgerActor(p)}
@@ -351,14 +473,31 @@ function AllPaymentsLedger() {
 
       {meta && meta.totalPages > 1 && (
         <div className="flex items-center justify-center gap-2">
-          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => { setPage((p) => Math.max(1, p - 1)); setSelected([]); }}>
             Previous
           </Button>
           <span className="text-sm text-muted-foreground">Page {page} of {meta.totalPages}</span>
-          <Button variant="outline" size="sm" disabled={page >= meta.totalPages} onClick={() => setPage((p) => p + 1)}>
+          <Button variant="outline" size="sm" disabled={page >= meta.totalPages} onClick={() => { setPage((p) => p + 1); setSelected([]); }}>
             Next
           </Button>
         </div>
+      )}
+
+      {refundOpen && selectedRows.length > 0 && (
+        <RecordRefundModal
+          key={selectedRows.map((r) => r.id).join(',')}
+          orderId={selectedRows[0].orderId}
+          open={refundOpen}
+          onClose={() => { setRefundOpen(false); setSelected([]); }}
+          initialAmount={Math.round(totalRemainder * 100) / 100}
+          sourcePaymentIds={selectedRows.map((r) => r.id)}
+          sourceContext={selectedRows.map((r) => ({
+            id: r.id,
+            gatewayCode: r.gatewayCode,
+            amount: Number(r.amount),
+            remainder: Math.round(paymentRemainder(r) * 100) / 100,
+          }))}
+        />
       )}
     </div>
   );

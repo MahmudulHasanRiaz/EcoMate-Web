@@ -5,6 +5,7 @@ import {
   IsIn,
   IsNotEmpty,
   IsBoolean,
+  IsArray,
   Min,
   IsUUID,
 } from 'class-validator';
@@ -48,6 +49,21 @@ export class CreateRefundDto {
    * total. When omitted, the service picks the oldest unrefunded PAID payment.
    */
   @IsOptional() @IsUUID() sourcePaymentId?: string;
+  /**
+   * D-B: refund via payment-list selection. The exact PAID payment rows the
+   * money comes back from (checkbox selection in the payment ledger). The
+   * service enforces: every id exists and belongs to `orderId` (same-order),
+   * every row is PAID (pending rows 400 first), and the requested total fits
+   * the summed per-row remainders (row.amount − Σ non-rejected refunds by
+   * sourcePaymentId) — so a repeated refund of the same row 400s via the cap.
+   * The total is distributed across the rows in the given order and each slice
+   * becomes its own Refund row + negative ledger row + timeline entry (one
+   * call returns an array when several rows are produced).
+   */
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  sourcePaymentIds?: string[];
 }
 
 export class UpdateRefundStatusDto {

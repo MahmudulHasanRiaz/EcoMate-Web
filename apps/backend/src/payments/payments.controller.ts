@@ -21,6 +21,9 @@ export class PaymentsController {
     @Query('gatewayCode') gatewayCode?: string,
     @Query('status') status?: string,
     @Query('orderId') orderId?: string,
+    // D-B: staff search by order NUMBER (displayId). Resolved server-side;
+    // unknown numbers 404 (see PaymentsService.findAll).
+    @Query('orderNumber') orderNumber?: string,
   ) {
     return this.svc.findAll({
       page: page ? parseInt(page) : undefined,
@@ -28,6 +31,7 @@ export class PaymentsController {
       gatewayCode,
       status,
       orderId,
+      orderNumber,
     });
   }
 

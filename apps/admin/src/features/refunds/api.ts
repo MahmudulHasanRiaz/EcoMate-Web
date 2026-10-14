@@ -9,6 +9,12 @@ export interface CreateRefundInput {
   reason: string
   /** Atomic cancel-too (D5): same $transaction refunds AND cancels. */
   cancelToo?: boolean
+  /**
+   * D-B: refund via payment-list selection — the exact PAID payment rows the
+   * money comes back from. Same-order + PAID-only + per-row remainder cap are
+   * enforced server-side; the total is split across the rows in order.
+   */
+  sourcePaymentIds?: string[]
   notes?: string
 }
 

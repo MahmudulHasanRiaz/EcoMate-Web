@@ -31,6 +31,11 @@ export interface PaymentRow {
   createdAt: string
   order?: { displayId: string }
   verifier?: { id: string; firstName: string; lastName: string } | null
+  /**
+   * D-B: refunds linked to THIS row (Refund.sourcePaymentId). The Refunded
+   * badge + per-row remainder are DERIVED from these — no extra fetch.
+   */
+  sourceRefunds?: { id: string; amount: number; status: string }[]
 }
 
 export const paymentsApi = {
@@ -40,7 +45,7 @@ export const paymentsApi = {
     }).then(r => r.data.data),
   verify: (id: string, verified: boolean, note?: string, feeAmount?: number) =>
     apiClient.post(`/orders/${id}/verify-payment`, { verified, note, feeAmount }),
-  list: (params?: { page?: number; perPage?: number; gatewayCode?: string; status?: string; orderId?: string }) =>
+  list: (params?: { page?: number; perPage?: number; gatewayCode?: string; status?: string; orderId?: string; orderNumber?: string }) =>
     apiClient.get<{ data: PaymentRow[]; meta: { total: number; page: number; perPage: number; totalPages: number } }>('/payments', { params }).then(r => r.data),
   /**
    * Staff record a ledger entry (Task 11). The backend derives isStaff from

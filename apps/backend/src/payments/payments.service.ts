@@ -61,13 +61,29 @@ export class PaymentsService {
     gatewayCode?: string;
     status?: string;
     orderId?: string;
+    /**
+     * D-B: staff search by order NUMBER (displayId, e.g. ORD-260818-0013).
+     * Resolved displayId→orderId via the order lookup; an unknown number is a
+     * 404, never an empty-but-200 list. Takes precedence over orderId.
+     */
+    orderNumber?: string;
   }) {
     const page = query.page || 1;
     const perPage = query.perPage || 10;
     const where: any = {};
     if (query.gatewayCode) where.gatewayCode = query.gatewayCode;
     if (query.status) where.status = query.status;
-    if (query.orderId) where.orderId = query.orderId;
+    if (query.orderNumber) {
+      const order = await this.prisma.order.findUnique({
+        where: { displayId: query.orderNumber },
+        select: { id: true },
+      });
+      if (!order)
+        throw new NotFoundException(
+          `Order ${query.orderNumber} not found`,
+        );
+      where.orderId = order.id;
+    } else if (query.orderId) where.orderId = query.orderId;
     const [data, total] = await Promise.all([
       this.prisma.payment.findMany({
         where,
@@ -77,6 +93,11 @@ export class PaymentsService {
         include: {
           order: { select: { displayId: true } },
           verifier: { select: { id: true, firstName: true, lastName: true } },
+          // D-B: Refunded badge is DERIVED from Refund.sourcePaymentId links —
+          // no schema change, just the link rows for the remainder math.
+          sourceRefunds: {
+            select: { id: true, amount: true, status: true },
+          },
         },
       }),
       this.prisma.payment.count({ where }),

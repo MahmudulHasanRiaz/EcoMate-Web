@@ -189,7 +189,15 @@ describe('RefundsService — Task 9 cancel/refund gate (RED)', () => {
 
       expect(prisma.refund.create).toHaveBeenCalled();
       expect(prisma.payment.create).toHaveBeenCalled();
-      expect(prisma.order.update).not.toHaveBeenCalled();
+      // D-B: no status change — but the refund still leaves a timeline entry.
+      const updateCall = (prisma.order.update as jest.Mock).mock.calls[0][0];
+      expect(updateCall.where).toEqual({ id: 'order-id-1' });
+      expect(updateCall.data).not.toHaveProperty('statusId');
+      expect(updateCall.data.timeline).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: 'refund', amount: 500 }),
+        ]),
+      );
     });
 
     it('cancelToo with partial amount (outstanding remains) is rejected', async () => {
