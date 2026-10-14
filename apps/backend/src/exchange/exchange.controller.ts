@@ -28,6 +28,18 @@ export class ExchangeController {
     return this.exchangeService.getSettlementPreview(orderId);
   }
 
+  /**
+   * Task 4 (Fix 8): BOTH signals for confirming the original Returned —
+   * exchange-delivered AND return-arrived. The order detail page uses this to
+   * explain WHY Returned is still blocked; the updateStatus path enforces it.
+   */
+  @Roles('superadmin', 'admin', 'employee')
+  @RequiresFeature('admin_orders')
+  @Get('readiness/:orderId')
+  readiness(@Param('orderId') orderId: string) {
+    return this.exchangeService.getExchangeReadiness(orderId);
+  }
+
   @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Get(':id')

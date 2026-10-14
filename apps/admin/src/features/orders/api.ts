@@ -389,7 +389,30 @@ export const exchangeApi = {
         `/exchange/settlement-preview/${orderId}`,
       )
       .then(r => r.data),
+  /**
+   * Task 4 (Fix 8): BOTH signals for confirming the original Returned —
+   * exchange-delivered AND return-arrived. Drives the order-detail hint; the
+   * updateStatus path enforces the same check server-side.
+   */
+  readiness: (orderId: string) =>
+    apiClient
+      .get<{
+        orderId: string
+        linked: boolean
+        exchanges: { id: string; displayId: string; delivered: boolean }[]
+        returns: { id: string; displayId: string; status: string }[]
+        exchangeDelivered: boolean
+        returnArrived: boolean
+        canConfirmReturned: boolean
+        blockReason: string | null
+      }>(
+        `/exchange/readiness/${orderId}`,
+      )
+      .then(r => r.data),
   create: (orderId: string, data: {
+    mode?: 'FULL' | 'PARTIAL'
+    returningItems?: { productId: string; variantId?: string | null; quantity: number }[]
+    returnReason?: string
     items: { productId: string; variantId?: string; quantity: number; price: number }[]
     discount?: number
     discountType?: 'flat' | 'percentage'
@@ -398,11 +421,45 @@ export const exchangeApi = {
     officeNotes?: string
   }) =>
     apiClient
-      .post<{ exchange: OrderResponse; settlement: ExchangeSettlement }>(
+      .post<{ exchange: OrderResponse; settlement: ExchangeSettlement; mode: 'FULL' | 'PARTIAL'; returnRecord: ReturnRecord | null }>(
         `/exchange/from-order/${orderId}`,
         data,
       )
       .then(r => r.data),
+}
+
+export interface ReturnRecord {
+  id: string
+  displayId: string
+  orderId: string
+  type: 'FULL' | 'PARTIAL' | 'EXCHANGE'
+  status: string
+  source: string
+  items: { productId: string; variantId?: string | null; quantity: number }[]
+  reason?: string | null
+  courier?: string | null
+  courierReturnId?: string | null
+  exchangeOrderId?: string | null
+}
+
+/**
+ * Unified Return entity (Task 6 backend; Task 4 menu entry points).
+ * T7 owns the Returns/Exchanges LISTS — this client only creates/reads
+ * single records for the order-detail flows.
+ */
+export const returnsApi = {
+  create: (data: {
+    orderId: string
+    type: 'FULL' | 'PARTIAL' | 'EXCHANGE'
+    source?: 'STAFF' | 'COURIER' | 'EXCHANGE'
+    items?: { productId: string; variantId?: string | null; quantity: number }[]
+    reason?: string
+    courier?: string
+    courierReturnId?: string
+    courierStatus?: string
+    exchangeOrderId?: string
+  }) => apiClient.post<ReturnRecord>('/returns', data).then(r => r.data),
+  get: (id: string) => apiClient.get<ReturnRecord>(`/returns/${id}`).then(r => r.data),
 }
 
 export const scannerApi = {

@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { OrdersService } from '../../orders/orders.service';
 import { OrdersEventService } from '../../orders/orders-event.service';
 import { CacheService } from '../../cache/cache.service';
+import { ReturnsService } from '../../returns/returns.service';
 
 const actor = { userId: 'u1', email: 'staff@ecomate.com' };
 
@@ -185,6 +186,18 @@ async function setup(opts: { order?: any; paidAmount?: number; products?: any[] 
       },
       { provide: OrdersEventService, useValue: { emit: jest.fn() } },
       { provide: CacheService, useValue: { invalidateByPrefix: jest.fn() } },
+      // Task 4 (Fix 8): the Return(EXCHANGE) leg. FULL snapshots the order,
+      // PARTIAL carries staff-picked items — both through this mock.
+      {
+        provide: ReturnsService,
+        useValue: {
+          create: jest.fn().mockImplementation((dto: any) =>
+            Promise.resolve({ id: 'ret-1', displayId: 'RTN-260930-0001', status: 'REQUESTED', ...dto }),
+          ),
+          orderItemsSnapshot: jest.fn().mockResolvedValue([]),
+          validateItemsInput: jest.fn((items: any) => items),
+        },
+      },
     ],
   }).compile();
   return { service: module.get(ExchangeService), store: fake.store, applyStockForLine };

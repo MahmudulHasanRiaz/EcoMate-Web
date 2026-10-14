@@ -3550,6 +3550,14 @@ export class OrdersService {
       );
     }
 
+    // Task 4 (Fix 8): an exchange-linked original confirms Returned ONLY on
+    // BOTH signals — its exchange order(s) delivered AND its Return(EXCHANGE)
+    // leg(s) arrived. NEVER auto from an exchange event alone (automated
+    // actors are already blocked above; this gates the staff path too).
+    if (newStatus.name === 'Returned') {
+      await this.assertExchangeReturnReady(id);
+    }
+
     const timeline = [
       ...this.parseTimeline(order.timeline),
       {
@@ -4250,6 +4258,27 @@ export class OrdersService {
     }
     for (const missingId of missing) {
       failedDetails.push({ id: missingId, reason: 'Order not found' });
+    }
+
+    // Task 4 (Fix 8): bulk Returned collects per-order failures like the
+    // cancel gate above — an exchange-linked original whose exchange is not
+    // delivered + return not arrived lands in the failed list; the rest
+    // still confirm.
+    if (targetStatus.name === 'Returned') {
+      const stillValid: string[] = [];
+      for (const orderId of validIds) {
+        try {
+          await this.assertExchangeReturnReady(orderId);
+          stillValid.push(orderId);
+        } catch (e) {
+          failedDetails.push({
+            id: orderId,
+            reason: (e as Error)?.message ?? 'Exchange return not ready',
+          });
+        }
+      }
+      validIds.length = 0;
+      validIds.push(...stillValid);
     }
 
     // Task 9 (D5): bulk cancel collects per-order failures instead of
@@ -5073,6 +5102,87 @@ export class OrdersService {
       performedBy,
       tx,
     });
+  }
+
+  /**
+   * Task 4 (Fix 8): BOTH-signals gate for confirming an exchange-linked
+   * original Returned — every exchange order DELIVERED (dispatch) AND every
+   * Return(EXCHANGE) leg RECEIVED/RESTOCKED.
+   *
+   * Unlinked orders pass straight through. Legacy exchanges (pre-Feature, no
+   * Return record) gate on delivery only. Fail-OPEN when the query surface is
+   * unavailable (defensive: a gate must never brick the confirm path on an
+   * unexpected DB shape — it blocks only on positive evidence of an
+   * incomplete exchange leg).
+   */
+  private async assertExchangeReturnReady(id: string): Promise<void> {
+    const db = this.prisma as any;
+    if (typeof db?.order?.findMany !== 'function') return;
+    let children: any[];
+    try {
+      children = (await db.order.findMany({
+        where: { exchangeOfOrderId: id, trashedAt: null },
+        select: { id: true, displayId: true },
+      })) ?? [];
+    } catch {
+      return;
+    }
+    // An order is never its own exchange child (also keeps arg-insensitive
+    // test doubles from false-positiving on the order row itself).
+    const exchanges = (children ?? []).filter((e) => e?.id !== id);
+    let exReturns: any[] = [];
+    if (typeof db?.return?.findMany === 'function') {
+      try {
+        exReturns =
+          (await db.return.findMany({
+            where: { orderId: id, type: 'EXCHANGE' },
+            select: { id: true, displayId: true, status: true },
+          })) ?? [];
+      } catch {
+        exReturns = [];
+      }
+    }
+    if (exchanges.length === 0 && exReturns.length === 0) return;
+
+    if (exchanges.length > 0) {
+      if (typeof db?.dispatch?.findMany !== 'function') return;
+      let dispatches: any[];
+      try {
+        dispatches =
+          (await db.dispatch.findMany({
+            where: { orderId: { in: exchanges.map((e) => e.id) } },
+            select: { orderId: true, status: true },
+          })) ?? [];
+      } catch {
+        return;
+      }
+      const delivered = new Set(
+        (dispatches ?? [])
+          .filter((d) => d?.status === 'DELIVERED')
+          .map((d) => d.orderId),
+      );
+      const undelivered = exchanges.filter((e) => !delivered.has(e.id));
+      if (undelivered.length > 0) {
+        const first = undelivered[0];
+        throw new BadRequestException(
+          `Cannot mark Returned yet — exchange order ${first.displayId ?? first.id} ` +
+            `has not been delivered.`,
+        );
+      }
+    }
+
+    if (exReturns.length > 0) {
+      const unarrived = exReturns.filter(
+        (r) => r?.status !== 'RECEIVED' && r?.status !== 'RESTOCKED',
+      );
+      if (unarrived.length > 0) {
+        const first = unarrived[0];
+        throw new BadRequestException(
+          `Cannot mark Returned yet — return ${first.displayId ?? first.id} ` +
+            `has not arrived (needs RECEIVED or RESTOCKED).`,
+        );
+      }
+    }
   }
 
   private async handleDeliveredSideEffects(

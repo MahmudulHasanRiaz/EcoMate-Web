@@ -62,8 +62,17 @@ export class ReturnsService {
 
   // ------------------------------------------------------------------ create
 
-  async create(dto: CreateReturnInput, performedBy?: string) {
-    const order = await this.prisma.order.findUnique({ where: { id: dto.orderId } });
+  /**
+   * Task 4 (Fix 8): optional `tx` runs the whole creation inside a caller's
+   * transaction (the PARTIAL exchange creates its exchange order + this
+   * Return in ONE commit — TWO records at once). Without `tx` the behavior
+   * is exactly the Task 6 standalone path.
+   */
+  async create(dto: CreateReturnInput, performedBy?: string, tx?: Prisma.TransactionClient) {
+    const db = (tx ?? this.prisma) as Prisma.TransactionClient & {
+      order: { findUnique: (...args: any[]) => Promise<any> };
+    };
+    const order = await db.order.findUnique({ where: { id: dto.orderId } });
     if (!order || (order as any).trashedAt) {
       throw new NotFoundException(`Order not found: ${dto.orderId}`);
     }
@@ -76,8 +85,10 @@ export class ReturnsService {
     }
     const items = this.validateItems(dto.items ?? []);
 
-    const displayId = await this.generateDisplayId();
-    const ret = await this.prisma.return.create({
+    const displayId = tx
+      ? await this.generateDisplayIdInTx(tx)
+      : await this.generateDisplayId();
+    const ret = await db.return.create({
       data: {
         orderId: dto.orderId,
         displayId,
@@ -366,6 +377,14 @@ export class ReturnsService {
   // ------------------------------------------------------------------ helpers
 
   /**
+   * Public shape-check shared by the PARTIAL exchange path (Task 4 Fix 8):
+   * productId required, quantity a positive integer, no duplicate lines.
+   */
+  validateItemsInput(items: unknown): ReturnItemInput[] {
+    return this.validateItems(items);
+  }
+
+  /**
    * T6 partial restore-or-hold (owner-locked): find the newest OPEN
    * staff-created Return carrying non-empty items for the order.
    *
@@ -433,5 +452,23 @@ export class ReturnsService {
       });
       return `${prefix}-${String(counter.seq).padStart(4, '0')}`;
     });
+  }
+
+  /**
+   * Same RTN sequence inside a caller's transaction (single upsert is
+   * atomic — no nested $transaction, which interactive tx clients forbid).
+   */
+  private async generateDisplayIdInTx(tx: Prisma.TransactionClient): Promise<string> {
+    const { year, month, day } = dhakaDateParts();
+    const yy = String(year).slice(2);
+    const mm = String(month).padStart(2, '0');
+    const dd = String(day).padStart(2, '0');
+    const dateStr = `${yy}${mm}${dd}`;
+    const counter = await tx.returnCounter.upsert({
+      where: { date: dateStr },
+      create: { date: dateStr, seq: 1 },
+      update: { seq: { increment: 1 } },
+    });
+    return `RTN-${dateStr}-${String(counter.seq).padStart(4, '0')}`;
   }
 }

@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { OrdersService } from '../orders/orders.service';
+import { ReturnsService, ReturnItemInput } from '../returns/returns.service';
 import { appendOrderTimeline } from '../orders/order-timeline.util';
 import { OrdersEventService } from '../orders/orders-event.service';
 import { CacheService } from '../cache/cache.service';
@@ -71,6 +72,7 @@ export class ExchangeService {
     private readonly ordersService: OrdersService,
     private readonly events: OrdersEventService,
     private readonly cache: CacheService,
+    private readonly returns: ReturnsService,
   ) {}
 
   /** Preview for the creation screen: what the customer already paid. */
@@ -88,6 +90,95 @@ export class ExchangeService {
       orderTotal: Number(order.total),
       originalPaid: available,
       creditAvailable: available,
+    };
+  }
+
+  /**
+   * Task 4 (Fix 8): BOTH signals for confirming the original Returned.
+   * - exchange-delivered: EVERY exchange order of the original has a DELIVERED
+   *   dispatch (existing dispatch maps — no new signal).
+   * - return-arrived: EVERY Return(EXCHANGE) leg is RECEIVED or RESTOCKED.
+   *
+   * Unlinked orders (no exchange, no EXCHANGE return) report linked=false and
+   * are NOT gated. Legacy exchanges (pre-Feature, no Return record) gate on
+   * delivery only. NEVER auto-transitions anything — staff confirm separately
+   * via the normal Return Pending → Returned path, which enforces this check.
+   */
+  async getExchangeReadiness(originalOrderId: string) {
+    const children = await this.prisma.order.findMany({
+      where: { exchangeOfOrderId: originalOrderId, trashedAt: null },
+      select: { id: true, displayId: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    // An order is never its own exchange child (also keeps arg-insensitive
+    // test doubles from false-positiving on the order row itself).
+    const exchanges = (children ?? []).filter((e) => e?.id !== originalOrderId);
+    const exReturns = await this.prisma.return.findMany({
+      where: { orderId: originalOrderId, type: 'EXCHANGE' },
+      select: { id: true, displayId: true, status: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (exchanges.length === 0 && exReturns.length === 0) {
+      return {
+        orderId: originalOrderId,
+        linked: false,
+        exchanges: [],
+        returns: [],
+        exchangeDelivered: false,
+        returnArrived: false,
+        canConfirmReturned: true,
+        blockReason: null as string | null,
+      };
+    }
+
+    const dispatches =
+      exchanges.length > 0
+        ? await this.prisma.dispatch.findMany({
+            where: { orderId: { in: exchanges.map((e) => e.id) } },
+            select: { orderId: true, status: true },
+          })
+        : [];
+    const delivered = new Set(
+      dispatches.filter((d) => d.status === 'DELIVERED').map((d) => d.orderId),
+    );
+    const undelivered = exchanges.filter((e) => !delivered.has(e.id));
+    const exchangeDelivered = exchanges.length > 0 && undelivered.length === 0;
+
+    const unarrived = exReturns.filter(
+      (r) => (r as any).status !== 'RECEIVED' && (r as any).status !== 'RESTOCKED',
+    );
+    const returnArrived = exReturns.length > 0 && unarrived.length === 0;
+
+    let blockReason: string | null = null;
+    if (!exchangeDelivered) {
+      const first = undelivered[0] ?? exchanges[0];
+      blockReason =
+        `Cannot mark Returned yet — exchange order ${first.displayId ?? first.id} ` +
+        `has not been delivered.`;
+    } else if (exReturns.length > 0 && !returnArrived) {
+      const first = unarrived[0];
+      blockReason =
+        `Cannot mark Returned yet — return ${(first as any).displayId ?? (first as any).id} ` +
+        `has not arrived (needs RECEIVED or RESTOCKED).`;
+    }
+
+    return {
+      orderId: originalOrderId,
+      linked: true,
+      exchanges: exchanges.map((e) => ({
+        id: e.id,
+        displayId: (e as any).displayId,
+        delivered: delivered.has(e.id),
+      })),
+      returns: exReturns.map((r) => ({
+        id: (r as any).id,
+        displayId: (r as any).displayId,
+        status: (r as any).status,
+      })),
+      exchangeDelivered,
+      returnArrived,
+      canConfirmReturned: blockReason === null,
+      blockReason,
     };
   }
 
@@ -116,15 +207,29 @@ export class ExchangeService {
 
   /**
    * Create the exchange + settle it, atomically.
+   *
+   * Task 4 (Fix 8): FULL vs PARTIAL.
+   * - FULL (default): the whole original comes back — the Return(EXCHANGE)
+   *   record carries the full order snapshot.
+   * - PARTIAL: `returningItems` (staff-picked) become the Return(EXCHANGE)
+   *   items. Exchange order + Return are created in ONE transaction (TWO
+   *   records at once, exactly ONE new Order — no phantom Orders, ever).
    */
   async createFromOrder(
     originalOrderId: string,
     dto: CreateExchangeOrderDto,
     actor: ExchangeActor,
   ) {
+    const mode = dto.mode ?? 'FULL';
+    if (mode !== 'FULL' && mode !== 'PARTIAL') {
+      throw new BadRequestException(`Invalid exchange mode: ${dto.mode}`);
+    }
     const original = await this.prisma.order.findUnique({
       where: { id: originalOrderId },
-      include: { status: true },
+      include: {
+        status: true,
+        items: { select: { productId: true, variantId: true, quantity: true } },
+      },
     });
     if (!original || original.trashedAt) {
       throw new NotFoundException('Order not found');
@@ -136,6 +241,35 @@ export class ExchangeService {
     }
     if (dto.items.length === 0) {
       throw new BadRequestException('Select at least one product for the exchange.');
+    }
+
+    // ---- Returning leg (Task 4 Fix 8) ------------------------------------
+    // Resolved BEFORE the transaction so a bad pick fails fast with a clean
+    // message and creates nothing.
+    let returningItems: ReturnItemInput[];
+    if (mode === 'PARTIAL') {
+      if (!dto.returningItems || dto.returningItems.length === 0) {
+        throw new BadRequestException(
+          'Select at least one returning item for a partial exchange.',
+        );
+      }
+      returningItems = this.returns.validateItemsInput(dto.returningItems);
+      const inOriginal = new Set(
+        ((original as any).items ?? [])
+          .filter((i: any) => i.productId)
+          .map((i: any) => `${i.productId}::${i.variantId ?? ''}`),
+      );
+      if (inOriginal.size > 0) {
+        for (const line of returningItems) {
+          if (!inOriginal.has(`${line.productId}::${line.variantId ?? ''}`)) {
+            throw new BadRequestException(
+              'A returning item is not part of the original order.',
+            );
+          }
+        }
+      }
+    } else {
+      returningItems = await this.returns.orderItemsSnapshot(original.id);
     }
 
     // Resolve products + availability BEFORE the transaction so a stock
@@ -320,6 +454,24 @@ export class ExchangeService {
         // ---- Settlement against the original's ACTUAL payments (§4) ------
         const settlement = await this.settle(tx, original, total, created.id, actor, now);
 
+        // ---- Return(EXCHANGE) leg (Task 4 Fix 8) --------------------------
+        // The return leg is a Return RECORD, never a phantom Order. Created in
+        // the SAME transaction as the exchange order (TWO records at once).
+        // Stock is NOT restored here — only on return receipt (markReceived /
+        // reconcile), exactly like every other Return.
+        const returnRecord = await this.returns.create(
+          {
+            orderId: original.id,
+            type: 'EXCHANGE',
+            source: 'EXCHANGE',
+            items: returningItems,
+            reason: dto.returnReason ?? `Exchange ${displayId} return leg`,
+            exchangeOrderId: created.id,
+          },
+          actor.email,
+          tx,
+        );
+
         // ---- Original → Return Pending (§5) -------------------------------
         // Even when it was already Delivered: the goods are coming back, and
         // the return leg must be receivable. Stock is NOT restored here —
@@ -338,7 +490,7 @@ export class ExchangeService {
           },
         ]);
 
-        return { exchange: created, settlement };
+        return { exchange: created, settlement, returnRecord };
       });
 
       this.emitStatusChanged(result.exchange.id, result.exchange.displayId, 'Confirmed');
@@ -348,6 +500,8 @@ export class ExchangeService {
       return {
         exchange: await this.findById(result.exchange.id),
         settlement: result.settlement,
+        mode,
+        returnRecord: result.returnRecord,
       };
     } catch (err) {
       if (

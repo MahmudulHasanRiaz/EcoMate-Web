@@ -266,6 +266,16 @@ describe('OrdersService', () => {
             trackingOutbox: {
               findUnique: jest.fn(),
             },
+            // Task 4 (Fix 8) exchange-Returned gate: child exchanges +
+            // EXCHANGE return legs + exchange dispatches. Default EMPTY so
+            // every pre-existing test sees an unlinked order and passes
+            // straight through the gate.
+            dispatch: {
+              findMany: jest.fn().mockResolvedValue([]),
+            },
+            return: {
+              findMany: jest.fn().mockResolvedValue([]),
+            },
           },
         },
         {
@@ -6367,6 +6377,123 @@ describe('order lifecycle custom events (OrderPlaced/OrderConfirmed/OrderCancell
     it('throws NotFound for a missing order', async () => {
       (prisma.order.findUnique as jest.Mock).mockResolvedValue(null);
       await expect(service.getRemainingFulfillment('nope')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('exchange-linked Returned gate (Task 4 Fix 8)', () => {
+    const returnPendingOrder = {
+      ...mockOrder,
+      status: { ...mockInitialStatus, name: 'Return Pending' },
+    };
+    const returnedStatus = {
+      id: 'status-returned',
+      name: 'Returned',
+      isInitial: false,
+      nextStatuses: [],
+    };
+
+    function mockReturnedPath() {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(returnPendingOrder);
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(returnedStatus);
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...returnPendingOrder,
+        statusId: 'status-returned',
+        status: returnedStatus,
+      });
+      (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+      (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+    }
+
+    it('blocks a manual Returned while the exchange order is not delivered', async () => {
+      mockReturnedPath();
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([
+        { id: 'ex-1', displayId: 'EX-260930-0001' },
+      ]);
+      ((prisma as any).dispatch.findMany as jest.Mock).mockResolvedValue([
+        { orderId: 'ex-1', status: 'SHIPPING' },
+      ]);
+      ((prisma as any).return.findMany as jest.Mock).mockResolvedValue([]);
+
+      await expect(
+        service.updateStatus('order-id-1', { statusId: 'status-returned' }, 'staff-123'),
+      ).rejects.toThrow(/EX-260930-0001.*delivered/i);
+      expect(prisma.order.update).not.toHaveBeenCalled();
+    });
+
+    it('blocks a manual Returned when delivered but the EXCHANGE return has not arrived', async () => {
+      mockReturnedPath();
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([
+        { id: 'ex-1', displayId: 'EX-260930-0001' },
+      ]);
+      ((prisma as any).dispatch.findMany as jest.Mock).mockResolvedValue([
+        { orderId: 'ex-1', status: 'DELIVERED' },
+      ]);
+      ((prisma as any).return.findMany as jest.Mock).mockResolvedValue([
+        { id: 'ret-1', displayId: 'RTN-260930-0001', status: 'REQUESTED' },
+      ]);
+
+      await expect(
+        service.updateStatus('order-id-1', { statusId: 'status-returned' }, 'staff-123'),
+      ).rejects.toThrow(/RTN-260930-0001.*arrived/i);
+      expect(prisma.order.update).not.toHaveBeenCalled();
+    });
+
+    it('allows a manual Returned once the exchange is delivered AND the return arrived', async () => {
+      mockReturnedPath();
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([
+        { id: 'ex-1', displayId: 'EX-260930-0001' },
+      ]);
+      ((prisma as any).dispatch.findMany as jest.Mock).mockResolvedValue([
+        { orderId: 'ex-1', status: 'DELIVERED' },
+      ]);
+      ((prisma as any).return.findMany as jest.Mock).mockResolvedValue([
+        { id: 'ret-1', displayId: 'RTN-260930-0001', status: 'RECEIVED' },
+      ]);
+      const cancelReturnStock = module.get<CancelReturnStockService>(CancelReturnStockService);
+
+      const result = await service.updateStatus(
+        'order-id-1',
+        { statusId: 'status-returned' },
+        'staff-123',
+      );
+
+      expect(result.statusId).toBe('status-returned');
+      expect(cancelReturnStock.restoreForOrder).toHaveBeenCalledWith(
+        expect.objectContaining({ referencePrefix: 'return' }),
+      );
+    });
+
+    it('lets an unlinked order straight through (no exchange, no EXCHANGE return)', async () => {
+      mockReturnedPath();
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([]);
+      ((prisma as any).return.findMany as jest.Mock).mockResolvedValue([]);
+
+      const result = await service.updateStatus(
+        'order-id-1',
+        { statusId: 'status-returned' },
+        'staff-123',
+      );
+      expect(result.statusId).toBe('status-returned');
+    });
+
+    it('still blocks automated actors first (never auto from an exchange event alone)', async () => {
+      mockReturnedPath();
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([
+        { id: 'ex-1', displayId: 'EX-260930-0001' },
+      ]);
+      ((prisma as any).dispatch.findMany as jest.Mock).mockResolvedValue([
+        { orderId: 'ex-1', status: 'DELIVERED' },
+      ]);
+      ((prisma as any).return.findMany as jest.Mock).mockResolvedValue([
+        { id: 'ret-1', displayId: 'RTN-260930-0001', status: 'RESTOCKED' },
+      ]);
+
+      // Even with BOTH signals ready, an automated actor (webhook/system)
+      // can never confirm Returned — staff only.
+      await expect(
+        service.updateStatus('order-id-1', { statusId: 'status-returned' }, 'system'),
+      ).rejects.toThrow(/automated process/i);
+      expect(prisma.order.update).not.toHaveBeenCalled();
     });
   });
 });

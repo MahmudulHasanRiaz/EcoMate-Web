@@ -13,6 +13,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { UserBadge } from '@/components/user-badge'
 import { ordersApi, rtnApi, mediaUrl } from '@/features/orders/api'
 import { ReturnOrderDialog } from '@/features/orders/components/return-order-dialog'
+import { OrderActionMenu } from '@/features/orders/components/order-action-menu'
 
 import { CourierCustomerHistoryCard } from '@/features/orders/courier-customer-history-card'
 import { SteadfastSetPicker } from '@/features/dispatch/steadfast-set-picker'
@@ -678,6 +679,9 @@ function OrderDetailPage() {
                     <span className='sm:hidden'>Others</span>
                   </Button>
                 )}
+
+                {/* Task 4 (Fix 8): Plus (+) return/exchange action menu */}
+                {!order.trashedAt && <OrderActionMenu order={order} />}
 
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
