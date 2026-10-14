@@ -13,8 +13,8 @@ import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
  *  - 6 return statuses (sourced ONLY from
  *    GET /status_with_return_status_by_cid) → RETURNED/CANCELLED path or
  *    PARTIAL-kept + return state; *_received reconciles stock, NO COD owed.
- *  - RedX `paid` → MONEY event (invoice_id stored for the settlement feed),
- *    NO delivery-status change.
+ *  - RedX `paid` → DELIVERED + Delivered + invoice (Task 1 owner lock;
+ *    paid→money-only WITHDRAWN — paid = DELIVERED + money),
  *  - RedX `pickup-pending` → DISPATCHED (booked awaiting pickup).
  *  - Settle exclusion: exceptional / *_approval_pending never settle —
  *    never a DELIVERED dispatch, never a Delivered order advancement.
@@ -39,6 +39,7 @@ describe('CourierWebhookService — Task 5 owner-approved status mappings', () =
 
   const partialStatus = { id: 'status-partial', name: 'Partial' };
   const returnPendingStatus = { id: 'status-rp', name: 'Return Pending' };
+  const deliveredStatus = { id: 'status-delivered', name: 'Delivered' };
 
   function timelineEntries(): any[] {
     const calls = prisma.order.update.mock.calls as any[];
@@ -57,6 +58,7 @@ describe('CourierWebhookService — Task 5 owner-approved status mappings', () =
         findUnique: jest.fn().mockImplementation(({ where }: any) => {
           if (where?.name === 'Partial') return Promise.resolve(partialStatus);
           if (where?.name === 'Return Pending') return Promise.resolve(returnPendingStatus);
+          if (where?.name === 'Delivered') return Promise.resolve(deliveredStatus);
           return Promise.resolve(null);
         }),
       },
@@ -175,30 +177,33 @@ describe('CourierWebhookService — Task 5 owner-approved status mappings', () =
     });
   });
 
-  describe('RedX paid → MONEY event, no delivery change', () => {
+  describe('RedX paid → DELIVERED + Delivered + invoice (Task 1 owner lock; money-only WITHDRAWN)', () => {
     const paidBody = {
       tracking_number: 'TN-1',
       invoice_number: 'INV-1',
       status: 'paid',
     };
 
-    it('stores the money event without touching the delivery workflow', async () => {
+    it('advances the delivery workflow (dispatch DELIVERED + order Delivered)', async () => {
       prisma.dispatch.findFirst.mockResolvedValue({ id: 'd-1', status: 'IN_TRANSIT' });
 
       const result = await service.handleRedx(paidBody);
 
       expect(result.status).toBe('success');
-      // NO delivery-status change on either row…
-      expect(prisma.dispatch.upsert).not.toHaveBeenCalled();
-      const dispatchUpdates = prisma.dispatch.update.mock.calls as any[];
-      for (const [args] of dispatchUpdates) {
-        expect(args?.data).not.toHaveProperty('status');
-      }
-      // …and the order never advances.
-      expect(ordersService.updateStatus).not.toHaveBeenCalled();
+      // Delivery workflow advances (was: no delivery change — withdrawn).
+      expect(prisma.dispatch.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({ status: 'DELIVERED' }),
+        }),
+      );
+      expect(ordersService.updateStatus).toHaveBeenCalledWith(
+        'order-1',
+        { statusId: 'status-delivered' },
+        'system',
+      );
     });
 
-    it('persists the raw paid state + invoice_id for the settlement feed', async () => {
+    it('keeps the money recording (raw paid state + invoice_id for the settlement feed)', async () => {
       prisma.dispatch.findFirst.mockResolvedValue({ id: 'd-1', status: 'IN_TRANSIT' });
 
       await service.handleRedx(paidBody);
@@ -210,10 +215,12 @@ describe('CourierWebhookService — Task 5 owner-approved status mappings', () =
         }),
       );
       const entries = timelineEntries();
-      const money = entries.find((e) => e?.courier === 'redx' && e?.status === 'paid');
-      expect(money).toBeDefined();
+      const paid = entries.find(
+        (e) => e?.courier === 'redx' && (e?.status === 'DELIVERED' || e?.status === 'paid'),
+      );
+      expect(paid).toBeDefined();
       // The merchant invoice id rides the timeline entry (no new tables).
-      expect(money?.invoiceNumber).toBe('INV-1');
+      expect(paid?.invoiceNumber).toBe('INV-1');
     });
   });
 

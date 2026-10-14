@@ -558,6 +558,11 @@ export class CourierWebhookController {
 
     const event = (body['event'] as string) || '';
     const consignmentId = String(body['consignment_id'] ?? '').trim();
+    // Task 1 (owner-locked, paid = DELIVERED + money): the Pathao order.paid
+    // sample carries invoice_id (no amount) — store it on the WebhookAttempt
+    // row (dedicated settlement-matching store, no new tables) so the
+    // settlement feed can match the payment to the order.
+    const pathaoInvoice = String(body['invoice_id'] ?? '').trim();
 
     this.logger.log(`Pathao webhook received [${ctx.correlationId}]`);
     return this.processWebhook({
@@ -572,6 +577,7 @@ export class CourierWebhookController {
       meta: {
         notificationType: event || undefined,
         consignmentId: consignmentId || undefined,
+        invoice: pathaoInvoice || undefined,
       },
       run: () => this.svc.handlePathao(body),
     });
@@ -588,9 +594,10 @@ export class CourierWebhookController {
     const rawBody = this.rawBodyOf(req, body);
     const auth = await this.authenticateRedx(req, rawBody);
     const trackingNumber = String(body['tracking_number'] ?? '').trim();
-    // Task 5: the RedX `paid` money event carries the merchant invoice id —
+    // Task 1: the RedX `paid` money event carries the merchant invoice id —
     // store it on the WebhookAttempt row (dedicated store, no new tables) so
-    // the settlement feed can match the payment to the order.
+    // the settlement feed can match the payment to the order. Paid now also
+    // advances the delivery workflow (DELIVERED + Delivered, owner lock).
     const invoiceNumber = String(body['invoice_number'] ?? '').trim();
 
     this.logger.log(`RedX webhook received [${ctx.correlationId}]`);
@@ -636,6 +643,13 @@ export class CourierWebhookController {
 
     const event = (body['event'] as string) || '';
     const consignmentId = String(body['consignment_id'] ?? '').trim();
+    // Task 1 (owner-locked, paid = DELIVERED + money): Carrybee mirrors the
+    // Pathao order.* vocabulary — order.paid carries the settlement money
+    // identifiers (invoice_id + payment_status). Stored on the WebhookAttempt
+    // row (no new tables) for settlement matching.
+    const carrybeeInvoice = String(
+      body['invoice_id'] ?? body['invoice_number'] ?? '',
+    ).trim();
 
     this.logger.log(`Carrybee webhook received [${ctx.correlationId}]`);
     return this.processWebhook({
@@ -650,6 +664,7 @@ export class CourierWebhookController {
       meta: {
         notificationType: event || undefined,
         consignmentId: consignmentId || undefined,
+        invoice: carrybeeInvoice || undefined,
       },
       run: () => this.svc.handleCarrybee(body),
     });

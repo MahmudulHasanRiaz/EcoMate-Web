@@ -101,6 +101,9 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     'order.returned-to-merchant': 'RETURNED',
     'order.paid-return': 'RETURN_PENDING',
     'order.paid': 'DELIVERED',
+    // Task 1 (owner-locked, paid = DELIVERED): plain tracking-API `paid`
+    // label → DELIVERED (webhook `order.paid` above already does).
+    'paid': 'DELIVERED',
     'order.exchanged': 'DELIVERED',
     'order.pickup-cancelled': 'CANCELLED',
     // Plain labels from the official /orders/{id}/info endpoint
@@ -158,6 +161,10 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     'agent-hold': 'HOLD',
     'agent-returning': 'RETURN_PENDING',
     returned: 'RETURN_PENDING',
+    // Task 1 (owner-locked, paid = DELIVERED): RedX `paid` is a delivery
+    // event AND a money event — DELIVERED here (webhook keeps the money
+    // recording on the timeline + WebhookAttempt meta).
+    'paid': 'DELIVERED',
   },
   carrybee: {
     'order.created': 'DISPATCHED',
@@ -183,6 +190,9 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     'order.paid-return': 'RETURN_PENDING',
     'order.exchange': 'DELIVERED',
     'order.paid': 'DELIVERED',
+    // Task 1 (owner-locked, paid = DELIVERED): plain tracking-API `paid`
+    // label → DELIVERED (webhook `order.paid` above already does).
+    'paid': 'DELIVERED',
     'order.create-failed': 'CANCELLED',
     'order.pickup-cancelled': 'CANCELLED',
   },

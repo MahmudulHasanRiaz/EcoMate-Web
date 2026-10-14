@@ -188,6 +188,11 @@ const REDX_DISPATCH_MAP: Record<string, string | null> = {
   'agent-hold': 'HOLD',
   'agent-returning': 'RETURN_PENDING',
   returned: 'RETURN_PENDING',
+  // Task 1 (owner-locked, paid = DELIVERED): RedX `paid` advances the
+  // delivery workflow AND keeps the money recording (handled in
+  // handleRedxPaid, which upserts DELIVERED + advances the order while
+  // storing invoice_number on the timeline + WebhookAttempt meta).
+  'paid': 'DELIVERED',
   'agent-area-change': null,
 };
 
@@ -910,9 +915,13 @@ export class CourierWebhookService {
     if (extra?.collected_amount != null) entry.collectedAmount = extra.collected_amount;
     if (extra?.return_type) entry.returnType = extra.return_type;
     if (extra?.return_consignment_id) entry.returnConsignmentId = extra.return_consignment_id;
-    // Task 5: RedX `paid` money event — the merchant invoice id rides the
-    // timeline entry so the settlement feed can match it (no new tables).
+    // Task 1 (owner-locked, paid = DELIVERED + money): the merchant invoice
+    // id rides the timeline entry so the settlement feed can match it
+    // (no new tables). Handlers map invoice_id → invoice_number; redx sends
+    // invoice_number natively.
     if (extra?.invoice_number) entry.invoiceNumber = extra.invoice_number;
+    // Task 1: carrybee paid payment_status rides the timeline (no new table).
+    if (extra?.payment_status) entry.paymentStatus = extra.payment_status;
     if (extra?.remarks) entry.remarks = extra.remarks;
     // Task A (extras c/d): informational + fee fields ride the timeline entry
     // (no new tables — T6 owns the full Return entity).
@@ -1038,6 +1047,11 @@ export class CourierWebhookService {
     if (body['collected_amount'] != null) extra.collected_amount = body['collected_amount'];
     if (body['return_type']) extra.return_type = body['return_type'];
     if (body['return_consignment_id']) extra.return_consignment_id = body['return_consignment_id'];
+    // Task 1 (owner-locked, paid = DELIVERED + money): the Pathao order.paid
+    // sample carries invoice_id (no amount — identifiers only). It rides the
+    // timeline entry (→ invoiceNumber, settlement-matching key, no new table)
+    // + the WebhookAttempt meta via the controller.
+    if (body['invoice_id'] != null && body['invoice_id'] !== '') extra.invoice_number = body['invoice_id'];
     await this.addTimelineEntry(order.id, 'pathao', dispatchStatus, extra);
 
     const orderStatusName = PATHAO_DISPATCH_TO_ORDER[dispatchStatus];
@@ -1140,11 +1154,11 @@ export class CourierWebhookService {
       dispatchStatus = 'PARTIAL';
     }
 
-    // Task 5 (owner-locked): RedX `paid` is a MONEY event, not a delivery
-    // event. It feeds settlement (the merchant invoice id is stored on the
-    // timeline entry + the WebhookAttempt row via the controller meta) and
-    // must NEVER change the delivery workflow: no Dispatch status write,
-    // no order advancement.
+    // Task 1 (owner-locked, paid = DELIVERED): RedX `paid` is BOTH a
+    // delivery event AND a money event. It advances the delivery workflow
+    // (DELIVERED + Delivered, same as pathao/carrybee order.paid) AND keeps
+    // the money recording (invoice_number on the timeline + WebhookAttempt
+    // meta via the controller). paid→money-only is DEAD/withdrawn.
     if (status === 'paid') {
       return this.handleRedxPaid(order.id, trackingNumber, invoiceNumber, body);
     }
@@ -1182,9 +1196,15 @@ export class CourierWebhookService {
   }
 
   /**
-   * Task 5 (owner-locked): RedX `paid` money event → settlement feed.
-   * Stores the merchant invoice id (settlement matching key) on the raw
-   * courier state + timeline; the delivery workflow is untouched.
+   * Task 1 (owner-locked, paid = DELIVERED): RedX `paid` delivery + money.
+   * Advances the delivery workflow (Dispatch DELIVERED + order Delivered,
+   * same as pathao/carrybee order.paid) AND keeps the money recording: the
+   * merchant invoice_number rides the timeline entry + the WebhookAttempt
+   * row via the controller meta (existing pattern, no new table). A definite
+   * amount rides the timeline ONLY when the payload carries one (numeric
+   * collected_amount/amount/cash_collected/cash_paid); otherwise identifiers
+   * only. Books NO Payment row — the CSV settlement owns the money
+   * (paid + CSV → single payment via the settlement transactionId dedupe).
    */
   private async handleRedxPaid(
     orderId: string,
@@ -1203,29 +1223,45 @@ export class CourierWebhookService {
       },
     });
 
-    const existing = await this.prisma.dispatch.findFirst({
-      where: { courier: 'redx' as any, consignmentId },
-      select: { id: true },
-    });
-    if (existing) {
-      await this.prisma.dispatch.update({
-        where: { id: existing.id },
-        data: { courierStatus: 'paid', lastSyncedAt: new Date() },
-      });
-    } else {
-      await this.fillManualDispatchIdentifiers(orderId, 'redx', consignmentId);
-    }
+    await this.fillManualDispatchIdentifiers(orderId, 'redx', consignmentId);
+    await this.upsertDispatch(orderId, 'redx', consignmentId, 'DELIVERED', body, 'paid');
 
-    await this.addTimelineEntry(orderId, 'redx', 'paid', {
+    const extra: Record<string, unknown> = {
       invoice_number: invoiceNumber,
       remarks: body['message_en'] as string | undefined,
-    });
+    };
+    const definiteAmount = this.definitePaidAmount(body);
+    if (definiteAmount != null) extra.collected_amount = definiteAmount;
+    await this.addTimelineEntry(orderId, 'redx', 'DELIVERED', extra);
+
+    const orderStatusName = REDX_DISPATCH_TO_ORDER['DELIVERED'];
+    if (orderStatusName) {
+      await this.tryAdvanceOrderStatus(orderId, orderStatusName);
+    }
 
     this.logger.log(
-      `RedX MONEY event: parcel ${consignmentId} paid (invoice ${invoiceNumber || 'unknown'}) — ` +
-        `recorded for settlement, no delivery-status change`,
+      `RedX PAID: parcel ${consignmentId} paid (invoice ${invoiceNumber || 'unknown'}) — ` +
+        `dispatch=DELIVERED order=${orderStatusName || '-'} recorded for settlement`,
     );
-    return { status: 'success', message: 'Payment recorded — no delivery-status change' };
+    return { status: 'success', message: 'Webhook received successfully.' };
+  }
+
+  /**
+   * Task 1: definite-amount gate for paid money recording. Returns the
+   * numeric amount ONLY when the payload carries an explicit finite number
+   * (or numeric string); otherwise null (identifiers only — never infer
+   * from the order total). Checked keys cover the known paid vocabularies:
+   * collected_amount (pathao/carrybee), amount, cash_collected/cash_paid
+   * (redx settlement vocabulary).
+   */
+  private definitePaidAmount(body: Record<string, unknown>): number | null {
+    for (const key of ['collected_amount', 'amount', 'cash_collected', 'cash_paid']) {
+      const raw = body[key];
+      if (raw == null || raw === '') continue;
+      const num = Number(raw);
+      if (Number.isFinite(num)) return num;
+    }
+    return null;
   }
 
   async handleCarrybee(body: Record<string, unknown>) {
@@ -1296,6 +1332,17 @@ export class CourierWebhookService {
     if (body['attempt'] != null) extra.attempt = body['attempt'];
     if (body['agent_name']) extra.agent_name = body['agent_name'];
     if (body['agent_phone']) extra.agent_phone = body['agent_phone'];
+    // Task 1 (owner-locked, paid = DELIVERED + money): Carrybee mirrors the
+    // Pathao order.* vocabulary — order.paid carries the settlement money
+    // identifiers (invoice_id + payment_status; collected_amount above is
+    // recorded only when definite). They ride the timeline entry
+    // (→ invoiceNumber, no new table) + the WebhookAttempt meta via the
+    // controller. Doc read: Carrybee v2 details shape
+    // (carrybee-v2.spec: invoice_id + payment_status + collected_amount) +
+    // carrybee invoice CSV Invoice_number column; no live keys used.
+    if (body['invoice_id'] != null && body['invoice_id'] !== '') extra.invoice_number = body['invoice_id'];
+    else if (body['invoice_number'] != null && body['invoice_number'] !== '') extra.invoice_number = body['invoice_number'];
+    if (body['payment_status'] != null && body['payment_status'] !== '') extra.payment_status = body['payment_status'];
     await this.addTimelineEntry(order.id, 'carrybee', dispatchStatus, extra);
 
     const orderStatusName = CARRYBEE_DISPATCH_TO_ORDER[dispatchStatus];
