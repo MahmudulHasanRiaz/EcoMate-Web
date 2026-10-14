@@ -34,6 +34,56 @@ export function orderRecipientName(o: OrderRecipientSource): string {
   return name.length >= 3 ? name : 'Customer';
 }
 
+/**
+ * Raw snapshot name with NO floor/prefix/truncation: "first last" ||
+ * guestName (trimmed, '' when absent). Used to detect whether
+ * courierSafeRecipientName transformed the name for the timeline note.
+ */
+export function orderRecipientRawName(o: OrderRecipientSource): string {
+  const full = [o.customerFirstName, o.customerLastName]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+  return (full || o.guestName || '').trim();
+}
+
+/**
+ * Per-courier recipient-name length rules (Fix 5a, owner decision).
+ *
+ * Doc sources (latest docs, read 2026-10-14):
+ * - Pathao: `recipient_name` 3–100 chars (doc-verified).
+ * - Steadfast: `recipient_name` "Stored to 100 characters", NO minimum
+ *   stated → min 3 assumed (default), max 100 doc-verified.
+ * - RedX: `customer_name` — NO lengths stated → 3/100 assumed (default).
+ * - Carrybee: `recipient_name`/`customer_name` 2–99 chars (doc-verified).
+ *   Carrybee is EXEMPT from the Mx. prefix by owner decision — short names
+ *   go out verbatim (only trimmed + truncated to 99).
+ *
+ * Rules: empty → '' (no prefix; the CALLER surfaces a field error).
+ * Short (< min, non-empty, non-Carrybee) → `'Mx. ' + full` (gender-neutral,
+ * owner-locked). Long (> max) → truncated to max. The stored order/customer
+ * is NEVER mutated — this is a pure function; only the dispatch payload +
+ * dispatch record carry the transformed value.
+ */
+export function courierSafeRecipientName(
+  o: OrderRecipientSource,
+  courier: string,
+): string {
+  const full = orderRecipientRawName(o);
+  if (!full) return '';
+  const c = (courier || '').toLowerCase();
+  if (c === 'carrybee') {
+    return full.length > 99 ? full.slice(0, 99) : full;
+  }
+  // max: pathao 100 + steadfast 100 doc-verified; redx/unknown default 100.
+  const max = 100;
+  if (full.length > max) return full.slice(0, max);
+  // min: pathao 3 doc-verified; steadfast/redx unstated → default 3 assumed.
+  const min = 3;
+  if (full.length < min) return `Mx. ${full}`;
+  return full;
+}
+
 /** Snapshot phone: customerPhone || guestPhone (undefined when neither). */
 export function orderRecipientPhone(
   o: OrderRecipientSource,

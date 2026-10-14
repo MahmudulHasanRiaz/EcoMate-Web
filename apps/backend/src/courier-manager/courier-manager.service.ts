@@ -3,9 +3,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CourierTokenService } from './courier-token.service';
 import { formatCourierAddress } from './address-format';
 import {
-  orderRecipientName,
+  courierSafeRecipientName,
   orderRecipientPhone,
   orderRecipientEmail,
+  orderRecipientRawName,
 } from '../orders/order-recipient';
 
 const BASE_URLS: Record<string, Record<string, string>> = {
@@ -129,6 +130,67 @@ export class CourierManagerService {
     await this.prisma.courierDispatchLog.create({ data: params as any });
   }
 
+  /**
+   * Fix 5a (owner-locked): resolve the courier-safe recipient name.
+   * Short snapshot names go out as `'Mx. ' + full` (gender-neutral prefix;
+   * Carrybee exempt — verbatim), long names are truncated per courier max,
+   * and the STORED order/customer is never mutated (pure helper — payload +
+   * dispatch record carry the transformed value only). Empty/missing →
+   * throws a field error (never prefixed, never a 'Customer' placeholder).
+   */
+  private resolveCourierName(
+    order: any,
+    courier: string,
+    payloadField: string,
+  ): { sent: string; raw: string } {
+    const raw = orderRecipientRawName(order);
+    const sent = courierSafeRecipientName(order, courier);
+    if (!sent) {
+      throw new BadRequestException(
+        `Courier: field '${payloadField}' is required — order '${order.displayId || order.id}' has no recipient name`,
+      );
+    }
+    return { sent, raw };
+  }
+
+  /** Timeline note, ONLY when the courier name was transformed. */
+  private courierNameNote(sent: string, raw: string): string | null {
+    if (sent === raw) return null;
+    return `courier name sent as '${sent}' — order keeps '${raw}'`;
+  }
+
+  private async noteCourierNameTransform(
+    orderId: string,
+    courier: string,
+    sent: string,
+    raw: string,
+  ): Promise<void> {
+    const note = this.courierNameNote(sent, raw);
+    if (!note) return;
+    try {
+      const current = await this.prisma.order.findUnique({
+        where: { id: orderId },
+        select: { timeline: true },
+      });
+      const timeline = ((current?.timeline as unknown[]) || []) as any[];
+      timeline.push({
+        type: 'courier',
+        courier,
+        status: 'DISPATCHED',
+        timestamp: new Date().toISOString(),
+        note,
+      });
+      await this.prisma.order.update({
+        where: { id: orderId },
+        data: { timeline: timeline as any },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Courier name timeline note skipped: ${(err as Error).message}`,
+      );
+    }
+  }
+
   async dispatch(courier: string, orderIds: string[]) {
     const orders = await this.prisma.order.findMany({
       where: { id: { in: orderIds }, trashedAt: null },
@@ -241,9 +303,16 @@ export class CourierManagerService {
         ?.map((item: any) => item.product?.name || 'Product')
         .join(', ') || undefined;
 
+    // Fix 5a: courier-safe name (Mx. prefix / truncate); stored order kept.
+    const { sent: safeName, raw: rawName } = this.resolveCourierName(
+      order,
+      'steadfast',
+      'recipient_name',
+    );
+
     const payload: Record<string, unknown> = {
       invoice: order.displayId,
-      recipient_name: orderRecipientName(order),
+      recipient_name: safeName,
       recipient_phone: phone,
       recipient_address: formatCourierAddress(address) ?? 'Dhaka',
       cod_amount: collectAmount,
@@ -347,8 +416,21 @@ export class CourierManagerService {
                 // post-dispatch COD mismatch source of truth). Persist-only —
                 // the getCollectableAmount calc itself is untouched.
                 courierAmount: collectAmount,
+                // Fix 5a: dispatch record stores the sent name (only when
+                // transformed; the stored order keeps the original).
+                ...(this.courierNameNote(safeName, rawName)
+                  ? {
+                      notes: `courier name sent as '${safeName}'`,
+                    }
+                  : {}),
               },
             });
+            await this.noteCourierNameTransform(
+              order.id,
+              'steadfast',
+              safeName,
+              rawName,
+            );
             await this.logDispatch({
               orderId: order.id,
               courier: 'steadfast',
@@ -424,9 +506,16 @@ export class CourierManagerService {
         ?.map((item: any) => item.product?.name || 'Product')
         .join(', ') || undefined;
 
+    // Fix 5a: courier-safe name (Mx. prefix / truncate); stored order kept.
+    const { sent: safeName, raw: rawName } = this.resolveCourierName(
+      order,
+      'pathao',
+      'recipient_name',
+    );
+
     const payload: Record<string, unknown> = {
       store_id: parseInt(storeId),
-      recipient_name: orderRecipientName(order),
+      recipient_name: safeName,
       recipient_phone: phone,
       recipient_address: formatCourierAddress(address) ?? 'Dhaka',
       delivery_type: 48,
@@ -515,8 +604,20 @@ export class CourierManagerService {
                 // Persist the amount actually sent as amount_to_collect
                 // (Feature A). Persist-only — the calc itself is untouched.
                 courierAmount: total,
+                // Fix 5a: dispatch record stores the sent name (transformed only).
+                ...(this.courierNameNote(safeName, rawName)
+                  ? {
+                      notes: `courier name sent as '${safeName}'`,
+                    }
+                  : {}),
               },
             });
+            await this.noteCourierNameTransform(
+              order.id,
+              'pathao',
+              safeName,
+              rawName,
+            );
           } catch (dbErr) {
             this.logger.error(`Pathao dispatch DB save failed: ${(dbErr as Error).message}`);
           }
@@ -592,13 +693,19 @@ export class CourierManagerService {
     const phone = this.normalizePhone(orderRecipientPhone(order));
     const total = Number(order.total);
     const address = order.shippingAddress as Record<string, unknown> | null;
-    const name = orderRecipientName(order);
     // Hoisted single call — the payload and the persisted row share one
     // value. The getCollectableAmount calc itself is untouched.
     const collectable = this.getCollectableAmount(order);
 
     const district = (address?.district as string) || 'Dhaka';
     const deliveryAreaId = address?.deliveryAreaId || address?.areaId || 1;
+
+    // Fix 5a: courier-safe name (Mx. prefix / truncate); stored order kept.
+    const { sent: safeName, raw: rawName } = this.resolveCourierName(
+      order,
+      'redx',
+      'customer_name',
+    );
 
     const itemDescription =
       order.items
@@ -607,7 +714,7 @@ export class CourierManagerService {
 
     const payload: Record<string, unknown> = {
       merchant_invoice_id: order.displayId,
-      customer_name: name || 'Customer',
+      customer_name: safeName,
       customer_phone: phone,
       delivery_area: district,
       delivery_area_id: Number(deliveryAreaId) || 1,
@@ -665,6 +772,12 @@ export class CourierManagerService {
               // Persist the amount actually sent as cash_collection_amount
               // (Feature A). Persist-only — the calc itself is untouched.
               courierAmount: collectable,
+              // Fix 5a: dispatch record stores the sent name (transformed only).
+              ...(this.courierNameNote(safeName, rawName)
+                ? {
+                    notes: `courier name sent as '${safeName}'`,
+                  }
+                : {}),
             },
           });
           const currentOrder = await this.prisma.order.findUnique({
@@ -679,6 +792,17 @@ export class CourierManagerService {
             timestamp: new Date().toISOString(),
             note: 'redx: Parcel created',
           });
+          // Fix 5a: timeline notes the transformation (stored order keeps raw).
+          const nameNote = this.courierNameNote(safeName, rawName);
+          if (nameNote) {
+            timeline.push({
+              type: 'courier',
+              courier: 'redx',
+              status: 'DISPATCHED',
+              timestamp: new Date().toISOString(),
+              note: nameNote,
+            });
+          }
           await this.prisma.order.update({
             where: { id: order.id },
             data: { timeline: timeline as any },
@@ -732,10 +856,15 @@ export class CourierManagerService {
     const phone = this.normalizePhone(orderRecipientPhone(order));
     const total = Number(order.total);
     const address = order.shippingAddress;
-    const name = orderRecipientName(order);
+    // Fix 5a: Carrybee-exempt safe name (verbatim, truncated to 99, never Mx.).
+    const { sent: safeName, raw: rawName } = this.resolveCourierName(
+      order,
+      'carrybee',
+      'full_name',
+    );
 
     const payload = {
-      full_name: name || 'Customer',
+      full_name: safeName,
       mobile: phone,
       address: formatCourierAddress(address) ?? 'Dhaka',
       city: address?.district || 'Dhaka',
@@ -776,6 +905,14 @@ export class CourierManagerService {
           requestPayload: payload,
           responsePayload: data,
         });
+        // Fix 5a: no Dispatch row exists on this path — the log payload above
+        // stores the sent name; the timeline notes a transform (if any).
+        await this.noteCourierNameTransform(
+          order.id,
+          'carrybee',
+          safeName,
+          rawName,
+        );
         return { consignmentId: cId };
       }
       const msg = String(data['message'] || 'Carrybee dispatch failed');
@@ -949,7 +1086,9 @@ export class CourierManagerService {
     const bodyData = orders.map((order) => ({
       invoice: order.displayId,
       // D-A: snapshot authority — never the linked CustomerProfile.
-      recipient_name: orderRecipientName(order),
+      // Fix 5a: Mx. prefix / truncate; empty throws a field error (invoice in msg).
+      recipient_name: this.resolveCourierName(order, 'steadfast', 'recipient_name')
+        .sent,
       recipient_phone: this.normalizePhone(orderRecipientPhone(order)),
       recipient_address:
         formatCourierAddress(
@@ -999,6 +1138,12 @@ export class CourierManagerService {
               `Bulk Steadfast dispatch: no input order matched invoice ${invoice} — courierAmount omitted, COD alert coverage skipped for this consignment`,
             );
           }
+          // Fix 5a: sent-name audit for this invoice (recomputed pure; the
+          // payload above already carries .sent).
+          const bulkSent = bulkOrder
+            ? courierSafeRecipientName(bulkOrder, 'steadfast')
+            : '';
+          const bulkRaw = bulkOrder ? orderRecipientRawName(bulkOrder) : '';
           if (order) {
             await this.prisma.order.update({
               where: { id: order.id },
@@ -1028,8 +1173,21 @@ export class CourierManagerService {
                 ...(bulkOrder
                   ? { courierAmount: this.getCollectableAmount(bulkOrder) }
                   : {}),
+                // Fix 5a: dispatch record stores the sent name (transformed only).
+                ...(this.courierNameNote(bulkSent, bulkRaw)
+                  ? {
+                      notes: `courier name sent as '${bulkSent}'`,
+                    }
+                  : {}),
               },
             });
+
+            await this.noteCourierNameTransform(
+              order.id,
+              'steadfast',
+              bulkSent,
+              bulkRaw,
+            );
 
             await this.logDispatch({
               orderId: order.id,
