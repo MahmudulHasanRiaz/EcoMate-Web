@@ -8,6 +8,7 @@ import { randomBytes } from 'node:crypto';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 import { WebhookAttemptOutcome } from '@prisma/client';
+import { CancelCarrybeeOrderDto } from './dto/cancel-carrybee-order.dto';
 
 @Roles('superadmin', 'admin', 'employee')
 @Controller('couriers')
@@ -303,9 +304,9 @@ export class CourierManagerController {
   @Post('carrybee/cancel/:consignmentId')
   async cancelCarrybeeOrder(
     @Param('consignmentId') consignmentId: string,
-    @Body() dto: { reason: string },
+    @Body() dto: CancelCarrybeeOrderDto,
   ) {
-    return this.svc.cancelCarrybeeOrder(consignmentId, dto.reason);
+    return this.svc.cancelCarrybeeOrder(consignmentId, dto?.reason);
   }
 
   @Get('order-tracking/:orderId')

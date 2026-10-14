@@ -1464,6 +1464,31 @@ export class CourierManagerService {
     // (CarryBee API Docs.md, POST /api/v2/orders). delivery_type 1=Normal,
     // product_type 1=Parcel (doc defaults; no per-order override UI exists).
     // `recipient_secendary_phone` keeps the doc's spelling verbatim.
+    // Pre-flight: collectable_amount is capped at 100000 by the courier —
+    // NEVER silently clamp (a 150k COD order reporting success at 100k is
+    // money loss). Reject with a shaped field error instead.
+    const collectable = Math.round(this.getCollectableAmount(order));
+    if (collectable > 100000) {
+      throw new CourierDispatchError({
+        courier: 'carrybee',
+        status: 0,
+        message: `Carrybee: field 'collectable_amount' exceeds maximum 100000 — order value ${collectable} cannot be collected in one shipment`,
+        errors: { collectable_amount: ['max 100000'] },
+        orderId: order.id,
+      });
+    }
+    // Pre-flight: item_quantity is capped at 200 by the courier — NEVER
+    // silently clamp (dropping lines mis-states the parcel). Reject instead.
+    const lineCount = order.items?.length || 1;
+    if (lineCount > 200) {
+      throw new CourierDispatchError({
+        courier: 'carrybee',
+        status: 0,
+        message: `Carrybee: field 'item_quantity' exceeds maximum 200 — order has ${lineCount} lines`,
+        errors: { item_quantity: ['max 200'] },
+        orderId: order.id,
+      });
+    }
     const payload: Record<string, unknown> = {
       store_id: String(storeId),
       merchant_order_id: order.displayId,
@@ -1473,14 +1498,8 @@ export class CourierManagerService {
       recipient_name: safeName,
       recipient_address: this.resolveCarrybeeAddress(order),
       item_weight: this.resolveCarrybeeWeightGrams(order),
-      item_quantity: Math.min(
-        200,
-        Math.max(1, order.items?.length || 1),
-      ),
-      collectable_amount: Math.min(
-        100000,
-        Math.max(0, Math.round(this.getCollectableAmount(order))),
-      ),
+      item_quantity: Math.max(1, lineCount),
+      collectable_amount: Math.max(0, collectable),
     };
     // Secondary contact: the order's staff-entered secondaryPhone wins;
     // otherwise keep the legacy shippingAddress.phone fallback.
@@ -1492,12 +1511,23 @@ export class CourierManagerService {
     if (secondaryPhone) {
       payload.recipient_secendary_phone = secondaryPhone;
     }
-    const cityId = Number(address?.cityId);
-    if (Number.isFinite(cityId)) payload.city_id = cityId;
-    const zoneId = Number(address?.zoneId);
-    if (Number.isFinite(zoneId)) payload.zone_id = zoneId;
-    const areaId = Number(address?.areaId);
-    if (Number.isFinite(areaId)) payload.area_id = areaId;
+    // Guard falsy first: Number('') is 0 (finite) — an empty city/zone/area
+    // must be omitted, never sent as 0.
+    const cityRaw = address?.cityId;
+    if (cityRaw !== undefined && cityRaw !== null && String(cityRaw).trim() !== '') {
+      const cityId = Number(cityRaw);
+      if (Number.isFinite(cityId)) payload.city_id = cityId;
+    }
+    const zoneRaw = address?.zoneId;
+    if (zoneRaw !== undefined && zoneRaw !== null && String(zoneRaw).trim() !== '') {
+      const zoneId = Number(zoneRaw);
+      if (Number.isFinite(zoneId)) payload.zone_id = zoneId;
+    }
+    const areaRaw = address?.areaId;
+    if (areaRaw !== undefined && areaRaw !== null && String(areaRaw).trim() !== '') {
+      const areaId = Number(areaRaw);
+      if (Number.isFinite(areaId)) payload.area_id = areaId;
+    }
     if (order.officeNotes) {
       payload.special_instruction = String(order.officeNotes).slice(0, 254);
     }
