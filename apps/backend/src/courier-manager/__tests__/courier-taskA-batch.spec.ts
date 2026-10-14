@@ -114,7 +114,13 @@ describe('Courier Task A — mapping corrections batch', () => {
       }
     });
 
-    it('partial_delivered_return_received → PARTIAL + reconcile + COD-not-owed + NEVER Delivered', async () => {
+    it('partial_delivered_return_received → PARTIAL + HOLD (legacy FULL-only gate) + COD-not-owed + NEVER Delivered', async () => {
+      // T6 gap fix: legacy path (no ReturnsService here) NEVER blanket-
+      // restores a partial (that would restock the kept part) — it HOLDs with
+      // a LOUD "confirm items to restock" alert. Mapper intent flag stays
+      // reconcileStock:true (parcel physically back); the path derives HOLD
+      // from the actual outcome. Production restore-or-hold via staff-Return
+      // lookup — see courier-webhook-partial-restore.spec.ts.
       manager.getSteadfastReturnStatus.mockResolvedValue({
         deliveryStatus: 'partial_delivered_return_received',
       });
@@ -127,8 +133,15 @@ describe('Courier Task A — mapping corrections batch', () => {
         }),
       );
       const result = await service.reconcileSteadfastReturn({ consignmentId: 'CG-1' });
-      expect(result).toEqual(expect.objectContaining({ dispatchStatus: 'PARTIAL', codOwed: false }));
-      expect(cancelReturnStock.restoreForOrder).toHaveBeenCalled();
+      expect(result).toEqual(
+        expect.objectContaining({ dispatchStatus: 'PARTIAL', stockReconciled: false, codOwed: false }),
+      );
+      expect(cancelReturnStock.restoreForOrder).not.toHaveBeenCalled();
+      const remarks = timelineEntries()
+        .map((e: any) => String(e?.remarks || ''))
+        .join('\n');
+      expect(remarks).toMatch(/partial return received — confirm items to restock/);
+      expect(remarks).not.toMatch(/stock reconciled/);
       expect(ordersService.updateStatus).not.toHaveBeenCalledWith(
         'order-1',
         expect.objectContaining({ statusId: 'status-delivered' }),

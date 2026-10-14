@@ -365,6 +365,30 @@ export class ReturnsService {
 
   // ------------------------------------------------------------------ helpers
 
+  /**
+   * T6 partial restore-or-hold (owner-locked): find the newest OPEN
+   * staff-created Return carrying non-empty items for the order.
+   *
+   * OPEN = status not CLOSED and not RESTOCKED (REQUESTED / IN_TRANSIT /
+   * RECEIVED — still awaiting its stock movement). Courier-sourced rows are
+   * skipped (their split is unknown by construction). Returns null when no
+   * staff Return carries quantities — the reconcile then HOLDs and staff
+   * confirm exact quantities at mark-received (which restores later).
+   */
+  async findOpenStaffReturnWithItems(orderId: string) {
+    const candidates = await this.prisma.return.findMany({
+      where: { orderId, source: 'STAFF' as any, status: { not: 'CLOSED' as any } },
+      orderBy: { createdAt: 'desc' },
+    });
+    for (const row of (candidates as any[]) ?? []) {
+      const status = (row as any)?.status as string;
+      if (status === 'CLOSED' || status === 'RESTOCKED') continue;
+      const items = (row as any)?.items;
+      if (Array.isArray(items) && items.length > 0) return row;
+    }
+    return null;
+  }
+
   private async load(id: string) {
     const ret = await this.prisma.return.findUnique({ where: { id } });
     if (!ret) throw new NotFoundException(`Return not found: ${id}`);

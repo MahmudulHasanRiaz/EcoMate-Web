@@ -319,6 +319,12 @@ const STEADFAST_RETURN_MAP: Record<string, SteadfastReturnMapping> = {
   'partial_delivered_return_proccessing': { dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Partial', reconcileStock: false, codOwed: false },
   'partial_delivered_return_processing': { dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Partial', reconcileStock: false, codOwed: false },
   'partial_delivered_return_rider_assigned': { dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Partial', reconcileStock: false, codOwed: false },
+  // T6 gap fix (owner-locked): reconcileStock:true here is the INTENT flag
+  // (parcel physically back with the merchant). The reconcile path does NOT
+  // blanket-restore partials — it runs restore-or-hold via the open
+  // staff-Return lookup (items-known → RESTOCKED, unknown → HOLD + loud
+  // "confirm items to restock" alert). Timeline + log derive from the ACTUAL
+  // result, never from this flag alone.
   'partial_delivered_return_received': { dispatchStatus: 'PARTIAL', advanceOrder: 'Partial', reconcileStock: true, codOwed: false },
 };
 

@@ -89,6 +89,9 @@ describe('CourierWebhookService — Return records (Task 6)', () => {
       orderItemsSnapshot: jest
         .fn()
         .mockResolvedValue([{ productId: 'p-1', quantity: 2 }]),
+      // T6 restore-or-hold lookup: default unknown (HOLD). Items-known covered
+      // in courier-webhook-partial-restore.spec.ts.
+      findOpenStaffReturnWithItems: jest.fn().mockResolvedValue(null),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -276,7 +279,10 @@ describe('CourierWebhookService — Return records (Task 6)', () => {
       );
     });
 
-    it('partial received → Return RECEIVED with NO auto-restore (split unknown)', async () => {
+    it('partial received → Return RECEIVED with NO auto-restore when qty unknown (HOLD + loud alert)', async () => {
+      // T6 restore-or-hold: unknown split HOLDs (items-known restores — see
+      // courier-webhook-partial-restore.spec.ts). Timeline is truthful: HOLD
+      // alert, never "stock reconciled".
       manager.getSteadfastReturnStatus.mockResolvedValue({
         deliveryStatus: 'partial_delivered_return_received',
       });
@@ -296,6 +302,14 @@ describe('CourierWebhookService — Return records (Task 6)', () => {
       expect(returns.restockReturn).not.toHaveBeenCalled();
       expect(cancelReturnStock.restoreForOrder).not.toHaveBeenCalled();
       expect(cancelReturnStock.restoreForReturnItems).not.toHaveBeenCalled();
+      const calls = prisma.order.update.mock.calls as any[];
+      const remarks = calls
+        .filter((c) => Array.isArray(c[0]?.data?.timeline))
+        .flatMap((c) => c[0].data.timeline)
+        .map((e: any) => String(e?.remarks || ''))
+        .join('\n');
+      expect(remarks).toMatch(/partial return received — confirm items to restock/);
+      expect(remarks).not.toMatch(/stock reconciled/);
     });
   });
 

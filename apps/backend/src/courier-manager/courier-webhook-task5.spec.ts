@@ -287,13 +287,12 @@ describe('CourierWebhookService — Task 5 owner-approved status mappings', () =
       );
     });
 
-    it('partial_delivered_return_received → PARTIAL kept + return state + stock reconcile', async () => {
-      // NOTE (Task 6): this legacy-path assertion holds only when
-      // ReturnsService is NOT wired (this spec provides no ReturnsService, so
-      // reconcile falls back to the blanket restoreForOrder). Production +
-      // Task 6 spec wire ReturnsService: partial received → RECEIVED with NO
-      // auto-restore (courier never reports the split). See
-      // courier-webhook-task6.spec.ts.
+    it('partial_delivered_return_received → PARTIAL kept + HOLD (legacy FULL-only gate, no blanket restore)', async () => {
+      // T6 gap fix: the legacy path (no ReturnsService) is FULL-only. A
+      // partial NEVER blanket-restores (that would restock the kept part) —
+      // it HOLDs with a LOUD "confirm items to restock" staff alert instead.
+      // Production path (ReturnsService wired) does restore-or-hold via the
+      // staff-Return lookup — see courier-webhook-partial-restore.spec.ts.
       manager.getSteadfastReturnStatus.mockResolvedValue({
         deliveryStatus: 'partial_delivered_return_received',
       });
@@ -305,17 +304,20 @@ describe('CourierWebhookService — Task 5 owner-approved status mappings', () =
         expect.objectContaining({
           reconciled: true,
           dispatchStatus: 'PARTIAL',
-          stockReconciled: true,
+          stockReconciled: false,
           codOwed: false,
         }),
       );
-      expect(cancelReturnStock.restoreForOrder).toHaveBeenCalledWith(
-        expect.objectContaining({ orderId: 'order-1', referencePrefix: 'return' }),
-      );
+      expect(cancelReturnStock.restoreForOrder).not.toHaveBeenCalled();
       // Return state rides the timeline (raw return status preserved).
       const entries = timelineEntries();
       const ret = entries.find((e) => e?.returnType === 'partial_delivered_return_received');
       expect(ret).toBeDefined();
+      // Timeline is truthful: HOLD alert, never "stock reconciled".
+      expect(String((ret as any)?.remarks || '')).toMatch(
+        /partial return received — confirm items to restock/,
+      );
+      expect(String((ret as any)?.remarks || '')).not.toMatch(/stock reconciled/);
       // PARTIAL keeps the authoritative Partial advancement path.
       expect(ordersService.updateStatus).toHaveBeenCalledWith(
         'order-1',

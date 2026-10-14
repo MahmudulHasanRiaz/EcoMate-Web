@@ -301,4 +301,46 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
       expect(updateArg.data.courierReturnId ?? 'RR-10').toBe('RR-10');
     });
   });
+
+  describe('findOpenStaffReturnWithItems (T6 partial restore-or-hold lookup)', () => {
+    it('returns the open STAFF Return with items, skips empty rows', async () => {
+      prisma.return.findMany.mockResolvedValue([
+        { id: 'ret-empty', status: 'REQUESTED', source: 'STAFF', items: [] },
+        {
+          id: 'ret-staff-1',
+          status: 'REQUESTED',
+          source: 'STAFF',
+          items: [{ productId: 'p-1', quantity: 1 }],
+        },
+      ]);
+
+      await expect(service.findOpenStaffReturnWithItems('order-1')).resolves.toMatchObject({
+        id: 'ret-staff-1',
+      });
+      expect(prisma.return.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ orderId: 'order-1', source: 'STAFF' }),
+        }),
+      );
+    });
+
+    it('returns null when no staff Return carries items', async () => {
+      prisma.return.findMany.mockResolvedValue([
+        { id: 'ret-empty', status: 'REQUESTED', source: 'STAFF', items: [] },
+      ]);
+      await expect(service.findOpenStaffReturnWithItems('order-1')).resolves.toBeNull();
+    });
+
+    it('skips CLOSED/RESTOCKED rows (never double-restore)', async () => {
+      prisma.return.findMany.mockResolvedValue([
+        {
+          id: 'ret-old',
+          status: 'RESTOCKED',
+          source: 'STAFF',
+          items: [{ productId: 'p-1', quantity: 1 }],
+        },
+      ]);
+      await expect(service.findOpenStaffReturnWithItems('order-1')).resolves.toBeNull();
+    });
+  });
 });
