@@ -179,16 +179,14 @@ describe('courierSafeRecipientName (Fix 5a — Mx. prefix, per-courier rules)', 
     ).toBe('');
   });
 
-  it('prefixes short Steadfast names (docs state no minimum — default min 3 assumed)', () => {
+  it('sends short Steadfast names verbatim (no documented minimum — truncate to 100 only)', () => {
     expect(
       courierSafeRecipientName({ customerFirstName: 'Al' }, 'steadfast'),
-    ).toBe('Mx. Al');
+    ).toBe('Al');
   });
 
-  it('prefixes short RedX names and truncates long ones (docs state no lengths — 3/100 assumed)', () => {
-    expect(courierSafeRecipientName({ guestName: 'Bo' }, 'redx')).toBe(
-      'Mx. Bo',
-    );
+  it('sends short RedX names verbatim and truncates long ones (no documented lengths — 100 default max, noted)', () => {
+    expect(courierSafeRecipientName({ guestName: 'Bo' }, 'redx')).toBe('Bo');
     expect(
       courierSafeRecipientName({ guestName: 'B'.repeat(150) }, 'redx').length,
     ).toBeLessThanOrEqual(100);
@@ -228,12 +226,12 @@ describe('courierSafeRecipientName (Fix 5a — Mx. prefix, per-courier rules)', 
     );
   });
 
-  it('treats the courier key case-insensitively and defaults unknown couriers to 3/100', () => {
+  it('treats the courier key case-insensitively; only Pathao prepends, unknown couriers go verbatim (100 default max)', () => {
     expect(courierSafeRecipientName({ guestName: 'Jo' }, 'Pathao')).toBe(
       'Mx. Jo',
     );
     expect(courierSafeRecipientName({ guestName: 'Jo' }, 'mystery')).toBe(
-      'Mx. Jo',
+      'Jo',
     );
   });
 

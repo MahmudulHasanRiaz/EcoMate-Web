@@ -148,6 +148,38 @@ describe('Pathao bulk accepted-rows + webhook completion', () => {
     );
   });
 
+  it('timeline-notes a Pathao Mx. transform per bulk entry (payload prefixed, stored order untouched)', async () => {
+    const short = {
+      ...mkOrder('order-1', 'ORD-1'),
+      customerFirstName: 'Jo',
+      customerLastName: '',
+    };
+    const prisma: any = bulkPrisma([short]);
+    const service = new CourierManagerService(prisma as any, tokenStore as any);
+    global.fetch = acceptedFetch();
+
+    await service.bulkCreatePathaoOrders([short]);
+
+    const bulkCall = (global.fetch as jest.Mock).mock.calls.find((c) =>
+      String(c[0]).includes('/aladdin/api/v1/orders/bulk'),
+    );
+    expect(JSON.parse(bulkCall[1].body).orders[0].recipient_name).toBe(
+      'Mx. Jo',
+    );
+    const row = prisma.dispatch.create.mock.calls[0][0].data;
+    expect(String(row.notes)).toContain("courier name sent as 'Mx. Jo'");
+    expect(String(row.notes)).toContain('ORD-1');
+    const notes = prisma.order.update.mock.calls
+      .map((c: any) => c[0]?.data?.timeline)
+      .filter(Boolean)
+      .flat()
+      .map((e: any) => e.note);
+    expect(notes).toContain(
+      "courier name sent as 'Mx. Jo' — order keeps 'Jo'",
+    );
+    expect(short.customerFirstName).toBe('Jo');
+  });
+
   it("result entries carry merchant_order_id/displayId + 'accepted, processing' (never internal id alone)", async () => {
     const orders = [mkOrder('order-1', 'ORD-1'), mkOrder('order-2', 'ORD-2')];
     const prisma: any = bulkPrisma(orders);

@@ -368,9 +368,11 @@ export class CourierManagerService {
   }
 
   /**
-   * Fix 5a (owner-locked): resolve the courier-safe recipient name.
-   * Short snapshot names go out as `'Mx. ' + full` (gender-neutral prefix;
-   * Carrybee exempt — verbatim), long names are truncated per courier max,
+   * Fix 5a (owner-locked, Task 2: Mx. prepend is Pathao-ONLY): resolve the
+   * courier-safe recipient name. Short snapshot names go out as
+   * `'Mx. ' + full` for Pathao only (gender-neutral prefix);
+   * Steadfast/RedX/Carrybee go verbatim (truncated to their max);
+   * long names are truncated per courier max,
    * and the STORED order/customer is never mutated (pure helper — payload +
    * dispatch record carry the transformed value only). Empty/missing →
    * throws a Fix 5 field error (never prefixed, never a 'Customer'
@@ -1430,6 +1432,11 @@ export class CourierManagerService {
           if (liveIds.has(o.id)) continue;
           const merchantRef =
             o.displayId || entries[i]?.['merchant_order_id'] || o.id;
+          // Fix 5a: sent-name audit for this entry (recomputed pure; the
+          // entries above already carry .sent via buildPathaoOrderPayload).
+          const bulkSent = courierSafeRecipientName(o, 'pathao');
+          const bulkRaw = orderRecipientRawName(o);
+          const bulkNameNote = this.courierNameNote(bulkSent, bulkRaw);
           await this.prisma.dispatch.create({
             data: {
               orderId: o.id,
@@ -1440,7 +1447,7 @@ export class CourierManagerService {
               // marks the row as bulk-accepted/awaiting-webhook. The sync
               // mapper yields null for it, so no workflow change is forced.
               courierStatus: 'bulk_accepted',
-              notes: `bulk accepted — merchant_order_id ${merchantRef}; results arrive automatically, check the dispatch list`,
+              notes: `bulk accepted — merchant_order_id ${merchantRef}; results arrive automatically, check the dispatch list${bulkNameNote ? `; ${bulkNameNote}` : ''}`,
               // Persist the amount actually sent as amount_to_collect
               // (Feature A, persist-only — the calc itself is untouched).
               ...(typeof entries[i]?.['amount_to_collect'] === 'number'
@@ -1448,6 +1455,9 @@ export class CourierManagerService {
                 : {}),
             },
           });
+          // Fix 5a: timeline notes the transformation (stored order keeps
+          // raw). No-op when the name needed no transform.
+          await this.noteCourierNameTransform(o.id, 'pathao', bulkSent, bulkRaw);
         }
         // Identifier-less stamp (manual-row parity): lets the
         // merchant_order_id → displayId webhook fallback resolve. The guard

@@ -88,7 +88,8 @@ export function truncateGraphemes(value: string, max: number): string {
 }
 
 /**
- * Per-courier recipient-name length rules (Fix 5a, owner decision).
+ * Per-courier recipient-name length rules (Fix 5a, owner decision; Task 2
+ * owner-locked refinement: Mx. prepend is Pathao-ONLY).
  *
  * Lengths are counted in GRAPHEME CLUSTERS (user-perceived characters),
  * not UTF-16 units: Pathao rejects 'জয়' as 2 chars even though
@@ -96,16 +97,18 @@ export function truncateGraphemes(value: string, max: number): string {
  * splits a combining mark / ZWJ sequence).
  *
  * Doc sources (latest docs, read 2026-10-14):
- * - Pathao: `recipient_name` 3–100 chars (doc-verified).
+ * - Pathao: `recipient_name` 3–100 chars (doc-verified) → min 3 enforced
+ *   via the Mx. prefix, max 100 truncated.
  * - Steadfast: `recipient_name` "Stored to 100 characters", NO minimum
- *   stated → min 3 assumed (default), max 100 doc-verified.
- * - RedX: `customer_name` — NO lengths stated → 3/100 assumed (default).
+ *   documented → verbatim + truncate to 100 only (NO prepend).
+ * - RedX: `customer_name` — NO lengths documented → verbatim + truncate to
+ *   100 default max only (NO prepend; 100 default noted).
  * - Carrybee: `recipient_name`/`customer_name` 2–99 chars (doc-verified).
  *   Carrybee is EXEMPT from the Mx. prefix by owner decision — short names
  *   go out verbatim (only trimmed + truncated to 99 graphemes).
  *
  * Rules: empty → '' (no prefix; the CALLER surfaces a field error).
- * Short (< min, non-empty, non-Carrybee) → `'Mx. ' + full` (gender-neutral,
+ * Short (< 3, non-empty, Pathao ONLY) → `'Mx. ' + full` (gender-neutral,
  * owner-locked). Long (> max) → truncated to max. The stored order/customer
  * is NEVER mutated — this is a pure function; only the dispatch payload +
  * dispatch record carry the transformed value.
@@ -123,9 +126,9 @@ export function courierSafeRecipientName(
   // max: pathao 100 + steadfast 100 doc-verified; redx/unknown default 100.
   const max = 100;
   if (graphemeLength(full) > max) return truncateGraphemes(full, max);
-  // min: pathao 3 doc-verified; steadfast/redx unstated → default 3 assumed.
-  const min = 3;
-  if (graphemeLength(full) < min) return `Mx. ${full}`;
+  // min: Pathao-ONLY (3 doc-verified). Steadfast/RedX/unknown document NO
+  // minimum → verbatim (owner-locked); only truncation above applies.
+  if (c === 'pathao' && graphemeLength(full) < 3) return `Mx. ${full}`;
   return full;
 }
 

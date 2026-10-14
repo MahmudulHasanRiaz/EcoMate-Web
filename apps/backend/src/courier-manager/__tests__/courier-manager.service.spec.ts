@@ -549,7 +549,8 @@ describe('CourierManagerService — Fix 5a Mx. prefix for short names', () => {
     credentials: {},
   };
 
-  // 2-char snapshot name (below every courier minimum except Carrybee).
+  // 2-char snapshot name (below Pathao's doc-verified min 3 — the ONLY
+  // courier that prepends Mx.; Steadfast/RedX/Carrybee go verbatim).
   const shortOrder: any = {
     id: 'order-short-1',
     displayId: 'ORD-SHORT-1',
@@ -622,23 +623,17 @@ describe('CourierManagerService — Fix 5a Mx. prefix for short names', () => {
   it('stores the sent name on the dispatch record + timeline, never mutates the stored order', async () => {
     const before = JSON.parse(JSON.stringify(shortOrder));
     mockFetch(
-      new Response(
-        JSON.stringify({
-          status: 200,
-          consignment: {
-            consignment_id: 'CID-SX',
-            tracking_code: 'TC-SX',
-            tracking_link: 'https://track/sx',
-          },
-        }),
-        { status: 200 },
-      ),
+      new Response(JSON.stringify({ data: { consignment_id: 'CID-PX' } }), {
+        status: 200,
+      }),
     );
 
-    await service.dispatch('steadfast', ['order-short-1']);
+    await service.dispatch('pathao', ['order-short-1']);
 
-    const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
-    expect(body.recipient_name).toBe('Mx. Jo');
+    const orderCall = (global.fetch as jest.Mock).mock.calls.find((c) =>
+      String(c[0]).includes('/aladdin/api/v1/orders'),
+    );
+    expect(JSON.parse(orderCall[1].body).recipient_name).toBe('Mx. Jo');
     expect(prisma.dispatch.upsert).toHaveBeenCalled();
     expect(
       prisma.dispatch.upsert.mock.calls[0][0].create.notes,
@@ -656,7 +651,36 @@ describe('CourierManagerService — Fix 5a Mx. prefix for short names', () => {
     expect(shortOrder).toEqual(before);
   });
 
-  it('prefixes short names in the Steadfast bulk payload', async () => {
+  it('sends a Steadfast short name verbatim (no documented minimum — no prefix, no timeline note)', async () => {
+    mockFetch(
+      new Response(
+        JSON.stringify({
+          status: 200,
+          consignment: {
+            consignment_id: 'CID-SX',
+            tracking_code: 'TC-SX',
+            tracking_link: 'https://track/sx',
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await service.dispatch('steadfast', ['order-short-1']);
+
+    const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+    expect(body.recipient_name).toBe('Jo');
+    expect(body.recipient_name).not.toContain('Mx.');
+    // No transform → no dispatch notes, no timeline note.
+    expect(
+      prisma.dispatch.upsert.mock.calls[0][0].create.notes,
+    ).toBeUndefined();
+    expect(timelineNotes()).not.toContain(
+      "courier name sent as 'Mx. Jo' — order keeps 'Jo'",
+    );
+  });
+
+  it('sends short names in the Steadfast bulk payload verbatim (no documented minimum)', async () => {
     mockFetch(
       new Response(
         JSON.stringify({
@@ -681,10 +705,10 @@ describe('CourierManagerService — Fix 5a Mx. prefix for short names', () => {
     const postCall = (global.fetch as jest.Mock).mock.calls.find((c) =>
       String(c[0]).includes('/create_order/bulk-order'),
     );
-    expect(JSON.parse(postCall[1].body).data[0].recipient_name).toBe('Mx. Jo');
+    expect(JSON.parse(postCall[1].body).data[0].recipient_name).toBe('Jo');
   });
 
-  it("sends prefixed customer_name to RedX for a short name", async () => {
+  it('sends a RedX short name verbatim (no documented minimum — no prefix, no timeline note)', async () => {
     mockFetch(
       new Response(JSON.stringify({ data: { tracking_id: 'RX-1' } }), {
         status: 200,
@@ -695,14 +719,17 @@ describe('CourierManagerService — Fix 5a Mx. prefix for short names', () => {
 
     expect(results[0].ok).toBe(true);
     const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
-    expect(body.customer_name).toBe('Mx. Jo');
+    expect(body.customer_name).toBe('Jo');
+    expect(body.customer_name).not.toContain('Mx.');
     expect(prisma.dispatch.create).toHaveBeenCalled();
-    expect(prisma.dispatch.create.mock.calls[0][0].data.notes).toContain(
-      'Mx. Jo',
-    );
-    expect(timelineNotes()).toContain(
-      "courier name sent as 'Mx. Jo' — order keeps 'Jo'",
-    );
+    expect(
+      prisma.dispatch.create.mock.calls[0][0].data.notes,
+    ).toBeUndefined();
+    expect(
+      timelineNotes().some((n) =>
+        n.includes("courier name sent as 'Mx. Jo'"),
+      ),
+    ).toBe(false);
   });
 
   it('sends a Carrybee short name verbatim (exempt from Mx. prefix)', async () => {
