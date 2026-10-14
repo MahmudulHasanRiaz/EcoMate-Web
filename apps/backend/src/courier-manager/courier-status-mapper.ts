@@ -54,19 +54,27 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     // enum (schema.prisma), so this yields null — keep the previous status,
     // never HOLD/DELIVERED/settle. The webhook raises the staff alert.
     exceptional: null,
-    // Task 5 (owner-locked): return-endpoint vocabulary — ONLY sourced from
-    // GET /status_with_return_status_by_cid (Steadfast webhooks never carry
-    // these; see SteadFast Webhooks Docs delivery_status list). Spellings are
-    // doc-literal ("proccessing"); the corrected spelling is accepted too.
-    // cancelled_* ride the RETURNED/CANCELLED path (in-flight → RETURN_PENDING,
-    // back-with-us → RETURNED); partial_* keep PARTIAL with a return state.
+  // Task 5 (owner-locked): return-endpoint vocabulary — ONLY sourced from
+  // GET /status_with_return_status_by_cid (Steadfast webhooks never carry
+  // these; see SteadFast Webhooks Docs delivery_status list). Spellings are
+  // doc-literal ("proccessing"); the corrected spelling is accepted too.
+  // cancelled_* ride the RETURNED/CANCELLED path (in-flight → RETURN_PENDING,
+  // back-with-us → RETURNED). Task 6 (Fix 13, rows 39–40): partial
+  // in-progress labels ride RETURN_PENDING in this map too (parcel on its way
+  // back); only partial_delivered_return_received keeps PARTIAL. The ORDER
+  // outcome for partial rows stays 'Partial' (STEADFAST_RETURN_MAP below) —
+  // never Delivered.
     'cancelled_return_proccessing': 'RETURN_PENDING',
     'cancelled_return_processing': 'RETURN_PENDING',
     'cancelled_return_rider_assigned': 'RETURN_PENDING',
+    // Task 6 (Fix 13, rows 39–40 owner-locked): partial in-progress return
+    // labels ride RETURN_PENDING (the parcel is on its way back — no longer a
+    // plain PARTIAL hold). The ORDER keeps its Partial outcome (never
+    // Delivered) via STEADFAST_RETURN_MAP.advanceOrder below.
     'cancelled_return_received': 'RETURNED',
-    'partial_delivered_return_proccessing': 'PARTIAL',
-    'partial_delivered_return_processing': 'PARTIAL',
-    'partial_delivered_return_rider_assigned': 'PARTIAL',
+    'partial_delivered_return_proccessing': 'RETURN_PENDING',
+    'partial_delivered_return_processing': 'RETURN_PENDING',
+    'partial_delivered_return_rider_assigned': 'RETURN_PENDING',
     'partial_delivered_return_received': 'PARTIAL',
     // Task A (owner-locked): "unknown" is NOT a cancellation — the courier
     // explicitly reports it cannot determine the state. Yield null (keep the
@@ -275,10 +283,12 @@ export function mapCourierStatusToDispatchStatus(  courier: string,
  * The 6 return statuses exist ONLY in the
  * GET /status_with_return_status_by_cid/{id} vocabulary (doc: "Only from
  * /status_with_return_status_by_cid/{id}, and only for a parcel that did not
- * fully arrive"). cancelled_* ride the RETURNED/CANCELLED path; partial_*
- * keep PARTIAL with a return state; *_received means the parcel is physically
- * back ("you have it back") → reconcile stock via the existing return-stock
- * hook, and NO COD is owed (a returned parcel collects nothing).
+ * fully arrive"). cancelled_* ride the RETURNED/CANCELLED path; partial
+ * in-progress labels ride dispatch RETURN_PENDING with a Partial order outcome
+ * (Task 6, Fix 13 rows 39–40); only partial_delivered_return_received keeps
+ * dispatch PARTIAL. *_received means the parcel is physically
+ * back ("you have it back") → reconcile stock via the item-level return path,
+ * and NO COD is owed (a returned parcel collects nothing).
  *
  * `codOwed` is always false by construction — the settle-exclusion lock:
  * no return status may ever settle. Non-return input yields null (the normal
@@ -299,10 +309,16 @@ const STEADFAST_RETURN_MAP: Record<string, SteadfastReturnMapping> = {
   'cancelled_return_proccessing': { dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Return Pending', reconcileStock: false, codOwed: false },
   'cancelled_return_processing': { dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Return Pending', reconcileStock: false, codOwed: false },
   'cancelled_return_rider_assigned': { dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Return Pending', reconcileStock: false, codOwed: false },
-  'cancelled_return_received': { dispatchStatus: 'RETURNED', advanceOrder: null, reconcileStock: true, codOwed: false },
-  'partial_delivered_return_proccessing': { dispatchStatus: 'PARTIAL', advanceOrder: 'Partial', reconcileStock: false, codOwed: false },
-  'partial_delivered_return_processing': { dispatchStatus: 'PARTIAL', advanceOrder: 'Partial', reconcileStock: false, codOwed: false },
-  'partial_delivered_return_rider_assigned': { dispatchStatus: 'PARTIAL', advanceOrder: 'Partial', reconcileStock: false, codOwed: false },
+  // Task 6 (Fix 13, row 44 owner-locked): the parcel is back — dispatch
+  // RETURNED AND the order surfaces as 'Return Pending' for staff
+  // confirmation (was advanceOrder null — the order never surfaced).
+  'cancelled_return_received': { dispatchStatus: 'RETURNED', advanceOrder: 'Return Pending', reconcileStock: true, codOwed: false },
+  // Task 6 (Fix 13, rows 39–40 owner-locked): partial in-progress labels ride
+  // dispatch RETURN_PENDING (parcel on its way back) while the ORDER keeps its
+  // Partial outcome — never Delivered.
+  'partial_delivered_return_proccessing': { dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Partial', reconcileStock: false, codOwed: false },
+  'partial_delivered_return_processing': { dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Partial', reconcileStock: false, codOwed: false },
+  'partial_delivered_return_rider_assigned': { dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Partial', reconcileStock: false, codOwed: false },
   'partial_delivered_return_received': { dispatchStatus: 'PARTIAL', advanceOrder: 'Partial', reconcileStock: true, codOwed: false },
 };
 

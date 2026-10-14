@@ -975,6 +975,7 @@ model Order {
   dispatchLogs                 CourierDispatchLog[]
   dispatches                   Dispatch[]
   refunds                      Refund[]
+  returns                      Return[]                       @relation("OrderReturns")
   exchangeRefunds             Refund[]                       @relation("RefundExchangeOrder")
   sourcePayments              Payment[]                      @relation("PaymentSourceOrder")
   couponUsages                 CouponUsage[]
@@ -1476,6 +1477,66 @@ enum DispatchStatus {
   CANCELLED
 }
 
+// Task 6 (courier FINAL follow-up, Fix 13 §§17.1–17.3): unified Return entity.
+// EVERY return creates ONE Return row (staff, courier, or exchange sourced) —
+// never a phantom Order. RTN return-orders (rtn module) stay a separate flow.
+enum ReturnType {
+  FULL
+  PARTIAL
+  EXCHANGE
+}
+
+enum ReturnStatus {
+  REQUESTED
+  IN_TRANSIT
+  RECEIVED
+  RESTOCKED
+  CLOSED
+}
+
+enum ReturnSource {
+  STAFF
+  COURIER
+  EXCHANGE
+}
+
+model Return {
+  id       String @id @default(uuid())
+  orderId  String
+  order    Order  @relation("OrderReturns", fields: [orderId], references: [id], onDelete: Cascade)
+  // Human sequence RTN-YYMMDD-NNNN (mirrors the ORD-XXXX Order generator;
+  // own ReturnCounter so order numbering never shifts).
+  displayId         String       @unique
+  type              ReturnType
+  status            ReturnStatus @default(REQUESTED)
+  // Returned quantities: [{ productId, variantId?, quantity }]. Courier-sourced
+  // rows start EMPTY (the courier API never reports the split) — staff confirm
+  // exact quantities at mark-received; NOTHING restocks until then.
+  items             Json         @default("[]")
+  reason            String?
+  source            ReturnSource
+  courier           String?
+  // First courier-side return reference seen (Pathao return_consignment_id,
+  // Steadfast return_request_id / return_list_id, or the consignment id for
+  // reconcile-created rows). Set-once: later signals update courierStatus.
+  courierReturnId   String?
+  courierStatus     String?
+  // Durable item-restore guard: set in the SAME transaction as the stock
+  // movement, so reconcile retries + mark-received can never restore twice.
+  stockReconciled   Boolean      @default(false)
+  stockReconciledAt DateTime?
+  // Linked refund row (refunds module) — plain id, no FK (refund lifecycle is
+  // independent; deleting a refund must never cascade a Return).
+  refundId        String?
+  // Exchange order created for this return (Task 4 owns the flow) — plain id.
+  exchangeOrderId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([orderId])
+  @@index([courierReturnId])
+}
+
 model Dispatch {
   id              String         @id @default(uuid())
   orderId         String
@@ -1823,6 +1884,13 @@ model ManagedStockLedger {
 }
 
 model OrderCounter {
+  date String @id // YYMMDD
+  seq  Int
+}
+
+// Task 6 (Fix 13): RTN-YYMMDD-NNNN sequence counter. Separate from
+// OrderCounter so Return numbering never shifts order numbering.
+model ReturnCounter {
   date String @id // YYMMDD
   seq  Int
 }

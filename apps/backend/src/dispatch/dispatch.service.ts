@@ -12,6 +12,7 @@ import { OrderStockDeductService } from '../stock/order-stock-deduct.service';
 import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
 import { OrdersService } from '../orders/orders.service';
 import { CourierTrackingService } from '../courier-manager/courier-tracking.service';
+import { CourierWebhookService } from '../courier-manager/courier-webhook.service';
 import { extractScanIdentifier } from '../scanner/scanner-resolver';
 import {
   isSupportedCourier,
@@ -153,6 +154,10 @@ export class DispatchService {
     // that build DispatchService without it keep working; production always
     // wires it via CourierManagerModule's export.
     @Optional() private readonly courierManager?: CourierManagerService,
+    // Task 6 (Fix 13): return-status reconcile trigger. Optional so existing
+    // unit tests that build DispatchService without it keep working;
+    // production always wires it via CourierManagerModule's export.
+    @Optional() private readonly courierWebhooks?: CourierWebhookService,
   ) {}
 
   /**
@@ -873,6 +878,54 @@ export class DispatchService {
       }
 
       try {
+        // Task 6 (Fix 13): manual sync on a return-ish Steadfast dispatch
+        // (RETURN_PENDING / RETURNED / PARTIAL) calls the Steadfast
+        // return-status reconcile — the ONLY endpoint that reports how far
+        // back a parcel has got — instead of the normal tracking path.
+        // Other couriers / non-return dispatches keep the normal path.
+        if (
+          this.courierWebhooks &&
+          courier === 'steadfast' &&
+          ['RETURN_PENDING', 'RETURNED', 'PARTIAL'].includes(dispatch.status as string)
+        ) {
+          try {
+            const rec = await this.courierWebhooks.reconcileSteadfastReturn({
+              consignmentId: dispatch.consignmentId as string,
+            });
+            if (rec && (rec as any).reconciled) {
+              mutated = true;
+              await this.logSync(dispatch, 'SYNCED', (rec as any).deliveryStatus ?? null, {
+                performedBy,
+                result: rec,
+                nextDispatchStatus: (rec as any).dispatchStatus,
+              }).catch(() => undefined);
+              summary.synced.push({
+                id,
+                dispatchId: dispatch.id,
+                status: (rec as any).deliveryStatus ?? (rec as any).dispatchStatus,
+                message:
+                  (rec as any).dispatchStatus != null
+                    ? `Return status reconciled to ${(rec as any).dispatchStatus}`
+                    : 'Return status reconciled',
+              });
+              continue;
+            }
+            // reconciled=false ("not a return status") → fall through to the
+            // normal tracking path below.
+          } catch (recErr: unknown) {
+            const msg = recErr instanceof Error ? recErr.message : 'Return reconcile failed';
+            this.logger.warn(
+              `Return-status reconcile failed for dispatch ${dispatch.id}: ${msg}`,
+            );
+            await this.logSync(dispatch, 'SYNC_FAILED', null, {
+              performedBy,
+              error: msg,
+            }).catch(() => undefined);
+            summary.failed.push({ id, dispatchId: dispatch.id, reason: msg });
+            continue;
+          }
+        }
+
         const consignmentKey = `${courier}:${dispatch.consignmentId}`;
         let result: any;
         if (seenConsignments.has(consignmentKey)) {

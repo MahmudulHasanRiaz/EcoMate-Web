@@ -243,7 +243,10 @@ describe('CourierWebhookService — Task 5 owner-approved status mappings', () =
   });
 
   describe('reconcileSteadfastReturn (return endpoint vocabulary only)', () => {
-    it('cancelled_return_received → RETURNED + stock reconcile, no COD, no order jump', async () => {
+    // Task 6 (Fix 13, row 44 owner-locked): the parcel is back — dispatch
+    // RETURNED AND the order surfaces as 'Return Pending' for staff
+    // confirmation (was advanceOrder null — the order never surfaced).
+    it('cancelled_return_received → RETURNED + stock reconcile, no COD, order to Return Pending', async () => {
       manager.getSteadfastReturnStatus.mockResolvedValue({
         deliveryStatus: 'cancelled_return_received',
       });
@@ -275,10 +278,22 @@ describe('CourierWebhookService — Task 5 owner-approved status mappings', () =
       for (const [args] of upserts) {
         expect(args?.update?.status).not.toBe('DELIVERED');
       }
-      expect(ordersService.updateStatus).not.toHaveBeenCalled();
+      // Row 44 fix: the order surfaces as Return Pending for staff
+      // confirmation (never Delivered, never Returned directly).
+      expect(ordersService.updateStatus).toHaveBeenCalledWith(
+        'order-1',
+        { statusId: 'status-rp' },
+        'system',
+      );
     });
 
     it('partial_delivered_return_received → PARTIAL kept + return state + stock reconcile', async () => {
+      // NOTE (Task 6): this legacy-path assertion holds only when
+      // ReturnsService is NOT wired (this spec provides no ReturnsService, so
+      // reconcile falls back to the blanket restoreForOrder). Production +
+      // Task 6 spec wire ReturnsService: partial received → RECEIVED with NO
+      // auto-restore (courier never reports the split). See
+      // courier-webhook-task6.spec.ts.
       manager.getSteadfastReturnStatus.mockResolvedValue({
         deliveryStatus: 'partial_delivered_return_received',
       });

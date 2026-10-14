@@ -154,15 +154,16 @@ describe('mapCourierStatusToDispatchStatus', () => {
     expect(isSupportedCourier('')).toBe(false);
   });
 
-  // Task 5 (owner-locked): Steadfast return statuses come ONLY from
-  // GET /status_with_return_status_by_cid. cancelled_* ride the
-  // RETURNED/CANCELLED path, partial_* keep PARTIAL with a return state.
+  // Task 6 (Fix 13, rows 39–40 owner-locked): partial in-progress return
+  // labels ride RETURN_PENDING (parcel on its way back — no longer a plain
+  // PARTIAL hold); the ORDER keeps its Partial outcome (never Delivered).
+  // Only partial_delivered_return_received keeps PARTIAL.
   it('maps the 6 Steadfast return statuses (return endpoint vocabulary)', () => {
     expect(mapCourierStatusToDispatchStatus('steadfast', 'cancelled_return_proccessing')).toBe('RETURN_PENDING');
     expect(mapCourierStatusToDispatchStatus('steadfast', 'cancelled_return_rider_assigned')).toBe('RETURN_PENDING');
     expect(mapCourierStatusToDispatchStatus('steadfast', 'cancelled_return_received')).toBe('RETURNED');
-    expect(mapCourierStatusToDispatchStatus('steadfast', 'partial_delivered_return_proccessing')).toBe('PARTIAL');
-    expect(mapCourierStatusToDispatchStatus('steadfast', 'partial_delivered_return_rider_assigned')).toBe('PARTIAL');
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'partial_delivered_return_proccessing')).toBe('RETURN_PENDING');
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'partial_delivered_return_rider_assigned')).toBe('RETURN_PENDING');
     expect(mapCourierStatusToDispatchStatus('steadfast', 'partial_delivered_return_received')).toBe('PARTIAL');
   });
 
@@ -212,12 +213,14 @@ describe('mapSteadfastReturnStatus', () => {
     );
   });
 
-  it('keeps PARTIAL for partial-delivered returns and reconciles stock only on receipt', () => {
+  it('partial in-progress rides RETURN_PENDING + Partial; only receipt keeps PARTIAL', () => {
+    // Task 6 (Fix 13, rows 39–40 owner-locked): partial in-progress labels
+    // ride dispatch RETURN_PENDING while the ORDER keeps its Partial outcome.
     expect(mapSteadfastReturnStatus('partial_delivered_return_proccessing')).toEqual(
-      expect.objectContaining({ dispatchStatus: 'PARTIAL', advanceOrder: 'Partial', reconcileStock: false, codOwed: false }),
+      expect.objectContaining({ dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Partial', reconcileStock: false, codOwed: false }),
     );
     expect(mapSteadfastReturnStatus('partial_delivered_return_rider_assigned')).toEqual(
-      expect.objectContaining({ dispatchStatus: 'PARTIAL', advanceOrder: 'Partial', reconcileStock: false, codOwed: false }),
+      expect.objectContaining({ dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Partial', reconcileStock: false, codOwed: false }),
     );
     expect(mapSteadfastReturnStatus('partial_delivered_return_received')).toEqual(
       expect.objectContaining({ dispatchStatus: 'PARTIAL', advanceOrder: 'Partial', reconcileStock: true, codOwed: false }),

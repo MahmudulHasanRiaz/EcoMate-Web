@@ -8,6 +8,7 @@ import { CodMismatchService } from '../cod-mismatch/cod-mismatch.service';
 import { mapSteadfastReturnStatus } from './courier-status-mapper';
 import { normalizeInvoiceForCompare } from './courier-settle-guard';
 import { impliesPickup } from '../dispatch/dispatch-timestamps';
+import { ReturnsService } from '../returns/returns.service';
 
 const ORDER_TRANSITIONS: Record<string, string[]> = {
   'Pending': ['Payment Pending', 'Hold', 'Confirmed', 'Cancelled'],
@@ -246,6 +247,7 @@ export class CourierWebhookService {
     private readonly manager: CourierManagerService,
     private readonly cancelReturnStock: CancelReturnStockService,
     @Optional() private readonly codMismatch?: CodMismatchService,
+    @Optional() private readonly returns?: ReturnsService,
   ) {}
 
   /**
@@ -306,6 +308,19 @@ export class CourierWebhookService {
     }
 
     const rawStatus = (body['status'] as string)?.toLowerCase() || '';
+
+    // Task 6 (Fix 13): return labels NEVER arrive via webhook (SteadFast
+    // Webhooks Docs delivery_status vocabulary is only
+    // pending/delivered/partial_delivered/cancelled/unknown). A return label
+    // here is out-of-vocabulary — skip, never a workflow change, never a
+    // Return row (returns reconcile solely through reconcileSteadfastReturn).
+    if (rawStatus.includes('return')) {
+      this.logger.log(
+        `Steadfast: ${consignmentId} status "${rawStatus}" → skipped (return labels never arrive via webhook)`,
+      );
+      return { status: 'success', message: 'No status change needed' };
+    }
+
     let dispatchStatus: string | null = STEADFAST_DISPATCH_MAP[rawStatus];
 
     if (rawStatus === 'cancelled') {
@@ -553,13 +568,24 @@ export class CourierWebhookService {
    * Task A (extra c, owner-locked): informational Steadfast notification
    * types — return_list_accepted / payment_request / cancel_request /
    * return_request / pickup_request / user_update. Recorded (timeline + log),
-   * never a workflow change. Return-linking is MINIMAL: the courier return
-   * ids ride the timeline entry + log; the full Return entity is T6.
+   * never a workflow change.
+   *
+   * Task 6 (Fix 13): return_request / return_list_accepted ALSO create/link
+   * the unified COURIER Return (source COURIER, empty items — the split is
+   * unknown). Record-only discipline kept: no dispatch write, no order
+   * advancement. return_request_id / return_list_id ride the timeline entry
+   * (existing minimal linking) AND the Return row.
    */
   private async handleSteadfastRecordOnly(body: Record<string, unknown>) {
     const notificationType = body['notification_type'] as string;
     const consignmentId = String(body['consignment_id'] ?? '').trim();
     const invoice = (body['invoice'] as string) || undefined;
+
+    // Task 6: return_list_accepted carries a LIST of consignments (one Return
+    // per consignment). Branch before the single-order path.
+    if (notificationType === 'return_list_accepted') {
+      return this.handleReturnListAccepted(body);
+    }
 
     const extra: Record<string, unknown> = {};
     for (const k of [
@@ -589,6 +615,17 @@ export class CourierWebhookService {
         ...extra,
         remarks: `${notificationType} recorded — no status change`,
       });
+
+      // Task 6: return_request links a COURIER Return (record-only kept).
+      if (notificationType === 'return_request') {
+        await this.linkCourierReturn({
+          orderId: (order as any).id,
+          courier: 'steadfast',
+          courierReturnId: (body['return_request_id'] as string) || undefined,
+          courierStatus: notificationType,
+          reason: (body['reason'] as string) || undefined,
+        });
+      }
     }
 
     this.logger.log(
@@ -600,18 +637,114 @@ export class CourierWebhookService {
   }
 
   /**
-   * Task 5 (owner-locked): Steadfast return reconciliation, sourced ONLY
-   * from GET /status_with_return_status_by_cid (the only endpoint that
-   * reports how far back a parcel has got).
+   * Task 6 (Fix 13): Steadfast return_list_accepted — one COURIER Return per
+   * consignment in the list (return_list_id stored as courierReturnId).
+   * Record-only: timeline + log per order, never a dispatch write.
+   */
+  private async handleReturnListAccepted(body: Record<string, unknown>) {
+    const returnListId = (body['return_list_id'] as string) || undefined;
+    const rawList = (body['consignments'] as unknown) ?? [];
+    let consignments = Array.isArray(rawList)
+      ? rawList.map((c) => String(c).trim()).filter(Boolean)
+      : [];
+    // Backward compat: single-parcel payloads carry only consignment_id
+    // (Task A batch shape) — treat it as a one-item list so the timeline +
+    // Return link still happen.
+    if (consignments.length === 0) {
+      const single = String(body['consignment_id'] ?? '').trim();
+      if (single) consignments = [single];
+    }
+    const status = (body['status'] as string) || 'accepted';
+
+    if (consignments.length === 0) {
+      this.logger.log(
+        `Steadfast return_list_accepted: empty consignments list (return_list_id=${returnListId || 'n/a'}) — recorded, workflow unchanged`,
+      );
+      return { status: 'success', message: 'Informational event recorded' };
+    }
+
+    for (const cid of consignments) {
+      const order = await this.findSteadfastOrder(cid);
+      if (!order) {
+        this.logger.warn(
+          `Steadfast return_list_accepted: order not found for consignment ${cid} (return_list_id=${returnListId || 'n/a'})`,
+        );
+        continue;
+      }
+      await this.fillManualDispatchIdentifiers((order as any).id, 'steadfast', cid);
+      await this.addTimelineEntry((order as any).id, 'steadfast', 'return_list_accepted', {
+        return_list_id: returnListId,
+        status,
+        consignments,
+        remarks: `return_list_accepted recorded — no status change`,
+      });
+      await this.linkCourierReturn({
+        orderId: (order as any).id,
+        courier: 'steadfast',
+        courierReturnId: returnListId,
+        courierStatus: 'return_list_accepted',
+      });
+    }
+
+    this.logger.log(
+      `Steadfast return_list_accepted: return_list_id=${returnListId || 'n/a'} ` +
+        `consignments=[${consignments.join(',')}] recorded, workflow unchanged`,
+    );
+    return { status: 'success', message: 'Informational event recorded' };
+  }
+
+  /** Best-effort Return link — never fails the webhook (record-only path). */
+  private async linkCourierReturn(input: {
+    orderId: string;
+    courier: string;
+    courierReturnId?: string;
+    courierStatus?: string;
+    type?: 'FULL' | 'PARTIAL' | 'EXCHANGE';
+    reason?: string;
+  }): Promise<void> {
+    if (!this.returns) return;
+    try {
+      await this.returns.upsertCourierReturn(input);
+    } catch (e) {
+      this.logger.warn(
+        `Return link failed for order ${input.orderId} (${input.courier}:${input.courierReturnId || 'n/a'}): ${(e as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * Task 6: Pathao return_type → Return type. Doc values are
+   * `partial-delivery` / `exchange` (full is the default when absent).
+   */
+  private mapPathaoReturnType(raw: unknown): 'FULL' | 'PARTIAL' | 'EXCHANGE' {
+    const v = String(raw ?? '').trim().toLowerCase();
+    if (v.includes('exchange')) return 'EXCHANGE';
+    if (v.includes('partial')) return 'PARTIAL';
+    return 'FULL';
+  }
+
+  /**
+   * Task 6 (Fix 13 §§17.1–17.3, owner-locked): Steadfast return
+   * reconciliation, sourced ONLY from GET /status_with_return_status_by_cid
+   * (the only endpoint that reports how far back a parcel has got).
    *
+   * Dispatch + order flow (unchanged workflow):
    * - cancelled in-flight (processing/rider_assigned) → RETURN_PENDING.
-   * - cancelled received ("you have it back") → RETURNED + stock reconcile.
-   * - partial_* keep PARTIAL + return state; received → stock reconcile.
+   * - cancelled received ("you have it back") → RETURNED + order
+   *   'Return Pending' (row 44 fix — was advanceOrder null).
+   * - partial in-progress → RETURN_PENDING + order Partial (rows 39–40 fix).
+   * - partial received → PARTIAL + order Partial, RECEIVED with NO
+   *   auto-restore (the courier never reports the split — the kept part must
+   *   NOT restock; staff confirm quantities at mark-received).
    * - *_received never marks COD owed (a returned parcel collects nothing).
    * - 'Returned' stays manual-confirmation-only: the reconcile never sets
-   *   the order status to Returned (OrdersService blocks automated actors);
-   *   staff confirms it from the order detail page afterwards. Stock is
-   *   restored now because the courier API itself confirms physical receipt.
+   *   the order status to Returned; staff confirms it afterwards.
+   *
+   * Return entity (new in Task 6): EVERY reconcile creates/updates ONE
+   * COURIER Return (courierReturnId = consignment id, set-once). In-progress
+   * → IN_TRANSIT (stock held); cancelled received → RECEIVED → RESTOCKED
+   * with an item-level restore of the full order snapshot (FULL returns only);
+   * partial received → RECEIVED, no restore. No phantom Orders, ever.
    */
   async reconcileSteadfastReturn(input: { consignmentId: string }) {
     const consignmentId = String(input?.consignmentId ?? '').trim();
@@ -655,27 +788,77 @@ export class CourierWebhookService {
       await this.tryAdvanceOrderStatus(order.id, mapped.advanceOrder);
     }
 
-    let stockReconciled = false;
-    if (mapped.reconcileStock) {
-      await this.prisma.$transaction(async (tx) => {
-        await this.cancelReturnStock.restoreForOrder({
-          orderId: order.id,
-          referencePrefix: 'return',
-          performedBy: 'system',
-          tx: tx as Prisma.TransactionClient,
+    // ---- Unified Return entity (Task 6) ----------------------------------
+    // No ReturnsService (legacy unit tests) → legacy blanket stock path so
+    // those suites keep their contract; production always wires ReturnsModule.
+    if (!this.returns) {
+      let stockReconciled = false;
+      if (mapped.reconcileStock) {
+        await this.prisma.$transaction(async (tx) => {
+          await this.cancelReturnStock.restoreForOrder({
+            orderId: order.id,
+            referencePrefix: 'return',
+            performedBy: 'system',
+            tx: tx as Prisma.TransactionClient,
+          });
         });
-      });
+        stockReconciled = true;
+      }
+      this.logger.log(
+        `Steadfast return-reconcile: ${consignmentId} → dispatch=${mapped.dispatchStatus} ` +
+          `stock=${stockReconciled ? 'reconciled' : 'held'} codOwed=false`,
+      );
+      return {
+        reconciled: true as const,
+        deliveryStatus: rawStatus,
+        dispatchStatus: mapped.dispatchStatus,
+        stockReconciled,
+        codOwed: false as const,
+      };
+    }
+
+    const isReceived = rawStatus.endsWith('_received');
+    const isPartial = rawStatus.startsWith('partial');
+    const upserted = await this.returns.upsertCourierReturn({
+      orderId: order.id,
+      courier: 'steadfast',
+      courierReturnId: consignmentId,
+      courierStatus: rawStatus,
+      type: isPartial ? 'PARTIAL' : 'FULL',
+    });
+    const returnId = (upserted as any).id;
+
+    let returnStatus: string;
+    let stockReconciled = false;
+    if (!isReceived) {
+      await this.returns.setReturnTransit(returnId, rawStatus);
+      returnStatus = 'IN_TRANSIT';
+    } else if (!isPartial) {
+      // FULL back ("you have it back"): RECEIVED → RESTOCKED with the full
+      // order snapshot (item-level — same quantities as the blanket path,
+      // item-scoped semantics so a later partial can never double-restore).
+      await this.returns.setReturnReceived(returnId, rawStatus);
+      const snapshot = await this.returns.orderItemsSnapshot(order.id);
+      await this.returns.restockReturn(returnId, { items: snapshot, performedBy: 'system' });
+      returnStatus = 'RESTOCKED';
       stockReconciled = true;
+    } else {
+      // PARTIAL back: the courier never reports the split — RECEIVED with NO
+      // auto-restore. Staff confirm exact quantities at mark-received.
+      await this.returns.setReturnReceived(returnId, rawStatus);
+      returnStatus = 'RECEIVED';
+      stockReconciled = false;
     }
 
     this.logger.log(
       `Steadfast return-reconcile: ${consignmentId} → dispatch=${mapped.dispatchStatus} ` +
-        `stock=${stockReconciled ? 'reconciled' : 'held'} codOwed=false`,
+        `return=${returnStatus} stock=${stockReconciled ? 'reconciled' : 'held'} codOwed=false`,
     );
     return {
       reconciled: true as const,
       deliveryStatus: rawStatus,
       dispatchStatus: mapped.dispatchStatus,
+      returnStatus,
       stockReconciled,
       codOwed: false as const,
     };
@@ -1092,6 +1275,21 @@ export class CourierWebhookService {
     const orderStatusName = PATHAO_DISPATCH_TO_ORDER[dispatchStatus];
     if (orderStatusName) {
       await this.tryAdvanceOrderStatus(order.id, orderStatusName);
+    }
+
+    // Task 6 (Fix 13): order.return-id-created ALSO creates/links the unified
+    // COURIER Return (existing RETURN_PENDING flow kept above). Courier-side
+    // return id = return_consignment_id; type from return_type
+    // (partial-delivery → PARTIAL, exchange → EXCHANGE, else FULL).
+    if (event === 'order.return-id-created') {
+      await this.linkCourierReturn({
+        orderId: order.id,
+        courier: 'pathao',
+        courierReturnId: (body['return_consignment_id'] as string) || undefined,
+        courierStatus: event,
+        type: this.mapPathaoReturnType(body['return_type']),
+        reason: (body['reason'] as string) || undefined,
+      });
     }
 
     // Task 3 (owner-locked F7): pickup failure is staff-actionable — loud log

@@ -19,6 +19,7 @@ import { AttributesModule } from './attributes/attributes.module';
 import { ProductsModule } from './products/products.module';
 import { OrdersModule } from './orders/orders.module';
 import { RtnModule } from './rtn/rtn.module';
+import { ReturnsModule } from './returns/returns.module';
 import { ExchangeModule } from './exchange/exchange.module';
 import { ScannerModule } from './scanner/scanner.module';
 
@@ -125,6 +126,7 @@ import { SecurityDashboardModule } from './security-dashboard/security-dashboard
     ProductsModule,
     OrdersModule,
     RtnModule,
+    ReturnsModule,
     ExchangeModule,
     ScannerModule,
     PackingModule,
