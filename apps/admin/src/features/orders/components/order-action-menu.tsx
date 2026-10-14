@@ -15,12 +15,40 @@ export const ORDER_ACTION_LABELS = {
   createPartialReturn: 'Create Partial Return Order',
 } as const
 
+/**
+ * Original-order statuses an exchange may be raised from (mirrors the
+ * backend EXCHANGE_ALLOWED_ORIGINAL_STATUSES gate — kind-only creation
+ * would force Return Pending past ORDER_TRANSITIONS).
+ */
+export const EXCHANGE_ALLOWED_STATUSES: readonly string[] = [
+  'Shipping',
+  'Delivered',
+  'Partial',
+  'Return Pending',
+]
+
+/** Non-null reason when a SALE order's status disallows exchange creation. */
+export function exchangeBlockedReason(order: any): string | null {
+  if (order?.kind !== 'SALE') return null // kind gate hides instead
+  const status = order?.status?.name as string | undefined
+  if (!EXCHANGE_ALLOWED_STATUSES.includes(status as string)) {
+    return (
+      'Exchanges are allowed only from Shipping, Delivered, Partial or ' +
+      `Return Pending status (current: ${status ?? 'unknown'}).`
+    )
+  }
+  return null
+}
+
 export interface OrderActionDef {
   key: 'create-return' | 'create-exchange' | 'create-partial-return' | string
   label: string
   icon: React.ReactNode
   /** Per-order visibility (kind/trashed gating lives here, not in callers). */
   visible: (order: any) => boolean
+  /** Per-order disablement (status gating surfaces a reason, not a hide). */
+  disabled?: (order: any) => boolean
+  disabledReason?: (order: any) => string | null
   run: () => void
 }
 
@@ -79,6 +107,8 @@ export function OrderActionMenu({ order }: { order: any }) {
       label: ORDER_ACTION_LABELS.createExchange,
       icon: <ArrowRightLeft className='h-4 w-4 mr-2' />,
       visible: (o) => o.kind === 'SALE',
+      disabled: (o) => exchangeBlockedReason(o) !== null,
+      disabledReason: (o) => exchangeBlockedReason(o),
       run: () => setScopeOpen(true),
     },
     {
@@ -103,7 +133,12 @@ export function OrderActionMenu({ order }: { order: any }) {
         </DropdownMenuTrigger>
         <DropdownMenuContent align='end' className='w-56'>
           {visible.map((a) => (
-            <DropdownMenuItem key={a.key} onClick={a.run} disabled={a.key === 'create-return' && fullReturnMut.isPending}>
+            <DropdownMenuItem
+              key={a.key}
+              onClick={a.run}
+              disabled={(a.key === 'create-return' && fullReturnMut.isPending) || (a.disabled?.(order) ?? false)}
+              title={a.disabledReason?.(order) ?? undefined}
+            >
               {a.icon} {a.label}
             </DropdownMenuItem>
           ))}

@@ -48,8 +48,8 @@ export class ExchangeController {
   }
 
   /**
-   * Create an Exchange Order from an existing order. Any sale order qualifies,
-   * including one already marked Delivered (§1).
+   * Create an Exchange Order from an existing order. The original must be a
+   * sale order in Shipping, Delivered, Partial or Return Pending status (§1).
    */
   @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')

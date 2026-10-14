@@ -5110,10 +5110,11 @@ export class OrdersService {
    * Return(EXCHANGE) leg RECEIVED/RESTOCKED.
    *
    * Unlinked orders pass straight through. Legacy exchanges (pre-Feature, no
-   * Return record) gate on delivery only. Fail-OPEN when the query surface is
-   * unavailable (defensive: a gate must never brick the confirm path on an
-   * unexpected DB shape — it blocks only on positive evidence of an
-   * incomplete exchange leg).
+   * Return record) gate on delivery only. Fail-CLOSED when exchange children
+   * are known but the delivery state is unknown (dispatch surface missing or
+   * query throws): the gate blocks with an explicit error rather than
+   * allowing Returned on no evidence. Zero-exchange orders keep the lenient
+   * path — a return-leg query failure with nothing to gate on still passes.
    */
   private async assertExchangeReturnReady(id: string): Promise<void> {
     const db = this.prisma as any;
@@ -5145,7 +5146,15 @@ export class OrdersService {
     if (exchanges.length === 0 && exReturns.length === 0) return;
 
     if (exchanges.length > 0) {
-      if (typeof db?.dispatch?.findMany !== 'function') return;
+      // Fail-CLOSED: with known exchange children, an unknown delivery state
+      // must block — never silently allow Returned. (Zero-exchange orders
+      // keep the lenient path: nothing to gate on.)
+      if (typeof db?.dispatch?.findMany !== 'function') {
+        throw new BadRequestException(
+          'Cannot mark Returned yet — exchange delivery state is unknown. ' +
+            'Verify the exchange order delivery before confirming.',
+        );
+      }
       let dispatches: any[];
       try {
         dispatches =
@@ -5154,7 +5163,10 @@ export class OrdersService {
             select: { orderId: true, status: true },
           })) ?? [];
       } catch {
-        return;
+        throw new BadRequestException(
+          'Cannot mark Returned yet — exchange delivery state is unknown. ' +
+            'Verify the exchange order delivery before confirming.',
+        );
       }
       const delivered = new Set(
         (dispatches ?? [])

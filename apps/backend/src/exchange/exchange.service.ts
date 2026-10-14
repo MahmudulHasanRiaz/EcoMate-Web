@@ -20,6 +20,14 @@ export interface ExchangeActor {
   email: string;
 }
 
+/** Original-order statuses an exchange may be raised from (§1). */
+export const EXCHANGE_ALLOWED_ORIGINAL_STATUSES: readonly string[] = [
+  'Shipping',
+  'Delivered',
+  'Partial',
+  'Return Pending',
+];
+
 /** Which settlement branch applied (§4). */
 export type SettlementStatus = 'SETTLED_DUE' | 'SETTLED_EXACT' | 'SETTLED_REFUND';
 
@@ -239,6 +247,13 @@ export class ExchangeService {
         'An exchange can only be created from a sale order.',
       );
     }
+    const originalStatus = (original as any)?.status?.name as string | undefined;
+    if (!EXCHANGE_ALLOWED_ORIGINAL_STATUSES.includes(originalStatus as string)) {
+      throw new BadRequestException(
+        'An exchange can only be created from an order in Shipping, Delivered, ' +
+          `Partial or Return Pending status (current: ${originalStatus ?? 'unknown'}).`,
+      );
+    }
     if (dto.items.length === 0) {
       throw new BadRequestException('Select at least one product for the exchange.');
     }
@@ -259,11 +274,25 @@ export class ExchangeService {
           .filter((i: any) => i.productId)
           .map((i: any) => `${i.productId}::${i.variantId ?? ''}`),
       );
+      // Ordered quantities per line, so a returning line can never exceed
+      // what the original ordered (direct-POST qty inflation guard).
+      const orderedQtyByKey = new Map<string, number>();
+      for (const i of ((original as any).items ?? [])) {
+        if (!i?.productId) continue;
+        const key = `${i.productId}::${i.variantId ?? ''}`;
+        orderedQtyByKey.set(key, (orderedQtyByKey.get(key) ?? 0) + Number(i.quantity ?? 0));
+      }
       if (inOriginal.size > 0) {
         for (const line of returningItems) {
           if (!inOriginal.has(`${line.productId}::${line.variantId ?? ''}`)) {
             throw new BadRequestException(
               'A returning item is not part of the original order.',
+            );
+          }
+          const ordered = orderedQtyByKey.get(`${line.productId}::${line.variantId ?? ''}`);
+          if (ordered !== undefined && line.quantity > ordered) {
+            throw new BadRequestException(
+              `Returning quantity (${line.quantity}) exceeds the ordered quantity (${ordered}).`,
             );
           }
         }

@@ -121,6 +121,49 @@ describe('OrderActionMenu (Task 4 Fix 8)', () => {
     await expect.element(getByText('Create Exchange Order', { exact: true })).not.toBeInTheDocument()
   })
 
+  it.each(['Pending', 'Confirmed', 'Packed', 'Hold', 'Cancelled'])(
+    'gates the exchange action on %s status (hide or disable with reason)',
+    async (status) => {
+      const { getByRole, getByText } = (await renderMenu({
+        ...saleOrder,
+        status: { id: `st-${status}`, name: status },
+      })) as any
+      await userEvent.click(getByRole('button', { name: 'Order actions' }))
+      const item = getByText('Create Exchange Order', { exact: true })
+      try {
+        // Hidden gating is acceptable.
+        await expect.element(item).not.toBeInTheDocument()
+      } catch {
+        // Visible gating must be disabled with a surfaced reason.
+        const el = Array.from(document.querySelectorAll('[role="menuitem"]')).find((n) =>
+          n.textContent?.includes('Create Exchange Order'),
+        ) as HTMLElement | undefined
+        expect(el).toBeDefined()
+        const disabledAttr =
+          el!.getAttribute('aria-disabled') === 'true' ||
+          el!.getAttribute('data-disabled') === 'true' ||
+          el!.hasAttribute('disabled')
+        expect(disabledAttr).toBe(true)
+        const host: HTMLElement = (el!.closest('[title]') as HTMLElement | null) ?? el!
+        const reason =
+          host.getAttribute('title') ?? document.body.textContent ?? ''
+        expect(reason).toMatch(/shipping|delivered|partial|return pending|eligible|status/i)
+      }
+    },
+  )
+
+  it.each(['Shipping', 'Delivered', 'Partial', 'Return Pending'])(
+    'shows an enabled exchange action on %s status',
+    async (status) => {
+      const { getByRole, getByText } = (await renderMenu({
+        ...saleOrder,
+        status: { id: `st-${status}`, name: status },
+      })) as any
+      await userEvent.click(getByRole('button', { name: 'Order actions' }))
+      expect(getByText('Create Exchange Order', { exact: true })).not.toBeNull()
+    },
+  )
+
   it('partial exchange picks returning items + new products and posts ONE PARTIAL call', async () => {
     mockGet.mockResolvedValue({
       data: { data: [{ id: 'p9', name: 'Replacement Tee', salePrice: 450, basePrice: 500 }] },

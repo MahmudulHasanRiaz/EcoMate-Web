@@ -6495,5 +6495,49 @@ describe('order lifecycle custom events (OrderPlaced/OrderConfirmed/OrderCancell
       ).rejects.toThrow(/automated process/i);
       expect(prisma.order.update).not.toHaveBeenCalled();
     });
+
+    it('fail-closed: throws when exchange children exist but the dispatch surface is missing', async () => {
+      mockReturnedPath();
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([
+        { id: 'ex-1', displayId: 'EX-260930-0001' },
+      ]);
+      ((prisma as any).return.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma as any).dispatch.findMany = undefined;
+
+      await expect(
+        service.updateStatus('order-id-1', { statusId: 'status-returned' }, 'staff-123'),
+      ).rejects.toThrow(/delivery state is unknown|not been delivered/i);
+      expect(prisma.order.update).not.toHaveBeenCalled();
+    });
+
+    it('fail-closed: throws when exchange children exist but the dispatch query throws', async () => {
+      mockReturnedPath();
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([
+        { id: 'ex-1', displayId: 'EX-260930-0001' },
+      ]);
+      ((prisma as any).return.findMany as jest.Mock).mockResolvedValue([]);
+      ((prisma as any).dispatch.findMany as jest.Mock).mockRejectedValue(
+        new Error('db down'),
+      );
+
+      await expect(
+        service.updateStatus('order-id-1', { statusId: 'status-returned' }, 'staff-123'),
+      ).rejects.toThrow(/delivery state is unknown|not been delivered/i);
+      expect(prisma.order.update).not.toHaveBeenCalled();
+    });
+
+    it('keeps current behavior when zero exchanges and the dispatch surface is missing', async () => {
+      mockReturnedPath();
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([]);
+      ((prisma as any).return.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma as any).dispatch.findMany = undefined;
+
+      const result = await service.updateStatus(
+        'order-id-1',
+        { statusId: 'status-returned' },
+        'staff-123',
+      );
+      expect(result.statusId).toBe('status-returned');
+    });
   });
 });
