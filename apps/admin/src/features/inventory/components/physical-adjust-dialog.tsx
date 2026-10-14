@@ -1,6 +1,8 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { DESTRUCTIVE_CONFIRM_MESSAGE, isDestructiveAdjustmentError } from '@/lib/destructive-adjustment'
 import { apiClient } from '@/lib/api-client'
 import { appUrl } from '@/lib/utils'
 import { SafeImage } from '@/components/safe-image'
@@ -44,6 +46,9 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
   const [reason, setReason] = useState('')
   const [confirmDestructive, setConfirmDestructive] = useState(false)
   const [items, setItems] = useState<AdjustItem[]>([])
+  // Payload refused by the 100%-removal guard, awaiting explicit confirmation.
+  const [destructivePending, setDestructivePending] = useState<any | null>(null)
+  const lastPayloadRef = useRef<any>(null)
 
   const { data: products } = useQuery<any[]>({
     queryKey: ['product-search-physical-bulk', productSearch],
@@ -90,8 +95,23 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
       reset()
       onOpenChange(false)
     },
-    onError: (e: any) => toast.error(e.response?.data?.message || 'Adjustment failed'),
+    onError: (e: any) => {
+      // Guard refusal is matched by CODE, never by English message text.
+      if (isDestructiveAdjustmentError(e)) { setDestructivePending(lastPayloadRef.current); return }
+      toast.error(e.response?.data?.message || 'Adjustment failed')
+    },
   })
+
+  // Guard fired: [নিশ্চিত] resubmits the SAME payload with the flag on;
+  // [বাতিল] drops it and leaves the form untouched.
+  const confirmDestructiveResubmit = () => {
+    if (!destructivePending) return
+    const payload = { ...destructivePending, confirmDestructive: true }
+    setDestructivePending(null)
+    setConfirmDestructive(true)
+    lastPayloadRef.current = payload
+    bulkAdjustMut.mutate(payload)
+  }
 
   // Flatten products and variants for searchable command list
   const searchOptions = useMemo(() => {
@@ -138,6 +158,8 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
     setReason('')
     setConfirmDestructive(false)
     setItems([])
+    setDestructivePending(null)
+    lastPayloadRef.current = null
   }
 
   useEffect(() => {
@@ -243,7 +265,7 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
     }
 
     // Map fields for backend DTO
-    bulkAdjustMut.mutate({
+    const payload = {
       warehouseId: selectedWarehouse,
       reason: reason.trim(),
       // Opt-in only after the operator explicitly acknowledges a near-total wipe.
@@ -255,10 +277,13 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
         binLocationId: item.binLocationId && item.binLocationId !== '__none__' ? item.binLocationId : undefined,
         unitCost: item.quantity > 0 ? parseFloat(item.unitCost) : undefined,
       })),
-    })
+    }
+    lastPayloadRef.current = payload
+    bulkAdjustMut.mutate(payload)
   }
 
   return (
+    <>
     <Dialog open={open} onOpenChange={v => { if (!v) reset(); onOpenChange(v) }}>
       <DialogContent className='sm:max-w-[800px] max-h-[90vh] flex flex-col gap-4 overflow-hidden'>
         <DialogHeader>
@@ -488,5 +513,16 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    <ConfirmDialog
+      open={destructivePending !== null}
+      onOpenChange={(v) => { if (!v) setDestructivePending(null) }}
+      title='স্টক ডিডাকশন নিশ্চিত করুন'
+      desc={DESTRUCTIVE_CONFIRM_MESSAGE}
+      cancelBtnText='বাতিল'
+      confirmText='নিশ্চিত'
+      destructive
+      handleConfirm={confirmDestructiveResubmit}
+    />
+    </>
   )
 }

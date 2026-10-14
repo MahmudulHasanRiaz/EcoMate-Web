@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { DESTRUCTIVE_CONFIRM_MESSAGE, isDestructiveAdjustmentError } from '@/lib/destructive-adjustment'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -28,6 +30,9 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, var
   const [warehouseId, setWarehouseId] = useState('')
   const [unitCost, setUnitCost] = useState('')
   const [binLocationId, setBinLocationId] = useState('')
+  // Payload refused by the 100%-removal guard, awaiting explicit confirmation.
+  const [destructivePending, setDestructivePending] = useState<any | null>(null)
+  const lastPayloadRef = useRef<any>(null)
 
   // Fetch product details for variant context
   const { data: productDetail } = useQuery({
@@ -119,8 +124,22 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, var
       onOpenChange(false)
       onSuccess?.()
     },
-    onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed to adjust stock'),
+    onError: (err: any) => {
+      // Guard refusal is matched by CODE, never by English message text.
+      if (isDestructiveAdjustmentError(err)) { setDestructivePending(lastPayloadRef.current); return }
+      toast.error(err?.response?.data?.message || 'Failed to adjust stock')
+    },
   })
+
+  // Guard fired: [নিশ্চিত] resubmits the SAME payload with the flag on;
+  // [বাতিল] drops it and leaves the form untouched.
+  const confirmDestructiveResubmit = () => {
+    if (!destructivePending) return
+    const payload = { ...destructivePending, confirmDestructive: true }
+    setDestructivePending(null)
+    lastPayloadRef.current = payload
+    adjustMut.mutate(payload)
+  }
 
   const handleSave = () => {
     if (!productId) {
@@ -141,7 +160,7 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, var
       toast.error('Please select or enter a reason')
       return
     }
-    adjustMut.mutate({
+    const payload = {
       productId,
       variantId,
       warehouseId,
@@ -149,16 +168,20 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, var
       reason,
       unitCost: cost,
       binLocationId: binLocationId && binLocationId !== '__none__' ? binLocationId : undefined,
-    })
+    }
+    lastPayloadRef.current = payload
+    adjustMut.mutate(payload)
   }
 
   const hasZones = zones && zones.length > 0
 
   return (
+    <>
     <Dialog open={open} onOpenChange={(v) => {
       if (!v) {
         setQuantity(''); setReason(''); setUnitCost(''); setWarehouseId('')
         setZoneId(''); setRackId(''); setShelfId(''); setBinLocationId('')
+        setDestructivePending(null); lastPayloadRef.current = null
       }
       onOpenChange(v)
     }}>
@@ -344,5 +367,16 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, var
         )}
       </DialogContent>
     </Dialog>
+    <ConfirmDialog
+      open={destructivePending !== null}
+      onOpenChange={(v) => { if (!v) setDestructivePending(null) }}
+      title='স্টক ডিডাকশন নিশ্চিত করুন'
+      desc={DESTRUCTIVE_CONFIRM_MESSAGE}
+      cancelBtnText='বাতিল'
+      confirmText='নিশ্চিত'
+      destructive
+      handleConfirm={confirmDestructiveResubmit}
+    />
+    </>
   )
 }

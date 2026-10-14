@@ -49,6 +49,38 @@ describe('InventoryService — managed-stock destructive guard', () => {
     expect(stockService.scrap).not.toHaveBeenCalled();
   });
 
+  it('carries a stable DESTRUCTIVE_ADJUSTMENT code with the existing message unchanged', async () => {
+    const err = await service
+      .adjust('prod-1', -10, 'recount')
+      .then(() => null)
+      .catch((e: unknown) => e as BadRequestException);
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect((err as BadRequestException).getResponse()).toEqual({
+      code: 'DESTRUCTIVE_ADJUSTMENT',
+      message:
+        'This adjustment would remove 10 of 10 available for "Test Product" (100%). ' +
+        'Re-submit with confirmDestructive=true if this is intentional.',
+    });
+  });
+
+  it('carries the code on the no-available-stock branch too', async () => {
+    prisma.product.findUnique.mockResolvedValue(
+      product({ managedStockQuantity: 5, reservedStock: 5 }),
+    );
+    const err = await service
+      .adjust('prod-1', -1, 'recount')
+      .then(() => null)
+      .catch((e: unknown) => e as BadRequestException);
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect((err as BadRequestException).getResponse()).toEqual({
+      code: 'DESTRUCTIVE_ADJUSTMENT',
+      message:
+        'This adjustment would remove 1 from "Test Product", ' +
+          'which has no available stock (5 on hand, 5 reserved). ' +
+          'Re-submit with confirmDestructive=true if this is intentional.',
+    });
+  });
+
   it('allows the same deduction when explicitly confirmed', async () => {
     await expect(
       service.adjust('prod-1', -10, 'write-off', 'admin@x', undefined, undefined, true),
