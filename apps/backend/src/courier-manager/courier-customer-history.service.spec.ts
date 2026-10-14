@@ -548,13 +548,53 @@ describe('CourierCustomerHistoryService', () => {
     it('refresh all forces a fetch for every courier', async () => {
       const creds = { courier: 'steadfast', enabled: true, apiKey: 'k', secretKey: 's', credentials: {} };
       prisma.courierCredentials.findUnique.mockResolvedValue(creds);
-      globalFetchSpy.mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ total_delivered: 3, total_cancelled: 1 }),
-      } as any);
+      globalFetchSpy.mockImplementation((url: string) => {
+        if (url.includes('/fraud_check/score/')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () =>
+              Promise.resolve({
+                status: 200,
+                phone: PHONE,
+                delivery_ratio: 75,
+                cancellation_ratio: 25,
+                volume_band: 'low',
+                volume_range: '7',
+                delivered_count: 3,
+                cancelled_count: 1,
+                total_reports: 0,
+                fraud_categories: [],
+                score: null,
+                level: null,
+                reasons: [],
+                scoring_disabled: true,
+              }),
+          } as any);
+        }
+        return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) } as any);
+      });
       const res = await service.refresh(PHONE);
       expect(Object.keys(res)).toEqual(['steadfast', 'pathao', 'redx', 'carrybee']);
       expect(Object.values(res).every(r => r !== null)).toBe(true);
+      expect(res.steadfast!.report).toMatchObject({
+        success: 3,
+        cancel: 1,
+        total: 4,
+        successRatio: 75,
+        source: 'actual',
+      });
+      expect((res.steadfast!.report as any).steadfastFraud).toMatchObject({
+        deliveryRatio: 75,
+        cancellationRatio: 25,
+        volumeBand: 'low',
+        deliveredCount: 3,
+        cancelledCount: 1,
+      });
+      expect(globalFetchSpy).toHaveBeenCalledWith(
+        expect.stringContaining('/fraud_check/score/'),
+        expect.anything(),
+      );
     });
   });
 });
