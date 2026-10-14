@@ -1246,16 +1246,29 @@ export class CourierManagerService {
    * `{type:'success', code:202, data:true}` with message "Your bulk order
    * creation request is accepted, please wait some time to complete order
    * creation." — i.e. ACCEPTED/async, NOT created. There are NO per-entry
-   * consignment ids in the response; each input order is reported as
-   * `{ok:true, accepted:true, message:'accepted, processing — ...'}` and
-   * verified later via getPathaoOrderInfo once consignments exist.
+   * consignment ids in the response, so one accepted-state Dispatch row is
+   * persisted per entry (NULL consignment, merchant_order_id in notes) and
+   * Order.courierService is stamped — the async order.created webhooks then
+   * complete the visible rows via the merchant_order_id → displayId fallback
+   * (fillManualDispatchIdentifiers, no duplicate row). Each input order is
+   * reported as `{ok:true, accepted:true, merchant_order_id, displayId,
+   * message:'accepted, processing — ...'}`; staff track completion in the
+   * dispatch list ("Pending webhook" until the consignment lands), or verify
+   * a known consignment via getPathaoOrderInfo.
    * Retry ONLY 5xx/network with backoff; NEVER 4xx.
    */
   async bulkCreatePathaoOrders(orders: any[]): Promise<{
     accepted: boolean;
     message: string;
     count: number;
-    results: { id: string; ok: boolean; accepted: boolean; message: string }[];
+    results: {
+      id: string;
+      merchant_order_id: string;
+      displayId?: string;
+      ok: boolean;
+      accepted: boolean;
+      message: string;
+    }[];
   }> {
     if (!orders || orders.length === 0)
       throw new BadRequestException('No orders to dispatch');
@@ -1359,9 +1372,26 @@ export class CourierManagerService {
         });
       }
       const message =
-        'Pathao bulk accepted, processing — please wait some time to complete order creation; verify via order info.';
+        'Pathao bulk accepted, processing — results arrive automatically; check the dispatch list.';
       try {
-        for (const o of orders) {
+        // Review MAJOR fix: the 202 carries NO per-order ids, so persist one
+        // accepted-state Dispatch row per entry (manual-row pattern: NULL
+        // consignment, merchant ref in notes) and stamp Order.courierService.
+        // Without these the async webhooks complete nothing visible (silent
+        // stuck-accepted) and the merchant_order_id → displayId fallback in
+        // findPathaoOrder cannot resolve. Retries skip orders that already
+        // own a live row, so a re-sent bulk never duplicates.
+        const live = await this.prisma.dispatch.findMany({
+          where: {
+            orderId: { in: orders.map((o: any) => o.id) },
+            courier: 'pathao' as any,
+            status: { not: 'CANCELLED' },
+          },
+          select: { orderId: true },
+        });
+        const liveIds = new Set((live || []).map((r: any) => r.orderId));
+        for (let i = 0; i < orders.length; i++) {
+          const o = orders[i];
           await this.logDispatch({
             orderId: o.id,
             courier: 'pathao',
@@ -1370,7 +1400,39 @@ export class CourierManagerService {
             requestPayload: { orders: entries },
             responsePayload: data,
           });
+          if (liveIds.has(o.id)) continue;
+          const merchantRef =
+            o.displayId || entries[i]?.['merchant_order_id'] || o.id;
+          await this.prisma.dispatch.create({
+            data: {
+              orderId: o.id,
+              courier: 'pathao' as any,
+              consignmentId: null,
+              status: 'DISPATCHED',
+              // Synthetic running state (never a courier verbatim label):
+              // marks the row as bulk-accepted/awaiting-webhook. The sync
+              // mapper yields null for it, so no workflow change is forced.
+              courierStatus: 'bulk_accepted',
+              notes: `bulk accepted — merchant_order_id ${merchantRef}; results arrive automatically, check the dispatch list`,
+              // Persist the amount actually sent as amount_to_collect
+              // (Feature A, persist-only — the calc itself is untouched).
+              ...(typeof entries[i]?.['amount_to_collect'] === 'number'
+                ? { courierAmount: entries[i]['amount_to_collect'] as number }
+                : {}),
+            },
+          });
         }
+        // Identifier-less stamp (manual-row parity): lets the
+        // merchant_order_id → displayId webhook fallback resolve. The guard
+        // never steals an order already claimed by a consignment/courier.
+        await (this.prisma.order as any).updateMany({
+          where: {
+            id: { in: orders.map((o: any) => o.id) },
+            courierConsignmentId: null,
+            courierService: null,
+          },
+          data: { courierService: 'pathao' },
+        });
       } catch (dbErr) {
         this.logger.error(`Pathao bulk DB log failed: ${(dbErr as Error).message}`);
       }
@@ -1378,11 +1440,15 @@ export class CourierManagerService {
         accepted: true,
         message,
         count: orders.length,
-        results: orders.map((o: any) => ({
+        results: orders.map((o: any, i: number) => ({
           id: o.id,
+          merchant_order_id: (o.displayId ||
+            entries[i]?.['merchant_order_id'] ||
+            o.id) as string,
+          displayId: o.displayId || undefined,
           ok: true,
           accepted: true,
-          message: 'accepted, processing — verify via order info after completion',
+          message: `accepted, processing — ${o.displayId || o.id}; results arrive automatically, check the dispatch list`,
         })),
       };
     }
