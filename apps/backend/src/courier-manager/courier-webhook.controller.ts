@@ -411,6 +411,13 @@ export class CourierWebhookController {
       });
       return result;
     } catch (err) {
+      // 404-race (owner-locked: keep 404, do NOT convert to 202/5xx).
+      // Per-courier retry docs: Steadfast EXPLICIT — "A 4xx answer is not
+      // retried" (SteadFast Webhooks Docs, Answers and retries); Pathao /
+      // RedX / Carrybee webhook docs are SILENT on retry (ASSUMED no 4xx
+      // retry — no contrary statement found in the 7 doc files). The miss
+      // stays LOUD (service logger.warn + ORDER_NOT_FOUND attempt row +
+      // webhook-attempts UI) with manual-dispatch backfill as mitigation.
       if (err instanceof HttpException) {
         const status = err.getStatus();
         const outcome =
@@ -501,14 +508,21 @@ export class CourierWebhookController {
     const ctx = this.baseContext(req);
     const auth = await this.authenticatePathao(req);
 
-    const creds = await this.prisma.courierCredentials.findUnique({
-      where: { courier: 'pathao' },
-    });
-    res.header(
-      'X-Pathao-Merchant-Webhook-Integration-Secret',
-      (creds?.pathaoIntegrationSecret || '').trim() || PATHAO_WEBHOOK_INTEGRATION_SECRET,
-    );
-    res.status(202);
+    // Security: echo the integration secret ONLY after auth passes
+    // (MATCHED or UNCONFIGURED). On MISSING/MISMATCH with a token
+    // configured the 401 path must carry NO secret headers — setting the
+    // echo before auth would disclose the custom secret to unauthenticated
+    // callers who could then forge webhooks.
+    if (auth.result === 'MATCHED' || auth.result === 'UNCONFIGURED') {
+      const creds = await this.prisma.courierCredentials.findUnique({
+        where: { courier: 'pathao' },
+      });
+      res.header(
+        'X-Pathao-Merchant-Webhook-Integration-Secret',
+        (creds?.pathaoIntegrationSecret || '').trim() || PATHAO_WEBHOOK_INTEGRATION_SECRET,
+      );
+      res.status(202);
+    }
 
     const event = (body['event'] as string) || '';
     const consignmentId = String(body['consignment_id'] ?? '').trim();
@@ -570,11 +584,18 @@ export class CourierWebhookController {
     const ctx = this.baseContext(req);
     const auth = await this.authenticateCarrybee(req);
 
-    const creds = await this.prisma.courierCredentials.findUnique({
-      where: { courier: 'carrybee' },
-    });
-    res.header('X-CB-Webhook-Integration-Header', creds?.webhookSecret || '');
-    res.status(202);
+    // Security (HIGH): the X-CB echo value IS the webhook auth secret.
+    // Set it ONLY when auth.result is MATCHED or UNCONFIGURED — never on
+    // FAILED/MISMATCH/MISSING-with-token-configured. The 401 passthrough
+    // keeps response headers, so a pre-auth echo would disclose the secret
+    // to anonymous callers and enable webhook forgery.
+    if (auth.result === 'MATCHED' || auth.result === 'UNCONFIGURED') {
+      const creds = await this.prisma.courierCredentials.findUnique({
+        where: { courier: 'carrybee' },
+      });
+      res.header('X-CB-Webhook-Integration-Header', creds?.webhookSecret || '');
+      res.status(202);
+    }
 
     const event = (body['event'] as string) || '';
     const consignmentId = String(body['consignment_id'] ?? '').trim();

@@ -187,10 +187,13 @@ export class CourierWebhookService {
 
   /**
    * Task 4 status discipline: malformed payloads throw 400, unknown
-   * consignments throw 404. Rationale (documented choice): every courier
-   * retries ONLY 5xx/network failures and never 4xx, so a 404 ends the retry
-   * loop instead of hammering us. The residual risk (dispatch row created
-   * AFTER the webhook) is covered structurally — manual dispatch rows and
+   * consignments throw 404. Rationale (owner-locked 404, mitigations exist):
+   * Steadfast docs are EXPLICIT — "A 4xx answer is not retried" (SteadFast
+   * Webhooks Docs, Answers and retries); Pathao / RedX / Carrybee webhook
+   * docs are SILENT on retry (ASSUMED no 4xx retry — no contrary statement
+   * found), so a 404 ends the retry loop instead of hammering us. The
+   * residual risk (dispatch row created AFTER the webhook) is covered
+   * structurally — manual dispatch rows and
    * the fillManualDispatchIdentifiers backfill exist precisely for that —
    * and every miss is LOUD-logged + visible in the webhook-attempts UI for
    * staff reconciliation. Only transient failures (DB down, etc.) surface

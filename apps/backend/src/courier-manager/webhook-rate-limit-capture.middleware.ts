@@ -23,7 +23,10 @@ export class WebhookRateLimitCaptureMiddleware {
   constructor(private readonly prisma: PrismaService) {}
 
   use(req: FastifyRequest, reply: FastifyReply, next: NextFunction): void {
-    const path = req.url;
+    // Security (LOW): strip the query string (?token=) before matching and
+    // storing — RedX authenticates via `?token=`, and persisting req.url
+    // verbatim would write the secret into WebhookAttempt rows.
+    const path = String(req.url || '').split('?')[0];
     const match = COURIER_WEBHOOK_PATTERN.exec(path);
 
     if (!match) {
@@ -53,11 +56,15 @@ export class WebhookRateLimitCaptureMiddleware {
   ): Promise<void> {
     try {
       const sourceIp = this.extractSourceIp(req);
+      // Defense-in-depth: strip any query (?token=) again at the store
+      // boundary so a future caller passing a raw URL can never persist
+      // the RedX callback token.
+      const cleanPath = String(path || '').split('?')[0];
       await this.prisma.webhookAttempt.create({
         data: {
           courier,
           method: (req.method || 'POST') as string,
-          path,
+          path: cleanPath,
           responseStatus: 429,
           outcome: WebhookAttemptOutcome.RATE_LIMITED,
           failureStage: WebhookAttemptStage.RATE_LIMIT,
