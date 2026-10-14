@@ -239,8 +239,12 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       );
       expect(result.status).toBe('success');
       expect(prisma.dispatch.upsert).toHaveBeenCalled();
-      // Primary hit → fallback lookups are never executed
-      expect(prisma.dispatch.findFirst).not.toHaveBeenCalled();
+      // Primary hit → order-resolution fallbacks never run (the post-match
+      // manual-row fill uses orderId-keyed lookups, never the registry shape).
+      const registryLookups = (prisma.dispatch.findFirst as jest.Mock).mock.calls.filter(
+        (call) => call[0]?.where?.order,
+      );
+      expect(registryLookups).toEqual([]);
     });
 
     it('falls back to the Dispatch registry when Order.courierConsignmentId is unset (manual dispatch)', async () => {
@@ -362,8 +366,12 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       );
       expect(result.status).toBe('success');
       expect(prisma.dispatch.upsert).toHaveBeenCalled();
-      // Primary hit → fallback lookups are never executed
-      expect(prisma.dispatch.findFirst).not.toHaveBeenCalled();
+      // Primary hit → order-resolution fallbacks never run (the post-match
+      // manual-row fill uses orderId-keyed lookups, never the registry shape).
+      const registryLookups = (prisma.dispatch.findFirst as jest.Mock).mock.calls.filter(
+        (call) => call[0]?.where?.order,
+      );
+      expect(registryLookups).toEqual([]);
     });
 
     it('falls back to the Dispatch registry when Order.courierConsignmentId is unset (manual dispatch list)', async () => {
@@ -735,6 +743,90 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       for (const call of orderUpdates) {
         expect(call[0].data.statusId).toBeUndefined();
       }
+    });
+  });
+
+  describe('Manual-row identifier autofill (Task 4)', () => {
+    beforeEach(() => {
+      prisma.dispatch.update = jest.fn().mockResolvedValue({});
+    });
+
+    it('steadfast invoice→displayId match fills the NULL-identifier manual row', async () => {
+      const manualOrder = {
+        ...order,
+        id: 'order-9',
+        displayId: 'ORD-9',
+        courierService: 'steadfast',
+        courierConsignmentId: null,
+        status: { id: 'status-packed', name: 'Packed' },
+      };
+      // Direct consignment lookup misses (manual row never stamped the order);
+      // the invoice fallback resolves via displayId.
+      prisma.order.findFirst.mockImplementation((args: any) =>
+        args?.where?.displayId ? manualOrder : null,
+      );
+      prisma.order.findUnique.mockResolvedValue(manualOrder);
+      prisma.orderStatus.findUnique.mockResolvedValue(deliveredStatus);
+      // Registry has no consignment row; exactly one NULL-identifier manual row.
+      prisma.dispatch.findFirst.mockImplementation((args: any) =>
+        args?.where?.orderId
+          ? { id: 'manual-1', orderId: 'order-9', courier: 'steadfast', consignmentId: null }
+          : null,
+      );
+
+      const result = await service.handleSteadfast({
+        notification_type: 'status_change',
+        consignment_id: 'SF-9',
+        invoice: 'ORD-9',
+        status: 'delivered',
+      });
+
+      expect(result.status).toBe('success');
+      expect(prisma.dispatch.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'manual-1' },
+          data: expect.objectContaining({ consignmentId: 'SF-9' }),
+        }),
+      );
+    });
+
+    it('skips the fill when a dispatch row already owns the consignment', async () => {
+      prisma.order.findFirst.mockResolvedValue(order);
+      // Registry/existing row owns CG-1 — the manual fill must not run.
+      prisma.dispatch.findFirst.mockResolvedValue({
+        id: 'd-owned',
+        orderId: 'order-1',
+        courier: 'steadfast',
+        consignmentId: 'CG-1',
+      });
+
+      await service.handleSteadfast({
+        notification_type: 'status_change',
+        consignment_id: 'CG-1',
+        status: 'delivered',
+      });
+
+      expect(prisma.dispatch.update).not.toHaveBeenCalled();
+      expect(prisma.dispatch.upsert).toHaveBeenCalled();
+    });
+
+    it('carrybee with no match warns LOUDLY and leaves identifiers blank', async () => {
+      prisma.order.findFirst.mockResolvedValue(null);
+      prisma.dispatch.findFirst.mockResolvedValue(null);
+      const warnSpy = jest.spyOn((service as any).logger, 'warn');
+
+      const result = await service.handleCarrybee({
+        event: 'order.delivered',
+        consignment_id: 'CB-NOPE',
+      });
+
+      expect(result).toEqual({ status: 'error', message: 'Order not found' });
+      expect(prisma.dispatch.upsert).not.toHaveBeenCalled();
+      expect(prisma.dispatch.update).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('UNMATCHED'),
+      );
+      warnSpy.mockRestore();
     });
   });
 });

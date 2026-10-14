@@ -38,7 +38,7 @@ export interface OrderResponse {
   dispatches?: {
     id: string;
     courier: string;
-    consignmentId: string;
+    consignmentId: string | null;
     trackingCode: string | null;
     trackingUrl?: string | null;
     status: string;
@@ -122,7 +122,7 @@ export interface ScanPurposeDescriptor {
 export interface ScanDispatchPreview {
   id: string
   courier: string
-  consignmentId: string
+  consignmentId: string | null
   trackingCode: string | null
   status: string
   orderId: string

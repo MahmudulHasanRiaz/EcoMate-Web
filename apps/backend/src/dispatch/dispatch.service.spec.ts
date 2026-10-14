@@ -1132,5 +1132,84 @@ describe('DispatchService', () => {
         }),
       );
     });
+
+    it('creates a manual row without identifiers (no duplicate check, NULL consignment)', async () => {
+      prisma.dispatch.create.mockResolvedValue({
+        id: 'd-manual',
+        courier: 'steadfast',
+        consignmentId: null,
+      });
+
+      await service.create({
+        orderId: 'order-1',
+        courier: 'steadfast',
+      } as any);
+
+      // No consignment to dedupe on — the unique lookup would throw on
+      // undefined, so it must be skipped for identifier-less rows.
+      expect(prisma.dispatch.findUnique).not.toHaveBeenCalled();
+      expect(prisma.dispatch.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            orderId: 'order-1',
+            courier: 'steadfast',
+          }),
+        }),
+      );
+      const createdData = prisma.dispatch.create.mock.calls[0][0].data;
+      expect(createdData.consignmentId ?? null).toBeNull();
+    });
+
+    it('treats blank identifier strings as NULL (never hits the unique key)', async () => {
+      prisma.dispatch.create.mockResolvedValue({ id: 'd-manual' });
+
+      await service.create({
+        orderId: 'order-1',
+        courier: 'steadfast',
+        consignmentId: '   ',
+        trackingCode: '',
+      } as any);
+
+      expect(prisma.dispatch.findUnique).not.toHaveBeenCalled();
+      const createdData = prisma.dispatch.create.mock.calls[0][0].data;
+      expect(createdData.consignmentId).toBeNull();
+      expect(createdData.trackingCode ?? null).toBeNull();
+    });
+
+    it('identifier-less create stamps courierService but never a consignment claim', async () => {
+      prisma.dispatch.create.mockResolvedValue({ id: 'd-manual' });
+
+      await service.create({
+        orderId: 'order-1',
+        courier: 'steadfast',
+      } as any);
+
+      expect(prisma.order.updateMany).toHaveBeenCalled();
+      const linkData = prisma.order.updateMany.mock.calls[0][0].data;
+      expect(linkData).toMatchObject({ courierService: 'steadfast' });
+      expect(linkData).not.toHaveProperty('courierConsignmentId');
+    });
+
+    it('identifier-less create keeps the courierAmount helper behavior', async () => {      prisma.dispatch.create.mockResolvedValue({ id: 'd-manual' });
+      prisma.order.findUnique.mockResolvedValue({
+        id: 'order-1',
+        total: 1000,
+        payments: [{ status: 'PAID', amount: 250 }],
+      });
+
+      await service.create({
+        orderId: 'order-1',
+        courier: 'steadfast',
+      } as any);
+
+      expect(courierManager.getCollectableAmount).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'order-1' }),
+      );
+      expect(prisma.dispatch.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ courierAmount: 750 }),
+        }),
+      );
+    });
   });
 });

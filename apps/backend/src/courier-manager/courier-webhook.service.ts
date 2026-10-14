@@ -206,6 +206,12 @@ export class CourierWebhookService {
     // Handle tracking_update — just add timeline entry, no status change
     if (notificationType === 'tracking_update') {
       const trackingMsg = (body['tracking_message'] as string) || 'Tracking update';
+      await this.fillManualDispatchIdentifiers(
+        order.id,
+        'steadfast',
+        consignmentId,
+        (body['tracking_code'] as string) || undefined,
+      );
       await this.addTimelineEntry(order.id, 'steadfast', trackingMsg);
       this.logger.log(`Steadfast tracking: ${consignmentId} — ${trackingMsg}`);
       return { status: 'success', message: 'Tracking update received' };
@@ -228,6 +234,12 @@ export class CourierWebhookService {
       data: { courierStatus: rawStatus, courierService: 'steadfast' },
     });
 
+    await this.fillManualDispatchIdentifiers(
+      order.id,
+      'steadfast',
+      consignmentId,
+      (body['tracking_code'] as string) || undefined,
+    );
     await this.upsertDispatch(order.id, 'steadfast', consignmentId, dispatchStatus, body, rawStatus);
 
     await this.addTimelineEntry(order.id, 'steadfast', dispatchStatus);
@@ -301,6 +313,42 @@ export class CourierWebhookService {
       },
     });
     return hasProgress ? 'RETURN_PENDING' : 'CANCELLED';
+  }
+
+  /**
+   * Backfill a manual Dispatch row created before the courier booking existed
+   * (NULL identifiers) with the webhook's identifiers. No-op when no such row
+   * exists, or when a row already owns the consignment (the upsert path owns
+   * that case — filling too would collide on the unique key).
+   */
+  private async fillManualDispatchIdentifiers(
+    orderId: string,
+    courier: string,
+    consignmentId: string,
+    trackingCode?: string,
+  ): Promise<void> {
+    if (!consignmentId) return;
+    const owned = await this.prisma.dispatch.findFirst({
+      where: { courier: courier as any, consignmentId },
+      select: { id: true },
+    });
+    if (owned) return;
+    const manual = await this.prisma.dispatch.findFirst({
+      where: { orderId, courier: courier as any, consignmentId: null },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    if (!manual) return;
+    await this.prisma.dispatch.update({
+      where: { id: manual.id },
+      data: {
+        consignmentId,
+        ...(trackingCode ? { trackingCode } : {}),
+      },
+    });
+    this.logger.log(
+      `${courier}: backfilled identifiers on manual dispatch ${manual.id} (order ${orderId}, consignment ${consignmentId})`,
+    );
   }
 
   private async upsertDispatch(
@@ -504,6 +552,14 @@ export class CourierWebhookService {
         },
         select: { id: true, status: true },
       });
+      if (!existing) {
+        await this.fillManualDispatchIdentifiers(
+          order.id,
+          'pathao',
+          consignmentId,
+          (body['tracking_code'] as string) || undefined,
+        );
+      }
       if (existing) {
         await this.prisma.dispatch.update({
           where: { id: existing.id },
@@ -523,6 +579,12 @@ export class CourierWebhookService {
       data: { courierStatus: event, courierService: 'pathao' },
     });
 
+    await this.fillManualDispatchIdentifiers(
+      order.id,
+      'pathao',
+      consignmentId,
+      (body['tracking_code'] as string) || undefined,
+    );
     await this.upsertDispatch(order.id, 'pathao', consignmentId, dispatchStatus, body, event);
 
     const extra: Record<string, unknown> = {};
@@ -635,6 +697,7 @@ export class CourierWebhookService {
     });
 
     const consignmentId = trackingNumber || invoiceNumber || '';
+    await this.fillManualDispatchIdentifiers(order.id, 'redx', consignmentId);
     await this.upsertDispatch(order.id, 'redx', consignmentId, dispatchStatus, body, status);
 
     const extra: Record<string, unknown> = {};
@@ -665,11 +728,14 @@ export class CourierWebhookService {
       return { status: 'error', message: 'Missing consignment_id' };
     }
 
-    const order = await this.prisma.order.findFirst({
-      where: { courierConsignmentId: consignmentId, trashedAt: null },
-    });
+    const order = await this.findCarrybeeOrder(consignmentId);
     if (!order) {
-      this.logger.warn(`Carrybee: Order not found for consignment ${consignmentId}`);
+      // Portal-side bookings never stamp the Order row and carry no invoice
+      // fallback — nothing can be matched. Say so LOUDLY and leave the manual
+      // row (if any) blank rather than fabricating identifiers.
+      this.logger.warn(
+        `Carrybee: UNMATCHED webhook — no Order or manual Dispatch row for consignment ${consignmentId} (courier=carrybee, event=${event}). Leaving identifiers blank; create the dispatch from admin or stamp the Order row.`,
+      );
       return { status: 'error', message: 'Order not found' };
     }
 
@@ -689,6 +755,8 @@ export class CourierWebhookService {
       data: { courierStatus: event, courierService: 'carrybee' },
     });
 
+    await this.fillManualDispatchIdentifiers(order.id, 'carrybee', consignmentId);
+
     await this.upsertDispatch(order.id, 'carrybee', consignmentId, dispatchStatus, body, event);
 
     const extra: Record<string, unknown> = {};
@@ -707,6 +775,39 @@ export class CourierWebhookService {
 
     this.logger.log(`Carrybee: ${consignmentId} → dispatch=${dispatchStatus} order=${orderStatusName || '-'}`);
     return { status: 'success', message: 'Webhook received successfully.' };
+  }
+
+  /**
+   * Resolve the order for a Carrybee webhook by consignment id:
+   * 1. Order.courierConsignmentId — automated API dispatch.
+   * 2. Dispatch registry — staff pre-created rows carrying identifiers whose
+   *    order claim was skipped (claimed by a different consignment).
+   * Portal bookings with neither stay unmatchable by design (loud warn above).
+   */
+  private async findCarrybeeOrder(
+    consignmentId: string,
+  ): Promise<{ id: string } | null> {
+    const direct = await this.prisma.order.findFirst({
+      where: { courierConsignmentId: consignmentId, trashedAt: null },
+    });
+    if (direct) return direct;
+
+    const dispatch = await this.prisma.dispatch.findFirst({
+      where: {
+        courier: 'carrybee' as any,
+        consignmentId,
+        order: { trashedAt: null },
+      },
+      select: { orderId: true },
+    });
+    if (dispatch) {
+      const viaDispatch = await this.prisma.order.findUnique({
+        where: { id: dispatch.orderId },
+      });
+      if (viaDispatch && !viaDispatch.trashedAt) return viaDispatch;
+    }
+
+    return null;
   }
 
   private logWebhookRequest(courier: string, body: Record<string, unknown>) {

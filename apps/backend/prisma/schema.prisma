@@ -1446,7 +1446,9 @@ model Dispatch {
   id              String         @id @default(uuid())
   orderId         String
   courier         CourierService
-  consignmentId   String
+  // NULL until known: staff may create the row before booking the courier;
+  // the courier webhook backfills it (see fillManualDispatchIdentifiers).
+  consignmentId   String?
   trackingCode    String?
   trackingUrl     String?
   status          DispatchStatus @default(DISPATCHED)

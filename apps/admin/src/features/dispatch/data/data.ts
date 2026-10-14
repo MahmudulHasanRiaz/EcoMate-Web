@@ -26,3 +26,27 @@ export function getCourierColor(value: string): string | undefined {
 export function getCourierOptions(hasFeature: (key: string) => boolean) {
   return ALL_COURIERS.filter((c) => hasFeature(`courier_${c.value}`))
 }
+
+/**
+ * Courier-specific identifier labels for dispatch detail/edit views.
+ * Terms match what each courier calls the id (Carrybee's merchant panel
+ * calls it "Parcel ID" — see the sticker template title).
+ */
+export const DISPATCH_IDENTIFIER_LABELS: Record<
+  string,
+  { primary: string; secondary?: string }
+> = {
+  steadfast: { primary: 'Consignment ID', secondary: 'Tracking code' },
+  pathao: { primary: 'Consignment ID' },
+  redx: { primary: 'Tracking ID' },
+  carrybee: { primary: 'Parcel ID' },
+}
+
+export function getDispatchIdentifierLabels(courier: string): {
+  primary: string
+  secondary?: string
+} {
+  return DISPATCH_IDENTIFIER_LABELS[courier?.toLowerCase()] ?? {
+    primary: 'Consignment ID',
+  }
+}

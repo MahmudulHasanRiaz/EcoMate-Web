@@ -57,7 +57,7 @@ import {
   AlertTriangle, MoreHorizontal, Minus, Plus, X, MapPin, Mail, Phone, Trash2, RefreshCcw, Ban, Lock,
   RotateCcw, ScanSearch, Calendar, CreditCard, CheckCircle2, ShoppingBag, History
 } from 'lucide-react'
-import { DISPATCH_STATUSES } from '@/features/dispatch/data/data'
+import { DISPATCH_STATUSES, getDispatchIdentifierLabels } from '@/features/dispatch/data/data'
 import { STATUS_COLORS as statusColors } from '@/features/orders/status-transitions'
 
 const nn = (v: number | string) => Number(v)
@@ -1400,16 +1400,23 @@ function OrderDetailPage() {
                           <TableBody>
                             {order.dispatches.slice().reverse().map((d: any) => {
                               const statusConfig = DISPATCH_STATUSES.find(s => s.value === d.status)
+                              const idLabels = getDispatchIdentifierLabels(d.courier)
                               return (
                                 <TableRow key={d.id} className='hover:bg-muted/30 transition-colors'>
                                   <TableCell className='px-4 sm:px-6 font-semibold text-sm capitalize text-foreground'>
                                     {d.courier}
                                   </TableCell>
                                   <TableCell>
-                                    <div className='flex items-center gap-1.5'>
-                                      <span className='text-sm font-mono font-medium'>{d.consignmentId}</span>
-                                      <CopyButton text={d.consignmentId} label='Consignment ID' />
-                                    </div>
+                                    {d.consignmentId ? (
+                                      <div className='flex items-center gap-1.5'>
+                                        <span className='text-sm font-mono font-medium' title={idLabels.primary}>{d.consignmentId}</span>
+                                        <CopyButton text={d.consignmentId} label={idLabels.primary} />
+                                      </div>
+                                    ) : (
+                                      <span className='text-xs text-amber-600 dark:text-amber-500' title='Created before the courier booking — the webhook fills this in'>
+                                        Pending webhook
+                                      </span>
+                                    )}
                                   </TableCell>
                                   <TableCell>
                                     <Badge className={`text-xs font-medium shadow-xs ${statusConfig?.color || 'bg-gray-500'}`}>
@@ -1444,6 +1451,7 @@ function OrderDetailPage() {
                       <div className='md:hidden divide-y divide-border/50'>
                         {order.dispatches.slice().reverse().map((d: any) => {
                           const statusConfig = DISPATCH_STATUSES.find(s => s.value === d.status)
+                          const idLabels = getDispatchIdentifierLabels(d.courier)
                           return (
                             <div key={d.id} className='p-3.5 space-y-2 bg-card'>
                               <div className='flex items-center justify-between'>
@@ -1454,8 +1462,14 @@ function OrderDetailPage() {
                               </div>
                               <div className='flex items-center justify-between text-xs'>
                                 <div className='flex items-center gap-1.5'>
-                                  <span className='font-mono text-xs font-medium text-foreground'>{d.consignmentId}</span>
-                                  <CopyButton text={d.consignmentId} label='Consignment ID' />
+                                  {d.consignmentId ? (
+                                    <>
+                                      <span className='font-mono text-xs font-medium text-foreground' title={idLabels.primary}>{d.consignmentId}</span>
+                                      <CopyButton text={d.consignmentId} label={idLabels.primary} />
+                                    </>
+                                  ) : (
+                                    <span className='text-[11px] text-amber-600 dark:text-amber-500'>Pending webhook</span>
+                                  )}
                                 </div>
                                 <span className='text-[11px] text-muted-foreground'>
                                   {new Date(d.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} {new Date(d.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
@@ -1541,7 +1555,7 @@ function OrderDetailPage() {
                         {order.dispatches && order.dispatches.length > 0 && (
                           <div className='text-xs text-muted-foreground flex items-center gap-1.5 col-span-2'>
                             <Truck className='h-3.5 w-3.5 text-muted-foreground' />
-                            <span>{order.dispatches[order.dispatches.length - 1].courier} — {order.dispatches[order.dispatches.length - 1].consignmentId}</span>
+                            <span>{order.dispatches[order.dispatches.length - 1].courier} — {order.dispatches[order.dispatches.length - 1].consignmentId ?? 'pending webhook'}</span>
                           </div>
                         )}
                         {rtnOrder.status === 'Returned' && (

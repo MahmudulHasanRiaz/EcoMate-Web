@@ -1,7 +1,9 @@
+import { useEffect, useRef, useState } from 'react'
 import { z } from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Loader2 } from 'lucide-react'
+import { ChevronsUpDown, Loader2, X } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -22,9 +24,10 @@ import {
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { SelectDropdown } from '@/components/select-dropdown'
+import { apiClient } from '@/lib/api-client'
 import { useDispatchMutations } from './hooks'
 import { useLicenseStore } from '@/stores/license-store'
-import { ALL_COURIERS, getCourierOptions } from './data/data'
+import { getCourierOptions } from './data/data'
 
 type CreateDispatchDialogProps = {
   open: boolean
@@ -32,14 +35,33 @@ type CreateDispatchDialogProps = {
 }
 
 const formSchema = z.object({
-  orderId: z.string().min(1, 'Order ID is required'),
+  orderId: z.string().min(1, 'Order is required'),
   courier: z.string().min(1, 'Courier is required'),
-  consignmentId: z.string().min(1, 'Consignment ID is required'),
+  consignmentId: z.string().optional(),
   trackingCode: z.string().optional(),
   notes: z.string().optional(),
 })
 
 type DispatchForm = z.infer<typeof formSchema>
+
+type OrderOption = {
+  id: string
+  displayId: string
+  total?: number
+}
+
+function useOrderSearch(term: string) {
+  return useQuery({
+    queryKey: ['dispatch-order-search', term],
+    queryFn: async (): Promise<OrderOption[]> => {
+      const res = await apiClient.get('/orders', {
+        params: { search: term || undefined, perPage: 8 },
+      })
+      const body = (res as any)?.data
+      return (body?.data ?? body ?? []) as OrderOption[]
+    },
+  })
+}
 
 export function CreateDispatchDialog({
   open,
@@ -48,6 +70,24 @@ export function CreateDispatchDialog({
   const { create } = useDispatchMutations()
   const hasFeature = useLicenseStore((s) => s.hasFeature)
   const courierOptions = getCourierOptions(hasFeature)
+
+  const [identifiersOpen, setIdentifiersOpen] = useState(false)
+  const [orderSearch, setOrderSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [orderResultsOpen, setOrderResultsOpen] = useState(false)
+  const [selectedOrder, setSelectedOrder] = useState<OrderOption | null>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  )
+
+  useEffect(() => {
+    clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => setDebouncedSearch(orderSearch), 300)
+    return () => clearTimeout(debounceRef.current)
+  }, [orderSearch])
+
+  const { data: orderOptions = [], isFetching: searchingOrders } =
+    useOrderSearch(debouncedSearch)
 
   const form = useForm<DispatchForm>({
     resolver: zodResolver(formSchema),
@@ -60,10 +100,29 @@ export function CreateDispatchDialog({
     },
   })
 
+  const resetAll = () => {
+    form.reset()
+    setIdentifiersOpen(false)
+    setOrderSearch('')
+    setOrderResultsOpen(false)
+    setSelectedOrder(null)
+  }
+
   const onSubmit = (data: DispatchForm) => {
-    create.mutateAsync(data).then(() => {
+    // Blank identifiers are omitted entirely — the row stays NULL until the
+    // courier webhook backfills it (never send empty strings to the unique key).
+    const payload: Record<string, unknown> = {
+      orderId: data.orderId,
+      courier: data.courier,
+    }
+    if (data.notes?.trim()) payload.notes = data.notes.trim()
+    if (data.consignmentId?.trim())
+      payload.consignmentId = data.consignmentId.trim()
+    if (data.trackingCode?.trim())
+      payload.trackingCode = data.trackingCode.trim()
+    create.mutateAsync(payload).then(() => {
       onOpenChange(false)
-      form.reset()
+      resetAll()
     })
   }
 
@@ -72,14 +131,15 @@ export function CreateDispatchDialog({
       open={open}
       onOpenChange={(v) => {
         onOpenChange(v)
-        if (!v) form.reset()
+        if (!v) resetAll()
       }}
     >
       <DialogContent className='sm:max-w-lg'>
         <DialogHeader>
           <DialogTitle>Create Dispatch</DialogTitle>
           <DialogDescription>
-            Create a new dispatch record for an order.
+            Pick the order and courier. Identifiers are optional — the courier
+            webhook fills them automatically.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -93,9 +153,79 @@ export function CreateDispatchDialog({
               name='orderId'
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Order ID</FormLabel>
+                  <FormLabel>Order</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder='Enter order ID' />
+                    <div className='relative'>
+                      {selectedOrder ? (
+                        <div className='flex items-center justify-between rounded-md border border-input bg-background px-3 py-2'>
+                          <span className='font-mono text-sm font-medium'>
+                            {selectedOrder.displayId}
+                          </span>
+                          <Button
+                            type='button'
+                            variant='ghost'
+                            size='sm'
+                            className='h-6 w-6 p-0'
+                            aria-label='Clear selected order'
+                            onClick={() => {
+                              setSelectedOrder(null)
+                              field.onChange('')
+                              setOrderSearch('')
+                            }}
+                          >
+                            <X className='h-3.5 w-3.5' />
+                          </Button>
+                        </div>
+                      ) : (
+                        <>
+                          <Input
+                            placeholder='Search orders…'
+                            value={orderSearch}
+                            onChange={(e) => {
+                              setOrderSearch(e.target.value)
+                              setOrderResultsOpen(true)
+                            }}
+                            onFocus={() => setOrderResultsOpen(true)}
+                          />
+                          {orderResultsOpen && orderSearch.trim() && (
+                            <div className='absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-md border border-border bg-popover shadow-md'>
+                              {searchingOrders ? (
+                                <div className='flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground'>
+                                  <Loader2 className='h-3.5 w-3.5 animate-spin' />
+                                  Searching…
+                                </div>
+                              ) : orderOptions.length === 0 ? (
+                                <div className='px-3 py-2 text-sm text-muted-foreground'>
+                                  No orders found
+                                </div>
+                              ) : (
+                                orderOptions.map((o) => (
+                                  <button
+                                    key={o.id}
+                                    type='button'
+                                    className='flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted'
+                                    onClick={() => {
+                                      setSelectedOrder(o)
+                                      field.onChange(o.id)
+                                      setOrderResultsOpen(false)
+                                    }}
+                                  >
+                                    <span className='font-mono font-medium'>
+                                      {o.displayId}
+                                    </span>
+                                    {o.total != null && (
+                                      <span className='text-xs text-muted-foreground'>
+                                        ৳{o.total}
+                                      </span>
+                                    )}
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -120,32 +250,56 @@ export function CreateDispatchDialog({
                 </FormItem>
               )}
             />
-            <FormField
-              control={form.control}
-              name='consignmentId'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Consignment ID</FormLabel>
-                  <FormControl>
-                    <Input {...field} placeholder='Enter consignment ID' />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
+            <div className='rounded-md border border-dashed border-border'>
+              <button
+                type='button'
+                className='flex w-full items-center justify-between px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground'
+                onClick={() => setIdentifiersOpen((v) => !v)}
+                aria-expanded={identifiersOpen}
+              >
+                Identifiers (optional)
+                <ChevronsUpDown className='h-4 w-4' />
+              </button>
+              {identifiersOpen && (
+                <div className='space-y-4 border-t border-border px-3 py-3'>
+                  <p className='text-xs text-muted-foreground'>
+                    Leave blank — filled automatically by the courier webhook.
+                  </p>
+                  <FormField
+                    control={form.control}
+                    name='consignmentId'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Consignment ID</FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            placeholder='Enter consignment ID'
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name='trackingCode'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Tracking Code</FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            placeholder='Enter tracking code'
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
               )}
-            />
-            <FormField
-              control={form.control}
-              name='trackingCode'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Tracking Code (optional)</FormLabel>
-                  <FormControl>
-                    <Input {...field} placeholder='Enter tracking code' />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            </div>
             <FormField
               control={form.control}
               name='notes'
@@ -162,10 +316,7 @@ export function CreateDispatchDialog({
           </form>
         </Form>
         <DialogFooter>
-          <Button
-            variant='outline'
-            onClick={() => onOpenChange(false)}
-          >
+          <Button variant='outline' onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button

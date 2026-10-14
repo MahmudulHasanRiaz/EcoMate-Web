@@ -325,67 +325,80 @@ export class DispatchService {
   }
 
   async create(dto: CreateDispatchDto) {
-    const existing = await this.prisma.dispatch.findUnique({
-      where: {
-        courier_consignmentId: {
-          courier: dto.courier as any,
-          consignmentId: dto.consignmentId,
-        },
-      },
-    });
-
-    if (existing && existing.status !== 'CANCELLED') {
-      const courierAmount = await this.resolveDispatchCourierAmount(dto.orderId);
-      const flagged = await this.prisma.dispatch.create({
-        data: {
-          orderId: dto.orderId,
-          courier: dto.courier as any,
-          consignmentId: dto.consignmentId,
-          trackingCode: dto.trackingCode,
-          productMapping: (dto.productMapping ||
-            []) as unknown as Prisma.InputJsonValue,
-          notes: dto.notes,
-          flaggedAt: new Date(),
-          // Feature A: dispatch-time collectable (shared helper, persist-only).
-          ...(courierAmount !== undefined ? { courierAmount } : {}),
-        },
-        include: {
-          order: {
-            select: {
-              id: true,
-              displayId: true,
-              total: true,
-              guestName: true,
-              guestPhone: true,
-              courierStatus: true,
-            },
+    // Normalize blank identifier inputs to undefined: an empty string is not
+    // a consignment and must never reach the unique key (second '' would
+    // collide) — the row stays NULL until the webhook backfills it.
+    dto = {
+      ...dto,
+      consignmentId: dto.consignmentId?.trim() || undefined,
+      trackingCode: dto.trackingCode?.trim() || undefined,
+    };
+    // Identifier-less manual rows (order + courier only) skip the duplicate
+    // check: there is no consignment to dedupe on, and the unique lookup
+    // would throw on undefined. The courier webhook backfills identifiers.
+    if (dto.consignmentId) {
+      const existing = await this.prisma.dispatch.findUnique({
+        where: {
+          courier_consignmentId: {
+            courier: dto.courier as any,
+            consignmentId: dto.consignmentId,
           },
         },
       });
 
-      await this.prisma.courierDispatchLog.create({
-        data: {
-          orderId: dto.orderId,
-          courier: dto.courier as any,
-          status: 'DUPLICATION_FLAGGED',
-          message: `Duplicate dispatch flagged. Existing: ${existing.id} (${existing.consignmentId}), New: ${flagged.id} (${dto.consignmentId}). Previous status: ${existing.status}`,
-          consignmentId: dto.consignmentId,
-          requestPayload: dto as any,
-        },
-      });
+      if (existing && existing.status !== 'CANCELLED') {
+        const courierAmount = await this.resolveDispatchCourierAmount(dto.orderId);
+        const flagged = await this.prisma.dispatch.create({
+          data: {
+            orderId: dto.orderId,
+            courier: dto.courier as any,
+            consignmentId: dto.consignmentId,
+            trackingCode: dto.trackingCode,
+            productMapping: (dto.productMapping ||
+              []) as unknown as Prisma.InputJsonValue,
+            notes: dto.notes,
+            flaggedAt: new Date(),
+            // Feature A: dispatch-time collectable (shared helper, persist-only).
+            ...(courierAmount !== undefined ? { courierAmount } : {}),
+          },
+          include: {
+            order: {
+              select: {
+                id: true,
+                displayId: true,
+                total: true,
+                guestName: true,
+                guestPhone: true,
+                courierStatus: true,
+              },
+            },
+          },
+        });
 
-      // Link the order regardless of the duplicate flag: the created row must
-      // be resolvable by webhooks and manual sync keyed on courier+consignment.
-      await this.linkOrderToConsignment(dto);
-      await this.maybeRecordShippingCost(dto.orderId, dto);
-      await this.invalidateAnalytics();
+        await this.prisma.courierDispatchLog.create({
+          data: {
+            orderId: dto.orderId,
+            courier: dto.courier as any,
+            status: 'DUPLICATION_FLAGGED',
+            message: `Duplicate dispatch flagged. Existing: ${existing.id} (${existing.consignmentId}), New: ${flagged.id} (${dto.consignmentId}). Previous status: ${existing.status}`,
+            consignmentId: dto.consignmentId,
+            requestPayload: dto as any,
+          },
+        });
 
-      return {
-        duplicate: true,
-        id: flagged.id,
-        message: 'Duplicate dispatch flagged for review',
-        flagged: true,
-      };
+        // Link the order regardless of the duplicate flag: the created row must
+        // be resolvable by webhooks and manual sync keyed on courier+consignment.
+        await this.linkOrderToConsignment(dto);
+        await this.maybeRecordShippingCost(dto.orderId, dto);
+        await this.invalidateAnalytics();
+
+        return {
+          duplicate: true,
+          id: flagged.id,
+          message: 'Duplicate dispatch flagged for review',
+          flagged: true,
+        };
+      }
     }
 
     const courierAmount = await this.resolveDispatchCourierAmount(dto.orderId);
@@ -393,7 +406,8 @@ export class DispatchService {
       data: {
         orderId: dto.orderId,
         courier: dto.courier as any,
-        consignmentId: dto.consignmentId,
+        // NULL until the courier booking exists; the webhook backfills it.
+        consignmentId: dto.consignmentId ?? null,
         trackingCode: dto.trackingCode,
         productMapping: (dto.productMapping ||
           []) as unknown as Prisma.InputJsonValue,
@@ -429,8 +443,25 @@ export class DispatchService {
    * Link the order to the dispatch's consignment so Pathao/Steadfast webhooks
    * and manual syncs can resolve it by consignment id. Never overwrites an
    * order already claimed by a different consignment/courier combo.
+   *
+   * Identifier-less manual rows stamp the courier service only (so the
+   * invoice/merchant-id webhook fallbacks can resolve the order) but never a
+   * consignment claim.
    */
   private async linkOrderToConsignment(dto: CreateDispatchDto): Promise<void> {
+    if (!dto.consignmentId) {
+      await this.prisma.order.updateMany({
+        where: {
+          id: dto.orderId,
+          courierConsignmentId: null,
+          courierService: null,
+        },
+        data: {
+          courierService: dto.courier as any,
+        },
+      });
+      return;
+    }
     await this.prisma.order.updateMany({
       where: {
         id: dto.orderId,

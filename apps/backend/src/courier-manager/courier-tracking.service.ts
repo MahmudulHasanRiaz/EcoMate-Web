@@ -111,7 +111,9 @@ export class CourierTrackingService {
   async getDispatchTracking(
     courier: string,
     phone: string,
-    consignmentId: string,
+    // NULL until the courier booking exists (manual rows); the falsy guard
+    // below returns null — nothing to track yet.
+    consignmentId: string | null,
     trackingCode?: string | null,
     options: { force?: boolean } = {},
   ): Promise<CourierTrackingResult | null> {
