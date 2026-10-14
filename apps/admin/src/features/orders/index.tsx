@@ -1145,10 +1145,10 @@ export function Orders() {
                             <DropdownMenuContent align='end' className='min-w-44 rounded-xl border-border/80 shadow-pop'>
                               <DropdownMenuItem asChild><Link to='/op/orders/$id' params={{ id: o.id }} className='text-xs font-medium cursor-pointer'><Eye className='h-3.5 w-3.5 mr-2 text-muted-foreground' />View Details</Link></DropdownMenuItem>
                               <DropdownMenuItem onClick={() => copyToClipboard(o.displayId, 'Order ID')} className='text-xs cursor-pointer'><ClipboardCopy className='h-3.5 w-3.5 mr-2 text-muted-foreground' />Copy Order ID</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => copyToClipboard(o.customer?.phoneNumber || o.guestPhone || '', 'Phone')} className='text-xs cursor-pointer'><Phone className='h-3.5 w-3.5 mr-2 text-muted-foreground' />Copy Phone</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => copyToClipboard(getCustomerPhone(o) || '', 'Phone')} className='text-xs cursor-pointer'><Phone className='h-3.5 w-3.5 mr-2 text-muted-foreground' />Copy Phone</DropdownMenuItem>
                               {formatAddressFull(addr) && <DropdownMenuItem onClick={() => copyToClipboard(formatAddressFull(addr), 'Address')} className='text-xs cursor-pointer'><MapPin className='h-3.5 w-3.5 mr-2 text-muted-foreground' />Copy Address</DropdownMenuItem>}
                               <DropdownMenuSeparator />
-                              <DropdownMenuItem className='text-destructive focus:text-destructive text-xs cursor-pointer' onClick={() => setBlockPhones({ phones: [o.customer?.phoneNumber || o.guestPhone || ''], contextLabel: o.displayId })}><Ban className='h-3.5 w-3.5 mr-2' />Block Phone</DropdownMenuItem>
+                              <DropdownMenuItem className='text-destructive focus:text-destructive text-xs cursor-pointer' onClick={() => setBlockPhones({ phones: [getCustomerPhone(o) || ''], contextLabel: o.displayId })}><Ban className='h-3.5 w-3.5 mr-2' />Block Phone</DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem onClick={() => window.open(`/admin/op/print/sticker/${o.id}`, '_blank')} className='text-xs cursor-pointer'><Printer className='h-3.5 w-3.5 mr-2 text-muted-foreground' />Print Sticker</DropdownMenuItem>
                               <DropdownMenuItem onClick={() => window.open(`/admin/op/print/invoice/${o.id}`, '_blank')} className='text-xs cursor-pointer'><Receipt className='h-3.5 w-3.5 mr-2 text-muted-foreground' />Print Invoice</DropdownMenuItem>
@@ -1255,11 +1255,11 @@ export function Orders() {
                                       <div className='text-muted-foreground italic'>No address provided</div>
                                     )}
                                     <div className='flex flex-col gap-1.5 pt-1.5 border-t border-border/50'>
-                                      {(o.customer?.phoneNumber || o.guestPhone) && (
+                                      {(getCustomerPhone(o)) && (
                                         <div className='flex items-center gap-2'>
                                           <Phone className='size-3.5 text-muted-foreground shrink-0' />
-                                          <a href={`tel:${o.customer?.phoneNumber || o.guestPhone}`} className='hover:underline font-mono'>{o.customer?.phoneNumber || o.guestPhone}</a>
-                                          <CustomerContactActions phone={o.customer?.phoneNumber || o.guestPhone} />
+                                          <a href={`tel:${getCustomerPhone(o)}`} className='hover:underline font-mono'>{getCustomerPhone(o)}</a>
+                                          <CustomerContactActions phone={getCustomerPhone(o)} />
                                         </div>
                                       )}
                                       {getCustomerEmail(o) && (

@@ -22,7 +22,7 @@ import { RecordRefundModal } from '@/features/orders/components/record-refund-mo
 import { OrderSummaryCard } from '@/features/orders/order-summary-card'
 import { OrderEditLockGuard } from '@/features/orders/order-edit-lock'
 import { OrderSourceBadges } from '@/features/orders/order-source-badge'
-import { CustomerEditSheet } from '@/features/orders/customer-edit-sheet'
+import { CustomerEditSheet, resolveCustomerEditInitial } from '@/features/orders/customer-edit-sheet'
 import { apiClient } from '@/lib/api-client'
 import { variantLabel, variantThumbUrl } from '@/lib/product-variant'
 import { resolveOrderItemImages } from '@/lib/product-image'
@@ -207,7 +207,9 @@ function OrderDetailPage() {
   const staffAutoVerified = sysSettings?.['payments.staffAutoVerified'] !== 'false'
   const paymentEditAllowed = sysSettings?.['payments.editAllowed'] === 'true'
 
-  const phone = order?.customer?.phoneNumber?.replace(/[^\d]/g, '')
+  // D-A: phone VALUE is the order snapshot (customerPhone/guestPhone first,
+  // GET-mapped customer only as fallback) — the history lookup is by number.
+  const phone = (order ? getCustomerPhone(order) : '').replace(/[^\d]/g, '')
   const { data: customerSummary } = useQuery({ queryKey: ['customer-summary', phone], queryFn: () => apiClient.get(`/customers/order-summary?phone=${phone}`).then(r => r.data), enabled: !!phone })
 
 
@@ -451,6 +453,9 @@ function OrderDetailPage() {
   if (!order) return <div className='p-6 text-muted-foreground'>Order not found</div>
 
   const allowedStatuses = ((order.status.nextStatuses as string[]) || []).map((sid: string) => statusList.find((s: any) => s.id === sid)).filter(Boolean)
+
+  // D-A: edit-sheet init reads the SAME snapshot fields the save writes.
+  const customerEditInit = resolveCustomerEditInitial(order)
 
   return (
     <TooltipProvider>
@@ -1757,7 +1762,8 @@ function OrderDetailPage() {
               </Card>
 
               {/* Courier Customer History */}
-              <CourierCustomerHistoryCard phone={order.customer?.phoneNumber || order.guestPhone} />
+              {/* Courier Customer History — phone VALUE from snapshot (D-A) */}
+              <CourierCustomerHistoryCard phone={getCustomerPhone(order)} />
 
             </div>
           </div>
@@ -1778,14 +1784,15 @@ function OrderDetailPage() {
           />
         )}
 
-        {/* ── Customer Edit Sheet ──────────────────────────────── */}
+        {/* ── Customer Edit Sheet ────────────────────────────────
+            Init values read the SAME snapshot fields the save writes (D-A). */}
         <CustomerEditSheet
           open={showCustomerSheet}
           onOpenChange={setShowCustomerSheet}
-          firstName={order.customer?.firstName || ''}
-          lastName={order.customer?.lastName || ''}
-          email={order.customer?.email || ''}
-          phone={order.customer?.phoneNumber || ''}
+          firstName={customerEditInit.firstName}
+          lastName={customerEditInit.lastName}
+          email={customerEditInit.email}
+          phone={customerEditInit.phone}
           address={order.shippingAddress?.address || ''}
           cityId={order.shippingAddress?.cityId || ''}
           zoneId={order.shippingAddress?.zoneId || ''}

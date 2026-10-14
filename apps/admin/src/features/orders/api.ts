@@ -19,6 +19,11 @@ export interface OrderResponse {
   guestName?: string | null;
   guestPhone?: string | null;
   secondaryPhone?: string | null;
+  /** Order-time customer snapshot (D-A source of truth; also mirrored into `customer` by GET). */
+  customerFirstName?: string | null;
+  customerLastName?: string | null;
+  customerPhone?: string | null;
+  customerEmail?: string | null;
   viewToken?: string | null;
   paymentMethod?: string | null;
   paymentMode?: string | null;

@@ -1,5 +1,34 @@
 import { describe, it, expect } from 'vitest'
-import { getOrderPaidAmount, getOrderDueAmount, getOrderPaymentMode, getPaymentModeForAmounts, hasOpenCodAlert } from './order-display'
+import { getCustomerDisplayName, getCustomerPhone, getCustomerEmail, getOrderPaidAmount, getOrderDueAmount, getOrderPaymentMode, getPaymentModeForAmounts, hasOpenCodAlert } from './order-display'
+
+describe('customer snapshot authority (D-A)', () => {
+  it('display name prefers snapshot over profile', () => {
+    const order = { customerFirstName: 'MR', customerLastName: 'Joy', customer: { name: 'OLD' } }
+    expect(getCustomerDisplayName(order)).toBe('MR Joy')
+  })
+
+  it('phone prefers snapshot over profile', () => {
+    const order = { customerPhone: '01711111111', guestPhone: '01822222222', customer: { phone: 'OLD' } }
+    expect(getCustomerPhone(order)).toBe('01711111111')
+  })
+
+  it('email prefers snapshot over profile', () => {
+    const order = { customerEmail: 'new@example.com', customer: { email: 'old@example.com' } }
+    expect(getCustomerEmail(order)).toBe('new@example.com')
+  })
+
+  it('falls back to guest columns when snapshot names are absent', () => {
+    const order = { guestName: 'Walk In', customer: { name: 'OLD' } }
+    expect(getCustomerDisplayName(order)).toBe('Walk In')
+  })
+
+  it('falls back to profile only when snapshot and guest are absent', () => {
+    const order = { customer: { name: 'OLD', phone: '01900000000', email: 'old@example.com' } }
+    expect(getCustomerDisplayName(order)).toBe('OLD')
+    expect(getCustomerPhone(order)).toBe('01900000000')
+    expect(getCustomerEmail(order)).toBe('old@example.com')
+  })
+})
 
 describe('getOrderPaidAmount', () => {
   it('returns 0 for a null/undefined order', () => {
