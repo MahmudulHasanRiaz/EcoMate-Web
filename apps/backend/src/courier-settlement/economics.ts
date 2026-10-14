@@ -22,6 +22,8 @@ export interface ExpectedCodOrderInput {
   paymentOptionType?: string | null;
   trashedAt?: Date | null;
   statusName?: string | null;
+  /** Raw courier running status (Order.courierStatus / Dispatch.courierStatus). */
+  courierStatus?: string | null;
   total: number;
   payments: ExpectedCodPaymentInput[];
 }
@@ -38,6 +40,18 @@ export interface ExpectedCodResult {
 }
 
 const CANCELLED_STATUS = 'Cancelled';
+
+/**
+ * Task 10 (owner-locked): approval_pending NEVER settles. Local copy of the
+ * shared guard (kept dependency-free — mirrors
+ * `courier-manager/courier-settle-guard.ts isUnsettledCourierStatus`).
+ */
+function isUnsettledCourierStatus(status: string | null | undefined): boolean {
+  const s = String(status ?? '').trim().toLowerCase();
+  if (!s) return false;
+  if (s === 'exceptional') return true;
+  return s.endsWith('_approval_pending');
+}
 
 /**
  * D-C actuals-only ledger: the derived due shared by `expectedCod` and every
@@ -82,6 +96,13 @@ export function expectedCod(order: ExpectedCodOrderInput): ExpectedCodResult {
     return { value: 0, source: 'not_cod', divergence: false, cashPaymentSum: null, orderTotal };
   }
   if (order.statusName === CANCELLED_STATUS) {
+    return { value: 0, source: 'not_cod', divergence: false, cashPaymentSum: null, orderTotal };
+  }
+  // Task 10 (owner-locked): approval_pending NEVER settles — only
+  // delivered/partial_delivered/cancelled count. Anything ending
+  // `_approval_pending` (+ `exceptional`) is the rider's word, not ours:
+  // no COD expectation until the courier confirms.
+  if (isUnsettledCourierStatus(order.courierStatus)) {
     return { value: 0, source: 'not_cod', divergence: false, cashPaymentSum: null, orderTotal };
   }
 

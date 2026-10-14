@@ -5,6 +5,7 @@ import { OrdersService } from '../orders/orders.service';
 import { CourierManagerService } from './courier-manager.service';
 import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
 import { mapSteadfastReturnStatus } from './courier-status-mapper';
+import { normalizeInvoiceForCompare } from './courier-settle-guard';
 import { impliesPickup } from '../dispatch/dispatch-timestamps';
 
 const ORDER_TRANSITIONS: Record<string, string[]> = {
@@ -469,9 +470,13 @@ export class CourierWebhookService {
     }
 
     if (invoice) {
+      // Task 10: tolerate server-cut text — the courier truncates long
+      // invoices (Steadfast: 100); compare the cut form (dispatch now sends
+      // the truncated invoice, so this matches what the courier holds).
+      const cutInvoice = normalizeInvoiceForCompare(invoice);
       const viaInvoice = await this.prisma.order.findFirst({
         where: {
-          displayId: invoice,
+          displayId: cutInvoice,
           courierService: 'steadfast',
           trashedAt: null,
         },
@@ -818,9 +823,12 @@ export class CourierWebhookService {
     }
 
     if (merchantOrderId) {
+      // Task 10: tolerate server-cut text (cut form documented in
+      // courier-settle-guard.normalizeInvoiceForCompare).
+      const cutId = normalizeInvoiceForCompare(merchantOrderId);
       const viaMerchantId = await this.prisma.order.findFirst({
         where: {
-          displayId: merchantOrderId,
+          displayId: cutId,
           courierService: 'pathao',
           trashedAt: null,
         },
@@ -855,8 +863,10 @@ export class CourierWebhookService {
         where: { courierTrackingCode: trackingNumber, courierService: 'redx', trashedAt: null },
       });
     if (!order && invoiceNumber)
+      // Task 10: tolerate server-cut text (cut form documented in
+      // courier-settle-guard.normalizeInvoiceForCompare).
       order = await this.prisma.order.findFirst({
-        where: { displayId: invoiceNumber, courierService: 'redx', trashedAt: null },
+        where: { displayId: normalizeInvoiceForCompare(invoiceNumber), courierService: 'redx', trashedAt: null },
       });
     if (!order) {
       this.logger.warn(`RedX: Order not found for tracking ${trackingNumber || invoiceNumber}`);
@@ -1108,9 +1118,12 @@ export class CourierWebhookService {
     }
 
     if (merchantOrderId) {
+      // Task 10: tolerate server-cut text (cut form documented in
+      // courier-settle-guard.normalizeInvoiceForCompare).
+      const cutId = normalizeInvoiceForCompare(merchantOrderId);
       const viaMerchantId = await this.prisma.order.findFirst({
         where: {
-          displayId: merchantOrderId,
+          displayId: cutId,
           courierService: 'carrybee',
           trashedAt: null,
         },

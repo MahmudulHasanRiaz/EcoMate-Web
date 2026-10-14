@@ -711,6 +711,13 @@ export class CourierSettlementImportService {
     const settledByOrder = new Map<string, number>();
     for (const rec of prepared.rowRecords) {
       if (rec.row.rowClass !== 'DATA' || !rec.match.orderId) continue;
+      // Task 10 (owner-locked): approval_pending NEVER settles — only
+      // DELIVERY rows book settlement money. Unsettled rows (anything ending
+      // `_approval_pending` + `exceptional`) classify to non-DELIVERY kinds
+      // (settle-exclusion.spec locks this); the kind gate here is the money
+      // enforcement so a collected>0 unsettled row can never book a
+      // `courier_settlement` PAID payment.
+      if (rec.row.rowKind !== 'DELIVERY') continue;
       const collected = num(rec.row.effectiveCollected);
       if (!(collected > 0)) continue;
       settledByOrder.set(

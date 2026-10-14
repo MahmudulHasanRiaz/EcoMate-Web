@@ -183,6 +183,7 @@ export class CourierSettlementOverviewService {
         id: true,
         displayId: true,
         total: true,
+        courierStatus: true,
         payments: { select: { amount: true, status: true, appliedCreditAmount: true, gatewayCode: true } },
         status: { select: { name: true } },
         courierSettlementRows: {
@@ -255,8 +256,15 @@ export class CourierSettlementOverviewService {
 
 function expectedCodOf(order: {
   total: unknown;
+  courierStatus?: unknown;
   payments: { amount: unknown; status: string; appliedCreditAmount?: unknown; gatewayCode?: unknown }[];
 }): number {
+  // Task 10 (owner-locked): approval_pending NEVER settles — unsettled
+  // courier statuses yield no COD expectation (mirrors economics.expectedCod).
+  const courierStatus = String((order as { courierStatus?: unknown }).courierStatus ?? '').trim().toLowerCase();
+  if (courierStatus === 'exceptional' || (courierStatus !== '' && courierStatus.endsWith('_approval_pending'))) {
+    return 0;
+  }
   // D-C actuals-only ledger: derived due (total − ΣPAID − ΣappliedCredit),
   // floored at 0 — mirrors CodMismatchService systemDue, EXCEPT
   // courier_settlement PAID rows are excluded (settlement money is already

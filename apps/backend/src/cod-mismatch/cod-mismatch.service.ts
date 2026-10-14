@@ -26,7 +26,13 @@ export class CodMismatchService {
       0,
     );
     const systemDue = Math.max(0, Number((order as any).total) - paid - applied);
-    const live = (order as any).dispatches.filter((d: any) => d.status !== 'CANCELLED');
+    // Task 10 (owner-locked): approval_pending NEVER settles — only
+    // delivered/partial_delivered/cancelled count in the COD-alert. Unsettled
+    // rows (anything ending `_approval_pending` + `exceptional`) are the
+    // rider's word, not ours: skip them here AND in the stale-clear pass.
+    const live = (order as any).dispatches.filter(
+      (d: any) => d.status !== 'CANCELLED' && !isUnsettledCourierStatus(d.courierStatus),
+    );
     const out: any[] = [];
     for (const d of live) {
       // NULL courierAmount = pre-existing dispatch, cannot compare — skip, never fabricate 0.
@@ -132,4 +138,16 @@ export class CodMismatchService {
     arr.push({ event: text, at: new Date().toISOString() });
     await this.prisma.order.update({ where: { id: orderId }, data: { timeline: arr as any } });
   }
+}
+
+/**
+ * Task 10 (owner-locked): approval_pending NEVER settles. Local copy of the
+ * shared guard (kept dependency-free — mirrors
+ * `courier-manager/courier-settle-guard.ts isUnsettledCourierStatus`).
+ */
+function isUnsettledCourierStatus(status: string | null | undefined): boolean {
+  const s = String(status ?? '').trim().toLowerCase();
+  if (!s) return false;
+  if (s === 'exceptional') return true;
+  return s.endsWith('_approval_pending');
 }

@@ -138,7 +138,11 @@ export function matchRow(
   return { matchMethod: 'NONE', matchContext: { attemptedOrder: order } };
 }
 
-/** Normalise a candidate identifier for map lookup (trim; case-insensitive). */
-export function norm(value: string): string {
-  return String(value).trim().toLowerCase();
+/** Normalise a candidate identifier for map lookup (trim; case-insensitive).
+ * Task 10: tolerate server-cut text — the courier silently truncates long
+ * invoice values (Steadfast: 100), so both sides are cut to the field max
+ * before compare. Consignment/tracking ids are short in practice; the same
+ * cap is harmless for them. */
+export function norm(value: string, max = 100): string {
+  return String(value).trim().slice(0, max).toLowerCase();
 }

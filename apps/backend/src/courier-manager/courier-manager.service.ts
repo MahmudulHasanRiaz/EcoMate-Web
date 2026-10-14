@@ -9,6 +9,11 @@ import {
   orderRecipientEmail,
   orderRecipientRawName,
 } from '../orders/order-recipient';
+import {
+  COURIER_FIELD_LIMITS,
+  sanitizeCourierText,
+  normalizeCourierKey,
+} from './courier-settle-guard';
 
 const BASE_URLS: Record<string, Record<string, string>> = {
   steadfast: {
@@ -611,13 +616,24 @@ export class CourierManagerService {
     );
 
     const payload: Record<string, unknown> = {
-      invoice: order.displayId,
-      recipient_name: safeName,
-      recipient_phone: phone,
-      recipient_address: formatCourierAddress(address) ?? 'Dhaka',
+      // Task 10: pre-check lengths + strip `{ } ; < > $` (Steadfast doc
+      // limits: invoice 100, name 100, phone 40, address 490, note 480).
+      // safeName already carries the Mx./100-cut; sanitize re-applies the
+      // strip + cap defensively (idempotent).
+      invoice: sanitizeCourierText(order.displayId, COURIER_FIELD_LIMITS.invoice),
+      recipient_name: sanitizeCourierText(safeName, COURIER_FIELD_LIMITS.name),
+      recipient_phone: sanitizeCourierText(phone, COURIER_FIELD_LIMITS.phone),
+      recipient_address: sanitizeCourierText(
+        formatCourierAddress(address) ?? 'Dhaka',
+        COURIER_FIELD_LIMITS.address,
+      ),
       cod_amount: collectAmount,
-      note: order.officeNotes || undefined,
-      item_description: itemDescription,
+      note: order.officeNotes
+        ? sanitizeCourierText(String(order.officeNotes), COURIER_FIELD_LIMITS.note)
+        : undefined,
+      item_description: itemDescription
+        ? sanitizeCourierText(itemDescription, COURIER_FIELD_LIMITS.note)
+        : undefined,
       delivery_type: address?.deliveryType === 'hub' ? 1 : 0,
     };
 
@@ -925,10 +941,16 @@ export class CourierManagerService {
     );
 
     const payload: Record<string, unknown> = {
+      // Task 10: same strip + pre-check (Pathao doc states name 3–100;
+      // invoice/phone/address/note caps unstated → Steadfast 100/40/490/480
+      // applied as the safe default, noted here).
       store_id: parseInt(String(storeId)),
-      recipient_name: safeName,
-      recipient_phone: phone,
-      recipient_address: formatCourierAddress(address) ?? 'Dhaka',
+      recipient_name: sanitizeCourierText(safeName, COURIER_FIELD_LIMITS.name),
+      recipient_phone: sanitizeCourierText(phone, COURIER_FIELD_LIMITS.phone),
+      recipient_address: sanitizeCourierText(
+        formatCourierAddress(address) ?? 'Dhaka',
+        COURIER_FIELD_LIMITS.address,
+      ),
       delivery_type: 48,
       item_type: 2,
       item_quantity: order.items?.length || 1,
@@ -937,13 +959,19 @@ export class CourierManagerService {
     };
 
     if (order.displayId) {
-      payload.merchant_order_id = order.displayId;
+      payload.merchant_order_id = sanitizeCourierText(
+        String(order.displayId),
+        COURIER_FIELD_LIMITS.invoice,
+      );
     }
     if (order.officeNotes) {
-      payload.special_instruction = order.officeNotes;
+      payload.special_instruction = sanitizeCourierText(
+        String(order.officeNotes),
+        COURIER_FIELD_LIMITS.note,
+      );
     }
     if (itemDescription) {
-      payload.item_description = itemDescription;
+      payload.item_description = sanitizeCourierText(itemDescription, COURIER_FIELD_LIMITS.note);
     }
     if (address?.cityId) {
       payload.recipient_city = address.cityId;
@@ -1538,15 +1566,25 @@ export class CourierManagerService {
       //   it is sent only when set in creds.credentials.pickupStoreId.
       // - type: doc OPTIONAL, reverse-shipments only → omitted (we never
       //   book reverse). merchant_invoice_id=displayId kept (doc optional).
-      merchant_invoice_id: order.displayId,
-      customer_name: safeName,
-      customer_phone: phone,
+      // Task 10: strip `{ } ; < > $` + pre-check lengths (RedX doc states no
+      //   field lengths → Steadfast 100/40/490/480 applied as safe default).
+      merchant_invoice_id: sanitizeCourierText(
+        String(order.displayId),
+        COURIER_FIELD_LIMITS.invoice,
+      ),
+      customer_name: sanitizeCourierText(safeName, COURIER_FIELD_LIMITS.name),
+      customer_phone: sanitizeCourierText(phone, COURIER_FIELD_LIMITS.phone),
       delivery_area: district,
       delivery_area_id: Number(deliveryAreaId) || 1,
-      customer_address: formatCourierAddress(address) ?? 'N/A',
+      customer_address: sanitizeCourierText(
+        formatCourierAddress(address) ?? 'N/A',
+        COURIER_FIELD_LIMITS.address,
+      ),
       cash_collection_amount: String(collectable),
       parcel_weight: String(500),
-      instruction: order.officeNotes || '',
+      instruction: order.officeNotes
+        ? sanitizeCourierText(String(order.officeNotes), COURIER_FIELD_LIMITS.note)
+        : '',
       value: String(total),
       is_closed_box: false,
       parcel_details_json: order.items?.map((item: any) => ({
@@ -1818,12 +1856,18 @@ export class CourierManagerService {
       });
     }
     const payload: Record<string, unknown> = {
+      // Task 10: strip + pre-check (Carrybee doc: name 2–99 — safeName already
+      // 99-cut; address 10–200 doc-verified via resolveCarrybeeAddress; invoice
+      // /phone/note unstated → Steadfast 100/40/480 safe default, noted here).
       store_id: String(storeId),
-      merchant_order_id: order.displayId,
+      merchant_order_id: sanitizeCourierText(
+        String(order.displayId),
+        COURIER_FIELD_LIMITS.invoice,
+      ),
       delivery_type: 1,
       product_type: 1,
-      recipient_phone: phone,
-      recipient_name: safeName,
+      recipient_phone: sanitizeCourierText(phone, COURIER_FIELD_LIMITS.phone),
+      recipient_name: sanitizeCourierText(safeName, 99),
       recipient_address: this.resolveCarrybeeAddress(order),
       item_weight: this.resolveCarrybeeWeightGrams(order),
       item_quantity: Math.max(1, lineCount),
@@ -1857,14 +1901,15 @@ export class CourierManagerService {
       if (Number.isFinite(areaId)) payload.area_id = areaId;
     }
     if (order.officeNotes) {
-      payload.special_instruction = String(order.officeNotes).slice(0, 254);
+      // Task 10: strip applied; 254 kept (Carrybee-side bound, noted).
+      payload.special_instruction = sanitizeCourierText(String(order.officeNotes), 254);
     }
     const itemDescription =
       order.items
         ?.map((item: any) => item.product?.name || 'Product')
         .join(', ') || undefined;
     if (itemDescription) {
-      payload.product_description = itemDescription.slice(0, 254);
+      payload.product_description = sanitizeCourierText(itemDescription, 254);
     }
 
     // Fix 5: same discipline as the other couriers — FULL body text first,
@@ -2073,7 +2118,8 @@ export class CourierManagerService {
       if (included(extra.trim())) continue;
       out = out ? `${out}, ${extra.trim()}` : extra.trim();
     }
-    return out.slice(0, 200);
+    // Task 10: strip `{ } ; < > $` (200-cap kept — Carrybee doc-verified).
+    return sanitizeCourierText(out, 200);
   }
 
   /**

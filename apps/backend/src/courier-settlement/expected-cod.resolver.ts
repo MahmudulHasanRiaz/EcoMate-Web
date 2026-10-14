@@ -26,6 +26,7 @@ export class ExpectedCodResolver {
         paymentOptionType: true,
         trashedAt: true,
         total: true,
+        courierStatus: true,
         status: { select: { name: true } },
         payments: { select: { amount: true, gatewayCode: true, status: true, appliedCreditAmount: true } },
       },
@@ -35,6 +36,9 @@ export class ExpectedCodResolver {
       paymentOptionType: order.paymentOptionType,
       trashedAt: order.trashedAt,
       statusName: order.status?.name ?? null,
+      // Task 10: approval_pending never settles — the raw courier status rides
+      // into expectedCod so unsettled rows yield 0.
+      courierStatus: (order as { courierStatus?: string | null }).courierStatus ?? null,
       total: toNumber(order.total),
       payments: order.payments.map((p) => ({
         amount: toNumber(p.amount),

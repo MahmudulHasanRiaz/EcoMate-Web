@@ -1,4 +1,5 @@
 import { DispatchStatus } from '@prisma/client';
+import { isUnsettledCourierStatus } from './courier-settle-guard';
 
 /**
  * Maps the courier's own running/current status (as returned by the courier
@@ -125,7 +126,11 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     'paid return': 'RETURN_PENDING',
     exchange: 'DELIVERED',
     exchanged: 'DELIVERED',
-    exchanged_approval_pending: 'DELIVERED',
+    // Task 10 (owner-locked): approval_pending NEVER settles — anything
+    // ending `_approval_pending` is the rider's word, not ours. The previous
+    // DELIVERED mapping violated the lock (a money-affecting promotion on an
+    // unconfirmed label); null keeps the workflow unchanged, never settles.
+    exchanged_approval_pending: null,
     pickup: 'PICKED_UP',
     picked: 'PICKED_UP',
     pending: 'DISPATCHED',
@@ -212,6 +217,13 @@ export function mapCourierStatusToDispatchStatus(  courier: string,
   // APIs sometimes surface plain "delivery-failed"/"failed" labels instead of
   // the "order.*" event vocabulary — these must never match `deliver`.
   if (/fail|error/i.test(normalized)) return null;
+
+  // Task 10 (owner-locked): any *_approval_pending label NOT in the exact map
+  // above is the rider's word, not ours — never settle via keyword fallback
+  // (`deliver`/`pending` keywords would otherwise promote it to DELIVERED or
+  // DISPATCHED). Exact-map entries (e.g. steadfast partial_delivered_approval
+  // _pending → PARTIAL, T5-locked) already returned above and are unaffected.
+  if (isUnsettledCourierStatus(normalized)) return null;
 
   for (const rule of KEYWORD_RULES) {
     if (rule.match.test(normalized)) return rule.status;
