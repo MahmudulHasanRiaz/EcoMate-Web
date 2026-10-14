@@ -1,9 +1,10 @@
-import { Injectable, Logger, Inject, forwardRef, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef, BadRequestException, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { OrdersService } from '../orders/orders.service';
 import { CourierManagerService } from './courier-manager.service';
 import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
+import { CodMismatchService } from '../cod-mismatch/cod-mismatch.service';
 import { mapSteadfastReturnStatus } from './courier-status-mapper';
 import { normalizeInvoiceForCompare } from './courier-settle-guard';
 import { impliesPickup } from '../dispatch/dispatch-timestamps';
@@ -16,7 +17,10 @@ const ORDER_TRANSITIONS: Record<string, string[]> = {
   'Confirmed': ['Packed', 'Packing Hold', 'Cancelled'],
   'Packed': ['Shipping', 'Packing Hold'],
   'Packing Hold': ['Packed', 'Cancelled'],
-  'Shipping': ['Delivered', 'Partial'],
+  // Task A (owner-locked): Shipping → Return Pending is DIRECT (a parcel can
+  // turn back without ever delivering). The previous map forced the fallback
+  // path through Delivered — now forbidden (see tryAdvanceOrderStatus guard).
+  'Shipping': ['Delivered', 'Partial', 'Return Pending'],
   'Delivered': ['Return Pending'],
   'Partial': ['Return Pending'],
   'Return Pending': ['Returned', 'Damaged'],
@@ -46,8 +50,23 @@ const STEADFAST_DISPATCH_MAP: Record<string, string | null> = {
   delivered: 'DELIVERED',
   partial_delivered: 'PARTIAL',
   cancelled: null, // handled conditionally in handleSteadfast
-  unknown: 'CANCELLED',
+  // Task A (owner-locked): "unknown" is NOT a cancellation — null yields the
+  // skip path, which records the raw state + timeline + loud alert and keeps
+  // the previous workflow status (sync mapper returns null for it too).
+  unknown: null,
 };
+
+// Task A (extra c): Steadfast informational notification types — recorded
+// (raw + timeline + log), never a workflow change. Return-linking is MINIMAL
+// (ids on the timeline + log); the full Return entity is T6, not built here.
+const STEADFAST_RECORD_ONLY_TYPES = new Set([
+  'return_list_accepted',
+  'payment_request',
+  'cancel_request',
+  'return_request',
+  'pickup_request',
+  'user_update',
+]);
 
 // DispatchStatus → OrderStatus name mapping (when webhook should auto-update order)
 // AUTHORITATIVE RULE: PARTIAL from ANY courier advances the order to 'Partial'
@@ -157,7 +176,10 @@ const REDX_DISPATCH_MAP: Record<string, string | null> = {
   // DISPATCHED → order map below is null, so the order is never moved.
   'pickup-pending': 'DISPATCHED',
   pickup_pending: 'DISPATCHED',
-  'ready-for-delivery': 'PICKED_UP',
+  // Task A (owner-locked): `ready-for-delivery` = parcel received from the
+  // merchant, rider not yet assigned — ASSIGNED_TO_RIDER (was PICKED_UP),
+  // order stays Shipping via REDX_DISPATCH_TO_ORDER.
+  'ready-for-delivery': 'ASSIGNED_TO_RIDER',
   'delivery-in-progress': 'ASSIGNED_TO_RIDER',
   delivered: 'DELIVERED',
   // AUTHORITATIVE RULE: PARTIAL → 'Partial' for every courier, no exception.
@@ -194,6 +216,7 @@ export class CourierWebhookService {
     private readonly ordersService: OrdersService,
     private readonly manager: CourierManagerService,
     private readonly cancelReturnStock: CancelReturnStockService,
+    @Optional() private readonly codMismatch?: CodMismatchService,
   ) {}
 
   /**
@@ -212,6 +235,17 @@ export class CourierWebhookService {
    */
   async handleSteadfast(body: Record<string, unknown>) {
     const notificationType = body['notification_type'] as string;
+
+    // Task A (extras b/c): consignment_update + informational types branch
+    // BEFORE the parcel-key requirement — user_update / payment_request /
+    // pickup_request / return_list_accepted carry no consignment_id.
+    if (notificationType === 'consignment_update') {
+      return this.handleConsignmentUpdate(body);
+    }
+    if (STEADFAST_RECORD_ONLY_TYPES.has(notificationType)) {
+      return this.handleSteadfastRecordOnly(body);
+    }
+
     const consignmentId = String(body['consignment_id'] ?? '').trim();
 
     if (!consignmentId) {
@@ -247,6 +281,13 @@ export class CourierWebhookService {
 
     if (rawStatus === 'cancelled') {
       dispatchStatus = await this.resolveCancelledStatus(order.id);
+    }
+
+    // Task A (F3): "unknown" — the courier cannot determine the state. Record
+    // raw + timeline + loud alert, keep the previous workflow status (never
+    // CANCELLED, never an order advance).
+    if (rawStatus === 'unknown') {
+      return this.handleUnknownSteadfast(order.id, consignmentId, body);
     }
 
     // Task 5 (owner-locked): `exceptional` = lost, damaged or otherwise off
@@ -347,6 +388,186 @@ export class CourierWebhookService {
         `staff alert raised on the order timeline`,
     );
     return { status: 'success', message: 'Exception recorded — status kept, staff alerted' };
+  }
+
+  /**
+   * Task A (F3, owner-locked): Steadfast `unknown` — the courier explicitly
+   * reports it cannot determine the parcel state. NOT a cancellation: keep
+   * the previous workflow status (no Dispatch status write, no order
+   * advancement, no settlement effect). Alert surface mirrors `exceptional`:
+   * raw courierStatus on order + dispatch, timeline alert, loud error log.
+   */
+  private async handleUnknownSteadfast(
+    orderId: string,
+    consignmentId: string,
+    body: Record<string, unknown>,
+  ) {
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: { courierStatus: 'unknown', courierService: 'steadfast' },
+    });
+
+    const existing = await this.prisma.dispatch.findFirst({
+      where: {
+        courier: 'steadfast' as any,
+        consignmentId,
+      },
+      select: { id: true },
+    });
+    if (existing) {
+      await this.prisma.dispatch.update({
+        where: { id: (existing as any).id },
+        data: { courierStatus: 'unknown', lastSyncedAt: new Date() },
+      });
+    } else {
+      await this.fillManualDispatchIdentifiers(
+        orderId,
+        'steadfast',
+        consignmentId,
+        (body['tracking_code'] as string) || undefined,
+      );
+    }
+
+    await this.addTimelineEntry(orderId, 'steadfast', 'unknown', {
+      remarks:
+        `Courier reports state unknown — dispatch status kept; ` +
+        `needs staff review`,
+    });
+
+    this.logger.error(
+      `Steadfast UNKNOWN: consignment ${consignmentId} (order ${orderId}) ` +
+        `state unknown — workflow status kept, staff alert raised on the order timeline`,
+    );
+    return { status: 'success', message: 'Unknown state recorded — status kept, staff alerted' };
+  }
+
+  /**
+   * Task A (extra b, owner-locked): `consignment_update` — the merchant
+   * changed the parcel (address or COD) via the Steadfast dashboard. Applies
+   * changed[]/values to our fields with NO status change (no dispatch status
+   * write, no order advancement). A COD change refreshes the courier-side
+   * Dispatch.courierAmount and recomputes the COD mismatch (systemDue is
+   * untouched — only the courier-side amount moved).
+   */
+  private async handleConsignmentUpdate(body: Record<string, unknown>) {
+    const consignmentId = String(body['consignment_id'] ?? '').trim();
+    const invoice = (body['invoice'] as string) || undefined;
+    if (!consignmentId && !invoice) {
+      this.logger.warn('Steadfast consignment_update missing consignment_id and invoice');
+      throw new BadRequestException('Missing consignment_id');
+    }
+
+    const order = await this.findSteadfastOrder(consignmentId, invoice);
+    if (!order) {
+      this.logger.warn(
+        `Steadfast consignment_update: order not found for consignment ${consignmentId || invoice}`,
+      );
+      throw new NotFoundException(`Order not found for consignment ${consignmentId || invoice}`);
+    }
+
+    const changed = Array.isArray(body['changed'])
+      ? (body['changed'] as unknown[]).map((v) => String(v))
+      : [];
+    const values = (body['values'] as Record<string, unknown>) || {};
+
+    // Address change → merge into the order-owned shippingAddress snapshot.
+    const addressKey = changed.find((k) => ['cus_address', 'recipient_address', 'address'].includes(k));
+    if (addressKey && values[addressKey] != null) {
+      const full = await this.prisma.order.findUnique({ where: { id: (order as any).id } });
+      const existingAddr = (full as any)?.shippingAddress;
+      const base =
+        typeof existingAddr === 'object' && existingAddr !== null ? existingAddr : {};
+      const newAddress = String(values[addressKey]);
+      await this.prisma.order.update({
+        where: { id: (order as any).id },
+        data: {
+          shippingAddress: { ...base, address: newAddress, addressLine: newAddress } as any,
+        },
+      });
+    }
+
+    // COD change → refresh courier-side amount + recompute the mismatch.
+    const codKey = changed.find((k) => ['cod_amount', 'cod', 'collectable_amount'].includes(k));
+    if (codKey && values[codKey] != null && !Number.isNaN(Number(values[codKey]))) {
+      if (consignmentId) {
+        const dispatch = await this.prisma.dispatch.findFirst({
+          where: { courier: 'steadfast' as any, consignmentId },
+          select: { id: true },
+        });
+        if (dispatch) {
+          await this.prisma.dispatch.update({
+            where: { id: (dispatch as any).id },
+            data: { courierAmount: Number(values[codKey]) },
+          });
+        }
+      }
+      await this.codMismatch?.recompute((order as any).id);
+    }
+
+    await this.fillManualDispatchIdentifiers(
+      (order as any).id,
+      'steadfast',
+      consignmentId,
+      (body['tracking_id'] as string) || undefined,
+    );
+    await this.addTimelineEntry((order as any).id, 'steadfast', 'consignment_update', {
+      remarks: `Changed: ${changed.join(', ') || 'unknown'} — values applied, no status change`,
+    });
+
+    this.logger.log(
+      `Steadfast consignment_update: ${consignmentId || invoice} changed=[${changed.join(',')}] — applied, workflow unchanged`,
+    );
+    return { status: 'success', message: 'Consignment update recorded' };
+  }
+
+  /**
+   * Task A (extra c, owner-locked): informational Steadfast notification
+   * types — return_list_accepted / payment_request / cancel_request /
+   * return_request / pickup_request / user_update. Recorded (timeline + log),
+   * never a workflow change. Return-linking is MINIMAL: the courier return
+   * ids ride the timeline entry + log; the full Return entity is T6.
+   */
+  private async handleSteadfastRecordOnly(body: Record<string, unknown>) {
+    const notificationType = body['notification_type'] as string;
+    const consignmentId = String(body['consignment_id'] ?? '').trim();
+    const invoice = (body['invoice'] as string) || undefined;
+
+    const extra: Record<string, unknown> = {};
+    for (const k of [
+      'return_list_id', 'return_request_id', 'payment_request_id',
+      'cancel_request_id', 'pickup_request_id', 'status', 'item_count',
+      'amount', 'method', 'note', 'reason', 'reason_id', 'verify_status',
+      'address_id', 'pickup_location', 'service_type', 'estimated_qty',
+      'consignments',
+    ]) {
+      if (body[k] != null) extra[k] = body[k];
+    }
+
+    let order: { id: string } | null = null;
+    if (consignmentId || invoice) {
+      order = await this.findSteadfastOrder(consignmentId, invoice);
+    }
+
+    if (order) {
+      if (consignmentId || invoice) {
+        await this.fillManualDispatchIdentifiers(
+          (order as any).id,
+          'steadfast',
+          consignmentId || (invoice as string),
+        );
+      }
+      await this.addTimelineEntry((order as any).id, 'steadfast', notificationType, {
+        ...extra,
+        remarks: `${notificationType} recorded — no status change`,
+      });
+    }
+
+    this.logger.log(
+      `Steadfast ${notificationType}: consignment ${consignmentId || invoice || 'n/a'} ` +
+        `recorded, workflow unchanged` +
+        (order ? '' : ' (no linked order — account-level or unmatched)'),
+    );
+    return { status: 'success', message: 'Informational event recorded' };
   }
 
   /**
@@ -610,6 +831,23 @@ export class CourierWebhookService {
       this.logger.warn(`Direct transition to ${targetName} failed: ${(e as Error).message}`);
     }
 
+    // Task A (owner-locked F11): Shipping → Return Pending is direct-or-
+    // not-at-all. Walking through Delivered as a stepping stone would briefly
+    // mark a returned parcel delivered (Delivered side effects: COD, stock,
+    // notifications) — never do that. Staff-visible: timeline note + loud log.
+    if (order.status.name === 'Shipping' && targetName === 'Return Pending') {
+      this.logger.warn(
+        `Shipping → Return Pending direct transition failed for order ${orderId} — ` +
+          `NOT stepping via Delivered; needs staff review`,
+      );
+      await this.addTimelineEntry(orderId, 'system', 'Return Pending', {
+        remarks:
+          `Shipping → Return Pending direct transition failed; ` +
+          `not stepped via Delivered — needs staff review`,
+      });
+      return;
+    }
+
     const path = this.findTransitionPath(order.status.name, targetName);
     for (const step of path) {
       const current = await this.prisma.order.findUnique({
@@ -676,6 +914,22 @@ export class CourierWebhookService {
     // timeline entry so the settlement feed can match it (no new tables).
     if (extra?.invoice_number) entry.invoiceNumber = extra.invoice_number;
     if (extra?.remarks) entry.remarks = extra.remarks;
+    // Task A (extras c/d): informational + fee fields ride the timeline entry
+    // (no new tables — T6 owns the full Return entity).
+    if (extra?.delivery_fee != null) entry.deliveryFee = extra.delivery_fee;
+    if (extra?.return_list_id) entry.returnListId = extra.return_list_id;
+    if (extra?.return_request_id) entry.returnRequestId = extra.return_request_id;
+    if (extra?.payment_request_id) entry.paymentRequestId = extra.payment_request_id;
+    if (extra?.cancel_request_id) entry.cancelRequestId = extra.cancel_request_id;
+    if (extra?.pickup_request_id) entry.pickupRequestId = extra.pickup_request_id;
+    // Task A (extra a): a courier PICKED_UP implies the parcel left our hands —
+    // mark the HANDOVER stage complete on the timeline (Dispatch.handedOverAt
+    // is the data marker, set only by the explicit handover scan; the timeline
+    // note is the courier-driven completion signal).
+    if (status === 'PICKED_UP') {
+      const handoverNote = 'HANDOVER stage complete (courier pickup implies handover done)';
+      entry.remarks = entry.remarks ? `${entry.remarks} | ${handoverNote}` : handoverNote;
+    }
     if (extra?.attempt != null) entry.attempt = extra.attempt;
     if (extra?.agent_name) entry.agentName = extra.agent_name;
     if (extra?.agent_phone) entry.agentPhone = extra.agent_phone;
@@ -751,7 +1005,14 @@ export class CourierWebhookService {
           data: { courierStatus: event, lastSyncedAt: new Date() },
         });
       }
-      await this.addTimelineEntry(order.id, 'pathao', event);
+      // Task A (extra d): order.updated carries the current delivery_fee —
+      // record the change on the timeline (still no status change, no
+      // dispatch workflow write).
+      const skipExtra: Record<string, unknown> = {};
+      if (body['delivery_fee'] != null) skipExtra.delivery_fee = body['delivery_fee'];
+      if (body['reason']) skipExtra.reason = body['reason'];
+      if (body['collected_amount'] != null) skipExtra.collected_amount = body['collected_amount'];
+      await this.addTimelineEntry(order.id, 'pathao', event, skipExtra);
       return { status: 'success', message: 'No status change needed' };
     }
 
@@ -975,6 +1236,14 @@ export class CourierWebhookService {
       return { status: 'success', message: 'Webhook integration successful' };
     }
 
+    // Task A (extra f): order.create-failed carries NO consignment_id (doc
+    // shape: merchant_order_id + reason + causes) — branch BEFORE the
+    // parcel-key requirement. Never fabricate a dispatch for a failed
+    // creation; CANCELLED marks only the optimistic record, if one exists.
+    if (event === 'order.create-failed') {
+      return this.handleCreateFailed(body);
+    }
+
     const consignmentId = body['consignment_id'] as string;
     if (!consignmentId) {
       this.logger.warn('Carrybee webhook missing consignment_id');
@@ -1036,6 +1305,72 @@ export class CourierWebhookService {
 
     this.logger.log(`Carrybee: ${consignmentId} → dispatch=${dispatchStatus} order=${orderStatusName || '-'}`);
     return { status: 'success', message: 'Webhook received successfully.' };
+  }
+
+  /**
+   * Task A (extra f, owner-locked): Carrybee `order.create-failed` — the
+   * courier refused to create the order (doc: merchant_order_id + reason +
+   * 422 `causes`, no consignment_id). Record raw + timeline + loud alert;
+   * create NO dispatch row. CANCELLED marks ONLY a pre-existing optimistic
+   * record (a dispatch row created before the courier booking existed).
+   */
+  private async handleCreateFailed(body: Record<string, unknown>) {
+    const merchantOrderId = String(body['merchant_order_id'] ?? '').trim();
+    if (!merchantOrderId) {
+      this.logger.warn('Carrybee create-failed missing merchant_order_id');
+      throw new BadRequestException('Missing merchant_order_id');
+    }
+
+    const cutId = normalizeInvoiceForCompare(merchantOrderId);
+    const order = await this.prisma.order.findFirst({
+      where: {
+        displayId: cutId,
+        courierService: 'carrybee',
+        trashedAt: null,
+      },
+    });
+    if (!order) {
+      this.logger.warn(
+        `Carrybee create-failed UNMATCHED — no order for merchant_order_id ${merchantOrderId} (courier=carrybee). Leaving identifiers blank; create the dispatch from admin or stamp the Order row.`,
+      );
+      throw new NotFoundException(`Order not found for merchant_order_id ${merchantOrderId}`);
+    }
+
+    await this.prisma.order.update({
+      where: { id: (order as any).id },
+      data: { courierStatus: 'order.create-failed', courierService: 'carrybee' },
+    });
+
+    const optimistic = await this.prisma.dispatch.findFirst({
+      where: { orderId: (order as any).id, courier: 'carrybee' as any },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (optimistic) {
+      await this.prisma.dispatch.update({
+        where: { id: (optimistic as any).id },
+        data: {
+          status: 'CANCELLED',
+          courierStatus: 'order.create-failed',
+          lastSyncedAt: new Date(),
+        },
+      });
+    }
+
+    const reason = String(body['reason'] || 'unknown reason');
+    const causes =
+      body['causes'] != null ? ` — causes: ${JSON.stringify(body['causes'])}` : '';
+    await this.addTimelineEntry((order as any).id, 'carrybee', 'order.create-failed', {
+      reason: body['reason'],
+      remarks:
+        `Create failed: ${reason}${causes} — ` +
+        (optimistic ? 'optimistic dispatch marked CANCELLED' : 'no dispatch created'),
+    });
+
+    this.logger.error(
+      `Carrybee create-failed: merchant order ${merchantOrderId} (order ${(order as any).id}) — ` +
+        `${reason}${causes}; ${optimistic ? 'optimistic dispatch CANCELLED' : 'no dispatch record'}`,
+    );
+    return { status: 'success', message: 'Create failure recorded' };
   }
 
   /**

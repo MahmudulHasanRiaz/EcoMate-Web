@@ -68,8 +68,11 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     'partial_delivered_return_processing': 'PARTIAL',
     'partial_delivered_return_rider_assigned': 'PARTIAL',
     'partial_delivered_return_received': 'PARTIAL',
-    // Webhook parity: the Steadfast webhook treats "unknown" as cancelled.
-    unknown: 'CANCELLED',
+    // Task A (owner-locked): "unknown" is NOT a cancellation — the courier
+    // explicitly reports it cannot determine the state. Yield null (keep the
+    // previous status, never CANCELLED) and let the webhook raise the
+    // staff alert with the raw state + timeline.
+    unknown: null,
     // Unknown awaiting admin approval — needs support; never force a status.
     'unknown_approval_pending': null,
   },
@@ -144,7 +147,12 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     // accepted (same tolerance as the rest of this map).
     'pickup-pending': 'DISPATCHED',
     pickup_pending: 'DISPATCHED',
-    'ready-for-delivery': 'PICKED_UP',
+    // Task A (owner-locked): `ready-for-delivery` = parcel received from the
+    // merchant, rider not yet assigned (RedX doc: "Parcel received from
+    // merchants" vs `delivery-in-progress`: "dispatched to rider"). The
+    // previous PICKED_UP mapping overstated possession; ASSIGNED_TO_RIDER
+    // keeps the order at Shipping without claiming a pickup.
+    'ready-for-delivery': 'ASSIGNED_TO_RIDER',
     'delivery-in-progress': 'ASSIGNED_TO_RIDER',
     delivered: 'DELIVERED',
     'agent-hold': 'HOLD',

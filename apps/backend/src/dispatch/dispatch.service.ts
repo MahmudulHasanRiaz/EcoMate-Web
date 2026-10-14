@@ -84,7 +84,9 @@ const SYNC_ORDER_TRANSITIONS: Record<string, string[]> = {
   Confirmed: ['Packed', 'Packing Hold', 'Cancelled'],
   Packed: ['Shipping', 'Packing Hold'],
   'Packing Hold': ['Packed', 'Cancelled'],
-  Shipping: ['Delivered', 'Partial'],
+  // Task A (F11): Shipping → Return Pending is DIRECT (mirrors the webhook
+  // pipeline) — the fallback path must never walk through Delivered.
+  Shipping: ['Delivered', 'Partial', 'Return Pending'],
   Delivered: ['Return Pending'],
   Partial: ['Return Pending'],
   'Return Pending': ['Returned', 'Damaged'],
@@ -1109,6 +1111,11 @@ export class DispatchService {
         status,
         timestamp: new Date().toISOString(),
         note: `Courier sync: ${rawStatus}`,
+        // Task A (extra a): courier PICKED_UP implies the parcel left our
+        // hands — mark the HANDOVER stage complete on the timeline.
+        ...(status === 'PICKED_UP'
+          ? { remarks: 'HANDOVER stage complete (courier pickup implies handover done)' }
+          : {}),
       },
     ];
     await this.prisma.order.update({
@@ -1141,6 +1148,16 @@ export class DispatchService {
       mappedStatus = await this.resolveCancelledWithProgress(
         dispatch.orderId,
       );
+    }
+    // Task A (extra g): an unlisted transfer_status (mapper null) is kept —
+    // the raw courier state is already persisted by the caller; never force a
+    // workflow change. Loud log so the new label is visible for mapping.
+    if (!mappedStatus) {
+      this.logger.warn(
+        `Courier sync: unlisted courier status "${rawStatus}" for ${dispatch.courier} — ` +
+          `recorded, workflow kept (no forced change)`,
+      );
+      return;
     }
     const targetName = mappedStatus
       ? SYNC_DISPATCH_TO_ORDER[mappedStatus]
@@ -1183,6 +1200,37 @@ export class DispatchService {
       this.logger.warn(
         `Direct transition to ${targetName} failed during courier sync: ${(e as Error).message}`,
       );
+    }
+
+    // Task A (F11): Shipping → Return Pending is direct-or-not-at-all. Walking
+    // through Delivered as a stepping stone would briefly mark a returned
+    // parcel delivered (Delivered side effects) — never do that. Staff-visible:
+    // timeline note + loud log.
+    if (order.status.name === 'Shipping' && targetName === 'Return Pending') {
+      this.logger.warn(
+        `Courier sync: Shipping → Return Pending direct transition failed for order ${orderId} — ` +
+          `NOT stepping via Delivered; needs staff review`,
+      );
+      const full = await this.prisma.order.findFirst({
+        where: { id: orderId, trashedAt: null },
+      });
+      if (full) {
+        const timeline = [
+          ...(((full as any).timeline as unknown[]) || []),
+          {
+            type: 'courier',
+            courier: 'sync',
+            status: 'Return Pending',
+            timestamp: new Date().toISOString(),
+            note: 'Courier sync: Shipping → Return Pending direct transition failed — not stepped via Delivered; needs staff review',
+          },
+        ];
+        await this.prisma.order.update({
+          where: { id: orderId },
+          data: { timeline: timeline as unknown as Prisma.InputJsonValue },
+        });
+      }
+      return;
     }
 
     const path = this.findOrderTransitionPath(order.status.name, targetName);

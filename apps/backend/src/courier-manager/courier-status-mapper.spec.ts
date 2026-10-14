@@ -25,7 +25,9 @@ describe('mapCourierStatusToDispatchStatus', () => {
 
   it('maps RedX statuses (shared webhook/tracking vocabulary)', () => {
     expect(mapCourierStatusToDispatchStatus('redx', 'delivered')).toBe('DELIVERED');
-    expect(mapCourierStatusToDispatchStatus('redx', 'ready-for-delivery')).toBe('PICKED_UP');
+    // Task A: ready-for-delivery = received from merchant, rider not yet
+    // assigned → ASSIGNED_TO_RIDER (was PICKED_UP), order stays Shipping.
+    expect(mapCourierStatusToDispatchStatus('redx', 'ready-for-delivery')).toBe('ASSIGNED_TO_RIDER');
     expect(mapCourierStatusToDispatchStatus('redx', 'delivery-in-progress')).toBe('ASSIGNED_TO_RIDER');
     expect(mapCourierStatusToDispatchStatus('redx', 'agent-hold')).toBe('HOLD');
     expect(mapCourierStatusToDispatchStatus('redx', 'agent-returning')).toBe('RETURN_PENDING');
@@ -85,8 +87,10 @@ describe('mapCourierStatusToDispatchStatus', () => {
     expect(mapCourierStatusToDispatchStatus('redx', 'delivery-failed')).toBeNull();
   });
 
-  it('steadfast "unknown" maps to CANCELLED (webhook parity)', () => {
-    expect(mapCourierStatusToDispatchStatus('steadfast', 'unknown')).toBe('CANCELLED');
+  it('steadfast "unknown" maps to null + alert (never CANCELLED)', () => {
+    // Task A: "unknown" = courier cannot determine the state — keep the
+    // previous workflow status; the webhook raises the staff alert instead.
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'unknown')).toBeNull();
   });
 
   it('maps Carrybee webhook-event labels', () => {
