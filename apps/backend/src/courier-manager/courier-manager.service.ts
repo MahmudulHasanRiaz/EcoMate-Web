@@ -2090,6 +2090,12 @@ export class CourierManagerService {
   ) {
     // Task 8: bulk resolves ONE profile upfront (override → default →
     // legacy); per-entry booking rows below store the same booking set id.
+    // MEDIUM bulk-silent note: the bulk path has NO per-order account
+    // picker, so when >1 Steadfast sets are configured every parcel in the
+    // batch books with the DEFAULT account. The admin bulk bar shows a
+    // visible "Bulk books with the default Steadfast account" warning in
+    // that case (see features/orders/index.tsx) instead of silently
+    // ignoring per-order overrides.
     const { apiKey, secretKey, setId: bulkSetId } =
       await this.resolveSteadfastAuth({
         overrideSetId: opts?.credentialSetId,

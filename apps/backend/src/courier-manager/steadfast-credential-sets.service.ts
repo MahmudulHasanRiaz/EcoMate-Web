@@ -21,6 +21,12 @@ import { verifyRawHmacSha256Hex } from './webhook-verifier';
  *   booking record's set tried first via consignment lookup).
  * - NEVER retry-loop 401 across profiles: callers resolve ONE set upfront
  *   and fail fast (the wrong-profile hint tells staff to pick a set).
+ *
+ * LIMITATION (settlement-blind): the courier-settlement matcher is
+ * consignment-only and carries NO credential context — multi-business payout
+ * files share one ledger. A payout row matches by consignment/tracking/
+ * displayId only; it never records which Steadfast account was booked.
+ * See reconciliation/matcher.ts header for the same note.
  */
 export interface SteadfastSetMeta {
   id: string;
@@ -66,6 +72,55 @@ export class SteadfastCredentialSetsService {
     return (this.prisma as any).courierCredentialSet;
   }
 
+  /**
+   * Run fn inside a $transaction when available (tests may stub a prisma
+   * without $transaction — fall back to the plain client). All
+   * single-default read-then-write sequences MUST go through here so the
+   * check and the writes share one transaction scope.
+   */
+  private inTx<T>(fn: (tx: any) => Promise<T>): Promise<T> {
+    const p = this.prisma as any;
+    if (typeof p.$transaction === 'function') return p.$transaction((tx: any) => fn(tx));
+    return fn(p);
+  }
+
+  private txSets(tx: any): any {
+    return (tx as any)?.courierCredentialSet ?? this.sets;
+  }
+
+  /**
+   * Single-default enforcement inside the tx: clear every OTHER default.
+   * updateMany is preferred (one round-trip); older stubs without
+   * updateMany fall back to per-row updates.
+   */
+  private async clearOtherDefaults(sets: any, keepId: string): Promise<void> {
+    if (typeof sets.updateMany === 'function') {
+      await sets.updateMany({
+        where: { courier: STEADFAST, isDefault: true, id: { not: keepId } },
+        data: { isDefault: false },
+      });
+      return;
+    }
+    const all = (await sets.findMany({ where: { courier: STEADFAST } })) ?? [];
+    for (const row of all) {
+      if (row.id !== keepId && row.isDefault)
+        await sets.update({ where: { id: row.id }, data: { isDefault: false } });
+    }
+  }
+
+  /** Count dispatches booked with a set (tx-scoped; stub-tolerant). */
+  private async countDispatches(tx: any, setId: string): Promise<number> {
+    const dispatch = (tx as any)?.dispatch;
+    if (!dispatch) return 0;
+    if (typeof dispatch.count === 'function')
+      return (await dispatch.count({ where: { credentialSetId: setId } })) ?? 0;
+    if (typeof dispatch.findMany === 'function') {
+      const rows = (await dispatch.findMany({ where: { credentialSetId: setId } })) ?? [];
+      return rows.length;
+    }
+    return 0;
+  }
+
   /** Labels + flags only — keys NEVER leave the server. */
   async listSets(): Promise<SteadfastSetMeta[]> {
     const rows =
@@ -87,33 +142,42 @@ export class SteadfastCredentialSetsService {
     if (!label) throw new BadRequestException('Set label is required');
     if (!input.apiKey || !input.secretKey)
       throw new BadRequestException('Api-Key and Secret-Key are required');
-    const existing = (await this.sets.findMany({ where: { courier: STEADFAST } })) ?? [];
-    // First set is the default automatically (zero-friction migration).
-    let makeDefault = input.isDefault === true || existing.length === 0;
-    if (makeDefault) {
-      for (const row of existing) {
-        if (row.isDefault)
-          await this.sets.update({ where: { id: row.id }, data: { isDefault: false } });
-      }
-    }
-    const row = await this.sets.create({
-      data: {
-        courier: STEADFAST,
-        label,
-        apiKeyEnc: this.encryption.encrypt(input.apiKey),
-        secretKeyEnc: this.encryption.encrypt(input.secretKey),
-        webhookSecretEnc: input.webhookSecret
-          ? this.encryption.encrypt(input.webhookSecret)
-          : null,
-        isDefault: makeDefault,
-      },
+    // MEDIUM race fix: check-then-write runs INSIDE one $transaction, and
+    // the default-clear happens AFTER the create (not before). Two
+    // concurrent first-creates both see "empty", both insert default=true,
+    // then each clears the other — last-writer-wins leaves exactly one
+    // default instead of two.
+    return this.inTx(async (tx) => {
+      const sets = this.txSets(tx);
+      const existing =
+        (await sets.findMany({ where: { courier: STEADFAST } })) ?? [];
+      // First set is the default automatically (zero-friction migration).
+      const makeDefault = input.isDefault === true || existing.length === 0;
+      const row = await sets.create({
+        data: {
+          courier: STEADFAST,
+          label,
+          apiKeyEnc: this.encryption.encrypt(input.apiKey),
+          secretKeyEnc: this.encryption.encrypt(input.secretKey),
+          webhookSecretEnc: input.webhookSecret
+            ? this.encryption.encrypt(input.webhookSecret)
+            : null,
+          isDefault: makeDefault,
+        },
+      });
+      if (makeDefault) await this.clearOtherDefaults(sets, row.id);
+      return toMeta(row);
     });
-    return toMeta(row);
   }
 
   async updateSet(
     id: string,
-    input: { label?: string; apiKey?: string; secretKey?: string; webhookSecret?: string },
+    input: {
+      label?: string;
+      apiKey?: string | null;
+      secretKey?: string | null;
+      webhookSecret?: string | null;
+    },
   ): Promise<SteadfastSetMeta> {
     const row = await this.sets.findUnique({ where: { id } });
     if (!row) throw new NotFoundException('Credential set not found');
@@ -123,11 +187,14 @@ export class SteadfastCredentialSetsService {
       if (!label) throw new BadRequestException('Set label is required');
       data['label'] = label;
     }
-    if (input.apiKey !== undefined)
+    // LOW blank-wipe fix: "" is ignored (keep stored value); only an
+    // explicit null clears a key. The admin form only sends keys staff
+    // actually typed, so a stray "" must never wipe a stored secret.
+    if (input.apiKey !== undefined && input.apiKey !== '')
       data['apiKeyEnc'] = input.apiKey ? this.encryption.encrypt(input.apiKey) : null;
-    if (input.secretKey !== undefined)
+    if (input.secretKey !== undefined && input.secretKey !== '')
       data['secretKeyEnc'] = input.secretKey ? this.encryption.encrypt(input.secretKey) : null;
-    if (input.webhookSecret !== undefined)
+    if (input.webhookSecret !== undefined && input.webhookSecret !== '')
       data['webhookSecretEnc'] = input.webhookSecret
         ? this.encryption.encrypt(input.webhookSecret)
         : null;
@@ -136,31 +203,46 @@ export class SteadfastCredentialSetsService {
   }
 
   async deleteSet(id: string): Promise<{ deleted: boolean }> {
-    const row = await this.sets.findUnique({ where: { id } });
-    if (!row) throw new NotFoundException('Credential set not found');
-    await this.sets.delete({ where: { id } });
-    if (row.isDefault) {
-      const rest =
-        (await this.sets.findMany({
-          where: { courier: STEADFAST },
-          orderBy: { createdAt: 'asc' },
-        })) ?? [];
-      if (rest.length > 0)
-        await this.sets.update({ where: { id: rest[0].id }, data: { isDefault: true } });
-    }
-    return { deleted: true };
+    // LOW delete-guard + MEDIUM race fix: the reference check, the delete,
+    // and the default-promotion share one $transaction scope.
+    return this.inTx(async (tx) => {
+      const sets = this.txSets(tx);
+      const row = await sets.findUnique({ where: { id } });
+      if (!row) throw new NotFoundException('Credential set not found');
+      // LOW delete-guard: never orphan booking history — the FK is
+      // ON DELETE SET NULL, so deleting a referenced set would silently
+      // re-attribute past bookings to the legacy/default profile.
+      const refCount = await this.countDispatches(tx, id);
+      if (refCount > 0)
+        throw new BadRequestException(
+          `Cannot delete this account: ${refCount} dispatch(es) were booked with it.`,
+        );
+      await sets.delete({ where: { id } });
+      if (row.isDefault) {
+        const rest =
+          (await sets.findMany({
+            where: { courier: STEADFAST },
+            orderBy: { createdAt: 'asc' },
+          })) ?? [];
+        if (rest.length > 0)
+          await sets.update({ where: { id: rest[0].id }, data: { isDefault: true } });
+      }
+      return { deleted: true };
+    });
   }
 
   async setDefault(id: string): Promise<SteadfastSetMeta> {
-    const row = await this.sets.findUnique({ where: { id } });
-    if (!row) throw new NotFoundException('Credential set not found');
-    const all = (await this.sets.findMany({ where: { courier: STEADFAST } })) ?? [];
-    for (const other of all) {
-      if (other.id !== id && other.isDefault)
-        await this.sets.update({ where: { id: other.id }, data: { isDefault: false } });
-    }
-    const updated = await this.sets.update({ where: { id }, data: { isDefault: true } });
-    return toMeta(updated);
+    // MEDIUM race fix: the read-then-clear-then-set sequence runs INSIDE one
+    // $transaction so two concurrent make-default calls cannot both leave
+    // isDefault=true (single-default enforcement is tx-scoped).
+    return this.inTx(async (tx) => {
+      const sets = this.txSets(tx);
+      const row = await sets.findUnique({ where: { id } });
+      if (!row) throw new NotFoundException('Credential set not found');
+      await this.clearOtherDefaults(sets, id);
+      const updated = await sets.update({ where: { id }, data: { isDefault: true } });
+      return toMeta(updated);
+    });
   }
 
   /**

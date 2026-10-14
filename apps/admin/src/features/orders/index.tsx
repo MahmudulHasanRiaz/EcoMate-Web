@@ -36,6 +36,8 @@ import { SearchableSelect } from '@/components/ui/searchable-select'
 import { OrderSourceBadges } from '@/features/orders/order-source-badge'
 import { CanonicalAttributionBadges } from '@/features/orders/canonical-attribution-badge'
 import { formatCourierDispatchToast } from '@/features/dispatch/courier-errors'
+import { useSteadfastSets } from '@/features/dispatch/steadfast-set-picker'
+import { BulkSteadfastDefaultWarning } from '@/features/orders/bulk-steadfast-warning'
 
 const fallbackStatusColors: Record<string, string> = { Pending: 'var(--warning)', Confirmed: 'var(--info)', Cancelled: 'var(--danger)', 'On Hold': 'var(--accent-violet)', Packed: 'var(--accent-cyan)', Shipped: 'var(--success)', 'In Courier': 'var(--accent-violet)', Delivered: 'var(--success)', 'Partial Return': 'var(--warning)', 'Return Pending': 'var(--accent-pink)', Returned: 'var(--danger)', Damaged: 'var(--danger)' }
 const nn = (v: number | string) => Number(v)
@@ -701,6 +703,12 @@ export function Orders() {
     (c: any) => useLicenseStore.getState().hasFeature(`courier_${c.courier}`)
   )
   const [dispatchCourier, setDispatchCourier] = useState('')
+  // MEDIUM bulk-silent: the bulk dispatch path resolves ONE Steadfast
+  // profile upfront (default account) and ignores per-order overrides —
+  // surface that explicitly when >1 sets exist so staff are never
+  // surprised. (Single-order dispatch keeps its per-order set picker.)
+  const { data: steadfastSets = [] } = useSteadfastSets()
+  const showBulkDefaultWarn = dispatchCourier === 'steadfast' && steadfastSets.length > 1
 
   const dispatchMut = useMutation({
     mutationFn: ({ courier, ids }: { courier: string; ids: string[] }) => apiClient.post(`/couriers/dispatch/${courier}`, { orderIds: ids }),
@@ -1393,7 +1401,7 @@ export function Orders() {
         )}
 
         {selected.length > 0 && (
-          <div className='fixed bottom-5 left-1/2 -translate-x-1/2 bg-popover/95 backdrop-blur-md border border-border/80 shadow-2xl rounded-2xl px-3.5 py-2 flex items-center gap-2.5 z-50 animate-in fade-in slide-in-from-bottom-3 duration-200'>
+          <div className='fixed bottom-5 left-1/2 -translate-x-1/2 bg-popover/95 backdrop-blur-md border border-border/80 shadow-2xl rounded-2xl px-3.5 py-2 flex flex-wrap items-center gap-2.5 z-50 animate-in fade-in slide-in-from-bottom-3 duration-200'>
             <Button variant='ghost' size='icon' className='h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground' onClick={() => setSelected([])}>
               <X className='h-3.5 w-3.5' />
             </Button>
@@ -1453,6 +1461,12 @@ export function Orders() {
                 Send
               </Button>
             </div>
+            {showBulkDefaultWarn && (
+              <BulkSteadfastDefaultWarning
+                courier={dispatchCourier}
+                setCount={steadfastSets.length}
+              />
+            )}
           </div>
         )}
 

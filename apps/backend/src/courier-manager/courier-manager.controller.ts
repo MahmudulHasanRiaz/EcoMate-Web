@@ -235,7 +235,7 @@ export class CourierManagerController {
   async updateCredentialSet(
     @Param('id') id: string,
     @Body()
-    dto: { label?: string; apiKey?: string; secretKey?: string; webhookSecret?: string },
+    dto: { label?: string; apiKey?: string | null; secretKey?: string | null; webhookSecret?: string | null },
   ) {
     return this.requireSets().updateSet(id, dto);
   }

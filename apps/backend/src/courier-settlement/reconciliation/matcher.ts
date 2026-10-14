@@ -4,6 +4,13 @@
 // Resolution follows the provider descriptor's identifier order and records an
 // explanation so the Reconciliation UI can show *how* a row was matched.
 // An unresolved row is `NONE` → the RED `NO_MATCH` rule blocks finalization.
+//
+// LIMITATION (settlement-blind, Steadfast multi-account): this matcher is
+// consignment-only and carries NO credential context — multi-business payout
+// files share one ledger. A payout row matches by consignment/tracking/
+// displayId only; it never records which Steadfast credential set booked the
+// parcel (see SteadfastCredentialSetsService header). Do NOT add per-set
+// filtering here without a credential-aware payout key.
 
 import type { MatchMethod } from '../parsing/types';
 

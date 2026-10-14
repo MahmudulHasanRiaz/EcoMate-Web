@@ -12,8 +12,10 @@ const mockEncryption = {
 
 function makePrisma() {
   const sets: any[] = [];
-  return {
+  const dispatchRows: any[] = [];
+  const prisma: any = {
     _sets: sets,
+    _dispatchRows: dispatchRows,
     courierCredentialSet: {
       findMany: jest.fn(async () => [...sets]),
       findUnique: jest.fn(async ({ where }: any) =>
@@ -25,7 +27,7 @@ function makePrisma() {
         return sets[0] ?? null;
       }),
       create: jest.fn(async ({ data }: any) => {
-        const row = { id: `set-${sets.length + 1}`, ...data };
+        const row = { id: `set-${sets.length + 1}`, createdAt: new Date(), ...data };
         sets.push(row);
         return row;
       }),
@@ -33,6 +35,17 @@ function makePrisma() {
         const row = sets.find((s) => s.id === where.id);
         Object.assign(row, data);
         return row;
+      }),
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        let count = 0;
+        for (const s of sets) {
+          if (where?.courier && s.courier !== where.courier) continue;
+          if (where?.isDefault === true && !s.isDefault) continue;
+          if (where?.id?.not && s.id === where.id.not) continue;
+          Object.assign(s, data);
+          count++;
+        }
+        return { count };
       }),
       delete: jest.fn(async ({ where }: any) => {
         const i = sets.findIndex((s) => s.id === where.id);
@@ -51,9 +64,42 @@ function makePrisma() {
     },
     dispatch: {
       findFirst: jest.fn(async () => null),
+      findMany: jest.fn(async ({ where }: any) => {
+        if (where?.credentialSetId)
+          return dispatchRows.filter((d) => d.credentialSetId === where.credentialSetId);
+        return [...dispatchRows];
+      }),
+      count: jest.fn(async ({ where }: any) => {
+        if (where?.credentialSetId)
+          return dispatchRows.filter((d) => d.credentialSetId === where.credentialSetId).length;
+        return dispatchRows.length;
+      }),
       upsert: jest.fn(async (args: any) => args),
     },
   };
+  prisma.$transaction = jest.fn(async (cb: any) => {
+    const tx = {
+      courierCredentialSet: prisma.courierCredentialSet,
+      courierCredentials: prisma.courierCredentials,
+      dispatch: prisma.dispatch,
+    };
+    // Serialize tx bodies (mutex): models the atomic check-then-write scope
+    // the service relies on — concurrent callers queue, so the second tx
+    // observes the first tx's committed rows. True cross-instance safety
+    // would need a partial unique index (deliberately not in the DB — see
+    // schema comment), but single-instance atomicity is what this guards.
+    const prev: Promise<unknown> = (prisma as any).__txQueue ?? Promise.resolve();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((res) => { release = res; });
+    (prisma as any).__txQueue = prev.then(() => gate);
+    await prev;
+    try {
+      return await cb(tx);
+    } finally {
+      release();
+    }
+  });
+  return prisma;
 }
 
 describe('Task 8: Steadfast hybrid credential sets', () => {
@@ -176,5 +222,90 @@ describe('Task 8: Steadfast hybrid credential sets', () => {
     expect(resolved.apiKey).toBe('legacy-key');
     expect(resolved.setId).toBeNull();
     expect(resolved.isLegacy).toBe(true);
+  });
+});
+
+describe('Review blockers: single-default guard, blank-wipe, delete guard', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('concurrent first-creates leave exactly one default (tx-scoped)', async () => {
+    const prisma: any = makePrisma();
+    const svc = new SteadfastCredentialSetsService(prisma, mockEncryption);
+    const [a, b] = await Promise.all([
+      svc.createSet({ label: 'A', apiKey: 'key-a', secretKey: 'sec-a' }),
+      svc.createSet({ label: 'B', apiKey: 'key-b', secretKey: 'sec-b' }),
+    ]);
+    expect(a).toBeTruthy();
+    expect(b).toBeTruthy();
+    expect(prisma.$transaction).toHaveBeenCalled();
+    const defaults = prisma._sets.filter((s: any) => s.isDefault);
+    expect(defaults).toHaveLength(1);
+  });
+
+  it('createSet runs check-then-write inside $transaction', async () => {
+    const prisma: any = makePrisma();
+    const svc = new SteadfastCredentialSetsService(prisma, mockEncryption);
+    await svc.createSet({ label: 'A', apiKey: 'k', secretKey: 's' });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('setDefault runs inside $transaction and leaves exactly one default', async () => {
+    const prisma: any = makePrisma();
+    const svc = new SteadfastCredentialSetsService(prisma, mockEncryption);
+    const a = (await svc.createSet({ label: 'A', apiKey: 'k1', secretKey: 's1' })) as any;
+    const b = (await svc.createSet({ label: 'B', apiKey: 'k2', secretKey: 's2' })) as any;
+    jest.clearAllMocks();
+    await svc.setDefault(b.id);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma._sets.find((s: any) => s.id === b.id).isDefault).toBe(true);
+    expect(prisma._sets.find((s: any) => s.id === a.id).isDefault).toBe(false);
+    expect(prisma._sets.filter((s: any) => s.isDefault)).toHaveLength(1);
+  });
+
+  it('deleteSet runs inside $transaction and promotes the next set', async () => {
+    const prisma: any = makePrisma();
+    const svc = new SteadfastCredentialSetsService(prisma, mockEncryption);
+    const a = (await svc.createSet({ label: 'A', apiKey: 'k1', secretKey: 's1' })) as any;
+    await svc.createSet({ label: 'B', apiKey: 'k2', secretKey: 's2' });
+    jest.clearAllMocks();
+    await svc.deleteSet(a.id);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    const rest = prisma._sets;
+    expect(rest).toHaveLength(1);
+    expect(rest[0].isDefault).toBe(true);
+  });
+
+  it('updateSet ignores "" (keeps stored value); explicit null clears', async () => {
+    const prisma: any = makePrisma();
+    const svc = new SteadfastCredentialSetsService(prisma, mockEncryption);
+    const a = (await svc.createSet({
+      label: 'A',
+      apiKey: 'key-a',
+      secretKey: 'sec-a',
+      webhookSecret: 'tok-a',
+    })) as any;
+    const before = prisma._sets.find((s: any) => s.id === a.id);
+    const encBefore = before.apiKeyEnc;
+    // "" must NOT wipe the stored secret.
+    await svc.updateSet(a.id, { apiKey: '', secretKey: '', webhookSecret: '' } as any);
+    const kept = prisma._sets.find((s: any) => s.id === a.id);
+    expect(kept.apiKeyEnc).toBe(encBefore);
+    expect(kept.webhookSecretEnc).toBeTruthy();
+    // Explicit null clears.
+    await svc.updateSet(a.id, { webhookSecret: null } as any);
+    const cleared = prisma._sets.find((s: any) => s.id === a.id);
+    expect(cleared.webhookSecretEnc).toBeNull();
+  });
+
+  it('deleteSet is blocked (400 + count) when dispatches reference the set', async () => {
+    const prisma: any = makePrisma();
+    const svc = new SteadfastCredentialSetsService(prisma, mockEncryption);
+    const a = (await svc.createSet({ label: 'A', apiKey: 'k1', secretKey: 's1' })) as any;
+    prisma._dispatchRows.push({ id: 'd1', credentialSetId: a.id });
+    prisma._dispatchRows.push({ id: 'd2', credentialSetId: a.id });
+    await expect(svc.deleteSet(a.id)).rejects.toMatchObject({ status: 400 });
+    await expect(svc.deleteSet(a.id)).rejects.toThrow(/2 dispatch/);
+    // Row must survive the blocked delete.
+    expect(prisma._sets.find((s: any) => s.id === a.id)).toBeTruthy();
   });
 });
