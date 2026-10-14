@@ -900,16 +900,12 @@ export class CourierManagerService {
     return failure;
   }
 
-  private async dispatchPathao(creds: any, base: string, order: any) {
-    const clientId = creds.clientId || creds.credentials?.['clientId'];
-    const clientSecret =
-      creds.clientSecret || creds.credentials?.['clientSecret'];
-    const username = creds.username || creds.credentials?.['username'];
-    const password = creds.password || creds.credentials?.['password'];
-    if (!clientId || !clientSecret || !username || !password)
-      throw new BadRequestException('Pathao credentials not configured');
-
-    const storeId = creds.storeId || creds.credentials?.['storeId'] || '1';
+  /**
+   * Task 9(a): per-order Pathao payload builder (doc: Create Order + Bulk
+   * Order share the same order-object shape). Extracted so single dispatch
+   * and bulk dispatch send byte-identical entries — bulk reuses this verbatim.
+   */
+  buildPathaoOrderPayload(order: any, storeId: string | number): Record<string, unknown> {
     // D-A: the order snapshot is the recipient source of truth — the linked
     // CustomerProfile is never read here (it may hold pre-correction values).
     const phone = this.normalizePhone(orderRecipientPhone(order));
@@ -922,14 +918,14 @@ export class CourierManagerService {
         .join(', ') || undefined;
 
     // Fix 5a: courier-safe name (Mx. prefix / truncate); stored order kept.
-    const { sent: safeName, raw: rawName } = this.resolveCourierName(
+    const { sent: safeName } = this.resolveCourierName(
       order,
       'pathao',
       'recipient_name',
     );
 
     const payload: Record<string, unknown> = {
-      store_id: parseInt(storeId),
+      store_id: parseInt(String(storeId)),
       recipient_name: safeName,
       recipient_phone: phone,
       recipient_address: formatCourierAddress(address) ?? 'Dhaka',
@@ -968,6 +964,31 @@ export class CourierManagerService {
     if (secondaryPhone) {
       payload.recipient_secondary_phone = secondaryPhone;
     }
+    return payload;
+  }
+
+  private async dispatchPathao(creds: any, base: string, order: any) {
+    const clientId = creds.clientId || creds.credentials?.['clientId'];
+    const clientSecret =
+      creds.clientSecret || creds.credentials?.['clientSecret'];
+    const username = creds.username || creds.credentials?.['username'];
+    const password = creds.password || creds.credentials?.['password'];
+    if (!clientId || !clientSecret || !username || !password)
+      throw new BadRequestException('Pathao credentials not configured');
+
+    const storeId = creds.storeId || creds.credentials?.['storeId'] || '1';
+    const address = order.shippingAddress as Record<string, unknown> | null;
+    const phone = this.normalizePhone(orderRecipientPhone(order));
+    const total = this.getCollectableAmount(order);
+
+    // Fix 5a: courier-safe name (Mx. prefix / truncate); stored order kept.
+    const { sent: safeName, raw: rawName } = this.resolveCourierName(
+      order,
+      'pathao',
+      'recipient_name',
+    );
+
+    const payload = this.buildPathaoOrderPayload(order, storeId);
 
     // Fix 5: `res.ok` is checked BEFORE parsing — error bodies are read as
     // FULL text and parsed into the Pathao error envelope
@@ -1215,6 +1236,191 @@ export class CourierManagerService {
       username,
       password,
     });
+  }
+
+  /**
+   * Task 9(a): Pathao bulk create — POST /aladdin/api/v1/orders/bulk.
+   * Doc (Pathao Courier API Documenttation.md, "Create a Bulk Order"):
+   * request `{orders: [<single-order-object>...]}` (same shape as the
+   * single-order builder — reused verbatim); success is HTTP 202
+   * `{type:'success', code:202, data:true}` with message "Your bulk order
+   * creation request is accepted, please wait some time to complete order
+   * creation." — i.e. ACCEPTED/async, NOT created. There are NO per-entry
+   * consignment ids in the response; each input order is reported as
+   * `{ok:true, accepted:true, message:'accepted, processing — ...'}` and
+   * verified later via getPathaoOrderInfo once consignments exist.
+   * Retry ONLY 5xx/network with backoff; NEVER 4xx.
+   */
+  async bulkCreatePathaoOrders(orders: any[]): Promise<{
+    accepted: boolean;
+    message: string;
+    count: number;
+    results: { id: string; ok: boolean; accepted: boolean; message: string }[];
+  }> {
+    if (!orders || orders.length === 0)
+      throw new BadRequestException('No orders to dispatch');
+    const creds = await this.getCreds('pathao');
+    const mode = creds?.mode || 'production';
+    const base =
+      BASE_URLS['pathao']?.[mode] || BASE_URLS['pathao']?.['production'] || '';
+    const clientId = creds.clientId || (creds.credentials as any)?.['clientId'];
+    const clientSecret =
+      creds.clientSecret || (creds.credentials as any)?.['clientSecret'];
+    const username = creds.username || (creds.credentials as any)?.['username'];
+    const password = creds.password || (creds.credentials as any)?.['password'];
+    if (!clientId || !clientSecret || !username || !password)
+      throw new BadRequestException('Pathao credentials not configured');
+    const storeId =
+      creds.storeId || (creds.credentials as any)?.['storeId'] || '1';
+
+    const entries = orders.map((o) => this.buildPathaoOrderPayload(o, storeId));
+    const body = JSON.stringify({ orders: entries });
+
+    const maxRetries = 3;
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      let token: string;
+      try {
+        token = await this.getPathaoToken(base, clientId, clientSecret, username, password);
+      } catch (tokErr: unknown) {
+        lastError = tokErr instanceof Error ? tokErr : new Error(String(tokErr));
+        if (attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, backoffMs(attempt)));
+        }
+        continue;
+      }
+      let res: Response;
+      try {
+        res = await this.fetchWithTimeout(`${base}/aladdin/api/v1/orders/bulk`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json; charset=UTF-8',
+            Authorization: `Bearer ${token}`,
+          },
+          body,
+        });
+      } catch (netErr: unknown) {
+        lastError = netErr instanceof Error ? netErr : new Error(String(netErr));
+        this.logger.warn(
+          `Pathao bulk dispatch attempt ${attempt}/${maxRetries} failed (network): ${lastError.message}`,
+        );
+        if (attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, backoffMs(attempt)));
+        }
+        continue;
+      }
+      const rawBody = await res.text().catch(() => '');
+      const data = parseJsonBody(rawBody);
+      if (!res.ok) {
+        if (isRetryableStatus(res.status)) {
+          lastError = new Error(
+            `Pathao bulk API error (HTTP ${res.status}): ${redactSecrets(rawBody).slice(0, 500) || '(empty response body)'}`,
+          );
+          this.logger.warn(
+            `Pathao bulk dispatch attempt ${attempt}/${maxRetries} failed (retryable HTTP ${res.status}): ${lastError.message}`,
+          );
+          if (attempt < maxRetries) {
+            await new Promise((r) => setTimeout(r, backoffMs(attempt)));
+          }
+          continue;
+        }
+        const msg = data
+          ? `Pathao bulk: ${String(data['message'] || 'bulk dispatch failed')}`
+          : `Pathao bulk API error (HTTP ${res.status}): ${(redactSecrets(rawBody) || '(empty response body)').slice(0, 500)}`;
+        throw new CourierDispatchError({
+          courier: 'pathao',
+          status: res.status,
+          message: msg + authHint('pathao', res.status),
+          errors:
+            data && typeof data['errors'] === 'object' && data['errors'] !== null
+              ? (data['errors'] as Record<string, unknown>)
+              : undefined,
+        });
+      }
+      if (data === null) {
+        lastError = new Error(
+          `Pathao bulk returned non-JSON (HTTP ${res.status}): ${(redactSecrets(rawBody) || '(empty response body)').slice(0, 500)}`,
+        );
+        if (attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, backoffMs(attempt)));
+        }
+        continue;
+      }
+      const accepted = data['data'] === true && (data['code'] === 202 || res.status === 202);
+      if (!accepted) {
+        throw new CourierDispatchError({
+          courier: 'pathao',
+          status: res.status,
+          message: `Pathao bulk: ${String(data['message'] || 'bulk request not accepted')}`,
+          errors:
+            typeof data['errors'] === 'object' && data['errors'] !== null
+              ? (data['errors'] as Record<string, unknown>)
+              : undefined,
+        });
+      }
+      const message =
+        'Pathao bulk accepted, processing — please wait some time to complete order creation; verify via order info.';
+      try {
+        for (const o of orders) {
+          await this.logDispatch({
+            orderId: o.id,
+            courier: 'pathao',
+            status: 'accepted',
+            message,
+            requestPayload: { orders: entries },
+            responsePayload: data,
+          });
+        }
+      } catch (dbErr) {
+        this.logger.error(`Pathao bulk DB log failed: ${(dbErr as Error).message}`);
+      }
+      return {
+        accepted: true,
+        message,
+        count: orders.length,
+        results: orders.map((o: any) => ({
+          id: o.id,
+          ok: true,
+          accepted: true,
+          message: 'accepted, processing — verify via order info after completion',
+        })),
+      };
+    }
+    throw new CourierDispatchError({
+      courier: 'pathao',
+      status: 0,
+      message: `Pathao bulk: ${lastError?.message || 'dispatch failed after retries'} (retried ${maxRetries} attempts)`,
+    });
+  }
+
+  /**
+   * Task 9(a): Pathao order short-info verification —
+   * GET /aladdin/api/v1/orders/{consignment_id}/info (doc "Get Order Short
+   * Info"). Used to verify bulk-accepted entries after the async completion
+   * window (bulk returns no consignment ids immediately).
+   */
+  async getPathaoOrderInfo(consignmentId: string): Promise<Record<string, unknown>> {
+    const id = String(consignmentId || '').trim();
+    if (!id) throw new BadRequestException('consignmentId is required');
+    const creds = await this.getCreds('pathao');
+    const mode = creds?.mode || 'production';
+    const base =
+      BASE_URLS['pathao']?.[mode] || BASE_URLS['pathao']?.['production'] || '';
+    const clientId = creds.clientId || (creds.credentials as any)?.['clientId'];
+    const clientSecret =
+      creds.clientSecret || (creds.credentials as any)?.['clientSecret'];
+    const username = creds.username || (creds.credentials as any)?.['username'];
+    const password = creds.password || (creds.credentials as any)?.['password'];
+    if (!clientId || !clientSecret || !username || !password)
+      throw new BadRequestException('Pathao credentials not configured');
+    const token = await this.getPathaoToken(base, clientId, clientSecret, username, password);
+    const data = await this.jsonFetch(
+      `${base}/aladdin/api/v1/orders/${encodeURIComponent(id)}/info`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    const inner = data['data'];
+    if (inner && typeof inner === 'object') return inner as Record<string, unknown>;
+    return data;
   }
 
   private async dispatchRedx(creds: any, base: string, order: any) {
@@ -2003,8 +2209,18 @@ export class CourierManagerService {
     });
   }
 
+  /**
+   * Task 9(b): paginated return-requests list. Doc (Steadfast API Docs.md,
+   * "GET /get_return_requests — Your return requests, newest first, ten to a
+   * page. Paginated: add `?page=2` for the next ten."): loop `?page=` until
+   * an empty page and aggregate. `page` fetches ONE page (legacy callers);
+   * default fetches ALL pages. The envelope shape is preserved (first page's
+   * keys) with the list key replaced by the aggregate + `pages`.
+   */
   async getSteadfastReturnRequests(opts?: {
     credentialSetId?: string | null;
+    page?: number;
+    all?: boolean;
   }) {
     const { apiKey, secretKey } = await this.resolveSteadfastAuth({
       overrideSetId: opts?.credentialSetId,
@@ -2013,18 +2229,62 @@ export class CourierManagerService {
       throw new BadRequestException('Steadfast API key/secret not configured');
 
     const base = await this.getBaseUrl('steadfast');
-    return this.jsonFetch(`${base}/get_return_requests`, {
-      method: 'GET',
-      headers: {
-        'Api-Key': apiKey,
-        'Secret-Key': secretKey,
-        'Content-Type': 'application/json',
-      },
-    });
+    const headers = {
+      'Api-Key': apiKey,
+      'Secret-Key': secretKey,
+      'Content-Type': 'application/json',
+    };
+    const fetchPage = (page: number) =>
+      this.jsonFetch(`${base}/get_return_requests?page=${page}`, {
+        method: 'GET',
+        headers,
+      });
+    if (opts?.page) return fetchPage(opts.page);
+    if (opts?.all === false) {
+      return this.jsonFetch(`${base}/get_return_requests`, {
+        method: 'GET',
+        headers,
+      });
+    }
+    const all: unknown[] = [];
+    let first: Record<string, unknown> | null = null;
+    let listKey: string | null = null;
+    for (let page = 1; page <= 100; page++) {
+      const res = await fetchPage(page);
+      if (!first) {
+        first = res;
+        listKey = this.firstArrayKey(res);
+      }
+      const items = listKey ? ((res[listKey] as unknown[]) || []) : [];
+      if (!Array.isArray(items) || items.length === 0) break;
+      all.push(...items);
+    }
+    if (!first) return { data: all, pages: 0 };
+    if (!listKey) return { ...first, pages: all.length === 0 ? 1 : 1 };
+    return { ...first, [listKey]: all, pages: all.length === 0 ? 0 : undefined } as Record<string, unknown>;
   }
 
+  /** First top-level array key in a courier envelope (data/payments/…). */
+  private firstArrayKey(res: Record<string, unknown>): string | null {
+    for (const k of ['data', 'return_requests', 'returns', 'payments', 'results', 'items']) {
+      if (Array.isArray(res[k])) return k;
+    }
+    for (const k of Object.keys(res)) {
+      if (Array.isArray((res as any)[k])) return k;
+    }
+    return null;
+  }
+
+  /**
+   * Task 9(b): paginated payments list. Doc (Steadfast API Docs.md,
+   * "GET /payments — Payouts we have made to you, ten to a page."): loop
+   * `?page=` until an empty page and aggregate `payments`. Same single/all
+   * contract as getSteadfastReturnRequests.
+   */
   async getSteadfastPayments(opts?: {
     credentialSetId?: string | null;
+    page?: number;
+    all?: boolean;
   }) {
     const { apiKey, secretKey } = await this.resolveSteadfastAuth({
       overrideSetId: opts?.credentialSetId,
@@ -2033,14 +2293,34 @@ export class CourierManagerService {
       throw new BadRequestException('Steadfast API key/secret not configured');
 
     const base = await this.getBaseUrl('steadfast');
-    return this.jsonFetch(`${base}/payments`, {
-      method: 'GET',
-      headers: {
-        'Api-Key': apiKey,
-        'Secret-Key': secretKey,
-        'Content-Type': 'application/json',
-      },
-    });
+    const headers = {
+      'Api-Key': apiKey,
+      'Secret-Key': secretKey,
+      'Content-Type': 'application/json',
+    };
+    const fetchPage = (page: number) =>
+      this.jsonFetch(`${base}/payments?page=${page}`, {
+        method: 'GET',
+        headers,
+      });
+    if (opts?.page) return fetchPage(opts.page);
+    if (opts?.all === false) {
+      return this.jsonFetch(`${base}/payments`, {
+        method: 'GET',
+        headers,
+      });
+    }
+    const all: unknown[] = [];
+    let first: Record<string, unknown> | null = null;
+    for (let page = 1; page <= 100; page++) {
+      const res = await fetchPage(page);
+      if (!first) first = res;
+      const items = (res['payments'] as unknown[]) || (res['data'] as unknown[]) || [];
+      if (!Array.isArray(items) || items.length === 0) break;
+      all.push(...items);
+    }
+    if (!first) return { payments: all, pages: 0 };
+    return { ...first, payments: all };
   }
 
   async getSteadfastPaymentWithConsignments(
@@ -2448,6 +2728,67 @@ export class CourierManagerService {
         'API-ACCESS-TOKEN': `Bearer ${apiToken}`,
       },
     });
+  }
+
+  /**
+   * Task 9(c): RedX charge calculator — GET /charge/charge_calculator
+   * (doc "Calculate Parcel Charge": `?delivery_area_id=&pickup_area_id=&
+   * cash_collection_amount=&weight=` → `{deliveryCharge, codCharge}`).
+   * Dispatch-time PREVIEW only: callers render it as non-blocking info
+   * (never gate dispatch on it). pickup_area_id is optional here (doc says
+   * required, but no pickup-area config exists — omitted when unconfigured).
+   */
+  async getRedxCharge(params: {
+    delivery_area_id: number | string;
+    pickup_area_id?: number | string | null;
+    cash_collection_amount: number | string;
+    weight: number | string;
+  }): Promise<{ deliveryCharge: number; codCharge: number }> {
+    const deliveryAreaId = Number((params as any)?.delivery_area_id);
+    const cash = Number((params as any)?.cash_collection_amount);
+    const weight = Number((params as any)?.weight);
+    if (!Number.isFinite(deliveryAreaId) || deliveryAreaId <= 0)
+      throw new BadRequestException(
+        "RedX charge preview: field 'delivery_area_id' is required",
+      );
+    if (!Number.isFinite(cash) || cash < 0)
+      throw new BadRequestException(
+        "RedX charge preview: field 'cash_collection_amount' must be a non-negative number",
+      );
+    if (!Number.isFinite(weight) || weight <= 0)
+      throw new BadRequestException(
+        "RedX charge preview: field 'weight' must be a positive number (grams)",
+      );
+    const creds = await this.getCreds('redx');
+    const apiToken = creds.apiKey || (creds.credentials as any)?.['apiKey'];
+    if (!apiToken)
+      throw new BadRequestException('RedX API token not configured');
+    const base = await this.getBaseUrl('redx');
+    const qs = new URLSearchParams({
+      delivery_area_id: String(Math.trunc(deliveryAreaId)),
+      cash_collection_amount: String(cash),
+      weight: String(Math.trunc(weight)),
+    });
+    const pickupRaw = (params as any)?.pickup_area_id;
+    if (pickupRaw !== undefined && pickupRaw !== null && String(pickupRaw).trim() !== '') {
+      const pickupId = Number(pickupRaw);
+      if (Number.isFinite(pickupId) && pickupId > 0)
+        qs.set('pickup_area_id', String(Math.trunc(pickupId)));
+    }
+    const data = await this.jsonFetch(
+      `${base}/charge/charge_calculator?${qs.toString()}`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'API-ACCESS-TOKEN': `Bearer ${apiToken}`,
+        },
+      },
+    );
+    return {
+      deliveryCharge: Number((data as any)['deliveryCharge'] ?? 0),
+      codCharge: Number((data as any)['codCharge'] ?? 0),
+    };
   }
 
   /**

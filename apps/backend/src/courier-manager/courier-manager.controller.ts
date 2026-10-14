@@ -288,13 +288,29 @@ export class CourierManagerController {
   }
 
   @Get('steadfast/returns')
-  async getSteadfastReturns(@Query('setId') setId?: string) {
-    return this.svc.getSteadfastReturnRequests({ credentialSetId: setId ?? null });
+  async getSteadfastReturns(
+    @Query('setId') setId?: string,
+    @Query('page') page?: string,
+    @Query('all') all?: string,
+  ) {
+    return this.svc.getSteadfastReturnRequests({
+      credentialSetId: setId ?? null,
+      page: page ? parseInt(page, 10) : undefined,
+      all: all === 'false' ? false : undefined,
+    });
   }
 
   @Get('steadfast/payments')
-  async getSteadfastPayments(@Query('setId') setId?: string) {
-    return this.svc.getSteadfastPayments({ credentialSetId: setId ?? null });
+  async getSteadfastPayments(
+    @Query('setId') setId?: string,
+    @Query('page') page?: string,
+    @Query('all') all?: string,
+  ) {
+    return this.svc.getSteadfastPayments({
+      credentialSetId: setId ?? null,
+      page: page ? parseInt(page, 10) : undefined,
+      all: all === 'false' ? false : undefined,
+    });
   }
 
   @Get('steadfast/payment/:id')
@@ -335,6 +351,26 @@ export class CourierManagerController {
     return this.svc.getRedxParcelDetails(trackingId);
   }
 
+  /**
+   * Task 9(c): RedX dispatch-time charge preview (non-blocking info).
+   * GET /couriers/redx/charge?delivery_area_id=&cash_collection_amount=&
+   * weight=[&pickup_area_id=] → {deliveryCharge, codCharge}.
+   */
+  @Get('redx/charge')
+  async getRedxCharge(
+    @Query('delivery_area_id') deliveryAreaId?: string,
+    @Query('pickup_area_id') pickupAreaId?: string,
+    @Query('cash_collection_amount') cashCollectionAmount?: string,
+    @Query('weight') weight?: string,
+  ) {
+    return this.svc.getRedxCharge({
+      delivery_area_id: deliveryAreaId as any,
+      pickup_area_id: pickupAreaId as any,
+      cash_collection_amount: cashCollectionAmount as any,
+      weight: weight as any,
+    });
+  }
+
   @Get('redx/track/:trackingId')
   async trackRedxParcel(@Param('trackingId') trackingId: string) {
     return this.svc.trackRedxParcel(trackingId);
@@ -354,6 +390,29 @@ export class CourierManagerController {
   @Get('carrybee/details/:consignmentId')
   async getCarrybeeOrderDetails(@Param('consignmentId') consignmentId: string) {
     return this.svc.getCarrybeeOrderDetails(consignmentId);
+  }
+
+  /**
+   * Task 9(a): Pathao bulk create — POST /couriers/pathao/bulk {orderIds}.
+   * 202 = accepted/async (NOT created). Each entry reports
+   * "accepted, processing"; verify later via GET /couriers/pathao/info/:id.
+   */
+  @Post('pathao/bulk')
+  async bulkCreatePathaoOrders(@Body() dto: { orderIds: string[] }) {
+    const orders = await this.prisma.order.findMany({
+      where: { id: { in: dto.orderIds } },
+      include: {
+        customer: { select: { id: true, name: true, phone: true } },
+        items: { include: { product: { select: { name: true } } } },
+        payments: true,
+      },
+    });
+    return (this.svc as any).bulkCreatePathaoOrders(orders);
+  }
+
+  @Get('pathao/info/:consignmentId')
+  async getPathaoOrderInfo(@Param('consignmentId') consignmentId: string) {
+    return (this.svc as any).getPathaoOrderInfo(consignmentId);
   }
 
   @Post('carrybee/cancel/:consignmentId')
