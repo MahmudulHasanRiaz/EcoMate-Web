@@ -115,15 +115,31 @@ describe('orderSnapshotCustomer', () => {
 });
 
 describe('courierSafeRecipientName (Fix 5a — Mx. prefix, per-courier rules)', () => {
-  it("prefixes a short Pathao name with 'Mx. '", () => {
-    // NOTE: plan example 'জয়' is 3 UTF-16 units (U+99C U+9AF U+9BC) so it
-    // passes min-3 verbatim; prefix is proven with genuinely short names.
+  it("prefixes a short Pathao name with 'Mx. ' (grapheme count)", () => {
+    // Founding incident: 'জয়' is 3 UTF-16 units but 2 grapheme clusters —
+    // Pathao counts user-perceived characters, so it must get the Mx. prefix.
+    expect(
+      courierSafeRecipientName(
+        { customerFirstName: 'জয়', customerLastName: '' },
+        'pathao',
+      ),
+    ).toBe('Mx. জয়');
     expect(
       courierSafeRecipientName({ customerFirstName: 'জ' }, 'pathao'),
     ).toBe('Mx. জ');
     expect(courierSafeRecipientName({ guestName: 'Jo' }, 'pathao')).toBe(
       'Mx. Jo',
     );
+  });
+
+  it('truncates by grapheme clusters without splitting them', () => {
+    const cluster = '👨‍👩‍👧‍👦'; // 1 grapheme, many UTF-16 units
+    const long = { guestName: cluster.repeat(150) };
+    const out = courierSafeRecipientName(long, 'pathao');
+    const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+    const count = [...seg.segment(out)].length;
+    expect(count).toBeLessThanOrEqual(100);
+    expect(out).toBe(cluster.repeat(100));
   });
 
   it('exempts Carrybee from the Mx. prefix (verbatim short name)', () => {
@@ -178,7 +194,7 @@ describe('courierSafeRecipientName (Fix 5a — Mx. prefix, per-courier rules)', 
     ).toBeLessThanOrEqual(100);
   });
 
-  it('truncates Carrybee names to 99 without ever prefixing', () => {
+  it('truncates Carrybee names to 99 graphemes without ever prefixing', () => {
     expect(
       courierSafeRecipientName({ guestName: 'C'.repeat(120) }, 'carrybee')
         .length,
@@ -186,6 +202,15 @@ describe('courierSafeRecipientName (Fix 5a — Mx. prefix, per-courier rules)', 
     expect(
       courierSafeRecipientName({ guestName: 'C'.repeat(120) }, 'carrybee'),
     ).not.toContain('Mx.');
+    // Grapheme-based 99-cut: 150 single-grapheme emoji clusters → 99 intact.
+    const cluster = '👨‍👩‍👧‍👦';
+    const out = courierSafeRecipientName(
+      { guestName: cluster.repeat(150) },
+      'carrybee',
+    );
+    const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+    expect([...seg.segment(out)].length).toBe(99);
+    expect(out).toBe(cluster.repeat(99));
   });
 
   it('leaves names within range untouched and trims whitespace', () => {

@@ -749,6 +749,87 @@ describe('CourierManagerService — Fix 5a Mx. prefix for short names', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
+  it('bulk skips empty-name entries per-entry instead of aborting the batch', async () => {
+    const goodOrder: any = {
+      ...shortOrder,
+      id: 'order-good-1',
+      displayId: 'ORD-GOOD-1',
+      customerFirstName: 'Good',
+      customerLastName: 'Buyer',
+    };
+    const badOrder: any = {
+      ...shortOrder,
+      id: 'order-bad-1',
+      displayId: 'ORD-BAD-1',
+      customerFirstName: null,
+      customerLastName: null,
+      guestName: null,
+    };
+    mockFetch(
+      new Response(
+        JSON.stringify({
+          status: 200,
+          data: [
+            {
+              invoice: 'ORD-GOOD-1',
+              status: 'success',
+              consignment_id: 'B-GOOD',
+              tracking_code: 'T-GOOD',
+              tracking_link: 'https://track/good',
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+    prisma.order.findFirst = jest.fn().mockResolvedValue({ id: 'order-good-1' });
+
+    let result: any;
+    await expect(
+      (async () => {
+        result = await service.bulkCreateSteadfastOrders([goodOrder, badOrder]);
+      })(),
+    ).resolves.not.toThrow();
+
+    expect(result.success).toHaveLength(1);
+    expect(result.success[0].orderId).toBe('ORD-GOOD-1');
+    expect(result.failed).toHaveLength(1);
+    expect(result.failed[0].orderId).toBe('ORD-BAD-1');
+    expect(result.failed[0].message).toContain(
+      "Courier: field 'recipient_name' is required",
+    );
+    // The bad entry never reaches the courier API payload.
+    const postCall = (global.fetch as jest.Mock).mock.calls.find((c) =>
+      String(c[0]).includes('/create_order/bulk-order'),
+    );
+    expect(postCall).toBeDefined();
+    const body = JSON.parse(postCall[1].body);
+    expect(body.data).toHaveLength(1);
+    expect(body.data[0].invoice).toBe('ORD-GOOD-1');
+  });
+
+  it('fires a timeline note when a long name is truncated for the courier', async () => {
+    const longName = 'A'.repeat(101);
+    prisma.order.findMany.mockResolvedValue([
+      { ...shortOrder, customerFirstName: longName, customerLastName: '' },
+    ]);
+    mockFetch(
+      new Response(JSON.stringify({ data: { consignment_id: 'CID-CUT' } }), {
+        status: 200,
+      }),
+    );
+
+    await service.dispatch('pathao', ['order-short-1']);
+
+    const orderCall = (global.fetch as jest.Mock).mock.calls.find((c) =>
+      String(c[0]).includes('/aladdin/api/v1/orders'),
+    );
+    const sent = JSON.parse(orderCall[1].body).recipient_name;
+    expect(sent).toBe('A'.repeat(100));
+    expect(timelineNotes()).toContain(
+      `courier name sent as '${'A'.repeat(100)}' — order keeps '${longName}'`,
+    );
+  });
   it('appends no timeline note and no dispatch notes when the name needed no transform', async () => {
     prisma.order.findMany.mockResolvedValue([
       { ...shortOrder, customerFirstName: 'MR', customerLastName: 'Joy' },

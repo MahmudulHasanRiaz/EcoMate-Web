@@ -1083,20 +1083,43 @@ export class CourierManagerService {
       );
 
     const base = await this.getBaseUrl('steadfast');
-    const bodyData = orders.map((order) => ({
-      invoice: order.displayId,
-      // D-A: snapshot authority — never the linked CustomerProfile.
-      // Fix 5a: Mx. prefix / truncate; empty throws a field error (invoice in msg).
-      recipient_name: this.resolveCourierName(order, 'steadfast', 'recipient_name')
-        .sent,
-      recipient_phone: this.normalizePhone(orderRecipientPhone(order)),
-      recipient_address:
-        formatCourierAddress(
-          order.shippingAddress as Record<string, unknown>,
-        ) ?? 'Dhaka',
-      cod_amount: this.getCollectableAmount(order),
-      note: order.officeNotes || null,
-    }));
+    // Per-entry name errors must NOT abort the batch: an order with no
+    // recipient name becomes a failed entry (same {orderId, message} shape
+    // the response loop below produces) and the rest still dispatch.
+    const bodyData: Record<string, unknown>[] = [];
+    const preFailed: { orderId: string; message: string }[] = [];
+    for (const order of orders) {
+      try {
+        // D-A: snapshot authority — never the linked CustomerProfile.
+        // Fix 5a: Mx. prefix / truncate; empty throws a field error (invoice in msg).
+        const { sent: safeName } = this.resolveCourierName(
+          order,
+          'steadfast',
+          'recipient_name',
+        );
+        bodyData.push({
+          invoice: order.displayId,
+          recipient_name: safeName,
+          recipient_phone: this.normalizePhone(orderRecipientPhone(order)),
+          recipient_address:
+            formatCourierAddress(
+              order.shippingAddress as Record<string, unknown>,
+            ) ?? 'Dhaka',
+          cod_amount: this.getCollectableAmount(order),
+          note: order.officeNotes || null,
+        });
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : 'Dispatch failed';
+        preFailed.push({
+          orderId: order.displayId ?? order.id ?? 'unknown',
+          message: msg,
+        });
+      }
+    }
+
+    if (bodyData.length === 0) {
+      return { success: [], failed: preFailed };
+    }
 
     const response = await this.jsonFetch(`${base}/create_order/bulk-order`, {
       method: 'POST',
@@ -1218,7 +1241,7 @@ export class CourierManagerService {
       }
     }
 
-    return { success: successResults, failed: failedResults };
+    return { success: successResults, failed: [...preFailed, ...failedResults] };
   }
 
   async getRedxParcelDetails(trackingId: string) {

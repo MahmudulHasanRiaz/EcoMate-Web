@@ -21,9 +21,11 @@ export interface OrderRecipientSource {
 
 /**
  * Full snapshot name: "first last" || guestName || 'Customer'.
- * The result is never shorter than 3 chars — Pathao rejects
- * `recipient_name` outside 3–100 chars, so a short fragment floors to
- * 'Customer' instead of being sent verbatim.
+ *
+ * @deprecated Dead floor — use {@link courierSafeRecipientName} for
+ * courier-facing names (grapheme-aware Mx. prefix / per-courier max).
+ * Kept only for legacy callers; the Pathao ≥3 floor here is NOT
+ * grapheme-aware and must not feed dispatch payloads.
  */
 export function orderRecipientName(o: OrderRecipientSource): string {
   const full = [o.customerFirstName, o.customerLastName]
@@ -48,7 +50,50 @@ export function orderRecipientRawName(o: OrderRecipientSource): string {
 }
 
 /**
+ * Split a string into user-perceived characters (grapheme clusters).
+ * Uses `Intl.Segmenter` (`granularity: 'grapheme'`) when the runtime
+ * supports it (Node 16+); falls back to code-point spread otherwise.
+ * Pathao counts user-perceived characters: 'জয়' is 3 UTF-16 units / 3
+ * code points but 2 graphemes, so it must fail a min-3 check.
+ */
+export function segmentGraphemes(value: string): string[] {
+  const Segmenter = (Intl as unknown as Record<string, unknown>)?.[
+    'Segmenter'
+  ] as
+    | (new (
+        locales?: string | string[],
+        options?: { granularity?: string },
+      ) => { segment(s: string): Iterable<{ segment: string }> })
+    | undefined;
+  if (typeof Segmenter === 'function') {
+    try {
+      const seg = new Segmenter(undefined, { granularity: 'grapheme' });
+      return Array.from(seg.segment(value), (s) => s.segment);
+    } catch {
+      return [...value];
+    }
+  }
+  return [...value];
+}
+
+/** User-perceived character count (grapheme clusters, not UTF-16 units). */
+export function graphemeLength(value: string): number {
+  return segmentGraphemes(value).length;
+}
+
+/** Truncate to `max` graphemes without ever splitting a cluster. */
+export function truncateGraphemes(value: string, max: number): string {
+  const parts = segmentGraphemes(value);
+  return parts.length > max ? parts.slice(0, max).join('') : value;
+}
+
+/**
  * Per-courier recipient-name length rules (Fix 5a, owner decision).
+ *
+ * Lengths are counted in GRAPHEME CLUSTERS (user-perceived characters),
+ * not UTF-16 units: Pathao rejects 'জয়' as 2 chars even though
+ * `'জয়'.length === 3`. Truncation cuts on cluster boundaries (never
+ * splits a combining mark / ZWJ sequence).
  *
  * Doc sources (latest docs, read 2026-10-14):
  * - Pathao: `recipient_name` 3–100 chars (doc-verified).
@@ -57,7 +102,7 @@ export function orderRecipientRawName(o: OrderRecipientSource): string {
  * - RedX: `customer_name` — NO lengths stated → 3/100 assumed (default).
  * - Carrybee: `recipient_name`/`customer_name` 2–99 chars (doc-verified).
  *   Carrybee is EXEMPT from the Mx. prefix by owner decision — short names
- *   go out verbatim (only trimmed + truncated to 99).
+ *   go out verbatim (only trimmed + truncated to 99 graphemes).
  *
  * Rules: empty → '' (no prefix; the CALLER surfaces a field error).
  * Short (< min, non-empty, non-Carrybee) → `'Mx. ' + full` (gender-neutral,
@@ -73,14 +118,14 @@ export function courierSafeRecipientName(
   if (!full) return '';
   const c = (courier || '').toLowerCase();
   if (c === 'carrybee') {
-    return full.length > 99 ? full.slice(0, 99) : full;
+    return graphemeLength(full) > 99 ? truncateGraphemes(full, 99) : full;
   }
   // max: pathao 100 + steadfast 100 doc-verified; redx/unknown default 100.
   const max = 100;
-  if (full.length > max) return full.slice(0, max);
+  if (graphemeLength(full) > max) return truncateGraphemes(full, max);
   // min: pathao 3 doc-verified; steadfast/redx unstated → default 3 assumed.
   const min = 3;
-  if (full.length < min) return `Mx. ${full}`;
+  if (graphemeLength(full) < min) return `Mx. ${full}`;
   return full;
 }
 
