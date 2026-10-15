@@ -442,6 +442,7 @@ export class ExchangeService {
             displayId,
             kind: 'EXCHANGE',
             exchangeOfOrderId: original.id,
+            exchangeScope: mode,
             statusId: confirmed.id,
             source: 'MANUAL',
             subtotal,

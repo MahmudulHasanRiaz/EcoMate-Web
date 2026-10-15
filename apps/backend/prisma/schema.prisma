@@ -830,6 +830,10 @@ model Order {
   /// Original order this EXCHANGE was raised against. One original may have
   /// MANY exchanges, so this is a plain index, never unique.
   exchangeOfOrderId        String?
+  /// Exchange scope decided at creation (FULL = whole order exchanged,
+  /// PARTIAL = subset). Persisted so the Exchanges list can filter
+  /// server-side; NULL = created before this column (unknown, shows '—').
+  exchangeScope            String?
   /// Set when the RTN order itself reached 'Returned' (stock restored).
   returnedAt               DateTime?
   /// Idempotency guard for RTN stock restoration: once true, the exact RTN

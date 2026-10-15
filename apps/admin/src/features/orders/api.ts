@@ -4,6 +4,13 @@ export interface OrderResponse {
   id: string; displayId: string; customerId?: string | null; statusId: string;
   warnings?: string[];
   kind?: 'SALE' | 'RETURN' | 'EXCHANGE';
+  /** Badge flags from the list response (server-counted, no extra fetches). */
+  hasActiveReturn?: boolean;
+  activeReturnCount?: number;
+  hasActiveExchange?: boolean;
+  activeExchangeCount?: number;
+  /** Exchange scope decided at creation (FULL/PARTIAL); null = unknown. */
+  exchangeScope?: string | null;
   returnOfOrderId?: string | null;
   returnOfOrder?: { id: string; displayId: string; status: { id: string; name: string } } | null;
   exchangeOfOrderId?: string | null;

@@ -7,6 +7,8 @@ export interface ExchangeListItem {
   status: { id: string; name: string }
   exchangeOfOrderId?: string | null
   exchangeOfOrder?: { id: string; displayId: string } | null
+  /** Exchange scope decided at creation (FULL/PARTIAL); null = unknown. */
+  exchangeScope?: string | null
   dispatches?: { id: string; courier: string; status: string; consignmentId?: string | null }[]
   courierService?: string | null
   courierConsignmentId?: string | null
@@ -59,6 +61,8 @@ export const exchangesApi = {
   list: (q: {
     search?: string
     statusId?: string
+    /** Server-side exchange scope filter (FULL/PARTIAL). */
+    type?: string
     dateFrom?: string
     dateTo?: string
     page?: number

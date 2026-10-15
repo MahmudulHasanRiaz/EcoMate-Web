@@ -625,6 +625,16 @@ export class OrdersService {
       ...order,
       dispatches,
       editLock,
+      // Badge flags for the order list (from the _count include in findAll —
+      // absent on shapes that don't request it, e.g. public/my-orders).
+      ...(((order as any)._count
+        ? {
+            activeReturnCount: (order as any)._count.returns ?? 0,
+            hasActiveReturn: ((order as any)._count.returns ?? 0) > 0,
+            activeExchangeCount: (order as any)._count.exchanges ?? 0,
+            hasActiveExchange: ((order as any)._count.exchanges ?? 0) > 0,
+          }
+        : {}) as any),
       // D-A: `customer` is built FROM the order snapshot so the UI keeps
       // working while the source flips to snapshot. The linked
       // CustomerProfile is never read here.
@@ -709,6 +719,8 @@ export class OrdersService {
     order?: string;
     includeTrashed?: boolean;
     kind?: 'SALE' | 'RETURN' | 'EXCHANGE';
+    /** Exchange scope filter — only honored with kind=EXCHANGE. */
+    type?: string;
   }) {
     // 1000-row pages are a first-class use case (daily volume in the
     // thousands) — but an unbounded `take` with the full list include
@@ -730,6 +742,23 @@ export class OrdersService {
       where.kind = query.kind;
     } else {
       where.kind = { not: 'RETURN' };
+    }
+    // Exchange scope filter (Exchanges list): server-side Full/Partial.
+    // Only meaningful with kind=EXCHANGE — anything else is rejected so a
+    // stray `type` can never silently filter the wrong list. Pre-column
+    // rows have exchangeScope NULL and never match FULL/PARTIAL.
+    if (query.type !== undefined) {
+      if (query.kind !== 'EXCHANGE') {
+        throw new BadRequestException(
+          "The 'type' filter only applies with kind=EXCHANGE.",
+        );
+      }
+      if (query.type !== 'FULL' && query.type !== 'PARTIAL') {
+        throw new BadRequestException(
+          `Invalid exchange type filter: ${query.type}. Use FULL or PARTIAL.`,
+        );
+      }
+      where.exchangeScope = query.type;
     }
     if (query.search) {
       // Order number · customer/guest name · product SKU · phone (exact once
@@ -784,6 +813,14 @@ export class OrdersService {
           },
           // Latest dispatch only — supplies the (correct) tracking link on list rows.
           dispatches: { orderBy: { createdAt: 'desc' }, take: 1 },
+          // Badge flags (Return ×N / Exchange) come from the list response
+          // itself — one filtered COUNT per relation, never per-row fetches.
+          _count: {
+            select: {
+              returns: { where: { status: { not: 'CLOSED' } } },
+              exchanges: { where: { trashedAt: null } },
+            },
+          },
         },
       }),
       this.prisma.order.count({ where }),

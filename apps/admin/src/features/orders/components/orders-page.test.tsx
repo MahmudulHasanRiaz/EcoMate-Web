@@ -216,36 +216,31 @@ describe('Orders page', () => {
     await expect.element(getByRole('cell', { name: '৳150.00' })).toBeInTheDocument()
   })
 
-  it('shows a ↩ Return ×N badge for orders with non-closed linked returns', async () => {
+  it('shows a ↩ Return ×N badge from the list-response flags (no separate fetch)', async () => {
     mockGet.mockImplementation((url: string) => {
       if (url === '/order-statuses') return Promise.resolve({ data: orderStatuses })
-      if (url === '/orders') return Promise.resolve({ data: singlePageResponse })
-      if (url === '/orders/staff/list') return Promise.resolve({ data: [] })
-      if (url === '/couriers/credentials') return Promise.resolve({ data: [] })
-      if (url === '/returns') {
+      if (url === '/orders')
         return Promise.resolve({
           data: {
-            data: [
-              { id: 'ret-1', displayId: 'RTN-1', orderId: '1', type: 'PARTIAL', status: 'REQUESTED', items: [] },
-              { id: 'ret-2', displayId: 'RTN-2', orderId: '1', type: 'FULL', status: 'CLOSED', items: [] },
-            ],
-            meta: { total: 2, page: 1, limit: 200 },
+            data: [{ ...mockOrder, hasActiveReturn: true, activeReturnCount: 2 }],
+            meta: { total: 1, page: 1, perPage: 10, totalPages: 1 },
           },
         })
-      }
-      return Promise.reject(new Error('Unexpected URL'))
+      if (url === '/orders/staff/list') return Promise.resolve({ data: [] })
+      if (url === '/couriers/credentials') return Promise.resolve({ data: [] })
+      // Any /returns fetch fails the test — badges must come from the list rows.
+      return Promise.reject(new Error('Unexpected URL: ' + url))
     })
 
     const { getByText } = await renderOrders()
 
-    // Only the non-closed leg counts.
-    await expect.element(getByText('↩ Return ×1')).toBeInTheDocument()
+    await expect.element(getByText('↩ Return ×2')).toBeInTheDocument()
   })
 
-  it('shows a ⇄ Exchange badge on originals with a linked exchange child', async () => {
+  it('shows a ⇄ Exchange badge from the list-response flags', async () => {
     mockSuccessfulAPIs({
       data: [
-        { ...mockOrder, id: '1', displayId: '#ORD-001', kind: 'SALE' },
+        { ...mockOrder, id: '1', displayId: '#ORD-001', kind: 'SALE', hasActiveExchange: true, activeExchangeCount: 1 },
         {
           ...mockOrder,
           id: 'ex-1',

@@ -5,11 +5,8 @@ import { Minus, Plus } from 'lucide-react'
 /**
  * Simple multi-select over original-order lines (Task 4 Fix 8).
  *
- * NOTE: the legacy ReturnOrderDialog picker is NOT reused here — it is
- * RTN-payload-shaped (orderItemId lines + discount deltas + deliver-now) and
- * hard-gated on Partial status. This picker emits plain
- * {productId, variantId, quantity} lines for the unified Return entity and
- * the PARTIAL exchange returning leg.
+ * Emits plain {productId, variantId, quantity} lines for the unified Return
+ * entity and the PARTIAL exchange returning leg.
  */
 export function ReturnItemPicker({
   items,

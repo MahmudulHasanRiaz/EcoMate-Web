@@ -85,11 +85,13 @@ export function ExchangesList() {
   })
 
   const { data, isLoading } = useQuery({
-    queryKey: ['exchanges', debounced, statusId, dateFrom, dateTo, page],
+    queryKey: ['exchanges', debounced, statusId, exType, dateFrom, dateTo, page],
     queryFn: () =>
       exchangesApi.list({
         search: debounced || undefined,
         statusId: statusId !== 'all' ? statusId : undefined,
+        // Server-side scope filter — pagination meta stays correct.
+        type: exType === 'all' ? undefined : exType.toUpperCase(),
         dateFrom: dateFrom || undefined,
         dateTo: dateTo || undefined,
         page,
@@ -113,9 +115,26 @@ export function ExchangesList() {
   )
   const originalQs = useOriginalItems(originalIds, needOriginal)
 
+  // Type display: prefer the server-persisted scope (set at creation);
+  // fall back to the derived comparison for pre-column rows (unknown).
+  const serverTypeById = useMemo(() => {
+    const m = new Map<string, string>()
+    ids.forEach((id) => {
+      const scope = all.find((o) => o.id === id)?.exchangeScope
+      if (scope === 'FULL') m.set(id, 'Full')
+      else if (scope === 'PARTIAL') m.set(id, 'Partial')
+    })
+    return m
+  }, [ids, all])
+
   const typeById = useMemo(() => {
     const m = new Map<string, string>()
     ids.forEach((id, i) => {
+      const server = serverTypeById.get(id)
+      if (server) {
+        m.set(id, server)
+        return
+      }
       const linked = linkedById.get(id)
       if (!linked) {
         m.set(id, '—')
@@ -134,8 +153,9 @@ export function ExchangesList() {
     return m
   }, [ids, linkedById, originalQs, needOriginal])
 
-  const rows =
-    exType === 'all' ? all : all.filter((o) => typeById.get(o.id) === exType)
+  // Rows arrive pre-filtered from the server — no client-side type filter,
+  // so pagination meta stays correct.
+  const rows = all
   const total: number = data?.meta?.total ?? 0
   const totalPages = Math.max(1, data?.meta?.totalPages ?? 1)
 

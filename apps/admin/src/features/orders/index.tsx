@@ -777,32 +777,9 @@ export function Orders() {
     return data.data.reduce((sum: number, o: OrderResponse) => sum + nn(o.total), 0)
   }, [data])
 
-  // Linked return/exchange badges (return hardening, display-only hints —
-  // the order-detail section is the source of truth).
-  const pageIds = useMemo(() => ((data?.data ?? []) as OrderResponse[]).map((o) => o.id), [data])
-  const { data: linkedReturns } = useQuery({
-    queryKey: ['linked-returns', pageIds.join(',')],
-    queryFn: () => returnsApi.list({ limit: 200 }).then((r) => r.data),
-    enabled: pageIds.length > 0,
-    staleTime: 30_000,
-  })
-  const activeReturnCountByOrder = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const r of linkedReturns ?? []) {
-      if (r?.status === 'CLOSED') continue
-      if (!pageIds.includes(r.orderId)) continue
-      map.set(r.orderId, (map.get(r.orderId) ?? 0) + 1)
-    }
-    return map
-  }, [linkedReturns, pageIds])
-  const exchangeChildByOrder = useMemo(() => {
-    const set = new Set<string>()
-    for (const o of ((data?.data ?? []) as OrderResponse[])) {
-      const parentId = (o as any)?.exchangeOfOrder?.id
-      if (o.kind === 'EXCHANGE' && parentId) set.add(parentId)
-    }
-    return set
-  }, [data])
+  // Linked return/exchange badges come from the list response itself
+  // (hasActiveReturn/activeReturnCount/hasActiveExchange, server-counted
+  // per row — no extra fetches, no pagination cap).
 
   const totalOrders = data?.meta?.total || 0
   const totalPages = data?.meta?.totalPages || 1
@@ -1056,18 +1033,18 @@ export function Orders() {
                                 <ArrowRightLeft className='h-2.5 w-2.5' /> Exchange
                               </span>
                             )}
-                            {(activeReturnCountByOrder.get(o.id) ?? 0) > 0 && (
+                            {(o.activeReturnCount ?? 0) > 0 && (
                               <Link
                                 to='/op/orders/$id'
                                 params={{ id: o.id }}
                                 onClick={e => e.stopPropagation()}
-                                title={`${activeReturnCountByOrder.get(o.id)} active return(s) — view linked returns`}
+                                title={`${o.activeReturnCount} active return(s) — view linked returns`}
                                 className='inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400 hover:underline'
                               >
-                                ↩ Return ×{activeReturnCountByOrder.get(o.id)}
+                                ↩ Return ×{o.activeReturnCount}
                               </Link>
                             )}
-                            {exchangeChildByOrder.has(o.id) && (
+                            {o.hasActiveExchange && (
                               <Link
                                 to='/op/orders/$id'
                                 params={{ id: o.id }}

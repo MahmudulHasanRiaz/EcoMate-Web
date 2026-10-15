@@ -76,4 +76,36 @@ describe('ExchangesList (Task 7)', () => {
       }
     })
   })
+
+  it('sends type=FULL to the server when the Full filter is picked (no client-side filtering)', async () => {
+    const { getByRole, getByText } = await renderList()
+    await expect.element(getByText('ORD-261014-0002')).toBeInTheDocument()
+    await getByRole('combobox').nth(1).click()
+    await getByText('Full', { exact: true }).click()
+    await vi.waitFor(() => {
+      const calls = mockGet.mock.calls.filter(
+        (c: unknown[]) =>
+          c[0] === '/orders' &&
+          (c[1] as { params: Record<string, unknown> }).params.type === 'FULL',
+      )
+      expect(calls.length).toBeGreaterThan(0)
+    })
+  })
+
+  it('prefers server exchangeScope for the Type cell when present', async () => {
+    mockGet.mockImplementation((url: string, opts?: { params?: Record<string, unknown> }) => {
+      if (url === '/orders' && opts?.params?.kind === 'EXCHANGE')
+        return Promise.resolve({
+          data: {
+            data: [{ ...exRow, exchangeScope: 'PARTIAL' }],
+            meta: { total: 1, page: 1, perPage: 10, totalPages: 1 },
+          },
+        })
+      if (url === '/order-statuses') return Promise.resolve({ data: [] })
+      if (url === '/returns') return Promise.resolve({ data: { data: [] } })
+      return Promise.reject(new Error(`Unexpected URL ${url}`))
+    })
+    const { getByText } = await renderList()
+    await expect.element(getByText('Partial', { exact: true })).toBeInTheDocument()
+  })
 })
