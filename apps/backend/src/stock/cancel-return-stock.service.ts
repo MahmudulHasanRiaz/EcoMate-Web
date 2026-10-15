@@ -324,6 +324,354 @@ export class CancelReturnStockService {
   }
 
   /**
+   * Task 6 (Fix 13): ITEM-LEVEL restore for unified Returns.
+   *
+   * restoreForOrder is blanket full-order — for a PARTIAL return it would
+   * restock the kept/delivered part too. This restores ONLY the given item
+   * quantities (Return.items: productId + variantId + qty), capped at each
+   * order line's ordered quantity:
+   * - matched products: exact-qty managed `add` + physical `add` (same
+   *   authoritative operate paths the RTN flow uses — no flag/cycle reads
+   *   required, so a second partial Return for the same order keeps working);
+   * - unmatched products: NEVER touched (the kept part must NOT restock);
+   * - matched claims are DISARMED (managed flags cleared, physical
+   *   reservation marked handled) so a later blanket restoreForOrder (manual
+   *   'Returned' confirmation) can never restore the same units twice. The
+   *   steady state is then exact: returned units back on hand, kept units
+   *   still deducted, future arrivals restore through this same path;
+   * - the ACTIVE cycle terminates only on FULL coverage (every line fully
+   *   restored) — a partial leaves it ACTIVE for what may still arrive.
+   */
+  async restoreForReturnItems(params: {
+    orderId: string;
+    items: Array<{ productId: string; variantId?: string | null; quantity: number }>;
+    returnId: string;
+    performedBy?: string;
+    tx: Prisma.TransactionClient;
+  }): Promise<{ restored: Array<{ productId: string; variantId: string | null; quantity: number }> }> {
+    const { orderId, items, returnId, performedBy, tx } = params;
+    const reference = `return-${returnId}`;
+
+    const cycle =
+      (await tx.orderStockCycle.findFirst({ where: { orderId, status: 'ACTIVE' } })) ??
+      (await tx.orderStockCycle.findFirst({ where: { orderId }, orderBy: { createdAt: 'asc' } }));
+    const cycleId = cycle?.id ?? null;
+    const activeCycleId =
+      cycle && (cycle as any).status === 'ACTIVE' ? (cycle as any).id : null;
+
+    const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
+
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      include: {
+        items: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                availabilityMode: true,
+                manageStock: true,
+                syncManagedStock: true,
+                warehouseId: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!order) return { restored: [] };
+
+    // ---- Build matchable claims: standalone lines + combo snapshots --------
+    type Claim =
+      | { kind: 'line'; line: any; product: any; remaining: number }
+      | { kind: 'snap'; line: any; snap: any; product: any; remaining: number };
+    const claimsByKey = new Map<string, Claim[]>();
+    const keyOf = (productId: string, variantId?: string | null) =>
+      `${productId}::${variantId ?? ''}`;
+    const allClaims: Claim[] = [];
+    for (const line of (order as any).items ?? []) {
+      if (!line.productId && !line.comboId) continue;
+      if (line.comboId) {
+        const snaps = await tx.orderItemComboComponent.findMany({
+          where: { orderItemId: line.id },
+          include: { product: true },
+        });
+        for (const snap of snaps as any[]) {
+          const claim: Claim = {
+            kind: 'snap',
+            line,
+            snap,
+            product: snap.product,
+            remaining: snap.totalQuantity,
+          };
+          allClaims.push(claim);
+          const k = keyOf(snap.productId, snap.variantId ?? undefined);
+          if (!claimsByKey.has(k)) claimsByKey.set(k, []);
+          claimsByKey.get(k)!.push(claim);
+        }
+        continue;
+      }
+      const claim: Claim = {
+        kind: 'line',
+        line,
+        product: line.product,
+        remaining: line.quantity,
+      };
+      allClaims.push(claim);
+      const k = keyOf(line.productId, line.variantId ?? undefined);
+      if (!claimsByKey.has(k)) claimsByKey.set(k, []);
+      claimsByKey.get(k)!.push(claim);
+    }
+
+    // ---- Allocate Return quantities across matching claims (FIFO) ----------
+    const restoredByKey = new Map<string, { productId: string; variantId: string | null; quantity: number }>();
+    for (const item of items ?? []) {
+      const qty = Math.floor(Number((item as any)?.quantity ?? 0));
+      if (!item?.productId || !(qty > 0)) continue;
+      const k = keyOf(item.productId, item.variantId ?? undefined);
+      const claims = claimsByKey.get(k) ?? [];
+      let wanted = qty;
+      for (const claim of claims) {
+        if (wanted <= 0) break;
+        if (claim.remaining <= 0) continue;
+        const take = Math.min(claim.remaining, wanted);
+        claim.remaining -= take;
+        wanted -= take;
+        await this.restoreReturnClaim(tx, claim, take, cycleId, imEnabled, reference, performedBy);
+        const agg = restoredByKey.get(k) ?? {
+          productId: item.productId,
+          variantId: (item.variantId ?? null) as string | null,
+          quantity: 0,
+        };
+        agg.quantity += take;
+        restoredByKey.set(k, agg);
+      }
+      if (wanted > 0) {
+        this.logger.warn(
+          `Return ${returnId}: ${wanted} unit(s) of product ${item.productId} exceed the order quantity — skipped (never over-restore)`,
+        );
+      }
+    }
+
+    // ---- Terminate the ACTIVE cycle only on FULL coverage ------------------
+    if (activeCycleId && allClaims.length > 0 && allClaims.every((c) => c.remaining <= 0)) {
+      await tx.orderStockCycle.update({
+        where: { id: activeCycleId },
+        data: { status: 'TERMINATED' },
+      });
+      this.logger.log(`Cycle ${activeCycleId} TERMINATED for return ${returnId} (full coverage)`);
+    }
+
+    await this.cache.invalidateByPrefix('product:');
+    return { restored: [...restoredByKey.values()] };
+  }
+
+  /**
+   * Restore + disarm ONE allocated claim (see restoreForReturnItems).
+   * Managed: exact-qty `add` when deducted (plus a capped release of the
+   * Return-Pending hold), capped `release` when reserved-only; flags cleared
+   * so a later blanket restore skips this claim. Physical: exact-qty on-hand
+   * restore for CONSUMED reservations (capped `release` of the held counter
+   * for ACTIVE ones); the reservation is marked handled so the blanket path
+   * — which skips non-ACTIVE/CONSUMED reservations — can never re-restore.
+   */
+  private async restoreReturnClaim(
+    tx: Prisma.TransactionClient,
+    claim:
+      | { kind: 'line'; line: any; product: any; remaining: number }
+      | { kind: 'snap'; line: any; snap: any; product: any; remaining: number },
+    qty: number,
+    cycleId: string | null,
+    imEnabled: boolean,
+    reference: string,
+    performedBy?: string,
+  ): Promise<void> {
+    if (qty <= 0) return;
+    const product = claim.product;
+    const holder = claim.kind === 'line' ? claim.line : claim.snap;
+    const productId = (claim.kind === 'line' ? claim.line.productId : claim.snap.productId) as string;
+    const variantId = (claim.kind === 'line' ? claim.line.variantId : claim.snap.variantId) ?? undefined;
+    if (!product) return;
+
+    // A. Managed engine (exact-qty direct adds — RTN-path semantics).
+    if (product.availabilityMode === 'MANAGED_STOCK' && product.manageStock) {
+      if (holder.managedStockDeducted) {
+        await this.stockService.operate('add', {
+          productId,
+          variantId,
+          quantity: qty,
+          reference,
+          performedBy: performedBy || 'system',
+          tx,
+          ledgerType: 'RETURN',
+          referenceType: 'RETURN',
+        });
+        // Capped release of the Return-Pending hold (remainder stays held).
+        await this.releaseHeldReservation(tx, productId, variantId, qty, reference, performedBy);
+      } else if (holder.managedStockReserved) {
+        await this.stockService.operate('release', {
+          productId,
+          variantId,
+          quantity: qty,
+          reference,
+          performedBy: performedBy || 'system',
+          tx,
+          ledgerType: 'CANCEL_RELEASE',
+        });
+      }
+      // Disarm: this claim is settled — the blanket path must skip it.
+      if (claim.kind === 'line') {
+        await tx.orderItem.update({
+          where: { id: claim.line.id },
+          data: { managedStockDeducted: false, managedStockReserved: false },
+        });
+      } else {
+        await tx.orderItemComboComponent.update({
+          where: { id: claim.snap.id },
+          data: { managedStockDeducted: false, managedStockReserved: false },
+        });
+      }
+    }
+
+    // B. Physical engine (exact-qty on-hand restore for CONSUMED claims).
+    if (cycleId && product.warehouseId) {
+      const decision = this.stockRouter.resolve(
+        product.availabilityMode,
+        'add',
+        imEnabled,
+        product.syncManagedStock ?? undefined,
+      );
+      if (decision.pi !== 'skip') {
+        if (claim.kind === 'line') {
+          await this.restorePhysicalForReturnLine(
+            tx, claim.line.id, null, cycleId, 'ORDER_ITEM',
+            product, variantId, qty, reference, performedBy,
+          );
+        } else {
+          await this.restorePhysicalForReturnLine(
+            tx, claim.snap.id, claim.snap.id, cycleId, 'COMBO_COMPONENT',
+            product, variantId, qty, reference, performedBy,
+          );
+        }
+      }
+    }
+  }
+
+  /**
+   * Physical half of restoreReturnClaim. CONSUMED → on-hand +qty across the
+   * reservation's allocations (capped walk, never past each alloc), guarded
+   * held-counter release, RESTORATION ledger, costing capped at qty, then
+   * RESTORED (disarm). ACTIVE → capped guarded counter release only (stock
+   * never left on-hand, so nothing to add back), RELEASED only on full
+   * coverage of the reservation.
+   */
+  private async restorePhysicalForReturnLine(
+    tx: Prisma.TransactionClient,
+    lookupId: string,
+    componentId: string | null,
+    cycleId: string,
+    referenceType: string,
+    product: any,
+    variantId: string | undefined,
+    qty: number,
+    reference: string,
+    performedBy?: string,
+  ): Promise<void> {
+    const reservation = componentId
+      ? await tx.comboComponentPhysicalReservation.findUnique({
+          where: { componentId_cycleId: { componentId, cycleId } },
+          include: { allocations: true },
+        })
+      : await tx.physicalReservation.findUnique({
+          where: { orderItemId_cycleId: { orderItemId: lookupId, cycleId } },
+          include: { allocations: true },
+        });
+    if (!reservation) return;
+    if ((reservation as any).status === 'RELEASED' || (reservation as any).status === 'RESTORED') return;
+
+    const markHandled = (status: 'RELEASED' | 'RESTORED') =>
+      componentId
+        ? tx.comboComponentPhysicalReservation.update({ where: { id: (reservation as any).id }, data: { status } })
+        : tx.physicalReservation.update({ where: { id: (reservation as any).id }, data: { status } });
+
+    if ((reservation as any).status === 'ACTIVE') {
+      // Stock never left on-hand — release the held counter (capped), no add.
+      for (const alloc of (reservation as any).allocations ?? []) {
+        const take = Math.min((alloc as any).quantity, qty);
+        if (take <= 0) continue;
+        await tx.physicalInventory.updateMany({
+          where: { id: (alloc as any).physicalInventoryId, reservedQuantity: { gte: take } },
+          data: { reservedQuantity: { decrement: take } },
+        });
+      }
+      const total = ((reservation as any).allocations ?? []).reduce(
+        (s: number, a: any) => s + (a.quantity ?? 0), 0,
+      );
+      if (qty >= total) await markHandled('RELEASED');
+      return;
+    }
+
+    if ((reservation as any).status === 'CONSUMED') {
+      let remaining = qty;
+      for (const alloc of (reservation as any).allocations ?? []) {
+        if (remaining <= 0) break;
+        const take = Math.min((alloc as any).quantity, remaining);
+        if (take <= 0) continue;
+        remaining -= take;
+        await tx.physicalInventory.update({
+          where: { id: (alloc as any).physicalInventoryId },
+          data: { quantity: { increment: take } },
+        });
+        await tx.physicalInventory.updateMany({
+          where: { id: (alloc as any).physicalInventoryId, reservedQuantity: { gte: take } },
+          data: { reservedQuantity: { decrement: take } },
+        });
+        const pi = await tx.physicalInventory.findUnique({
+          where: { id: (alloc as any).physicalInventoryId },
+          select: { quantity: true, reservedQuantity: true },
+        });
+        await tx.physicalInventoryLedger.create({
+          data: {
+            productId: (reservation as any).productId,
+            variantId: (reservation as any).variantId ?? null,
+            warehouseId: (reservation as any).warehouseId,
+            quantity: take,
+            direction: 'IN',
+            stockBefore: pi?.quantity ?? take,
+            stockAfter: pi?.quantity ?? take,
+            reservedBefore: (pi?.reservedQuantity ?? 0) + take,
+            reservedAfter: pi?.reservedQuantity ?? 0,
+            type: 'RELEASE',
+            reason: reference,
+            performedBy: performedBy,
+          },
+        });
+        await tx.physicalInventoryLedger.create({
+          data: {
+            productId: (reservation as any).productId,
+            variantId: (reservation as any).variantId ?? null,
+            warehouseId: (reservation as any).warehouseId,
+            quantity: take,
+            direction: 'IN',
+            stockBefore: 0,
+            stockAfter: take,
+            type: 'RESTORATION',
+            reason: reference,
+            performedBy: performedBy,
+          },
+        });
+      }
+      await this.restoreCostingConsumption(
+        tx, cycleId, referenceType, lookupId, qty, reference,
+      );
+      // Disarm: the blanket path skips non-ACTIVE/CONSUMED reservations, so
+      // this claim can never re-restore; later arrivals use this same path.
+      await markHandled('RESTORED');
+    }
+  }
+
+  /**
    * RTN stock restoration — the exact inverse of a PARTIAL return.
    *
    * An RTN order was never an outbound stock reservation/deduction, so

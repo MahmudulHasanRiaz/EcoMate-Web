@@ -18,7 +18,9 @@ import { CustomersService } from '../customers/customers.service';
 import { CustomerAddressService } from '../customers/customer-address.service';
 import { SalesChannelService } from '../sales-channel/sales-channel.service';
 import { OrdersEventService } from './orders-event.service';
+import { readPaymentSettings } from '../payments/payment-settings';
 import { buildOrderSearchFilter } from './order-search';
+import { orderSnapshotCustomer } from './order-recipient';
 import { buildOrderAttributionSnapshot } from './order-attribution-snapshot';
 import { StockService } from '../stock/stock.service';
 import { StockRouterService } from '../stock/stock-router.service';
@@ -57,6 +59,7 @@ import { TrackingEligibilityGate } from '../tracking/tracking-eligibility-gate';
 import { CacheService } from '../cache/cache.service';
 import { OrderStaffPerformanceService } from './order-staff-performance.service';
 import { CommissionEngineService } from '../commissions/commission-engine.service';
+import { CodMismatchService } from '../cod-mismatch/cod-mismatch.service';
 
 // Order-status transition rules live in one place — the runtime gate and the
 // seed share the same map (see order-transitions.ts for the Partial rule).
@@ -66,6 +69,16 @@ import {
   ITEM_EDIT_BLOCKED_STATUSES,
 } from './order-transitions';
 export { ORDER_TRANSITIONS };
+
+/**
+ * Task 5 (Fix 9, owner-locked Rule 15): the staff-partial button lives on
+ * Shipping AND Partial orders only. Every other status 400s (the menu mirrors
+ * this with a disabled reason; the backend enforces it).
+ */
+export const STAFF_PARTIAL_ALLOWED_STATUSES: readonly string[] = [
+  'Shipping',
+  'Partial',
+];
 
 /**
  * Order status name → lifecycle custom tracking event. Only genuinely
@@ -274,6 +287,9 @@ export class OrdersService {
     // OrdersService without it keep working; production always wires it.
     @Optional()
     private readonly commissionEngine?: CommissionEngineService,
+    // Shared COD alert recompute (Feature A). Optional for the same reason.
+    @Optional()
+    private readonly codMismatch?: CodMismatchService,
   ) {}
 
   /**
@@ -287,6 +303,19 @@ export class OrdersService {
       await this.cache?.invalidateByPrefix('analytics:');
     } catch (err) {
       this.logger.warn(`Analytics cache invalidation failed: ${err}`);
+    }
+  }
+
+  /**
+   * Post-dispatch COD alert refresh (Feature A). Resilient — mirrors
+   * invalidateAnalytics: an alert failure must never break the mutation.
+   * No-op when the order has no dispatch (recompute skips NULL amounts).
+   */
+  private async refreshCodAlert(orderId: string): Promise<void> {
+    try {
+      await this.codMismatch?.recompute(orderId);
+    } catch (err) {
+      this.logger.warn(`COD alert recompute failed for order ${orderId}: ${err}`);
     }
   }
 
@@ -582,14 +611,10 @@ export class OrdersService {
       ...order,
       dispatches,
       editLock,
-      customer: order.customer
-        ? {
-            ...order.customer,
-            firstName: order.customer.name || '',
-            lastName: '',
-            phoneNumber: order.customer.phone || '',
-          }
-        : order.customer,
+      // D-A: `customer` is built FROM the order snapshot so the UI keeps
+      // working while the source flips to snapshot. The linked
+      // CustomerProfile is never read here.
+      customer: orderSnapshotCustomer(order),
       shippingAddress: normalizedAddress,
       timeline: Array.isArray(order.timeline) ? order.timeline : [],
       trackingUrl:
@@ -669,7 +694,7 @@ export class OrdersService {
     sort?: string;
     order?: string;
     includeTrashed?: boolean;
-    kind?: 'SALE' | 'RETURN';
+    kind?: 'SALE' | 'RETURN' | 'EXCHANGE';
   }) {
     // 1000-row pages are a first-class use case (daily volume in the
     // thousands) — but an unbounded `take` with the full list include
@@ -684,9 +709,13 @@ export class OrdersService {
     const where: any = {};
     if (!query.includeTrashed) where.trashedAt = null;
     // RTN return orders are excluded from the sales list unless explicitly
-    // requested — they are operations records, not sales.
+    // requested — they are operations records, not sales. Task 7: the unified
+    // Returns menu owns return visibility, so a kind-less list shows SALE +
+    // EXCHANGE only (exchange orders keep their Exchange badge in the list).
     if (query.kind) {
       where.kind = query.kind;
+    } else {
+      where.kind = { not: 'RETURN' };
     }
     if (query.search) {
       // Order number · customer/guest name · product SKU · phone (exact once
@@ -731,6 +760,10 @@ export class OrdersService {
           payments: true,
           shipment: true,
           assignee: { select: { id: true, firstName: true, lastName: true } },
+          // Task 7: Exchanges list needs the original-order link without a
+          // second query; RTN rows keep their returnOf link for the badge.
+          exchangeOfOrder: { select: { id: true, displayId: true } },
+          returnOfOrder: { select: { id: true, displayId: true } },
           // One LEFT JOIN for every list row — no per-order lock queries.
           editLock: {
             include: { user: { select: { firstName: true, lastName: true } } },
@@ -2147,41 +2180,16 @@ export class OrdersService {
               notes: 'Advance payment collected during order creation',
             },
           });
-          const remaining = Math.max(0, Number(finalTotal) - advancePaid);
-          if (remaining > 0) {
-            await tx.payment.create({
-              data: {
-                orderId: created.id,
-                gatewayCode: 'cash',
-                amount: remaining,
-                status: PaymentStatus.UNPAID,
-                notes: 'Remaining balance to collect on delivery',
-              },
-            });
-          }
+          // D-C actuals-only ledger: the uncollected remainder is DERIVED
+          // (total − ΣPAID), never a placeholder row. The courier collects
+          // against the derived due; settlement import writes the real PAID
+          // row when the money arrives.
         } else {
-          const paymentAmount =
-            dto.paymentOptionType === 'PARTIAL_PAYMENT' && dto.partialAmount
-              ? dto.partialAmount
-              : finalTotal;
-          const gatewayCode =
-            dto.gatewayCode ||
-            (dto.paymentOptionType === 'CASH_ON_DELIVERY' ? 'cash' : undefined);
-          if (gatewayCode) {
-            await tx.payment.create({
-              data: {
-                orderId: created.id,
-                gatewayCode,
-                amount: paymentAmount,
-                // COD cash rows are created UNPAID so the Delivered path can
-                // mark them PAID; in-progress online payments stay PENDING.
-                status:
-                  gatewayCode === 'cash'
-                    ? PaymentStatus.UNPAID
-                    : PaymentStatus.PENDING,
-              },
-            });
-          }
+          // D-C actuals-only ledger: order creation records NO payment row
+          // unless money was actually received (the staff-partial advance
+          // above). COD cash and in-progress online intents leave no row —
+          // the due stays derived (total − ΣPAID) and real money enters via
+          // the payment endpoints / gateway callbacks.
         }
       }
 
@@ -2479,6 +2487,8 @@ export class OrdersService {
     }
 
     await this.invalidateAnalytics();
+    // Harmless no-op when no dispatch exists yet (recompute skips the order).
+    await this.refreshCodAlert(order.id);
     return order;
   }
 
@@ -3287,6 +3297,9 @@ export class OrdersService {
                   PaymentStatus.REFUNDED,
                   PaymentStatus.PARTIAL_REFUNDED,
                   PaymentStatus.CANCELLED,
+                  // D-C: legacy cash/UNPAID placeholders are VOID-marked, never
+                  // money — skip them like every other terminal row.
+                  PaymentStatus.VOID,
                 ],
               },
             },
@@ -3294,20 +3307,76 @@ export class OrdersService {
           });
           if (existing) {
             if (paymentAmount <= 0) {
-              // Advance covers the whole bill: no balance row should linger.
-              await tx.payment.delete({ where: { id: existing.id } });
-            } else {
-              await tx.payment.update({
-                where: { id: existing.id },
+              // Append-only ledger: NEVER delete. The lingering balance row
+              // is neutralized by a full-reversal correction row (negative of
+              // the original) with a reason — an INSERT, so no S2 gate.
+              const actor =
+                opts?.userId != null ? `staff:${opts.userId}` : null;
+              await tx.payment.create({
                 data: {
-                  gatewayCode,
-                  amount: paymentAmount,
-                  status:
-                    gatewayCode === 'cash'
-                      ? PaymentStatus.UNPAID
-                      : PaymentStatus.PENDING,
+                  orderId: id,
+                  gatewayCode: existing.gatewayCode,
+                  amount: -Number(existing.amount),
+                  status: existing.status,
+                  notes: `Reversal of payment ${existing.id}: advance covers the full bill — auto-reversal entry, original row retained.`,
+                  recordedBy: actor,
+                  submittedBy: actor,
+                  recordedAt: new Date(),
                 },
               });
+            } else {
+              const amountChanged =
+                Number(existing.amount) !== paymentAmount;
+              const gatewayChanged = existing.gatewayCode !== gatewayCode;
+              if (amountChanged || gatewayChanged) {
+                // S2 gate (default OFF): direct amount/account edits are
+                // forbidden — staff record a correction entry instead.
+                const paymentSettings = await readPaymentSettings(tx);
+                if (!paymentSettings.editAllowed) {
+                  throw new ForbiddenException(
+                    'Payment editing is disabled — record a correction entry instead',
+                  );
+                }
+                const oldRow = {
+                  gatewayCode: existing.gatewayCode,
+                  amount: Number(existing.amount),
+                  status: existing.status,
+                };
+                const newStatus =
+                  gatewayCode === 'cash'
+                    ? PaymentStatus.UNPAID
+                    : PaymentStatus.PENDING;
+                await tx.payment.update({
+                  where: { id: existing.id },
+                  data: {
+                    gatewayCode,
+                    amount: paymentAmount,
+                    status: newStatus,
+                  },
+                });
+                // S2-ON direct edits stay auditable: append old → new + by.
+                const editedBy =
+                  opts?.userId ?? opts?.performedBy ?? 'staff';
+                data.timeline = [
+                  ...((data.timeline as any[]) ?? timeline),
+                  {
+                    type: 'payment',
+                    visibility: 'internal',
+                    timestamp: now,
+                    note: `Payment row edited ৳${oldRow.amount} → ৳${paymentAmount} (${oldRow.gatewayCode} → ${gatewayCode}) by ${editedBy}.`,
+                    old: oldRow,
+                    new: {
+                      gatewayCode,
+                      amount: paymentAmount,
+                      status: newStatus,
+                    },
+                    by: editedBy,
+                    at: now,
+                  },
+                ];
+              }
+              // No-op save (identical amount + gateway): leave the row
+              // untouched — no write, no audit, no 403.
             }
           } else {
             const paidRows = await tx.payment.count({
@@ -3318,17 +3387,10 @@ export class OrdersService {
                 'Payment was already completed — change the gateway via a refund instead of editing the order',
               );
             }
-            await tx.payment.create({
-              data: {
-                orderId: id,
-                gatewayCode,
-                amount: paymentAmount,
-                status:
-                  gatewayCode === 'cash'
-                    ? PaymentStatus.UNPAID
-                    : PaymentStatus.PENDING,
-              },
-            });
+            // D-C actuals-only ledger: switching the method with no money
+            // received records nothing — no UNPAID/PENDING placeholder. The
+            // due stays derived (total − ΣPAID); real money enters via the
+            // payment endpoints.
           }
         }
       }
@@ -3361,6 +3423,9 @@ export class OrdersService {
       });
     });
     await this.invalidateAnalytics();
+    // Order edit changes the collectable (total/shipping/discount) — refresh
+    // the post-dispatch COD alert (Feature A, resilient no-op if no dispatch).
+    await this.refreshCodAlert(id);
     return updated;
   }
 
@@ -3404,12 +3469,61 @@ export class OrdersService {
    * packing lock, which must not be left behind if the status write fails).
    * When omitted the method runs in its own transaction, as before.
    */
+  /**
+   * Task 9 (D5) cancel/refund gate — single source of truth, shared with
+   * refunds.service: outstanding = netPaid − legacyRefunded, where netPaid is
+   * Σ signed PAID payment rows (Task 5 negative corrections included) and
+   * legacyRefunded is Σ approved/completed Refund rows with method NULL
+   * (recorded before ledger mirroring; every new-flow refund carries method
+   * + a matching negative payment row, so counting new rows here would
+   * double-count — they are counted via the ledger instead).
+   */
+  private async outstandingRefundableBalance(
+    orderId: string,
+    client?: Prisma.TransactionClient,
+  ): Promise<number> {
+    const db = client ?? this.prisma;
+    const [paidAgg, legacyAgg] = await Promise.all([
+      db.payment.aggregate({
+        where: { orderId, status: 'PAID' },
+        _sum: { amount: true },
+      }),
+      db.refund.aggregate({
+        where: {
+          orderId,
+          status: { in: ['approved', 'completed'] },
+          method: null,
+        },
+        _sum: { amount: true },
+      }),
+    ]);
+    const netPaid = Number((paidAgg as any)?._sum?.amount || 0);
+    const legacyRefunded = Number((legacyAgg as any)?._sum?.amount || 0);
+    return netPaid - legacyRefunded;
+  }
+
+  private cancelBlockedMessage(outstanding: number): string {
+    return (
+      `আগে রিফান্ড করুন — this order still has an outstanding paid balance ` +
+      `of ${outstanding}. Record a refund first (the refund flow can cancel ` +
+      `atomically via its cancel option), then cancel.`
+    );
+  }
+
+  private async assertNoOutstandingForCancel(orderId: string): Promise<void> {
+    const outstanding = await this.outstandingRefundableBalance(orderId);
+    if (outstanding > 0) {
+      throw new BadRequestException(this.cancelBlockedMessage(outstanding));
+    }
+  }
+
   async updateStatus(
     id: string,
     dto: UpdateOrderStatusDto,
     userId: string,
     performedBy?: string,
     tx?: Prisma.TransactionClient,
+    internalOpts?: { allowStaffPartialToDelivered?: boolean },
   ) {
     const order = await this.prisma.order.findUnique({
       where: { id },
@@ -3423,22 +3537,37 @@ export class OrdersService {
     });
     if (!newStatus) throw new NotFoundException('Status not found');
 
+    // Task 5 (Fix 9, owner-locked Rule 15.4): the ONLY automated Partial →
+    // Delivered path. confirmStaffPartialDelivered() verifies the open
+    // staff-created PARTIAL Return fail-closed BEFORE setting this flag, so a
+    // direct updateStatus caller can never smuggle it in via the DTO (the flag
+    // is a method parameter, not request input).
+    const staffPartialBypass =
+      internalOpts?.allowStaffPartialToDelivered === true &&
+      order.status.name === 'Partial' &&
+      newStatus.name === 'Delivered';
+
     // AUTHORITATIVE RULE: 'Partial' is an automation-stopped state. Once an
     // order is Partial, only manual staff action may change its status —
     // courier webhooks, webhook replays, the manual courier sync and
     // reconciliation must never transition it. Manual staff members pass a
     // real user id and are unaffected.
-    if (order.status.name === 'Partial' && isAutomatedActor(userId)) {
+    if (order.status.name === 'Partial' && isAutomatedActor(userId) && !staffPartialBypass) {
       throw new BadRequestException(
         'Order is Partial: automated processes cannot change its status. It must be changed manually.',
       );
     }
 
     const allowed = ORDER_TRANSITIONS[order.status.name] || [];
-    if (!allowed.includes(newStatus.name)) {
+    if (!allowed.includes(newStatus.name) && !staffPartialBypass) {
       throw new BadRequestException(
         `Cannot transition from "${order.status.name}" to "${newStatus.name}". Allowed: ${allowed.join(', ') || 'none'}`,
       );
+    }
+
+    // Task 9 (D5): cancel blocked while money is still out — refund first.
+    if (newStatus.name === 'Cancelled') {
+      await this.assertNoOutstandingForCancel(id);
     }
 
     // 'Returned' is a manual-confirmation-only status: it restores stock via
@@ -3448,6 +3577,14 @@ export class OrdersService {
       throw new BadRequestException(
         'Order cannot be marked Returned by an automated process — it must be manually confirmed from the order detail page.',
       );
+    }
+
+    // Task 4 (Fix 8): an exchange-linked original confirms Returned ONLY on
+    // BOTH signals — its exchange order(s) delivered AND its Return(EXCHANGE)
+    // leg(s) arrived. NEVER auto from an exchange event alone (automated
+    // actors are already blocked above; this gates the staff path too).
+    if (newStatus.name === 'Returned') {
+      await this.assertExchangeReturnReady(id);
     }
 
     const timeline = [
@@ -3674,6 +3811,299 @@ export class OrdersService {
     return updated;
   }
 
+  /**
+   * Task 5 (Fix 9, owner-locked Rule 15): staff-partial creation.
+   *
+   * Button 'Create Partial Return Order' on Shipping AND Partial orders →
+   * creates Return(PARTIAL, items=marked products, source STAFF) → order →
+   * Partial, DISPATCH UNCHANGED. There is deliberately NO dispatch write
+   * anywhere in this method: a staff action never rewrites the dispatch
+   * (locked by test — dispatch.update/updateMany/upsert/create uncalled).
+   *
+   * T4 rows adopted: the Return shape here is exactly ReturnsService.create's
+   * standalone shape (RTN-YYMMDD-NNNN via the shared ReturnCounter), so rows
+   * created by the T4 menu entry need no migration.
+   *
+   * - Shipping (no instantDelivery) → order → Partial via updateStatus.
+   * - Already Partial (no instantDelivery) → Return created, status kept.
+   * - instantDelivery → the kept remainder is already delivered: Shipping →
+   *   Delivered via updateStatus (legal transition), Partial → Delivered via
+   *   confirmStaffPartialDelivered (the Return created above satisfies its
+   *   staff-Return check). A later courier partial webhook is then a no-op.
+   */
+  async createStaffPartialReturn(
+    orderId: string,
+    dto: { items: unknown; reason?: string; instantDelivery?: boolean },
+    actor: { userId: string; email?: string },
+  ) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        status: true,
+        items: { select: { productId: true, variantId: true, quantity: true } },
+      },
+    });
+    if (!order || (order as any).trashedAt) {
+      throw new NotFoundException('Order not found');
+    }
+    if ((order as any).kind === 'RETURN') {
+      throw new BadRequestException(
+        'A partial return cannot be created from a Return Order.',
+      );
+    }
+    const statusName = (order as any)?.status?.name as string | undefined;
+    if (!STAFF_PARTIAL_ALLOWED_STATUSES.includes(statusName as string)) {
+      throw new BadRequestException(
+        'A partial return can only be created from an order in Shipping or ' +
+          `Partial status (current: ${statusName ?? 'unknown'}).`,
+      );
+    }
+    const items = this.validateStaffPartialItems(
+      dto.items,
+      ((order as any).items ?? []) as {
+        productId: string | null;
+        variantId: string | null;
+        quantity: number;
+      }[],
+    );
+
+    const displayId = await this.generateStaffPartialDisplayId();
+    const ret = await (this.prisma as any).return.create({
+      data: {
+        orderId,
+        displayId,
+        type: 'PARTIAL',
+        status: 'REQUESTED',
+        source: 'STAFF',
+        items: items as unknown as Prisma.InputJsonValue,
+        reason: dto.reason?.trim() ? dto.reason.trim() : null,
+      },
+    });
+    this.logger.log(
+      `Staff partial return ${displayId} created for order ${(order as any).displayId ?? orderId} ` +
+        `by=${actor.email ?? actor.userId} (dispatch unchanged)`,
+    );
+
+    const performedBy = actor.email ?? actor.userId;
+    if (dto.instantDelivery) {
+      if (statusName === 'Shipping') {
+        const delivered = await this.prisma.orderStatus.findUnique({
+          where: { name: 'Delivered' },
+        });
+        if (!delivered) {
+          throw new BadRequestException('Order status configuration is incomplete');
+        }
+        const updated = await this.updateStatus(
+          orderId,
+          {
+            statusId: delivered.id,
+            note:
+              `Staff partial return ${displayId} created — remaining items ` +
+              `marked instantly delivered.`,
+          },
+          actor.userId,
+          performedBy,
+        );
+        return { return: ret, order: updated };
+      }
+      const updated = await this.confirmStaffPartialDelivered(
+        orderId,
+        actor.userId,
+        `Staff partial return ${displayId} created — remaining items marked ` +
+          `instantly delivered.`,
+        performedBy,
+      );
+      return { return: ret, order: updated };
+    }
+
+    if (statusName === 'Shipping') {
+      const partial = await this.prisma.orderStatus.findUnique({
+        where: { name: 'Partial' },
+      });
+      if (!partial) {
+        throw new BadRequestException('Order status configuration is incomplete');
+      }
+      const updated = await this.updateStatus(
+        orderId,
+        {
+          statusId: partial.id,
+          note:
+            `Staff partial return ${displayId} created — ` +
+            `order moved to Partial; dispatch unchanged.`,
+        },
+        actor.userId,
+        performedBy,
+      );
+      return { return: ret, order: updated };
+    }
+
+    // Already Partial: the Return is the record; the status stays. Leave a
+    // staff-visible timeline note so the creation is auditable.
+    const timeline = [
+      ...this.parseTimeline((order as any).timeline),
+      {
+        status: 'Partial',
+        oldStatus: 'Partial',
+        timestamp: new Date().toISOString(),
+        note: `Staff partial return ${displayId} created — order stays Partial; dispatch unchanged.`,
+        performedBy,
+      },
+    ];
+    const updated = await this.prisma.order.update({
+      where: { id: orderId },
+      data: { timeline: timeline as any },
+      include: { status: true },
+    });
+    return { return: ret, order: updated };
+  }
+
+  /**
+   * Task 5 (Fix 9, owner-locked Rule 15.4): the ONLY automated Partial →
+   * Delivered path — an explicit exception to the flow-index block in
+   * CourierWebhookService.tryAdvanceOrderStatus AND to the updateStatus
+   * automation-stop / transition locks (via the internal bypass flag, which
+   * is set ONLY here after the fail-closed checks below — never from request
+   * input).
+   *
+   * Fail-closed: throws unless the order is Partial AND an OPEN
+   * staff-created PARTIAL Return exists (CLOSED legs never qualify).
+   * Approval-pending partials never reach this method (the webhook passes
+   * confirmedPartial=false for them); instant-delivery orders never reach it
+   * either (they are already Delivered — the webhook is a no-op there).
+   */
+  async confirmStaffPartialDelivered(
+    orderId: string,
+    performedBy?: string,
+    note?: string,
+    performedByEmail?: string,
+  ) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { status: true },
+    });
+    if (!order || (order as any).trashedAt) {
+      throw new NotFoundException('Order not found');
+    }
+    if ((order as any)?.status?.name !== 'Partial') {
+      throw new BadRequestException(
+        'Only a Partial order can be confirmed Delivered through a staff partial return.',
+      );
+    }
+    const db = this.prisma as any;
+    const staffReturn =
+      typeof db?.return?.findFirst === 'function'
+        ? await db.return.findFirst({
+            where: {
+              orderId,
+              source: 'STAFF',
+              type: 'PARTIAL',
+              status: { not: 'CLOSED' },
+            },
+          })
+        : null;
+    if (!staffReturn) {
+      throw new BadRequestException(
+        'Partial → Delivered requires an open staff-created partial return.',
+      );
+    }
+    const delivered = await this.prisma.orderStatus.findUnique({
+      where: { name: 'Delivered' },
+    });
+    if (!delivered) {
+      throw new BadRequestException('Order status configuration is incomplete');
+    }
+    return this.updateStatus(
+      orderId,
+      {
+        statusId: delivered.id,
+        note:
+          note ??
+          `Staff partial return ${(staffReturn as any)?.displayId ?? (staffReturn as any)?.id} ` +
+            `confirmed — kept remainder delivered (Rule 15.4).`,
+      },
+      'system',
+      performedByEmail ?? performedBy ?? 'system',
+      undefined,
+      { allowStaffPartialToDelivered: true },
+    );
+  }
+
+  /**
+   * Staff-partial item validation: ReturnsService shape rules (productId
+   * required, quantity a positive integer, no duplicate lines) PLUS the
+   * exchange qty-cap rules (each line must belong to the original order and
+   * never exceed its ordered quantity — direct-POST inflation guard).
+   */
+  private validateStaffPartialItems(
+    items: unknown,
+    orderLines: { productId: string | null; variantId: string | null; quantity: number }[],
+  ): { productId: string; variantId: string | null; quantity: number }[] {
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new BadRequestException('Select at least one product to return.');
+    }
+    const orderedQtyByKey = new Map<string, number>();
+    const inOriginal = new Set<string>();
+    for (const line of orderLines ?? []) {
+      if (!line?.productId) continue;
+      const key = `${line.productId}::${line.variantId ?? ''}`;
+      inOriginal.add(key);
+      orderedQtyByKey.set(key, (orderedQtyByKey.get(key) ?? 0) + Number(line.quantity ?? 0));
+    }
+    const seen = new Set<string>();
+    return (items as any[]).map((it, i) => {
+      const productId = String((it as any)?.productId ?? '').trim();
+      const variantId = (it as any)?.variantId ? String((it as any).variantId) : null;
+      const quantity = Number((it as any)?.quantity);
+      if (!productId) {
+        throw new BadRequestException(`Return items[${i}].productId is required`);
+      }
+      if (!Number.isInteger(quantity) || quantity <= 0) {
+        throw new BadRequestException(
+          `Return items[${i}].quantity must be a positive integer`,
+        );
+      }
+      const key = `${productId}::${variantId ?? ''}`;
+      if (seen.has(key)) {
+        throw new BadRequestException(`Duplicate return line: ${productId}`);
+      }
+      seen.add(key);
+      if (inOriginal.size > 0 && !inOriginal.has(key)) {
+        throw new BadRequestException(
+          'A returning item is not part of the original order.',
+        );
+      }
+      const ordered = orderedQtyByKey.get(key);
+      if (ordered !== undefined && quantity > ordered) {
+        throw new BadRequestException(
+          `Returning quantity (${quantity}) exceeds the ordered quantity (${ordered}).`,
+        );
+      }
+      return { productId, variantId, quantity };
+    });
+  }
+
+  /**
+   * RTN-YYMMDD-NNNN — mirrors ReturnsService.generateDisplayId (shared
+   * ReturnCounter, so T4-created and T5-created rows number in one sequence).
+   */
+  private async generateStaffPartialDisplayId(): Promise<string> {
+    const { year, month, day } = dhakaDateParts();
+    const yy = String(year).slice(2);
+    const mm = String(month).padStart(2, '0');
+    const dd = String(day).padStart(2, '0');
+    const dateStr = `${yy}${mm}${dd}`;
+    const prefix = `RTN-${dateStr}`;
+
+    return this.prisma.$transaction(async (tx) => {
+      const counter = await tx.returnCounter.upsert({
+        where: { date: dateStr },
+        create: { date: dateStr, seq: 1 },
+        update: { seq: { increment: 1 } },
+      });
+      return `${prefix}-${String(counter.seq).padStart(4, '0')}`;
+    });
+  }
+
   async submitPaymentProof(
     orderId: string,
     proofData: { transactionId?: string; screenshot?: string },
@@ -3744,7 +4174,7 @@ export class OrdersService {
     });
   }
 
-  async verifyPayment(orderId: string, verified: boolean, note?: string, feeAmount?: number) {
+  async verifyPayment(orderId: string, verified: boolean, note?: string, feeAmount?: number, userId?: string) {
     const updated = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
@@ -3756,6 +4186,23 @@ export class OrdersService {
         throw new BadRequestException(
           'Order is not awaiting payment verification',
         );
+      }
+
+      // Self-approve block (Task 6): the order-level verify approves every
+      // PENDING row at once, so a verifier who recorded ANY of them is
+      // refused — per-row PUT /payments/:id/verify stays the granular path.
+      // userId is optional (pre-Task-6 callers omit it) — without an actor
+      // there is nobody to compare against, so the check is skipped.
+      if (userId) {
+        const pending = await tx.payment.findMany({
+          where: { orderId, status: 'PENDING' },
+          select: { recordedBy: true },
+        });
+        if (
+          pending.some((p: any) => p.recordedBy === `staff:${userId}`)
+        ) {
+          throw new ForbiddenException('Staff cannot approve their own entry');
+        }
       }
 
       const targetStatusName = verified ? 'Confirmed' : 'Payment Pending';
@@ -3847,6 +4294,8 @@ export class OrdersService {
     });
 
     await this.invalidateAnalytics();
+    // Verification flips PAID status — the collectable changed (Feature A).
+    await this.refreshCodAlert(orderId);
 
     // Commission hook (decision #5): verified payment lands the order on
     // 'Confirmed'; evaluate active commission rules. Resilient.
@@ -3961,6 +4410,7 @@ export class OrdersService {
       });
     });
     await this.invalidateAnalytics();
+    await this.refreshCodAlert(orderId);
     return added;
   }
 
@@ -4043,6 +4493,7 @@ export class OrdersService {
       });
     });
     await this.invalidateAnalytics();
+    await this.refreshCodAlert(orderId);
     return removed;
   }
 
@@ -4129,6 +4580,47 @@ export class OrdersService {
     }
     for (const missingId of missing) {
       failedDetails.push({ id: missingId, reason: 'Order not found' });
+    }
+
+    // Task 4 (Fix 8): bulk Returned collects per-order failures like the
+    // cancel gate above — an exchange-linked original whose exchange is not
+    // delivered + return not arrived lands in the failed list; the rest
+    // still confirm.
+    if (targetStatus.name === 'Returned') {
+      const stillValid: string[] = [];
+      for (const orderId of validIds) {
+        try {
+          await this.assertExchangeReturnReady(orderId);
+          stillValid.push(orderId);
+        } catch (e) {
+          failedDetails.push({
+            id: orderId,
+            reason: (e as Error)?.message ?? 'Exchange return not ready',
+          });
+        }
+      }
+      validIds.length = 0;
+      validIds.push(...stillValid);
+    }
+
+    // Task 9 (D5): bulk cancel collects per-order failures instead of
+    // throwing the whole batch — an order with money still out lands in the
+    // failed list with the gate message; the rest still cancel.
+    if (targetStatus.name === 'Cancelled') {
+      const stillValid: string[] = [];
+      for (const orderId of validIds) {
+        const outstanding = await this.outstandingRefundableBalance(orderId);
+        if (outstanding > 0) {
+          failedDetails.push({
+            id: orderId,
+            reason: this.cancelBlockedMessage(outstanding),
+          });
+        } else {
+          stillValid.push(orderId);
+        }
+      }
+      validIds.length = 0;
+      validIds.push(...stillValid);
     }
 
     if (validIds.length > 0) {
@@ -4591,6 +5083,9 @@ export class OrdersService {
         `Order in "${order.status.name}" status cannot be cancelled`,
       );
     }
+    // Task 9 (D5): customer cancel blocked while money is still out — the
+    // customer must contact support for a refund first.
+    await this.assertNoOutstandingForCancel(orderId);
     const timeline = [
       ...this.parseTimeline(order.timeline),
       {
@@ -4929,6 +5424,99 @@ export class OrdersService {
       performedBy,
       tx,
     });
+  }
+
+  /**
+   * Task 4 (Fix 8): BOTH-signals gate for confirming an exchange-linked
+   * original Returned — every exchange order DELIVERED (dispatch) AND every
+   * Return(EXCHANGE) leg RECEIVED/RESTOCKED.
+   *
+   * Unlinked orders pass straight through. Legacy exchanges (pre-Feature, no
+   * Return record) gate on delivery only. Fail-CLOSED when exchange children
+   * are known but the delivery state is unknown (dispatch surface missing or
+   * query throws): the gate blocks with an explicit error rather than
+   * allowing Returned on no evidence. Zero-exchange orders keep the lenient
+   * path — a return-leg query failure with nothing to gate on still passes.
+   */
+  private async assertExchangeReturnReady(id: string): Promise<void> {
+    const db = this.prisma as any;
+    if (typeof db?.order?.findMany !== 'function') return;
+    let children: any[];
+    try {
+      children = (await db.order.findMany({
+        where: { exchangeOfOrderId: id, trashedAt: null },
+        select: { id: true, displayId: true },
+      })) ?? [];
+    } catch {
+      return;
+    }
+    // An order is never its own exchange child (also keeps arg-insensitive
+    // test doubles from false-positiving on the order row itself).
+    const exchanges = (children ?? []).filter((e) => e?.id !== id);
+    let exReturns: any[] = [];
+    if (typeof db?.return?.findMany === 'function') {
+      try {
+        exReturns =
+          (await db.return.findMany({
+            where: { orderId: id, type: 'EXCHANGE' },
+            select: { id: true, displayId: true, status: true },
+          })) ?? [];
+      } catch {
+        exReturns = [];
+      }
+    }
+    if (exchanges.length === 0 && exReturns.length === 0) return;
+
+    if (exchanges.length > 0) {
+      // Fail-CLOSED: with known exchange children, an unknown delivery state
+      // must block — never silently allow Returned. (Zero-exchange orders
+      // keep the lenient path: nothing to gate on.)
+      if (typeof db?.dispatch?.findMany !== 'function') {
+        throw new BadRequestException(
+          'Cannot mark Returned yet — exchange delivery state is unknown. ' +
+            'Verify the exchange order delivery before confirming.',
+        );
+      }
+      let dispatches: any[];
+      try {
+        dispatches =
+          (await db.dispatch.findMany({
+            where: { orderId: { in: exchanges.map((e) => e.id) } },
+            select: { orderId: true, status: true },
+          })) ?? [];
+      } catch {
+        throw new BadRequestException(
+          'Cannot mark Returned yet — exchange delivery state is unknown. ' +
+            'Verify the exchange order delivery before confirming.',
+        );
+      }
+      const delivered = new Set(
+        (dispatches ?? [])
+          .filter((d) => d?.status === 'DELIVERED')
+          .map((d) => d.orderId),
+      );
+      const undelivered = exchanges.filter((e) => !delivered.has(e.id));
+      if (undelivered.length > 0) {
+        const first = undelivered[0];
+        throw new BadRequestException(
+          `Cannot mark Returned yet — exchange order ${first.displayId ?? first.id} ` +
+            `has not been delivered.`,
+        );
+      }
+    }
+
+    if (exReturns.length > 0) {
+      const unarrived = exReturns.filter(
+        (r) => r?.status !== 'RECEIVED' && r?.status !== 'RESTOCKED',
+      );
+      if (unarrived.length > 0) {
+        const first = unarrived[0];
+        throw new BadRequestException(
+          `Cannot mark Returned yet — return ${first.displayId ?? first.id} ` +
+            `has not arrived (needs RECEIVED or RESTOCKED).`,
+        );
+      }
+    }
   }
 
   private async handleDeliveredSideEffects(

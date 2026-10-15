@@ -3,9 +3,11 @@ import { apiClient } from '@/lib/api-client'
 export interface OrderResponse {
   id: string; displayId: string; customerId?: string | null; statusId: string;
   warnings?: string[];
-  kind?: 'SALE' | 'RETURN';
+  kind?: 'SALE' | 'RETURN' | 'EXCHANGE';
   returnOfOrderId?: string | null;
   returnOfOrder?: { id: string; displayId: string; status: { id: string; name: string } } | null;
+  exchangeOfOrderId?: string | null;
+  exchangeOfOrder?: { id: string; displayId: string } | null;
   returnedAt?: string | null;
   stockRestored?: boolean;
   subtotal: number | string; shippingCharge: number | string; discount: number | string;
@@ -19,6 +21,11 @@ export interface OrderResponse {
   guestName?: string | null;
   guestPhone?: string | null;
   secondaryPhone?: string | null;
+  /** Order-time customer snapshot (D-A source of truth; also mirrored into `customer` by GET). */
+  customerFirstName?: string | null;
+  customerLastName?: string | null;
+  customerPhone?: string | null;
+  customerEmail?: string | null;
   viewToken?: string | null;
   paymentMethod?: string | null;
   paymentMode?: string | null;
@@ -33,7 +40,7 @@ export interface OrderResponse {
   dispatches?: {
     id: string;
     courier: string;
-    consignmentId: string;
+    consignmentId: string | null;
     trackingCode: string | null;
     trackingUrl?: string | null;
     status: string;
@@ -63,10 +70,17 @@ export interface OrderResponse {
   sourcePlatformName?: string | null;
   trashedAt?: string | null;
   createdAt: string; updatedAt: string;
-  customer: { id: string; firstName: string; lastName: string; email: string; phoneNumber: string } | null;
+  customer: { id: string; firstName: string; lastName: string; email: string; phoneNumber: string; name?: string; phone?: string } | null;
   status: { id: string; name: string; color: string; nextStatuses: string[] };
   items: { id: string; productId: string; variantId?: string | null; quantity: number; price: number | string; product: { id: string; name: string; images: any; slug?: string } }[];
-  payments: { id: string; method?: string; gatewayCode?: string; amount: number | string; status: string; transactionId?: string | null }[];
+  /** Append-only payment ledger rows (Task 11: account/actor/recordedAt). */
+  payments: {
+    id: string; method?: string; gatewayCode?: string; amount: number | string; status: string;
+    transactionId?: string | null; account?: string | null;
+    recordedBy?: string | null; submittedBy?: string | null; recordedAt?: string | null;
+    verifiedBy?: string | null; verifiedAt?: string | null; notes?: string | null;
+    createdAt?: string;
+  }[];
   shipment?: { id: string; trackingNo?: string | null; courier?: string | null; status: string } | null;
 }
 
@@ -110,7 +124,7 @@ export interface ScanPurposeDescriptor {
 export interface ScanDispatchPreview {
   id: string
   courier: string
-  consignmentId: string
+  consignmentId: string | null
   trackingCode: string | null
   status: string
   orderId: string
@@ -290,9 +304,29 @@ export interface OrderOthersInfoResponse {
   rawMeta: { truncated: boolean; redactedPaths: string[] };
 }
 
+export interface CodMismatchAlert {
+  id: string
+  orderId: string
+  courier: string
+  consignmentId: string
+  courierAmount: number | string
+  systemDue: number | string
+  status: 'open' | 'resolved' | 'cleared'
+  resolvedBy?: string | null
+  resolvedAt?: string | null
+  createdAt: string
+  updatedAt?: string
+}
+
+export const codAlertsApi = {
+  list: (orderId: string) =>
+    apiClient.get<CodMismatchAlert[]>(`/orders/${orderId}/cod-alerts`).then(r => r.data),
+  resolve: (orderId: string, alertId: string) =>
+    apiClient.post(`/orders/${orderId}/cod-alerts/${alertId}/resolve`).then(r => r.data),
+}
+
 export const ordersApi = {
-  list: (query?: any) => apiClient.get<PaginatedResponse<OrderResponse>>('/orders', { params: query }),
-  get: (id: string) => apiClient.get<OrderResponse>(`/orders/${id}`),
+  list: (query?: any) => apiClient.get<PaginatedResponse<OrderResponse>>('/orders', { params: query }),  get: (id: string) => apiClient.get<OrderResponse>(`/orders/${id}`),
   /**
    * Others Information — order snapshot, current customer profile, device /
    * request context, raw + resolved attribution, tracking identifiers and
@@ -310,6 +344,17 @@ export const ordersApi = {
   removeItem: (orderId: string, itemId: string) => apiClient.delete(`/orders/${orderId}/items/${itemId}`),
   bulkAssign: (ids: string[], assignedToId: string | null) => apiClient.post('/orders/bulk/assign', { ids, assignedToId }),
   rotateViewToken: (orderId: string) => apiClient.post<{ id: string; viewToken: string; displayId: string }>(`/orders/${orderId}/rotate-view-token`),
+  /**
+   * Task 5 (Fix 9, Rule 15): staff-partial flow — creates Return(PARTIAL,
+   * items) + moves the order to Partial (or Delivered with instantDelivery),
+   * dispatch UNCHANGED. Replaces the direct /returns POST for the Plus-menu
+   * partial entry (T4 rows are adopted as-is, same record shape).
+   */
+  createStaffPartialReturn: (id: string, data: {
+    items: { productId: string; variantId?: string | null; quantity: number }[]
+    reason?: string
+    instantDelivery?: boolean
+  }) => apiClient.post<{ return: ReturnRecord; order: OrderResponse }>(`/orders/${id}/staff-partial-return`, data).then(r => r.data),
   backfillViewTokens: () => apiClient.post<{ updated: number; total: number }>('/orders/backfill-view-tokens'),
   trash: (id: string) => apiClient.post(`/orders/${id}/trash`),
   restore: (id: string) => apiClient.post(`/orders/${id}/restore`),
@@ -357,7 +402,30 @@ export const exchangeApi = {
         `/exchange/settlement-preview/${orderId}`,
       )
       .then(r => r.data),
+  /**
+   * Task 4 (Fix 8): BOTH signals for confirming the original Returned —
+   * exchange-delivered AND return-arrived. Drives the order-detail hint; the
+   * updateStatus path enforces the same check server-side.
+   */
+  readiness: (orderId: string) =>
+    apiClient
+      .get<{
+        orderId: string
+        linked: boolean
+        exchanges: { id: string; displayId: string; delivered: boolean }[]
+        returns: { id: string; displayId: string; status: string }[]
+        exchangeDelivered: boolean
+        returnArrived: boolean
+        canConfirmReturned: boolean
+        blockReason: string | null
+      }>(
+        `/exchange/readiness/${orderId}`,
+      )
+      .then(r => r.data),
   create: (orderId: string, data: {
+    mode?: 'FULL' | 'PARTIAL'
+    returningItems?: { productId: string; variantId?: string | null; quantity: number }[]
+    returnReason?: string
     items: { productId: string; variantId?: string; quantity: number; price: number }[]
     discount?: number
     discountType?: 'flat' | 'percentage'
@@ -366,11 +434,45 @@ export const exchangeApi = {
     officeNotes?: string
   }) =>
     apiClient
-      .post<{ exchange: OrderResponse; settlement: ExchangeSettlement }>(
+      .post<{ exchange: OrderResponse; settlement: ExchangeSettlement; mode: 'FULL' | 'PARTIAL'; returnRecord: ReturnRecord | null }>(
         `/exchange/from-order/${orderId}`,
         data,
       )
       .then(r => r.data),
+}
+
+export interface ReturnRecord {
+  id: string
+  displayId: string
+  orderId: string
+  type: 'FULL' | 'PARTIAL' | 'EXCHANGE'
+  status: string
+  source: string
+  items: { productId: string; variantId?: string | null; quantity: number }[]
+  reason?: string | null
+  courier?: string | null
+  courierReturnId?: string | null
+  exchangeOrderId?: string | null
+}
+
+/**
+ * Unified Return entity (Task 6 backend; Task 4 menu entry points).
+ * T7 owns the Returns/Exchanges LISTS — this client only creates/reads
+ * single records for the order-detail flows.
+ */
+export const returnsApi = {
+  create: (data: {
+    orderId: string
+    type: 'FULL' | 'PARTIAL' | 'EXCHANGE'
+    source?: 'STAFF' | 'COURIER' | 'EXCHANGE'
+    items?: { productId: string; variantId?: string | null; quantity: number }[]
+    reason?: string
+    courier?: string
+    courierReturnId?: string
+    courierStatus?: string
+    exchangeOrderId?: string
+  }) => apiClient.post<ReturnRecord>('/returns', data).then(r => r.data),
+  get: (id: string) => apiClient.get<ReturnRecord>(`/returns/${id}`).then(r => r.data),
 }
 
 export const scannerApi = {

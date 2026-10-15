@@ -12,7 +12,7 @@ import { useLicenseStore } from '@/stores/license-store'
 import { useOrdersFilterStore } from '@/stores/orders-filter-store'
 import { copyToClipboard } from '@/lib/clipboard'
 import { resolveOrderItemImages } from '@/lib/product-image'
-import { getCustomerDisplayName, getCustomerPhone, getCustomerEmail, extractOrderScanCode } from '@/lib/order-display'
+import { getCustomerDisplayName, getCustomerPhone, getCustomerEmail, extractOrderScanCode, getOrderPaymentMode, hasOpenCodAlert } from '@/lib/order-display'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -31,10 +31,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '@/components/ui/label'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, UserCheck, Calendar, Search as SearchIcon, Send, Plus, Upload, Trash2, Ban, RotateCcw } from 'lucide-react'
+import { Loader2, ExternalLink, Printer, X, ChevronLeft, ChevronRight, ArrowUpDown, Truck, ChevronRight as ChevronRightIcon, Package, MapPin, Mail, Tag, Phone, Receipt, CreditCard, MessageCircle, FileText, ClipboardCopy, MoreHorizontal, Inbox, Eye, UserCheck, Calendar, Search as SearchIcon, Send, Plus, Upload, Trash2, Ban, RotateCcw, ArrowRightLeft } from 'lucide-react'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { OrderSourceBadges } from '@/features/orders/order-source-badge'
 import { CanonicalAttributionBadges } from '@/features/orders/canonical-attribution-badge'
+import { formatCourierDispatchToast } from '@/features/dispatch/courier-errors'
+import { useSteadfastSets } from '@/features/dispatch/steadfast-set-picker'
+import { BulkSteadfastDefaultWarning } from '@/features/orders/bulk-steadfast-warning'
 
 const fallbackStatusColors: Record<string, string> = { Pending: 'var(--warning)', Confirmed: 'var(--info)', Cancelled: 'var(--danger)', 'On Hold': 'var(--accent-violet)', Packed: 'var(--accent-cyan)', Shipped: 'var(--success)', 'In Courier': 'var(--accent-violet)', Delivered: 'var(--success)', 'Partial Return': 'var(--warning)', 'Return Pending': 'var(--accent-pink)', Returned: 'var(--danger)', Damaged: 'var(--danger)' }
 const nn = (v: number | string) => Number(v)
@@ -110,7 +113,8 @@ function paymentStatusBadgeClass(status: string): { variant: 'default' | 'second
   if (['paid', 'verified', 'completed'].includes(s)) return { variant: 'default', className: 'bg-success-soft text-success border-success/25' }
   if (['pending', 'payment_pending'].includes(s)) return { variant: 'secondary', className: 'bg-warning-soft text-warning border-warning/25' }
   if (['failed', 'cancelled', 'unpaid'].includes(s)) return { variant: 'destructive', className: 'bg-danger-soft text-danger border-danger/25' }
-  if (s === 'partial_paid') return { variant: 'default', className: 'bg-info-soft text-info border-info/25' }
+  if (['partial', 'partial_paid'].includes(s)) return { variant: 'default', className: 'bg-info-soft text-info border-info/25' }
+  if (s === 'credit') return { variant: 'outline', className: 'bg-accent-violet-soft text-accent-violet border-accent-violet/25' }
   if (s === 'refunded') return { variant: 'outline', className: 'bg-accent-pink-soft text-accent-pink border-accent-pink/25' }
   return { variant: 'outline', className: '' }
 }
@@ -337,8 +341,8 @@ function OrdersStatusFilterBar({
   totalOrders: number
   statusFilter: string
   setStatusFilter: (s: string) => void
-  kindFilter: 'all' | 'SALE' | 'RETURN'
-  setKindFilter: (k: 'all' | 'SALE' | 'RETURN') => void
+  kindFilter: 'all' | 'SALE' | 'RETURN' | 'EXCHANGE'
+  setKindFilter: (k: 'all' | 'SALE' | 'RETURN' | 'EXCHANGE') => void
   setPage: (p: number) => void
 }) {
   const visible = statusList.filter((s: any) => (statusCountMap[s.id] || 0) > 0)
@@ -512,6 +516,7 @@ function OrdersStatusFilterBar({
         {([
           ['SALE', 'Sales', 'var(--primary)'],
           ['RETURN', 'Returns', '#EC4899'],
+          ['EXCHANGE', 'Exchanges', '#8B5CF6'],
         ] as const).map(([value, label, color]) => {
           const active = kindFilter === value
           return (
@@ -647,7 +652,7 @@ export function Orders() {
   const { data: staffList } = useQuery({ queryKey: ['staff-list'], queryFn: () => apiClient.get('/orders/staff/list').then(r => r.data as any[]) })
   const staff = (Array.isArray(staffList) ? staffList : []) as any[]
 
-  const [kindFilter, setKindFilter] = useState<'all' | 'SALE' | 'RETURN'>('all')
+  const [kindFilter, setKindFilter] = useState<'all' | 'SALE' | 'RETURN' | 'EXCHANGE'>('all')
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ['orders', page, perPage, debouncedSearch, statusFilter, courierFilter, assigneeFilter, sort, order, kindFilter],
@@ -699,6 +704,12 @@ export function Orders() {
     (c: any) => useLicenseStore.getState().hasFeature(`courier_${c.courier}`)
   )
   const [dispatchCourier, setDispatchCourier] = useState('')
+  // MEDIUM bulk-silent: the bulk dispatch path resolves ONE Steadfast
+  // profile upfront (default account) and ignores per-order overrides —
+  // surface that explicitly when >1 sets exist so staff are never
+  // surprised. (Single-order dispatch keeps its per-order set picker.)
+  const { data: steadfastSets = [] } = useSteadfastSets()
+  const showBulkDefaultWarn = dispatchCourier === 'steadfast' && steadfastSets.length > 1
 
   const dispatchMut = useMutation({
     mutationFn: ({ courier, ids }: { courier: string; ids: string[] }) => apiClient.post(`/couriers/dispatch/${courier}`, { orderIds: ids }),
@@ -708,14 +719,27 @@ export function Orders() {
       const failed = results.filter((r: any) => !r.ok)
       if (failed.length > 0) {
         toast.error(`${failed.length} order(s) failed to dispatch`)
-        failed.forEach((r: any) => toast.error(r.message || 'Unknown error', { id: r.id }))
+        // Fix 5: each failure names the EXACT courier field+rule
+        // (shaped backend error threaded through untouched).
+        failed.forEach((r: any) => toast.error(formatCourierDispatchToast(r), { id: r.id, duration: 8000 }))
       }
       if (succeeded.length > 0) toast.success(`${succeeded.length} order(s) dispatched to courier`)
       queryClient.invalidateQueries({ queryKey: ['orders'] })
       setSelected([])
       setDispatchCourier('')
     },
-    onError: (e: unknown) => { toast.error((e as Error).message || 'Dispatch failed') },
+    onError: (e: any) => {
+      // Fix 5: a whole-batch transport rejection can also carry the shaped
+      // error ({message, errors}) — surface it with exact field+rule naming.
+      const d = e?.response?.data
+      toast.error(
+        formatCourierDispatchToast({
+          message: d?.message || (e as Error)?.message || 'Dispatch failed',
+          errors: d?.errors,
+        }),
+        { duration: 8000 },
+      )
+    },
   })
 
   const trashOrderMut = useMutation({
@@ -999,6 +1023,11 @@ export function Orders() {
                                 <RotateCcw className='h-2.5 w-2.5' /> RTN
                               </span>
                             )}
+                            {o.kind === 'EXCHANGE' && (
+                              <span className='inline-flex items-center gap-1 rounded-full border border-violet-500/40 bg-violet-500/10 px-1.5 py-0.5 text-[9px] font-bold text-violet-600 dark:text-violet-400'>
+                                <ArrowRightLeft className='h-2.5 w-2.5' /> Exchange
+                              </span>
+                            )}
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <button
@@ -1118,7 +1147,21 @@ export function Orders() {
                         <TableCell onClick={e => e.stopPropagation()}>
                           <AssigneeCell assignee={o.assignee} />
                         </TableCell>
-                        <TableCell className='text-right font-mono font-semibold text-xs text-foreground'>৳{fmt(o.total)}</TableCell>
+                        <TableCell className='text-right font-mono font-semibold text-xs text-foreground'>
+                          <div>৳{fmt(o.total)}</div>
+                          {(() => {
+                            const mode = getOrderPaymentMode(o)
+                            const mc = paymentStatusBadgeClass(mode)
+                            return (
+                              <span className="inline-flex flex-col items-end gap-0.5">
+                                <Badge variant={mc.variant} className={`text-[10px] py-0 px-1.5 mt-0.5 ${mc.className}`}>{mode}</Badge>
+                                {hasOpenCodAlert(o) && (
+                                  <Badge variant="outline" className="text-[10px] py-0 px-1.5 border-amber-500/50 text-amber-600 dark:text-amber-500">COD mismatch</Badge>
+                                )}
+                              </span>
+                            )
+                          })()}
+                        </TableCell>
                         <TableCell className='text-right text-xs text-muted-foreground pr-4 font-mono'>{o.items.length}</TableCell>
                         <TableCell onClick={e => e.stopPropagation()} className='pr-3'>
                           <DropdownMenu>
@@ -1130,10 +1173,10 @@ export function Orders() {
                             <DropdownMenuContent align='end' className='min-w-44 rounded-xl border-border/80 shadow-pop'>
                               <DropdownMenuItem asChild><Link to='/op/orders/$id' params={{ id: o.id }} className='text-xs font-medium cursor-pointer'><Eye className='h-3.5 w-3.5 mr-2 text-muted-foreground' />View Details</Link></DropdownMenuItem>
                               <DropdownMenuItem onClick={() => copyToClipboard(o.displayId, 'Order ID')} className='text-xs cursor-pointer'><ClipboardCopy className='h-3.5 w-3.5 mr-2 text-muted-foreground' />Copy Order ID</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => copyToClipboard(o.customer?.phoneNumber || o.guestPhone || '', 'Phone')} className='text-xs cursor-pointer'><Phone className='h-3.5 w-3.5 mr-2 text-muted-foreground' />Copy Phone</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => copyToClipboard(getCustomerPhone(o) || '', 'Phone')} className='text-xs cursor-pointer'><Phone className='h-3.5 w-3.5 mr-2 text-muted-foreground' />Copy Phone</DropdownMenuItem>
                               {formatAddressFull(addr) && <DropdownMenuItem onClick={() => copyToClipboard(formatAddressFull(addr), 'Address')} className='text-xs cursor-pointer'><MapPin className='h-3.5 w-3.5 mr-2 text-muted-foreground' />Copy Address</DropdownMenuItem>}
                               <DropdownMenuSeparator />
-                              <DropdownMenuItem className='text-destructive focus:text-destructive text-xs cursor-pointer' onClick={() => setBlockPhones({ phones: [o.customer?.phoneNumber || o.guestPhone || ''], contextLabel: o.displayId })}><Ban className='h-3.5 w-3.5 mr-2' />Block Phone</DropdownMenuItem>
+                              <DropdownMenuItem className='text-destructive focus:text-destructive text-xs cursor-pointer' onClick={() => setBlockPhones({ phones: [getCustomerPhone(o) || ''], contextLabel: o.displayId })}><Ban className='h-3.5 w-3.5 mr-2' />Block Phone</DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem onClick={() => window.open(`/admin/op/print/sticker/${o.id}`, '_blank')} className='text-xs cursor-pointer'><Printer className='h-3.5 w-3.5 mr-2 text-muted-foreground' />Print Sticker</DropdownMenuItem>
                               <DropdownMenuItem onClick={() => window.open(`/admin/op/print/invoice/${o.id}`, '_blank')} className='text-xs cursor-pointer'><Receipt className='h-3.5 w-3.5 mr-2 text-muted-foreground' />Print Invoice</DropdownMenuItem>
@@ -1240,11 +1283,11 @@ export function Orders() {
                                       <div className='text-muted-foreground italic'>No address provided</div>
                                     )}
                                     <div className='flex flex-col gap-1.5 pt-1.5 border-t border-border/50'>
-                                      {(o.customer?.phoneNumber || o.guestPhone) && (
+                                      {(getCustomerPhone(o)) && (
                                         <div className='flex items-center gap-2'>
                                           <Phone className='size-3.5 text-muted-foreground shrink-0' />
-                                          <a href={`tel:${o.customer?.phoneNumber || o.guestPhone}`} className='hover:underline font-mono'>{o.customer?.phoneNumber || o.guestPhone}</a>
-                                          <CustomerContactActions phone={o.customer?.phoneNumber || o.guestPhone} />
+                                          <a href={`tel:${getCustomerPhone(o)}`} className='hover:underline font-mono'>{getCustomerPhone(o)}</a>
+                                          <CustomerContactActions phone={getCustomerPhone(o)} />
                                         </div>
                                       )}
                                       {getCustomerEmail(o) && (
@@ -1364,7 +1407,7 @@ export function Orders() {
         )}
 
         {selected.length > 0 && (
-          <div className='fixed bottom-5 left-1/2 -translate-x-1/2 bg-popover/95 backdrop-blur-md border border-border/80 shadow-2xl rounded-2xl px-3.5 py-2 flex items-center gap-2.5 z-50 animate-in fade-in slide-in-from-bottom-3 duration-200'>
+          <div className='fixed bottom-5 left-1/2 -translate-x-1/2 bg-popover/95 backdrop-blur-md border border-border/80 shadow-2xl rounded-2xl px-3.5 py-2 flex flex-wrap items-center gap-2.5 z-50 animate-in fade-in slide-in-from-bottom-3 duration-200'>
             <Button variant='ghost' size='icon' className='h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground' onClick={() => setSelected([])}>
               <X className='h-3.5 w-3.5' />
             </Button>
@@ -1424,6 +1467,12 @@ export function Orders() {
                 Send
               </Button>
             </div>
+            {showBulkDefaultWarn && (
+              <BulkSteadfastDefaultWarning
+                courier={dispatchCourier}
+                setCount={steadfastSets.length}
+              />
+            )}
           </div>
         )}
 

@@ -183,7 +183,8 @@ export class CourierSettlementOverviewService {
         id: true,
         displayId: true,
         total: true,
-        payments: { select: { amount: true, gatewayCode: true, status: true } },
+        courierStatus: true,
+        payments: { select: { amount: true, status: true, appliedCreditAmount: true, gatewayCode: true } },
         status: { select: { name: true } },
         courierSettlementRows: {
           where: { supersededByRowId: null, rowClass: 'DATA', invoice: { state: { in: FINALIZED } } },
@@ -255,13 +256,24 @@ export class CourierSettlementOverviewService {
 
 function expectedCodOf(order: {
   total: unknown;
-  payments: { amount: unknown; gatewayCode: string; status: string }[];
+  courierStatus?: unknown;
+  payments: { amount: unknown; status: string; appliedCreditAmount?: unknown; gatewayCode?: unknown }[];
 }): number {
-  const cash = order.payments.filter(
-    (p) => p.gatewayCode === 'cash' && p.status !== 'FAILED' && p.status !== 'CANCELLED',
-  );
-  if (cash.length === 0) return num(order.total);
-  return round2(cash.reduce((s, p) => s + num(p.amount), 0));
+  // Task 10 (owner-locked): approval_pending NEVER settles — unsettled
+  // courier statuses yield no COD expectation (mirrors economics.expectedCod).
+  const courierStatus = String((order as { courierStatus?: unknown }).courierStatus ?? '').trim().toLowerCase();
+  if (courierStatus === 'exceptional' || (courierStatus !== '' && courierStatus.endsWith('_approval_pending'))) {
+    return 0;
+  }
+  // D-C actuals-only ledger: derived due (total − ΣPAID − ΣappliedCredit),
+  // floored at 0 — mirrors CodMismatchService systemDue, EXCEPT
+  // courier_settlement PAID rows are excluded (settlement money is already
+  // reconciled in journals; gross expectation ≠ customer remainder).
+  const paid = order.payments
+    .filter((p) => p.status === 'PAID' && String((p as { gatewayCode?: unknown }).gatewayCode ?? '') !== 'courier_settlement')
+    .reduce((s, p) => s + num(p.amount), 0);
+  const applied = order.payments.reduce((s, p) => s + num(p.appliedCreditAmount), 0);
+  return Math.max(0, round2(num(order.total) - paid - applied));
 }
 
 function num(v: unknown): number {

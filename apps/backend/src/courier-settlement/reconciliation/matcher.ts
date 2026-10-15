@@ -4,6 +4,13 @@
 // Resolution follows the provider descriptor's identifier order and records an
 // explanation so the Reconciliation UI can show *how* a row was matched.
 // An unresolved row is `NONE` → the RED `NO_MATCH` rule blocks finalization.
+//
+// LIMITATION (settlement-blind, Steadfast multi-account): this matcher is
+// consignment-only and carries NO credential context — multi-business payout
+// files share one ledger. A payout row matches by consignment/tracking/
+// displayId only; it never records which Steadfast credential set booked the
+// parcel (see SteadfastCredentialSetsService header). Do NOT add per-set
+// filtering here without a credential-aware payout key.
 
 import type { MatchMethod } from '../parsing/types';
 
@@ -131,7 +138,11 @@ export function matchRow(
   return { matchMethod: 'NONE', matchContext: { attemptedOrder: order } };
 }
 
-/** Normalise a candidate identifier for map lookup (trim; case-insensitive). */
-export function norm(value: string): string {
-  return String(value).trim().toLowerCase();
+/** Normalise a candidate identifier for map lookup (trim; case-insensitive).
+ * Task 10: tolerate server-cut text — the courier silently truncates long
+ * invoice values (Steadfast: 100), so both sides are cut to the field max
+ * before compare. Consignment/tracking ids are short in practice; the same
+ * cap is harmless for them. */
+export function norm(value: string, max = 100): string {
+  return String(value).trim().slice(0, max).toLowerCase();
 }

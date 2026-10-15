@@ -543,7 +543,7 @@ export class AnalyticsFulfillmentService {
       select: {
         id: true,
         total: true,
-        payments: { select: { amount: true, gatewayCode: true, status: true } },
+        payments: { select: { amount: true, status: true, appliedCreditAmount: true, gatewayCode: true } },
       },
     });
     for (const o of ordersMeta) {
@@ -569,16 +569,19 @@ export class AnalyticsFulfillmentService {
   }
 }
 
-/** expectedCod for a COD order: Σ non-failed cash payments, else Order.total (§2.1). */
+/** expectedCod for a COD order: derived due (total − ΣPAID − ΣappliedCredit, D-C, excl. courier_settlement). */
 function expectedCodFromOrder(
   total: unknown,
-  payments: { amount: unknown; gatewayCode: string; status: string }[],
+  payments: { amount: unknown; status: string; appliedCreditAmount?: unknown; gatewayCode?: unknown }[],
 ): number {
-  const cash = (payments ?? []).filter(
-    (p) => p.gatewayCode === 'cash' && p.status !== 'FAILED' && p.status !== 'CANCELLED',
+  const paid = (payments ?? [])
+    .filter((p) => p.status === 'PAID' && String((p as { gatewayCode?: unknown }).gatewayCode ?? '') !== 'courier_settlement')
+    .reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  const applied = (payments ?? []).reduce(
+    (s, p) => s + (Number(p.appliedCreditAmount) || 0),
+    0,
   );
-  if (cash.length === 0) return round2(Number(total) || 0);
-  return round2(cash.reduce((s, p) => s + (Number(p.amount) || 0), 0));
+  return Math.max(0, round2((Number(total) || 0) - paid - applied));
 }
 
 function round2(n: number): number {

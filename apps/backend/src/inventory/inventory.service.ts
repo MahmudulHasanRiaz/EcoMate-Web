@@ -595,17 +595,21 @@ export class InventoryService {
       return;
     }
     if (available <= 0) {
-      throw new BadRequestException(
-        `This adjustment would remove ${params.removalQty} from "${params.itemName}", ` +
+      throw new BadRequestException({
+        code: 'DESTRUCTIVE_ADJUSTMENT',
+        message:
+          `This adjustment would remove ${params.removalQty} from "${params.itemName}", ` +
           `which has no available stock (${params.onHand} on hand, ${params.reserved} reserved). ` +
           `Re-submit with confirmDestructive=true if this is intentional.`,
-      );
+      });
     }
-    throw new BadRequestException(
-      `This adjustment would remove ${params.removalQty} of ${available} available for ` +
+    throw new BadRequestException({
+      code: 'DESTRUCTIVE_ADJUSTMENT',
+      message:
+        `This adjustment would remove ${params.removalQty} of ${available} available for ` +
         `"${params.itemName}" (${Math.round((params.removalQty / available) * 100)}%). ` +
         `Re-submit with confirmDestructive=true if this is intentional.`,
-    );
+    });
   }
 
   async adjust(

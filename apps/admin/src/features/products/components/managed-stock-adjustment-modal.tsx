@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { DESTRUCTIVE_CONFIRM_MESSAGE, isDestructiveAdjustmentError } from '@/lib/destructive-adjustment'
 import { Loader2, X, Package, Check, ChevronRight, Search as SearchIcon } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -31,6 +33,9 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
   const [quantity, setQuantity] = useState('0')
   const [reason, setReason] = useState('')
   const [confirmDestructive, setConfirmDestructive] = useState(false)
+  // Payload refused by the 100%-removal guard, awaiting explicit confirmation.
+  const [destructivePending, setDestructivePending] = useState<any | null>(null)
+  const lastPayloadRef = useRef<any>(null)
   const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   useEffect(() => {
@@ -81,7 +86,11 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
       resetDialog()
       toast.success('Managed stock adjusted')
     },
-    onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed to adjust stock'),
+    onError: (err: any) => {
+      // Guard refusal is matched by CODE, never by English message text.
+      if (isDestructiveAdjustmentError(err)) { setDestructivePending(lastPayloadRef.current); return }
+      toast.error(err?.response?.data?.message || 'Failed to adjust stock')
+    },
   })
 
   const resetDialog = () => {
@@ -92,6 +101,7 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
     setProductSearch(''); setSearchResults([])
     setVariants([]); setVariantId('')
     setQuantity('0'); setReason(''); setSelectedProductAvailability(null); setConfirmDestructive(false)
+    setDestructivePending(null); lastPayloadRef.current = null
   }
 
   function clearProduct() {
@@ -115,10 +125,24 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
     if (!reason.trim()) { toast.error('Please provide a reason for the adjustment'); return }
     if (!productId) return
     if (isVar && !variantId) { toast.error('Please select a variant'); return }
-    adjustMut.mutate({ productId, variantId: isVar ? variantId : undefined, quantity: qty, reason: reason.trim(), confirmDestructive: confirmDestructive || undefined })
+    const payload = { productId, variantId: isVar ? variantId : undefined, quantity: qty, reason: reason.trim(), confirmDestructive: confirmDestructive || undefined }
+    lastPayloadRef.current = payload
+    adjustMut.mutate(payload)
+  }
+
+  // Guard fired: [নিশ্চিত] resubmits the SAME payload with the flag on;
+  // [বাতিল] drops it and leaves the form untouched.
+  const confirmDestructiveResubmit = () => {
+    if (!destructivePending) return
+    const payload = { ...destructivePending, confirmDestructive: true }
+    setDestructivePending(null)
+    setConfirmDestructive(true)
+    lastPayloadRef.current = payload
+    adjustMut.mutate(payload)
   }
 
   return (
+    <>
     <Dialog open={open} onOpenChange={(v) => { if (!v) setTimeout(resetDialog, 0); else onOpenChange(true) }}>
       <DialogContent className='sm:max-w-[540px]'>
         <DialogHeader>
@@ -289,5 +313,16 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
         </div>
       </DialogContent>
     </Dialog>
+    <ConfirmDialog
+      open={destructivePending !== null}
+      onOpenChange={(v) => { if (!v) setDestructivePending(null) }}
+      title='স্টক ডিডাকশন নিশ্চিত করুন'
+      desc={DESTRUCTIVE_CONFIRM_MESSAGE}
+      cancelBtnText='বাতিল'
+      confirmText='নিশ্চিত'
+      destructive
+      handleConfirm={confirmDestructiveResubmit}
+    />
+    </>
   )
 }

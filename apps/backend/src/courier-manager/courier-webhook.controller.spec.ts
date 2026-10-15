@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UnauthorizedException } from '@nestjs/common';
+import * as crypto from 'node:crypto';
 import { CourierWebhookController } from './courier-webhook.controller';
 import { CourierWebhookService } from './courier-webhook.service';
 import { WebhookAttemptService } from './webhook-attempt.service';
@@ -44,13 +45,14 @@ describe('CourierWebhookController — Diagnostics', () => {
     controller = module.get<CourierWebhookController>(CourierWebhookController);
   });
 
-  function makeReq(headers: Record<string, string> = {}, ip = '1.2.3.4'): FastifyRequest {
+  function makeReq(headers: Record<string, string> = {}, ip = '1.2.3.4', rawBody?: string): FastifyRequest {
     return {
       headers,
       url: '/api/webhooks/courier/steadfast',
       ip,
       method: 'POST',
       socket: { remoteAddress: ip },
+      rawBody,
     } as unknown as FastifyRequest;
   }
 
@@ -65,45 +67,27 @@ describe('CourierWebhookController — Diagnostics', () => {
     return res;
   }
 
-  describe('Steadfast — auth diagnostics', () => {
-    it('records AUTH_HEADER_MISSING when no Authorization header', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue(null);
+  // Task 4: Steadfast authenticates by HMAC-SHA256(raw body) vs X-Signature.
+  // Bearer alone is NOT a fallback once a token is configured.
+  const STEADFAST_TOKEN = 'steadfast-token-task4';
+  const signSteadfast = (rawBody: string, secret: string = STEADFAST_TOKEN) =>
+    crypto.createHmac('sha256', secret).update(rawBody, 'utf8').digest('hex');
 
-      await expect(
-        controller.steadfast({ consignment_id: 'CG-1' }, makeReq({}), makeRes()),
-      ).rejects.toThrow(UnauthorizedException);
+  function steadfastReq(
+    headers: Record<string, string>,
+    rawBody = '{"status":"delivered","consignment_id":12345}',
+  ) {
+    return makeReq(headers, '1.2.3.4', rawBody);
+  }
 
-      expect(attemptSvc.completeAttempt).toHaveBeenCalledWith(
-        'att-1',
-        expect.objectContaining({
-          outcome: 'AUTH_HEADER_MISSING',
-          failureStage: 'AUTH',
-        }),
-      );
-    });
-
-    it('records AUTH_FORMAT_INVALID for non-Bearer scheme', async () => {
-      await expect(
-        controller.steadfast({ consignment_id: 'CG-1' }, makeReq({ authorization: 'Basic abc' }), makeRes()),
-      ).rejects.toThrow(UnauthorizedException);
-
-      expect(attemptSvc.completeAttempt).toHaveBeenCalledWith(
-        'att-1',
-        expect.objectContaining({
-          outcome: 'AUTH_FORMAT_INVALID',
-          failureStage: 'AUTH',
-        }),
-      );
-    });
-
-    it('records AUTH_FAILED when token mismatch', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: 'correct-token' });
+  describe('Steadfast — HMAC auth diagnostics (Task 4)', () => {
+    it('records AUTH_FAILED when no X-Signature header (Bearer alone is not a fallback)', async () => {
+      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: STEADFAST_TOKEN });
 
       await expect(
         controller.steadfast(
           { consignment_id: 'CG-1' },
-          makeReq({ authorization: 'Bearer wrong-token' }),
-          makeRes(),
+          steadfastReq({ authorization: `Bearer ${STEADFAST_TOKEN}` }),
         ),
       ).rejects.toThrow(UnauthorizedException);
 
@@ -112,18 +96,37 @@ describe('CourierWebhookController — Diagnostics', () => {
         expect.objectContaining({
           outcome: 'AUTH_FAILED',
           failureStage: 'AUTH',
-          authResult: expect.stringContaining('Token fingerprint'),
         }),
       );
     });
 
-    it('records SUCCESS with correlation ID on valid webhook', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: 'my-secret' });
+    it('records AUTH_FAILED when HMAC does not match', async () => {
+      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: STEADFAST_TOKEN });
+
+      await expect(
+        controller.steadfast(
+          { consignment_id: 'CG-1' },
+          steadfastReq({ 'x-signature': '0'.repeat(64) }),
+        ),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(attemptSvc.completeAttempt).toHaveBeenCalledWith(
+        'att-1',
+        expect.objectContaining({
+          outcome: 'AUTH_FAILED',
+          failureStage: 'AUTH',
+        }),
+      );
+      expect(webhookSvc.handleSteadfast).not.toHaveBeenCalled();
+    });
+
+    it('records SUCCESS with correlation ID on valid HMAC webhook', async () => {
+      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: STEADFAST_TOKEN });
+      const rawBody = '{"status":"delivered","consignment_id":12345}';
 
       await controller.steadfast(
-        { consignment_id: 'CG-1', notification_type: 'status_change', status: 'delivered' },
-        makeReq({ authorization: 'Bearer my-secret' }),
-        makeRes(),
+        { consignment_id: 12345, status: 'delivered' },
+        steadfastReq({ 'x-signature': signSteadfast(rawBody) }, rawBody),
       );
 
       expect(webhookSvc.handleSteadfast).toHaveBeenCalled();
@@ -138,17 +141,17 @@ describe('CourierWebhookController — Diagnostics', () => {
       }));
     });
 
-    it('records PROCESSING_ERROR when handler throws', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: 'my-secret' });
+    it('records PROCESSING_ERROR when handler throws a transient error', async () => {
+      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: STEADFAST_TOKEN });
       webhookSvc.handleSteadfast.mockRejectedValue(new Error('DB connection lost'));
+      const rawBody = '{"consignment_id":"CG-1"}';
 
       await expect(
         controller.steadfast(
           { consignment_id: 'CG-1' },
-          makeReq({ authorization: 'Bearer my-secret' }),
-          makeRes(),
+          steadfastReq({ 'x-signature': signSteadfast(rawBody) }, rawBody),
         ),
-      ).rejects.toThrow('DB connection lost');
+      ).rejects.toThrow('Webhook processing failed');
 
       expect(attemptSvc.completeAttempt).toHaveBeenCalledWith(
         'att-1',
@@ -162,11 +165,14 @@ describe('CourierWebhookController — Diagnostics', () => {
 
     it('never stores raw token in authResult', async () => {
       prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: 'super-secret-token-123' });
+      const rawBody = '{"consignment_id":"CG-1"}';
 
       await controller.steadfast(
-        { consignment_id: 'CG-1', notification_type: 'status_change', status: 'delivered' },
-        makeReq({ authorization: 'Bearer super-secret-token-123' }),
-        makeRes(),
+        { consignment_id: 'CG-1' },
+        steadfastReq(
+          { 'x-signature': signSteadfast(rawBody, 'super-secret-token-123') },
+          rawBody,
+        ),
       );
 
       const allCalls = attemptSvc.completeAttempt.mock.calls;
@@ -179,6 +185,25 @@ describe('CourierWebhookController — Diagnostics', () => {
           expect(data.message).not.toContain('super-secret-token-123');
         }
       }
+    });
+
+    it('accepts with a recorded warning when no token is configured', async () => {
+      prisma.courierCredentials.findUnique.mockResolvedValue(null);
+
+      const result = await controller.steadfast(
+        { consignment_id: 'CG-1' },
+        steadfastReq({}),
+      );
+
+      expect(result).toEqual({ status: 'success', message: 'ok' });
+      expect(webhookSvc.handleSteadfast).toHaveBeenCalled();
+      expect(attemptSvc.completeAttempt).toHaveBeenCalledWith(
+        'att-1',
+        expect.objectContaining({
+          outcome: 'SUCCESS',
+          authResult: expect.stringMatching(/not configured/i),
+        }),
+      );
     });
   });
 
@@ -247,26 +272,25 @@ describe('CourierWebhookController — Diagnostics', () => {
       );
     });
 
-    it('returns AUTH_FAILED when the registered secret is missing even though the constant is set', async () => {
+    it('accepts with a recorded warning when the registered secret is missing (Task 4: never silent)', async () => {
       prisma.courierCredentials.findUnique.mockResolvedValue({
         webhookSecret: null,
         pathaoIntegrationSecret: 'f3992ecc-59da-4cbe-a049-a13da2018d51',
       });
 
-      await expect(
-        controller.pathao(
-          { event: 'order.delivered' },
-          makeReq({ 'x-pathao-signature': 'anything' }),
-          makeRes(),
-        ),
-      ).rejects.toThrow(UnauthorizedException);
+      const result = await controller.pathao(
+        { event: 'order.delivered' },
+        makeReq({ 'x-pathao-signature': 'anything' }),
+        makeRes(),
+      );
 
+      expect(result).toEqual({ status: 'success', message: 'ok' });
+      expect(webhookSvc.handlePathao).toHaveBeenCalled();
       expect(attemptSvc.completeAttempt).toHaveBeenCalledWith(
         'att-1',
         expect.objectContaining({
-          outcome: 'AUTH_FAILED',
-          failureStage: 'AUTH',
-          authResult: expect.stringContaining('Pathao webhook secret not configured'),
+          outcome: 'SUCCESS',
+          authResult: expect.stringMatching(/not configured/i),
         }),
       );
     });
@@ -310,26 +334,24 @@ describe('CourierWebhookController — Diagnostics', () => {
       );
     });
 
-    it('rejects with AUTH_FAILED when neither secret is configured', async () => {
+    it('accepts with a recorded warning when neither secret is configured', async () => {
       prisma.courierCredentials.findUnique.mockResolvedValue({
         webhookSecret: null,
         pathaoIntegrationSecret: null,
       });
 
-      await expect(
-        controller.pathao(
-          { event: 'order.delivered' },
-          makeReq({ 'x-pathao-signature': 'anything' }),
-          makeRes(),
-        ),
-      ).rejects.toThrow(UnauthorizedException);
+      const result = await controller.pathao(
+        { event: 'order.delivered' },
+        makeReq({ 'x-pathao-signature': 'anything' }),
+        makeRes(),
+      );
 
+      expect(result).toEqual({ status: 'success', message: 'ok' });
       expect(attemptSvc.completeAttempt).toHaveBeenCalledWith(
         'att-1',
         expect.objectContaining({
-          outcome: 'AUTH_FAILED',
-          failureStage: 'AUTH',
-          authResult: expect.stringContaining('Pathao webhook secret not configured'),
+          outcome: 'SUCCESS',
+          authResult: expect.stringMatching(/not configured/i),
         }),
       );
     });
@@ -337,12 +359,12 @@ describe('CourierWebhookController — Diagnostics', () => {
 
   describe('Correlation ID', () => {
     it('generates unique correlation ID per request', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: 'secret' });
+      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: STEADFAST_TOKEN });
+      const rawBody = '{"consignment_id":"CG-1"}';
 
       await controller.steadfast(
-        { consignment_id: 'CG-1', notification_type: 'status_change', status: 'delivered' },
-        makeReq({ authorization: 'Bearer secret' }),
-        makeRes(),
+        { consignment_id: 'CG-1' },
+        steadfastReq({ 'x-signature': signSteadfast(rawBody) }, rawBody),
       );
 
       const startCall = attemptSvc.startAttempt.mock.calls[0];
@@ -354,15 +376,15 @@ describe('CourierWebhookController — Diagnostics', () => {
 
   describe('Best-effort diagnostics', () => {
     it('diagnostic DB failure does not break webhook processing', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: 'secret' });
+      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: STEADFAST_TOKEN });
       attemptSvc.startAttempt.mockRejectedValue(new Error('DB down'));
       webhookSvc.handleSteadfast.mockResolvedValue({ status: 'success', message: 'ok' });
+      const rawBody = '{"consignment_id":"CG-1"}';
 
       // Should still succeed despite diagnostic logging failure
       const result = await controller.steadfast(
-        { consignment_id: 'CG-1', notification_type: 'status_change', status: 'delivered' },
-        makeReq({ authorization: 'Bearer secret' }),
-        makeRes(),
+        { consignment_id: 'CG-1' },
+        steadfastReq({ 'x-signature': signSteadfast(rawBody) }, rawBody),
       );
 
       expect(result).toEqual({ status: 'success', message: 'ok' });
@@ -370,13 +392,13 @@ describe('CourierWebhookController — Diagnostics', () => {
     });
 
     it('completeAttempt failure does not cause 500 when handler succeeds', async () => {
-      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: 'secret' });
+      prisma.courierCredentials.findUnique.mockResolvedValue({ webhookSecret: STEADFAST_TOKEN });
       attemptSvc.completeAttempt.mockRejectedValue(new Error('DB write failed'));
+      const rawBody = '{"consignment_id":"CG-1"}';
 
       const result = await controller.steadfast(
-        { consignment_id: 'CG-1', notification_type: 'status_change', status: 'delivered' },
-        makeReq({ authorization: 'Bearer secret' }),
-        makeRes(),
+        { consignment_id: 'CG-1' },
+        steadfastReq({ 'x-signature': signSteadfast(rawBody) }, rawBody),
       );
 
       expect(result).toEqual({ status: 'success', message: 'ok' });

@@ -41,6 +41,7 @@ import {
   X
 } from 'lucide-react'
 import type { QueueItem, HoldFormData, HistoryEntry, ProductPhotoCatalogEntry } from './types'
+import { getCustomerDisplayName, getCustomerPhone } from '@/lib/order-display'
 
 type TabType = 'scan' | 'packed' | 'held'
 
@@ -1266,8 +1267,9 @@ export function PackingWorkspace() {
 
                 {showCustomerDetails && (
                   <div className="px-5 py-4 border-t border-[var(--border)] text-start text-xs space-y-2 bg-zinc-900/10 text-[var(--ink-muted)] select-text">
-                    <p><span className="text-[var(--ink-muted)] font-bold select-none">Name:</span> {activeOrder.customer?.name ?? 'Guest User'}</p>
-                    <p><span className="text-[var(--ink-muted)] font-bold select-none">Phone:</span> {activeOrder.customer?.phone ?? 'N/A'}</p>
+                    {/* D-A: queue customer is snapshot-mapped; helpers read snapshot first. */}
+                    <p><span className="text-[var(--ink-muted)] font-bold select-none">Name:</span> {getCustomerDisplayName(activeOrder) === 'Guest' ? 'Guest User' : getCustomerDisplayName(activeOrder)}</p>
+                    <p><span className="text-[var(--ink-muted)] font-bold select-none">Phone:</span> {getCustomerPhone(activeOrder) || 'N/A'}</p>
                     <p><span className="text-[var(--ink-muted)] font-bold select-none">Created Date:</span> {new Date(activeOrder.createdAt).toLocaleString()}</p>
                     <p><span className="text-[var(--ink-muted)] font-bold select-none">Order Status:</span> {activeOrder.statusName}</p>
                   </div>
@@ -1400,8 +1402,8 @@ export function PackingWorkspace() {
               <p><span className="text-[var(--ink-muted)] font-bold select-none">Hold Timestamp:</span> {new Date(viewedHeldOrder.createdAt).toLocaleString()}</p>
               {viewedHeldOrder.customer && (
                 <>
-                  <p><span className="text-[var(--ink-muted)] font-bold select-none">Customer Name:</span> {viewedHeldOrder.customer.name}</p>
-                  <p><span className="text-[var(--ink-muted)] font-bold select-none">Phone:</span> {viewedHeldOrder.customer.phone}</p>
+                  <p><span className="text-[var(--ink-muted)] font-bold select-none">Customer Name:</span> {getCustomerDisplayName(viewedHeldOrder)}</p>
+                  <p><span className="text-[var(--ink-muted)] font-bold select-none">Phone:</span> {getCustomerPhone(viewedHeldOrder) || 'N/A'}</p>
                 </>
               )}
             </div>

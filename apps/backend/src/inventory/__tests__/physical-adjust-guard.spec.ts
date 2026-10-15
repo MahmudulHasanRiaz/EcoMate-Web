@@ -87,6 +87,60 @@ describe('PhysicalInventoryController — destructive adjustment guard', () => {
     expect(addPhysical).not.toHaveBeenCalled();
   });
 
+  it('carries a stable DESTRUCTIVE_ADJUSTMENT code with the existing message unchanged', async () => {
+    await build(46);
+    // Nest passes an object response through as the HTTP body verbatim
+    // (BaseExceptionFilter), so `code` lands at err.response.data.code.
+    const err = await controller
+      .adjust(
+        {
+          productId: PRODUCT,
+          variantId: VARIANT,
+          warehouseId: SHOWROOM,
+          quantity: -46,
+          reason: 'restore',
+        } as any,
+        user,
+      )
+      .then(() => null)
+      .catch((e: unknown) => e as BadRequestException);
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect((err as BadRequestException).getResponse()).toEqual({
+      code: 'DESTRUCTIVE_ADJUSTMENT',
+      message:
+        'This adjustment would remove 46 of 46 available ' +
+          'at this location (100%). ' +
+          'Re-submit with confirmDestructive=true if this is intentional.',
+    });
+    expect(addPhysical).not.toHaveBeenCalled();
+  });
+
+  it('carries the code on the no-available-stock branch too', async () => {
+    await build(10, 10);
+    const err = await controller
+      .adjust(
+        {
+          productId: PRODUCT,
+          variantId: VARIANT,
+          warehouseId: SHOWROOM,
+          quantity: -1,
+          reason: 'restore',
+        } as any,
+        user,
+      )
+      .then(() => null)
+      .catch((e: unknown) => e as BadRequestException);
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect((err as BadRequestException).getResponse()).toEqual({
+      code: 'DESTRUCTIVE_ADJUSTMENT',
+      message:
+        'This adjustment would remove 1 from a location with no ' +
+          'available stock (10 on hand, 10 reserved). ' +
+          'Re-submit with confirmDestructive=true if this is intentional.',
+    });
+    expect(addPhysical).not.toHaveBeenCalled();
+  });
+
   it('allows the same wipe when the caller explicitly confirms it', async () => {
     await build(46);
     await expect(

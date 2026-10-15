@@ -2,6 +2,7 @@
 // These are the executable Truth Table rows 1–5 plus expectedCod precedence.
 
 import {
+  derivedDue,
   expectedCod,
   residualOf,
   codPosition,
@@ -15,7 +16,7 @@ import {
 } from '../economics';
 import { matchRow, emptyIndexes, norm } from '../reconciliation/matcher';
 
-describe('expectedCod (§2.1, §2.3)', () => {
+describe('expectedCod — derived due (D-C actuals-only ledger)', () => {
   const base = { total: 1000, payments: [], trashedAt: null, statusName: 'Processing' } as const;
 
   it('is 0 for a non-COD order', () => {
@@ -38,40 +39,88 @@ describe('expectedCod (§2.1, §2.3)', () => {
     expect(r.value).toBe(0);
   });
 
-  it('sums non-failed cash payments (authoritative)', () => {
+  it('is total − ΣPAID: only received money reduces what the courier collects', () => {
     const r = expectedCod({
       ...base,
       paymentOptionType: 'CASH_ON_DELIVERY',
       payments: [
-        { amount: 600, gatewayCode: 'cash', status: 'UNPAID' },
-        { amount: 400, gatewayCode: 'cash', status: 'PAID' },
+        { amount: 400, gatewayCode: 'bkash', status: 'PAID' },
+        { amount: 999, gatewayCode: 'cash', status: 'PENDING' },
         { amount: 999, gatewayCode: 'cash', status: 'FAILED' },
-        { amount: 999, gatewayCode: 'cash', status: 'CANCELLED' },
-        { amount: 999, gatewayCode: 'bkash', status: 'PAID' },
+        { amount: 999, gatewayCode: 'cash', status: 'VOID' },
       ],
     });
-    expect(r.value).toBe(1000);
-    expect(r.source).toBe('cash_payments');
+    expect(r.value).toBe(600);
     expect(r.divergence).toBe(false);
   });
 
-  it('falls back to Order.total when no cash payment row exists (flagged)', () => {
+  it('subtracts appliedCreditAmount (mirrors the cod-mismatch systemDue formula)', () => {
+    const r = expectedCod({
+      ...base,
+      total: 1500,
+      paymentOptionType: 'CASH_ON_DELIVERY',
+      payments: [
+        { amount: 1000, gatewayCode: 'bkash', status: 'PAID', appliedCreditAmount: 200 },
+        { amount: 500, gatewayCode: 'bkash', status: 'PENDING', appliedCreditAmount: null },
+      ],
+    });
+    // systemDue = 1500 − 1000 − 200 = 300 (same numbers as cod-mismatch.spec)
+    expect(r.value).toBe(300);
+  });
+
+  it('is Order.total when no payment row exists yet', () => {
     const r = expectedCod({ ...base, paymentOptionType: 'CASH_ON_DELIVERY' });
     expect(r.value).toBe(1000);
     expect(r.source).toBe('order_total_fallback');
   });
 
-  it('flags divergence when cash sum and Order.total disagree by > 0.01', () => {
+  it('floors at 0 on overpayment (excess becomes credit, never negative due)', () => {
     const r = expectedCod({
       ...base,
-      total: 950,
       paymentOptionType: 'CASH_ON_DELIVERY',
-      payments: [{ amount: 1000, gatewayCode: 'cash', status: 'UNPAID' }],
+      payments: [{ amount: 1200, gatewayCode: 'bkash', status: 'PAID' }],
     });
-    expect(r.value).toBe(1000);
-    expect(r.divergence).toBe(true);
-    expect(r.cashPaymentSum).toBe(1000);
-    expect(r.orderTotal).toBe(950);
+    expect(r.value).toBe(0);
+  });
+
+  it('excludes courier_settlement PAID rows (settled money is journal-reconciled, not a due reduction)', () => {
+    const r = expectedCod({
+      ...base,
+      total: 770,
+      paymentOptionType: 'CASH_ON_DELIVERY',
+      payments: [{ amount: 770, gatewayCode: 'courier_settlement', status: 'PAID' }],
+    });
+    // Gross courier expectation stays 770 — the settlement row must not collapse it.
+    expect(r.value).toBe(770);
+  });
+
+  it('settled order (770/770 settlement, charges 50, net 720) nets to zero balances', () => {
+    const expected = expectedCod({
+      ...base,
+      total: 770,
+      paymentOptionType: 'CASH_ON_DELIVERY',
+      payments: [{ amount: 770, gatewayCode: 'courier_settlement', status: 'PAID' }],
+    }).value;
+    const pos = codPosition({ expectedCod: expected, charges: 50, netCashMovement: 720 });
+    expect(pos).toBe(0);
+    expect(outstandingCod(pos)).toBe(0);
+    expect(payableToCourier(pos)).toBe(0);
+  });
+});
+
+describe('derivedDue (shared helper)', () => {
+  it('equals total − ΣPAID − ΣappliedCredit, floored at 0', () => {
+    expect(derivedDue(1000, [])).toBe(1000);
+    expect(
+      derivedDue(1000, [
+        { amount: 400, status: 'PAID' },
+        { amount: 999, status: 'PENDING' },
+      ]),
+    ).toBe(600);
+    expect(
+      derivedDue(1000, [{ amount: 800, status: 'PAID', appliedCreditAmount: 200 }]),
+    ).toBe(0);
+    expect(derivedDue(1000, [{ amount: 1500, status: 'PAID' }])).toBe(0);
   });
 });
 

@@ -22,6 +22,7 @@ import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { CourierCustomerHistoryCard } from '@/features/orders/courier-customer-history-card'
+import { CreditBalanceCard } from './components/credit-balance-card'
 import { cn } from '@/lib/utils'
 
 function initials(firstName?: string | null, lastName?: string | null) {
@@ -212,6 +213,9 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
             value={summary?.lastOrderDate ? format(new Date(summary.lastOrderDate), 'MMM d, yyyy') : 'N/A'}
           />
         </div>
+
+        {/* Store credit — live balance + mini-ledger (overpayment grants, order applies) */}
+        <CreditBalanceCard customerId={customer.id} />
 
         <div className='grid gap-4 sm:gap-5 lg:grid-cols-2'>
           {/* Linked phone numbers */}

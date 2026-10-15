@@ -12,7 +12,13 @@ import { CacheService } from '../../cache/cache.service';
 describe('RefundsService analytics invalidation', () => {
   let service: RefundsService;
   const txMocks: any = {
-    refund: { update: jest.fn(), aggregate: jest.fn() },
+    refund: {
+      update: jest.fn(),
+      aggregate: jest.fn(),
+      create: jest.fn(),
+    },
+    payment: { create: jest.fn() },
+    orderStatus: { findFirst: jest.fn() },
     order: { findUnique: jest.fn(), update: jest.fn() },
   };
   const mockPrisma: any = {
@@ -59,8 +65,19 @@ describe('RefundsService analytics invalidation', () => {
       status: 'pending',
       ...args.data,
     }));
+    // create() writes Refund + negative ledger row inside one $transaction.
+    txMocks.refund.create.mockImplementation(async (args: any) => ({
+      id: 'r1',
+      status: 'pending',
+      ...args.data,
+    }));
 
-    await service.create({ orderId: 'o1', amount: 100 } as any);
+    await service.create({
+      orderId: 'o1',
+      amount: 100,
+      method: 'bkash',
+      reason: 'Customer request',
+    } as any);
 
     expect(mockCache.invalidateByPrefix).toHaveBeenCalledWith('analytics:');
   });

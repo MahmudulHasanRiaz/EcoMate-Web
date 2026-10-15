@@ -7,10 +7,12 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
+import { CourierManagerService } from '../courier-manager/courier-manager.service';
 import { OrderStockDeductService } from '../stock/order-stock-deduct.service';
 import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
 import { OrdersService } from '../orders/orders.service';
 import { CourierTrackingService } from '../courier-manager/courier-tracking.service';
+import { CourierWebhookService } from '../courier-manager/courier-webhook.service';
 import { extractScanIdentifier } from '../scanner/scanner-resolver';
 import {
   isSupportedCourier,
@@ -35,15 +37,23 @@ function isAutomatedActorId(actor?: string | null): boolean {
 }
 
 const DISPATCH_TRANSITIONS: Record<string, string[]> = {
-  DISPATCHED: ['HANDED_OVER', 'HOLD', 'CANCELLED'],
-  HANDED_OVER: ['PICKED_UP', 'HOLD', 'CANCELLED'],
+  DISPATCHED: ['HANDED_OVER', 'HOLD', 'CANCELLED', 'PICKUP_FAILED'],
+  HANDED_OVER: ['PICKED_UP', 'HOLD', 'CANCELLED', 'PICKUP_FAILED'],
   PICKED_UP: ['IN_TRANSIT', 'HOLD', 'CANCELLED'],
-  IN_TRANSIT: ['ASSIGNED_TO_RIDER', 'HOLD', 'CANCELLED'],
+  // Task 3 (owner-locked F7): hub scan lands between transit and rider
+  // assignment; a failed pickup keeps its own retryable state.
+  IN_TRANSIT: ['ASSIGNED_TO_HUB', 'ASSIGNED_TO_RIDER', 'HOLD', 'CANCELLED'],
   ASSIGNED_TO_RIDER: ['HOLD', 'DELIVERED', 'CANCELLED'],
+  // Task 3 (owner-locked F7): PICKUP_FAILED is retryable — staff re-books /
+  // updates the SAME dispatch (→ PICKED_UP), or holds/cancels it.
+  PICKUP_FAILED: ['PICKED_UP', 'HOLD', 'CANCELLED'],
+  ASSIGNED_TO_HUB: ['ASSIGNED_TO_RIDER', 'HOLD', 'DELIVERED', 'CANCELLED'],
   HOLD: [
     'PICKED_UP',
     'IN_TRANSIT',
+    'ASSIGNED_TO_HUB',
     'ASSIGNED_TO_RIDER',
+    'PICKUP_FAILED',
     'DELIVERED',
     'CANCELLED',
   ],
@@ -83,7 +93,9 @@ const SYNC_ORDER_TRANSITIONS: Record<string, string[]> = {
   Confirmed: ['Packed', 'Packing Hold', 'Cancelled'],
   Packed: ['Shipping', 'Packing Hold'],
   'Packing Hold': ['Packed', 'Cancelled'],
-  Shipping: ['Delivered', 'Partial'],
+  // Task A (F11): Shipping → Return Pending is DIRECT (mirrors the webhook
+  // pipeline) — the fallback path must never walk through Delivered.
+  Shipping: ['Delivered', 'Partial', 'Return Pending'],
   Delivered: ['Return Pending'],
   Partial: ['Return Pending'],
   'Return Pending': ['Returned', 'Damaged'],
@@ -102,6 +114,9 @@ const SYNC_DISPATCH_TO_ORDER: Record<string, string | null> = {
   IN_TRANSIT: 'Shipping',
   HOLD: 'Shipping',
   ASSIGNED_TO_RIDER: 'Shipping',
+  // Task 3 (owner-locked F7): failed-pickup + hub states keep Shipping.
+  PICKUP_FAILED: 'Shipping',
+  ASSIGNED_TO_HUB: 'Shipping',
   DELIVERED: 'Delivered',
   PARTIAL: 'Partial',
   RETURN_PENDING: 'Return Pending',
@@ -135,7 +150,33 @@ export class DispatchService {
     private readonly tracking: CourierTrackingService,
     private readonly ordersService: OrdersService,
     @Optional() private readonly cache?: CacheService,
+    // Shared collectable helper (Feature A). Optional so existing unit tests
+    // that build DispatchService without it keep working; production always
+    // wires it via CourierManagerModule's export.
+    @Optional() private readonly courierManager?: CourierManagerService,
+    // Task 6 (Fix 13): return-status reconcile trigger. Optional so existing
+    // unit tests that build DispatchService without it keep working;
+    // production always wires it via CourierManagerModule's export.
+    @Optional() private readonly courierWebhooks?: CourierWebhookService,
   ) {}
+
+  /**
+   * Dispatch-time collectable for a manual dispatch row. Uses the single
+   * shared getCollectableAmount helper — never a local re-derivation.
+   * Returns undefined when the order or helper is unavailable: the column
+   * stays NULL and recompute skips the row (correct, never fabricate 0).
+   */
+  private async resolveDispatchCourierAmount(
+    orderId: string,
+  ): Promise<number | undefined> {
+    if (!this.courierManager) return undefined;
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { payments: true },
+    });
+    if (!order) return undefined;
+    return this.courierManager.getCollectableAmount(order);
+  }
 
   /**
    * Business analytics freshness (P2 §6): dispatches capture the fulfillment
@@ -302,75 +343,95 @@ export class DispatchService {
   }
 
   async create(dto: CreateDispatchDto) {
-    const existing = await this.prisma.dispatch.findUnique({
-      where: {
-        courier_consignmentId: {
-          courier: dto.courier as any,
-          consignmentId: dto.consignmentId,
-        },
-      },
-    });
-
-    if (existing && existing.status !== 'CANCELLED') {
-      const flagged = await this.prisma.dispatch.create({
-        data: {
-          orderId: dto.orderId,
-          courier: dto.courier as any,
-          consignmentId: dto.consignmentId,
-          trackingCode: dto.trackingCode,
-          productMapping: (dto.productMapping ||
-            []) as unknown as Prisma.InputJsonValue,
-          notes: dto.notes,
-          flaggedAt: new Date(),
-        },
-        include: {
-          order: {
-            select: {
-              id: true,
-              displayId: true,
-              total: true,
-              guestName: true,
-              guestPhone: true,
-              courierStatus: true,
-            },
+    // Normalize blank identifier inputs to undefined: an empty string is not
+    // a consignment and must never reach the unique key (second '' would
+    // collide) — the row stays NULL until the webhook backfills it.
+    dto = {
+      ...dto,
+      consignmentId: dto.consignmentId?.trim() || undefined,
+      trackingCode: dto.trackingCode?.trim() || undefined,
+    };
+    // Identifier-less manual rows (order + courier only) skip the duplicate
+    // check: there is no consignment to dedupe on, and the unique lookup
+    // would throw on undefined. The courier webhook backfills identifiers.
+    if (dto.consignmentId) {
+      const existing = await this.prisma.dispatch.findUnique({
+        where: {
+          courier_consignmentId: {
+            courier: dto.courier as any,
+            consignmentId: dto.consignmentId,
           },
         },
       });
 
-      await this.prisma.courierDispatchLog.create({
-        data: {
-          orderId: dto.orderId,
-          courier: dto.courier as any,
-          status: 'DUPLICATION_FLAGGED',
-          message: `Duplicate dispatch flagged. Existing: ${existing.id} (${existing.consignmentId}), New: ${flagged.id} (${dto.consignmentId}). Previous status: ${existing.status}`,
-          consignmentId: dto.consignmentId,
-          requestPayload: dto as any,
-        },
-      });
+      if (existing && existing.status !== 'CANCELLED') {
+        const courierAmount = await this.resolveDispatchCourierAmount(dto.orderId);
+        const flagged = await this.prisma.dispatch.create({
+          data: {
+            orderId: dto.orderId,
+            courier: dto.courier as any,
+            consignmentId: dto.consignmentId,
+            trackingCode: dto.trackingCode,
+            productMapping: (dto.productMapping ||
+              []) as unknown as Prisma.InputJsonValue,
+            notes: dto.notes,
+            flaggedAt: new Date(),
+            // Feature A: dispatch-time collectable (shared helper, persist-only).
+            ...(courierAmount !== undefined ? { courierAmount } : {}),
+          },
+          include: {
+            order: {
+              select: {
+                id: true,
+                displayId: true,
+                total: true,
+                guestName: true,
+                guestPhone: true,
+                courierStatus: true,
+              },
+            },
+          },
+        });
 
-      // Link the order regardless of the duplicate flag: the created row must
-      // be resolvable by webhooks and manual sync keyed on courier+consignment.
-      await this.linkOrderToConsignment(dto);
-      await this.maybeRecordShippingCost(dto.orderId, dto);
-      await this.invalidateAnalytics();
+        await this.prisma.courierDispatchLog.create({
+          data: {
+            orderId: dto.orderId,
+            courier: dto.courier as any,
+            status: 'DUPLICATION_FLAGGED',
+            message: `Duplicate dispatch flagged. Existing: ${existing.id} (${existing.consignmentId}), New: ${flagged.id} (${dto.consignmentId}). Previous status: ${existing.status}`,
+            consignmentId: dto.consignmentId,
+            requestPayload: dto as any,
+          },
+        });
 
-      return {
-        duplicate: true,
-        id: flagged.id,
-        message: 'Duplicate dispatch flagged for review',
-        flagged: true,
-      };
+        // Link the order regardless of the duplicate flag: the created row must
+        // be resolvable by webhooks and manual sync keyed on courier+consignment.
+        await this.linkOrderToConsignment(dto);
+        await this.maybeRecordShippingCost(dto.orderId, dto);
+        await this.invalidateAnalytics();
+
+        return {
+          duplicate: true,
+          id: flagged.id,
+          message: 'Duplicate dispatch flagged for review',
+          flagged: true,
+        };
+      }
     }
 
+    const courierAmount = await this.resolveDispatchCourierAmount(dto.orderId);
     const created = await this.prisma.dispatch.create({
       data: {
         orderId: dto.orderId,
         courier: dto.courier as any,
-        consignmentId: dto.consignmentId,
+        // NULL until the courier booking exists; the webhook backfills it.
+        consignmentId: dto.consignmentId ?? null,
         trackingCode: dto.trackingCode,
         productMapping: (dto.productMapping ||
           []) as unknown as Prisma.InputJsonValue,
         notes: dto.notes,
+        // Feature A: dispatch-time collectable (shared helper, persist-only).
+        ...(courierAmount !== undefined ? { courierAmount } : {}),
       },
       include: {
         order: {
@@ -400,8 +461,25 @@ export class DispatchService {
    * Link the order to the dispatch's consignment so Pathao/Steadfast webhooks
    * and manual syncs can resolve it by consignment id. Never overwrites an
    * order already claimed by a different consignment/courier combo.
+   *
+   * Identifier-less manual rows stamp the courier service only (so the
+   * invoice/merchant-id webhook fallbacks can resolve the order) but never a
+   * consignment claim.
    */
   private async linkOrderToConsignment(dto: CreateDispatchDto): Promise<void> {
+    if (!dto.consignmentId) {
+      await this.prisma.order.updateMany({
+        where: {
+          id: dto.orderId,
+          courierConsignmentId: null,
+          courierService: null,
+        },
+        data: {
+          courierService: dto.courier as any,
+        },
+      });
+      return;
+    }
     await this.prisma.order.updateMany({
       where: {
         id: dto.orderId,
@@ -547,6 +625,9 @@ export class DispatchService {
       IN_TRANSIT: 'Shipping',
       HOLD: 'Shipping',
       ASSIGNED_TO_RIDER: 'Shipping',
+      // Task 3 (owner-locked F7): failed-pickup + hub states keep Shipping.
+      PICKUP_FAILED: 'Shipping',
+      ASSIGNED_TO_HUB: 'Shipping',
       DELIVERED: 'Delivered',
       PARTIAL: 'Partial',
       RETURN_PENDING: 'Return Pending',
@@ -797,6 +878,54 @@ export class DispatchService {
       }
 
       try {
+        // Task 6 (Fix 13): manual sync on a return-ish Steadfast dispatch
+        // (RETURN_PENDING / RETURNED / PARTIAL) calls the Steadfast
+        // return-status reconcile — the ONLY endpoint that reports how far
+        // back a parcel has got — instead of the normal tracking path.
+        // Other couriers / non-return dispatches keep the normal path.
+        if (
+          this.courierWebhooks &&
+          courier === 'steadfast' &&
+          ['RETURN_PENDING', 'RETURNED', 'PARTIAL'].includes(dispatch.status as string)
+        ) {
+          try {
+            const rec = await this.courierWebhooks.reconcileSteadfastReturn({
+              consignmentId: dispatch.consignmentId as string,
+            });
+            if (rec && (rec as any).reconciled) {
+              mutated = true;
+              await this.logSync(dispatch, 'SYNCED', (rec as any).deliveryStatus ?? null, {
+                performedBy,
+                result: rec,
+                nextDispatchStatus: (rec as any).dispatchStatus,
+              }).catch(() => undefined);
+              summary.synced.push({
+                id,
+                dispatchId: dispatch.id,
+                status: (rec as any).deliveryStatus ?? (rec as any).dispatchStatus,
+                message:
+                  (rec as any).dispatchStatus != null
+                    ? `Return status reconciled to ${(rec as any).dispatchStatus}`
+                    : 'Return status reconciled',
+              });
+              continue;
+            }
+            // reconciled=false ("not a return status") → fall through to the
+            // normal tracking path below.
+          } catch (recErr: unknown) {
+            const msg = recErr instanceof Error ? recErr.message : 'Return reconcile failed';
+            this.logger.warn(
+              `Return-status reconcile failed for dispatch ${dispatch.id}: ${msg}`,
+            );
+            await this.logSync(dispatch, 'SYNC_FAILED', null, {
+              performedBy,
+              error: msg,
+            }).catch(() => undefined);
+            summary.failed.push({ id, dispatchId: dispatch.id, reason: msg });
+            continue;
+          }
+        }
+
         const consignmentKey = `${courier}:${dispatch.consignmentId}`;
         let result: any;
         if (seenConsignments.has(consignmentKey)) {
@@ -1016,11 +1145,14 @@ export class DispatchService {
     const hasProgress = await this.prisma.dispatch.findFirst({
       where: {
         orderId,
+        // Task 3 (owner-locked F7): ASSIGNED_TO_HUB counts as progress (hub
+        // stage → RETURN_PENDING on cancel); PICKUP_FAILED is NO progress.
         status: {
           in: [
             'HANDED_OVER',
             'PICKED_UP',
             'IN_TRANSIT',
+            'ASSIGNED_TO_HUB',
             'ASSIGNED_TO_RIDER',
             'DELIVERED',
             'PARTIAL',
@@ -1049,6 +1181,11 @@ export class DispatchService {
         status,
         timestamp: new Date().toISOString(),
         note: `Courier sync: ${rawStatus}`,
+        // Task A (extra a): courier PICKED_UP implies the parcel left our
+        // hands — mark the HANDOVER stage complete on the timeline.
+        ...(status === 'PICKED_UP'
+          ? { remarks: 'HANDOVER stage complete (courier pickup implies handover done)' }
+          : {}),
       },
     ];
     await this.prisma.order.update({
@@ -1081,6 +1218,16 @@ export class DispatchService {
       mappedStatus = await this.resolveCancelledWithProgress(
         dispatch.orderId,
       );
+    }
+    // Task A (extra g): an unlisted transfer_status (mapper null) is kept —
+    // the raw courier state is already persisted by the caller; never force a
+    // workflow change. Loud log so the new label is visible for mapping.
+    if (!mappedStatus) {
+      this.logger.warn(
+        `Courier sync: unlisted courier status "${rawStatus}" for ${dispatch.courier} — ` +
+          `recorded, workflow kept (no forced change)`,
+      );
+      return;
     }
     const targetName = mappedStatus
       ? SYNC_DISPATCH_TO_ORDER[mappedStatus]
@@ -1123,6 +1270,37 @@ export class DispatchService {
       this.logger.warn(
         `Direct transition to ${targetName} failed during courier sync: ${(e as Error).message}`,
       );
+    }
+
+    // Task A (F11): Shipping → Return Pending is direct-or-not-at-all. Walking
+    // through Delivered as a stepping stone would briefly mark a returned
+    // parcel delivered (Delivered side effects) — never do that. Staff-visible:
+    // timeline note + loud log.
+    if (order.status.name === 'Shipping' && targetName === 'Return Pending') {
+      this.logger.warn(
+        `Courier sync: Shipping → Return Pending direct transition failed for order ${orderId} — ` +
+          `NOT stepping via Delivered; needs staff review`,
+      );
+      const full = await this.prisma.order.findFirst({
+        where: { id: orderId, trashedAt: null },
+      });
+      if (full) {
+        const timeline = [
+          ...(((full as any).timeline as unknown[]) || []),
+          {
+            type: 'courier',
+            courier: 'sync',
+            status: 'Return Pending',
+            timestamp: new Date().toISOString(),
+            note: 'Courier sync: Shipping → Return Pending direct transition failed — not stepped via Delivered; needs staff review',
+          },
+        ];
+        await this.prisma.order.update({
+          where: { id: orderId },
+          data: { timeline: timeline as unknown as Prisma.InputJsonValue },
+        });
+      }
+      return;
     }
 
     const path = this.findOrderTransitionPath(order.status.name, targetName);

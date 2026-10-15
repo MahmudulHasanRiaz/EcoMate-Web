@@ -13,12 +13,18 @@ import { useAuthStore } from '@/stores/auth-store'
 import { UserBadge } from '@/components/user-badge'
 import { ordersApi, rtnApi, mediaUrl } from '@/features/orders/api'
 import { ReturnOrderDialog } from '@/features/orders/components/return-order-dialog'
+import { OrderActionMenu } from '@/features/orders/components/order-action-menu'
 
 import { CourierCustomerHistoryCard } from '@/features/orders/courier-customer-history-card'
+import { SteadfastSetPicker } from '@/features/dispatch/steadfast-set-picker'
+import { CodMismatchBanner } from '@/features/orders/components/cod-mismatch-banner'
+import { PaymentLedgerCard } from '@/features/orders/components/payment-ledger-card'
+import { RecordPaymentModal } from '@/features/orders/components/record-payment-modal'
+import { RecordRefundModal } from '@/features/orders/components/record-refund-modal'
 import { OrderSummaryCard } from '@/features/orders/order-summary-card'
 import { OrderEditLockGuard } from '@/features/orders/order-edit-lock'
 import { OrderSourceBadges } from '@/features/orders/order-source-badge'
-import { CustomerEditSheet } from '@/features/orders/customer-edit-sheet'
+import { CustomerEditSheet, resolveCustomerEditInitial } from '@/features/orders/customer-edit-sheet'
 import { apiClient } from '@/lib/api-client'
 import { variantLabel, variantThumbUrl } from '@/lib/product-variant'
 import { resolveOrderItemImages } from '@/lib/product-image'
@@ -29,6 +35,7 @@ import {
   getCustomerEmail,
   getOrderPaidAmount,
   getOrderDueAmount,
+  getOrderPaymentMode,
 } from '@/lib/order-display'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -44,7 +51,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { PaymentLogo } from '@/components/payment-logo'
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -53,7 +59,8 @@ import {
   AlertTriangle, MoreHorizontal, Minus, Plus, X, MapPin, Mail, Phone, Trash2, RefreshCcw, Ban, Lock,
   RotateCcw, ScanSearch, Calendar, CreditCard, CheckCircle2, ShoppingBag, History
 } from 'lucide-react'
-import { DISPATCH_STATUSES } from '@/features/dispatch/data/data'
+import { DISPATCH_STATUSES, getDispatchIdentifierLabels } from '@/features/dispatch/data/data'
+import { formatCourierDispatchToast } from '@/features/dispatch/courier-errors'
 import { STATUS_COLORS as statusColors } from '@/features/orders/status-transitions'
 
 const nn = (v: number | string) => Number(v)
@@ -88,6 +95,9 @@ const paymentStatusColors: Record<string, string> = {
   PAYMENT_PENDING: '#F59E0B', PENDING: '#F59E0B', PAID: '#22C55E',
   PARTIAL_PAID: '#3B82F6', UNPAID: '#EF4444', FAILED: '#DC2626',
   CANCELLED: '#6B7280', REFUNDED: '#EC4899',
+  // Derived ledger modes (getOrderPaymentMode) — the badge source of truth.
+  Unpaid: '#EF4444', Partial: '#3B82F6', Paid: '#22C55E', Credit: '#8B5CF6',
+  Refunded: '#EC4899',
 }
 
 function PaymentStatusBadge({ status }: { status?: string | null }) {
@@ -151,6 +161,10 @@ function OrderDetailPage() {
   const [paymentMode, setPaymentMode] = useState<'cod' | 'full' | 'partial'>('cod')
   const [partialAmount, setPartialAmount] = useState('')
 
+  // ── Ledger modals (Task 11: append-only entries, never in-place edits) ──
+  const [showRecordPayment, setShowRecordPayment] = useState(false)
+  const [showRecordRefund, setShowRecordRefund] = useState(false)
+
   // ── Timeline / Notes ─────────────────────────────────────────────
   const [noteText, setNoteText] = useState('')
   const [noteVisibility, setNoteVisibility] = useState<'public' | 'private'>('public')
@@ -164,6 +178,8 @@ function OrderDetailPage() {
   // ── Dispatch ─────────────────────────────────────────────────────
   const [showDispatchDialog, setShowDispatchDialog] = useState(false)
   const [dispatchCourier, setDispatchCourier] = useState('')
+  // Task 8: steadfast order-level account override (picker shows iff >1 set).
+  const [dispatchSetId, setDispatchSetId] = useState('')
 
   // ── RTN (return order) ─────────────────────────────────────────────
   const { data: rtnOrder } = useQuery({
@@ -190,7 +206,15 @@ function OrderDetailPage() {
 
   const shippingMode = sysSettings?.['shipping_mode'] || 'auto_district'
 
-  const phone = order?.customer?.phoneNumber?.replace(/[^\d]/g, '')
+  // S1/S2 (live in the same /system-settings map): S1 ON (default) means staff
+  // entries skip verification, so txn ID is optional; S2 OFF (default) means
+  // no edit UI for recorded payments — corrections go through new entries.
+  const staffAutoVerified = sysSettings?.['payments.staffAutoVerified'] !== 'false'
+  const paymentEditAllowed = sysSettings?.['payments.editAllowed'] === 'true'
+
+  // D-A: phone VALUE is the order snapshot (customerPhone/guestPhone first,
+  // GET-mapped customer only as fallback) — the history lookup is by number.
+  const phone = (order ? getCustomerPhone(order) : '').replace(/[^\d]/g, '')
   const { data: customerSummary } = useQuery({ queryKey: ['customer-summary', phone], queryFn: () => apiClient.get(`/customers/order-summary?phone=${phone}`).then(r => r.data), enabled: !!phone })
 
 
@@ -226,7 +250,20 @@ function OrderDetailPage() {
   const statusMut = useMutation({
     mutationFn: ({ id, statusId, note }: { id: string; statusId: string; note?: string }) => ordersApi.updateStatus(id, statusId, note),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['order', id] }); toast.success('Status updated') },
-    onError: (e: unknown) => toast.error(errMsg(e)),
+    onError: (e: unknown) => {
+      const msg = errMsg(e)
+      // Cancel blocked by outstanding paid balance (D5): surface the backend
+      // message and deep-link straight into the refund flow (cancel-too can
+      // cancel atomically once the balance is refunded).
+      if (/আগে রিফান্ড/.test(msg)) {
+        toast.error(msg, { duration: 9000 })
+        setShowStatusDialog(null)
+        setStatusNote('')
+        setShowRecordRefund(true)
+        return
+      }
+      toast.error(msg)
+    },
   })
 
   const noteMut = useMutation({
@@ -236,19 +273,32 @@ function OrderDetailPage() {
   })
 
   const dispatchMut = useMutation({
-    mutationFn: ({ courier, orderId }: { courier: string; orderId: string }) => apiClient.post(`/couriers/dispatch/${courier}`, { orderIds: [orderId] }),
+    mutationFn: ({ courier, orderId, credentialSetId }: { courier: string; orderId: string; credentialSetId?: string }) => apiClient.post(`/couriers/dispatch/${courier}`, { orderIds: [orderId], ...(credentialSetId ? { credentialSetId } : {}) }),
     onSuccess: (res) => {
       const results = (res as any)?.data as any[] || []
       const succeeded = results.filter((r: any) => r.ok)
       const failed = results.filter((r: any) => !r.ok)
-      if (failed.length > 0) toast.error(failed[0]?.message || 'Dispatch failed')
+      // Fix 5: the failure names the EXACT courier field+rule
+      // (shaped backend error threaded through untouched).
+      if (failed.length > 0) toast.error(formatCourierDispatchToast(failed[0] || { message: 'Dispatch failed' }), { duration: 8000 })
       if (succeeded.length > 0) {
         queryClient.invalidateQueries({ queryKey: ['order', id] })
-        setShowDispatchDialog(false); setDispatchCourier('')
+        setShowDispatchDialog(false); setDispatchCourier(''); setDispatchSetId('')
         toast.success('Order dispatched')
       }
     },
-    onError: (e: unknown) => toast.error(errMsg(e)),
+    onError: (e: unknown) => {
+      // Fix 5: a whole-batch transport rejection can also carry the shaped
+      // error ({message, errors}) — surface it with exact field+rule naming.
+      const d = (e as any)?.response?.data
+      toast.error(
+        formatCourierDispatchToast({
+          message: d?.message || errMsg(e),
+          errors: d?.errors,
+        }),
+        { duration: 8000 },
+      )
+    },
   })
 
   const trashMut = useMutation({
@@ -422,6 +472,9 @@ function OrderDetailPage() {
 
   const allowedStatuses = ((order.status.nextStatuses as string[]) || []).map((sid: string) => statusList.find((s: any) => s.id === sid)).filter(Boolean)
 
+  // D-A: edit-sheet init reads the SAME snapshot fields the save writes.
+  const customerEditInit = resolveCustomerEditInitial(order)
+
   return (
     <TooltipProvider>
       <>
@@ -436,6 +489,9 @@ function OrderDetailPage() {
         <Main className='flex flex-1 flex-col gap-3.5 sm:gap-6 p-2.5 sm:p-6 pb-24 sm:pb-32 max-w-[1600px] w-full mx-auto'>
 
           <OrderEditLockGuard orderId={order.id} disabled={!!order.trashedAt} />
+
+          {/* COD mismatch — server-driven, persistent while an open alert exists */}
+          <CodMismatchBanner orderId={order.id} due={getOrderDueAmount(order)} dispatches={order.dispatches} />
 
           {/* ── Executive Order Header Banner ──────────────────────── */}
           <div className='rounded-2xl border border-border/70 bg-card/75 backdrop-blur-md p-3 sm:p-6 shadow-2xs space-y-3 sm:space-y-4'>
@@ -623,6 +679,9 @@ function OrderDetailPage() {
                     <span className='sm:hidden'>Others</span>
                   </Button>
                 )}
+
+                {/* Task 4 (Fix 8): Plus (+) return/exchange action menu */}
+                {!order.trashedAt && <OrderActionMenu order={order} />}
 
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -1069,19 +1128,48 @@ function OrderDetailPage() {
                         <div>
                           <CardTitle className='text-sm font-semibold tracking-tight text-foreground flex items-center gap-2'>
                             Payment Details
-                            <PaymentStatusBadge status={order.paymentStatus} />
+                            <PaymentStatusBadge status={getOrderPaymentMode(order)} />
                           </CardTitle>
                           <p className='text-xs text-muted-foreground mt-0.5'>Settlement mode and transaction log</p>
                         </div>
                       </div>
                       {!editingPayment && (
-                        <Button variant='outline' size='sm' className='h-8 text-xs font-medium shadow-none hover:bg-accent' onClick={openPaymentEdit}>
+                        <Button
+                          variant='outline'
+                          size='sm'
+                          className='h-8 text-xs font-medium shadow-none hover:bg-accent'
+                          onClick={openPaymentEdit}
+                          disabled={!paymentEditAllowed}
+                          title={paymentEditAllowed ? undefined : 'Payment editing is disabled — record a correction entry instead'}
+                        >
                           <Pencil className='h-3 w-3 mr-1.5' /> Edit
                         </Button>
                       )}
                     </div>
                   </CardHeader>
                   <CardContent className='p-3 sm:p-6 space-y-3 sm:space-y-4'>
+                    {/* D6: three unmistakable blocks — ledger-derived, never the stored column */}
+                    {(() => {
+                      const total = nn(order.total)
+                      const paid = getOrderPaidAmount(order)
+                      const due = getOrderDueAmount(order)
+                      return (
+                        <div className='grid grid-cols-3 gap-2'>
+                          <div className='rounded-lg bg-muted/40 border border-border/50 p-2.5 text-center'>
+                            <p className='text-[10px] font-semibold uppercase tracking-wider text-muted-foreground'>মোট বিল</p>
+                            <p className='font-bold text-sm text-foreground mt-0.5'>৳{fmt(total)}</p>
+                          </div>
+                          <div className='rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-2.5 text-center'>
+                            <p className='text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400'>আদায়কৃত</p>
+                            <p className='font-bold text-sm text-emerald-600 dark:text-emerald-400 mt-0.5'>৳{fmt(paid)}</p>
+                          </div>
+                          <div className='rounded-lg bg-amber-500/10 border border-amber-500/25 p-2.5 text-center ring-1 ring-amber-500/20'>
+                            <p className='text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-500'>বকেয়া Due</p>
+                            <p className='font-extrabold text-base text-amber-600 dark:text-amber-500 mt-0.5'>৳{fmt(due)}</p>
+                          </div>
+                        </div>
+                      )
+                    })()}
                     {editingPayment ? (
                       <div className='space-y-3.5'>
                         <div>
@@ -1135,41 +1223,12 @@ function OrderDetailPage() {
                       </div>
                     )}
 
-                    {order.payments && order.payments.length > 0 && (
-                      <div className='space-y-2.5 pt-1'>
-                        <p className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'>Recorded Transactions</p>
-                        {order.payments.map((p: any) => {
-                          const ps = p.status?.toLowerCase()
-                          const statusVariant = ps === 'paid' || ps === 'verified' || ps === 'completed' ? 'default' as const : ps === 'pending' || ps === 'payment_pending' ? 'secondary' as const : ps === 'failed' || ps === 'cancelled' ? 'destructive' as const : 'outline' as const
-                          return (
-                            <div key={p.id} className='rounded-lg border border-border/60 bg-card p-3 shadow-xs space-y-2'>
-                              <div className='flex items-center justify-between'>
-                                <PaymentLogo method={p.gatewayCode || p.method} size='sm' />
-                                <Badge variant={statusVariant} className='text-[10px] font-medium shadow-xs'>{p.status}</Badge>
-                              </div>
-                              <div className='grid grid-cols-2 gap-2 text-xs pt-1.5 border-t border-border/40'>
-                                <div>
-                                  <span className='text-muted-foreground text-[10px] block'>Amount</span>
-                                  <span className='font-bold text-sm text-foreground'>৳{fmt(p.amount)}</span>
-                                </div>
-                                {p.transactionId && (
-                                  <div>
-                                    <span className='text-muted-foreground text-[10px] block'>Transaction ID</span>
-                                    <div className='flex items-center gap-1 font-mono text-[11px] font-medium text-foreground'>
-                                      <span className='truncate'>{p.transactionId}</span>
-                                      <CopyButton text={p.transactionId} label='TrxID' />
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                              {p.gatewayCode && (
-                                <p className='text-[10px] text-muted-foreground/75 font-mono'>Gateway: {p.gatewayCode}</p>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
+                    {/* Append-only ledger: signed entries, no in-place edits */}
+                    <PaymentLedgerCard
+                      payments={(order.payments || []) as any}
+                      onRecordPayment={() => setShowRecordPayment(true)}
+                      onRecordRefund={() => setShowRecordRefund(true)}
+                    />
                   </CardContent>
                 </Card>
               )}
@@ -1362,16 +1421,23 @@ function OrderDetailPage() {
                           <TableBody>
                             {order.dispatches.slice().reverse().map((d: any) => {
                               const statusConfig = DISPATCH_STATUSES.find(s => s.value === d.status)
+                              const idLabels = getDispatchIdentifierLabels(d.courier)
                               return (
                                 <TableRow key={d.id} className='hover:bg-muted/30 transition-colors'>
                                   <TableCell className='px-4 sm:px-6 font-semibold text-sm capitalize text-foreground'>
                                     {d.courier}
                                   </TableCell>
                                   <TableCell>
-                                    <div className='flex items-center gap-1.5'>
-                                      <span className='text-sm font-mono font-medium'>{d.consignmentId}</span>
-                                      <CopyButton text={d.consignmentId} label='Consignment ID' />
-                                    </div>
+                                    {d.consignmentId ? (
+                                      <div className='flex items-center gap-1.5'>
+                                        <span className='text-sm font-mono font-medium' title={idLabels.primary}>{d.consignmentId}</span>
+                                        <CopyButton text={d.consignmentId} label={idLabels.primary} />
+                                      </div>
+                                    ) : (
+                                      <span className='text-xs text-amber-600 dark:text-amber-500' title='Created before the courier booking — the webhook fills this in'>
+                                        Pending webhook
+                                      </span>
+                                    )}
                                   </TableCell>
                                   <TableCell>
                                     <Badge className={`text-xs font-medium shadow-xs ${statusConfig?.color || 'bg-gray-500'}`}>
@@ -1406,6 +1472,7 @@ function OrderDetailPage() {
                       <div className='md:hidden divide-y divide-border/50'>
                         {order.dispatches.slice().reverse().map((d: any) => {
                           const statusConfig = DISPATCH_STATUSES.find(s => s.value === d.status)
+                          const idLabels = getDispatchIdentifierLabels(d.courier)
                           return (
                             <div key={d.id} className='p-3.5 space-y-2 bg-card'>
                               <div className='flex items-center justify-between'>
@@ -1416,8 +1483,14 @@ function OrderDetailPage() {
                               </div>
                               <div className='flex items-center justify-between text-xs'>
                                 <div className='flex items-center gap-1.5'>
-                                  <span className='font-mono text-xs font-medium text-foreground'>{d.consignmentId}</span>
-                                  <CopyButton text={d.consignmentId} label='Consignment ID' />
+                                  {d.consignmentId ? (
+                                    <>
+                                      <span className='font-mono text-xs font-medium text-foreground' title={idLabels.primary}>{d.consignmentId}</span>
+                                      <CopyButton text={d.consignmentId} label={idLabels.primary} />
+                                    </>
+                                  ) : (
+                                    <span className='text-[11px] text-amber-600 dark:text-amber-500'>Pending webhook</span>
+                                  )}
                                 </div>
                                 <span className='text-[11px] text-muted-foreground'>
                                   {new Date(d.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} {new Date(d.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
@@ -1503,7 +1576,7 @@ function OrderDetailPage() {
                         {order.dispatches && order.dispatches.length > 0 && (
                           <div className='text-xs text-muted-foreground flex items-center gap-1.5 col-span-2'>
                             <Truck className='h-3.5 w-3.5 text-muted-foreground' />
-                            <span>{order.dispatches[order.dispatches.length - 1].courier} — {order.dispatches[order.dispatches.length - 1].consignmentId}</span>
+                            <span>{order.dispatches[order.dispatches.length - 1].courier} — {order.dispatches[order.dispatches.length - 1].consignmentId ?? 'pending webhook'}</span>
                           </div>
                         )}
                         {rtnOrder.status === 'Returned' && (
@@ -1724,7 +1797,8 @@ function OrderDetailPage() {
               </Card>
 
               {/* Courier Customer History */}
-              <CourierCustomerHistoryCard phone={order.customer?.phoneNumber || order.guestPhone} />
+              {/* Courier Customer History — phone VALUE from snapshot (D-A) */}
+              <CourierCustomerHistoryCard phone={getCustomerPhone(order)} />
 
             </div>
           </div>
@@ -1745,14 +1819,15 @@ function OrderDetailPage() {
           />
         )}
 
-        {/* ── Customer Edit Sheet ──────────────────────────────── */}
+        {/* ── Customer Edit Sheet ────────────────────────────────
+            Init values read the SAME snapshot fields the save writes (D-A). */}
         <CustomerEditSheet
           open={showCustomerSheet}
           onOpenChange={setShowCustomerSheet}
-          firstName={order.customer?.firstName || ''}
-          lastName={order.customer?.lastName || ''}
-          email={order.customer?.email || ''}
-          phone={order.customer?.phoneNumber || ''}
+          firstName={customerEditInit.firstName}
+          lastName={customerEditInit.lastName}
+          email={customerEditInit.email}
+          phone={customerEditInit.phone}
           address={order.shippingAddress?.address || ''}
           cityId={order.shippingAddress?.cityId || ''}
           zoneId={order.shippingAddress?.zoneId || ''}
@@ -1863,20 +1938,23 @@ function OrderDetailPage() {
         </Dialog>
 
         {/* ── Dispatch Dialog ──────────────────────────────────── */}
-        <Dialog open={showDispatchDialog} onOpenChange={() => { setShowDispatchDialog(false); setDispatchCourier('') }}>
+        <Dialog open={showDispatchDialog} onOpenChange={() => { setShowDispatchDialog(false); setDispatchCourier(''); setDispatchSetId('') }}>
           <DialogContent>
             <DialogHeader><DialogTitle>Send to Courier</DialogTitle></DialogHeader>
             <div className='space-y-3 py-2'>
               <p className='text-sm text-muted-foreground'>Select a courier service to dispatch this order.</p>
               <div className='space-y-1'>
                 <Label>Courier</Label>
-                <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm' value={dispatchCourier} onChange={e => setDispatchCourier(e.target.value)}>
+                <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm' value={dispatchCourier} onChange={e => { setDispatchCourier(e.target.value); setDispatchSetId('') }}>
                   <option value=''>Select...</option>
                   {activeCouriers.map((c: any) => (
                     <option key={c.courier} value={c.courier}>{c.courier.charAt(0).toUpperCase() + c.courier.slice(1)}</option>
                   ))}
                 </select>
               </div>
+              {dispatchCourier === 'steadfast' && (
+                <SteadfastSetPicker value={dispatchSetId} onChange={setDispatchSetId} />
+              )}
               {(() => {
                 const due = getOrderDueAmount(order)
                 const paid = getOrderPaidAmount(order)
@@ -1901,14 +1979,27 @@ function OrderDetailPage() {
               })()}
             </div>
             <div className='flex justify-end gap-2'>
-              <Button variant='outline' onClick={() => { setShowDispatchDialog(false); setDispatchCourier('') }}>Cancel</Button>
-              <Button disabled={!dispatchCourier || dispatchMut.isPending} onClick={() => dispatchMut.mutate({ courier: dispatchCourier, orderId: id })}>
+              <Button variant='outline' onClick={() => { setShowDispatchDialog(false); setDispatchCourier(''); setDispatchSetId('') }}>Cancel</Button>
+              <Button disabled={!dispatchCourier || dispatchMut.isPending} onClick={() => dispatchMut.mutate({ courier: dispatchCourier, orderId: id, ...(dispatchCourier === 'steadfast' && dispatchSetId ? { credentialSetId: dispatchSetId } : {}) })}>
                 {dispatchMut.isPending ? <Loader2 className='h-4 w-4 animate-spin mr-1' /> : <Send className='h-4 w-4 mr-1' />}
                 Dispatch
               </Button>
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* ── Ledger entry modals (Task 11) ─────────────────────── */}
+        <RecordPaymentModal
+          orderId={id}
+          open={showRecordPayment}
+          onClose={() => setShowRecordPayment(false)}
+          txnRequired={!staffAutoVerified}
+        />
+        <RecordRefundModal
+          orderId={id}
+          open={showRecordRefund}
+          onClose={() => setShowRecordRefund(false)}
+        />
 
         {/* ── Variant Picker Dialog ────────────────────────────── */}
         <Dialog open={!!selectedProductForVariants} onOpenChange={() => setSelectedProductForVariants(null)}>

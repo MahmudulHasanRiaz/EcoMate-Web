@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { gatewayApi, type GatewayConfig } from './api'
+import { gatewayApi, type GatewayConfig, type PaymentSettingKey } from './api'
 import { PaymentLogo } from '@/components/payment-logo'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,6 +12,59 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator'
 import { Loader2, Save, ChevronDown, ChevronUp, Phone, Settings2, Info, CheckCircle2, Truck, ShieldCheck, Zap } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+/**
+ * Task 7 — S1/S2 toggles. Manual-gateway settings only: rendered only when
+ * `g.type === 'manual'` (explicit guard at the call site) — never in api or
+ * cash cards. Values persist as `payments.staffAutoVerified` / `payments.editAllowed`
+ * SystemSetting keys (seeded true/false; code defaults match when absent).
+ */
+function ManualPaymentSettings() {
+  const uid = useId()
+  const queryClient = useQueryClient()
+  const { data: settings, isLoading } = useQuery({
+    queryKey: ['payment-settings'],
+    queryFn: () => gatewayApi.getPaymentSettings(),
+  })
+
+  const setMut = useMutation({
+    mutationFn: ({ key, value }: { key: PaymentSettingKey; value: boolean }) =>
+      gatewayApi.setPaymentSetting(key, value),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payment-settings'] })
+    },
+    onError: () => {
+      toast.error('Failed to update payment setting')
+    },
+  })
+
+  const staffAuto = settings?.staffAutoVerified ?? true
+  const editAllowed = settings?.editAllowed ?? false
+  const busy = isLoading || setMut.isPending
+
+  return (
+    <div className='sm:col-span-2 space-y-3 rounded-lg border bg-background p-3'>
+      <div className='flex items-center justify-between gap-4'>
+        <Label htmlFor={`${uid}-s1`} className='text-xs font-semibold'>Staff manual payments auto-verified</Label>
+        <Switch
+          id={`${uid}-s1`}
+          checked={staffAuto}
+          disabled={busy}
+          onCheckedChange={(v) => setMut.mutate({ key: 'payments.staffAutoVerified', value: v })}
+        />
+      </div>
+      <div className='flex items-center justify-between gap-4'>
+        <Label htmlFor={`${uid}-s2`} className='text-xs font-semibold'>Staff may edit recorded payments</Label>
+        <Switch
+          id={`${uid}-s2`}
+          checked={editAllowed}
+          disabled={busy}
+          onCheckedChange={(v) => setMut.mutate({ key: 'payments.editAllowed', value: v })}
+        />
+      </div>
+    </div>
+  )
+}
 
 export function GatewaySettings() {
   const queryClient = useQueryClient()
@@ -288,6 +341,7 @@ export function GatewaySettings() {
                               <Label className='text-xs font-semibold flex items-center gap-1.5'><Phone className='h-3 w-3' /> Phone Number</Label>
                               <Input className='h-9' value={d.phoneNumber || ''} onChange={e => setGatewayEditData(p => ({ ...p, [g.code]: { ...d, phoneNumber: e.target.value } }))} placeholder='01XXXXXXXXX' />
                             </div>
+                            {g.type === 'manual' && <ManualPaymentSettings />}
                             <div className='sm:col-span-2 flex justify-end'>
                               <Button size='sm' onClick={() => handleGatewaySave(g.code)} disabled={updateGatewayMut.isPending}>
                                 {updateGatewayMut.isPending ? <Loader2 className='animate-spin h-3.5 w-3.5 mr-2' /> : <Save className='h-3.5 w-3.5 mr-2' />}

@@ -4,7 +4,8 @@ export interface DispatchResponse {
   id: string
   orderId: string
   courier: string
-  consignmentId: string
+  // NULL until the courier booking exists — the webhook backfills it.
+  consignmentId: string | null
   trackingCode: string | null
   trackingUrl: string | null
   status: string

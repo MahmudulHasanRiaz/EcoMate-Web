@@ -40,6 +40,15 @@ export const productOverrideApi = {
   remove: (productId: string, type: string) => apiClient.delete(`/gateways/product-overrides/${productId}/${type}`),
 }
 
+export interface PaymentSettings {
+  /** S1: staff manual entries skip the verification queue (default ON). */
+  staffAutoVerified: boolean;
+  /** S2: staff may directly edit recorded payments (default OFF). Manual gateways only. */
+  editAllowed: boolean;
+}
+
+export type PaymentSettingKey = 'payments.staffAutoVerified' | 'payments.editAllowed';
+
 export const gatewayApi = {
   listOptions: () => apiClient.get<PaymentOption[]>('/gateways/options'),
   updateOption: (type: string, data: { enabled?: boolean; name?: string; description?: string; sortOrder?: number }) =>
@@ -49,4 +58,14 @@ export const gatewayApi = {
     return apiClient.get<GatewayConfig[]>('/gateways/admin', params);
   },
   updateGateway: (code: string, data: any) => apiClient.put(`/gateways/${code}`, data),
+  getPaymentSettings: async (): Promise<PaymentSettings> => {
+    const r = await apiClient.get<Record<string, string>>('/system-settings');
+    const map = (r.data ?? {}) as Record<string, string>;
+    return {
+      staffAutoVerified: map['payments.staffAutoVerified'] === undefined ? true : map['payments.staffAutoVerified'] === 'true',
+      editAllowed: map['payments.editAllowed'] === undefined ? false : map['payments.editAllowed'] === 'true',
+    };
+  },
+  setPaymentSetting: (key: PaymentSettingKey, value: boolean) =>
+    apiClient.post(`/system-settings/${key}`, { value: value ? 'true' : 'false' }),
 }

@@ -5,6 +5,7 @@ import { CreatePaymentDto, VerifyPaymentDto } from '../orders/dto/order.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 
 @Controller('payments')
@@ -20,6 +21,9 @@ export class PaymentsController {
     @Query('gatewayCode') gatewayCode?: string,
     @Query('status') status?: string,
     @Query('orderId') orderId?: string,
+    // D-B: staff search by order NUMBER (displayId). Resolved server-side;
+    // unknown numbers 404 (see PaymentsService.findAll).
+    @Query('orderNumber') orderNumber?: string,
   ) {
     return this.svc.findAll({
       page: page ? parseInt(page) : undefined,
@@ -27,6 +31,7 @@ export class PaymentsController {
       gatewayCode,
       status,
       orderId,
+      orderNumber,
     });
   }
 
@@ -36,13 +41,22 @@ export class PaymentsController {
   create(
     @Param('orderId') orderId: string,
     @Body() dto: CreatePaymentDto,
-    @CurrentUser() user: { userId: string } | null | undefined,
+    @CurrentUser() user: { userId: string; role?: string } | null | undefined,
   ) {
-    return this.svc.create(orderId, dto, { userId: user?.userId, token: dto.token });
+    // Staff recording on behalf of a customer: context-bound staff actor
+    // (logged-in non-customer), exempt from the order-ownership gate and
+    // eligible for S1 auto-verification inside the service.
+    const isStaff = !!user?.userId && user?.role !== 'customer';
+    return this.svc.create(orderId, dto, {
+      userId: user?.userId,
+      token: dto.token,
+      isStaff,
+    });
   }
 
   @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_payments')
+  @Permissions('approve_payments')
   @Put(':id/verify')
   verify(
     @Param('id') id: string,

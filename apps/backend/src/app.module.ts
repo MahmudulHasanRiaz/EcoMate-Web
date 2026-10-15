@@ -19,6 +19,7 @@ import { AttributesModule } from './attributes/attributes.module';
 import { ProductsModule } from './products/products.module';
 import { OrdersModule } from './orders/orders.module';
 import { RtnModule } from './rtn/rtn.module';
+import { ReturnsModule } from './returns/returns.module';
 import { ExchangeModule } from './exchange/exchange.module';
 import { ScannerModule } from './scanner/scanner.module';
 
@@ -29,6 +30,7 @@ import { MobileDownloadModule } from './mobile-download/mobile-download.module';
 import { MobileBuilderModule } from './mobile-builder/mobile-builder.module';
 import { MediaModule } from './media/media.module';
 import { CustomersModule } from './customers/customers.module';
+import { CustomerCreditModule } from './customer-credit/customer-credit.module';
 import { SalesChannelModule } from './sales-channel/sales-channel.module';
 import { CourierModule } from './courier/courier.module';
 import { GatewayModule } from './gateways/gateway.module';
@@ -124,6 +126,7 @@ import { SecurityDashboardModule } from './security-dashboard/security-dashboard
     ProductsModule,
     OrdersModule,
     RtnModule,
+    ReturnsModule,
     ExchangeModule,
     ScannerModule,
     PackingModule,
@@ -135,6 +138,7 @@ import { SecurityDashboardModule } from './security-dashboard/security-dashboard
     MobileBuilderModule,
     MediaModule,
     CustomersModule,
+    CustomerCreditModule,
     SalesChannelModule,
     CourierModule,
     GatewayModule,

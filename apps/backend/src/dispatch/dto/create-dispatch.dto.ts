@@ -22,8 +22,11 @@ export class CreateDispatchDto {
   orderId: string;
   @IsString()
   courier: string;
+  // Optional: a manual row may be created before the courier booking exists.
+  // The courier webhook backfills the identifiers on match (Task 4).
+  @IsOptional()
   @IsString()
-  consignmentId: string;
+  consignmentId?: string;
   @IsOptional()
   @IsString()
   trackingCode?: string;

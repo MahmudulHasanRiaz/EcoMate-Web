@@ -68,18 +68,22 @@ export class PhysicalInventoryController {
     }
 
     if (available <= 0) {
-      throw new BadRequestException(
-        `This adjustment would remove ${params.removalQty} from a location with no ` +
+      throw new BadRequestException({
+        code: 'DESTRUCTIVE_ADJUSTMENT',
+        message:
+          `This adjustment would remove ${params.removalQty} from a location with no ` +
           `available stock (${totalQty} on hand, ${totalReserved} reserved). ` +
           `Re-submit with confirmDestructive=true if this is intentional.`,
-      );
+      });
     }
 
-    throw new BadRequestException(
-      `This adjustment would remove ${params.removalQty} of ${available} available ` +
-        `at this location (${Math.round((params.removalQty / available) * 100)}%). ` +
-        `Re-submit with confirmDestructive=true if this is intentional.`,
-    );
+    throw new BadRequestException({
+      code: 'DESTRUCTIVE_ADJUSTMENT',
+      message:
+        `This adjustment would remove ${params.removalQty} of ${available} available ` +
+          `at this location (${Math.round((params.removalQty / available) * 100)}%). ` +
+          `Re-submit with confirmDestructive=true if this is intentional.`,
+    });
   }
 
   /**

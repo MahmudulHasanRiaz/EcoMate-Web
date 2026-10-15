@@ -598,6 +598,33 @@ probe_ddl() {
       fi
       ;;
 
+    20261014000200_void_placeholder_payments)
+      # DDL+data: PaymentStatus gains 'VOID'; legacy cash/UNPAID rows are
+      # VOID-marked (never deleted); blank order snapshots backfilled.
+      # All writes are idempotent (guarded ADD VALUE + WHERE-clause UPDATEs),
+      # so a retry after resolve --rolled-back is safe.
+      # APPLIED iff the value exists AND no placeholder is left behind.
+      # Value present + placeholders left = ambiguous (partial failure vs new
+      # placeholders written post-migration) -> UNKNOWN, human investigates.
+      enum_count="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+           WHERE t.typname = 'PaymentStatus' AND e.enumlabel = 'VOID';"
+      )"
+      leftover_count="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM \"Payment\"
+           WHERE \"gatewayCode\" = 'cash' AND \"status\" = 'UNPAID';"
+      )"
+      if [ "$enum_count" = "1" ] && [ "$leftover_count" = "0" ]; then
+        echo "APPLIED"
+      elif [ "$enum_count" = "0" ]; then
+        echo "NOT_APPLIED"
+      else
+        echo "UNKNOWN"
+      fi
+      ;;
+
     *)
       echo "UNKNOWN"
       ;;

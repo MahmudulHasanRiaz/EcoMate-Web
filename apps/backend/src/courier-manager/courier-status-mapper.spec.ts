@@ -1,4 +1,4 @@
-import { mapCourierStatusToDispatchStatus, isSupportedCourier } from './courier-status-mapper';
+import { mapCourierStatusToDispatchStatus, isSupportedCourier, mapSteadfastReturnStatus } from './courier-status-mapper';
 
 describe('mapCourierStatusToDispatchStatus', () => {
   it('maps Steadfast tracking-normalized statuses', () => {
@@ -25,7 +25,9 @@ describe('mapCourierStatusToDispatchStatus', () => {
 
   it('maps RedX statuses (shared webhook/tracking vocabulary)', () => {
     expect(mapCourierStatusToDispatchStatus('redx', 'delivered')).toBe('DELIVERED');
-    expect(mapCourierStatusToDispatchStatus('redx', 'ready-for-delivery')).toBe('PICKED_UP');
+    // Task A: ready-for-delivery = received from merchant, rider not yet
+    // assigned → ASSIGNED_TO_RIDER (was PICKED_UP), order stays Shipping.
+    expect(mapCourierStatusToDispatchStatus('redx', 'ready-for-delivery')).toBe('ASSIGNED_TO_RIDER');
     expect(mapCourierStatusToDispatchStatus('redx', 'delivery-in-progress')).toBe('ASSIGNED_TO_RIDER');
     expect(mapCourierStatusToDispatchStatus('redx', 'agent-hold')).toBe('HOLD');
     expect(mapCourierStatusToDispatchStatus('redx', 'agent-returning')).toBe('RETURN_PENDING');
@@ -49,14 +51,16 @@ describe('mapCourierStatusToDispatchStatus', () => {
     expect(mapCourierStatusToDispatchStatus('pathao', 'Pickup Requested')).toBeNull();
     expect(mapCourierStatusToDispatchStatus('pathao', 'At the Sorting Hub')).toBe('IN_TRANSIT');
     expect(mapCourierStatusToDispatchStatus('pathao', 'In Transit')).toBe('IN_TRANSIT');
-    expect(mapCourierStatusToDispatchStatus('pathao', 'Received at Last Mile Hub')).toBe('ASSIGNED_TO_RIDER');
+    expect(mapCourierStatusToDispatchStatus('pathao', 'Received at Last Mile Hub')).toBe('ASSIGNED_TO_HUB');
     expect(mapCourierStatusToDispatchStatus('pathao', 'Partial Delivery')).toBe('PARTIAL');
     expect(mapCourierStatusToDispatchStatus('pathao', 'On Hold')).toBe('HOLD');
     expect(mapCourierStatusToDispatchStatus('pathao', 'Return')).toBe('RETURN_PENDING');
     expect(mapCourierStatusToDispatchStatus('pathao', 'Paid Return')).toBe('RETURN_PENDING');
     expect(mapCourierStatusToDispatchStatus('pathao', 'Exchange')).toBe('DELIVERED');
-    // Skip labels from the info vocabulary never get promoted.
-    expect(mapCourierStatusToDispatchStatus('pathao', 'Pickup Failed')).toBeNull();
+    // Task 3 (owner-locked F7): pickup-failed is a real workflow state
+    // (PICKUP_FAILED), delivery-failed stays record-only (null).
+    expect(mapCourierStatusToDispatchStatus('pathao', 'Pickup Failed')).toBe('PICKUP_FAILED');
+    expect(mapCourierStatusToDispatchStatus('carrybee', 'Pickup Failed')).toBe('PICKUP_FAILED');
     expect(mapCourierStatusToDispatchStatus('pathao', 'Delivery Failed')).toBeNull();
     expect(mapCourierStatusToDispatchStatus('pathao', 'Payment Invoice')).toBeNull();
     expect(mapCourierStatusToDispatchStatus('pathao', 'Pending')).toBe('DISPATCHED');
@@ -66,11 +70,12 @@ describe('mapCourierStatusToDispatchStatus', () => {
 
   it('webhook-skip statuses map to null (never promoted by keyword fallback)', () => {
     // Pathao/Carrybee webhooks explicitly map these to null ("skip").
+    // Task 3 (owner-locked F7): order.pickup-failed is NOT skip anymore — it
+    // is a real PICKUP_FAILED workflow state (asserted here + below).
     const skipLabels = [
       'order.updated',
       'order.pickup-requested',
       'order.assigned-for-pickup',
-      'order.pickup-failed',
       'order.delivery-failed',
     ];
     for (const label of skipLabels) {
@@ -78,15 +83,38 @@ describe('mapCourierStatusToDispatchStatus', () => {
       expect(mapCourierStatusToDispatchStatus('carrybee', label)).toBeNull();
     }
     // Plain (non event-prefixed) failure labels from tracking timelines must
-    // never collide with `deliver`/`pickup` keyword rules.
+    // never collide with `deliver`/`pickup` keyword rules. delivery-failed
+    // stays record-only; pickup-failed is the PICKUP_FAILED state.
     expect(mapCourierStatusToDispatchStatus('pathao', 'delivery-failed')).toBeNull();
-    expect(mapCourierStatusToDispatchStatus('pathao', 'pickup failed')).toBeNull();
+    expect(mapCourierStatusToDispatchStatus('pathao', 'pickup failed')).toBe('PICKUP_FAILED');
     expect(mapCourierStatusToDispatchStatus('carrybee', 'Delivery Failed')).toBeNull();
+    expect(mapCourierStatusToDispatchStatus('carrybee', 'pickup-failed')).toBe('PICKUP_FAILED');
     expect(mapCourierStatusToDispatchStatus('redx', 'delivery-failed')).toBeNull();
   });
 
-  it('steadfast "unknown" maps to CANCELLED (webhook parity)', () => {
-    expect(mapCourierStatusToDispatchStatus('steadfast', 'unknown')).toBe('CANCELLED');
+  // Task 3 (owner-locked F7): pickup-failed → PICKUP_FAILED (Pathao +
+  // Carrybee, event + plain labels); received-at-last-mile-hub →
+  // ASSIGNED_TO_HUB; ASSIGNED_TO_RIDER is ONLY for assigned-for-delivery.
+  it('maps pickup-failed → PICKUP_FAILED and last-mile-hub → ASSIGNED_TO_HUB', () => {
+    for (const courier of ['pathao', 'carrybee']) {
+      expect(mapCourierStatusToDispatchStatus(courier, 'order.pickup-failed')).toBe('PICKUP_FAILED');
+      expect(mapCourierStatusToDispatchStatus(courier, 'order.received-at-last-mile-hub')).toBe('ASSIGNED_TO_HUB');
+      expect(mapCourierStatusToDispatchStatus(courier, 'order.assigned-for-delivery')).toBe('ASSIGNED_TO_RIDER');
+      // delivery-failed stays record-only (never a workflow state).
+      expect(mapCourierStatusToDispatchStatus(courier, 'order.delivery-failed')).toBeNull();
+    }
+    // ASSIGNED_TO_RIDER producers for pathao/carrybee: assigned-for-delivery
+    // ONLY — hub + pickup-failed must never yield it.
+    expect(mapCourierStatusToDispatchStatus('pathao', 'order.received-at-last-mile-hub')).not.toBe('ASSIGNED_TO_RIDER');
+    expect(mapCourierStatusToDispatchStatus('pathao', 'order.pickup-failed')).not.toBe('ASSIGNED_TO_RIDER');
+    expect(mapCourierStatusToDispatchStatus('carrybee', 'order.received-at-last-mile-hub')).not.toBe('ASSIGNED_TO_RIDER');
+    expect(mapCourierStatusToDispatchStatus('carrybee', 'order.pickup-failed')).not.toBe('ASSIGNED_TO_RIDER');
+  });
+
+  it('steadfast "unknown" maps to null + alert (never CANCELLED)', () => {
+    // Task A: "unknown" = courier cannot determine the state — keep the
+    // previous workflow status; the webhook raises the staff alert instead.
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'unknown')).toBeNull();
   });
 
   it('maps Carrybee webhook-event labels', () => {
@@ -124,5 +152,86 @@ describe('mapCourierStatusToDispatchStatus', () => {
     expect(isSupportedCourier('carrybee')).toBe(true);
     expect(isSupportedCourier('hoorin')).toBe(false);
     expect(isSupportedCourier('')).toBe(false);
+  });
+
+  // Task 6 (Fix 13, rows 39–40 owner-locked): partial in-progress return
+  // labels ride RETURN_PENDING (parcel on its way back — no longer a plain
+  // PARTIAL hold); the ORDER keeps its Partial outcome (never Delivered).
+  // Only partial_delivered_return_received keeps PARTIAL.
+  it('maps the 6 Steadfast return statuses (return endpoint vocabulary)', () => {
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'cancelled_return_proccessing')).toBe('RETURN_PENDING');
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'cancelled_return_rider_assigned')).toBe('RETURN_PENDING');
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'cancelled_return_received')).toBe('RETURNED');
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'partial_delivered_return_proccessing')).toBe('RETURN_PENDING');
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'partial_delivered_return_rider_assigned')).toBe('RETURN_PENDING');
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'partial_delivered_return_received')).toBe('PARTIAL');
+  });
+
+  // Task 5 (owner-locked): exceptional → keep previous status. There is no
+  // EXCEPTION value in the DispatchStatus enum, so the mapper yields null
+  // (no forced change) and the webhook raises the staff alert instead.
+  it('maps Steadfast exceptional to null (never HOLD/DELIVERED/settle)', () => {
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'exceptional')).toBeNull();
+  });
+
+  // Task 5 (owner-locked): RedX pickup-pending = booked awaiting pickup =
+  // internal DISPATCHED (Dispatch default status; order.created → DISPATCHED).
+  it('maps RedX pickup-pending to DISPATCHED', () => {
+    expect(mapCourierStatusToDispatchStatus('redx', 'pickup-pending')).toBe('DISPATCHED');
+    expect(mapCourierStatusToDispatchStatus('redx', 'pickup_pending')).toBe('DISPATCHED');
+  });
+
+  // Task 5 (owner-locked): settle exclusion — exceptional and every
+  // *_approval_pending label must NEVER resolve to DELIVERED.
+  it('never maps exceptional/approval-pending labels to DELIVERED', () => {
+    const neverDelivered = [
+      'exceptional',
+      'delivered_approval_pending',
+      'partial_delivered_approval_pending',
+      'cancelled_approval_pending',
+      'unknown_approval_pending',
+    ];
+    for (const label of neverDelivered) {
+      expect(mapCourierStatusToDispatchStatus('steadfast', label)).not.toBe('DELIVERED');
+    }
+  });
+});
+
+describe('mapSteadfastReturnStatus', () => {
+  it('routes cancelled returns through RETURN_PENDING until the parcel is back', () => {
+    expect(mapSteadfastReturnStatus('cancelled_return_proccessing')).toEqual(
+      expect.objectContaining({ dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Return Pending', reconcileStock: false, codOwed: false }),
+    );
+    expect(mapSteadfastReturnStatus('cancelled_return_rider_assigned')).toEqual(
+      expect.objectContaining({ dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Return Pending', reconcileStock: false, codOwed: false }),
+    );
+  });
+
+  it('routes cancelled_return_received to RETURNED with a stock reconcile and no COD', () => {
+    expect(mapSteadfastReturnStatus('cancelled_return_received')).toEqual(
+      expect.objectContaining({ dispatchStatus: 'RETURNED', reconcileStock: true, codOwed: false }),
+    );
+  });
+
+  it('partial in-progress rides RETURN_PENDING + Partial; only receipt keeps PARTIAL', () => {
+    // Task 6 (Fix 13, rows 39–40 owner-locked): partial in-progress labels
+    // ride dispatch RETURN_PENDING while the ORDER keeps its Partial outcome.
+    expect(mapSteadfastReturnStatus('partial_delivered_return_proccessing')).toEqual(
+      expect.objectContaining({ dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Partial', reconcileStock: false, codOwed: false }),
+    );
+    expect(mapSteadfastReturnStatus('partial_delivered_return_rider_assigned')).toEqual(
+      expect.objectContaining({ dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Partial', reconcileStock: false, codOwed: false }),
+    );
+    expect(mapSteadfastReturnStatus('partial_delivered_return_received')).toEqual(
+      expect.objectContaining({ dispatchStatus: 'PARTIAL', advanceOrder: 'Partial', reconcileStock: true, codOwed: false }),
+    );
+  });
+
+  it('returns null for non-return statuses (normal sync owns those)', () => {
+    expect(mapSteadfastReturnStatus('delivered')).toBeNull();
+    expect(mapSteadfastReturnStatus('exceptional')).toBeNull();
+    expect(mapSteadfastReturnStatus('delivered_approval_pending')).toBeNull();
+    expect(mapSteadfastReturnStatus('')).toBeNull();
+    expect(mapSteadfastReturnStatus(null)).toBeNull();
   });
 });

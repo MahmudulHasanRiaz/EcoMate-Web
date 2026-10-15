@@ -10,6 +10,46 @@ import { SearchableSelect } from '@/components/ui/searchable-select'
 import { apiClient } from '@/lib/api-client'
 import { toast } from 'sonner'
 
+/**
+ * Order-scoped customer identity for the edit sheet (D-A write parity).
+ *
+ * Initial values come from the SAME order snapshot fields the save mutation
+ * writes (`customerInfo` → customerFirstName/LastName/Phone/Email). The
+ * GET-mapped `customer` object is fallback only — after Task 1 it is itself
+ * built from the snapshot, so both paths agree.
+ */
+export interface OrderCustomerEditSource {
+  customerFirstName?: string | null
+  customerLastName?: string | null
+  customerPhone?: string | null
+  customerEmail?: string | null
+  guestName?: string | null
+  guestPhone?: string | null
+  customer?: {
+    firstName?: string | null
+    lastName?: string | null
+    email?: string | null
+    phone?: string | null
+    phoneNumber?: string | null
+    name?: string | null
+  } | null
+}
+
+export function resolveCustomerEditInitial(order: OrderCustomerEditSource): {
+  firstName: string
+  lastName: string
+  email: string
+  phone: string
+} {
+  const c = order.customer ?? {}
+  return {
+    firstName: order.customerFirstName || c.firstName || '',
+    lastName: order.customerLastName || c.lastName || '',
+    email: order.customerEmail || c.email || '',
+    phone: order.customerPhone || order.guestPhone || c.phoneNumber || c.phone || '',
+  }
+}
+
 interface CustomerEditSheetProps {
   open: boolean
   onOpenChange: (open: boolean) => void

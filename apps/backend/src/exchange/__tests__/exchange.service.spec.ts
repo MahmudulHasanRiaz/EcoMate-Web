@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { OrdersService } from '../../orders/orders.service';
 import { OrdersEventService } from '../../orders/orders-event.service';
 import { CacheService } from '../../cache/cache.service';
+import { ReturnsService } from '../../returns/returns.service';
 
 const actor = { userId: 'u1', email: 'staff@ecomate.com' };
 
@@ -185,6 +186,18 @@ async function setup(opts: { order?: any; paidAmount?: number; products?: any[] 
       },
       { provide: OrdersEventService, useValue: { emit: jest.fn() } },
       { provide: CacheService, useValue: { invalidateByPrefix: jest.fn() } },
+      // Task 4 (Fix 8): the Return(EXCHANGE) leg. FULL snapshots the order,
+      // PARTIAL carries staff-picked items — both through this mock.
+      {
+        provide: ReturnsService,
+        useValue: {
+          create: jest.fn().mockImplementation((dto: any) =>
+            Promise.resolve({ id: 'ret-1', displayId: 'RTN-260930-0001', status: 'REQUESTED', ...dto }),
+          ),
+          orderItemsSnapshot: jest.fn().mockResolvedValue([]),
+          validateItemsInput: jest.fn((items: any) => items),
+        },
+      },
     ],
   }).compile();
   return { service: module.get(ExchangeService), store: fake.store, applyStockForLine };
@@ -385,5 +398,73 @@ describe('ExchangeService — lifecycle (§5, §6)', () => {
     const preview = await service.getSettlementPreview('order-1');
     expect(preview.creditAvailable).toBe(700);
     expect(preview.originalPaid).toBe(700);
+  });
+
+  it.each(['Shipping', 'Delivered', 'Partial', 'Return Pending'])(
+    'allows exchange creation from status %s',
+    async (status) => {
+      const order = makeOrder({ status: { id: `st-${status}`, name: status } });
+      const { service, store } = await setup({ order, paidAmount: 1000 });
+      const res = await service.createFromOrder(
+        'order-1',
+        { items: [{ productId: 'prod-1', quantity: 1, price: 1000 }] },
+        actor,
+      );
+      expect(store.orders).toHaveLength(1);
+      expect(res.exchange.kind).toBe('EXCHANGE');
+    },
+  );
+
+  it.each(['Pending', 'Confirmed', 'Packed', 'Hold', 'Cancelled', 'Returned'])(
+    'refuses exchange creation from status %s (400)',
+    async (status) => {
+      const order = makeOrder({ status: { id: `st-${status}`, name: status } });
+      const { service, store } = await setup({ order, paidAmount: 1000 });
+      await expect(
+        service.createFromOrder(
+          'order-1',
+          { items: [{ productId: 'prod-1', quantity: 1, price: 10 }] },
+          actor,
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(store.orders).toHaveLength(0);
+    },
+  );
+
+  it('refuses a PARTIAL returning line whose qty exceeds the original ordered qty', async () => {
+    const order = makeOrder({
+      items: [{ productId: 'prod-1', variantId: null, quantity: 2 }],
+    });
+    const { service, store } = await setup({ order, paidAmount: 1000 });
+    await expect(
+      service.createFromOrder(
+        'order-1',
+        {
+          mode: 'PARTIAL',
+          items: [{ productId: 'prod-1', quantity: 1, price: 100 }],
+          returningItems: [{ productId: 'prod-1', quantity: 5 }],
+        },
+        actor,
+      ),
+    ).rejects.toThrow(/exceed|ordered quantity/i);
+    expect(store.orders).toHaveLength(0);
+  });
+
+  it('allows a PARTIAL returning line whose qty equals the original ordered qty', async () => {
+    const order = makeOrder({
+      items: [{ productId: 'prod-1', variantId: null, quantity: 2 }],
+    });
+    const { service, store } = await setup({ order, paidAmount: 1000 });
+    const res = await service.createFromOrder(
+      'order-1',
+      {
+        mode: 'PARTIAL',
+        items: [{ productId: 'prod-1', quantity: 1, price: 100 }],
+        returningItems: [{ productId: 'prod-1', quantity: 2 }],
+      },
+      actor,
+    );
+    expect(store.orders).toHaveLength(1);
+    expect(res.mode).toBe('PARTIAL');
   });
 });

@@ -2,6 +2,7 @@ import { Controller, Get, Post, Put, Body, Param, Query } from '@nestjs/common';
 import { RefundsService } from './refunds.service';
 import { CreateRefundDto, UpdateRefundStatusDto } from './dto/refund.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 
@@ -32,13 +33,21 @@ export class RefundsController {
     return this.svc.findOne(id);
   }
 
+  // Task 9 (D5): recording a refund moves money (Refund row + negative
+  // ledger row, optionally an atomic cancel) — requires the approve
+  // permission, same as payment verification.
   @Roles('superadmin', 'admin', 'employee')
+  @Permissions('approve_payments')
   @Post()
-  create(@Body() dto: CreateRefundDto) {
-    return this.svc.create(dto);
+  create(
+    @Body() dto: CreateRefundDto,
+    @CurrentUser() user?: { userId: string; email: string },
+  ) {
+    return this.svc.create(dto, user?.userId);
   }
 
   @Roles('superadmin', 'admin', 'employee')
+  @Permissions('approve_payments')
   @Put(':id/status')
   updateStatus(
     @Param('id') id: string,

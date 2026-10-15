@@ -1,4 +1,5 @@
 import { DispatchStatus } from '@prisma/client';
+import { isUnsettledCourierStatus } from './courier-settle-guard';
 
 /**
  * Maps the courier's own running/current status (as returned by the courier
@@ -48,8 +49,38 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     return_pending: 'RETURN_PENDING',
     returned: 'RETURNED',
     hold: 'HOLD',
-    // Webhook parity: the Steadfast webhook treats "unknown" as cancelled.
-    unknown: 'CANCELLED',
+    // Task 5 (owner-locked): `exceptional` = lost, damaged or otherwise off
+    // the normal path. There is NO EXCEPTION value in the DispatchStatus
+    // enum (schema.prisma), so this yields null — keep the previous status,
+    // never HOLD/DELIVERED/settle. The webhook raises the staff alert.
+    exceptional: null,
+  // Task 5 (owner-locked): return-endpoint vocabulary — ONLY sourced from
+  // GET /status_with_return_status_by_cid (Steadfast webhooks never carry
+  // these; see SteadFast Webhooks Docs delivery_status list). Spellings are
+  // doc-literal ("proccessing"); the corrected spelling is accepted too.
+  // cancelled_* ride the RETURNED/CANCELLED path (in-flight → RETURN_PENDING,
+  // back-with-us → RETURNED). Task 6 (Fix 13, rows 39–40): partial
+  // in-progress labels ride RETURN_PENDING in this map too (parcel on its way
+  // back); only partial_delivered_return_received keeps PARTIAL. The ORDER
+  // outcome for partial rows stays 'Partial' (STEADFAST_RETURN_MAP below) —
+  // never Delivered.
+    'cancelled_return_proccessing': 'RETURN_PENDING',
+    'cancelled_return_processing': 'RETURN_PENDING',
+    'cancelled_return_rider_assigned': 'RETURN_PENDING',
+    // Task 6 (Fix 13, rows 39–40 owner-locked): partial in-progress return
+    // labels ride RETURN_PENDING (the parcel is on its way back — no longer a
+    // plain PARTIAL hold). The ORDER keeps its Partial outcome (never
+    // Delivered) via STEADFAST_RETURN_MAP.advanceOrder below.
+    'cancelled_return_received': 'RETURNED',
+    'partial_delivered_return_proccessing': 'RETURN_PENDING',
+    'partial_delivered_return_processing': 'RETURN_PENDING',
+    'partial_delivered_return_rider_assigned': 'RETURN_PENDING',
+    'partial_delivered_return_received': 'PARTIAL',
+    // Task A (owner-locked): "unknown" is NOT a cancellation — the courier
+    // explicitly reports it cannot determine the state. Yield null (keep the
+    // previous status, never CANCELLED) and let the webhook raise the
+    // staff alert with the raw state + timeline.
+    unknown: null,
     // Unknown awaiting admin approval — needs support; never force a status.
     'unknown_approval_pending': null,
   },
@@ -62,11 +93,16 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     'order.updated': null,
     'order.pickup-requested': null,
     'order.assigned-for-pickup': null,
-    'order.pickup-failed': null,
+    // Task 3 (owner-locked F7): pickup-failed is a real PICKUP_FAILED
+    // workflow state (record attempt + reason + alert, order Shipping) —
+    // never the skip path. delivery-failed stays record-only (null).
+    'order.pickup-failed': 'PICKUP_FAILED',
     'order.picked': 'PICKED_UP',
     'order.at-the-sorting-hub': 'IN_TRANSIT',
     'order.in-transit': 'IN_TRANSIT',
-    'order.received-at-last-mile-hub': 'ASSIGNED_TO_RIDER',
+    // Task 3 (owner-locked F7): last-mile-hub is its own ASSIGNED_TO_HUB
+    // state — ASSIGNED_TO_RIDER is ONLY for assigned-for-delivery.
+    'order.received-at-last-mile-hub': 'ASSIGNED_TO_HUB',
     'order.assigned-for-delivery': 'ASSIGNED_TO_RIDER',
     'order.delivery-failed': null,
     'order.delivered': 'DELIVERED',
@@ -78,6 +114,9 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     'order.returned-to-merchant': 'RETURNED',
     'order.paid-return': 'RETURN_PENDING',
     'order.paid': 'DELIVERED',
+    // Task 1 (owner-locked, paid = DELIVERED): plain tracking-API `paid`
+    // label → DELIVERED (webhook `order.paid` above already does).
+    'paid': 'DELIVERED',
     'order.exchanged': 'DELIVERED',
     'order.pickup-cancelled': 'CANCELLED',
     // Plain labels from the official /orders/{id}/info endpoint
@@ -89,15 +128,17 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     'assigned for pickup': null,
     // 'assigned for delivery' → ASSIGNED_TO_RIDER, NOT the `deliver` keyword.
     'assigned for delivery': 'ASSIGNED_TO_RIDER',
-    // 'pickup failed' / 'delivery failed' are "skip" statuses like their
-    // webhook equivalents; the generic /fail|error/ guard below covers them,
-    // listed here explicitly so the intent is visible.
-    'pickup failed': null,
+    // Task 3 (owner-locked F7): 'pickup failed' is the PICKUP_FAILED state
+    // (mirrors 'order.pickup-failed'); 'delivery failed' stays record-only.
+    // The generic /fail|error/ guard below covers any other failure label.
+    'pickup failed': 'PICKUP_FAILED',
+    'pickup-failed': 'PICKUP_FAILED',
     'delivery failed': null,
     'payment invoice': null,
     'at the sorting hub': 'IN_TRANSIT',
     'in transit': 'IN_TRANSIT',
-    'received at last mile hub': 'ASSIGNED_TO_RIDER',
+    // Task 3 (owner-locked F7): hub state, NOT the rider state.
+    'received at last mile hub': 'ASSIGNED_TO_HUB',
     'partial delivery': 'PARTIAL',
     'on hold': 'HOLD',
     delivered: 'DELIVERED',
@@ -106,32 +147,56 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     'paid return': 'RETURN_PENDING',
     exchange: 'DELIVERED',
     exchanged: 'DELIVERED',
-    exchanged_approval_pending: 'DELIVERED',
+    // Task 10 (owner-locked): approval_pending NEVER settles — anything
+    // ending `_approval_pending` is the rider's word, not ours. The previous
+    // DELIVERED mapping violated the lock (a money-affecting promotion on an
+    // unconfirmed label); null keeps the workflow unchanged, never settles.
+    exchanged_approval_pending: null,
     pickup: 'PICKED_UP',
     picked: 'PICKED_UP',
     pending: 'DISPATCHED',
   },
   // RedX: tracking API and webhook share the same status vocabulary.
   redx: {
-    'ready-for-delivery': 'PICKED_UP',
+    // Task 5 (owner-locked): `pickup-pending` = just booked, awaiting pickup
+    // (the /parcel/info answer for a fresh parcel) = internal DISPATCHED —
+    // verified: Dispatch.status defaults to DISPATCHED at booking, and
+    // order.created → DISPATCHED for Pathao/Carrybee. Underscore variant
+    // accepted (same tolerance as the rest of this map).
+    'pickup-pending': 'DISPATCHED',
+    pickup_pending: 'DISPATCHED',
+    // Task A (owner-locked): `ready-for-delivery` = parcel received from the
+    // merchant, rider not yet assigned (RedX doc: "Parcel received from
+    // merchants" vs `delivery-in-progress`: "dispatched to rider"). The
+    // previous PICKED_UP mapping overstated possession; ASSIGNED_TO_RIDER
+    // keeps the order at Shipping without claiming a pickup.
+    'ready-for-delivery': 'ASSIGNED_TO_RIDER',
     'delivery-in-progress': 'ASSIGNED_TO_RIDER',
     delivered: 'DELIVERED',
     'agent-hold': 'HOLD',
     'agent-returning': 'RETURN_PENDING',
     returned: 'RETURN_PENDING',
+    // Task 1 (owner-locked, paid = DELIVERED): RedX `paid` is a delivery
+    // event AND a money event — DELIVERED here (webhook keeps the money
+    // recording on the timeline + WebhookAttempt meta).
+    'paid': 'DELIVERED',
   },
   carrybee: {
     'order.created': 'DISPATCHED',
     'order.updated': null,
     'order.pickup-requested': null,
     'order.assigned-for-pickup': null,
-    'order.pickup-failed': null,
+    // Task 3 (owner-locked F7): pickup-failed → PICKUP_FAILED (same as
+    // Pathao); delivery-failed stays record-only (null).
+    'order.pickup-failed': 'PICKUP_FAILED',
     'order.picked': 'PICKED_UP',
     'order.at-the-sorting-hub': 'IN_TRANSIT',
     'order.on-the-way-to-central-warehouse': 'IN_TRANSIT',
     'order.at-central-warehouse': 'IN_TRANSIT',
     'order.in-transit': 'IN_TRANSIT',
-    'order.received-at-last-mile-hub': 'ASSIGNED_TO_RIDER',
+    // Task 3 (owner-locked F7): hub state — ASSIGNED_TO_RIDER is ONLY for
+    // assigned-for-delivery.
+    'order.received-at-last-mile-hub': 'ASSIGNED_TO_HUB',
     'order.assigned-for-delivery': 'ASSIGNED_TO_RIDER',
     'order.delivery-on-hold': 'HOLD',
     'order.delivery-failed': null,
@@ -144,8 +209,16 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     'order.paid-return': 'RETURN_PENDING',
     'order.exchange': 'DELIVERED',
     'order.paid': 'DELIVERED',
+    // Task 1 (owner-locked, paid = DELIVERED): plain tracking-API `paid`
+    // label → DELIVERED (webhook `order.paid` above already does).
+    'paid': 'DELIVERED',
     'order.create-failed': 'CANCELLED',
     'order.pickup-cancelled': 'CANCELLED',
+    // Task 3 (owner-locked F7): plain tracking-API failure labels (Pathao
+    // vocabulary mirror) — pickup-failed is the PICKUP_FAILED state;
+    // delivery-failed stays record-only via the /fail|error/ guard below.
+    'pickup-failed': 'PICKUP_FAILED',
+    'pickup failed': 'PICKUP_FAILED',
   },
 };
 
@@ -154,9 +227,12 @@ const COURIER_TRACKING_STATUS_MAP: Record<
  * Ordering matters: more specific keywords must be tested first
  * ("partial" before "deliver", "returned" before "return").
  *
- * Any "failed/error" label is deliberately excluded before fallback: the
- * webhooks map delivery/pickup failures to null (skip), and a failed
- * consignment must never be promoted to DELIVERED/PICKED_UP.
+ * Any "failed/error" label NOT in the exact maps above is deliberately
+ * excluded before fallback: the webhooks map delivery failures to null
+ * (skip), and a failed consignment must never be promoted to
+ * DELIVERED/PICKED_UP. (Task 3 owner-locked exception: exact-mapped
+ * pickup-failed → PICKUP_FAILED returns from the exact map above, before
+ * this guard runs.)
  */
 const KEYWORD_RULES: Array<{ match: RegExp; status: DispatchStatus }> = [
   { match: /partial/i, status: 'PARTIAL' },
@@ -171,8 +247,7 @@ const KEYWORD_RULES: Array<{ match: RegExp; status: DispatchStatus }> = [
   { match: /pending|review/i, status: 'DISPATCHED' },
 ];
 
-export function mapCourierStatusToDispatchStatus(
-  courier: string,
+export function mapCourierStatusToDispatchStatus(  courier: string,
   rawStatus: string | null | undefined,
 ): DispatchStatus | null {
   const normalized = String(rawStatus || '').trim().toLowerCase();
@@ -188,9 +263,75 @@ export function mapCourierStatusToDispatchStatus(
   // the "order.*" event vocabulary — these must never match `deliver`.
   if (/fail|error/i.test(normalized)) return null;
 
+  // Task 10 (owner-locked): any *_approval_pending label NOT in the exact map
+  // above is the rider's word, not ours — never settle via keyword fallback
+  // (`deliver`/`pending` keywords would otherwise promote it to DELIVERED or
+  // DISPATCHED). Exact-map entries (e.g. steadfast partial_delivered_approval
+  // _pending → PARTIAL, T5-locked) already returned above and are unaffected.
+  if (isUnsettledCourierStatus(normalized)) return null;
+
   for (const rule of KEYWORD_RULES) {
     if (rule.match.test(normalized)) return rule.status;
   }
 
   return null;
+}
+
+/**
+ * Task 5 (owner-locked): Steadfast return-status reconciliation.
+ *
+ * The 6 return statuses exist ONLY in the
+ * GET /status_with_return_status_by_cid/{id} vocabulary (doc: "Only from
+ * /status_with_return_status_by_cid/{id}, and only for a parcel that did not
+ * fully arrive"). cancelled_* ride the RETURNED/CANCELLED path; partial
+ * in-progress labels ride dispatch RETURN_PENDING with a Partial order outcome
+ * (Task 6, Fix 13 rows 39–40); only partial_delivered_return_received keeps
+ * dispatch PARTIAL. *_received means the parcel is physically
+ * back ("you have it back") → reconcile stock via the item-level return path,
+ * and NO COD is owed (a returned parcel collects nothing).
+ *
+ * `codOwed` is always false by construction — the settle-exclusion lock:
+ * no return status may ever settle. Non-return input yields null (the normal
+ * tracking/webhook sync owns those labels).
+ */
+export interface SteadfastReturnMapping {
+  dispatchStatus: DispatchStatus;
+  /** Order advancement the reconcile may attempt (null = dispatch-level only;
+   * 'Returned' is manual-confirmation-only, never set here). */
+  advanceOrder: string | null;
+  /** True only for *_received (parcel physically back with the merchant). */
+  reconcileStock: boolean;
+  /** Always false — no return status ever settles. */
+  codOwed: false;
+}
+
+const STEADFAST_RETURN_MAP: Record<string, SteadfastReturnMapping> = {
+  'cancelled_return_proccessing': { dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Return Pending', reconcileStock: false, codOwed: false },
+  'cancelled_return_processing': { dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Return Pending', reconcileStock: false, codOwed: false },
+  'cancelled_return_rider_assigned': { dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Return Pending', reconcileStock: false, codOwed: false },
+  // Task 6 (Fix 13, row 44 owner-locked): the parcel is back — dispatch
+  // RETURNED AND the order surfaces as 'Return Pending' for staff
+  // confirmation (was advanceOrder null — the order never surfaced).
+  'cancelled_return_received': { dispatchStatus: 'RETURNED', advanceOrder: 'Return Pending', reconcileStock: true, codOwed: false },
+  // Task 6 (Fix 13, rows 39–40 owner-locked): partial in-progress labels ride
+  // dispatch RETURN_PENDING (parcel on its way back) while the ORDER keeps its
+  // Partial outcome — never Delivered.
+  'partial_delivered_return_proccessing': { dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Partial', reconcileStock: false, codOwed: false },
+  'partial_delivered_return_processing': { dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Partial', reconcileStock: false, codOwed: false },
+  'partial_delivered_return_rider_assigned': { dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Partial', reconcileStock: false, codOwed: false },
+  // T6 gap fix (owner-locked): reconcileStock:true here is the INTENT flag
+  // (parcel physically back with the merchant). The reconcile path does NOT
+  // blanket-restore partials — it runs restore-or-hold via the open
+  // staff-Return lookup (items-known → RESTOCKED, unknown → HOLD + loud
+  // "confirm items to restock" alert). Timeline + log derive from the ACTUAL
+  // result, never from this flag alone.
+  'partial_delivered_return_received': { dispatchStatus: 'PARTIAL', advanceOrder: 'Partial', reconcileStock: true, codOwed: false },
+};
+
+export function mapSteadfastReturnStatus(
+  rawStatus: string | null | undefined,
+): SteadfastReturnMapping | null {
+  const normalized = String(rawStatus || '').trim().toLowerCase();
+  if (!normalized) return null;
+  return STEADFAST_RETURN_MAP[normalized] ?? null;
 }

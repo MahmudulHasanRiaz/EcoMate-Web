@@ -64,6 +64,7 @@ describe('RefundsService', () => {
     payment: {
       aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 2000 } }),
       findFirst: jest.fn().mockResolvedValue({ id: 'pay-1' }),
+      create: jest.fn(),
     },
     dispatch: {
       findFirst: jest.fn().mockResolvedValue(null),
@@ -185,6 +186,7 @@ describe('RefundsService', () => {
     const createDto = {
       orderId: 'order-id-1',
       amount: 1500,
+      method: 'bkash',
       reason: 'Customer request',
       notes: 'Refund for damaged item',
     };
@@ -209,7 +211,7 @@ describe('RefundsService', () => {
 
       expect(prisma.order.findUnique).toHaveBeenCalledWith({
         where: { id: createDto.orderId },
-        select: { id: true, total: true, kind: true },
+        select: { id: true, total: true, kind: true, timeline: true },
       });
       // Traceability: the refund is pinned to the exact payment it reverses.
       expect(prisma.refund.create).toHaveBeenCalledWith(
@@ -240,7 +242,12 @@ describe('RefundsService', () => {
       (prisma.refund.aggregate as jest.Mock).mockResolvedValue({ _sum: { amount: 0 } });
 
       await expect(
-        service.create({ orderId: 'order-id-1', amount: 1000 }),
+        service.create({
+          orderId: 'order-id-1',
+          amount: 1000,
+          method: 'bkash',
+          reason: 'Customer request',
+        }),
       ).rejects.toThrow(/exceeds the amount actually paid/i);
       expect(prisma.refund.create).not.toHaveBeenCalled();
     });
@@ -254,7 +261,12 @@ describe('RefundsService', () => {
       (prisma.payment.aggregate as jest.Mock).mockResolvedValue({ _sum: { amount: 0 } });
 
       await expect(
-        service.create({ orderId: 'order-id-1', amount: 100 }),
+        service.create({
+          orderId: 'order-id-1',
+          amount: 100,
+          method: 'bkash',
+          reason: 'Customer request',
+        }),
       ).rejects.toThrow(/no completed payment/i);
       expect(prisma.refund.create).not.toHaveBeenCalled();
     });
@@ -294,7 +306,12 @@ describe('RefundsService', () => {
     });
 
     it('should create refund with minimal fields', async () => {
-      const minimalDto = { orderId: 'order-id-1', amount: 500 };
+      const minimalDto = {
+        orderId: 'order-id-1',
+        amount: 500,
+        method: 'bkash',
+        reason: 'Customer request',
+      };
 
       (prisma.order.findUnique as jest.Mock).mockResolvedValue({
         id: 'order-id-1',

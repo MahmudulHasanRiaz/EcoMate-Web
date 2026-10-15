@@ -24,6 +24,7 @@ import {
   CancelOrderDto,
   VerifyOrderPaymentDto,
 } from './dto/order.dto';
+import { StaffPartialReturnDto } from './dto/staff-partial-return.dto';
 import {
   BulkOrdersDto,
   BulkStatusDto,
@@ -35,6 +36,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { Observable } from 'rxjs';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 
 @Controller('orders')
@@ -61,7 +63,7 @@ export class OrdersController {
     @Query('sort') sort?: string,
     @Query('order') order?: string,
     @Query('includeTrashed') includeTrashed?: string,
-    @Query('kind') kind?: 'SALE' | 'RETURN',
+    @Query('kind') kind?: 'SALE' | 'RETURN' | 'EXCHANGE',
   ) {
     return this.svc.findAll({
       page: page ? parseInt(page) : undefined,
@@ -76,7 +78,7 @@ export class OrdersController {
       sort,
       order,
       includeTrashed: includeTrashed === 'true',
-      kind: kind === 'SALE' || kind === 'RETURN' ? kind : undefined,
+      kind: kind === 'SALE' || kind === 'RETURN' || kind === 'EXCHANGE' ? kind : undefined,
     });
   }
 
@@ -220,12 +222,20 @@ export class OrdersController {
 
   @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
+  @Permissions('approve_payments')
   @Post(':id/verify-payment')
   async verifyPayment(
     @Param('id') id: string,
     @Body() dto: VerifyOrderPaymentDto,
+    @CurrentUser() user: { userId: string },
   ) {
-    return this.svc.verifyPayment(id, dto.verified, dto.note, dto.feeAmount);
+    return this.svc.verifyPayment(
+      id,
+      dto.verified,
+      dto.note,
+      dto.feeAmount,
+      user.userId,
+    );
   }
 
   @Public()
@@ -252,6 +262,20 @@ export class OrdersController {
     return this.svc.updateOrder(id, dto, {
       userId: user.userId,
       performedBy: user.email,
+    });
+  }
+
+  @Roles('superadmin', 'admin', 'employee')
+  @RequiresFeature('admin_orders')
+  @Post(':id/staff-partial-return')
+  createStaffPartialReturn(
+    @Param('id') id: string,
+    @Body() dto: StaffPartialReturnDto,
+    @CurrentUser() user: { userId: string; email: string },
+  ) {
+    return this.svc.createStaffPartialReturn(id, dto, {
+      userId: user.userId,
+      email: user.email,
     });
   }
 

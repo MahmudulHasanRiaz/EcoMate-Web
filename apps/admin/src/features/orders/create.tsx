@@ -3,6 +3,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { ordersApi, exchangeApi, mediaUrl } from './api'
+import { paymentsApi } from '@/features/payments/api'
+import { creditApi } from '@/features/customers/api'
+import {
+  CreatePaymentsSection,
+  emptyCollectedRow,
+  nonEmptyCollectedRows,
+  collectedRowsTotal,
+  validateCollectedRows,
+  type CollectedPaymentRow,
+} from './components/create-payments-section'
 import { resolveCityCharge, shouldAutoFillCharge } from './shipping-charge'
 import {
   ACQUISITION_OPTIONS,
@@ -170,6 +180,21 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
   const [paymentMode, setPaymentMode] = useState<'cod' | 'full' | 'partial'>('cod')
   const [partialAmount, setPartialAmount] = useState('')
 
+  // ── Task 11 (JOB C): multi-row collected payments (create, full/partial) ──
+  // Backend create takes NO payment rows: when rows are entered the payload
+  // omits gatewayCode/partialAmount (so the server creates no rows) and each
+  // row is recorded via POST /payments/:id after the order exists; optional
+  // credit apply follows via POST /orders/:id/apply-credit. Documented choice:
+  // create-then-record keeps one writer per row (the ledger service) instead
+  // of two competing row creators.
+  const [collectedRows, setCollectedRows] = useState<CollectedPaymentRow[]>([emptyCollectedRow()])
+  const [applyCredit, setApplyCredit] = useState(false)
+  const [creditAmount, setCreditAmount] = useState('')
+  // Snapshot at submit time — the async post-create steps must not read live
+  // state that staff may keep editing after pressing Create.
+  const postCreateRef = useRef<{ rows: CollectedPaymentRow[]; apply: boolean; creditAmt: number } | null>(null)
+  const showCollectedRows = !isEdit && !isExchange && paymentMode !== 'cod'
+
   const [customerNotes, setCustomerNotes] = useState('')
   const [officeNotes, setOfficeNotes] = useState('')
   const [selectedProductForVariants, setSelectedProductForVariants] = useState<any>(null)
@@ -205,6 +230,28 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
     staleTime: 30_000,
   })
 
+  // ── Task 11 (JOB C): customer credit offer (create mode, linked customer) ─
+  const { data: customerCredit, isLoading: creditLoading } = useQuery({
+    queryKey: ['customer-credit', selectedCustomerId],
+    queryFn: () => creditApi.get(selectedCustomerId!),
+    enabled: !isEdit && !isExchange && !!selectedCustomerId,
+    staleTime: 30_000,
+  })
+  const creditBalance = Number(customerCredit?.balance || 0)
+
+  // Pre-fill the credit amount once per customer (clamped to the balance;
+  // the server clamps again against the live balance — never negative).
+  useEffect(() => {
+    if (creditBalance > 0 && !creditAmount) {
+      setCreditAmount(String(Math.round(creditBalance * 100) / 100))
+    }
+    if (creditBalance <= 0) {
+      setApplyCredit(false)
+    }
+    // Intentionally not keyed on creditAmount: only auto-fill once per load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [creditBalance])
+
   // Pre-fill the form from the loaded order. Runs ONCE per order: `hydrated`
 // guards against clobbering the user's in-progress edits if the query
 // refetches in the background.
@@ -225,7 +272,7 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
     o.guestName ||
     ''
   setCustomerName(fullName)
-  setCustomerPhone(o.customerPhone || o.customer?.phone || o.guestPhone || '')
+  setCustomerPhone(o.customerPhone || o.guestPhone || o.customer?.phone || '')
   setSecondaryPhone((o as any).secondaryPhone || '')
   setSecondaryInitial((o as any).secondaryPhone || '')
   setCustomerEmail(o.customerEmail || o.customer?.email || '')
@@ -662,9 +709,8 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
       }
       return isEdit ? ordersApi.updateOrder(orderId!, data) : ordersApi.create(data)
     },
-    onSuccess: (res: any) => {
-      if (isExchange) {
-        // The exchange response carries its own settlement breakdown, which is
+    onSuccess: async (res: any) => {
+      if (isExchange) {        // The exchange response carries its own settlement breakdown, which is
         // the whole point of the flow — surface it instead of a bare "created".
         const s = res?.settlement
         const exId = res?.exchange?.id
@@ -685,6 +731,42 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
         return
       }
       const savedId = res.data?.id || res.id || orderId
+      // Task 11 (JOB C): the order carries NO payment rows yet — record the
+      // collected rows + credit apply now, before leaving. Partial failures
+      // navigate anyway (the order page can finish them); nothing is silent.
+      const post = !isEdit ? postCreateRef.current : null
+      postCreateRef.current = null
+      if (post && savedId) {
+        const failures: string[] = []
+        for (let i = 0; i < post.rows.length; i++) {
+          const r = post.rows[i]
+          try {
+            await paymentsApi.record(savedId, {
+              gatewayCode: r.gatewayCode,
+              amount: parseFloat(r.amount),
+              account: r.account.trim(),
+              transactionId: r.transactionId.trim() || undefined,
+              notes: r.note.trim() || undefined,
+            })
+          } catch (e: any) {
+            failures.push(`payment row ${i + 1}: ${e?.response?.data?.message || 'failed'}`)
+          }
+        }
+        if (post.apply && post.creditAmt > 0) {
+          try {
+            await creditApi.apply(savedId, post.creditAmt)
+          } catch (e: any) {
+            failures.push(`apply credit: ${e?.response?.data?.message || 'failed'}`)
+          }
+        }
+        if (failures.length > 0) {
+          toast.error(
+            `Order created, but some money movements failed — finish them on the order page: ${failures.join('; ')}`,
+            { duration: 10000 },
+          )
+        }
+        queryClient.invalidateQueries({ queryKey: ['order', savedId] })
+      }
       // Only creation reports staff-context warnings (blocked phone/IP). An
       // update never produces them, so read defensively rather than assuming.
       const warnings: string[] = res.data?.warnings || res.warnings || []
@@ -737,7 +819,7 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
       toast.error('Customer name is required')
       return
     }
-    if (paymentMode === 'partial') {
+    if (paymentMode === 'partial' && !showCollectedRows) {
       const pAmt = parseFloat(partialAmount) || 0
       if (!partialAmount || pAmt <= 0) {
         toast.error('Enter a valid partial advance amount')
@@ -748,7 +830,41 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
         return
       }
     }
-    submitMut.mutate(buildPayload())
+    const payload = buildPayload()
+    if (showCollectedRows) {
+      // S1 mirror (same rule as the order page): txn required iff staff
+      // entries are NOT auto-verified.
+      const txnRequired = sysSettings?.['payments.staffAutoVerified'] === 'false'
+      const rowErrors = validateCollectedRows(collectedRows, txnRequired)
+      if (rowErrors.length > 0) {
+        toast.error(rowErrors[0])
+        return
+      }
+      const rows = nonEmptyCollectedRows(collectedRows)
+      if (paymentMode === 'partial' && rows.length === 0) {
+        toast.error('Add at least one collected payment row for the partial advance')
+        return
+      }
+      if (rows.length > 0) {
+        // The rows ARE the collection — the server must not also mint its own
+        // advance/collect-later row from gatewayCode/partialAmount.
+        delete payload.gatewayCode
+        delete payload.partialAmount
+      }
+      let creditAmt = 0
+      const wantCredit = applyCredit && creditBalance > 0
+      if (wantCredit) {
+        creditAmt = Math.min(parseFloat(creditAmount) || 0, creditBalance)
+        if (!(creditAmt > 0)) {
+          toast.error('Enter a credit amount greater than 0')
+          return
+        }
+      }
+      postCreateRef.current = { rows, apply: wantCredit && creditAmt > 0, creditAmt }
+    } else {
+      postCreateRef.current = null
+    }
+    submitMut.mutate(payload)
   }
 
   const subtotal = calculateSubtotal()
@@ -1634,7 +1750,7 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                     </select>
                   </div>
                 </div>
-                {paymentMode === 'partial' && (
+                {paymentMode === 'partial' && !showCollectedRows && (
                   <div className='p-3.5 bg-muted/40 rounded-xl border border-border/60 space-y-2'>
                     <div>
                       <Label className='text-xs font-semibold block text-foreground mb-1'>Advance Paid Amount (৳) *</Label>
@@ -1659,6 +1775,19 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                       Advance of ৳{fmt(parseFloat(partialAmount) || 0)} will be recorded as paid now. Balance of ৳{fmt(Math.max(0, total - (parseFloat(partialAmount) || 0)))} will be assigned to courier collection.
                     </p>
                   </div>
+                )}
+                {showCollectedRows && (
+                  <CreatePaymentsSection
+                    rows={collectedRows}
+                    onRowsChange={setCollectedRows}
+                    txnRequired={sysSettings?.['payments.staffAutoVerified'] === 'false'}
+                    total={total}
+                    creditBalance={creditBalance}
+                    applyCredit={applyCredit}
+                    onApplyCreditChange={setApplyCredit}
+                    creditAmount={creditAmount}
+                    onCreditAmountChange={setCreditAmount}
+                  />
                 )}
               </CardContent>
             </Card>

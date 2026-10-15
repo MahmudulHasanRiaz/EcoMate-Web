@@ -45,7 +45,7 @@ import { DataTablePagination } from '@/components/data-table'
 import { DataTableBulkActions } from '@/components/data-table/bulk-actions'
 import { DataTableViewOptions } from '@/components/data-table/view-options'
 import { type DispatchResponse } from './api'
-import { DISPATCH_STATUSES, ALL_COURIERS, getCourierColor } from './data/data'
+import { DISPATCH_STATUSES, ALL_COURIERS, getCourierColor, getDispatchIdentifierLabels } from './data/data'
 
 type DispatchTableProps = {
   data: DispatchResponse[]
@@ -236,9 +236,22 @@ export function DispatchTable({
     {
       accessorKey: 'consignmentId',
       header: 'Consignment ID',
-      cell: ({ row }) => (
-        <div className='font-mono text-sm'>{row.getValue('consignmentId')}</div>
-      ),
+      cell: ({ row }) => {
+        const value = row.getValue('consignmentId') as string | null
+        const labels = getDispatchIdentifierLabels(row.original.courier)
+        if (!value) {
+          return (
+            <span className='text-xs text-amber-600 dark:text-amber-500'>
+              Pending webhook
+            </span>
+          )
+        }
+        return (
+          <div className='font-mono text-sm' title={labels.primary}>
+            {value}
+          </div>
+        )
+      },
       meta: { tdClassName: 'ps-4' },
     },
     {

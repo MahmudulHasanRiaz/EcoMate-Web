@@ -32,7 +32,9 @@ export interface FinalizeReturnResult {
   outcome: 'returned' | 'already_returned';
   dispatch: {
     id: string;
-    consignmentId: string;
+    // NULL until the courier booking exists (manual rows); readers are
+    // null-safe (`?? ''`, template interpolation).
+    consignmentId: string | null;
     courier: string;
     status: string;
     oldStatus: string;

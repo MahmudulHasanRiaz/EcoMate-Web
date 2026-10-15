@@ -2,19 +2,45 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
   Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PaymentStatus } from '@prisma/client';
 import { CreatePaymentDto, VerifyPaymentDto } from '../orders/dto/order.dto';
 import { CacheService } from '../cache/cache.service';
+import { CodMismatchService } from '../cod-mismatch/cod-mismatch.service';
+import { CustomerCreditService } from '../customer-credit/customer-credit.service';
+import {
+  PaymentSettings,
+  parsePaymentSettings,
+  readPaymentSettings,
+} from './payment-settings';
 
 @Injectable()
 export class PaymentsService {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly cache?: CacheService,
+    // Shared COD alert recompute (Feature A). Optional so existing unit
+    // tests that build PaymentsService without it keep working.
+    @Optional() private readonly codMismatch?: CodMismatchService,
+    // Task 8 — marginal overpay grant. Optional for the same reason; the
+    // grant call below is skipped when no credit service is wired.
+    @Optional() private readonly credit?: CustomerCreditService,
   ) {}
+
+  /**
+   * Post-dispatch COD alert refresh. Resilient — mirrors invalidateAnalytics:
+   * an alert failure must never break the payment mutation.
+   */
+  private async refreshCodAlert(orderId: string): Promise<void> {
+    try {
+      await this.codMismatch?.recompute(orderId);
+    } catch {
+      /* alert failure must not fail payments */
+    }
+  }
 
   /**
    * Business analytics freshness (P2 §6): payment rows feed L3 cash and the
@@ -35,13 +61,33 @@ export class PaymentsService {
     gatewayCode?: string;
     status?: string;
     orderId?: string;
+    /**
+     * D-B: staff search by order NUMBER (displayId, e.g. ORD-260818-0013).
+     * Resolved displayId→orderId via the order lookup; an unknown number is a
+     * 404, never an empty-but-200 list. Takes precedence over orderId.
+     */
+    orderNumber?: string;
   }) {
     const page = query.page || 1;
     const perPage = query.perPage || 10;
     const where: any = {};
     if (query.gatewayCode) where.gatewayCode = query.gatewayCode;
+    // D-C actuals-only ledger: legacy cash/UNPAID placeholders are
+    // VOID-marked by migration (never deleted). The list shows real rows
+    // only — VOID is excluded by default, auditable via status=VOID.
     if (query.status) where.status = query.status;
-    if (query.orderId) where.orderId = query.orderId;
+    else where.status = { not: PaymentStatus.VOID };
+    if (query.orderNumber) {
+      const order = await this.prisma.order.findUnique({
+        where: { displayId: query.orderNumber },
+        select: { id: true },
+      });
+      if (!order)
+        throw new NotFoundException(
+          `Order ${query.orderNumber} not found`,
+        );
+      where.orderId = order.id;
+    } else if (query.orderId) where.orderId = query.orderId;
     const [data, total] = await Promise.all([
       this.prisma.payment.findMany({
         where,
@@ -51,6 +97,11 @@ export class PaymentsService {
         include: {
           order: { select: { displayId: true } },
           verifier: { select: { id: true, firstName: true, lastName: true } },
+          // D-B: Refunded badge is DERIVED from Refund.sourcePaymentId links —
+          // no schema change, just the link rows for the remainder math.
+          sourceRefunds: {
+            select: { id: true, amount: true, status: true },
+          },
         },
       }),
       this.prisma.payment.count({ where }),
@@ -61,10 +112,17 @@ export class PaymentsService {
     };
   }
 
+  async getPaymentSettings(): Promise<PaymentSettings> {
+    const rows = await this.prisma.systemSetting.findMany({
+      where: { key: { in: ['payments.staffAutoVerified', 'payments.editAllowed'] } },
+    });
+    return parsePaymentSettings(rows ?? []);
+  }
+
   async create(
     orderId: string,
     dto: CreatePaymentDto,
-    opts?: { userId?: string; token?: string },
+    opts?: { userId?: string; token?: string; isStaff?: boolean },
   ) {
     const created = await this.prisma.$transaction(async (tx) => {
       // Lock the order row first — prevents concurrent payment insert races
@@ -78,38 +136,32 @@ export class PaymentsService {
         include: { payments: true },
       });
 
-      // Ownership gate: user must own the order or present a valid viewToken
+      // Staff acting on any order are exempt from the ownership gate (the
+      // exemption is context-bound to an authenticated staff actor, mirroring
+      // the Q3 order-create exemption). Customers/guests keep the gate as-is.
+      const isStaff = !!opts?.isStaff;
       const ownsOrder = opts?.userId && order.customerId === opts.userId;
       const hasValidToken = opts?.token && order.viewToken === opts.token;
-      if (!ownsOrder && !hasValidToken) {
+      if (!isStaff && !ownsOrder && !hasValidToken) {
         throw new NotFoundException('Order not found');
       }
 
+      // Append-only ledger: zero is never a payment; negatives are
+      // corrections/refunds and must carry a reason (never silent).
       const paymentAmount = Number(dto.amount);
-      if (isNaN(paymentAmount) || paymentAmount <= 0) {
+      if (isNaN(paymentAmount) || paymentAmount === 0) {
         throw new BadRequestException(
-          'Payment amount must be a positive number',
+          'Payment amount must be a non-zero number',
+        );
+      }
+      if (paymentAmount < 0 && !(dto.notes && dto.notes.trim())) {
+        throw new BadRequestException(
+          'Reason (notes) is required for correction/refund entries',
         );
       }
 
-      const orderTotal = Number(order.total);
-
-      // Sum only PAID/PENDING payments for this order
-      const totalPaidOrPending = order.payments
-        .filter(
-          (p) =>
-            p.status === PaymentStatus.PAID ||
-            p.status === PaymentStatus.PENDING,
-        )
-        .reduce((sum, p) => sum + Number(p.amount), 0);
-
-      const remainingBalance = Math.max(0, orderTotal - totalPaidOrPending);
-
-      if (paymentAmount > remainingBalance) {
-        throw new BadRequestException(
-          `Payment amount of ৳${paymentAmount} exceeds the remaining order balance of ৳${remainingBalance.toFixed(2)}`,
-        );
-      }
+      // Overpayment is ALLOWED (append-only ledger; Task 8 grants the excess
+      // as customer credit). No remaining-balance throw here.
 
       if (
         order.paymentOptionType === 'PARTIAL_PAYMENT' &&
@@ -124,19 +176,104 @@ export class PaymentsService {
         }
       }
 
-      return tx.payment.create({
+      // S1/S2 settings (seeded in prisma/seed.ts; code defaults match).
+      const settings = await readPaymentSettings(tx);
+
+      // Manual gateway detection: look up by code; unknown codes are treated
+      // as manual (safe — forces account + verification instead of silent
+      // auto-verify). Optional-chained so unit-test tx doubles without a
+      // paymentGateway delegate still resolve (as unknown → manual).
+      let gateway: { type?: string } | null = null;
+      try {
+        gateway =
+          (await (tx as any).paymentGateway?.findUnique?.({
+            where: { code: dto.gatewayCode },
+          })) ?? null;
+      } catch {
+        gateway = null;
+      }
+      const isManual = !gateway || gateway.type === 'manual';
+
+      if (isManual && !(dto.account && dto.account.trim())) {
+        throw new BadRequestException(
+          'Account is required for manual gateway payments',
+        );
+      }
+
+      // Staff entries skip the verification queue when S1 is ON (PAID
+      // directly + verifiedBy/At). Everything else stays PENDING; the live
+      // API-callback path (non-manual type) stays auto-verified as before.
+      const autoVerified = isStaff && settings.staffAutoVerified;
+      const status = isManual
+        ? autoVerified
+          ? PaymentStatus.PAID
+          : PaymentStatus.PENDING
+        : PaymentStatus.PAID;
+
+      // txnId is required exactly when the entry will sit PENDING
+      // (customer-submitted always; staff when S1 OFF), optional otherwise.
+      if (
+        status === PaymentStatus.PENDING &&
+        !(dto.transactionId && dto.transactionId.trim())
+      ) {
+        throw new BadRequestException(
+          'Transaction ID is required for payments awaiting verification',
+        );
+      }
+
+      const created = await tx.payment.create({
         data: {
           orderId,
           gatewayCode: dto.gatewayCode,
           amount: dto.amount,
+          account: dto.account,
           transactionId: dto.transactionId,
           screenshot: dto.screenshot,
           notes: dto.notes,
-          status: PaymentStatus.PENDING,
+          status,
+          ...(autoVerified && opts?.userId
+            ? { verifiedBy: opts.userId, verifiedAt: new Date() }
+            : {}),
+          recordedBy:
+            isStaff && opts?.userId ? `staff:${opts.userId}` : null,
+          submittedBy:
+            isStaff && opts?.userId
+              ? `staff:${opts.userId}`
+              : order.customerId
+                ? `customer:${order.customerId}`
+                : null,
+          // D4: server-set, always. Any client-sent recordedAt is ignored
+          // (never read — the DTO does not even declare the field).
+          recordedAt: new Date(),
         },
       });
+
+      // Task 8 — marginal overpay grant, SAME $transaction (atomic with the
+      // payment row). paidBefore counts PAID rows only, matching the shared
+      // recompute's coverage (Σ PAID amount + Σ appliedCreditAmount); the
+      // service grants excessAfter − excessBefore so each payment grants only
+      // its own marginal overpay. Guest orders (no customerId) never grant.
+      // The grant does NOT change paidTotal, so the recompute below (which
+      // fires once, after commit) needs no second call here.
+      if (order.customerId && this.credit) {
+        const paidBefore = (order.payments ?? [])
+          .filter((p: any) => p.status === PaymentStatus.PAID)
+          .reduce((s: number, p: any) => s + Number(p.amount), 0);
+        await this.credit.grantFromOverpayment(tx, {
+          customerId: order.customerId,
+          orderId,
+          paymentId: created.id,
+          orderTotal: Number(order.total),
+          paidBefore,
+          newAmount: paymentAmount,
+          isPaid: created.status === PaymentStatus.PAID,
+        });
+      }
+
+      return created;
     });
     await this.invalidateAnalytics();
+    await this.refreshCodAlert(orderId);
     return created;
   }
 
@@ -144,6 +281,19 @@ export class PaymentsService {
     const updated = await this.prisma.$transaction(async (tx) => {
       const payment = await tx.payment.findUnique({ where: { id } });
       if (!payment) throw new NotFoundException('Payment not found');
+
+      // VOID rows are terminal (D-C actuals-only ledger placeholders) — they
+      // can never be resurrected to PAID via verify.
+      if ((payment as any).status === PaymentStatus.VOID) {
+        throw new BadRequestException('VOID payments cannot be verified (void rows are terminal)');
+      }
+
+      // Self-approve block (Task 6): recordedBy is `staff:<userId>` for
+      // staff entries (null for customer-submitted), verifiedBy is the raw
+      // userId — same id space, so a direct comparison is exact.
+      if (payment.recordedBy === `staff:${userId}`) {
+        throw new ForbiddenException('Staff cannot approve their own entry');
+      }
 
       // Lock the order row — prevents concurrent verify races on order status
       await tx.$queryRawUnsafe(
@@ -173,9 +323,34 @@ export class PaymentsService {
       const totalPaid = Number(paidAgg._sum.amount || 0);
       const orderData = await tx.order.findUnique({
         where: { id: payment.orderId },
-        select: { total: true },
+        select: { total: true, customerId: true },
       });
       const orderTotal = Number(orderData?.total || 0);
+
+      // D2 — overpay via verification grants marginal credit, SAME $tx
+      // (atomic with the status flip). Guarded on the REAL transition
+      // PENDING→PAID: re-verify of an already-PAID row grants nothing
+      // (idempotent), and non-PAID targets (FAILED) never grant. Guest
+      // orders (no customerId) never grant. grantFromOverpayment clamps to
+      // the marginal excess, so PAID→FAILED→PAID re-grant is bounded to
+      // whatever excess is still uncovered.
+      if (
+        dto.status === PaymentStatus.PAID &&
+        (payment as any).status !== PaymentStatus.PAID &&
+        (orderData as any)?.customerId &&
+        this.credit
+      ) {
+        const paidBefore = totalPaid - Number((payment as any).amount);
+        await this.credit.grantFromOverpayment(tx, {
+          customerId: (orderData as any).customerId,
+          orderId: payment.orderId,
+          paymentId: payment.id,
+          orderTotal,
+          paidBefore,
+          newAmount: Number((payment as any).amount),
+          isPaid: true,
+        });
+      }
 
       if (totalPaid === 0) {
         await tx.order.update({
@@ -197,6 +372,7 @@ export class PaymentsService {
       return updated;
     });
     await this.invalidateAnalytics();
+    await this.refreshCodAlert(updated.orderId);
     return updated;
   }
 }

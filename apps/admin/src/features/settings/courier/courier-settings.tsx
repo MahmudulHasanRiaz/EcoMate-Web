@@ -4,6 +4,8 @@ import { toast } from 'sonner'
 import { apiClient } from '@/lib/api-client'
 import { useLicenseStore } from '@/stores/license-store'
 import { courierLogos } from './courier-logos'
+import { SteadfastSetsManager } from './steadfast-sets-manager'
+import { unconfiguredCouriers, webhookBannerCopy, type WebhookStatusPayload } from './webhook-status'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -37,6 +39,7 @@ const courierApi = {
   saveDefaultNote: (note: string) => apiClient.put('/couriers/default-note', { note }),
   webhookSummary: (courier: string) => apiClient.get(`/couriers/webhook-attempts/summary/${courier}`),
   webhookAttempts: (courier: string, limit?: number) => apiClient.get(`/couriers/webhook-attempts?courier=${courier}&limit=${limit ?? 20}`),
+  webhookStatus: () => apiClient.get('/couriers/webhook-status'),
 }
 
 interface CourierFormState {
@@ -162,6 +165,13 @@ export function CourierSettings() {
   const [defaultNote, setDefaultNote] = useState('')
   useEffect(() => { if (defaultNoteData !== undefined) setDefaultNote(defaultNoteData) }, [defaultNoteData])
 
+  // Task 4: banner flag — couriers accepting webhooks without verification.
+  const { data: webhookStatusData } = useQuery({
+    queryKey: ['courier-webhook-status'],
+    queryFn: () => courierApi.webhookStatus().then(r => (r.data ?? r) as WebhookStatusPayload),
+  })
+  const webhookBanner = webhookBannerCopy(unconfiguredCouriers(webhookStatusData))
+
   const saveDefaultNoteMut = useMutation({
     mutationFn: (note: string) => courierApi.saveDefaultNote(note),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['courier-default-note'] }); toast.success('Default note saved') },
@@ -253,6 +263,13 @@ export function CourierSettings() {
           <p className='text-sm text-muted-foreground mt-1'>Configure API credentials for courier services.</p>
         </div>
       </div>
+
+      {webhookBanner && (
+        <div className='flex items-start gap-2.5 mb-6 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200'>
+          <AlertCircle className='h-4 w-4 mt-0.5 shrink-0' />
+          <p>{webhookBanner}</p>
+        </div>
+      )}
 
       <Card className='mb-6 border-dashed'>
         <CardHeader className='pb-3'>
@@ -364,17 +381,10 @@ export function CourierSettings() {
                   </div>
                 </div>
 
-{courier === 'redx' ? (
-                  <div className='bg-muted/50 rounded-md p-2 space-y-1'>
-                    <Label className='text-[10px] text-muted-foreground flex items-center gap-1'><Webhook className='h-3 w-3' /> Webhook Auth</Label>
-                    <p className='text-[10px] text-muted-foreground'>
-                      RedX webhook authentication currently using tracking number + invoice verification.
-                    </p>
-                  </div>
-                ) : (
+{(
                   <div className='bg-muted/50 rounded-md p-2 space-y-2'>
                     <div className='flex items-center justify-between'>
-                      <Label className='text-[10px] text-muted-foreground flex items-center gap-1'><Webhook className='h-3 w-3' /> {courier === 'pathao' ? 'Webhook Secret' : 'Bearer Token (Auth)'}</Label>
+                      <Label className='text-[10px] text-muted-foreground flex items-center gap-1'><Webhook className='h-3 w-3' /> {courier === 'pathao' ? 'Webhook Secret' : courier === 'redx' ? 'Webhook Secret (HMAC / ?token=)' : 'Bearer Token (Auth)'}</Label>
                       {form.webhookSecret ? (
                         <Button 
                           variant='ghost' 
@@ -416,22 +426,32 @@ export function CourierSettings() {
                         disabled={generateWebhookMut.isPending}
                       >
                         {generateWebhookMut.isPending ? <Loader2 className='h-3 w-3 animate-spin mr-1' /> : <RefreshCw className='h-3 w-3 mr-1' />}
-                        Generate Bearer Token
+                        Generate Webhook Secret
                       </Button>
                     )}
                     {courier === 'pathao' ? (
                       <p className='text-[10px] text-muted-foreground'>
                         The exact Secret you entered in Pathao's Webhook Integration page. Pathao sends it in the <code className='text-[10px] bg-muted px-0.5 rounded'>X-PATHAO-Signature</code> header on every webhook.
                       </p>
+                    ) : courier === 'redx' ? (
+                      <p className='text-[10px] text-muted-foreground'>
+                        Verified as HMAC-SHA256 of the raw body (<code className='text-[10px] bg-muted px-0.5 rounded'>X-RedX-Signature</code>) or the <code className='text-[10px] bg-muted px-0.5 rounded'>?token=</code> value in your RedX callback URL. Use the same value in both places.
+                      </p>
+                    ) : courier === 'steadfast' ? (
+                      <p className='text-[10px] text-muted-foreground'>
+                        Steadfast signs every webhook with HMAC-SHA256 of the raw body (<code className='text-[10px] bg-muted px-0.5 rounded'>X-Signature</code>) keyed by this token. Paste the token from your Steadfast webhook settings.
+                      </p>
                     ) : (
                       <p className='text-[10px] text-muted-foreground'>
-                        Use as <code className='text-[10px] bg-muted px-0.5 rounded'>Authorization: Bearer {'{token}'}</code> in webhook calls
+                        Carrybee sends it in <code className='text-[10px] bg-muted px-0.5 rounded'>X-Carrybee-Webhook-Signature</code> or <code className='text-[10px] bg-muted px-0.5 rounded'>X-CB-Webhook-Integration-Header</code> on every webhook.
                       </p>
                     )}
                   </div>
                 )}
 
                 <WebhookDiagnosticsSection courier={courier} />
+
+                {courier === 'steadfast' && <SteadfastSetsManager />}
 
                 <Button size='sm' onClick={() => handleSave(courier)} disabled={updateMut.isPending} className='w-full'>
                   <Save className='h-3.5 w-3.5 mr-1' /> Save Credentials
@@ -445,7 +465,7 @@ export function CourierSettings() {
       <Dialog open={regenDialog.open} onOpenChange={(open) => setRegenDialog(prev => ({ ...prev, open }))}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Regenerate Bearer Token</DialogTitle>
+            <DialogTitle>Regenerate Webhook Secret</DialogTitle>
             <DialogDescription asChild>
               <div className='space-y-2 text-sm'>
                 <p>This will <strong>immediately invalidate</strong> the current token for <strong>{regenDialog.courier}</strong>.</p>

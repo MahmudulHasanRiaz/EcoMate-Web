@@ -1,8 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
 import { CourierTokenService } from './courier-token.service';
 import { buildTrackingUrl } from './courier-webhook.service';
+import { orderRecipientPhone } from '../orders/order-recipient';
+import type { SteadfastCredentialSetsService } from './steadfast-credential-sets.service';
 
 interface TrackingEvent {
   status: string;
@@ -51,6 +53,7 @@ export class CourierTrackingService {
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
     private readonly tokenStore: CourierTokenService,
+    @Optional() private readonly steadfastSets?: SteadfastCredentialSetsService,
   ) {}
 
   async getOrderTracking(orderId: string) {
@@ -58,16 +61,15 @@ export class CourierTrackingService {
       where: { id: orderId },
       select: {
         customerId: true,
-        customer: { select: { phone: true } },
+        customerPhone: true,
         guestPhone: true,
         dispatches: { orderBy: { createdAt: 'desc' } },
       },
     });
     if (!order) return { orderId, trackers: [] };
 
-    const phone = this.normalizePhone(
-      order.customer?.phone || order.guestPhone,
-    );
+    // D-A: snapshot phone is the source of truth; the profile is never read.
+    const phone = this.normalizePhone(orderRecipientPhone(order));
 
     const trackers = await Promise.all(
       order.dispatches.map((d) =>
@@ -111,7 +113,9 @@ export class CourierTrackingService {
   async getDispatchTracking(
     courier: string,
     phone: string,
-    consignmentId: string,
+    // NULL until the courier booking exists (manual rows); the falsy guard
+    // below returns null — nothing to track yet.
+    consignmentId: string | null,
     trackingCode?: string | null,
     options: { force?: boolean } = {},
   ): Promise<CourierTrackingResult | null> {
@@ -330,7 +334,7 @@ export class CourierTrackingService {
       },
       carrybee: {
         production: 'https://developers.carrybee.com',
-        sandbox: 'https://developers.carrybee.com',
+        sandbox: 'https://sandbox.carrybee.com',
       },
     };
     const mode = creds?.mode || 'production';
@@ -372,10 +376,33 @@ export class CourierTrackingService {
     base: string,
     baseResult: any,
   ): Promise<CourierTrackingResult> {
+    // Task 8: tracking ALWAYS resolves the BOOKING set from the dispatch
+    // record (never the current default) — a default change after booking
+    // must not move live tracking to the wrong merchant profile.
+    if (this.steadfastSets) {
+      try {
+        const auth = await this.steadfastSets.resolveAuth({ consignmentId });
+        return this.trackSteadfastWithKeys(consignmentId, auth.apiKey, auth.secretKey, base, baseResult);
+      } catch {
+        // Unconfigured (no sets, legacy disabled) — same empty shape as the
+        // legacy missing-keys path below, never a throw out of tracking.
+        return { ...baseResult, events: [] };
+      }
+    }
     const apiKey = creds.apiKey || creds.credentials?.['apiKey'];
     const secretKey = creds.secretKey || creds.credentials?.['secretKey'];
     if (!apiKey || !secretKey)
       return { ...baseResult, events: [] };
+    return this.trackSteadfastWithKeys(consignmentId, apiKey, secretKey, base, baseResult);
+  }
+
+  private async trackSteadfastWithKeys(
+    consignmentId: string,
+    apiKey: string,
+    secretKey: string,
+    base: string,
+    baseResult: any,
+  ): Promise<CourierTrackingResult> {
 
     const STEADFAST_STATUS_MAP: Record<string, string> = {
       pending: 'pending',
@@ -605,50 +632,59 @@ export class CourierTrackingService {
     };
   }
 
+  /**
+   * Task 7: v2 details — GET /api/v2/orders/{id}/details with the 3
+   * Client-* headers (the legacy `?api_key=` style is dead; creds.apiKey is
+   * never read here). Accepts the consignment ID or merchant tracking ID.
+   * The doc details shape carries a single `transfer_status` (+ attempt /
+   * reason / remarks / updated_at), surfaced as one event.
+   */
   private async trackCarrybee(
     consignmentId: string,
     creds: any,
     base: string,
     baseResult: any,
   ): Promise<CourierTrackingResult> {
-    const apiKey = creds.apiKey || creds.credentials?.['apiKey'];
-    if (!apiKey)
+    const clientId = creds.clientId || creds.credentials?.['clientId'];
+    const clientSecret =
+      creds.clientSecret || creds.credentials?.['clientSecret'];
+    const clientContext =
+      creds.clientContext || creds.credentials?.['clientContext'] || 'merchant';
+    if (!clientId || !clientSecret)
       return { ...baseResult, events: [] };
 
-    const url = `${base}/api/shipments/${consignmentId}/track?api_key=${encodeURIComponent(apiKey)}`;
-    const data = await this.jsonFetch(url);
-
-    const events: TrackingEvent[] = [];
-    const trackData = data?.['data'] || data;
-    const trackHistory = trackData?.['tracking'] || trackData?.['tracking_history'] || trackData?.['events'] || [];
-
-    if (Array.isArray(trackHistory)) {
-      for (const t of trackHistory) {
-        events.push({
-          status: String(t['status'] || t['event'] || ''),
-          message: String(t['message'] || t['note'] || t['remarks'] || ''),
-          timestamp: String(t['timestamp'] || t['time'] || t['date'] || t['created_at'] || ''),
-          location: t['location'] ? String(t['location']) : undefined,
-        });
-      }
-    }
-
-    if (events.length === 0) {
-      events.push({
-        status: String(trackData?.['status'] || ''),
-        message: String(trackData?.['message'] || trackData?.['status_message'] || ''),
-        timestamp: String(trackData?.['updated_at'] || trackData?.['created_at'] || new Date().toISOString()),
-      });
-    }
-
-    events.sort(
-      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+    const data = await this.jsonFetch(
+      `${base}/api/v2/orders/${encodeURIComponent(consignmentId)}/details`,
+      {
+        headers: {
+          'Client-ID': String(clientId),
+          'Client-Secret': String(clientSecret),
+          'Client-Context': String(clientContext),
+        },
+      },
     );
+
+    const d = (data?.['data'] || data) as Record<string, unknown>;
+    const status = String(d?.['transfer_status'] || '');
+    const reason = String(d?.['reason'] || '');
+    const remarks = String(d?.['remarks'] || '');
+    const attempt = d?.['attempt'];
+    const messageParts = [reason, remarks].filter(Boolean);
+    if (attempt != null && String(attempt) !== '') {
+      messageParts.push(`attempt ${String(attempt)}`);
+    }
+    const message = messageParts.join(' — ') || status;
+    const timestamp = String(d?.['updated_at'] || new Date().toISOString());
+
+    const events: TrackingEvent[] = status
+      ? [{ status, message, timestamp }]
+      : [];
 
     return {
       ...baseResult,
-      currentStatus: String(trackData?.['status'] || ''),
-      currentMessage: String(trackData?.['message'] || trackData?.['status_message'] || events[events.length - 1]?.message || ''),
+      currentStatus: status,
+      currentMessage:
+        message || String(d?.['message'] || ''),
       events,
     };
   }

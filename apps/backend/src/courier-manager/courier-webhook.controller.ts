@@ -7,16 +7,25 @@ import {
   HttpCode,
   HttpStatus,
   UnauthorizedException,
+  InternalServerErrorException,
+  HttpException,
   Logger,
+  Optional,
 } from '@nestjs/common';
-import { randomUUID, createHash } from 'crypto';
+import { randomUUID } from 'crypto';
 import { CourierWebhookService } from './courier-webhook.service';
 import { WebhookAttemptService } from './webhook-attempt.service';
 import { Public } from '../common/decorators/public.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { WebhookAttemptOutcome, WebhookAttemptStage } from '@prisma/client';
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import { verifyRedxHmac } from './webhook-verifier';
+import type { SteadfastCredentialSetsService } from './steadfast-credential-sets.service';
+import {
+  timingSafeEqualText,
+  verifyRawHmacSha256Hex,
+  verifyVerbatimSecret,
+} from './webhook-verifier';
+import { redactSecrets } from './courier-manager.service';
 
 /**
  * Pathao's published, merchant-independent webhook integration token that every
@@ -27,6 +36,11 @@ import { verifyRedxHmac } from './webhook-verifier';
  */
 export const PATHAO_WEBHOOK_INTEGRATION_SECRET = 'f3992ecc-59da-4cbe-a049-a13da2018d51';
 
+type AuthDecision =
+  | { result: 'MATCHED' }
+  | { result: 'UNCONFIGURED'; detail: string }
+  | { result: 'MISSING' | 'MISMATCH'; detail: string };
+
 @Controller('webhooks/courier')
 export class CourierWebhookController {
   private readonly logger = new Logger(CourierWebhookController.name);
@@ -35,6 +49,7 @@ export class CourierWebhookController {
     private readonly svc: CourierWebhookService,
     private readonly prisma: PrismaService,
     private readonly attempts: WebhookAttemptService,
+    @Optional() private readonly steadfastSets?: SteadfastCredentialSetsService,
   ) {}
 
   private extractSourceIp(req: FastifyRequest): string {
@@ -46,109 +61,223 @@ export class CourierWebhookController {
     return req.ip || req.socket?.remoteAddress || '0.0.0.0';
   }
 
-  private generateCorrelationId(): string {
-    return randomUUID();
+  /**
+   * Task 4: the stored/logged path MUST NOT contain the query string —
+   * RedX authenticates via `?token=`, and persisting req.url verbatim would
+   * write the secret into WebhookAttempt rows and logs.
+   */
+  private cleanPath(req: FastifyRequest): string {
+    return String(req.url || '').split('?')[0];
   }
 
-  private tokenFingerprint(token: string): string {
-    return createHash('sha256').update(token).digest('hex').slice(0, 8);
+  /**
+   * Task 4: HMAC input bytes. The preParsing hook (WebhookRawBodyCapture)
+   * stashes the exact received bytes on the request; direct/unit-test calls
+   * without it fall back to re-serialization (documented, byte-inexact).
+   */
+  private rawBodyOf(req: FastifyRequest, body: unknown): string {
+    const raw = (req as unknown as { rawBody?: unknown }).rawBody;
+    if (typeof raw === 'string') return raw;
+    if (Buffer.isBuffer(raw)) return raw.toString('utf8');
+    return typeof body === 'string' ? body : JSON.stringify(body ?? {});
   }
 
-  private async validateWebhookToken(
-    courier: string,
-    authHeader: string | undefined,
-  ): Promise<{ result: string; detail?: string }> {
-    if (!authHeader) {
-      return { result: 'MISSING', detail: 'Authorization header not provided' };
-    }
+  private idempotencyKeyOf(req: FastifyRequest): string | undefined {
+    const raw = req.headers['idempotency-key'];
+    const key = (Array.isArray(raw) ? raw[0] : raw)?.trim();
+    return key ? key : undefined;
+  }
 
-    const [type, token] = authHeader.split(' ');
-    if (type !== 'Bearer' || !token) {
-      return { result: 'INVALID_FORMAT', detail: `Expected Bearer scheme, got "${type || '(empty)'}"` };
-    }
+  private queryTokenOf(req: FastifyRequest): string | undefined {
+    const q = (req as unknown as { query?: Record<string, unknown> }).query;
+    const token = q?.['token'];
+    return typeof token === 'string' && token.length > 0 ? token : undefined;
+  }
 
+  private isUniqueViolation(err: unknown): boolean {
+    return (err as { code?: string })?.code === 'P2002';
+  }
+
+  private async storedSecret(courier: string): Promise<string | undefined> {
     const creds = await this.prisma.courierCredentials.findUnique({
       where: { courier },
     });
-    if (!creds?.webhookSecret) {
-      return { result: 'CREDENTIAL_MISSING', detail: 'Courier webhook secret not configured' };
-    }
-
-    if (token !== creds.webhookSecret) {
-      return {
-        result: 'MISMATCH',
-        detail: `Token fingerprint ${this.tokenFingerprint(token)} does not match stored`,
-      };
-    }
-
-    return { result: 'MATCHED' };
+    const secret = creds?.webhookSecret?.trim();
+    return secret ? secret : undefined;
   }
 
-  private async validatePathaoSignature(
-    signature: string | undefined,
-  ): Promise<{ result: string; detail?: string }> {
-    if (!signature) {
-      return { result: 'MISSING', detail: 'X-PATHAO-Signature header not provided' };
-    }
-
-    const creds = await this.prisma.courierCredentials.findUnique({
-      where: { courier: 'pathao' },
-    });
-    // The inbound X-PATHAO-Signature carries the MERCHANT-REGISTERED webhook
-    // secret verbatim (Pathao does not HMAC the body). Pathao's separate
-    // integration token (echoed in the response header) is a public publisher
-    // constant shared by every merchant — it MUST NOT be used for validation,
-    // otherwise any spoofed request could replay it and bypass auth.
-    const secret = creds?.webhookSecret;
-    if (!secret) {
-      return {
-        result: 'CREDENTIAL_MISSING',
-        detail: 'Pathao webhook secret not configured — set the Webhook Secret to the exact value registered with Pathao',
-      };
-    }
-
-    if (signature !== secret) {
-      return { result: 'MISMATCH', detail: 'Signature does not match the registered webhook secret' };
-    }
-
-    return { result: 'MATCHED' };
+  private async redxSecret(): Promise<string | undefined> {
+    return (
+      (await this.storedSecret('redx')) ||
+      process.env['REDX_WEBHOOK_SECRET']?.trim() ||
+      undefined
+    );
   }
 
-  private async validateCarrybeeSignature(
-    signature: string | undefined,
-  ): Promise<{ result: string; detail?: string }> {
-    if (!signature) {
-      return { result: 'MISSING', detail: 'X-Carrybee-Webhook-Signature header not provided' };
-    }
-
-    const creds = await this.prisma.courierCredentials.findUnique({
-      where: { courier: 'carrybee' },
-    });
-    if (!creds?.webhookSecret) {
-      return { result: 'CREDENTIAL_MISSING', detail: 'Carrybee webhook secret not configured' };
-    }
-
-    if (signature !== creds.webhookSecret) {
-      return { result: 'MISMATCH', detail: 'Signature does not match stored secret' };
-    }
-
-    return { result: 'MATCHED' };
+  private unconfiguredDetail(courier: string, hint: string): string {
+    return `${courier} webhook token not configured — accepted WITHOUT verification. ${hint}`;
   }
 
-  private validateRedxSignature(
-    body: unknown,
-    signature: unknown,
-  ): { result: string; detail?: string } {
-    try {
-      verifyRedxHmac(body, signature, process.env['REDX_WEBHOOK_SECRET']);
-      return { result: 'MATCHED' };
-    } catch (err) {
-      const msg = (err as Error).message;
-      if (msg === 'RedX webhook not configured') {
-        return { result: 'CREDENTIAL_MISSING', detail: 'REDX_WEBHOOK_SECRET env var not set' };
+  /**
+   * Steadfast (per docs): every request carries `Authorization: Bearer <token>`
+   * AND `X-Signature: HMAC-SHA256(raw body, token)`. When a token is
+   * configured the HMAC is the ONLY accepted proof — a Bearer match alone is
+   * NOT a fallback (owner: Bearer fallback ONLY when no token configured).
+   * With no token configured the request is accepted with a loud warning.
+   *
+   * Task 8: ANY configured set verifies (the booking record's set is tried
+   * first via consignment lookup, then every other set, then legacy).
+   */
+  private async authenticateSteadfast(
+    req: FastifyRequest,
+    rawBody: string,
+    consignmentId?: string,
+  ): Promise<AuthDecision> {
+    if (this.steadfastSets) {
+      const preferred = consignmentId
+        ? await this.steadfastSets.findSetForConsignment(consignmentId).catch(() => null)
+        : null;
+      const verdict = await this.steadfastSets.verifyWebhook(
+        rawBody,
+        req.headers['x-signature'],
+        preferred,
+      );
+      if (verdict.matched) return { result: 'MATCHED' };
+      // Distinguish "nothing configured" (accept-with-warning) from a real
+      // mismatch (401): any set secret OR the legacy secret counts.
+      const sets = await this.steadfastSets.listSets().catch(() => []);
+      const legacy = await this.storedSecret('steadfast');
+      if (sets.every((s: any) => !s.hasWebhook) && !legacy) {
+        return {
+          result: 'UNCONFIGURED',
+          detail: this.unconfiguredDetail(
+            'Steadfast',
+            'Set the webhook token in courier settings (Steadfast panel → webhook URL) to enable HMAC verification.',
+          ),
+        };
       }
       return { result: 'MISMATCH', detail: 'HMAC signature verification failed' };
     }
+    const secret = await this.storedSecret('steadfast');
+    if (!secret) {
+      return {
+        result: 'UNCONFIGURED',
+        detail: this.unconfiguredDetail(
+          'Steadfast',
+          'Set the webhook token in courier settings (Steadfast panel → webhook URL) to enable HMAC verification.',
+        ),
+      };
+    }
+    try {
+      verifyRawHmacSha256Hex(rawBody, req.headers['x-signature'], secret);
+      return { result: 'MATCHED' };
+    } catch {
+      return { result: 'MISMATCH', detail: 'HMAC signature verification failed' };
+    }
+  }
+
+  /**
+   * Pathao (per docs): X-PATHAO-Signature carries the merchant-registered
+   * secret VERBATIM (no HMAC) — constant-time compare, never the public
+   * integration constant.
+   */
+  private async authenticatePathao(req: FastifyRequest): Promise<AuthDecision> {
+    const secret = await this.storedSecret('pathao');
+    if (!secret) {
+      return {
+        result: 'UNCONFIGURED',
+        detail: this.unconfiguredDetail(
+          'Pathao',
+          'Put the exact Secret from Pathao Webhook Integration page into the Webhook Secret box to enable verification.',
+        ),
+      };
+    }
+    try {
+      verifyVerbatimSecret(req.headers['x-pathao-signature'] as string | undefined, secret, {
+        missingSecretMessage: 'Pathao webhook secret not configured',
+      });
+      return { result: 'MATCHED' };
+    } catch (err) {
+      const msg = (err as Error).message;
+      if (msg === 'Pathao webhook secret not configured') {
+        return { result: 'UNCONFIGURED', detail: this.unconfiguredDetail('Pathao', '') };
+      }
+      return { result: 'MISMATCH', detail: 'Signature does not match the registered webhook secret' };
+    }
+  }
+
+  /**
+   * Carrybee: TWO documented header names — `X-Carrybee-Webhook-Signature`
+   * (webhooks doc) and `X-CB-Webhook-Integration-Header` (API webhook-
+   * integration doc). Verify WHICHEVER arrives; when both arrive, both must
+   * match (a half-forged request is still forged).
+   */
+  private async authenticateCarrybee(req: FastifyRequest): Promise<AuthDecision> {
+    const secret = await this.storedSecret('carrybee');
+    if (!secret) {
+      return {
+        result: 'UNCONFIGURED',
+        detail: this.unconfiguredDetail(
+          'Carrybee',
+          'Set the webhook secret from the Carrybee Webhook Integration page to enable verification.',
+        ),
+      };
+    }
+    const candidates = [
+      req.headers['x-carrybee-webhook-signature'],
+      req.headers['x-cb-webhook-integration-header'],
+    ].filter((h): h is string => typeof h === 'string' && h.length > 0);
+    if (candidates.length === 0) {
+      return { result: 'MISSING', detail: 'Carrybee signature header not provided' };
+    }
+    for (const candidate of candidates) {
+      if (!timingSafeEqualText(candidate, secret)) {
+        return { result: 'MISMATCH', detail: 'Signature does not match stored secret' };
+      }
+    }
+    return { result: 'MATCHED' };
+  }
+
+  /**
+   * RedX dual (owner-approved; docs show only the ?token= callback style):
+   * HMAC over the raw body when the signature header is present, ELSE the
+   * `?token=` query value compared in constant time. The token is NEVER
+   * logged or persisted (see cleanPath). Per-env callback URL holds the
+   * token; the stored per-courier secret takes precedence when both exist.
+   */
+  private async authenticateRedx(
+    req: FastifyRequest,
+    rawBody: string,
+  ): Promise<AuthDecision> {
+    const secret = await this.redxSecret();
+    const hmacHeader = req.headers['x-redx-signature'];
+    const hasHmacHeader = typeof hmacHeader === 'string' && hmacHeader.length > 0;
+    const queryToken = this.queryTokenOf(req);
+
+    if (!secret) {
+      return {
+        result: 'UNCONFIGURED',
+        detail: this.unconfiguredDetail(
+          'RedX',
+          'Set the webhook secret (courier settings, or REDX_WEBHOOK_SECRET) matching the token in your RedX callback URL to enable verification.',
+        ),
+      };
+    }
+    if (hasHmacHeader) {
+      try {
+        verifyRawHmacSha256Hex(rawBody, hmacHeader, secret);
+        return { result: 'MATCHED' };
+      } catch {
+        return { result: 'MISMATCH', detail: 'HMAC signature verification failed' };
+      }
+    }
+    if (queryToken !== undefined) {
+      if (!timingSafeEqualText(queryToken, secret)) {
+        return { result: 'MISMATCH', detail: 'Callback token verification failed' };
+      }
+      return { result: 'MATCHED' };
+    }
+    return { result: 'MISSING', detail: 'RedX signature header and callback token both missing' };
   }
 
   private authOutcomeFromResult(result: string): WebhookAttemptOutcome {
@@ -166,10 +295,12 @@ export class CourierWebhookController {
     path: string,
     correlationId: string,
     sourceIp: string,
+    idempotencyKey?: string,
   ): Promise<{ id: string; receivedAt: Date } | null> {
     try {
-      return await this.attempts.startAttempt(courier, path, correlationId, sourceIp);
+      return await this.attempts.startAttempt(courier, path, correlationId, sourceIp, idempotencyKey);
     } catch (err) {
+      if (this.isUniqueViolation(err)) throw err;
       this.logger.warn(`Webhook attempt start failed for ${courier}: ${(err as Error).message?.slice(0, 200)}`);
       return null;
     }
@@ -199,6 +330,173 @@ export class CourierWebhookController {
     }
   }
 
+  /**
+   * Shared tail of every handler: claim the Idempotency-Key (P2002 → 2xx
+   * no-reprocess), run the service, and enforce the status discipline —
+   * HttpExceptions keep their 4xx (recorded as PAYLOAD_INVALID /
+   * ORDER_NOT_FOUND), ONLY non-HTTP/transient failures become 5xx.
+   */
+  private async processWebhook(opts: {
+    courier: string;
+    auth: AuthDecision;
+    idempotencyKey: string | undefined;
+    path: string;
+    correlationId: string;
+    sourceIp: string;
+    startedAt: number;
+    successStatus: number;
+    meta: { notificationType?: string; consignmentId?: string; invoice?: string; courierEvent?: string };
+    run: () => Promise<{ status: string; message?: string } | unknown>;
+  }): Promise<unknown> {
+    const { courier, auth, idempotencyKey, path, correlationId, sourceIp, startedAt, successStatus, meta, run } = opts;
+
+    if (auth.result === 'MISSING' || auth.result === 'MISMATCH') {
+      const outcome = this.authOutcomeFromResult(auth.result);
+      const attempt = await this.safeStartAttempt(courier, path, correlationId, sourceIp);
+      await this.safeCompleteAttempt(attempt?.id ?? null, {
+        responseStatus: 401,
+        outcome,
+        failureStage: WebhookAttemptStage.AUTH,
+        authResult: auth.detail,
+        ...meta,
+        durationMs: Date.now() - startedAt,
+      });
+      throw new UnauthorizedException('Invalid webhook signature');
+    }
+
+    if (auth.result === 'UNCONFIGURED') {
+      // Owner-locked: accept, but NEVER silently — loud server warning +
+      // warning persisted on the attempt row + settings banner flag.
+      this.logger.warn(
+        `[webhook] ${courier}: ${auth.detail}`,
+      );
+    }
+
+    if (idempotencyKey) {
+      try {
+        const attempt = await this.attempts.startAttempt(
+          courier, path, correlationId, sourceIp, idempotencyKey,
+        );
+        return await this.runAndComplete({
+          attemptId: attempt.id, courier, startedAt, successStatus, meta,
+          authResult: auth.result === 'MATCHED' ? 'MATCHED' : auth.detail,
+          run,
+        });
+      } catch (err) {
+        if (this.isUniqueViolation(err)) {
+          this.logger.warn(
+            `[webhook] ${courier}: duplicate Idempotency-Key ignored (no reprocess) [${correlationId}]`,
+          );
+          try {
+            await this.attempts.logAttempt({
+              courier,
+              path,
+              responseStatus: successStatus,
+              outcome: WebhookAttemptOutcome.SUCCESS,
+              authResult: auth.result === 'MATCHED' ? 'MATCHED' : auth.detail,
+              ...meta,
+              message: 'Duplicate Idempotency-Key — replay ignored, original processing kept',
+              isDuplicate: true,
+              correlationId,
+              sourceIp,
+              durationMs: Date.now() - startedAt,
+            });
+          } catch {
+            // Diagnostics must never break the 2xx contract.
+          }
+          return { status: 'success', message: 'Duplicate webhook ignored', duplicate: true };
+        }
+        this.logger.warn(`Webhook attempt start failed for ${courier}: ${(err as Error).message?.slice(0, 200)}`);
+      }
+    }
+
+    const attempt = await this.safeStartAttempt(courier, path, correlationId, sourceIp);
+    return await this.runAndComplete({
+      attemptId: attempt?.id ?? null, courier, startedAt, successStatus, meta,
+      authResult: auth.result === 'MATCHED' ? 'MATCHED' : auth.detail,
+      run,
+    });
+  }
+
+  private async runAndComplete(opts: {
+    attemptId: string | null;
+    courier: string;
+    startedAt: number;
+    successStatus: number;
+    meta: { notificationType?: string; consignmentId?: string; invoice?: string; courierEvent?: string };
+    authResult: string;
+    run: () => Promise<unknown>;
+  }): Promise<unknown> {
+    try {
+      const result = await opts.run();
+      const message =
+        result && typeof result === 'object' && 'message' in result
+          ? String((result as { message: unknown }).message ?? '').slice(0, 500)
+          : undefined;
+      await this.safeCompleteAttempt(opts.attemptId, {
+        responseStatus: opts.successStatus,
+        outcome: WebhookAttemptOutcome.SUCCESS,
+        authResult: opts.authResult,
+        ...opts.meta,
+        message,
+        durationMs: Date.now() - opts.startedAt,
+      });
+      return result;
+    } catch (err) {
+      // 404-race (owner-locked: keep 404, do NOT convert to 202/5xx).
+      // Per-courier retry docs: Steadfast EXPLICIT — "A 4xx answer is not
+      // retried" (SteadFast Webhooks Docs, Answers and retries); Pathao /
+      // RedX / Carrybee webhook docs are SILENT on retry (ASSUMED no 4xx
+      // retry — no contrary statement found in the 7 doc files). The miss
+      // stays LOUD (service logger.warn + ORDER_NOT_FOUND attempt row +
+      // webhook-attempts UI) with manual-dispatch backfill as mitigation.
+      if (err instanceof HttpException) {
+        const status = err.getStatus();
+        const outcome =
+          status === 404
+            ? WebhookAttemptOutcome.ORDER_NOT_FOUND
+            : status >= 400 && status < 500
+              ? WebhookAttemptOutcome.PAYLOAD_INVALID
+              : WebhookAttemptOutcome.PROCESSING_ERROR;
+        await this.safeCompleteAttempt(opts.attemptId, {
+          responseStatus: status,
+          outcome,
+          failureStage:
+            status === 404
+              ? WebhookAttemptStage.ORDER_RESOLUTION
+              : status >= 400 && status < 500
+                ? WebhookAttemptStage.PAYLOAD
+                : WebhookAttemptStage.PROCESSING,
+          authResult: opts.authResult,
+          ...opts.meta,
+          message: redactSecrets(err.message)?.slice(0, 500),
+          durationMs: Date.now() - opts.startedAt,
+        });
+        throw err;
+      }
+      await this.safeCompleteAttempt(opts.attemptId, {
+        responseStatus: 500,
+        outcome: WebhookAttemptOutcome.PROCESSING_ERROR,
+        failureStage: WebhookAttemptStage.PROCESSING,
+        authResult: opts.authResult,
+        ...opts.meta,
+        message: redactSecrets((err as Error).message)?.slice(0, 500),
+        durationMs: Date.now() - opts.startedAt,
+      });
+      throw new InternalServerErrorException('Webhook processing failed');
+    }
+  }
+
+  private baseContext(req: FastifyRequest) {
+    return {
+      correlationId: randomUUID(),
+      sourceIp: this.extractSourceIp(req),
+      path: this.cleanPath(req),
+      idempotencyKey: this.idempotencyKeyOf(req),
+      startedAt: Date.now(),
+    };
+  }
+
   @Public()
   @Post('steadfast')
   @HttpCode(HttpStatus.OK)
@@ -206,62 +504,30 @@ export class CourierWebhookController {
     @Body() body: Record<string, unknown>,
     @Req() req: FastifyRequest,
   ) {
-    const correlationId = this.generateCorrelationId();
-    const sourceIp = this.extractSourceIp(req);
-    const path = req.url;
-    const startedAt = Date.now();
+    const ctx = this.baseContext(req);
+    const rawBody = this.rawBodyOf(req, body);
+    const notificationType = (body['notification_type'] as string) || (body['status'] as string) || '';
+    const consignmentId = String(body['consignment_id'] ?? '').trim();
+    const invoice = String(body['invoice'] ?? '').trim();
+    const auth = await this.authenticateSteadfast(req, rawBody, consignmentId || undefined);
 
-    const attempt = await this.safeStartAttempt('steadfast', path, correlationId, sourceIp);
-
-    try {
-      const auth = await this.validateWebhookToken('steadfast', req.headers['authorization']);
-      if (auth.result !== 'MATCHED') {
-        const outcome = this.authOutcomeFromResult(auth.result);
-        await this.safeCompleteAttempt(attempt?.id ?? '', {
-          responseStatus: 401,
-          outcome,
-          failureStage: WebhookAttemptStage.AUTH,
-          authResult: auth.detail,
-          durationMs: Date.now() - startedAt,
-        });
-        throw new UnauthorizedException('Invalid webhook authentication');
-      }
-
-      const notificationType = (body['notification_type'] as string) || (body['status'] as string) || '';
-      const consignmentId = String(body['consignment_id'] ?? '').trim();
-      const invoice = String(body['invoice'] ?? '').trim();
-
-      await this.safeCompleteAttempt(attempt?.id ?? '', {
-        outcome: WebhookAttemptOutcome.UNKNOWN_ERROR,
-        authResult: 'MATCHED',
+    this.logger.log(`Steadfast webhook received [${ctx.correlationId}]`);
+    return this.processWebhook({
+      courier: 'steadfast',
+      auth,
+      idempotencyKey: ctx.idempotencyKey,
+      path: ctx.path,
+      correlationId: ctx.correlationId,
+      sourceIp: ctx.sourceIp,
+      startedAt: ctx.startedAt,
+      successStatus: 200,
+      meta: {
         notificationType: notificationType || undefined,
         consignmentId: consignmentId || undefined,
         invoice: invoice || undefined,
-      });
-
-      this.logger.log(`Steadfast webhook received [${correlationId}]`);
-      const result = await this.svc.handleSteadfast(body);
-
-      await this.safeCompleteAttempt(attempt?.id ?? '', {
-        responseStatus: 200,
-        outcome: WebhookAttemptOutcome.SUCCESS,
-        message: result?.message,
-        durationMs: Date.now() - startedAt,
-      });
-
-      return result;
-    } catch (err) {
-      if (err instanceof UnauthorizedException) throw err;
-
-      await this.safeCompleteAttempt(attempt?.id ?? '', {
-        responseStatus: 500,
-        outcome: WebhookAttemptOutcome.PROCESSING_ERROR,
-        failureStage: WebhookAttemptStage.PROCESSING,
-        message: (err as Error).message?.slice(0, 500),
-        durationMs: Date.now() - startedAt,
-      });
-      throw err;
-    }
+      },
+      run: () => this.svc.handleSteadfast(body),
+    });
   }
 
   @Public()
@@ -271,27 +537,15 @@ export class CourierWebhookController {
     @Req() req: FastifyRequest,
     @Res({ passthrough: true }) res: FastifyReply,
   ) {
-    const correlationId = this.generateCorrelationId();
-    const sourceIp = this.extractSourceIp(req);
-    const path = req.url;
-    const startedAt = Date.now();
+    const ctx = this.baseContext(req);
+    const auth = await this.authenticatePathao(req);
 
-    const attempt = await this.safeStartAttempt('pathao', path, correlationId, sourceIp);
-
-    try {
-      const auth = await this.validatePathaoSignature(req.headers['x-pathao-signature'] as string | undefined);
-      if (auth.result !== 'MATCHED') {
-        const outcome = this.authOutcomeFromResult(auth.result);
-        await this.safeCompleteAttempt(attempt?.id ?? '', {
-          responseStatus: 401,
-          outcome,
-          failureStage: WebhookAttemptStage.AUTH,
-          authResult: auth.detail,
-          durationMs: Date.now() - startedAt,
-        });
-        throw new UnauthorizedException('Invalid webhook authentication');
-      }
-
+    // Security: echo the integration secret ONLY after auth passes
+    // (MATCHED or UNCONFIGURED). On MISSING/MISMATCH with a token
+    // configured the 401 path must carry NO secret headers — setting the
+    // echo before auth would disclose the custom secret to unauthenticated
+    // callers who could then forge webhooks.
+    if (auth.result === 'MATCHED' || auth.result === 'UNCONFIGURED') {
       const creds = await this.prisma.courierCredentials.findUnique({
         where: { courier: 'pathao' },
       });
@@ -300,100 +554,68 @@ export class CourierWebhookController {
         (creds?.pathaoIntegrationSecret || '').trim() || PATHAO_WEBHOOK_INTEGRATION_SECRET,
       );
       res.status(202);
+    }
 
-      const event = (body['event'] as string) || '';
-      const consignmentId = String(body['consignment_id'] ?? '').trim();
+    const event = (body['event'] as string) || '';
+    const consignmentId = String(body['consignment_id'] ?? '').trim();
+    // Task 1 (owner-locked, paid = DELIVERED + money): the Pathao order.paid
+    // sample carries invoice_id (no amount) — store it on the WebhookAttempt
+    // row (dedicated settlement-matching store, no new tables) so the
+    // settlement feed can match the payment to the order.
+    const pathaoInvoice = String(body['invoice_id'] ?? '').trim();
 
-      await this.safeCompleteAttempt(attempt?.id ?? '', {
-        outcome: WebhookAttemptOutcome.UNKNOWN_ERROR,
-        authResult: 'MATCHED',
+    this.logger.log(`Pathao webhook received [${ctx.correlationId}]`);
+    return this.processWebhook({
+      courier: 'pathao',
+      auth,
+      idempotencyKey: ctx.idempotencyKey,
+      path: ctx.path,
+      correlationId: ctx.correlationId,
+      sourceIp: ctx.sourceIp,
+      startedAt: ctx.startedAt,
+      successStatus: 202,
+      meta: {
         notificationType: event || undefined,
         consignmentId: consignmentId || undefined,
-      });
-
-      this.logger.log(`Pathao webhook received [${correlationId}]`);
-      const result = await this.svc.handlePathao(body);
-
-      await this.safeCompleteAttempt(attempt?.id ?? '', {
-        responseStatus: 202,
-        outcome: WebhookAttemptOutcome.SUCCESS,
-        message: result?.message,
-        durationMs: Date.now() - startedAt,
-      });
-
-      return result;
-    } catch (err) {
-      if (err instanceof UnauthorizedException) throw err;
-
-      await this.safeCompleteAttempt(attempt?.id ?? '', {
-        responseStatus: 500,
-        outcome: WebhookAttemptOutcome.PROCESSING_ERROR,
-        failureStage: WebhookAttemptStage.PROCESSING,
-        message: (err as Error).message?.slice(0, 500),
-        durationMs: Date.now() - startedAt,
-      });
-      throw err;
-    }
+        invoice: pathaoInvoice || undefined,
+      },
+      run: () => this.svc.handlePathao(body),
+    });
   }
 
   @Public()
   @Post('redx')
+  @HttpCode(HttpStatus.OK)
   async redx(
     @Body() body: Record<string, unknown>,
     @Req() req: FastifyRequest,
   ) {
-    const correlationId = this.generateCorrelationId();
-    const sourceIp = this.extractSourceIp(req);
-    const path = req.url;
-    const startedAt = Date.now();
+    const ctx = this.baseContext(req);
+    const rawBody = this.rawBodyOf(req, body);
+    const auth = await this.authenticateRedx(req, rawBody);
+    const trackingNumber = String(body['tracking_number'] ?? '').trim();
+    // Task 1: the RedX `paid` money event carries the merchant invoice id —
+    // store it on the WebhookAttempt row (dedicated store, no new tables) so
+    // the settlement feed can match the payment to the order. Paid now also
+    // advances the delivery workflow (DELIVERED + Delivered, owner lock).
+    const invoiceNumber = String(body['invoice_number'] ?? '').trim();
 
-    const attempt = await this.safeStartAttempt('redx', path, correlationId, sourceIp);
-
-    try {
-      const auth = this.validateRedxSignature(body, req.headers['x-redx-signature']);
-      if (auth.result !== 'MATCHED') {
-        const outcome = this.authOutcomeFromResult(auth.result);
-        await this.safeCompleteAttempt(attempt?.id ?? '', {
-          responseStatus: 401,
-          outcome,
-          failureStage: WebhookAttemptStage.AUTH,
-          authResult: auth.detail,
-          durationMs: Date.now() - startedAt,
-        });
-        throw new UnauthorizedException('Invalid webhook signature');
-      }
-
-      const trackingNumber = String(body['tracking_number'] ?? '').trim();
-
-      await this.safeCompleteAttempt(attempt?.id ?? '', {
-        outcome: WebhookAttemptOutcome.UNKNOWN_ERROR,
-        authResult: 'MATCHED',
+    this.logger.log(`RedX webhook received [${ctx.correlationId}]`);
+    return this.processWebhook({
+      courier: 'redx',
+      auth,
+      idempotencyKey: ctx.idempotencyKey,
+      path: ctx.path,
+      correlationId: ctx.correlationId,
+      sourceIp: ctx.sourceIp,
+      startedAt: ctx.startedAt,
+      successStatus: 200,
+      meta: {
         consignmentId: trackingNumber || undefined,
-      });
-
-      this.logger.log(`RedX webhook received [${correlationId}]`);
-      const result = await this.svc.handleRedx(body);
-
-      await this.safeCompleteAttempt(attempt?.id ?? '', {
-        responseStatus: 200,
-        outcome: WebhookAttemptOutcome.SUCCESS,
-        message: result?.message,
-        durationMs: Date.now() - startedAt,
-      });
-
-      return result;
-    } catch (err) {
-      if (err instanceof UnauthorizedException) throw err;
-
-      await this.safeCompleteAttempt(attempt?.id ?? '', {
-        responseStatus: 500,
-        outcome: WebhookAttemptOutcome.PROCESSING_ERROR,
-        failureStage: WebhookAttemptStage.PROCESSING,
-        message: (err as Error).message?.slice(0, 500),
-        durationMs: Date.now() - startedAt,
-      });
-      throw err;
-    }
+        invoice: invoiceNumber || undefined,
+      },
+      run: () => this.svc.handleRedx(body),
+    });
   }
 
   @Public()
@@ -403,65 +625,48 @@ export class CourierWebhookController {
     @Req() req: FastifyRequest,
     @Res({ passthrough: true }) res: FastifyReply,
   ) {
-    const correlationId = this.generateCorrelationId();
-    const sourceIp = this.extractSourceIp(req);
-    const path = req.url;
-    const startedAt = Date.now();
+    const ctx = this.baseContext(req);
+    const auth = await this.authenticateCarrybee(req);
 
-    const attempt = await this.safeStartAttempt('carrybee', path, correlationId, sourceIp);
-
-    try {
-      const auth = await this.validateCarrybeeSignature(req.headers['x-carrybee-webhook-signature'] as string | undefined);
-      if (auth.result !== 'MATCHED') {
-        const outcome = this.authOutcomeFromResult(auth.result);
-        await this.safeCompleteAttempt(attempt?.id ?? '', {
-          responseStatus: 401,
-          outcome,
-          failureStage: WebhookAttemptStage.AUTH,
-          authResult: auth.detail,
-          durationMs: Date.now() - startedAt,
-        });
-        throw new UnauthorizedException('Invalid webhook authentication');
-      }
-
+    // Security (HIGH): the X-CB echo value IS the webhook auth secret.
+    // Set it ONLY when auth.result is MATCHED or UNCONFIGURED — never on
+    // FAILED/MISMATCH/MISSING-with-token-configured. The 401 passthrough
+    // keeps response headers, so a pre-auth echo would disclose the secret
+    // to anonymous callers and enable webhook forgery.
+    if (auth.result === 'MATCHED' || auth.result === 'UNCONFIGURED') {
       const creds = await this.prisma.courierCredentials.findUnique({
         where: { courier: 'carrybee' },
       });
       res.header('X-CB-Webhook-Integration-Header', creds?.webhookSecret || '');
       res.status(202);
+    }
 
-      const event = (body['event'] as string) || '';
-      const consignmentId = String(body['consignment_id'] ?? '').trim();
+    const event = (body['event'] as string) || '';
+    const consignmentId = String(body['consignment_id'] ?? '').trim();
+    // Task 1 (owner-locked, paid = DELIVERED + money): Carrybee mirrors the
+    // Pathao order.* vocabulary — order.paid carries the settlement money
+    // identifiers (invoice_id + payment_status). Stored on the WebhookAttempt
+    // row (no new tables) for settlement matching.
+    const carrybeeInvoice = String(
+      body['invoice_id'] ?? body['invoice_number'] ?? '',
+    ).trim();
 
-      await this.safeCompleteAttempt(attempt?.id ?? '', {
-        outcome: WebhookAttemptOutcome.UNKNOWN_ERROR,
-        authResult: 'MATCHED',
+    this.logger.log(`Carrybee webhook received [${ctx.correlationId}]`);
+    return this.processWebhook({
+      courier: 'carrybee',
+      auth,
+      idempotencyKey: ctx.idempotencyKey,
+      path: ctx.path,
+      correlationId: ctx.correlationId,
+      sourceIp: ctx.sourceIp,
+      startedAt: ctx.startedAt,
+      successStatus: 202,
+      meta: {
         notificationType: event || undefined,
         consignmentId: consignmentId || undefined,
-      });
-
-      this.logger.log(`Carrybee webhook received [${correlationId}]`);
-      const result = await this.svc.handleCarrybee(body);
-
-      await this.safeCompleteAttempt(attempt?.id ?? '', {
-        responseStatus: 202,
-        outcome: WebhookAttemptOutcome.SUCCESS,
-        message: result?.message,
-        durationMs: Date.now() - startedAt,
-      });
-
-      return result;
-    } catch (err) {
-      if (err instanceof UnauthorizedException) throw err;
-
-      await this.safeCompleteAttempt(attempt?.id ?? '', {
-        responseStatus: 500,
-        outcome: WebhookAttemptOutcome.PROCESSING_ERROR,
-        failureStage: WebhookAttemptStage.PROCESSING,
-        message: (err as Error).message?.slice(0, 500),
-        durationMs: Date.now() - startedAt,
-      });
-      throw err;
-    }
+        invoice: carrybeeInvoice || undefined,
+      },
+      run: () => this.svc.handleCarrybee(body),
+    });
   }
 }

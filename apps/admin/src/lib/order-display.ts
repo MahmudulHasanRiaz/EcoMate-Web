@@ -19,6 +19,8 @@ interface OrderCustomerSnapshot {
     name?: string | null
     email?: string | null
     phone?: string | null
+    /** Canonical profile field (OrderResponse.customer.phoneNumber). */
+    phoneNumber?: string | null
     firstName?: string | null
     lastName?: string | null
   } | null
@@ -51,9 +53,10 @@ export function getCustomerDisplayName(order: OrderCustomerSnapshot): string {
 /**
  * Resolve customer phone from order-time snapshot.
  * Priority: snapshot phone > guestPhone > CustomerProfile phone
+ * (either the snapshot-mapped `phone` or the canonical `phoneNumber`).
  */
 export function getCustomerPhone(order: OrderCustomerSnapshot): string {
-  return order.customerPhone || order.guestPhone || order.customer?.phone || ''
+  return order.customerPhone || order.guestPhone || order.customer?.phone || order.customer?.phoneNumber || ''
 }
 
 /**
@@ -140,28 +143,39 @@ export interface OrderPaymentSummarySource {
   paymentStatus?: string | null
   paymentOptionType?: string | null
   partialAmount?: number | string | null
+  /** Order-status relation (`status: { name }`) — Cancelled name per backend cancelByCustomer lookup. */
+  status?: { name?: string | null } | null
+  /** Flat status-name fallback for queue-like shapes. */
+  statusName?: string | null
   payments?: Array<{
     amount?: number | string | null
+    status?: string | null
+  }> | null
+  /** Dispatches attached to the order (list rows carry the latest one). */
+  dispatches?: Array<{
+    consignmentId?: string | null
+    courierAmount?: number | string | null
     status?: string | null
   }> | null
 }
 
 /**
  * Calculate the verified / paid amount on an order.
- * Considers payments with status paid/verified/completed, or if paymentStatus is PAID,
- * falls back to total.
+ * The payment LEDGER is truth: when recorded payment rows exist, their signed
+ * sum (PAID-family statuses, negatives included for corrections/refunds) wins
+ * over the stored `paymentStatus` column. The column is kept for query/filter
+ * only. Falls back to the legacy stored-value heuristics when no rows exist.
  */
 export function getOrderPaidAmount(order: OrderPaymentSummarySource | null | undefined): number {
   if (!order) return 0
   const total = Number(order.total || 0)
   if (Array.isArray(order.payments) && order.payments.length > 0) {
-    const verifiedSum = order.payments
+    return order.payments
       .filter((p) => {
         const s = (p.status || '').toLowerCase()
         return s === 'paid' || s === 'verified' || s === 'completed'
       })
       .reduce((sum, p) => sum + Number(p.amount || 0), 0)
-    if (verifiedSum > 0) return verifiedSum
   }
   if (order.paymentStatus === 'PAID' || order.paymentOptionType === 'FULL_PAYMENT') {
     return total
@@ -173,15 +187,104 @@ export function getOrderPaidAmount(order: OrderPaymentSummarySource | null | und
 }
 
 /**
+ * Cancelled order-status name — exact match on the backend lookup in
+ * cancelByCustomer (`orderStatus.findFirst({ where: { name: 'Cancelled' } })`).
+ */
+export const CANCELLED_STATUS_NAME = 'Cancelled'
+
+/** True when the order sits in the Cancelled status (relation or flat shape). */
+function isCancelledOrder(order: OrderPaymentSummarySource | null | undefined): boolean {
+  if (!order) return false
+  if (order.status?.name === CANCELLED_STATUS_NAME) return true
+  if (order.statusName === CANCELLED_STATUS_NAME) return true
+  return false
+}
+
+/** True when the ledger carries refund activity: any negative PAID-family row. */
+function hasRefundActivity(order: OrderPaymentSummarySource | null | undefined): boolean {
+  if (!order || !Array.isArray(order.payments)) return false
+  return order.payments.some((p) => {
+    const s = (p.status || '').toLowerCase()
+    if (s !== 'paid' && s !== 'verified' && s !== 'completed') return false
+    return Number(p.amount || 0) < 0
+  })
+}
+
+/**
  * Calculate the actual remaining due amount (amount collectable on delivery / COD).
- * Guarantees due = max(0, total - paid).
+ * Guarantees due = max(0, total - paid). Ledger-first: recorded rows decide,
+ * stored `paymentStatus` is only a fallback when no rows exist.
+ *
+ * Cancelled orders always owe 0 — nothing is collectable post-cancel, even a
+ * paid-then-cancelled order with only a partial refund.
  */
 export function getOrderDueAmount(order: OrderPaymentSummarySource | null | undefined): number {
   if (!order) return 0
+  if (isCancelledOrder(order)) return 0
+  const total = Number(order.total || 0)
+  if (Array.isArray(order.payments) && order.payments.length > 0) {
+    return Math.max(0, total - getOrderPaidAmount(order))
+  }
   if (order.paymentStatus === 'PAID' || order.paymentOptionType === 'FULL_PAYMENT') {
     return 0
   }
-  const total = Number(order.total || 0)
   const paid = getOrderPaidAmount(order)
   return Math.max(0, total - paid)
+}
+
+/** Derived payment mode — the single source of truth for payment badges/cards. */
+export type OrderPaymentMode = 'Unpaid' | 'Partial' | 'Paid' | 'Credit' | 'Refunded'
+
+/** Round to paisa so float dust (0.1+0.2) never flips a boundary. */
+const toPaisa = (v: number | string): number => Math.round(Number(v || 0) * 100) / 100
+
+/**
+ * Pure mode from amounts. Boundary: paid > total → 'Credit' (overrides Paid);
+ * paid == total → 'Paid'; 0 < paid < total → 'Partial'; paid <= 0 → 'Unpaid'.
+ * Number() coercion handles Decimal-serialized strings.
+ */
+export function getPaymentModeForAmounts(
+  total: number | string,
+  paidTotal: number | string,
+): OrderPaymentMode {
+  const t = toPaisa(total)
+  const p = toPaisa(paidTotal)
+  if (p <= 0) return 'Unpaid'
+  if (p < t) return 'Partial'
+  if (p === t) return 'Paid'
+  return 'Credit'
+}
+
+/**
+ * Derived payment mode for an order — computed from the ledger sum, never
+ * from the stored `paymentStatus` column directly.
+ *
+ * Cancelled + refund activity (any negative PAID-family row) → 'Refunded'
+ * (a paid-then-refunded order is not "Unpaid"). Cancelled without
+ * payments/refunds keeps the derived mode. Non-cancelled behavior unchanged.
+ */
+export function getOrderPaymentMode(order: OrderPaymentSummarySource | null | undefined): OrderPaymentMode {
+  if (!order) return 'Unpaid'
+  if (isCancelledOrder(order) && hasRefundActivity(order)) return 'Refunded'
+  return getPaymentModeForAmounts(order.total ?? 0, getOrderPaidAmount(order))
+}
+
+/**
+ * Derived COD-mismatch flag for the orders LIST — computed from data the list
+ * endpoint already returns (latest dispatch + ledger-derived due), so rows need
+ * zero extra requests. Mirrors the server recompute rule: a live (non-
+ * CANCELLED) dispatch with a stored courierAmount that differs from the system
+ * due. Steady-state agreement with server open alerts: resolving an alert
+ * re-raises it on the next recompute while the amounts still differ, and a
+ * cleared/matching dispatch drops both.
+ */
+export function hasOpenCodAlert(order: OrderPaymentSummarySource | null | undefined): boolean {
+  if (!order || !Array.isArray(order.dispatches)) return false
+  const due = toPaisa(getOrderDueAmount(order))
+  return order.dispatches.some((d) => {
+    if (!d) return false
+    if ((d.status || '').toUpperCase() === 'CANCELLED') return false
+    if (d.courierAmount === null || d.courierAmount === undefined || d.courierAmount === '') return false
+    return toPaisa(d.courierAmount) !== due
+  })
 }

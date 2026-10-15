@@ -73,6 +73,10 @@ enum PaymentStatus {
   CANCELLED
   REFUNDED
   PAYMENT_VERIFYING
+  // D-C actuals-only ledger: legacy cash/UNPAID placeholder rows (no money
+  // ever moved) are VOID-marked by migration, never deleted. Excluded from
+  // the payment list by default; auditable via an explicit status filter.
+  VOID
 }
 
 enum WarehouseType {
@@ -327,6 +331,8 @@ model CustomerProfile {
   // to exactly one customer, which is what makes "type any linked number →
   // same customer" safe. No auto-merge ever happens through this table.
   linkedPhones CustomerPhone[]
+
+  creditEntries CustomerCreditEntry[]
 
   @@index([email])
   // Orders-list search matches customer name as a substring.
@@ -963,10 +969,13 @@ model Order {
   status                       OrderStatus                   @relation(fields: [statusId], references: [id])
   items                        OrderItem[]
   payments                     Payment[]
+  codAlerts                    CodMismatchAlert[]
+  creditEntries                CustomerCreditEntry[]
   shipment                     Shipment?
   dispatchLogs                 CourierDispatchLog[]
   dispatches                   Dispatch[]
   refunds                      Refund[]
+  returns                      Return[]                       @relation("OrderReturns")
   exchangeRefunds             Refund[]                       @relation("RefundExchangeOrder")
   sourcePayments              Payment[]                      @relation("PaymentSourceOrder")
   couponUsages                 CouponUsage[]
@@ -1060,6 +1069,10 @@ model Payment {
   transactionId     String?
   providerPaymentId String?       @unique // bKash paymentID, bound at initiation
   screenshot        String?
+  account           String?
+  recordedBy        String?
+  submittedBy       String? // "staff:<userId>" | "customer:<customerId>"
+  recordedAt        DateTime      @default(now())
   status            PaymentStatus @default(PENDING)
   verifiedBy        String?
   verifiedAt        DateTime?
@@ -1078,12 +1091,51 @@ model Payment {
   sourceOrder Order?    @relation("PaymentSourceOrder", fields: [sourceOrderId], references: [id])
   verifier UserProfile? @relation("VerifiedPayments", fields: [verifiedBy], references: [id])
   sourceRefunds Refund[] @relation("RefundSourcePayment")
+  creditEntries CustomerCreditEntry[]
 
   @@unique([transactionId, gatewayCode])
   @@index([orderId])
   @@index([gatewayCode])
   @@index([transactionId])
   @@index([sourceOrderId])
+}
+
+model CodMismatchAlert {
+  id            String   @id @default(uuid())
+  orderId       String
+  courier       String
+  consignmentId String
+  courierAmount Decimal  @db.Decimal(10, 2)
+  systemDue     Decimal  @db.Decimal(10, 2)
+  status        String   @default("open") // open | resolved | cleared
+  resolvedBy    String?
+  resolvedAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, status])
+  @@index([consignmentId])
+}
+
+model CustomerCreditEntry {
+  id         String   @id @default(uuid())
+  customerId String
+  orderId    String?
+  paymentId  String?
+  amount     Decimal  @db.Decimal(10, 2) // positive = granted, negative = applied
+  reason     String
+  createdBy  String?
+  createdAt  DateTime @default(now())
+
+  customer CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  order    Order?          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  payment  Payment?        @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([customerId])
+  @@index([orderId])
+  @@index([paymentId])
 }
 
 model CheckoutLead {
@@ -1333,6 +1385,29 @@ model CourierCredentials {
   updatedAt               DateTime @updatedAt
 }
 
+// Task 8 (owner-locked hybrid, Steadfast-only): MULTIPLE encrypted merchant
+// accounts per courier. Keys are ciphertext (EncryptionService, AES-256-GCM);
+// the legacy CourierCredentials single row stays as the zero-friction
+// fallback while this table is empty. At most one isDefault per courier
+// (enforced in SteadfastCredentialSetsService, not the DB, so a hand-authored
+// backfill can never violate it on redeploy).
+model CourierCredentialSet {
+  id               String   @id @default(uuid())
+  courier          String   @default("steadfast")
+  label            String
+  apiKeyEnc        String?
+  secretKeyEnc     String?
+  webhookSecretEnc String?
+  isDefault        Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  dispatches Dispatch[]
+
+  @@unique([courier, label])
+  @@index([courier])
+}
+
 model CourierDispatchLog {
   id              String   @id @default(uuid())
   orderId         String
@@ -1387,6 +1462,13 @@ enum DispatchStatus {
   PICKED_UP
   IN_TRANSIT
   ASSIGNED_TO_RIDER
+  // Task 3 / Fix 7 (courier FINAL follow-up, owner-locked): pickup-failed
+  // (Pathao + Carrybee) → record attempt + reason + alert, order Shipping;
+  // staff can retry/update the same dispatch.
+  PICKUP_FAILED
+  // Task 3 / Fix 7: received-at-last-mile-hub (Pathao + Carrybee) → order
+  // Shipping. ASSIGNED_TO_RIDER is ONLY for assigned-for-delivery.
+  ASSIGNED_TO_HUB
   HOLD
   DELIVERED
   PARTIAL
@@ -1395,11 +1477,73 @@ enum DispatchStatus {
   CANCELLED
 }
 
+// Task 6 (courier FINAL follow-up, Fix 13 §§17.1–17.3): unified Return entity.
+// EVERY return creates ONE Return row (staff, courier, or exchange sourced) —
+// never a phantom Order. RTN return-orders (rtn module) stay a separate flow.
+enum ReturnType {
+  FULL
+  PARTIAL
+  EXCHANGE
+}
+
+enum ReturnStatus {
+  REQUESTED
+  IN_TRANSIT
+  RECEIVED
+  RESTOCKED
+  CLOSED
+}
+
+enum ReturnSource {
+  STAFF
+  COURIER
+  EXCHANGE
+}
+
+model Return {
+  id       String @id @default(uuid())
+  orderId  String
+  order    Order  @relation("OrderReturns", fields: [orderId], references: [id], onDelete: Cascade)
+  // Human sequence RTN-YYMMDD-NNNN (mirrors the ORD-XXXX Order generator;
+  // own ReturnCounter so order numbering never shifts).
+  displayId         String       @unique
+  type              ReturnType
+  status            ReturnStatus @default(REQUESTED)
+  // Returned quantities: [{ productId, variantId?, quantity }]. Courier-sourced
+  // rows start EMPTY (the courier API never reports the split) — staff confirm
+  // exact quantities at mark-received; NOTHING restocks until then.
+  items             Json         @default("[]")
+  reason            String?
+  source            ReturnSource
+  courier           String?
+  // First courier-side return reference seen (Pathao return_consignment_id,
+  // Steadfast return_request_id / return_list_id, or the consignment id for
+  // reconcile-created rows). Set-once: later signals update courierStatus.
+  courierReturnId   String?
+  courierStatus     String?
+  // Durable item-restore guard: set in the SAME transaction as the stock
+  // movement, so reconcile retries + mark-received can never restore twice.
+  stockReconciled   Boolean      @default(false)
+  stockReconciledAt DateTime?
+  // Linked refund row (refunds module) — plain id, no FK (refund lifecycle is
+  // independent; deleting a refund must never cascade a Return).
+  refundId        String?
+  // Exchange order created for this return (Task 4 owns the flow) — plain id.
+  exchangeOrderId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([orderId])
+  @@index([courierReturnId])
+}
+
 model Dispatch {
   id              String         @id @default(uuid())
   orderId         String
   courier         CourierService
-  consignmentId   String
+  // NULL until known: staff may create the row before booking the courier;
+  // the courier webhook backfills it (see fillManualDispatchIdentifiers).
+  consignmentId   String?
   trackingCode    String?
   trackingUrl     String?
   status          DispatchStatus @default(DISPATCHED)
@@ -1409,6 +1553,14 @@ model Dispatch {
   // and is the source for the Dispatch list "Courier Status" column.
   courierStatus   String?
   courierStatusAt DateTime?
+  /// Amount-to-collect sent to the courier at dispatch time. Source of truth
+  /// for the post-dispatch COD mismatch comparison (Feature A).
+  courierAmount   Decimal?  @db.Decimal(10, 2)
+  // Task 8: Steadfast booking credential-set id. NULL = legacy default
+  // (single-business rows booked before sets, or while no sets exist).
+  // Tracking / status / webhooks resolve the set from THIS record.
+  credentialSetId String?
+  credentialSet   CourierCredentialSet? @relation(fields: [credentialSetId], references: [id], onDelete: SetNull)
   lastSyncedAt    DateTime?
   handedOverAt    DateTime?
   pickedUpAt      DateTime?
@@ -1431,6 +1583,8 @@ model Dispatch {
   // (the composite unique's leading column can't serve those lookups).
   @@index([consignmentId])
   @@index([trackingCode])
+  // Task 8: booking-set lookups (webhook consignment → record → set).
+  @@index([credentialSetId])
 }
 
 enum WebhookAttemptOutcome {
@@ -1475,12 +1629,18 @@ model WebhookAttempt {
   courierEvent     String?
   message          String?
   isDuplicate      Boolean               @default(false)
+  // Task 4: sender-supplied Idempotency-Key. Retried deliveries carry the
+  // same key — the UNIQUE(courier, idempotencyKey) claim turns a replay into
+  // a 2xx no-reprocess instead of double-processing. NULL = sender sent no
+  // key (Postgres treats NULLs as distinct, so keyless webhooks are unaffected).
+  idempotencyKey   String?
 
   @@index([courier])
   @@index([receivedAt])
   @@index([outcome])
   @@index([correlationId])
   @@index([courier, receivedAt])
+  @@unique([courier, idempotencyKey])
 }
 
 model Coupon {
@@ -1527,6 +1687,13 @@ model Refund {
   processedBy String?
   processedAt DateTime?
   notes       String?   @db.Text
+  /// D5 (Task 9): where the money went back (gateway code / account label,
+  /// e.g. 'bkash'). Required for every refund recorded after the payment-
+  /// ledger overhaul; NULL marks a legacy pre-ledger refund. The gate uses
+  /// this to tell mirrored refunds (method set + matching negative payment
+  /// row — counted via the ledger) from legacy ones (method NULL — counted
+  /// via the Refund row) without ever double-counting.
+  method      String?
   /// EXCHANGE settlement only: the exchange that produced this refund. The
   /// refund is still raised against `orderId` (the ORIGINAL whose money is
   /// being returned) — this column is the traceability link back to the
@@ -1717,6 +1884,13 @@ model ManagedStockLedger {
 }
 
 model OrderCounter {
+  date String @id // YYMMDD
+  seq  Int
+}
+
+// Task 6 (Fix 13): RTN-YYMMDD-NNNN sequence counter. Separate from
+// OrderCounter so Return numbering never shifts order numbering.
+model ReturnCounter {
   date String @id // YYMMDD
   seq  Int
 }
