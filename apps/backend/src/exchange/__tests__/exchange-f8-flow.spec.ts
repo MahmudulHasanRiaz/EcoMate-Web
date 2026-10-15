@@ -73,6 +73,8 @@ function makeFake(opts: {
     payment: {
       aggregate: async () => ({ _sum: { amount: opts.paidAmount ?? 0 } }),
       findFirst: async () => ({ id: 'pay-1' }),
+      // Hardening (4): transfer-linked rows recorded on the exchange.
+      create: async ({ data }: any) => ({ id: `pay-t-${Date.now()}`, ...data }),
     },
     refund: {
       create: async ({ data }: any) => {

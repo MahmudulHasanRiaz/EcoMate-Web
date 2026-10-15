@@ -98,6 +98,7 @@ function mockSuccessfulAPIs(response?: any) {
       if (url === '/orders') return Promise.resolve({ data: response ?? singlePageResponse })
       if (url === '/orders/staff/list') return Promise.resolve({ data: [] })
       if (url === '/couriers/credentials') return Promise.resolve({ data: [] })
+      if (url === '/returns') return Promise.resolve({ data: { data: [], meta: { total: 0, page: 1, limit: 200 } } })
       return Promise.reject(new Error('Unexpected URL'))
     })
   }
@@ -213,5 +214,51 @@ describe('Orders page', () => {
     await expect.element(getByText('#ORD-002')).toBeInTheDocument()
     await expect.element(getByText(/Jane Smith/i)).toBeInTheDocument()
     await expect.element(getByRole('cell', { name: '৳150.00' })).toBeInTheDocument()
+  })
+
+  it('shows a ↩ Return ×N badge for orders with non-closed linked returns', async () => {
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/order-statuses') return Promise.resolve({ data: orderStatuses })
+      if (url === '/orders') return Promise.resolve({ data: singlePageResponse })
+      if (url === '/orders/staff/list') return Promise.resolve({ data: [] })
+      if (url === '/couriers/credentials') return Promise.resolve({ data: [] })
+      if (url === '/returns') {
+        return Promise.resolve({
+          data: {
+            data: [
+              { id: 'ret-1', displayId: 'RTN-1', orderId: '1', type: 'PARTIAL', status: 'REQUESTED', items: [] },
+              { id: 'ret-2', displayId: 'RTN-2', orderId: '1', type: 'FULL', status: 'CLOSED', items: [] },
+            ],
+            meta: { total: 2, page: 1, limit: 200 },
+          },
+        })
+      }
+      return Promise.reject(new Error('Unexpected URL'))
+    })
+
+    const { getByText } = await renderOrders()
+
+    // Only the non-closed leg counts.
+    await expect.element(getByText('↩ Return ×1')).toBeInTheDocument()
+  })
+
+  it('shows a ⇄ Exchange badge on originals with a linked exchange child', async () => {
+    mockSuccessfulAPIs({
+      data: [
+        { ...mockOrder, id: '1', displayId: '#ORD-001', kind: 'SALE' },
+        {
+          ...mockOrder,
+          id: 'ex-1',
+          displayId: '#ORD-EX-1',
+          kind: 'EXCHANGE',
+          exchangeOfOrder: { id: '1', displayId: '#ORD-001' },
+        },
+      ],
+      meta: { total: 2, page: 1, perPage: 10, totalPages: 1 },
+    })
+
+    const { getByText } = await renderOrders()
+
+    await expect.element(getByText('⇄ Exchange')).toBeInTheDocument()
   })
 })

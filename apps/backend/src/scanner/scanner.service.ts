@@ -65,6 +65,8 @@ export class ScannerService {
       orderId?: string;
       orderIds?: string[];
       targetStatusId?: string;
+      returnId?: string;
+      exchangeId?: string;
     },
     actor: ScanActor,
   ): Promise<ScanResult> {

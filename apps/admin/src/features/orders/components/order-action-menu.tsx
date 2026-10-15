@@ -1,19 +1,54 @@
-import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { toast } from 'sonner'
-import { ArrowRightLeft, Plus, RotateCcw, Scissors } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { ArrowRightLeft, Plus, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { returnsApi } from '@/features/orders/api'
-import { PartialReturnDialog } from './partial-return-dialog'
+import { returnsApi } from '@/features/returns/api'
+import { CreateReturnDialog } from './create-return-dialog'
 import { ExchangeScopeDialog } from './exchange-scope-dialog'
 
-/** Menu labels — EXACT strings (owner-locked, Task 4 Fix 8). */
+/**
+ * Menu labels — EXACT strings.
+ *
+ * HIGH §2 ONE button: exactly ONE staff return entry ('Create return').
+ * The separate 'Create Partial Return Order' entry is deleted — the unified
+ * CreateReturnDialog (Partial default) covers both FULL and PARTIAL via POST
+ * /returns (courier auto-creation is backend-only and excepted).
+ */
 export const ORDER_ACTION_LABELS = {
-  createReturn: 'Create Return Order',
+  createReturn: 'Create return',
   createExchange: 'Create Exchange Order',
-  createPartialReturn: 'Create Partial Return Order',
 } as const
+
+/**
+ * Original-order statuses a staff return may be raised from (mirrors the
+ * backend RETURN_ELIGIBLE_STATUSES guard — anything else is rejected with
+ * "Order is not eligible for return", so the menu disables with the reason
+ * instead of offering a doomed click).
+ */
+export const RETURN_ELIGIBLE_STATUSES: readonly string[] = [
+  'Shipping',
+  'Partial',
+  'Delivered',
+]
+
+/** Non-null reason when a return cannot be raised from this order. */
+export function returnBlockedReason(order: any, activeFullDisplayId?: string | null): string | null {
+  if (activeFullDisplayId) {
+    return (
+      `Order already has an active return ${activeFullDisplayId}; ` +
+      `close or cancel it first.`
+    )
+  }
+  const status = order?.status?.name as string | undefined
+  if (!RETURN_ELIGIBLE_STATUSES.includes(status as string)) {
+    return (
+      'Returns are allowed only from Shipping, Partial or Delivered status ' +
+      `(current: ${status ?? 'unknown'}).`
+    )
+  }
+  return null
+}
 
 /**
  * Original-order statuses an exchange may be raised from (mirrors the
@@ -40,32 +75,8 @@ export function exchangeBlockedReason(order: any): string | null {
   return null
 }
 
-/**
- * Task 5 (Fix 9, owner-locked Rule 15): the staff-partial button lives on
- * Shipping AND Partial orders only (mirrors the backend
- * STAFF_PARTIAL_ALLOWED_STATUSES gate — kind-only creation would force the
- * order past ORDER_TRANSITIONS).
- */
-export const PARTIAL_ALLOWED_STATUSES: readonly string[] = [
-  'Shipping',
-  'Partial',
-]
-
-/** Non-null reason when the order's status disallows staff-partial creation. */
-export function partialBlockedReason(order: any): string | null {
-  if (order?.kind === 'RETURN') return null // kind gate hides instead
-  const status = order?.status?.name as string | undefined
-  if (!PARTIAL_ALLOWED_STATUSES.includes(status as string)) {
-    return (
-      'Partial returns are allowed only from Shipping or Partial status ' +
-      `(current: ${status ?? 'unknown'}).`
-    )
-  }
-  return null
-}
-
 export interface OrderActionDef {
-  key: 'create-return' | 'create-exchange' | 'create-partial-return' | string
+  key: 'create-return' | 'create-exchange' | string
   label: string
   icon: React.ReactNode
   /** Per-order visibility (kind/trashed gating lives here, not in callers). */
@@ -76,47 +87,34 @@ export interface OrderActionDef {
   run: () => void
 }
 
-const errMsg = (e: unknown): string => {
-  const err = e as any
-  const d = err?.response?.data
-  const msg = d?.message ?? d?.error ?? err?.message
-  if (typeof msg === 'string' && msg.trim()) return msg.trim()
-  if (Array.isArray(msg)) return msg.join(', ')
-  return 'Failed to create the return.'
-}
-
 /**
  * Plus (+) order action menu on the order detail page (Task 4 Fix 8).
  *
  * EXTENSIBLE: new actions are one entry in the `actions` array below
  * (key + EXACT label + icon + visibility + run) — no toolbar surgery.
  * T7 owns the Returns/Exchanges LISTS; this menu only creates records.
+ *
+ * Return hardening: there is exactly ONE return entry ('Create return'),
+ * opening the unified modal — staff returns are NEVER created one-click
+ * from this menu (the old instant FULL POST is deleted; courier
+ * auto-creation is backend-only and untouched).
  */
 export function OrderActionMenu({ order }: { order: any }) {
-  const queryClient = useQueryClient()
+  const [returnOpen, setReturnOpen] = useState(false)
   const [scopeOpen, setScopeOpen] = useState(false)
-  const [partialOpen, setPartialOpen] = useState(false)
 
-  // 'Create Return Order' → Return FULL create (unified Return record —
-  // best-effort full snapshot from the order lines; receive-time confirms
-  // quantities, same as the courier-sourced flow).
-  const fullReturnMut = useMutation({
-    mutationFn: () =>
-      returnsApi.create({
-        orderId: order.id,
-        type: 'FULL',
-        source: 'STAFF',
-        items: (order?.items ?? [])
-          .filter((i: any) => i.productId)
-          .map((i: any) => ({ productId: i.productId, variantId: i.variantId ?? null, quantity: i.quantity })),
-      }),
-    onSuccess: (ret: any) => {
-      queryClient.invalidateQueries({ queryKey: ['order', order.id] })
-      queryClient.invalidateQueries({ queryKey: ['returns'] })
-      toast.success(`Return ${ret?.displayId ?? ''} created — original stays Return Pending until receipt.`)
-    },
-    onError: (e: unknown) => toast.error(errMsg(e)),
+  // Display-only guard mirror: an active FULL names itself in the tooltip.
+  // The backend guard is still the authority — this only avoids doomed clicks.
+  const { data: linked } = useQuery({
+    queryKey: ['order-returns', order.id],
+    queryFn: () => returnsApi.list({ orderId: order.id, limit: 100 }).then((r) => r.data),
+    enabled: !!order?.id,
+    staleTime: 15_000,
   })
+  const activeFull = useMemo(
+    () => (linked ?? []).find((r: any) => r?.status !== 'CLOSED' && r?.type === 'FULL') as any | undefined,
+    [linked],
+  )
 
   const actions: OrderActionDef[] = [
     {
@@ -124,7 +122,9 @@ export function OrderActionMenu({ order }: { order: any }) {
       label: ORDER_ACTION_LABELS.createReturn,
       icon: <RotateCcw className='h-4 w-4 mr-2' />,
       visible: (o) => o.kind !== 'RETURN',
-      run: () => fullReturnMut.mutate(),
+      disabled: () => returnBlockedReason(order, activeFull?.displayId ?? activeFull?.id) !== null,
+      disabledReason: () => returnBlockedReason(order, activeFull?.displayId ?? activeFull?.id),
+      run: () => setReturnOpen(true),
     },
     {
       key: 'create-exchange',
@@ -134,15 +134,6 @@ export function OrderActionMenu({ order }: { order: any }) {
       disabled: (o) => exchangeBlockedReason(o) !== null,
       disabledReason: (o) => exchangeBlockedReason(o),
       run: () => setScopeOpen(true),
-    },
-    {
-      key: 'create-partial-return',
-      label: ORDER_ACTION_LABELS.createPartialReturn,
-      icon: <Scissors className='h-4 w-4 mr-2' />,
-      visible: (o) => o.kind !== 'RETURN',
-      disabled: (o) => partialBlockedReason(o) !== null,
-      disabledReason: (o) => partialBlockedReason(o),
-      run: () => setPartialOpen(true),
     },
   ]
 
@@ -162,7 +153,7 @@ export function OrderActionMenu({ order }: { order: any }) {
             <DropdownMenuItem
               key={a.key}
               onClick={a.run}
-              disabled={(a.key === 'create-return' && fullReturnMut.isPending) || (a.disabled?.(order) ?? false)}
+              disabled={a.disabled?.(order) ?? false}
               title={a.disabledReason?.(order) ?? undefined}
             >
               {a.icon} {a.label}
@@ -170,8 +161,8 @@ export function OrderActionMenu({ order }: { order: any }) {
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
+      <CreateReturnDialog order={order} open={returnOpen} onClose={() => setReturnOpen(false)} />
       <ExchangeScopeDialog order={order} open={scopeOpen} onClose={() => setScopeOpen(false)} />
-      <PartialReturnDialog order={order} open={partialOpen} onClose={() => setPartialOpen(false)} />
     </>
   )
 }

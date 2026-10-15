@@ -7,7 +7,15 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
-import { dhakaDateParts } from '../common/utils/dhaka-time';
+import {
+  assertNoDuplicateReturn,
+  assertReturnEligible,
+  COURIER_GUARD_SKIP_REASON,
+  generateReturnDisplayId,
+  orderItemsSnapshotForClient,
+  restoreStockForReturnTx,
+  validateReturnItemsShape,
+} from './return-guard';
 
 export interface ReturnItemInput {
   productId: string;
@@ -84,6 +92,12 @@ export class ReturnsService {
       throw new BadRequestException(`Invalid return source: ${dto.source}`);
     }
     const items = this.validateItems(dto.items ?? []);
+
+    // Hardening (1): shared eligibility guard + 60s duplicate guard. EXCHANGE
+    // legs skip the overlap checks (own lifecycle) but keep the duplicate
+    // guard — the check runs on the caller's client (tx-aware).
+    await assertReturnEligible(db, dto.orderId, { type: dto.type, items });
+    await assertNoDuplicateReturn(db, dto.orderId, dto.type, items);
 
     const displayId = tx
       ? await this.generateDisplayIdInTx(tx)
@@ -226,6 +240,10 @@ export class ReturnsService {
    * mark-received path and the reconcile auto-path (full returns only — the
    * reconcile never calls this for partials: the courier never reports the
    * split, so the kept part must NOT restock until staff confirm quantities).
+   *
+   * Hardening (2): the movement itself runs through restoreStockForReturnTx —
+   * the single guarded stock core (flag + status set in the SAME transaction
+   * as the movement; double calls are no-ops).
    */
   async restockReturn(
     id: string,
@@ -248,34 +266,38 @@ export class ReturnsService {
     }
 
     const performedBy = opts?.performedBy;
-    const orderId = (ret as any).orderId as string;
-    const finalRow = await this.prisma.$transaction(async (tx) => {
-      if ((ret as any).status !== 'RECEIVED') {
-        await tx.return.update({ where: { id }, data: { status: 'RECEIVED' as any } });
-      }
-      await this.cancelReturnStock.restoreForReturnItems({
-        orderId,
-        items: effectiveItems,
-        returnId: id,
-        performedBy,
-        tx: tx as Prisma.TransactionClient,
-      });
-      return tx.return.update({
-        where: { id },
-        data: {
-          status: 'RESTOCKED' as any,
-          items: effectiveItems as unknown as Prisma.InputJsonValue,
-          stockReconciled: true,
-          stockReconciledAt: new Date(),
-        },
-      });
-    });
+    const finalRow = await this.prisma.$transaction(async (tx) =>
+      restoreStockForReturnTx(
+        { db: tx, cancelReturnStock: this.cancelReturnStock },
+        id,
+        { items: effectiveItems, performedBy },
+      ),
+    );
     this.logger.log(
       `Return ${(ret as any).displayId ?? id} RESTOCKED — ` +
         `${effectiveItems.length} item line(s) restored` +
         `${performedBy ? ` by=${performedBy}` : ''}`,
     );
     return finalRow;
+  }
+
+  /**
+   * Hardening (2) STOCK AUTHORITY funnel: every restore caller that does not
+   * already hold the row's items goes through here — mark-received (via
+   * restockReturn), courier reconcile (via restockReturn), scan receive and
+   * manual order-Returned all converge on restoreStockForReturnTx. The ORDER
+   * is never touched here (status-only downstream).
+   */
+  async restoreStockForReturn(
+    returnId: string,
+    opts?: { items?: ReturnItemInput[]; performedBy?: string },
+  ) {
+    const ret = await this.load(returnId);
+    return this.restockReturn(returnId, {
+      ...(opts?.items ? { items: opts.items } : {}),
+      ...(opts?.performedBy ? { performedBy: opts.performedBy } : {}),
+      current: ret,
+    });
   }
 
   // ------------------------------------------------------------- transitions
@@ -332,8 +354,14 @@ export class ReturnsService {
    * First courier signal for (order, courier) → create a COURIER Return
    * (status REQUESTED, empty items — the split is unknown). Later signals →
    * update courierStatus only; courierReturnId is set-once, never clobbered.
+   *
+   * Hardening (1): deliberately skips assertReturnEligible —
+   * COURIER_GUARD_SKIP_REASON (see return-guard.ts). Abuse is impossible
+   * downstream: stock moves only via restoreStockForReturnTx (flag-guarded,
+   * item-scoped), and a repeat signal re-resolves to this same row.
    */
   async upsertCourierReturn(input: UpsertCourierReturnInput) {
+    void COURIER_GUARD_SKIP_REASON;
     const order = await this.prisma.order.findUnique({ where: { id: input.orderId } });
     if (!order || (order as any).trashedAt) {
       throw new NotFoundException(`Order not found: ${input.orderId}`);
@@ -378,32 +406,7 @@ export class ReturnsService {
    * standalone lines as-is; combo lines expanded to their component products.
    */
   async orderItemsSnapshot(orderId: string): Promise<ReturnItemInput[]> {
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
-      include: {
-        items: {
-          select: { id: true, productId: true, variantId: true, quantity: true, comboId: true },
-        },
-      },
-    });
-    if (!order) throw new NotFoundException(`Order not found: ${orderId}`);
-    const out: ReturnItemInput[] = [];
-    for (const item of (order as any).items ?? []) {
-      if (!item.comboId && item.productId) {
-        out.push({ productId: item.productId, variantId: item.variantId ?? null, quantity: item.quantity });
-        continue;
-      }
-      if (item.comboId) {
-        const snaps = await this.prisma.orderItemComboComponent.findMany({
-          where: { orderItemId: item.id },
-          select: { productId: true, variantId: true, totalQuantity: true },
-        });
-        for (const s of snaps as any[]) {
-          out.push({ productId: s.productId, variantId: s.variantId ?? null, quantity: s.totalQuantity });
-        }
-      }
-    }
-    return out;
+    return orderItemsSnapshotForClient(this.prisma, orderId);
   }
 
   // ------------------------------------------------------------------ helpers
@@ -447,21 +450,7 @@ export class ReturnsService {
   }
 
   private validateItems(items: unknown): ReturnItemInput[] {
-    if (!Array.isArray(items)) throw new BadRequestException('Return items must be an array');
-    const seen = new Set<string>();
-    return (items as ReturnItemInput[]).map((it, i) => {
-      const productId = String((it as any)?.productId ?? '').trim();
-      const variantId = (it as any)?.variantId ? String((it as any).variantId) : null;
-      const quantity = Number((it as any)?.quantity);
-      if (!productId) throw new BadRequestException(`Return items[${i}].productId is required`);
-      if (!Number.isInteger(quantity) || quantity <= 0) {
-        throw new BadRequestException(`Return items[${i}].quantity must be a positive integer`);
-      }
-      const key = `${productId}::${variantId ?? ''}`;
-      if (seen.has(key)) throw new BadRequestException(`Duplicate return line: ${productId}`);
-      seen.add(key);
-      return { productId, variantId, quantity };
-    });
+    return validateReturnItemsShape(items);
   }
 
   /**
@@ -469,21 +458,7 @@ export class ReturnsService {
    * ReturnCounter so order numbering never shifts).
    */
   private async generateDisplayId(): Promise<string> {
-    const { year, month, day } = dhakaDateParts();
-    const yy = String(year).slice(2);
-    const mm = String(month).padStart(2, '0');
-    const dd = String(day).padStart(2, '0');
-    const dateStr = `${yy}${mm}${dd}`;
-    const prefix = `RTN-${dateStr}`;
-
-    return this.prisma.$transaction(async (tx) => {
-      const counter = await tx.returnCounter.upsert({
-        where: { date: dateStr },
-        create: { date: dateStr, seq: 1 },
-        update: { seq: { increment: 1 } },
-      });
-      return `${prefix}-${String(counter.seq).padStart(4, '0')}`;
-    });
+    return this.prisma.$transaction(async (tx) => generateReturnDisplayId(tx));
   }
 
   /**
@@ -491,16 +466,6 @@ export class ReturnsService {
    * atomic — no nested $transaction, which interactive tx clients forbid).
    */
   private async generateDisplayIdInTx(tx: Prisma.TransactionClient): Promise<string> {
-    const { year, month, day } = dhakaDateParts();
-    const yy = String(year).slice(2);
-    const mm = String(month).padStart(2, '0');
-    const dd = String(day).padStart(2, '0');
-    const dateStr = `${yy}${mm}${dd}`;
-    const counter = await tx.returnCounter.upsert({
-      where: { date: dateStr },
-      create: { date: dateStr, seq: 1 },
-      update: { seq: { increment: 1 } },
-    });
-    return `RTN-${dateStr}-${String(counter.seq).padStart(4, '0')}`;
+    return generateReturnDisplayId(tx);
   }
 }

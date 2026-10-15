@@ -32,8 +32,18 @@ export const EXCHANGE_ALLOWED_ORIGINAL_STATUSES: readonly string[] = [
 export type SettlementStatus = 'SETTLED_DUE' | 'SETTLED_EXACT' | 'SETTLED_REFUND';
 
 export interface ExchangeSettlement {
-  /** What the customer actually paid on the ORIGINAL order. */
+  /**
+   * Hardening (4): the paid figure settlement ran on — paidConfirmed when the
+   * dialog supplied one, else the recorded Σ PAID. due(exchange) =
+   * total − this figure (capped at the bill).
+   */
   originalPaid: number;
+  /** Recorded Σ PAID on the original (before any dialog adjustment). */
+  recordedPaid: number;
+  /** Dialog-confirmed figure, or null when the recorded figure was used. */
+  paidConfirmed: number | null;
+  /** Why the confirmed figure differs (null when it does not). */
+  paidAdjustmentReason: string | null;
   /** Credit still available to this exchange (paid minus siblings' usage). */
   availableCredit: number;
   /** The freshly computed exchange bill. */
@@ -391,6 +401,30 @@ export class ExchangeService {
     const displayId = await this.deriveExchangeDisplayId();
     const now = new Date().toISOString();
 
+    // Hardening (4): the dialog confirms what the customer paid. Recorded Σ
+    // PAID stays the default; a differing confirmed figure needs a reason
+    // (fail-closed — silent money adjustments are never allowed).
+    const recordedAgg = await this.prisma.payment.aggregate({
+      where: { orderId: original.id, status: 'PAID' },
+      _sum: { amount: true },
+    });
+    const recordedPaid = Number(recordedAgg._sum.amount || 0);
+    const paidConfirmed = dto.paidConfirmed ?? null;
+    if (paidConfirmed !== null && Math.abs(paidConfirmed - recordedPaid) > 0.005) {
+      const reason = (dto.paidAdjustmentReason ?? '').trim();
+      if (!reason) {
+        throw new BadRequestException(
+          `paidConfirmed (${paidConfirmed}) differs from recorded payments (${recordedPaid}) — ` +
+            `provide paidAdjustmentReason explaining the difference.`,
+        );
+      }
+    }
+    const effectivePaid = paidConfirmed ?? recordedPaid;
+    const paidAdjustmentReason =
+      paidConfirmed !== null && Math.abs(paidConfirmed - recordedPaid) > 0.005
+        ? ((dto.paidAdjustmentReason ?? '').trim() || null)
+        : null;
+
     try {
       const result = await this.prisma.$transaction(async (tx) => {
         const confirmed = await tx.orderStatus.findUnique({
@@ -481,7 +515,60 @@ export class ExchangeService {
         }
 
         // ---- Settlement against the original's ACTUAL payments (§4) ------
-        const settlement = await this.settle(tx, original, total, created.id, actor, now);
+        const settlement = await this.settle(
+          tx,
+          original,
+          total,
+          created.id,
+          actor,
+          now,
+          { effectivePaid, recordedPaid, paidConfirmed, paidAdjustmentReason },
+        );
+
+        // ---- Transfer-linked payment rows (hardening 4) --------------------
+        // The reallocation is recorded transparently: ONE PAID row on the
+        // EXCHANGE (gateway 'exchange_transfer', sourceOrderId = original,
+        // sourcePaymentId = largest PAID row of the original (null when none),
+        // appliedCreditAmount NULL). D-C actuals-only ledger: coverage comes
+        // from `amount` alone — mirroring the customer_credit row convention —
+        // so the same taka is never double-counted, and due(exchange) =
+        // total − ΣPAID(exchange) holds for every reader. The ORIGINAL's rows
+        // are never touched (its financials are append-only history).
+        if (settlement.creditApplied > 0) {
+          let transferSourcePaymentId: string | null = null;
+          try {
+            const largest = await tx.payment.findFirst({
+              where: { orderId: original.id, status: 'PAID' },
+              orderBy: { amount: 'desc' },
+            });
+            transferSourcePaymentId = (largest as any)?.id ?? null;
+          } catch {
+            transferSourcePaymentId = null;
+          }
+          await tx.payment.create({
+            data: {
+              orderId: created.id,
+              gatewayCode: 'exchange_transfer',
+              account: 'exchange_transfer',
+              amount: settlement.creditApplied,
+              appliedCreditAmount: null,
+              status: 'PAID',
+              sourceOrderId: original.id,
+              sourcePaymentId: transferSourcePaymentId,
+              recordedBy: `staff:${actor.userId}`,
+              submittedBy: `staff:${actor.userId}`,
+              verifiedBy: actor.userId,
+              verifiedAt: new Date(now),
+              recordedAt: new Date(now),
+              notes:
+                `Credit transferred from ${original.displayId} ` +
+                `(recorded paid ${recordedPaid}` +
+                (paidConfirmed !== null ? `, confirmed ${paidConfirmed}` : '') +
+                `, applied ${settlement.creditApplied})` +
+                (paidAdjustmentReason ? ` — ${paidAdjustmentReason}` : ''),
+            },
+          });
+        }
 
         // ---- Return(EXCHANGE) leg (Task 4 Fix 8) --------------------------
         // The return leg is a Return RECORD, never a phantom Order. Created in
@@ -557,12 +644,14 @@ export class ExchangeService {
     exchangeId: string,
     actor: ExchangeActor,
     now: string,
+    paid: {
+      effectivePaid: number;
+      recordedPaid: number;
+      paidConfirmed: number | null;
+      paidAdjustmentReason: string | null;
+    },
   ): Promise<ExchangeSettlement> {
-    const paidAgg = await tx.payment.aggregate({
-      where: { orderId: original.id, status: 'PAID' },
-      _sum: { amount: true },
-    });
-    const originalPaid = Number(paidAgg._sum.amount || 0);
+    const originalPaid = paid.effectivePaid;
 
     // Credit already consumed by SIBLING exchanges of this same original.
     const priorAgg = await tx.order.aggregate({
@@ -573,6 +662,16 @@ export class ExchangeService {
 
     const available = Math.max(0, originalPaid - priorCredit);
     const creditApplied = Math.min(available, exchangeTotal);
+
+    // MED transfer-leg cap: creditApplied must never exceed the RECORDED Σ
+    // PAID unless an adjustment reason justifies the inflated effectivePaid
+    // (fail-closed — silent money creation is never allowed).
+    if (!paid.paidAdjustmentReason && priorCredit + creditApplied > paid.recordedPaid + 0.005) {
+      throw new BadRequestException(
+        `Exchange credit (${creditApplied}) exceeds recorded payments (${paid.recordedPaid}) — ` +
+          `provide paidAdjustmentReason explaining the difference.`,
+      );
+    }
 
     // Requirements §4, read literally:
     //   exchange > paid  → the DIFFERENCE is Due for collection
@@ -604,6 +703,19 @@ export class ExchangeService {
     if (status === 'SETTLED_REFUND') {
       // Money comes back from the ORIGINAL (it is the original's collection
       // being returned), linked to this exchange and to the exact payment.
+      // Hardening (4): sourcePaymentId names the largest PAID row the money
+      // came back from (best-effort, null when the original has no payments)
+      // so the refund reconciles against the exact collection.
+      let sourcePaymentId: string | null = null;
+      try {
+        const largest = await tx.payment.findFirst({
+          where: { orderId: original.id, status: 'PAID' },
+          orderBy: { amount: 'desc' },
+        });
+        sourcePaymentId = (largest as any)?.id ?? null;
+      } catch {
+        sourcePaymentId = null;
+      }
       const refund = await tx.refund.create({
         data: {
           orderId: original.id,
@@ -611,6 +723,7 @@ export class ExchangeService {
           reason: `Exchange ${exchangeId} unused credit refund`,
           status: 'pending',
           exchangeOrderId: exchangeId,
+          sourcePaymentId,
           notes: `Settlement refund for exchange against ${original.displayId}.`,
         },
       });
@@ -635,7 +748,12 @@ export class ExchangeService {
         visibility: 'private',
         timestamp: now,
         note:
-          `Settlement vs ${original.displayId}: paid ৳${originalPaid}, credit available ৳${available}, ` +
+          `Settlement vs ${original.displayId}: paid ৳${originalPaid} ` +
+          `(recorded ৳${paid.recordedPaid}` +
+          (paid.paidConfirmed !== null
+            ? `, confirmed ৳${paid.paidConfirmed}${paid.paidAdjustmentReason ? ` — ${paid.paidAdjustmentReason}` : ''}`
+            : '') +
+          `), credit available ৳${available}, ` +
           `applied ৳${creditApplied}, exchange total ৳${exchangeTotal}, ` +
           (status === 'SETTLED_DUE'
             ? `collect ৳${delta.toFixed(2)}.`
@@ -646,7 +764,18 @@ export class ExchangeService {
       },
     ]);
 
-    return { originalPaid, availableCredit: available, exchangeTotal, creditApplied, delta, status, refundId };
+    return {
+      originalPaid,
+      recordedPaid: paid.recordedPaid,
+      paidConfirmed: paid.paidConfirmed,
+      paidAdjustmentReason: paid.paidAdjustmentReason,
+      availableCredit: available,
+      exchangeTotal,
+      creditApplied,
+      delta,
+      status,
+      refundId,
+    };
   }
 
   /**

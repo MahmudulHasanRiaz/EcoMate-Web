@@ -5,9 +5,11 @@ import { HandedOverPurpose } from './purposes/handed-over.purpose';
 import { ReturnPurpose } from './purposes/return.purpose';
 import { OrderStatusPurpose } from './purposes/order-status.purpose';
 import { StickerPrintPurpose } from './purposes/sticker-print.purpose';
+import { ReturnReceivePurpose } from './purposes/return-receive.purpose';
 import { DispatchModule } from '../dispatch/dispatch.module';
 import { RtnModule } from '../rtn/rtn.module';
 import { OrdersModule } from '../orders/orders.module';
+import { ReturnsModule } from '../returns/returns.module';
 
 @Module({
   controllers: [ScannerController],
@@ -17,6 +19,7 @@ import { OrdersModule } from '../orders/orders.module';
     ReturnPurpose,
     OrderStatusPurpose,
     StickerPrintPurpose,
+    ReturnReceivePurpose,
     {
       provide: SCAN_PURPOSE_HANDLERS,
       useFactory: (
@@ -24,10 +27,11 @@ import { OrdersModule } from '../orders/orders.module';
         returnPurpose: ReturnPurpose,
         orderStatus: OrderStatusPurpose,
         stickerPrint: StickerPrintPurpose,
-      ) => [handedOver, returnPurpose, orderStatus, stickerPrint],
-      inject: [HandedOverPurpose, ReturnPurpose, OrderStatusPurpose, StickerPrintPurpose],
+        returnReceive: ReturnReceivePurpose,
+      ) => [handedOver, returnPurpose, orderStatus, stickerPrint, returnReceive],
+      inject: [HandedOverPurpose, ReturnPurpose, OrderStatusPurpose, StickerPrintPurpose, ReturnReceivePurpose],
     },
   ],
-  imports: [DispatchModule, RtnModule, OrdersModule],
+  imports: [DispatchModule, RtnModule, OrdersModule, ReturnsModule],
 })
 export class ScannerModule {}

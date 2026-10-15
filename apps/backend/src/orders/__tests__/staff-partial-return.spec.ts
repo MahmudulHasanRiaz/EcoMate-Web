@@ -298,6 +298,49 @@ describe('OrdersService — staff-partial flow (Task 5 Fix 9)', () => {
       expect(prisma.return.create).not.toHaveBeenCalled();
     });
 
+    it('hardening (1): an active FULL return blocks a second staff partial', async () => {
+      prisma.order.findUnique.mockResolvedValue(makeOrder(shippingStatus));
+      prisma.return.findMany.mockResolvedValue([
+        {
+          id: 'ret-full',
+          displayId: 'RTN-261014-0001',
+          orderId: 'order-1',
+          type: 'FULL',
+          status: 'REQUESTED',
+          items: [],
+          createdAt: new Date('2026-10-01T00:00:00Z'),
+        },
+      ]);
+      await expect(
+        (service as any).createStaffPartialReturn('order-1', { items }, actor),
+      ).rejects.toThrow(/already has an active return RTN-261014-0001/);
+      expect(prisma.return.create).not.toHaveBeenCalled();
+    });
+
+    it('hardening (1): requested qty is capped at ordered − already-returned', async () => {
+      prisma.order.findUnique.mockResolvedValue(makeOrder(shippingStatus));
+      prisma.return.findMany.mockResolvedValue([
+        {
+          id: 'ret-p1',
+          displayId: 'RTN-261014-0002',
+          orderId: 'order-1',
+          type: 'PARTIAL',
+          status: 'REQUESTED',
+          items: [{ productId: 'prod-1', variantId: null, quantity: 1 }],
+          createdAt: new Date('2026-10-01T00:00:00Z'),
+        },
+      ]);
+      // prod-1 ordered ×2, returned ×1 → only 1 left; requesting 2 fails.
+      await expect(
+        (service as any).createStaffPartialReturn(
+          'order-1',
+          { items: [{ productId: 'prod-1', variantId: null, quantity: 2 }] },
+          actor,
+        ),
+      ).rejects.toThrow(/Only 1 left to return/);
+      expect(prisma.return.create).not.toHaveBeenCalled();
+    });
+
     it('rejects empty items', async () => {
       prisma.order.findUnique.mockResolvedValue(makeOrder(shippingStatus));
       await expect(

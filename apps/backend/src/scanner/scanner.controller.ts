@@ -50,6 +50,8 @@ export class ScannerController {
         orderId: dto.orderId,
         orderIds: dto.orderIds,
         targetStatusId: dto.targetStatusId,
+        returnId: dto.returnId,
+        exchangeId: dto.exchangeId,
       },
       { userId: user.userId, email: user.email },
     );

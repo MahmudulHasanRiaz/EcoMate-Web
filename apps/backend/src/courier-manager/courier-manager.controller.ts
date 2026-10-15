@@ -212,8 +212,11 @@ export class CourierManagerController {
 
   // ── Task 8: Steadfast hybrid credential sets (labels only — keys NEVER
   // shown; list meta carries hasApiKey/hasSecret/hasWebhook flags only). ──
+  // Hardening (5a): an unwired sets provider degrades to [] (settings UI
+  // renders "no accounts"), never an unhandled 500.
   @Get('credential-sets')
   async listCredentialSets() {
+    if (!this.sets) return [];
     return this.requireSets().listSets();
   }
 

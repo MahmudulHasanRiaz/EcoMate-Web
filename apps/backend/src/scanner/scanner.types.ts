@@ -11,7 +11,8 @@ export type ScanPurposeId =
   | 'DISPATCH_HANDED_OVER'
   | 'DISPATCH_RETURN'
   | 'ORDER_STATUS'
-  | 'STICKER_PRINT';
+  | 'STICKER_PRINT'
+  | 'RETURN_RECEIVE';
 
 export interface ScanActor {
   userId: string;
@@ -60,6 +61,20 @@ export interface ResolveOutcome {
   message?: string;
   dispatches: DispatchPreview[];
   order: OrderPreview | null;
+  /**
+   * Hardening (3): linked returns/exchanges for an order barcode. Exactly
+   * one → the receiver; several → the phase-2 picker list; absent on
+   * not_found. The order itself is never a candidate — it is never marked.
+   */
+  linked?: ScanLinkedCandidate[];
+}
+
+/** One linked return or exchange leg offered to the phase-2 picker. */
+export interface ScanLinkedCandidate {
+  kind: 'return' | 'exchange';
+  id: string;
+  displayId: string;
+  status: string;
 }
 
 export type ScanResultStatus = 'success' | 'warning' | 'error' | 'duplicate';
@@ -88,6 +103,8 @@ export interface ScanPurposeHandler {
       dispatchId?: string;
       orderId?: string;
       targetStatusId?: string;
+      returnId?: string;
+      exchangeId?: string;
     },
     actor: ScanActor,
   ): Promise<ScanResult>;

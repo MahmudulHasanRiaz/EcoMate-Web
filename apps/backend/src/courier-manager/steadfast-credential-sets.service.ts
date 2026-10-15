@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -63,6 +64,8 @@ function toMeta(row: any): SteadfastSetMeta {
 
 @Injectable()
 export class SteadfastCredentialSetsService {
+  private readonly logger = new Logger(SteadfastCredentialSetsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly encryption: EncryptionService,
@@ -123,12 +126,25 @@ export class SteadfastCredentialSetsService {
 
   /** Labels + flags only — keys NEVER leave the server. */
   async listSets(): Promise<SteadfastSetMeta[]> {
-    const rows =
-      (await this.sets.findMany({
-        where: { courier: STEADFAST },
-        orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
-      })) ?? [];
-    return rows.map(toMeta);
+    // Hardening (5a): zero/unavailable sets → [], never an unhandled 500.
+    // A missing model (legacy DB / unwired provider surface) or a failing
+    // query degrades to "no accounts configured" so settings UI renders
+    // instead of crashing.
+    try {
+      const delegate = (this.prisma as any)?.courierCredentialSet;
+      if (typeof delegate?.findMany !== 'function') return [];
+      const rows =
+        (await delegate.findMany({
+          where: { courier: STEADFAST },
+          orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+        })) ?? [];
+      return rows.map(toMeta);
+    } catch (err) {
+      this.logger.warn(
+        `credential-sets list degraded to []: ${(err as Error)?.message}`,
+      );
+      return [];
+    }
   }
 
   async createSet(input: {

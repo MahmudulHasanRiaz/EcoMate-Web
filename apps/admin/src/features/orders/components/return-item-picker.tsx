@@ -15,14 +15,25 @@ export function ReturnItemPicker({
   items,
   value,
   onChange,
+  maxQty,
 }: {
   items: any[]
   value: Record<string, number>
   onChange: (v: Record<string, number>) => void
+  /**
+   * Per-order-line caps (ordered − already-returned, see
+   * return-remaining.ts). Absent lines fall back to the ordered quantity
+   * (legacy behavior).
+   */
+  maxQty?: Record<string, number>
 }) {
   const lines = (items ?? []).filter((i: any) => i.productId)
   if (lines.length === 0) {
     return <p className='text-xs text-muted-foreground py-2'>No returnable lines on this order.</p>
+  }
+  const capOf = (item: any) => {
+    const cap = maxQty?.[item.id]
+    return typeof cap === 'number' ? Math.max(0, Math.min(cap, item.quantity)) : item.quantity
   }
   return (
     <div className='rounded-lg border border-border overflow-hidden'>
@@ -39,7 +50,8 @@ export function ReturnItemPicker({
           {lines.map((item: any) => {
             const name = item.product?.name ?? 'Item'
             const qty = value[item.id] ?? 0
-            const remaining = item.quantity - qty
+            const max = capOf(item)
+            const remaining = max - qty
             return (
               <TableRow key={item.id}>
                 <TableCell>
@@ -62,9 +74,9 @@ export function ReturnItemPicker({
                     <span className={`text-sm w-8 text-center font-medium ${qty > 0 ? 'text-pink-500' : 'text-muted-foreground'}`}>{qty}</span>
                     <Button
                       variant='outline' size='icon' className='h-7 w-7'
-                      disabled={qty >= item.quantity}
+                      disabled={qty >= max}
                       aria-label={`Increase return quantity for ${name}`}
-                      onClick={() => onChange({ ...value, [item.id]: Math.min(item.quantity, qty + 1) })}
+                      onClick={() => onChange({ ...value, [item.id]: Math.min(max, qty + 1) })}
                     ><Plus className='h-3 w-3' /></Button>
                   </div>
                 </TableCell>

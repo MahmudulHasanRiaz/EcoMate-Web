@@ -60,6 +60,13 @@ import { CacheService } from '../cache/cache.service';
 import { OrderStaffPerformanceService } from './order-staff-performance.service';
 import { CommissionEngineService } from '../commissions/commission-engine.service';
 import { CodMismatchService } from '../cod-mismatch/cod-mismatch.service';
+import {
+  assertNoDuplicateReturn,
+  assertReturnEligible,
+  generateReturnDisplayId,
+  orderItemsSnapshotForClient,
+  restoreStockForReturnTx,
+} from '../returns/return-guard';
 
 // Order-status transition rules live in one place — the runtime gate and the
 // seed share the same map (see order-transitions.ts for the Partial rule).
@@ -74,6 +81,13 @@ export { ORDER_TRANSITIONS };
  * Task 5 (Fix 9, owner-locked Rule 15): the staff-partial button lives on
  * Shipping AND Partial orders only. Every other status 400s (the menu mirrors
  * this with a disabled reason; the backend enforces it).
+ *
+ * COHERENT BY DESIGN (review MED status-sets): this flow endpoint allows
+ * {Shipping, Partial} while the unified guard (RETURN_ELIGIBLE_STATUSES in
+ * returns/return-guard.ts) allows {Shipping, Partial, Delivered}. Delivered
+ * partials go via the unified dialog only (POST /returns PARTIAL) — the flow
+ * endpoint auto-moves Shipping→Partial / marks instant-delivery, which must
+ * never run on an already-Delivered order.
  */
 export const STAFF_PARTIAL_ALLOWED_STATUSES: readonly string[] = [
   'Shipping',
@@ -3867,6 +3881,13 @@ export class OrdersService {
       }[],
     );
 
+    // Hardening (1): the shared eligibility guard — an active FULL blocks a
+    // second partial, and requested lines are capped at ordered − returned
+    // (not just ordered). Courier-driven creation skips this on purpose (see
+    // COURIER_GUARD_SKIP_REASON); staff creation never does.
+    await assertReturnEligible(this.prisma, orderId, { type: 'PARTIAL', items });
+    await assertNoDuplicateReturn(this.prisma, orderId, 'PARTIAL', items);
+
     const displayId = await this.generateStaffPartialDisplayId();
     const ret = await (this.prisma as any).return.create({
       data: {
@@ -5418,12 +5439,78 @@ export class OrdersService {
     orderId: string,
     performedBy?: string,
   ) {
-    await this.cancelReturnStock.restoreForOrder({
-      orderId,
-      referencePrefix: 'return',
-      performedBy,
-      tx,
-    });
+    // Hardening (2) STOCK AUTHORITY: a status change NEVER writes stock
+    // directly. Manual mark-Returned goes find-or-create linked Return →
+    // guarded receive (restoreStockForReturnTx — flag + status in the SAME
+    // tx as the movement; reconciled rows are no-ops, so an already-received
+    // full return moves to Returned with ZERO stock writes here).
+    const db = tx as any;
+    const all = ((await db.return.findMany({
+      where: { orderId },
+      orderBy: { createdAt: 'asc' },
+    })) ?? []) as any[];
+    const active = all.filter((r) => r?.status !== 'CLOSED');
+    const arrived = (r: any) =>
+      r?.status === 'RECEIVED' || r?.status === 'RESTOCKED' || !!r?.stockReconciled;
+    const unarrived = active.filter((r) => !arrived(r));
+    if (unarrived.length > 0) {
+      const first = unarrived[0];
+      throw new BadRequestException(
+        `Cannot mark Returned yet — return ${first.displayId ?? first.id} ` +
+          `has not arrived (needs RECEIVED or RESTOCKED).`,
+      );
+    }
+    const reconciledHistory = all.some(
+      (r) => r?.status === 'RESTOCKED' || !!r?.stockReconciled,
+    );
+    let targets = active.filter(
+      (r) => !r?.stockReconciled && r?.status !== 'RESTOCKED',
+    );
+    if (targets.length === 0 && active.length === 0 && !reconciledHistory) {
+      // Find-or-create: no linked return and nothing ever reconciled — the
+      // legacy manual path. Auto-create ONE FULL return scoped to the order's
+      // items, then receive it through the guarded path below.
+      const snapshot = await orderItemsSnapshotForClient(tx, orderId);
+      if (snapshot.length > 0) {
+        const created = await db.return.create({
+          data: {
+            orderId,
+            displayId: await generateReturnDisplayId(tx),
+            type: 'FULL',
+            status: 'REQUESTED',
+            source: 'STAFF',
+            items: snapshot,
+            reason: 'Auto-created on manual Returned confirmation',
+          },
+        });
+        targets = [created];
+        this.logger.log(
+          `Order ${orderId} manually marked Returned with no linked return — ` +
+            `auto-created ${(created as any)?.displayId ?? (created as any)?.id} ` +
+            `(type=FULL, source=STAFF).`,
+        );
+      }
+    }
+    for (const target of targets) {
+      const rowItems = Array.isArray(target?.items) ? target.items : [];
+      if (rowItems.length === 0 && target?.type !== 'FULL') {
+        // Unknown split on a partial leg — staff confirm exact quantities via
+        // mark-received. Never fabricate a full-order snapshot for a PARTIAL.
+        this.logger.warn(
+          `Order ${orderId} marked Returned with an item-less ${target?.type} return ` +
+            `${target?.displayId ?? target?.id} — stock held for staff confirmation.`,
+        );
+        continue;
+      }
+      const items =
+        rowItems.length > 0 ? rowItems : await orderItemsSnapshotForClient(tx, orderId);
+      if (items.length === 0) continue;
+      await restoreStockForReturnTx(
+        { db: tx, cancelReturnStock: this.cancelReturnStock },
+        target.id,
+        { items, performedBy },
+      );
+    }
   }
 
   /**

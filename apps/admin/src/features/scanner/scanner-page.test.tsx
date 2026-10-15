@@ -34,6 +34,7 @@ const purposes = [
   { purpose: 'DISPATCH_RETURN', label: 'Dispatch → Return', description: 'd2' },
   { purpose: 'ORDER_STATUS', label: 'Order → Status Update', description: 'd3' },
   { purpose: 'STICKER_PRINT', label: 'Sticker Print', description: 'd4' },
+  { purpose: 'RETURN_RECEIVE', label: 'Return / Exchange Receive', description: 'd5' },
 ]
 
 async function renderPage() {
@@ -462,5 +463,91 @@ describe('Scanner page', () => {
     const page = await renderPage()
     await scanText(page, 'CONS-1')
     expect(page.getByText('Md. Rahim · ORD-260930-0001', { exact: false })).not.toBeNull()
+  })
+
+  it('RETURN_RECEIVE shows the backend No-active message when nothing is linked', async () => {
+    mockPost.mockImplementation((url: string) => {
+      if (url === '/scanner/resolve') {
+        return Promise.resolve({
+          data: {
+            status: 'not_found', identifier: 'ORD-1', dispatches: [],
+            order: orderPreview('o1', 'ORD-1', []),
+            linked: [],
+            message: 'No active return/exchange for this order.',
+          },
+        })
+      }
+      return Promise.resolve({ data: {} })
+    })
+    const page = await renderPage()
+    await userEvent.selectOptions(page.getByRole('combobox'), 'RETURN_RECEIVE')
+    await scanText(page, 'ORD-1')
+    expect(page.getByText('No active return/exchange for this order.', { exact: false })).not.toBeNull()
+    expect(mockPost.mock.calls.filter((c) => c[0] === '/scanner/scan')).toHaveLength(0)
+  })
+
+  it('RETURN_RECEIVE receives the single linked return at once (order never marked)', async () => {
+    mockPost.mockImplementation((url: string) => {
+      if (url === '/scanner/resolve') {
+        return Promise.resolve({
+          data: {
+            status: 'resolved', identifier: 'ORD-1', dispatches: [],
+            order: orderPreview('o1', 'ORD-1', []),
+            linked: [{ kind: 'return', id: 'ret-1', displayId: 'RTN-1', status: 'REQUESTED' }],
+            message: 'One active return RTN-1 is linked to this order — ready to receive.',
+          },
+        })
+      }
+      return Promise.resolve({
+        data: {
+          status: 'success', identifier: 'ORD-1', title: 'RTN-1 — Received',
+          message: 'Return received and restocked (idempotent per return).',
+          details: { returnId: 'ret-1', returnDisplayId: 'RTN-1', orderId: 'o1' },
+        },
+      })
+    })
+    const page = await renderPage()
+    await userEvent.selectOptions(page.getByRole('combobox'), 'RETURN_RECEIVE')
+    await scanText(page, 'ORD-1')
+    const scanCall = mockPost.mock.calls.find((c) => c[0] === '/scanner/scan')
+    expect(scanCall?.[1]?.returnId).toBe('ret-1')
+    expect(scanCall?.[1]?.orderId).toBeUndefined()
+    expect(page.getByText('RTN-1 — Received')).not.toBeNull()
+  })
+
+  it('RETURN_RECEIVE offers a picker when several legs are linked', async () => {
+    mockPost.mockImplementation((url: string) => {
+      if (url === '/scanner/resolve') {
+        return Promise.resolve({
+          data: {
+            status: 'selection_required', identifier: 'ORD-1', dispatches: [],
+            order: orderPreview('o1', 'ORD-1', []),
+            linked: [
+              { kind: 'return', id: 'ret-1', displayId: 'RTN-1', status: 'REQUESTED' },
+              { kind: 'exchange', id: 'ex-1', displayId: 'ORD-EX-1', status: 'Shipping' },
+            ],
+            message: 'Multiple returns/exchanges are linked to this order. Select one to continue.',
+          },
+        })
+      }
+      return Promise.resolve({
+        data: {
+          status: 'success', identifier: 'ORD-1', title: 'RTN-1 — Received',
+          message: 'Return received and restocked (idempotent per return).',
+          details: { returnId: 'ret-1' },
+        },
+      })
+    })
+    const page = await renderPage()
+    await userEvent.selectOptions(page.getByRole('combobox'), 'RETURN_RECEIVE')
+    await scanText(page, 'ORD-1')
+    // Picker lists both legs; no execute fired yet.
+    expect(page.getByText('RTN-1', { exact: true })).not.toBeNull()
+    expect(page.getByText('ORD-EX-1', { exact: true })).not.toBeNull()
+    expect(mockPost.mock.calls.filter((c) => c[0] === '/scanner/scan')).toHaveLength(0)
+    await userEvent.click(page.getByRole('button', { name: 'Select RTN-1' }))
+    const scanCall = mockPost.mock.calls.find((c) => c[0] === '/scanner/scan')
+    expect(scanCall?.[1]?.returnId).toBe('ret-1')
+    expect(page.getByText('RTN-1 — Received')).not.toBeNull()
   })
 })

@@ -82,4 +82,17 @@ export class CreateExchangeOrderDto {
 
   @IsOptional() @IsString() @MaxLength(2000)
   officeNotes?: string;
+
+  /**
+   * Hardening (4): what the customer confirmed they paid on the ORIGINAL
+   * (the dialog confirms it). Drives settlement instead of the recorded Σ
+   * when present. When it differs from recorded payments, paidAdjustmentReason
+   * is required (enforced in the service).
+   */
+  @IsOptional() @IsNumber() @Min(0)
+  paidConfirmed?: number;
+
+  /** Why paidConfirmed differs from the recorded payments (max 500 chars). */
+  @IsOptional() @IsString() @MaxLength(500)
+  paidAdjustmentReason?: string;
 }

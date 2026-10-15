@@ -406,6 +406,7 @@ describe('OrdersService', () => {
           provide: CancelReturnStockService,
           useValue: {
             restoreForOrder: jest.fn().mockResolvedValue(undefined),
+            restoreForReturnItems: jest.fn().mockResolvedValue({ restored: [] }),
             holdReservationForReturnPending: jest.fn().mockResolvedValue(undefined),
           },
         },
@@ -3496,7 +3497,7 @@ describe('OrdersService', () => {
       expect(prisma.order.update).not.toHaveBeenCalled();
     });
 
-    it('allows a manual staff transition to Returned and runs restore side effects', async () => {
+    it('allows a manual staff transition to Returned via find-or-create + guarded restore', async () => {
       const returnPendingOrder = {
         ...mockOrder,
         status: { ...mockInitialStatus, name: 'Return Pending' },
@@ -3520,6 +3521,22 @@ describe('OrdersService', () => {
       });
       (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
       (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+      // No linked return → the status change auto-creates ONE FULL return and
+      // receives it through the guarded path (hardening 2 — no direct write).
+      let createdReturn: any = null;
+      ((prisma as any).return.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma as any).return.create = jest.fn().mockImplementation(async ({ data }: any) => {
+        createdReturn = { id: 'ret-auto', displayId: 'RTN-1', createdAt: new Date(), stockReconciled: false, ...data };
+        return createdReturn;
+      });
+      (prisma as any).return.findUnique = jest.fn().mockImplementation(async () => createdReturn);
+      (prisma as any).return.update = jest.fn().mockImplementation(async ({ data }: any) => {
+        createdReturn = { ...createdReturn, ...data };
+        return createdReturn;
+      });
+      (prisma as any).returnCounter = {
+        upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+      };
 
       const cancelReturnStock = module.get<CancelReturnStockService>(
         CancelReturnStockService,
@@ -3531,9 +3548,16 @@ describe('OrdersService', () => {
       );
 
       expect(result.statusId).toBe('status-returned');
-      expect(cancelReturnStock.restoreForOrder).toHaveBeenCalledWith(
-        expect.objectContaining({ referencePrefix: 'return' }),
+      expect((prisma as any).return.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ orderId: 'order-id-1', type: 'FULL' }),
+        }),
       );
+      expect(cancelReturnStock.restoreForReturnItems).toHaveBeenCalledWith(
+        expect.objectContaining({ orderId: 'order-id-1', returnId: 'ret-auto' }),
+      );
+      // The status change itself never writes stock directly.
+      expect(cancelReturnStock.restoreForOrder).not.toHaveBeenCalled();
     });
 
     it('auto-assigns the acting staff member on a manual status change', async () => {
@@ -4699,7 +4723,7 @@ describe('OrdersService', () => {
       });
     });
 
-    it('runs Returned restore side effects per valid order', async () => {
+    it('bulk Returned moves already-received orders with zero direct stock writes', async () => {
       const returnPendingOrder = {
         ...pendingOrder,
         status: { name: 'Return Pending' },
@@ -4711,6 +4735,18 @@ describe('OrdersService', () => {
         returnPendingOrder,
       ]);
       (prisma.order.update as jest.Mock).mockResolvedValue(returnPendingOrder);
+      // Linked return already RESTOCKED → the status change is status-only.
+      ((prisma as any).return.findMany as jest.Mock).mockResolvedValue([
+        {
+          id: 'ret-1',
+          displayId: 'RTN-1',
+          orderId: 'order-1',
+          type: 'FULL',
+          status: 'RESTOCKED',
+          items: [{ productId: 'prod-1', variantId: null, quantity: 1 }],
+          stockReconciled: true,
+        },
+      ]);
 
       const cancelReturnStock = module.get<CancelReturnStockService>(
         CancelReturnStockService,
@@ -4721,9 +4757,8 @@ describe('OrdersService', () => {
         'staff-123',
       );
 
-      expect(cancelReturnStock.restoreForOrder).toHaveBeenCalledWith(
-        expect.objectContaining({ orderId: 'order-1', referencePrefix: 'return' }),
-      );
+      expect(cancelReturnStock.restoreForOrder).not.toHaveBeenCalled();
+      expect(cancelReturnStock.restoreForReturnItems).not.toHaveBeenCalled();
     });
 
     it('assigns the actor on bulk update only to currently-unassigned orders', async () => {
@@ -5360,18 +5395,89 @@ await service.bulkAssign(['order-1', 'trashed-1'], 'staff-1');
     });
   });
 
-  describe('handleReturnedSideEffects', () => {
-    it('should call cancelReturnStock.restoreForOrder', async () => {
+  describe('handleReturnedSideEffects (hardening 2: find-or-create + guarded)', () => {
+    const wireReturnModels = (rows: any[]) => {
+      let createdReturn: any = null;
+      const all = [...rows];
+      ((prisma as any).return.findMany as jest.Mock).mockResolvedValue(all);
+      (prisma as any).return.create = jest.fn().mockImplementation(async ({ data }: any) => {
+        createdReturn = { id: 'ret-auto', displayId: 'RTN-1', createdAt: new Date(), stockReconciled: false, ...data };
+        all.push(createdReturn);
+        return createdReturn;
+      });
+      (prisma as any).return.findUnique = jest.fn().mockImplementation(async ({ where }: any) =>
+        all.find((r) => r.id === where?.id) ?? null,
+      );
+      (prisma as any).return.update = jest.fn().mockImplementation(async ({ where, data }: any) => {
+        const row = all.find((r) => r.id === where?.id);
+        if (row) Object.assign(row, data);
+        return row ?? { id: where?.id, ...data };
+      });
+      (prisma as any).returnCounter = {
+        upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+      };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        items: [
+          { id: 'item-1', productId: 'prod-1', variantId: null, quantity: 2, comboId: null },
+        ],
+      });
+    };
+
+    it('auto-creates a FULL return and restores once through the guarded path', async () => {
+      wireReturnModels([]);
+      const cancelReturnStock = module.get<CancelReturnStockService>(CancelReturnStockService);
+
+      await (service as any).handleReturnedSideEffects(prisma, 'order-id-1', 'staff-123');
+
+      expect((prisma as any).return.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ orderId: 'order-id-1', type: 'FULL', status: 'REQUESTED' }),
+        }),
+      );
+      expect(cancelReturnStock.restoreForReturnItems).toHaveBeenCalledWith(
+        expect.objectContaining({ orderId: 'order-id-1', returnId: 'ret-auto' }),
+      );
+      expect(cancelReturnStock.restoreForOrder).not.toHaveBeenCalled();
+    });
+
+    it('already-reconciled returns are no-ops (zero stock writes)', async () => {
+      wireReturnModels([
+        {
+          id: 'ret-1',
+          displayId: 'RTN-1',
+          orderId: 'order-id-1',
+          type: 'FULL',
+          status: 'RESTOCKED',
+          items: [{ productId: 'prod-1', variantId: null, quantity: 2 }],
+          stockReconciled: true,
+        },
+      ]);
       const cancelReturnStock = module.get<CancelReturnStockService>(CancelReturnStockService);
 
       await (service as any).handleReturnedSideEffects(prisma, 'order-id-1');
 
-      expect(cancelReturnStock.restoreForOrder).toHaveBeenCalledWith({
-        orderId: 'order-id-1',
-        referencePrefix: 'return',
-        performedBy: undefined,
-        tx: prisma,
-      });
+      expect((prisma as any).return.create).not.toHaveBeenCalled();
+      expect(cancelReturnStock.restoreForReturnItems).not.toHaveBeenCalled();
+      expect(cancelReturnStock.restoreForOrder).not.toHaveBeenCalled();
+    });
+
+    it('blocks when an active return has not arrived yet', async () => {
+      wireReturnModels([
+        {
+          id: 'ret-1',
+          displayId: 'RTN-1',
+          orderId: 'order-id-1',
+          type: 'FULL',
+          status: 'IN_TRANSIT',
+          items: [],
+          stockReconciled: false,
+        },
+      ]);
+
+      await expect(
+        (service as any).handleReturnedSideEffects(prisma, 'order-id-1'),
+      ).rejects.toThrow(/RTN-1.*has not arrived/);
     });
   });
 
@@ -6051,6 +6157,27 @@ describe('order lifecycle custom events (OrderPlaced/OrderConfirmed/OrderCancell
       gatewayCode: 'cash',
       status: 'UNPAID',
     });
+    // Hardening (2): a Returned status change resolves/auto-creates the linked
+    // return through the guarded path — wire the return models (no-ops for
+    // every other status).
+    const listed: any[] = [];
+    ((prisma as any).return.findMany as jest.Mock).mockImplementation(async () => listed);
+    (prisma as any).return.create = jest.fn().mockImplementation(async ({ data }: any) => {
+      const row = { id: 'ret-lc', displayId: 'RTN-LC-1', createdAt: new Date(), stockReconciled: false, ...data };
+      listed.push(row);
+      return row;
+    });
+    (prisma as any).return.findUnique = jest.fn().mockImplementation(async ({ where }: any) =>
+      listed.find((r) => r.id === where?.id) ?? null,
+    );
+    (prisma as any).return.update = jest.fn().mockImplementation(async ({ where, data }: any) => {
+      const row = listed.find((r) => r.id === where?.id);
+      if (row) Object.assign(row, data);
+      return row ?? { id: where?.id, ...data };
+    });
+    (prisma as any).returnCounter = {
+      upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+    };
     await service.updateStatus(
       'order-lc-1',
       { statusId: lcStatuses[toName].id },
@@ -6426,6 +6553,40 @@ describe('order lifecycle custom events (OrderPlaced/OrderConfirmed/OrderCancell
       });
       (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
       (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+      // Hardening (2): the Returned status change resolves linked returns and
+      // may auto-create ONE FULL return — wire the return models so the
+      // guarded path runs (findUnique sees created + listed rows).
+      const listed: any[] = [];
+      ((prisma as any).return.findMany as jest.Mock).mockImplementation(async () => listed);
+      const findRow = (id: string) => listed.find((r) => r.id === id) ?? null;
+      (prisma as any).return.create = jest.fn().mockImplementation(async ({ data }: any) => {
+        const row = { id: 'ret-auto', displayId: 'RTN-1', createdAt: new Date(), stockReconciled: false, ...data };
+        listed.push(row);
+        return row;
+      });
+      (prisma as any).return.findUnique = jest.fn().mockImplementation(async ({ where }: any) =>
+        findRow(where?.id),
+      );
+      (prisma as any).return.update = jest.fn().mockImplementation(async ({ where, data }: any) => {
+        const row = findRow(where?.id);
+        if (row) Object.assign(row, data);
+        return row ?? { id: where?.id, ...data };
+      });
+      (prisma as any).returnCounter = {
+        upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+      };
+    }
+
+    function listReturns(rows: any[]) {
+      ((prisma as any).return.findMany as jest.Mock).mockImplementation(async () => rows);
+      (prisma as any).return.findUnique = jest.fn().mockImplementation(async ({ where }: any) =>
+        rows.find((r) => r.id === where?.id) ?? null,
+      );
+      (prisma as any).return.update = jest.fn().mockImplementation(async ({ where, data }: any) => {
+        const row = rows.find((r) => r.id === where?.id);
+        if (row) Object.assign(row, data);
+        return row ?? { id: where?.id, ...data };
+      });
     }
 
     it('blocks a manual Returned while the exchange order is not delivered', async () => {
@@ -6470,8 +6631,18 @@ describe('order lifecycle custom events (OrderPlaced/OrderConfirmed/OrderCancell
       ((prisma as any).dispatch.findMany as jest.Mock).mockResolvedValue([
         { orderId: 'ex-1', status: 'DELIVERED' },
       ]);
-      ((prisma as any).return.findMany as jest.Mock).mockResolvedValue([
-        { id: 'ret-1', displayId: 'RTN-260930-0001', status: 'RECEIVED' },
+      // RECEIVED (not yet reconciled) → the status change receives it through
+      // the guarded path — never the blanket direct write.
+      listReturns([
+        {
+          id: 'ret-1',
+          displayId: 'RTN-260930-0001',
+          orderId: 'order-id-1',
+          type: 'EXCHANGE',
+          status: 'RECEIVED',
+          stockReconciled: false,
+          items: [{ productId: 'prod-1', variantId: null, quantity: 2 }],
+        },
       ]);
       const cancelReturnStock = module.get<CancelReturnStockService>(CancelReturnStockService);
 
@@ -6482,9 +6653,10 @@ describe('order lifecycle custom events (OrderPlaced/OrderConfirmed/OrderCancell
       );
 
       expect(result.statusId).toBe('status-returned');
-      expect(cancelReturnStock.restoreForOrder).toHaveBeenCalledWith(
-        expect.objectContaining({ referencePrefix: 'return' }),
+      expect(cancelReturnStock.restoreForReturnItems).toHaveBeenCalledWith(
+        expect.objectContaining({ orderId: 'order-id-1', returnId: 'ret-1' }),
       );
+      expect(cancelReturnStock.restoreForOrder).not.toHaveBeenCalled();
     });
 
     it('lets an unlinked order straight through (no exchange, no EXCHANGE return)', async () => {

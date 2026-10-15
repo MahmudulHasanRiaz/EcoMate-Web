@@ -20,7 +20,7 @@ import { StatusBadge, riseStyle } from '@/components/ui/dashboard'
 import { StagedList, displayCustomer, orderMeta, type StagedRow } from '@/features/scanner/staged-list'
 import { extractOrderScanCode } from '@/lib/order-display'
 import {
-  scannerApi, ScanPurposeDescriptor, ScanResult, ScanDispatchPreview,
+  scannerApi, ScanPurposeDescriptor, ScanResult, ScanDispatchPreview, ScanLinkedCandidate,
 } from '@/features/orders/api'
 
 /** Operator-facing task names. Backend purpose ids stay technical. */
@@ -29,6 +29,7 @@ const TASK_NAMES: Record<string, string> = {
   DISPATCH_RETURN: 'Process return',
   ORDER_STATUS: 'Update order status',
   STICKER_PRINT: 'Print sticker',
+  RETURN_RECEIVE: 'Receive return / exchange',
 }
 
 const TASK_ICONS: Record<string, any> = {
@@ -36,6 +37,7 @@ const TASK_ICONS: Record<string, any> = {
   DISPATCH_RETURN: RotateCcw,
   ORDER_STATUS: Package,
   STICKER_PRINT: Printer,
+  RETURN_RECEIVE: RotateCcw,
 }
 
 /** Workspace title + accepted identifiers per task (mirrors the resolver). */
@@ -59,6 +61,11 @@ const TASK_HELP: Record<string, { title: string; accept: string; empty: string }
     title: 'Print sticker',
     accept: 'Scan an order QR code / barcode (ORD-…).',
     empty: 'Scan an order QR code or barcode to begin.',
+  },
+  RETURN_RECEIVE: {
+    title: 'Receive return / exchange',
+    accept: 'Scan an order QR code / barcode (ORD-…) — the linked return or exchange is resolved, never the order itself.',
+    empty: 'Scan an order QR code or barcode to receive its linked return.',
   },
 }
 
@@ -167,6 +174,8 @@ interface PendingSelection {
   identifier: string
   message: string
   dispatches: ScanDispatchPreview[]
+  /** Linked return/exchange legs (RETURN_RECEIVE picker). */
+  linked?: ScanLinkedCandidate[]
 }
 
 interface FeedItem extends ScanResult {
@@ -232,6 +241,8 @@ export default function ScannerPage() {
     orderId?: string
     orderIds?: string[]
     targetStatusId?: string
+    returnId?: string
+    exchangeId?: string
   }, context?: { customerName?: string; customerPhone?: string; orderDisplayId?: string }) => {
     const res = await scannerApi.scan({ purpose: modeRef.current, ...payload })
     if (context && (context.customerName || context.customerPhone || context.orderDisplayId)) {
@@ -283,9 +294,35 @@ export default function ScannerPage() {
       }
 
       if (outcome.status === 'selection_required') {
-        // Ambiguous — never guess. The inline panel resolves it.
+        // Ambiguous — never guess. The inline panel resolves it. For
+        // RETURN_RECEIVE the picker lists linked return/exchange legs, never
+        // dispatches (the order itself is never a candidate).
+        if (purpose === 'RETURN_RECEIVE') {
+          const linked = outcome.linked ?? []
+          setSelection({ identifier, message: outcome.message ?? 'Multiple returns/exchanges are linked to this order. Select one to continue.', dispatches: [], linked })
+          record({ status: 'warning', identifier, title: `${identifier} — Select return or exchange`, message: 'Select which linked return or exchange to receive below.' })
+          return
+        }
         setSelection({ identifier, message: outcome.message ?? 'Multiple dispatches found. Select the dispatch to continue.', dispatches: outcome.dispatches })
         record({ status: 'warning', identifier, title: `${identifier} — Multiple dispatches found`, message: 'Select which dispatch to process below.' })
+        return
+      }
+
+      if (purpose === 'RETURN_RECEIVE') {
+        // Exactly one linked leg → receive it at once; several → picker
+        // (handled above via selection_required); none → not_found already
+        // returned with the backend "No active…" message.
+        const linked = outcome.linked ?? []
+        if (linked.length === 1) {
+          const only = linked[0]
+          const o = outcome.order
+          await runExecute(
+            only.kind === 'return' ? { identifier, returnId: only.id } : { identifier, exchangeId: only.id },
+            o ? { customerName: o.customerName, customerPhone: o.customerPhone, orderDisplayId: o.displayId } : undefined,
+          )
+          return
+        }
+        record({ status: 'error', identifier, title: 'Not found', message: outcome.message ?? 'No active return/exchange for this order.' })
         return
       }
 
@@ -362,6 +399,23 @@ export default function ScannerPage() {
       } else {
         await runExecute({ identifier: d.consignmentId ?? d.orderDisplayId, dispatchId: d.id }, { customerName: d.customerName, customerPhone: d.customerPhone, orderDisplayId: d.orderDisplayId })
       }
+      setSelection(null)
+    } catch (e) {
+      toast.error(errMsg(e))
+    } finally {
+      setBusy(false)
+      inputRef.current?.focus()
+    }
+  }, [busy, runExecute])
+
+  /** Resolve a RETURN_RECEIVE scan by picking one linked leg inline. */
+  const resolveLinked = useCallback(async (identifier: string, c: ScanLinkedCandidate) => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await runExecute(
+        c.kind === 'return' ? { identifier, returnId: c.id } : { identifier, exchangeId: c.id },
+      )
       setSelection(null)
     } catch (e) {
       toast.error(errMsg(e))
@@ -496,7 +550,8 @@ export default function ScannerPage() {
   const help = TASK_HELP[mode] ?? TASK_HELP.DISPATCH_HANDED_OVER
   const isOrderStatus = mode === 'ORDER_STATUS'
   const isSticker = mode === 'STICKER_PRINT'
-  const isDispatchPurpose = !isOrderStatus && !isSticker
+  const isReturnReceive = mode === 'RETURN_RECEIVE'
+  const isDispatchPurpose = !isOrderStatus && !isSticker && !isReturnReceive
   const showBatchToggle = isDispatchPurpose || isSticker
   const TaskIcon = TASK_ICONS[mode] ?? ScanLine
   const canApplyQueue = queue.length > 0 && !busy
@@ -672,7 +727,10 @@ export default function ScannerPage() {
                   <div className="rounded-xl border border-warning/40 bg-warning-soft/40 p-2.5 flex flex-col gap-2" role="group" aria-label="Select dispatch">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-xs font-semibold">
-                        {selection.dispatches.length} dispatches found for <span className="font-mono">{selection.identifier}</span>
+                        {selection.linked?.length
+                          ? `${selection.linked.length} linked returns/exchanges found for `
+                          : `${selection.dispatches.length} dispatches found for `}
+                        <span className="font-mono">{selection.identifier}</span>
                       </p>
                       <button
                         className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
@@ -682,6 +740,32 @@ export default function ScannerPage() {
                         <X className="h-3.5 w-3.5" />
                       </button>
                     </div>
+                    {selection.linked?.length ? (
+                      <>
+                        <p className="text-[11px] text-muted-foreground -mt-1">Select the return or exchange to receive — the scanner stays ready.</p>
+                        <div className="flex flex-col gap-1.5">
+                          {selection.linked.map((c) => (
+                            <div key={c.id} className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{c.kind === 'return' ? 'Return' : 'Exchange'}</p>
+                                <p className="font-mono text-sm font-semibold truncate">{c.displayId}</p>
+                                <p className="text-[11px] text-muted-foreground truncate">{c.status}</p>
+                              </div>
+                              <Button
+                                size="sm"
+                                className="tap-h press shrink-0"
+                                disabled={busy}
+                                aria-label={`Select ${c.displayId}`}
+                                onClick={() => void resolveLinked(selection.identifier, c)}
+                              >
+                                Select <ArrowRight className="h-3.5 w-3.5 ml-1" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                    <>
                     <p className="text-[11px] text-muted-foreground -mt-1">Select the dispatch to {batchMode && isDispatchPurpose ? 'stage' : 'process'} — the scanner stays ready.</p>
                     <div className="flex flex-col gap-1.5">
                       {selection.dispatches.map((d) => (
@@ -703,6 +787,8 @@ export default function ScannerPage() {
                         </div>
                       ))}
                     </div>
+                    </>
+                    )}
                   </div>
                 )}
 

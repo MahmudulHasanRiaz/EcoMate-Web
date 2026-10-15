@@ -37,6 +37,7 @@ export interface ReturnsListResponse {
 }
 
 export interface ReturnsListQuery {
+  orderId?: string
   status?: string
   type?: string
   source?: string
@@ -58,6 +59,14 @@ export const returnsApi = {
   list: (q: ReturnsListQuery = {}) =>
     apiClient.get<ReturnsListResponse>('/returns', { params: q }).then((r) => r.data),
   get: (id: string) => apiClient.get<ReturnDetail>(`/returns/${id}`).then((r) => r.data),
+  /** Staff creation (the unified Create-return dialog): FULL or PARTIAL. */
+  create: (data: {
+    orderId: string
+    type: 'FULL' | 'PARTIAL' | 'EXCHANGE'
+    source?: 'STAFF' | 'COURIER' | 'EXCHANGE'
+    items?: { productId: string; variantId?: string | null; quantity: number }[]
+    reason?: string
+  }) => apiClient.post<ReturnListItem>('/returns', data).then((r) => r.data),
   markReceived: (id: string, items?: { productId: string; variantId?: string | null; quantity: number }[]) =>
     apiClient.post<ReturnDetail>(`/returns/${id}/mark-received`, items ? { items } : {}).then((r) => r.data),
   /** Staff-triggered return reconciliation (original consignment id). */

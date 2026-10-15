@@ -70,6 +70,13 @@ export class OrderEditLockService {
    * Try to acquire the lock for an order.
    * Returns `{ acquired: true, lock }` on success, or `{ acquired: false, heldBy }`
    * when another user holds a live lock. Never throws for "held by someone else".
+   *
+   * Hardening (5b): find-or-create. A free lock is taken with a plain create
+   * (201 stays); refresh/takeover and race-recovery go through upsert so a
+   * concurrent release between the read and the write can never surface a
+   * P2025. The benign create-race (P2002 — someone else created first) is
+   * resolved by re-reading and NEVER hits logger.error; only genuine failures
+   * are logged.
    */
   async acquire(
     orderId: string,
@@ -86,37 +93,70 @@ export class OrderEditLockService {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + LOCK_TTL_MS);
 
+    const existing = await this.prisma.orderEditLock.findUnique({
+      where: { orderId },
+    });
+    if (existing && existing.expiresAt > now && existing.userId !== userId) {
+      return { acquired: false, heldBy: await this.toInfo(existing) };
+    }
+    if (existing) {
+      // Own live lock → refresh; expired lock → takeover. Upsert is the
+      // find-or-create: it also survives a concurrent release (no P2025).
+      const lock = await this.prisma.orderEditLock.upsert({
+        where: { orderId },
+        create: { orderId, userId, expiresAt },
+        update: { userId, heartbeatAt: now, expiresAt },
+      });
+      if (existing.userId !== userId) {
+        const prevName = await this.displayNameFor(existing.userId);
+        await this.appendAuditEntry(orderId, {
+          type: 'edit_lock',
+          visibility: 'private',
+          timestamp: new Date().toISOString(),
+          note: prevName
+            ? `Lock taken over after expiry — previous holder: ${prevName}.`
+            : `Lock taken over after expiry (previous holder released session).`,
+          performedBy: userId,
+        });
+      }
+      return { acquired: true, lock: await this.toInfo(lock) };
+    }
+
     try {
       const lock = await this.prisma.orderEditLock.create({
         data: { orderId, userId, expiresAt },
       });
       return { acquired: true, lock: await this.toInfo(lock) };
     } catch (err) {
-      // Unique violation (orderId) → lock exists → decide takeover vs conflict.
+      // Benign race: another holder created the row between our read and our
+      // create. Re-read to decide — never logger.error here.
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&
         err.code === 'P2002'
       ) {
-        const existing = await this.prisma.orderEditLock.findUnique({
+        const raced = await this.prisma.orderEditLock.findUnique({
           where: { orderId },
         });
-        if (!existing) {
-          // Race: lock was released between create-fail and re-read; try once
-          // more fresh (or loop is fine here — a single retry is enough given
-          // the unique constraint, just return a conflict-ish error).
-          return { acquired: false, heldBy: await this.toInfoFallback() };
+        if (!raced) {
+          // Released again between the failed create and the re-read —
+          // find-or-create via upsert, no error to log.
+          const lock = await this.prisma.orderEditLock.upsert({
+            where: { orderId },
+            create: { orderId, userId, expiresAt },
+            update: { userId, heartbeatAt: new Date(), expiresAt },
+          });
+          return { acquired: true, lock: await this.toInfo(lock) };
         }
-        if (existing.expiresAt > now && existing.userId !== userId) {
-          const heldBy = await this.toInfo(existing);
-          return { acquired: false, heldBy };
+        if (raced.expiresAt > new Date() && raced.userId !== userId) {
+          return { acquired: false, heldBy: await this.toInfo(raced) };
         }
-        // Expired or own lock → takeover (update atomic by unique orderId).
-        const lock = await this.prisma.orderEditLock.update({
+        const lock = await this.prisma.orderEditLock.upsert({
           where: { orderId },
-          data: { userId, heartbeatAt: now, expiresAt },
+          create: { orderId, userId, expiresAt },
+          update: { userId, heartbeatAt: new Date(), expiresAt },
         });
-        if (existing.userId !== userId) {
-          const prevName = await this.displayNameFor(existing.userId);
+        if (raced.userId !== userId) {
+          const prevName = await this.displayNameFor(raced.userId);
           await this.appendAuditEntry(orderId, {
             type: 'edit_lock',
             visibility: 'private',

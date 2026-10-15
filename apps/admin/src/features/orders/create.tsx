@@ -25,6 +25,7 @@ import {
   ITEM_EDIT_BLOCKED_STATUSES,
   ITEM_EDIT_WARNING_STATUSES,
 } from './item-edit-policy'
+import { ExchangePaidConfirm, isPaidConfirmValid } from './components/exchange-paid-confirm'
 import { apiClient } from '@/lib/api-client'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -229,6 +230,32 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
     enabled: isExchange && !!orderId,
     staleTime: 30_000,
   })
+
+  // ── Exchange paid-confirm (phase-1 paidConfirmed contract) ────────────
+  // Pre-filled from the ledger (Σ PAID rows on the original). CONFIRM is
+  // required — the dialog can never be skipped — and any figure that differs
+  // from the ledger needs a written reason (mirrors the backend fail-closed
+  // rule: silent money adjustments are never allowed).
+  const recordedPaid = useMemo(
+    () =>
+      (isExchange ? ((editOrder as any)?.payments ?? []) : [])
+        .filter((p: any) => p?.status === 'PAID')
+        .reduce((s: number, p: any) => s + (Number(p?.amount) || 0), 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isExchange, (editOrder as any)?.payments],
+  )
+  const [paid, setPaid] = useState(0)
+  const [paidReason, setPaidReason] = useState('')
+  const [paidConfirmedChecked, setPaidConfirmedChecked] = useState(false)
+  const [paidHydrated, setPaidHydrated] = useState(false)
+  useEffect(() => {
+    if (isExchange && editOrder && !paidHydrated) {
+      setPaid(recordedPaid)
+      setPaidHydrated(true)
+    }
+  }, [isExchange, editOrder, recordedPaid, paidHydrated])
+  const paidValid =
+    !isExchange || isPaidConfirmValid(paid, recordedPaid, paidReason, paidConfirmedChecked)
 
   // ── Task 11 (JOB C): customer credit offer (create mode, linked customer) ─
   const { data: customerCredit, isLoading: creditLoading } = useQuery({
@@ -705,6 +732,8 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
           ...(sc ? { shippingCharge: sc } : {}),
           ...(cn ? { customerNotes: cn } : {}),
           ...(on ? { officeNotes: on } : {}),
+          paidConfirmed: paid,
+          ...(Math.abs(paid - recordedPaid) > 0.005 ? { paidAdjustmentReason: paidReason.trim() } : {}),
         })
       }
       return isEdit ? ordersApi.updateOrder(orderId!, data) : ordersApi.create(data)
@@ -795,6 +824,16 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
       // inherited, so the create-mode identity rules do not apply.
       if (cartItems.length === 0) {
         toast.error('Add at least one replacement item')
+        return
+      }
+      // The paid figure can never be skipped: CONFIRM is required, and a
+      // figure that differs from the ledger needs a written reason.
+      if (!paidConfirmedChecked) {
+        toast.error('Confirm the already-paid figure before creating the exchange')
+        return
+      }
+      if (Math.abs(paid - recordedPaid) > 0.005 && !paidReason.trim()) {
+        toast.error('Explain why the confirmed figure differs from the ledger')
         return
       }
       submitMut.mutate(buildPayload())
@@ -927,7 +966,7 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
               size='sm'
               className='h-9 px-4 font-semibold text-xs shadow-xs'
               onClick={handleSubmit}
-              disabled={submitMut.isPending}
+              disabled={submitMut.isPending || !paidValid}
             >
               {submitMut.isPending
                 ? <Loader2 className='h-3.5 w-3.5 animate-spin mr-1.5' />
@@ -1656,6 +1695,21 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
               </CardContent>
             </Card>
 
+            {/* Exchange paid-confirm (phase-1 contract): pre-filled from the
+              ledger, CONFIRM required, reason required on adjustment. */}
+            {isExchange && editOrder && (
+              <ExchangePaidConfirm
+                recordedPaid={recordedPaid}
+                exchangeTotal={total}
+                paid={paid}
+                reason={paidReason}
+                confirmed={paidConfirmedChecked}
+                onPaid={setPaid}
+                onReason={setPaidReason}
+                onConfirmed={setPaidConfirmedChecked}
+              />
+            )}
+
             {/* Exchange settlement preview (§4) */}
             {isExchange && settlementPreview && (
               <Card className='overflow-hidden border border-primary/30 shadow-xs rounded-xl'>
@@ -1887,7 +1941,7 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                 className='w-full h-11 text-sm font-semibold shadow-xs'
                 size='lg'
                 onClick={handleSubmit}
-                disabled={submitMut.isPending || itemsBlocked}
+                disabled={submitMut.isPending || itemsBlocked || !paidValid}
               >
                 {submitMut.isPending
                   ? <Loader2 className='h-4 w-4 animate-spin mr-2' />
@@ -1914,7 +1968,7 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
         <Button
           className='h-11 px-6 font-semibold text-sm shadow-sm shrink-0'
           onClick={handleSubmit}
-          disabled={submitMut.isPending || itemsBlocked}
+          disabled={submitMut.isPending || itemsBlocked || !paidValid}
         >
           {submitMut.isPending
             ? <Loader2 className='h-4 w-4 animate-spin mr-1.5' />

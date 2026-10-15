@@ -12,8 +12,8 @@ import { OthersInfoDialog } from '@/features/orders/others-info-dialog'
 import { useAuthStore } from '@/stores/auth-store'
 import { UserBadge } from '@/components/user-badge'
 import { ordersApi, rtnApi, mediaUrl } from '@/features/orders/api'
-import { ReturnOrderDialog } from '@/features/orders/components/return-order-dialog'
 import { OrderActionMenu } from '@/features/orders/components/order-action-menu'
+import { LinkedReturnsSection } from '@/features/orders/components/linked-returns-section'
 
 import { CourierCustomerHistoryCard } from '@/features/orders/courier-customer-history-card'
 import { SteadfastSetPicker } from '@/features/dispatch/steadfast-set-picker'
@@ -181,14 +181,14 @@ function OrderDetailPage() {
   // Task 8: steadfast order-level account override (picker shows iff >1 set).
   const [dispatchSetId, setDispatchSetId] = useState('')
 
-  // ── RTN (return order) ─────────────────────────────────────────────
+  // ── RTN (return order, historic display only) ──────────────────────
+  // HIGH §2: staff creation moved to the unified Plus-menu flow. This query
+  // stays read-only so historic linked RTN rows still render below.
   const { data: rtnOrder } = useQuery({
     queryKey: ['rtn-for-order', id],
     queryFn: () => rtnApi.forOrder(id),
     enabled: !!order && order.kind !== 'RETURN',
   })
-  const [showRtnDialog, setShowRtnDialog] = useState(false)
-  const [returnQtys, setReturnQtys] = useState<Record<string, number>>({})
 
   // ── Queries ───────────────────────────────────────────────────────
   const { data: courierCreds } = useQuery({ queryKey: ['courier-creds'], queryFn: () => apiClient.get('/couriers/credentials').then(r => r.data as any[]), enabled: showDispatchDialog })
@@ -654,18 +654,10 @@ function OrderDetailPage() {
                   </Button>
                 )}
 
-                {order.status.name === 'Partial' && !rtnOrder && (
-                  <Button
-                    variant='default'
-                    size='sm'
-                    className='h-8 gap-1.5 shadow-xs bg-pink-600 hover:bg-pink-700 font-medium'
-                    onClick={() => { setReturnQtys({}); setShowRtnDialog(true) }}
-                  >
-                    <RotateCcw className='h-3.5 w-3.5' />
-                    <span className='hidden sm:inline'>Create Return Order</span>
-                    <span className='sm:hidden'>Return Order</span>
-                  </Button>
-                )}
+                {/* HIGH §2 ONE button: the legacy RTN "Create Return Order"
+                  button is deleted — staff uses the unified Plus-menu →
+                  'Create return' flow (CreateReturnDialog). RTN backend
+                  untouched; historic linked RTN rows still render below. */}
 
                 {canViewOthersInfo && (
                   <Button
@@ -690,13 +682,8 @@ function OrderDetailPage() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align='end' className='w-48'>
-                    {!order.trashedAt && order.kind === 'SALE' && (
-                      <DropdownMenuItem asChild>
-                        <Link to='/op/orders/$id/exchange' params={{ id }}>
-                          <ArrowRightLeft className='h-4 w-4 mr-2' /> Create Exchange Order
-                        </Link>
-                      </DropdownMenuItem>
-                    )}
+                    {/* Exchange lives ONLY in the Plus (+) OrderActionMenu —
+                      never in this ⋯ menu. */}
                     <DropdownMenuItem onClick={() => window.open(`/admin/op/print/sticker/${order.id}`, '_blank')}>
                       <Printer className='h-4 w-4 mr-2' /> Print Sticker
                     </DropdownMenuItem>
@@ -1598,6 +1585,9 @@ function OrderDetailPage() {
                   </CardContent>
                 </Card>
               )}
+
+              {/* ── Linked returns & exchanges (unified Return entity) ─── */}
+              {order.kind !== 'RETURN' && <LinkedReturnsSection orderId={order.id} />}
             </div>
 
             {/* ════ RIGHT COLUMN (5/12 or 4/12) ════ */}
@@ -1853,12 +1843,8 @@ function OrderDetailPage() {
           </DialogContent>
         </Dialog>
 
-        {/* ── Create Return Order (RTN) Dialog ─────────────────── */}
-        <ReturnOrderDialog
-          order={order}
-          open={showRtnDialog}
-          onClose={() => { setShowRtnDialog(false); setReturnQtys({}) }}
-        />
+        {/* HIGH §2: legacy RTN dialog removed — unified Plus-menu flow owns
+          staff returns. Historic linked RTN rows still render above. */}
 
         {/* ── Customer Past Orders History Dialog ───────────────── */}
         <Dialog open={showPastOrdersDialog} onOpenChange={setShowPastOrdersDialog}>

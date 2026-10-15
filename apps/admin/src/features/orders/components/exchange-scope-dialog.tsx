@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ArrowRightLeft, Minus, Plus, X } from 'lucide-react'
 import { ReturnItemPicker, pickerLines } from './return-item-picker'
+import { ExchangePaidConfirm, isPaidConfirmValid } from './exchange-paid-confirm'
 
 const errMsg = (e: unknown): string => {
   const err = e as any
@@ -59,6 +60,14 @@ export function ExchangeScopeDialog({
   const [rows, setRows] = useState<NewItemRow[]>([])
   const [shipping, setShipping] = useState('')
   const [discount, setDiscount] = useState('')
+  // Phase-1 paid-confirm: pre-filled from the ledger (Σ PAID rows on the
+  // original), CONFIRM required, reason required on any adjustment.
+  const recordedPaid = (order?.payments ?? [])
+    .filter((p: any) => p?.status === 'PAID')
+    .reduce((s: number, p: any) => s + (Number(p?.amount) || 0), 0)
+  const [paid, setPaid] = useState(0)
+  const [paidReason, setPaidReason] = useState('')
+  const [paidConfirmedChecked, setPaidConfirmedChecked] = useState(false)
 
   useEffect(() => {
     if (!open) {
@@ -70,8 +79,14 @@ export function ExchangeScopeDialog({
       setRows([])
       setShipping('')
       setDiscount('')
+      setPaidReason('')
+      setPaidConfirmedChecked(false)
+    } else {
+      setPaid(recordedPaid)
     }
-  }, [open ])
+    // recordedPaid derives from the order prop; re-prefill per opening.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   // Product search hits the backend so ANY product is findable by name/SKU.
   useEffect(() => {
@@ -86,6 +101,10 @@ export function ExchangeScopeDialog({
   }, [search, open, step])
 
   const returning = pickerLines(order?.items, returnQtys)
+  const partialTotal =
+    rows.reduce((s, r) => s + r.quantity * (Number(r.price) || 0), 0) +
+    (shipping.trim() !== '' && !isNaN(parseFloat(shipping)) ? parseFloat(shipping) : 0) -
+    (discount.trim() !== '' && !isNaN(parseFloat(discount)) ? parseFloat(discount) : 0)
 
   const mut = useMutation({
     mutationFn: () => exchangeApi.create(order.id, {
@@ -95,6 +114,8 @@ export function ExchangeScopeDialog({
       items: rows.map(r => ({ productId: r.productId, quantity: r.quantity, price: r.price })),
       ...(shipping.trim() !== '' && !isNaN(parseFloat(shipping)) ? { shippingCharge: parseFloat(shipping) } : {}),
       ...(discount.trim() !== '' && !isNaN(parseFloat(discount)) ? { discount: parseFloat(discount) } : {}),
+      paidConfirmed: paid,
+      ...(Math.abs(paid - recordedPaid) > 0.005 ? { paidAdjustmentReason: paidReason.trim() } : {}),
     }),
     onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: ['order', order.id] })
@@ -238,11 +259,30 @@ export function ExchangeScopeDialog({
               <Button variant='ghost' onClick={() => setStep('ask')}>Back</Button>
               <div className='flex gap-2'>
                 <Button variant='outline' onClick={() => onClose()}>Cancel</Button>
-                <Button disabled={mut.isPending || returning.length === 0 || rows.length === 0} onClick={() => mut.mutate()}>
+                <Button
+                  disabled={
+                    mut.isPending ||
+                    returning.length === 0 ||
+                    rows.length === 0 ||
+                    !isPaidConfirmValid(paid, recordedPaid, paidReason, paidConfirmedChecked)
+                  }
+                  onClick={() => mut.mutate()}
+                >
                   {mut.isPending ? 'Creating…' : 'Create partial exchange'}
                 </Button>
               </div>
             </div>
+
+            <ExchangePaidConfirm
+              recordedPaid={recordedPaid}
+              exchangeTotal={Math.max(0, partialTotal)}
+              paid={paid}
+              reason={paidReason}
+              confirmed={paidConfirmedChecked}
+              onPaid={setPaid}
+              onReason={setPaidReason}
+              onConfirmed={setPaidConfirmedChecked}
+            />
           </div>
         )}
       </DialogContent>

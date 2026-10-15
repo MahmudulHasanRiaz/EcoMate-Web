@@ -1085,12 +1085,17 @@ model Payment {
   /// Portion of THIS payment that was settled by carried-over credit rather
   /// than fresh money. NULL = a plain full-value payment (every normal order).
   appliedCreditAmount Decimal?    @db.Decimal(10, 2)
+  /// EXCHANGE transfer only: the ORIGINAL PAID row this credit came from
+  /// (largest PAID row of the original, null when none). Traceability only.
+  sourcePaymentId String?
   createdAt         DateTime      @default(now())
 
   order    Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
   sourceOrder Order?    @relation("PaymentSourceOrder", fields: [sourceOrderId], references: [id])
   verifier UserProfile? @relation("VerifiedPayments", fields: [verifiedBy], references: [id])
   sourceRefunds Refund[] @relation("RefundSourcePayment")
+  sourcePayment Payment? @relation("PaymentSourcePayment", fields: [sourcePaymentId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  sourceTransfers Payment[] @relation("PaymentSourcePayment")
   creditEntries CustomerCreditEntry[]
 
   @@unique([transactionId, gatewayCode])
@@ -1098,6 +1103,7 @@ model Payment {
   @@index([gatewayCode])
   @@index([transactionId])
   @@index([sourceOrderId])
+  @@index([sourcePaymentId])
 }
 
 model CodMismatchAlert {

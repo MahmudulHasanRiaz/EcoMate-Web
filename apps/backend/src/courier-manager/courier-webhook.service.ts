@@ -800,50 +800,15 @@ export class CourierWebhookService {
     }
 
     // ---- Unified Return entity (Task 6) ----------------------------------
-    // No ReturnsService (legacy unit tests) → FULL-only blanket stock path.
-    // Production always wires ReturnsModule. Legacy partials NEVER blanket
-    // restore (that would restock the kept/delivered part too) — they HOLD
-    // with a LOUD staff alert instead (fail loud, never Optional-silent).
+    // ReturnsService is REQUIRED — stock never moves via a raw blanket
+    // restore. The legacy `if (!this.returns)` blanket-restore branch is
+    // deleted: an absent service throws LOUD below (never a silent HOLD and
+    // never a raw restoreForOrder).
     if (!this.returns) {
-      let stockReconciled = false;
-      let remarks: string;
-      if (mapped.reconcileStock && !isPartial) {
-        await this.prisma.$transaction(async (tx) => {
-          await this.cancelReturnStock.restoreForOrder({
-            orderId: order.id,
-            referencePrefix: 'return',
-            performedBy: 'system',
-            tx: tx as Prisma.TransactionClient,
-          });
-        });
-        stockReconciled = true;
-        remarks = 'Parcel back with the merchant — stock reconciled; confirm Returned manually';
-      } else if (mapped.reconcileStock && isPartial) {
-        stockReconciled = false;
-        remarks =
-          'partial return received — confirm items to restock; stock held, nothing restored yet';
-        this.logger.warn(
-          `Steadfast return-reconcile: ${consignmentId} partial return received — ` +
-            `confirm items to restock (legacy path, no ReturnsService; stock held, order ${order.id})`,
-        );
-      } else {
-        remarks = 'Return in progress — stock held, nothing restored yet';
-      }
-      await this.addTimelineEntry(order.id, 'steadfast', mapped.dispatchStatus, {
-        return_type: rawStatus,
-        remarks,
-      });
-      this.logger.log(
-        `Steadfast return-reconcile: ${consignmentId} → dispatch=${mapped.dispatchStatus} ` +
-          `stock=${stockReconciled ? 'reconciled' : 'held'} codOwed=false`,
+      throw new Error(
+        'ReturnsService is required for Steadfast return reconciliation — ' +
+          'refusing raw stock restore (wire ReturnsModule).',
       );
-      return {
-        reconciled: true as const,
-        deliveryStatus: rawStatus,
-        dispatchStatus: mapped.dispatchStatus,
-        stockReconciled,
-        codOwed: false as const,
-      };
     }
 
     const upserted = await this.returns.upsertCourierReturn({

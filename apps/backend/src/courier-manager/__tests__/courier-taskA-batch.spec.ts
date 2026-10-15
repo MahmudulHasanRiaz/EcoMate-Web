@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { OrdersService } from '../../orders/orders.service';
 import { CancelReturnStockService } from '../../stock/cancel-return-stock.service';
 import { CodMismatchService } from '../../cod-mismatch/cod-mismatch.service';
+import { ReturnsService } from '../../returns/returns.service';
 import {
   mapCourierStatusToDispatchStatus,
   mapSteadfastReturnStatus,
@@ -77,6 +78,14 @@ describe('Courier Task A — mapping corrections batch', () => {
     manager = { getSteadfastReturnStatus: jest.fn() };
     cancelReturnStock = { restoreForOrder: jest.fn().mockResolvedValue(undefined) };
     codMismatch = { recompute: jest.fn().mockResolvedValue([]) };
+    const returns = {
+      upsertCourierReturn: jest.fn().mockResolvedValue({ id: 'ret-1', status: 'REQUESTED' }),
+      setReturnTransit: jest.fn().mockResolvedValue({ id: 'ret-1', status: 'IN_TRANSIT' }),
+      setReturnReceived: jest.fn().mockResolvedValue({ id: 'ret-1', status: 'RECEIVED' }),
+      restockReturn: jest.fn().mockResolvedValue({ id: 'ret-1', status: 'RESTOCKED' }),
+      orderItemsSnapshot: jest.fn().mockResolvedValue([{ productId: 'p-1', quantity: 2 }]),
+      findOpenStaffReturnWithItems: jest.fn().mockResolvedValue(null),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -86,6 +95,7 @@ describe('Courier Task A — mapping corrections batch', () => {
         { provide: CourierManagerService, useValue: manager },
         { provide: CancelReturnStockService, useValue: cancelReturnStock },
         { provide: CodMismatchService, useValue: codMismatch },
+        { provide: ReturnsService, useValue: returns },
       ],
     }).compile();
 
@@ -114,13 +124,13 @@ describe('Courier Task A — mapping corrections batch', () => {
       }
     });
 
-    it('partial_delivered_return_received → PARTIAL + HOLD (legacy FULL-only gate) + COD-not-owed + NEVER Delivered', async () => {
-      // T6 gap fix: legacy path (no ReturnsService here) NEVER blanket-
-      // restores a partial (that would restock the kept part) — it HOLDs with
-      // a LOUD "confirm items to restock" alert. Mapper intent flag stays
-      // reconcileStock:true (parcel physically back); the path derives HOLD
-      // from the actual outcome. Production restore-or-hold via staff-Return
-      // lookup — see courier-webhook-partial-restore.spec.ts.
+    it('partial_delivered_return_received → PARTIAL + HOLD (unified path) + COD-not-owed + NEVER Delivered', async () => {
+      // Unified path (ReturnsService REQUIRED — HIGH legacy-restore fix) NEVER
+      // blanket-restores a partial (that would restock the kept part) — it
+      // HOLDs with a LOUD "confirm items to restock" alert. Mapper intent flag
+      // stays reconcileStock:true (parcel physically back); the path derives
+      // HOLD from the actual outcome via the staff-Return lookup — see
+      // courier-webhook-partial-restore.spec.ts.
       manager.getSteadfastReturnStatus.mockResolvedValue({
         deliveryStatus: 'partial_delivered_return_received',
       });

@@ -61,14 +61,8 @@ describe('OrderEditLockService', () => {
   });
 
   it('re-acquires (refreshes) when the caller already owns the lock', async () => {
-    prisma.orderEditLock.create.mockRejectedValue(
-      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
-        code: 'P2002',
-        clientVersion: '5.0.0',
-      }),
-    );
     prisma.orderEditLock.findUnique.mockResolvedValue(liveLock);
-    prisma.orderEditLock.update.mockResolvedValue({
+    prisma.orderEditLock.upsert.mockResolvedValue({
       ...liveLock,
       heartbeatAt: new Date(),
       expiresAt: new Date(Date.now() + 60_000),
@@ -76,15 +70,17 @@ describe('OrderEditLockService', () => {
 
     const result = await service.acquire('order-1', 'user-a');
     expect(result.acquired).toBe(true);
+    // Refresh goes through upsert (find-or-create — no P2025 on races).
+    expect(prisma.orderEditLock.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { orderId: 'order-1' },
+        create: expect.objectContaining({ userId: 'user-a' }),
+      }),
+    );
+    expect(prisma.orderEditLock.create).not.toHaveBeenCalled();
   });
 
   it('returns heldBy without throwing when another user holds a live lock', async () => {
-    prisma.orderEditLock.create.mockRejectedValue(
-      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
-        code: 'P2002',
-        clientVersion: '5.0.0',
-      }),
-    );
     prisma.orderEditLock.findUnique.mockResolvedValue(liveLock);
 
     const result = await service.acquire('order-1', 'user-b');
@@ -94,17 +90,13 @@ describe('OrderEditLockService', () => {
       expect(result.heldBy.userName).toBe('Ayesha Khan');
     }
     expect(prisma.orderEditLock.update).not.toHaveBeenCalled();
+    expect(prisma.orderEditLock.upsert).not.toHaveBeenCalled();
+    expect(prisma.orderEditLock.create).not.toHaveBeenCalled();
   });
 
-  it('takes over an expired lock and audits the takeover', async () => {
-    prisma.orderEditLock.create.mockRejectedValue(
-      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
-        code: 'P2002',
-        clientVersion: '5.0.0',
-      }),
-    );
+  it('takes over an expired lock via upsert and audits the takeover', async () => {
     prisma.orderEditLock.findUnique.mockResolvedValue(expiredLock);
-    prisma.orderEditLock.update.mockResolvedValue({
+    prisma.orderEditLock.upsert.mockResolvedValue({
       ...expiredLock,
       userId: 'user-b',
       heartbeatAt: new Date(),
@@ -117,10 +109,10 @@ describe('OrderEditLockService', () => {
 
     const result = await service.acquire('order-1', 'user-b');
     expect(result.acquired).toBe(true);
-    expect(prisma.orderEditLock.update).toHaveBeenCalledWith(
+    expect(prisma.orderEditLock.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { orderId: 'order-1' },
-        data: expect.objectContaining({ userId: 'user-b' }),
+        create: expect.objectContaining({ userId: 'user-b' }),
       }),
     );
     // Audit entry appended to the order timeline.
@@ -128,18 +120,53 @@ describe('OrderEditLockService', () => {
     expect(timelineUpdate.data.timeline[0].type).toBe('edit_lock');
   });
 
-  it('returns heldBy when a create races with another holder', async () => {
-    prisma.orderEditLock.findUnique.mockResolvedValue(liveLock);
+  it('returns heldBy when a create races with another holder (no error log)', async () => {
+    // Read sees nothing; the create loses the unique race; the re-read sees
+    // the other holder's live lock → conflict, and the benign race is never
+    // logged as an error.
+    prisma.orderEditLock.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(liveLock);
     prisma.orderEditLock.create.mockRejectedValue(
       new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
         code: 'P2002',
         clientVersion: '5.0.0',
       }),
     );
+    const errorSpy = jest
+      .spyOn((service as any).logger, 'error')
+      .mockImplementation(() => undefined);
 
     const result = await service.acquire('order-1', 'user-b');
     expect(result.acquired).toBe(false);
     if (!result.acquired) expect(result.heldBy.userId).toBe('user-a');
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it('recovers via upsert when the raced lock was released before the re-read', async () => {
+    prisma.orderEditLock.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    prisma.orderEditLock.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: '5.0.0',
+      }),
+    );
+    prisma.orderEditLock.upsert.mockResolvedValue({
+      ...liveLock,
+      userId: 'user-b',
+    });
+    const errorSpy = jest
+      .spyOn((service as any).logger, 'error')
+      .mockImplementation(() => undefined);
+
+    const result = await service.acquire('order-1', 'user-b');
+    expect(result.acquired).toBe(true);
+    expect(prisma.orderEditLock.upsert).toHaveBeenCalled();
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 
   it('throws NotFound when the order does not exist', async () => {

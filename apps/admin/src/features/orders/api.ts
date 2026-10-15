@@ -116,7 +116,7 @@ export interface RtnOrderResponse {
 }
 
 export interface ScanPurposeDescriptor {
-  purpose: 'DISPATCH_HANDED_OVER' | 'DISPATCH_RETURN' | 'ORDER_STATUS' | 'STICKER_PRINT'
+  purpose: 'DISPATCH_HANDED_OVER' | 'DISPATCH_RETURN' | 'ORDER_STATUS' | 'STICKER_PRINT' | 'RETURN_RECEIVE'
   label: string
   description: string
 }
@@ -149,12 +149,21 @@ export interface ScanOrderPreview {
   orderTotal: number
 }
 
+export interface ScanLinkedCandidate {
+  kind: 'return' | 'exchange'
+  id: string
+  displayId: string
+  status: string
+}
+
 export interface ScanResolveOutcome {
   status: 'resolved' | 'selection_required' | 'not_found'
   identifier: string
   message?: string
   dispatches: ScanDispatchPreview[]
   order: ScanOrderPreview | null
+  /** Linked returns/exchanges for an order barcode (RETURN_RECEIVE). */
+  linked?: ScanLinkedCandidate[]
 }
 
 export interface ScanResult {
@@ -386,6 +395,12 @@ export const rtnApi = {
 
 export interface ExchangeSettlement {
   originalPaid: number
+  /** Recorded Σ PAID before any dialog adjustment (phase-1 paidConfirmed). */
+  recordedPaid?: number
+  /** Dialog-confirmed figure, or null when the recorded figure was used. */
+  paidConfirmed?: number | null
+  /** Why the confirmed figure differs (null when it does not). */
+  paidAdjustmentReason?: string | null
   availableCredit: number
   exchangeTotal: number
   creditApplied: number
@@ -432,6 +447,15 @@ export const exchangeApi = {
     shippingCharge?: number
     customerNotes?: string
     officeNotes?: string
+    /**
+     * Phase-1 hardening: what the customer confirmed they paid on the
+     * ORIGINAL (the dialog confirms it). Drives settlement instead of the
+     * recorded Σ when present. When it differs from recorded payments,
+     * paidAdjustmentReason is required (enforced server-side).
+     */
+    paidConfirmed?: number
+    /** Why paidConfirmed differs from the recorded payments (max 500 chars). */
+    paidAdjustmentReason?: string
   }) =>
     apiClient
       .post<{ exchange: OrderResponse; settlement: ExchangeSettlement; mode: 'FULL' | 'PARTIAL'; returnRecord: ReturnRecord | null }>(
@@ -456,22 +480,11 @@ export interface ReturnRecord {
 }
 
 /**
- * Unified Return entity (Task 6 backend; Task 4 menu entry points).
- * T7 owns the Returns/Exchanges LISTS — this client only creates/reads
- * single records for the order-detail flows.
+ * Single-record reads for the order-detail flows. Creation lives in
+ * `@/features/returns/api` (the unified Create-return dialog) — staff
+ * returns are NEVER posted one-click from a menu.
  */
 export const returnsApi = {
-  create: (data: {
-    orderId: string
-    type: 'FULL' | 'PARTIAL' | 'EXCHANGE'
-    source?: 'STAFF' | 'COURIER' | 'EXCHANGE'
-    items?: { productId: string; variantId?: string | null; quantity: number }[]
-    reason?: string
-    courier?: string
-    courierReturnId?: string
-    courierStatus?: string
-    exchangeOrderId?: string
-  }) => apiClient.post<ReturnRecord>('/returns', data).then(r => r.data),
   get: (id: string) => apiClient.get<ReturnRecord>(`/returns/${id}`).then(r => r.data),
 }
 
@@ -487,6 +500,10 @@ export const scannerApi = {
     orderId?: string
     orderIds?: string[]
     targetStatusId?: string
+    /** Linked return leg selected by the picker (RETURN_RECEIVE). */
+    returnId?: string
+    /** Linked exchange selected by the picker (RETURN_RECEIVE, info-only). */
+    exchangeId?: string
   }) => apiClient.post<ScanResult>('/scanner/scan', payload).then(r => r.data),
 }
 

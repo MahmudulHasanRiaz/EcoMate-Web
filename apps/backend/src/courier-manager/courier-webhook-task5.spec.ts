@@ -4,6 +4,7 @@ import { CourierManagerService } from './courier-manager.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { OrdersService } from '../orders/orders.service';
 import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
+import { ReturnsService } from '../returns/returns.service';
 
 /**
  * Task 5 (owner-locked status mappings):
@@ -25,6 +26,7 @@ describe('CourierWebhookService — Task 5 owner-approved status mappings', () =
   let ordersService: any;
   let manager: any;
   let cancelReturnStock: any;
+  let returns: any;
 
   const order = {
     id: 'order-1',
@@ -79,6 +81,14 @@ describe('CourierWebhookService — Task 5 owner-approved status mappings', () =
     cancelReturnStock = {
       restoreForOrder: jest.fn().mockResolvedValue(undefined),
     };
+    returns = {
+      upsertCourierReturn: jest.fn().mockResolvedValue({ id: 'ret-1', status: 'REQUESTED' }),
+      setReturnTransit: jest.fn().mockResolvedValue({ id: 'ret-1', status: 'IN_TRANSIT' }),
+      setReturnReceived: jest.fn().mockResolvedValue({ id: 'ret-1', status: 'RECEIVED' }),
+      restockReturn: jest.fn().mockResolvedValue({ id: 'ret-1', status: 'RESTOCKED' }),
+      orderItemsSnapshot: jest.fn().mockResolvedValue([{ productId: 'p-1', quantity: 2 }]),
+      findOpenStaffReturnWithItems: jest.fn().mockResolvedValue(null),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -87,6 +97,7 @@ describe('CourierWebhookService — Task 5 owner-approved status mappings', () =
         { provide: OrdersService, useValue: ordersService },
         { provide: CourierManagerService, useValue: manager },
         { provide: CancelReturnStockService, useValue: cancelReturnStock },
+        { provide: ReturnsService, useValue: returns },
       ],
     }).compile();
 
@@ -269,10 +280,14 @@ describe('CourierWebhookService — Task 5 owner-approved status mappings', () =
           update: expect.objectContaining({ status: 'RETURNED' }),
         }),
       );
-      // Stock reconcile hook reused (existing return-stock path, return prefix).
-      expect(cancelReturnStock.restoreForOrder).toHaveBeenCalledWith(
-        expect.objectContaining({ orderId: 'order-1', referencePrefix: 'return' }),
+      // Unified Return path: item-level restore via ReturnsService (never a
+      // raw blanket restoreForOrder — HIGH legacy-restore fix).
+      expect(returns.setReturnReceived).toHaveBeenCalledWith('ret-1', 'cancelled_return_received');
+      expect(returns.restockReturn).toHaveBeenCalledWith(
+        'ret-1',
+        expect.objectContaining({ items: [{ productId: 'p-1', quantity: 2 }] }),
       );
+      expect(cancelReturnStock.restoreForOrder).not.toHaveBeenCalled();
       // NO COD owed: never DELIVERED, never a Delivered advancement.
       const upserts = prisma.dispatch.upsert.mock.calls as any[];
       for (const [args] of upserts) {
@@ -287,12 +302,12 @@ describe('CourierWebhookService — Task 5 owner-approved status mappings', () =
       );
     });
 
-    it('partial_delivered_return_received → PARTIAL kept + HOLD (legacy FULL-only gate, no blanket restore)', async () => {
-      // T6 gap fix: the legacy path (no ReturnsService) is FULL-only. A
-      // partial NEVER blanket-restores (that would restock the kept part) —
-      // it HOLDs with a LOUD "confirm items to restock" staff alert instead.
-      // Production path (ReturnsService wired) does restore-or-hold via the
-      // staff-Return lookup — see courier-webhook-partial-restore.spec.ts.
+    it('partial_delivered_return_received → PARTIAL kept + HOLD (unified path, no blanket restore)', async () => {
+      // Unified path (ReturnsService REQUIRED — HIGH legacy-restore fix): a
+      // partial with unknown split HOLDs with a LOUD "confirm items to
+      // restock" staff alert (never a blanket restore — that would restock
+      // the kept part). Restore-or-hold via the staff-Return lookup — see
+      // courier-webhook-partial-restore.spec.ts.
       manager.getSteadfastReturnStatus.mockResolvedValue({
         deliveryStatus: 'partial_delivered_return_received',
       });

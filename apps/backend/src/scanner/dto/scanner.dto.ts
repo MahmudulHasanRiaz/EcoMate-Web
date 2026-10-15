@@ -6,6 +6,7 @@ export const SCAN_PURPOSES: ScanPurposeId[] = [
   'DISPATCH_RETURN',
   'ORDER_STATUS',
   'STICKER_PRINT',
+  'RETURN_RECEIVE',
 ];
 
 export class ScanResolveDto {
@@ -45,4 +46,14 @@ export class ScanExecuteDto {
   @IsOptional()
   @IsUUID()
   targetStatusId?: string;
+
+  /** Hardening (3): the linked return leg selected by the picker. */
+  @IsOptional()
+  @IsUUID()
+  returnId?: string;
+
+  /** Hardening (3): the linked exchange selected by the picker (info-only). */
+  @IsOptional()
+  @IsUUID()
+  exchangeId?: string;
 }

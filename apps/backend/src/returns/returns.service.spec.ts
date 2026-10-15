@@ -21,7 +21,13 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
   let prisma: any;
   let cancelReturnStock: any;
 
-  const order = { id: 'order-1', displayId: 'ORD-260101-0001', trashedAt: null };
+  const order = {
+    id: 'order-1',
+    displayId: 'ORD-260101-0001',
+    trashedAt: null,
+    status: { id: 'st-shipping', name: 'Shipping' },
+    items: [] as any[],
+  };
 
   function makeTx(over: Record<string, any> = {}) {
     return {
@@ -37,7 +43,12 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
         update: jest.fn().mockImplementation(({ data }: any) =>
           Promise.resolve({ id: 'ret-1', ...data }),
         ),
-        findUnique: jest.fn().mockResolvedValue(null),
+        // The guarded stock core re-loads the row INSIDE the transaction —
+        // delegate to the outer mock so tests control the stored row.
+        findUnique: jest.fn((...args: any[]) =>
+          (prisma.return.findUnique as jest.Mock)(...args),
+        ),
+        findMany: jest.fn().mockResolvedValue([]),
       },
       ...over,
     };
