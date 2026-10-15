@@ -4,7 +4,7 @@
 ## Constraints & Preferences
 - Each requirement audited independently; existing passing suite ≠ requirement completion; fix only real gaps.
 - Change-completeness gate (AGENT.md "CHANGE COMPLETENESS & DEPLOYMENT SYNC RULES"): before every commit, update companion files in the SAME commit (env vars → docker-compose.yml + .env.example + portainer-stack.json; ports/volumes/topology → compose + Dockerfiles + docs; API shapes → all consumers + tests; redeploy-affecting changes → CI images built before redeploy). Schema edits ship with migration + rollback, redeploy-safe + self-healing (resolve-failed-migrations.sh). State the DoD checklist in the final report.
-- Prisma rules (AGENTS.md): schema edit → migration mandatory; no `db push`/`migrate reset`/destructive flags; no drift left behind; schema+migration committed together; backend changes → `nest build` mandatory.
+- Prisma rules (AGENTS.md): schema edit → migration mandatory; no `db push`/`migrate reset`/destructive flags; no drift left behind; schema+migration committed together; backend changes → `nest build` mandatory; enum `ADD VALUE` + any DML using the new value NEVER share one migration file (55P04 — DDL-only file first, data in later file).
 - Frontend changes → `npx tsc --noEmit` + full regression (admin vitest, storefront `npm test`).
 - Final report must include the 3 explicit yes/no answers; "No"/"partially" → task not complete.
 - No new order statuses; no role-based "bypass permission" for admin blocking context (context-based exemption only). Banner language: "This phone number is blocked for storefront ordering."
