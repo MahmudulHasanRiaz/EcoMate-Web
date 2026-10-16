@@ -467,6 +467,57 @@ export class ImportService {
         productCache,
       );
     }
+
+    // Parent price fallback for variable products: when the CSV leaves the
+    // parent price empty, the parent is created/updated with 0 and the
+    // storefront shows no price. Documented rule: fill the parent basePrice
+    // with the LOWEST effective variant price (salePrice ?? regular) from the
+    // CSV, but only when the stored parent price is still 0 — an explicitly
+    // set parent price is never overwritten.
+    if (hasVariations) {
+      const parentType = (parentRow.data.Type || 'simple').toLowerCase().trim();
+      const isVariableParent = parentType.includes('variable');
+      const explicitParentPrice =
+        this.parsePrice(parentRow.data['Regular price']) ??
+        this.parsePrice(parentRow.data['Price']);
+      if (isVariableParent && explicitParentPrice === undefined) {
+        const lowestVariantPrice = this.lowestVariationPrice(variationRows);
+        if (lowestVariantPrice !== undefined) {
+          const current = await this.prisma.product.findUnique({
+            where: { id: productId },
+            select: { basePrice: true },
+          });
+          if (!current || Number(current.basePrice) === 0) {
+            await this.prisma.product.update({
+              where: { id: productId },
+              data: { basePrice: lowestVariantPrice },
+            });
+            this.logger.log(
+              `Product ${parentSku}: parent price filled from lowest variant price (${lowestVariantPrice}).`,
+            );
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Lowest effective variant price (salePrice ?? regular) among CSV variation
+   * rows. Mirrors the effective-price rule used in processVariationCached.
+   */
+  private lowestVariationPrice(rows: CsvRowWithMeta[]): number | undefined {
+    let lowest: number | undefined;
+    for (const row of rows) {
+      const regPrice =
+        this.parsePrice(row.data['Regular price']) ??
+        this.parsePrice(row.data['Price']);
+      const salePrice = this.parsePrice(row.data['Sale price']);
+      const effective = salePrice ?? regPrice;
+      if (effective !== undefined && (lowest === undefined || effective < lowest)) {
+        lowest = effective;
+      }
+    }
+    return lowest;
   }
 
   private async createProductCached(
@@ -679,7 +730,10 @@ export class ImportService {
       updateData.description = data.Description.trim() || null;
     if (data['Short description']?.trim() !== undefined)
       updateData.shortDesc = data['Short description'].trim() || null;
-    updateData.basePrice = basePrice;
+    // Empty price cell must not wipe the stored parent price (variable
+    // products commonly leave the parent price empty; a min-variant fallback
+    // fills it after variations are processed).
+    if (parsedPrice !== undefined || !isVariable) updateData.basePrice = basePrice;
     updateData.salePrice = salePrice ?? null;
     updateData.managedStockQuantity = stock;
     updateData.categoryId = categoryId;
@@ -1000,7 +1054,11 @@ export class ImportService {
     if (!eq(current.name, intended.name)) return false;
     if (!eq(current.description, intended.description)) return false;
     if (!eq(current.shortDesc, intended.shortDesc)) return false;
-    if (!eq(Number(current.basePrice), intended.basePrice)) return false;
+    if (
+      intended.basePrice !== undefined &&
+      !eq(Number(current.basePrice), intended.basePrice)
+    )
+      return false;
     if (
       !eq(
         current.salePrice != null ? Number(current.salePrice) : null,

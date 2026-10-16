@@ -13,7 +13,7 @@ vi.mock('@/lib/api-client', () => ({
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }))
 
 const CODE_ERR = { response: { data: { code: 'DESTRUCTIVE_ADJUSTMENT', message: 'server guard' } } }
-const CONFIRM_TEXT = 'এই location-এর শেষ ১ পিস সরিয়ে ফেলা হবে (স্টক শূন্য হবে) — নিশ্চিত?'
+const CONFIRM_TEXT = 'This removes the last remaining unit(s) at this location — stock will reach zero. Confirm?'
 
 function renderDialog() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -38,7 +38,7 @@ describe('PhysicalAdjustDialog destructive confirm (Fix 3)', () => {
     })
   })
 
-  it('guard code → Bengali confirm; নিশ্চিত resubmits with confirmDestructive=true', async () => {
+  it('guard code → English confirm; Confirm resubmits with confirmDestructive=true', async () => {
     mockPost.mockRejectedValueOnce(CODE_ERR).mockResolvedValue({ data: { ok: true } })
     const ui = await renderDialog()
     // Pre-selected product lands in the items table.
@@ -51,15 +51,15 @@ describe('PhysicalAdjustDialog destructive confirm (Fix 3)', () => {
 
     expect(mockPost).toHaveBeenCalledTimes(1)
     await expect.element(ui.getByText(CONFIRM_TEXT)).toBeInTheDocument()
-    await expect.element(ui.getByRole('button', { name: 'নিশ্চিত' })).toBeInTheDocument()
-    await expect.element(ui.getByRole('button', { name: 'বাতিল' })).toBeInTheDocument()
+    await expect.element(ui.getByRole('button', { name: 'Confirm' })).toBeInTheDocument()
+    await expect.element(ui.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
 
-    await userEvent.click(ui.getByRole('button', { name: 'নিশ্চিত' }))
+    await userEvent.click(ui.getByRole('button', { name: 'Confirm' }))
     expect(mockPost).toHaveBeenCalledTimes(2)
     expect(mockPost.mock.calls[1][1]).toMatchObject({ confirmDestructive: true })
   })
 
-  it('বাতিল leaves everything unchanged (no resubmit)', async () => {
+  it('Cancel leaves everything unchanged (no resubmit)', async () => {
     mockPost.mockRejectedValueOnce(CODE_ERR)
     const ui = await renderDialog()
     await expect.element(ui.getByText('Widget')).toBeInTheDocument()
@@ -70,7 +70,7 @@ describe('PhysicalAdjustDialog destructive confirm (Fix 3)', () => {
     await userEvent.click(ui.getByRole('button', { name: 'Apply Adjustments' }))
     await expect.element(ui.getByText(CONFIRM_TEXT)).toBeInTheDocument()
 
-    await userEvent.click(ui.getByRole('button', { name: 'বাতিল' }))
+    await userEvent.click(ui.getByRole('button', { name: 'Cancel' }))
     expect(mockPost).toHaveBeenCalledTimes(1)
     await expect.element(ui.getByText('Adjust Physical Stock')).toBeInTheDocument()
   })

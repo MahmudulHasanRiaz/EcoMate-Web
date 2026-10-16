@@ -18,6 +18,7 @@ import { CustomersService } from '../customers/customers.service';
 import { CustomerAddressService } from '../customers/customer-address.service';
 import { SalesChannelService } from '../sales-channel/sales-channel.service';
 import { OrdersEventService } from './orders-event.service';
+import { withTimelineSources } from './timeline-source';
 import { readPaymentSettings } from '../payments/payment-settings';
 import { buildOrderSearchFilter } from './order-search';
 import { orderSnapshotCustomer } from './order-recipient';
@@ -1047,7 +1048,13 @@ export class OrdersService {
     }
     // Note: edit-lock presence is stripped by transformOrder for the public/customer
     // shape (it never exposes the holder). Staff only.
-    return this.transformOrder(order);
+    const transformed = this.transformOrder(order);
+    // Timeline source attribution for the admin All/Staff/Courier/System
+    // filters — derived at read time (writers never persist a source field).
+    if (Array.isArray(transformed.timeline)) {
+      transformed.timeline = withTimelineSources(transformed.timeline);
+    }
+    return transformed;
   }
 
   /**
@@ -3553,18 +3560,27 @@ export class OrdersService {
     return netPaid - legacyRefunded;
   }
 
+  /**
+   * Stable client contract: the admin matches `code` — never the message
+   * text — to deep-link into the refund flow (see $id.tsx statusMut.onError).
+   */
+  static readonly CANCEL_REQUIRES_REFUND_CODE = 'CANCEL_REQUIRES_REFUND';
+
   private cancelBlockedMessage(outstanding: number): string {
     return (
-      `আগে রিফান্ড করুন — this order still has an outstanding paid balance ` +
-      `of ${outstanding}. Record a refund first (the refund flow can cancel ` +
-      `atomically via its cancel option), then cancel.`
+      `This order has an outstanding paid balance of ${outstanding}. ` +
+      `Record a refund first (the refund flow can cancel atomically via its ` +
+      `cancel option), then cancel.`
     );
   }
 
   private async assertNoOutstandingForCancel(orderId: string): Promise<void> {
     const outstanding = await this.outstandingRefundableBalance(orderId);
     if (outstanding > 0) {
-      throw new BadRequestException(this.cancelBlockedMessage(outstanding));
+      throw new BadRequestException({
+        message: this.cancelBlockedMessage(outstanding),
+        code: OrdersService.CANCEL_REQUIRES_REFUND_CODE,
+      });
     }
   }
 

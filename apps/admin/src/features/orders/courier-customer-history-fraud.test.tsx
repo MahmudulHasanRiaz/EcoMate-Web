@@ -98,10 +98,10 @@ describe('CourierCustomerHistoryCard — Steadfast fraud ratios UI', () => {
     expect(container.textContent).toContain('refused')
   })
 
-  it('null fraud fields render তথ্য নেই — never 0-as-clean', async () => {
+  it('null fraud fields render No data — never 0-as-clean', async () => {
     const { getByText, container } = await renderCard(payloadWith(FRAUD_NULL))
-    await expect.element(getByText(/তথ্য নেই/).first()).toBeInTheDocument()
-    expect(container.textContent).toContain('তথ্য নেই')
+    await expect.element(getByText(/No data/).first()).toBeInTheDocument()
+    expect(container.textContent).toContain('No data')
     await expect.element(getByText('0.0%', { exact: true })).not.toBeInTheDocument()
     await expect.element(getByText('Low Risk', { exact: true })).not.toBeInTheDocument()
     await expect.element(getByText('High Risk', { exact: true })).not.toBeInTheDocument()

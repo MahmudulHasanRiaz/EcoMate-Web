@@ -684,6 +684,8 @@ describe('OrdersService', () => {
       // D-A: customer is built from the snapshot (stale profile ignored).
       expect(result).toEqual({
         ...mockOrder,
+        // Read-time attribution: actor-less entries are system.
+        timeline: [{ ...mockOrder.timeline[0], source: 'system' }],
         customerFirstName: 'John',
         customerLastName: 'Doe',
         customerPhone: '+1234567890',
@@ -698,6 +700,27 @@ describe('OrdersService', () => {
           phoneNumber: '+1234567890',
         },
       });
+    });
+
+    it('attaches a derived source to every timeline entry (staff / courier / system)', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        timeline: [
+          { status: 'Pending', timestamp: new Date().toISOString(), note: 'Order created' },
+          { type: 'courier', courier: 'pathao', status: 'DISPATCHED', timestamp: new Date().toISOString() },
+          { type: 'note', performedBy: 'staff@shop.com', note: 'called customer', timestamp: new Date().toISOString() },
+          { type: 'note', performedBy: 'System', note: 'auto', timestamp: new Date().toISOString() },
+        ],
+      });
+
+      const result = await service.findOne('order-id-1', { token: 'mock-view-token' });
+
+      expect(result.timeline.map((t: any) => t.source)).toEqual([
+        'system',
+        'courier',
+        'staff',
+        'system',
+      ]);
     });
 
     it('loads product.category + combo relations so the browser Purchase can map content metadata (F1)', async () => {
@@ -5159,7 +5182,7 @@ await service.bulkAssign(['order-1', 'trashed-1'], 'staff-1');
           { statusId: 'status-cancelled' } as any,
           'staff-1',
         ),
-      ).rejects.toThrow(/আগে রিফান্ড/);
+      ).rejects.toThrow(/outstanding paid balance/);
       expect(prisma.order.update).not.toHaveBeenCalled();
     });
 
@@ -5176,7 +5199,7 @@ await service.bulkAssign(['order-1', 'trashed-1'], 'staff-1');
 
       await expect(
         service.cancelByCustomer('order-id-1', 'the-token'),
-      ).rejects.toThrow(/আগে রিফান্ড/);
+      ).rejects.toThrow(/outstanding paid balance/);
       expect(prisma.order.update).not.toHaveBeenCalled();
     });
 
@@ -5249,7 +5272,7 @@ await service.bulkAssign(['order-1', 'trashed-1'], 'staff-1');
       expect(result.updated).toBe(1);
       expect(result.failed).toBe(1);
       expect(result.failedDetails).toMatchObject([
-        { id: 'order-owing', reason: expect.stringContaining('আগে রিফান্ড') },
+        { id: 'order-owing', reason: expect.stringContaining('outstanding paid balance') },
       ]);
     });
   });

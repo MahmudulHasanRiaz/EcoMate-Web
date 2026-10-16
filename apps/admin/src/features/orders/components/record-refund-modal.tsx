@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { refundsApi } from '@/features/refunds/api'
 
-export const REFUND_CANCEL_QUESTION = 'এই অর্ডারটি কি ক্যান্সেলও হয়ে যাবে?'
+export const REFUND_CANCEL_QUESTION = 'Should this order be cancelled too?'
 
 export interface RefundSourceContext {
   id: string
@@ -154,7 +154,7 @@ export function RecordRefundModal({
                 onChange={() => setCancelToo(true)}
                 className="accent-primary"
               />
-              হ্যাঁ, এখনই ক্যান্সেল করো
+              Yes, cancel it now
             </label>
             <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input
@@ -164,7 +164,7 @@ export function RecordRefundModal({
                 onChange={() => setCancelToo(false)}
                 className="accent-primary"
               />
-              পরে করব
+              No, later
             </label>
           </div>
         </div>

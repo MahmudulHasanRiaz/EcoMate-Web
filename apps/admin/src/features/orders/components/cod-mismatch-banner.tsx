@@ -13,7 +13,7 @@ export interface CodDispatchLink {
 }
 
 export const COD_MISMATCH_INSTRUCTION =
-  'ডিসপ্যাচের পর COD বদলেছে। কুরিয়ার প্যানেলে গিয়ে হাতে amount আপডেট করুন — API দিয়ে আপডেট করা যায় না।'
+  'The COD amount changed after dispatch. Update the amount manually in the courier panel — the API cannot change it.'
 
 const fmtBdt = (v: number | string) => `৳${Number(v).toLocaleString()}`
 

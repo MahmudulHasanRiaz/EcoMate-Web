@@ -147,7 +147,10 @@ export default defineConfig(({ mode }) => {
       },
     },
     optimizeDeps: {
-      include: ['@ecomate/shared-types'],
+      // @dnd-kit resolves its own React copy when externalized under vitest
+      // browser mode ("Invalid hook call" via useMemo) — pre-bundle it so the
+      // deduped React is used, like in dev/build.
+      include: ['@ecomate/shared-types', '@dnd-kit/core', '@dnd-kit/sortable', '@dnd-kit/utilities'],
     },
     test: {
       silent: 'passed-only',

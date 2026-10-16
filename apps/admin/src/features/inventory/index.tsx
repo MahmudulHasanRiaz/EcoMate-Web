@@ -19,6 +19,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { InventoryDetailDrawer } from './components/inventory-detail-drawer'
 import { AdjustStockModal } from './components/adjust-stock-modal'
 import { useInventoryManagement } from './hooks/use-inventory-management'
+import { dedupePhysicalVariants } from './utils/dedupe-physical-variants'
 import { Link } from '@tanstack/react-router'
 
 interface StockOverviewItem {
@@ -258,17 +259,20 @@ export function Inventory() {
         const isVariable = p.type === 'variable'
         const hasPhysicalStock = !!phys
 
-        // Build variant display list — merge PI records with virtual entries for variants without physical stock
+        // Build variant display list — merge PI records with virtual entries for
+        // variants without physical stock, then collapse to ONE row per variant:
+        // PhysicalInventory rows arrive per (variant × warehouse × bin) and used
+        // to render as duplicated variant lines.
         let displayVariants = variants
         if (isVariable) {
-          displayVariants = [...variants]
+          const merged = [...variants]
           const piVariantIds = new Set(
             variants.filter((v: any) => v.variantId).map((v: any) => v.variantId)
           )
           const stockVariants = (p as any).variants || []
           for (const sv of stockVariants) {
             if (!piVariantIds.has(sv.id)) {
-              displayVariants.push({
+              merged.push({
                 id: `virtual-${sv.id}`,
                 variantId: sv.id,
                 variant: {
@@ -286,6 +290,7 @@ export function Inventory() {
               })
             }
           }
+          displayVariants = dedupePhysicalVariants(merged)
         }
 
         return {
@@ -295,9 +300,13 @@ export function Inventory() {
           sku: p.sku || '—',
           availabilityMode: p.availabilityMode,
           warehouse: hasPhysicalStock
-            ? (displayVariants.length > 1 ? `${displayVariants.length} records` : (phys._warehouseName))
+            ? (displayVariants.length > 1
+                ? `${displayVariants.length} ${isVariable ? 'variants' : 'records'}`
+                : (displayVariants[0]?.warehouse?.name || phys._warehouseName))
             : '—',
-          bin: phys?._binCode || '—',
+          bin: hasPhysicalStock
+            ? (displayVariants[0]?.binLocation?.code || phys?._binCode || '—')
+            : '—',
           lot: '—',
           expiry: '—',
           available: hasPhysicalStock ? avail : 0,

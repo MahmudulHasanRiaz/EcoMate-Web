@@ -26,11 +26,11 @@ describe('RecordRefundModal (D5)', () => {
     mockPost.mockResolvedValue({ data: { id: 'refund-1' } })
   })
 
-  it('asks the cancel-too question verbatim with হ্যাঁ/পরে options', async () => {
+  it('asks the cancel-too question verbatim with Yes/No options', async () => {
     const ui = await renderModal()
     await expect.element(ui.getByText(REFUND_CANCEL_QUESTION)).toBeInTheDocument()
-    await expect.element(ui.getByText(/হ্যাঁ, এখনই ক্যান্সেল করো/)).toBeInTheDocument()
-    await expect.element(ui.getByText(/পরে করব/)).toBeInTheDocument()
+    await expect.element(ui.getByText(/Yes, cancel it now/)).toBeInTheDocument()
+    await expect.element(ui.getByText(/No, later/)).toBeInTheDocument()
   })
 
   it('requires amount, refund account/method and reason', async () => {
@@ -40,12 +40,12 @@ describe('RecordRefundModal (D5)', () => {
     await expect.element(ui.getByRole('button', { name: /^Record refund$/ })).toBeInTheDocument()
   })
 
-  it('posts cancelToo=true when হ্যাঁ is chosen (atomic cancel)', async () => {
+  it('posts cancelToo=true when Yes is chosen (atomic cancel)', async () => {
     const ui = await renderModal()
     await userEvent.fill(ui.getByLabelText(/Amount/), '1200')
     await userEvent.fill(ui.getByLabelText(/Refund to/), 'bkash 017XX')
     await userEvent.fill(ui.getByLabelText(/Reason/), 'customer cancelled')
-    await userEvent.click(ui.getByText(/হ্যাঁ, এখনই ক্যান্সেল করো/))
+    await userEvent.click(ui.getByText(/Yes, cancel it now/))
     await userEvent.click(ui.getByRole('button', { name: /^Record refund$/ }))
     expect(mockPost).toHaveBeenCalledWith('/refunds', expect.objectContaining({
       orderId: 'order-1',
@@ -56,12 +56,12 @@ describe('RecordRefundModal (D5)', () => {
     }))
   })
 
-  it('posts cancelToo=false when পরে is chosen (refund only)', async () => {
+  it('posts cancelToo=false when No is chosen (refund only)', async () => {
     const ui = await renderModal()
     await userEvent.fill(ui.getByLabelText(/Amount/), '400')
     await userEvent.fill(ui.getByLabelText(/Refund to/), 'cash')
     await userEvent.fill(ui.getByLabelText(/Reason/), 'partial adjustment')
-    await userEvent.click(ui.getByText(/পরে করব/))
+    await userEvent.click(ui.getByText(/No, later/))
     await userEvent.click(ui.getByRole('button', { name: /^Record refund$/ }))
     expect(mockPost).toHaveBeenCalledWith('/refunds', expect.objectContaining({ cancelToo: false }))
   })

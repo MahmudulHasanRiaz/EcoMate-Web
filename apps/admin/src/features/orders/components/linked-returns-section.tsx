@@ -32,6 +32,10 @@ export function LinkedReturnsSection({ orderId }: { orderId: string }) {
   const exRows = ready?.exchanges ?? []
   const empty = rtnRows.length === 0 && exRows.length === 0
 
+  // Nothing linked → nothing rendered. An empty card is noise on every order
+  // that never had a return or exchange.
+  if (empty) return null
+
   return (
     <Card className='overflow-hidden border border-border/70 shadow-xs'>
       <CardHeader className='bg-muted/30 border-b border-border/50 py-2.5 px-3.5 sm:py-3.5 sm:px-6'>
@@ -48,9 +52,6 @@ export function LinkedReturnsSection({ orderId }: { orderId: string }) {
         </div>
       </CardHeader>
       <CardContent className='p-3 sm:p-6 flex flex-col gap-2'>
-        {empty && (
-          <p className='text-xs text-muted-foreground'>No linked returns or exchanges.</p>
-        )}
         {rtnRows.map((r: any) => (
           <div key={r.id} className='flex items-center gap-2 text-xs flex-wrap rounded-lg border border-border/50 px-2.5 py-2'>
             <RotateCcw className='h-3.5 w-3.5 text-pink-500 shrink-0' />

@@ -102,8 +102,8 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
     },
   })
 
-  // Guard fired: [নিশ্চিত] resubmits the SAME payload with the flag on;
-  // [বাতিল] drops it and leaves the form untouched.
+  // Guard fired: [Confirm] resubmits the SAME payload with the flag on;
+  // [Cancel] drops it and leaves the form untouched.
   const confirmDestructiveResubmit = () => {
     if (!destructivePending) return
     const payload = { ...destructivePending, confirmDestructive: true }
@@ -516,10 +516,10 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
     <ConfirmDialog
       open={destructivePending !== null}
       onOpenChange={(v) => { if (!v) setDestructivePending(null) }}
-      title='স্টক ডিডাকশন নিশ্চিত করুন'
+      title='Confirm stock deduction'
       desc={DESTRUCTIVE_CONFIRM_MESSAGE}
-      cancelBtnText='বাতিল'
-      confirmText='নিশ্চিত'
+      cancelBtnText='Cancel'
+      confirmText='Confirm'
       destructive
       handleConfirm={confirmDestructiveResubmit}
     />

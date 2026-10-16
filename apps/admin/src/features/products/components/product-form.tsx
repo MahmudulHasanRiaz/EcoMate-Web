@@ -50,7 +50,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [createdProductId, setCreatedProductId] = useState<string | null>(null)
   const [serverDraftId, setServerDraftId] = useState<string | null>(null)
 
-  const { data: fullProduct } = useQuery({
+  const { data: fullProduct, isError: fullProductError } = useQuery({
     queryKey: ['product', currentRow?.id || createdProductId],
     queryFn: () => productsApi.get(currentRow?.id || createdProductId!).then(r => r.data),
     enabled: (isEdit && !!currentRow?.id) || !!createdProductId,
@@ -178,10 +178,13 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     CASH_ON_DELIVERY: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
   })
 
-  const prevRowId = useRef<string | undefined>(undefined)
+  const populateKeyRef = useRef<string | null>(null)
+  const prevOpenRef = useRef(false)
   const prevSku = useRef(sku)
   const openStateRef = useRef<any>(null)
   const notifySaveErrorRef = useRef(false)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
 
   const notifyDraftSaveFailure = (e: any) => {
     console.error('[draft-save]', e?.response?.data || e?.message || e)
@@ -246,6 +249,41 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       return false
     }
   }
+
+  // The untouched-baseline for a populated form, built from the SOURCE object
+  // (an effect cannot read the state it just queued). Mirrors every setter in
+  // the population effect, including the `[type]` effect that zeroes stock for
+  // variable products. `localVariants` is passed in because the duplicate
+  // suffix must be identical between the state and the baseline.
+  const baselineFromSource = (src: any, localVariantList: any[]) => ({
+    mode, name: src.name || '', slug: src.slug || '', type: src.type || 'simple',
+    desc: src.description || '', shortDesc: src.shortDesc || '', videoUrl: src.videoUrl || '',
+    detailRows: Array.isArray(src.detailRows) ? src.detailRows : [],
+    dsTagline: src.descriptionSections?.tagline || '',
+    dsBenefits: Array.isArray(src.descriptionSections?.benefits) ? src.descriptionSections.benefits : [],
+    dsSpecs: src.descriptionSections?.specifications || '',
+    dsTip: src.descriptionSections?.stylingTip || '',
+    basePrice: String(src.basePrice ?? ''),
+    salePrice: src.salePrice != null ? String(src.salePrice) : '',
+    sku: src.sku || '',
+    stock: src.type === 'variable' && type !== 'variable' ? '0' : String(src.managedStockQuantity ?? 0),
+    lowStockQty: src.lowStockQty != null ? String(src.lowStockQty) : '',
+    categoryIds: src.productCategories?.map((pc: any) => pc.categoryId) || (src.categoryId ? [src.categoryId] : []),
+    brandId: src.brandId || '',
+    isActive: src.isActive ?? true,
+    isFeatured: src.isFeatured ?? false,
+    availabilityMode: src.availabilityMode || (src.manageStock ? 'MANAGED_STOCK' : 'INVENTORY_CONTROLLED'),
+    standardCost: src.standardCost != null ? String(src.standardCost) : '',
+    images: dedupUrls(Array.isArray(src.images) ? src.images : []),
+    tags: Array.isArray(src.tags) ? src.tags.join(', ') : '',
+    sizeChartId: src.sizeChartId || '',
+    seoTitle: src.seoMeta?.title || '',
+    seoDesc: src.seoMeta?.description || '',
+    seoKeywords: src.seoMeta?.keywords || '',
+    selectedAttrs: [] as string[],
+    selectedValues: {} as Record<string, string[]>,
+    localVariants: localVariantList,
+  })
 
   // Opening the dialog always starts a fresh create/duplicate session: the
   // draft surface is the Drafts tab, so no resume prompt here. Clean up the
@@ -358,68 +396,112 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
 
   useEffect(() => () => { if (wasOpenRef.current) flushRef.current() }, [])
 
+  // A fresh open must ALWAYS repopulate: closing the dialog resets every
+  // field while a naive "same row id" guard would still remember the previous
+  // session — reopening the same product then showed an EMPTY form (phantom
+  // "Product name is required", and saving wiped the stored images). The
+  // population marker therefore resets on every open transition and is keyed
+  // by (row id + data source), so an upgrade from list-row data to the full
+  // product GET still repopulates without clobbering in-progress edits.
+  useEffect(() => {
+    if (open && !prevOpenRef.current) {
+      populateKeyRef.current = null
+      openStateRef.current = null
+    }
+    prevOpenRef.current = open
+  }, [open])
+
   useEffect(() => {
     if (!open) return
-    const isSameRow = currentRow?.id === prevRowId.current
-    if (isSameRow) return
+    // Prefer the full product (GET) once it has loaded; the list row is the
+    // instant-paint fallback and already carries every scalar this form edits.
+    const source: any = isEdit ? (fullProduct ?? currentRow) : currentRow
+    const sourceKind = isEdit && fullProduct ? 'full' : 'row'
+    const sourceKey = source?.id ? `${sourceKind}:${source.id}${isDuplicate ? ':dup' : ''}` : 'blank'
+    if (sourceKey === populateKeyRef.current) return
 
-    prevRowId.current = currentRow?.id
+    // The row painted first; if the user already started editing while the
+    // full product was in flight, keep their work.
+    if (
+      sourceKey.startsWith('full:') &&
+      populateKeyRef.current?.startsWith('row:') &&
+      openStateRef.current !== null &&
+      !formUntouched()
+    ) {
+      populateKeyRef.current = sourceKey
+      return
+    }
 
-    if (currentRow) {
+    populateKeyRef.current = sourceKey
+
+    if (source) {
       const isClone = isDuplicate
+      const dupSuffix = `-CP${Date.now().toString(36).toUpperCase()}`
+      const cloneVariants = isClone
+        ? (source.variants?.map((v: any) => ({
+            ...v,
+            id: undefined,
+            productId: undefined,
+            sku: v.sku ? `${v.sku}${dupSuffix}` : '',
+          })) || [])
+        : []
       availabilityModeTouchedRef.current = true
-      setName(currentRow.name || '')
-      setSlug(currentRow.slug || '')
-      setType(currentRow.type || 'simple')
-      setDesc(currentRow.description || '')
-      setShortDesc(currentRow.shortDesc || '')
-      setVideoUrl((currentRow as any).videoUrl || '')
+      setName(source.name || '')
+      setSlug(source.slug || '')
+      setType(source.type || 'simple')
+      setDesc(source.description || '')
+      setShortDesc(source.shortDesc || '')
+      setVideoUrl((source as any).videoUrl || '')
       setVideoUrlError('')
-      setDetailRows(Array.isArray((currentRow as any).detailRows) ? (currentRow as any).detailRows : [])
-      setDsTagline((currentRow as any).descriptionSections?.tagline || '')
-      setDsBenefits(Array.isArray((currentRow as any).descriptionSections?.benefits) ? (currentRow as any).descriptionSections.benefits : [])
-      setDsSpecs((currentRow as any).descriptionSections?.specifications || '')
-      setDsTip((currentRow as any).descriptionSections?.stylingTip || '')
-      setBasePrice(String(currentRow.basePrice ?? ''))
-      setSalePrice(currentRow.salePrice != null ? String(currentRow.salePrice) : '')
-      setSku(currentRow.sku || '')
-      setStock(String(currentRow.managedStockQuantity ?? 0))
-      setLowStockQty(currentRow.lowStockQty != null ? String(currentRow.lowStockQty) : '')
-      setCategoryIds((currentRow as any).productCategories?.map((pc: any) => pc.categoryId) || (currentRow.categoryId ? [currentRow.categoryId] : []))
-      setBrandId(currentRow.brandId || '')
-      setIsActive(currentRow.isActive ?? true)
-      setIsFeatured(currentRow.isFeatured ?? false)
-      setAvailabilityMode(currentRow.availabilityMode || (currentRow.manageStock ? 'MANAGED_STOCK' : 'INVENTORY_CONTROLLED'))
-      setStandardCost(currentRow.standardCost != null ? String(currentRow.standardCost) : '')
-      setImages(dedupUrls(Array.isArray(currentRow.images) ? currentRow.images : []))
-      setTags(Array.isArray(currentRow.tags) ? currentRow.tags.join(', ') : '')
-      setSizeChartId((currentRow as any).sizeChartId || '')
-      setSeoTitle((currentRow.seoMeta as any)?.title || '')
-      setSeoDesc((currentRow.seoMeta as any)?.description || '')
-      setSeoKeywords((currentRow.seoMeta as any)?.keywords || '')
-      if (isClone) {
-        const dupSuffix = `-CP${Date.now().toString(36).toUpperCase()}`
-        setLocalVariants(currentRow.variants?.map((v: any) => ({
-          ...v,
-          id: undefined,
-          productId: undefined,
-          sku: v.sku ? `${v.sku}${dupSuffix}` : '',
-        })) || [])
-      }
+      setDetailRows(Array.isArray((source as any).detailRows) ? (source as any).detailRows : [])
+      setDsTagline((source as any).descriptionSections?.tagline || '')
+      setDsBenefits(Array.isArray((source as any).descriptionSections?.benefits) ? (source as any).descriptionSections.benefits : [])
+      setDsSpecs((source as any).descriptionSections?.specifications || '')
+      setDsTip((source as any).descriptionSections?.stylingTip || '')
+      setBasePrice(String(source.basePrice ?? ''))
+      setSalePrice(source.salePrice != null ? String(source.salePrice) : '')
+      setSku(source.sku || '')
+      setStock(String(source.managedStockQuantity ?? 0))
+      setLowStockQty(source.lowStockQty != null ? String(source.lowStockQty) : '')
+      setCategoryIds((source as any).productCategories?.map((pc: any) => pc.categoryId) || (source.categoryId ? [source.categoryId] : []))
+      setBrandId(source.brandId || '')
+      setIsActive(source.isActive ?? true)
+      setIsFeatured(source.isFeatured ?? false)
+      setAvailabilityMode(source.availabilityMode || (source.manageStock ? 'MANAGED_STOCK' : 'INVENTORY_CONTROLLED'))
+      setStandardCost(source.standardCost != null ? String(source.standardCost) : '')
+      setImages(dedupUrls(Array.isArray(source.images) ? source.images : []))
+      setTags(Array.isArray(source.tags) ? source.tags.join(', ') : '')
+      setSizeChartId((source as any).sizeChartId || '')
+      setSeoTitle((source.seoMeta as any)?.title || '')
+      setSeoDesc((source.seoMeta as any)?.description || '')
+      setSeoKeywords((source.seoMeta as any)?.keywords || '')
+      setFieldErrors({})
+      setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({})
+      setDefaultVariantStock('0')
+      setLocalVariants(cloneVariants)
+      // Baseline is derived from the source, not from the just-queued state —
+      // an effect cannot observe its own updates, and deferring the capture by
+      // one render races user input (a keystroke could be captured AS the
+      // baseline, silently disabling auto-save).
+      openStateRef.current = baselineFromSource(source, cloneVariants)
     } else {
       setName(''); setSlug(''); setType('simple'); setDesc(''); setShortDesc(''); setBasePrice(''); setSalePrice('');
       setSku(''); setStock('0'); setLowStockQty(''); setCategoryIds([]); setBrandId(''); setIsActive(true); setIsFeatured(false);
       setAvailabilityMode('MANAGED_STOCK'); availabilityModeTouchedRef.current = false; setStandardCost(''); setImages([]); setTags(''); setSizeChartId(''); setSeoTitle(''); setSeoDesc(''); setSeoKeywords('');
 setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       setDefaultVariantStock('0'); setLocalVariants([]);
+      setFieldErrors({})
+      // Blank session: no baseline — `formUntouched` falls back to the
+      // "has no real content" rule so an untouched form never auto-saves.
+      openStateRef.current = null
     }
     setTab('general')
-  }, [open, currentRow, isEdit])
+  }, [open, currentRow, fullProduct, isEdit, isDuplicate])
 
-  // Baseline for "untouched" detection: captured on the render AFTER the
-  // row-load effect above populated the form (its field deps re-fire this
-  // effect once the loaded values land), so edits to a draft/edit row are
-  // compared against the loaded values, never stale prior state.
+  // Baseline fallback for the blank session: once the (possibly defaulted)
+  // values settle, capture them so the first user edit is measured against
+  // them. Populated sessions already have their baseline from the effect
+  // above, so this is a no-op for them.
   useEffect(() => {
     if (open && openStateRef.current === null) openStateRef.current = snapshotOf()
   }, [open, mode, name, slug, type, desc, shortDesc, videoUrl, detailRows, dsTagline, dsBenefits, dsSpecs, dsTip, basePrice, salePrice, sku,
@@ -522,6 +604,8 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       CASH_ON_DELIVERY: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
     })
     setAdjustmentModalOpen(false)
+    setShowDiscardConfirm(false)
+    setFieldErrors({})
   }
 
   const handleBackendError = (e: any) => {
@@ -541,7 +625,9 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       queryClient.invalidateQueries({ queryKey: ['products'] });
       const createdId = res.data?.id || res.id;
       if (serverDraftId && serverDraftId !== createdId) {
-        productsApi.delete(serverDraftId).catch(() => {})
+        productsApi.delete(serverDraftId).catch(() => {
+          toast.warning('The leftover auto-saved draft could not be cleaned up — remove it from the Drafts tab')
+        })
       }
       setServerDraftId(null);
       hasSavedRef.current = true;
@@ -926,26 +1012,60 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     }, 0)
   }
 
-  const validateForSave = (): string[] => {
-    const errors: string[] = []
-    if (!name.trim()) errors.push('Product name is required')
-    if (!basePrice || parseFloat(basePrice) <= 0) errors.push('Regular price is required')
+  // Validation returns structured errors pointing at both the TAB and the
+  // FIELD they belong to, so a failing save navigates to the offending section
+  // and highlights the input instead of only showing a toast.
+  type FormFieldError = { tab: 'general' | 'images' | 'variants' | 'payments' | 'seo'; field: string; message: string }
+  const validateForSave = (): FormFieldError[] => {
+    const errors: FormFieldError[] = []
+    if (!name.trim()) errors.push({ tab: 'general', field: 'name', message: 'Product name is required' })
+    if (!basePrice || parseFloat(basePrice) <= 0) errors.push({ tab: 'general', field: 'basePrice', message: 'Regular price is required' })
     if (salePrice && basePrice && parseFloat(salePrice) > parseFloat(basePrice)) {
-      errors.push('Sale price cannot be higher than regular price')
+      errors.push({ tab: 'general', field: 'salePrice', message: 'Sale price cannot be higher than regular price' })
     }
     if (videoUrl.trim() && !isSupportedVideoUrl(videoUrl)) {
-      errors.push('Video URL must be a YouTube or Facebook video link')
+      errors.push({ tab: 'general', field: 'videoUrl', message: 'Video URL must be a YouTube or Facebook video link' })
+    }
+    if (seoTitle.trim().length > 60) {
+      errors.push({ tab: 'seo', field: 'seoTitle', message: 'SEO title must be 60 characters or fewer' })
     }
     return errors
   }
 
+  const TAB_LABELS: Record<FormFieldError['tab'], string> = {
+    general: 'General', images: 'Images', variants: 'Variants', payments: 'Payments', seo: 'SEO',
+  }
+
+  const focusField = (field: string) => {
+    setTimeout(() => {
+      const el = document.getElementById(`product-field-${field}`)
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      ;(el as HTMLInputElement | null)?.focus?.()
+    }, 60)
+  }
+
+  const clearFieldError = (field: string) => {
+    setFieldErrors(prev => {
+      if (!prev[field]) return prev
+      const { [field]: _removed, ...rest } = prev
+      return rest
+    })
+  }
+
   const handleSaveClick = (skipReviewGuard = false) => {
-    const errors = validateForSave()
-    if (errors.length > 0) {
-      setTab('general')
-      toast.error(errors[0])
+    if (!fullProductReady) {
+      toast.error('Product data is still loading — try again in a moment')
       return
     }
+    const errors = validateForSave()
+    if (errors.length > 0) {
+      setFieldErrors(Object.fromEntries(errors.map(e => [e.field, e.message])))
+      setTab(errors[0].tab)
+      toast.error(`${errors[0].message} — check the ${TAB_LABELS[errors[0].tab]} tab`)
+      focusField(errors[0].field)
+      return
+    }
+    setFieldErrors({})
     if (!isEdit && !skipReviewGuard) {
       const items: string[] = []
       if (images.length === 0) items.push('No product images configured')
@@ -961,11 +1081,34 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
 
   const isLocalMode = localVariants.length > 0 && !currentRow && !createdProductId
   const variantList = (isLocalMode || isDuplicate) ? localVariants : (fullProduct?.variants || currentRow?.variants || [])
+  // Editing must never submit a half-loaded form. If the full-product GET
+  // failed, saving stays allowed (the list row carries every scalar) but the
+  // user is warned.
+  const fullProductReady = !isEdit || !!fullProduct || fullProductError
 
   // Any nested overlay/dialog open — main dialog must NOT close from outside clicks.
   // Radix Dialog (modal) fires main onOpenChange(false) on any pointerdown outside its
   // content, which includes clicks inside nested dialogs (bulk update, confirmations).
-  const hasSubOverlay = bulkUpdateOpen || clearVariantConfirm || regenerateConfirm || showReviewGuard || adjustmentModalOpen || !!variantImgMgr
+  const hasSubOverlay = bulkUpdateOpen || clearVariantConfirm || regenerateConfirm || showReviewGuard || adjustmentModalOpen || !!variantImgMgr || showDiscardConfirm
+
+  // Closing a plain edit with unsaved edits silently discarded them; warn
+  // first. Create/duplicate/draft-edit sessions persist to a server draft on
+  // close (autosave + exit flush), so only plain edits need the prompt.
+  const hasUnsavedEditChanges = isEdit && !isDraftEdit && fullProductReady && openStateRef.current !== null && !formUntouched()
+
+  const closeNow = () => {
+    if (wasOpenRef.current) flushRef.current()
+    onOpenChange(false)
+    reset()
+  }
+
+  const requestClose = () => {
+    if (hasUnsavedEditChanges) {
+      setShowDiscardConfirm(true)
+      return
+    }
+    closeNow()
+  }
 
   const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
@@ -989,7 +1132,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
 
   return (
     <>
-    <Dialog open={open} onOpenChange={(v) => { if (!v && hasSubOverlay) return; if (!v) { if (wasOpenRef.current) flushRef.current(); onOpenChange(false); reset(); } }}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) { if (hasSubOverlay) return; requestClose() } }}>
       <DialogContent
         className='!max-w-[92vw] max-w-[1400px] max-h-[95vh] overflow-hidden flex flex-col p-0'
         onInteractOutside={(e) => { if (hasSubOverlay) e.preventDefault(); }}
@@ -999,6 +1142,18 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
         <DialogHeader className='px-6 pt-6 pb-2'>
           <DialogTitle>{isDraftEdit ? `Edit Draft: ${currentRow?.name || 'Untitled Draft'}` : isEdit ? `Edit: ${currentRow?.name}` : isDuplicate ? `Duplicate: ${currentRow?.name}` : 'Add New Product'}</DialogTitle>
         </DialogHeader>
+
+        {isEdit && !fullProductReady && (
+          <div className='px-6 py-2 text-xs text-muted-foreground flex items-center gap-2 border-b bg-muted/30' data-testid='product-loading-banner'>
+            <Loader2 className='h-3.5 w-3.5 animate-spin' />
+            Loading full product data — the form fills in as soon as it arrives…
+          </div>
+        )}
+        {isEdit && fullProductError && (
+          <div className='px-6 py-2 text-xs text-destructive border-b bg-destructive/5' data-testid='product-loading-error'>
+            Could not load the full product — list data is shown. Reload the page before saving to avoid missing fields.
+          </div>
+        )}
 
         <Tabs value={tab} onValueChange={setTab} className='flex-1 flex flex-col overflow-hidden'>
           <TabsList className='px-6 justify-start rounded-none border-b'>
@@ -1063,7 +1218,8 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                 <div className='grid grid-cols-2 gap-6'>
                   <div className='space-y-1.5'>
                     <Label>Product Name *</Label>
-                    <Input value={name} onChange={e => { setName(e.target.value); if (!isEdit && !isDuplicate) setSlug(e.target.value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')) }} placeholder='Product name' />
+                    <Input id='product-field-name' value={name} onChange={e => { clearFieldError('name'); setName(e.target.value); if (!isEdit && !isDuplicate) setSlug(e.target.value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')) }} placeholder='Product name' className={fieldErrors.name ? 'border-destructive' : ''} />
+                    {fieldErrors.name && <p className='text-xs text-destructive'>{fieldErrors.name}</p>}
                   </div>
                   <div className='space-y-1.5'>
                     <Label>Slug</Label>
@@ -1149,13 +1305,14 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                 <div className='space-y-1.5'>
                   <Label>Video URL (optional)</Label>
                   <Input
+                    id='product-field-videoUrl'
                     value={videoUrl}
-                    onChange={e => { setVideoUrl(e.target.value); setVideoUrlError('') }}
+                    onChange={e => { clearFieldError('videoUrl'); setVideoUrl(e.target.value); setVideoUrlError('') }}
                     onBlur={() => { if (videoUrl.trim() && !isSupportedVideoUrl(videoUrl)) setVideoUrlError('Must be a YouTube or Facebook video link') }}
                     placeholder='YouTube / Facebook video link'
-                    className={videoUrlError ? 'border-destructive' : ''}
+                    className={videoUrlError || fieldErrors.videoUrl ? 'border-destructive' : ''}
                   />
-                  {videoUrlError && <p className='text-xs text-destructive'>{videoUrlError}</p>}
+                  {(videoUrlError || fieldErrors.videoUrl) && <p className='text-xs text-destructive'>{fieldErrors.videoUrl || videoUrlError}</p>}
                 </div>
                 <div className='space-y-1.5'>
                   <Label>Product Details rows (optional)</Label>
@@ -1213,11 +1370,13 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                 <div className='grid grid-cols-3 gap-6'>
                   <div className='space-y-1.5'>
                     <Label>Regular Price *</Label>
-                    <Input type='number' step='0.01' value={basePrice} onChange={e => setBasePrice(e.target.value)} placeholder='0.00' />
+                    <Input id='product-field-basePrice' type='number' step='0.01' value={basePrice} onChange={e => { clearFieldError('basePrice'); clearFieldError('salePrice'); setBasePrice(e.target.value) }} placeholder='0.00' className={fieldErrors.basePrice ? 'border-destructive' : ''} />
+                    {fieldErrors.basePrice && <p className='text-xs text-destructive'>{fieldErrors.basePrice}</p>}
                   </div>
                   <div className='space-y-1.5'>
                     <Label>Sale Price</Label>
-                    <Input type='number' step='0.01' value={salePrice} onChange={e => setSalePrice(e.target.value)} placeholder='0.00' />
+                    <Input id='product-field-salePrice' type='number' step='0.01' value={salePrice} onChange={e => { clearFieldError('salePrice'); setSalePrice(e.target.value) }} placeholder='0.00' className={fieldErrors.salePrice ? 'border-destructive' : ''} />
+                    {fieldErrors.salePrice && <p className='text-xs text-destructive'>{fieldErrors.salePrice}</p>}
                   </div>
                   <div className='space-y-1.5'>
                     <Label>Standard Cost (COGS)</Label>
@@ -1511,6 +1670,19 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                     </div>
                   </div>
 
+                  {isEdit && !fullProductReady && (
+                    <div className='border-2 border-dashed rounded-lg p-6 text-center text-sm text-muted-foreground flex items-center justify-center gap-2'>
+                      <Loader2 className='h-4 w-4 animate-spin' /> Loading variants…
+                    </div>
+                  )}
+                  {fullProductReady && variantList.length === 0 && (
+                    <div className='border-2 border-dashed rounded-lg p-8 text-center space-y-2'>
+                      <Package className='h-8 w-8 text-muted-foreground mx-auto' />
+                      <h3 className='font-medium text-sm'>No variants yet</h3>
+                      <p className='text-xs text-muted-foreground'>Select attributes above and click <strong>Generate Variants</strong> to create the combinations.</p>
+                    </div>
+                  )}
+
                   {variantList.length > 0 && (
                     <div className='border rounded-lg overflow-hidden'>
                       <div className='bg-muted/30 px-4 py-2 border-b flex items-center justify-between'>
@@ -1680,8 +1852,9 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                 <div className='grid grid-cols-2 gap-6'>
                   <div className='space-y-1.5'>
                     <Label>Meta Title</Label>
-                    <Input value={seoTitle} onChange={e => setSeoTitle(e.target.value)} placeholder='SEO title...' />
-                    <span className='text-xs text-muted-foreground'>{seoTitle.length} characters</span>
+                    <Input id='product-field-seoTitle' value={seoTitle} onChange={e => { clearFieldError('seoTitle'); setSeoTitle(e.target.value) }} placeholder='SEO title...' className={fieldErrors.seoTitle ? 'border-destructive' : ''} />
+                    <span className={`text-xs ${seoTitle.length > 60 ? 'text-destructive font-medium' : 'text-muted-foreground'}`}>{seoTitle.length}/60 characters</span>
+                    {fieldErrors.seoTitle && <p className='text-xs text-destructive'>{fieldErrors.seoTitle}</p>}
                   </div>
                   <div className='space-y-1.5'>
                     <Label>Keywords</Label>
@@ -1699,7 +1872,12 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
         </Tabs>
 
         <div className='flex items-center justify-end gap-3 px-6 py-4 border-t mt-auto shrink-0 bg-muted/20'>
-          <Button variant='outline' onClick={() => { if (wasOpenRef.current) flushRef.current(); onOpenChange(false); reset(); }}>Cancel</Button>
+          {hasUnsavedEditChanges && (
+            <span className='mr-auto text-xs text-muted-foreground flex items-center gap-1.5' data-testid='unsaved-changes-indicator'>
+              <span className='h-1.5 w-1.5 rounded-full bg-amber-500' /> Unsaved changes
+            </span>
+          )}
+          <Button variant='outline' onClick={requestClose}>Cancel</Button>
           {isDraftEdit && currentRow && (
             <Button
               variant='outline'
@@ -1710,7 +1888,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
               Save Draft
             </Button>
           )}
-          <Button onClick={() => handleSaveClick()} disabled={createMut.isPending || updateMut.isPending || publishDraftMut.isPending}>
+          <Button onClick={() => handleSaveClick()} disabled={createMut.isPending || updateMut.isPending || publishDraftMut.isPending || !fullProductReady}>
             {(createMut.isPending || updateMut.isPending || publishDraftMut.isPending) && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
             {isDraftEdit ? 'Publish' : isEdit ? 'Update Product' : 'Create Product'}
           </Button>
@@ -1852,6 +2030,20 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       destructive
       isLoading={clearVariantMut.isPending}
       handleConfirm={() => { const id = currentRow?.id || createdProductId; if (id) clearVariantMut.mutate(id); }}
+    />
+
+    {/* Unsaved-changes guard for plain edits (create/duplicate/draft-edit
+        sessions persist to a server draft on close instead). Deferred close:
+        the click that confirms this dialog is a pointer event the outer
+        dialog must settle before the guard drops (see Key Decisions). */}
+    <ConfirmDialog
+      open={showDiscardConfirm}
+      onOpenChange={(v) => { if (v) setShowDiscardConfirm(true); else setTimeout(() => setShowDiscardConfirm(false), 0) }}
+      title='Discard unsaved changes?'
+      desc='This product has edits that have not been saved yet. Closing now will discard them.'
+      confirmText='Discard changes'
+      destructive
+      handleConfirm={() => setTimeout(() => { setShowDiscardConfirm(false); closeNow() }, 0)}
     />
 
     {/* Nested dialog MUST be a full modal. A non-modal DialogContent inside a

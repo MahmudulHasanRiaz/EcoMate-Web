@@ -231,4 +231,53 @@ describe('Stock menu — variant-level on-hand rows', () => {
 
     expect(rowCells(findRow(ui, 'Variable Tee'))[onHandIdx]).toBe('10')
   })
+
+  it('PHYSICAL view: one row per variant even when the same variant sits in multiple warehouses/bins', async () => {
+    mockGet.mockImplementation((url: string) => {
+      if (String(url).includes('/inventory/stock-overview'))
+        return Promise.resolve({ data: STOCK_OVERVIEW })
+      if (String(url).includes('/inventory/physical'))
+        return Promise.resolve({
+          data: [
+            PHYSICAL_ROWS[0],
+            {
+              ...PHYSICAL_ROWS[0],
+              id: 'pi-1b',
+              warehouseId: 'wh-2',
+              quantity: 2,
+              reservedQuantity: 0,
+              updatedAt: '2026-03-01T00:00:00Z',
+              warehouse: { id: 'wh-2', name: 'Overflow Warehouse' },
+              binLocation: { code: 'B-02' },
+            },
+            PHYSICAL_ROWS[1],
+          ],
+        })
+      if (String(url).includes('/warehouses')) return Promise.resolve({ data: [] })
+      return Promise.resolve({ data: [] })
+    })
+
+    const ui = await renderInventory()
+    await expandVariableProduct(ui)
+
+    const { index: onHandIdx } = await onHandColumnIndex(ui)
+
+    // Exactly ONE TEE-S row (not one per warehouse).
+    const sRows = bodyRows(ui).filter((r) => textOf(r).includes('TEE-S'))
+    expect(sRows).toHaveLength(1)
+    expect(rowCells(sRows[0])[onHandIdx]).toBe('9')
+    // Both locations are surfaced on the single row.
+    expect(textOf(sRows[0])).toContain('Main Warehouse')
+    expect(textOf(sRows[0])).toContain('Overflow Warehouse')
+
+    // Stable order is by SKU (M before S), independent of input order.
+    const mIndex = bodyRows(ui).findIndex((r) => textOf(r).includes('TEE-M'))
+    const sIndex = bodyRows(ui).findIndex((r) => textOf(r).includes('TEE-S'))
+    expect(mIndex).toBeGreaterThan(-1)
+    expect(sIndex).toBeGreaterThan(-1)
+    expect(mIndex).toBeLessThan(sIndex)
+
+    // Parent aggregate counts every physical record (7 + 2 + 3).
+    expect(rowCells(findRow(ui, 'Variable Tee'))[onHandIdx]).toBe('12')
+  })
 })

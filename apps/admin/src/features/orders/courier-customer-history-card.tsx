@@ -173,7 +173,7 @@ export function CourierCustomerHistoryCard({ phone }: { phone?: string | null })
               const fraud = key === 'steadfast' ? (report?.steadfastFraud ?? null) : null
               const rated = report && report.successRatio != null
               // Fraud rows explain themselves in the detail block below
-              // (তথ্য নেই for nulls) — never a bare 'No History'.
+              // (No data for nulls) — never a bare 'No History'.
               const status = !report || (report.source === 'none' && !fraud)
                 ? 'No History'
                 : report.source === 'new'
@@ -238,14 +238,14 @@ export function CourierCustomerHistoryCard({ phone }: { phone?: string | null })
                 {fraud && (
                   <div className='ml-7 -mt-0.5 mb-1 flex flex-col gap-0.5 rounded-md bg-muted/30 px-2 py-1.5'>
                     <span className='text-[10px] tabular-nums text-foreground/90'>
-                      ডেলিভারি {fraud.deliveryRatio != null ? `${fraud.deliveryRatio}%` : 'তথ্য নেই'} · বাতিল{' '}
-                      {fraud.cancellationRatio != null ? `${fraud.cancellationRatio}%` : 'তথ্য নেই'}
+                      Delivery {fraud.deliveryRatio != null ? `${fraud.deliveryRatio}%` : 'No data'} · Cancelled{' '}
+                      {fraud.cancellationRatio != null ? `${fraud.cancellationRatio}%` : 'No data'}
                     </span>
                     <span className='text-[10px] tabular-nums text-muted-foreground'>
-                      {fraud.volumeBand ?? 'তথ্য নেই'}
+                      {fraud.volumeBand ?? 'No data'}
                       {fraud.volumeRange ? ` · ${fraud.volumeRange}` : ''} ·{' '}
-                      {fraud.deliveredCount != null ? `${fraud.deliveredCount} delivered` : 'তথ্য নেই'} ·{' '}
-                      {fraud.cancelledCount != null ? `${fraud.cancelledCount} cancelled` : 'তথ্য নেই'} ·{' '}
+                      {fraud.deliveredCount != null ? `${fraud.deliveredCount} delivered` : 'No data'} ·{' '}
+                      {fraud.cancelledCount != null ? `${fraud.cancelledCount} cancelled` : 'No data'} ·{' '}
                       {fraud.totalReports} reports
                     </span>
                     {Object.keys(fraud.fraudCategories).length > 0 && (

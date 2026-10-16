@@ -62,6 +62,7 @@ import {
 import { DISPATCH_STATUSES, getDispatchIdentifierLabels } from '@/features/dispatch/data/data'
 import { formatCourierDispatchToast } from '@/features/dispatch/courier-errors'
 import { STATUS_COLORS as statusColors } from '@/features/orders/status-transitions'
+import { countTimelineSources, filterTimeline, loadTimelineFilter, saveTimelineFilter, type TimelineFilter } from '@/features/orders/timeline-filter'
 
 const nn = (v: number | string) => Number(v)
 const fmt = (v: number | string) => nn(v).toFixed(2)
@@ -168,6 +169,11 @@ function OrderDetailPage() {
   // ── Timeline / Notes ─────────────────────────────────────────────
   const [noteText, setNoteText] = useState('')
   const [noteVisibility, setNoteVisibility] = useState<'public' | 'private'>('public')
+  const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>(() => loadTimelineFilter())
+  const changeTimelineFilter = (filter: TimelineFilter) => {
+    setTimelineFilter(filter)
+    saveTimelineFilter(filter)
+  }
   const [showStatusDialog, setShowStatusDialog] = useState<string | null>(null)
   const [blockPhones, setBlockPhones] = useState<{ phones: string[]; contextLabel?: string } | null>(null)
   const [statusNote, setStatusNote] = useState('')
@@ -252,10 +258,12 @@ function OrderDetailPage() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['order', id] }); toast.success('Status updated') },
     onError: (e: unknown) => {
       const msg = errMsg(e)
+      const code = (e as any)?.response?.data?.code
       // Cancel blocked by outstanding paid balance (D5): surface the backend
       // message and deep-link straight into the refund flow (cancel-too can
-      // cancel atomically once the balance is refunded).
-      if (/আগে রিফান্ড/.test(msg)) {
+      // cancel atomically once the balance is refunded). The backend contract
+      // is a stable code — never locale-dependent message text.
+      if (code === 'CANCEL_REQUIRES_REFUND' || /outstanding paid balance/i.test(msg)) {
         toast.error(msg, { duration: 9000 })
         setShowStatusDialog(null)
         setStatusNote('')
@@ -474,6 +482,17 @@ function OrderDetailPage() {
 
   // D-A: edit-sheet init reads the SAME snapshot fields the save writes.
   const customerEditInit = resolveCustomerEditInitial(order)
+
+  // Timeline source filter (server attaches a derived `source` per entry).
+  const timelineEntries = (order.timeline as any[]) || []
+  const timelineCounts = countTimelineSources(timelineEntries)
+  const visibleTimeline = filterTimeline(timelineEntries, timelineFilter)
+  const TIMELINE_FILTERS: Array<{ key: TimelineFilter; label: string }> = [
+    { key: 'all', label: 'All' },
+    { key: 'staff', label: 'Staff' },
+    { key: 'courier', label: 'Courier' },
+    { key: 'system', label: 'System' },
+  ]
 
   return (
     <TooltipProvider>
@@ -1143,15 +1162,15 @@ function OrderDetailPage() {
                       return (
                         <div className='grid grid-cols-3 gap-2'>
                           <div className='rounded-lg bg-muted/40 border border-border/50 p-2.5 text-center'>
-                            <p className='text-[10px] font-semibold uppercase tracking-wider text-muted-foreground'>মোট বিল</p>
+                            <p className='text-[10px] font-semibold uppercase tracking-wider text-muted-foreground'>Total bill</p>
                             <p className='font-bold text-sm text-foreground mt-0.5'>৳{fmt(total)}</p>
                           </div>
                           <div className='rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-2.5 text-center'>
-                            <p className='text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400'>আদায়কৃত</p>
+                            <p className='text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400'>Paid</p>
                             <p className='font-bold text-sm text-emerald-600 dark:text-emerald-400 mt-0.5'>৳{fmt(paid)}</p>
                           </div>
                           <div className='rounded-lg bg-amber-500/10 border border-amber-500/25 p-2.5 text-center ring-1 ring-amber-500/20'>
-                            <p className='text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-500'>বকেয়া Due</p>
+                            <p className='text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-500'>Due</p>
                             <p className='font-extrabold text-base text-amber-600 dark:text-amber-500 mt-0.5'>৳{fmt(due)}</p>
                           </div>
                         </div>
@@ -1223,7 +1242,7 @@ function OrderDetailPage() {
               {/* Timeline Card */}
               <Card className='overflow-hidden border border-border/70 shadow-xs'>
                 <CardHeader className='bg-muted/30 border-b border-border/50 py-2.5 px-3.5 sm:py-3.5 sm:px-6'>
-                  <div className='flex items-center justify-between'>
+                  <div className='flex flex-wrap items-center justify-between gap-2'>
                     <div className='flex items-center gap-2.5'>
                       <div className='h-8 w-8 rounded-lg bg-indigo-500/10 text-indigo-500 flex items-center justify-center font-semibold'>
                         <Clock className='h-4 w-4' />
@@ -1238,22 +1257,49 @@ function OrderDetailPage() {
                         <p className='text-xs text-muted-foreground mt-0.5'>Audit trail of status transitions, courier updates, and staff notes</p>
                       </div>
                     </div>
+                    <div className='flex items-center gap-1 flex-wrap' role='group' aria-label='Filter timeline by source'>
+                      {TIMELINE_FILTERS.map((f) => (
+                        <button
+                          key={f.key}
+                          type='button'
+                          onClick={() => changeTimelineFilter(f.key)}
+                          aria-pressed={timelineFilter === f.key}
+                          data-testid={`timeline-filter-${f.key}`}
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                            timelineFilter === f.key
+                              ? 'border-primary/40 bg-primary/10 text-primary'
+                              : 'border-border/60 bg-muted/30 text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                          }`}
+                        >
+                          {f.label}
+                          <span className={`rounded-full px-1.5 text-[10px] tabular-nums ${timelineFilter === f.key ? 'bg-primary/15' : 'bg-muted'}`}>
+                            {timelineCounts[f.key]}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className='p-3 sm:p-6'>
-                  {!order.timeline || order.timeline.length === 0 ? (
+                  {timelineEntries.length === 0 ? (
                     <div className='text-center py-8 text-muted-foreground'>
                       <Clock className='h-8 w-8 mx-auto mb-2 opacity-30' />
                       <p className='text-sm font-medium text-foreground'>No activity recorded yet</p>
                       <p className='text-xs text-muted-foreground mt-0.5'>Lifecycle changes and internal notes will appear here.</p>
                     </div>
+                  ) : visibleTimeline.length === 0 ? (
+                    <div className='text-center py-8 text-muted-foreground'>
+                      <Clock className='h-8 w-8 mx-auto mb-2 opacity-30' />
+                      <p className='text-sm font-medium text-foreground'>No {timelineFilter} activity</p>
+                      <p className='text-xs text-muted-foreground mt-0.5'>Switch the filter to see other timeline entries.</p>
+                    </div>
                   ) : (
                     <div className='space-y-0 pl-1'>
-                      {(order.timeline as any[]).map((t: any, i: number) => {
+                      {visibleTimeline.map((t: any, i: number) => {
                         const isStatus = !!t.status && !t.type
                         const isPrivate = t.visibility === 'private'
                         const color = isStatus ? (statusColors[t.status] || '#6B7280') : isPrivate ? '#8B5CF6' : '#6366F1'
-                        const prev = i > 0 ? (order.timeline as any[])[i - 1] : null
+                        const prev = i > 0 ? visibleTimeline[i - 1] : null
                         const prevIsStatus = !!prev?.status && !prev?.type
                         const isGrouped = prev && (t.type === prev.type || (isStatus && prevIsStatus))
                         const performer = t.performedBy || t.performer || ''
