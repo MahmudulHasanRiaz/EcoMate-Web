@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { appendOrderTimeline } from '../orders/order-timeline.util';
 import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
 import {
   assertNoDuplicateReturn,
@@ -33,6 +34,10 @@ export interface CreateReturnInput {
   courierReturnId?: string;
   courierStatus?: string;
   exchangeOrderId?: string;
+  /** Signed per-field adjustment on the ORIGINAL order (partial returns only). */
+  shippingAdjustment?: number;
+  /** Signed per-field adjustment on the ORIGINAL order (partial returns only). */
+  discountAdjustment?: number;
 }
 
 export interface UpsertCourierReturnInput {
@@ -46,6 +51,10 @@ export interface UpsertCourierReturnInput {
 
 const RETURN_TYPES = ['FULL', 'PARTIAL', 'EXCHANGE'];
 const RETURN_SOURCES = ['STAFF', 'COURIER', 'EXCHANGE'];
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const money = (n: number) => Number(Number(n).toFixed(2));
+const signed = (n: number) => `${n > 0 ? '+' : ''}${money(n)}`;
 
 /**
  * Task 6 (Fix 13 §§17.1–17.3): unified Return entity.
@@ -75,8 +84,35 @@ export class ReturnsService {
    * transaction (the PARTIAL exchange creates its exchange order + this
    * Return in ONE commit — TWO records at once). Without `tx` the behavior
    * is exactly the Task 6 standalone path.
+   *
+   * Signed per-field billing adjustments (partial returns): when present the
+   * return row, the ORIGINAL order's shippingCharge/discount/total update and
+   * the timeline entries commit in ONE transaction — all-or-nothing. With no
+   * adjustments the path is byte-identical to before (no extra transaction).
    */
   async create(dto: CreateReturnInput, performedBy?: string, tx?: Prisma.TransactionClient) {
+    const shippingAdjustment = dto.shippingAdjustment ?? 0;
+    const discountAdjustment = dto.discountAdjustment ?? 0;
+    const hasAdjustments = shippingAdjustment !== 0 || discountAdjustment !== 0;
+    if (tx) {
+      return this.createInner(dto, performedBy, tx, shippingAdjustment, discountAdjustment, hasAdjustments);
+    }
+    if (!hasAdjustments) {
+      return this.createInner(dto, performedBy, undefined, 0, 0, false);
+    }
+    return this.prisma.$transaction((client) =>
+      this.createInner(dto, performedBy, client, shippingAdjustment, discountAdjustment, true),
+    );
+  }
+
+  private async createInner(
+    dto: CreateReturnInput,
+    performedBy: string | undefined,
+    tx: Prisma.TransactionClient | undefined,
+    shippingAdjustment: number,
+    discountAdjustment: number,
+    hasAdjustments: boolean,
+  ) {
     const db = (tx ?? this.prisma) as Prisma.TransactionClient & {
       order: { findUnique: (...args: any[]) => Promise<any> };
     };
@@ -102,6 +138,13 @@ export class ReturnsService {
     const displayId = tx
       ? await this.generateDisplayIdInTx(tx)
       : await this.generateDisplayId();
+
+    // Adjustments are validated BEFORE anything persists; they still commit
+    // inside the same tx as the Return row (all-or-nothing with the guards).
+    const adjustment = hasAdjustments
+      ? this.resolvePartialAdjustments(order, dto, displayId, performedBy, shippingAdjustment, discountAdjustment)
+      : null;
+
     const ret = await db.return.create({
       data: {
         orderId: dto.orderId,
@@ -117,11 +160,102 @@ export class ReturnsService {
         exchangeOrderId: dto.exchangeOrderId ?? null,
       },
     });
+
+    if (adjustment) {
+      await db.order.update({
+        where: { id: dto.orderId },
+        data: {
+          shippingCharge: adjustment.newShipping,
+          discount: adjustment.newDiscount,
+          total: adjustment.newTotal,
+        },
+      });
+      await appendOrderTimeline(db, dto.orderId, adjustment.entries);
+    }
+
     this.logger.log(
       `Return ${displayId} created for order ${(order as any).displayId ?? dto.orderId} ` +
-        `(type=${dto.type} source=${source}${performedBy ? ` by=${performedBy}` : ''})`,
+        `(type=${dto.type} source=${source}${performedBy ? ` by=${performedBy}` : ''}` +
+        `${hasAdjustments ? ` shippingAdj=${signed(shippingAdjustment)} discountAdj=${signed(discountAdjustment)}` : ''})`,
     );
     return ret;
+  }
+
+  /**
+   * Owner-locked signed per-field semantics: each adjustment is ADDED to the
+   * original order's stored field value (positive = bill up on that field,
+   * negative = bill down). The discount field is the STORED value — for
+   * percentage-type orders it is percent points and the effective discount
+   * is subtotal × value/100. Rejections are hard 400s; the recomputed total
+   * must never go negative (no silent clamping).
+   */
+  private resolvePartialAdjustments(
+    order: any,
+    dto: CreateReturnInput,
+    displayId: string,
+    performedBy: string | undefined,
+    shippingAdjustment: number,
+    discountAdjustment: number,
+  ) {
+    if (dto.type !== 'PARTIAL') {
+      throw new BadRequestException(
+        'Billing adjustments are only supported on partial returns.',
+      );
+    }
+    const shipping = Number(order.shippingCharge ?? 0);
+    const discount = Number(order.discount ?? 0);
+    const subtotal = Number(order.subtotal ?? 0);
+    const discountType = order.discountType === 'percentage' ? 'percentage' : 'flat';
+
+    const newShipping = round2(shipping + shippingAdjustment);
+    const newDiscount = round2(discount + discountAdjustment);
+    if (newShipping < 0) {
+      throw new BadRequestException(
+        `Shipping charge cannot go below 0 — currently ${money(shipping)}, adjustment ${signed(shippingAdjustment)} leaves ${money(newShipping)}.`,
+      );
+    }
+    if (newDiscount < 0) {
+      throw new BadRequestException(
+        `Discount cannot go below 0 — currently ${money(discount)}, adjustment ${signed(discountAdjustment)} leaves ${money(newDiscount)}.`,
+      );
+    }
+    const effectiveDiscount =
+      discountType === 'percentage' ? (subtotal * newDiscount) / 100 : newDiscount;
+    const rawTotal = subtotal + newShipping - effectiveDiscount;
+    if (rawTotal < 0) {
+      throw new BadRequestException(
+        `Order total cannot go negative — subtotal ${money(subtotal)} + shipping ${money(newShipping)} − discount ${money(effectiveDiscount)} = ${money(rawTotal)}. Reduce the adjustments and try again.`,
+      );
+    }
+    const newTotal = round2(rawTotal);
+
+    const by = performedBy ?? 'staff';
+    const timestamp = new Date().toISOString();
+    const entries: unknown[] = [];
+    if (shippingAdjustment !== 0) {
+      entries.push({
+        type: 'shipping',
+        visibility: 'public',
+        timestamp,
+        oldValue: shipping,
+        newValue: newShipping,
+        note: `Shipping charge ${signed(shippingAdjustment)} by ${by} during partial return ${displayId}`,
+        performedBy: by,
+      });
+    }
+    if (discountAdjustment !== 0) {
+      entries.push({
+        type: 'discount',
+        visibility: 'public',
+        timestamp,
+        oldValue: discount,
+        newValue: newDiscount,
+        ...(discountType === 'percentage' ? { discountType } : {}),
+        note: `Discount ${signed(discountAdjustment)} by ${by} during partial return ${displayId}`,
+        performedBy: by,
+      });
+    }
+    return { newShipping, newDiscount, newTotal, entries };
   }
 
   // -------------------------------------------------------------------- read

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { returnsApi } from '@/features/returns/api'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -17,6 +18,53 @@ const errMsg = (e: unknown): string => {
   if (typeof msg === 'string' && msg.trim()) return msg.trim()
   if (Array.isArray(msg)) return msg.join(', ')
   return 'Failed to create the return.'
+}
+
+const nn = (v: any) => {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : 0
+}
+const fmt = (v: any) => nn(v).toFixed(2)
+const round2 = (n: number) => Math.round(n * 100) / 100
+const parseAdj = (v: string) => {
+  const t = v.trim()
+  if (!t) return 0
+  const n = Number(t)
+  return Number.isFinite(n) ? round2(n) : 0
+}
+
+/** One billing row: current → new + explicit signed delta (never ambiguous). */
+function MoneyRow({
+  label,
+  cur,
+  next,
+  unit = '৳',
+  strong = false,
+}: {
+  label: string
+  cur: number
+  next: number
+  unit?: '৳' | '%'
+  strong?: boolean
+}) {
+  const d = round2(next - cur)
+  const view = (v: number) => (unit === '%' ? `${fmt(v)}%` : `৳${fmt(v)}`)
+  return (
+    <div className='flex items-center justify-between'>
+      <span className={strong ? 'font-medium' : 'text-muted-foreground'}>{label}</span>
+      <span className='flex items-center gap-2 font-mono'>
+        <span className='text-muted-foreground'>{view(cur)}</span>
+        <span aria-hidden>→</span>
+        <span className={strong ? 'font-semibold' : 'font-medium'}>{view(next)}</span>
+        {d !== 0 && (
+          <span className='rounded bg-muted px-1.5 py-0.5 text-xs font-semibold text-foreground'>
+            {d > 0 ? '+' : '-'}
+            {unit === '%' ? `${fmt(Math.abs(d))}%` : `৳${fmt(Math.abs(d))}`}
+          </span>
+        )}
+      </span>
+    </div>
+  )
 }
 
 /**
@@ -45,6 +93,8 @@ export function CreateReturnDialog({
   const [kind, setKind] = useState<'PARTIAL' | 'FULL'>('PARTIAL')
   const [qtys, setQtys] = useState<Record<string, number>>({})
   const [reason, setReason] = useState('')
+  const [shippingAdj, setShippingAdj] = useState('')
+  const [discountAdj, setDiscountAdj] = useState('')
 
   // Active (non-CLOSED) returns for the overlap caps. Display-only: the
   // backend guard is still the authority — this only avoids offering
@@ -79,6 +129,8 @@ export function CreateReturnDialog({
         source: 'STAFF',
         items,
         ...(reason.trim() ? { reason: reason.trim() } : {}),
+        ...(kind === 'PARTIAL' && shipAdjNum !== 0 ? { shippingAdjustment: shipAdjNum } : {}),
+        ...(kind === 'PARTIAL' && discAdjNum !== 0 ? { discountAdjustment: discAdjNum } : {}),
       })
     },
     onSuccess: (ret: any) => {
@@ -89,6 +141,8 @@ export function CreateReturnDialog({
       setQtys({})
       setReason('')
       setKind('PARTIAL')
+      setShippingAdj('')
+      setDiscountAdj('')
       toast.success(`Return ${ret?.displayId ?? ''} created — stock restores when the return is marked received.`)
     },
     onError: (e: unknown) => toast.error(errMsg(e)),
@@ -98,6 +152,36 @@ export function CreateReturnDialog({
   const totalUnits = (order?.items ?? [])
     .filter((i: any) => i.productId)
     .reduce((s: number, i: any) => s + (Number(i.quantity) || 0), 0)
+
+  // Signed per-field billing adjustments (PARTIAL only, applied to the
+  // ORIGINAL order). The backend is the authority — these live values exist
+  // so the admin sees exactly what will bill (and cannot confirm nonsense).
+  const shipAdjNum = parseAdj(shippingAdj)
+  const discAdjNum = parseAdj(discountAdj)
+  const subtotal = nn(order?.subtotal)
+  const origShipping = nn(order?.shippingCharge)
+  const origDiscount = nn(order?.discount)
+  const discountType = order?.discountType === 'percentage' ? 'percentage' : 'flat'
+  const origTotal = nn(order?.total)
+  const returningSubtotal = (order?.items ?? []).reduce(
+    (s: number, i: any) => s + (qtys[i.id] ?? 0) * nn(i.price),
+    0,
+  )
+  const newShipping = round2(origShipping + shipAdjNum)
+  const newDiscount = round2(origDiscount + discAdjNum)
+  const effectiveDiscount =
+    discountType === 'percentage' ? (subtotal * newDiscount) / 100 : newDiscount
+  const newTotal = round2(subtotal + newShipping - effectiveDiscount)
+  const billingError =
+    kind !== 'PARTIAL'
+      ? ''
+      : newShipping < 0
+        ? 'Shipping charge cannot go below 0.'
+        : newDiscount < 0
+          ? 'Discount cannot go below 0.'
+          : newTotal < 0
+            ? 'Order total cannot go negative.'
+            : ''
 
   return (
     <Dialog open={open} onOpenChange={() => onClose()}>
@@ -141,6 +225,65 @@ export function CreateReturnDialog({
             </div>
           )}
 
+          {kind === 'PARTIAL' && (
+            <div data-testid='return-billing-card' className='rounded-lg border border-border p-4 space-y-3'>
+              <div className='text-xs font-semibold uppercase tracking-wide text-muted-foreground'>
+                Billing — applied to the original order
+              </div>
+              <div className='space-y-1.5 text-sm'>
+                <div className='flex items-center justify-between'>
+                  <span className='text-muted-foreground'>Returning items</span>
+                  <span className='font-mono font-medium'>৳{fmt(returningSubtotal)}</span>
+                </div>
+                <MoneyRow label='Shipping charge' cur={origShipping} next={newShipping} />
+                <MoneyRow
+                  label='Discount'
+                  cur={origDiscount}
+                  next={newDiscount}
+                  unit={discountType === 'percentage' ? '%' : '৳'}
+                />
+                <MoneyRow label='Order total' cur={origTotal} next={newTotal} strong />
+              </div>
+              <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
+                <div>
+                  <Label htmlFor='return-shipping-adjustment' className='text-xs font-medium text-muted-foreground mb-1 block'>
+                    Shipping charge adjustment
+                  </Label>
+                  <Input
+                    id='return-shipping-adjustment'
+                    data-testid='return-shipping-adjustment'
+                    type='number'
+                    step='0.01'
+                    value={shippingAdj}
+                    onChange={(e) => setShippingAdj(e.target.value)}
+                    placeholder='e.g. 50 or -20'
+                    className='text-sm'
+                  />
+                </div>
+                <div>
+                  <Label htmlFor='return-discount-adjustment' className='text-xs font-medium text-muted-foreground mb-1 block'>
+                    Discount adjustment
+                  </Label>
+                  <Input
+                    id='return-discount-adjustment'
+                    data-testid='return-discount-adjustment'
+                    type='number'
+                    step='0.01'
+                    value={discountAdj}
+                    onChange={(e) => setDiscountAdj(e.target.value)}
+                    placeholder='e.g. 50 or -20'
+                    className='text-sm'
+                  />
+                </div>
+              </div>
+              <p className='text-xs text-muted-foreground leading-relaxed'>
+                Positive raises the order's value, negative lowers it — each field independently,
+                applied to the original order (not the return).
+              </p>
+              {billingError && <p className='text-xs font-medium text-red-500'>{billingError}</p>}
+            </div>
+          )}
+
           <div>
             <Label htmlFor='create-return-reason' className='text-xs font-medium text-muted-foreground mb-1 block'>
               Return reason (optional)
@@ -159,7 +302,7 @@ export function CreateReturnDialog({
           <div className='flex justify-end gap-2'>
             <Button variant='outline' onClick={() => onClose()}>Cancel</Button>
             <Button
-              disabled={mut.isPending || (kind === 'PARTIAL' && selected.length === 0)}
+              disabled={mut.isPending || !!(kind === 'PARTIAL' && (selected.length === 0 || billingError))}
               onClick={() => mut.mutate()}
             >
               {mut.isPending ? 'Creating…' : 'Confirm return'}

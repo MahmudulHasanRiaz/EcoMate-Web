@@ -30,29 +30,37 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
   };
 
   function makeTx(over: Record<string, any> = {}) {
-    return {
-      returnCounter: {
-        upsert: jest.fn().mockImplementation(({ create }: any) =>
-          Promise.resolve({ date: '260101', seq: create?.seq ?? 1 }),
-        ),
-      },
-      return: {
-        create: jest.fn().mockImplementation(({ data }: any) =>
-          Promise.resolve({ id: 'ret-1', ...data }),
-        ),
-        update: jest.fn().mockImplementation(({ data }: any) =>
-          Promise.resolve({ id: 'ret-1', ...data }),
-        ),
-        // The guarded stock core re-loads the row INSIDE the transaction —
-        // delegate to the outer mock so tests control the stored row.
-        findUnique: jest.fn((...args: any[]) =>
-          (prisma.return.findUnique as jest.Mock)(...args),
-        ),
-        findMany: jest.fn().mockResolvedValue([]),
-      },
-      ...over,
-    };
-  }
+      return {
+        returnCounter: {
+          upsert: jest.fn().mockImplementation(({ create }: any) =>
+            Promise.resolve({ date: '260101', seq: create?.seq ?? 1 }),
+          ),
+        },
+        return: {
+          create: jest.fn().mockImplementation(({ data }: any) =>
+            Promise.resolve({ id: 'ret-1', ...data }),
+          ),
+          update: jest.fn().mockImplementation(({ data }: any) =>
+            Promise.resolve({ id: 'ret-1', ...data }),
+          ),
+          // The guarded stock core re-loads the row INSIDE the transaction —
+          // delegate to the outer mock so tests control the stored row.
+          findUnique: jest.fn((...args: any[]) =>
+            (prisma.return.findUnique as jest.Mock)(...args),
+          ),
+          findMany: jest.fn().mockResolvedValue([]),
+        },
+        // Signed adjustment path: original-order write + atomic timeline append.
+        order: {
+          update: jest.fn().mockResolvedValue({}),
+          findUnique: jest.fn((...args: any[]) =>
+            (prisma.order.findUnique as jest.Mock)(...args),
+          ),
+        },
+        $executeRaw: jest.fn().mockResolvedValue(1),
+        ...over,
+      };
+    }
 
   beforeEach(async () => {
     prisma = {
@@ -396,6 +404,177 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
         },
       ]);
       await expect(service.findOpenStaffReturnWithItems('order-1')).resolves.toBeNull();
+    });
+  });
+
+  /**
+   * Owner-locked signed per-field semantics: positive RAISES the original
+   * order's field value, negative LOWERS it. All widening combos + hard
+   * rejections + timeline entries + all-or-nothing.
+   */
+  describe('create — signed per-field billing adjustments (partial)', () => {
+    const richOrder = {
+      ...order,
+      items: [{ id: 'oi-1', productId: 'p1', variantId: null, quantity: 5, price: 360 }],
+      subtotal: 1800,
+      shippingCharge: 100,
+      discount: 50,
+      discountType: 'flat',
+      total: 1850,
+    };
+
+    let txMock: any;
+    const baseDto = () => ({
+      orderId: 'order-1',
+      type: 'PARTIAL' as const,
+      source: 'STAFF' as const,
+      items: [{ productId: 'p1', variantId: null, quantity: 1 }],
+    });
+
+    beforeEach(() => {
+      txMock = null;
+      prisma.$transaction.mockImplementation((cb: any) => {
+        txMock = makeTx();
+        return cb(txMock);
+      });
+      prisma.$transaction.mockClear();
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(richOrder);
+    });
+
+    it('shipping +50 raises original shippingCharge and total by exactly 50 + writes the timeline entry', async () => {
+      const ret: any = await service.create(
+        { ...baseDto(), shippingAdjustment: 50 },
+        'staff@shop.com',
+      );
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(txMock.order.update).toHaveBeenCalledWith({
+        where: { id: 'order-1' },
+        data: { shippingCharge: 150, discount: 50, total: 1900 },
+      });
+      const payload = txMock.$executeRaw.mock.calls[0][1] as string;
+      expect(payload).toContain('"type":"shipping"');
+      expect(payload).toContain('"oldValue":100');
+      expect(payload).toContain('"newValue":150');
+      expect(payload).toContain(
+        `Shipping charge +50 by staff@shop.com during partial return ${ret.displayId}`,
+      );
+    });
+
+    it('shipping -50 lowers original shippingCharge and total by exactly 50', async () => {
+      const ret: any = await service.create(
+        { ...baseDto(), shippingAdjustment: -50 },
+        'staff@shop.com',
+      );
+      expect(txMock.order.update).toHaveBeenCalledWith({
+        where: { id: 'order-1' },
+        data: { shippingCharge: 50, discount: 50, total: 1800 },
+      });
+      const payload = txMock.$executeRaw.mock.calls[0][1] as string;
+      expect(payload).toContain(
+        `Shipping charge -50 by staff@shop.com during partial return ${ret.displayId}`,
+      );
+    });
+
+    it('discount +20 raises original discount by 20 (total drops by 20)', async () => {
+      await service.create({ ...baseDto(), discountAdjustment: 20 }, 'staff@shop.com');
+      expect(txMock.order.update).toHaveBeenCalledWith({
+        where: { id: 'order-1' },
+        data: { shippingCharge: 100, discount: 70, total: 1830 },
+      });
+    });
+
+    it('discount -20 lowers original discount by 20 (total rises by 20) + timeline entry', async () => {
+      const ret: any = await service.create(
+        { ...baseDto(), discountAdjustment: -20 },
+        'staff@shop.com',
+      );
+      expect(txMock.order.update).toHaveBeenCalledWith({
+        where: { id: 'order-1' },
+        data: { shippingCharge: 100, discount: 30, total: 1870 },
+      });
+      const payload = txMock.$executeRaw.mock.calls[0][1] as string;
+      expect(payload).toContain('"type":"discount"');
+      expect(payload).toContain('"oldValue":50');
+      expect(payload).toContain('"newValue":30');
+      expect(payload).toContain(
+        `Discount -20 by staff@shop.com during partial return ${ret.displayId}`,
+      );
+    });
+
+    it('applies both fields independently in ONE update', async () => {
+      await service.create(
+        { ...baseDto(), shippingAdjustment: 50, discountAdjustment: -20 },
+        'staff@shop.com',
+      );
+      expect(txMock.order.update).toHaveBeenCalledWith({
+        where: { id: 'order-1' },
+        data: { shippingCharge: 150, discount: 30, total: 1920 },
+      });
+      expect(txMock.$executeRaw).toHaveBeenCalledTimes(1);
+    });
+
+    it('percentage-type order: recomputes the effective discount from the new stored value', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...richOrder,
+        subtotal: 1000,
+        discount: 10,
+        discountType: 'percentage',
+        total: 900,
+      });
+      await service.create({ ...baseDto(), discountAdjustment: 5 }, 'staff@shop.com');
+      // stored value 10 → 15 (percent points); effective 1000 × 15/100 = 150.
+      expect(txMock.order.update).toHaveBeenCalledWith({
+        where: { id: 'order-1' },
+        data: { shippingCharge: 100, discount: 15, total: 950 },
+      });
+    });
+
+    it('rejects a shipping adjustment that would leave shipping below 0 (400, nothing persists)', async () => {
+      await expect(
+        service.create({ ...baseDto(), shippingAdjustment: -500 }, 'staff@shop.com'),
+      ).rejects.toThrow(/Shipping charge cannot go below 0/);
+      expect(txMock.return.create).not.toHaveBeenCalled();
+      expect(txMock.order.update).not.toHaveBeenCalled();
+      expect(txMock.$executeRaw).not.toHaveBeenCalled();
+    });
+
+    it('rejects a discount adjustment that would leave discount below 0 (400)', async () => {
+      await expect(
+        service.create({ ...baseDto(), discountAdjustment: -60 }, 'staff@shop.com'),
+      ).rejects.toThrow(/Discount cannot go below 0/);
+      expect(txMock.return.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects adjustments that would push the recomputed total negative (400)', async () => {
+      await expect(
+        service.create({ ...baseDto(), discountAdjustment: 5000 }, 'staff@shop.com'),
+      ).rejects.toThrow(/Order total cannot go negative/);
+      expect(txMock.return.create).not.toHaveBeenCalled();
+      expect(txMock.order.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects adjustments on FULL returns (partial-only semantics)', async () => {
+      await expect(
+        service.create({ ...baseDto(), type: 'FULL' as const, shippingAdjustment: 10 }, 'staff@shop.com'),
+      ).rejects.toThrow(/only supported on partial returns/);
+      expect(txMock.return.create).not.toHaveBeenCalled();
+    });
+
+    it('no adjustments → only the displayId sequence tx runs, no order write (existing path untouched)', async () => {
+      await service.create(baseDto(), 'staff@shop.com');
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(txMock.order.update).not.toHaveBeenCalled();
+      expect(txMock.$executeRaw).not.toHaveBeenCalled();
+      expect(prisma.return.create).toHaveBeenCalled();
+    });
+
+    it('propagates an original-order write failure (all-or-nothing — no truthy return)', async () => {
+      const failing = makeTx();
+      failing.order.update.mockRejectedValue(new Error('db down'));
+      prisma.$transaction.mockImplementation((cb: any) => cb(failing));
+      await expect(
+        service.create({ ...baseDto(), shippingAdjustment: 10 }, 'staff@shop.com'),
+      ).rejects.toThrow('db down');
     });
   });
 });

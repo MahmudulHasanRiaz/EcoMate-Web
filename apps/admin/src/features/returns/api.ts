@@ -66,6 +66,10 @@ export const returnsApi = {
     source?: 'STAFF' | 'COURIER' | 'EXCHANGE'
     items?: { productId: string; variantId?: string | null; quantity: number }[]
     reason?: string
+    /** Signed per-field adjustment on the ORIGINAL order (partial returns only). */
+    shippingAdjustment?: number
+    /** Signed per-field adjustment on the ORIGINAL order (partial returns only). */
+    discountAdjustment?: number
   }) => apiClient.post<ReturnListItem>('/returns', data).then((r) => r.data),
   markReceived: (id: string, items?: { productId: string; variantId?: string | null; quantity: number }[]) =>
     apiClient.post<ReturnDetail>(`/returns/${id}/mark-received`, items ? { items } : {}).then((r) => r.data),

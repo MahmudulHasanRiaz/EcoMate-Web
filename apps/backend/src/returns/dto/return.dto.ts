@@ -3,6 +3,7 @@ import {
   IsArray,
   IsIn,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
@@ -71,6 +72,19 @@ export class CreateReturnDto {
   @IsOptional()
   @IsUUID()
   exchangeOrderId?: string;
+
+  /**
+   * Signed per-field billing adjustments on the ORIGINAL order (partial
+   * returns only). Positive raises the field's value, negative lowers it —
+   * never applied to the Return row itself.
+   */
+  @IsOptional()
+  @IsNumber()
+  shippingAdjustment?: number;
+
+  @IsOptional()
+  @IsNumber()
+  discountAdjustment?: number;
 }
 
 export class MarkReceivedDto {

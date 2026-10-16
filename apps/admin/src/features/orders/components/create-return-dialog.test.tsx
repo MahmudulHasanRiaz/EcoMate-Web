@@ -21,6 +21,11 @@ const order = {
   displayId: 'ORD-260930-0007',
   kind: 'SALE',
   status: { id: 'st-shipping', name: 'Shipping' },
+  subtotal: 1800,
+  shippingCharge: 100,
+  discount: 50,
+  discountType: 'flat',
+  total: 1850,
   items: [
     { id: 'oi-1', productId: 'p1', variantId: null, quantity: 3, price: 500, product: { id: 'p1', name: 'Widget' }, variant: null },
     { id: 'oi-2', productId: 'p2', variantId: null, quantity: 1, price: 300, product: { id: 'p2', name: 'Gadget' }, variant: null },
@@ -144,5 +149,100 @@ describe('CreateReturnDialog (unified staff return)', () => {
   it('requires at least one picked line for partial confirm', async () => {
     const { getByRole } = await renderDialog()
     await expect.element(getByRole('button', { name: 'Confirm return' })).toBeDisabled()
+  })
+
+  // ——— Billing card + signed per-field adjustments (partial only) ———
+
+  it('shows the billing card on Partial (hidden on Full) with current → new rows', async () => {
+    const { getByRole } = await renderDialog()
+    const card = document.querySelector('[data-testid="return-billing-card"]')
+    expect(card).not.toBeNull()
+    expect(card?.textContent).toContain('Billing — applied to the original order')
+    // Defaults: current == new, so no delta chips.
+    expect(card?.textContent).toContain('৳100.00')
+    expect(card?.textContent).toContain('৳1850.00')
+    await userEvent.click(getByRole('radio', { name: /full/i }))
+    expect(document.querySelector('[data-testid="return-billing-card"]')).toBeNull()
+  })
+
+  it('live previews signed per-field adjustments with explicit deltas + recomputed total', async () => {
+    const { getByTestId } = await renderDialog()
+    await userEvent.type(getByTestId('return-shipping-adjustment'), '50')
+    await userEvent.type(getByTestId('return-discount-adjustment'), '-20')
+    const card = document.querySelector('[data-testid="return-billing-card"]')!
+    expect(card.textContent).toContain('৳150.00') // shipping 100 + 50
+    expect(card.textContent).toContain('+৳50.00')
+    expect(card.textContent).toContain('৳30.00') // discount 50 − 20
+    expect(card.textContent).toContain('-৳20.00')
+    expect(card.textContent).toContain('৳1920.00') // 1800 + 150 − 30
+    expect(card.textContent).toContain('+৳70.00') // total delta 1850 → 1920
+  })
+
+  it('posts only non-zero signed adjustments with the partial return', async () => {
+    mockPost.mockResolvedValue({ data: { id: 'ret-5', displayId: 'RTN-260930-0005' } })
+    const { getByRole, getByTestId } = await renderDialog()
+    await userEvent.type(getByTestId('return-shipping-adjustment'), '50')
+    await userEvent.click(getByRole('button', { name: 'Increase return quantity for Widget' }))
+    await userEvent.click(getByRole('button', { name: 'Confirm return' }))
+    await expect.poll(() => mockPost.mock.calls.length).toBe(1)
+    const body = mockPost.mock.calls[0][1] as any
+    expect(body).toMatchObject({ type: 'PARTIAL', shippingAdjustment: 50 })
+    expect(body).not.toHaveProperty('discountAdjustment')
+  })
+
+  it('omits adjustments entirely when none were entered', async () => {
+    mockPost.mockResolvedValue({ data: { id: 'ret-6', displayId: 'RTN-260930-0006' } })
+    const { getByRole } = await renderDialog()
+    await userEvent.click(getByRole('button', { name: 'Increase return quantity for Widget' }))
+    await userEvent.click(getByRole('button', { name: 'Confirm return' }))
+    await expect.poll(() => mockPost.mock.calls.length).toBe(1)
+    const body = mockPost.mock.calls[0][1] as any
+    expect(body).not.toHaveProperty('shippingAdjustment')
+    expect(body).not.toHaveProperty('discountAdjustment')
+  })
+
+  it('blocks confirm + explains when an adjustment would push a field below 0', async () => {
+    const { getByRole, getByTestId } = await renderDialog()
+    await userEvent.click(getByRole('button', { name: 'Increase return quantity for Widget' }))
+    await userEvent.type(getByTestId('return-shipping-adjustment'), '-500')
+    await expect.element(getByRole('button', { name: 'Confirm return' })).toBeDisabled()
+    expect(document.body.textContent).toContain('Shipping charge cannot go below 0.')
+    await userEvent.clear(getByTestId('return-shipping-adjustment'))
+    await userEvent.type(getByTestId('return-shipping-adjustment'), '-50')
+    await expect.element(getByRole('button', { name: 'Confirm return' })).not.toBeDisabled()
+  })
+
+  it('blocks confirm when the recomputed order total would go negative', async () => {
+    const { getByRole, getByTestId } = await renderDialog()
+    await userEvent.click(getByRole('button', { name: 'Increase return quantity for Widget' }))
+    await userEvent.type(getByTestId('return-discount-adjustment'), '5000')
+    await expect.element(getByRole('button', { name: 'Confirm return' })).toBeDisabled()
+    expect(document.body.textContent).toContain('Order total cannot go negative.')
+  })
+
+  it('percentage-type orders preview the discount as percent points', async () => {
+    const { getByTestId } = await renderDialog({
+      ...order,
+      discountType: 'percentage',
+      discount: 10,
+      total: 1720,
+    })
+    const card = document.querySelector('[data-testid="return-billing-card"]')!
+    expect(card.textContent).toContain('10.00%')
+    await userEvent.type(getByTestId('return-discount-adjustment'), '5')
+    expect(card.textContent).toContain('15.00%')
+    expect(card.textContent).toContain('+5.00%')
+  })
+
+  it('switching to Full drops the entered adjustments from the payload', async () => {
+    mockPost.mockResolvedValue({ data: { id: 'ret-7', displayId: 'RTN-260930-0007' } })
+    const { getByRole, getByTestId } = await renderDialog()
+    await userEvent.type(getByTestId('return-shipping-adjustment'), '50')
+    await userEvent.click(getByRole('radio', { name: /full/i }))
+    await userEvent.click(getByRole('button', { name: 'Confirm return' }))
+    await expect.poll(() => mockPost.mock.calls.length).toBe(1)
+    const body = mockPost.mock.calls[0][1] as any
+    expect(body.type).toBe('FULL')
+    expect(body).not.toHaveProperty('shippingAdjustment')
   })
 })
