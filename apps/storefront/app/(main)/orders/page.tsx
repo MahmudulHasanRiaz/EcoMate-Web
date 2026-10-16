@@ -210,6 +210,18 @@ export function resolveTerminalState(statusName: string): string | null {
 }
 
 /**
+ * Customer-facing label for the tracking chip. Internal call-center states
+ * (Recall / No Response) must never leak verbatim to the customer — they both
+ * mean "the order is on hold while we reach you", so both render as
+ * "Awaiting Confirmation". Every other status keeps its own name.
+ */
+export function customerStatusLabel(statusName: string): string {
+  const normalized = (statusName || '').trim().toLowerCase();
+  if (normalized === 'recall' || normalized === 'no response') return 'Awaiting Confirmation';
+  return statusName || 'Processing';
+}
+
+/**
  * Determines stage index (0 to 4) based on status name and timeline entries.
  * 0: Placed
  * 1: Confirmed
@@ -236,7 +248,15 @@ export function determineActiveStageIndex(statusName: string, timeline: Timeline
   if (normalizedStatus.includes('confirmed')) {
     return 1;
   }
-  if (normalizedStatus.includes('pending') || normalizedStatus.includes('hold') || normalizedStatus.includes('verifying')) {
+  if (
+    normalizedStatus.includes('pending') ||
+    normalizedStatus.includes('hold') ||
+    normalizedStatus.includes('verifying') ||
+    // E: the call-center pre-confirmation pair is explicitly stage 0 — never
+    // dependent on the timeline fallback below.
+    normalizedStatus.includes('recall') ||
+    normalizedStatus.includes('no response')
+  ) {
     return 0;
   }
 
@@ -478,7 +498,7 @@ export default function OrdersPage() {
                       backgroundColor: order.status?.color ? order.status.color + '15' : '#3B82F615',
                     }}
                   >
-                    {order.status?.name || 'Processing'}
+                    {customerStatusLabel(order.status?.name || 'Processing')}
                   </span>
                 </div>
               </div>

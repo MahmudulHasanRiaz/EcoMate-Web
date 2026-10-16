@@ -32,12 +32,18 @@ interface UserBadgeProps {
   email?: string
   userId?: string
   user?: UserResponse
+  /**
+   * Optional display name used while the full user is still loading (or when
+   * the lookup fails) — e.g. `recorder: {firstName, lastName}` already present
+   * on the row. Prevents the generic "User" flash on table chips.
+   */
+  fallbackLabel?: string
   showEmail?: boolean
   size?: 'sm' | 'md' | 'lg'
   className?: string
 }
 
-export function UserBadge({ email, userId, user: propUser, showEmail = true, size = 'sm', className = '' }: UserBadgeProps) {
+export function UserBadge({ email, userId, user: propUser, fallbackLabel, showEmail = true, size = 'sm', className = '' }: UserBadgeProps) {
   const [open, setOpen] = useState(false)
 
   const { data: fetchedUser, isLoading } = useQuery({
@@ -54,8 +60,17 @@ export function UserBadge({ email, userId, user: propUser, showEmail = true, siz
   })
 
   const u = propUser || fetchedUser
-  const initials = u ? getInitials(u.firstName, u.lastName, u.email) : email ? getInitials(undefined, undefined, looksLikeId(email) ? undefined : email) : '?'
-  const displayName = u ? `${u.firstName} ${u.lastName}` : email && !looksLikeId(email) ? email : 'User'
+  const fallbackName = fallbackLabel?.trim() || undefined
+  const initials = u
+    ? getInitials(u.firstName, u.lastName, u.email)
+    : fallbackName
+      ? fallbackName.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase()
+      : email
+        ? getInitials(undefined, undefined, looksLikeId(email) ? undefined : email)
+        : '?'
+  const displayName = u
+    ? `${u.firstName} ${u.lastName}`
+    : fallbackName || (email && !looksLikeId(email) ? email : 'User')
   const sizeClass = size === 'sm' ? 'h-6 w-6 text-[10px]' : size === 'md' ? 'h-8 w-8 text-xs' : 'h-10 w-10 text-sm'
   const roleColor: Record<string, string> = {
     superadmin: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
@@ -89,7 +104,7 @@ export function UserBadge({ email, userId, user: propUser, showEmail = true, siz
               <Avatar className="h-8 w-8">
                 <AvatarFallback className="text-xs font-medium">{initials}</AvatarFallback>
               </Avatar>
-              <span>{u ? `${u.firstName} ${u.lastName}` : email && !looksLikeId(email) ? email : 'User'}</span>
+              <span>{displayName}</span>
             </DialogTitle>
           </DialogHeader>
           {isLoading && (

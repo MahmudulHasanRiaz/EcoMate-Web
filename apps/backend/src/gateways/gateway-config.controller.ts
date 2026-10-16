@@ -234,6 +234,9 @@ export class GatewayConfigController implements OnApplicationBootstrap {
       phoneNumber: g.phoneNumber,
       credentials: g.credentials,
       sortOrder: g.sortOrder,
+      // D (owner-locked): tri-state overrides — null = use global default.
+      staffAutoVerifiedOverride: g.staffAutoVerifiedOverride,
+      editAllowedOverride: g.editAllowedOverride,
     }));
   }
 
@@ -266,6 +269,19 @@ export class GatewayConfigController implements OnApplicationBootstrap {
     const phoneNumber = dto.phoneNumber
       ? normalizePhone(dto.phoneNumber)
       : null;
+    // D: tri-state overrides — only touched when the key is present, so
+    // existing callers that never send them can't silently clear them.
+    const overrideUpdate: Record<string, boolean | null> = {};
+    if ('staffAutoVerifiedOverride' in dto) {
+      overrideUpdate.staffAutoVerifiedOverride =
+        dto.staffAutoVerifiedOverride === null
+          ? null
+          : dto.staffAutoVerifiedOverride === true;
+    }
+    if ('editAllowedOverride' in dto) {
+      overrideUpdate.editAllowedOverride =
+        dto.editAllowedOverride === null ? null : dto.editAllowedOverride === true;
+    }
     return this.prisma.paymentGateway.upsert({
       where: { code },
       create: {
@@ -278,6 +294,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
         phoneNumber,
         credentials: dto.credentials || {},
         sortOrder: dto.sortOrder || 0,
+        ...overrideUpdate,
       },
       update: {
         name: dto.name,
@@ -288,6 +305,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
         phoneNumber,
         credentials: dto.credentials,
         sortOrder: dto.sortOrder,
+        ...overrideUpdate,
       },
     });
   }

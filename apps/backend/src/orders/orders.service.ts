@@ -19,7 +19,7 @@ import { CustomerAddressService } from '../customers/customer-address.service';
 import { SalesChannelService } from '../sales-channel/sales-channel.service';
 import { OrdersEventService } from './orders-event.service';
 import { withTimelineSources } from './timeline-source';
-import { readPaymentSettings } from '../payments/payment-settings';
+import { resolveEffectivePaymentSettings } from '../payments/payment-settings';
 import { buildOrderSearchFilter } from './order-search';
 import { orderSnapshotCustomer } from './order-recipient';
 import { buildOrderAttributionSnapshot } from './order-attribution-snapshot';
@@ -3389,7 +3389,12 @@ export class OrdersService {
               if (amountChanged || gatewayChanged) {
                 // S2 gate (default OFF): direct amount/account edits are
                 // forbidden — staff record a correction entry instead.
-                const paymentSettings = await readPaymentSettings(tx);
+                // D (owner-locked): resolve for the row's gateway — a
+                // per-gateway tri-state override wins over the global default.
+                const paymentSettings = await resolveEffectivePaymentSettings(
+                  tx as any,
+                  existing.gatewayCode,
+                );
                 if (!paymentSettings.editAllowed) {
                   throw new ForbiddenException(
                     'Payment editing is disabled — record a correction entry instead',

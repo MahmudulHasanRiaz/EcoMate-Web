@@ -1080,6 +1080,10 @@ model Payment {
   status            PaymentStatus @default(PENDING)
   verifiedBy        String?
   verifiedAt        DateTime?
+  /// How verification happened: 'auto' (S1 staff auto-verify / API gateway) |
+  /// 'manual' (human approve/reject). NULL = never verified (or legacy row
+  /// predating the column). Drives the System-vs-user chip in the admin.
+  verificationSource String?
   notes             String?
   /// Gateway/processing fee for THIS payment (BDT). NULL = not recorded.
   feeAmount         Decimal?      @db.Decimal(10, 2)
@@ -1295,6 +1299,11 @@ model PaymentGateway {
   phoneNumber       String?
   credentials       Json?             @default("{}")
   sortOrder         Int               @default(0)
+  /// Per-gateway tri-state overrides for the two global payment settings.
+  /// NULL = "use global default"; true/false = explicit override.
+  /// Effective value = override ?? global (see payments/payment-settings.ts).
+  staffAutoVerifiedOverride Boolean?
+  editAllowedOverride       Boolean?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 

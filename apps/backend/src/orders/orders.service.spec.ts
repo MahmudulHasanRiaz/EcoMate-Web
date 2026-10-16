@@ -2347,6 +2347,89 @@ describe('OrdersService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
+    it('allows Pending → Recall (call-center pre-confirmation)', async () => {
+      const recallStatus = {
+        id: 'status-recall',
+        name: 'Recall',
+        isInitial: false,
+        nextStatuses: [],
+      };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        recallStatus,
+      );
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        statusId: 'status-recall',
+        status: recallStatus,
+      });
+      (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+      (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+
+      const result = await service.updateStatus(
+        'order-id-1',
+        { statusId: 'status-recall', note: 'Called — no answer' },
+        userId,
+      );
+
+      expect(result.statusId).toBe('status-recall');
+      expect(prisma.order.update).toHaveBeenCalled();
+    });
+
+    it('allows Recall → No Response (retry also unanswered)', async () => {
+      const recallOrder = {
+        ...mockOrder,
+        status: { id: 'status-recall', name: 'Recall' },
+      };
+      const noResponseStatus = {
+        id: 'status-no-response',
+        name: 'No Response',
+        isInitial: false,
+        nextStatuses: [],
+      };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(recallOrder);
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        noResponseStatus,
+      );
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...recallOrder,
+        statusId: 'status-no-response',
+        status: noResponseStatus,
+      });
+      (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+      (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+
+      const result = await service.updateStatus(
+        'order-id-1',
+        { statusId: 'status-no-response', note: 'Second call — no answer' },
+        userId,
+      );
+
+      expect(result.statusId).toBe('status-no-response');
+    });
+
+    it('rejects Confirmed → Recall (pre-confirmation pair is one-way)', async () => {
+      const confirmedOrder = {
+        ...mockOrder,
+        status: { id: 'status-confirmed', name: 'Confirmed' },
+      };
+      const recallStatus = {
+        id: 'status-recall',
+        name: 'Recall',
+        isInitial: false,
+        nextStatuses: [],
+      };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(confirmedOrder);
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        recallStatus,
+      );
+
+      await expect(
+        service.updateStatus('order-id-1', { statusId: 'status-recall' }, userId),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.order.update).not.toHaveBeenCalled();
+    });
+
     it('allows Cancelled → Hold and re-establishes the stock reservation', async () => {
       const cancelledOrder = {
         ...mockOrder,

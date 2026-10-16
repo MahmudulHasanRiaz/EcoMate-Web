@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  customerStatusLabel,
   determineActiveStageIndex,
   maskPhone,
   resolveCustomerInfo,
@@ -167,6 +168,19 @@ describe('Public Order Tracking Page — UX helpers', () => {
       expect(determineActiveStageIndex('Delivered')).toBe(4);
     });
 
+    // E: the call-center pre-confirmation pair is explicitly stage 0 — even
+    // with a stale timeline that already contains Confirmed/Shipping entries.
+    it('keeps Recall and No Response at the Placed stage, ignoring stale timeline', () => {
+      const timeline: any = [
+        { status: 'Pending', timestamp: '2026-10-01T10:00:00.000Z' },
+        { status: 'Shipping', timestamp: '2026-10-02T09:00:00.000Z' },
+      ];
+      expect(determineActiveStageIndex('Recall')).toBe(0);
+      expect(determineActiveStageIndex('No Response')).toBe(0);
+      expect(determineActiveStageIndex('Recall', timeline)).toBe(0);
+      expect(determineActiveStageIndex('No Response', timeline)).toBe(0);
+    });
+
     // A cancelled order must not report forward progress from a stale
     // timeline entry, which would tell the customer it is still shipping.
     it('never reports forward progress for terminal statuses', () => {
@@ -192,6 +206,26 @@ describe('Public Order Tracking Page — UX helpers', () => {
       expect(isStageInTimeline('packed', timeline).reached).toBe(true);
       expect(isStageInTimeline('shipping', timeline).reached).toBe(false);
       expect(isStageInTimeline('delivered', timeline).reached).toBe(false);
+    });
+  });
+
+  // E: internal call-center states must never leak verbatim to customers.
+  describe('customerStatusLabel', () => {
+    it('maps Recall and No Response to a neutral customer-facing label', () => {
+      expect(customerStatusLabel('Recall')).toBe('Awaiting Confirmation');
+      expect(customerStatusLabel('No Response')).toBe('Awaiting Confirmation');
+      expect(customerStatusLabel('no response')).toBe('Awaiting Confirmation');
+    });
+
+    it('keeps every other status name untouched', () => {
+      expect(customerStatusLabel('Pending')).toBe('Pending');
+      expect(customerStatusLabel('Confirmed')).toBe('Confirmed');
+      expect(customerStatusLabel('Shipping')).toBe('Shipping');
+      expect(customerStatusLabel('Delivered')).toBe('Delivered');
+    });
+
+    it('falls back to Processing when no status name is available', () => {
+      expect(customerStatusLabel('')).toBe('Processing');
     });
   });
 });

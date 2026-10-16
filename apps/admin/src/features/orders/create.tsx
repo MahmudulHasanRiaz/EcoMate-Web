@@ -105,6 +105,23 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
     staleTime: 5 * 60_000,
   })
 
+  // D: effective S1/S2 per gateway (tri-state override ?? global) — the
+  // create form mirrors the exact rule the backend ledger will enforce.
+  const { data: effectivePaySettings } = useQuery({
+    queryKey: ['payment-effective-settings'],
+    queryFn: () => paymentsApi.getEffectiveSettings(),
+    staleTime: 5 * 60_000,
+  })
+
+  // Per-row txn requirement: the row's gateway effective S1; falls back to
+  // the effective global, then the legacy system-settings read.
+  const txnRequiredFor = (gatewayCode: string): boolean => {
+    const eff = effectivePaySettings?.gateways.find((g) => g.code === gatewayCode)?.effective
+    if (eff) return !eff.staffAutoVerified
+    if (effectivePaySettings?.global) return !effectivePaySettings.global.staffAutoVerified
+    return sysSettings?.['payments.staffAutoVerified'] === 'false'
+  }
+
   const { data: shippingZones } = useQuery({
     queryKey: ['shipping-zones'],
     queryFn: () => apiClient.get('/shipping-zones').then(r => (r.data as any[]) || []),
@@ -872,9 +889,8 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
     const payload = buildPayload()
     if (showCollectedRows) {
       // S1 mirror (same rule as the order page): txn required iff staff
-      // entries are NOT auto-verified.
-      const txnRequired = sysSettings?.['payments.staffAutoVerified'] === 'false'
-      const rowErrors = validateCollectedRows(collectedRows, txnRequired)
+      // entries are NOT auto-verified — resolved PER ROW by gateway (D).
+      const rowErrors = validateCollectedRows(collectedRows, txnRequiredFor)
       if (rowErrors.length > 0) {
         toast.error(rowErrors[0])
         return
@@ -1834,7 +1850,7 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                   <CreatePaymentsSection
                     rows={collectedRows}
                     onRowsChange={setCollectedRows}
-                    txnRequired={sysSettings?.['payments.staffAutoVerified'] === 'false'}
+                    txnRequired={txnRequiredFor}
                     total={total}
                     creditBalance={creditBalance}
                     applyCredit={applyCredit}

@@ -35,6 +35,18 @@ export class PaymentsController {
     });
   }
 
+  // D (owner-locked): canonical effective settings — global defaults +
+  // per-gateway tri-state overrides + resolved effective values. Readable by
+  // every payments-viewing role: the order detail edit gate needs the same
+  // effective answer the backend enforces, not just the global default.
+  // Declared before parameterized routes so 'settings' is never captured as an :id.
+  @Roles('superadmin', 'admin', 'employee')
+  @RequiresFeature('admin_payments')
+  @Get('settings')
+  getSettings() {
+    return this.svc.getEffectivePaymentSettings();
+  }
+
   @Public()
   @RateLimitPolicy('checkout')
   @Post(':orderId')

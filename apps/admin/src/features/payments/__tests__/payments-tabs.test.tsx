@@ -1,7 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import type { ReactNode } from 'react'
 import { render } from 'vitest-browser-react'
-import { userEvent } from 'vitest/browser'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PaymentVerificationPage } from '../payment-verification'
 
@@ -53,17 +52,22 @@ describe('Payments page tabs', () => {
     })
   })
 
-  it('lists recorded payments (including staff-collected advances) with filters', async () => {
+  it('opens on the approval-first All Payments tab and lists recorded rows', async () => {
     const ui = await renderPage()
-    await userEvent.click(ui.getByRole('button', { name: 'All Payments' }))
+    // A: the default tab is All Payments — the ledger renders immediately,
+    // no click needed, with its one-line hint.
+    await expect.element(
+      ui.getByText('Every recorded payment row — approvals, balances and gateway history.'),
+    ).toBeInTheDocument()
     await expect.element(ui.getByText('ORD-001')).toBeInTheDocument()
     await expect.element(ui.getByText('PAID', { exact: true })).toBeInTheDocument()
   })
 
-  it('keeps the verifying queue as the default tab', async () => {
+  it('does NOT open on the verify queue, and the header badge is the truthful pending count', async () => {
     const ui = await renderPage()
-    await expect.element(ui.getByText('Payment Verification')).not.toBeInTheDocument()
-    // Default tab shows the verifying queue (empty here → empty-state copy).
-    await expect.element(ui.getByText('No orders awaiting payment verification')).toBeInTheDocument()
+    // The verify queue (and its empty-state copy) is one click away, not the default.
+    await expect.element(ui.getByText('No orders awaiting payment verification')).not.toBeInTheDocument()
+    // Header badge = PENDING ledger rows (meta.total from the pendingCount query).
+    await expect.element(ui.getByText('1 pending')).toBeInTheDocument()
   })
 })

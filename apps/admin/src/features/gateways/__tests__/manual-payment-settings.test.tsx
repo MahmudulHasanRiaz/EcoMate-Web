@@ -33,6 +33,8 @@ const manualGateway = {
   phoneNumber: '01700000000',
   credentials: {},
   sortOrder: 2,
+  staffAutoVerifiedOverride: null,
+  editAllowedOverride: null,
 }
 
 const apiGateway = {
@@ -47,6 +49,8 @@ const apiGateway = {
   phoneNumber: null,
   credentials: {},
   sortOrder: 7,
+  staffAutoVerifiedOverride: null,
+  editAllowedOverride: null,
 }
 
 const cashGateway = {
@@ -61,6 +65,8 @@ const cashGateway = {
   phoneNumber: null,
   credentials: {},
   sortOrder: 1,
+  staffAutoVerifiedOverride: null,
+  editAllowedOverride: null,
 }
 
 const optionsData = [
@@ -84,6 +90,38 @@ const optionsData = [
   },
 ]
 
+/** D: canonical effective settings shape returned by GET /payments/settings. */
+function effectiveSettings(over: {
+  global?: { staffAutoVerified: boolean; editAllowed: boolean }
+  bkash?: { staffAutoVerifiedOverride: boolean | null; editAllowedOverride: boolean | null }
+} = {}) {
+  const global = over.global ?? { staffAutoVerified: true, editAllowed: false }
+  const bkashOver = over.bkash ?? { staffAutoVerifiedOverride: null, editAllowedOverride: null }
+  return {
+    global,
+    gateways: [
+      {
+        code: 'bkash',
+        name: 'bKash (Manual)',
+        type: 'manual',
+        ...bkashOver,
+        effective: {
+          staffAutoVerified: bkashOver.staffAutoVerifiedOverride ?? global.staffAutoVerified,
+          editAllowed: bkashOver.editAllowedOverride ?? global.editAllowed,
+        },
+      },
+      {
+        code: 'bkash_pgw',
+        name: 'bKash PGW (API)',
+        type: 'api',
+        staffAutoVerifiedOverride: null,
+        editAllowedOverride: null,
+        effective: global,
+      },
+    ],
+  }
+}
+
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
@@ -93,35 +131,28 @@ function renderPage() {
   )
 }
 
-describe('Manual gateway payment settings (S1/S2)', () => {
+describe('Payment settings: global defaults + per-gateway tri-state (D)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGet.mockImplementation(async (url: string) => {
       if (url === '/gateways/options') return { data: optionsData }
+      if (url === '/payments/settings') return { data: effectiveSettings() }
       if (url === '/system-settings') return { data: {} }
       return { data: [] }
     })
     mockPost.mockResolvedValue({ data: { ok: true } })
+    mockPut.mockResolvedValue({ data: { ok: true } })
   })
 
-  it('renders S1/S2 toggles with exact labels inside the expanded manual card', async () => {
+  it('renders the Global Payment Defaults section with both store-wide toggles', async () => {
     const ui = await renderPage()
-    await userEvent.click(ui.getByText('bKash (Manual)'))
-    await expect.element(ui.getByText('Staff manual payments auto-verified')).toBeInTheDocument()
-    await expect.element(ui.getByText('Staff may edit recorded payments')).toBeInTheDocument()
+    await expect.element(ui.getByText('Global Payment Defaults')).toBeInTheDocument()
+    await expect.element(ui.getByRole('switch', { name: 'Staff manual payments auto-verified' })).toBeInTheDocument()
+    await expect.element(ui.getByRole('switch', { name: 'Staff may edit recorded payments' })).toBeInTheDocument()
   })
 
-  it('does NOT render S1/S2 toggles inside the api (bkash_pgw) card', async () => {
+  it('global toggle flips the stored value via system-settings POST and refetches', async () => {
     const ui = await renderPage()
-    await userEvent.click(ui.getByText('bKash PGW (API)'))
-    await expect.element(ui.getByText('Sandbox (Testing Mode)')).toBeInTheDocument()
-    await expect.element(page.getByText('Staff manual payments auto-verified')).not.toBeInTheDocument()
-    await expect.element(page.getByText('Staff may edit recorded payments')).not.toBeInTheDocument()
-  })
-
-  it('toggle flips the stored value via system-settings POST and refetches', async () => {
-    const ui = await renderPage()
-    await userEvent.click(ui.getByText('bKash (Manual)'))
     const s1 = ui.getByRole('switch', { name: 'Staff manual payments auto-verified' })
     // Default ON (no stored key) → flipping writes 'false'.
     await userEvent.click(s1)
@@ -129,37 +160,97 @@ describe('Manual gateway payment settings (S1/S2)', () => {
       expect(mockPost).toHaveBeenCalledWith('/system-settings/payments.staffAutoVerified', { value: 'false' })
     })
     await vi.waitFor(() => {
-      const settingsCalls = mockGet.mock.calls.filter((c) => c[0] === '/system-settings')
+      const settingsCalls = mockGet.mock.calls.filter((c) => c[0] === '/payments/settings')
       expect(settingsCalls.length).toBeGreaterThan(1)
     })
   })
 
-  it('S2 renders unchecked by default (absent keys) and flipping ON POSTs editAllowed true', async () => {
+  it('manual gateway card shows per-gateway tri-state rows defaulting to "Use global default"', async () => {
     const ui = await renderPage()
     await userEvent.click(ui.getByText('bKash (Manual)'))
-    const s2 = ui.getByRole('switch', { name: 'Staff may edit recorded payments' })
-    // Absent key → code default OFF.
-    await expect.element(s2).not.toBeChecked()
-    await userEvent.click(s2)
+    const s1 = ui.getByRole('combobox', { name: 'Staff manual payments auto-verified' })
+    const s2 = ui.getByRole('combobox', { name: 'Staff may edit recorded payments' })
+    await expect.element(s1).toHaveTextContent('Use global default')
+    await expect.element(s2).toHaveTextContent('Use global default')
+    // Effective hints resolve through the global defaults.
+    await expect.element(page.getByText('Effective: On — from global default')).toBeInTheDocument()
+    await expect.element(page.getByText('Effective: Off — from global default')).toBeInTheDocument()
+  })
+
+  it('tri-state override change updates the hint and saves the override on the gateway', async () => {
+    const ui = await renderPage()
+    await userEvent.click(ui.getByText('bKash (Manual)'))
+    const s1 = ui.getByRole('combobox', { name: 'Staff manual payments auto-verified' })
+    await userEvent.click(s1)
+    await userEvent.click(page.getByRole('option', { name: 'Off' }))
+    // Hint now says the value is gateway-scoped, not inherited.
+    await expect.element(page.getByText('Effective: Off — set on this gateway')).toBeInTheDocument()
+    await userEvent.click(ui.getByRole('button', { name: 'Save Configuration' }))
     await vi.waitFor(() => {
-      expect(mockPost).toHaveBeenCalledWith('/system-settings/payments.editAllowed', { value: 'true' })
-    })
-    await vi.waitFor(() => {
-      const settingsCalls = mockGet.mock.calls.filter((c) => c[0] === '/system-settings')
-      expect(settingsCalls.length).toBeGreaterThan(1)
+      const putCall = mockPut.mock.calls.find((c) => c[0] === '/gateways/bkash')
+      expect(putCall).toBeTruthy()
+      expect(putCall![1]).toMatchObject({
+        staffAutoVerifiedOverride: false,
+        editAllowedOverride: null,
+      })
     })
   })
 
-  it('cash gateway card never shows S1/S2 toggles', async () => {
+  it('server-side override is reflected in the tri-state and the effective hint', async () => {
+    mockGet.mockImplementation(async (url: string) => {
+      if (url === '/gateways/options') {
+        return {
+          data: [
+            {
+              ...optionsData[0],
+              gateways: [
+                { ...manualGateway, staffAutoVerifiedOverride: false, editAllowedOverride: true },
+                apiGateway,
+              ],
+            },
+            optionsData[1],
+          ],
+        }
+      }
+      if (url === '/payments/settings') {
+        return {
+          data: effectiveSettings({
+            bkash: { staffAutoVerifiedOverride: false, editAllowedOverride: true },
+          }),
+        }
+      }
+      return { data: [] }
+    })
+    const ui = await renderPage()
+    await userEvent.click(ui.getByText('bKash (Manual)'))
+    await expect
+      .element(ui.getByRole('combobox', { name: 'Staff manual payments auto-verified' }))
+      .toHaveTextContent('Off')
+    await expect
+      .element(ui.getByRole('combobox', { name: 'Staff may edit recorded payments' }))
+      .toHaveTextContent('On')
+    await expect.element(page.getByText('Effective: Off — set on this gateway')).toBeInTheDocument()
+    await expect.element(page.getByText('Effective: On — set on this gateway')).toBeInTheDocument()
+  })
+
+  it('api (bkash_pgw) card never shows the per-gateway tri-state rows', async () => {
+    const ui = await renderPage()
+    await userEvent.click(ui.getByText('bKash PGW (API)'))
+    await expect.element(ui.getByText('Sandbox (Testing Mode)')).toBeInTheDocument()
+    await expect.element(page.getByText('Use global default')).not.toBeInTheDocument()
+  })
+
+  it('cash gateway card never shows the per-gateway tri-state rows', async () => {
     const ui = await renderPage()
     // Cash gateway section renders (group heading), as its own static card (no expand step).
     await expect.element(ui.getByRole('heading', { name: 'Cash On Delivery Gateways' })).toBeInTheDocument()
-    await expect.element(page.getByText('Staff manual payments auto-verified')).not.toBeInTheDocument()
-    await expect.element(page.getByText('Staff may edit recorded payments')).not.toBeInTheDocument()
-    // Even with the manual card expanded, the toggles appear exactly once
-    // (inside the manual card — never duplicated into the cash card).
+    await expect.element(page.getByText('Use global default')).not.toBeInTheDocument()
+    // Even with the manual card expanded, the tri-state appears exactly once
+    // (inside the manual card — never duplicated into the cash card). A strict
+    // single-match role query fails if the row were rendered twice.
     await userEvent.click(ui.getByText('bKash (Manual)'))
-    await expect.element(ui.getByText('Staff manual payments auto-verified')).toBeInTheDocument()
-    await expect.element(ui.getByText('Staff may edit recorded payments')).toBeInTheDocument()
+    await expect
+      .element(ui.getByRole('combobox', { name: 'Staff manual payments auto-verified' }))
+      .toHaveTextContent('Use global default')
   })
 })

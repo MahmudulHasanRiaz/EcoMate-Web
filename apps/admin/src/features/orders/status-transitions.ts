@@ -9,10 +9,16 @@ export interface StatusNode {
 }
 
 export const ORDER_TRANSITIONS: Record<string, string[]> = {
-  'Pending': ['Payment Pending', 'Hold', 'Confirmed', 'Cancelled'],
-  'Payment Pending': ['Payment Verifying', 'Hold', 'Confirmed', 'Cancelled'],
-  'Payment Verifying': ['Confirmed', 'Hold', 'Cancelled'],
-  'Hold': ['Pending', 'Confirmed', 'Cancelled'],
+  'Pending': ['Payment Pending', 'Hold', 'Recall', 'No Response', 'Confirmed', 'Cancelled'],
+  'Payment Pending': ['Payment Verifying', 'Hold', 'Recall', 'No Response', 'Confirmed', 'Cancelled'],
+  'Payment Verifying': ['Confirmed', 'Hold', 'Recall', 'No Response', 'Cancelled'],
+  // E (owner-locked): Recall / No Response — the call-center PRE-CONFIRMATION
+  // pair (called once → retried → still nothing). Free movement inside the
+  // pre-confirmation group, normal Confirmed/Cancelled exits; once an order is
+  // Confirmed the main journey owns it — no way back in.
+  'Recall': ['Pending', 'Payment Pending', 'Payment Verifying', 'Hold', 'No Response', 'Confirmed', 'Cancelled'],
+  'No Response': ['Pending', 'Payment Pending', 'Payment Verifying', 'Hold', 'Recall', 'Confirmed', 'Cancelled'],
+  'Hold': ['Pending', 'Recall', 'No Response', 'Confirmed', 'Cancelled'],
   'Confirmed': ['Packed', 'Packing Hold', 'Cancelled'],
   'Packed': ['Shipping', 'Packing Hold'],
   'Packing Hold': ['Packed', 'Cancelled'],
@@ -32,6 +38,8 @@ export const STATUS_COLORS: Record<string, string> = {
   'Payment Pending': '#F59E0B',
   'Payment Verifying': '#8B5CF6',
   'Hold': '#D97706',
+  'Recall': '#F97316',
+  'No Response': '#64748B',
   'Confirmed': '#3B82F6',
   'Packed': '#059669',
   'Packing Hold': '#D97706',
@@ -59,4 +67,7 @@ export const STATUS_LAYOUT: StatusNode[] = [
   { id: '11', name: 'Returned', color: STATUS_COLORS['Returned'], x: 0, y: 0, column: 7, row: 0 },
   { id: '12', name: 'Cancelled', color: STATUS_COLORS['Cancelled'], x: 0, y: 0, column: 7, row: 1 },
   { id: '13', name: 'Damaged', color: STATUS_COLORS['Damaged'], x: 0, y: 0, column: 8, row: 0 },
+  // E: call-center pair — pre-confirmation branches under the payment column.
+  { id: '14', name: 'Recall', color: STATUS_COLORS['Recall'], x: 0, y: 0, column: 2, row: 2 },
+  { id: '15', name: 'No Response', color: STATUS_COLORS['No Response'], x: 0, y: 0, column: 2, row: 3 },
 ]

@@ -33,10 +33,18 @@ export function collectedRowsTotal(rows: CollectedPaymentRow[]): number {
 }
 
 /**
- * Mirror of the server ledger guards (account always, txn iff S1 OFF,
- * positive amounts). Returns human errors; [] = submittable.
+ * Mirror of the server ledger guards (account always, txn iff the entry will
+ * await verification, positive amounts). Returns human errors; [] = submittable.
+ *
+ * D (owner-locked): txn requirement is PER ROW when a resolver is passed —
+ * each row's gateway has its own effective S1 (tri-state override ?? global).
  */
-export function validateCollectedRows(rows: CollectedPaymentRow[], txnRequired: boolean): string[] {
+export function validateCollectedRows(
+  rows: CollectedPaymentRow[],
+  txnRequired: boolean | ((gatewayCode: string) => boolean),
+): string[] {
+  const needsTxn = (gw: string) =>
+    typeof txnRequired === 'function' ? txnRequired(gw) : txnRequired
   const errors: string[] = []
   nonEmptyCollectedRows(rows).forEach((r, i) => {
     const n = `Row ${i + 1}`
@@ -44,7 +52,7 @@ export function validateCollectedRows(rows: CollectedPaymentRow[], txnRequired: 
     if (!r.amount || isNaN(amt) || amt <= 0) errors.push(`${n}: enter an amount greater than 0`)
     if (!r.gatewayCode) errors.push(`${n}: gateway is required`)
     if (!r.account.trim()) errors.push(`${n}: account is required`)
-    if (txnRequired && !r.transactionId.trim()) errors.push(`${n}: transaction ID is required`)
+    if (needsTxn(r.gatewayCode) && !r.transactionId.trim()) errors.push(`${n}: transaction ID is required`)
   })
   return errors
 }
@@ -68,7 +76,8 @@ export function CreatePaymentsSection({
 }: {
   rows: CollectedPaymentRow[]
   onRowsChange: (rows: CollectedPaymentRow[]) => void
-  txnRequired: boolean
+  /** Boolean = same for every row; resolver = per-row effective S1 (D). */
+  txnRequired: boolean | ((gatewayCode: string) => boolean)
   total: number
   creditBalance: number
   applyCredit: boolean
@@ -78,6 +87,8 @@ export function CreatePaymentsSection({
 }) {
   const collected = collectedRowsTotal(nonEmptyCollectedRows(rows))
   const over = Math.max(0, Math.round((collected - total) * 100) / 100)
+  const rowTxnRequired = (gw: string) =>
+    typeof txnRequired === 'function' ? txnRequired(gw) : txnRequired
 
   function patch(i: number, p: Partial<CollectedPaymentRow>) {
     onRowsChange(rows.map((r, j) => (j === i ? { ...r, ...p } : r)))
@@ -88,7 +99,9 @@ export function CreatePaymentsSection({
       <p className="text-xs text-muted-foreground leading-relaxed">
         Collected now — one row per method. Recorded after the order is created.
       </p>
-      {rows.map((r, i) => (
+      {rows.map((r, i) => {
+        const needsTxn = rowTxnRequired(r.gatewayCode)
+        return (
         <div key={i} className="rounded-lg border border-border/60 bg-background p-3 space-y-2.5">
           <div className="grid grid-cols-2 gap-2.5">
             <div>
@@ -131,19 +144,19 @@ export function CreatePaymentsSection({
             </div>
             <div>
               <Label className="text-xs font-medium text-muted-foreground mb-1 block">
-                Transaction ID{txnRequired ? ' *' : ''}
+                Transaction ID{needsTxn ? ' *' : ''}
               </Label>
               <Input
                 value={r.transactionId}
                 onChange={(e) => patch(i, { transactionId: e.target.value })}
-                placeholder={txnRequired ? 'Required — entry needs verification' : 'Optional — auto-verified'}
+                placeholder={needsTxn ? 'Required — entry needs verification' : 'Optional — auto-verified'}
                 className="h-9 text-sm font-mono"
                 aria-label={`Row ${i + 1} transaction ID`}
               />
             </div>
           </div>
-          {txnRequired && (
-            <p className="text-[11px] text-muted-foreground">Transaction ID required — entries need verification (S1 off).</p>
+          {needsTxn && (
+            <p className="text-[11px] text-muted-foreground">Transaction ID required — entries need verification (auto-verify off for this gateway).</p>
           )}
           <div className="flex items-center gap-2">
             <Input
@@ -166,7 +179,8 @@ export function CreatePaymentsSection({
             )}
           </div>
         </div>
-      ))}
+        )
+      })}
       <Button
         variant="outline"
         size="sm"

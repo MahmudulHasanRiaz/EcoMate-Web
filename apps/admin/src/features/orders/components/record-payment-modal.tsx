@@ -14,7 +14,8 @@ const GATEWAYS = ['cash', 'bkash', 'nagad', 'bank', 'card']
 /**
  * Record a ledger payment (D1: stays SIMPLE — amount, gateway/account, txn,
  * note; no date picker, server sets recordedAt). txnRequired mirrors S1:
- * required exactly when the entry will sit PENDING (S1 OFF).
+ * required exactly when the entry will sit PENDING (S1 OFF). A resolver makes
+ * it PER-GATEWAY (D: tri-state override ?? global).
  */
 export function RecordPaymentModal({
   orderId,
@@ -25,7 +26,7 @@ export function RecordPaymentModal({
   orderId: string
   open: boolean
   onClose: () => void
-  txnRequired: boolean
+  txnRequired: boolean | ((gatewayCode: string) => boolean)
 }) {
   const queryClient = useQueryClient()
   const [amount, setAmount] = useState('')
@@ -33,6 +34,8 @@ export function RecordPaymentModal({
   const [account, setAccount] = useState('')
   const [transactionId, setTransactionId] = useState('')
   const [notes, setNotes] = useState('')
+  const needsTxn =
+    typeof txnRequired === 'function' ? txnRequired(gatewayCode) : txnRequired
 
   const recordMut = useMutation({
     mutationFn: () =>
@@ -68,7 +71,7 @@ export function RecordPaymentModal({
       toast.error('Account is required for manual gateway payments')
       return
     }
-    if (txnRequired && !transactionId.trim()) {
+    if (needsTxn && !transactionId.trim()) {
       toast.error('Transaction ID is required for payments awaiting verification')
       return
     }
@@ -124,7 +127,7 @@ export function RecordPaymentModal({
             <Label htmlFor="record-pay-txn">
               Transaction ID{' '}
               <span className="text-muted-foreground font-normal">
-                ({txnRequired ? 'required — entry needs verification' : 'optional — auto-verified'})
+                ({needsTxn ? 'required — entry needs verification' : 'optional — auto-verified'})
               </span>
             </Label>
             <Input

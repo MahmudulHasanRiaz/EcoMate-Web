@@ -15,6 +15,7 @@ import {
   PaymentSettings,
   parsePaymentSettings,
   readPaymentSettings,
+  resolveEffectivePaymentSettings,
 } from './payment-settings';
 
 @Injectable()
@@ -106,8 +107,33 @@ export class PaymentsService {
       }),
       this.prisma.payment.count({ where }),
     ]);
+    // B (owner-locked): resolve `staff:<userId>` recordedBy tags to the same
+    // user shape as `verifier` so the admin can render the shared user chip
+    // (click → profile) instead of a raw `staff 2f444b5a` code. The raw tag
+    // stays on the row for audit.
+    const staffIds = [
+      ...new Set(
+        data
+          .map((p) => p.recordedBy)
+          .filter((r): r is string => !!r && r.startsWith('staff:'))
+          .map((r) => r.slice('staff:'.length)),
+      ),
+    ];
+    const recorders = staffIds.length
+      ? await this.prisma.userProfile.findMany({
+          where: { id: { in: staffIds } },
+          select: { id: true, firstName: true, lastName: true },
+        })
+      : [];
+    const recorderById = new Map(recorders.map((u) => [u.id, u]));
     return {
-      data,
+      data: data.map((p) => ({
+        ...p,
+        recorder:
+          p.recordedBy && p.recordedBy.startsWith('staff:')
+            ? recorderById.get(p.recordedBy.slice('staff:'.length)) ?? null
+            : null,
+      })),
       meta: { total, page, perPage, totalPages: Math.ceil(total / perPage) },
     };
   }
@@ -117,6 +143,37 @@ export class PaymentsService {
       where: { key: { in: ['payments.staffAutoVerified', 'payments.editAllowed'] } },
     });
     return parsePaymentSettings(rows ?? []);
+  }
+
+  /**
+   * D (owner-locked): the canonical effective-settings read for the admin —
+   * global defaults + per-gateway tri-state overrides + resolved effective
+   * values, so every surface (settings page, order edit gate, record-payment
+   * forms) computes the same answer without duplicating the resolution.
+   */
+  async getEffectivePaymentSettings() {
+    const global = await readPaymentSettings(this.prisma);
+    const gateways = await this.prisma.paymentGateway.findMany({
+      select: {
+        code: true,
+        name: true,
+        type: true,
+        staffAutoVerifiedOverride: true,
+        editAllowedOverride: true,
+      },
+      orderBy: { sortOrder: 'asc' },
+    });
+    return {
+      global,
+      gateways: gateways.map((g) => ({
+        ...g,
+        effective: {
+          staffAutoVerified:
+            g.staffAutoVerifiedOverride ?? global.staffAutoVerified,
+          editAllowed: g.editAllowedOverride ?? global.editAllowed,
+        },
+      })),
+    };
   }
 
   async create(
@@ -177,7 +234,12 @@ export class PaymentsService {
       }
 
       // S1/S2 settings (seeded in prisma/seed.ts; code defaults match).
-      const settings = await readPaymentSettings(tx);
+      // D (owner-locked): per-gateway tri-state override wins over the global
+      // default — resolve for THIS gateway.
+      const settings = await resolveEffectivePaymentSettings(
+        tx as any,
+        dto.gatewayCode,
+      );
 
       // Manual gateway detection: look up by code; unknown codes are treated
       // as manual (safe — forces account + verification instead of silent
@@ -221,6 +283,11 @@ export class PaymentsService {
         );
       }
 
+      // B: how this row got PAID — 'auto' (S1 staff auto-verify, or an API
+      // gateway that settles without human review). PENDING rows stay null.
+      const verificationSource =
+        status === PaymentStatus.PAID ? 'auto' : null;
+
       const created = await tx.payment.create({
         data: {
           orderId,
@@ -234,6 +301,7 @@ export class PaymentsService {
           ...(autoVerified && opts?.userId
             ? { verifiedBy: opts.userId, verifiedAt: new Date() }
             : {}),
+          verificationSource,
           recordedBy:
             isStaff && opts?.userId ? `staff:${opts.userId}` : null,
           submittedBy:
@@ -307,6 +375,8 @@ export class PaymentsService {
           status: dto.status,
           verifiedBy: userId,
           verifiedAt: new Date(),
+          // B: a human clicked approve/reject — distinct from S1 auto-verify.
+          verificationSource: 'manual',
           notes: dto.notes ?? payment.notes,
           // Analytics cost capture (P2 §3.2): gateway fee for THIS payment
           // row. P&L counts it only while the row is PAID, so PAID→FAILED

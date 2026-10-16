@@ -243,6 +243,8 @@ export class BkashPgwController {
             transactionId: result.trxID,
             gatewayCode: 'bkash',
             verifiedAt: new Date(),
+            // B: gateway callback — verified by the provider flow, not a human.
+            verificationSource: 'auto',
           },
         });
 

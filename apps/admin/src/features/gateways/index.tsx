@@ -14,54 +14,106 @@ import { Loader2, Save, ChevronDown, ChevronUp, Phone, Settings2, Info, CheckCir
 import { cn } from '@/lib/utils'
 
 /**
- * Task 7 — S1/S2 toggles. Manual-gateway settings only: rendered only when
- * `g.type === 'manual'` (explicit guard at the call site) — never in api or
- * cash cards. Values persist as `payments.staffAutoVerified` / `payments.editAllowed`
- * SystemSetting keys (seeded true/false; code defaults match when absent).
+ * D (owner-locked): Global payment defaults. These are the S1/S2 values every
+ * gateway follows unless it sets its own override (per-gateway tri-state lives
+ * inside each manual gateway card). Persisted as the `payments.staffAutoVerified`
+ * / `payments.editAllowed` SystemSetting keys (seeded; code defaults match when
+ * absent) — unchanged storage, only the placement was fixed: this section now
+ * lives BELOW the gateway list instead of masquerading as per-gateway state.
  */
-function ManualPaymentSettings() {
+function GlobalPaymentDefaults() {
   const uid = useId()
   const queryClient = useQueryClient()
-  const { data: settings, isLoading } = useQuery({
-    queryKey: ['payment-settings'],
-    queryFn: () => gatewayApi.getPaymentSettings(),
+  const { data: effective, isLoading } = useQuery({
+    queryKey: ['payment-effective-settings'],
+    queryFn: () => gatewayApi.getEffectivePaymentSettings(),
   })
 
   const setMut = useMutation({
     mutationFn: ({ key, value }: { key: PaymentSettingKey; value: boolean }) =>
       gatewayApi.setPaymentSetting(key, value),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['payment-settings'] })
+      queryClient.invalidateQueries({ queryKey: ['payment-effective-settings'] })
     },
     onError: () => {
       toast.error('Failed to update payment setting')
     },
   })
 
-  const staffAuto = settings?.staffAutoVerified ?? true
-  const editAllowed = settings?.editAllowed ?? false
+  const staffAuto = effective?.global.staffAutoVerified ?? true
+  const editAllowed = effective?.global.editAllowed ?? false
   const busy = isLoading || setMut.isPending
 
   return (
-    <div className='sm:col-span-2 space-y-3 rounded-lg border bg-background p-3'>
-      <div className='flex items-center justify-between gap-4'>
-        <Label htmlFor={`${uid}-s1`} className='text-xs font-semibold'>Staff manual payments auto-verified</Label>
-        <Switch
-          id={`${uid}-s1`}
-          checked={staffAuto}
-          disabled={busy}
-          onCheckedChange={(v) => setMut.mutate({ key: 'payments.staffAutoVerified', value: v })}
-        />
+    <Card className='shadow-sm'>
+      <CardContent className='p-4 space-y-4'>
+        <CardDescription className='text-xs'>
+          These defaults apply to every gateway. Expand a manual gateway to override them for that gateway only.
+        </CardDescription>
+        <div className='flex items-center justify-between gap-4'>
+          <Label htmlFor={`${uid}-s1`} className='text-xs font-semibold'>Staff manual payments auto-verified</Label>
+          <Switch
+            id={`${uid}-s1`}
+            checked={staffAuto}
+            disabled={busy}
+            onCheckedChange={(v) => setMut.mutate({ key: 'payments.staffAutoVerified', value: v })}
+          />
+        </div>
+        <div className='flex items-center justify-between gap-4'>
+          <Label htmlFor={`${uid}-s2`} className='text-xs font-semibold'>Staff may edit recorded payments</Label>
+          <Switch
+            id={`${uid}-s2`}
+            checked={editAllowed}
+            disabled={busy}
+            onCheckedChange={(v) => setMut.mutate({ key: 'payments.editAllowed', value: v })}
+          />
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+/**
+ * D (owner-locked): per-gateway tri-state override row. Value null = "use
+ * global default"; true/false = explicit override. The hint shows the value
+ * that WILL be enforced — the pending selection when an override is chosen,
+ * otherwise the server-resolved effective value — and where it came from, so
+ * staff can see exactly what the backend will enforce before saving.
+ */
+function GatewayOverrideRow({
+  label,
+  value,
+  effective,
+  onChange,
+}: {
+  label: string
+  value: boolean | null
+  effective: boolean
+  onChange: (v: boolean | null) => void
+}) {
+  const selected = value === null ? 'global' : value ? 'on' : 'off'
+  return (
+    <div className='flex items-center justify-between gap-4'>
+      <div className='space-y-0.5'>
+        <Label className='text-xs font-semibold'>{label}</Label>
+        <p className='text-[11px] text-muted-foreground'>
+          Effective: <b>{effective ? 'On' : 'Off'}</b>
+          {value === null ? ' — from global default' : ' — set on this gateway'}
+        </p>
       </div>
-      <div className='flex items-center justify-between gap-4'>
-        <Label htmlFor={`${uid}-s2`} className='text-xs font-semibold'>Staff may edit recorded payments</Label>
-        <Switch
-          id={`${uid}-s2`}
-          checked={editAllowed}
-          disabled={busy}
-          onCheckedChange={(v) => setMut.mutate({ key: 'payments.editAllowed', value: v })}
-        />
-      </div>
+      <Select
+        value={selected}
+        onValueChange={(v) => onChange(v === 'global' ? null : v === 'on')}
+      >
+        <SelectTrigger className='h-8 w-44 text-xs' aria-label={label}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value='global'>Use global default</SelectItem>
+          <SelectItem value='on'>On</SelectItem>
+          <SelectItem value='off'>Off</SelectItem>
+        </SelectContent>
+      </Select>
     </div>
   )
 }
@@ -72,6 +124,16 @@ export function GatewaySettings() {
     queryKey: ['payment-options'],
     queryFn: () => gatewayApi.listOptions().then(r => r.data),
   })
+
+  // D: effective settings (global + per-gateway) — used for the tri-state
+  // hints inside manual gateway cards. Single source with the backend gate.
+  const { data: effectiveSettings } = useQuery({
+    queryKey: ['payment-effective-settings'],
+    queryFn: () => gatewayApi.getEffectivePaymentSettings(),
+  })
+  const effectiveFor = (code: string) =>
+    effectiveSettings?.gateways.find((g) => g.code === code)?.effective
+  const globalDefaults = effectiveSettings?.global
 
   const [expandedGateways, setExpandedGateways] = useState<Record<string, boolean>>({})
   const [gatewayEditData, setGatewayEditData] = useState<Record<string, any>>({})
@@ -90,6 +152,7 @@ export function GatewaySettings() {
       gatewayApi.updateGateway(code, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payment-options'] })
+      queryClient.invalidateQueries({ queryKey: ['payment-effective-settings'] })
       toast.success('Gateway settings updated successfully')
     },
   })
@@ -103,6 +166,8 @@ export function GatewaySettings() {
         mode: g.mode || (g.type === 'api' ? 'sandbox' : 'personal'),
         phoneNumber: g.phoneNumber || '',
         credentials: g.credentials || {},
+        staffAutoVerifiedOverride: g.staffAutoVerifiedOverride ?? null,
+        editAllowedOverride: g.editAllowedOverride ?? null,
       },
     }))
   }
@@ -193,7 +258,13 @@ export function GatewaySettings() {
               {[...option.gateways].sort((a, b) => a.sortOrder - b.sortOrder).map(g => {
                 const isCashType = g.type === 'cash'
                 const isOpen = expandedGateways[g.code]
-                const d = gatewayEditData[g.code] || { enabled: g.enabled, mode: g.mode || 'personal', phoneNumber: g.phoneNumber || '' }
+                const d = gatewayEditData[g.code] || {
+                  enabled: g.enabled,
+                  mode: g.mode || 'personal',
+                  phoneNumber: g.phoneNumber || '',
+                  staffAutoVerifiedOverride: g.staffAutoVerifiedOverride ?? null,
+                  editAllowedOverride: g.editAllowedOverride ?? null,
+                }
 
                 if (isCashType) {
                   return (
@@ -248,7 +319,9 @@ export function GatewaySettings() {
                               enabled: v, 
                               mode: currentMode,
                               phoneNumber: currentPhone,
-                              credentials: currentCreds
+                              credentials: currentCreds,
+                              staffAutoVerifiedOverride: d.staffAutoVerifiedOverride ?? null,
+                              editAllowedOverride: d.editAllowedOverride ?? null,
                             };
                             setGatewayEditData(p => ({ ...p, [g.code]: updated }));
                             
@@ -263,6 +336,8 @@ export function GatewaySettings() {
                                 phoneNumber: currentPhone,
                                 credentials: currentCreds,
                                 sortOrder: g.sortOrder,
+                                staffAutoVerifiedOverride: d.staffAutoVerifiedOverride ?? null,
+                                editAllowedOverride: d.editAllowedOverride ?? null,
                               } 
                             });
                           }} 
@@ -341,7 +416,25 @@ export function GatewaySettings() {
                               <Label className='text-xs font-semibold flex items-center gap-1.5'><Phone className='h-3 w-3' /> Phone Number</Label>
                               <Input className='h-9' value={d.phoneNumber || ''} onChange={e => setGatewayEditData(p => ({ ...p, [g.code]: { ...d, phoneNumber: e.target.value } }))} placeholder='01XXXXXXXXX' />
                             </div>
-                            {g.type === 'manual' && <ManualPaymentSettings />}
+                            {g.type === 'manual' && (
+                              <div className='sm:col-span-2 space-y-3 rounded-lg border bg-background p-3'>
+                                <p className='text-[11px] text-muted-foreground'>
+                                  Per-gateway overrides — leave on “Use global default” to follow the Global Payment Defaults below the gateway list.
+                                </p>
+                                <GatewayOverrideRow
+                                  label='Staff manual payments auto-verified'
+                                  value={d.staffAutoVerifiedOverride ?? null}
+                                  effective={d.staffAutoVerifiedOverride ?? effectiveFor(g.code)?.staffAutoVerified ?? globalDefaults?.staffAutoVerified ?? true}
+                                  onChange={(v) => setGatewayEditData(p => ({ ...p, [g.code]: { ...d, staffAutoVerifiedOverride: v } }))}
+                                />
+                                <GatewayOverrideRow
+                                  label='Staff may edit recorded payments'
+                                  value={d.editAllowedOverride ?? null}
+                                  effective={d.editAllowedOverride ?? effectiveFor(g.code)?.editAllowed ?? globalDefaults?.editAllowed ?? false}
+                                  onChange={(v) => setGatewayEditData(p => ({ ...p, [g.code]: { ...d, editAllowedOverride: v } }))}
+                                />
+                              </div>
+                            )}
                             <div className='sm:col-span-2 flex justify-end'>
                               <Button size='sm' onClick={() => handleGatewaySave(g.code)} disabled={updateGatewayMut.isPending}>
                                 {updateGatewayMut.isPending ? <Loader2 className='animate-spin h-3.5 w-3.5 mr-2' /> : <Save className='h-3.5 w-3.5 mr-2' />}
@@ -359,6 +452,17 @@ export function GatewaySettings() {
           </div>
         )
       })}
+
+      {/* SECTION C: Global Payment Defaults — deliberately BELOW the gateway
+          list (D, owner-locked): they are store-wide fallbacks, not gateway
+          state. Each manual gateway can override them individually. */}
+      <div className='space-y-4 pt-2'>
+        <div className='flex items-center gap-2 px-1'>
+          <ShieldCheck className='h-4 w-4 text-primary' />
+          <h3 className='text-sm font-bold uppercase tracking-wider'>Global Payment Defaults</h3>
+        </div>
+        <GlobalPaymentDefaults />
+      </div>
     </div>
   )
 }

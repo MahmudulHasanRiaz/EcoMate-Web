@@ -148,7 +148,14 @@ export class DashboardService {
         where: {
           ...this.dateFilter(startDate, endDate),
           trashedAt: null,
-          status: { name: { in: ['Pending', 'Payment Pending'] } },
+          // Pre-confirmation statuses awaiting action — including the
+          // call-center pair (Recall = called once, No Response = retry also
+          // unanswered); both exit via Confirmed or Cancelled like the rest.
+          status: {
+            name: {
+              in: ['Pending', 'Payment Pending', 'Recall', 'No Response'],
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
         take: 20,

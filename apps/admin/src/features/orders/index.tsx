@@ -40,7 +40,7 @@ import { formatCourierDispatchToast } from '@/features/dispatch/courier-errors'
 import { useSteadfastSets } from '@/features/dispatch/steadfast-set-picker'
 import { BulkSteadfastDefaultWarning } from '@/features/orders/bulk-steadfast-warning'
 
-const fallbackStatusColors: Record<string, string> = { Pending: 'var(--warning)', Confirmed: 'var(--info)', Cancelled: 'var(--danger)', 'On Hold': 'var(--accent-violet)', Packed: 'var(--accent-cyan)', Shipped: 'var(--success)', 'In Courier': 'var(--accent-violet)', Delivered: 'var(--success)', 'Partial Return': 'var(--warning)', 'Return Pending': 'var(--accent-pink)', Returned: 'var(--danger)', Damaged: 'var(--danger)' }
+const fallbackStatusColors: Record<string, string> = { Pending: 'var(--warning)', Confirmed: 'var(--info)', Cancelled: 'var(--danger)', 'On Hold': 'var(--accent-violet)', 'Hold': 'var(--accent-violet)', 'Recall': 'var(--warning)', 'No Response': 'var(--muted-foreground)', Packed: 'var(--accent-cyan)', Shipped: 'var(--success)', 'Shipping': 'var(--accent-cyan)', 'In Courier': 'var(--accent-violet)', Delivered: 'var(--success)', 'Partial Return': 'var(--warning)', 'Return Pending': 'var(--accent-pink)', Returned: 'var(--danger)', Damaged: 'var(--danger)' }
 const nn = (v: number | string) => Number(v)
 const fmt = (v: number | string) => nn(v).toFixed(2)
 

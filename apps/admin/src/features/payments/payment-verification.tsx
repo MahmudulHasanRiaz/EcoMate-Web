@@ -25,19 +25,75 @@ function isPaidRow(p: PaymentRow): boolean {
   return (p.status || '').toUpperCase() === 'PAID';
 }
 
-/** Shorten `staff:<userId>` / `customer:<id>` actor tags for display. */
-function ledgerActor(p: Pick<PaymentRow, 'recordedBy' | 'submittedBy'>): string {
-  const raw = p.recordedBy || p.submittedBy;
-  if (!raw) return '—';
-  const m = raw.match(/^(staff|customer):(.+)$/);
-  return m ? `${m[1]} ${m[2].slice(0, 8)}` : raw;
+/**
+ * C (owner-locked): Recorded by cell. Staff rows resolve through the shared
+ * user chip (click → profile); customer submissions show a neutral "Customer"
+ * chip; anything unresolvable falls back to the raw tag — never blank while a
+ * recordedBy/submittedBy exists.
+ */
+function ActorChip({ row }: { row: PaymentRow }) {
+  if (row.recorder) {
+    const name = `${row.recorder.firstName} ${row.recorder.lastName}`.trim();
+    return (
+      <UserBadge userId={row.recorder.id} fallbackLabel={name} showEmail={false} />
+    );
+  }
+  const raw = row.recordedBy || row.submittedBy;
+  if (!raw) return <span className="text-muted-foreground">—</span>;
+  if (raw.startsWith('customer:')) {
+    return (
+      <Badge
+        variant="secondary"
+        className="text-[10px] font-normal"
+        title={`Submitted by the customer (${raw.slice('customer:'.length)})`}
+      >
+        Customer
+      </Badge>
+    );
+  }
+  return <span className="font-mono text-muted-foreground">{raw}</span>;
 }
-import { Check, X, Loader2 } from 'lucide-react';
+
+/**
+ * C (owner-locked): Verified by cell. Auto-verified rows (S1 staff auto-verify
+ * or a gateway callback) show a visually distinct system chip — icon + muted
+ * style — so a human approver is never confused with the system; manual
+ * approvals resolve through the same user chip as Recorded by. "—" only when
+ * the row was never verified at all.
+ */
+function VerifiedByChip({ row }: { row: PaymentRow }) {
+  if ((row.verificationSource || '').toLowerCase() === 'auto') {
+    return (
+      <Badge
+        variant="secondary"
+        className="gap-1 text-[10px] font-normal"
+        title="Verified automatically — no human approval was required"
+      >
+        <Bot className="h-3 w-3" /> System auto-verified
+      </Badge>
+    );
+  }
+  if (row.verifier) {
+    const name = `${row.verifier.firstName} ${row.verifier.lastName}`.trim();
+    return (
+      <UserBadge userId={row.verifier.id} fallbackLabel={name} showEmail={false} />
+    );
+  }
+  if (row.verifiedBy) {
+    return <span className="font-mono text-muted-foreground">{row.verifiedBy}</span>;
+  }
+  return <span className="text-muted-foreground">—</span>;
+}
+import { Check, X, Loader2, Bot } from 'lucide-react';
 import { PaymentLogo } from '@/components/payment-logo';
+import { UserBadge } from '@/components/user-badge';
 
 export function PaymentVerificationPage() {
   const qc = useQueryClient();
-  const [tab, setTab] = useState<'verify' | 'all'>('verify');
+  // A (owner-locked): the page opens on the APPROVAL-FIRST view — All
+  // Payments tab with the Pending sub-filter — not on the proof-verification
+  // queue (that tab keeps its unchanged flow, one click away).
+  const [tab, setTab] = useState<'verify' | 'all'>('all');
   const [notes, setNotes] = useState<Record<string, string>>({});
   // Optional per-order gateway fee (৳) recorded on the single PENDING payment
   // row at verify time (P2 §3.4). Orders with several PENDING rows must use
@@ -50,12 +106,25 @@ export function PaymentVerificationPage() {
     refetchInterval: 15000,
   });
 
+  // A: truthful header badge — the count of PENDING ledger rows (the actual
+  // approval queue), NOT the smaller proof-verification order list. Same
+  // number the All Payments → Pending view shows.
+  const { data: pendingTotal } = useQuery({
+    queryKey: ['payments-pending-count'],
+    queryFn: paymentsApi.pendingCount,
+    refetchInterval: 15000,
+  });
+
+  const verifyQueueCount = orders?.length || 0;
+  const pendingCountLabel = pendingTotal === undefined ? '…' : pendingTotal;
+
   const verifyMut = useMutation({
     mutationFn: ({ id, verified, note, feeAmount }: { id: string; verified: boolean; note?: string; feeAmount?: number }) =>
       paymentsApi.verify(id, verified, note, feeAmount),
     onSuccess: () => {
       toast.success('Payment verification processed');
       qc.invalidateQueries({ queryKey: ['orders-payment-verifying'] });
+      qc.invalidateQueries({ queryKey: ['payments-pending-count'] });
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Verification failed'),
   });
@@ -72,18 +141,32 @@ export function PaymentVerificationPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-semibold tracking-tight">Payments</h2>
-        <Badge variant="outline" className="text-sm">
-          {orders?.length || 0} pending
+        <Badge
+          variant="outline"
+          className="text-sm"
+          title="Payment rows waiting for approval"
+        >
+          {pendingCountLabel} pending
         </Badge>
       </div>
 
-      <div className="flex gap-1 rounded-lg bg-muted p-1 w-fit">
-        <Button size="sm" variant={tab === 'verify' ? 'default' : 'ghost'} onClick={() => setTab('verify')}>
-          Verify{orders?.length ? ` (${orders.length})` : ''}
-        </Button>
-        <Button size="sm" variant={tab === 'all' ? 'default' : 'ghost'} onClick={() => setTab('all')}>
-          All Payments
-        </Button>
+      <div className="flex items-start gap-6">
+        <div className="space-y-1.5">
+          <Button size="sm" variant={tab === 'verify' ? 'default' : 'ghost'} onClick={() => setTab('verify')}>
+            Verify{verifyQueueCount ? ` (${verifyQueueCount})` : ''}
+          </Button>
+          <p className="text-[11px] text-muted-foreground max-w-[230px]">
+            Orders whose payment proof is waiting for a decision.
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <Button size="sm" variant={tab === 'all' ? 'default' : 'ghost'} onClick={() => setTab('all')}>
+            All Payments{pendingTotal ? ` (${pendingTotal})` : ''}
+          </Button>
+          <p className="text-[11px] text-muted-foreground max-w-[230px]">
+            Every recorded payment row — approvals, balances and gateway history.
+          </p>
+        </div>
       </div>
 
       {tab === 'all' ? (
@@ -209,7 +292,10 @@ function AllPaymentsLedger() {
   const me = useAuthStore((s) => s.auth.user?.id);
   const [page, setPage] = useState(1);
   const [gatewayCode, setGatewayCode] = useState('');
-  const [stateFilter, setStateFilter] = useState<'all' | 'pending' | 'verified'>('all');
+  // A (owner-locked): the approval queue is the default sub-filter — the
+  // PENDING rows are what staff came here to act on; All/Verified stay one
+  // click away.
+  const [stateFilter, setStateFilter] = useState<'all' | 'pending' | 'verified'>('pending');
   // D-B: order-number search (displayId, e.g. ORD-260818-0013). Draft edits
   // locally; Search applies it to the query. `?order=` deep-links from the
   // Refunds menu with the number prefilled.
@@ -248,6 +334,7 @@ function AllPaymentsLedger() {
       toast.success('Payment verification processed');
       qc.invalidateQueries({ queryKey: ['payments-all'] });
       qc.invalidateQueries({ queryKey: ['orders-payment-verifying'] });
+      qc.invalidateQueries({ queryKey: ['payments-pending-count'] });
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Verification failed'),
   });
@@ -419,11 +506,11 @@ function AllPaymentsLedger() {
                           {partiallyRefunded && <Badge variant="secondary" className="text-[10px]">Partially refunded</Badge>}
                         </div>
                       </td>
-                      <td className="px-4 py-2.5 text-xs text-muted-foreground font-mono">
-                        {ledgerActor(p)}
+                      <td className="px-4 py-2.5 text-xs">
+                        <ActorChip row={p} />
                       </td>
-                      <td className="px-4 py-2.5 text-xs text-muted-foreground">
-                        {p.verifier ? `${p.verifier.firstName} ${p.verifier.lastName}`.trim() : '—'}
+                      <td className="px-4 py-2.5 text-xs">
+                        <VerifiedByChip row={p} />
                       </td>
                       <td className="px-4 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
                         {new Date(p.recordedAt || p.createdAt).toLocaleString()}

@@ -7,6 +7,8 @@ import {
   Wallet,
   CreditCard,
   PauseCircle,
+  PhoneCall,
+  PhoneOff,
   PackageCheck,
   Package,
   PackageX,
@@ -79,6 +81,9 @@ const STATUS_PRESENTATION: Record<string, StatusPresentation> = {
   'Payment Pending': { label: 'Payment Pending', icon: Wallet, accent: 'warning' },
   'Payment Verifying': { label: 'Payment Verifying', icon: CreditCard, accent: 'violet' },
   Hold: { label: 'Hold', icon: PauseCircle, accent: 'warning' },
+  // E: the call-center pre-confirmation pair.
+  Recall: { label: 'Recall', icon: PhoneCall, accent: 'warning' },
+  'No Response': { label: 'No Response', icon: PhoneOff, accent: 'violet' },
   Confirmed: { label: 'Confirmed', icon: PackageCheck, accent: 'info' },
   Packed: { label: 'Packed', icon: Package, accent: 'cyan' },
   'Packing Hold': { label: 'Packing Hold', icon: PackageX, accent: 'warning' },

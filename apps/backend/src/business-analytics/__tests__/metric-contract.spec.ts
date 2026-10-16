@@ -63,6 +63,8 @@ describe('lifecycle vocabulary (§1.3)', () => {
       'Payment Pending',
       'Payment Verifying',
       'Hold',
+      'Recall',
+      'No Response',
       'Confirmed',
       'Packed',
       'Packing Hold',
@@ -74,7 +76,7 @@ describe('lifecycle vocabulary (§1.3)', () => {
       'Damaged',
       'Cancelled',
     ]);
-    expect(ORDER_STATUSES).toHaveLength(14);
+    expect(ORDER_STATUSES).toHaveLength(16);
     for (const s of ORDER_STATUSES) {
       expect(STATUS_META[s]).toBeDefined();
     }
@@ -99,6 +101,8 @@ describe('lifecycle vocabulary (§1.3)', () => {
     ['Payment Pending', false],
     ['Payment Verifying', false],
     ['Hold', false],
+    ['Recall', false],
+    ['No Response', false],
     ['Confirmed', false],
     ['Packed', false],
     ['Packing Hold', false],
@@ -133,6 +137,8 @@ describe('lifecycle vocabulary (§1.3)', () => {
     ['Payment Pending', 'pre_fulfilment'],
     ['Payment Verifying', 'pre_fulfilment'],
     ['Hold', 'pre_fulfilment'],
+    ['Recall', 'pre_fulfilment'],
+    ['No Response', 'pre_fulfilment'],
     ['Confirmed', 'in_fulfilment'],
     ['Packed', 'in_fulfilment'],
     ['Packing Hold', 'in_fulfilment'],

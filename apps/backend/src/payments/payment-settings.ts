@@ -45,3 +45,71 @@ export async function readPaymentSettings(db: {
   });
   return parsePaymentSettings(rows ?? []);
 }
+
+/**
+ * D (owner-locked): per-gateway tri-state overrides over the two global
+ * defaults. Effective value for gateway G = explicit per-gateway override if
+ * set (true/false), else the global SystemSetting value. `null` override =
+ * "use global default" (the default state of every gateway).
+ */
+export interface GatewayPaymentOverrides {
+  staffAutoVerified: boolean | null;
+  editAllowed: boolean | null;
+}
+
+export interface EffectivePaymentSettings extends PaymentSettings {
+  /** The gateway these values were resolved for (null = global only). */
+  gatewayCode: string | null;
+  /** The raw global defaults (before any override). */
+  global: PaymentSettings;
+  /** Raw per-gateway overrides (null when no gateway row / no overrides). */
+  overrides: GatewayPaymentOverrides | null;
+}
+
+export async function resolveEffectivePaymentSettings(
+  db: {
+    systemSetting: {
+      findMany: (args: unknown) => Promise<Array<{ key: string; value: string }>>;
+    };
+    paymentGateway?: {
+      findUnique: (args: unknown) => Promise<{
+        staffAutoVerifiedOverride?: boolean | null;
+        editAllowedOverride?: boolean | null;
+      } | null>;
+    };
+  },
+  gatewayCode?: string | null,
+): Promise<EffectivePaymentSettings> {
+  const global = await readPaymentSettings(db);
+  if (!gatewayCode) {
+    return { ...global, gatewayCode: null, global, overrides: null };
+  }
+  let gw: {
+    staffAutoVerifiedOverride?: boolean | null;
+    editAllowedOverride?: boolean | null;
+  } | null = null;
+  try {
+    gw =
+      (await db.paymentGateway?.findUnique?.({
+        where: { code: gatewayCode },
+        select: {
+          staffAutoVerifiedOverride: true,
+          editAllowedOverride: true,
+        },
+      })) ?? null;
+  } catch {
+    gw = null;
+  }
+  const overrides: GatewayPaymentOverrides = {
+    staffAutoVerified: gw?.staffAutoVerifiedOverride ?? null,
+    editAllowed: gw?.editAllowedOverride ?? null,
+  };
+  return {
+    staffAutoVerified:
+      overrides.staffAutoVerified ?? global.staffAutoVerified,
+    editAllowed: overrides.editAllowed ?? global.editAllowed,
+    gatewayCode,
+    global,
+    overrides: gw ? overrides : null,
+  };
+}

@@ -16,10 +16,16 @@
  * OrderStatus."Partial".nextStatuses for existing installs.)
  */
 export const ORDER_TRANSITIONS: Record<string, string[]> = {
-  Pending: ['Payment Pending', 'Hold', 'Confirmed', 'Cancelled'],
-  'Payment Pending': ['Payment Verifying', 'Hold', 'Confirmed', 'Cancelled'],
-  'Payment Verifying': ['Confirmed', 'Hold', 'Cancelled'],
-  Hold: ['Pending', 'Confirmed', 'Cancelled'],
+  Pending: ['Payment Pending', 'Hold', 'Recall', 'No Response', 'Confirmed', 'Cancelled'],
+  'Payment Pending': ['Payment Verifying', 'Hold', 'Recall', 'No Response', 'Confirmed', 'Cancelled'],
+  'Payment Verifying': ['Confirmed', 'Hold', 'Recall', 'No Response', 'Cancelled'],
+  // Recall / No Response are the call-center PRE-CONFIRMATION pair (called
+  // once → retried → still nothing): free movement inside the pre-confirmation
+  // group, then the normal Confirmed/Cancelled exits. Once an order is
+  // Confirmed the main journey owns it — no transition back into these.
+  Recall: ['Pending', 'Payment Pending', 'Payment Verifying', 'Hold', 'No Response', 'Confirmed', 'Cancelled'],
+  'No Response': ['Pending', 'Payment Pending', 'Payment Verifying', 'Hold', 'Recall', 'Confirmed', 'Cancelled'],
+  Hold: ['Pending', 'Recall', 'No Response', 'Confirmed', 'Cancelled'],
   Confirmed: ['Hold', 'Packed', 'Packing Hold', 'Cancelled'],
   Packed: ['Shipping', 'Packing Hold'],
   'Packing Hold': ['Packed', 'Cancelled'],

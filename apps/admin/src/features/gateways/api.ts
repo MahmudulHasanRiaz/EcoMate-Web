@@ -22,6 +22,9 @@ export interface GatewayConfig {
   phoneNumber: string | null;
   credentials: any;
   sortOrder: number;
+  /** D: tri-state per-gateway overrides — null = use the global default. */
+  staffAutoVerifiedOverride?: boolean | null;
+  editAllowedOverride?: boolean | null;
 }
 
 export interface ProductOverride {
@@ -47,6 +50,21 @@ export interface PaymentSettings {
   editAllowed: boolean;
 }
 
+/** D: effective settings shape of GET /payments/settings (single source). */
+export interface GatewayEffectiveSettings {
+  code: string;
+  name: string;
+  type: string;
+  staffAutoVerifiedOverride: boolean | null;
+  editAllowedOverride: boolean | null;
+  effective: { staffAutoVerified: boolean; editAllowed: boolean };
+}
+
+export interface EffectivePaymentSettings {
+  global: PaymentSettings;
+  gateways: GatewayEffectiveSettings[];
+}
+
 export type PaymentSettingKey = 'payments.staffAutoVerified' | 'payments.editAllowed';
 
 export const gatewayApi = {
@@ -58,6 +76,14 @@ export const gatewayApi = {
     return apiClient.get<GatewayConfig[]>('/gateways/admin', params);
   },
   updateGateway: (code: string, data: any) => apiClient.put(`/gateways/${code}`, data),
+  /**
+   * D: canonical effective settings — global defaults + per-gateway tri-state
+   * overrides + resolved effective values (what the backend enforces).
+   */
+  getEffectivePaymentSettings: async (): Promise<EffectivePaymentSettings> => {
+    const r = await apiClient.get<EffectivePaymentSettings>('/payments/settings');
+    return r.data;
+  },
   getPaymentSettings: async (): Promise<PaymentSettings> => {
     const r = await apiClient.get<Record<string, string>>('/system-settings');
     const map = (r.data ?? {}) as Record<string, string>;

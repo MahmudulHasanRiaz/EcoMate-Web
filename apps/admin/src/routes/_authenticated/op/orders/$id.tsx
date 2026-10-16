@@ -12,6 +12,7 @@ import { OthersInfoDialog } from '@/features/orders/others-info-dialog'
 import { useAuthStore } from '@/stores/auth-store'
 import { UserBadge } from '@/components/user-badge'
 import { ordersApi, rtnApi, mediaUrl } from '@/features/orders/api'
+import { paymentsApi } from '@/features/payments/api'
 import { OrderActionMenu } from '@/features/orders/components/order-action-menu'
 import { LinkedReturnsSection } from '@/features/orders/components/linked-returns-section'
 
@@ -212,11 +213,33 @@ function OrderDetailPage() {
 
   const shippingMode = sysSettings?.['shipping_mode'] || 'auto_district'
 
-  // S1/S2 (live in the same /system-settings map): S1 ON (default) means staff
-  // entries skip verification, so txn ID is optional; S2 OFF (default) means
-  // no edit UI for recorded payments — corrections go through new entries.
-  const staffAutoVerified = sysSettings?.['payments.staffAutoVerified'] !== 'false'
-  const paymentEditAllowed = sysSettings?.['payments.editAllowed'] === 'true'
+  // D (owner-locked): effective S1/S2 per gateway (tri-state override ??
+  // global). The UI mirrors the EXACT rule the backend enforces, not just the
+  // global SystemSetting default.
+  const { data: effectivePaySettings } = useQuery({
+    queryKey: ['payment-effective-settings'],
+    queryFn: () => paymentsApi.getEffectiveSettings(),
+    staleTime: 5 * 60_000,
+  })
+
+  const txnRequiredFor = (gatewayCode: string): boolean => {
+    const eff = effectivePaySettings?.gateways.find((g) => g.code === gatewayCode)?.effective
+    if (eff) return !eff.staffAutoVerified
+    if (effectivePaySettings?.global) return !effectivePaySettings.global.staffAutoVerified
+    return sysSettings?.['payments.staffAutoVerified'] === 'false'
+  }
+
+  // S2: the backend edit gate targets the earliest non-finalized payment row —
+  // resolve editAllowed for THAT row's gateway. No editable row → the save
+  // creates/reverses (never gated), so editing stays available.
+  const editablePaymentRow = (order?.payments || [])
+    .filter((p: any) => !['PAID', 'PARTIAL_PAID', 'REFUNDED', 'PARTIAL_REFUNDED', 'CANCELLED', 'VOID'].includes(String(p.status || '').toUpperCase()))
+    .sort((a: any, b: any) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime())[0]
+  const paymentEditAllowed = editablePaymentRow
+    ? (effectivePaySettings?.gateways.find((g) => g.code === editablePaymentRow.gatewayCode)?.effective.editAllowed
+        ?? effectivePaySettings?.global.editAllowed
+        ?? sysSettings?.['payments.editAllowed'] === 'true')
+    : true
 
   // D-A: phone VALUE is the order snapshot (customerPhone/guestPhone first,
   // GET-mapped customer only as fallback) — the history lookup is by number.
@@ -2025,7 +2048,7 @@ function OrderDetailPage() {
           orderId={id}
           open={showRecordPayment}
           onClose={() => setShowRecordPayment(false)}
-          txnRequired={!staffAutoVerified}
+          txnRequired={txnRequiredFor}
         />
         <RecordRefundModal
           orderId={id}

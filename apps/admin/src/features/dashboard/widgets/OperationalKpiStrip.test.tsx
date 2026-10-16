@@ -18,12 +18,14 @@ vi.mock('@/features/dashboard/api', () => ({
   },
 }))
 
-/** The 14 configured order statuses, in lifecycle (sortOrder) sequence. */
+/** The 16 configured order statuses, in lifecycle (sortOrder) sequence. */
 const ALL_STATUSES: Array<[string, string]> = [
   ['Pending', '#F59E0B'],
   ['Payment Pending', '#F59E0B'],
   ['Payment Verifying', '#8B5CF6'],
   ['Hold', '#D97706'],
+  ['Recall', '#F97316'],
+  ['No Response', '#64748B'],
   ['Confirmed', '#3B82F6'],
   ['Packed', '#059669'],
   ['Packing Hold', '#D97706'],
@@ -308,7 +310,7 @@ describe('OperationalKpiStrip', () => {
 
       await vi.waitFor(() => {
         // The known statuses render as — until the real value is known.
-        expect(view.getByText('—').elements().length).toBe(14)
+        expect(view.getByText('—').elements().length).toBe(16)
       })
     })
 

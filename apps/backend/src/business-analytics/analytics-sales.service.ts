@@ -170,6 +170,8 @@ const CHAIN_INDEX: Record<string, number> = {
   'Payment Pending': 0,
   'Payment Verifying': 0,
   Hold: 0,
+  Recall: 0,
+  'No Response': 0,
   Confirmed: 1,
   Packed: 2,
   'Packing Hold': 2,
