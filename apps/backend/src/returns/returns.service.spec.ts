@@ -57,6 +57,10 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
             (prisma.order.findUnique as jest.Mock)(...args),
           ),
         },
+        // Mark-original-delivered path: the existing Delivered status row.
+        orderStatus: {
+          findUnique: jest.fn().mockResolvedValue({ id: 'st-delivered', name: 'Delivered' }),
+        },
         $executeRaw: jest.fn().mockResolvedValue(1),
         ...over,
       };
@@ -560,11 +564,24 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
       expect(txMock.return.create).not.toHaveBeenCalled();
     });
 
-    it('no adjustments → only the displayId sequence tx runs, no order write (existing path untouched)', async () => {
+    it('partial with no adjustments still runs the business tx (default mark-delivered write)', async () => {
       await service.create(baseDto(), 'staff@shop.com');
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(txMock.order.update).toHaveBeenCalledWith({
+        where: { id: 'order-1' },
+        data: { statusId: 'st-delivered' },
+      });
+      const payload = txMock.$executeRaw.mock.calls[0][1] as string;
+      expect(payload).toContain('Original order marked Delivered on partial return');
+      expect(txMock.return.create).toHaveBeenCalled();
+    });
+
+    it('FULL with no adjustments keeps the legacy path (no business write at all)', async () => {
+      await service.create({ ...baseDto(), type: 'FULL' as const }, 'staff@shop.com');
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1); // displayId sequence only
       expect(txMock.order.update).not.toHaveBeenCalled();
       expect(txMock.$executeRaw).not.toHaveBeenCalled();
+      expect(txMock.orderStatus.findUnique).not.toHaveBeenCalled();
       expect(prisma.return.create).toHaveBeenCalled();
     });
 
@@ -575,6 +592,137 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
       await expect(
         service.create({ ...baseDto(), shippingAdjustment: 10 }, 'staff@shop.com'),
       ).rejects.toThrow('db down');
+    });
+  });
+
+  /**
+   * Owner-locked §5: partial returns mark the ORIGINAL order Delivered by
+   * default; unchecking leaves it to courier status updates (the sheet is
+   * authority — no parallel interpretation here). Both branches record the
+   * decision on the original order's timeline.
+   */
+  describe('create — mark original order as delivered (partial)', () => {
+    const decOrder = {
+      ...order,
+      items: [{ id: 'oi-1', productId: 'p1', variantId: null, quantity: 5, price: 360 }],
+      subtotal: 1800,
+      shippingCharge: 100,
+      discount: 50,
+      discountType: 'flat',
+      total: 1850,
+    };
+
+    let txMock: any;
+    const baseDto = () => ({
+      orderId: 'order-1',
+      type: 'PARTIAL' as const,
+      source: 'STAFF' as const,
+      items: [{ productId: 'p1', variantId: null, quantity: 1 }],
+    });
+
+    beforeEach(() => {
+      txMock = null;
+      prisma.$transaction.mockImplementation((cb: any) => {
+        txMock = makeTx();
+        return cb(txMock);
+      });
+      prisma.$transaction.mockClear();
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(decOrder);
+    });
+
+    it('default (omitted) → original order set to Delivered + decision timeline entry', async () => {
+      const ret: any = await service.create(baseDto(), 'staff@shop.com');
+      expect(txMock.orderStatus.findUnique).toHaveBeenCalledWith({ where: { name: 'Delivered' } });
+      expect(txMock.order.update).toHaveBeenCalledWith({
+        where: { id: 'order-1' },
+        data: { statusId: 'st-delivered' },
+      });
+      const payload = txMock.$executeRaw.mock.calls[0][1] as string;
+      expect(payload).toContain('"type":"status"');
+      expect(payload).toContain('"oldValue":"Shipping"');
+      expect(payload).toContain('"newValue":"Delivered"');
+      expect(payload).toContain(
+        `Original order marked Delivered on partial return ${ret.displayId} by staff@shop.com`,
+      );
+    });
+
+    it('explicit true behaves exactly like the default', async () => {
+      await service.create({ ...baseDto(), markOriginalDelivered: true }, 'staff@shop.com');
+      expect(txMock.order.update).toHaveBeenCalledWith({
+        where: { id: 'order-1' },
+        data: { statusId: 'st-delivered' },
+      });
+      expect(txMock.$executeRaw).toHaveBeenCalledTimes(1);
+    });
+
+    it('unchecked → original order status untouched + left-for-courier timeline entry', async () => {
+      const ret: any = await service.create({ ...baseDto(), markOriginalDelivered: false }, 'staff@shop.com');
+      expect(txMock.orderStatus.findUnique).not.toHaveBeenCalled();
+      expect(txMock.order.update).not.toHaveBeenCalled();
+      const payload = txMock.$executeRaw.mock.calls[0][1] as string;
+      expect(payload).toContain(
+        `Order left for courier status updates on partial return ${ret.displayId} by staff@shop.com`,
+      );
+      expect(payload).not.toContain('"statusId"');
+    });
+
+    it('already-Delivered order → entry written, no no-op status update', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...decOrder,
+        statusId: 'st-delivered',
+        status: { id: 'st-delivered', name: 'Delivered' },
+      });
+      await service.create(baseDto(), 'staff@shop.com');
+      expect(txMock.orderStatus.findUnique).toHaveBeenCalled();
+      expect(txMock.order.update).not.toHaveBeenCalled();
+      const payload = txMock.$executeRaw.mock.calls[0][1] as string;
+      expect(payload).toContain('Original order marked Delivered on partial return');
+    });
+
+    it('explicitly sending the flag on FULL → 400 (both true and false), nothing persists', async () => {
+      await expect(
+        service.create({ ...baseDto(), type: 'FULL' as const, markOriginalDelivered: true }, 'staff@shop.com'),
+      ).rejects.toThrow(/only supported on partial returns/);
+      expect(txMock.return.create).not.toHaveBeenCalled();
+      await expect(
+        service.create({ ...baseDto(), type: 'FULL' as const, markOriginalDelivered: false }, 'staff@shop.com'),
+      ).rejects.toThrow(/only supported on partial returns/);
+      expect(txMock.return.create).not.toHaveBeenCalled();
+    });
+
+    it('incomplete status configuration → 400, nothing persists', async () => {
+      const noDelivered = makeTx({ orderStatus: { findUnique: jest.fn().mockResolvedValue(null) } });
+      prisma.$transaction.mockImplementation((cb: any) => cb(noDelivered));
+      await expect(service.create(baseDto(), 'staff@shop.com')).rejects.toThrow(
+        'Order status configuration is incomplete',
+      );
+      expect(noDelivered.return.create).not.toHaveBeenCalled();
+      expect(noDelivered.order.update).not.toHaveBeenCalled();
+    });
+
+    it('status write failure propagates (rolls back with the return creation)', async () => {
+      const failing = makeTx();
+      failing.order.update.mockRejectedValue(new Error('db down'));
+      prisma.$transaction.mockImplementation((cb: any) => cb(failing));
+      await expect(service.create(baseDto(), 'staff@shop.com')).rejects.toThrow('db down');
+    });
+
+    it('adjustments + default mark-delivered commit together in ONE tx (3 entries, 2 order writes)', async () => {
+      await service.create({ ...baseDto(), shippingAdjustment: 50 }, 'staff@shop.com');
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(txMock.order.update).toHaveBeenCalledTimes(2);
+      expect(txMock.order.update).toHaveBeenNthCalledWith(1, {
+        where: { id: 'order-1' },
+        data: { shippingCharge: 150, discount: 50, total: 1900 },
+      });
+      expect(txMock.order.update).toHaveBeenNthCalledWith(2, {
+        where: { id: 'order-1' },
+        data: { statusId: 'st-delivered' },
+      });
+      const payload = txMock.$executeRaw.mock.calls[0][1] as string;
+      expect(payload).toContain('"type":"shipping"');
+      expect(payload).toContain('"type":"status"');
+      expect(txMock.$executeRaw).toHaveBeenCalledTimes(1);
     });
   });
 });

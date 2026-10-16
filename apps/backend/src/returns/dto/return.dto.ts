@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsNumber,
@@ -85,6 +86,15 @@ export class CreateReturnDto {
   @IsOptional()
   @IsNumber()
   discountAdjustment?: number;
+
+  /**
+   * Partial returns only (default true): true → original order set to
+   * Delivered; false → left to courier status updates. Explicitly sending
+   * this on FULL is a 400.
+   */
+  @IsOptional()
+  @IsBoolean()
+  markOriginalDelivered?: boolean;
 }
 
 export class MarkReceivedDto {

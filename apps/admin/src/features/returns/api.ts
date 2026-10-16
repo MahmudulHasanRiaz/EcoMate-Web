@@ -70,6 +70,12 @@ export const returnsApi = {
     shippingAdjustment?: number
     /** Signed per-field adjustment on the ORIGINAL order (partial returns only). */
     discountAdjustment?: number
+    /**
+     * Partial returns only (default true): true → the ORIGINAL order is set to
+     * Delivered on creation; false → status left to courier updates. Explicit
+     * on FULL is a 400.
+     */
+    markOriginalDelivered?: boolean
   }) => apiClient.post<ReturnListItem>('/returns', data).then((r) => r.data),
   markReceived: (id: string, items?: { productId: string; variantId?: string | null; quantity: number }[]) =>
     apiClient.post<ReturnDetail>(`/returns/${id}/mark-received`, items ? { items } : {}).then((r) => r.data),

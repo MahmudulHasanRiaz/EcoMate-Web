@@ -65,6 +65,20 @@ describe('ReturnsService — shared eligibility guard (hardening 1)', () => {
           return active;
         }),
       },
+      // §5 mark-original-delivered (partial returns): status write + timeline.
+      order: {
+        update: jest.fn().mockResolvedValue({}),
+        findUnique: jest.fn((...args: any[]) => prisma.order.findUnique(...args)),
+      },
+      product: {
+        findMany: jest.fn((...args: any[]) =>
+          prisma.product?.findMany ? prisma.product.findMany(...args) : Promise.resolve([]),
+        ),
+      },
+      orderStatus: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'st-delivered', name: 'Delivered' }),
+      },
+      $executeRaw: jest.fn().mockResolvedValue(1),
     };
     prisma = {
       order: { findUnique: jest.fn().mockResolvedValue(order) },

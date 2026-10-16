@@ -38,6 +38,13 @@ export interface CreateReturnInput {
   shippingAdjustment?: number;
   /** Signed per-field adjustment on the ORIGINAL order (partial returns only). */
   discountAdjustment?: number;
+  /**
+   * Partial returns only (default true): true → the original order is set to
+   * Delivered as part of creation; false → left untouched so courier status
+   * updates (the sheet is authority) drive it. Explicitly sending this on
+   * FULL is a 400.
+   */
+  markOriginalDelivered?: boolean;
 }
 
 export interface UpsertCourierReturnInput {
@@ -89,19 +96,26 @@ export class ReturnsService {
    * return row, the ORIGINAL order's shippingCharge/discount/total update and
    * the timeline entries commit in ONE transaction — all-or-nothing. With no
    * adjustments the path is byte-identical to before (no extra transaction).
+   *
+   * Mark-original-delivered (partial returns, default true): the original
+   * order's status update (and the decision timeline entry) join the SAME
+   * transaction as the Return row. PARTIAL returns therefore always run a
+   * business transaction; FULL/EXCHANGE without adjustments keep the legacy
+   * no-extra-tx path.
    */
   async create(dto: CreateReturnInput, performedBy?: string, tx?: Prisma.TransactionClient) {
     const shippingAdjustment = dto.shippingAdjustment ?? 0;
     const discountAdjustment = dto.discountAdjustment ?? 0;
     const hasAdjustments = shippingAdjustment !== 0 || discountAdjustment !== 0;
+    const needsBusinessTx = hasAdjustments || dto.type === 'PARTIAL';
     if (tx) {
       return this.createInner(dto, performedBy, tx, shippingAdjustment, discountAdjustment, hasAdjustments);
     }
-    if (!hasAdjustments) {
+    if (!needsBusinessTx) {
       return this.createInner(dto, performedBy, undefined, 0, 0, false);
     }
     return this.prisma.$transaction((client) =>
-      this.createInner(dto, performedBy, client, shippingAdjustment, discountAdjustment, true),
+      this.createInner(dto, performedBy, client, shippingAdjustment, discountAdjustment, hasAdjustments),
     );
   }
 
@@ -115,8 +129,12 @@ export class ReturnsService {
   ) {
     const db = (tx ?? this.prisma) as Prisma.TransactionClient & {
       order: { findUnique: (...args: any[]) => Promise<any> };
+      orderStatus: { findUnique: (...args: any[]) => Promise<any> };
     };
-    const order = await db.order.findUnique({ where: { id: dto.orderId } });
+    const order = await db.order.findUnique({
+      where: { id: dto.orderId },
+      include: { status: true },
+    });
     if (!order || (order as any).trashedAt) {
       throw new NotFoundException(`Order not found: ${dto.orderId}`);
     }
@@ -145,6 +163,11 @@ export class ReturnsService {
       ? this.resolvePartialAdjustments(order, dto, displayId, performedBy, shippingAdjustment, discountAdjustment)
       : null;
 
+    // Mark-original-delivered decision (partial only). Both branches record
+    // the decision on the original order's timeline; the checked branch also
+    // schedules the statusId update — all inside the same transaction.
+    const decision = await this.resolveMarkDeliveredDecision(db, order, dto, displayId, performedBy);
+
     const ret = await db.return.create({
       data: {
         orderId: dto.orderId,
@@ -170,15 +193,86 @@ export class ReturnsService {
           total: adjustment.newTotal,
         },
       });
-      await appendOrderTimeline(db, dto.orderId, adjustment.entries);
+    }
+    if (decision?.statusId) {
+      await db.order.update({
+        where: { id: dto.orderId },
+        data: { statusId: decision.statusId },
+      });
+    }
+    const timelineEntries = [
+      ...(adjustment?.entries ?? []),
+      ...(decision ? [decision.entry] : []),
+    ];
+    if (timelineEntries.length) {
+      await appendOrderTimeline(db, dto.orderId, timelineEntries);
     }
 
     this.logger.log(
       `Return ${displayId} created for order ${(order as any).displayId ?? dto.orderId} ` +
         `(type=${dto.type} source=${source}${performedBy ? ` by=${performedBy}` : ''}` +
-        `${hasAdjustments ? ` shippingAdj=${signed(shippingAdjustment)} discountAdj=${signed(discountAdjustment)}` : ''})`,
+        `${hasAdjustments ? ` shippingAdj=${signed(shippingAdjustment)} discountAdj=${signed(discountAdjustment)}` : ''}` +
+        `${decision ? ` markDelivered=${dto.markOriginalDelivered ?? true}` : ''})`,
     );
     return ret;
+  }
+
+  /**
+   * Owner-locked mark-original-delivered semantics (partial returns only):
+   * default TRUE → the original order is set to the existing Delivered
+   * status; FALSE → the order status is left untouched and evolves solely
+   * from courier webhooks per the existing mapping (no parallel
+   * interpretation logic here). Both branches leave a timeline entry naming
+   * the decision, actor and RTN id. Explicitly sending the flag on a non-
+   * partial return is a hard 400 (mirrors the adjustment fields).
+   */
+  private async resolveMarkDeliveredDecision(
+    db: any,
+    order: any,
+    dto: CreateReturnInput,
+    displayId: string,
+    performedBy: string | undefined,
+  ): Promise<{ entry: unknown; statusId?: string } | null> {
+    if (dto.markOriginalDelivered !== undefined && dto.type !== 'PARTIAL') {
+      throw new BadRequestException(
+        'Marking the original order as delivered is only supported on partial returns.',
+      );
+    }
+    if (dto.type !== 'PARTIAL') return null;
+
+    const markDelivered = dto.markOriginalDelivered ?? true;
+    const by = performedBy ?? 'staff';
+    const timestamp = new Date().toISOString();
+
+    if (!markDelivered) {
+      return {
+        entry: {
+          type: 'status',
+          visibility: 'public',
+          timestamp,
+          note: `Order left for courier status updates on partial return ${displayId} by ${by}`,
+          performedBy: by,
+        },
+      };
+    }
+
+    const delivered = await db.orderStatus.findUnique({ where: { name: 'Delivered' } });
+    if (!delivered) {
+      throw new BadRequestException('Order status configuration is incomplete');
+    }
+    const currentStatusId = order.statusId ?? order.status?.id;
+    return {
+      entry: {
+        type: 'status',
+        visibility: 'public',
+        timestamp,
+        oldValue: order.status?.name ?? null,
+        newValue: 'Delivered',
+        note: `Original order marked Delivered on partial return ${displayId} by ${by}`,
+        performedBy: by,
+      },
+      ...(currentStatusId !== delivered.id ? { statusId: delivered.id } : {}),
+    };
   }
 
   /**

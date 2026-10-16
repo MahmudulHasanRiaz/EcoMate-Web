@@ -199,6 +199,8 @@ describe('CreateReturnDialog (unified staff return)', () => {
     const body = mockPost.mock.calls[0][1] as any
     expect(body).not.toHaveProperty('shippingAdjustment')
     expect(body).not.toHaveProperty('discountAdjustment')
+    // §5: default-on for partial returns.
+    expect(body.markOriginalDelivered).toBe(true)
   })
 
   it('blocks confirm + explains when an adjustment would push a field below 0', async () => {
@@ -244,5 +246,43 @@ describe('CreateReturnDialog (unified staff return)', () => {
     const body = mockPost.mock.calls[0][1] as any
     expect(body.type).toBe('FULL')
     expect(body).not.toHaveProperty('shippingAdjustment')
+    expect(body).not.toHaveProperty('markOriginalDelivered')
+  })
+
+  // ——— §5: mark original order as delivered (partial only, default on) ———
+
+  it('shows the mark-delivered checkbox checked by default on Partial (hidden on Full)', async () => {
+    const { getByRole } = await renderDialog()
+    const box = document.querySelector('[data-testid="return-mark-delivered"]')
+    expect(box).not.toBeNull()
+    expect(box?.getAttribute('data-state')).toBe('checked')
+    expect(document.body.textContent).toContain('Mark the original order as delivered now')
+    expect(document.body.textContent).toContain('Uncheck to let courier status updates determine the order status.')
+    await userEvent.click(getByRole('radio', { name: /full/i }))
+    expect(document.querySelector('[data-testid="return-mark-delivered"]')).toBeNull()
+  })
+
+  it('unchecking sends markOriginalDelivered: false', async () => {
+    mockPost.mockResolvedValue({ data: { id: 'ret-8', displayId: 'RTN-260930-0008' } })
+    const { getByRole, getByTestId } = await renderDialog()
+    await userEvent.click(getByRole('button', { name: 'Increase return quantity for Widget' }))
+    await userEvent.click(getByTestId('return-mark-delivered'))
+    expect(document.querySelector('[data-testid="return-mark-delivered"]')?.getAttribute('data-state')).toBe('unchecked')
+    await userEvent.click(getByRole('button', { name: 'Confirm return' }))
+    await expect.poll(() => mockPost.mock.calls.length).toBe(1)
+    const body = mockPost.mock.calls[0][1] as any
+    expect(body.type).toBe('PARTIAL')
+    expect(body.markOriginalDelivered).toBe(false)
+  })
+
+  it('re-checking after uncheck sends true again', async () => {
+    mockPost.mockResolvedValue({ data: { id: 'ret-9', displayId: 'RTN-260930-0009' } })
+    const { getByRole, getByTestId } = await renderDialog()
+    await userEvent.click(getByRole('button', { name: 'Increase return quantity for Widget' }))
+    await userEvent.click(getByTestId('return-mark-delivered'))
+    await userEvent.click(getByTestId('return-mark-delivered'))
+    await userEvent.click(getByRole('button', { name: 'Confirm return' }))
+    await expect.poll(() => mockPost.mock.calls.length).toBe(1)
+    expect((mockPost.mock.calls[0][1] as any).markOriginalDelivered).toBe(true)
   })
 })

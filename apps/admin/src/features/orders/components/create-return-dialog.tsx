@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { returnsApi } from '@/features/returns/api'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -95,6 +96,7 @@ export function CreateReturnDialog({
   const [reason, setReason] = useState('')
   const [shippingAdj, setShippingAdj] = useState('')
   const [discountAdj, setDiscountAdj] = useState('')
+  const [markDelivered, setMarkDelivered] = useState(true)
 
   // Active (non-CLOSED) returns for the overlap caps. Display-only: the
   // backend guard is still the authority — this only avoids offering
@@ -129,6 +131,7 @@ export function CreateReturnDialog({
         source: 'STAFF',
         items,
         ...(reason.trim() ? { reason: reason.trim() } : {}),
+        ...(kind === 'PARTIAL' ? { markOriginalDelivered: markDelivered } : {}),
         ...(kind === 'PARTIAL' && shipAdjNum !== 0 ? { shippingAdjustment: shipAdjNum } : {}),
         ...(kind === 'PARTIAL' && discAdjNum !== 0 ? { discountAdjustment: discAdjNum } : {}),
       })
@@ -143,6 +146,7 @@ export function CreateReturnDialog({
       setKind('PARTIAL')
       setShippingAdj('')
       setDiscountAdj('')
+      setMarkDelivered(true)
       toast.success(`Return ${ret?.displayId ?? ''} created — stock restores when the return is marked received.`)
     },
     onError: (e: unknown) => toast.error(errMsg(e)),
@@ -184,7 +188,15 @@ export function CreateReturnDialog({
             : ''
 
   return (
-    <Dialog open={open} onOpenChange={() => onClose()}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        // Default-on control: never reopen with a stale "unchecked" from an
+        // abandoned attempt (money fields keep their existing close behavior).
+        if (!o) setMarkDelivered(true)
+        onClose()
+      }}
+    >
       <DialogContent className='max-w-2xl max-h-[90vh] overflow-y-auto'>
         <DialogHeader>
           <DialogTitle className='flex items-center gap-2'>
@@ -298,6 +310,26 @@ export function CreateReturnDialog({
               className='text-sm resize-none'
             />
           </div>
+
+          {kind === 'PARTIAL' && (
+            <div className='flex items-start gap-2.5 rounded-lg border border-border p-3'>
+              <Checkbox
+                id='return-mark-delivered'
+                data-testid='return-mark-delivered'
+                checked={markDelivered}
+                onCheckedChange={(v) => setMarkDelivered(v === true)}
+                className='mt-0.5'
+              />
+              <div className='space-y-0.5'>
+                <Label htmlFor='return-mark-delivered' className='text-sm font-medium cursor-pointer'>
+                  Mark the original order as delivered now
+                </Label>
+                <p className='text-xs text-muted-foreground leading-relaxed'>
+                  Uncheck to let courier status updates determine the order status.
+                </p>
+              </div>
+            </div>
+          )}
 
           <div className='flex justify-end gap-2'>
             <Button variant='outline' onClick={() => onClose()}>Cancel</Button>
