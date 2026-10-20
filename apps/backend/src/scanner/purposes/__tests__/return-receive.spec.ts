@@ -40,7 +40,13 @@ describe('ReturnReceivePurpose — return/exchange scan resolution (hardening 3)
     ...over,
   });
 
-  function setup(opts: { order?: any; returns?: any[]; exchanges?: any[] }) {
+  function setup(opts: {
+    order?: any;
+    returns?: any[];
+    exchanges?: any[];
+    products?: any[];
+    variants?: any[];
+  }) {
     const order = opts.order ?? saleOrder();
     prisma = {
       orderStatus: { findMany: async () => [{ id: 'st-shipping', name: 'Shipping' }] },
@@ -50,6 +56,14 @@ describe('ReturnReceivePurpose — return/exchange scan resolution (hardening 3)
           order && where.id === order.id ? order : null,
         findMany: async () => opts.exchanges ?? [],
         update: jest.fn(),
+      },
+      product: {
+        findMany: async ({ where }: any) =>
+          (opts.products ?? []).filter((p: any) => where?.id?.in?.includes(p.id)),
+      },
+      productVariant: {
+        findMany: async ({ where }: any) =>
+          (opts.variants ?? []).filter((v: any) => where?.id?.in?.includes(v.id)),
       },
       dispatch: { findMany: async () => [] },
       return: {
@@ -163,5 +177,137 @@ describe('ReturnReceivePurpose — return/exchange scan resolution (hardening 3)
     expect(res.status).toBe('success');
     expect(returns.restoreStockForReturn).not.toHaveBeenCalled();
     expect(prisma.order.update).not.toHaveBeenCalled();
+  });
+
+  it('enriches the linked return candidate with returned-line previews, units and stage-time processability', async () => {
+    await build({
+      order: saleOrder({ items: [{ quantity: 3 }, { quantity: 2 }] }),
+      returns: [activeReturn({ items: [{ productId: 'p-1', variantId: 'v-1', quantity: 2 }] })],
+      products: [{ id: 'p-1', name: 'Panjabi', sku: 'PNJ', images: ['/uploads/p1.jpg'] }],
+      variants: [
+        {
+          id: 'v-1',
+          sku: 'PNJ-RD-XL',
+          image: '/uploads/p1-rd.jpg',
+          images: ['/uploads/p1-rd.jpg'],
+          product: { id: 'p-1', name: 'Panjabi', images: ['/uploads/p1.jpg'] },
+          attributeValues: [
+            { attributeValue: { value: 'Red', hexCode: '#f00', attribute: { name: 'Color' } } },
+          ],
+        },
+      ],
+    });
+    const outcome = await purpose.resolve('ORD-260930-0001');
+    expect(outcome.status).toBe('resolved');
+    const leg = (outcome.linked ?? [])[0] as any;
+    expect(leg.coversUnits).toBe(2);
+    expect(leg.orderUnits).toBe(5);
+    expect(leg.orderDisplayId).toBe('ORD-260930-0001');
+    expect(leg.processable).toBe(true);
+    expect(leg.image).toBe('/uploads/p1-rd.jpg');
+    expect(leg.items).toEqual([
+      {
+        name: 'Panjabi',
+        variantLabel: 'Color: Red',
+        sku: 'PNJ-RD-XL',
+        image: '/uploads/p1-rd.jpg',
+        quantity: 2,
+      },
+    ]);
+  });
+
+  it('a customer-report-free (unknown-split) return leg carries an empty items list', async () => {
+    await build({ returns: [activeReturn({ items: [] })] });
+    const leg = (await purpose.resolve('ORD-260930-0001').then((o) => o.linked ?? []))[0] as any;
+    expect(leg.items).toEqual([]);
+    expect(leg.image).toBeNull();
+    expect(leg.coversUnits).toBe(0);
+    expect(leg.processable).toBe(true);
+    // Nothing to restore while the split is unconfirmed — still stageable.
+  });
+
+  it('an already-received return leg is stageable but NOT processable — operator sees the reason', async () => {
+    await build({
+      returns: [activeReturn({ status: 'RESTOCKED', stockReconciled: true, items: [{ productId: 'p-1', quantity: 1 }] })],
+      products: [{ id: 'p-1', name: 'Panjabi', sku: 'PNJ', images: [] }],
+    });
+    const leg = (await purpose.resolve('ORD-260930-0001').then((o) => o.linked ?? []))[0] as any;
+    expect(leg.processable).toBe(false);
+    expect(String(leg.reason)).toContain('Already received');
+  });
+
+  it('exchange legs carry the exchange order items from the SAME fetch and process as info-only', async () => {
+    await build({
+      exchanges: [
+        {
+          id: 'ex-1',
+          displayId: 'EX-260930-0001',
+          status: { name: 'Confirmed' },
+          items: [
+            {
+              productId: 'p-2',
+              variantId: null,
+              quantity: 1,
+              price: 750,
+              product: { id: 'p-2', name: 'New Panjabi', sku: 'PNJ2', images: ['/uploads/new.jpg'] },
+            },
+          ],
+        },
+      ],
+    });
+    const leg = (await purpose.resolve('ORD-260930-0001').then((o) => o.linked ?? []))[0] as any;
+    expect(leg.kind).toBe('exchange');
+    expect(leg.items).toEqual([
+      { name: 'New Panjabi', variantLabel: undefined, sku: 'PNJ2', image: '/uploads/new.jpg', quantity: 1, price: 750 },
+    ]);
+    expect(leg.processable).toBe(true);
+    expect(leg.reason).toBeNull();
+  });
+
+  it('exchange legs fall back to the exchange order-line product when the variant has no own image/sku', async () => {
+    await build({
+      exchanges: [
+        {
+          id: 'ex-2',
+          displayId: 'EX-260930-0002',
+          status: { name: 'Confirmed' },
+          items: [
+            {
+              productId: 'p-4',
+              variantId: 'v-4',
+              quantity: 1,
+              price: 800,
+              // production include shape: top-level product carries images+sku
+              product: { id: 'p-4', name: 'Kurti', sku: 'KRT', images: ['/uploads/k1.jpg'] },
+              variant: {
+                id: 'v-4', sku: null, image: null, images: [],
+                product: { id: 'p-4', name: 'Kurti' }, // thin nested select
+                attributeValues: [],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const leg = (await purpose.resolve('ORD-260930-0001').then((o) => o.linked ?? []))[0] as any;
+    expect(leg.items).toEqual([
+      { name: 'Kurti', variantLabel: undefined, sku: 'KRT', image: '/uploads/k1.jpg', quantity: 1, price: 800 },
+    ]);
+  });
+
+  it('caps linked-leg item previews at 50 lines (payload stays bounded on huge exchanges)', async () => {
+    const many = Array.from({ length: 60 }, (_, i) => ({
+      productId: `p-${i}`,
+      variantId: null,
+      quantity: 1,
+      price: 100,
+      product: { id: `p-${i}`, name: `Item ${i}`, sku: `SKU-${i}`, images: [] },
+    }));
+    await build({
+      exchanges: [{ id: 'ex-3', displayId: 'EX-260930-0003', status: { name: 'Confirmed' }, items: many }],
+    });
+    const leg = (await purpose.resolve('ORD-260930-0001').then((o) => o.linked ?? []))[0] as any;
+    expect(leg.items.length).toBe(50);
+    expect(leg.coversUnits).toBe(60); // units stay truthful — only the PREVIEWS are capped
   });
 });

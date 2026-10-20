@@ -129,6 +129,21 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
       expect(ret.displayId).toMatch(/^RTN-\d{6}-\d{4}$/);
     });
 
+    it('records createdBy = the performing staff email on creation, null without an actor', async () => {
+      await service.create({ orderId: 'order-1', type: 'FULL' }, 'staff@ecomate.com');
+      expect(prisma.return.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ createdBy: 'staff@ecomate.com' }),
+        }),
+      );
+      await service.create({ orderId: 'order-1', type: 'FULL' });
+      expect(prisma.return.create).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ createdBy: null }),
+        }),
+      );
+    });
+
     it('increments the daily RTN sequence (no phantom Orders created)', async () => {
       prisma.$transaction.mockImplementationOnce((cb: any) =>
         cb(makeTx({
@@ -227,6 +242,41 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
       expect(res).toMatchObject({ id: 'ret-1' });
       expect((res as any).exchangeOrder).toMatchObject({ id: 'ex-1' });
       expect((res as any).refund).toMatchObject({ id: 'refund-1' });
+    });
+
+    it('get deep-loads the original order: customer snapshot + item snapshots in ONE query (no N+1)', async () => {
+      prisma.return.findUnique.mockResolvedValueOnce({ id: 'ret-1', orderId: 'order-1' });
+      await service.get('ret-1');
+      expect(prisma.return.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'ret-1' },
+          include: expect.objectContaining({
+            order: expect.objectContaining({
+              select: expect.objectContaining({
+                displayId: true,
+                customerPhone: true,
+                guestName: true,
+                secondaryPhone: true,
+                customer: { select: expect.objectContaining({ id: true, name: true }) },
+                items: {
+                  select: expect.objectContaining({
+                    productId: true,
+                    variantId: true,
+                    quantity: true,
+                    price: true,
+                    product: expect.objectContaining({
+                      select: expect.objectContaining({ name: true, sku: true, images: true }),
+                    }),
+                    variant: expect.objectContaining({
+                      select: expect.objectContaining({ sku: true, image: true, images: true }),
+                    }),
+                  }),
+                },
+              }),
+            }),
+          }),
+        }),
+      );
     });
   });
 

@@ -1004,6 +1004,34 @@ export class OrdersService {
         editLock: {
           include: { user: { select: { firstName: true, lastName: true } } },
         },
+        // EXCHANGE children: the original order + its item snapshots ride on
+        // the SAME fetch (exchange detail needs old-vs-new). PUBLIC/CUSTOMER
+        // responses never see this — stripped below (another customer's data).
+        exchangeOfOrder: {
+          select: {
+            id: true,
+            displayId: true,
+            kind: true,
+            subtotal: true,
+            shippingCharge: true,
+            discount: true,
+            discountType: true,
+            total: true,
+            status: { select: { id: true, name: true, color: true } },
+            items: {
+              select: {
+                productId: true,
+                variantId: true,
+                quantity: true,
+                price: true,
+                product: { select: { id: true, name: true, sku: true, images: true } },
+                variant: {
+                  select: { id: true, sku: true, image: true, images: true },
+                },
+              },
+            },
+          },
+        },
       },
     });
     if (!order || order.trashedAt)
@@ -1048,6 +1076,9 @@ export class OrdersService {
     }
     // Note: edit-lock presence is stripped by transformOrder for the public/customer
     // shape (it never exposes the holder). Staff only.
+    // exchangeOfOrder is a cross-order snapshot (another order's customer/items):
+    // staff only. Public/customer token viewers never see it.
+    if (!isAdmin) delete (order as any).exchangeOfOrder;
     const transformed = this.transformOrder(order);
     // Timeline source attribution for the admin All/Staff/Courier/System
     // filters — derived at read time (writers never persist a source field).

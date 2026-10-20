@@ -1535,6 +1535,9 @@ model Return {
   reason            String?
   source            ReturnSource
   courier           String?
+  // Staff performer recorded at creation (email). NULL when the row came from
+  // a courier webhook / reconcile (no staff actor existed). Display-only.
+  createdBy         String?
   // First courier-side return reference seen (Pathao return_consignment_id,
   // Steadfast return_request_id / return_list_id, or the consignment id for
   // reconcile-created rows). Set-once: later signals update courierStatus.

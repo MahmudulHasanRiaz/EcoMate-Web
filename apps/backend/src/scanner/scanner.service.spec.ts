@@ -235,6 +235,78 @@ describe('scanner-resolver — resolveScanIdentifier', () => {
     expect(outcome.dispatches[0].itemCount).toBe(1);
     expect(outcome.dispatches[0].orderTotal).toBe(850);
   });
+
+  it('embeds line-item previews on order previews (name/sku/variantLabel/image/qty/price, same query)', async () => {
+    const order = saleOrder({
+      items: [
+        {
+          productId: 'p-1', variantId: null, quantity: 2, price: 550,
+          product: { id: 'p-1', name: 'Classic Tee', sku: 'TEE', images: ['/uploads/t1.jpg'] },
+        },
+        {
+          productId: 'p-2', variantId: 'v-2', quantity: 1, price: 900,
+          product: { id: 'p-2', name: 'Panjabi', sku: 'PNJ', images: [] },
+          variant: {
+            id: 'v-2', sku: 'PNJ-RD-XL', image: null, images: ['/uploads/p2-rd.jpg'],
+            product: { id: 'p-2', name: 'Panjabi' },
+            attributeValues: [
+              { attributeValue: { value: 'Red', hexCode: '#f00', attribute: { name: 'Color' } } },
+              { attributeValue: { value: 'XL', attribute: { name: 'Size' } } },
+            ],
+          },
+        },
+      ],
+    });
+    const { prisma } = makePrismaFake({ orders: [order] });
+    const outcome = await resolveScanIdentifier(prisma, 'ORD-260930-0001');
+    expect(outcome.order?.items).toEqual([
+      { name: 'Classic Tee', variantLabel: undefined, sku: 'TEE', image: '/uploads/t1.jpg', quantity: 2, price: 550 },
+      { name: 'Panjabi', variantLabel: 'Color: Red, Size: XL', sku: 'PNJ-RD-XL', image: '/uploads/p2-rd.jpg', quantity: 1, price: 900 },
+    ]);
+  });
+
+  it('dispatch previews embed the same order item previews from the dispatch-fetched order row', async () => {
+    const order = saleOrder({
+      items: [
+        {
+          productId: 'p-1', variantId: null, quantity: 3, price: 200,
+          product: { id: 'p-1', name: 'Sock', sku: 'SCK', images: [{ path: '/uploads/s.jpg' }] },
+        },
+      ],
+    });
+    const d = dispatchFor(order, { consignmentId: 'SF-777' });
+    const { prisma } = makePrismaFake({ orders: [order], dispatches: [d] });
+    const outcome = await resolveScanIdentifier(prisma, 'sf 777');
+    expect(outcome.dispatches[0].items).toEqual([
+      { name: 'Sock', variantLabel: undefined, sku: 'SCK', image: '/uploads/s.jpg', quantity: 3, price: 200 },
+    ]);
+  });
+
+  it('falls back to the order-line product (images/sku) when the variant carries none — no select shadowing', async () => {
+    // Production select shape: the top-level `product` carries sku+images, the
+    // nested `variant.product` is thin ({ id, name }) — a variant WITHOUT its
+    // own image/sku must still surface the product image + sku.
+    const order = saleOrder({
+      items: [
+        {
+          productId: 'p-3', variantId: 'v-3', quantity: 1, price: 700,
+          product: { id: 'p-3', name: 'Kurti', sku: 'KRT', images: ['/uploads/k1.jpg'] },
+          variant: {
+            id: 'v-3', sku: null, image: null, images: [],
+            product: { id: 'p-3', name: 'Kurti' },
+            attributeValues: [
+              { attributeValue: { value: 'M', attribute: { name: 'Size' } } },
+            ],
+          },
+        },
+      ],
+    });
+    const { prisma } = makePrismaFake({ orders: [order] });
+    const outcome = await resolveScanIdentifier(prisma, 'ORD-260930-0001');
+    expect(outcome.order?.items).toEqual([
+      { name: 'Kurti', variantLabel: 'Size: M', sku: 'KRT', image: '/uploads/k1.jpg', quantity: 1, price: 700 },
+    ]);
+  });
 });
 
 describe('ScannerService — purpose registry', () => {

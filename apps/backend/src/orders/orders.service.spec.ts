@@ -741,6 +741,79 @@ describe('OrdersService', () => {
       );
     });
 
+    describe('exchangeOfOrder (exchange parent snapshot)', () => {
+      const exchangeChildOrder = () => ({
+        ...mockOrder,
+        kind: 'EXCHANGE',
+        exchangeOfOrderId: 'orig-1',
+        exchangeOfOrder: {
+          id: 'orig-1',
+          displayId: 'ORD-250101-0001',
+          kind: 'ORDER',
+          subtotal: 2000,
+          shippingCharge: 100,
+          discount: 50,
+          discountType: 'flat',
+          total: 2050,
+          status: { id: 'st-1', name: 'Shipped', color: '#2ecc71' },
+          items: [
+            {
+              productId: 'prod-1',
+              variantId: 'variant-1',
+              quantity: 2,
+              price: 1000,
+              product: {
+                id: 'prod-1',
+                name: 'Original Tee M',
+                sku: 'TEE-M',
+                images: ['a.jpg'],
+              },
+              variant: { id: 'variant-1', sku: 'TEE-M', image: 'a.jpg', images: ['a.jpg'] },
+            },
+          ],
+        },
+      });
+
+      it('staff viewer sees the exchangeOfOrder snapshot with line items', async () => {
+        (prisma.order.findUnique as jest.Mock).mockResolvedValue(
+          exchangeChildOrder(),
+        );
+
+        const result = await service.findOne('order-id-1', {
+          userId: 'user-a',
+          role: 'admin',
+        });
+
+        // The include itself is pinned: the staff shape must request the
+        // snapshot (the resolved fixture alone would pass even without it).
+        const args = (prisma.order.findUnique as jest.Mock).mock.calls.at(-1)[0];
+        expect(args.include.exchangeOfOrder).toEqual(
+          expect.objectContaining({
+            select: expect.objectContaining({ items: expect.anything() }),
+          }),
+        );
+
+        expect(result.exchangeOfOrder.displayId).toBe('ORD-250101-0001');
+        expect(result.exchangeOfOrder.items[0].product.name).toBe(
+          'Original Tee M',
+        );
+        expect(result.exchangeOfOrder.items[0].quantity).toBe(2);
+      });
+
+      it('strips exchangeOfOrder from the customer/public token shape', async () => {
+        (prisma.order.findUnique as jest.Mock).mockResolvedValue(
+          exchangeChildOrder(),
+        );
+
+        const result = await service.findOne('order-id-1', {
+          token: 'mock-view-token',
+        });
+
+        expect(result).not.toHaveProperty('exchangeOfOrder');
+        expect(JSON.stringify(result)).not.toContain('Original Tee M');
+      });
+    });
+
     it('should throw NotFoundException for non-guest order without matching token', async () => {
       (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
 
