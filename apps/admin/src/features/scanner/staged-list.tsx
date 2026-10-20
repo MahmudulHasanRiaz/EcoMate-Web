@@ -1,9 +1,27 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { ArrowDown, ExternalLink, Search, Trash2, X } from 'lucide-react'
+import { ArrowDown, ChevronDown, ChevronUp, ExternalLink, Search, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { StatusBadge, orderStatusTone } from '@/components/ui/dashboard'
+import { CustomerContactActions } from '@/components/customer-contact-actions'
+import { SafeImage } from '@/components/safe-image'
+
+/** Item preview line inside the expansion panel (from the staging payload —
+ * no extra fetch per expand). */
+export interface ExpandItem {
+  name: string
+  sub?: string
+  image?: string | null
+  quantity?: number
+  price?: string
+}
+
+export interface StagedRowExpand {
+  heading?: string
+  items?: ExpandItem[]
+  note?: string
+}
 
 /** One dense staged row. All display data rides on the resolve response. */
 export interface StagedRow {
@@ -14,6 +32,16 @@ export interface StagedRow {
   /** Second identifier shown muted next to primary (order no for dispatches). */
   secondary?: string
   customerName: string
+  /** Customer snapshot phone — rendered as a `tel:` link (≥ sm only). */
+  phone?: string
+  /** 'return' → the caller's orderHref routes to the RETURNS page. */
+  destKind?: 'return' | 'order'
+  /** Pre-fetched goods for the chevron expansion panel (absent → no chevron). */
+  expand?: StagedRowExpand
+  /** Row needs operator attention (processable=false) — amber tints the row. */
+  needsAttention?: boolean
+  /** Why the row needs attention — exposed as the row title tooltip. */
+  reason?: string
   /** Compact meta: "2 items · ৳1,250" (orders) or courier (dispatches). */
   meta?: string
   status: string
@@ -55,6 +83,7 @@ export function StagedList({
   onClear,
   footer,
   clearConfirm,
+  openLabel,
 }: {
   title: string
   items: StagedRow[]
@@ -64,9 +93,12 @@ export function StagedList({
   footer?: ReactNode
   /** Render-prop for the clear confirmation message given the count. */
   clearConfirm?: (count: number) => string
+  /** External-link label; return staging passes "Open return …". */
+  openLabel?: (row: StagedRow) => string
 }) {
   const [query, setQuery] = useState('')
   const [confirmingClear, setConfirmingClear] = useState(false)
+  const [expandedKey, setExpandedKey] = useState<string | null>(null)
   const [newCount, setNewCount] = useState(0)
   const scrollRef = useRef<HTMLDivElement>(null)
   const atTopRef = useRef(true)
@@ -127,11 +159,57 @@ export function StagedList({
   const showSearch = items.length > 1
   const vItems = virtualizer.getVirtualItems()
 
-  const renderRow = (r: StagedRow, num: number, style?: CSSProperties) => (
+  // Expansion panel lifecycle: outside click + Escape close it. Capture phase
+  // so the panel never races a Radix overlay above us (ESC-bubble lesson).
+  useEffect(() => {
+    if (!expandedKey) return
+    const onPointer = (e: MouseEvent) => {
+      const t = e.target as Element | null
+      if (t?.closest('[data-staged-panel]') || t?.closest('button[data-staged-chevron]')) return
+      setExpandedKey(null)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      // An open modal owns Escape — never swallow it (the panel stays until
+      // the dialog closes; the next Escape then targets the panel).
+      if (document.querySelector('[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]')) return
+      e.stopImmediatePropagation()
+      setExpandedKey(null)
+    }
+    document.addEventListener('mousedown', onPointer, true)
+    document.addEventListener('keydown', onKey, true)
+    return () => {
+      document.removeEventListener('mousedown', onPointer, true)
+      document.removeEventListener('keydown', onKey, true)
+    }
+  }, [expandedKey])
+
+  const renderRow = (r: StagedRow, num: number, style?: CSSProperties) => {
+    const openLabelFor = openLabel
+      ? (row: StagedRow) => openLabel(row)
+      : (row: StagedRow) => `Open order ${row.secondary ?? row.primary}`
+    const isExpanded = expandedKey === r.key
+    const chevron = r.expand ? (
+      <button
+        type="button"
+        data-staged-chevron
+        aria-expanded={isExpanded}
+        aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${r.primary}`}
+        className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
+        onClick={() => setExpandedKey(isExpanded ? null : r.key)}
+      >
+        {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+      </button>
+    ) : null
+    return (
     <div
       key={r.key}
       role="listitem"
-      className="flex items-center gap-2 border-b border-border/40 bg-card px-2.5 transition-colors duration-150 hover:bg-muted/50"
+      data-staged-row={r.key}
+      title={r.reason ?? undefined}
+      className={`relative flex items-center gap-2 border-b border-border/40 ${
+        r.needsAttention ? 'bg-amber-500/5 hover:bg-amber-500/10' : 'bg-card hover:bg-muted/50'
+      } px-2.5 transition-colors duration-150`}
       style={{ height: ROW_H, ...style }}
     >
       <span className="w-7 shrink-0 text-right text-[10px] font-bold text-muted-foreground tabular-nums" aria-hidden>
@@ -148,6 +226,18 @@ export function StagedList({
       <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={r.customerName}>
         {r.customerName}
       </span>
+      {r.phone && (
+        <span className="hidden shrink-0 items-center gap-0.5 sm:inline-flex">
+          <a
+            href={`tel:${r.phone}`}
+            className="font-mono text-[11px] text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap"
+            title={`Call ${r.customerName}`}
+          >
+            {r.phone}
+          </a>
+          <CustomerContactActions phone={r.phone} iconClassName="!p-0" />
+        </span>
+      )}
       {r.meta && (
         <span className="hidden shrink-0 text-[11px] text-muted-foreground tabular-nums md:inline" title={r.meta}>
           {r.meta}
@@ -162,8 +252,8 @@ export function StagedList({
           target="_blank"
           rel="noreferrer"
           className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          title={`Open order ${r.secondary ?? r.primary}`}
-          aria-label={`Open order ${r.secondary ?? r.primary} in a new tab`}
+          title={openLabelFor(r)}
+          aria-label={`${openLabelFor(r)} in a new tab`}
         >
           <ExternalLink className="h-3.5 w-3.5" />
         </a>
@@ -175,9 +265,49 @@ export function StagedList({
         >
           <X className="h-3.5 w-3.5" />
         </button>
+        {chevron}
       </span>
+      {/* Floating expansion panel — absolutely positioned below the row so it
+          never changes the 44px virtualized geometry. */}
+      {isExpanded && r.expand && (
+        <div
+          data-staged-panel
+          role="region"
+          tabIndex={0}
+          aria-label={`${r.expand.heading ?? 'Row details'} — ${r.primary}`}
+          className="absolute inset-x-0 top-full z-30 max-h-80 overflow-y-auto rounded-b-xl border border-border/70 bg-card shadow-lg"
+        >
+          {r.expand.heading && (
+            <p className="border-b border-border/50 bg-muted/30 px-3 py-2 text-xs font-semibold">{r.expand.heading}</p>
+          )}
+          <div className="p-2 space-y-1">
+            {(r.expand.items ?? []).map((it, i) => (
+              <div key={`${r.key}-item-${i}`} className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-muted/40">
+                <SafeImage src={it.image ?? undefined} alt={it.name} className="h-9 w-9 rounded border object-cover shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium">{it.name}</p>
+                  {it.sub && <p className="truncate text-[11px] text-muted-foreground">{it.sub}</p>}
+                </div>
+                <div className="shrink-0 text-right text-[11px]">
+                  {typeof it.quantity === 'number' && <span className="font-medium">× {it.quantity}</span>}
+                  {it.price && <div className="text-muted-foreground">{it.price}</div>}
+                </div>
+              </div>
+            ))}
+            {(r.expand.items ?? []).length === 0 && !r.expand.note && (
+              <p className="px-2 py-3 text-center text-xs text-muted-foreground">No line items recorded.</p>
+            )}
+          </div>
+          {r.expand.note && (
+            <p className="border-t border-border/50 bg-amber-500/5 px-3 py-2 text-xs font-medium text-amber-700 dark:text-amber-400">
+              {r.expand.note}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   )
+  }
 
   return (
     <div className="rounded-xl border border-border/70 bg-muted/20 overflow-hidden" aria-label={title}>

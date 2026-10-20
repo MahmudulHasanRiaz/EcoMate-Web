@@ -5,6 +5,45 @@ export interface ReturnOrderLink {
   displayId: string
 }
 
+/** Variant attribute chain on the order snapshot (variantLabel source). */
+export interface ReturnOrderVariantAttribute {
+  attributeValue: {
+    value?: string | null
+    hexCode?: string | null
+    attribute?: { name?: string | null } | null
+  }
+}
+
+/** Product/variant snapshot per ORDER LINE (GET /returns/:id deep include). */
+export interface ReturnOrderItem {
+  productId: string
+  variantId?: string | null
+  quantity: number
+  price?: number | string | null
+  product?: { id: string; name: string; sku?: string | null; images?: string[] | null } | null
+  variant?: {
+    id: string
+    sku?: string | null
+    image?: string | null
+    images?: string[] | null
+    attributeValues?: ReturnOrderVariantAttribute[]
+  } | null
+}
+
+/** Original ORDER embedded by GET /returns/:id (customer snapshot + line items). */
+export interface ReturnOrderSnapshot extends ReturnOrderLink {
+  kind?: string | null
+  createdAt?: string | null
+  customerFirstName?: string | null
+  customerLastName?: string | null
+  guestName?: string | null
+  customerPhone?: string | null
+  guestPhone?: string | null
+  secondaryPhone?: string | null
+  customer?: { id: string; name?: string | null; email?: string | null; phone?: string | null } | null
+  items?: ReturnOrderItem[] | null
+}
+
 export interface ReturnListItem {
   id: string
   displayId: string
@@ -27,6 +66,9 @@ export interface ReturnListItem {
 }
 
 export interface ReturnDetail extends ReturnListItem {
+  /** staff email / free-text performer (Task 1 column). */
+  createdBy?: string | null
+  order?: ReturnOrderSnapshot | null
   exchangeOrder?: ReturnOrderLink | null
   refund?: { id: string; status?: string } | null
 }

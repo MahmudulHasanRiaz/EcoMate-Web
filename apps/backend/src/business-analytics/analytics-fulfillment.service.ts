@@ -12,6 +12,11 @@ import { Injectable } from '@nestjs/common';
 import { PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
+import { deriveOrderDue } from '../common/finance/order-due';
+import {
+  receivedReturnValue,
+  RECEIVED_RETURN_STATUSES,
+} from '../common/finance/return-impact';
 import {
   inferDeliveryChargeRetained,
   resolveRevenueEvent,
@@ -544,12 +549,28 @@ export class AnalyticsFulfillmentService {
         id: true,
         total: true,
         payments: { select: { amount: true, status: true, appliedCreditAmount: true, gatewayCode: true } },
+        items: {
+          select: { productId: true, variantId: true, price: true, quantity: true },
+        },
+        // Received returns lower the collectable exactly like the order card /
+        // due listing: the same shared derivation, no separate formula.
+        returns: {
+          where: { status: { in: [...RECEIVED_RETURN_STATUSES] as any } },
+          select: { status: true, receivedAt: true, items: true },
+        },
       },
     });
     for (const o of ordersMeta) {
       const acc = byOrder.get(o.id);
       if (!acc) continue;
-      const expected = expectedCodFromOrder(o.total, o.payments);
+      const expected = expectedCodFromOrder(
+        o.total,
+        o.payments,
+        receivedReturnValue({
+          returns: (o as any).returns ?? [],
+          orderItems: (o as any).items ?? [],
+        }),
+      );
       acc.codPosition =
         Math.round((expected - acc.charges - acc.net + Number.EPSILON) * 100) / 100;
     }
@@ -569,19 +590,24 @@ export class AnalyticsFulfillmentService {
   }
 }
 
-/** expectedCod for a COD order: derived due (total − ΣPAID − ΣappliedCredit, D-C, excl. courier_settlement). */
+/** expectedCod for a COD order: shared derived due (D-C). */
 function expectedCodFromOrder(
   total: unknown,
   payments: { amount: unknown; status: string; appliedCreditAmount?: unknown; gatewayCode?: unknown }[],
+  receivedReturns = 0,
 ): number {
-  const paid = (payments ?? [])
-    .filter((p) => p.status === 'PAID' && String((p as { gatewayCode?: unknown }).gatewayCode ?? '') !== 'courier_settlement')
-    .reduce((s, p) => s + (Number(p.amount) || 0), 0);
-  const applied = (payments ?? []).reduce(
-    (s, p) => s + (Number(p.appliedCreditAmount) || 0),
-    0,
+  return round2(
+    deriveOrderDue({
+      receivedReturnValue: receivedReturns,
+      total: Number(total) || 0,
+      payments: (payments ?? []).map((p) => ({
+        amount: Number(p.amount) || 0,
+        status: p.status,
+        appliedCreditAmount: Number(p.appliedCreditAmount) || 0,
+        gatewayCode: p.gatewayCode == null ? null : String(p.gatewayCode),
+      })),
+    }).due,
   );
-  return Math.max(0, round2((Number(total) || 0) - paid - applied));
 }
 
 function round2(n: number): number {

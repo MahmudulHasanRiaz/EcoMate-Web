@@ -177,6 +177,7 @@ export class ReturnsService {
         source: source as any,
         items: items as unknown as Prisma.InputJsonValue,
         reason: dto.reason ?? null,
+        createdBy: performedBy ?? null,
         courier: dto.courier ?? null,
         courierReturnId: dto.courierReturnId ?? null,
         courierStatus: dto.courierStatus ?? null,
@@ -357,7 +358,55 @@ export class ReturnsService {
   async get(id: string) {
     const ret = await this.prisma.return.findUnique({
       where: { id },
-      include: { order: { select: { id: true, displayId: true } } },
+      // Deep include (return detail page): the original order carries the
+      // customer snapshot AND line-item snapshots (name/sku/images/price +
+      // variant attributes) in the SAME query — the UI joins Return.items
+      // (returned quantities) against these without extra requests.
+      include: {
+        order: {
+          select: {
+            id: true,
+            displayId: true,
+            kind: true,
+            createdAt: true,
+            customerFirstName: true,
+            customerLastName: true,
+            guestName: true,
+            customerPhone: true,
+            guestPhone: true,
+            secondaryPhone: true,
+            customer: { select: { id: true, name: true, email: true, phone: true } },
+            items: {
+              select: {
+                productId: true,
+                variantId: true,
+                quantity: true,
+                price: true,
+                product: { select: { id: true, name: true, sku: true, images: true } },
+                variant: {
+                  select: {
+                    id: true,
+                    sku: true,
+                    image: true,
+                    images: true,
+                    attributeValues: {
+                      select: {
+                        attributeValue: {
+                          select: {
+                            value: true,
+                            hexCode: true,
+                            attribute: { select: { name: true } },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
     });
     if (!ret) throw new NotFoundException(`Return not found: ${id}`);
     // Task 7: detail links without extra round-trips — exchange order +
@@ -557,7 +606,11 @@ export class ReturnsService {
     }
     return this.prisma.return.update({
       where: { id },
-      data: { status: 'RECEIVED' as any, courierStatus: courierStatus ?? (ret as any).courierStatus },
+      data: {
+        status: 'RECEIVED' as any,
+        courierStatus: courierStatus ?? (ret as any).courierStatus,
+        receivedAt: (ret as any).receivedAt ?? new Date(),
+      },
     });
   }
 

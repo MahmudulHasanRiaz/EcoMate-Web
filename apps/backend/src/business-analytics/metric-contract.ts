@@ -275,6 +275,39 @@ export function resolveReturn(
 }
 
 // ---------------------------------------------------------------------------
+// Partial delivery recognition (kept-items revenue).
+//
+// A Partial order earns revenue on the KEPT portion only. Recognition is
+// event-dated on the latest 'Partial' timeline transition; a status with no
+// dated transition stays unrecognised (W5) — never an invented date.
+// ---------------------------------------------------------------------------
+
+export function findPartialTransition(
+  timeline: TimelineEntry[],
+): TimelineEntry | null {
+  for (let i = (timeline ?? []).length - 1; i >= 0; i -= 1) {
+    if (timeline[i].status === 'Partial') return timeline[i];
+  }
+  return null;
+}
+
+export interface PartialRecognition {
+  recognised: boolean;
+  partialAt: Date | null;
+}
+
+export function resolvePartialRecognition(
+  status: string,
+  timeline: TimelineEntry[],
+): PartialRecognition {
+  if (status !== 'Partial') return { recognised: false, partialAt: null };
+  const transition = findPartialTransition(timeline ?? []);
+  if (!transition) return { recognised: false, partialAt: null };
+  const partialAt = toDateOrNull(transition.timestamp);
+  return { recognised: partialAt !== null, partialAt };
+}
+
+// ---------------------------------------------------------------------------
 // Return/refund crossover predicate (D7). Single home for the ladder rule.
 // ---------------------------------------------------------------------------
 

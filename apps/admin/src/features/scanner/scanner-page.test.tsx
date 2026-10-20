@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
 import { userEvent } from 'vitest/browser'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import '@/styles/index.css'
 import ScannerPage from './index'
 
 const mockGet = vi.hoisted(() => vi.fn())
@@ -63,11 +64,14 @@ async function scanText(page: any, text: string) {
   await userEvent.keyboard('{Enter}')
 }
 
+const RETURN_STAGING_KEY = 'ecomate:scanner:return-staged'
+
 describe('Scanner page', () => {
   beforeEach(() => {
     mockGet.mockReset()
     mockPost.mockReset()
     mockGet.mockResolvedValue({ data: purposes })
+    localStorage.removeItem(RETURN_STAGING_KEY)
   })
 
   it('reads as a scanner workspace: compact task selector + dominant input', async () => {
@@ -486,36 +490,40 @@ describe('Scanner page', () => {
     expect(mockPost.mock.calls.filter((c) => c[0] === '/scanner/scan')).toHaveLength(0)
   })
 
-  it('RETURN_RECEIVE receives the single linked return at once (order never marked)', async () => {
+  it('RETURN_RECEIVE stages the single linked return for batch receiving (never executes)', async () => {
     mockPost.mockImplementation((url: string) => {
       if (url === '/scanner/resolve') {
         return Promise.resolve({
           data: {
             status: 'resolved', identifier: 'ORD-1', dispatches: [],
-            order: orderPreview('o1', 'ORD-1', []),
-            linked: [{ kind: 'return', id: 'ret-1', displayId: 'RTN-1', status: 'REQUESTED' }],
+            order: { ...orderPreview('o1', 'ORD-1', [], 'Md. Rahim', '01700000001'), items: [{ name: 'Black Tee', quantity: 1, price: 450 }] },
+            linked: [{
+              kind: 'return', id: 'ret-1', displayId: 'RTN-1', status: 'REQUESTED', orderDisplayId: 'ORD-1',
+              coversUnits: 2, orderUnits: 3, processable: true, reason: null,
+              items: [{ name: 'Blue Hoodie', variantLabel: 'Size: M', sku: 'HD-BLU-M', image: null, quantity: 2, price: 600 }],
+            }],
             message: 'One active return RTN-1 is linked to this order — ready to receive.',
           },
         })
       }
-      return Promise.resolve({
-        data: {
-          status: 'success', identifier: 'ORD-1', title: 'RTN-1 — Received',
-          message: 'Return received and restocked (idempotent per return).',
-          details: { returnId: 'ret-1', returnDisplayId: 'RTN-1', orderId: 'o1' },
-        },
-      })
+      return Promise.resolve({ data: {} })
     })
     const page = await renderPage()
     await userEvent.selectOptions(page.getByRole('combobox'), 'RETURN_RECEIVE')
     await scanText(page, 'ORD-1')
-    const scanCall = mockPost.mock.calls.find((c) => c[0] === '/scanner/scan')
-    expect(scanCall?.[1]?.returnId).toBe('ret-1')
-    expect(scanCall?.[1]?.orderId).toBeUndefined()
-    expect(page.getByText('RTN-1 — Received')).not.toBeNull()
+    // Staged for batch receiving — never executed by a scan.
+    expect(mockPost.mock.calls.filter((c) => c[0] === '/scanner/scan')).toHaveLength(0)
+    await expect.element(page.getByText('Staged returns')).toBeInTheDocument()
+    await expect.element(page.getByText('RTN-1', { exact: true })).toBeInTheDocument()
+    // Row context: customer name + phone + WhatsApp affordance.
+    await expect.element(page.getByText('Md. Rahim', { exact: false })).toBeInTheDocument()
+    expect(document.querySelector('a[href^="tel:01700000001"]')).not.toBeNull()
+    expect(document.querySelector('a[href*="wa.me"]')).not.toBeNull()
+    // The scan result feed records the staging event.
+    await expect.element(page.getByText('RTN-1 — Staged')).toBeInTheDocument()
   })
 
-  it('RETURN_RECEIVE offers a picker when several legs are linked', async () => {
+  it('RETURN_RECEIVE stages the picked leg from the picker (no execute)', async () => {
     mockPost.mockImplementation((url: string) => {
       if (url === '/scanner/resolve') {
         return Promise.resolve({
@@ -523,31 +531,320 @@ describe('Scanner page', () => {
             status: 'selection_required', identifier: 'ORD-1', dispatches: [],
             order: orderPreview('o1', 'ORD-1', []),
             linked: [
-              { kind: 'return', id: 'ret-1', displayId: 'RTN-1', status: 'REQUESTED' },
-              { kind: 'exchange', id: 'ex-1', displayId: 'ORD-EX-1', status: 'Shipping' },
+              { kind: 'return', id: 'ret-1', displayId: 'RTN-1', status: 'REQUESTED', orderDisplayId: 'ORD-1', processable: true, reason: null, items: [{ name: 'Blue Hoodie', quantity: 2 }] },
+              { kind: 'exchange', id: 'ex-1', displayId: 'ORD-EX-1', status: 'Shipping', orderDisplayId: 'ORD-1', processable: true, reason: null, items: [{ name: 'Red Cap', quantity: 1 }] },
             ],
             message: 'Multiple returns/exchanges are linked to this order. Select one to continue.',
           },
         })
       }
-      return Promise.resolve({
-        data: {
-          status: 'success', identifier: 'ORD-1', title: 'RTN-1 — Received',
-          message: 'Return received and restocked (idempotent per return).',
-          details: { returnId: 'ret-1' },
-        },
-      })
+      return Promise.resolve({ data: {} })
     })
     const page = await renderPage()
     await userEvent.selectOptions(page.getByRole('combobox'), 'RETURN_RECEIVE')
     await scanText(page, 'ORD-1')
     // Picker lists both legs; no execute fired yet.
-    expect(page.getByText('RTN-1', { exact: true })).not.toBeNull()
-    expect(page.getByText('ORD-EX-1', { exact: true })).not.toBeNull()
+    await expect.element(page.getByText('RTN-1', { exact: true })).toBeInTheDocument()
+    await expect.element(page.getByText('ORD-EX-1', { exact: true })).toBeInTheDocument()
     expect(mockPost.mock.calls.filter((c) => c[0] === '/scanner/scan')).toHaveLength(0)
     await userEvent.click(page.getByRole('button', { name: 'Select RTN-1' }))
-    const scanCall = mockPost.mock.calls.find((c) => c[0] === '/scanner/scan')
-    expect(scanCall?.[1]?.returnId).toBe('ret-1')
-    expect(page.getByText('RTN-1 — Received')).not.toBeNull()
+    // Picked leg staged — still zero executions. The unpicked leg never stages.
+    expect(mockPost.mock.calls.filter((c) => c[0] === '/scanner/scan')).toHaveLength(0)
+    await expect.element(page.getByText('RTN-1', { exact: true })).toBeInTheDocument()
+    await expect.element(page.getByText('ORD-EX-1', { exact: true })).not.toBeInTheDocument()
+    await expect.element(page.getByText('RTN-1 — Staged')).toBeInTheDocument()
+    // The picked row keeps the customer context carried by the resolve payload
+    // (same as the single-leg path — the picker must not lose the order).
+    expect(document.querySelector('a[href^="tel:01700000001"]')).not.toBeNull()
+  })
+})
+
+describe('Scanner page — staged returns: persistence, attention rows, batch processing', () => {
+  beforeEach(() => {
+    mockGet.mockReset()
+    mockPost.mockReset()
+    mockGet.mockResolvedValue({ data: purposes })
+    localStorage.removeItem(RETURN_STAGING_KEY)
+  })
+
+  const returnLeg = (overrides: Record<string, unknown> = {}) => ({
+    kind: 'return', id: 'ret-1', displayId: 'RTN-1', status: 'REQUESTED', orderDisplayId: 'ORD-1',
+    coversUnits: 2, orderUnits: 3, processable: true, reason: null,
+    items: [{ name: 'Blue Hoodie', variantLabel: 'Size: M', sku: 'HD-BLU-M', image: null, quantity: 2, price: 600 }],
+    ...overrides,
+  })
+
+  const mockReturnResolve = (leg: Record<string, unknown>, identifier = 'ORD-1') => {
+    mockPost.mockImplementation((url: string) => {
+      if (url === '/scanner/resolve') {
+        return Promise.resolve({
+          data: {
+            status: 'resolved', identifier, dispatches: [],
+            order: orderPreview('o1', identifier, [], 'Md. Rahim', '01700000001'),
+            linked: [returnLeg(leg)],
+            message: 'One active return is linked to this order.',
+          },
+        })
+      }
+      return Promise.resolve({ data: {} })
+    })
+  }
+
+  it('a duplicate scan keeps one row and records Already staged in the feed', async () => {
+    mockReturnResolve({})
+    const page = await renderPage()
+    await userEvent.selectOptions(page.getByRole('combobox'), 'RETURN_RECEIVE')
+    await scanText(page, 'ORD-1')
+    await scanText(page, 'ORD-1')
+    await expect.element(page.getByText('RTN-1 — Already staged')).toBeInTheDocument()
+    // Exactly one staged row for RTN-1.
+    await expect.element(page.getByRole('button', { name: 'Remove RTN-1 from staged list' })).toBeInTheDocument()
+  })
+
+  it('a RESTOCKED leg stages as an attention row with its reason and blocks processing', async () => {
+    mockReturnResolve({ id: 'ret-3', displayId: 'RTN-3', status: 'RESTOCKED', processable: false, reason: 'Already received — stock was restored earlier.' })
+    const page = await renderPage()
+    await userEvent.selectOptions(page.getByRole('combobox'), 'RETURN_RECEIVE')
+    await scanText(page, 'ORD-1')
+    // Row staged; the reason is recorded in the feed as a warning.
+    await expect.element(page.getByText('RTN-3', { exact: true })).toBeInTheDocument()
+    await expect.element(page.getByText('Already received — stock was restored earlier.')).toBeInTheDocument()
+    // Amber row tint on the attention row.
+    expect(document.querySelector('[data-staged-row="ret-3"]')?.className).toMatch(/amber/)
+    // Process button states the counts and is disabled: nothing is ready.
+    const button = page.getByRole('button', { name: /Process returns/ })
+    await expect.element(page.getByText('Process returns (0 ready · 1 need attention)', { exact: false })).toBeInTheDocument()
+    await expect.element(button).toBeDisabled()
+  })
+
+  it('survives a malformed localStorage seed without crashing and still stages normally', async () => {
+    localStorage.setItem(RETURN_STAGING_KEY, 'not-json{')
+    mockReturnResolve({})
+    const page = await renderPage()
+    await expect.element(page.getByText('Ready to scan')).toBeInTheDocument()
+    await userEvent.selectOptions(page.getByRole('combobox'), 'RETURN_RECEIVE')
+    await scanText(page, 'ORD-1')
+    await expect.element(page.getByText('Staged returns')).toBeInTheDocument()
+    await expect.element(page.getByText('RTN-1', { exact: true })).toBeInTheDocument()
+    expect(mockPost.mock.calls.filter((c) => c[0] === '/scanner/resolve')).toHaveLength(1)
+  })
+
+  it('refresh keeps the staged list: rows restore from localStorage without any resolve call', async () => {
+    localStorage.setItem(RETURN_STAGING_KEY, JSON.stringify([{
+      key: 'ret-1', identifier: 'ORD-1', kind: 'return', legId: 'ret-1', displayId: 'RTN-1',
+      orderDisplayId: 'ORD-1', status: 'REQUESTED', processable: true, reason: null,
+      customerName: 'Md. Rahim', customerPhone: '01700000001',
+      items: [{ name: 'Blue Hoodie', variantLabel: 'Size: M', sku: 'HD-BLU-M', image: null, quantity: 2, price: 600 }],
+    }]))
+    mockPost.mockImplementation(() => Promise.resolve({ data: {} }))
+    const page = await renderPage()
+    // Restored rows show under their own task (RETURN_RECEIVE).
+    await userEvent.selectOptions(page.getByRole('combobox'), 'RETURN_RECEIVE')
+    await expect.element(page.getByText('RTN-1', { exact: true })).toBeInTheDocument()
+    await expect.element(page.getByText('Md. Rahim', { exact: false })).toBeInTheDocument()
+    expect(mockPost.mock.calls.filter((c) => c[0] === '/scanner/resolve')).toHaveLength(0)
+    // Expansion data persists with the row.
+    await userEvent.click(page.getByRole('button', { name: 'Expand RTN-1' }))
+    await expect.element(page.getByText('Blue Hoodie', { exact: false })).toBeInTheDocument()
+    // Switching task and back keeps the staged list (never cleared on mode switch).
+    await userEvent.selectOptions(page.getByRole('combobox'), 'ORDER_STATUS')
+    await expect.element(page.getByText('Staged returns')).not.toBeInTheDocument()
+    await userEvent.selectOptions(page.getByRole('combobox'), 'RETURN_RECEIVE')
+    await expect.element(page.getByText('RTN-1', { exact: true })).toBeInTheDocument()
+  })
+
+  it('clear asks for confirmation mentioning unprocessed legs, then empties list and storage', async () => {
+    mockPost.mockImplementation((url: string, body?: any) => {
+      if (url === '/scanner/resolve') {
+        const id = body?.identifier ?? 'ORD-1'
+        return Promise.resolve({
+          data: {
+            status: 'resolved', identifier: id, dispatches: [],
+            order: orderPreview('o1', id, [], 'Md. Rahim', '01700000001'),
+            linked: [returnLeg({ id: id === 'ORD-1' ? 'ret-1' : 'ret-2', displayId: id === 'ORD-1' ? 'RTN-1' : 'RTN-2', orderDisplayId: id })],
+          },
+        })
+      }
+      return Promise.resolve({ data: {} })
+    })
+    const page = await renderPage()
+    await userEvent.selectOptions(page.getByRole('combobox'), 'RETURN_RECEIVE')
+    await scanText(page, 'ORD-1')
+    await scanText(page, 'ORD-2')
+    await userEvent.click(page.getByRole('button', { name: 'Clear' }).first())
+    await expect.element(page.getByText('Clear staged list?')).toBeInTheDocument()
+    await expect.element(page.getByText(/unprocessed/i)).toBeInTheDocument()
+    await userEvent.click(page.getByRole('button', { name: 'Clear 2' }))
+    await expect.element(page.getByText('RTN-1', { exact: true })).not.toBeInTheDocument()
+    expect(JSON.parse(localStorage.getItem(RETURN_STAGING_KEY) ?? '[]')).toHaveLength(0)
+  })
+
+  it('process batch is sequential, removes settled rows, keeps failed rows with the live reason, and never scans attention rows', async () => {
+    const legs: Record<string, Record<string, unknown>> = {
+      'ORD-1': returnLeg({}),
+      'ORD-2': { kind: 'exchange', id: 'ex-2', displayId: 'ORD-EX-1', status: 'Shipping', orderDisplayId: 'ORD-2', processable: true, reason: null, items: [{ name: 'Red Cap', quantity: 1 }] },
+      'ORD-3': returnLeg({ id: 'ret-2', displayId: 'RTN-2', orderDisplayId: 'ORD-3', items: [{ name: 'Wool Scarf', quantity: 1 }] }),
+      'ORD-4': returnLeg({ id: 'ret-3', displayId: 'RTN-3', orderDisplayId: 'ORD-4', status: 'RESTOCKED', processable: false, reason: 'Already received — stock was restored earlier.' }),
+    }
+    let ret2Attempts = 0
+    mockPost.mockImplementation((url: string, body?: any) => {
+      if (url === '/scanner/resolve') {
+        const id = body?.identifier ?? ''
+        return Promise.resolve({
+          data: {
+            status: 'resolved', identifier: id, dispatches: [],
+            order: orderPreview('o1', id, [], 'Md. Rahim', '01700000001'),
+            linked: [legs[id]],
+            message: 'One active return is linked to this order.',
+          },
+        })
+      }
+      if (url === '/scanner/scan') {
+        const key = body?.returnId ?? body?.exchangeId
+        if (key === 'ret-1') {
+          return Promise.resolve({ data: { status: 'success', identifier: 'ORD-1', title: 'RTN-1 — Received', message: 'Return received and restocked (idempotent per return).', details: { returnId: 'ret-1' } } })
+        }
+        if (key === 'ex-2') {
+          return Promise.resolve({ data: { status: 'duplicate', identifier: 'ORD-2', title: 'ORD-EX-1 — Already handled', message: 'This exchange was already received.' } })
+        }
+        if (key === 'ret-2') {
+          ret2Attempts += 1
+          return Promise.resolve({
+            data: ret2Attempts === 1
+              ? { status: 'error', identifier: 'ORD-3', title: 'RTN-2 — Cannot receive', message: 'Return cannot be received in its current state.' }
+              : { status: 'success', identifier: 'ORD-3', title: 'RTN-2 — Received', message: 'Return received and restocked.' },
+          })
+        }
+        return Promise.resolve({ data: {} })
+      }
+      return Promise.resolve({ data: {} })
+    })
+    const page = await renderPage()
+    await userEvent.selectOptions(page.getByRole('combobox'), 'RETURN_RECEIVE')
+    for (const id of ['ORD-1', 'ORD-2', 'ORD-3', 'ORD-4']) await scanText(page, id)
+    await expect.element(page.getByText('Process returns (3 ready · 1 need attention)', { exact: false })).toBeInTheDocument()
+    await userEvent.click(page.getByRole('button', { name: /Process returns/ }))
+    // Sequential — row order, per-row payload (identifier + returnId/exchangeId), attention row skipped.
+    const scanCalls = mockPost.mock.calls.filter((c) => c[0] === '/scanner/scan').map((c) => c[1])
+    // Processing follows the staged list order (top-down, newest scan first).
+    expect(scanCalls).toEqual([
+      expect.objectContaining({ purpose: 'RETURN_RECEIVE', identifier: 'ORD-3', returnId: 'ret-2' }),
+      expect.objectContaining({ purpose: 'RETURN_RECEIVE', identifier: 'ORD-2', exchangeId: 'ex-2' }),
+      expect.objectContaining({ purpose: 'RETURN_RECEIVE', identifier: 'ORD-1', returnId: 'ret-1' }),
+    ])
+    expect(scanCalls.some((p) => (p as any).returnId === 'ret-3')).toBe(false)
+    // Settled rows leave the list; the failed + attention rows stay.
+    await expect.element(page.getByText('RTN-1', { exact: true })).not.toBeInTheDocument()
+    await expect.element(page.getByText('ORD-EX-1', { exact: true })).not.toBeInTheDocument()
+    await expect.element(page.getByText('RTN-2', { exact: true })).toBeInTheDocument()
+    await expect.element(page.getByText('RTN-3', { exact: true })).toBeInTheDocument()
+    // Feed preserved each outcome.
+    await expect.element(page.getByText('RTN-1 — Received')).toBeInTheDocument()
+    await expect.element(page.getByText('ORD-EX-1 — Already handled')).toBeInTheDocument()
+    // Failed row carries the live error reason; it counts as attention but is
+    // retryable in place (Process stays enabled).
+    await expect.element(page.getByText('Process returns (0 ready · 2 need attention)', { exact: false })).toBeInTheDocument()
+    const retry = page.getByRole('button', { name: /Process returns/ })
+    await expect.element(retry).toBeEnabled()
+    await userEvent.click(page.getByRole('button', { name: 'Expand RTN-2' }))
+    // Reason shows BOTH in the expanded row note and in the feed error event.
+    await expect.element(page.getByText('Return cannot be received in its current state.').first()).toBeInTheDocument()
+
+    // Retry-in-place: the failed row re-validates and settles; the untouched
+    // attention row is still never scanned.
+    await userEvent.click(retry)
+    await expect.element(page.getByText('RTN-2', { exact: true })).not.toBeInTheDocument()
+    await expect.element(page.getByText('RTN-3', { exact: true })).toBeInTheDocument()
+    await expect.element(page.getByText('Process returns (0 ready · 1 need attention)', { exact: false })).toBeInTheDocument()
+    const retried = mockPost.mock.calls
+      .filter((c) => c[0] === '/scanner/scan')
+      .map((c) => c[1])
+      .filter((p: any) => p?.returnId === 'ret-2')
+    expect(retried).toHaveLength(2)
+    // Only the untouched attention row persists.
+    expect(JSON.parse(localStorage.getItem(RETURN_STAGING_KEY) ?? '[]')).toHaveLength(1)
+  })
+
+  it('sticker staged rows expand into the ORDER items pre-fetched from the scan outcome', async () => {
+    mockPost.mockImplementation((url: string) => {
+      if (url === '/scanner/resolve') {
+        return Promise.resolve({
+          data: {
+            status: 'resolved', identifier: 'ORD-1', dispatches: [],
+            order: { ...orderPreview('o1', 'ORD-1', []), items: [{ name: 'Printed Mug', sku: 'MUG-1', image: null, quantity: 1, price: 300 }] },
+          },
+        })
+      }
+      return Promise.resolve({ data: {} })
+    })
+    const page = await renderPage()
+    await userEvent.click(page.getByRole('switch'))
+    await userEvent.selectOptions(page.getByRole('combobox'), 'STICKER_PRINT')
+    await scanText(page, 'ORD-1')
+    await expect.element(page.getByText('Staged prints')).toBeInTheDocument()
+    expect(mockPost.mock.calls.filter((c) => c[0] === '/scanner/scan')).toHaveLength(0)
+    await userEvent.click(page.getByRole('button', { name: 'Expand ORD-1' }))
+    await expect.element(page.getByText('Order items')).toBeInTheDocument()
+    await expect.element(page.getByText('Printed Mug')).toBeInTheDocument()
+  })
+
+  it('ORDER_STATUS staged rows expand into the order items from the resolve payload', async () => {
+    mockPost.mockImplementation((url: string) => {
+      if (url === '/scanner/resolve') {
+        return Promise.resolve({
+          data: {
+            status: 'resolved', identifier: 'ORD-1', dispatches: [],
+            order: { ...orderPreview('o1', 'ORD-1', [{ id: 'st-delivered', name: 'Delivered' }]), items: [{ name: 'Black Tee', sku: 'TEE-BLK-M', image: null, quantity: 2, price: 600 }] },
+          },
+        })
+      }
+      return Promise.resolve({ data: {} })
+    })
+    const page = await renderPage()
+    await userEvent.selectOptions(page.getByRole('combobox'), 'ORDER_STATUS')
+    await scanText(page, 'ORD-1')
+    await expect.element(page.getByText('Staged orders')).toBeInTheDocument()
+    await userEvent.click(page.getByRole('button', { name: 'Expand ORD-1' }))
+    await expect.element(page.getByText('Order items')).toBeInTheDocument()
+    await expect.element(page.getByText('Black Tee')).toBeInTheDocument()
+    await expect.element(page.getByText('× 2')).toBeInTheDocument()
+  })
+
+  it('dispatch staged rows expand into that dispatch order items', async () => {
+    mockPost.mockImplementation((url: string) => {
+      if (url === '/scanner/resolve') {
+        return Promise.resolve({
+          data: {
+            status: 'resolved', identifier: 'CONS-1',
+            dispatches: [{ ...dispatchPreview('d1', 'CONS-1'), items: [{ name: 'Cargo Bag', sku: 'BAG-CG-1', image: null, quantity: 3, price: 500 }] }],
+            order: null,
+          },
+        })
+      }
+      return Promise.resolve({ data: {} })
+    })
+    const page = await renderPage()
+    await userEvent.click(page.getByRole('switch'))
+    await scanText(page, 'CONS-1')
+    await expect.element(page.getByText('Staged dispatches')).toBeInTheDocument()
+    await userEvent.click(page.getByRole('button', { name: 'Expand CONS-1' }))
+    await expect.element(page.getByText('Order items')).toBeInTheDocument()
+    await expect.element(page.getByText('Cargo Bag')).toBeInTheDocument()
+    await expect.element(page.getByText('× 3')).toBeInTheDocument()
+  })
+
+  it('RETURN staged rows expand into the RETURNED items — never the order items', async () => {
+    mockReturnResolve({})
+    const page = await renderPage()
+    await userEvent.selectOptions(page.getByRole('combobox'), 'RETURN_RECEIVE')
+    await scanText(page, 'ORD-1')
+    await userEvent.click(page.getByRole('button', { name: 'Expand RTN-1' }))
+    await expect.element(page.getByText('Returned items')).toBeInTheDocument()
+    await expect.element(page.getByText('Blue Hoodie')).toBeInTheDocument()
+    await expect.element(page.getByText('Size: M · HD-BLU-M')).toBeInTheDocument()
+    await expect.element(page.getByText('× 2')).toBeInTheDocument()
+    await expect.element(page.getByText('৳600')).toBeInTheDocument()
+    // The order's own line items must never appear in the return staging panel.
+    await expect.element(page.getByText('Order items')).not.toBeInTheDocument()
   })
 })

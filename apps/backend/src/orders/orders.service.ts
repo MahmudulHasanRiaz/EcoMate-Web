@@ -22,6 +22,14 @@ import { withTimelineSources } from './timeline-source';
 import { resolveEffectivePaymentSettings } from '../payments/payment-settings';
 import { buildOrderSearchFilter } from './order-search';
 import { orderSnapshotCustomer } from './order-recipient';
+import {
+  deriveOrderDue,
+  type DuePayment,
+} from '../common/finance/order-due';
+import {
+  receivedReturnValue,
+  RECEIVED_RETURN_STATUSES,
+} from '../common/finance/return-impact';
 import { buildOrderAttributionSnapshot } from './order-attribution-snapshot';
 import { StockService } from '../stock/stock.service';
 import { StockRouterService } from '../stock/stock-router.service';
@@ -622,7 +630,7 @@ export class OrdersService {
             buildTrackingUrl(d.courier, d.trackingCode, d.consignmentId),
         }))
       : order.dispatches;
-    return {
+    const transformed: any = {
       ...order,
       dispatches,
       editLock,
@@ -650,6 +658,26 @@ export class OrdersService {
           order.courierConsignmentId,
         ),
     };
+
+    // Derived due (D1): received returns lower the collectable without ever
+    // rewriting the order total. Only computed when the caller fetched the
+    // received-return summary (order detail), so list rows keep their shape.
+    if (Array.isArray((order as any).returns)) {
+      const returnsValue = receivedReturnValue({
+        returns: (order as any).returns,
+        orderItems: Array.isArray(order.items) ? order.items : [],
+      });
+      transformed.receivedReturnValue = returnsValue;
+      transformed.due = deriveOrderDue({
+        total: Number(order.total),
+        payments: (Array.isArray(order.payments)
+          ? order.payments
+          : []) as DuePayment[],
+        receivedReturnValue: returnsValue,
+        cancelled: order.status?.name === 'Cancelled',
+      }).due;
+    }
+    return transformed;
   }
 
   private async generateDisplayId(): Promise<string> {
@@ -1000,9 +1028,49 @@ export class OrdersService {
         // RTN relationship — both directions (original → RTN, RTN → original).
         returnOfOrder: { include: { status: true } },
         returnOrders: { include: { status: true } },
+        // Received Return rows: the order-due derivation subtracts their
+        // item value (D1 — the order total is never mutated). Summary fetch
+        // only; the returns module owns the full lifecycle.
+        returns: {
+          where: { status: { in: [...RECEIVED_RETURN_STATUSES] as any } },
+          select: {
+            id: true,
+            status: true,
+            receivedAt: true,
+            items: true,
+          },
+        },
         // Include edit lock for staff detail view (stripped for customers).
         editLock: {
           include: { user: { select: { firstName: true, lastName: true } } },
+        },
+        // EXCHANGE children: the original order + its item snapshots ride on
+        // the SAME fetch (exchange detail needs old-vs-new). PUBLIC/CUSTOMER
+        // responses never see this — stripped below (another customer's data).
+        exchangeOfOrder: {
+          select: {
+            id: true,
+            displayId: true,
+            kind: true,
+            subtotal: true,
+            shippingCharge: true,
+            discount: true,
+            discountType: true,
+            total: true,
+            status: { select: { id: true, name: true, color: true } },
+            items: {
+              select: {
+                productId: true,
+                variantId: true,
+                quantity: true,
+                price: true,
+                product: { select: { id: true, name: true, sku: true, images: true } },
+                variant: {
+                  select: { id: true, sku: true, image: true, images: true },
+                },
+              },
+            },
+          },
         },
       },
     });
@@ -1048,6 +1116,9 @@ export class OrdersService {
     }
     // Note: edit-lock presence is stripped by transformOrder for the public/customer
     // shape (it never exposes the holder). Staff only.
+    // exchangeOfOrder is a cross-order snapshot (another order's customer/items):
+    // staff only. Public/customer token viewers never see it.
+    if (!isAdmin) delete (order as any).exchangeOfOrder;
     const transformed = this.transformOrder(order);
     // Timeline source attribution for the admin All/Staff/Courier/System
     // filters — derived at read time (writers never persist a source field).

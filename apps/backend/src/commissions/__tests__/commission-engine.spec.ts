@@ -4,6 +4,7 @@ import { CommissionEngineService } from '../commission-engine.service';
 import { SYSTEM_ACTOR_USER_ID } from '../commission-math';
 import { normalizeEffectiveFrom, normalizeEffectiveTo } from '../commission-dates';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CompensationExpenseService } from '../../expenses/compensation-expense.service';
 
 /**
  * The invariants this suite exists to protect, from the specification:
@@ -22,6 +23,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 describe('CommissionEngineService', () => {
   let service: CommissionEngineService;
   let prisma: any;
+  let compensationMock: {
+    postCompensationExpense: jest.Mock;
+    reverseCompensationExpense: jest.Mock;
+  };
 
   const ORDER = { id: 'o1', total: new Prisma.Decimal('1000.00'), subtotal: new Prisma.Decimal('1000.00'), trashedAt: null };
 
@@ -45,6 +50,10 @@ describe('CommissionEngineService', () => {
   }
 
   beforeEach(async () => {
+    compensationMock = {
+      postCompensationExpense: jest.fn().mockResolvedValue(undefined),
+      reverseCompensationExpense: jest.fn().mockResolvedValue(undefined),
+    };
     prisma = {
       userProfile: { findUnique: jest.fn() },
       employee: {
@@ -77,6 +86,7 @@ describe('CommissionEngineService', () => {
       providers: [
         CommissionEngineService,
         { provide: PrismaService, useValue: prisma },
+        { provide: CompensationExpenseService, useValue: compensationMock },
       ],
     }).compile();
 
@@ -114,6 +124,18 @@ describe('CommissionEngineService', () => {
       expect(out.isFirstForStatus).toBe(true);
       expect(out.earned).toHaveLength(1);
       expect(out.earned[0]).toMatchObject({ ruleId: 'rule-1', purpose: 'Confirmed', amount: '10' });
+
+      // Accrual posts its own expense (salary payroll excludes commission
+      // lines, so this is the only place commission cost enters the P&L).
+      expect(compensationMock.postCompensationExpense).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourceType: 'commission_v2',
+          sourceId: 'led-1',
+          amount: 10,
+          categorySlug: 'commissions',
+        }),
+        prisma,
+      );
     });
 
     // §10: the second employee to confirm the same order earns nothing, because

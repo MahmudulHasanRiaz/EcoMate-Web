@@ -1,5 +1,5 @@
 import { PrismaService } from '../prisma/prisma.service';
-import { DispatchPreview, OrderPreview, ResolveOutcome } from './scanner.types';
+import { DispatchPreview, OrderPreview, ResolveOutcome, ScanItemPreview } from './scanner.types';
 
 /**
  * Identifier resolution — the single backend path for EVERY scan input
@@ -48,6 +48,85 @@ function alnumCore(identifier: string): string {
   return identifier.replace(/[^A-Z0-9]/g, '');
 }
 
+/** How many item previews ride on a preview payload (expansion shows capped count). */
+export const ITEM_PREVIEW_CAP = 50;
+
+/** Resolve an image URL from either a plain string or an object form. */
+function resolveImage(img: any): string | null {
+  if (typeof img === 'string') return img.trim() || null;
+  if (img && typeof img === 'object') {
+    return (
+      (typeof img.url === 'string' && img.url.trim()) ||
+      (typeof img.path === 'string' && img.path.trim()) ||
+      null
+    );
+  }
+  return null;
+}
+
+/** First resolvable image in an images-Json list. */
+function firstImage(list: any): string | null {
+  if (!Array.isArray(list)) return null;
+  for (const entry of list) {
+    const resolved = resolveImage(entry);
+    if (resolved) return resolved;
+  }
+  return null;
+}
+
+/** Variant display label "Color: Red, Size: XL" — mirrors the admin helper. */
+function variantLabelOf(avs: any): string | undefined {
+  if (!Array.isArray(avs)) return undefined;
+  const parts = (avs as any[])
+    .map((av) => {
+      const attr = av?.attributeValue?.attribute?.name;
+      const value = av?.attributeValue?.value;
+      if (attr && value) return `${attr}: ${value}`;
+      return value || null;
+    })
+    .filter(Boolean) as string[];
+  return parts.length ? parts.join(', ') : undefined;
+}
+
+/**
+ * Line preview for staged-row expansion. Runs on rows ALREADY fetched by the
+ * resolver include — zero extra queries. Image hierarchy mirrors the packing
+ * queue: variant image → variant images → product image (falls back through
+ * the variant.product chain when present).
+ */
+export function orderItemPreview(it: any): ScanItemPreview | null {
+  if (!it) return null;
+  const variant = it.variant ?? null;
+  // Prefer the ORDER-LINE product: the nested `variant.product` select is thin
+  // ({ id, name }) on the resolver + exchange includes — taking it first would
+  // shadow the line's images/sku whenever the variant carries none.
+  const product = it.product ?? variant?.product ?? null;
+  const image =
+    (variant?.image && resolveImage(variant.image)) ||
+    firstImage(variant?.images) ||
+    (product?.image && resolveImage(product.image)) ||
+    firstImage(product?.images) ||
+    null;
+  return {
+    name: product?.name ?? 'Unknown product',
+    variantLabel: variantLabelOf(variant?.attributeValues),
+    sku: variant?.sku ?? product?.sku ?? null,
+    image,
+    quantity: Number(it.quantity) || 0,
+    ...(it.price !== undefined && it.price !== null
+      ? { price: Number(it.price) }
+      : {}),
+  };
+}
+
+/** Preview caps keep the resolve payload bounded at 1000+ scan sessions. */
+function orderItemPreviews(items: any): ScanItemPreview[] {
+  return (Array.isArray(items) ? items : [])
+    .slice(0, ITEM_PREVIEW_CAP)
+    .map(orderItemPreview)
+    .filter(Boolean) as ScanItemPreview[];
+}
+
 /**
  * Row enrichment for staged-list display. Uses ONLY fields already present
  * on the fetched order row / requested includes — never an extra query per
@@ -76,6 +155,9 @@ export function toDispatchPreview(d: any): DispatchPreview {
     orderStatus: d.order?.status?.name ?? '',
     orderKind: d.order?.kind ?? 'SALE',
     ...orderRowFacts(d.order),
+    ...(Array.isArray(d.order?.items) && d.order.items.length
+      ? { items: orderItemPreviews(d.order.items) }
+      : {}),
   };
 }
 
@@ -92,6 +174,9 @@ export function toOrderPreview(o: any, statusMap: Map<string, string>): OrderPre
       .map((sid: string) => ({ id: sid, name: statusMap.get(sid) ?? sid }))
       .filter((s: { id: string; name: string }) => s.name),
     ...orderRowFacts(o),
+    ...(Array.isArray(o.items) && o.items.length
+      ? { items: orderItemPreviews(o.items) }
+      : {}),
   };
 }
 
@@ -117,13 +202,38 @@ export async function resolveScanIdentifier(
   );
 
   // ---- A. Order number (ORD-… / RTN-…) ------------------------------------
+  // Items fetch both row facts AND line previews in the same query.
+  const ORDER_ITEM_SELECT = {
+    quantity: true,
+    productId: true,
+    variantId: true,
+    price: true,
+    product: { select: { id: true, name: true, sku: true, images: true } },
+    variant: {
+      select: {
+        id: true,
+        sku: true,
+        image: true,
+        images: true,
+        product: { select: { id: true, name: true } },
+        attributeValues: {
+          select: {
+            attributeValue: {
+              select: { value: true, hexCode: true, attribute: { select: { name: true } } },
+            },
+          },
+        },
+      },
+    },
+  } as const;
+
   if (ORDER_NUMBER.test(identifier)) {
     const order = await prisma.order.findFirst({
       where: { displayId: { equals: identifier, mode: 'insensitive' } },
       include: {
         status: true,
-        // Row facts for the staged list ride on this single fetch.
-        items: { select: { quantity: true } },
+        // Row facts + line previews for the staged list ride on this single fetch.
+        items: { select: ORDER_ITEM_SELECT },
         dispatches: { orderBy: { createdAt: 'desc' } },
       },
     });
@@ -162,7 +272,7 @@ export async function resolveScanIdentifier(
           : []),
       ],
     },
-    include: { order: { include: { status: true, items: { select: { quantity: true } } } } },
+    include: { order: { include: { status: true, items: { select: ORDER_ITEM_SELECT } } } },
     orderBy: { createdAt: 'asc' },
     take: 20,
   });

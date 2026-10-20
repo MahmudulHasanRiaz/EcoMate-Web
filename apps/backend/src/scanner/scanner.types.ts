@@ -37,6 +37,22 @@ export interface DispatchPreview {
   itemCount: number;
   /** Order grand total (already fetched on the order row — no extra query). */
   orderTotal: number;
+  /** Order line previews from the SAME fetched order row (capped). */
+  items?: ScanItemPreview[];
+}
+
+/**
+ * One cheap line preview for staged-row expansion. Rides on rows already
+ * fetched by the resolver / purpose — never an extra request per expand.
+ */
+export interface ScanItemPreview {
+  name: string;
+  /** "Color: Red, Size: XL" — mirrors the admin variantLabel helper. */
+  variantLabel?: string;
+  sku?: string | null;
+  image?: string | null;
+  quantity: number;
+  price?: number;
 }
 
 export interface OrderPreview {
@@ -53,6 +69,12 @@ export interface OrderPreview {
   itemCount: number;
   /** Order grand total (already fetched on the order row — no extra query). */
   orderTotal: number;
+  /**
+   * Line-item previews (name/sku/variantLabel/image/qty/price) mapped from the
+   * SAME fetched order row — staging rows expand into these with zero extra
+   * requests (capped, cheap, from the resolver's existing include).
+   */
+  items?: ScanItemPreview[];
 }
 
 export interface ResolveOutcome {
@@ -69,12 +91,24 @@ export interface ResolveOutcome {
   linked?: ScanLinkedCandidate[];
 }
 
-/** One linked return or exchange leg offered to the phase-2 picker. */
+/** One linked return or exchange leg offered to the phase-2 picker/staging. */
 export interface ScanLinkedCandidate {
   kind: 'return' | 'exchange';
   id: string;
   displayId: string;
   status: string;
+  /** Original order display id (return rows) — staged rows link back. */
+  orderDisplayId?: string;
+  /** Σ returned units for this leg; "covers X" / Σ order lines ("of Y"). */
+  coversUnits?: number;
+  orderUnits?: number;
+  /** Returned-goods previews (return legs) or exchange-order previews (exchange legs). */
+  items?: ScanItemPreview[];
+  /** Headline item image (first returned line) for the compact staged row. */
+  image?: string | null;
+  /** Stage-time validation: false → the operator should see the reason BEFORE processing. */
+  processable?: boolean;
+  reason?: string | null;
 }
 
 export type ScanResultStatus = 'success' | 'warning' | 'error' | 'duplicate';

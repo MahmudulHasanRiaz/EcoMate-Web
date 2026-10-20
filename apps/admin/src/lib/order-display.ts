@@ -150,7 +150,13 @@ export interface OrderPaymentSummarySource {
   payments?: Array<{
     amount?: number | string | null
     status?: string | null
+    gatewayCode?: string | null
+    appliedCreditAmount?: number | string | null
   }> | null
+  /** Server-derived value of received returns (D1: total never mutated). */
+  receivedReturnValue?: number | string | null
+  /** Server-derived due (one shared formula); preferred over local math. */
+  due?: number | string | null
   /** Dispatches attached to the order (list rows carry the latest one). */
   dispatches?: Array<{
     consignmentId?: string | null
@@ -173,7 +179,10 @@ export function getOrderPaidAmount(order: OrderPaymentSummarySource | null | und
     return order.payments
       .filter((p) => {
         const s = (p.status || '').toLowerCase()
-        return s === 'paid' || s === 'verified' || s === 'completed'
+        if (s !== 'paid' && s !== 'verified' && s !== 'completed') return false
+        // Settlement rows are bookkeeping, not customer money (shared due
+        // derivation excludes them).
+        return p.gatewayCode !== 'courier_settlement'
       })
       .reduce((sum, p) => sum + Number(p.amount || 0), 0)
   }
@@ -221,15 +230,45 @@ function hasRefundActivity(order: OrderPaymentSummarySource | null | undefined):
 export function getOrderDueAmount(order: OrderPaymentSummarySource | null | undefined): number {
   if (!order) return 0
   if (isCancelledOrder(order)) return 0
+  // One shared derivation: the server's due already subtracts PAID, applied
+  // credit and received return value. Prefer it whenever present.
+  if (order.due !== null && order.due !== undefined) {
+    return Math.max(0, Number(order.due))
+  }
   const total = Number(order.total || 0)
+  const receivedReturns = getOrderReceivedReturnValue(order)
   if (Array.isArray(order.payments) && order.payments.length > 0) {
-    return Math.max(0, total - getOrderPaidAmount(order))
+    return Math.max(
+      0,
+      total - getOrderPaidAmount(order) - getOrderCreditApplied(order) - receivedReturns,
+    )
   }
   if (order.paymentStatus === 'PAID' || order.paymentOptionType === 'FULL_PAYMENT') {
     return 0
   }
   const paid = getOrderPaidAmount(order)
-  return Math.max(0, total - paid)
+  return Math.max(0, total - paid - receivedReturns)
+}
+
+/** Value of received returns on this order (0 when absent). */
+export function getOrderReceivedReturnValue(
+  order: OrderPaymentSummarySource | null | undefined,
+): number {
+  const value = Number(order?.receivedReturnValue ?? 0)
+  return Number.isFinite(value) && value > 0 ? value : 0
+}
+
+/** Applied customer credit on PAID ledger rows (settlement rows excluded). */
+export function getOrderCreditApplied(
+  order: OrderPaymentSummarySource | null | undefined,
+): number {
+  if (!order || !Array.isArray(order.payments)) return 0
+  return order.payments.reduce((sum, p) => {
+    const s = (p.status || '').toLowerCase()
+    if (s !== 'paid' && s !== 'verified' && s !== 'completed') return sum
+    if (p.gatewayCode === 'courier_settlement') return sum
+    return sum + Number(p.appliedCreditAmount || 0)
+  }, 0)
 }
 
 /** Derived payment mode — the single source of truth for payment badges/cards. */

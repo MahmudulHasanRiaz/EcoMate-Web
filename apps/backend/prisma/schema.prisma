@@ -1535,6 +1535,9 @@ model Return {
   reason            String?
   source            ReturnSource
   courier           String?
+  // Staff performer recorded at creation (email). NULL when the row came from
+  // a courier webhook / reconcile (no staff actor existed). Display-only.
+  createdBy         String?
   // First courier-side return reference seen (Pathao return_consignment_id,
   // Steadfast return_request_id / return_list_id, or the consignment id for
   // reconcile-created rows). Set-once: later signals update courierStatus.
@@ -1544,6 +1547,10 @@ model Return {
   // movement, so reconcile retries + mark-received can never restore twice.
   stockReconciled   Boolean      @default(false)
   stockReconciledAt DateTime?
+  /// First transition into RECEIVED-or-later. Event date for analytics
+  /// deductions (never the mutable updatedAt). Backfilled from
+  /// stockReconciledAt for pre-existing restocked rows.
+  receivedAt        DateTime?
   // Linked refund row (refunds module) — plain id, no FK (refund lifecycle is
   // independent; deleting a refund must never cascade a Return).
   refundId        String?
@@ -2338,11 +2345,17 @@ model Expense {
   referenceNo      String?
   notes            String?         @db.Text
   receiptUrl       String?
+  /// Set ONLY for system-posted expenses (payroll finalisation, commission
+  /// accrual). NULL = manually entered. The unique pair makes posting
+  /// idempotent; reversal rows use `<sourceType>_reversal` + the same source id.
+  sourceType       String?
+  sourceId         String?
   createdBy        String?
   updatedBy        String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
+  @@unique([sourceType, sourceId])
   @@index([categoryId])
   @@index([paymentAccountId])
   @@index([expenseDate])

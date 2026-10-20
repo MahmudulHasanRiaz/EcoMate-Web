@@ -19,6 +19,9 @@ export interface OrderResponse {
   stockRestored?: boolean;
   subtotal: number | string; shippingCharge: number | string; discount: number | string;
   discountType: string; total: number | string;
+  /** Server-derived: received returns value + shared due formula. */
+  receivedReturnValue?: number | string | null;
+  due?: number | string | null;
   shippingAddress: any; customerNotes?: string | null; officeNotes?: string | null; timeline: any[];
   courierService?: string | null; courierStatus?: string | null;
   courierTrackingCode?: string | null; courierConsignmentId?: string | null;
@@ -128,6 +131,20 @@ export interface ScanPurposeDescriptor {
   description: string
 }
 
+/** One cheap line preview for staged-row expansion (mirrors the backend
+ *  scanner): rides on rows already fetched by resolve — never an extra
+ *  request per expand. */
+export interface ScanItemPreview {
+  name: string
+  /** "Color: Red, Size: XL" — mirrors the admin variantLabel helper. */
+  variantLabel?: string
+  sku?: string | null
+  image?: string | null
+  /** Units on this line. */
+  quantity: number
+  price?: number
+}
+
 export interface ScanDispatchPreview {
   id: string
   courier: string
@@ -142,6 +159,8 @@ export interface ScanDispatchPreview {
   customerPhone: string
   itemCount: number
   orderTotal: number
+  /** Order line previews from the SAME fetched order row (capped). */
+  items?: ScanItemPreview[]
 }
 
 export interface ScanOrderPreview {
@@ -154,6 +173,9 @@ export interface ScanOrderPreview {
   customerPhone: string
   itemCount: number
   orderTotal: number
+  /** Line-item previews mapped from the SAME fetched order row — staged rows
+   *  expand into these with zero extra requests. */
+  items?: ScanItemPreview[]
 }
 
 export interface ScanLinkedCandidate {
@@ -161,6 +183,18 @@ export interface ScanLinkedCandidate {
   id: string
   displayId: string
   status: string
+  /** Original order display id (return rows) — staged rows link back. */
+  orderDisplayId?: string
+  /** Σ returned units for this leg; "covers X" / Σ order line units ("of Y"). */
+  coversUnits?: number
+  orderUnits?: number
+  /** Returned-goods previews (return legs) or exchange-order previews. */
+  items?: ScanItemPreview[]
+  /** Headline item image (first returned line) for the compact staged row. */
+  image?: string | null
+  /** Stage-time validation: false → the operator sees the reason BEFORE processing. */
+  processable?: boolean
+  reason?: string | null
 }
 
 export interface ScanResolveOutcome {

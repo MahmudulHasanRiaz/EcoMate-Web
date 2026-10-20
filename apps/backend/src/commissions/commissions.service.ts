@@ -8,6 +8,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { CommissionAmountType, LedgerStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { CompensationExpenseService } from '../expenses/compensation-expense.service';
 import { CreateCommissionRuleDto } from './dto/create-commission-rule.dto';
 import { UpdateCommissionRuleDto } from './dto/update-commission-rule.dto';
 import { ReverseEarningDto } from './dto/reverse-earning.dto';
@@ -17,7 +18,10 @@ export class CommissionsService {
   private readonly logger = new Logger(CommissionsService.name);
   private confirmedStatusIdCache: string | null | undefined;
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly compensation: CompensationExpenseService,
+  ) {}
 
   // Resolve the default 'Confirmed' OrderStatus id at runtime. The Commission
   // model has no statusKey field, so match by name (case-insensitive) per the
@@ -262,7 +266,7 @@ export class CommissionsService {
       amount = earningAmount;
     }
 
-    return this.prisma.commissionReversal.create({
+    const reversal = await this.prisma.commissionReversal.create({
       data: {
         commissionEarningId: earning.id,
         orderId: dto.orderId ?? null,
@@ -272,6 +276,27 @@ export class CommissionsService {
         reversedById: actorId ?? null,
       },
     });
+
+    // Reverse the accrued commission expense — a NEW negative row; the
+    // original accrual is never rewritten.
+    if (earning.orderId && earning.ruleId) {
+      try {
+        await this.compensation.reverseCompensationExpense({
+          sourceType: 'commission',
+          sourceId: `${earning.orderId}:${earning.ruleId}`,
+          expenseDate: new Date(),
+          description: `Commission reversal — ${dto.reason.trim()}`,
+          categorySlug: 'commissions',
+        });
+      } catch (err) {
+        this.logger.error(
+          `Commission expense reversal failed for ${earning.orderId}:${earning.ruleId}:`,
+          err,
+        );
+      }
+    }
+
+    return reversal;
   }
 
   // ORDER-HOOK entry: reverse every approved earning tied to an order when the
@@ -394,6 +419,40 @@ export class CommissionsService {
         data: rows,
         skipDuplicates: true,
       });
+
+      // Accrual → Operating Expenses (§8), one row per earning. The unique
+      // (sourceType, sourceId) pair makes a retried run a no-op; a skipped
+      // duplicate still backfills an expense that was never posted. Amounts
+      // come from the PERSISTED earning (a pre-existing row may predate the
+      // current rule value), never from the recomputed rule.
+      if (rows.length > 0) {
+        const persisted = await this.prisma.commissionEarning.findMany({
+          where: {
+            orderId,
+            ruleId: { in: rows.map((r) => r.ruleId) },
+          },
+          select: { ruleId: true, amount: true },
+        });
+        for (const earning of persisted) {
+          try {
+            await this.compensation.postCompensationExpense({
+              sourceType: 'commission',
+              sourceId: `${orderId}:${earning.ruleId}`,
+              amount: Number(earning.amount),
+              expenseDate: new Date(),
+              description: `Commission — ${order.displayId ?? orderId} (${earning.ruleId})`,
+              categorySlug: 'commissions',
+            });
+          } catch (err) {
+            // Never break the order hook; a later processing pass retries the
+            // idempotent posting.
+            this.logger.error(
+              `Commission expense posting failed for ${orderId}:${earning.ruleId}:`,
+              err,
+            );
+          }
+        }
+      }
       return rows.length;
     } catch (err) {
       this.logger.error(

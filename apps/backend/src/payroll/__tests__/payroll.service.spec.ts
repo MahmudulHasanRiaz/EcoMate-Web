@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PayrollService } from '../payroll.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CompensationExpenseService } from '../../expenses/compensation-expense.service';
 
 describe('PayrollService', () => {
   let service: PayrollService;
@@ -82,6 +83,11 @@ describe('PayrollService', () => {
     employee: mockEmployee,
   };
 
+  const compensationMock = {
+    postCompensationExpense: jest.fn().mockResolvedValue(undefined),
+    reverseCompensationExpense: jest.fn().mockResolvedValue(undefined),
+  };
+
   const prismaMock = {
     $transaction: jest.fn((cb: any) => cb(prismaMock)),
     employee: {
@@ -156,6 +162,10 @@ describe('PayrollService', () => {
         {
           provide: PrismaService,
           useValue: prismaMock,
+        },
+        {
+          provide: CompensationExpenseService,
+          useValue: compensationMock,
         },
       ],
     }).compile();
@@ -397,6 +407,80 @@ describe('PayrollService', () => {
       jest.spyOn(prisma.payslip, 'findUnique').mockResolvedValue(null);
       await expect(service.approvePayslip('invalid')).rejects.toThrow(
         NotFoundException,
+      );
+    });
+  });
+
+  describe('compensation expense posting (§8)', () => {
+    it('posts salary excluding commission lines on draft → paid finalisation', async () => {
+      prismaMock.payslip.update.mockResolvedValue({
+        ...mockPayslip,
+        status: 'paid',
+        items: [
+          ...mockPayslip.items,
+          { id: 'psi-9', type: 'earnings', label: 'Commission', amount: '5000' },
+        ],
+      });
+
+      await service.approvePayslip('ps-1');
+
+      expect(compensationMock.postCompensationExpense).toHaveBeenCalledTimes(1);
+      expect(compensationMock.postCompensationExpense).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourceType: 'payroll',
+          sourceId: 'ps-1',
+          amount: 45000,
+          categorySlug: 'salaries',
+          expenseDate: expect.any(Date),
+        }),
+        prismaMock,
+      );
+    });
+
+    it('posts the salary expense when reviewed → approved', async () => {
+      jest
+        .spyOn(prisma.payslip, 'findUnique')
+        .mockResolvedValue({ ...mockPayslip, status: 'reviewed' });
+      prismaMock.payslip.update.mockResolvedValue({
+        ...mockPayslip,
+        status: 'approved',
+        items: mockPayslip.items,
+      });
+
+      await service.setStatus('ps-1', 'approved', 'actor-1');
+
+      expect(compensationMock.postCompensationExpense).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourceType: 'payroll',
+          sourceId: 'ps-1',
+          amount: 50000,
+          categorySlug: 'salaries',
+        }),
+        prismaMock,
+      );
+    });
+
+    it('reverses the salary expense when a payslip is cancelled', async () => {
+      jest
+        .spyOn(prisma.payslip, 'findUnique')
+        .mockResolvedValue({ ...mockPayslip, status: 'reviewed' });
+      prismaMock.payslip.update.mockResolvedValue({
+        ...mockPayslip,
+        status: 'cancelled',
+      });
+
+      await service.setStatus('ps-1', 'cancelled');
+
+      expect(compensationMock.postCompensationExpense).not.toHaveBeenCalled();
+      expect(
+        compensationMock.reverseCompensationExpense,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourceType: 'payroll',
+          sourceId: 'ps-1',
+          categorySlug: 'salaries',
+        }),
+        prismaMock,
       );
     });
   });
