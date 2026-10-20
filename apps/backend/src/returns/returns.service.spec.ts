@@ -299,7 +299,7 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
       expect(cancelReturnStock.restoreForReturnItems).toHaveBeenCalledWith(
         expect.objectContaining({
           orderId: 'order-1',
-          items: [{ productId: 'p-1', variantId: null, quantity: 2 }],
+          items: [{ productId: 'p-1', variantId: null, quantity: 2, damagedQuantity: 0 }],
           returnId: 'ret-1',
         }),
       );
@@ -328,7 +328,7 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
       prisma.return.findUnique.mockResolvedValue({ ...stored, items: [] });
       await service.markReceived('ret-1', { items: [{ productId: 'p-9', quantity: 1 }] });
       expect(cancelReturnStock.restoreForReturnItems).toHaveBeenCalledWith(
-        expect.objectContaining({ items: [{ productId: 'p-9', variantId: null, quantity: 1 }] }),
+        expect.objectContaining({ items: [{ productId: 'p-9', variantId: null, quantity: 1, damagedQuantity: 0 }] }),
       );
     });
 

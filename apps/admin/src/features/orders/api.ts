@@ -135,6 +135,8 @@ export interface ScanPurposeDescriptor {
  *  scanner): rides on rows already fetched by resolve — never an extra
  *  request per expand. */
 export interface ScanItemPreview {
+  productId?: string
+  variantId?: string | null
   name: string
   /** "Color: Red, Size: XL" — mirrors the admin variantLabel helper. */
   variantLabel?: string
@@ -142,6 +144,10 @@ export interface ScanItemPreview {
   image?: string | null
   /** Units on this line. */
   quantity: number
+  /** Upper bound for a staff-confirmed quantity (return/order line). */
+  maxQuantity?: number
+  /** Units already known to be damaged (return legs). */
+  damagedQuantity?: number
   price?: number
 }
 
@@ -159,8 +165,11 @@ export interface ScanDispatchPreview {
   customerPhone: string
   itemCount: number
   orderTotal: number
-  /** Order line previews from the SAME fetched order row (capped). */
+  /** Returning-order line previews (or order lines when unresolved). */
   items?: ScanItemPreview[]
+  /** Stage-time validation for DISPATCH_RETURN (false → attention row). */
+  processable?: boolean
+  reason?: string | null
 }
 
 export interface ScanOrderPreview {
@@ -195,6 +204,8 @@ export interface ScanLinkedCandidate {
   /** Stage-time validation: false → the operator sees the reason BEFORE processing. */
   processable?: boolean
   reason?: string | null
+  /** False when the courier left Return.items empty — confirm quantities now. */
+  itemsConfirmed?: boolean
 }
 
 export interface ScanResolveOutcome {
@@ -545,6 +556,13 @@ export const scannerApi = {
     returnId?: string
     /** Linked exchange selected by the picker (RETURN_RECEIVE, info-only). */
     exchangeId?: string
+    /** Confirmed received lines (+ receive-time damaged units). */
+    items?: Array<{
+      productId: string
+      variantId?: string | null
+      quantity: number
+      damagedQuantity?: number
+    }>
   }) => apiClient.post<ScanResult>('/scanner/scan', payload).then(r => r.data),
 }
 

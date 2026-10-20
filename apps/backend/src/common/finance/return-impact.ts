@@ -27,6 +27,89 @@ export interface ReceivedReturnLine {
   productId?: string | null;
   variantId?: string | null;
   quantity: number;
+  /** Units of `quantity` that came back damaged (never restocked). */
+  damagedQuantity?: number;
+  /** Structured damage history (`receive` = at receipt, `later` = after restock). */
+  damageLog?: ReturnDamageLogEntry[];
+}
+
+export type ReturnDamagePhase = 'receive' | 'later';
+
+export interface ReturnDamageLogEntry {
+  qty: number;
+  at: Date | string;
+  phase: ReturnDamagePhase;
+  by?: string | null;
+}
+
+export interface ParsedReturnDamage {
+  lineQuantity: number;
+  receiveDamaged: number;
+  laterDamaged: number;
+  laterEvents: Array<{ qty: number; at: Date | null }>;
+}
+
+/**
+ * Damage split for one Return line. `damagedQuantity` is authoritative for the
+ * total; the log supplies event dating. A legacy line with damagedQuantity but
+ * no log is treated as receive-time damage (conservative: no COGS reversal).
+ */
+export function parseReturnDamage(line: {
+  quantity: number;
+  damagedQuantity?: unknown;
+  damageLog?: unknown;
+}): ParsedReturnDamage {
+  const lineQuantity = Math.max(0, Math.floor(Number(line.quantity) || 0));
+  const damagedTotal = Math.min(
+    lineQuantity,
+    Math.max(0, Math.floor(Number(line.damagedQuantity) || 0)),
+  );
+  const log = Array.isArray(line.damageLog)
+    ? line.damageLog.filter(
+        (e): e is Record<string, unknown> => !!e && typeof e === 'object',
+      )
+    : [];
+  const logged = log
+    .map((e) => ({
+      qty: Math.max(0, Math.floor(Number(e.qty) || 0)),
+      at: toDate(e.at as any),
+      phase: e.phase === 'later' ? ('later' as const) : ('receive' as const),
+    }))
+    .filter((e) => e.qty > 0);
+
+  if (logged.length === 0) {
+    return {
+      lineQuantity,
+      receiveDamaged: damagedTotal,
+      laterDamaged: 0,
+      laterEvents: [],
+    };
+  }
+
+  const loggedReceive = logged
+    .filter((e) => e.phase === 'receive')
+    .reduce((s, e) => s + e.qty, 0);
+  const loggedLater = logged.filter((e) => e.phase === 'later');
+  const loggedLaterQty = loggedLater.reduce((s, e) => s + e.qty, 0);
+  // damagedQuantity is the source of truth. Any unlogged remainder is treated
+  // as receive-time damage so stock is never assumed to have been restocked.
+  const unlogged = Math.max(0, damagedTotal - loggedReceive - loggedLaterQty);
+  const receiveDamaged = Math.min(lineQuantity, loggedReceive + unlogged);
+  const laterCapacity = Math.max(0, lineQuantity - receiveDamaged);
+  let laterLeft = Math.min(damagedTotal - receiveDamaged, laterCapacity);
+  const laterEvents: Array<{ qty: number; at: Date | null }> = [];
+  for (const e of loggedLater) {
+    if (laterLeft <= 0) break;
+    const take = Math.min(e.qty, laterLeft);
+    laterLeft -= take;
+    laterEvents.push({ qty: take, at: e.at });
+  }
+  return {
+    lineQuantity,
+    receiveDamaged,
+    laterDamaged: laterEvents.reduce((s, e) => s + e.qty, 0),
+    laterEvents,
+  };
 }
 
 export interface ReceivedReturnEvent {
@@ -54,6 +137,18 @@ export interface ReceivedReturnImpact {
   value: number;
   cogsReversal: number;
   cogsUnavailableUnits: number;
+  /** In-range units received damaged (never restocked). */
+  receiveDamagedUnits: number;
+  /** Cost of in-range receive-damaged units — never reversed. */
+  receiveDamageCost: number;
+  receiveDamageUnavailableUnits: number;
+  /** Later-damaged units whose damage date falls inside the range. */
+  laterDamageUnits: number;
+  /** Cost re-expensed at the later damage date (event-dated). */
+  laterDamageExpense: number;
+  laterDamageUnavailableUnits: number;
+  /** Number of later-damage log entries dated inside the range. */
+  laterDamageEvents: number;
 }
 
 function toDate(value: Date | string | null | undefined): Date | null {
@@ -70,6 +165,10 @@ function parseLines(items: unknown): ReceivedReturnLine[] {
       productId: typeof it.productId === 'string' ? it.productId : null,
       variantId: typeof it.variantId === 'string' ? it.variantId : null,
       quantity: Number(it.quantity),
+      damagedQuantity: Number(it.damagedQuantity ?? 0) || 0,
+      damageLog: Array.isArray(it.damageLog)
+        ? (it.damageLog as ReturnDamageLogEntry[])
+        : [],
     }))
     .filter((it) => it.productId !== null && Number.isFinite(it.quantity) && it.quantity > 0);
 }
@@ -138,6 +237,13 @@ function walk({
     value: 0,
     cogsReversal: 0,
     cogsUnavailableUnits: 0,
+    receiveDamagedUnits: 0,
+    receiveDamageCost: 0,
+    receiveDamageUnavailableUnits: 0,
+    laterDamageUnits: 0,
+    laterDamageExpense: 0,
+    laterDamageUnavailableUnits: 0,
+    laterDamageEvents: 0,
   };
 
   for (const { r, at } of ordered) {
@@ -155,18 +261,42 @@ function walk({
       byLine[index] += take;
       matchedUnits += take;
 
-      if (!inRange) continue;
+      const damage = parseReturnDamage({
+        quantity: take,
+        damagedQuantity: line.damagedQuantity,
+        // The persisted log may describe more units than this line contributed
+        // (capped by cumulative order quantity) — parse caps at `take`.
+        damageLog: line.damageLog,
+      });
       const orderLine = orderItems[index];
       const price = Number(orderLine.price) || 0;
-      impact.value += price * take;
       const cost =
         orderLine.costSnapshot === null || orderLine.costSnapshot === undefined
           ? null
           : Number(orderLine.costSnapshot);
-      if (cost === null || !Number.isFinite(cost)) {
-        impact.cogsUnavailableUnits += take;
-      } else {
-        impact.cogsReversal += cost * take;
+      const costKnown = cost !== null && Number.isFinite(cost);
+      const goodUnits = Math.max(0, take - damage.receiveDamaged);
+
+      if (inRange) {
+        impact.value += price * take;
+        impact.receiveDamagedUnits += damage.receiveDamaged;
+        if (costKnown) {
+          impact.cogsReversal += cost * goodUnits;
+          impact.receiveDamageCost += cost * damage.receiveDamaged;
+        } else {
+          impact.cogsUnavailableUnits += goodUnits;
+          impact.receiveDamageUnavailableUnits += damage.receiveDamaged;
+        }
+      }
+
+      // Later damage is dated by the damage event itself — it must land in the
+      // period it happened even when the receipt belongs to an earlier period.
+      for (const event of damage.laterEvents) {
+        if (!event.at || !inRangeOf(event.at, range)) continue;
+        impact.laterDamageEvents += 1;
+        impact.laterDamageUnits += event.qty;
+        if (costKnown) impact.laterDamageExpense += cost * event.qty;
+        else impact.laterDamageUnavailableUnits += event.qty;
       }
     }
 
@@ -177,6 +307,14 @@ function walk({
   }
 
   return { impact, byLine };
+}
+
+function inRangeOf(
+  date: Date,
+  range?: { start: Date; end: Date },
+): boolean {
+  if (!range) return true;
+  return date >= range.start && date <= range.end;
 }
 
 export function computeReceivedReturnImpact(input: {

@@ -31,6 +31,8 @@ describe('CancelReturnStockService.restoreForReturnItems (Task 6)', () => {
     manageStock: true,
     syncManagedStock: true,
     warehouseId: 'wh-1',
+    managedStockQuantity: 5,
+    reservedStock: 1,
     name: 'A',
   };
   const keptProduct = {
@@ -100,7 +102,24 @@ describe('CancelReturnStockService.restoreForReturnItems (Task 6)', () => {
       physicalInventory: {
         update: jest.fn().mockResolvedValue({}),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findMany: jest.fn().mockResolvedValue([{ quantity: 10, reservedQuantity: 2 }]),
         findUnique: jest.fn().mockResolvedValue({ quantity: 10, reservedQuantity: 5 }),
+      },
+      product: {
+        findUnique: jest.fn().mockImplementation(({ where }: any) =>
+          Promise.resolve(
+            where.id === 'pp'
+              ? {
+                  id: 'pp',
+                  availabilityMode: 'INVENTORY_CONTROLLED',
+                  manageStock: false,
+                  warehouseId: 'wh-2',
+                  managedStockQuantity: 0,
+                  reservedStock: 0,
+                }
+              : managedProduct,
+          ),
+        ),
       },
       physicalInventoryLedger: { create: jest.fn().mockResolvedValue({}) },
       costingLotConsumption: { findFirst: jest.fn().mockResolvedValue(null) },
@@ -219,6 +238,42 @@ describe('CancelReturnStockService.restoreForReturnItems (Task 6)', () => {
     );
   });
 
+  it('restores good units only and never restocks damaged units', async () => {
+    const res = await service.restoreForReturnItems({
+      orderId: 'order-1',
+      items: [{ productId: 'pa', quantity: 5, damagedQuantity: 2 }],
+      returnId: 'ret-damaged',
+      tx,
+    });
+
+    expect(res.restored).toEqual([{ productId: 'pa', variantId: null, quantity: 3 }]);
+    expect(stockService.operate).toHaveBeenCalledWith(
+      'add',
+      expect.objectContaining({ productId: 'pa', quantity: 3 }),
+    );
+    for (const [op, args] of stockService.operate.mock.calls as any[]) {
+      expect(args?.quantity).not.toBe(5);
+    }
+    // The damaged units still count as covered: the claim is disarmed. The
+    // cycle stays ACTIVE because product pb has not been returned.
+    expect(tx.orderItem.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'item-a' } }),
+    );
+    expect(tx.orderStockCycle.update).not.toHaveBeenCalled();
+  });
+
+  it('restores nothing when the whole line is damaged', async () => {
+    const res = await service.restoreForReturnItems({
+      orderId: 'order-1',
+      items: [{ productId: 'pa', quantity: 2, damagedQuantity: 2 }],
+      returnId: 'ret-all-damaged',
+      tx,
+    });
+    expect(res.restored).toEqual([]);
+    expect(stockService.operate).not.toHaveBeenCalled();
+    expect(tx.physicalInventory.update).not.toHaveBeenCalled();
+  });
+
   it('caps restoration at the ordered quantity and skips non-positive lines', async () => {
     const res = await service.restoreForReturnItems({
       orderId: 'order-1',
@@ -234,5 +289,62 @@ describe('CancelReturnStockService.restoreForReturnItems (Task 6)', () => {
       'add',
       expect.objectContaining({ productId: 'pa', quantity: 5 }),
     );
+  });
+
+  describe('damageWriteOff', () => {
+    it('writes managed stock off through the authoritative scrap engine', async () => {
+      const res = await service.damageWriteOff({
+        productId: 'pa',
+        quantity: 2,
+        reference: 'damage-RTN-1',
+        performedBy: 'staff@x.com',
+        tx,
+      });
+      expect(res).toEqual({ managed: true, warehouseId: null });
+      expect(stockService.operate).toHaveBeenCalledWith(
+        'scrap',
+        expect.objectContaining({
+          productId: 'pa',
+          quantity: 2,
+          ledgerType: 'ADJUSTMENT',
+          referenceType: 'ADJUSTMENT',
+          performedBy: 'staff@x.com',
+        }),
+      );
+      expect(stockService.operatePhysical).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when managed sellable stock is insufficient', async () => {
+      await expect(
+        service.damageWriteOff({
+          productId: 'pa',
+          quantity: 10,
+          reference: 'damage-RTN-1',
+          tx,
+        }),
+      ).rejects.toThrow(/Only 4 unit\(s\) available/i);
+      expect(stockService.operate).not.toHaveBeenCalled();
+    });
+
+    it('writes physical stock off at the return warehouse through operatePhysical', async () => {
+      const res = await service.damageWriteOff({
+        productId: 'pp',
+        quantity: 2,
+        warehouseId: 'wh-2',
+        reference: 'damage-RTN-2',
+        tx,
+      });
+      expect(res).toEqual({ managed: false, warehouseId: 'wh-2' });
+      expect(stockService.operatePhysical).toHaveBeenCalledWith(
+        'add',
+        expect.objectContaining({
+          productId: 'pp',
+          warehouseId: 'wh-2',
+          quantity: -2,
+          ledgerType: 'ADJUSTMENT',
+          referenceType: 'ADJUSTMENT',
+        }),
+      );
+    });
   });
 });

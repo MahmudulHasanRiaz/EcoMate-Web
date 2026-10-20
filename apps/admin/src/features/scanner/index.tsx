@@ -21,6 +21,10 @@ import {
   StagedList, displayCustomer, orderMeta, fmtBDT,
   type StagedRow, type StagedRowExpand, type ExpandItem,
 } from '@/features/scanner/staged-list'
+import {
+  editStagedLine, linesFromPreview, loadStagedReturns, persistStagedReturns,
+  STAGED_RETURNS_CAP, type StagedReturn, type StagedReturnLine,
+} from '@/features/scanner/staged-returns'
 import { extractOrderScanCode } from '@/lib/order-display'
 import {
   scannerApi, ScanPurposeDescriptor, ScanResult, ScanDispatchPreview, ScanLinkedCandidate,
@@ -117,74 +121,23 @@ interface StagedOrder {
   items?: ScanItemPreview[]
 }
 
-/**
- * One staged return/exchange leg (RETURN_RECEIVE). A scan NEVER executes
- * RETURN_RECEIVE — it stages; the batch runs only via Process returns, so
- * validation, persistence and re-validation all happen on this list.
- */
-interface StagedReturn {
-  key: string
-  /** Scanned identifier — the process payload reuses it per row. */
-  identifier: string
-  kind: 'return' | 'exchange'
-  legId: string
-  displayId: string
-  orderDisplayId: string
-  status: string
-  /** Stage-time validation result. false → attention row, never scanned. */
-  processable: boolean
-  /** Last process attempt failed. Retryable in place; counts as attention. */
-  failed?: boolean
-  reason: string | null
-  customerName: string
-  customerPhone: string
-  /** Returned-goods previews (returns) or exchange-order previews. */
-  items: ScanItemPreview[]
-}
-
-const RETURN_STAGING_KEY = 'ecomate:scanner:return-staged'
-const RETURN_STAGING_CAP = 200
-
-/** JSON-guarded restore: malformed or foreign payloads become an empty batch,
- *  never a crash; unknown fields are dropped. */
-const sanitizeStagedReturns = (raw: unknown): StagedReturn[] => {
-  if (!Array.isArray(raw)) return []
-  const rows: StagedReturn[] = []
-  for (const r of raw as any[]) {
-    if (!r || typeof r.key !== 'string' || typeof r.displayId !== 'string') continue
-    if (r.kind !== 'return' && r.kind !== 'exchange') continue
-    rows.push({
-      key: r.key,
-      identifier: typeof r.identifier === 'string' ? r.identifier : '',
-      kind: r.kind,
-      legId: typeof r.legId === 'string' ? r.legId : r.key,
-      displayId: r.displayId,
-      orderDisplayId: typeof r.orderDisplayId === 'string' ? r.orderDisplayId : '',
-      status: typeof r.status === 'string' ? r.status : '',
-      processable: r.processable !== false,
-      failed: r.failed === true,
-      reason: typeof r.reason === 'string' ? r.reason : null,
-      customerName: typeof r.customerName === 'string' ? r.customerName : '',
-      customerPhone: typeof r.customerPhone === 'string' ? r.customerPhone : '',
-      items: Array.isArray(r.items) ? r.items.slice(0, 50) : [],
-    })
-  }
-  return rows.slice(0, RETURN_STAGING_CAP)
-}
-
 /** ScanPreview → expansion item mapping (price formatted, variant+sku sub). */
-function toExpandItem(it: ScanItemPreview): ExpandItem {
+function toExpandItem(
+  it: Pick<ScanItemPreview, 'name' | 'variantLabel' | 'sku' | 'image' | 'quantity' | 'price'>,
+  controls?: Partial<ExpandItem>,
+): ExpandItem {
   return {
     name: it.name,
     sub: [it.variantLabel, it.sku ?? null].filter(Boolean).join(' · ') || undefined,
     image: it.image ?? null,
     quantity: it.quantity,
     price: typeof it.price === 'number' ? fmtBDT(it.price) : undefined,
+    ...controls,
   }
 }
 
 const itemExpand = (heading: string, items?: ScanItemPreview[]): StagedRowExpand | undefined =>
-  items && items.length > 0 ? { heading, items: items.map(toExpandItem) } : undefined
+  items && items.length > 0 ? { heading, items: items.map((it) => toExpandItem(it)) } : undefined
 
 /** Fallback label where a dispatch identifier would display but the courier
  *  webhook hasn't filled the consignment id yet (dispatch-table language). */
@@ -249,27 +202,57 @@ function queueStagedRow(q: QueuedDispatch): StagedRow {
   }
 }
 
-/** Staged return row: RETURN items in the expansion (never order items),
- *  coverage-free dense context, amber tint + reason for attention rows. */
-function returnStagedRow(r: StagedReturn): StagedRow {
+/** Staged return row: returning items in the expansion (never order items),
+ *  courier/tracking context, amber tint + reason for attention rows. */
+function returnStagedRow(
+  r: StagedReturn,
+  onLineChange: (rowKey: string, lineIndex: number, patch: { quantity?: number; damagedQuantity?: number }) => void,
+): StagedRow {
   const who = displayCustomer(r.customerName, r.customerPhone)
-  const hay = `${r.displayId} ${r.orderDisplayId} ${r.customerName} ${r.customerPhone} ${who} ${r.status} ${r.reason ?? ''}`.toLowerCase()
-  const items = r.items.length > 0 ? r.items.map(toExpandItem) : undefined
+  const hay = `${r.displayId} ${r.orderDisplayId} ${r.customerName} ${r.customerPhone} ${who} ${r.status} ${r.courier ?? ''} ${r.trackingCode ?? ''} ${r.reason ?? ''}`.toLowerCase()
+  const items: ExpandItem[] | undefined = r.items.length > 0
+    ? r.items.map((it: StagedReturnLine, index: number) =>
+        toExpandItem(it, {
+          receivedQuantity: it.quantity,
+          damagedQuantity: it.damagedQuantity,
+          maxQuantity: it.maxQuantity,
+          quantityEditable: it.quantityEditable === true,
+          infoOnly: it.infoOnly === true || r.kind === 'exchange',
+          onReceivedChange: it.infoOnly || r.kind === 'exchange'
+            ? undefined
+            : (q) => onLineChange(r.key, index, { quantity: q }),
+          onDamagedChange: it.infoOnly || r.kind === 'exchange'
+            ? undefined
+            : (q) => onLineChange(r.key, index, { damagedQuantity: q }),
+        }),
+      )
+    : undefined
+  const meta = r.courier
+    ? [r.courier, r.trackingCode].filter(Boolean).join(' · ')
+    : r.purpose === 'DISPATCH_RETURN'
+      ? 'Courier return'
+      : 'Return receive'
+  const heading = r.kind === 'exchange'
+    ? 'Exchange items'
+    : r.purpose === 'DISPATCH_RETURN'
+      ? 'Returning items'
+      : 'Returned items'
   return {
     key: r.key,
-    orderId: r.legId,
+    orderId: r.purpose === 'DISPATCH_RETURN' ? r.orderId : r.legId,
     primary: r.displayId,
     secondary: r.orderDisplayId || undefined,
     customerName: who,
     phone: r.customerPhone || undefined,
-    destKind: r.kind === 'return' ? 'return' : 'order',
+    destKind: r.kind === 'return' && r.purpose === 'RETURN_RECEIVE' ? 'return' : 'order',
     needsAttention: !r.processable || r.failed === true,
     reason: r.reason ?? undefined,
+    meta,
     status: r.status,
     searchText: hay,
     expand: items || r.reason
       ? {
-          heading: r.kind === 'return' ? 'Returned items' : 'Exchange items',
+          heading,
           items,
           note: r.reason ?? undefined,
         }
@@ -304,12 +287,12 @@ export default function ScannerPage() {
   const [batchMode, setBatchMode] = useState(false)
   const [queue, setQueue] = useState<QueuedDispatch[]>([])
   const [staged, setStaged] = useState<StagedOrder[]>([])
-  /** Staged return/exchange legs (RETURN_RECEIVE) — persisted, survives mode
-   *  switches and refreshes; cleared only by Clear/processing/removal. */
+  /** ONE staged-returns list fed by RETURN_RECEIVE + DISPATCH_RETURN —
+   *  persisted, survives mode switches and refreshes; cleared only by
+   *  Clear/processing/removal. Legacy key is merged once on load. */
   const [returnStaged, setReturnStaged] = useState<StagedReturn[]>(() => {
     try {
-      const raw = localStorage.getItem(RETURN_STAGING_KEY)
-      return raw ? sanitizeStagedReturns(JSON.parse(raw)) : []
+      return loadStagedReturns(localStorage)
     } catch {
       return []
     }
@@ -344,11 +327,7 @@ export default function ScannerPage() {
 
   // Staged returns persist across refreshes and task switches (capped).
   useEffect(() => {
-    try {
-      localStorage.setItem(RETURN_STAGING_KEY, JSON.stringify(returnStaged.slice(0, RETURN_STAGING_CAP)))
-    } catch {
-      /* storage unavailable/full — batch stays session-only */
-    }
+    persistStagedReturns(localStorage, returnStaged)
   }, [returnStaged])
 
   const record = useCallback((res: ScanResult) => {
@@ -368,9 +347,11 @@ export default function ScannerPage() {
     const processable = leg.processable !== false
     const row: StagedReturn = {
       key: leg.id,
+      purpose: 'RETURN_RECEIVE',
       identifier,
       kind: leg.kind,
       legId: leg.id,
+      orderId: o?.id ?? '',
       displayId: leg.displayId,
       orderDisplayId: leg.orderDisplayId ?? o?.displayId ?? '',
       status: leg.status,
@@ -379,7 +360,10 @@ export default function ScannerPage() {
       reason: leg.reason ?? null,
       customerName: o?.customerName ?? '',
       customerPhone: o?.customerPhone ?? '',
-      items: leg.items ?? [],
+      items: linesFromPreview(leg.items, {
+        quantityEditable: leg.itemsConfirmed === false,
+        infoOnly: leg.kind === 'exchange',
+      }),
     }
     record({
       status: processable ? 'success' : 'warning',
@@ -391,7 +375,53 @@ export default function ScannerPage() {
     })
     // Re-check inside the updater for concurrency safety (idempotent either way).
     setReturnStaged((rs) =>
-      rs.some((i) => i.key === leg.id) ? rs : [row, ...rs].slice(0, RETURN_STAGING_CAP),
+      rs.some((i) => i.key === leg.id) ? rs : [row, ...rs].slice(0, STAGED_RETURNS_CAP),
+    )
+  }, [record])
+
+  /** Stage a DISPATCH_RETURN scan. "Process return" NEVER executes on scan —
+   *  single-match and picker paths both land here and wait for Process. */
+  const stageDispatch = useCallback((identifier: string, d: ScanDispatchPreview) => {
+    if (returnStagedRef.current.some((i) => i.key === d.id)) {
+      record({
+        status: 'duplicate',
+        identifier,
+        title: `${d.consignmentId ?? PENDING_WEBHOOK_LABEL} — Already staged`,
+        message: 'This dispatch is already staged in the returns list.',
+      })
+      return
+    }
+    const processable = d.processable !== false
+    const row: StagedReturn = {
+      key: d.id,
+      purpose: 'DISPATCH_RETURN',
+      identifier,
+      kind: 'dispatch',
+      legId: d.id,
+      dispatchId: d.id,
+      orderId: d.orderId,
+      displayId: d.consignmentId ?? PENDING_WEBHOOK_LABEL,
+      orderDisplayId: d.orderDisplayId,
+      status: d.status,
+      processable,
+      failed: false,
+      reason: d.reason ?? null,
+      customerName: d.customerName ?? '',
+      customerPhone: d.customerPhone ?? '',
+      courier: d.courier,
+      trackingCode: d.trackingCode,
+      items: linesFromPreview(d.items),
+    }
+    record({
+      status: processable ? 'success' : 'warning',
+      identifier,
+      title: `${row.displayId} — ${processable ? 'Staged' : 'Needs attention'}`,
+      message: processable
+        ? `Return staged for Order ${d.orderDisplayId}. Process the list when ready.`
+        : d.reason ?? 'This dispatch cannot be returned in its current state.',
+    })
+    setReturnStaged((rs) =>
+      rs.some((i) => i.key === d.id) ? rs : [row, ...rs].slice(0, STAGED_RETURNS_CAP),
     )
   }, [record])
 
@@ -492,6 +522,17 @@ export default function ScannerPage() {
         return
       }
 
+      if (purpose === 'DISPATCH_RETURN') {
+        // Process return is ALWAYS stage-only, batch toggle or not.
+        const d = outcome.dispatches[0]
+        if (!d) {
+          record({ status: 'error', identifier, title: 'Not found', message: 'No dispatch found for this identifier.' })
+          return
+        }
+        stageDispatch(identifier, d)
+        return
+      }
+
       if (purpose === 'ORDER_STATUS') {
         const o = outcome.order
         if (!o) {
@@ -551,13 +592,18 @@ export default function ScannerPage() {
       setBusy(false)
       inputRef.current?.focus()
     }
-  }, [busy, record, runExecute, stageReturnLeg])
+  }, [busy, record, runExecute, stageDispatch, stageReturnLeg])
 
   /** Resolve an ambiguous scan by picking one dispatch inline. */
   const resolveSelection = useCallback(async (d: ScanDispatchPreview) => {
     if (busy) return
     setBusy(true)
     try {
+      if (modeRef.current === 'DISPATCH_RETURN') {
+        stageDispatch(selection?.identifier ?? d.consignmentId ?? d.orderDisplayId, d)
+        setSelection(null)
+        return
+      }
       if (batchRef.current && modeRef.current !== 'ORDER_STATUS' && modeRef.current !== 'STICKER_PRINT') {
         setQueue((q) => q.some((i) => i.key === d.id)
           ? q
@@ -572,7 +618,7 @@ export default function ScannerPage() {
       setBusy(false)
       inputRef.current?.focus()
     }
-  }, [busy, runExecute])
+  }, [busy, runExecute, selection?.identifier, stageDispatch])
 
   /** Return picker resolution: STAGE the picked leg — never executes. The
    *  picker collapses and the operator keeps scanning. */
@@ -646,11 +692,33 @@ export default function ScannerPage() {
         const cur = returnStagedRef.current.find((i) => i.key === key)
         if (!cur || !cur.processable) continue
         try {
-          const res = await scannerApi.scan({
-            purpose: 'RETURN_RECEIVE',
-            identifier: cur.identifier,
-            ...(cur.kind === 'return' ? { returnId: cur.legId } : { exchangeId: cur.legId }),
-          })
+          // Only send confirmed lines that carry a real product id; migrated
+          // legacy rows without ids keep the old quantity-from-Return behavior.
+          const items = cur.kind !== 'exchange' && cur.items.some((i) => i.productId)
+            ? cur.items
+                .filter((i) => i.productId && i.quantity > 0)
+                .map((i) => ({
+                  productId: i.productId as string,
+                  variantId: i.variantId,
+                  quantity: i.quantity,
+                  damagedQuantity: i.damagedQuantity,
+                }))
+            : undefined
+          const res = await scannerApi.scan(
+            cur.purpose === 'DISPATCH_RETURN'
+              ? {
+                  purpose: 'DISPATCH_RETURN',
+                  identifier: cur.identifier,
+                  dispatchId: cur.dispatchId ?? cur.legId,
+                  ...(items ? { items } : {}),
+                }
+              : {
+                  purpose: 'RETURN_RECEIVE',
+                  identifier: cur.identifier,
+                  ...(cur.kind === 'return' ? { returnId: cur.legId } : { exchangeId: cur.legId }),
+                  ...(items ? { items } : {}),
+                },
+          )
           record(res)
           if (res.status === 'success' || res.status === 'duplicate') {
             setReturnStaged((rs) => rs.filter((r) => r.key !== cur.key))
@@ -751,7 +819,7 @@ export default function ScannerPage() {
   const isSticker = mode === 'STICKER_PRINT'
   const isReturnReceive = mode === 'RETURN_RECEIVE'
   const isDispatchPurpose = !isOrderStatus && !isSticker && !isReturnReceive
-  const showBatchToggle = isDispatchPurpose || isSticker
+  const showBatchToggle = (isDispatchPurpose && mode !== 'DISPATCH_RETURN') || isSticker
   const TaskIcon = TASK_ICONS[mode] ?? ScanLine
   const canApplyQueue = queue.length > 0 && !busy
   const canApplyStaged = staged.length > 0 && !busy && !!targetStatusId
@@ -763,7 +831,24 @@ export default function ScannerPage() {
 
   const stagedRows = useMemo(() => staged.map(orderStagedRow), [staged])
   const queueRows = useMemo(() => queue.map(queueStagedRow), [queue])
-  const returnRows = useMemo(() => returnStaged.map(returnStagedRow), [returnStaged])
+  const updateReturnLine = useCallback(
+    (rowKey: string, lineIndex: number, patch: { quantity?: number; damagedQuantity?: number }) => {
+      setReturnStaged((rs) =>
+        rs.map((r) => {
+          if (r.key !== rowKey) return r
+          return {
+            ...r,
+            items: r.items.map((line, i) => (i === lineIndex ? editStagedLine(line, patch) : line)),
+          }
+        }),
+      )
+    },
+    [],
+  )
+  const returnRows = useMemo(
+    () => returnStaged.map((r) => returnStagedRow(r, updateReturnLine)),
+    [returnStaged, updateReturnLine],
+  )
   const targetStatusName = commonStatuses.find((s) => s.id === targetStatusId)?.name ?? ''
   const orderHref = useCallback((r: StagedRow) => `/admin/op/orders/${r.orderId}`, [])
   const removeStaged = useCallback((key: string) => setStaged((s) => s.filter((i) => i.key !== key)), [])
@@ -971,7 +1056,7 @@ export default function ScannerPage() {
                       </>
                     ) : (
                     <>
-                    <p className="text-[11px] text-muted-foreground -mt-1">Select the dispatch to {batchMode && isDispatchPurpose ? 'stage' : 'process'} — the scanner stays ready.</p>
+                    <p className="text-[11px] text-muted-foreground -mt-1">Select the dispatch to {(mode === 'DISPATCH_RETURN' || batchMode) && isDispatchPurpose ? 'stage' : 'process'} — the scanner stays ready.</p>
                     <div className="flex flex-col gap-1.5">
                       {selection.dispatches.map((d) => (
                         <div key={d.id} className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2">
@@ -1074,8 +1159,9 @@ export default function ScannerPage() {
                   />
                 )}
 
-                {/* ── Staged returns: stage-only batch, processed explicitly ── */}
-                {isReturnReceive && returnStaged.length > 0 && (
+                {/* ── ONE staged-returns list (return receive + dispatch
+                    return), visible under every task, processed explicitly ── */}
+                {returnStaged.length > 0 && (
                   <StagedList
                     title="Staged returns"
                     items={returnRows}

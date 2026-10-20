@@ -39,6 +39,9 @@ export interface DispatchPreview {
   orderTotal: number;
   /** Order line previews from the SAME fetched order row (capped). */
   items?: ScanItemPreview[];
+  /** Stage-time validation for DISPATCH_RETURN (false → attention row). */
+  processable?: boolean;
+  reason?: string | null;
 }
 
 /**
@@ -46,13 +49,19 @@ export interface DispatchPreview {
  * fetched by the resolver / purpose — never an extra request per expand.
  */
 export interface ScanItemPreview {
+  productId?: string;
+  variantId?: string | null;
   name: string;
   /** "Color: Red, Size: XL" — mirrors the admin variantLabel helper. */
   variantLabel?: string;
   sku?: string | null;
   image?: string | null;
   quantity: number;
+  /** Maximum confirmable quantity (return line / order line). */
+  maxQuantity?: number;
   price?: number;
+  /** Units already known to be damaged (return legs). */
+  damagedQuantity?: number;
 }
 
 export interface OrderPreview {
@@ -109,6 +118,8 @@ export interface ScanLinkedCandidate {
   /** Stage-time validation: false → the operator should see the reason BEFORE processing. */
   processable?: boolean;
   reason?: string | null;
+  /** False when the courier left Return.items empty — staff confirm quantities now. */
+  itemsConfirmed?: boolean;
 }
 
 export type ScanResultStatus = 'success' | 'warning' | 'error' | 'duplicate';
@@ -139,6 +150,12 @@ export interface ScanPurposeHandler {
       targetStatusId?: string;
       returnId?: string;
       exchangeId?: string;
+      items?: Array<{
+        productId: string;
+        variantId?: string | null;
+        quantity: number;
+        damagedQuantity?: number;
+      }>;
     },
     actor: ScanActor,
   ): Promise<ScanResult>;

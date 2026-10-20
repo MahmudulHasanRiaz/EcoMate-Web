@@ -15,6 +15,18 @@ export interface ExpandItem {
   image?: string | null
   quantity?: number
   price?: string
+  /** Confirmed received units (staged returns). */
+  receivedQuantity?: number
+  /** Units of receivedQuantity marked damaged (never restocked). */
+  damagedQuantity?: number
+  /** Upper bound for receivedQuantity (order/return line quantity). */
+  maxQuantity?: number
+  /** Unconfirmed courier splits allow staff to confirm the received qty. */
+  quantityEditable?: boolean
+  /** Exchange legs are info-only — no stock controls. */
+  infoOnly?: boolean
+  onReceivedChange?: (quantity: number) => void
+  onDamagedChange?: (quantity: number) => void
 }
 
 export interface StagedRowExpand {
@@ -65,13 +77,13 @@ export function displayCustomer(name: string | undefined, phone: string | undefi
   return 'Guest'
 }
 
-const ROW_H = 44
+const ROW_H = 56
 /** Windowing engages past this many rows — shorter lists render as plain
  * flow (cheaper, zero overlay risk); large batches get virtualization. */
 const VIRTUALIZE_AFTER = 40
 
 /**
- * Dense operational staged list: one 44px row per scan, bounded internal
+ * Dense operational staged list: one compact two-line row per scan, bounded internal
  * scroll, windowed rendering for 1000+ rows, local search, newest-first
  * with a non-disruptive "new scans" pill, sticky bulk footer.
  */
@@ -215,37 +227,41 @@ export function StagedList({
       <span className="w-7 shrink-0 text-right text-[10px] font-bold text-muted-foreground tabular-nums" aria-hidden>
         {String(num).padStart(2, '0')}
       </span>
-      <span className="shrink-0 font-mono text-xs font-semibold truncate max-w-[38%]" title={r.primary}>
-        {r.primary}
-      </span>
-      {r.secondary && (
-        <span className="hidden shrink-0 font-mono text-[11px] text-muted-foreground truncate min-[420px]:inline" title={r.secondary}>
-          · {r.secondary}
-        </span>
-      )}
-      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={r.customerName}>
-        {r.customerName}
-      </span>
-      {r.phone && (
-        <span className="hidden shrink-0 items-center gap-0.5 sm:inline-flex">
-          <a
-            href={`tel:${r.phone}`}
-            className="font-mono text-[11px] text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap"
-            title={`Call ${r.customerName}`}
-          >
-            {r.phone}
-          </a>
-          <CustomerContactActions phone={r.phone} iconClassName="!p-0" />
-        </span>
-      )}
-      {r.meta && (
-        <span className="hidden shrink-0 text-[11px] text-muted-foreground tabular-nums md:inline" title={r.meta}>
-          {r.meta}
-        </span>
-      )}
-      <StatusBadge tone={orderStatusTone(r.status)} icon={null} className="hidden shrink-0 !px-1.5 text-[10px] sm:inline-flex">
-        <span className="max-w-[110px] truncate">{r.status}</span>
-      </StatusBadge>
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span className="shrink-0 font-mono text-xs font-semibold truncate max-w-[46%]" title={r.primary}>
+            {r.primary}
+          </span>
+          {r.secondary && (
+            <span className="shrink-0 font-mono text-[11px] text-muted-foreground truncate" title={r.secondary}>
+              · {r.secondary}
+            </span>
+          )}
+          <StatusBadge tone={orderStatusTone(r.status)} icon={null} className="shrink-0 !px-1.5 text-[10px]">
+            <span className="max-w-[110px] truncate">{r.status}</span>
+          </StatusBadge>
+        </div>
+        <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+          <span className="min-w-0 truncate" title={r.customerName}>{r.customerName}</span>
+          {r.phone && (
+            <span className="inline-flex shrink-0 items-center gap-0.5">
+              <a
+                href={`tel:${r.phone}`}
+                className="font-mono text-[11px] text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap"
+                title={`Call ${r.customerName}`}
+              >
+                {r.phone}
+              </a>
+              <CustomerContactActions phone={r.phone} iconClassName="!p-0" />
+            </span>
+          )}
+          {r.meta && (
+            <span className="min-w-0 shrink truncate tabular-nums sm:shrink-0" title={r.meta}>
+              {r.meta}
+            </span>
+          )}
+        </div>
+      </div>
       <span className="flex shrink-0 items-center">
         <a
           href={orderHref(r)}
@@ -268,7 +284,7 @@ export function StagedList({
         {chevron}
       </span>
       {/* Floating expansion panel — absolutely positioned below the row so it
-          never changes the 44px virtualized geometry. */}
+          never changes the fixed virtualized geometry. */}
       {isExpanded && r.expand && (
         <div
           data-staged-panel
@@ -292,6 +308,41 @@ export function StagedList({
                   {typeof it.quantity === 'number' && <span className="font-medium">× {it.quantity}</span>}
                   {it.price && <div className="text-muted-foreground">{it.price}</div>}
                 </div>
+                {(it.onDamagedChange || it.onReceivedChange) && !it.infoOnly && (
+                  <div className="flex shrink-0 flex-col items-end gap-1 border-l border-border/50 pl-2">
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] text-muted-foreground">Received</span>
+                      {it.quantityEditable && it.onReceivedChange ? (
+                        <input
+                          type="number"
+                          min={0}
+                          max={it.maxQuantity ?? it.receivedQuantity ?? 0}
+                          value={it.receivedQuantity ?? 0}
+                          aria-label={`Received quantity for ${it.name}`}
+                          onChange={(e) => it.onReceivedChange?.(Number(e.target.value))}
+                          className="h-6 w-14 rounded border border-border/70 bg-card px-1 text-right text-[11px] tabular-nums outline-none focus-visible:border-primary"
+                        />
+                      ) : (
+                        <span className="font-medium tabular-nums">{it.receivedQuantity ?? 0}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] text-muted-foreground">Damaged</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={it.receivedQuantity ?? 0}
+                        value={it.damagedQuantity ?? 0}
+                        aria-label={`Damaged quantity for ${it.name}`}
+                        onChange={(e) => it.onDamagedChange?.(Number(e.target.value))}
+                        className="h-6 w-14 rounded border border-border/70 bg-card px-1 text-right text-[11px] tabular-nums outline-none focus-visible:border-primary"
+                      />
+                    </div>
+                    <span className="text-[10px] text-muted-foreground tabular-nums">
+                      Good {Math.max(0, (it.receivedQuantity ?? 0) - (it.damagedQuantity ?? 0))}
+                    </span>
+                  </div>
+                )}
               </div>
             ))}
             {(r.expand.items ?? []).length === 0 && !r.expand.note && (

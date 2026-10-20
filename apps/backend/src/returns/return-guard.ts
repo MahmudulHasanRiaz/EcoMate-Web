@@ -10,6 +10,17 @@ export interface GuardReturnItem {
   productId: string;
   variantId?: string | null;
   quantity: number;
+  /** Units of `quantity` that arrived damaged — never restocked. */
+  damagedQuantity?: number;
+  /** Persisted damage history (structured JSON on Return.items). */
+  damageLog?: Array<{
+    qty: number;
+    at: string | Date;
+    phase: 'receive' | 'later';
+    by?: string | null;
+  }>;
+  /** Warehouse the units actually came from (physical stock write-off target). */
+  warehouseId?: string | null;
 }
 
 export interface AssertReturnEligibleOptions {
@@ -63,11 +74,38 @@ export function validateReturnItemsShape(items: unknown): GuardReturnItem[] {
         `Return items[${i}].quantity must be a positive integer`,
       );
     }
+    const rawDamaged = Number((it as any)?.damagedQuantity ?? 0);
+    if (!Number.isInteger(rawDamaged) || rawDamaged < 0 || rawDamaged > quantity) {
+      throw new BadRequestException(
+        `Return items[${i}].damagedQuantity must be an integer between 0 and quantity`,
+      );
+    }
+    const damageLog = Array.isArray((it as any)?.damageLog)
+      ? ((it as any).damageLog as any[])
+          .filter((e) => e && typeof e === 'object')
+          .map((e) => ({
+            qty: Math.max(0, Math.floor(Number(e.qty) || 0)),
+            at: e.at,
+            phase: e.phase === 'later' ? ('later' as const) : ('receive' as const),
+            ...(e.by ? { by: String(e.by) } : {}),
+          }))
+          .filter((e) => e.qty > 0)
+      : [];
     const key = keyOf(productId, variantId);
     if (seen.has(key))
       throw new BadRequestException(`Duplicate return line: ${productId}`);
     seen.add(key);
-    return { productId, variantId, quantity };
+    const warehouseId = (it as any)?.warehouseId
+      ? String((it as any).warehouseId)
+      : null;
+    return {
+      productId,
+      variantId,
+      quantity,
+      damagedQuantity: rawDamaged,
+      ...(damageLog.length > 0 ? { damageLog } : {}),
+      ...(warehouseId ? { warehouseId } : {}),
+    };
   });
 }
 
@@ -400,18 +438,76 @@ export async function restoreStockForReturnTx(
       'Return item quantities are unknown — provide items (the courier never reports the split)',
     );
   }
+  const receivedAt = (ret as any).receivedAt ?? new Date();
+  // Freeze the warehouse each returned unit actually came from so a later
+  // damage write-off hits THAT location (never an arbitrary product default).
+  const orderLines = (db as any).orderItem?.findMany
+    ? await (db as any).orderItem.findMany({
+        where: { orderId: (ret as any).orderId },
+        select: {
+          productId: true,
+          variantId: true,
+          sourceWarehouseId: true,
+          product: { select: { warehouseId: true } },
+        },
+      })
+    : [];
+  const warehouseByKey = new Map<string, string>();
+  for (const line of orderLines as any[]) {
+    const key = keyOf(line.productId, line.variantId ?? undefined);
+    const warehouseId = line.sourceWarehouseId ?? line.product?.warehouseId ?? null;
+    if (warehouseId && !warehouseByKey.has(key)) {
+      warehouseByKey.set(key, warehouseId);
+    }
+  }
+  const receivedItems: GuardReturnItem[] = effectiveItems.map((item) => {
+    const key = keyOf(item.productId, item.variantId);
+    const warehouseId =
+      item.warehouseId ?? warehouseByKey.get(key) ?? null;
+    const damaged = Math.min(
+      item.quantity,
+      Math.max(0, Math.floor(Number(item.damagedQuantity ?? 0) || 0)),
+    );
+    if (damaged <= 0) {
+      return {
+        ...item,
+        damagedQuantity: 0,
+        ...(warehouseId ? { warehouseId } : {}),
+      };
+    }
+    const existing = item.damageLog ?? [];
+    const hasReceiveLog = existing.some(
+      (e) => e.phase === 'receive' && Number(e.qty) === damaged,
+    );
+    return {
+      ...item,
+      damagedQuantity: damaged,
+      ...(warehouseId ? { warehouseId } : {}),
+      damageLog: hasReceiveLog
+        ? existing
+        : [
+            ...existing,
+            {
+              qty: damaged,
+              at: receivedAt.toISOString(),
+              phase: 'receive' as const,
+              by: opts?.performedBy ?? null,
+            },
+          ],
+    };
+  });
   if ((ret as any).status !== 'RECEIVED') {
     await db.return.update({
       where: { id: returnId },
       data: {
         status: 'RECEIVED',
-        receivedAt: (ret as any).receivedAt ?? new Date(),
+        receivedAt,
       },
     });
   }
   await cancelReturnStock.restoreForReturnItems({
     orderId: (ret as any).orderId as string,
-    items: effectiveItems,
+    items: receivedItems,
     returnId,
     performedBy: opts?.performedBy,
     tx: db,
@@ -420,10 +516,10 @@ export async function restoreStockForReturnTx(
     where: { id: returnId },
     data: {
       status: 'RESTOCKED',
-      items: effectiveItems as unknown as any,
+      items: receivedItems as unknown as any,
       stockReconciled: true,
       stockReconciledAt: new Date(),
-      receivedAt: (ret as any).receivedAt ?? new Date(),
+      receivedAt,
     },
   });
 }

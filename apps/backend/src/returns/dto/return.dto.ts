@@ -31,6 +31,12 @@ export class ReturnItemDto {
   @IsInt()
   @Min(1)
   quantity!: number;
+
+  /** Units of `quantity` that arrived damaged — never restocked. */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  damagedQuantity?: number;
 }
 
 export class CreateReturnDto {
@@ -103,6 +109,26 @@ export class MarkReceivedDto {
   @ValidateNested({ each: true })
   @Type(() => ReturnItemDto)
   items?: ReturnItemDto[];
+}
+
+export class DamageItemDto {
+  @IsUUID()
+  productId!: string;
+
+  @IsOptional()
+  @IsUUID()
+  variantId?: string | null;
+
+  @IsInt()
+  @Min(1)
+  quantity!: number;
+}
+
+export class MarkDamagedDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DamageItemDto)
+  items!: DamageItemDto[];
 }
 
 export class LinkRefundDto {

@@ -80,11 +80,21 @@ export class ReturnReceivePurpose implements ScanPurposeHandler {
   }
 
   async execute(
-    params: { identifier: string; returnId?: string; exchangeId?: string },
+    params: {
+      identifier: string;
+      returnId?: string;
+      exchangeId?: string;
+      items?: Array<{
+        productId: string;
+        variantId?: string | null;
+        quantity: number;
+        damagedQuantity?: number;
+      }>;
+    },
     actor: ScanActor,
   ): Promise<ScanResult> {
     if (params.returnId) {
-      return this.receiveReturn(params.identifier, params.returnId, actor);
+      return this.receiveReturn(params.identifier, params.returnId, actor, params.items);
     }
     if (params.exchangeId) {
       return this.describeExchange(params.identifier, params.exchangeId);
@@ -139,7 +149,34 @@ export class ReturnReceivePurpose implements ScanPurposeHandler {
       // (dispatch-scan outcomes can have a null order preview).
       this.prisma.order.findUnique({
         where: { id: orderId },
-        select: { displayId: true, items: { select: { quantity: true } } },
+        select: {
+          displayId: true,
+          items: {
+            select: {
+              quantity: true,
+              productId: true,
+              variantId: true,
+              price: true,
+              product: { select: { id: true, name: true, sku: true, images: true } },
+              variant: {
+                select: {
+                  id: true,
+                  sku: true,
+                  image: true,
+                  images: true,
+                  product: { select: { id: true, name: true } },
+                  attributeValues: {
+                    select: {
+                      attributeValue: {
+                        select: { value: true, hexCode: true, attribute: { select: { name: true } } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       }),
     ]);
     const orderUnits = (Array.isArray((order as any)?.items) ? (order as any).items : []).reduce(
@@ -219,7 +256,11 @@ export class ReturnReceivePurpose implements ScanPurposeHandler {
         0,
       );
       const alreadyReceived = r.stockReconciled || r.status === 'RESTOCKED';
-      const mapped = legItemsMapper(r.items, products, variants);
+      const hasConfirmedItems =
+        Array.isArray(r.items) && (r.items as any[]).length > 0;
+      const mapped = hasConfirmedItems
+        ? legItemsMapper(r.items, products, variants)
+        : legItemsMapper((order as any)?.items, new Map(), new Map());
       return {
         kind: 'return' as const,
         id: r.id,
@@ -230,6 +271,7 @@ export class ReturnReceivePurpose implements ScanPurposeHandler {
         orderUnits,
         items: mapped.items,
         image: mapped.image,
+        itemsConfirmed: hasConfirmedItems,
         processable: !alreadyReceived,
         reason: alreadyReceived
           ? 'Already received — stock was restored earlier. No action needed.'
@@ -264,6 +306,12 @@ export class ReturnReceivePurpose implements ScanPurposeHandler {
     identifier: string,
     returnId: string,
     actor: ScanActor,
+    items?: Array<{
+      productId: string;
+      variantId?: string | null;
+      quantity: number;
+      damagedQuantity?: number;
+    }>,
   ): Promise<ScanResult> {
     const ret = await this.prisma.return.findUnique({ where: { id: returnId } });
     if (!ret) {
@@ -308,17 +356,32 @@ export class ReturnReceivePurpose implements ScanPurposeHandler {
     }
     try {
       const received = (await this.returns.restoreStockForReturn(returnId, {
+        ...(items && items.length > 0 ? { items } : {}),
         performedBy: actor.email,
       })) as any;
+      const lines = Array.isArray(received?.items) ? received.items : [];
+      const receivedUnits = lines.reduce(
+        (s: number, l: any) => s + (Number(l?.quantity) || 0),
+        0,
+      );
+      const damagedUnits = lines.reduce(
+        (s: number, l: any) => s + (Number(l?.damagedQuantity) || 0),
+        0,
+      );
       return {
         status: 'success',
         identifier,
         title: `${received?.displayId ?? (ret as any).displayId ?? returnId} — Received`,
-        message: `Return received and restocked (idempotent per return).`,
+        message:
+          damagedUnits > 0
+            ? `Return received — ${Math.max(0, receivedUnits - damagedUnits)} restored · ${damagedUnits} damaged (not restocked).`
+            : 'Return received and restocked (idempotent per return).',
         details: {
           returnId: received?.id ?? returnId,
           returnDisplayId: received?.displayId ?? (ret as any).displayId,
           orderId: (ret as any).orderId,
+          receivedUnits,
+          damagedUnits,
         },
       };
     } catch (e: any) {

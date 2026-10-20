@@ -2,7 +2,12 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
-import { returnsApi, type ReturnOrderItem } from './api'
+import {
+  returnsApi,
+  type ReturnDetail,
+  type ReturnLineItem,
+  type ReturnOrderItem,
+} from './api'
 import { apiClient } from '@/lib/api-client'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -78,6 +83,136 @@ const contradictionFor = (type: string, c: Coverage): string | null => {
   return null
 }
 
+interface ReceiveLine {
+  key: string
+  productId: string
+  variantId: string | null
+  name: string
+  sku: string
+  variant: ReturnOrderItem['variant']
+  image: string | null
+  orderedQty: number
+  returnedQty: number
+  quantity: number
+  maxQuantity: number
+  damagedQuantity: number
+  unitPrice: number
+  quantityEditable: boolean
+}
+
+const lineKey = (productId: string, variantId?: string | null) =>
+  `${productId}::${variantId ?? ''}`
+
+/**
+ * Merge the courier return lines with the original order snapshot. Courier
+ * rows with no split (items = []) fall back to the order lines and become
+ * staff-editable; confirmed splits keep their quantity fixed and only allow
+ * damage marking at receive.
+ */
+function buildReceiveLines(
+  ret: ReturnDetail,
+  draft: Record<string, { quantity: number; damagedQuantity: number }>,
+): ReceiveLine[] {
+  const retRows = ret.items ?? []
+  const orderLines = ret.order?.items ?? []
+  const confirmed = retRows.length > 0
+  const orderByKey = new Map(
+    orderLines.map((l) => [lineKey(l.productId, l.variantId), l]),
+  )
+  const returnedByKey = new Map(
+    retRows.map((l) => [lineKey(l.productId, l.variantId), l]),
+  )
+  const source: Array<{
+    productId: string
+    variantId: string | null
+    quantity: number
+    damagedQuantity: number
+    orderLine?: ReturnOrderItem
+  }> = confirmed
+    ? [
+        ...orderLines.map((l) => {
+          const returned = returnedByKey.get(lineKey(l.productId, l.variantId))
+          return {
+            productId: l.productId,
+            variantId: l.variantId ?? null,
+            quantity: Number(returned?.quantity ?? 0),
+            damagedQuantity: Number(returned?.damagedQuantity ?? 0),
+            orderLine: l,
+          }
+        }),
+        ...retRows
+          .filter((l) => !orderByKey.has(lineKey(l.productId, l.variantId)))
+          .map((l) => ({
+            productId: l.productId,
+            variantId: l.variantId ?? null,
+            quantity: Number(l.quantity ?? 0),
+            damagedQuantity: Number(l.damagedQuantity ?? 0),
+            orderLine: undefined,
+          })),
+      ]
+    : orderLines.map((l) => ({
+        productId: l.productId,
+        variantId: l.variantId ?? null,
+        quantity: Number(l.quantity ?? 0),
+        damagedQuantity: 0,
+        orderLine: l,
+      }))
+
+  return source
+    .map((row) => {
+      const key = lineKey(row.productId, row.variantId)
+      const maxQuantity = Math.max(0, row.quantity)
+      const patched = draft[key]
+      const quantity = Math.max(
+        0,
+        Math.min(maxQuantity, Math.floor(Number(patched?.quantity ?? row.quantity) || 0)),
+      )
+      const damagedQuantity = Math.max(
+        0,
+        Math.min(quantity, Math.floor(Number(patched?.damagedQuantity ?? row.damagedQuantity) || 0)),
+      )
+      const ol = row.orderLine
+      return {
+        key,
+        productId: row.productId,
+        variantId: row.variantId,
+        name: ol?.product?.name ?? `Product ${row.productId.slice(0, 8)}`,
+        sku: ol?.variant?.sku || ol?.product?.sku || '',
+        variant: ol?.variant ?? null,
+        image: ol ? resolveOrderItemImages(ol.product, ol.variant).image : null,
+        orderedQty: Number(ol?.quantity ?? 0),
+        returnedQty: row.quantity,
+        quantity,
+        maxQuantity,
+        damagedQuantity,
+        unitPrice: Number(ol?.price ?? 0),
+        quantityEditable: !confirmed,
+      }
+    })
+    .filter((l) => l.orderedQty > 0 || l.returnedQty > 0)
+}
+
+/** Only send a body when staff changed something meaningful; a plain
+ *  confirmed receive keeps the historical empty-body contract. */
+function buildReceiveItems(
+  ret: ReturnDetail,
+  draft: Record<string, { quantity: number; damagedQuantity: number }>,
+): ReturnLineItem[] | undefined {
+  const lines = buildReceiveLines(ret, draft)
+  if (lines.length === 0) return undefined
+  const confirmed = (ret.items ?? []).length > 0
+  const touched = !confirmed || lines.some((l) => l.damagedQuantity > 0)
+  if (!touched) return undefined
+  return lines
+    .filter((l) => l.quantity > 0)
+    .map((l) => ({
+      productId: l.productId,
+      variantId: l.variantId,
+      quantity: l.quantity,
+      damagedQuantity: l.damagedQuantity,
+    }))
+}
+
 /**
  * Return detail: coverage accident-spotter, customer snapshot card
  * (shared contact actions), order line items joined with returned qty,
@@ -88,6 +223,10 @@ export function ReturnDetail() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [checking, setChecking] = useState(false)
+  /** operator-confirmed receive quantities/damage, keyed product::variant */
+  const [receiveDraft, setReceiveDraft] = useState<Record<string, { quantity: number; damagedQuantity: number }>>({})
+  /** "Mark as damaged after receive" quantities, keyed product::variant */
+  const [damageDraft, setDamageDraft] = useState<Record<string, number>>({})
 
   const { data: ret, isLoading } = useQuery({
     queryKey: ['return', id],
@@ -102,11 +241,28 @@ export function ReturnDetail() {
   })
 
   const markMut = useMutation({
-    mutationFn: () => returnsApi.markReceived(id),
+    mutationFn: () =>
+      returnsApi.markReceived(
+        id,
+        ret ? buildReceiveItems(ret, receiveDraft) : undefined,
+      ),
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ['return', id] })
       queryClient.invalidateQueries({ queryKey: ['returns'] })
-      toast.success(`Return ${updated?.displayId ?? ''} marked received — stock restored item-level.`)
+      setReceiveDraft({})
+      toast.success(`Return ${updated?.displayId ?? ''} marked received — good units restored, damaged units excluded.`)
+    },
+    onError: (e: unknown) => toast.error(errMsg(e)),
+  })
+
+  const markDamagedMut = useMutation({
+    mutationFn: (items: { productId: string; variantId?: string | null; quantity: number }[]) =>
+      returnsApi.markDamaged(id, items),
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ['return', id] })
+      queryClient.invalidateQueries({ queryKey: ['returns'] })
+      setDamageDraft({})
+      toast.success(`Damage recorded on ${updated?.displayId ?? 'this return'} — sellable stock reduced.`)
     },
     onError: (e: unknown) => toast.error(errMsg(e)),
   })
@@ -145,13 +301,11 @@ export function ReturnDetail() {
   const orderLines = ret.order?.items ?? []
   const coverage = coverageFor(orderLines, retRows)
   const contradiction = contradictionFor(ret.type as string, coverage)
-  const returnedByKey = new Map<string, number>()
-  for (const l of retRows) {
-    returnedByKey.set(`${l.productId}::${l.variantId ?? ''}`, Number(l.quantity ?? 0))
-  }
-  // Return rows without an order-line snapshot (legacy/edge): never silently dropped.
-  const orphanRows = retRows.filter(
-    (l) => !orderLines.some((o) => o.productId === l.productId && (o.variantId ?? '') === (l.variantId ?? '')),
+  const receiveLines = buildReceiveLines(ret, receiveDraft)
+  const restocked = ret.stockReconciled || ret.status === 'RESTOCKED'
+  const totalDamaged = retRows.reduce(
+    (sum, l) => sum + Number(l.damagedQuantity ?? 0),
+    0,
   )
   const paymentDeepLink = ret.order
     ? `/op/payments?order=${encodeURIComponent(ret.order.displayId)}`
@@ -182,6 +336,11 @@ export function ReturnDetail() {
           <Badge variant={ret.stockReconciled ? 'default' : 'secondary'}>
             {stockLabel(ret)}
           </Badge>
+          {totalDamaged > 0 ? (
+            <Badge variant='outline' className='border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300'>
+              {totalDamaged} damaged · not restocked
+            </Badge>
+          ) : null}
           <span className='ms-auto text-xs text-muted-foreground'>
             Created {createdDate}
             <span className='hidden sm:inline'> · Created by {ret.createdBy || '—'}</span>
@@ -278,50 +437,148 @@ export function ReturnDetail() {
         <Card>
           <CardHeader><CardTitle className='text-sm'>Line items ({orderLines.length} order lines)</CardTitle></CardHeader>
           <CardContent className='space-y-1 text-sm'>
-            {coverage.unknown && retRows.length === 0 ? (
+            {receiveLines.length === 0 ? (
               <p className='text-xs text-muted-foreground'>
-                Quantities unknown — the courier never reports the split. Confirm exact quantities at mark-received.
+                Quantities unknown — the courier never reports the split and the order has no line snapshot. Confirm quantities from the order before receiving.
               </p>
             ) : (
               <>
-                {orderLines.map((line, i) => {
-                  const key = `${line.productId}::${line.variantId ?? ''}`
-                  const returned = returnedByKey.get(key) ?? 0
-                  const orderedQty = Number(line.quantity ?? 0)
-                  const unitPrice = Number(line.price ?? 0)
-                  const img = resolveOrderItemImages(line.product, line.variant).image
-                  const name = line.product?.name ?? '—'
-                  const sku = line.variant?.sku || line.product?.sku || ''
+                {receiveLines.map((line) => {
+                  const retRow = retRows.find(
+                    (l) => lineKey(l.productId, l.variantId) === line.key,
+                  )
+                  const good = Math.max(0, line.quantity - line.damagedQuantity)
+                  const remainingGood = Math.max(
+                    0,
+                    line.returnedQty - Number(retRow?.damagedQuantity ?? line.damagedQuantity ?? 0),
+                  )
+                  const damageNow = Math.max(
+                    1,
+                    Math.min(
+                      remainingGood || 1,
+                      Math.floor(Number(damageDraft[line.key] ?? 1) || 1),
+                    ),
+                  )
                   return (
-                    <div key={key || i} className='flex items-center gap-3 py-1.5'>
-                      <SafeImage src={img} alt={name} className='h-10 w-10 rounded border object-cover shrink-0' />
+                    <div key={line.key} className='flex items-start gap-3 py-2'>
+                      <SafeImage src={line.image} alt={line.name} className='h-10 w-10 rounded border object-cover shrink-0' />
                       <div className='min-w-0 flex-1'>
-                        <p className='truncate font-medium'>{name}</p>
+                        <p className='truncate font-medium'>{line.name}</p>
                         <p className='text-xs text-muted-foreground truncate'>
                           {variantLabel(line.variant)}
-                          {sku ? <span className='font-mono'> · {sku}</span> : null}
+                          {line.sku ? <span className='font-mono'> · {line.sku}</span> : null}
                         </p>
+                        {retRow?.damageLog?.length ? (
+                          <p className='mt-0.5 text-[10px] text-muted-foreground'>
+                            Damage: {retRow.damageLog.map((d) => `${d.phase === 'receive' ? 'receive' : 'later'} +${d.qty}`).join(' · ')}
+                          </p>
+                        ) : null}
                       </div>
-                      <div className='text-right text-xs shrink-0'>
+                      <div className='shrink-0 text-right text-xs space-y-1'>
                         <div>
-                          <span className='font-medium'>× {returned}</span>
-                          {orderedQty > 0 ? <span className='text-muted-foreground'> of {orderedQty}</span> : null}
+                          {line.quantityEditable ? (
+                            <>
+                              <label htmlFor={`recv-${line.key}`} className='text-[10px] text-muted-foreground me-1'>Received</label>
+                              <input
+                                id={`recv-${line.key}`}
+                                type='number'
+                                min={0}
+                                max={line.maxQuantity}
+                                value={line.quantity}
+                                aria-label={`Received quantity for ${line.name}`}
+                                onChange={(e) => {
+                                  const q = Math.max(0, Math.min(line.maxQuantity, Math.floor(Number(e.target.value) || 0)))
+                                  setReceiveDraft((d) => {
+                                    const cur = d[line.key] ?? { quantity: line.quantity, damagedQuantity: line.damagedQuantity }
+                                    return { ...d, [line.key]: { quantity: q, damagedQuantity: Math.min(cur.damagedQuantity, q) } }
+                                  })
+                                }}
+                                className='h-7 w-16 rounded border border-border/70 bg-card px-1 text-right tabular-nums'
+                              />
+                            </>
+                          ) : (
+                            <span className='font-medium'>× {line.quantity}</span>
+                          )}
+                          {line.orderedQty > 0 ? <span className='text-muted-foreground'> of {line.orderedQty}</span> : null}
+                        </div>
+                        <div className='flex items-center justify-end gap-1'>
+                          <label htmlFor={`dmg-${line.key}`} className='text-[10px] text-muted-foreground'>Damaged</label>
+                          <input
+                            id={`dmg-${line.key}`}
+                            type='number'
+                            min={0}
+                            max={line.quantity}
+                            value={line.damagedQuantity}
+                            aria-label={`Damaged quantity for ${line.name}`}
+                            onChange={(e) => {
+                              const q = Math.max(0, Math.min(line.quantity, Math.floor(Number(e.target.value) || 0)))
+                              setReceiveDraft((d) => {
+                                const cur = d[line.key] ?? { quantity: line.quantity, damagedQuantity: line.damagedQuantity }
+                                return { ...d, [line.key]: { ...cur, damagedQuantity: q } }
+                              })
+                            }}
+                            className='h-7 w-16 rounded border border-border/70 bg-card px-1 text-right tabular-nums'
+                          />
                         </div>
                         <div className='text-muted-foreground'>
-                          {returned > 0
-                            ? `${fmt(returned)} × ৳${fmt(unitPrice)} = ৳${fmt(returned * unitPrice)}`
-                            : `returned 0 of ${orderedQty}`}
+                          {line.quantity > 0
+                            ? `${fmt(line.quantity)} × ৳${fmt(line.unitPrice)} = ৳${fmt(line.quantity * line.unitPrice)}`
+                            : `returned 0 of ${line.orderedQty}`}
                         </div>
+                        {restocked ? (
+                          <p className='text-[11px] text-muted-foreground tabular-nums'>
+                            {fmt(good)} restored · {fmt(line.damagedQuantity)} damaged (not restocked)
+                          </p>
+                        ) : line.damagedQuantity > 0 ? (
+                          <p className='text-[11px] text-amber-700 dark:text-amber-400 tabular-nums'>
+                            {fmt(line.damagedQuantity)} damaged — will not be restocked
+                          </p>
+                        ) : null}
+                        {restocked && remainingGood > 0 ? (
+                          <div className='flex items-center justify-end gap-1 pt-0.5'>
+                            <input
+                              type='number'
+                              min={1}
+                              max={remainingGood}
+                              value={damageNow}
+                              aria-label={`Damage now for ${line.name}`}
+                              onChange={(e) => {
+                                const q = Math.max(1, Math.min(remainingGood, Math.floor(Number(e.target.value) || 1)))
+                                setDamageDraft((d) => ({ ...d, [line.key]: q }))
+                              }}
+                              className='h-7 w-14 rounded border border-border/70 bg-card px-1 text-right tabular-nums'
+                            />
+                            <Button
+                              size='sm'
+                              variant='outline'
+                              className='h-7 px-2 text-[11px]'
+                              disabled={markDamagedMut.isPending}
+                              onClick={() =>
+                                markDamagedMut.mutate([
+                                  {
+                                    productId: line.productId,
+                                    variantId: line.variantId,
+                                    quantity: damageNow,
+                                  },
+                                ])
+                              }
+                            >
+                              Mark as damaged
+                            </Button>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   )
                 })}
-                {orphanRows.map((l, i) => (
-                  <div key={`orphan-${i}`} className='flex items-center justify-between py-1.5'>
-                    <span className='font-mono text-xs truncate'>{String(l.productId).slice(0, 8)}</span>
-                    <span className='text-xs'>× {Number(l.quantity ?? 0)}</span>
-                  </div>
-                ))}
+                {retRows
+                  .filter((l) => !receiveLines.some((r) => r.key === lineKey(l.productId, l.variantId)))
+                  .map((l, i) => (
+                    <div key={`orphan-${i}`} className='flex items-center justify-between py-1.5'>
+                      <span className='font-mono text-xs truncate'>{String(l.productId).slice(0, 8)}</span>
+                      <span className='text-xs'>× {Number(l.quantity ?? 0)}</span>
+                    </div>
+                  ))}
               </>
             )}
           </CardContent>
@@ -332,7 +589,7 @@ export function ReturnDetail() {
             {checking ? <Loader2 className='h-3.5 w-3.5 animate-spin mr-1' /> : null}
             Check return status
           </Button>
-          <Button size='sm' onClick={() => markMut.mutate()} disabled={markMut.isPending || ret.status === 'RESTOCKED' || ret.status === 'CLOSED'}>
+          <Button size='sm' onClick={() => markMut.mutate()} disabled={markMut.isPending || restocked || ret.status === 'CLOSED'}>
             {markMut.isPending ? <Loader2 className='h-3.5 w-3.5 animate-spin mr-1' /> : null}
             Mark received
           </Button>

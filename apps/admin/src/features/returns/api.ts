@@ -44,6 +44,23 @@ export interface ReturnOrderSnapshot extends ReturnOrderLink {
   items?: ReturnOrderItem[] | null
 }
 
+export interface ReturnDamageLogEntry {
+  qty: number
+  at: string
+  by?: string | null
+  phase: 'receive' | 'later'
+}
+
+export interface ReturnLineItem {
+  productId: string
+  variantId?: string | null
+  quantity: number
+  /** Units of quantity that must never be restocked. Absent = 0. */
+  damagedQuantity?: number
+  damageLog?: ReturnDamageLogEntry[]
+  warehouseId?: string | null
+}
+
 export interface ReturnListItem {
   id: string
   displayId: string
@@ -51,7 +68,7 @@ export interface ReturnListItem {
   type: 'FULL' | 'PARTIAL' | 'EXCHANGE'
   status: string
   source: string
-  items: { productId: string; variantId?: string | null; quantity: number }[]
+  items: ReturnLineItem[]
   reason?: string | null
   courier?: string | null
   courierReturnId?: string | null
@@ -106,7 +123,7 @@ export const returnsApi = {
     orderId: string
     type: 'FULL' | 'PARTIAL' | 'EXCHANGE'
     source?: 'STAFF' | 'COURIER' | 'EXCHANGE'
-    items?: { productId: string; variantId?: string | null; quantity: number }[]
+    items?: ReturnLineItem[]
     reason?: string
     /** Signed per-field adjustment on the ORIGINAL order (partial returns only). */
     shippingAdjustment?: number
@@ -119,8 +136,11 @@ export const returnsApi = {
      */
     markOriginalDelivered?: boolean
   }) => apiClient.post<ReturnListItem>('/returns', data).then((r) => r.data),
-  markReceived: (id: string, items?: { productId: string; variantId?: string | null; quantity: number }[]) =>
+  markReceived: (id: string, items?: ReturnLineItem[]) =>
     apiClient.post<ReturnDetail>(`/returns/${id}/mark-received`, items ? { items } : {}).then((r) => r.data),
+  /** Damaged AFTER receive — stock write-off in one transaction. */
+  markDamaged: (id: string, items: { productId: string; variantId?: string | null; quantity: number }[]) =>
+    apiClient.post<ReturnDetail>(`/returns/${id}/mark-damaged`, { items }).then((r) => r.data),
   /** Staff-triggered return reconciliation (original consignment id). */
   checkReturnStatus: (consignmentId: string) =>
     apiClient

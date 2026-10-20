@@ -37,6 +37,7 @@ function makePrismaFake(state: {
   const items = [...state.items];
   const snapshots = [...(state.snapshots ?? [])];
   const dispatches = [...(state.dispatches ?? [])];
+  const returns: any[] = [];
   const original = state.order;
 
   const statusName = (id: string) =>
@@ -175,6 +176,22 @@ function makePrismaFake(state: {
         return { count: 1 };
       },
     },
+    return: {
+      findFirst: async () => null,
+      create: async ({ data }: any) => {
+        const created = { id: `ret-${returns.length + 1}`, ...data };
+        returns.push(created);
+        return created;
+      },
+      update: async ({ where, data }: any) => {
+        const target = returns.find((r) => r.id === where.id);
+        Object.assign(target, data);
+        return target;
+      },
+    },
+    returnCounter: {
+      upsert: async () => ({ seq: 1 }),
+    },
     costingLotConsumption: { findFirst: async () => null },
     costingLotRestoration: { create: async ({ data }: any) => data },
     costingLot: { update: async () => ({}) },
@@ -199,13 +216,15 @@ function makePrismaFake(state: {
     orderStatus: tx.orderStatus,
     orderStockCycle: tx.orderStockCycle,
     dispatch: tx.dispatch,
+    return: tx.return,
+    returnCounter: tx.returnCounter,
     costingLotConsumption: tx.costingLotConsumption,
     costingLotRestoration: tx.costingLotRestoration,
     costingLot: tx.costingLot,
     $transaction: async (cb: any) => cb(tx),
   };
 
-  return { prisma: prisma as unknown as PrismaService, tx, store: { orders, items, snapshots, dispatches } };
+  return { prisma: prisma as unknown as PrismaService, tx, store: { orders, items, snapshots, dispatches, returns } };
 }
 
 const actor = { userId: 'user-1', email: 'staff@ecomate.com' };
@@ -772,6 +791,7 @@ describe('RtnService — finalizeDispatchReturn', () => {
         { provide: DispatchService, useValue: {} },
         { provide: CancelReturnStockService, useValue: {
           restoreForOrder: jest.fn().mockResolvedValue(undefined),
+          restoreForReturnItems: jest.fn().mockResolvedValue({ restored: [] }),
           restoreForReturnOrder: jest.fn().mockImplementation(async ({ rtnOrderId, tx }: any) => {
             await tx.order.update({ where: { id: rtnOrderId }, data: { stockRestored: true } });
             return { restored: true };
@@ -920,6 +940,92 @@ describe('RtnService — finalizeDispatchReturn', () => {
     expect(result.outcome).toBe('returned');
     expect(result.order.status).toBe('Returned');
     expect(cancelReturnStock.restoreForOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it('full return with damage: restores good units only and persists the Return row', async () => {
+    const order = makePartialOrder({
+      status: { id: 'status-rp', name: 'Return Pending', nextStatuses: ['status-returned'] },
+      statusId: 'status-rp',
+    });
+    const dispatch = { id: 'dsp-1', orderId: 'order-1', courier: 'steadfast', consignmentId: 'CONS-D1', status: 'RETURN_PENDING' };
+    const store = await setup({
+      order,
+      dispatch,
+      items: [
+        { id: 'item-1', orderId: 'order-1', productId: 'prod-1', variantId: null, quantity: 2, sourceWarehouseId: 'wh-1' },
+      ],
+    });
+
+    const result = await service.finalizeDispatchReturn('dsp-1', actor, [
+      { productId: 'prod-1', variantId: null, quantity: 2, damagedQuantity: 1 },
+    ]);
+
+    expect(cancelReturnStock.restoreForOrder).not.toHaveBeenCalled();
+    expect(cancelReturnStock.restoreForReturnItems).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'order-1',
+        items: [expect.objectContaining({ productId: 'prod-1', quantity: 2, damagedQuantity: 1 })],
+      }),
+    );
+    expect(result.restoredItems).toEqual([
+      { productId: 'prod-1', variantId: null, quantity: 1, damagedQuantity: 1 },
+    ]);
+    expect(store.returns).toHaveLength(1);
+    expect(store.returns[0].items[0]).toMatchObject({
+      productId: 'prod-1',
+      quantity: 2,
+      damagedQuantity: 1,
+    });
+    expect(store.returns[0].items[0].damageLog[0]).toMatchObject({
+      qty: 1,
+      phase: 'receive',
+      by: actor.email,
+    });
+    expect(store.returns[0].stockReconciled).toBe(true);
+  });
+
+  it('partial return with damage: passes the damage map to the RTN restore and persists it', async () => {
+    const order = deliveredOrder();
+    const rtn = {
+      id: 'rtn-1', displayId: 'RTN-260930-0001', kind: 'RETURN', returnOfOrderId: 'order-1',
+      statusId: 'status-return-pending', status: { id: 'status-return-pending', name: 'Return Pending' },
+      stockRestored: false, returnedAt: null, timeline: [],
+      items: [{ id: 'ritem-1', orderId: 'rtn-1', productId: 'prod-1', variantId: null, comboId: null, quantity: 2, price: 100, sourceWarehouseId: 'wh-1', sourceOrderItemId: 'item-1', product: { id: 'prod-1', name: 'P' }, combo: null }],
+    };
+    const dispatch = { id: 'dsp-1', orderId: 'order-1', courier: 'pathao', consignmentId: 'CONS-D2', status: 'RETURN_PENDING' };
+    const store = await setup({ order, rtn, dispatch });
+
+    const result = await service.finalizeDispatchReturn('dsp-1', actor, [
+      { productId: 'prod-1', variantId: null, quantity: 2, damagedQuantity: 1 },
+    ]);
+
+    const call = (cancelReturnStock.restoreForReturnOrder as jest.Mock).mock.calls[0][0];
+    expect(call.damageByKey.get('prod-1::')).toBe(1);
+    expect(result.restoredItems).toEqual([
+      { productId: 'prod-1', variantId: null, quantity: 1, damagedQuantity: 1 },
+    ]);
+    expect(store.returns[0].items[0]).toMatchObject({ damagedQuantity: 1 });
+  });
+
+  it('rejects damage above the returned line quantity before any stock write', async () => {
+    const order = makePartialOrder({
+      status: { id: 'status-rp', name: 'Return Pending', nextStatuses: ['status-returned'] },
+      statusId: 'status-rp',
+    });
+    const dispatch = { id: 'dsp-1', orderId: 'order-1', courier: 'redx', consignmentId: 'CONS-D3', status: 'RETURN_PENDING' };
+    await setup({
+      order,
+      dispatch,
+      items: [{ id: 'item-1', orderId: 'order-1', productId: 'prod-1', variantId: null, quantity: 2 }],
+    });
+
+    await expect(
+      service.finalizeDispatchReturn('dsp-1', actor, [
+        { productId: 'prod-1', variantId: null, quantity: 2, damagedQuantity: 3 },
+      ]),
+    ).rejects.toThrow(/exceeds the returned quantity/i);
+    expect(cancelReturnStock.restoreForOrder).not.toHaveBeenCalled();
+    expect(cancelReturnStock.restoreForReturnItems).not.toHaveBeenCalled();
   });
 });
 

@@ -146,6 +146,8 @@ export interface PnlResult {
   netSales: { amount: number };
   cogs: { amount: number; state: CostState };
   returnedCogs: { amount: number };
+  /** Damage loss re-expensed at its own event date (never a restock). */
+  damagedCogs: { amount: number };
   grossProfit: { amount: number };
   fulfillmentCost: { amount: number; state: CostState };
   paymentFees: { amount: number; state: CostState };
@@ -225,6 +227,7 @@ export function computePnl(input: PnlInput): PnlResult {
   let partialNet = 0;
   let cogs = 0;
   let returnedCogs = 0;
+  let damagedCogsExpense = 0;
   let cogsActualUnits = 0;
   let cogsEstimatedUnits = 0;
   let cogsUnavailableUnits = 0;
@@ -332,17 +335,32 @@ export function computePnl(input: PnlInput): PnlResult {
       quantity: i.quantity,
       costSnapshot: i.costSnapshot,
     }));
-    if (rev.recognised && !partial.recognised && !ret.reversesRevenue) {
-      const impact = computeReceivedReturnImpact({
-        returns: order.receivedReturns ?? [],
-        orderItems: orderReturnItems,
-        range,
-      });
-      returns += impact.value;
-      returnsReceivedValue += impact.value;
-      returnedCogs += impact.cogsReversal;
-      receivedReturnEvents += impact.events;
-      receivedReturnUndatedEvents += impact.undatedEvents;
+    const returnImpact =
+      recognisedEver && (order.receivedReturns?.length ?? 0) > 0
+        ? computeReceivedReturnImpact({
+            returns: order.receivedReturns ?? [],
+            orderItems: orderReturnItems,
+            range,
+          })
+        : null;
+    if (returnImpact) {
+      if (rev.recognised && !partial.recognised && !ret.reversesRevenue) {
+        returns += returnImpact.value;
+        returnsReceivedValue += returnImpact.value;
+        returnedCogs += returnImpact.cogsReversal;
+        receivedReturnEvents += returnImpact.events;
+        receivedReturnUndatedEvents += returnImpact.undatedEvents;
+      }
+      // Damaged units never restocked: their cost stays a loss. For a partial
+      // order, kept-item recognition already excluded every returned unit, so
+      // the receive-damaged portion must be expensed explicitly. A whole-order
+      // reversal reverses the full line; the damaged portion is added back at
+      // its own event date so prior periods are never rewritten.
+      if (partial.recognised || (ret.reversesRevenue && inRange(ret.returnAt, range))) {
+        damagedCogsExpense += returnImpact.receiveDamageCost;
+      }
+      // Later damage is always event-dated by the damage log itself.
+      damagedCogsExpense += returnImpact.laterDamageExpense;
     }
 
     if (!inCohort) {
@@ -494,7 +512,7 @@ export function computePnl(input: PnlInput): PnlResult {
   }
 
   const netSales = gross - discounts - returns - refundsReversal;
-  const cogsNet = cogs - returnedCogs;
+  const cogsNet = cogs - returnedCogs + damagedCogsExpense;
   const grossProfit = netSales - cogsNet;
 
   const cogsState =
@@ -576,6 +594,7 @@ export function computePnl(input: PnlInput): PnlResult {
     netSales: { amount: netSales },
     cogs: { amount: cogsNet, state: cogsState },
     returnedCogs: { amount: returnedCogs },
+    damagedCogs: { amount: damagedCogsExpense },
     grossProfit: { amount: grossProfit },
     fulfillmentCost: { amount: fulfillment, state: shipStateAgg },
     paymentFees: { amount: fees, state: feesState },
