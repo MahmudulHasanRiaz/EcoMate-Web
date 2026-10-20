@@ -254,4 +254,55 @@ describe('ReturnDetail (Task 7 headers/links + actions)', () => {
       expect(mockPost).toHaveBeenCalledWith('/returns/ret-1/mark-received', {})
     })
   })
+
+  it('unconfirmed courier rows accept per-line received + damaged quantities and send them', async () => {
+    const { getByText, getByLabelText } = await renderDetail({ items: [] })
+    const received = getByLabelText('Received quantity for Classic Tee')
+    const damaged = getByLabelText('Damaged quantity for Classic Tee')
+    await expect.element(received).toBeInTheDocument()
+    await received.fill('1')
+    await damaged.fill('1')
+    await getByText('Mark received').click()
+    await vi.waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith(
+        '/returns/ret-1/mark-received',
+        expect.objectContaining({
+          items: expect.arrayContaining([
+            expect.objectContaining({ productId: 'p-1', variantId: 'v-1', quantity: 1, damagedQuantity: 1 }),
+          ]),
+        }),
+      )
+    })
+  })
+
+  it('confirmed lines can be marked damaged at receive and are sent with the receipt', async () => {
+    const { getByText, getByLabelText } = await renderDetail()
+    await getByLabelText('Damaged quantity for Classic Tee').fill('1')
+    await getByText('Mark received').click()
+    await vi.waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith('/returns/ret-1/mark-received', {
+        items: [{ productId: 'p-1', variantId: 'v-1', quantity: 2, damagedQuantity: 1 }],
+      })
+    })
+  })
+
+  it('post-receive damage writes off only the remaining good units via mark-damaged', async () => {
+    const { getByText, getByLabelText } = await renderDetail({
+      status: 'RESTOCKED',
+      stockReconciled: true,
+      items: [{
+        productId: 'p-1', variantId: 'v-1', quantity: 2, damagedQuantity: 1,
+        damageLog: [{ qty: 1, at: '2026-10-14T10:00:00Z', phase: 'receive', by: 'staff@ecomate.com' }],
+      }],
+    })
+    await expect.element(getByText('1 restored · 1 damaged (not restocked)')).toBeInTheDocument()
+    await getByLabelText('Damage now for Classic Tee').fill('1')
+    const buttons = getByText('Mark as damaged')
+    await buttons.first().click()
+    await vi.waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith('/returns/ret-1/mark-damaged', {
+        items: [{ productId: 'p-1', variantId: 'v-1', quantity: 1 }],
+      })
+    })
+  })
 })

@@ -108,11 +108,17 @@ export function orderItemPreview(it: any): ScanItemPreview | null {
     firstImage(product?.images) ||
     null;
   return {
+    productId: it.productId ?? variant?.productId ?? product?.id,
+    variantId: it.variantId ?? variant?.id ?? null,
     name: product?.name ?? 'Unknown product',
     variantLabel: variantLabelOf(variant?.attributeValues),
     sku: variant?.sku ?? product?.sku ?? null,
     image,
     quantity: Number(it.quantity) || 0,
+    maxQuantity: Number(it.maxQuantity ?? it.quantity) || 0,
+    ...(it.damagedQuantity !== undefined
+      ? { damagedQuantity: Number(it.damagedQuantity) || 0 }
+      : {}),
     ...(it.price !== undefined && it.price !== null
       ? { price: Number(it.price) }
       : {}),

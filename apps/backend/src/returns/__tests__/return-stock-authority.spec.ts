@@ -42,6 +42,16 @@ describe('ReturnsService — stock authority funnel (hardening 2)', () => {
         findUnique: jest.fn().mockResolvedValue({ ...stored }),
         findMany: jest.fn().mockResolvedValue([]),
       },
+      orderItem: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            productId: 'prod-1',
+            variantId: null,
+            sourceWarehouseId: 'wh-source',
+            product: { warehouseId: 'wh-default' },
+          },
+        ]),
+      },
     };
     prisma = {
       order: {
@@ -62,6 +72,16 @@ describe('ReturnsService — stock authority funnel (hardening 2)', () => {
       },
       refund: { findUnique: jest.fn().mockResolvedValue({ id: 'refund-1' }) },
       dispatch: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      orderItem: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            productId: 'prod-1',
+            variantId: null,
+            sourceWarehouseId: 'wh-source',
+            product: { warehouseId: 'wh-default' },
+          },
+        ]),
+      },
       $transaction: jest.fn((cb: any) => cb(tx)),
     };
     cancelReturnStock = {
@@ -123,5 +143,45 @@ describe('ReturnsService — stock authority funnel (hardening 2)', () => {
     const again = await service.restoreStockForReturn('ret-1', { performedBy: 'scanner' });
     expect(again).toMatchObject({ status: 'RESTOCKED', stockReconciled: true });
     expect(cancelReturnStock.restoreForReturnItems).toHaveBeenCalledTimes(1);
+  });
+
+  it('persists receive-time damage and sends good quantities to the stock authority', async () => {
+    await service.markReceived('ret-1', {
+      performedBy: 'staff@x.com',
+      items: [{ productId: 'prod-1', quantity: 2, damagedQuantity: 1 }],
+    });
+
+    expect(cancelReturnStock.restoreForReturnItems).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: [
+          expect.objectContaining({
+            productId: 'prod-1',
+            quantity: 2,
+            damagedQuantity: 1,
+            warehouseId: 'wh-source',
+          }),
+        ],
+      }),
+    );
+    const items = (prisma.return.update.mock.calls.at(-1)?.[0]?.data?.items ?? []) as any[];
+    expect(items[0]).toMatchObject({
+      productId: 'prod-1',
+      quantity: 2,
+      damagedQuantity: 1,
+      warehouseId: 'wh-source',
+    });
+    expect(items[0].damageLog).toEqual([
+      expect.objectContaining({ qty: 1, phase: 'receive', by: 'staff@x.com' }),
+    ]);
+  });
+
+  it('rejects damaged quantity above the received quantity (nothing restocks)', async () => {
+    await expect(
+      service.markReceived('ret-1', {
+        performedBy: 'staff@x.com',
+        items: [{ productId: 'prod-1', quantity: 2, damagedQuantity: 3 }],
+      }),
+    ).rejects.toThrow(/damagedQuantity/i);
+    expect(cancelReturnStock.restoreForReturnItems).not.toHaveBeenCalled();
   });
 });

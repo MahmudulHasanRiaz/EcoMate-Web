@@ -4,6 +4,7 @@ import {
   CreateReturnDto,
   LinkRefundDto,
   ListReturnsQueryDto,
+  MarkDamagedDto,
   MarkReceivedDto,
 } from './dto/return.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -81,6 +82,17 @@ export class ReturnsController {
     @CurrentUser() user?: { userId: string; email: string },
   ) {
     return this.returns.markReceived(id, { items: dto?.items, performedBy: user?.email });
+  }
+
+  /** Damaged after receive — write units off sellable stock (transactional). */
+  @Roles('superadmin', 'admin', 'employee')
+  @Post(':id/mark-damaged')
+  markDamaged(
+    @Param('id') id: string,
+    @Body() dto: MarkDamagedDto,
+    @CurrentUser() user?: { userId: string; email: string },
+  ) {
+    return this.returns.markDamaged(id, dto.items, user?.email);
   }
 
   @Roles('superadmin', 'admin', 'employee')

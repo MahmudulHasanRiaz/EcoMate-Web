@@ -207,13 +207,88 @@ describe('ReturnReceivePurpose — return/exchange scan resolution (hardening 3)
     expect(leg.image).toBe('/uploads/p1-rd.jpg');
     expect(leg.items).toEqual([
       {
+        productId: 'p-1',
+        variantId: 'v-1',
         name: 'Panjabi',
         variantLabel: 'Color: Red',
         sku: 'PNJ-RD-XL',
         image: '/uploads/p1-rd.jpg',
         quantity: 2,
+        maxQuantity: 2,
       },
     ]);
+  });
+
+  it('supplies order-line previews and an unconfirmed flag when the courier reported no split', async () => {
+    await build({
+      order: saleOrder({
+        items: [
+          {
+            quantity: 3,
+            productId: 'p-1',
+            variantId: null,
+            product: { id: 'p-1', name: 'Panjabi', sku: 'PNJ', images: [] },
+          },
+        ],
+      }),
+      returns: [activeReturn({ items: [] })],
+    });
+    const leg = (await purpose.resolve('ORD-260930-0001').then((o) => o.linked ?? []))[0] as any;
+    expect(leg.itemsConfirmed).toBe(false);
+    expect(leg.items).toEqual([
+      expect.objectContaining({
+        productId: 'p-1',
+        name: 'Panjabi',
+        quantity: 3,
+        maxQuantity: 3,
+      }),
+    ]);
+  });
+
+  it('execute forwards confirmed quantities and receive damage to the guarded restore', async () => {
+    await build({ returns: [activeReturn()] });
+    await purpose.execute(
+      {
+        identifier: 'ORD-260930-0001',
+        returnId: 'ret-1',
+        items: [
+          { productId: 'p-1', variantId: null, quantity: 3, damagedQuantity: 1 },
+        ],
+      },
+      actor,
+    );
+    expect(returns.restoreStockForReturn).toHaveBeenCalledWith(
+      'ret-1',
+      expect.objectContaining({
+        items: [
+          { productId: 'p-1', variantId: null, quantity: 3, damagedQuantity: 1 },
+        ],
+      }),
+    );
+  });
+
+  it('reports good units restored and damaged units NOT restocked in the feed result', async () => {
+    await build({ returns: [activeReturn()] });
+    returns.restoreStockForReturn.mockResolvedValue({
+      id: 'ret-1',
+      displayId: 'RTN-260930-0001',
+      status: 'RESTOCKED',
+      stockReconciled: true,
+      items: [
+        { productId: 'p-1', variantId: null, quantity: 3, damagedQuantity: 1 },
+      ],
+    });
+    const result = await purpose.execute(
+      {
+        identifier: 'ORD-260930-0001',
+        returnId: 'ret-1',
+        items: [{ productId: 'p-1', variantId: null, quantity: 3, damagedQuantity: 1 }],
+      },
+      actor,
+    );
+    expect(result.status).toBe('success');
+    expect(result.message).toBe('Return received — 2 restored · 1 damaged (not restocked).');
+    expect(result.details).toMatchObject({ receivedUnits: 3, damagedUnits: 1 });
   });
 
   it('a customer-report-free (unknown-split) return leg carries an empty items list', async () => {
@@ -258,7 +333,7 @@ describe('ReturnReceivePurpose — return/exchange scan resolution (hardening 3)
     const leg = (await purpose.resolve('ORD-260930-0001').then((o) => o.linked ?? []))[0] as any;
     expect(leg.kind).toBe('exchange');
     expect(leg.items).toEqual([
-      { name: 'New Panjabi', variantLabel: undefined, sku: 'PNJ2', image: '/uploads/new.jpg', quantity: 1, price: 750 },
+      { productId: 'p-2', variantId: null, name: 'New Panjabi', variantLabel: undefined, sku: 'PNJ2', image: '/uploads/new.jpg', quantity: 1, maxQuantity: 1, price: 750 },
     ]);
     expect(leg.processable).toBe(true);
     expect(leg.reason).toBeNull();
@@ -291,7 +366,7 @@ describe('ReturnReceivePurpose — return/exchange scan resolution (hardening 3)
     });
     const leg = (await purpose.resolve('ORD-260930-0001').then((o) => o.linked ?? []))[0] as any;
     expect(leg.items).toEqual([
-      { name: 'Kurti', variantLabel: undefined, sku: 'KRT', image: '/uploads/k1.jpg', quantity: 1, price: 800 },
+      { productId: 'p-4', variantId: 'v-4', name: 'Kurti', variantLabel: undefined, sku: 'KRT', image: '/uploads/k1.jpg', quantity: 1, maxQuantity: 1, price: 800 },
     ]);
   });
 

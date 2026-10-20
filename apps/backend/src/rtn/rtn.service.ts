@@ -15,10 +15,18 @@ import { StockService } from '../stock/stock.service';
 import { CacheService } from '../cache/cache.service';
 import { Prisma } from '@prisma/client';
 import { CreateReturnOrderDto } from './dto/create-return-order.dto';
+import { generateReturnDisplayId } from '../returns/return-guard';
 
 export interface RtnActor {
   userId: string;
   email: string;
+}
+
+export interface DispatchDamageItem {
+  productId: string;
+  variantId?: string | null;
+  quantity: number;
+  damagedQuantity?: number;
 }
 
 export interface RtnOrderPreview {
@@ -41,7 +49,12 @@ export interface FinalizeReturnResult {
   };
   order: { id: string; displayId: string; status: string };
   rtn: RtnOrderPreview | null;
-  restoredItems: { productId: string; variantId: string | null; quantity: number }[];
+  restoredItems: {
+    productId: string;
+    variantId: string | null;
+    quantity: number;
+    damagedQuantity?: number;
+  }[];
 }
 
 /**
@@ -577,6 +590,7 @@ export class RtnService {
   async finalizeDispatchReturn(
     dispatchId: string,
     actor: RtnActor,
+    items?: DispatchDamageItem[],
   ): Promise<FinalizeReturnResult> {
     const dispatch = await this.prisma.dispatch.findUnique({
       where: { id: dispatchId },
@@ -694,10 +708,24 @@ export class RtnService {
           throw new BadRequestException('The Return Order is not in a returnable state.');
         }
 
+        const damageByKey = this.buildDamageMap(items, rtnFull.items);
+        if (damageByKey.size > 0) {
+          await this.persistDispatchDamage(tx, {
+            orderId: order.id,
+            dispatch,
+            type: 'PARTIAL',
+            settlementItems: rtnFull.items,
+            damageByKey,
+            actor,
+            now,
+          });
+        }
+
         await this.cancelReturnStock.restoreForReturnOrder({
           rtnOrderId: rtn.id,
           performedBy: actor.email,
           tx,
+          damageByKey,
         });
 
         const rtnTimelineEntry = {
@@ -729,10 +757,17 @@ export class RtnService {
         }
 
         for (const item of rtnFull.items) {
+          const damaged = Math.min(
+            item.quantity,
+            damageByKey.get(
+              `${item.productId ?? ''}::${item.variantId ?? ''}`,
+            ) ?? 0,
+          );
           restoredItems.push({
             productId: item.productId ?? '',
             variantId: item.variantId,
-            quantity: item.quantity,
+            quantity: item.quantity - damaged,
+            ...(damaged > 0 ? { damagedQuantity: damaged } : {}),
           });
         }
 
@@ -775,13 +810,54 @@ export class RtnService {
       }
 
       // Exact inverse of the forward flow — same primitive the manual
-      // order-detail 'Returned' path uses.
-      await this.cancelReturnStock.restoreForOrder({
-        orderId: order.id,
-        referencePrefix: 'return',
-        performedBy: actor.email,
-        tx,
+      // order-detail 'Returned' path uses. Damaged lines restore GOOD units
+      // only through the item-level claim authority.
+      const fullItems = await tx.orderItem.findMany({
+        where: { orderId: order.id },
+        select: {
+          productId: true,
+          variantId: true,
+          quantity: true,
+          sourceWarehouseId: true,
+        },
       });
+      const damageByKey = this.buildDamageMap(items, fullItems);
+      let fullReturnId: string | null = null;
+      if (damageByKey.size > 0) {
+        const damageReturn = await this.persistDispatchDamage(tx, {
+          orderId: order.id,
+          dispatch,
+          type: 'FULL',
+          settlementItems: fullItems,
+          damageByKey,
+          actor,
+          now,
+        });
+        fullReturnId = damageReturn.id;
+        await this.cancelReturnStock.restoreForReturnItems({
+          orderId: order.id,
+          items: fullItems.map((it) => {
+            const damaged =
+              damageByKey.get(`${it.productId ?? ''}::${it.variantId ?? ''}`) ?? 0;
+            return {
+              productId: it.productId ?? '',
+              variantId: it.variantId,
+              quantity: it.quantity,
+              damagedQuantity: damaged,
+            };
+          }),
+          returnId: fullReturnId!,
+          performedBy: actor.email,
+          tx,
+        });
+      } else {
+        await this.cancelReturnStock.restoreForOrder({
+          orderId: order.id,
+          referencePrefix: 'return',
+          performedBy: actor.email,
+          tx,
+        });
+      }
 
       const finalTimelineEntries = [
         {
@@ -805,15 +881,14 @@ export class RtnService {
       });
       await appendOrderTimeline(tx, order.id, finalTimelineEntries);
 
-      const items = await tx.orderItem.findMany({
-        where: { orderId: order.id },
-        select: { productId: true, variantId: true, quantity: true },
-      });
-      for (const item of items) {
+      for (const item of fullItems) {
+        const damaged =
+          damageByKey.get(`${item.productId ?? ''}::${item.variantId ?? ''}`) ?? 0;
         restoredItems.push({
           productId: item.productId ?? '',
           variantId: item.variantId,
-          quantity: item.quantity,
+          quantity: item.quantity - damaged,
+          ...(damaged > 0 ? { damagedQuantity: damaged } : {}),
         });
       }
 
@@ -875,6 +950,157 @@ export class RtnService {
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
+
+  /** Validate requested damage lines against the settlement items and cap. */
+  private buildDamageMap(
+    requested: DispatchDamageItem[] | undefined,
+    settlementItems: Array<{
+      productId?: string | null;
+      variantId?: string | null;
+      quantity: number;
+    }>,
+  ): Map<string, number> {
+    const map = new Map<string, number>();
+    for (const req of requested ?? []) {
+      const qty = Math.floor(Number(req.damagedQuantity ?? 0) || 0);
+      if (qty <= 0) continue;
+      if (!req.productId) {
+        throw new BadRequestException('Damage line is missing a product.');
+      }
+      const key = `${req.productId}::${req.variantId ?? ''}`;
+      const line = settlementItems.find(
+        (it) => `${it.productId ?? ''}::${it.variantId ?? ''}` === key,
+      );
+      if (!line) {
+        throw new BadRequestException(
+          'A damaged line is not part of this return.',
+        );
+      }
+      const next = (map.get(key) ?? 0) + qty;
+      if (next > line.quantity) {
+        throw new BadRequestException(
+          `Damaged quantity exceeds the returned quantity for product ${req.productId}.`,
+        );
+      }
+      map.set(key, next);
+    }
+    return map;
+  }
+
+  /**
+   * Persist receive-time damage on the Return row in the SAME transaction as
+   * the stock movement. Creates the row when the courier flow had none.
+   */
+  private async persistDispatchDamage(
+    tx: Prisma.TransactionClient,
+    input: {
+      orderId: string;
+      dispatch: { consignmentId: string | null; courier: string };
+      type: 'FULL' | 'PARTIAL';
+      settlementItems: Array<{
+        productId?: string | null;
+        variantId?: string | null;
+        quantity: number;
+        sourceWarehouseId?: string | null;
+      }>;
+      damageByKey: Map<string, number>;
+      actor: RtnActor;
+      now: string;
+    },
+  ): Promise<{ id: string }> {
+    const { orderId, dispatch, type, settlementItems, damageByKey, actor, now } =
+      input;
+    const existing = await tx.return.findFirst({
+      where: {
+        orderId,
+        status: { not: 'CLOSED' as any },
+        ...(type === 'PARTIAL' && dispatch.consignmentId
+          ? { courierReturnId: dispatch.consignmentId }
+          : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (
+      existing &&
+      ((existing as any).stockReconciled ||
+        (existing as any).status === 'RESTOCKED')
+    ) {
+      throw new BadRequestException(
+        `Return ${(existing as any).displayId} was already received — mark damage from its detail page.`,
+      );
+    }
+
+    const previousRows = Array.isArray((existing as any)?.items)
+      ? ((existing as any).items as any[])
+      : [];
+    const rows = settlementItems.map((it) => {
+      const key = `${it.productId ?? ''}::${it.variantId ?? ''}`;
+      const damaged = Math.min(
+        it.quantity,
+        damageByKey.get(key) ?? 0,
+      );
+      const prev = previousRows.find(
+        (r) => `${r?.productId ?? ''}::${r?.variantId ?? ''}` === key,
+      );
+      const prevDamaged = Math.max(
+        0,
+        Math.floor(Number(prev?.damagedQuantity ?? 0) || 0),
+      );
+      const totalDamaged = Math.min(it.quantity, prevDamaged + damaged);
+      return {
+        productId: it.productId,
+        variantId: it.variantId ?? null,
+        quantity: it.quantity,
+        damagedQuantity: totalDamaged,
+        ...(it.sourceWarehouseId ? { warehouseId: it.sourceWarehouseId } : {}),
+        ...(totalDamaged > 0
+          ? {
+              damageLog: [
+                ...(Array.isArray(prev?.damageLog) ? prev.damageLog : []),
+                {
+                  qty: damaged,
+                  at: now,
+                  phase: 'receive',
+                  by: actor.email,
+                },
+              ].filter((e) => Number(e.qty) > 0),
+            }
+          : {}),
+      };
+    });
+
+    if (existing) {
+      return tx.return.update({
+        where: { id: (existing as any).id },
+        data: {
+          status: 'RESTOCKED' as any,
+          items: rows as unknown as any,
+          stockReconciled: true,
+          stockReconciledAt: new Date(now),
+          receivedAt: (existing as any).receivedAt ?? new Date(now),
+        },
+        select: { id: true },
+      });
+    }
+    const displayId = await generateReturnDisplayId(tx);
+    return tx.return.create({
+      data: {
+        orderId,
+        displayId,
+        type: type as any,
+        status: 'RESTOCKED' as any,
+        source: 'COURIER' as any,
+        courier: dispatch.courier,
+        courierReturnId: dispatch.consignmentId,
+        items: rows as unknown as any,
+        stockReconciled: true,
+        stockReconciledAt: new Date(now),
+        receivedAt: new Date(now),
+        createdBy: actor.email,
+      },
+      select: { id: true },
+    });
+  }
 
   /** ORD-260930-0001 → RTN-260930-0001 (new internal id, same business tail). */
   private deriveRtnDisplayId(originalDisplayId: string): string {

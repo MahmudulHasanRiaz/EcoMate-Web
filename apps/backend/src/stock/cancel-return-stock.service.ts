@@ -6,6 +6,10 @@ import { CostingLotService } from './costing-lot.service';
 import { CacheService } from '../cache/cache.service';
 import { Prisma } from '@prisma/client';
 
+function stockKeyOf(productId: string, variantId?: string | null): string {
+  return `${productId}::${variantId ?? ''}`;
+}
+
 /**
  * CancelReturnStockService
  *
@@ -344,7 +348,13 @@ export class CancelReturnStockService {
    */
   async restoreForReturnItems(params: {
     orderId: string;
-    items: Array<{ productId: string; variantId?: string | null; quantity: number }>;
+    items: Array<{
+      productId: string;
+      variantId?: string | null;
+      quantity: number;
+      /** Units of `quantity` that arrived damaged — never restocked. */
+      damagedQuantity?: number;
+    }>;
     returnId: string;
     performedBy?: string;
     tx: Prisma.TransactionClient;
@@ -429,6 +439,11 @@ export class CancelReturnStockService {
     for (const item of items ?? []) {
       const qty = Math.floor(Number((item as any)?.quantity ?? 0));
       if (!item?.productId || !(qty > 0)) continue;
+      const damaged = Math.min(
+        qty,
+        Math.max(0, Math.floor(Number((item as any)?.damagedQuantity ?? 0) || 0)),
+      );
+      let goodLeft = qty - damaged;
       const k = keyOf(item.productId, item.variantId ?? undefined);
       const claims = claimsByKey.get(k) ?? [];
       let wanted = qty;
@@ -438,14 +453,23 @@ export class CancelReturnStockService {
         const take = Math.min(claim.remaining, wanted);
         claim.remaining -= take;
         wanted -= take;
-        await this.restoreReturnClaim(tx, claim, take, cycleId, imEnabled, reference, performedBy);
-        const agg = restoredByKey.get(k) ?? {
-          productId: item.productId,
-          variantId: (item.variantId ?? null) as string | null,
-          quantity: 0,
-        };
-        agg.quantity += take;
-        restoredByKey.set(k, agg);
+        // Allocate the received split across claims; only good units move.
+        const goodTake = Math.min(goodLeft, take);
+        goodLeft -= goodTake;
+        if (goodTake > 0) {
+          await this.restoreReturnClaim(tx, claim, goodTake, cycleId, imEnabled, reference, performedBy);
+          const agg = restoredByKey.get(k) ?? {
+            productId: item.productId,
+            variantId: (item.variantId ?? null) as string | null,
+            quantity: 0,
+          };
+          agg.quantity += goodTake;
+          restoredByKey.set(k, agg);
+        } else {
+          // Damaged-only allocation still disarms the claim: a later blanket
+          // restore must never put these units back on the shelf.
+          await this.disarmClaim(tx, claim);
+        }
       }
       if (wanted > 0) {
         this.logger.warn(
@@ -465,6 +489,152 @@ export class CancelReturnStockService {
 
     await this.cache.invalidateByPrefix('product:');
     return { restored: [...restoredByKey.values()] };
+  }
+
+  /**
+   * Damaged-after-receive write-off. Decrements SELLABLE stock through the
+   * authoritative engine for the product's availability mode — never a raw
+   * quantity edit. Fails closed when available stock is insufficient.
+   */
+  async damageWriteOff(params: {
+    productId: string;
+    variantId?: string | null;
+    quantity: number;
+    warehouseId?: string | null;
+    reference: string;
+    performedBy?: string;
+    tx: Prisma.TransactionClient;
+  }): Promise<{ managed: boolean; warehouseId: string | null }> {
+    const { tx, productId, variantId, quantity, reference, performedBy } = params;
+    if (!(quantity > 0)) {
+      throw new BadRequestException('Damage quantity must be positive');
+    }
+    const product = await tx.product.findUnique({
+      where: { id: productId },
+      select: {
+        id: true,
+        availabilityMode: true,
+        manageStock: true,
+        warehouseId: true,
+        managedStockQuantity: true,
+        reservedStock: true,
+      },
+    });
+    if (!product) throw new BadRequestException('Product not found');
+
+    if ((product as any).availabilityMode === 'MANAGED_STOCK' && (product as any).manageStock) {
+      const holder = variantId
+        ? await tx.productVariant.findUnique({
+            where: { id: variantId },
+            select: { managedStockQuantity: true, reservedStock: true },
+          })
+        : product;
+      const available =
+        Number((holder as any)?.managedStockQuantity ?? 0) -
+        Number((holder as any)?.reservedStock ?? 0);
+      if (available < quantity) {
+        throw new BadRequestException(
+          `Only ${Math.max(0, available)} unit(s) available — cannot mark ${quantity} damaged.`,
+        );
+      }
+      await this.stockService.operate('scrap', {
+        productId,
+        variantId: variantId ?? undefined,
+        quantity,
+        reference,
+        performedBy: performedBy || 'system',
+        tx,
+        ledgerType: 'ADJUSTMENT',
+        referenceType: 'ADJUSTMENT',
+      });
+      return { managed: true, warehouseId: null };
+    }
+
+    const warehouseId = params.warehouseId ?? (product as any).warehouseId ?? null;
+    if (!warehouseId) {
+      throw new BadRequestException(
+        'No warehouse is set for this product — cannot write off damaged stock.',
+      );
+    }
+    const rows = await tx.physicalInventory.findMany({
+      where: { productId, variantId: variantId ?? null, warehouseId },
+      select: { quantity: true, reservedQuantity: true },
+    });
+    const available = (rows as any[]).reduce(
+      (s, r) => s + (Number(r.quantity) || 0) - (Number(r.reservedQuantity) || 0),
+      0,
+    );
+    if (available < quantity) {
+      throw new BadRequestException(
+        `Only ${Math.max(0, available)} unit(s) available at this warehouse — cannot mark ${quantity} damaged.`,
+      );
+    }
+    await this.stockService.operatePhysical('add', {
+      productId,
+      variantId: variantId ?? undefined,
+      warehouseId,
+      quantity: -quantity,
+      reference,
+      performedBy: performedBy || 'system',
+      tx,
+      ledgerType: 'ADJUSTMENT',
+      referenceType: 'ADJUSTMENT',
+    });
+    return { managed: false, warehouseId };
+  }
+
+  /**
+   * Damaged-only allocation: the claim is settled (nothing will ever restock)
+   * but no stock movement is written. Clearing the managed flags and marking
+   * the physical reservation handled keeps the blanket restore path from
+   * resurrecting units that arrived damaged.
+   */
+  private async disarmClaim(
+    tx: Prisma.TransactionClient,
+    claim:
+      | { kind: 'line'; line: any; product: any; remaining: number }
+      | { kind: 'snap'; line: any; snap: any; product: any; remaining: number },
+  ): Promise<void> {
+    if (claim.kind === 'line') {
+      await tx.orderItem.update({
+        where: { id: claim.line.id },
+        data: { managedStockDeducted: false, managedStockReserved: false },
+      });
+    } else {
+      await tx.orderItemComboComponent.update({
+        where: { id: claim.snap.id },
+        data: { managedStockDeducted: false, managedStockReserved: false },
+      });
+    }
+    const cycle = await tx.orderStockCycle.findFirst({
+      where: { orderId: claim.line.orderId, status: 'ACTIVE' },
+    });
+    if (!cycle) return;
+    if (claim.kind === 'line') {
+      const res = await tx.physicalReservation.findUnique({
+        where: {
+          orderItemId_cycleId: { orderItemId: claim.line.id, cycleId: cycle.id },
+        },
+      });
+      if (res && ['ACTIVE', 'CONSUMED'].includes((res as any).status)) {
+        await tx.physicalReservation.update({
+          where: { id: (res as any).id },
+          data: { status: 'RESTORED' },
+        });
+      }
+    } else {
+      const res = await tx.comboComponentPhysicalReservation.findUnique({
+        where: {
+          componentId_cycleId: { componentId: claim.snap.id, cycleId: cycle.id },
+        },
+      });
+      if (res && ['ACTIVE', 'CONSUMED'].includes((res as any).status)) {
+        await tx.comboComponentPhysicalReservation.update({
+          where: { id: (res as any).id },
+          data: { status: 'RESTORED' },
+        });
+      }
+    }
   }
 
   /**
@@ -692,8 +862,10 @@ export class CancelReturnStockService {
     rtnOrderId: string;
     performedBy?: string;
     tx: Prisma.TransactionClient;
+    /** productKey → damaged units (never restocked); quantity is capped per line. */
+    damageByKey?: Map<string, number>;
   }): Promise<{ restored: boolean }> {
-    const { rtnOrderId, performedBy, tx } = params;
+    const { rtnOrderId, performedBy, tx, damageByKey } = params;
 
     const rtn = await tx.order.findUnique({
       where: { id: rtnOrderId },
@@ -733,11 +905,17 @@ export class CancelReturnStockService {
           include: { product: true },
         });
         for (const snap of snapshots) {
+          const damaged = Math.min(
+            snap.totalQuantity,
+            Math.max(0, damageByKey?.get(stockKeyOf(snap.productId, snap.variantId ?? undefined)) ?? 0),
+          );
+          const good = snap.totalQuantity - damaged;
+          if (good <= 0) continue;
           await this.restoreManagedStock(
             tx,
             snap.product,
             snap.variantId ?? undefined,
-            snap.totalQuantity,
+            good,
             reference,
             performedBy,
           );
@@ -745,7 +923,7 @@ export class CancelReturnStockService {
             tx,
             snap.product,
             snap.variantId ?? undefined,
-            snap.totalQuantity,
+            good,
             item.sourceWarehouseId,
             imEnabled,
             reference,
@@ -756,11 +934,17 @@ export class CancelReturnStockService {
       }
 
       if (!item.product) continue;
+      const damaged = Math.min(
+        item.quantity,
+        Math.max(0, damageByKey?.get(stockKeyOf(item.productId!, item.variantId ?? undefined)) ?? 0),
+      );
+      const good = item.quantity - damaged;
+      if (good <= 0) continue;
       await this.restoreManagedStock(
         tx,
         item.product,
         item.variantId ?? undefined,
-        item.quantity,
+        good,
         reference,
         performedBy,
       );
@@ -768,7 +952,7 @@ export class CancelReturnStockService {
         tx,
         item.product,
         item.variantId ?? undefined,
-        item.quantity,
+        good,
         item.sourceWarehouseId,
         imEnabled,
         reference,
@@ -786,7 +970,7 @@ export class CancelReturnStockService {
         orderBy: { createdAt: 'asc' },
       });
       if (cycle) {
-        await this.restoreCostingLotsForRtn(tx, rtn, cycle.id, performedBy);
+        await this.restoreCostingLotsForRtn(tx, rtn, cycle.id, performedBy, damageByKey);
       }
     }
 
@@ -877,6 +1061,7 @@ export class CancelReturnStockService {
     rtn: any,
     cycleId: string,
     performedBy?: string,
+    damageByKey?: Map<string, number>,
   ) {
     const returnReferenceId = `rtn-${rtn.id}`;
 
@@ -888,7 +1073,16 @@ export class CancelReturnStockService {
           where: { orderItemId: item.sourceOrderItemId },
         });
         for (const snap of originalSnapshots) {
-          const wanted = snap.unitQuantity * item.quantity;
+          const damaged = Math.min(
+            snap.unitQuantity * item.quantity,
+            Math.max(
+              0,
+              damageByKey?.get(
+                stockKeyOf(snap.productId, snap.variantId ?? undefined),
+              ) ?? 0,
+            ),
+          );
+          const wanted = snap.unitQuantity * item.quantity - damaged;
           await this.restoreCostingConsumption(
             tx,
             cycleId,
@@ -901,12 +1095,21 @@ export class CancelReturnStockService {
         continue;
       }
 
+      const damaged = Math.min(
+        item.quantity,
+        Math.max(
+          0,
+          damageByKey?.get(
+            stockKeyOf(item.productId, item.variantId ?? undefined),
+          ) ?? 0,
+        ),
+      );
       await this.restoreCostingConsumption(
         tx,
         cycleId,
         'ORDER_ITEM',
         item.sourceOrderItemId,
-        item.quantity,
+        item.quantity - damaged,
         returnReferenceId,
       );
     }

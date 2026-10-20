@@ -22,6 +22,15 @@ export interface ReturnItemInput {
   productId: string;
   variantId?: string | null;
   quantity: number;
+  damagedQuantity?: number;
+  damageLog?: Array<{
+    qty: number;
+    at: string | Date;
+    phase: 'receive' | 'later';
+    by?: string | null;
+  }>;
+  /** Warehouse that received the units — the later-damage write-off target. */
+  warehouseId?: string | null;
 }
 
 export interface CreateReturnInput {
@@ -574,6 +583,116 @@ export class ReturnsService {
       ...(opts?.items ? { items: opts.items } : {}),
       ...(opts?.performedBy ? { performedBy: opts.performedBy } : {}),
       current: ret,
+    });
+  }
+
+  /**
+   * Damaged AFTER receive: append a `later` damage event and write the units
+   * off sellable stock. The whole operation is one transaction; insufficient
+   * stock fails with a clear message and nothing is written.
+   */
+  async markDamaged(
+    id: string,
+    items: Array<{ productId: string; variantId?: string | null; quantity: number }>,
+    performedBy?: string,
+  ) {
+    const ret = await this.load(id);
+    if ((ret as any).status === 'CLOSED') {
+      throw new BadRequestException('Return is CLOSED — damage cannot be recorded.');
+    }
+    if (!(ret as any).stockReconciled && (ret as any).status !== 'RESTOCKED') {
+      throw new BadRequestException(
+        'Receive this return before marking any received unit damaged.',
+      );
+    }
+    const requested = Array.isArray(items) ? items : [];
+    if (requested.length === 0) {
+      throw new BadRequestException('Select at least one received unit to mark damaged.');
+    }
+
+    const now = new Date();
+    const rows: ReturnItemInput[] = (
+      Array.isArray((ret as any).items) ? (ret as any).items : []
+    ).map((it: any) => ({
+      productId: String(it.productId),
+      variantId: it.variantId ?? null,
+      quantity: Number(it.quantity) || 0,
+      damagedQuantity: Number(it.damagedQuantity) || 0,
+      ...(Array.isArray(it.damageLog) ? { damageLog: it.damageLog } : {}),
+      ...(it.warehouseId ? { warehouseId: String(it.warehouseId) } : {}),
+    }));
+    const keyOf = (productId: string, variantId?: string | null) =>
+      `${productId}::${variantId ?? ''}`;
+    const touched: Array<{ productId: string; variantId: string | null; quantity: number; warehouseId: string | null }> = [];
+
+    return this.prisma.$transaction(async (tx) => {
+      for (const req of requested) {
+        const qty = Math.floor(Number(req.quantity) || 0);
+        const key = keyOf(req.productId, req.variantId ?? null);
+        const row = rows.find(
+          (r) => keyOf(r.productId, r.variantId ?? null) === key,
+        );
+        if (!row) {
+          throw new BadRequestException(
+            `Product ${req.productId} is not part of this return.`,
+          );
+        }
+        const remaining =
+          Number(row.quantity) - Number(row.damagedQuantity ?? 0);
+        if (qty <= 0 || qty > remaining) {
+          throw new BadRequestException(
+            `Cannot mark ${qty} damaged — only ${Math.max(0, remaining)} good unit(s) remain on this line.`,
+          );
+        }
+        const result = await this.cancelReturnStock.damageWriteOff({
+          productId: req.productId,
+          variantId: req.variantId ?? null,
+          quantity: qty,
+          warehouseId: (row as any).warehouseId ?? null,
+          reference: `damage-${(ret as any).displayId ?? id}`,
+          performedBy,
+          tx,
+        });
+        row.damagedQuantity = Number(row.damagedQuantity ?? 0) + qty;
+        row.damageLog = [
+          ...(row.damageLog ?? []),
+          {
+            qty,
+            at: now.toISOString(),
+            phase: 'later',
+            by: performedBy ?? null,
+          },
+        ];
+        touched.push({
+          productId: req.productId,
+          variantId: req.variantId ?? null,
+          quantity: qty,
+          warehouseId: result.warehouseId,
+        });
+      }
+
+      const updated = await tx.return.update({
+        where: { id },
+        data: { items: rows as unknown as any },
+      });
+
+      const order = await tx.order.findUnique({
+        where: { id: (ret as any).orderId },
+        select: { status: { select: { name: true } } },
+      });
+      const statusName = (order as any)?.status?.name ?? 'Unknown';
+      await appendOrderTimeline(tx, (ret as any).orderId, [
+        {
+          status: statusName,
+          oldStatus: statusName,
+          timestamp: now.toISOString(),
+          note:
+            `Marked ${touched.reduce((s, t) => s + t.quantity, 0)} unit(s) damaged ` +
+            `from return ${(ret as any).displayId ?? id}; sellable stock written off.`,
+          performedBy,
+        },
+      ]);
+      return updated;
     });
   }
 

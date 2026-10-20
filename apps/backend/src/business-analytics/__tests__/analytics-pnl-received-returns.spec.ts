@@ -130,6 +130,107 @@ describe('computePnl — received partial returns', () => {
   });
 });
 
+describe('computePnl — damaged units', () => {
+  const damaged = (
+    damagedQuantity: number,
+    phase: 'receive' | 'later',
+    damageAt = '2026-09-15T12:00:00+06:00',
+    quantity = 2,
+  ) => ({
+    id: `dmg-${phase}-${damagedQuantity}`,
+    status: 'RESTOCKED',
+    receivedAt: D('2026-09-15T10:00:00+06:00'),
+    items: [
+      {
+        productId: 'p1',
+        quantity,
+        damagedQuantity,
+        damageLog: [{ qty: damagedQuantity, at: D(damageAt), phase }],
+      },
+    ],
+  });
+
+  it('deducts revenue for damaged units but reverses COGS for good units only', () => {
+    const r = computePnl(input([baseOrder({ receivedReturns: [damaged(1, 'receive')] })]));
+    expect(r.returns.amount).toBe(1000);
+    expect(r.returnedCogs.amount).toBe(60);
+    expect(r.damagedCogs.amount).toBe(0);
+    expect(r.cogs.amount).toBe(60);
+  });
+
+  it('re-expenses later damage at its own date (same period)', () => {
+    const r = computePnl(
+      input([baseOrder({ receivedReturns: [damaged(1, 'later', '2026-09-25T12:00:00+06:00')] })]),
+    );
+    expect(r.returnedCogs.amount).toBe(120);
+    expect(r.damagedCogs.amount).toBe(60);
+    expect(r.cogs.amount).toBe(60);
+  });
+
+  it('re-expenses later damage in the damage period even when the receipt is older', () => {
+    const october = {
+      start: new Date('2026-10-01T00:00:00+06:00'),
+      end: new Date('2026-10-31T23:59:59+06:00'),
+    };
+    const r = computePnl(
+      input(
+        [
+          baseOrder({
+            receivedReturns: [
+              damaged(1, 'later', '2026-10-25T12:00:00+06:00', 2),
+            ],
+          }),
+        ],
+        { range: october },
+      ),
+    );
+    // Revenue/COGS reversal belong to September; only the damage loss lands here.
+    expect(r.recognisedOrders).toBe(0);
+    expect(r.returnedCogs.amount).toBe(0);
+    expect(r.damagedCogs.amount).toBe(60);
+    expect(r.cogs.amount).toBe(60);
+  });
+
+  it('keeps the receive-damaged cost as a loss on a partial order', () => {
+    const order = baseOrder({
+      status: 'Partial',
+      timeline: [
+        { status: 'Out for Delivery', timestamp: '2026-09-18T10:00:00+06:00' },
+        { status: 'Partial', timestamp: '2026-09-20T10:00:00+06:00' },
+      ],
+      items: [
+        {
+          productId: 'p1',
+          variantId: null,
+          price: 500,
+          quantity: 3,
+          costSnapshot: 60,
+          costType: 'actual' as const,
+        },
+      ],
+      receivedReturns: [
+        {
+          id: 'partial-dmg',
+          status: 'RESTOCKED',
+          receivedAt: D('2026-09-22T10:00:00+06:00'),
+          items: [
+            {
+              productId: 'p1',
+              quantity: 1,
+              damagedQuantity: 1,
+              damageLog: [{ qty: 1, at: D('2026-09-22T10:00:00+06:00'), phase: 'receive' }],
+            },
+          ],
+        },
+      ],
+    });
+    const r = computePnl(input([order]));
+    // Kept 2 units: COGS 120. The returned damaged unit never restocked → +60 loss.
+    expect(r.cogs.amount).toBe(180);
+    expect(r.damagedCogs.amount).toBe(60);
+  });
+});
+
 describe('computePnl — partial-delivery kept-items recognition', () => {
   const partialOrder = (extra: Partial<PnlOrderInput> = {}) =>
     baseOrder({
