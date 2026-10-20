@@ -24,14 +24,26 @@ export interface ExchangesListResponse {
 export type ExchangeType = 'Full' | 'Partial' | '—'
 
 /**
+ * Structurally loose order line — the shared order-detail payload can carry
+ * manual/legacy lines without a productId and string quantities.
+ */
+export interface ExchangeTypeItem {
+  productId?: string | null
+  variantId?: string | null
+  quantity?: number | string | null
+}
+
+/**
  * Derive Full vs Partial from the Return(EXCHANGE) leg vs the original
  * order lines. FULL = the return carries every original line at full
  * quantity; anything less (subset lines or short quantities) = Partial.
+ * Original lines without a productId cannot be matched and are skipped; a
+ * return line without one can never be confirmed, so it is Partial.
  * Unknown (no return leg yet) renders as '—', never guessed.
  */
 export function deriveExchangeType(
-  originalItems: { productId: string; variantId?: string | null; quantity: number }[],
-  returnItems: { productId: string; variantId?: string | null; quantity: number }[] | null | undefined,
+  originalItems: ExchangeTypeItem[],
+  returnItems: ExchangeTypeItem[] | null | undefined,
 ): ExchangeType {
   if (!returnItems || returnItems.length === 0) return '—'
   if (!originalItems || originalItems.length === 0) return '—'
