@@ -64,7 +64,7 @@ jobs:
     name: static guards
     if: inputs.all == true || inputs.backend == true
     # fromJSON array literal: runs-on accepts an expression evaluating to labels.
-    runs-on: ${{ fromJSON(inputs.runner == 'github' && '["ubuntu-latest"]' || '["self-hosted", "macos", "arm64"]') }}
+    runs-on: ${{ fromJSON(inputs.runner == 'github' && '["ubuntu-24.04"]' || '["self-hosted", "macos", "arm64"]') }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
@@ -92,7 +92,7 @@ jobs:
   unit:
     name: unit tests
     if: ${{ inputs.all == true || inputs.backend == true || inputs.storefront == true || inputs.admin == true || inputs.pos == true }}
-    runs-on: ${{ fromJSON(inputs.runner == 'github' && '["ubuntu-latest"]' || '["self-hosted", "macos", "arm64"]') }}
+    runs-on: ${{ fromJSON(inputs.runner == 'github' && '["ubuntu-24.04"]' || '["self-hosted", "macos", "arm64"]') }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
