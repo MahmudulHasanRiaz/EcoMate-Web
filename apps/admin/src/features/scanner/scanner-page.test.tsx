@@ -686,6 +686,7 @@ describe('Scanner page — staged returns: persistence, attention rows, batch pr
       'ORD-3': returnLeg({ id: 'ret-2', displayId: 'RTN-2', orderDisplayId: 'ORD-3', items: [{ name: 'Wool Scarf', quantity: 1 }] }),
       'ORD-4': returnLeg({ id: 'ret-3', displayId: 'RTN-3', orderDisplayId: 'ORD-4', status: 'RESTOCKED', processable: false, reason: 'Already received — stock was restored earlier.' }),
     }
+    let ret2Attempts = 0
     mockPost.mockImplementation((url: string, body?: any) => {
       if (url === '/scanner/resolve') {
         const id = body?.identifier ?? ''
@@ -707,7 +708,12 @@ describe('Scanner page — staged returns: persistence, attention rows, batch pr
           return Promise.resolve({ data: { status: 'duplicate', identifier: 'ORD-2', title: 'ORD-EX-1 — Already handled', message: 'This exchange was already received.' } })
         }
         if (key === 'ret-2') {
-          return Promise.resolve({ data: { status: 'error', identifier: 'ORD-3', title: 'RTN-2 — Cannot receive', message: 'Return cannot be received in its current state.' } })
+          ret2Attempts += 1
+          return Promise.resolve({
+            data: ret2Attempts === 1
+              ? { status: 'error', identifier: 'ORD-3', title: 'RTN-2 — Cannot receive', message: 'Return cannot be received in its current state.' }
+              : { status: 'success', identifier: 'ORD-3', title: 'RTN-2 — Received', message: 'Return received and restocked.' },
+          })
         }
         return Promise.resolve({ data: {} })
       }
@@ -735,14 +741,28 @@ describe('Scanner page — staged returns: persistence, attention rows, batch pr
     // Feed preserved each outcome.
     await expect.element(page.getByText('RTN-1 — Received')).toBeInTheDocument()
     await expect.element(page.getByText('ORD-EX-1 — Already handled')).toBeInTheDocument()
-    // Failed row carries the live error reason after the run; counts update.
+    // Failed row carries the live error reason; it counts as attention but is
+    // retryable in place (Process stays enabled).
     await expect.element(page.getByText('Process returns (0 ready · 2 need attention)', { exact: false })).toBeInTheDocument()
-    await expect.element(page.getByRole('button', { name: /Process returns/ })).toBeDisabled()
+    const retry = page.getByRole('button', { name: /Process returns/ })
+    await expect.element(retry).toBeEnabled()
     await userEvent.click(page.getByRole('button', { name: 'Expand RTN-2' }))
     // Reason shows BOTH in the expanded row note and in the feed error event.
     await expect.element(page.getByText('Return cannot be received in its current state.').first()).toBeInTheDocument()
-    // Only the two remaining rows persist.
-    expect(JSON.parse(localStorage.getItem(RETURN_STAGING_KEY) ?? '[]')).toHaveLength(2)
+
+    // Retry-in-place: the failed row re-validates and settles; the untouched
+    // attention row is still never scanned.
+    await userEvent.click(retry)
+    await expect.element(page.getByText('RTN-2', { exact: true })).not.toBeInTheDocument()
+    await expect.element(page.getByText('RTN-3', { exact: true })).toBeInTheDocument()
+    await expect.element(page.getByText('Process returns (0 ready · 1 need attention)', { exact: false })).toBeInTheDocument()
+    const retried = mockPost.mock.calls
+      .filter((c) => c[0] === '/scanner/scan')
+      .map((c) => c[1])
+      .filter((p: any) => p?.returnId === 'ret-2')
+    expect(retried).toHaveLength(2)
+    // Only the untouched attention row persists.
+    expect(JSON.parse(localStorage.getItem(RETURN_STAGING_KEY) ?? '[]')).toHaveLength(1)
   })
 
   it('sticker staged rows expand into the ORDER items pre-fetched from the scan outcome', async () => {

@@ -37,6 +37,7 @@ import {
   getCustomerEmail,
   getOrderPaidAmount,
   getOrderDueAmount,
+  getOrderReceivedReturnValue,
   getOrderPaymentMode,
 } from '@/lib/order-display'
 import { Header } from '@/components/layout/header'
@@ -1213,6 +1214,14 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                         </div>
                       )
                     })()}
+                    {getOrderReceivedReturnValue(order) > 0 && (
+                      <div className='flex items-center justify-between rounded-lg border border-sky-500/20 bg-sky-500/5 px-3 py-2'>
+                        <span className='text-xs font-medium text-muted-foreground'>Less: received returns</span>
+                        <span className='text-sm font-semibold text-sky-700 dark:text-sky-400'>
+                          −৳{fmt(getOrderReceivedReturnValue(order))}
+                        </span>
+                      </div>
+                    )}
                     {editingPayment ? (
                       <div className='space-y-3.5'>
                         <div>

@@ -401,7 +401,13 @@ export async function restoreStockForReturnTx(
     );
   }
   if ((ret as any).status !== 'RECEIVED') {
-    await db.return.update({ where: { id: returnId }, data: { status: 'RECEIVED' } });
+    await db.return.update({
+      where: { id: returnId },
+      data: {
+        status: 'RECEIVED',
+        receivedAt: (ret as any).receivedAt ?? new Date(),
+      },
+    });
   }
   await cancelReturnStock.restoreForReturnItems({
     orderId: (ret as any).orderId as string,
@@ -417,6 +423,7 @@ export async function restoreStockForReturnTx(
       items: effectiveItems as unknown as any,
       stockReconciled: true,
       stockReconciledAt: new Date(),
+      receivedAt: (ret as any).receivedAt ?? new Date(),
     },
   });
 }

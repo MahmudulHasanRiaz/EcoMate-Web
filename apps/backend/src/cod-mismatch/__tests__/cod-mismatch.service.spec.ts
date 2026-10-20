@@ -23,6 +23,9 @@ describe('CodMismatchService', () => {
     payments?: any[];
     dispatches?: any[];
     timeline?: any[];
+    returns?: any[];
+    items?: any[];
+    statusName?: string;
   }) {
     mockPrisma.order.findUnique.mockResolvedValue({
       id: 'order-1',
@@ -30,6 +33,9 @@ describe('CodMismatchService', () => {
       payments: opts.payments ?? [],
       dispatches: opts.dispatches ?? [],
       timeline: opts.timeline ?? [],
+      returns: opts.returns ?? [],
+      items: opts.items ?? [],
+      status: { name: opts.statusName ?? 'Shipping' },
     });
   }
 
@@ -136,6 +142,70 @@ describe('CodMismatchService', () => {
       expect(alerts).toHaveLength(0);
       expect(mockPrisma.codMismatchAlert.findFirst).not.toHaveBeenCalled();
       expect(mockPrisma.codMismatchAlert.create).not.toHaveBeenCalled();
+    });
+
+    it('subtracts the received partial-return value from the expected collectable', async () => {
+      loadOrder({
+        total: 1500,
+        payments: [{ amount: 1000, status: 'PAID', appliedCreditAmount: null }],
+        items: [{ productId: 'p1', variantId: null, price: 300, quantity: 2 }],
+        returns: [
+          {
+            id: 'ret-1',
+            status: 'RESTOCKED',
+            receivedAt: new Date('2026-10-01T10:00:00Z'),
+            items: [{ productId: 'p1', quantity: 1 }],
+          },
+          {
+            id: 'ret-2',
+            status: 'REQUESTED',
+            receivedAt: null,
+            items: [{ productId: 'p1', quantity: 1 }],
+          },
+        ],
+        dispatches: [
+          { courier: 'pathao', consignmentId: 'C1', status: 'DISPATCHED', courierAmount: 200 },
+        ],
+      });
+
+      const alerts = await service.recompute('order-1');
+
+      // 1500 − 1000 paid − 300 received return = 200 → equal, no alert.
+      expect(alerts).toHaveLength(0);
+      expect(mockPrisma.codMismatchAlert.create).not.toHaveBeenCalled();
+    });
+
+    it('excludes courier-settlement rows from PAID (not customer money)', async () => {
+      loadOrder({
+        total: 1500,
+        payments: [
+          { amount: 1000, status: 'PAID', appliedCreditAmount: null, gatewayCode: 'bkash' },
+          { amount: 500, status: 'PAID', appliedCreditAmount: null, gatewayCode: 'courier_settlement' },
+        ],
+        dispatches: [
+          { courier: 'pathao', consignmentId: 'C1', status: 'DISPATCHED', courierAmount: 500 },
+        ],
+      });
+
+      const alerts = await service.recompute('order-1');
+
+      expect(alerts).toHaveLength(0);
+    });
+
+    it('ignores credit carried on non-PAID rows', async () => {
+      loadOrder({
+        total: 1500,
+        payments: [
+          { amount: 0, status: 'PENDING', appliedCreditAmount: 200 },
+        ],
+        dispatches: [
+          { courier: 'pathao', consignmentId: 'C1', status: 'DISPATCHED', courierAmount: 1500 },
+        ],
+      });
+
+      const alerts = await service.recompute('order-1');
+
+      expect(alerts).toHaveLength(0);
     });
 
     it('refreshes existing open alert amounts instead of duplicating', async () => {

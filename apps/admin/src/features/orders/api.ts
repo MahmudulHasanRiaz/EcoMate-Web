@@ -19,6 +19,9 @@ export interface OrderResponse {
   stockRestored?: boolean;
   subtotal: number | string; shippingCharge: number | string; discount: number | string;
   discountType: string; total: number | string;
+  /** Server-derived: received returns value + shared due formula. */
+  receivedReturnValue?: number | string | null;
+  due?: number | string | null;
   shippingAddress: any; customerNotes?: string | null; officeNotes?: string | null; timeline: any[];
   courierService?: string | null; courierStatus?: string | null;
   courierTrackingCode?: string | null; courierConsignmentId?: string | null;

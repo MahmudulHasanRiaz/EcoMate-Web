@@ -5,9 +5,10 @@ import { CommissionEngineService } from './commission-engine.service';
 import { CommissionRulesService } from './commission-rules.service';
 import { CommissionReportsService } from './commission-reports.service';
 import { PrismaModule } from '../prisma/prisma.module';
+import { ExpensesModule } from '../expenses/expenses.module';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, ExpensesModule],
   controllers: [CommissionsController],
   providers: [
     CommissionsService,

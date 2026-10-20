@@ -73,7 +73,6 @@ export const exchangesApi = {
     apiClient
       .get<ExchangesListResponse>('/orders', { params: { ...q, kind: 'EXCHANGE' } })
       .then((r) => r.data),
-  get: (id: string) => apiClient.get<ExchangeListItem & { items?: unknown[] }>(`/orders/${id}`).then((r) => r.data),
   linkedReturn: (exchangeOrderId: string) =>
     apiClient
       .get<{ data: { id: string; displayId: string; status: string }[] }>(

@@ -133,6 +133,8 @@ interface StagedReturn {
   status: string
   /** Stage-time validation result. false → attention row, never scanned. */
   processable: boolean
+  /** Last process attempt failed. Retryable in place; counts as attention. */
+  failed?: boolean
   reason: string | null
   customerName: string
   customerPhone: string
@@ -160,6 +162,7 @@ const sanitizeStagedReturns = (raw: unknown): StagedReturn[] => {
       orderDisplayId: typeof r.orderDisplayId === 'string' ? r.orderDisplayId : '',
       status: typeof r.status === 'string' ? r.status : '',
       processable: r.processable !== false,
+      failed: r.failed === true,
       reason: typeof r.reason === 'string' ? r.reason : null,
       customerName: typeof r.customerName === 'string' ? r.customerName : '',
       customerPhone: typeof r.customerPhone === 'string' ? r.customerPhone : '',
@@ -260,7 +263,7 @@ function returnStagedRow(r: StagedReturn): StagedRow {
     customerName: who,
     phone: r.customerPhone || undefined,
     destKind: r.kind === 'return' ? 'return' : 'order',
-    needsAttention: !r.processable,
+    needsAttention: !r.processable || r.failed === true,
     reason: r.reason ?? undefined,
     status: r.status,
     searchText: hay,
@@ -372,6 +375,7 @@ export default function ScannerPage() {
       orderDisplayId: leg.orderDisplayId ?? o?.displayId ?? '',
       status: leg.status,
       processable,
+      failed: false,
       reason: leg.reason ?? null,
       customerName: o?.customerName ?? '',
       customerPhone: o?.customerPhone ?? '',
@@ -630,8 +634,8 @@ export default function ScannerPage() {
    * Process the staged RETURN_RECEIVE batch row by row: sequential scans
    * re-validate at PROCESS time against the CURRENT list state (stale rows
    * skipped), settled rows (success/duplicate) leave the list, failed rows
-   * stay with the live error reason, attention rows never scan (they were
-   * already flagged unprocessable at stage time).
+   * stay retryable with the live error reason, and stage-time-unprocessable
+   * attention rows never scan.
    */
   const processReturns = useCallback(async () => {
     if (busy || returnStagedRef.current.length === 0) return
@@ -651,12 +655,15 @@ export default function ScannerPage() {
           if (res.status === 'success' || res.status === 'duplicate') {
             setReturnStaged((rs) => rs.filter((r) => r.key !== cur.key))
           } else {
-            setReturnStaged((rs) => rs.map((r) => r.key === cur.key ? { ...r, processable: false, reason: res.message } : r))
+            // RETRY-IN-PLACE: a failed attempt stays processable (stage-time
+            // validation passed) and carries the live reason. Attention count
+            // includes it, and the next Process run re-validates it.
+            setReturnStaged((rs) => rs.map((r) => r.key === cur.key ? { ...r, failed: true, reason: res.message } : r))
           }
         } catch (e) {
           const msg = errMsg(e)
           record({ status: 'error', identifier: cur.identifier, title: `${cur.displayId} — Failed`, message: msg })
-          setReturnStaged((rs) => rs.map((r) => r.key === cur.key ? { ...r, processable: false, reason: msg } : r))
+          setReturnStaged((rs) => rs.map((r) => r.key === cur.key ? { ...r, failed: true, reason: msg } : r))
         }
       }
     } finally {
@@ -748,9 +755,11 @@ export default function ScannerPage() {
   const TaskIcon = TASK_ICONS[mode] ?? ScanLine
   const canApplyQueue = queue.length > 0 && !busy
   const canApplyStaged = staged.length > 0 && !busy && !!targetStatusId
-  const readyReturns = returnStaged.filter((r) => r.processable).length
-  const attentionReturns = returnStaged.length - readyReturns
-  const canProcessReturns = readyReturns > 0 && !busy
+  const readyReturns = returnStaged.filter((r) => r.processable && !r.failed).length
+  const attentionReturns = returnStaged.filter((r) => !r.processable || r.failed).length
+  // Failed rows are retryable in place, so they keep the action enabled even
+  // when the ready count is zero.
+  const canProcessReturns = returnStaged.some((r) => r.processable) && !busy
 
   const stagedRows = useMemo(() => staged.map(orderStagedRow), [staged])
   const queueRows = useMemo(() => queue.map(queueStagedRow), [queue])

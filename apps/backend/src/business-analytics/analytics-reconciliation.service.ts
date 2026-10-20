@@ -15,6 +15,7 @@ import {
   recognitionGroup,
   resolveRevenueEvent,
   resolveReturn,
+  resolvePartialRecognition,
   classifyRefund,
   computeNetProfitFromLedger,
   marketingIdentityTotals,
@@ -67,6 +68,57 @@ export interface ReconciliationWarnings {
   consumptionsMissingSpendAmount: number;
   codUnsettledOrders: number;
   codUnsettledCourierCost: number;
+  /** Months where a manual salary/commission expense coexists with an auto-posted one. */
+  compensationDoubleEntryMonths: number;
+  /** Manual amount exposed to double counting in those months. */
+  compensationDoubleEntryAmount: number;
+}
+
+const COMPENSATION_AUTO_SOURCES = new Set([
+  'payroll',
+  'commission',
+  'commission_v2',
+]);
+const COMPENSATION_CATEGORIES = new Set(['salaries', 'commissions']);
+
+/**
+ * Manual/auto compensation overlap (W12). Payroll finalisation and commission
+ * accrual post expenses automatically; a manually entered salary/commission
+ * expense in the same month is surfaced — never silently merged or hidden.
+ */
+export function computeCompensationOverlap(
+  rows: {
+    amount: unknown;
+    expenseDate: Date;
+    sourceType: string | null;
+    categorySlug: string | null;
+  }[],
+): { months: number; amount: number } {
+  const auto = new Set<string>();
+  const manual = new Map<string, number>();
+  for (const row of rows) {
+    if (!row.categorySlug || !COMPENSATION_CATEGORIES.has(row.categorySlug)) {
+      continue;
+    }
+    const d = row.expenseDate instanceof Date ? row.expenseDate : new Date(row.expenseDate);
+    if (Number.isNaN(d.getTime())) continue;
+    const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    const key = `${month}|${row.categorySlug}`;
+    if (row.sourceType && COMPENSATION_AUTO_SOURCES.has(row.sourceType)) {
+      auto.add(key);
+    } else if (!row.sourceType) {
+      manual.set(key, (manual.get(key) ?? 0) + (Number(row.amount) || 0));
+    }
+  }
+  let months = 0;
+  let amount = 0;
+  for (const [key, value] of manual) {
+    if (auto.has(key)) {
+      months += 1;
+      amount += value;
+    }
+  }
+  return { months, amount: Math.round(amount * 100) / 100 };
 }
 
 export interface ReconciliationInput {
@@ -506,7 +558,7 @@ const WARNING_DEFS: {
   { id: 'W2', pick: (w) => ({ count: w.ordersMissingShippingCost, detail: `${w.ordersMissingShippingCost} recognised order(s) missing shippingCost` }) },
   { id: 'W3', pick: (w) => ({ count: w.paymentsMissingFee, detail: `${w.paymentsMissingFee} PAID payment(s) missing feeAmount` }) },
   { id: 'W4', pick: (w) => ({ count: w.timelineLessDeliveries, detail: `${w.timelineLessDeliveries} deliverie(s) dated via Dispatch fallback or undated` }) },
-  { id: 'W5', pick: (w) => ({ count: w.partialFlagged, detail: `${w.partialFlagged} Partial order(s): unrecognised, flagged, no partial value invented` }) },
+  { id: 'W5', pick: (w) => ({ count: w.partialFlagged, detail: `${w.partialFlagged} Partial order(s) still unrecognised (no dated Partial transition) — kept value not invented` }) },
   { id: 'W6', pick: (w) => ({ count: w.returnPendingInFlight, detail: `${w.returnPendingInFlight} Return Pending order(s) in flight` }) },
   { id: 'W7', pick: (w) => ({ count: w.unmappedLocations, detail: `${w.unmappedLocations} order(s) with no city/state/zip snapshot` }) },
   {
@@ -530,6 +582,16 @@ const WARNING_DEFS: {
       w.codUnsettledOrders > 0
         ? { count: w.codUnsettledOrders, detail: `${w.codUnsettledOrders} COD order(s) with unavailable settlement (৳${w.codUnsettledCourierCost} courier cost)` }
         : { count: 0, detail: 'no unsettled COD orders' },
+  },
+  {
+    id: 'W12',
+    pick: (w) =>
+      w.compensationDoubleEntryMonths > 0
+        ? {
+            count: w.compensationDoubleEntryMonths,
+            detail: `manual salary/commission expense in ${w.compensationDoubleEntryMonths} month(s) that also have auto-posted compensation (৳${w.compensationDoubleEntryAmount}) — possible double entry`,
+          }
+        : { count: 0, detail: 'no manual/auto compensation overlap' },
   },
 ];
 
@@ -648,7 +710,13 @@ export class AnalyticsReconciliationService {
         }),
         this.prisma.expense.findMany({
           where: { expenseDate: { gte: range.start, lte: range.end } },
-          select: { amount: true, taxAmount: true },
+          select: {
+            amount: true,
+            taxAmount: true,
+            expenseDate: true,
+            sourceType: true,
+            category: { select: { slug: true } },
+          },
         }),
         this.prisma.marketingConsumption.findMany({
           select: { calculatedCost: true, spendDate: true },
@@ -701,6 +769,15 @@ export class AnalyticsReconciliationService {
           select: { id: true, name: true },
         }),
       ]);
+
+    const compensationOverlap = computeCompensationOverlap(
+      expenseRows.map((e: any) => ({
+        amount: e.amount,
+        expenseDate: e.expenseDate,
+        sourceType: e.sourceType ?? null,
+        categorySlug: e.category?.slug ?? null,
+      })),
+    );
 
     const num = (v: number | null | undefined) => v ?? 0;
     const L = pnlRes.data.lines;
@@ -839,7 +916,12 @@ export class AnalyticsReconciliationService {
         if (backedBySettlement && carriesFigures) codSettledOrders.push(o.id);
       }
 
-      if (statusName === 'Partial') partialFlagged += 1;
+      // W5: only Partial orders that cannot be recognised (no dated Partial
+      // transition). Covered Partial orders now recognise kept items in P&L.
+      if (statusName === 'Partial') {
+        const partial = resolvePartialRecognition(statusName, timeline);
+        if (!partial.recognised) partialFlagged += 1;
+      }
       if (statusName === 'Return Pending') returnPendingInFlight += 1;
       if (!o.customerCity && !o.customerState && !o.customerZip) {
         unmappedLocations += 1;
@@ -1018,6 +1100,8 @@ export class AnalyticsReconciliationService {
         consumptionsMissingSpendAmount: coverage.marketing.undatedAmount,
         codUnsettledOrders: ful.coverage.codUnsettled,
         codUnsettledCourierCost: ful.coverage.unknownAmount,
+        compensationDoubleEntryMonths: compensationOverlap.months,
+        compensationDoubleEntryAmount: compensationOverlap.amount,
       },
     });
 

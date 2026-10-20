@@ -34,7 +34,11 @@ revenue date (not even accepted as input). Everything before `Delivered` is neve
 Lifecycle groups: Pending / Payment Pending / Payment Verifying / Hold =
 pre-fulfilment (never recognised); Confirmed / Packed / Packing Hold /
 Shipping = in-fulfilment (never recognised); Delivered = recognised event;
-Partial = unrecognised + flagged (no partial value invented); Return Pending
+Partial = recognised on KEPT items only when a dated `Partial` timeline
+transition exists; status without a dated transition stays unrecognised and
+is counted in W5 (no partial value invented). Kept qty = order line qty −
+received-returned qty (courier-reported undelivered quantities are not
+carried in Dispatch, so they are not derivable). Return Pending
 = unrecognised unless a prior `Delivered` exists; Returned / Damaged =
 recognised-then-reversed only with a prior `Delivered`; Cancelled = never
 recognised. `isFinal`: Delivered, Returned, Damaged, Cancelled.
@@ -53,7 +57,18 @@ in the later period, earlier periods are never rewritten.
 
 Return Event = delivery-recognised order with a transition to
 Returned/Damaged in range, dated by that transition. Returned Value =
-`Σ lineNet` of all the order's items at the return event. Return Rate is
+`Σ lineNet` of all the order's items at the return event.
+
+Item-level partial returns: every `Return` row that reached RECEIVED or later
+(`RECEIVED | RESTOCKED | CLOSED`) deducts `Σ(qty × OrderItem.price)` matched
+to the original order line, dated at `Return.receivedAt` (first receipt,
+backfilled from `stockReconciledAt`). COGS mirrors `costSnapshot × qty`.
+Order totals/items are NEVER mutated (D1); the deduction is computed at read
+time. A created-but-not-received return deducts nothing. Undated receipts are
+counted (`returnReceivedUndatedEvents`) and consume line quantity but never
+invent a period. Quantity is capped at the ordered line quantity. Full-order
+reversal (timeline Returned/Damaged with a prior Delivered) takes the whole
+order and SKIPS item-level deductions (R12). Return Rate is
 order-level only (`returnEvents / recognisedOrders`); product/variant return
 figures are labelled "order-level incidence" — no fractional attribution.
 
@@ -129,19 +144,22 @@ actual; COD → unavailable, never inferred from `Order.total` or any order
 field) · `amountRefunded` (`Σ completed Refund.amount` → actual) ·
 `amountRetained` (derived, unavailable wherever collected is) ·
 `deliveryChargeRetained` (online: shipping charge adjusted by inference →
-actual; COD → unavailable) · `courierCost` (`shippingCost` + source states —
-available for COD and online, deducted once in the ladder) ·
-`fulfillmentMargin` (`DCR − CC`; unavailable for COD).
+actual; COD: `deliveryChargeRetained` from a finalized
+`ActualCodSettlement`, else unavailable) · `courierCost` (`shippingCost` +
+source states — available for COD and online, deducted once in the ladder) ·
+`fulfillmentMargin` (`DCR − CC`; unavailable while any COD order in the
+cohort lacks settlement data).
 
 Shipping-refund inference (online only, labelled): refund ≥ shipping charge
 ⇒ retained 0 (`covered`); refund < charge ⇒ retained full (`below`); no
 refund ⇒ retained full (`none`). Never applied to COD.
 
-Future courier settlement / CSV import is the designated authoritative
-source for COD collection, consumed through the `SettlementSource` adapter
-seam (P2) — no settlement tables in this project. R18: no COD order carries
-non-null collected / retained / deliveryChargeRetained / margin. R11: no
-settlement amount appears in any revenue bucket.
+Finalized courier settlement is the authoritative source for COD collection,
+consumed through the `SettlementSource` adapter seam.
+`AnalyticsPnlService` loads settlement for the recognised COD cohort once
+(`buildSettlementSource`) and maps `getCodCollection` per order — never a
+per-order query. No settlement row ⇒ unavailable, never inferred (R18). R11:
+no settlement amount appears in any revenue bucket.
 
 ## 9. Products, customers, inventory, expenses
 
@@ -158,11 +176,35 @@ non-finite inputs; zero sales ⇒ +Infinity); `classifyMovement` defaults its
 `doi` through it. Expense kinds default `unclassified`, never
 inferred. "Store" is not a dimension.
 
+Compensation expenses are system-posted: payroll finalisation (draft → paid
+or reviewed → approved) posts one salary expense (gross earnings EXCLUDING
+`Commission` payslip lines), and commission accrual (v1 rule earning, v2
+ledger credit) posts one commission expense. Provenance
+`Expense.sourceType/sourceId` is unique, so retries add nothing. Reversals
+post a separate negative row; originals are never edited. Manual
+salary/commission expenses that share a month with an auto-posted one are
+surfaced by W12, never silently merged.
+
 ## 10. Reconciliation & warnings
 
-R1–R18 + W1–W11 per plan §4.3. P1 locks the pure predicates behind R12
+R1–R18 + W1–W12 per plan §4.3. P1 locks the pure predicates behind R12
 (double-reversal), R14 (bridge identity), R15 (forbidden-formula guard),
 R16 (component-once), R17 (marketing strictness), R18 (COD honesty).
+W12 = manual compensation expense in a month that also has an auto-posted
+salary/commission expense (possible double entry).
+
+## 12. Order due (single derivation)
+
+`due = total − Σ(PAID customer payments) − applied credit − received return
+value`, floored at 0; cancelled orders have due 0. `courier_settlement`
+gateway rows are settlement bookkeeping, not customer money, and are
+excluded everywhere (`common/finance/order-due.ts`). Received return value is
+the same item-level, all-time calculation as §3
+(`receivedReturnValue`), so a received partial return lowers the payment
+card's Due and the COD-mismatch expected collectable identically. Courier
+booking collectables are computed at dispatch time (before delivery), when
+no received return can exist, and intentionally keep their stored
+`paymentStatus` fallback.
 
 ## 11. P2 data layer — registry, cost capture, deferred checks
 

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { CompensationExpenseService } from '../expenses/compensation-expense.service';
 import {
   calculateCommission,
   periodKeyFor,
@@ -58,7 +59,10 @@ export interface QualificationOutcome {
 export class CommissionEngineService {
   private readonly logger = new Logger(CommissionEngineService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly compensation: CompensationExpenseService,
+  ) {}
 
   /**
    * Record a status transition, and credit commission if this is the first
@@ -289,6 +293,27 @@ export class CommissionEngineService {
           purpose,
           amount: calc.amount.toString(),
         });
+
+        // Accrual → Operating Expenses. Commission lines are excluded from
+        // the payroll salary expense, so this is the only commission cost.
+        try {
+          await this.compensation.postCompensationExpense(
+            {
+              sourceType: 'commission_v2',
+              sourceId: ledger.id,
+              amount: Number(calc.amount),
+              expenseDate: occurredAt,
+              description: `Commission (${purpose}) — order ${orderId}`,
+              categorySlug: 'commissions',
+            },
+            client,
+          );
+        } catch (expenseErr) {
+          this.logger.error(
+            `Commission expense posting failed for ledger ${ledger.id}:`,
+            expenseErr,
+          );
+        }
       } catch (err: any) {
         // P2002 on (orderId, purpose) means this purpose was already credited
         // for this order. That is the invariant working, not a failure.

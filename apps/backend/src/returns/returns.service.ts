@@ -606,7 +606,11 @@ export class ReturnsService {
     }
     return this.prisma.return.update({
       where: { id },
-      data: { status: 'RECEIVED' as any, courierStatus: courierStatus ?? (ret as any).courierStatus },
+      data: {
+        status: 'RECEIVED' as any,
+        courierStatus: courierStatus ?? (ret as any).courierStatus,
+        receivedAt: (ret as any).receivedAt ?? new Date(),
+      },
     });
   }
 

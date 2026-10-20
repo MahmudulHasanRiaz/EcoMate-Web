@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { CommissionsService } from '../commissions.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CompensationExpenseService } from '../../expenses/compensation-expense.service';
 import { Prisma } from '@prisma/client';
 
 describe('CommissionsService', () => {
@@ -57,11 +58,17 @@ describe('CommissionsService', () => {
     },
   };
 
+  const compensationMock = {
+    postCompensationExpense: jest.fn().mockResolvedValue(undefined),
+    reverseCompensationExpense: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CommissionsService,
         { provide: PrismaService, useValue: prismaMock },
+        { provide: CompensationExpenseService, useValue: compensationMock },
       ],
     }).compile();
     service = module.get<CommissionsService>(CommissionsService);
@@ -367,6 +374,35 @@ describe('CommissionsService', () => {
       expect(count).toBe(0);
       expect(prismaMock.commissionRule.findMany).not.toHaveBeenCalled();
     });
+
+    it('posts one commission expense per accrued earning (idempotent source key)', async () => {
+      // The PERSISTED earning amount is authoritative (a legacy row may predate
+      // the current rule value), so the posting reads it back after createMany.
+      prismaMock.commissionEarning.findMany.mockResolvedValueOnce([
+        { ruleId: 'rule-1', amount: '40' },
+      ]);
+      await runHook(baseOrder(confirmedId), [
+        {
+          id: 'rule-1',
+          employeeId: 'emp-1',
+          triggerStatusId: null,
+          amountType: 'percent',
+          amount: 5,
+          minOrderAmount: null,
+          capPerOrder: null,
+        },
+      ]);
+
+      expect(compensationMock.postCompensationExpense).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourceType: 'commission',
+          sourceId: 'order-1:rule-1',
+          amount: 40,
+          categorySlug: 'commissions',
+          expenseDate: expect.any(Date),
+        }),
+      );
+    });
   });
 
   describe('reverseEarning', () => {
@@ -391,6 +427,24 @@ describe('CommissionsService', () => {
           reversedById: 'actor-1',
         }),
       });
+    });
+
+    it('posts a negative commission expense for the original accrual', async () => {
+      await service.reverseEarning(
+        'earning-1',
+        { orderId: 'order-1', reason: 'Order cancelled' },
+        'actor-1',
+      );
+
+      expect(
+        compensationMock.reverseCompensationExpense,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourceType: 'commission',
+          sourceId: 'order-1:rule-1',
+          categorySlug: 'commissions',
+        }),
+      );
     });
 
     it('reverses a proportional share of the earning (order 1000, refund 250 → 25%)', async () => {

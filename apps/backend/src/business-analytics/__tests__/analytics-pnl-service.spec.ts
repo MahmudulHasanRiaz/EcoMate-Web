@@ -8,6 +8,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PaymentStatus } from '@prisma/client';
 import { AnalyticsPnlService } from '../analytics-pnl.service';
+import { AnalyticsFulfillmentService } from '../analytics-fulfillment.service';
 import { AnalyticsFilterService } from '../analytics-filter.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CacheService } from '../../cache/cache.service';
@@ -26,6 +27,11 @@ describe('AnalyticsPnlService fetch wiring', () => {
     buildOrderWhere: jest.fn(),
     resolveMarketingOrderIds: jest.fn(),
     segmentOf: jest.fn(),
+  };
+  const mockFulfillment: any = {
+    buildSettlementSource: jest.fn().mockReturnValue({
+      getCodCollection: jest.fn().mockReturnValue({ state: 'unavailable' }),
+    }),
   };
 
   const range = {
@@ -51,6 +57,7 @@ describe('AnalyticsPnlService fetch wiring', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AnalyticsFilterService, useValue: mockFilter },
         { provide: CacheService, useValue: cache },
+        { provide: AnalyticsFulfillmentService, useValue: mockFulfillment },
       ],
     }).compile();
     service = module.get(AnalyticsPnlService);
@@ -200,5 +207,50 @@ describe('AnalyticsPnlService fetch wiring', () => {
       value: 0,
       state: 'zero',
     });
+  });
+
+  it('fetches received returns with the order cohort (item-level deductions)', async () => {
+    await service.getPnl({} as any);
+    const select = mockPrisma.order.findMany.mock.calls[0][0].select;
+    expect(select.returns).toEqual(
+      expect.objectContaining({
+        where: { status: { in: ['RECEIVED', 'RESTOCKED', 'CLOSED'] } },
+      }),
+    );
+    expect(select.items.select).toEqual(
+      expect.objectContaining({ productId: true, variantId: true }),
+    );
+  });
+
+  it('loads COD settlement once for the recognised candidate set', async () => {
+    mockPrisma.order.findMany.mockResolvedValue([
+      {
+        id: 'cod-1',
+        total: 1000,
+        subtotal: 900,
+        shippingCharge: 100,
+        discount: 0,
+        discountType: 'flat',
+        status: { name: 'Delivered' },
+        timeline: [
+          { status: 'Delivered', timestamp: '2026-09-10T10:00:00+06:00' },
+        ],
+        createdAt: new Date('2026-09-01T10:00:00+06:00'),
+        paymentOptionType: 'CASH_ON_DELIVERY',
+        customerId: null,
+        customerPhone: null,
+        guestPhone: null,
+        shippingCost: 80,
+        shippingCostSource: 'manual',
+        items: [],
+        payments: [],
+        refunds: [],
+        returns: [],
+        dispatches: [],
+      },
+    ]);
+    await service.getPnl({} as any);
+    expect(mockFulfillment.buildSettlementSource).toHaveBeenCalledTimes(1);
+    expect(mockFulfillment.buildSettlementSource).toHaveBeenCalledWith(['cod-1']);
   });
 });

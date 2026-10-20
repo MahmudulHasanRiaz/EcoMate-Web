@@ -5,6 +5,8 @@
 // here is the canonical one from the plan (§2 table, §3 decomposition) and is
 // covered by the Financial Truth Table tests.
 
+import { deriveOrderDue } from '../common/finance/order-due';
+
 export const MONEY_EPSILON = 0.01;
 export const RESIDUAL_TOLERANCE = 0.05;
 
@@ -70,14 +72,9 @@ export function derivedDue(
     gatewayCode?: string | null;
   }[],
 ): number {
-  const paid = payments
-    .filter((p) => p.status === 'PAID' && p.gatewayCode !== 'courier_settlement')
-    .reduce((sum, p) => sum + numberOr(p.amount, 0), 0);
-  const applied = payments.reduce(
-    (sum, p) => sum + numberOr(p.appliedCreditAmount ?? 0, 0),
-    0,
-  );
-  return Math.max(0, round2(numberOr(total, 0) - paid - applied));
+  // ONE shared derivation (common/finance/order-due): total − ΣPAID
+  // (settlement rows excluded) − applied credit, floored at 0.
+  return round2(deriveOrderDue({ total, payments }).due);
 }
 
 /**

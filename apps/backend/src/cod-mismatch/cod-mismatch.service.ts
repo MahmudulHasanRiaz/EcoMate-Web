@@ -1,5 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { deriveOrderDue } from '../common/finance/order-due';
+import {
+  receivedReturnValue,
+  RECEIVED_RETURN_STATUSES,
+} from '../common/finance/return-impact';
 
 const OPEN = 'open';
 const RESOLVED = 'resolved';
@@ -15,17 +20,37 @@ export class CodMismatchService {
   async recompute(orderId: string) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      include: { payments: true, dispatches: true },
+      include: {
+        payments: true,
+        dispatches: true,
+        status: { select: { name: true } },
+        items: {
+          select: {
+            productId: true,
+            variantId: true,
+            price: true,
+            quantity: true,
+          },
+        },
+        returns: {
+          where: { status: { in: [...RECEIVED_RETURN_STATUSES] as any } },
+          select: { id: true, status: true, receivedAt: true, items: true },
+        },
+      },
     });
     if (!order) return [];
-    const paid = (order as any).payments
-      .filter((p: any) => p.status === 'PAID')
-      .reduce((s: number, p: any) => s + Number(p.amount), 0);
-    const applied = (order as any).payments.reduce(
-      (s: number, p: any) => s + Number(p.appliedCreditAmount ?? 0),
-      0,
-    );
-    const systemDue = Math.max(0, Number((order as any).total) - paid - applied);
+    // ONE shared due derivation (total − PAID ∖ settlement − credit −
+    // received returns). The expected collectable always matches the order
+    // payment card; a received partial return lowers what the courier owes.
+    const systemDue = deriveOrderDue({
+      total: Number((order as any).total),
+      payments: (order as any).payments,
+      receivedReturnValue: receivedReturnValue({
+        returns: (order as any).returns ?? [],
+        orderItems: (order as any).items ?? [],
+      }),
+      cancelled: (order as any).status?.name === 'Cancelled',
+    }).due;
     // Task 10 (owner-locked): approval_pending NEVER settles — only
     // delivered/partial_delivered/cancelled count in the COD-alert. Unsettled
     // rows (anything ending `_approval_pending` + `exceptional`) are the

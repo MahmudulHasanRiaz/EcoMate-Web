@@ -1547,6 +1547,10 @@ model Return {
   // movement, so reconcile retries + mark-received can never restore twice.
   stockReconciled   Boolean      @default(false)
   stockReconciledAt DateTime?
+  /// First transition into RECEIVED-or-later. Event date for analytics
+  /// deductions (never the mutable updatedAt). Backfilled from
+  /// stockReconciledAt for pre-existing restocked rows.
+  receivedAt        DateTime?
   // Linked refund row (refunds module) — plain id, no FK (refund lifecycle is
   // independent; deleting a refund must never cascade a Return).
   refundId        String?
@@ -2341,11 +2345,17 @@ model Expense {
   referenceNo      String?
   notes            String?         @db.Text
   receiptUrl       String?
+  /// Set ONLY for system-posted expenses (payroll finalisation, commission
+  /// accrual). NULL = manually entered. The unique pair makes posting
+  /// idempotent; reversal rows use `<sourceType>_reversal` + the same source id.
+  sourceType       String?
+  sourceId         String?
   createdBy        String?
   updatedBy        String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
+  @@unique([sourceType, sourceId])
   @@index([categoryId])
   @@index([paymentAccountId])
   @@index([expenseDate])

@@ -18,6 +18,7 @@ import { CacheService } from '../cache/cache.service';
 import {
   resolveRevenueEvent,
   resolveReturn,
+  resolvePartialRecognition,
   allocateDiscount,
   classifyRefund,
   cogsLineState,
@@ -37,7 +38,14 @@ import {
   type MarketingConsumptionRow,
 } from './metric-contract';
 import { ladderState } from './analytics-coverage.util';
-import { collectionKindOf } from './settlement-source';
+import { collectionKindOf, type CodCollectionResult } from './settlement-source';
+import {
+  computeReceivedReturnImpact,
+  receivedReturnQuantities,
+  RECEIVED_RETURN_STATUSES,
+  type ReceivedReturnEvent,
+} from '../common/finance/return-impact';
+import { AnalyticsFulfillmentService } from './analytics-fulfillment.service';
 import {
   AnalyticsFilterService,
   customerKeyOf,
@@ -62,6 +70,8 @@ import {
 // ---------------------------------------------------------------------------
 
 export interface PnlItemInput {
+  productId?: string | null;
+  variantId?: string | null;
   price: number;
   quantity: number;
   costSnapshot: number | null;
@@ -103,6 +113,10 @@ export interface PnlOrderInput {
   items: PnlItemInput[];
   payments: PnlPaymentInput[];
   refunds: PnlRefundInput[];
+  /** RECEIVED-or-later Return rows (item-level partial returns, §1). */
+  receivedReturns?: ReceivedReturnEvent[];
+  /** Authoritative COD collection (settlement source) for DCR (§5). */
+  codCollection?: CodCollectionResult | null;
 }
 
 export interface PnlInput {
@@ -121,10 +135,14 @@ export interface PnlResult {
   recognisedOrders: number;
   grossSales: { amount: number };
   discounts: { amount: number };
-  returns: { amount: number };
+  returns: { amount: number; receivedAmount: number; partialAmount: number };
   refundsReversal: { amount: number };
   informationalRefunds: number;
   returnEvents: number;
+  /** Dated received-return events included in the Returns line. */
+  returnReceivedEvents: number;
+  returnReceivedUndatedEvents: number;
+  partialRecognition: { orders: number; grossSales: number; netSales: number };
   netSales: { amount: number };
   cogs: { amount: number; state: CostState };
   returnedCogs: { amount: number };
@@ -166,6 +184,8 @@ export interface PnlResult {
     /** Structural R15 guard: FM is never an operand. */
     operands: ['contributionProfit', 'deliveryChargeRetained'];
     codRecognisedOrders: number;
+    codSettledOrders: number;
+    codUnsettledOrders: number;
     excludedCodShippingCharge: number;
     shippingRefundInferences: number;
   };
@@ -196,6 +216,13 @@ export function computePnl(input: PnlInput): PnlResult {
   let refundsReversal = 0;
   let informationalRefunds = 0;
   let returnEvents = 0;
+  let returnsReceivedValue = 0;
+  let returnsPartialValue = 0;
+  let receivedReturnEvents = 0;
+  let receivedReturnUndatedEvents = 0;
+  let partialOrders = 0;
+  let partialGross = 0;
+  let partialNet = 0;
   let cogs = 0;
   let returnedCogs = 0;
   let cogsActualUnits = 0;
@@ -213,6 +240,8 @@ export function computePnl(input: PnlInput): PnlResult {
   let withoutFee = 0;
   let dcr = 0;
   let codRecognised = 0;
+  let codSettled = 0;
+  let codUnsettled = 0;
   let excludedCodShipping = 0;
   let inferences = 0;
   let onlineRecognised = 0;
@@ -236,13 +265,17 @@ export function computePnl(input: PnlInput): PnlResult {
       rev.revenueDate,
     );
 
+    // Partial-delivery recognition (§3): kept items earn revenue on the
+    // latest dated Partial transition. Status alone never invents a date.
+    const partial = resolvePartialRecognition(order.status, order.timeline ?? []);
+    const revenueDate = rev.recognised ? rev.revenueDate : partial.partialAt;
+
     // Event-dated lines (returns + refund reversals) belong to the period of
     // the EVENT, not the revenue period: a delivery-recognised order returned
     // or refunded in range reverses here even when delivered earlier (P1 is
     // never rewritten).
-    const recognisedEver = rev.recognised;
-    const inCohort =
-      recognisedEver && inRange(rev.revenueDate, range);
+    const recognisedEver = rev.recognised || partial.recognised;
+    const inCohort = recognisedEver && inRange(revenueDate, range);
 
     const lineGrosses = order.items.map((i) => i.price * i.quantity);
     const grossSum = lineGrosses.reduce((s, g) => s + g, 0);
@@ -253,7 +286,7 @@ export function computePnl(input: PnlInput): PnlResult {
     const allocated = allocateDiscount(lineGrosses, effectiveDiscount);
     const lineNets = allocated.map((a) => a.net);
 
-    if (recognisedEver) {
+    if (rev.recognised) {
       if (ret.reversesRevenue && inRange(ret.returnAt, range)) {
         returnEvents += 1;
         returns += lineNets.reduce((s, n) => s + n, 0);
@@ -288,6 +321,30 @@ export function computePnl(input: PnlInput): PnlResult {
       }
     }
 
+    // §1 item-level partial returns — delivered orders only. A whole-order
+    // reversal already took the full net + COGS (R12): never add item-level
+    // deductions on top. Partial orders exclude returned units from their
+    // kept recognition instead (below), so they never deduct twice either.
+    const orderReturnItems = order.items.map((i) => ({
+      productId: i.productId ?? null,
+      variantId: i.variantId ?? null,
+      price: i.price,
+      quantity: i.quantity,
+      costSnapshot: i.costSnapshot,
+    }));
+    if (rev.recognised && !partial.recognised && !ret.reversesRevenue) {
+      const impact = computeReceivedReturnImpact({
+        returns: order.receivedReturns ?? [],
+        orderItems: orderReturnItems,
+        range,
+      });
+      returns += impact.value;
+      returnsReceivedValue += impact.value;
+      returnedCogs += impact.cogsReversal;
+      receivedReturnEvents += impact.events;
+      receivedReturnUndatedEvents += impact.undatedEvents;
+    }
+
     if (!inCohort) {
       // Pipeline accounting for the recognition strip (snapshot over the
       // candidate set; cancelled orders are simply not in fulfilment).
@@ -306,8 +363,11 @@ export function computePnl(input: PnlInput): PnlResult {
     }
 
     recognisedOrders += 1;
-    if (rev.revenueDateSource === 'timeline') dateTimeline += 1;
-    if (rev.revenueDateSource === 'dispatch') dateDispatch += 1;
+    if (partial.recognised) dateTimeline += 1;
+    else {
+      if (rev.revenueDateSource === 'timeline') dateTimeline += 1;
+      if (rev.revenueDateSource === 'dispatch') dateDispatch += 1;
+    }
     const deliveredTransition = (order.timeline ?? []).some(
       (e) =>
         e.status === 'Delivered' &&
@@ -321,24 +381,62 @@ export function computePnl(input: PnlInput): PnlResult {
     );
     if (deliveredTransition) deliveredInRange += 1;
 
-    gross += grossSum;
-    discounts += allocated.reduce((s, a) => s + a.allocated, 0);
-
-    for (let i = 0; i < order.items.length; i++) {
-      const item = order.items[i];
-      const state = cogsLineState({
-        costSnapshot: item.costSnapshot,
-        costType: item.costType,
+    if (partial.recognised) {
+      // Kept-items recognition: order items minus received-returned units.
+      // Courier-reported undelivered quantities are not carried by Dispatch
+      // (status text only), so the derivable kept portion is used.
+      const returnedQty = receivedReturnQuantities({
+        returns: order.receivedReturns ?? [],
+        orderItems: orderReturnItems,
       });
-      if (item.costSnapshot !== null && item.costSnapshot !== undefined) {
-        cogs += item.costSnapshot * item.quantity;
-        if (state === 'actual') cogsActualUnits += item.quantity;
-        else cogsEstimatedUnits += item.quantity;
-      } else {
-        // Unavailable units are counted, never summed as zero; the current
-        // standardCost is never consulted (no back-fill, §2.3).
-        cogsUnavailableUnits += item.quantity;
-        cogsUnavailableItems += 1;
+      let keptGross = 0;
+      let keptNet = 0;
+      for (let i = 0; i < order.items.length; i++) {
+        const item = order.items[i];
+        const kept = Math.max(0, item.quantity - (returnedQty[i] ?? 0));
+        if (kept === 0) continue;
+        keptGross += item.price * kept;
+        keptNet += lineNets[i] * (kept / item.quantity);
+        returnsPartialValue += item.price * (item.quantity - kept);
+
+        const state = cogsLineState({
+          costSnapshot: item.costSnapshot,
+          costType: item.costType,
+        });
+        if (item.costSnapshot !== null && item.costSnapshot !== undefined) {
+          cogs += item.costSnapshot * kept;
+          if (state === 'actual') cogsActualUnits += kept;
+          else cogsEstimatedUnits += kept;
+        } else {
+          cogsUnavailableUnits += kept;
+          cogsUnavailableItems += 1;
+        }
+      }
+      gross += keptGross;
+      discounts += keptGross - keptNet;
+      partialOrders += 1;
+      partialGross += keptGross;
+      partialNet += keptNet;
+    } else {
+      gross += grossSum;
+      discounts += allocated.reduce((s, a) => s + a.allocated, 0);
+
+      for (let i = 0; i < order.items.length; i++) {
+        const item = order.items[i];
+        const state = cogsLineState({
+          costSnapshot: item.costSnapshot,
+          costType: item.costType,
+        });
+        if (item.costSnapshot !== null && item.costSnapshot !== undefined) {
+          cogs += item.costSnapshot * item.quantity;
+          if (state === 'actual') cogsActualUnits += item.quantity;
+          else cogsEstimatedUnits += item.quantity;
+        } else {
+          // Unavailable units are counted, never summed as zero; the current
+          // standardCost is never consulted (no back-fill, §2.3).
+          cogsUnavailableUnits += item.quantity;
+          cogsUnavailableItems += 1;
+        }
       }
     }
 
@@ -378,7 +476,20 @@ export function computePnl(input: PnlInput): PnlResult {
       if (outcome.inference !== 'none') inferences += 1;
     } else {
       codRecognised += 1;
-      excludedCodShipping += order.shippingCharge;
+      const collection = order.codCollection;
+      const retained =
+        collection && collection.state === 'actual'
+          ? collection.deliveryChargeRetained
+          : null;
+      if (retained !== null && retained !== undefined) {
+        dcr += Number(retained) || 0;
+        codSettled += 1;
+      } else {
+        // R18: COD collection is never inferred. Missing settlement data keeps
+        // the state unavailable and excludes the charge from the total.
+        codUnsettled += 1;
+        excludedCodShipping += order.shippingCharge;
+      }
     }
   }
 
@@ -411,7 +522,7 @@ export function computePnl(input: PnlInput): PnlResult {
     paymentFees: fees,
     marketingCost: marketing.total,
   });
-  const dcrState = codRecognised > 0 ? 'unavailable' : 'actual';
+  const dcrState = codUnsettled > 0 ? 'unavailable' : 'actual';
   const fulfillmentMargin = computeFulfillmentMargin({
     deliveryChargeRetained: dcr,
     courierCost: fulfillment,
@@ -447,10 +558,21 @@ export function computePnl(input: PnlInput): PnlResult {
     recognisedOrders,
     grossSales: { amount: gross },
     discounts: { amount: discounts },
-    returns: { amount: returns },
+    returns: {
+      amount: returns,
+      receivedAmount: returnsReceivedValue,
+      partialAmount: returnsPartialValue,
+    },
     refundsReversal: { amount: refundsReversal },
     informationalRefunds,
     returnEvents,
+    returnReceivedEvents: receivedReturnEvents,
+    returnReceivedUndatedEvents: receivedReturnUndatedEvents,
+    partialRecognition: {
+      orders: partialOrders,
+      grossSales: partialGross,
+      netSales: partialNet,
+    },
     netSales: { amount: netSales },
     cogs: { amount: cogsNet, state: cogsState },
     returnedCogs: { amount: returnedCogs },
@@ -492,7 +614,7 @@ export function computePnl(input: PnlInput): PnlResult {
       delivery: {
         onlineOrders: onlineRecognised,
         codOrders: codRecognised,
-        collectionUnavailableOrders: codRecognised,
+        collectionUnavailableOrders: codUnsettled,
       },
     },
     bridge: {
@@ -505,6 +627,8 @@ export function computePnl(input: PnlInput): PnlResult {
       netProfit,
       operands: ['contributionProfit', 'deliveryChargeRetained'],
       codRecognisedOrders: codRecognised,
+      codSettledOrders: codSettled,
+      codUnsettledOrders: codUnsettled,
       excludedCodShippingCharge: excludedCodShipping,
       shippingRefundInferences: inferences,
     },
@@ -634,6 +758,7 @@ export class AnalyticsPnlService {
     private readonly prisma: PrismaService,
     private readonly filters: AnalyticsFilterService,
     private readonly cache: CacheService,
+    private readonly fulfillment: AnalyticsFulfillmentService,
   ) {}
 
   // Non-ok states require a reason at the type level (overloads): a future
@@ -713,6 +838,8 @@ export class AnalyticsPnlService {
           shippingCostSource: true,
           items: {
             select: {
+              productId: true,
+              variantId: true,
               price: true,
               quantity: true,
               costSnapshot: true,
@@ -730,6 +857,16 @@ export class AnalyticsPnlService {
           },
           refunds: {
             select: { amount: true, status: true, processedAt: true, createdAt: true },
+          },
+          returns: {
+            where: { status: { in: [...RECEIVED_RETURN_STATUSES] as any } },
+            select: {
+              id: true,
+              status: true,
+              receivedAt: true,
+              stockReconciledAt: true,
+              items: true,
+            },
           },
           dispatches: {
             select: { deliveredAt: true },
@@ -797,10 +934,22 @@ export class AnalyticsPnlService {
         shippingCost: o.shippingCost === null ? null : Number(o.shippingCost),
         shippingCostSource: o.shippingCostSource,
         items: (o.items ?? []).map((i: any) => ({
+          productId: i.productId ?? null,
+          variantId: i.variantId ?? null,
           price: Number(i.price),
           quantity: i.quantity,
           costSnapshot: i.costSnapshot === null ? null : Number(i.costSnapshot),
           costType: i.costType === 'actual' || i.costType === 'estimated' ? i.costType : null,
+        })),
+        receivedReturns: (o.returns ?? []).map((r: any): ReceivedReturnEvent => ({
+          id: r.id,
+          status: r.status,
+          receivedAt: r.receivedAt
+            ? new Date(r.receivedAt)
+            : r.stockReconciledAt
+              ? new Date(r.stockReconciledAt)
+              : null,
+          items: r.items,
         })),
         payments: (o.payments ?? []).map((p: any) => ({
           amount: Number(p.amount),
@@ -837,6 +986,18 @@ export class AnalyticsPnlService {
           this.filters.segmentOf(customerKeyOf(order), range, history) ===
           filters.customerSegment,
       );
+    }
+
+    // COD delivery-charge retained (§5): authoritative settlement data only.
+    // One bulk load for the recognised candidate set — never per-order queries.
+    const codOrderIds = candidates
+      .filter((o) => collectionKindOf(o.paymentOptionType) !== 'online')
+      .map((o) => o.id);
+    const settlementSource =
+      await this.fulfillment.buildSettlementSource(codOrderIds);
+    for (const order of candidates) {
+      if (collectionKindOf(order.paymentOptionType) === 'online') continue;
+      order.codCollection = settlementSource.getCodCollection({ id: order.id });
     }
 
     const result = computePnl({
@@ -895,8 +1056,8 @@ export class AnalyticsPnlService {
         lines: {
           grossSales: money(result.grossSales.amount, 'actual', 'Delivered transition'),
           discounts: money(result.discounts.amount, 'actual', 'Delivered transition'),
-          returns: result.returnEvents > 0
-            ? money(result.returns.amount, 'actual', 'return transition')
+          returns: result.returnEvents > 0 || result.returns.amount > 0
+            ? money(result.returns.amount, 'actual', 'return transition / received return receipt')
             : kpiZero('no return events in range'),
           refundsReversal: result.refundsReversal.amount > 0
             ? money(result.refundsReversal.amount, 'actual', 'processedAt ?? createdAt')
@@ -960,7 +1121,7 @@ export class AnalyticsPnlService {
           movementFastDoiMax: 30,
           movementSlowDoiMin: 90,
         },
-        dateBasis: 'revenue-date (Delivered); refunds processedAt; marketing spendDate; expenses expenseDate',
+        dateBasis: 'revenue-date (Delivered/Partial); returns receivedAt; refunds processedAt; marketing spendDate; expenses expenseDate',
       }),
     };
   }

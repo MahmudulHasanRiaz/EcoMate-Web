@@ -11,6 +11,7 @@ import {
   CHECK_REGISTRY,
   DEFERRED_CHECKS,
   MARKETING_OVERLAP_RE,
+  computeCompensationOverlap,
   AnalyticsReconciliationService,
   type ReconciliationInput,
 } from '../analytics-reconciliation.service';
@@ -109,6 +110,8 @@ function baseInput(extra: Partial<ReconciliationInput> = {}): ReconciliationInpu
       consumptionsMissingSpendAmount: 0,
       codUnsettledOrders: 0,
       codUnsettledCourierCost: 0,
+      compensationDoubleEntryMonths: 0,
+      compensationDoubleEntryAmount: 0,
     },
     ...extra,
   };
@@ -367,7 +370,7 @@ describe('implemented R checks', () => {
 describe('warnings W1–W11', () => {
   it('passes clean and warns with counts otherwise', () => {
     const clean = evaluateChecks(baseInput());
-    for (const id of ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W9', 'W10', 'W11']) {
+    for (const id of ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W9', 'W10', 'W11', 'W12']) {
       expect(byId(clean, id).status).toBe('pass');
     }
     const dirty = evaluateChecks(
@@ -388,6 +391,8 @@ describe('warnings W1–W11', () => {
           consumptionsMissingSpendAmount: 300,
           codUnsettledOrders: 2,
           codUnsettledCourierCost: 120,
+          compensationDoubleEntryMonths: 1,
+          compensationDoubleEntryAmount: 45000,
         },
       }),
     );
@@ -395,6 +400,38 @@ describe('warnings W1–W11', () => {
     expect(byId(dirty, 'W10').actual).toBe(2);
     expect(byId(dirty, 'W10').explanation).toContain('300');
     expect(byId(dirty, 'W11').actual).toBe(2);
+    expect(byId(dirty, 'W12').actual).toBe(1);
+    expect(byId(dirty, 'W12').explanation).toContain('45000');
+  });
+
+  it('W12 fires only when a manual salary/commission expense shares an auto month', () => {
+    const jan = new Date('2026-01-10T00:00:00Z');
+    const feb = new Date('2026-02-10T00:00:00Z');
+
+    expect(
+      computeCompensationOverlap([
+        { amount: 50000, expenseDate: jan, sourceType: 'payroll', categorySlug: 'salaries' },
+        { amount: 50000, expenseDate: jan, sourceType: null, categorySlug: 'salaries' },
+        { amount: 300, expenseDate: feb, sourceType: null, categorySlug: 'salaries' },
+      ]),
+    ).toEqual({ months: 1, amount: 50000 });
+
+    // Auto-only or manual-only months never warn.
+    expect(
+      computeCompensationOverlap([
+        { amount: 50000, expenseDate: jan, sourceType: 'payroll', categorySlug: 'salaries' },
+        { amount: 300, expenseDate: feb, sourceType: null, categorySlug: 'salaries' },
+      ]),
+    ).toEqual({ months: 0, amount: 0 });
+
+    // Reversal rows are not a second accrual.
+    expect(
+      computeCompensationOverlap([
+        { amount: 5000, expenseDate: jan, sourceType: 'commission', categorySlug: 'commissions' },
+        { amount: -5000, expenseDate: jan, sourceType: 'commission_reversal', categorySlug: 'commissions' },
+        { amount: 100, expenseDate: jan, sourceType: null, categorySlug: 'commissions' },
+      ]),
+    ).toEqual({ months: 1, amount: 100 });
   });
 
   it('W8 fires on ad-keyword categories while marketing cost > 0', () => {

@@ -36,6 +36,11 @@ import {
 } from './metric-contract';
 import { collectionKindOf } from './settlement-source';
 import {
+  computeReceivedReturnImpact,
+  RECEIVED_RETURN_STATUSES,
+  type ReceivedReturnEvent,
+} from '../common/finance/return-impact';
+import {
   AnalyticsFilterService,
   customerKeyOf,
   deriveCustomerSegments,
@@ -585,6 +590,12 @@ export interface ReturnBreakdown {
   units: number;
   cogsReversal: number;
   cogsUnavailableUnits: number;
+  /** Item-level received partial returns included in the totals above. */
+  receivedEvents: number;
+  receivedValue: number;
+  receivedUnits: number;
+  receivedCogsReversal: number;
+  receivedUndatedEvents: number;
   /** Order-level rate: returnEvents / recognisedOrders (§2.2 — the only defensible order-level figure). */
   rate: number | null;
   rateBasis: string;
@@ -601,6 +612,11 @@ export function computeReturnBreakdown(
   let units = 0;
   let cogsReversal = 0;
   let cogsUnavailableUnits = 0;
+  let receivedEvents = 0;
+  let receivedValue = 0;
+  let receivedUnits = 0;
+  let receivedCogsReversal = 0;
+  let receivedUndatedEvents = 0;
   for (const o of orders) {
     const rev = resolveRevenueEvent({
       timeline: o.timeline ?? [],
@@ -608,6 +624,29 @@ export function computeReturnBreakdown(
       currentStatus: o.status,
     });
     const ret = resolveReturn(o.timeline ?? [], rev.revenueDate);
+
+    // Item-level partial returns — delivered orders whose whole value was not
+    // already reversed by the timeline path (R12 guard). Event-dated at the
+    // return's receipt; prior periods are never rewritten.
+    if (rev.recognised && !ret.reversesRevenue) {
+      const impact = computeReceivedReturnImpact({
+        returns: o.receivedReturns ?? [],
+        orderItems: o.items.map((i) => ({
+          productId: i.productId ?? null,
+          variantId: i.variantId ?? null,
+          price: i.price,
+          quantity: i.quantity,
+          costSnapshot: i.costSnapshot,
+        })),
+        range,
+      });
+      receivedEvents += impact.events;
+      receivedValue += impact.value;
+      receivedUnits += impact.units;
+      receivedCogsReversal += impact.cogsReversal;
+      receivedUndatedEvents += impact.undatedEvents;
+    }
+
     if (!ret.reversesRevenue || !ret.returnAt) continue;
     if (ret.returnAt < range.start || ret.returnAt > range.end) continue;
     events += 1;
@@ -624,13 +663,18 @@ export function computeReturnBreakdown(
   }
   return {
     events,
-    value,
-    units,
-    cogsReversal,
+    value: value + receivedValue,
+    units: units + receivedUnits,
+    cogsReversal: cogsReversal + receivedCogsReversal,
     cogsUnavailableUnits,
+    receivedEvents,
+    receivedValue,
+    receivedUnits,
+    receivedCogsReversal,
+    receivedUndatedEvents,
     rate: recognisedOrders > 0 ? events / recognisedOrders : null,
     rateBasis: 'returnEvents / recognisedOrders — order-level incidence, never fractional',
-    dateBasis: 'return transition (Returned / Damaged)',
+    dateBasis: 'return transition (Returned / Damaged) + received partial return (receivedAt)',
   };
 }
 
@@ -1009,13 +1053,30 @@ export class AnalyticsSalesService {
           shippingCost: true,
           shippingCostSource: true,
           items: {
-            select: { price: true, quantity: true, costSnapshot: true, costType: true },
+            select: {
+              productId: true,
+              variantId: true,
+              price: true,
+              quantity: true,
+              costSnapshot: true,
+              costType: true,
+            },
           },
           payments: {
             select: { amount: true, status: true, gatewayCode: true, createdAt: true },
           },
           refunds: {
             select: { amount: true, status: true, processedAt: true, createdAt: true },
+          },
+          returns: {
+            where: { status: { in: [...RECEIVED_RETURN_STATUSES] as any } },
+            select: {
+              id: true,
+              status: true,
+              receivedAt: true,
+              stockReconciledAt: true,
+              items: true,
+            },
           },
           dispatches: {
             select: { deliveredAt: true },
@@ -1064,10 +1125,22 @@ export class AnalyticsSalesService {
         shippingCost: o.shippingCost === null ? null : Number(o.shippingCost),
         shippingCostSource: o.shippingCostSource,
         items: (o.items ?? []).map((i: any) => ({
+          productId: i.productId ?? null,
+          variantId: i.variantId ?? null,
           price: Number(i.price),
           quantity: i.quantity,
           costSnapshot: i.costSnapshot === null ? null : Number(i.costSnapshot),
           costType: i.costType === 'actual' || i.costType === 'estimated' ? i.costType : null,
+        })),
+        receivedReturns: (o.returns ?? []).map((r: any): ReceivedReturnEvent => ({
+          id: r.id,
+          status: r.status,
+          receivedAt: r.receivedAt
+            ? new Date(r.receivedAt)
+            : r.stockReconciledAt
+              ? new Date(r.stockReconciledAt)
+              : null,
+          items: r.items,
         })),
         payments: (o.payments ?? []).map((p: any) => ({
           amount: Number(p.amount),

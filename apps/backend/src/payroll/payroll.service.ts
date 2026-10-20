@@ -5,12 +5,38 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CompensationExpenseService } from '../expenses/compensation-expense.service';
 import { SetSalaryStructureDto } from './dto/set-salary-structure.dto';
 import { LedgerStatus, PayslipStatus } from '@prisma/client';
 
 @Injectable()
 export class PayrollService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly compensation: CompensationExpenseService,
+  ) {}
+
+  /**
+   * Salary cost excludes commission lines: commissions post their own expense
+   * at accrual (v1 + v2), so including them here would double-count.
+   */
+  private salaryExpenseAmount(payslip: {
+    totalEarnings: unknown;
+    items?: { type: string; label: string; amount: unknown }[];
+  }): number {
+    const commission = (payslip.items ?? [])
+      .filter((i) => i.type === 'earnings' && i.label === 'Commission')
+      .reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+    const net = (Number(payslip.totalEarnings) || 0) - commission;
+    return Math.round(net * 100) / 100;
+  }
+
+  private salaryExpenseDescription(payslip: {
+    periodKey?: string | null;
+    id: string;
+  }): string {
+    return `Salary — ${payslip.periodKey ?? payslip.id}`;
+  }
 
   // Decision #2 (§5.1): periodKey is the per-employee payroll-period identity
   // (YYYY-MM) used for the unique constraint + duplicate detection.
@@ -500,10 +526,33 @@ export class PayrollService {
         `Cannot approve payslip with status "${payslip.status}"`,
       );
 
-    return this.prisma.payslip.update({
-      where: { id },
-      data: { status: 'paid', paidAt: new Date() },
-      include: { items: true, employee: true },
+    const paidAt = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.payslip.update({
+        where: { id },
+        data: { status: 'paid', paidAt },
+        include: { items: true, employee: true },
+      });
+
+      // Payroll finalisation → Operating Expenses, exactly once per payslip.
+      const amount = this.salaryExpenseAmount(updated);
+      if (amount > 0) {
+        await this.compensation.postCompensationExpense(
+          {
+            sourceType: 'payroll',
+            sourceId: payslip.id,
+            amount,
+            expenseDate: paidAt,
+            description: this.salaryExpenseDescription({
+              id: payslip.id,
+              periodKey: updated.periodKey,
+            }),
+            categorySlug: 'salaries',
+          },
+          tx,
+        );
+      }
+      return updated;
     });
   }
 
@@ -543,19 +592,63 @@ export class PayrollService {
       reviewedById?: string | null;
       approvedById?: string | null;
     } = { status };
+    const now = new Date();
     if (status === 'reviewed') {
-      data.reviewedAt = new Date();
+      data.reviewedAt = now;
       data.reviewedById = actorId ?? null;
     }
     if (status === 'approved') {
-      data.approvedAt = new Date();
+      data.approvedAt = now;
       data.approvedById = actorId ?? null;
     }
 
-    return this.prisma.payslip.update({
-      where: { id },
-      data,
-      include: { items: true, employee: true },
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.payslip.update({
+        where: { id },
+        data,
+        include: { items: true, employee: true },
+      });
+
+      if (status === 'approved') {
+        // Approving a payroll run finalises its salary cost (idempotent by
+        // payslip id). Commission lines are excluded — they already posted
+        // their own expense at accrual.
+        const amount = this.salaryExpenseAmount(updated);
+        if (amount > 0) {
+          await this.compensation.postCompensationExpense(
+            {
+              sourceType: 'payroll',
+              sourceId: payslip.id,
+              amount,
+              expenseDate: now,
+              description: this.salaryExpenseDescription({
+                id: payslip.id,
+                periodKey: updated.periodKey,
+              }),
+              categorySlug: 'salaries',
+            },
+            tx,
+          );
+        }
+      }
+
+      if (status === 'cancelled') {
+        // Defensive: current transitions forbid cancelling a finalised
+        // payslip, but if a salary expense was posted it must be reversed
+        // rather than silently surviving the cancellation.
+        await this.compensation.reverseCompensationExpense(
+          {
+            sourceType: 'payroll',
+            sourceId: payslip.id,
+            expenseDate: now,
+            description: `Salary reversal — ${payslip.periodKey ?? payslip.id}`,
+            categorySlug: 'salaries',
+          },
+          tx,
+        );
+      }
+
+      return updated;
     });
   }
 

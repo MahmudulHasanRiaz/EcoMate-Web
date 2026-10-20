@@ -165,6 +165,38 @@ describe('getOrderDueAmount', () => {
     const order = { total: 2750.5, paymentOptionType: 'CASH_ON_DELIVERY' }
     expect(getOrderPaidAmount(order) + getOrderDueAmount(order)).toBe(order.total)
   })
+
+  it('prefers the server-derived due when the API provides it', () => {
+    const order = {
+      total: 1000,
+      due: 300,
+      payments: [{ status: 'PAID', amount: 400 }],
+      receivedReturnValue: 300,
+    }
+    expect(getOrderDueAmount(order)).toBe(300)
+  })
+
+  it('subtracts received returns from the local fallback', () => {
+    const order = {
+      total: 1000,
+      receivedReturnValue: 300,
+      payments: [{ status: 'PAID', amount: 400 }],
+    }
+    expect(getOrderDueAmount(order)).toBe(300)
+    expect(getOrderPaidAmount(order)).toBe(400)
+  })
+
+  it('subtracts applied credit and ignores settlement rows', () => {
+    const order = {
+      total: 1000,
+      payments: [
+        { status: 'PAID', amount: 300, appliedCreditAmount: 200 },
+        { status: 'PAID', amount: 500, gatewayCode: 'courier_settlement' },
+      ],
+    }
+    expect(getOrderPaidAmount(order)).toBe(300)
+    expect(getOrderDueAmount(order)).toBe(500)
+  })
 })
 
 describe('getPaymentModeForAmounts', () => {
