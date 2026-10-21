@@ -34,9 +34,10 @@
     "@fastify/static": "^10.1.2",
     "postcss": "8.5.25",
     "vitest": "4.1.11",
-    "vite": "^8.0.8",
+    "vite": "^8.3.3",
     "esbuild": "0.25.0",
-    "hono": "4.13.8",
+    "hono": "4.13.11",
+    "follow-redirects": "1.16.1",
     "valibot": ">=1.4.2",
     "sharp": ">=0.35.4",
     "find-my-way": ">=9.7.0",
@@ -64,7 +65,7 @@
     "fast-uri": "^3.1.6",
     "js-yaml": "5.4.2",
     "typescript": "^5",
-    "vite": "^8.0.8",
+    "vite": "^8.3.3",
     "vite-plugin-compression": "^0.5.1"
   },
   "dependencies": {
