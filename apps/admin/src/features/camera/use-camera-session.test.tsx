@@ -134,6 +134,81 @@ describe('useCameraSession — one persistent session per open scanner', () => {
     await vi.waitFor(() => expect(trackStops.length).toBeGreaterThan(0))
   })
 
+  it('emits a decoded value ONCE while it stays in view (30 consecutive decodes → 1 call)', async () => {
+    const onScan = vi.fn()
+    await render(<Harness active onScan={onScan} />)
+    await vi.waitFor(() => expect(startCalls).toHaveLength(1))
+
+    const instance = instances[0]
+    for (let i = 0; i < 30; i++) {
+      instance.onSuccess?.('ORD-260930-0001')
+    }
+    await new Promise((r) => setTimeout(r, 60))
+
+    // html5-qrcode fires the success callback per decoded frame (~10/s).
+    // The value must be consumed ONCE.
+    expect(onScan).toHaveBeenCalledTimes(1)
+    expect(startCalls).toHaveLength(1)
+    expect(stopCalls).toHaveLength(0)
+  })
+
+  it('re-arms after the value has been absent for the gap → the same value fires again', async () => {
+    const onScan = vi.fn()
+    await render(<Harness active onScan={onScan} />)
+    await vi.waitFor(() => expect(startCalls).toHaveLength(1))
+
+    const instance = instances[0]
+    instance.onSuccess?.('SKU-1')
+    expect(onScan).toHaveBeenCalledTimes(1)
+
+    // Still in view → suppressed.
+    instance.onSuccess?.('SKU-1')
+    expect(onScan).toHaveBeenCalledTimes(1)
+
+    // The label leaves the view; the gap elapses → re-armed.
+    await new Promise((r) => setTimeout(r, 1400))
+    instance.onSuccess?.('SKU-1')
+    expect(onScan).toHaveBeenCalledTimes(2)
+  })
+
+  it('a different value intervenes → the new value fires immediately', async () => {
+    const onScan = vi.fn()
+    await render(<Harness active onScan={onScan} />)
+    await vi.waitFor(() => expect(startCalls).toHaveLength(1))
+
+    const instance = instances[0]
+    instance.onSuccess?.('SKU-1')
+    instance.onSuccess?.('SKU-2')
+    expect(onScan).toHaveBeenCalledTimes(2)
+    expect(onScan).toHaveBeenLastCalledWith('SKU-2')
+  })
+
+  it('drops emissions while an async handler is in flight and releases the lock afterwards', async () => {
+    let release: (() => void) | null = null
+    const onScan = vi.fn(
+      () => new Promise<void>((resolve) => {
+        release = () => resolve()
+      }),
+    )
+    await render(<Harness active onScan={onScan} />)
+    await vi.waitFor(() => expect(startCalls).toHaveLength(1))
+
+    const instance = instances[0]
+    instance.onSuccess?.('ORD-1')
+    expect(onScan).toHaveBeenCalledTimes(1)
+
+    // While the handler is in flight → further emissions are DROPPED.
+    instance.onSuccess?.('ORD-2')
+    instance.onSuccess?.('ORD-3')
+    expect(onScan).toHaveBeenCalledTimes(1)
+
+    release?.()
+    await new Promise((r) => setTimeout(r, 20))
+    // The lock is released: a new value is processed again.
+    instance.onSuccess?.('ORD-4')
+    expect(onScan).toHaveBeenCalledTimes(2)
+  })
+
   it('never leaves a painted frame behind: the viewport container is emptied on close', async () => {
     const onScan = vi.fn()
     const { rerender, container } = await render(<Harness active onScan={onScan} />)

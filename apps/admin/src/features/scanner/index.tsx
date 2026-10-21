@@ -825,7 +825,9 @@ export default function ScannerPage() {
   // is released only when the operator closes the camera.
   const cameraSession = useCameraSession({
     active: cameraActive,
-    onScan: (decoded) => { void handleScan(decoded) },
+    // The promise is returned so the session's processing lock is held until
+    // the scan settles (no double execution while a scan is in flight).
+    onScan: (decoded) => handleScan(decoded),
     fps: 10,
     qrboxRatio: 0.75,
   })

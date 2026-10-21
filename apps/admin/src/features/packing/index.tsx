@@ -8,6 +8,7 @@ import { Html5Qrcode, type CameraDevice } from 'html5-qrcode'
 import { pickDefaultCamera } from '@/features/camera/camera-controller'
 import { useCameraSession } from '@/features/camera/use-camera-session'
 import { packingCameraActive } from './packing-camera'
+import { createMismatchToastGate, isOrderReference, routePackingScan } from './packing-scan'
 import { SafeImage } from '@/components/safe-image'
 import { mediaUrl } from '@/lib/utils'
 import {
@@ -209,12 +210,18 @@ export function PackingWorkspace() {
   const selectedOrderIdRef = useRef(selectedOrderId)
   selectedOrderIdRef.current = selectedOrderId
   const handleProductScanRef = useRef<(code: string) => void>(() => {})
+  // The mismatch toast gate: the same wrong value may toast at most once per
+  // arm cycle (a burst can never stack a Toaster backlog).
+  const mismatchToastGateRef = useRef(createMismatchToastGate(4000))
+  // The order value consumed by the ORDER step — it is never re-processed by
+  // the item step (boundary hygiene).
+  const consumedOrderScanRef = useRef<string>('')
 
   // Open and lock order
   const openAndSelect = useCallback(async (order: QueueItem) => {
     if (!order) return
     if (order.packingLock && order.packingLock.packerId !== currentPackerId) {
-      toast.error(`This order is being packed by ${order.packingLock.packerName}`)
+      toast.error(`This order is being packed by ${order.packingLock.packerName}`, { id: 'packing-order-error' })
       return
     }
     try {
@@ -222,10 +229,10 @@ export function PackingWorkspace() {
       setSelectedOrderId(order.id)
       setCurrentProductIdx(0)
       setShowCustomerDetails(false)
-      toast.success(`Loaded Order ${order.displayId}`)
+      toast.success(`Loaded Order ${order.displayId}`, { id: 'packing-order-loaded' })
     } catch (err: any) {
       const errMsg = err.response?.data?.message || "Failed to lock order. It may be locked by another user."
-      toast.error(errMsg)
+      toast.error(errMsg, { id: 'packing-order-error' })
     }
   }, [openOrder, currentPackerId])
 
@@ -245,6 +252,10 @@ export function PackingWorkspace() {
       setOutOfPageOrder(null)
       setOutOfPageCatalog(null)
       setManualSearch('')
+      // The item screen is disarmed: the consumed order value and the toast
+      // gate are cleared, so the next order starts from a clean arm cycle.
+      consumedOrderScanRef.current = ''
+      mismatchToastGateRef.current.reset()
     }
   }, [selectedOrderId, releaseLock, clearChecklist])
 
@@ -275,7 +286,7 @@ export function PackingWorkspace() {
             return
           }
         }
-        toast.warning("This order left the packing queue. Lock released.")
+        toast.warning("This order left the packing queue. Lock released.", { id: 'packing-order-left-queue' })
         setSelectedOrderId(null)
         setOutOfPageOrder(null)
         setOutOfPageCatalog(null)
@@ -323,6 +334,7 @@ export function PackingWorkspace() {
     if (last && last.code === raw && now - last.at < 2000) return
     lastScanRef.current = { code: raw, at: now }
 
+
     // Search in the active queue (contains both Confirmed & Packing Hold statuses!)
     const matched = queueRef.current.find((o) =>
       o.id.toLowerCase() === code.toLowerCase() ||
@@ -345,7 +357,7 @@ export function PackingWorkspace() {
             // packing" branch and told the packer that a Confirmed order could
             // not be packed, which is false and looks like the scanner is broken.
             if (!res.id) {
-              toast.error(`Order "${orderDisplayId}" could not be loaded.`)
+              toast.error(`Order "${orderDisplayId}" could not be loaded.`, { id: 'packing-order-error' })
               return
             }
             try {
@@ -355,7 +367,7 @@ export function PackingWorkspace() {
               // synthesising an empty shell.
               const detail = await orderDetail.mutateAsync(res.id)
               if (!detail?.orders?.[0]) {
-                toast.error(`Order "${orderDisplayId}" is no longer in the packing queue.`)
+                toast.error(`Order "${orderDisplayId}" is no longer in the packing queue.`, { id: 'packing-order-error' })
                 return
               }
               setOutOfPageOrder(detail.orders[0])
@@ -363,11 +375,12 @@ export function PackingWorkspace() {
               setSelectedOrderId(res.id)
               setCurrentProductIdx(0)
               setShowCustomerDetails(false)
-              toast.success(`Loaded Order ${orderDisplayId}`)
+              toast.success(`Loaded Order ${orderDisplayId}`, { id: 'packing-order-loaded' })
             } catch (err: any) {
               toast.error(
                 err.response?.data?.message ||
                   'Failed to lock order. It may be locked by another user.',
+                { id: 'packing-order-error' },
               )
             }
             return
@@ -376,12 +389,14 @@ export function PackingWorkspace() {
           if (orderStatus.toLowerCase() === 'packed' || orderStatus.toLowerCase() === 'shipped' || orderStatus.toLowerCase() === 'delivered') {
             if (navigator.vibrate) navigator.vibrate([150, 100, 150])
             toast.error(`Order "${orderDisplayId}" is already packed (current status: ${orderStatus}).`, {
+              id: 'packing-order-error',
               position: 'top-center',
               duration: 5000
             })
           } else {
             if (navigator.vibrate) navigator.vibrate([150, 100, 150])
             toast.error(`Order "${orderDisplayId}" is not ready for packing (current status: ${orderStatus}).`, {
+              id: 'packing-order-error',
               position: 'top-center',
               duration: 5000
             })
@@ -389,6 +404,7 @@ export function PackingWorkspace() {
         } else {
           if (navigator.vibrate) navigator.vibrate([50, 50, 50])
           toast.error(`Order "${code}" was not found in the system.`, {
+            id: 'packing-order-error',
             position: 'top-center'
           })
         }
@@ -396,6 +412,7 @@ export function PackingWorkspace() {
         console.error("Failed to check order status", err)
         if (navigator.vibrate) navigator.vibrate([50, 50, 50])
         toast.error(`Order "${code}" was not found in the system.`, {
+          id: 'packing-order-error',
           position: 'top-center'
         })
       }
@@ -437,16 +454,22 @@ export function PackingWorkspace() {
   const cameraSession = useCameraSession({
     active: packingCameraActive({ activeTab, scannerActive, cameraId: selectedCameraId }),
     cameraId: selectedCameraId,
+    // ONE routing decision for both steps: an order reference that reaches
+    // the item step is a leak from the order step and is ignored SILENTLY
+    // (it used to raise a "Wrong Product!" toast ~10x per second).
     onScan: (decoded) => {
-      const code = decoded.trim()
-      if (!code) return
-      // An open order means the operator is scanning a PRODUCT barcode;
-      // otherwise the code is an order to open.
-      if (selectedOrderIdRef.current && activeOrderRef.current) {
-        handleProductScanRef.current(code)
-        return
-      }
-      void onScanSuccessRef.current(code)
+      const raw = decoded.trim()
+      if (!raw) return
+      return routePackingScan(raw, {
+        orderOpen: !!selectedOrderIdRef.current && !!activeOrderRef.current,
+        onOrder: (code) => {
+          // The ORDER step consumes this value: the EXACT camera value is
+          // remembered so the item step never re-processes it.
+          consumedOrderScanRef.current = raw
+          return onScanSuccessRef.current(code)
+        },
+        onProduct: (code) => handleProductScanRef.current(code),
+      })
     },
     fps: 15,
     qrboxRatio: 0.75,
@@ -467,10 +490,12 @@ export function PackingWorkspace() {
       setOutOfPageOrder(null)
       setOutOfPageCatalog(null)
       setManualSearch('')
-      toast.success("Order packed successfully!")
+      consumedOrderScanRef.current = ''
+      mismatchToastGateRef.current.reset()
+      toast.success("Order packed successfully!", { id: 'packing-packed' })
     } catch (err: any) {
       const msg = err.response?.data?.message
-      toast.error(msg || "Failed to complete packing.")
+      toast.error(msg || "Failed to complete packing.", { id: 'packing-packed' })
     } finally {
       submittingRef.current = false
     }
@@ -522,6 +547,7 @@ export function PackingWorkspace() {
     if (verificationMode === 'strict_scan' && currentQty < item.quantity) {
       if (navigator.vibrate) navigator.vibrate([100, 50, 100])
       toast.warning("Strict Scan Mode is enabled. Scan the product barcode/SKU to verify.", {
+        id: 'packing-strict-scan',
         position: 'top-center'
       })
       return
@@ -603,14 +629,22 @@ export function PackingWorkspace() {
   const handleProductScan = useCallback((scannedCode: string) => {
     const order = activeOrderRef.current
     if (!order) return
+    // An order reference never belongs to the item step — it is the order
+    // label leaking into the product handler. Ignore it SILENTLY.
+    if (isOrderReference(scannedCode)) return
+    // The value the ORDER step consumed is never re-processed.
+    if (scannedCode === consumedOrderScanRef.current) return
     const matchIdx = order.items.findIndex(
       (item) => item.sku && item.sku.toLowerCase() === scannedCode.toLowerCase(),
     )
 
     if (matchIdx === -1) {
-      // Wrong SKU alert
+      // Wrong SKU alert — ONE stable toast id (a repeat updates it in place,
+      // never stacks) and the same value may toast once per arm cycle.
+      if (!mismatchToastGateRef.current.shouldToast(scannedCode, Date.now())) return
       if (navigator.vibrate) navigator.vibrate([150, 100, 150])
       toast.error(`Wrong Product! SKU "${scannedCode}" does not belong to this order!`, {
+        id: 'packing-wrong-product',
         position: 'top-center',
         duration: 4000,
       })
@@ -622,7 +656,7 @@ export function PackingWorkspace() {
 
     if (currentVerified >= matchedItem.quantity) {
       if (navigator.vibrate) navigator.vibrate([50, 50])
-      toast.info(`Product "${matchedItem.productName}" is already fully verified.`)
+      toast.info(`Product "${matchedItem.productName}" is already fully verified.`, { id: 'packing-already-verified' })
       return
     }
 

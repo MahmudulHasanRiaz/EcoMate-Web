@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { createScanner, type CameraStartTarget, type ScannerController } from './camera-controller'
+import { createEmissionGate, type EmissionGate } from './emission-gate'
 
 /**
  * ONE camera session for the whole admin.
@@ -42,18 +43,26 @@ export interface CameraSession {
 export interface CameraSessionOptions {
   /** The scanner is open — one session lives exactly as long as this is true. */
   active: boolean
-  /** Decoded text. The identity of this callback never restarts the session. */
-  onScan: (decodedText: string) => void
+  /**
+   * Decoded text. The identity of this callback never restarts the session.
+   * Returning a promise keeps the processing lock held until it settles.
+   */
+  onScan: (decodedText: string) => void | Promise<void>
   onError?: (err: unknown) => void
   /** Explicit camera device id; when empty the rear-facing camera is used. */
   cameraId?: string
   fps?: number
   /** Scan-window size as a fraction of the smaller viewport side. */
   qrboxRatio?: number
+  /**
+   * How long a decoded value must be ABSENT from the decodes before the very
+   * same value may fire again (default 1200ms).
+   */
+  rearmGapMs?: number
 }
 
 export function useCameraSession(options: CameraSessionOptions): CameraSession {
-  const { active, cameraId, fps = 15, qrboxRatio = 0.75 } = options
+  const { active, cameraId, fps = 15, qrboxRatio = 0.75, rearmGapMs = 1200 } = options
 
   const rawId = useId()
   const containerId = `camera-viewport-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`
@@ -73,6 +82,27 @@ export function useCameraSession(options: CameraSessionOptions): CameraSession {
 
   const containerRef = useCallback((el: HTMLElement | null) => {
     setContainer((prev) => (prev === el ? prev : el))
+  }, [])
+
+  /**
+   * One-shot + re-arm + processing lock (the shared emission gate).
+   *
+   * html5-qrcode calls the success callback for EVERY decoded frame (~10/s
+   * for a label held in view). Without the gate one label produced a
+   * continuous stream of actions (the packing "Wrong Product!" flood).
+   *
+   * The gate is created ONCE and reads the decode handler from a ref, so a
+   * new callback identity never restarts the session nor the gate.
+   */
+  const gateRef = useRef<EmissionGate | null>(null)
+  if (!gateRef.current) {
+    gateRef.current = createEmissionGate({
+      rearmGapMs,
+      onEmit: (value) => onScanRef.current(value),
+    })
+  }
+  const emitDecoded = useCallback((decodedText: string) => {
+    gateRef.current?.push(decodedText)
   }, [])
 
   const restart = useCallback(() => {
@@ -110,7 +140,7 @@ export function useCameraSession(options: CameraSessionOptions): CameraSession {
       {
         onScan: (decodedText) => {
           if (cancelled) return
-          onScanRef.current(decodedText)
+          emitDecoded(decodedText)
         },
         onError: (err) => {
           if (cancelled) return
@@ -133,11 +163,12 @@ export function useCameraSession(options: CameraSessionOptions): CameraSession {
     return () => {
       cancelled = true
       controllerRef.current = null
+      gateRef.current?.dispose()
       void controller.dispose()
     }
     // `onScan` is intentionally NOT a dependency — it is read from a ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, container, cameraId, containerId, fps, qrboxRatio, restartKey])
+  }, [active, container, cameraId, containerId, fps, qrboxRatio, restartKey, emitDecoded])
 
   return {
     containerId,
