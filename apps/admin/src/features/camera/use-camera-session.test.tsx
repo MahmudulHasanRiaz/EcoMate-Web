@@ -15,9 +15,10 @@ import { useCameraSession } from './use-camera-session'
  * restart it, and closing releases the device.
  */
 
-const { instances, startCalls, stopCalls, trackStops } = vi.hoisted(() => ({
+const { instances, startCalls, startConfigs, stopCalls, trackStops } = vi.hoisted(() => ({
   instances: [] as any[],
   startCalls: [] as unknown[],
+  startConfigs: [] as unknown[],
   stopCalls: [] as unknown[],
   trackStops: [] as number[],
 }))
@@ -38,6 +39,7 @@ vi.mock('html5-qrcode', () => {
     ): Promise<void> {
       this.onSuccess = onSuccess
       startCalls.push(_target)
+      startConfigs.push(_config)
       // The library injects its <video> into the mount element.
       const el = document.getElementById(this.elementId)
       if (el) {
@@ -89,6 +91,7 @@ function Harness({
 beforeEach(() => {
   instances.length = 0
   startCalls.length = 0
+  startConfigs.length = 0
   stopCalls.length = 0
   trackStops.length = 0
 })
@@ -207,6 +210,39 @@ describe('useCameraSession — one persistent session per open scanner', () => {
     // The lock is released: a new value is processed again.
     instance.onSuccess?.('ORD-4')
     expect(onScan).toHaveBeenCalledTimes(2)
+  })
+
+  it('renders the library <video> at its NATURAL size (1:1) so the scan region keeps mapping onto the frame', async () => {
+    await render(<Harness active onScan={vi.fn()} />)
+    await vi.waitFor(() => expect(startCalls).toHaveLength(1))
+
+    // html5-qrcode samples the frame with `frameSize / elementClientSize`.
+    // A CSS-scaled video makes that rectangle leave the frame as soon as the
+    // viewport is resized (the order → item transition) — the decode canvas
+    // then freezes on the last good frame and every scan dies in silence.
+    await vi.waitFor(() => {
+      const video = document.querySelector<HTMLVideoElement>('video')
+      expect(video).toBeTruthy()
+      expect(video?.style.position).toBe('absolute')
+      expect(video?.style.width).toBe('auto')
+      expect(video?.style.height).toBe('auto')
+      expect(video?.style.transform).toBe('translate(-50%, -50%)')
+    })
+  })
+
+  it('decodes a FULL-WIDTH band of the frame (1D labels are never truncated)', async () => {
+    await render(<Harness active onScan={vi.fn()} />)
+    await vi.waitFor(() => expect(startCalls).toHaveLength(1))
+
+    // The library is handed the camera frame's native size; the scan region
+    // must span the whole width and a centred band of the height.
+    const config = startConfigs[0] as { qrbox: (w: number, h: number) => { width: number; height: number } }
+    const region = config.qrbox(640, 480)
+    expect(region.width).toBe(640)
+    expect(region.height).toBe(336)
+    // A 1D label held close spans (almost) the whole frame width — it must fit.
+    expect(region.width).toBe(640)
+    expect(region.height).toBeLessThan(480)
   })
 
   it('never leaves a painted frame behind: the viewport container is emptied on close', async () => {

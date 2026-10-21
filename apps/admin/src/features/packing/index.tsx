@@ -472,7 +472,7 @@ export function PackingWorkspace() {
       })
     },
     fps: 15,
-    qrboxRatio: 0.75,
+    qrboxHeightRatio: 0.7,
   })
 
   const handleDone = useCallback(async (orderId: string) => {
@@ -819,52 +819,77 @@ export function PackingWorkspace() {
             {/* Live camera frame — the container is ALWAYS mounted: the
                 library owns its children (the <video>), so React must never
                 remount it. When the camera is not live the overlay says so
-                instead of painting an empty "live looking" disc. */}
+                instead of painting an empty "live looking" disc.
+
+                ITEM STEP: the viewport is a WIDE strip, not a small disc. The
+                decode region spans the FULL frame width (see buildQrBox), so a
+                wide 1D SKU label only fits (and only stays visible) in a wide
+                viewport — a disc cropped the label's ends out of sight. The
+                strip is pinned to the top-right, below the order header, so it
+                never covers the item cards or the verify button. */}
             <div className={selectedOrderId
-              ? "sticky top-2 ml-auto mr-2 z-50 w-24 h-24 md:w-28 md:h-28 rounded-full border-2 border-success bg-[var(--surface)] shadow-2xl overflow-hidden flex flex-col items-center justify-center transition-all duration-300 pointer-events-auto"
+              ? "fixed top-16 right-2 z-50 w-[68%] max-w-sm pointer-events-auto"
               : "relative w-full aspect-square rounded-3xl border-2 border-[var(--border)] bg-[var(--surface)] overflow-hidden flex flex-col items-center justify-center shadow-2xl"
             }>
-              <div
-                ref={cameraSession.containerRef}
-                id={cameraSession.containerId}
-                className="h-full w-full [&>video]:h-full [&>video]:w-full [&>video]:object-cover"
-              ></div>
+              <div className={selectedOrderId
+                ? "relative w-full h-20 md:h-24 rounded-2xl border-2 border-success bg-[var(--surface)] shadow-2xl overflow-hidden"
+                : "relative w-full aspect-square rounded-3xl border-2 border-[var(--border)] bg-[var(--surface)] overflow-hidden flex flex-col items-center justify-center shadow-2xl"
+              }>
+                <div
+                  ref={cameraSession.containerRef}
+                  id={cameraSession.containerId}
+                  className="relative h-full w-full"
+                ></div>
 
-              {!cameraSession.isLive && (
-                <div className="absolute inset-0 p-4 text-center space-y-1 text-zinc-550 select-none bg-[var(--surface)]">
-                  <Camera className={`${selectedOrderId ? 'h-5 w-5' : 'h-10 w-10'} mx-auto text-[var(--ink-muted)]`} />
-                  {!selectedOrderId && (
-                    <>
-                      <p className="text-[var(--ink-muted)] text-sm font-semibold">
-                        {cameraSession.status === 'starting' ? 'Starting camera…' : 'Camera is paused'}
-                      </p>
-                      <p className="text-zinc-600 text-xs">Tap start below to enable scanning</p>
-                    </>
-                  )}
-                </div>
-              )}
-
-              {/* Animated scanning laser line overlay */}
-              {cameraSession.isLive && !selectedOrderId && (
-                <div className="absolute inset-x-0 top-0 h-1 bg-danger opacity-60 shadow-lg shadow-danger animate-scan-laser pointer-events-none"></div>
-              )}
-
-              {/* Picture-in-picture scan indicator laser */}
-              {cameraSession.isLive && selectedOrderId && (
-                <div className="absolute inset-x-0 top-0 h-0.5 bg-success shadow-[0_0_8px_var(--success)] animate-scan-laser pointer-events-none z-10"></div>
-              )}
-
-              {/* Scanner Frame Guide Overlay */}
-              {cameraSession.isLive && !selectedOrderId && (
-                <div className="absolute inset-0 border-[24px] border-black/35 flex items-center justify-center pointer-events-none">
-                  <div className="h-48 w-48 border border-info/50 rounded-2xl relative shadow-md">
-                    <div className="absolute -left-1 -top-1 h-4 w-4 border-l-2 border-t-2 border-info"></div>
-                    <div className="absolute -right-1 -top-1 h-4 w-4 border-r-2 border-t-2 border-info"></div>
-                    <div className="absolute -left-1 -bottom-1 h-4 w-4 border-l-2 border-b-2 border-info"></div>
-                    <div className="absolute -right-1 -bottom-1 h-4 w-4 border-r-2 border-b-2 border-info"></div>
+                {!cameraSession.isLive && (
+                  <div className="absolute inset-0 p-4 text-center space-y-1 text-zinc-550 select-none bg-[var(--surface)]">
+                    <Camera className={`${selectedOrderId ? 'h-4 w-4' : 'h-10 w-10'} mx-auto text-[var(--ink-muted)]`} />
+                    {!selectedOrderId && (
+                      <>
+                        <p className="text-[var(--ink-muted)] text-sm font-semibold">
+                          {cameraSession.status === 'starting' ? 'Starting camera…' : 'Camera is paused'}
+                        </p>
+                        <p className="text-zinc-600 text-xs">Tap start below to enable scanning</p>
+                      </>
+                    )}
                   </div>
-                </div>
-              )}
+                )}
+
+                {/* Animated scanning laser line overlay */}
+                {cameraSession.isLive && !selectedOrderId && (
+                  <div className="absolute inset-x-0 top-0 h-1 bg-danger opacity-60 shadow-lg shadow-danger animate-scan-laser pointer-events-none"></div>
+                )}
+
+                {/* Picture-in-picture scan indicator laser */}
+                {cameraSession.isLive && selectedOrderId && (
+                  <div className="absolute inset-x-0 top-0 h-0.5 bg-success shadow-[0_0_8px_var(--success)] animate-scan-laser pointer-events-none z-10"></div>
+                )}
+
+                {/* Scanner Frame Guide Overlay — a WIDE band (the aim zone) with
+                    corner brackets, matching the shape of the decode region.
+                    Subtle by design: it must never obscure the feed. */}
+                {cameraSession.isLive && !selectedOrderId && (
+                  <div className="absolute inset-0 border-[24px] border-black/35 flex items-center justify-center pointer-events-none">
+                    <div className="w-[86%] h-[26%] min-h-[72px] border border-info/50 rounded-xl relative shadow-md">
+                      <div className="absolute -left-1 -top-1 h-4 w-4 border-l-2 border-t-2 border-info"></div>
+                      <div className="absolute -right-1 -top-1 h-4 w-4 border-r-2 border-t-2 border-info"></div>
+                      <div className="absolute -left-1 -bottom-1 h-4 w-4 border-l-2 border-b-2 border-info"></div>
+                      <div className="absolute -right-1 -bottom-1 h-4 w-4 border-r-2 border-b-2 border-info"></div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Item step: small corner brackets on the wide strip, so the
+                    aim zone reads the same way as on the order step. */}
+                {cameraSession.isLive && selectedOrderId && (
+                  <div className="absolute inset-1 pointer-events-none">
+                    <div className="absolute left-0 top-0 h-3 w-3 border-l-2 border-t-2 border-success/80"></div>
+                    <div className="absolute right-0 top-0 h-3 w-3 border-r-2 border-t-2 border-success/80"></div>
+                    <div className="absolute left-0 bottom-0 h-3 w-3 border-l-2 border-b-2 border-success/80"></div>
+                    <div className="absolute right-0 bottom-0 h-3 w-3 border-r-2 border-b-2 border-success/80"></div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {!selectedOrderId && (

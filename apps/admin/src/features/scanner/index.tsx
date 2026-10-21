@@ -829,7 +829,7 @@ export default function ScannerPage() {
     // the scan settles (no double execution while a scan is in flight).
     onScan: (decoded) => handleScan(decoded),
     fps: 10,
-    qrboxRatio: 0.75,
+    qrboxHeightRatio: 0.7,
   })
 
   // Input stays ready: focus on load, after camera closes, after every result.
@@ -1081,7 +1081,7 @@ export default function ScannerPage() {
                     <div
                       ref={cameraSession.containerRef}
                       id={cameraSession.containerId}
-                      className="w-full max-w-sm mx-auto rounded-xl overflow-hidden border border-border min-h-[180px] bg-black/5 [&>video]:h-full [&>video]:w-full [&>video]:object-cover"
+                      className="relative w-full max-w-sm mx-auto rounded-xl overflow-hidden border border-border min-h-[180px] bg-black/5"
                     />
                     {cameraSession.status === 'starting' && (
                       <p className="text-xs text-muted-foreground text-center mt-2">Starting the camera…</p>
