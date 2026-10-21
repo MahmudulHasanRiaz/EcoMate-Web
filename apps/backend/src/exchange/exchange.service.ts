@@ -125,7 +125,37 @@ export class ExchangeService {
   async getExchangeReadiness(originalOrderId: string) {
     const children = await this.prisma.order.findMany({
       where: { exchangeOfOrderId: originalOrderId, trashedAt: null },
-      select: { id: true, displayId: true },
+      select: {
+        id: true,
+        displayId: true,
+        // The exchange order's product lines — the order detail's linked
+        // section renders them (image, name, variant, SKU, qty) instead of a
+        // bare displayId.
+        items: {
+          select: {
+            productId: true,
+            variantId: true,
+            quantity: true,
+            price: true,
+            product: { select: { id: true, name: true, sku: true, images: true } },
+            variant: {
+              select: {
+                id: true,
+                sku: true,
+                image: true,
+                images: true,
+                attributeValues: {
+                  select: {
+                    attributeValue: {
+                      select: { value: true, hexCode: true, attribute: { select: { name: true } } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       orderBy: { createdAt: 'asc' },
     });
     // An order is never its own exchange child (also keeps arg-insensitive
@@ -187,6 +217,23 @@ export class ExchangeService {
         id: e.id,
         displayId: (e as any).displayId,
         delivered: delivered.has(e.id),
+        items: ((e as any).items ?? []).map((it: any) => ({
+          productId: it.productId,
+          variantId: it.variantId ?? null,
+          quantity: Number(it.quantity) || 0,
+          price: it.price === null || it.price === undefined ? null : Number(it.price),
+          productName: it.product?.name ?? null,
+          productSku: it.product?.sku ?? null,
+          productImages: it.product?.images ?? [],
+          variantSku: it.variant?.sku ?? null,
+          variantImage: it.variant?.image ?? null,
+          variantImages: it.variant?.images ?? [],
+          variantAttributes: (it.variant?.attributeValues ?? []).map((av: any) => ({
+            value: av?.attributeValue?.value ?? null,
+            hexCode: av?.attributeValue?.hexCode ?? null,
+            attributeName: av?.attributeValue?.attribute?.name ?? null,
+          })),
+        })),
       })),
       returns: exReturns.map((r) => ({
         id: (r as any).id,

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useCameraSession } from '@/features/camera/use-camera-session'
 import { Header } from '@/components/layout/header'
@@ -347,6 +347,8 @@ export default function ScannerPage() {
   modeRef.current = mode
   const batchRef = useRef(batchMode)
   batchRef.current = batchMode
+
+  const queryClient = useQueryClient()
 
   const { data: purposes } = useQuery({
     queryKey: ['scanner-purposes'],
@@ -793,6 +795,12 @@ export default function ScannerPage() {
           record(res)
           if (res.status === 'success' || res.status === 'duplicate') {
             setReturnStaged((rs) => rs.filter((r) => r.key !== cur.key))
+            // A receive moves the return's lifecycle status (and records who
+            // received it) — the order page's linked-returns list must never
+            // keep serving the old "Requested" state.
+            queryClient.invalidateQueries({ queryKey: ['order-returns'] })
+            queryClient.invalidateQueries({ queryKey: ['exchange-readiness'] })
+            queryClient.invalidateQueries({ queryKey: ['returns'] })
           } else {
             // RETRY-IN-PLACE: a failed attempt stays processable (stage-time
             // validation passed) and carries the live reason. Attention count

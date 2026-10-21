@@ -61,6 +61,15 @@ export interface ReturnLineItem {
   warehouseId?: string | null
 }
 
+/** The staff member who RECEIVED the return (NULL for rows received before
+ *  the column existed — those show the date only, never an invented name). */
+export interface ReturnReceiver {
+  id: string
+  firstName?: string | null
+  lastName?: string | null
+  email?: string | null
+}
+
 export interface ReturnListItem {
   id: string
   displayId: string
@@ -77,9 +86,15 @@ export interface ReturnListItem {
   stockReconciledAt?: string | null
   refundId?: string | null
   exchangeOrderId?: string | null
+  /** First transition into RECEIVED-or-later. */
+  receivedAt?: string | null
+  /** Who received it — always a person, never "system". */
+  receivedBy?: ReturnReceiver | null
   createdAt: string
   updatedAt: string
-  order?: ReturnOrderLink | null
+  /** The original order — the list also carries its line items so the
+   *  order-scoped list can show WHAT is in each return (one query). */
+  order?: (ReturnOrderLink & { items?: ReturnOrderItem[] | null }) | null
 }
 
 export interface ReturnDetail extends ReturnListItem {

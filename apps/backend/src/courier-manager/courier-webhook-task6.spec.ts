@@ -84,7 +84,7 @@ describe('CourierWebhookService — Return records (Task 6)', () => {
     returns = {
       upsertCourierReturn: jest.fn().mockResolvedValue({ id: 'ret-1', status: 'REQUESTED' }),
       setReturnTransit: jest.fn().mockResolvedValue({ id: 'ret-1', status: 'IN_TRANSIT' }),
-      setReturnReceived: jest.fn().mockResolvedValue({ id: 'ret-1', status: 'RECEIVED' }),
+      recordCourierParcelBack: jest.fn().mockResolvedValue({ id: 'ret-1', status: 'REQUESTED' }),
       restockReturn: jest.fn().mockResolvedValue({ id: 'ret-1', status: 'RESTOCKED' }),
       orderItemsSnapshot: jest
         .fn()
@@ -248,7 +248,7 @@ describe('CourierWebhookService — Return records (Task 6)', () => {
       expect(cancelReturnStock.restoreForOrder).not.toHaveBeenCalled();
     });
 
-    it('cancelled received → RECEIVED → RESTOCKED with a full-order item snapshot', async () => {
+    it('cancelled received → parcel back recorded, NO auto-receive and NO auto-restore', async () => {
       manager.getSteadfastReturnStatus.mockResolvedValue({
         deliveryStatus: 'cancelled_return_received',
       });
@@ -258,18 +258,15 @@ describe('CourierWebhookService — Return records (Task 6)', () => {
         expect.objectContaining({
           reconciled: true,
           dispatchStatus: 'RETURNED',
-          returnStatus: 'RESTOCKED',
-          stockReconciled: true,
+          returnStatus: 'PARCEL_BACK',
+          stockReconciled: false,
           codOwed: false,
         }),
       );
-      expect(returns.setReturnReceived).toHaveBeenCalledWith('ret-1', 'cancelled_return_received');
+      expect(returns.recordCourierParcelBack).toHaveBeenCalledWith('ret-1', 'cancelled_return_received');
       // Item-level restore of EXACTLY the order snapshot — never the blanket
       // full-order restore (same quantities here, item-scoped semantics).
-      expect(returns.restockReturn).toHaveBeenCalledWith(
-        'ret-1',
-        expect.objectContaining({ items: [{ productId: 'p-1', quantity: 2 }] }),
-      );
+      expect(returns.restockReturn).not.toHaveBeenCalled();
       expect(cancelReturnStock.restoreForOrder).not.toHaveBeenCalled();
       // Order advances to Return Pending (row 44 fix), never Delivered.
       expect(ordersService.updateStatus).toHaveBeenCalledWith(
@@ -279,7 +276,7 @@ describe('CourierWebhookService — Return records (Task 6)', () => {
       );
     });
 
-    it('partial received → Return RECEIVED with NO auto-restore when qty unknown (HOLD + loud alert)', async () => {
+    it('partial received → parcel back recorded, NO auto-receive and NO auto-restore (staff must receive)', async () => {
       // T6 restore-or-hold: unknown split HOLDs (items-known restores — see
       // courier-webhook-partial-restore.spec.ts). Timeline is truthful: HOLD
       // alert, never "stock reconciled".
@@ -292,12 +289,12 @@ describe('CourierWebhookService — Return records (Task 6)', () => {
         expect.objectContaining({
           reconciled: true,
           dispatchStatus: 'PARTIAL',
-          returnStatus: 'RECEIVED',
+          returnStatus: 'PARCEL_BACK',
           stockReconciled: false,
           codOwed: false,
         }),
       );
-      expect(returns.setReturnReceived).toHaveBeenCalled();
+      expect(returns.recordCourierParcelBack).toHaveBeenCalled();
       // The kept part must NOT restock: no restore of any kind.
       expect(returns.restockReturn).not.toHaveBeenCalled();
       expect(cancelReturnStock.restoreForOrder).not.toHaveBeenCalled();
@@ -308,7 +305,7 @@ describe('CourierWebhookService — Return records (Task 6)', () => {
         .flatMap((c) => c[0].data.timeline)
         .map((e: any) => String(e?.remarks || ''))
         .join('\n');
-      expect(remarks).toMatch(/partial return received — confirm items to restock/);
+      expect(remarks).toMatch(/awaiting staff receive/);
       expect(remarks).not.toMatch(/stock reconciled/);
     });
   });

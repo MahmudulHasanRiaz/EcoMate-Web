@@ -180,6 +180,7 @@ model UserProfile {
   refreshTokens           RefreshToken[]
   addresses               Address[]
   assignedOrders          Order[]             @relation("OrderAssignee")
+  receivedReturns         Return[]            @relation("ReturnReceivedBy")
   payments                Payment[]           @relation("VerifiedPayments")
   refunds                 Refund[]            @relation("RefundProcessor")
   assignedLeads           CheckoutLead[]      @relation("CheckoutLeadAssignedTo")
@@ -1551,6 +1552,14 @@ model Return {
   /// deductions (never the mutable updatedAt). Backfilled from
   /// stockReconciledAt for pre-existing restocked rows.
   receivedAt        DateTime?
+  /// Staff member who RECEIVED this return. Mirrors Refund.processedBy:
+  /// a UserProfile id, plain column + relation. Receiving is ALWAYS a manual
+  /// act by an employee (scanner "Process return", the detail page's "Mark
+  /// received") — no automated flow, courier webhook or status sync may ever
+  /// mark a return received, so this is never "system". NULL for rows that
+  /// were received before this field existed (they show the date only).
+  receivedById      String?
+  receivedBy        UserProfile? @relation("ReturnReceivedBy", fields: [receivedById], references: [id])
   // Linked refund row (refunds module) — plain id, no FK (refund lifecycle is
   // independent; deleting a refund must never cascade a Return).
   refundId        String?

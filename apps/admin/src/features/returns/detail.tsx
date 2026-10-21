@@ -238,6 +238,11 @@ export function ReturnDetail() {
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ['return', id] })
       queryClient.invalidateQueries({ queryKey: ['returns'] })
+      // The order page's linked-returns list carries the LIVE lifecycle
+      // status + the receiving staff member — it must never serve a stale
+      // "Requested" after a receive. Prefix invalidation covers every order.
+      queryClient.invalidateQueries({ queryKey: ['order-returns'] })
+      queryClient.invalidateQueries({ queryKey: ['exchange-readiness'] })
       setReceiveDraft({})
       toast.success(`Return ${updated?.displayId ?? ''} marked received — good units restored, damaged units excluded.`)
     },
@@ -250,6 +255,8 @@ export function ReturnDetail() {
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ['return', id] })
       queryClient.invalidateQueries({ queryKey: ['returns'] })
+      queryClient.invalidateQueries({ queryKey: ['order-returns'] })
+      queryClient.invalidateQueries({ queryKey: ['exchange-readiness'] })
       setDamageDraft({})
       toast.success(`Damage recorded on ${updated?.displayId ?? 'this return'} — sellable stock reduced.`)
     },
@@ -316,6 +323,29 @@ export function ReturnDetail() {
   const createdDate = ret.createdAt
     ? new Date(ret.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
     : '—'
+  // "Received by {staff} · {date, time}" — rows received before the actor was
+  // recorded show the date only; no name is ever invented.
+  const receivedByLine = ret.receivedAt
+    ? (() => {
+        const when = new Date(ret.receivedAt!)
+        const stamp = Number.isNaN(when.getTime())
+          ? ''
+          : when.toLocaleString('en-GB', {
+              day: 'numeric',
+              month: 'short',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            })
+        const receiver = ret.receivedBy
+        const actor = receiver
+          ? [receiver.firstName, receiver.lastName].filter(Boolean).join(' ').trim() ||
+            receiver.email ||
+            receiver.id
+          : null
+        return actor ? `Received by ${actor}${stamp ? ` · ${stamp}` : ''}` : stamp || null
+      })()
+    : null
 
   return (
     <>
@@ -343,6 +373,9 @@ export function ReturnDetail() {
           <span className='ms-auto text-xs text-muted-foreground'>
             Created {createdDate}
             <span className='hidden sm:inline'> · Created by {ret.createdBy || '—'}</span>
+            {receivedByLine ? (
+              <span className='block'>{receivedByLine}</span>
+            ) : null}
           </span>
         </div>
 

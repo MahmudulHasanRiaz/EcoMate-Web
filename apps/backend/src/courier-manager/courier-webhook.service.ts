@@ -827,55 +827,39 @@ export class CourierWebhookService {
       await this.returns.setReturnTransit(returnId, rawStatus);
       returnStatus = 'IN_TRANSIT';
       remarks = 'Return in progress — stock held, nothing restored yet';
-    } else if (!isPartial) {
-      // FULL back ("you have it back"): RECEIVED → RESTOCKED with the full
-      // order snapshot (item-level — same quantities as the blanket path,
-      // item-scoped semantics so a later partial can never double-restore).
-      await this.returns.setReturnReceived(returnId, rawStatus);
-      const snapshot = await this.returns.orderItemsSnapshot(order.id);
-      await this.returns.restockReturn(returnId, { items: snapshot, performedBy: 'system' });
-      returnStatus = 'RESTOCKED';
-      stockReconciled = true;
-      remarks = 'Parcel back with the merchant — stock reconciled; confirm Returned manually';
     } else {
-      // PARTIAL back (owner-locked restore-or-hold): the courier never
-      // reports the split. Look up the open staff-created Return WITH items
-      // → restore THOSE items; qty unknown → HOLD + LOUD staff alert
-      // (mark-received flow restores later). Timeline derives from ACTUAL.
+      // Parcel back with the merchant ("you have it back").
+      //
+      // OWNER RULE: receiving is ALWAYS a manual act by an employee — no
+      // automated flow, courier webhook or status sync may ever mark a
+      // return received. The courier signal therefore only records the
+      // COURIER status: the Return stays open (REQUESTED/IN_TRANSIT), the
+      // stock is NOT restored and no "received by" actor is invented. A staff
+      // member receives it (scanner "Process return" or the return detail
+      // page's "Mark received") — that is the moment the status moves to
+      // RECEIVED/RESTOCKED, the stock returns and the receiver is recorded.
+      await this.returns.recordCourierParcelBack(returnId, rawStatus);
+      returnStatus = 'PARCEL_BACK';
+      stockReconciled = false;
       const staffReturn = (this.returns as any).findOpenStaffReturnWithItems
         ? await (this.returns as any).findOpenStaffReturnWithItems(order.id)
         : null;
       const staffItems = Array.isArray((staffReturn as any)?.items)
         ? ((staffReturn as any).items as unknown[])
         : [];
-      if (staffReturn && staffItems.length > 0) {
-        await this.returns.setReturnReceived(returnId, rawStatus);
-        await this.returns.restockReturn((staffReturn as any).id, {
-          items: staffItems as any,
-          performedBy: 'system',
-        });
-        returnStatus = 'RESTOCKED';
-        stockReconciled = true;
+      if (isPartial && staffReturn && staffItems.length > 0) {
         const display = (staffReturn as any)?.displayId ?? (staffReturn as any)?.id;
         remarks =
-          `Parcel back with the merchant — partial return received, ` +
-          `${staffItems.length} item line(s) restored from staff Return ${display} — ` +
-          `stock reconciled; confirm Returned manually`;
-        this.logger.log(
-          `Steadfast return-reconcile: ${consignmentId} partial received — ` +
-            `restored ${staffItems.length} line(s) from staff Return ${display} (order ${order.id})`,
-        );
+          `Parcel back with the merchant — partial return of ${staffItems.length} item line(s) ` +
+          `awaiting staff receive (staff Return ${display}); stock held, nothing restored yet`;
       } else {
-        await this.returns.setReturnReceived(returnId, rawStatus);
-        returnStatus = 'RECEIVED';
-        stockReconciled = false;
         remarks =
-          'partial return received — confirm items to restock; stock held, nothing restored yet';
-        this.logger.warn(
-          `Steadfast return-reconcile: ${consignmentId} partial return received — ` +
-            `confirm items to restock (stock held, order ${order.id})`,
-        );
+          'Parcel back with the merchant — awaiting staff receive; stock held, nothing restored yet';
       }
+      this.logger.log(
+        `Steadfast return-reconcile: ${consignmentId} parcel back recorded — ` +
+          `a staff member must receive the return (no automatic restock).`,
+      );
     }
 
     await this.addTimelineEntry(order.id, 'steadfast', mapped.dispatchStatus, {

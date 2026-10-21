@@ -298,6 +298,28 @@ describe('ReturnDetail (Task 7 headers/links + actions)', () => {
     mockPost.mockResolvedValue({ data: { ok: true } })
   })
 
+  it('shows the "Received by {staff} · {date}" log once the return is received', async () => {
+    const { getByText } = await renderDetail({
+      status: 'RESTOCKED',
+      stockReconciled: true,
+      receivedAt: '2026-10-21T10:30:00Z',
+      receivedBy: { id: 'staff-1', firstName: 'Karim', lastName: 'Uddin', email: 'karim@ecomate.com' },
+    })
+    await expect.element(getByText(/Received by Karim Uddin/)).toBeInTheDocument()
+  })
+
+  it('a return received before the actor was recorded shows the date only (no invented name)', async () => {
+    const { getByText, container } = await renderDetail({
+      status: 'RESTOCKED',
+      stockReconciled: true,
+      receivedAt: '2026-10-21T10:30:00Z',
+    })
+    // The date is shown (wait for the query to resolve first).
+    await expect.element(getByText(/21 Oct 2026/)).toBeInTheDocument()
+    // …but no name is ever invented.
+    expect(container.textContent ?? '').not.toContain('Received by')
+  })
+
   it('shows header badges, created date, created-by + all detail links', async () => {
     const { getByText } = await renderDetail()
     await expect.element(getByText('RTN-261014-0001')).toBeInTheDocument()

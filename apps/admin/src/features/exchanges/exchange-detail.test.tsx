@@ -25,7 +25,17 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: v
 const mockGet = vi.hoisted(() => vi.fn())
 // `delete` must resolve: the order lock releases on unmount and calls
 // `.catch()` on the result (a bare vi.fn() returns undefined → TypeError).
-vi.mock('@/lib/api-client', () => ({ apiClient: { get: mockGet, post: vi.fn().mockResolvedValue({}), put: vi.fn().mockResolvedValue({}), delete: vi.fn().mockResolvedValue({}) } }))
+// The implementations are passed to vi.fn() directly: `vi.resetAllMocks()`
+// clears a `mockResolvedValue` (the unlock on unmount then calls `.catch` on
+// undefined and throws), while the original implementation survives a reset.
+vi.mock('@/lib/api-client', () => ({
+  apiClient: {
+    get: mockGet,
+    post: vi.fn(() => Promise.resolve({})),
+    put: vi.fn(() => Promise.resolve({})),
+    delete: vi.fn(() => Promise.resolve({})),
+  },
+}))
 
 const linkedReturn = { id: 'ret-9', displayId: 'RTN-261014-0009', status: 'REQUESTED', items: [{ productId: 'p-1', variantId: 'v-1', quantity: 2 }] }
 
