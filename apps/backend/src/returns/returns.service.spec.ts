@@ -705,6 +705,41 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
       expect(txMock.$executeRaw).toHaveBeenCalledTimes(1);
     });
 
+    it('partial covering ALL ordered units (flag omitted) never marks Delivered — timeline records the skip', async () => {
+      const ret: any = await service.create(
+        {
+          ...baseDto(),
+          items: [{ productId: 'p1', variantId: null, quantity: 5 }],
+        },
+        'staff@shop.com',
+      );
+      // Remaining units = 5 ordered − 5 returned = 0 → delivered-marking never applies.
+      expect(txMock.orderStatus.findUnique).not.toHaveBeenCalled();
+      expect(txMock.order.update).not.toHaveBeenCalled();
+      expect(txMock.return.create).toHaveBeenCalled();
+      const payload = txMock.$executeRaw.mock.calls[0][1] as string;
+      expect(payload).toContain('Delivered-marking skipped — this return covers all items');
+      expect(payload).toContain(ret.displayId);
+      expect(payload).not.toContain('Original order marked Delivered');
+    });
+
+    it('partial covering ALL ordered units with explicit true → 400, nothing persists', async () => {
+      await expect(
+        service.create(
+          {
+            ...baseDto(),
+            items: [{ productId: 'p1', variantId: null, quantity: 5 }],
+            markOriginalDelivered: true,
+          },
+          'staff@shop.com',
+        ),
+      ).rejects.toThrow(/covers all items/i);
+      expect(txMock.orderStatus.findUnique).not.toHaveBeenCalled();
+      expect(txMock.order.update).not.toHaveBeenCalled();
+      expect(txMock.return.create).not.toHaveBeenCalled();
+      expect(txMock.$executeRaw).not.toHaveBeenCalled();
+    });
+
     it('unchecked → original order status untouched + left-for-courier timeline entry', async () => {
       const ret: any = await service.create({ ...baseDto(), markOriginalDelivered: false }, 'staff@shop.com');
       expect(txMock.orderStatus.findUnique).not.toHaveBeenCalled();

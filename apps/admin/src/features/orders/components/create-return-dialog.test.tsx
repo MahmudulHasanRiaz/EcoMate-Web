@@ -262,6 +262,45 @@ describe('CreateReturnDialog (unified staff return)', () => {
     expect(document.querySelector('[data-testid="return-mark-delivered"]')).toBeNull()
   })
 
+  it('hides the mark-delivered checkbox and omits the flag when the selection covers every unit', async () => {
+    mockPost.mockResolvedValue({ data: { id: 'ret-full', displayId: 'RTN-260930-0010' } })
+    const { getByRole } = await renderDialog()
+    const incWidget = getByRole('button', { name: 'Increase return quantity for Widget' })
+    const incGadget = getByRole('button', { name: 'Increase return quantity for Gadget' })
+    await userEvent.click(incWidget)
+    await userEvent.click(incWidget)
+    await userEvent.click(incWidget)
+    await userEvent.click(incGadget)
+    // 3 of 3 Widget + 1 of 1 Gadget = every ordered unit — functionally full.
+    expect(document.querySelector('[data-testid="return-mark-delivered"]')).toBeNull()
+    expect(document.body.textContent).toContain(
+      'This selection returns everything — the order will close as Returned, not Delivered.',
+    )
+    expect(document.body.textContent).not.toContain('Mark the original order as delivered now')
+    await userEvent.click(getByRole('button', { name: 'Confirm return' }))
+    await expect.poll(() => mockPost.mock.calls.length).toBe(1)
+    const body = mockPost.mock.calls[0][1] as any
+    expect(body.type).toBe('PARTIAL')
+    expect(body).not.toHaveProperty('markOriginalDelivered')
+  })
+
+  it('recomputes live: dropping one unit restores the mark-delivered checkbox and the default flag', async () => {
+    mockPost.mockResolvedValue({ data: { id: 'ret-live', displayId: 'RTN-260930-0011' } })
+    const { getByRole } = await renderDialog()
+    const incWidget = getByRole('button', { name: 'Increase return quantity for Widget' })
+    for (let i = 0; i < 3; i++) await userEvent.click(incWidget)
+    await userEvent.click(getByRole('button', { name: 'Increase return quantity for Gadget' }))
+    expect(document.querySelector('[data-testid="return-mark-delivered"]')).toBeNull()
+    await userEvent.click(getByRole('button', { name: 'Decrease return quantity for Gadget' }))
+    // 3 of 4 units — remaining > 0, so the normal §5 control is back.
+    const box = document.querySelector('[data-testid="return-mark-delivered"]')
+    expect(box).not.toBeNull()
+    expect(box?.getAttribute('data-state')).toBe('checked')
+    await userEvent.click(getByRole('button', { name: 'Confirm return' }))
+    await expect.poll(() => mockPost.mock.calls.length).toBe(1)
+    expect((mockPost.mock.calls[0][1] as any).markOriginalDelivered).toBe(true)
+  })
+
   it('unchecking sends markOriginalDelivered: false', async () => {
     mockPost.mockResolvedValue({ data: { id: 'ret-8', displayId: 'RTN-260930-0008' } })
     const { getByRole, getByTestId } = await renderDialog()

@@ -189,6 +189,8 @@ export interface ScanOrderPreview {
 
 export interface ScanLinkedCandidate {
   kind: 'return' | 'exchange'
+  /** Plain operator label kind — an exchange Return keeps the receive path. */
+  labelKind?: 'return' | 'exchange'
   id: string
   displayId: string
   status: string

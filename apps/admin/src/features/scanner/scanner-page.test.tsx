@@ -95,7 +95,10 @@ describe('Scanner page', () => {
   it('switches task via the selector and adapts helper text', async () => {
     const page = await renderPage()
     await userEvent.selectOptions(page.getByRole('combobox'), 'DISPATCH_RETURN')
-    expect(page.getByText(/returned courier dispatch ID/i)).not.toBeNull()
+    // ONE line covers every accepted return identifier.
+    expect(
+      page.getByText(/courier dispatch ID, tracking code, order QR\/barcode, or an RTN/i),
+    ).not.toBeNull()
     await userEvent.selectOptions(page.getByRole('combobox'), 'ORDER_STATUS')
     expect(page.getByText(/one or more order numbers/i)).not.toBeNull()
   })
@@ -490,7 +493,7 @@ describe('Scanner page', () => {
       return Promise.resolve({ data: {} })
     })
     const page = await renderPage()
-    await userEvent.selectOptions(page.getByRole('combobox'), 'RETURN_RECEIVE')
+    await userEvent.selectOptions(page.getByRole('combobox'), 'DISPATCH_RETURN')
     await scanText(page, 'ORD-1')
     expect(page.getByText('No active return/exchange for this order.', { exact: false })).not.toBeNull()
     expect(mockPost.mock.calls.filter((c) => c[0] === '/scanner/scan')).toHaveLength(0)
@@ -515,7 +518,7 @@ describe('Scanner page', () => {
       return Promise.resolve({ data: {} })
     })
     const page = await renderPage()
-    await userEvent.selectOptions(page.getByRole('combobox'), 'RETURN_RECEIVE')
+    await userEvent.selectOptions(page.getByRole('combobox'), 'DISPATCH_RETURN')
     await scanText(page, 'ORD-1')
     // Staged for batch receiving — never executed by a scan.
     expect(mockPost.mock.calls.filter((c) => c[0] === '/scanner/scan')).toHaveLength(0)
@@ -547,7 +550,7 @@ describe('Scanner page', () => {
       return Promise.resolve({ data: {} })
     })
     const page = await renderPage()
-    await userEvent.selectOptions(page.getByRole('combobox'), 'RETURN_RECEIVE')
+    await userEvent.selectOptions(page.getByRole('combobox'), 'DISPATCH_RETURN')
     await scanText(page, 'ORD-1')
     // Picker lists both legs; no execute fired yet.
     await expect.element(page.getByText('RTN-1', { exact: true })).toBeInTheDocument()
@@ -599,7 +602,7 @@ describe('Scanner page — staged returns: persistence, attention rows, batch pr
   it('a duplicate scan keeps one row and records Already staged in the feed', async () => {
     mockReturnResolve({})
     const page = await renderPage()
-    await userEvent.selectOptions(page.getByRole('combobox'), 'RETURN_RECEIVE')
+    await userEvent.selectOptions(page.getByRole('combobox'), 'DISPATCH_RETURN')
     await scanText(page, 'ORD-1')
     await scanText(page, 'ORD-1')
     await expect.element(page.getByText('RTN-1 — Already staged')).toBeInTheDocument()
@@ -630,7 +633,7 @@ describe('Scanner page — staged returns: persistence, attention rows, batch pr
       return base(url, body)
     })
     const page = await renderPage()
-    await userEvent.selectOptions(page.getByRole('combobox'), 'RETURN_RECEIVE')
+    await userEvent.selectOptions(page.getByRole('combobox'), 'DISPATCH_RETURN')
     await scanText(page, 'ORD-1')
     await userEvent.click(page.getByRole('button', { name: 'Expand RTN-1' }))
     await userEvent.fill(page.getByLabelText('Damaged quantity for Blue Hoodie'), '1')
@@ -650,7 +653,7 @@ describe('Scanner page — staged returns: persistence, attention rows, batch pr
   it('a RESTOCKED leg stages as an attention row with its reason and blocks processing', async () => {
     mockReturnResolve({ id: 'ret-3', displayId: 'RTN-3', status: 'RESTOCKED', processable: false, reason: 'Already received — stock was restored earlier.' })
     const page = await renderPage()
-    await userEvent.selectOptions(page.getByRole('combobox'), 'RETURN_RECEIVE')
+    await userEvent.selectOptions(page.getByRole('combobox'), 'DISPATCH_RETURN')
     await scanText(page, 'ORD-1')
     // Row staged; the reason is recorded in the feed as a warning.
     await expect.element(page.getByText('RTN-3', { exact: true })).toBeInTheDocument()
@@ -668,7 +671,7 @@ describe('Scanner page — staged returns: persistence, attention rows, batch pr
     mockReturnResolve({})
     const page = await renderPage()
     await expect.element(page.getByText('Ready to scan')).toBeInTheDocument()
-    await userEvent.selectOptions(page.getByRole('combobox'), 'RETURN_RECEIVE')
+    await userEvent.selectOptions(page.getByRole('combobox'), 'DISPATCH_RETURN')
     await scanText(page, 'ORD-1')
     await expect.element(page.getByText('Staged returns')).toBeInTheDocument()
     await expect.element(page.getByText('RTN-1', { exact: true })).toBeInTheDocument()
@@ -685,7 +688,7 @@ describe('Scanner page — staged returns: persistence, attention rows, batch pr
     mockPost.mockImplementation(() => Promise.resolve({ data: {} }))
     const page = await renderPage()
     // Restored rows show under their own task (RETURN_RECEIVE).
-    await userEvent.selectOptions(page.getByRole('combobox'), 'RETURN_RECEIVE')
+    await userEvent.selectOptions(page.getByRole('combobox'), 'DISPATCH_RETURN')
     await expect.element(page.getByText('RTN-1', { exact: true })).toBeInTheDocument()
     await expect.element(page.getByText('Md. Rahim', { exact: false })).toBeInTheDocument()
     expect(mockPost.mock.calls.filter((c) => c[0] === '/scanner/resolve')).toHaveLength(0)
@@ -695,7 +698,7 @@ describe('Scanner page — staged returns: persistence, attention rows, batch pr
     // ONE staged list: switching task keeps it visible (never cleared/hidden).
     await userEvent.selectOptions(page.getByRole('combobox'), 'ORDER_STATUS')
     await expect.element(page.getByText('RTN-1', { exact: true })).toBeInTheDocument()
-    await userEvent.selectOptions(page.getByRole('combobox'), 'RETURN_RECEIVE')
+    await userEvent.selectOptions(page.getByRole('combobox'), 'DISPATCH_RETURN')
     await expect.element(page.getByText('RTN-1', { exact: true })).toBeInTheDocument()
   })
 
@@ -714,7 +717,7 @@ describe('Scanner page — staged returns: persistence, attention rows, batch pr
       return Promise.resolve({ data: {} })
     })
     const page = await renderPage()
-    await userEvent.selectOptions(page.getByRole('combobox'), 'RETURN_RECEIVE')
+    await userEvent.selectOptions(page.getByRole('combobox'), 'DISPATCH_RETURN')
     await scanText(page, 'ORD-1')
     await scanText(page, 'ORD-2')
     await userEvent.click(page.getByRole('button', { name: 'Clear' }).first())
@@ -766,7 +769,7 @@ describe('Scanner page — staged returns: persistence, attention rows, batch pr
       return Promise.resolve({ data: {} })
     })
     const page = await renderPage()
-    await userEvent.selectOptions(page.getByRole('combobox'), 'RETURN_RECEIVE')
+    await userEvent.selectOptions(page.getByRole('combobox'), 'DISPATCH_RETURN')
     for (const id of ['ORD-1', 'ORD-2', 'ORD-3', 'ORD-4']) await scanText(page, id)
     await expect.element(page.getByText('Process returns (3 ready · 1 need attention)', { exact: false })).toBeInTheDocument()
     await userEvent.click(page.getByRole('button', { name: /Process returns/ }))
@@ -882,7 +885,7 @@ describe('Scanner page — staged returns: persistence, attention rows, batch pr
   it('RETURN staged rows expand into the RETURNED items — never the order items', async () => {
     mockReturnResolve({})
     const page = await renderPage()
-    await userEvent.selectOptions(page.getByRole('combobox'), 'RETURN_RECEIVE')
+    await userEvent.selectOptions(page.getByRole('combobox'), 'DISPATCH_RETURN')
     await scanText(page, 'ORD-1')
     await userEvent.click(page.getByRole('button', { name: 'Expand RTN-1' }))
     await expect.element(page.getByText('Returned items')).toBeInTheDocument()
@@ -1055,5 +1058,177 @@ describe('Scanner page — Process return (DISPATCH_RETURN) is stage-only', () =
     })
     await expect.element(page.getByText('CONS-R1', { exact: true })).not.toBeInTheDocument()
     await expect.element(page.getByText(/1 unit\(s\) damaged — not restocked/)).toBeInTheDocument()
+  })
+})
+
+describe('Scanner page — ONE merged Process return task (cross-kind resolve)', () => {
+  beforeEach(() => {
+    mockGet.mockReset()
+    mockPost.mockReset()
+    mockGet.mockResolvedValue({ data: purposes })
+    resetStagedStorage()
+  })
+
+  const returnLeg = (overrides: Record<string, unknown> = {}) => ({
+    kind: 'return',
+    labelKind: 'return',
+    id: 'ret-1',
+    displayId: 'RTN-1',
+    status: 'REQUESTED',
+    orderDisplayId: 'ORD-1',
+    coversUnits: 2,
+    orderUnits: 3,
+    processable: true,
+    reason: null,
+    items: [{ name: 'Blue Hoodie', variantLabel: 'Size: M', sku: 'HD-BLU-M', image: null, quantity: 2, price: 600 }],
+    ...overrides,
+  })
+
+  const dispatchReturn = (overrides: Record<string, unknown> = {}) => ({
+    ...dispatchPreview('d-r1', 'CONS-R1'),
+    status: 'RETURN_PENDING',
+    processable: true,
+    reason: null,
+    items: [{
+      productId: 'p-1', variantId: null, name: 'Blue Hoodie', variantLabel: 'Size: M',
+      sku: 'HD-BLU-M', image: null, quantity: 2, maxQuantity: 2, price: 600,
+    }],
+    ...overrides,
+  })
+
+  it('offers exactly ONE return task — Process return — and no Receive return / exchange', async () => {
+    const page = await renderPage()
+    await expect.element(page.getByRole('option', { name: /Process return/ })).toBeInTheDocument()
+    const labels = Array.from(
+      document.querySelectorAll<HTMLOptionElement>('#scan-task option'),
+    ).map((o) => o.textContent ?? '')
+    expect(labels.some((l) => /Process return/.test(l))).toBe(true)
+    expect(labels.some((l) => /Receive return/i.test(l))).toBe(false)
+    // The hidden backend purpose never appears as a selectable task.
+    expect(
+      Array.from(document.querySelectorAll<HTMLOptionElement>('#scan-task option')).some(
+        (o) => o.value === 'RETURN_RECEIVE',
+      ),
+    ).toBe(false)
+    await userEvent.selectOptions(page.getByRole('combobox'), 'DISPATCH_RETURN')
+  })
+
+  it('RTN display-id scan stages the Return leg through the merged task', async () => {
+    mockPost.mockImplementation((url: string) => {
+      if (url === '/scanner/resolve') {
+        return Promise.resolve({
+          data: {
+            status: 'resolved', identifier: 'RTN-1', dispatches: [],
+            order: orderPreview('o1', 'ORD-1', [], 'Md. Rahim', '01700000001'),
+            linked: [returnLeg()],
+          },
+        })
+      }
+      return Promise.resolve({ data: {} })
+    })
+    const page = await renderPage()
+    await userEvent.selectOptions(page.getByRole('combobox'), 'DISPATCH_RETURN')
+    await scanText(page, 'RTN-1')
+
+    expect(mockPost.mock.calls.filter((c) => c[0] === '/scanner/scan')).toHaveLength(0)
+    await expect.element(page.getByText('RTN-1', { exact: true })).toBeInTheDocument()
+    await expect.element(page.getByText('RTN-1 — Staged')).toBeInTheDocument()
+  })
+
+  it('tracking-code scan stages the dispatch row', async () => {
+    mockPost.mockImplementation((url: string) => {
+      if (url === '/scanner/resolve') {
+        return Promise.resolve({
+          data: { status: 'resolved', identifier: 'TRK-9001', dispatches: [dispatchReturn()], order: null, linked: [] },
+        })
+      }
+      return Promise.resolve({ data: {} })
+    })
+    const page = await renderPage()
+    await userEvent.selectOptions(page.getByRole('combobox'), 'DISPATCH_RETURN')
+    await scanText(page, 'TRK-9001')
+
+    expect(mockPost.mock.calls.filter((c) => c[0] === '/scanner/scan')).toHaveLength(0)
+    await expect.element(page.getByText('CONS-R1', { exact: true })).toBeInTheDocument()
+    await expect.element(page.getByText('CONS-R1 — Staged')).toBeInTheDocument()
+  })
+
+  it('order number matching BOTH kinds opens one picker with plain labels; the chosen dispatch stages', async () => {
+    mockPost.mockImplementation((url: string, body?: any) => {
+      if (url === '/scanner/resolve') {
+        return Promise.resolve({
+          data: {
+            status: 'selection_required', identifier: 'ORD-1', dispatches: [dispatchReturn()],
+            order: orderPreview('o1', 'ORD-1', [], 'Md. Rahim', '01700000001'),
+            linked: [
+              returnLeg(),
+              returnLeg({ kind: 'return', labelKind: 'exchange', id: 'ret-ex', displayId: 'RTN-EX-9', status: 'REQUESTED' }),
+            ],
+            message: 'Multiple return options are linked to this order. Select the dispatch, return, or exchange to continue.',
+          },
+        })
+      }
+      if (url === '/scanner/scan') return Promise.resolve({ data: { status: 'success', identifier: 'CONS-R1', title: 'Returned', message: 'Done', ...body } })
+      return Promise.resolve({ data: {} })
+    })
+    const page = await renderPage()
+    await userEvent.selectOptions(page.getByRole('combobox'), 'DISPATCH_RETURN')
+    await scanText(page, 'ORD-1')
+
+    // Never silently picked one kind: all three candidates are listed, labelled plainly.
+    await expect.element(page.getByText(/Courier return — CONS-R1/)).toBeInTheDocument()
+    await expect.element(page.getByText(/Return RTN-1/)).toBeInTheDocument()
+    await expect.element(page.getByText(/Exchange RTN-EX-9/)).toBeInTheDocument()
+    expect(mockPost.mock.calls.filter((c) => c[0] === '/scanner/scan')).toHaveLength(0)
+
+    await userEvent.click(page.getByRole('button', { name: 'Select CONS-R1 (pathao)' }))
+    await userEvent.click(page.getByRole('button', { name: /Process returns/ }))
+
+    const calls = mockPost.mock.calls.filter((c) => c[0] === '/scanner/scan')
+    expect(calls).toHaveLength(1)
+    expect(calls[0][1]).toEqual(expect.objectContaining({
+      purpose: 'DISPATCH_RETURN',
+      identifier: 'ORD-1',
+      dispatchId: 'd-r1',
+    }))
+  })
+
+  it('exchange RTN scan stages with the receive path + damaged controls (labelled Exchange in the picker)', async () => {
+    mockPost.mockImplementation((url: string, body?: any) => {
+      if (url === '/scanner/resolve') {
+        return Promise.resolve({
+          data: {
+            status: 'resolved', identifier: 'RTN-EX-9', dispatches: [],
+            order: orderPreview('o1', 'ORD-1', [], 'Md. Rahim', '01700000001'),
+            linked: [returnLeg({
+              id: 'ret-ex', displayId: 'RTN-EX-9', labelKind: 'exchange', itemsConfirmed: true,
+              items: [{
+                productId: 'p-1', variantId: 'v-1', name: 'Blue Hoodie', variantLabel: 'Size: M',
+                sku: 'HD-BLU-M', image: null, quantity: 2, maxQuantity: 2, price: 600,
+              }],
+            })],
+          },
+        })
+      }
+      if (url === '/scanner/scan') return Promise.resolve({ data: { status: 'success', identifier: 'RTN-EX-9', title: 'Received', message: 'Done', ...body } })
+      return Promise.resolve({ data: {} })
+    })
+    const page = await renderPage()
+    await userEvent.selectOptions(page.getByRole('combobox'), 'DISPATCH_RETURN')
+    await scanText(page, 'RTN-EX-9')
+
+    await userEvent.click(page.getByRole('button', { name: 'Expand RTN-EX-9' }))
+    // Damage controls are present — exchange returns receive through the return path.
+    await userEvent.fill(page.getByLabelText('Damaged quantity for Blue Hoodie'), '1')
+    await userEvent.click(page.getByRole('button', { name: /Process returns/ }))
+
+    const calls = mockPost.mock.calls.filter((c) => c[0] === '/scanner/scan')
+    expect(calls).toHaveLength(1)
+    expect(calls[0][1]).toEqual(expect.objectContaining({
+      purpose: 'RETURN_RECEIVE',
+      identifier: 'RTN-EX-9',
+      returnId: 'ret-ex',
+      items: [{ productId: 'p-1', variantId: 'v-1', quantity: 2, damagedQuantity: 1 }],
+    }))
   })
 })

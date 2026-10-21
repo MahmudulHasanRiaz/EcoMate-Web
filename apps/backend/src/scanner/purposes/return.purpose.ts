@@ -1,17 +1,34 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RtnService } from '../../rtn/rtn.service';
-import { resolveScanIdentifier, orderItemPreview } from '../scanner-resolver';
+import {
+  normalizeScanIdentifier,
+  resolveScanIdentifier,
+  orderItemPreview,
+} from '../scanner-resolver';
 import {
   ResolveOutcome,
   ScanActor,
+  ScanLinkedCandidate,
   ScanPurposeHandler,
   ScanResult,
 } from '../scanner.types';
+import { loadLinkedReturnCandidates } from './linked-return-candidates';
+
+const ORDER_NUMBER = /^(ORD|RTN)-\d{6}-\d{4}$/;
+const RETURN_NUMBER = /^RTN-\d{6}-\d{4}$/;
 
 /**
- * Purpose 2 — Dispatch → Return.
- * Delegates ALL domain logic to RtnService.finalizeDispatchReturn:
+ * Purpose 2 — Process return (merged task).
+ *
+ * Resolve accepts EVERY return identifier: a courier dispatch id / tracking
+ * code, an order number / QR, or an RTN display id (staff-created returns AND
+ * exchange returns). Candidates of BOTH kinds may match one order — the picker
+ * then lists every one of them, and the operator's choice is staged; nothing
+ * is ever executed by a scan. Staged rows keep their internal purpose so
+ * Process executes through the correct existing path.
+ *
+ * Execute delegates ALL domain logic to RtnService.finalizeDispatchReturn:
  *  - full return:    original Return Pending → Returned + restoreForOrder
  *  - partial return: RTN Return Pending → Returned + exact RTN quantities
  *  - unresolved Partial order: recoverable business exception (no mutation)
@@ -30,18 +47,109 @@ export class ReturnPurpose implements ScanPurposeHandler {
   ) {}
 
   async resolve(identifier: string): Promise<ResolveOutcome> {
+    const normalized = normalizeScanIdentifier(identifier);
+
+    // Direct RTN display id → exactly that leg. The generic resolver treats
+    // RTN as an Order displayId, so a staff-created / exchange Return row
+    // needs its own lookup BEFORE the generic path.
+    if (RETURN_NUMBER.test(normalized)) {
+      const direct = await this.resolveReturnDisplayId(normalized);
+      if (direct) return direct;
+    }
+
     const outcome = await resolveScanIdentifier(this.prisma, identifier);
-    if (outcome.status === 'not_found') return outcome;
-    if (outcome.dispatches.length > 1) {
+    if (outcome.status === 'not_found') {
+      return { ...outcome, linked: outcome.linked ?? [] };
+    }
+
+    // Dispatch-only identifiers (consignment / tracking) resolve the dispatch
+    // and are never widened to the order's other return legs — the scanned
+    // parcel is unambiguous.
+    if (!ORDER_NUMBER.test(normalized)) {
       await this.enrichDispatches(outcome);
+      return { ...outcome, linked: outcome.linked ?? [] };
+    }
+
+    const orderId = outcome.order?.id ?? outcome.dispatches[0]?.orderId ?? null;
+    const linked = orderId
+      ? await loadLinkedReturnCandidates(this.prisma, orderId)
+      : [];
+    await this.enrichDispatches(outcome);
+
+    const total = outcome.dispatches.length + linked.length;
+    if (total === 0) {
+      return {
+        ...outcome,
+        status: 'not_found',
+        dispatches: outcome.dispatches,
+        linked,
+        message: 'No active return/exchange or returnable dispatch was found for this order.',
+      };
+    }
+    if (total > 1) {
       return {
         ...outcome,
         status: 'selection_required',
-        message: 'Multiple dispatches are linked to this order. Select the dispatch to continue.',
+        dispatches: outcome.dispatches,
+        linked,
+        message:
+          'Multiple return options are linked to this order. Select the dispatch, return, or exchange to continue.',
       };
     }
-    await this.enrichDispatches(outcome);
-    return outcome;
+    const only = linked[0];
+    return {
+      ...outcome,
+      status: 'resolved',
+      dispatches: outcome.dispatches,
+      linked,
+      message: only
+        ? `One active ${only.labelKind ?? only.kind} ${only.displayId} is linked to this order — ready to process.`
+        : 'One returnable dispatch is linked to this order — ready to stage.',
+    };
+  }
+
+  /**
+   * A scanned RTN display id maps to ONE Return row. The candidate is built
+   * through the SAME shared loader as order scans (item previews, coverage,
+   * stage-time processability), then filtered to the scanned leg so the picker
+   * is never widened to the order's other returns.
+   */
+  private async resolveReturnDisplayId(
+    identifier: string,
+  ): Promise<ResolveOutcome | null> {
+    const ret = (await this.prisma.return.findFirst({
+      where: { displayId: { equals: identifier, mode: 'insensitive' } },
+      include: { order: { select: { displayId: true } } },
+    })) as any;
+    if (!ret) return null;
+
+    const linked = await loadLinkedReturnCandidates(this.prisma, ret.orderId);
+    const candidate = linked.find(
+      (c: ScanLinkedCandidate) => c.kind === 'return' && c.id === ret.id,
+    );
+    if (!candidate) {
+      return {
+        status: 'not_found',
+        identifier,
+        dispatches: [],
+        order: null,
+        linked: [],
+        message: `No active return/exchange found for "${identifier}".`,
+      };
+    }
+
+    const orderDisplayId = ret.order?.displayId as string | undefined;
+    const orderOutcome = orderDisplayId
+      ? await resolveScanIdentifier(this.prisma, orderDisplayId)
+      : null;
+    return {
+      status: 'resolved',
+      identifier,
+      dispatches: [],
+      order: orderOutcome?.order ?? null,
+      linked: [candidate],
+      message: `One active ${candidate.labelKind ?? candidate.kind} ${candidate.displayId} is ready to process.`,
+    };
   }
 
   /**

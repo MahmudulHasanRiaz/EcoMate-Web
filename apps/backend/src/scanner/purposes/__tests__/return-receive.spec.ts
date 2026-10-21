@@ -148,6 +148,27 @@ describe('ReturnReceivePurpose — return/exchange scan resolution (hardening 3)
     expect(prisma.order.update).not.toHaveBeenCalled();
   });
 
+  it("execute accepts the Return's own RTN display id (no order cross-check needed)", async () => {
+    await build({ returns: [activeReturn()] });
+    // A Return Order may not exist for a staff-created Return; even if the
+    // generic resolver matches an unrelated RTN order, the scanned value IS
+    // this leg's own display id — the cross-order guard must not misfire.
+    (prisma.order.findFirst as any) = async () => ({
+      ...saleOrder(),
+      id: 'order-9',
+      displayId: 'RTN-260930-0001',
+    });
+    const res = await purpose.execute(
+      { identifier: 'RTN-260930-0001', returnId: 'ret-1' },
+      actor,
+    );
+    expect(res.status).toBe('success');
+    expect(returns.restoreStockForReturn).toHaveBeenCalledWith(
+      'ret-1',
+      expect.objectContaining({ performedBy: 'staff@ecomate.com' }),
+    );
+  });
+
   it('execute rejects a return id that belongs to another order', async () => {
     await build({
       returns: [activeReturn({ id: 'ret-x', orderId: 'order-9', displayId: 'RTN-9' })],
