@@ -1,6 +1,8 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
+  NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -11,15 +13,16 @@ import {
   DispatchCancelEvaluation,
   courierLabel,
   evaluateDispatchCancelEligibility,
+  formatCollectedAt,
+  isPanelCancelPending,
 } from './dispatch-cancel-eligibility';
 
 /**
  * Cancel a DISPATCHED order (owner directive, 2026-10-21).
  *
- * A dispatched order can only be cancelled while the parcel is still with us
- * AND the courier has a cancel API we can push to. The flow is deliberately
- * split in two halves so the irreversible external call never sits inside a
- * database transaction:
+ * A dispatched order can only be cancelled while the parcel is still with us.
+ * The flow is deliberately split in two halves so the irreversible external
+ * call never sits inside a database transaction:
  *
  *   1. prepare() — evaluate the eligibility (server-side, authoritative) and
  *      push the courier cancels. Nothing is written here; a failure throws
@@ -27,9 +30,19 @@ import {
  *   2. apply() — inside the ORDER's transaction: mark the dispatches
  *      cancelled, store the courier's reference and write the audit entry.
  *
+ * Couriers:
+ *   - Carrybee / RedX / Pathao: the cancel is pushed through the courier
+ *     client (mode API).
+ *   - Steadfast: no cancel API exists, so the LOCAL cancel proceeds in
+ *     MANUAL mode. The dispatch keeps a "panel cancellation pending" marker
+ *     until staff confirm they cancelled the booking in the Steadfast panel
+ *     (confirmManualPanelCancel records the actor + timestamp).
+ *
  * The rules themselves live in dispatch-cancel-eligibility.ts (pure, shared
  * with the admin dialog).
  */
+
+export type CourierCancelMode = 'API' | 'MANUAL';
 
 export type DispatchCancelPlanEntry = {
   id: string;
@@ -42,8 +55,10 @@ export type DispatchCancelPlanEntry = {
 export type CourierCancelOutcome = {
   dispatchId: string;
   courier: string;
-  /** The courier's own booking id we cancelled. */
-  reference: string;
+  /** The courier's own booking id (null when no booking was recorded). */
+  reference: string | null;
+  /** API = pushed to the courier; MANUAL = local cancel only. */
+  mode: CourierCancelMode;
   /** Whatever the courier answered (stored on the dispatch for the audit). */
   response: unknown;
 };
@@ -52,7 +67,7 @@ export type DispatchCancelPlan = {
   orderId: string;
   /** The order's live dispatches (not CANCELLED) with their eligibility. */
   dispatches: DispatchCancelPlanEntry[];
-  /** The dispatches that may be cancelled with their courier — ALL or NONE. */
+  /** The dispatches that may be cancelled — ALL or NONE. */
   cancellable: DispatchCancelPlanEntry[];
   /** Why the plan cannot be executed (null when it can). */
   blockedReason: string | null;
@@ -133,9 +148,33 @@ export class DispatchCancelService {
 
     const outcomes: CourierCancelOutcome[] = [];
     for (const dispatch of plan.cancellable) {
-      outcomes.push(await this.pushCourierCancel(dispatch, actor));
+      if (dispatch.manualPanelCancel) {
+        outcomes.push(this.manualOutcome(dispatch));
+      } else {
+        outcomes.push(await this.pushCourierCancel(dispatch, actor));
+      }
     }
     return { ...plan, outcomes };
+  }
+
+  /**
+   * A courier without a cancel API (Steadfast): no external call. The local
+   * cancel proceeds and the panel cancellation is recorded as owed in
+   * apply().
+   */
+  protected manualOutcome(
+    dispatch: DispatchCancelPlanEntry,
+  ): CourierCancelOutcome {
+    return {
+      dispatchId: dispatch.id,
+      courier: dispatch.courier,
+      reference: dispatch.consignmentId || dispatch.trackingCode || null,
+      mode: 'MANUAL',
+      response: {
+        manual: true,
+        warning: dispatch.warning,
+      },
+    };
   }
 
   /**
@@ -165,6 +204,7 @@ export class DispatchCancelService {
         dispatchId: dispatch.id,
         courier: dispatch.courier,
         reference,
+        mode: 'API',
         response,
       };
     } catch (e) {
@@ -201,6 +241,9 @@ export class DispatchCancelService {
     if (courier === 'redx') {
       return mgr.cancelRedxParcel(reference, reason);
     }
+    if (courier === 'pathao') {
+      return mgr.cancelPathaoOrder(reference, reason);
+    }
     throw new BadRequestException(
       `${courierLabel(courier)} bookings cannot be cancelled from here — cancel the booking in the ${courierLabel(courier)} panel first, then cancel the order.`,
     );
@@ -210,6 +253,10 @@ export class DispatchCancelService {
    * Apply the cancellations inside the ORDER's transaction: the dispatches
    * become CANCELLED, the courier's reference is stored and the audit entry
    * is appended to the order's timeline.
+   *
+   * MANUAL outcomes keep `panelCancelConfirmedAt = NULL` (the pending marker)
+   * when a courier booking exists. A MANUAL cancel with no booking reference
+   * has nothing to cancel in the panel, so it is confirmed immediately.
    */
   async apply(
     tx: Prisma.TransactionClient,
@@ -220,35 +267,165 @@ export class DispatchCancelService {
     if (outcomes.length === 0) return;
 
     const now = new Date();
+    const performedBy = actor || 'system';
     const entries: any[] = [];
     for (const outcome of outcomes) {
+      const label = courierLabel(outcome.courier);
+      const manualWithoutBooking =
+        outcome.mode === 'MANUAL' && !outcome.reference;
+
       await tx.dispatch.updateMany({
         where: { id: outcome.dispatchId, status: { not: 'CANCELLED' } },
         data: {
           status: 'CANCELLED',
           courierCancelRef: outcome.reference,
           courierCancelAt: now,
+          courierCancelMode: outcome.mode,
           courierCancelResponse: (outcome.response ?? null) as any,
+          ...(manualWithoutBooking
+            ? {
+                panelCancelConfirmedAt: now,
+                panelCancelConfirmedBy: performedBy,
+              }
+            : {}),
         },
       });
-      entries.push({
-        type: 'dispatch.cancelled',
-        visibility: 'private',
-        timestamp: now.toISOString(),
-        note:
-          `Dispatch cancelled with ${courierLabel(outcome.courier)} ` +
-          `(booking ${outcome.reference}) — the courier booking was cancelled ` +
-          `as part of the order cancellation.`,
-        performedBy: actor || 'system',
-        courier: outcome.courier,
-        dispatchId: outcome.dispatchId,
-        courierReference: outcome.reference,
-      });
+
+      if (outcome.mode === 'MANUAL' && outcome.reference) {
+        entries.push({
+          type: 'dispatch.cancelled',
+          visibility: 'private',
+          timestamp: now.toISOString(),
+          note:
+            `Dispatch marked cancelled in EcoMate only. The ${label} booking ` +
+            `${outcome.reference} is still active — it MUST be cancelled in ` +
+            `the ${label} panel. Panel cancellation owed by ${performedBy} ` +
+            `since ${formatCollectedAt(now)}.`,
+          performedBy,
+          courier: outcome.courier,
+          dispatchId: outcome.dispatchId,
+          courierReference: outcome.reference,
+          courierCancelMode: 'MANUAL',
+          panelCancelPending: true,
+          panelCancelOwedBy: performedBy,
+          panelCancelOwedAt: now.toISOString(),
+        });
+      } else if (outcome.mode === 'MANUAL') {
+        entries.push({
+          type: 'dispatch.cancelled',
+          visibility: 'private',
+          timestamp: now.toISOString(),
+          note:
+            `Dispatch marked cancelled in EcoMate. No ${label} booking ` +
+            `reference was recorded, so no panel cancellation is owed.`,
+          performedBy,
+          courier: outcome.courier,
+          dispatchId: outcome.dispatchId,
+          courierCancelMode: 'MANUAL',
+          panelCancelPending: false,
+        });
+      } else {
+        entries.push({
+          type: 'dispatch.cancelled',
+          visibility: 'private',
+          timestamp: now.toISOString(),
+          note:
+            `Dispatch cancelled with ${label} ` +
+            `(booking ${outcome.reference}) — the courier booking was cancelled ` +
+            `as part of the order cancellation.`,
+          performedBy,
+          courier: outcome.courier,
+          dispatchId: outcome.dispatchId,
+          courierReference: outcome.reference,
+          courierCancelMode: 'API',
+          panelCancelPending: false,
+        });
+      }
     }
 
     if (entries.length > 0) {
       await appendOrderTimeline(tx, plan.orderId, entries);
     }
+  }
+
+  /**
+   * Staff confirm the courier-panel cancellation for a MANUAL-mode dispatch.
+   * The marker is cleared ONLY here — one click, recorded with actor + time.
+   */
+  async confirmManualPanelCancel(dispatchId: string, actor?: string) {
+    const dispatch = await this.prisma.dispatch.findUnique({
+      where: { id: dispatchId },
+      select: {
+        id: true,
+        orderId: true,
+        courier: true,
+        status: true,
+        courierCancelMode: true,
+        courierCancelRef: true,
+        panelCancelConfirmedAt: true,
+        panelCancelConfirmedBy: true,
+      },
+    });
+    if (!dispatch) throw new NotFoundException('Dispatch not found');
+
+    if (
+      dispatch.courierCancelMode !== 'MANUAL' ||
+      !dispatch.courierCancelRef ||
+      !isPanelCancelPending(dispatch)
+    ) {
+      if (dispatch.panelCancelConfirmedAt) {
+        throw new ConflictException(
+          'The panel cancellation was already confirmed.',
+        );
+      }
+      throw new BadRequestException(
+        'This dispatch has no pending manual panel cancellation.',
+      );
+    }
+
+    const now = new Date();
+    const performedBy = actor || 'system';
+    const label = courierLabel(dispatch.courier);
+
+    return this.prisma.$transaction(async (tx) => {
+      // CAS: only one confirmation clears the marker.
+      const claimed = await tx.dispatch.updateMany({
+        where: {
+          id: dispatchId,
+          courierCancelMode: 'MANUAL',
+          panelCancelConfirmedAt: null,
+        },
+        data: {
+          panelCancelConfirmedAt: now,
+          panelCancelConfirmedBy: performedBy,
+        },
+      });
+      if (claimed.count === 0) {
+        throw new ConflictException(
+          'The panel cancellation was already confirmed.',
+        );
+      }
+
+      await appendOrderTimeline(tx, dispatch.orderId, [
+        {
+          type: 'dispatch.panel-cancel-confirmed',
+          visibility: 'private',
+          timestamp: now.toISOString(),
+          note:
+            `Panel cancellation confirmed by ${performedBy} on ` +
+            `${formatCollectedAt(now)} — the ${label} booking ` +
+            `${dispatch.courierCancelRef} was cancelled in the ${label} panel.`,
+          performedBy,
+          courier: dispatch.courier,
+          dispatchId,
+          courierReference: dispatch.courierCancelRef,
+          courierCancelMode: 'MANUAL',
+          panelCancelPending: false,
+        },
+      ]);
+
+      return tx.dispatch.findUnique({ where: { id: dispatchId } });
+    });
   }
 }
 

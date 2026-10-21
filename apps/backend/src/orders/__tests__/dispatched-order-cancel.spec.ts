@@ -212,10 +212,61 @@ describe('OrdersService — cancel a dispatched order', () => {
     expect(courierCancel).not.toHaveBeenCalled();
   });
 
-  it('a courier WITHOUT a cancel API is refused by the server', async () => {
-    prisma.dispatch.findMany.mockResolvedValue([dispatch({ courier: 'pathao' })]);
+  it('Pathao is cancelled through its cancel endpoint (the order proceeds)', async () => {
+    prisma.dispatch.findMany.mockResolvedValue([
+      dispatch({ courier: 'pathao', consignmentId: 'PATHAO-9' }),
+    ]);
 
-    await expect(cancelOrder()).rejects.toThrow(/Pathao panel first/i);
+    const result = await cancelOrder();
+
+    expect(courierCancel).toHaveBeenCalledWith(
+      'pathao',
+      'PATHAO-9',
+      expect.stringContaining('staff@ecomate.com'),
+    );
+    expect(result.status).toMatchObject({ name: 'Cancelled' });
+    expect(prisma.dispatch.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'CANCELLED',
+          courierCancelMode: 'API',
+          courierCancelRef: 'PATHAO-9',
+        }),
+      }),
+    );
+  });
+
+  it('Steadfast proceeds in MANUAL mode and keeps the panel marker pending', async () => {
+    prisma.dispatch.findMany.mockResolvedValue([
+      dispatch({ courier: 'steadfast', consignmentId: 'SF-1' }),
+    ]);
+
+    const result = await cancelOrder();
+
+    // No courier API call — but the order cancel still completes.
+    expect(courierCancel).not.toHaveBeenCalled();
+    expect(result.status).toMatchObject({ name: 'Cancelled' });
+    expect(prisma.dispatch.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'CANCELLED',
+          courierCancelMode: 'MANUAL',
+          courierCancelRef: 'SF-1',
+        }),
+      }),
+    );
+  });
+
+  it('a PICKED-UP Steadfast dispatch is STILL refused (manual fallback never bypasses pickup)', async () => {
+    prisma.dispatch.findMany.mockResolvedValue([
+      dispatch({
+        courier: 'steadfast',
+        status: 'PICKED_UP',
+        pickedUpAt: new Date(),
+      }),
+    ]);
+
+    await expect(cancelOrder()).rejects.toThrow(/already picked up/i);
     expect(prisma.order.update).not.toHaveBeenCalled();
   });
 

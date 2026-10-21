@@ -1,4 +1,8 @@
-import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { DispatchCancelService } from '../dispatch-cancel.service';
 
 /**
@@ -39,8 +43,20 @@ describe('DispatchCancelService', () => {
     prisma = {
       dispatch: {
         findMany: jest.fn().mockResolvedValue([dispatch()]),
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'dsp-1',
+          orderId: 'order-1',
+          courier: 'steadfast',
+          status: 'CANCELLED',
+          courierCancelMode: 'MANUAL',
+          courierCancelRef: 'SF-1',
+          panelCancelConfirmedAt: null,
+          panelCancelConfirmedBy: null,
+        }),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      $transaction: jest.fn(async (cb: any) => cb(prisma)),
+      $executeRaw: jest.fn().mockResolvedValue(1),
     };
     service = new DispatchCancelService(prisma);
     courierCancel = jest
@@ -98,13 +114,23 @@ describe('DispatchCancelService', () => {
     expect(courierCancel).not.toHaveBeenCalled();
   });
 
-  it('a courier without a cancel API is BLOCKED with the panel guidance', async () => {
-    prisma.dispatch.findMany.mockResolvedValue([dispatch({ courier: 'pathao' })]);
+  it('Pathao is cancelled through its cancel endpoint (like Carrybee/RedX)', async () => {
+    prisma.dispatch.findMany.mockResolvedValue([
+      dispatch({ courier: 'pathao', consignmentId: 'PATHAO-9' }),
+    ]);
 
-    await expect(
-      service.prepare('order-1', 'staff@ecomate.com'),
-    ).rejects.toThrow(/Pathao panel first/i);
-    expect(courierCancel).not.toHaveBeenCalled();
+    const plan = await service.prepare('order-1', 'staff@ecomate.com');
+
+    expect(courierCancel).toHaveBeenCalledWith(
+      'pathao',
+      'PATHAO-9',
+      expect.stringContaining('staff@ecomate.com'),
+    );
+    expect(plan.outcomes[0]).toMatchObject({
+      courier: 'pathao',
+      reference: 'PATHAO-9',
+      mode: 'API',
+    });
   });
 
   it('a failing courier cancel aborts everything (nothing is written)', async () => {
@@ -169,5 +195,140 @@ describe('DispatchCancelService', () => {
     await expect(
       service.prepare('order-1', 'staff@ecomate.com'),
     ).rejects.toThrow(/no consignment\/tracking id/i);
+  });
+
+  it('Steadfast proceeds in MANUAL mode: no courier call, the booking is still owed', async () => {
+    prisma.dispatch.findMany.mockResolvedValue([
+      dispatch({ courier: 'steadfast', consignmentId: 'SF-1' }),
+    ]);
+
+    const plan = await service.prepare('order-1', 'staff@ecomate.com');
+
+    expect(courierCancel).not.toHaveBeenCalled();
+    expect(plan.outcomes[0]).toMatchObject({
+      courier: 'steadfast',
+      reference: 'SF-1',
+      mode: 'MANUAL',
+    });
+    expect(plan.outcomes[0].response).toMatchObject({ manual: true });
+  });
+
+  it('Steadfast apply() stores MANUAL mode and leaves the panel marker PENDING', async () => {
+    prisma.dispatch.findMany.mockResolvedValue([
+      dispatch({ courier: 'steadfast', consignmentId: 'SF-1' }),
+    ]);
+    const plan = await service.prepare('order-1', 'staff@ecomate.com');
+    const tx = makeTx();
+
+    await service.apply(tx as any, plan, 'staff@ecomate.com');
+
+    const data = tx.dispatch.updateMany.mock.calls[0][0].data;
+    expect(data).toMatchObject({
+      status: 'CANCELLED',
+      courierCancelMode: 'MANUAL',
+      courierCancelRef: 'SF-1',
+      courierCancelAt: expect.any(Date),
+    });
+    // The marker is cleared ONLY by the explicit confirmation.
+    expect(data).not.toHaveProperty('panelCancelConfirmedAt');
+
+    const timeline = JSON.parse(tx.$executeRaw.mock.calls[0][1] as string);
+    expect(timeline[0].note).toMatch(/still active/i);
+    expect(timeline[0].note).toMatch(/MUST be cancelled in the Steadfast panel/i);
+    expect(timeline[0]).toMatchObject({
+      panelCancelPending: true,
+      panelCancelOwedBy: 'staff@ecomate.com',
+      courierCancelMode: 'MANUAL',
+    });
+    expect(timeline[0].panelCancelOwedAt).toBeTruthy();
+  });
+
+  it('a picked-up Steadfast dispatch is still BLOCKED (manual fallback does not bypass pickup)', async () => {
+    prisma.dispatch.findMany.mockResolvedValue([
+      dispatch({
+        courier: 'steadfast',
+        status: 'PICKED_UP',
+        pickedUpAt: new Date('2026-10-20T10:00:00Z'),
+      }),
+    ]);
+
+    await expect(
+      service.prepare('order-1', 'staff@ecomate.com'),
+    ).rejects.toThrow(/already picked up/i);
+    expect(courierCancel).not.toHaveBeenCalled();
+  });
+
+  it('confirmManualPanelCancel clears the marker and records the actor + timestamp', async () => {
+    const result = await service.confirmManualPanelCancel(
+      'dsp-1',
+      'staff@ecomate.com',
+    );
+
+    expect(result).toMatchObject({ id: 'dsp-1' });
+    expect(prisma.dispatch.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: 'dsp-1',
+          courierCancelMode: 'MANUAL',
+          panelCancelConfirmedAt: null,
+        }),
+        data: expect.objectContaining({
+          panelCancelConfirmedAt: expect.any(Date),
+          panelCancelConfirmedBy: 'staff@ecomate.com',
+        }),
+      }),
+    );
+    const timeline = JSON.parse(prisma.$executeRaw.mock.calls[0][1] as string);
+    expect(timeline[0]).toMatchObject({
+      type: 'dispatch.panel-cancel-confirmed',
+      performedBy: 'staff@ecomate.com',
+      courierReference: 'SF-1',
+      panelCancelPending: false,
+    });
+    expect(timeline[0].note).toMatch(/confirmed by staff@ecomate.com/i);
+  });
+
+  it('the marker cannot be cleared twice', async () => {
+    prisma.dispatch.findUnique.mockResolvedValue({
+      id: 'dsp-1',
+      orderId: 'order-1',
+      courier: 'steadfast',
+      status: 'CANCELLED',
+      courierCancelMode: 'MANUAL',
+      courierCancelRef: 'SF-1',
+      panelCancelConfirmedAt: new Date(),
+      panelCancelConfirmedBy: 'other@ecomate.com',
+    });
+
+    await expect(
+      service.confirmManualPanelCancel('dsp-1', 'staff@ecomate.com'),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.dispatch.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('a dispatch without a MANUAL panel step cannot be confirmed', async () => {
+    prisma.dispatch.findUnique.mockResolvedValue({
+      id: 'dsp-1',
+      orderId: 'order-1',
+      courier: 'carrybee',
+      status: 'CANCELLED',
+      courierCancelMode: 'API',
+      courierCancelRef: 'CONS-1',
+      panelCancelConfirmedAt: null,
+      panelCancelConfirmedBy: null,
+    });
+
+    await expect(
+      service.confirmManualPanelCancel('dsp-1', 'staff@ecomate.com'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('a lost confirmation race (CAS count 0) reports a conflict', async () => {
+    prisma.dispatch.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      service.confirmManualPanelCancel('dsp-1', 'staff@ecomate.com'),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.$executeRaw).not.toHaveBeenCalled();
   });
 });

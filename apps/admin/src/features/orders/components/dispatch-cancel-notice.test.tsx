@@ -3,6 +3,7 @@ import { render } from 'vitest-browser-react'
 import {
   DispatchCancelNotice,
   dispatchCancelState,
+  manualPanelDispatches,
 } from './dispatch-cancel-notice'
 
 /**
@@ -98,5 +99,60 @@ describe('DispatchCancelNotice', () => {
   it('an eligible dispatch does not block the cancel', () => {
     const state = dispatchCancelState([eligibleDispatch])
     expect(state.isBlocked).toBe(false)
+  })
+
+  // Steadfast has no cancel API (owner directive, 2026-10-21): the combined
+  // cancel must PROCEED with a warning, never be blocked, and the dialog must
+  // tell staff they still owe the panel cancel.
+  const steadfastManualDispatch = {
+    id: 'dsp-sf',
+    courier: 'steadfast',
+    status: 'DISPATCHED',
+    consignmentId: 'SF-9001',
+    trackingCode: null,
+    cancelEligibility: {
+      eligible: true,
+      reason: null,
+      needsCourierPanel: true,
+      manualPanelCancel: true,
+      courierLabel: 'Steadfast',
+      warning:
+        'This booking cannot be cancelled from here. Cancelling will mark the dispatch cancelled in EcoMate; you MUST also cancel the booking in the Steadfast panel.',
+      collectedAt: null,
+    },
+  }
+
+  it('does not block a Steadfast dispatch — it proceeds with the panel warning', async () => {
+    const page = await render(
+      <DispatchCancelNotice dispatches={[steadfastManualDispatch]} />,
+    )
+
+    expect(dispatchCancelState([steadfastManualDispatch]).isBlocked).toBe(false)
+    expect(page.container.textContent ?? '').not.toContain(
+      'This order cannot be cancelled',
+    )
+    await expect
+      .element(page.getByText('Panel cancellation required'))
+      .toBeInTheDocument()
+    await expect
+      .element(
+        page.getByText(
+          'This booking cannot be cancelled from here. Cancelling will mark the dispatch cancelled in EcoMate; you MUST also cancel the booking in the Steadfast panel.',
+        ),
+      )
+      .toBeInTheDocument()
+    await expect
+      .element(page.getByText(/After you cancel it in the Steadfast panel/))
+      .toBeInTheDocument()
+  })
+
+  it('manualPanelDispatches lists only live manual-fallback bookings', () => {
+    expect(manualPanelDispatches([steadfastManualDispatch])).toHaveLength(1)
+    expect(manualPanelDispatches([eligibleDispatch])).toHaveLength(0)
+    expect(
+      manualPanelDispatches([
+        { ...steadfastManualDispatch, status: 'CANCELLED' },
+      ]),
+    ).toHaveLength(0)
   })
 })

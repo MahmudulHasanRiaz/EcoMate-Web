@@ -29,6 +29,13 @@ export function dispatchCancelState(dispatches: any[] | undefined): DispatchCanc
   return { live, blocked, isBlocked: blocked.length > 0 }
 }
 
+/** Live dispatches whose cancel proceeds LOCALLY but still owes a panel cancel. */
+export function manualPanelDispatches(dispatches: any[] | undefined): any[] {
+  return (dispatches ?? []).filter(
+    (d) => d?.status !== 'CANCELLED' && d?.cancelEligibility?.manualPanelCancel,
+  )
+}
+
 export function DispatchCancelNotice({
   dispatches,
 }: {
@@ -57,29 +64,58 @@ export function DispatchCancelNotice({
   }
 
   return (
-    <div className='rounded-lg border border-sky-300 bg-sky-50 p-3 dark:border-sky-500/40 dark:bg-sky-500/10'>
-      <p className='flex items-center gap-1.5 text-sm font-semibold text-sky-900 dark:text-sky-200'>
-        <Truck className='h-4 w-4 shrink-0' />
-        This order has a live dispatch
-      </p>
-      {live.map((d: any) => {
-        const courierName = d.cancelEligibility?.courierLabel || d.courier
-        const reference = d.consignmentId || d.trackingCode
-        return (
-          <div
-            key={d.id}
-            className='mt-1 text-xs text-sky-900 dark:text-sky-200'
-          >
-            <p className='font-medium'>
-              {courierName}
-              {reference ? ` · ${reference}` : ''}
-            </p>
-            <p>
-              This order's dispatch will also be cancelled with {courierName}.
-            </p>
-          </div>
-        )
-      })}
+    <div className='space-y-2'>
+      <div className='rounded-lg border border-sky-300 bg-sky-50 p-3 dark:border-sky-500/40 dark:bg-sky-500/10'>
+        <p className='flex items-center gap-1.5 text-sm font-semibold text-sky-900 dark:text-sky-200'>
+          <Truck className='h-4 w-4 shrink-0' />
+          This order has a live dispatch
+        </p>
+        {live.map((d: any) => {
+          const courierName = d.cancelEligibility?.courierLabel || d.courier
+          const reference = d.consignmentId || d.trackingCode
+          return (
+            <div
+              key={d.id}
+              className='mt-1 text-xs text-sky-900 dark:text-sky-200'
+            >
+              <p className='font-medium'>
+                {courierName}
+                {reference ? ` · ${reference}` : ''}
+              </p>
+              <p>
+                {d.cancelEligibility?.manualPanelCancel
+                  ? 'The dispatch will be marked cancelled in EcoMate; the courier booking is NOT cancelled by EcoMate.'
+                  : `This order's dispatch will also be cancelled with ${courierName}.`}
+              </p>
+            </div>
+          )
+        })}
+      </div>
+
+      {live
+        .filter((d: any) => d.cancelEligibility?.manualPanelCancel)
+        .map((d: any) => {
+          const courierName = d.cancelEligibility?.courierLabel || d.courier
+          return (
+            <div
+              key={`manual-${d.id}`}
+              className='rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-500/40 dark:bg-amber-500/10'
+            >
+              <p className='flex items-center gap-1.5 text-sm font-semibold text-amber-900 dark:text-amber-200'>
+                <AlertTriangle className='h-4 w-4 shrink-0' />
+                Panel cancellation required
+              </p>
+              <p className='mt-1 text-xs text-amber-800 dark:text-amber-200'>
+                {d.cancelEligibility?.warning ||
+                  `This booking cannot be cancelled from here. Cancelling will mark the dispatch cancelled in EcoMate; you MUST also cancel the booking in the ${courierName} panel.`}
+              </p>
+              <p className='mt-1 text-xs text-amber-700 dark:text-amber-300'>
+                After you cancel it in the {courierName} panel, the dispatch keeps
+                a “Panel cancellation pending” marker until you confirm it here.
+              </p>
+            </div>
+          )
+        })}
     </div>
   )
 }

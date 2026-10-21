@@ -46,7 +46,7 @@ export function DispatchPage() {
     courier: courierFilter || undefined,
   })
 
-  const { remove } = useDispatchMutations()
+  const { remove, confirmPanelCancel } = useDispatchMutations()
   const syncMutation = useDispatchSync()
 
   const activeFilterCount =
@@ -99,6 +99,12 @@ export function DispatchPage() {
           isSyncing={syncMutation.isPending}
           onDelete={(id) => setDeleteId(id)}
           onSyncSelected={(ids) => syncMutation.mutate(ids)}
+          onConfirmPanelCancel={(id) => confirmPanelCancel.mutate(id)}
+          confirmingId={
+            confirmPanelCancel.isPending
+              ? (confirmPanelCancel.variables as string | undefined) ?? null
+              : null
+          }
         />
       </Main>
 

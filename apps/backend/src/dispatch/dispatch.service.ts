@@ -22,6 +22,7 @@ import { Prisma } from '@prisma/client';
 import { CreateDispatchDto } from './dto/create-dispatch.dto';
 import { DispatchQueryDto } from './dto/dispatch-query.dto';
 import { impliesPickup } from './dispatch-timestamps';
+import { isPanelCancelPending } from '../dispatch-cancel/dispatch-cancel-eligibility';
 
 // Actors that represent automated processes rather than a logged-in staff
 // member. They must never move an order that is already 'Partial'.
@@ -231,7 +232,7 @@ export class DispatchService {
       : 10;
 
     const total = await this.prisma.dispatch.count({ where });
-    const data = await this.prisma.dispatch.findMany({
+    const rows = await this.prisma.dispatch.findMany({
       where,
       include: {
         order: {
@@ -272,7 +273,10 @@ export class DispatchService {
     ]);
 
     return {
-      data,
+      data: rows.map((row) => ({
+        ...row,
+        panelCancelPending: isPanelCancelPending(row),
+      })),
       total,
       facets: {
         status: Object.fromEntries(
@@ -302,7 +306,10 @@ export class DispatchService {
       },
     });
     if (!dispatch) throw new NotFoundException('Dispatch not found');
-    return dispatch;
+    return {
+      ...dispatch,
+      panelCancelPending: isPanelCancelPending(dispatch),
+    };
   }
 
   /**

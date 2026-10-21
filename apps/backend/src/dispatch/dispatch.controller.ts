@@ -14,10 +14,14 @@ import { DispatchQueryDto } from './dto/dispatch-query.dto';
 import { SyncDispatchStatusDto } from './dto/sync-dispatch-status.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { DispatchCancelService } from '../dispatch-cancel/dispatch-cancel.service';
 
 @Controller('dispatch')
 export class DispatchController {
-  constructor(private readonly dispatchService: DispatchService) {}
+  constructor(
+    private readonly dispatchService: DispatchService,
+    private readonly dispatchCancel: DispatchCancelService,
+  ) {}
 
   @Roles('superadmin', 'admin', 'employee')
   @Get()
@@ -79,6 +83,18 @@ export class DispatchController {
     @Body('performedBy') performedBy?: string,
   ) {
     return this.dispatchService.updateStatus(id, status, performedBy || user.email);
+  }
+
+  @Roles('superadmin', 'admin', 'employee')
+  @Post(':id/confirm-panel-cancel')
+  confirmPanelCancel(
+    @Param('id') id: string,
+    @CurrentUser() user: { email?: string; userId?: string },
+  ) {
+    return this.dispatchCancel.confirmManualPanelCancel(
+      id,
+      user?.email || user?.userId || 'staff',
+    );
   }
 
   @Delete(':id')

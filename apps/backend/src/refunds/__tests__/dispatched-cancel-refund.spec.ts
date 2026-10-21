@@ -142,13 +142,24 @@ describe('RefundsService — cancel a dispatched order with the refund', () => {
     expect(courierCancel).not.toHaveBeenCalled();
   });
 
-  it('a courier WITHOUT a cancel API is refused with the panel guidance', async () => {
-    prisma.dispatch.findMany.mockResolvedValue([dispatch({ courier: 'steadfast' })]);
+  it('Steadfast (no cancel API) proceeds in MANUAL mode — the refund still happens', async () => {
+    prisma.dispatch.findMany.mockResolvedValue([
+      dispatch({ courier: 'steadfast', consignmentId: 'SF-1' }),
+    ]);
 
-    await expect(
-      service.create(dto as any, 'staff-1'),
-    ).rejects.toThrow(/Steadfast panel first/i);
-    expect(prisma.refund.create).not.toHaveBeenCalled();
+    await service.create(dto as any, 'staff-1');
+
+    expect(courierCancel).not.toHaveBeenCalled();
+    expect(prisma.refund.create).toHaveBeenCalled();
+    expect(prisma.dispatch.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'CANCELLED',
+          courierCancelMode: 'MANUAL',
+          courierCancelRef: 'SF-1',
+        }),
+      }),
+    );
   });
 
   it('a FAILING courier cancel aborts everything (no refund, no order cancel)', async () => {
