@@ -60,6 +60,18 @@ export function useDispatchMutations() {
       onError: (e: any) =>
         toast.error(e?.response?.data?.message || 'Failed to delete dispatch'),
     }),
+    confirmPanelCancel: useMutation({
+      mutationFn: (id: string) => dispatchApi.confirmPanelCancel(id),
+      onSuccess: () => {
+        toast.success('Panel cancellation confirmed')
+        qc.invalidateQueries({ queryKey: ['dispatches'] })
+        qc.invalidateQueries({ queryKey: ['order'] })
+      },
+      onError: (e: any) =>
+        toast.error(
+          e?.response?.data?.message || 'Failed to confirm panel cancellation',
+        ),
+    }),
   }
 }
 

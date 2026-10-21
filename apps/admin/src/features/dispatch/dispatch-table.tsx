@@ -11,7 +11,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import { Trash2, Eye, ExternalLink, RefreshCw, ChevronDown } from 'lucide-react'
+import { Trash2, Eye, ExternalLink, RefreshCw, ChevronDown, Loader2, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { extractOrderScanCode } from '@/lib/order-display'
 import { useAuthStore } from '@/stores/auth-store'
@@ -66,6 +66,8 @@ type DispatchTableProps = {
   isSyncing?: boolean
   onDelete: (id: string) => void
   onSyncSelected: (ids: string[]) => void
+  onConfirmPanelCancel: (id: string) => void
+  confirmingId?: string | null
 }
 
 function ServerFilterDropdown({
@@ -163,6 +165,8 @@ export function DispatchTable({
   isSyncing,
   onDelete,
   onSyncSelected,
+  onConfirmPanelCancel,
+  confirmingId,
 }: DispatchTableProps) {
   const [rowSelection, setRowSelection] = useState({})
   const [sorting, setSorting] = useState<SortingState>([])
@@ -273,21 +277,49 @@ export function DispatchTable({
       accessorKey: 'status',
       header: 'Status',
       cell: ({ row }) => {
+        const dispatch = row.original
         const status = DISPATCH_STATUSES.find(
           (s) => s.value === row.getValue('status'),
         )
         return (
-          <Badge
-            variant='outline'
-            className={cn(
-              'capitalize',
-              status?.color
-                ? `${status.color} text-white`
-                : 'bg-gray-500 text-white',
+          <div className='flex flex-col items-start gap-1.5'>
+            <Badge
+              variant='outline'
+              className={cn(
+                'capitalize',
+                status?.color
+                  ? `${status.color} text-white`
+                  : 'bg-gray-500 text-white',
+              )}
+            >
+              {status?.label || row.getValue('status')}
+            </Badge>
+            {dispatch.panelCancelPending && (
+              <>
+                <Badge
+                  variant='outline'
+                  className='border-amber-400 bg-amber-50 text-[11px] font-medium text-amber-800 dark:border-amber-500/50 dark:bg-amber-500/10 dark:text-amber-200'
+                  title={`Cancel the ${dispatch.courier} booking in the ${dispatch.courier} panel, then confirm here.`}
+                >
+                  Panel cancellation pending
+                </Badge>
+                <Button
+                  size='sm'
+                  variant='outline'
+                  className='h-6 px-2 text-[11px]'
+                  disabled={confirmingId === dispatch.id}
+                  onClick={() => onConfirmPanelCancel(dispatch.id)}
+                >
+                  {confirmingId === dispatch.id ? (
+                    <Loader2 className='mr-1 h-3 w-3 animate-spin' />
+                  ) : (
+                    <CheckCircle2 className='mr-1 h-3 w-3' />
+                  )}
+                  Confirm panel cancellation
+                </Button>
+              </>
             )}
-          >
-            {status?.label || row.getValue('status')}
-          </Badge>
+          </div>
         )
       },
       meta: { tdClassName: 'ps-4' },

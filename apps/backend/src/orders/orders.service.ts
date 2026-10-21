@@ -76,6 +76,7 @@ import {
 import {
   courierLabel,
   evaluateDispatchCancelEligibility,
+  isPanelCancelPending,
 } from '../dispatch-cancel/dispatch-cancel-eligibility';
 import {
   assertNoDuplicateReturn,
@@ -643,6 +644,10 @@ export class OrdersService {
           trackingUrl:
             d.trackingUrl ||
             buildTrackingUrl(d.courier, d.trackingCode, d.consignmentId),
+          // MANUAL fallback (Steadfast): the panel cancellation stays pending
+          // until staff confirm it — the admin shows the marker + one-click
+          // confirm on this dispatch.
+          panelCancelPending: isPanelCancelPending(d),
           // Cancel-a-dispatched-order eligibility (owner directive,
           // 2026-10-21): the admin's cancel dialog explains the outcome
           // BEFORE the staff confirms. The list view selects a slim dispatch
@@ -663,6 +668,8 @@ export class OrdersService {
                     eligible: evaluation.eligible,
                     reason: evaluation.reason,
                     needsCourierPanel: evaluation.needsCourierPanel,
+                    manualPanelCancel: evaluation.manualPanelCancel,
+                    warning: evaluation.warning,
                     courierLabel: courierLabel(d.courier),
                     collectedAt: evaluation.collectedAt,
                   };

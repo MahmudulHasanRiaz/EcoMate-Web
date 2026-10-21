@@ -1476,6 +1476,16 @@ model CourierAuthToken {
   updatedAt    DateTime @updatedAt
 }
 
+// How a dispatch's courier booking was cancelled when a dispatched order is
+// cancelled (owner directive, 2026-10-21).
+// - API: pushed to the courier's cancel endpoint.
+// - MANUAL: no cancel API exists (Steadfast); the dispatch is cancelled here
+//   only and staff must still cancel the booking in the courier's panel.
+enum CourierCancelMode {
+  API
+  MANUAL
+}
+
 enum DispatchStatus {
   DISPATCHED
   HANDED_OVER
@@ -1599,6 +1609,14 @@ model Dispatch {
   courierCancelAt DateTime?
   /// The courier's raw cancel response (audit + support).
   courierCancelResponse Json?
+  /// How the booking was cancelled: API = pushed to the courier; MANUAL =
+  /// marked cancelled here only (staff still owes the courier-panel cancel).
+  courierCancelMode CourierCancelMode?
+  /// MANUAL only: when staff confirmed the courier-panel cancellation was
+  /// done. NULL while the panel cancellation is still pending.
+  panelCancelConfirmedAt DateTime?
+  /// MANUAL only: who confirmed the courier-panel cancellation.
+  panelCancelConfirmedBy String?
   // Task 8: Steadfast booking credential-set id. NULL = legacy default
   // (single-business rows booked before sets, or while no sets exist).
   // Tracking / status / webhooks resolve the set from THIS record.

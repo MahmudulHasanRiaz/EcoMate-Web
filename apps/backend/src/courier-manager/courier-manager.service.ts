@@ -1526,6 +1526,60 @@ export class CourierManagerService {
     return data;
   }
 
+  /**
+   * Pathao cancel — POST /aladdin/api/v1/orders/{consignment_id}/cancel.
+   *
+   * The local Pathao documentation set covers creation/info but not cancel;
+   * the endpoint is the one used by Pathao merchant integrations
+   * (codeboxr/pathao-courier, kejubayer/pathao-api-integration both POST it
+   * with an empty body). It cancels the order/pickup BEFORE collection —
+   * after the parcel is picked up Pathao refuses, and the dispatch-cancel
+   * eligibility gate already blocks every post-pickup dispatch. Pathao's
+   * `{type, code, message, data}` envelope is returned verbatim for the
+   * dispatch audit; an error envelope is a rejection even on HTTP 200.
+   */
+  async cancelPathaoOrder(consignmentId: string, _reason: string) {
+    const id = String(consignmentId || '').trim();
+    if (!id) throw new BadRequestException('consignmentId is required');
+    const creds = await this.getCreds('pathao');
+    const mode = creds?.mode || 'production';
+    const base =
+      BASE_URLS['pathao']?.[mode] || BASE_URLS['pathao']?.['production'] || '';
+    const clientId = creds.clientId || (creds.credentials as any)?.['clientId'];
+    const clientSecret =
+      creds.clientSecret || (creds.credentials as any)?.['clientSecret'];
+    const username = creds.username || (creds.credentials as any)?.['username'];
+    const password = creds.password || (creds.credentials as any)?.['password'];
+    if (!clientId || !clientSecret || !username || !password)
+      throw new BadRequestException('Pathao credentials not configured');
+    const token = await this.getPathaoToken(
+      base,
+      clientId,
+      clientSecret,
+      username,
+      password,
+    );
+    const data = await this.jsonFetch(
+      `${base}/aladdin/api/v1/orders/${encodeURIComponent(id)}/cancel`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+    if (
+      data['type'] === 'error' ||
+      (typeof data['code'] === 'number' && data['code'] >= 400)
+    ) {
+      throw new BadRequestException(
+        `Pathao cancel rejected: ${String(data['message'] || 'request not accepted')}`,
+      );
+    }
+    return data;
+  }
+
   private async dispatchRedx(creds: any, base: string, order: any) {
     const apiToken = creds.apiKey || creds.credentials?.['apiKey'];
     if (!apiToken)

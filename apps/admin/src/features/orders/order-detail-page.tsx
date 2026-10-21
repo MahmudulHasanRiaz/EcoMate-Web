@@ -347,6 +347,19 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
     },
   })
 
+  // MANUAL fallback (Steadfast): staff confirm the courier-panel cancellation
+  // was done. The server records the actor + timestamp and clears the marker.
+  const confirmPanelCancelMut = useMutation({
+    mutationFn: (dispatchId: string) =>
+      apiClient.post(`/dispatch/${dispatchId}/confirm-panel-cancel`, {}),
+    onSuccess: () => {
+      toast.success('Panel cancellation confirmed')
+      queryClient.invalidateQueries({ queryKey: ['order', id] })
+      queryClient.invalidateQueries({ queryKey: ['dispatches'] })
+    },
+    onError: (e: unknown) => toast.error(errMsg(e)),
+  })
+
   const trashMut = useMutation({
     mutationFn: (orderId: string) => ordersApi.trash(orderId),
     onSuccess: () => {
@@ -1533,9 +1546,36 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                                     )}
                                   </TableCell>
                                   <TableCell>
-                                    <Badge className={`text-xs font-medium shadow-xs ${statusConfig?.color || 'bg-gray-500'}`}>
-                                      {statusConfig?.label || d.status}
-                                    </Badge>
+                                    <div className='flex flex-col items-start gap-1.5'>
+                                      <Badge className={`text-xs font-medium shadow-xs ${statusConfig?.color || 'bg-gray-500'}`}>
+                                        {statusConfig?.label || d.status}
+                                      </Badge>
+                                      {d.panelCancelPending && (
+                                        <>
+                                          <Badge
+                                            variant='outline'
+                                            className='border-amber-400 bg-amber-50 text-[11px] font-medium text-amber-800 dark:border-amber-500/50 dark:bg-amber-500/10 dark:text-amber-200'
+                                            title={`Cancel the ${d.courier} booking in the ${d.courier} panel, then confirm here.`}
+                                          >
+                                            Panel cancellation pending
+                                          </Badge>
+                                          <Button
+                                            size='sm'
+                                            variant='outline'
+                                            className='h-6 px-2 text-[11px]'
+                                            disabled={confirmPanelCancelMut.isPending}
+                                            onClick={() => confirmPanelCancelMut.mutate(d.id)}
+                                          >
+                                            {confirmPanelCancelMut.isPending ? (
+                                              <Loader2 className='mr-1 h-3 w-3 animate-spin' />
+                                            ) : (
+                                              <CheckCircle2 className='mr-1 h-3 w-3' />
+                                            )}
+                                            Confirm panel cancel
+                                          </Button>
+                                        </>
+                                      )}
+                                    </div>
                                   </TableCell>
                                   <TableCell>
                                     {d.trackingCode ? (
@@ -1600,6 +1640,31 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                                       </a>
                                     )}
                                   </div>
+                                </div>
+                              )}
+                              {d.panelCancelPending && (
+                                <div className='flex flex-col gap-1.5 pt-1.5 border-t border-amber-300/50 dark:border-amber-500/30'>
+                                  <Badge
+                                    variant='outline'
+                                    className='self-start border-amber-400 bg-amber-50 text-[11px] font-medium text-amber-800 dark:border-amber-500/50 dark:bg-amber-500/10 dark:text-amber-200'
+                                    title={`Cancel the ${d.courier} booking in the ${d.courier} panel, then confirm here.`}
+                                  >
+                                    Panel cancellation pending
+                                  </Badge>
+                                  <Button
+                                    size='sm'
+                                    variant='outline'
+                                    className='h-7 self-start px-2 text-[11px]'
+                                    disabled={confirmPanelCancelMut.isPending}
+                                    onClick={() => confirmPanelCancelMut.mutate(d.id)}
+                                  >
+                                    {confirmPanelCancelMut.isPending ? (
+                                      <Loader2 className='mr-1 h-3 w-3 animate-spin' />
+                                    ) : (
+                                      <CheckCircle2 className='mr-1 h-3 w-3' />
+                                    )}
+                                    Confirm panel cancel
+                                  </Button>
                                 </div>
                               )}
                             </div>

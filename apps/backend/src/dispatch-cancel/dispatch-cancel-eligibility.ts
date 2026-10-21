@@ -53,40 +53,46 @@ export const CLOSED_DISPATCH_STATUSES: readonly DispatchStatus[] = [
 ];
 
 /**
- * Per-courier cancel capability — does a cancel/void API exist for this
- * courier, and is it already wrapped in our courier client?
+ * Per-courier cancel capability — what happens to the courier booking when a
+ * dispatched order is cancelled.
  *
- * - Carrybee: YES — CourierManagerService.cancelCarrybeeOrder()
+ * - Carrybee: API — CourierManagerService.cancelCarrybeeOrder()
  *   (POST /api/v2/orders/{id}/cancel).
- * - RedX: YES — CourierManagerService.cancelRedxParcel()
+ * - RedX: API — CourierManagerService.cancelRedxParcel()
  *   (PATCH /parcels → status = cancelled).
- * - Pathao / Steadfast: NO cancel API exists in our client (nor in the
- *   merchants' public APIs we integrate with) ⇒ the combined cancel is
- *   BLOCKED and staff are told to cancel the booking in the courier's panel
- *   first. (Owner open point — see the commit message.)
+ * - Pathao: API — CourierManagerService.cancelPathaoOrder()
+ *   (POST /aladdin/api/v1/orders/{consignment_id}/cancel). Pathao's merchant
+ *   API cancels the order/pickup BEFORE collection; our pre-pickup gate below
+ *   is the authority for "before collection", and any Pathao refusal after
+ *   that (e.g. the parcel is already moving) aborts the whole flow untouched.
+ * - Steadfast: NO cancel API in its public merchant API. The combined cancel
+ *   still PROCEEDS as a MANUAL fallback: the dispatch is cancelled in EcoMate
+ *   only, and staff must cancel the booking in the Steadfast panel. The
+ *   pending marker stays on the dispatch until they confirm it here.
  */
 export type CourierCancelCapability = {
   /** Can we push the cancel to the courier ourselves? */
   canCancel: boolean;
   /** Which wrapped client method does it. */
-  method?: 'carrybee' | 'redx';
-  /** Shown when we cannot: staff must cancel in the courier's panel. */
+  method?: 'carrybee' | 'redx' | 'pathao';
+  /** No API, but the local cancel may proceed with a panel follow-up. */
+  manualFallback?: boolean;
+  /** Shown when the cancel is BLOCKED (no safe path at all). */
   panelGuidance?: string;
+  /** Shown when a MANUAL fallback cancel is about to proceed. */
+  manualWarning?: string;
 };
 
 export const COURIER_CANCEL_CAPABILITY: Record<string, CourierCancelCapability> =
   {
     carrybee: { canCancel: true, method: 'carrybee' },
     redx: { canCancel: true, method: 'redx' },
-    pathao: {
-      canCancel: false,
-      panelGuidance:
-        'Pathao bookings cannot be cancelled from here — cancel the booking in the Pathao panel first, then cancel the order.',
-    },
+    pathao: { canCancel: true, method: 'pathao' },
     steadfast: {
       canCancel: false,
-      panelGuidance:
-        'Steadfast bookings cannot be cancelled from here — cancel the booking in the Steadfast panel first, then cancel the order.',
+      manualFallback: true,
+      manualWarning:
+        'This booking cannot be cancelled from here. Cancelling will mark the dispatch cancelled in EcoMate; you MUST also cancel the booking in the Steadfast panel.',
     },
   };
 
@@ -114,25 +120,32 @@ export type DispatchCancelSubject = {
 };
 
 export type DispatchCancelEvaluation = {
-  /** Can this dispatch be cancelled with the courier? */
+  /** Can this dispatch take part in the combined cancel? */
   eligible: boolean;
   /** Why not (null when eligible) — shown to staff. */
   reason: string | null;
   /** The internal status that blocks it (null when eligible). */
   blockingStatus: DispatchStatus | null;
-  /** True when the courier has no cancel API (staff must use their panel). */
+  /** True when the courier panel needs attention (blocked OR manual). */
   needsCourierPanel: boolean;
+  /** True when the cancel proceeds LOCALLY and staff owes a panel cancel. */
+  manualPanelCancel: boolean;
+  /** The manual-fallback warning (null unless manualPanelCancel). */
+  warning: string | null;
   /** When the parcel left our hands (best available evidence). */
   collectedAt: Date | null;
 };
 
 /**
- * The single source of truth for "may this dispatch be cancelled?".
+ * The single source of truth for "may this dispatch take part in a cancel?".
  *
  * Order of the checks:
  *  1. the parcel already left (internal status past DISPATCHED/PICKUP_FAILED
  *     OR a picked-up/handover/delivered timestamp) ⇒ blocked;
- *  2. the courier has no cancel API ⇒ blocked with the panel guidance.
+ *  2. a courier cancel API exists ⇒ eligible, pushed via the API;
+ *  3. no API but a MANUAL fallback is allowed (Steadfast) ⇒ eligible, the
+ *     local cancel proceeds and the panel cancellation stays pending;
+ *  4. otherwise ⇒ blocked with the panel guidance (fail closed).
  */
 export function evaluateDispatchCancelEligibility(
   dispatch: DispatchCancelSubject,
@@ -162,28 +175,68 @@ export function evaluateDispatchCancelEligibility(
       reason: `Parcel already picked up by ${label}${when} — a dispatched order can no longer be cancelled once the courier has the parcel.`,
       blockingStatus: status,
       needsCourierPanel: false,
+      manualPanelCancel: false,
+      warning: null,
       collectedAt,
     };
   }
 
-  // 2) we have no way to cancel the booking with this courier.
-  if (!capability.canCancel) {
+  // 2) the courier can cancel the booking for us.
+  if (capability.canCancel) {
     return {
-      eligible: false,
-      reason: capability.panelGuidance!,
+      eligible: true,
+      reason: null,
       blockingStatus: null,
-      needsCourierPanel: true,
+      needsCourierPanel: false,
+      manualPanelCancel: false,
+      warning: null,
       collectedAt: null,
     };
   }
 
+  // 3) no API: the local cancel proceeds, the courier panel cancel is owed.
+  if (capability.manualFallback) {
+    return {
+      eligible: true,
+      reason: null,
+      blockingStatus: null,
+      needsCourierPanel: true,
+      manualPanelCancel: true,
+      warning:
+        capability.manualWarning ??
+        `This booking cannot be cancelled from here. Cancelling will mark the dispatch cancelled in EcoMate; you MUST also cancel the booking in the ${label} panel.`,
+      collectedAt: null,
+    };
+  }
+
+  // 4) no safe path (unknown courier) ⇒ fail closed.
   return {
-    eligible: true,
-    reason: null,
+    eligible: false,
+    reason: capability.panelGuidance!,
     blockingStatus: null,
-    needsCourierPanel: false,
+    needsCourierPanel: true,
+    manualPanelCancel: false,
+    warning: null,
     collectedAt: null,
   };
+}
+
+/**
+ * The visible "Panel cancellation pending" marker: a MANUAL-mode cancel with
+ * a real courier booking reference that staff have not confirmed yet.
+ */
+export function isPanelCancelPending(dispatch: {
+  status?: string | null;
+  courierCancelMode?: string | null;
+  courierCancelRef?: string | null;
+  panelCancelConfirmedAt?: Date | string | null;
+}): boolean {
+  return (
+    String(dispatch.status) === 'CANCELLED' &&
+    dispatch.courierCancelMode === 'MANUAL' &&
+    !!dispatch.courierCancelRef &&
+    !dispatch.panelCancelConfirmedAt
+  );
 }
 
 /** "21 Oct 2026, 10:30" (en-GB, like the rest of the admin). */
