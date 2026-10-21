@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator'
 import { Loader2, Save, ChevronDown, ChevronUp, Phone, Settings2, Info, CheckCircle2, Truck, ShieldCheck, Zap } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/auth-store'
 
 /**
  * D (owner-locked): Global payment defaults. These are the S1/S2 values every
@@ -28,6 +29,7 @@ function GlobalPaymentDefaults() {
     queryKey: ['payment-effective-settings'],
     queryFn: () => gatewayApi.getEffectivePaymentSettings(),
   })
+  const role = useAuthStore((s) => s.auth.user?.role)
 
   const setMut = useMutation({
     mutationFn: ({ key, value }: { key: PaymentSettingKey; value: boolean }) =>
@@ -42,6 +44,11 @@ function GlobalPaymentDefaults() {
 
   const staffAuto = effective?.global.staffAutoVerified ?? true
   const editAllowed = effective?.global.editAllowed ?? false
+  // Refunds are NOT admin-only by default (owner decision, 2026-10-21): staff
+  // may process refunds unless an admin switches this off. Only admins may
+  // change it — the backend refuses any `payments.*` write from a non-admin.
+  const staffRefunds = effective?.global.staffRefundsAllowed ?? true
+  const isAdmin = (role ?? '').toLowerCase() === 'admin' || (role ?? '').toLowerCase() === 'superadmin'
   const busy = isLoading || setMut.isPending
 
   return (
@@ -57,6 +64,18 @@ function GlobalPaymentDefaults() {
             checked={staffAuto}
             disabled={busy}
             onCheckedChange={(v) => setMut.mutate({ key: 'payments.staffAutoVerified', value: v })}
+          />
+        </div>
+        <div className='flex items-center justify-between gap-4'>
+          <Label htmlFor={`${uid}-s3`} className='text-xs font-semibold'>
+            Staff can process refunds
+            {!isAdmin ? <span className='ml-1 font-normal text-muted-foreground'>(admin only)</span> : null}
+          </Label>
+          <Switch
+            id={`${uid}-s3`}
+            checked={staffRefunds}
+            disabled={busy || !isAdmin}
+            onCheckedChange={(v) => setMut.mutate({ key: 'payments.staffRefundsAllowed', value: v })}
           />
         </div>
         <div className='flex items-center justify-between gap-4'>

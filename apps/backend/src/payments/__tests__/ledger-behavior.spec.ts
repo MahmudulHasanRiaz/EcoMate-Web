@@ -400,6 +400,7 @@ describe('PaymentsService append-only ledger (Task 5)', () => {
     await expect(service.getPaymentSettings()).resolves.toEqual({
       staffAutoVerified: true,
       editAllowed: false,
+      staffRefundsAllowed: true,
     });
   });
 
@@ -412,6 +413,7 @@ describe('PaymentsService append-only ledger (Task 5)', () => {
     await expect(service.getPaymentSettings()).resolves.toEqual({
       staffAutoVerified: false,
       editAllowed: true,
+      staffRefundsAllowed: true,
     });
   });
 
@@ -438,7 +440,11 @@ describe('PaymentsService append-only ledger (Task 5)', () => {
 
     const res = await service.getEffectivePaymentSettings();
 
-    expect(res.global).toEqual({ staffAutoVerified: true, editAllowed: false });
+    expect(res.global).toEqual({
+        staffAutoVerified: true,
+        editAllowed: false,
+        staffRefundsAllowed: true,
+      });
     // bKash: override OFF wins; editAllowed falls back to global.
     expect(res.gateways[0].effective).toEqual({
       staffAutoVerified: false,

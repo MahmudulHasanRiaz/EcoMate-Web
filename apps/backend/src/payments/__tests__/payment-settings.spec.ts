@@ -18,10 +18,11 @@ describe('payment-settings — effective resolution (D)', () => {
     expect(parsePaymentSettings([])).toEqual({
       staffAutoVerified: true,
       editAllowed: false,
+      staffRefundsAllowed: true,
     });
   });
 
-  it('readPaymentSettings reads exactly the two canonical keys', async () => {
+  it('readPaymentSettings reads exactly the three canonical keys', async () => {
     const db = settingsRows([
       { key: 'payments.staffAutoVerified', value: 'false' },
     ]);
@@ -29,7 +30,11 @@ describe('payment-settings — effective resolution (D)', () => {
     expect(db.systemSetting.findMany).toHaveBeenCalledWith({
       where: {
         key: {
-          in: ['payments.staffAutoVerified', 'payments.editAllowed'],
+          in: [
+            'payments.staffAutoVerified',
+            'payments.editAllowed',
+            'payments.staffRefundsAllowed',
+          ],
         },
       },
     });
@@ -52,7 +57,11 @@ describe('payment-settings — effective resolution (D)', () => {
       gatewayCode: null,
       overrides: null,
     });
-    expect(eff.global).toEqual({ staffAutoVerified: false, editAllowed: true });
+    expect(eff.global).toEqual({
+      staffAutoVerified: false,
+      editAllowed: true,
+      staffRefundsAllowed: true,
+    });
     expect(db.paymentGateway.findUnique).not.toHaveBeenCalled();
   });
 
@@ -95,7 +104,11 @@ describe('payment-settings — effective resolution (D)', () => {
 
     expect(eff.staffAutoVerified).toBe(false);
     expect(eff.editAllowed).toBe(true);
-    expect(eff.global).toEqual({ staffAutoVerified: true, editAllowed: false });
+    expect(eff.global).toEqual({
+      staffAutoVerified: true,
+      editAllowed: false,
+      staffRefundsAllowed: true,
+    });
   });
 
   it('partial override: only the set field wins, the other falls back to global', async () => {

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -8,8 +8,32 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { refundsApi } from '@/features/refunds/api'
+import { gatewayApi } from '@/features/gateways/api'
+import { useAuthStore } from '@/stores/auth-store'
 
 export const REFUND_CANCEL_QUESTION = 'Should this order be cancelled too?'
+
+/**
+ * Why the refund option is unavailable for THIS user (null = available).
+ *
+ * Only the SETTING is enforced client-side: when an admin switches "Staff can
+ * process refunds" off, the staff member sees the option greyed out with the
+ * reason instead of a silent 403. The permission level itself stays the
+ * backend's business (RefundPermissionGuard) — the UI never guesses it from a
+ * possibly stale permission list.
+ */
+export function refundUnavailableReason(opts: {
+  role?: string
+  staffRefundsAllowed: boolean
+}): string | null {
+  const role = (opts.role ?? '').toLowerCase()
+  if (role === 'admin' || role === 'superadmin') return null
+  if (!opts.staffRefundsAllowed) {
+    return 'Refunds are restricted to administrators — ask an admin to record this refund. ' +
+      'You can still cancel the order without a refund record.'
+  }
+  return null
+}
 
 export interface RefundSourceContext {
   id: string
@@ -43,6 +67,23 @@ export function RecordRefundModal({
   sourceContext?: RefundSourceContext[]
 }) {
   const queryClient = useQueryClient()
+  const user = useAuthStore((s) => s.auth.user)
+  const { data: paymentSettings } = useQuery({
+    queryKey: ['payment-effective-settings'],
+    queryFn: () => gatewayApi.getEffectivePaymentSettings(),
+    enabled: open,
+  })
+  // DEFAULT ON — the toggle only ever RESTRICTS staff, it never enables them.
+  const staffRefundsAllowed = paymentSettings?.global?.staffRefundsAllowed ?? true
+  // Only gate on a LOADED user: while the auth state is still resolving the
+  // backend stays the authority (a transient null user must never block a
+  // refund the staff member is entitled to).
+  const unavailableReason = user
+    ? refundUnavailableReason({
+        role: user.role,
+        staffRefundsAllowed,
+      })
+    : null
   const [amount, setAmount] = useState(initialAmount !== undefined ? String(initialAmount) : '')
   const [method, setMethod] = useState('')
   const [reason, setReason] = useState('')
@@ -77,6 +118,10 @@ export function RecordRefundModal({
   })
 
   function handleSubmit() {
+    if (unavailableReason) {
+      toast.error(unavailableReason)
+      return
+    }
     const amt = parseFloat(amount)
     if (!amount || isNaN(amt) || amt <= 0) {
       toast.error('Enter a refund amount greater than 0')
@@ -100,6 +145,11 @@ export function RecordRefundModal({
           <DialogTitle>Record refund</DialogTitle>
         </DialogHeader>
         <div className="space-y-3 py-2">
+          {unavailableReason ? (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+              {unavailableReason}
+            </div>
+          ) : null}
           {sourceContext?.length ? (
             <div className="rounded-lg border border-border/60 bg-muted/30 p-3 space-y-1">
               <p className="text-xs font-medium text-muted-foreground">Refunding from {sourceContext.length} payment row{sourceContext.length > 1 ? 's' : ''}</p>
@@ -172,7 +222,7 @@ export function RecordRefundModal({
           <Button variant="outline" onClick={onClose} disabled={refundMut.isPending}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={refundMut.isPending}>
+          <Button onClick={handleSubmit} disabled={refundMut.isPending || !!unavailableReason}>
             {refundMut.isPending && <Loader2 className="h-4 w-4 animate-spin mr-1.5" />}
             Record refund
           </Button>

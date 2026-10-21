@@ -48,6 +48,8 @@ export interface PaymentSettings {
   staffAutoVerified: boolean;
   /** S2: staff may directly edit recorded payments (default OFF). Manual gateways only. */
   editAllowed: boolean;
+  /** Staff may process refunds (records a refund + the money movement). */
+  staffRefundsAllowed: boolean;
 }
 
 /** D: effective settings shape of GET /payments/settings (single source). */
@@ -65,7 +67,10 @@ export interface EffectivePaymentSettings {
   gateways: GatewayEffectiveSettings[];
 }
 
-export type PaymentSettingKey = 'payments.staffAutoVerified' | 'payments.editAllowed';
+export type PaymentSettingKey =
+  | 'payments.staffAutoVerified'
+  | 'payments.editAllowed'
+  | 'payments.staffRefundsAllowed';
 
 export const gatewayApi = {
   listOptions: () => apiClient.get<PaymentOption[]>('/gateways/options'),
@@ -90,6 +95,8 @@ export const gatewayApi = {
     return {
       staffAutoVerified: map['payments.staffAutoVerified'] === undefined ? true : map['payments.staffAutoVerified'] === 'true',
       editAllowed: map['payments.editAllowed'] === undefined ? false : map['payments.editAllowed'] === 'true',
+      // DEFAULT ON — refunds are not admin-only.
+      staffRefundsAllowed: map['payments.staffRefundsAllowed'] === undefined ? true : map['payments.staffRefundsAllowed'] === 'true',
     };
   },
   setPaymentSetting: (key: PaymentSettingKey, value: boolean) =>
