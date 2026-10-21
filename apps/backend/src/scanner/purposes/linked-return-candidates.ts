@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ITEM_PREVIEW_CAP, orderItemPreview } from '../scanner-resolver';
 import { ScanItemPreview, ScanLinkedCandidate } from '../scanner.types';
@@ -15,6 +16,57 @@ import { ScanItemPreview, ScanLinkedCandidate } from '../scanner.types';
  * coverage denominator ride in ONE parallel round, and the product/variant
  * catalog lookups run ONLY when return legs exist. Never a per-scan N+1.
  */
+/**
+ * The shared order-line select. TYPED against the generated Prisma client so
+ * a field that does not exist on the model is a COMPILE error (Product has no
+ * scalar `image` — only `images`; ProductVariant does have `image`).
+ */
+const ORDER_ITEM_SELECT = {
+  quantity: true,
+  productId: true,
+  variantId: true,
+  price: true,
+  product: { select: { id: true, name: true, sku: true, images: true } },
+  variant: {
+    select: {
+      id: true,
+      sku: true,
+      image: true,
+      images: true,
+      product: { select: { id: true, name: true } },
+      attributeValues: {
+        select: {
+          attributeValue: {
+            select: { value: true, hexCode: true, attribute: { select: { name: true } } },
+          },
+        },
+      },
+    },
+  },
+} satisfies Prisma.OrderItemSelect;
+
+const PRODUCT_SELECT = {
+  id: true,
+  name: true,
+  sku: true,
+  images: true,
+} satisfies Prisma.ProductSelect;
+
+const VARIANT_SELECT = {
+  id: true,
+  sku: true,
+  image: true,
+  images: true,
+  product: { select: { id: true, name: true, images: true } },
+  attributeValues: {
+    select: {
+      attributeValue: {
+        select: { value: true, hexCode: true, attribute: { select: { name: true } } },
+      },
+    },
+  },
+} satisfies Prisma.ProductVariantSelect;
+
 export async function loadLinkedReturnCandidates(
   prisma: PrismaService,
   orderId: string,
@@ -29,29 +81,7 @@ export async function loadLinkedReturnCandidates(
       include: {
         status: true,
         items: {
-          select: {
-            quantity: true,
-            productId: true,
-            variantId: true,
-            price: true,
-            product: { select: { id: true, name: true, sku: true, images: true } },
-            variant: {
-              select: {
-                id: true,
-                sku: true,
-                image: true,
-                images: true,
-                product: { select: { id: true, name: true } },
-                attributeValues: {
-                  select: {
-                    attributeValue: {
-                      select: { value: true, hexCode: true, attribute: { select: { name: true } } },
-                    },
-                  },
-                },
-              },
-            },
-          },
+          select: ORDER_ITEM_SELECT,
         },
       },
       orderBy: { createdAt: 'asc' },
@@ -63,29 +93,7 @@ export async function loadLinkedReturnCandidates(
       select: {
         displayId: true,
         items: {
-          select: {
-            quantity: true,
-            productId: true,
-            variantId: true,
-            price: true,
-            product: { select: { id: true, name: true, sku: true, images: true } },
-            variant: {
-              select: {
-                id: true,
-                sku: true,
-                image: true,
-                images: true,
-                product: { select: { id: true, name: true } },
-                attributeValues: {
-                  select: {
-                    attributeValue: {
-                      select: { value: true, hexCode: true, attribute: { select: { name: true } } },
-                    },
-                  },
-                },
-              },
-            },
-          },
+          select: ORDER_ITEM_SELECT,
         },
       },
     }),
@@ -114,26 +122,13 @@ export async function loadLinkedReturnCandidates(
       productIds.length
         ? (prisma as any).product.findMany({
             where: { id: { in: [...new Set(productIds)] } },
-            select: { id: true, name: true, sku: true, images: true },
+            select: PRODUCT_SELECT,
           })
         : Promise.resolve([]),
       variantIds.length
         ? (prisma as any).productVariant.findMany({
             where: { id: { in: [...new Set(variantIds)] } },
-            select: {
-              id: true,
-              sku: true,
-              image: true,
-              images: true,
-              product: { select: { id: true, name: true, images: true } },
-              attributeValues: {
-                select: {
-                  attributeValue: {
-                    select: { value: true, hexCode: true, attribute: { select: { name: true } } },
-                  },
-                },
-              },
-            },
+            select: VARIANT_SELECT,
           })
         : Promise.resolve([]),
     ]);

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RtnService } from '../../rtn/rtn.service';
 import {
@@ -160,13 +161,16 @@ export class ReturnPurpose implements ScanPurposeHandler {
   private async enrichDispatches(outcome: ResolveOutcome): Promise<void> {
     if (outcome.dispatches.length === 0) return;
     const orderIds = [...new Set(outcome.dispatches.map((d) => d.orderId))];
+    // The include is TYPED against the generated Prisma client, so a field
+    // that does not exist on the model is a COMPILE error, not a runtime 500.
+    // (Product has no scalar `image` — only `images`; the display image is
+    // derived from images[0]. ProductVariant DOES have `image`.)
     const itemInclude = {
       product: {
         select: {
           id: true,
           name: true,
           sku: true,
-          image: true,
           images: true,
           warehouseId: true,
         },
@@ -191,7 +195,7 @@ export class ReturnPurpose implements ScanPurposeHandler {
           },
         },
       },
-    };
+    } satisfies Prisma.OrderItemInclude;
 
     const [orders, rtns] = await Promise.all([
       this.prisma.order.findMany({

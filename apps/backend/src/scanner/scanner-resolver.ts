@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { DispatchPreview, OrderPreview, ResolveOutcome, ScanItemPreview } from './scanner.types';
 
@@ -101,10 +102,11 @@ export function orderItemPreview(it: any): ScanItemPreview | null {
   // ({ id, name }) on the resolver + exchange includes — taking it first would
   // shadow the line's images/sku whenever the variant carries none.
   const product = it.product ?? variant?.product ?? null;
+  // Product has NO scalar `image` field (only `images`), so the product image
+  // always comes from images[0]. ProductVariant DOES have a scalar `image`.
   const image =
     (variant?.image && resolveImage(variant.image)) ||
     firstImage(variant?.images) ||
-    (product?.image && resolveImage(product.image)) ||
     firstImage(product?.images) ||
     null;
   return {
@@ -231,7 +233,7 @@ export async function resolveScanIdentifier(
         },
       },
     },
-  } as const;
+  } satisfies Prisma.OrderItemSelect;
 
   if (ORDER_NUMBER.test(identifier)) {
     const order = await prisma.order.findFirst({
