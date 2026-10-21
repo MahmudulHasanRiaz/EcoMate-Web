@@ -16,12 +16,31 @@ vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }))
 
+/**
+ * The camera library is mocked with lifecycle counters: the shared session
+ * contract is "start ONCE per open camera, stop ONCE on close" — a decode or
+ * a task switch must never restart it.
+ */
+const { cameraStarts, cameraStops, cameraDecodes } = vi.hoisted(() => ({
+  cameraStarts: [] as string[],
+  cameraStops: [] as string[],
+  cameraDecodes: [] as ((text: string) => void)[],
+}))
+
 vi.mock('html5-qrcode', () => ({
   Html5Qrcode: class {
     isScanning = false
     static getCameras = vi.fn().mockResolvedValue([])
-    start = vi.fn().mockResolvedValue(undefined)
-    stop = vi.fn().mockResolvedValue(undefined)
+    constructor(public elementId: string) {}
+    start = vi.fn((_target: unknown, _config: unknown, onSuccess: (t: string) => void) => {
+      cameraStarts.push(this.elementId)
+      cameraDecodes.push(onSuccess)
+      return Promise.resolve()
+    })
+    stop = vi.fn(() => {
+      cameraStops.push(this.elementId)
+      return Promise.resolve()
+    })
   },
 }))
 
@@ -66,16 +85,22 @@ async function scanText(page: any, text: string) {
 
 const RETURN_STAGING_KEY = 'ecomate:scanner:staged-returns'
 const LEGACY_RETURN_STAGING_KEY = 'ecomate:scanner:return-staged'
+/** The selected scan task is persisted (Part 0) — reset it per test. */
+const SCAN_TASK_KEY = 'ecomate:scanner:task'
 
 const resetStagedStorage = () => {
   localStorage.removeItem(RETURN_STAGING_KEY)
   localStorage.removeItem(LEGACY_RETURN_STAGING_KEY)
+  localStorage.removeItem(SCAN_TASK_KEY)
 }
 
 describe('Scanner page', () => {
   beforeEach(() => {
     mockGet.mockReset()
     mockPost.mockReset()
+    cameraStarts.length = 0
+    cameraStops.length = 0
+    cameraDecodes.length = 0
     mockGet.mockResolvedValue({ data: purposes })
     resetStagedStorage()
   })
@@ -572,6 +597,9 @@ describe('Scanner page — staged returns: persistence, attention rows, batch pr
   beforeEach(() => {
     mockGet.mockReset()
     mockPost.mockReset()
+    cameraStarts.length = 0
+    cameraStops.length = 0
+    cameraDecodes.length = 0
     mockGet.mockResolvedValue({ data: purposes })
     resetStagedStorage()
   })
@@ -657,7 +685,8 @@ describe('Scanner page — staged returns: persistence, attention rows, batch pr
     await scanText(page, 'ORD-1')
     // Row staged; the reason is recorded in the feed as a warning.
     await expect.element(page.getByText('RTN-3', { exact: true })).toBeInTheDocument()
-    await expect.element(page.getByText('Already received — stock was restored earlier.')).toBeInTheDocument()
+    // The reason is on the ROW and in the feed — both are correct.
+    await expect.element(page.getByText('Already received — stock was restored earlier.').first()).toBeInTheDocument()
     // Amber row tint on the attention row.
     expect(document.querySelector('[data-staged-row="ret-3"]')?.className).toMatch(/amber/)
     // Process button states the counts and is disabled: nothing is ready.
@@ -902,6 +931,9 @@ describe('Scanner page — Process return (DISPATCH_RETURN) is stage-only', () =
   beforeEach(() => {
     mockGet.mockReset()
     mockPost.mockReset()
+    cameraStarts.length = 0
+    cameraStops.length = 0
+    cameraDecodes.length = 0
     mockGet.mockResolvedValue({ data: purposes })
     resetStagedStorage()
   })
@@ -993,7 +1025,7 @@ describe('Scanner page — Process return (DISPATCH_RETURN) is stage-only', () =
     await userEvent.selectOptions(page.getByRole('combobox'), 'DISPATCH_RETURN')
     await scanText(page, 'CONS-R1')
 
-    await expect.element(page.getByText('Already returned — stock was settled earlier. No action needed.')).toBeInTheDocument()
+    await expect.element(page.getByText('Already returned — stock was settled earlier. No action needed.').first()).toBeInTheDocument()
     await expect.element(page.getByText('Process returns (0 ready · 1 need attention)', { exact: false })).toBeInTheDocument()
     await expect.element(page.getByRole('button', { name: /Process returns/ })).toBeDisabled()
     expect(document.querySelector('[data-staged-row="d-r1"]')?.className).toMatch(/amber/)
@@ -1065,6 +1097,9 @@ describe('Scanner page — ONE merged Process return task (cross-kind resolve)',
   beforeEach(() => {
     mockGet.mockReset()
     mockPost.mockReset()
+    cameraStarts.length = 0
+    cameraStops.length = 0
+    cameraDecodes.length = 0
     mockGet.mockResolvedValue({ data: purposes })
     resetStagedStorage()
   })
@@ -1230,5 +1265,116 @@ describe('Scanner page — ONE merged Process return task (cross-kind resolve)',
       returnId: 'ret-ex',
       items: [{ productId: 'p-1', variantId: 'v-1', quantity: 2, damagedQuantity: 1 }],
     }))
+  })
+})
+
+describe('Scanner page — persisted scan task + ONE camera session', () => {
+  beforeEach(() => {
+    mockGet.mockReset()
+    mockPost.mockReset()
+    cameraStarts.length = 0
+    cameraStops.length = 0
+    cameraDecodes.length = 0
+    mockGet.mockResolvedValue({ data: purposes })
+    resetStagedStorage()
+  })
+
+  it('persists the selected task and restores it on reload', async () => {
+    const page = await renderPage()
+    await userEvent.selectOptions(page.getByRole('combobox'), 'DISPATCH_RETURN')
+    await expect
+      .poll(() => (page.getByRole('combobox').element() as HTMLSelectElement).value)
+      .toBe('DISPATCH_RETURN')
+
+    // "Reload": a fresh mount reads the persisted task back.
+    const reloaded = await renderPage()
+    const reloadedSelect = reloaded.container.querySelector('#scan-task') as HTMLSelectElement
+    await expect.poll(() => reloadedSelect.value).toBe('DISPATCH_RETURN')
+  })
+
+  it('falls back to the first task when the stored task is unknown', async () => {
+    localStorage.setItem(SCAN_TASK_KEY, 'TASK_THAT_WAS_REMOVED')
+    const page = await renderPage()
+    await expect
+      .poll(() => (page.getByRole('combobox').element() as HTMLSelectElement).value)
+      .toBe('DISPATCH_HANDED_OVER')
+  })
+
+  it('keeps ONE camera session across decodes and task switches; closing stops it once', async () => {
+    mockPost.mockImplementation((url: string) => {
+      if (url === '/scanner/resolve') {
+        return Promise.resolve({
+          data: { status: 'resolved', identifier: 'CONS-1', dispatches: [], order: null, linked: [] },
+        })
+      }
+      return Promise.resolve({ data: {} })
+    })
+    const page = await renderPage()
+    await userEvent.click(page.getByRole('button', { name: 'Open camera scanner' }))
+    await vi.waitFor(() => expect(cameraStarts).toHaveLength(1))
+
+    // Three camera decodes — the session must NOT restart.
+    cameraDecodes[0]?.('CONS-1')
+    cameraDecodes[0]?.('CONS-2')
+    cameraDecodes[0]?.('CONS-3')
+    await new Promise((r) => setTimeout(r, 50))
+    expect(cameraStarts).toHaveLength(1)
+    expect(cameraStops).toHaveLength(0)
+
+    // Switching the task must not corrupt the session.
+    await userEvent.selectOptions(page.getByRole('combobox'), 'ORDER_STATUS')
+    await new Promise((r) => setTimeout(r, 50))
+    expect(cameraStarts).toHaveLength(1)
+    expect(cameraStops).toHaveLength(0)
+
+    // Closing the camera stops the session exactly once.
+    await userEvent.click(page.getByRole('button', { name: 'Close camera scanner' }))
+    await vi.waitFor(() => expect(cameraStops).toHaveLength(1))
+    expect(cameraStarts).toHaveLength(1)
+  })
+})
+
+describe('Scanner page — page-level nits', () => {
+  beforeEach(() => {
+    mockGet.mockReset()
+    mockPost.mockReset()
+    cameraStarts.length = 0
+    cameraStops.length = 0
+    cameraDecodes.length = 0
+    mockGet.mockResolvedValue({ data: purposes })
+    resetStagedStorage()
+  })
+
+  it('keeps the Enter hint INSIDE the scan input row (no floating chip under the card)', async () => {
+    const page = await renderPage()
+    const input = page.getByPlaceholder(/Scan or enter/i).element() as HTMLInputElement
+    const kbd = input.parentElement?.querySelector('kbd')
+    expect(kbd).not.toBeNull()
+    expect(kbd?.textContent).toContain('Enter')
+  })
+
+  it('shows a COMPACT Recent-scans empty state whose hint matches the task hint', async () => {
+    const page = await renderPage()
+    const strip = document.querySelector('[data-testid="recent-scans-empty"]') as HTMLElement
+    expect(strip).not.toBeNull()
+    // The hint copy is the TASK hint (it used to omit "tracking code").
+    expect(strip.textContent).toContain('tracking code')
+    // A compact strip, not a ~250px empty box.
+    expect(strip.getBoundingClientRect().height).toBeLessThan(90)
+  })
+
+  it('gives the Recent-scans Clear a real button (≥36px, visible)', async () => {
+    mockPost.mockImplementation((url: string) => {
+      if (url === '/scanner/resolve') {
+        return Promise.resolve({ data: { status: 'resolved', identifier: 'CONS-1', dispatches: [], order: null, linked: [] } })
+      }
+      return Promise.resolve({ data: {} })
+    })
+    const page = await renderPage()
+    await scanText(page, 'CONS-1')
+    const clear = page.getByRole('button', { name: 'Clear' })
+    const el = clear.element() as HTMLElement
+    expect(el.getBoundingClientRect().height).toBeGreaterThanOrEqual(36)
+    expect(el.className).toMatch(/border/)
   })
 })

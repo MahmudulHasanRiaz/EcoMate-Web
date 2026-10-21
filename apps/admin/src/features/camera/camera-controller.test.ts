@@ -89,7 +89,7 @@ const CONFIG = {
 }
 
 async function importModule() {
-  return import('./scanner-controller')
+  return import('./camera-controller')
 }
 
 describe('createScanner lifecycle', () => {
@@ -171,6 +171,28 @@ describe('createScanner lifecycle', () => {
     await scanner.dispose()
 
     expect(document.getElementById('scanner-viewport')!.innerHTML).toBe('')
+  })
+
+  it('releases the device track on stop so the camera indicator goes dark', async () => {
+    const { createScanner } = await importModule()
+    const scanner = createScanner('scanner-viewport', CONFIG, {
+      onScan: vi.fn(),
+    })
+
+    await scanner.start('cam-1')
+    const el = document.getElementById('scanner-viewport')!
+    const video = document.createElement('video')
+    const stopTrack = vi.fn()
+    Object.defineProperty(video, 'srcObject', {
+      configurable: true,
+      writable: true,
+      value: { getTracks: () => [{ stop: stopTrack }] },
+    })
+    el.appendChild(video)
+
+    await scanner.dispose()
+
+    expect(stopTrack).toHaveBeenCalledTimes(1)
   })
 
   it('recovers from a failed start so scanning works again', async () => {

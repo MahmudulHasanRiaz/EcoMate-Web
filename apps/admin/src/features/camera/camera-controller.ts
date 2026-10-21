@@ -1,7 +1,8 @@
 import { Html5Qrcode, type CameraDevice } from 'html5-qrcode'
 
 /**
- * Camera lifecycle wrapper around `html5-qrcode`.
+ * Camera lifecycle wrapper around `html5-qrcode` — the ONE implementation for
+ * the whole admin (scanner page, packing workspace, SKU combobox).
  *
  * Why this exists — `html5-qrcode` guards every `start()`/`stop()` with a
  * single-slot "transaction" lock (`state-manager.js`) and **throws a bare
@@ -30,15 +31,52 @@ import { Html5Qrcode, type CameraDevice } from 'html5-qrcode'
  * This module fixes it by (a) serialising start/stop through a single promise
  * chain, and (b) tracking the scanner's real state itself instead of trusting
  * `isScanning`.
+ *
+ * It additionally guarantees the DEVICE is released: after the library stops,
+ * every media track of the rendered `<video>` is stopped explicitly, so the
+ * camera indicator on the phone actually goes dark (a wedged `start()` would
+ * otherwise keep the stream open forever).
  */
 
 type ScannerState = 'idle' | 'starting' | 'scanning' | 'stopping'
 
+/**
+ * What html5-qrcode accepts as the first `start()` argument: a device id, or a
+ * camera config (e.g. the rear lens by default).
+ */
+export type CameraStartTarget =
+  | string
+  | { facingMode?: string; deviceId?: string | { exact: string }; exact?: string }
+
 export interface ScannerController {
-  start(cameraId: string): Promise<void>
+  start(cameraIdOrConfig: CameraStartTarget): Promise<void>
   stop(): Promise<void>
   dispose(): Promise<void>
   getState(): ScannerState
+}
+
+/**
+ * Stop every media track of the videos the library rendered into the mount
+ * element. `stop()` already closes the camera, but a failed/interrupted start
+ * can leave the track alive — the phone's camera LED would stay on.
+ */
+export function releaseCameraTracks(elementId: string): void {
+  const el = document.getElementById(elementId)
+  if (!el) return
+  const videos = Array.from(el.querySelectorAll('video'))
+  for (const video of videos) {
+    const stream = (video as HTMLVideoElement).srcObject as MediaStream | null
+    try {
+      stream?.getTracks?.().forEach((track) => track.stop())
+    } catch {
+      /* the track may already be ended — releasing twice is harmless */
+    }
+    try {
+      ;(video as HTMLVideoElement).srcObject = null
+    } catch {
+      /* some environments expose srcObject as read-only — the track is stopped already */
+    }
+  }
 }
 
 export function createScanner(
@@ -67,7 +105,7 @@ export function createScanner(
     if (el) el.innerHTML = ''
   }
 
-  const runStart = async (cameraId: string) => {
+  const runStart = async (cameraIdOrConfig: CameraStartTarget) => {
     if (state !== 'idle') return
 
     const target = document.getElementById(elementId)
@@ -82,7 +120,7 @@ export function createScanner(
 
     try {
       await instance.start(
-        cameraId,
+        cameraIdOrConfig,
         config,
         (decodedText) => callbacks.onScan(decodedText),
         // IMPORTANT: html5-qrcode's 4th argument is a PER-FRAME decode
@@ -106,6 +144,7 @@ export function createScanner(
       // instance so a later start() builds a clean one.
       setState('idle')
       scanner = null
+      releaseCameraTracks(elementId)
       clearViewport()
       callbacks.onError?.(err)
     }
@@ -114,6 +153,10 @@ export function createScanner(
   const runStop = async () => {
     const instance = scanner
     if (!instance) {
+      // Nothing to stop — but a previous failed start may have left the
+      // device open. Release it anyway so the camera LED goes dark.
+      releaseCameraTracks(elementId)
+      clearViewport()
       setState('idle')
       return
     }
@@ -136,6 +179,8 @@ export function createScanner(
       callbacks.onError?.(err)
     } finally {
       scanner = null
+      // The DEVICE must be released even when the library's own stop() threw.
+      releaseCameraTracks(elementId)
       clearViewport()
       setState('idle')
     }
@@ -147,7 +192,7 @@ export function createScanner(
   }
 
   return {
-    start: (cameraId: string) => enqueue(() => runStart(cameraId)),
+    start: (cameraIdOrConfig: CameraStartTarget) => enqueue(() => runStart(cameraIdOrConfig)),
     stop: () => enqueue(() => runStop()),
     dispose: () => enqueue(() => runStop()),
     getState: () => state,

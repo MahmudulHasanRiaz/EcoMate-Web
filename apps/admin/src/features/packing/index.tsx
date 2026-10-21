@@ -5,11 +5,9 @@ import { usePackingQueuePage, usePackingStats, useOpenOrder, useOrderDetail, use
 import { HoldModal } from './HoldModal'
 import { Input } from '@/components/ui/input'
 import { Html5Qrcode, type CameraDevice } from 'html5-qrcode'
-import {
-  createScanner,
-  pickDefaultCamera,
-  type ScannerController,
-} from './scanner-controller'
+import { pickDefaultCamera } from '@/features/camera/camera-controller'
+import { useCameraSession } from '@/features/camera/use-camera-session'
+import { packingCameraActive } from './packing-camera'
 import { SafeImage } from '@/components/safe-image'
 import { mediaUrl } from '@/lib/utils'
 import {
@@ -48,8 +46,8 @@ type TabType = 'scan' | 'packed' | 'held'
 // Stable empty array so `queue` keeps a constant identity between polls.
 const EMPTY_QUEUE: QueueItem[] = []
 
-// Must match the id of the scanner viewport element in the JSX.
-const SCANNER_ELEMENT_ID = 'scanner-viewport'
+// The camera session stays OPEN for the whole scan tab — including while an
+// order is open (see packing-camera.ts for the root cause).
 
 export function PackingWorkspace() {
   const currentUser = useAuthStore((s) => s.auth.user)
@@ -94,10 +92,6 @@ export function PackingWorkspace() {
   const [cameras, setCameras] = useState<CameraDevice[]>([])
   const [selectedCameraId, setSelectedCameraId] = useState<string>('')
   const [scannerError, setScannerError] = useState<string | null>(null)
-  // Bumped by the "Retry camera" button to force the start effect to re-run
-  // even when the other inputs are unchanged.
-  const [cameraRetryKey, setCameraRetryKey] = useState(0)
-  const controllerRef = useRef<ScannerController | null>(null)
 
   // The queue is polled every 15s. Mirroring it into a ref keeps
   // `onScanSuccess` (and therefore the camera effect that depends on it) from
@@ -206,6 +200,15 @@ export function PackingWorkspace() {
     queue.find((o) => o.id === selectedOrderId) ??
     (outOfPageOrder?.id === selectedOrderId ? outOfPageOrder : undefined)
   queueRef.current = queue
+
+  // Mirrors for the camera decode handler: it must read the CURRENT order
+  // and the CURRENT verification logic without re-creating the camera session
+  // on every state change (a new handler identity used to restart the camera).
+  const activeOrderRef = useRef(activeOrder)
+  activeOrderRef.current = activeOrder
+  const selectedOrderIdRef = useRef(selectedOrderId)
+  selectedOrderIdRef.current = selectedOrderId
+  const handleProductScanRef = useRef<(code: string) => void>(() => {})
 
   // Open and lock order
   const openAndSelect = useCallback(async (order: QueueItem) => {
@@ -427,46 +430,27 @@ export function PackingWorkspace() {
       })
   }, [])
 
-  // Camera start/stop controller. All lifecycle work goes through
-  // `createScanner`, which serialises start/stop against html5-qrcode's
-  // single-slot transition lock. Gating cleanup on the library's own
-  // `isScanning` flag let `stop()` be called while `start()` still held that
-  // lock, which throws synchronously ("Cannot transition to a new state, already
-  // under transition") and took down the page with a 500 while leaving the
-  // camera stream open and the viewport permanently white.
-  useEffect(() => {
-    const shouldRun =
-      activeTab === 'scan' && !selectedOrderId && scannerActive && !!selectedCameraId
-    if (!shouldRun || !selectedCameraId) {
-      void controllerRef.current?.dispose()
-      return
-    }
-
-    const controller = createScanner(
-      SCANNER_ELEMENT_ID,
-      {
-        fps: 15,
-        qrbox: (width: number, height: number) => {
-          const size = Math.min(width, height) * 0.75
-          return { width: size, height: size }
-        },
-      },
-      {
-        onScan: (decodedText) => onScanSuccessRef.current(decodedText),
-        onError: (err) => {
-          console.error('Camera scanner error', err)
-          setScannerError('Camera is currently in use or not responding.')
-        },
-      },
-    )
-    controllerRef.current = controller
-    void controller.start(selectedCameraId)
-
-    return () => {
-      void controller.dispose()
-      if (controllerRef.current === controller) controllerRef.current = null
-    }
-  }, [activeTab, selectedOrderId, scannerActive, selectedCameraId, cameraRetryKey])
+  // Camera session — ONE shared session for the whole admin. The session
+  // survives the order → item transition (the packer verifies products with
+  // the same camera), and a decode NEVER restarts it: the handler is read
+  // from a ref by the shared hook.
+  const cameraSession = useCameraSession({
+    active: packingCameraActive({ activeTab, scannerActive, cameraId: selectedCameraId }),
+    cameraId: selectedCameraId,
+    onScan: (decoded) => {
+      const code = decoded.trim()
+      if (!code) return
+      // An open order means the operator is scanning a PRODUCT barcode;
+      // otherwise the code is an order to open.
+      if (selectedOrderIdRef.current && activeOrderRef.current) {
+        handleProductScanRef.current(code)
+        return
+      }
+      void onScanSuccessRef.current(code)
+    },
+    fps: 15,
+    qrboxRatio: 0.75,
+  })
 
   const handleDone = useCallback(async (orderId: string) => {
     // P0-3: a hardware scanner sends a trailing Enter, so double-submit is the
@@ -613,6 +597,53 @@ export function PackingWorkspace() {
     return () => window.removeEventListener('keydown', handleGlobalKeyDown)
   }, [selectedOrderId, activeTab, onScanSuccess])
 
+  // Product barcode → verify one unit of the matching item. ONE implementation
+  // shared by the keyboard-wedge scanner and the camera, so both behave the
+  // same (and the camera can verify products at all).
+  const handleProductScan = useCallback((scannedCode: string) => {
+    const order = activeOrderRef.current
+    if (!order) return
+    const matchIdx = order.items.findIndex(
+      (item) => item.sku && item.sku.toLowerCase() === scannedCode.toLowerCase(),
+    )
+
+    if (matchIdx === -1) {
+      // Wrong SKU alert
+      if (navigator.vibrate) navigator.vibrate([150, 100, 150])
+      toast.error(`Wrong Product! SKU "${scannedCode}" does not belong to this order!`, {
+        position: 'top-center',
+        duration: 4000,
+      })
+      return
+    }
+
+    const matchedItem = order.items[matchIdx]
+    const currentVerified = verifiedRef.current[matchedItem.id] ?? 0
+
+    if (currentVerified >= matchedItem.quantity) {
+      if (navigator.vibrate) navigator.vibrate([50, 50])
+      toast.info(`Product "${matchedItem.productName}" is already fully verified.`)
+      return
+    }
+
+    if (navigator.vibrate) navigator.vibrate(100)
+    const nextVal = currentVerified + 1
+    // P2-3: no side effects inside the state updater.
+    commitChecklist({
+      ...verifiedRef.current,
+      [matchedItem.id]: nextVal,
+    })
+
+    // Auto-advance slide if this scan fully verifies the item
+    if (nextVal === matchedItem.quantity && matchIdx < order.items.length - 1) {
+      scheduleAutoAdvance(450)
+    }
+
+    // Focus slide on matching item
+    setCurrentProductIdx(matchIdx)
+  }, [commitChecklist, scheduleAutoAdvance])
+  handleProductScanRef.current = handleProductScan
+
   // Active Order Keyboard Inputs (Hotkeys & Product Scanner)
   useEffect(() => {
     if (!selectedOrderId || !activeOrder) return
@@ -664,45 +695,7 @@ export function PackingWorkspace() {
         if (buffer.trim()) {
           const scannedCode = buffer.trim()
           buffer = ''
-
-          const matchIdx = activeOrder.items.findIndex(
-            item => item.sku && item.sku.toLowerCase() === scannedCode.toLowerCase()
-          )
-
-          if (matchIdx !== -1) {
-            const matchedItem = activeOrder.items[matchIdx]
-            const currentVerified = verifiedRef.current[matchedItem.id] ?? 0
-
-            if (currentVerified >= matchedItem.quantity) {
-              if (navigator.vibrate) navigator.vibrate([50, 50])
-              toast.info(`Product "${matchedItem.productName}" is already fully verified.`)
-            } else {
-              if (navigator.vibrate) navigator.vibrate(100)
-              const nextVal = currentVerified + 1
-              // P2-3: no side effects inside the state updater.
-              commitChecklist({
-                ...verifiedRef.current,
-                [matchedItem.id]: nextVal,
-              })
-
-              // Auto-advance slide if this scan fully verifies the item
-              if (nextVal === matchedItem.quantity && matchIdx < activeOrder.items.length - 1) {
-                scheduleAutoAdvance(450)
-              }
-
-              // Focus slide on matching item
-              if (currentProductIdx !== matchIdx) {
-                setCurrentProductIdx(matchIdx)
-              }
-            }
-          } else {
-            // Wrong SKU alert
-            if (navigator.vibrate) navigator.vibrate([150, 100, 150])
-            toast.error(`Wrong Product! SKU "${scannedCode}" does not belong to this order!`, {
-              position: 'top-center',
-              duration: 4000
-            })
-          }
+          handleProductScan(scannedCode)
         } else if (isAllVerified) {
           handleDone(activeOrder.id)
         }
@@ -717,7 +710,7 @@ export function PackingWorkspace() {
 
     window.addEventListener('keydown', handleActiveOrderKeyDown)
     return () => window.removeEventListener('keydown', handleActiveOrderKeyDown)
-  }, [selectedOrderId, activeOrder, currentProductIdx, isAllVerified, handleBackAndRelease, handleDone, commitChecklist, scheduleAutoAdvance])
+  }, [selectedOrderId, activeOrder, isAllVerified, handleBackAndRelease, handleDone, handleProductScan])
 
   // Cancel any pending carousel auto-advance when the order changes or the
   // workspace unmounts, so it can never slide a different order (P2-2).
@@ -789,19 +782,28 @@ export function PackingWorkspace() {
                 Scan or type any order ID to open it directly.
               </div>
             )}
-            {/* Live Camera Frame box */}
+            {/* Live camera frame — the container is ALWAYS mounted: the
+                library owns its children (the <video>), so React must never
+                remount it. When the camera is not live the overlay says so
+                instead of painting an empty "live looking" disc. */}
             <div className={selectedOrderId
-              ? "fixed bottom-24 right-4 z-50 w-28 h-28 md:w-36 md:h-36 rounded-full border-2 border-success bg-[var(--surface)] shadow-2xl overflow-hidden flex flex-col items-center justify-center transition-all duration-300 transform scale-100 hover:scale-105 active:scale-95 pointer-events-auto"
+              ? "sticky top-2 ml-auto mr-2 z-50 w-24 h-24 md:w-28 md:h-28 rounded-full border-2 border-success bg-[var(--surface)] shadow-2xl overflow-hidden flex flex-col items-center justify-center transition-all duration-300 pointer-events-auto"
               : "relative w-full aspect-square rounded-3xl border-2 border-[var(--border)] bg-[var(--surface)] overflow-hidden flex flex-col items-center justify-center shadow-2xl"
             }>
-              {scannerActive && !scannerError ? (
-                <div id="scanner-viewport" className="h-full w-full object-cover"></div>
-              ) : (
-                <div className="p-4 text-center space-y-1 text-zinc-550 select-none">
+              <div
+                ref={cameraSession.containerRef}
+                id={cameraSession.containerId}
+                className="h-full w-full [&>video]:h-full [&>video]:w-full [&>video]:object-cover"
+              ></div>
+
+              {!cameraSession.isLive && (
+                <div className="absolute inset-0 p-4 text-center space-y-1 text-zinc-550 select-none bg-[var(--surface)]">
                   <Camera className={`${selectedOrderId ? 'h-5 w-5' : 'h-10 w-10'} mx-auto text-[var(--ink-muted)]`} />
                   {!selectedOrderId && (
                     <>
-                      <p className="text-[var(--ink-muted)] text-sm font-semibold">Camera is paused</p>
+                      <p className="text-[var(--ink-muted)] text-sm font-semibold">
+                        {cameraSession.status === 'starting' ? 'Starting camera…' : 'Camera is paused'}
+                      </p>
                       <p className="text-zinc-600 text-xs">Tap start below to enable scanning</p>
                     </>
                   )}
@@ -809,17 +811,17 @@ export function PackingWorkspace() {
               )}
 
               {/* Animated scanning laser line overlay */}
-              {scannerActive && !selectedOrderId && (
+              {cameraSession.isLive && !selectedOrderId && (
                 <div className="absolute inset-x-0 top-0 h-1 bg-danger opacity-60 shadow-lg shadow-danger animate-scan-laser pointer-events-none"></div>
               )}
 
               {/* Picture-in-picture scan indicator laser */}
-              {scannerActive && selectedOrderId && (
+              {cameraSession.isLive && selectedOrderId && (
                 <div className="absolute inset-x-0 top-0 h-0.5 bg-success shadow-[0_0_8px_var(--success)] animate-scan-laser pointer-events-none z-10"></div>
               )}
 
               {/* Scanner Frame Guide Overlay */}
-              {scannerActive && !selectedOrderId && (
+              {cameraSession.isLive && !selectedOrderId && (
                 <div className="absolute inset-0 border-[24px] border-black/35 flex items-center justify-center pointer-events-none">
                   <div className="h-48 w-48 border border-info/50 rounded-2xl relative shadow-md">
                     <div className="absolute -left-1 -top-1 h-4 w-4 border-l-2 border-t-2 border-info"></div>
@@ -834,20 +836,16 @@ export function PackingWorkspace() {
             {!selectedOrderId && (
               <>
                 {/* Error logs */}
-                {scannerError && (
+                {(scannerError ?? cameraSession.error) && (
                   <div className="p-3 bg-danger-soft border border-danger/30 rounded-xl text-xs text-danger font-semibold text-center select-text space-y-2">
-                    <p>{scannerError}</p>
+                    <p>{scannerError ?? cameraSession.error}</p>
                     <button
                       onClick={() => {
-                        // Clear the error AND re-arm the scanner. Without this the
-                        // error was permanent: the viewport div stays unmounted,
-                        // the camera effect never re-runs, and the only recovery
-                        // was a full page reload.
+                        // Clear the error AND re-arm the scanner. The shared
+                        // session restarts cleanly (the device is released
+                        // first), so the viewport never stays painted white.
                         setScannerError(null)
-                        setScannerActive((prev) => (prev ? false : true))
-                        // Force the start effect to re-run even if scannerActive
-                        // was already true.
-                        setCameraRetryKey((k) => k + 1)
+                        cameraSession.restart()
                       }}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-danger/15 border border-danger/40 text-danger hover:bg-danger/25 font-bold text-xs cursor-pointer"
                     >
