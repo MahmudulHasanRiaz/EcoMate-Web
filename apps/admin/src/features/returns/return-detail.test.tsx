@@ -119,19 +119,21 @@ describe('ReturnDetail (coverage panel)', () => {
     mockPost.mockResolvedValue({ data: { ok: true } })
   })
 
-  it('FULL return shows the coverage line + FULL badge in the big line', async () => {
+  it('FULL return shows the coverage line ONCE (no repeated FULL/PARTIAL line)', async () => {
     // FULL: return items X = 3, order items Y = 3.
-    const { getByText } = await renderDetail({
+    const { getByText, container } = await renderDetail({
       items: [{ productId: 'p-1', variantId: 'v-1', quantity: 2 }, { productId: 'p-2', variantId: null, quantity: 1 }],
     })
     await expect.element(getByText('This return covers 3 of 3 items from ORD-261014-0001')).toBeInTheDocument()
-    await expect.element(getByText('FULL — all 3 items')).toBeInTheDocument()
+    // The type chip already carries the type — the banner must not repeat it.
+    expect(container.textContent ?? '').not.toContain('FULL — all 3 items')
+    expect(container.textContent ?? '').not.toContain('items\nPARTIAL')
   })
 
-  it('PARTIAL return shows the X of Y coverage line', async () => {
-    const { getByText } = await renderDetail({ type: 'PARTIAL' })
+  it('PARTIAL return shows the X of Y coverage line exactly once', async () => {
+    const { getByText, container } = await renderDetail({ type: 'PARTIAL' })
     await expect.element(getByText('This return covers 2 of 3 items from ORD-261014-0001')).toBeInTheDocument()
-    await expect.element(getByText('PARTIAL — 2 of 3 items')).toBeInTheDocument()
+    expect(container.textContent ?? '').not.toContain('PARTIAL — 2 of 3 items')
   })
 
   it('PARTIAL return that covers ALL ordered items raises the red contradiction warning (owner accident)', async () => {
@@ -185,15 +187,25 @@ describe('ReturnDetail (customer + line items)', () => {
     expect(container.querySelectorAll('a[href*="wa.me"]').length).toBeGreaterThanOrEqual(1)
   })
 
-  it('joins ORDER lines with returned qty: name, variant label, sku, qty × price, line subtotal', async () => {
+  it('shows the RETURNING line with variant, sku, qty × price and line subtotal', async () => {
     const { getByText } = await renderDetail()
     await expect.element(getByText('Classic Tee')).toBeInTheDocument()
     await expect.element(getByText('Size: M')).toBeInTheDocument()
     await expect.element(getByText('TEE-BLK-M')).toBeInTheDocument()
     await expect.element(getByText('× 2')).toBeInTheDocument()
     await expect.element(getByText('৳600')).toBeInTheDocument()
+  })
+
+  it('lists a line that is NOT returning in its own demoted section (no inputs, no money)', async () => {
+    const { getByText, getByLabelText, container } = await renderDetail()
+    await expect.element(getByText('Not in this return — kept by customer (1)')).toBeInTheDocument()
     await expect.element(getByText('Printed Mug')).toBeInTheDocument()
-    await expect.element(getByText('returned 0 of 1')).toBeInTheDocument()
+    await expect.element(getByText('Ordered ×1')).toBeInTheDocument()
+    // No "returned 0 of N" noise, no damaged/received inputs for a kept line.
+    expect(container.textContent ?? '').not.toContain('returned 0 of')
+    expect(container.querySelector('[aria-label="Damaged quantity for Printed Mug"]')).toBeNull()
+    expect(container.querySelector('[aria-label="Received quantity for Printed Mug"]')).toBeNull()
+    void getByLabelText
   })
 
   it('renders thumbs through the canonical order-line resolver — non-variant lines keep their product image', async () => {
@@ -202,6 +214,69 @@ describe('ReturnDetail (customer + line items)', () => {
     const srcs = Array.from(container.querySelectorAll('img')).map((i) => i.getAttribute('src'))
     expect(srcs).toContain('/uploads/tee-m.jpg') // variant's own image
     expect(srcs).toContain('/uploads/mug.jpg') // product-image fallback (no variant on the line)
+  })
+
+  it('a PARTIAL return keeps the returning line editable and the kept line input-free', async () => {
+    const { getByText, container } = await renderDetail({
+      type: 'PARTIAL',
+      items: [{ productId: 'p-1', variantId: 'v-1', quantity: 2 }],
+    })
+    // Section heads: returning items vs kept-by-customer items.
+    await expect.element(getByText('Items in this return (2)')).toBeInTheDocument()
+    await expect.element(getByText('Not in this return — kept by customer (1)')).toBeInTheDocument()
+    // The returning line keeps its damage input, the kept line has none.
+    expect(container.querySelector('[aria-label="Damaged quantity for Classic Tee"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Damaged quantity for Printed Mug"]')).toBeNull()
+    // The kept line carries no money math.
+    expect(container.textContent ?? '').not.toContain('৳300')
+  })
+
+  it('a FULL return renders NO "kept by customer" section', async () => {
+    const { getByText, container } = await renderDetail({
+      type: 'FULL',
+      items: [
+        { productId: 'p-1', variantId: 'v-1', quantity: 2 },
+        { productId: 'p-2', variantId: null, quantity: 1 },
+      ],
+    })
+    await expect.element(getByText('Items in this return (3)')).toBeInTheDocument()
+    expect(container.textContent ?? '').not.toContain('Not in this return')
+  })
+
+  it('the return total sums ONLY the returning lines', async () => {
+    const { getByText } = await renderDetail({
+      type: 'PARTIAL',
+      items: [{ productId: 'p-1', variantId: 'v-1', quantity: 2 }],
+    })
+    // 2 × ৳600 = ৳1200 — the kept ৳300 line is NOT part of the return value.
+    await expect.element(getByText('Return value')).toBeInTheDocument()
+    await expect.element(getByText('৳1200', { exact: true })).toBeInTheDocument()
+    expect(document.body.textContent ?? '').not.toContain('৳1500')
+  })
+
+  it('the Mark received payload contains the RETURNING lines only', async () => {
+    const { getByText, getByLabelText } = await renderDetail({
+      type: 'PARTIAL',
+      items: [{ productId: 'p-1', variantId: 'v-1', quantity: 2 }],
+    })
+    // A confirmed receive without edits keeps the historical empty body…
+    await getByText('Mark received').click()
+    await vi.waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith('/returns/ret-1/mark-received', {})
+    })
+
+    // …and a receive WITH damage carries the returning line only.
+    mockPost.mockClear()
+    await getByLabelText('Damaged quantity for Classic Tee').fill('1')
+    await getByText('Mark received').click()
+    await vi.waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith('/returns/ret-1/mark-received', {
+        items: [{ productId: 'p-1', variantId: 'v-1', quantity: 2, damagedQuantity: 1 }],
+      })
+    })
+    // The kept line (p-2) is never sent.
+    const call = mockPost.mock.calls.find((c: unknown[]) => c[0] === '/returns/ret-1/mark-received')
+    expect(JSON.stringify(call)).not.toContain('p-2')
   })
 
   it('never claims "X of 0" — an order snapshot without line items shows an explicit unavailable note', async () => {

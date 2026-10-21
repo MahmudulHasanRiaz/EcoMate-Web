@@ -39,13 +39,6 @@ const TYPE_BADGE_CLASS: Record<string, string> = {
     'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/40 dark:bg-violet-500/10 dark:text-violet-300',
 }
 
-/** Coverage label color — FULL green, PARTIAL amber, EXCHANGE violet. */
-const COVERAGE_TEXT_CLASS: Record<string, string> = {
-  FULL: 'text-emerald-700 dark:text-emerald-400',
-  PARTIAL: 'text-amber-700 dark:text-amber-400',
-  EXCHANGE: 'text-violet-700 dark:text-violet-400',
-}
-
 const sumQty = (rows: { quantity?: number | string }[] | null | undefined): number =>
   (rows ?? []).reduce((s, r) => s + Number(r?.quantity ?? 0), 0)
 
@@ -65,12 +58,6 @@ const coverageFor = (
   const retRows = returnItems ?? []
   if (retRows.length === 0) return { unknown: true, x: 0, y: 0 }
   return { unknown: false, x: sumQty(retRows), y: sumQty(orderLines) }
-}
-
-const coverageLabelFor = (type: string, c: Coverage): string => {
-  if (type === 'FULL') return `FULL — all ${c.y} items`
-  if (type === 'EXCHANGE') return `EXCHANGE — ${c.x} of ${c.y} items`
-  return `PARTIAL — ${c.x} of ${c.y} items`
 }
 
 /** Red contradiction warnings — the owner's real accident must catch the eye. */
@@ -204,7 +191,9 @@ function buildReceiveItems(
   const touched = !confirmed || lines.some((l) => l.damagedQuantity > 0)
   if (!touched) return undefined
   return lines
-    .filter((l) => l.quantity > 0)
+    // Only RETURNING lines may be received: a line the customer kept has no
+    // return quantity, so it can never reach the receive payload.
+    .filter((l) => l.returnedQty > 0 && l.quantity > 0)
     .map((l) => ({
       productId: l.productId,
       variantId: l.variantId,
@@ -302,6 +291,16 @@ export function ReturnDetail() {
   const coverage = coverageFor(orderLines, retRows)
   const contradiction = contradictionFor(ret.type as string, coverage)
   const receiveLines = buildReceiveLines(ret, receiveDraft)
+  // What is actually coming back vs what the customer kept. A line belongs to
+  // the return only when the return itself carries a quantity for it.
+  const returningLines = receiveLines.filter((l) => l.returnedQty > 0)
+  const keptLines = receiveLines.filter((l) => l.returnedQty === 0)
+  const returningUnits = returningLines.reduce((n, l) => n + l.quantity, 0)
+  const keptUnits = keptLines.reduce((n, l) => n + l.orderedQty, 0)
+  const returnValue = returningLines.reduce(
+    (n, l) => n + l.quantity * l.unitPrice,
+    0,
+  )
   const restocked = ret.stockReconciled || ret.status === 'RESTOCKED'
   const totalDamaged = retRows.reduce(
     (sum, l) => sum + Number(l.damagedQuantity ?? 0),
@@ -358,14 +357,9 @@ export function ReturnDetail() {
               Order line items unavailable — coverage cannot be computed from this order record.
             </p>
           ) : (
-            <>
-              <p className='text-base font-semibold leading-snug'>
-                {`This return covers ${coverage.x} of ${coverage.y} items from ${snapshot?.displayId ?? 'the original order'}`}
-              </p>
-              <p className={cn('text-sm font-semibold', COVERAGE_TEXT_CLASS[ret.type as string] ?? '')}>
-                {coverageLabelFor(ret.type as string, coverage)}
-              </p>
-            </>
+            <p className='text-base font-semibold leading-snug'>
+              {`This return covers ${coverage.x} of ${coverage.y} items from ${snapshot?.displayId ?? 'the original order'}`}
+            </p>
           )}
           {contradiction ? (
             <p className='rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300'>
@@ -435,7 +429,9 @@ export function ReturnDetail() {
         </div>
 
         <Card>
-          <CardHeader><CardTitle className='text-sm'>Line items ({orderLines.length} order lines)</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className='text-sm'>Items in this return ({returningUnits})</CardTitle>
+          </CardHeader>
           <CardContent className='space-y-1 text-sm'>
             {receiveLines.length === 0 ? (
               <p className='text-xs text-muted-foreground'>
@@ -443,7 +439,7 @@ export function ReturnDetail() {
               </p>
             ) : (
               <>
-                {receiveLines.map((line) => {
+                {returningLines.map((line) => {
                   const retRow = retRows.find(
                     (l) => lineKey(l.productId, l.variantId) === line.key,
                   )
@@ -521,9 +517,7 @@ export function ReturnDetail() {
                           />
                         </div>
                         <div className='text-muted-foreground'>
-                          {line.quantity > 0
-                            ? `${fmt(line.quantity)} × ৳${fmt(line.unitPrice)} = ৳${fmt(line.quantity * line.unitPrice)}`
-                            : `returned 0 of ${line.orderedQty}`}
+                          {`${fmt(line.quantity)} × ৳${fmt(line.unitPrice)} = ৳${fmt(line.quantity * line.unitPrice)}`}
                         </div>
                         {restocked ? (
                           <p className='text-[11px] text-muted-foreground tabular-nums'>
@@ -581,8 +575,46 @@ export function ReturnDetail() {
                   ))}
               </>
             )}
+            {returningLines.length > 0 ? (
+              <div className='flex items-center justify-between border-t pt-2 mt-2 font-semibold'>
+                <span>Return value</span>
+                <span className='tabular-nums'>{`৳${fmt(returnValue)}`}</span>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
+
+        {/* What the customer is NOT sending back — demoted, no inputs, no money. */}
+        {keptLines.length > 0 ? (
+          <Card className='bg-muted/30'>
+            <CardHeader>
+              <CardTitle className='text-sm text-muted-foreground'>
+                {`Not in this return — kept by customer (${keptUnits})`}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className='space-y-1 text-sm text-muted-foreground'>
+              {keptLines.map((line) => (
+                <div key={line.key} className='flex items-center gap-3 py-1.5'>
+                  <SafeImage
+                    src={line.image}
+                    alt={line.name}
+                    className='h-8 w-8 rounded border object-cover shrink-0 opacity-70'
+                  />
+                  <div className='min-w-0 flex-1'>
+                    <p className='truncate'>{line.name}</p>
+                    <p className='text-xs truncate'>
+                      {variantLabel(line.variant)}
+                      {line.sku ? <span className='font-mono'> · {line.sku}</span> : null}
+                    </p>
+                  </div>
+                  <span className='shrink-0 text-xs tabular-nums whitespace-nowrap'>
+                    {`Ordered ×${line.orderedQty}`}
+                  </span>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        ) : null}
 
         <div className='flex flex-wrap gap-2'>
           <Button size='sm' variant='outline' onClick={checkStatus} disabled={checking || !order?.courierConsignmentId}>
