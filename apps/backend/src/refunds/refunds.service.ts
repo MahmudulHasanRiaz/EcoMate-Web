@@ -7,6 +7,10 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
 import { CodMismatchService } from '../cod-mismatch/cod-mismatch.service';
+import {
+  DispatchCancelService,
+  type DispatchCancelPlan,
+} from '../dispatch-cancel/dispatch-cancel.service';
 
 import { Prisma } from '@prisma/client';
 import { CreateRefundDto, UpdateRefundStatusDto } from './dto/refund.dto';
@@ -26,6 +30,11 @@ export class RefundsService {
     // Shared COD alert recompute (Feature A). Optional so existing unit
     // tests that build RefundsService without it keep working.
     @Optional() private readonly codMismatch?: CodMismatchService,
+    // Cancel a DISPATCHED order with its dispatch (owner directive
+    // 2026-10-21). Optional for the same reason (unit tests build
+    // RefundsService without it) — production always wires it: RefundsModule
+    // imports DispatchCancelModule.
+    @Optional() private readonly dispatchCancel?: DispatchCancelService,
   ) {}
 
   /**
@@ -173,7 +182,18 @@ export class RefundsService {
       );
     }
 
-    await this.assertNoActiveDispatches(dto.orderId);
+    // A cancel-with-refund cancels the dispatch WITH ITS COURIER first (the
+    // eligibility check + the courier push run BEFORE the transaction; the
+    // dispatch rows flip inside it). A courier failure aborts everything —
+    // the order, the refund and the dispatch stay exactly as they were.
+    // A plain refund (no cancel) keeps the old rule: never touch a dispatched
+    // order without cancelling its booking.
+    let dispatchPlan: DispatchCancelPlan | null = null;
+    if (dto.cancelToo && this.dispatchCancel) {
+      dispatchPlan = await this.dispatchCancel.prepare(dto.orderId, recordedBy);
+    } else {
+      await this.assertNoActiveDispatches(dto.orderId);
+    }
 
     // D-B: explicit source rows (payment-list selection). Validated BEFORE any
     // write — same order, PAID-only, per-row remainder cap. The requested total
@@ -310,6 +330,13 @@ export class RefundsService {
             timeline: current as any,
           },
         });
+        // The dispatch is cancelled with the courier in the SAME transaction
+        // as the refund + the order cancel (the courier push already
+        // succeeded above). After the order write: that write REPLACES the
+        // timeline column, so the audit entry is appended last.
+        if (dispatchPlan) {
+          await this.dispatchCancel!.apply(tx, dispatchPlan, recordedBy);
+        }
       } else {
         current.push(...refundEntries);
         await tx.order.update({

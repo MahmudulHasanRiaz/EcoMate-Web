@@ -70,6 +70,14 @@ import { OrderStaffPerformanceService } from './order-staff-performance.service'
 import { CommissionEngineService } from '../commissions/commission-engine.service';
 import { CodMismatchService } from '../cod-mismatch/cod-mismatch.service';
 import {
+  DispatchCancelService,
+  type DispatchCancelPlan,
+} from '../dispatch-cancel/dispatch-cancel.service';
+import {
+  courierLabel,
+  evaluateDispatchCancelEligibility,
+} from '../dispatch-cancel/dispatch-cancel-eligibility';
+import {
   assertNoDuplicateReturn,
   assertReturnEligible,
   generateReturnDisplayId,
@@ -313,6 +321,13 @@ export class OrdersService {
     // Shared COD alert recompute (Feature A). Optional for the same reason.
     @Optional()
     private readonly codMismatch?: CodMismatchService,
+    // Cancel a DISPATCHED order with the dispatch (owner directive
+    // 2026-10-21). Optional for the same reason (unit tests build
+    // OrdersService without it) — production always wires it: OrdersModule
+    // imports DispatchCancelModule, so the dispatch cancel gate is never
+    // skipped there.
+    @Optional()
+    private readonly dispatchCancel?: DispatchCancelService,
   ) {}
 
   /**
@@ -628,6 +643,32 @@ export class OrdersService {
           trackingUrl:
             d.trackingUrl ||
             buildTrackingUrl(d.courier, d.trackingCode, d.consignmentId),
+          // Cancel-a-dispatched-order eligibility (owner directive,
+          // 2026-10-21): the admin's cancel dialog explains the outcome
+          // BEFORE the staff confirms. The list view selects a slim dispatch
+          // shape (no status) — those rows carry no flag.
+          ...(d?.status
+            ? {
+                cancelEligibility: (() => {
+                  const evaluation = evaluateDispatchCancelEligibility({
+                    courier: d.courier,
+                    status: d.status,
+                    pickedUpAt: d.pickedUpAt ?? null,
+                    handedOverAt: d.handedOverAt ?? null,
+                    deliveredAt: d.deliveredAt ?? null,
+                    courierStatus: d.courierStatus ?? null,
+                    courierStatusAt: d.courierStatusAt ?? null,
+                  });
+                  return {
+                    eligible: evaluation.eligible,
+                    reason: evaluation.reason,
+                    needsCourierPanel: evaluation.needsCourierPanel,
+                    courierLabel: courierLabel(d.courier),
+                    collectedAt: evaluation.collectedAt,
+                  };
+                })(),
+              }
+            : {}),
         }))
       : order.dispatches;
     const transformed: any = {
@@ -3702,15 +3743,43 @@ export class OrdersService {
     }
 
     const allowed = ORDER_TRANSITIONS[order.status.name] || [];
-    if (!allowed.includes(newStatus.name) && !staffPartialBypass) {
+    // A dispatched order is cancelled by STAFF only (the directive's flow: the
+    // dispatch is cancelled with the courier, then the order). An automated
+    // actor (courier webhook, reconcile) must never cancel a shipped order.
+    const dispatchedCancelByAutomation =
+      newStatus.name === 'Cancelled' &&
+      order.status.name === 'Shipping' &&
+      isAutomatedActor(userId);
+    if (
+      !allowed.includes(newStatus.name) &&
+      !staffPartialBypass &&
+      !dispatchedCancelByAutomation
+    ) {
       throw new BadRequestException(
         `Cannot transition from "${order.status.name}" to "${newStatus.name}". Allowed: ${allowed.join(', ') || 'none'}`,
+      );
+    }
+    if (dispatchedCancelByAutomation) {
+      throw new BadRequestException(
+        'A dispatched order cannot be cancelled by an automated process — ' +
+          'it must be cancelled by staff, which cancels the dispatch with the courier first.',
       );
     }
 
     // Task 9 (D5): cancel blocked while money is still out — refund first.
     if (newStatus.name === 'Cancelled') {
       await this.assertNoOutstandingForCancel(id);
+    }
+
+    // Cancel a DISPATCHED order (owner directive, 2026-10-21): the dispatch
+    // is cancelled WITH THE COURIER first. The eligibility check + the
+    // courier push happen BEFORE the transaction (an external, irreversible
+    // call must never sit inside one); a courier failure aborts everything,
+    // so the order and its dispatch stay exactly as they were. The dispatch
+    // rows are flipped inside the order's own transaction (apply()).
+    let dispatchPlan: DispatchCancelPlan | null = null;
+    if (newStatus.name === 'Cancelled' && this.dispatchCancel) {
+      dispatchPlan = await this.dispatchCancel.prepare(id, performedBy || userId);
     }
 
     // 'Returned' is a manual-confirmation-only status: it restores stock via
@@ -3803,6 +3872,15 @@ export class OrdersService {
 
       if (newStatus.name === 'Cancelled') {
         await this.handleCancelledSideEffects(client, id, performedBy);
+        // The dispatch is cancelled with the courier in the SAME transaction
+        // as the order cancel (the courier push already succeeded above).
+        if (dispatchPlan) {
+          await this.dispatchCancel!.apply(
+            client,
+            dispatchPlan,
+            performedBy || userId,
+          );
+        }
       }
 
       if (newStatus.name === 'Delivered') {
@@ -4773,6 +4851,33 @@ export class OrdersService {
       validIds.push(...stillValid);
     }
 
+    // Bulk cancel of DISPATCHED orders: each order's dispatch is cancelled
+    // with its courier first (the eligibility check + the courier push run
+    // BEFORE the transaction). A blocked order lands in the failed list with
+    // its reason — like the money gate — the rest still cancel.
+    const bulkDispatchPlans = new Map<string, DispatchCancelPlan>();
+    if (targetStatus.name === 'Cancelled' && this.dispatchCancel) {
+      const stillValid: string[] = [];
+      for (const orderId of validIds) {
+        try {
+          bulkDispatchPlans.set(
+            orderId,
+            await this.dispatchCancel.prepare(orderId, userId),
+          );
+          stillValid.push(orderId);
+        } catch (e) {
+          failedDetails.push({
+            id: orderId,
+            reason:
+              (e as Error)?.message ??
+              'The dispatch could not be cancelled with the courier',
+          });
+        }
+      }
+      validIds.length = 0;
+      validIds.push(...stillValid);
+    }
+
     if (validIds.length > 0) {
       await this.prisma.$transaction(async (tx) => {
         await tx.order.updateMany({
@@ -4797,6 +4902,10 @@ export class OrdersService {
         if (targetStatus.name === 'Cancelled') {
           for (const cancelOrderId of validIds) {
             await this.handleCancelledSideEffects(tx, cancelOrderId, userId);
+            const plan = bulkDispatchPlans.get(cancelOrderId);
+            if (plan) {
+              await this.dispatchCancel!.apply(tx, plan, userId);
+            }
           }
         }
 

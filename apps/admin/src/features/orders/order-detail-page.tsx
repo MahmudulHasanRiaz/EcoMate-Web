@@ -9,6 +9,10 @@ import { CopyButton } from '@/components/copy-button'
 import { BlockPhoneDialog } from '@/features/orders/block-phone-dialog'
 import { CanonicalAttributionBadges } from '@/features/orders/canonical-attribution-badge'
 import { OthersInfoDialog } from '@/features/orders/others-info-dialog'
+import {
+  DispatchCancelNotice,
+  dispatchCancelState,
+} from '@/features/orders/components/dispatch-cancel-notice'
 import { useAuthStore } from '@/stores/auth-store'
 import { UserBadge } from '@/components/user-badge'
 import { ordersApi, rtnApi, mediaUrl } from '@/features/orders/api'
@@ -513,6 +517,16 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
   if (!order) return <div className='p-6 text-muted-foreground'>Order not found</div>
 
   const allowedStatuses = ((order.status.nextStatuses as string[]) || []).map((sid: string) => statusList.find((s: any) => s.id === sid)).filter(Boolean)
+
+  // Cancel a DISPATCHED order (owner directive, 2026-10-21): the status
+  // dialog must tell the staff what happens to the dispatch BEFORE they
+  // confirm — the dispatch is cancelled with the courier first, and a parcel
+  // the courier already has cannot be cancelled at all. The eligibility is
+  // the server's authority (it rides on the order's dispatches).
+  const cancelStatusId = statusList.find((s: any) => s.name === 'Cancelled')?.id
+  const isCancellingStatus = !!cancelStatusId && showStatusDialog === cancelStatusId
+  const dispatchCancel = dispatchCancelState(order.dispatches)
+  const dispatchCancelBlocked = isCancellingStatus && dispatchCancel.isBlocked
 
   // D-A: edit-sheet init reads the SAME snapshot fields the save writes.
   const customerEditInit = resolveCustomerEditInitial(order)
@@ -1926,11 +1940,19 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
             <div className='space-y-3 py-2'>
               <p className='text-sm'>Current: <Badge style={{ backgroundColor: statusColors[order.status.name] || '#6B7280', color: '#fff' }}>{order.status.name}</Badge></p>
               {showStatusDialog && <p className='text-sm'>New: <Badge style={{ backgroundColor: statusColors[statusList.find((s: any) => s.id === showStatusDialog)?.name] || '#6B7280', color: '#fff' }}>{statusList.find((s: any) => s.id === showStatusDialog)?.name}</Badge></p>}
+              {isCancellingStatus ? (
+                <DispatchCancelNotice dispatches={order.dispatches} />
+              ) : null}
               <div><Label>Note (optional)</Label><Textarea value={statusNote} onChange={e => setStatusNote(e.target.value)} rows={2} /></div>
             </div>
             <div className='flex justify-end gap-2'>
               <Button variant='outline' onClick={() => { setShowStatusDialog(null); setStatusNote('') }}>Cancel</Button>
-              <Button onClick={() => { statusMut.mutate({ id, statusId: showStatusDialog!, note: statusNote || undefined }, { onSuccess: () => { setShowStatusDialog(null); setStatusNote('') } }) }}>Confirm</Button>
+              <Button
+                disabled={dispatchCancelBlocked}
+                onClick={() => { statusMut.mutate({ id, statusId: showStatusDialog!, note: statusNote || undefined }, { onSuccess: () => { setShowStatusDialog(null); setStatusNote('') } }) }}
+              >
+                Confirm
+              </Button>
             </div>
           </DialogContent>
         </Dialog>

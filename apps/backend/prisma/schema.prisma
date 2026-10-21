@@ -1591,6 +1591,14 @@ model Dispatch {
   /// Amount-to-collect sent to the courier at dispatch time. Source of truth
   /// for the post-dispatch COD mismatch comparison (Feature A).
   courierAmount   Decimal?  @db.Decimal(10, 2)
+  /// The courier booking id that was cancelled WITH the courier when a
+  /// dispatched order was cancelled (Carrybee / RedX). NULL for dispatches
+  /// that were never cancelled with a courier.
+  courierCancelRef String?
+  /// When the courier cancel was pushed.
+  courierCancelAt DateTime?
+  /// The courier's raw cancel response (audit + support).
+  courierCancelResponse Json?
   // Task 8: Steadfast booking credential-set id. NULL = legacy default
   // (single-business rows booked before sets, or while no sets exist).
   // Tracking / status / webhooks resolve the set from THIS record.

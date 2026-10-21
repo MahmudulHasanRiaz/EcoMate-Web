@@ -58,6 +58,17 @@ export interface OrderResponse {
     notes: string | null;
     createdAt: string;
     updatedAt: string;
+    /** Cancel-a-dispatched-order eligibility (server-side authority). */
+    cancelEligibility?: {
+      eligible: boolean;
+      /** Why the dispatch cannot be cancelled (null when it can). */
+      reason: string | null;
+      /** The courier has no cancel API — staff cancel in their panel. */
+      needsCourierPanel: boolean;
+      courierLabel: string;
+      /** When the parcel left our hands (best available evidence). */
+      collectedAt: string | null;
+    } | null;
   }[];
   selectedShippingOptionId?: string | null;
   shippingChargeOverridden?: boolean;

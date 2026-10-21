@@ -15,6 +15,7 @@ import { BlockedEntriesModule } from '../blocked-entries/blocked-entries.module'
 import { MarketingModule } from '../marketing/marketing.module';
 import { CommissionsModule } from '../commissions/commissions.module';
 import { CodMismatchModule } from '../cod-mismatch/cod-mismatch.module';
+import { DispatchCancelModule } from '../dispatch-cancel/dispatch-cancel.module';
 
 @Module({
   controllers: [OrdersController, OrderStatusController],
@@ -42,6 +43,7 @@ import { CodMismatchModule } from '../cod-mismatch/cod-mismatch.module';
     MarketingModule,
     CommissionsModule,
     CodMismatchModule,
+    DispatchCancelModule,
   ],
 })
 export class OrdersModule {}
