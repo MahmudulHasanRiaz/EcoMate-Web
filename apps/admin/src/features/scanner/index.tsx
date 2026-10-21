@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Html5Qrcode } from 'html5-qrcode'
+import { useCameraSession } from '@/features/camera/use-camera-session'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
@@ -53,27 +53,46 @@ const TASK_ICONS: Record<string, any> = {
  */
 const EXECUTE_ONLY_PURPOSES = new Set(['RETURN_RECEIVE'])
 
+/**
+ * The selected scan task is persisted: the staged list survives a reload, so
+ * the task the operator was working in must survive it too. An unknown or
+ * removed task falls back to the first available task.
+ */
+const SCAN_TASK_KEY = 'ecomate:scanner:task'
+
+const readStoredTask = (): string => {
+  try {
+    return localStorage.getItem(SCAN_TASK_KEY) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+const storeTask = (purpose: string): void => {
+  try {
+    localStorage.setItem(SCAN_TASK_KEY, purpose)
+  } catch {
+    /* storage unavailable — the task simply resets next reload */
+  }
+}
+
 /** Workspace title + accepted identifiers per task (mirrors the resolver). */
-const TASK_HELP: Record<string, { title: string; accept: string; empty: string }> = {
+const TASK_HELP: Record<string, { title: string; accept: string }> = {
   DISPATCH_HANDED_OVER: {
     title: 'Hand over dispatch',
     accept: 'Scan a courier dispatch ID, tracking code, or order QR/barcode.',
-    empty: 'Scan a courier ID or order QR/barcode to begin.',
   },
   DISPATCH_RETURN: {
     title: 'Process return',
     accept: 'Scan a courier dispatch ID, tracking code, order QR/barcode, or an RTN return/exchange ID.',
-    empty: 'Scan a courier dispatch, order QR/barcode, or RTN return to begin.',
   },
   ORDER_STATUS: {
     title: 'Update order status',
     accept: 'Scan one or more order QR codes / barcodes (ORD-…).',
-    empty: 'Scan an order QR code or barcode to begin.',
   },
   STICKER_PRINT: {
     title: 'Print sticker',
     accept: 'Scan an order QR code / barcode (ORD-…).',
-    empty: 'Scan an order QR code or barcode to begin.',
   },
 }
 
@@ -177,10 +196,15 @@ function orderStagedRow(s: StagedOrder): StagedRow {
     orderId: s.key,
     primary: s.label,
     customerName: who,
+    phone: s.customerPhone || undefined,
     meta: orderMeta(s.itemCount, s.orderTotal),
     status: s.sub,
     searchText: hay,
     expand: itemExpand('Order items', s.items),
+    thumbs: (s.items ?? []).slice(0, 3).map((it) => ({ image: it.image, name: it.name })),
+    thumbTotal: (s.items ?? []).length,
+    unitCount: s.itemCount,
+    ready: true,
   }
 }
 
@@ -195,10 +219,15 @@ function queueStagedRow(q: QueuedDispatch): StagedRow {
     primary: label,
     secondary: isDispatch && q.orderDisplayId && q.orderDisplayId !== label ? q.orderDisplayId : undefined,
     customerName: who,
+    phone: q.customerPhone || undefined,
     meta: isDispatch ? q.courier : orderMeta(q.itemCount, q.orderTotal),
     status: isDispatch ? q.dispatchStatus : q.sub,
     searchText: hay,
     expand: itemExpand('Order items', q.items),
+    thumbs: (q.items ?? []).slice(0, 3).map((it) => ({ image: it.image, name: it.name })),
+    thumbTotal: (q.items ?? []).length,
+    unitCount: q.itemCount,
+    ready: true,
   }
 }
 
@@ -237,6 +266,7 @@ function returnStagedRow(
     : r.purpose === 'DISPATCH_RETURN'
       ? 'Returning items'
       : 'Returned items'
+  const unitCount = r.items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0)
   return {
     key: r.key,
     orderId: r.purpose === 'DISPATCH_RETURN' ? r.orderId : r.legId,
@@ -257,6 +287,12 @@ function returnStagedRow(
           note: r.reason ?? undefined,
         }
       : undefined,
+    // The thumbnail is the FIRST RETURNING item's image; the "+N" badge
+    // counts the remaining lines.
+    thumbs: r.items.slice(0, 3).map((it) => ({ image: it.image, name: it.name })),
+    thumbTotal: r.items.length,
+    unitCount,
+    ready: r.processable && r.failed !== true,
   }
 }
 
@@ -280,7 +316,7 @@ const FEED_CAP = 200
 const FEED_RENDER_CAP = 100
 
 export default function ScannerPage() {
-  const [mode, setMode] = useState<string>('DISPATCH_HANDED_OVER')
+  const [mode, setMode] = useState<string>(() => readStoredTask())
   const [input, setInput] = useState('')
   const [feed, setFeed] = useState<FeedItem[]>([])
   const [feedFilter, setFeedFilter] = useState<FeedFilter>('all')
@@ -303,11 +339,9 @@ export default function ScannerPage() {
   const [targetStatusId, setTargetStatusId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [cameraActive, setCameraActive] = useState(false)
-  const [cameraError, setCameraError] = useState<string | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const [confirmApply, setConfirmApply] = useState<null | { kind: 'staged' | 'queue' }>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const scannerRef = useRef<Html5Qrcode | null>(null)
   const ridRef = useRef(0)
   const modeRef = useRef(mode)
   modeRef.current = mode
@@ -324,6 +358,15 @@ export default function ScannerPage() {
     () => (purposes ?? []).filter((p) => !EXECUTE_ONLY_PURPOSES.has(p.purpose)),
     [purposes],
   )
+
+  // Unknown / removed task → fall back to the first available task.
+  useEffect(() => {
+    if (tasks.length === 0) return
+    if (tasks.some((t) => t.purpose === mode)) return
+    const fallback = tasks[0].purpose
+    setMode(fallback)
+    storeTask(fallback)
+  }, [tasks, mode])
 
   // Relative timestamps stay fresh without touching scan state.
   useEffect(() => {
@@ -433,6 +476,7 @@ export default function ScannerPage() {
 
   const selectMode = useCallback((purpose: string) => {
     setMode(purpose)
+    storeTask(purpose)
     setTargetStatusId(null)
     setStaged([])
     setQueue([])
@@ -767,34 +811,24 @@ export default function ScannerPage() {
     }
   }, [busy, record])
 
-  // Camera lifecycle — mirrors the packing workspace pattern.
-  useEffect(() => {
-    if (!cameraActive) {
-      if (scannerRef.current?.isScanning) {
-        scannerRef.current.stop().then(() => { scannerRef.current = null }).catch(() => {})
-      }
-      return
-    }
-    const element = document.getElementById('scanner-viewport')
-    if (!element) return
-    const html5QrCode = new Html5Qrcode('scanner-viewport')
-    scannerRef.current = html5QrCode
-    html5QrCode.start(
-      { facingMode: 'environment' },
-      { fps: 10, qrbox: (w: number, h: number) => ({ width: Math.min(w, h) * 0.75, height: Math.min(w, h) * 0.75 }) },
-      (decoded) => { void handleScan(decoded) },
-      () => {},
-    ).catch((err) => {
-      console.error('Failed to start html5-qrcode', err)
-      setCameraError('Camera is currently in use or not responding. You can keep scanning manually below.')
-      setCameraActive(false)
-    })
-    return () => {
-      if (html5QrCode.isScanning) {
-        html5QrCode.stop().then(() => { scannerRef.current = null }).catch(() => {})
-      }
-    }
-  }, [cameraActive, handleScan])
+  // Camera lifecycle — ONE shared session for the whole admin.
+  //
+  // Root cause this replaces: the camera used to be a raw `Html5Qrcode` owned
+  // by an effect that depended on `handleScan`'s identity. Every decode (and
+  // every busy toggle) produced a new handler → the effect stopped the
+  // session (the library clears the viewport → it paints white) and started a
+  // second one immediately, racing the library's single-slot transition lock.
+  // That is why the first camera scan worked and the next ones died.
+  //
+  // The shared session keeps ONE camera alive per open scanner: decodes and
+  // re-renders never restart it, task switches never touch it, and the device
+  // is released only when the operator closes the camera.
+  const cameraSession = useCameraSession({
+    active: cameraActive,
+    onScan: (decoded) => { void handleScan(decoded) },
+    fps: 10,
+    qrboxRatio: 0.75,
+  })
 
   // Input stays ready: focus on load, after camera closes, after every result.
   useEffect(() => {
@@ -912,7 +946,7 @@ export default function ScannerPage() {
                 <div className="relative">
                   <select
                     id="scan-task"
-                    value={mode}
+                    value={tasks.some((t) => t.purpose === mode) ? mode : (tasks[0]?.purpose ?? '')}
                     onChange={(e) => selectMode(e.target.value)}
                     className="h-10 w-full appearance-none rounded-xl border border-border bg-card pl-3 pr-9 text-sm font-semibold outline-none transition-colors duration-200 cursor-pointer hover:border-primary/50 focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/30"
                   >
@@ -1000,6 +1034,11 @@ export default function ScannerPage() {
                     spellCheck={false}
                     aria-describedby="scanner-help"
                   />
+                  {/* The Enter hint belongs to the input, not floating under
+                      the card — it explains THIS field. */}
+                  <kbd className="hidden sm:inline-flex shrink-0 items-center gap-0.5 rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                    Enter ↵
+                  </kbd>
                   {input && (
                     <button
                       className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
@@ -1014,7 +1053,7 @@ export default function ScannerPage() {
                     size="sm"
                     variant="ghost"
                     className="tap-h press shrink-0 text-muted-foreground"
-                    onClick={() => { setCameraActive((v) => !v); setCameraError(null) }}
+                    onClick={() => setCameraActive((v) => !v)}
                     title={cameraActive ? 'Close camera' : 'Open camera scanner'}
                     aria-pressed={cameraActive}
                     aria-label={cameraActive ? 'Close camera scanner' : 'Open camera scanner'}
@@ -1022,9 +1061,8 @@ export default function ScannerPage() {
                     {cameraActive ? <CameraOff className="h-4 w-4" /> : <Camera className="h-4 w-4" />}
                   </Button>
                 </div>
-                <div className="flex items-center justify-between gap-2 px-0.5">
+                <div className="flex items-center gap-2 px-0.5">
                   <p id="scanner-help" className="text-xs text-muted-foreground">{help.accept}</p>
-                  <kbd className="shrink-0 rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">Enter ↵</kbd>
                 </div>
 
                 {cameraActive && (
@@ -1035,8 +1073,22 @@ export default function ScannerPage() {
                         <X className="h-3.5 w-3.5 mr-1" /> Close
                       </Button>
                     </div>
-                    <div id="scanner-viewport" className="w-full max-w-sm mx-auto rounded-xl overflow-hidden border border-border min-h-[180px] bg-black/5" />
-                    {cameraError && <p className="text-xs text-destructive text-center mt-2" role="alert">{cameraError}</p>}
+                    {/* The container is OWNED by the shared session: React never
+                        re-creates it, so the library's <video> is never
+                        remounted and the feed never dies mid-session. */}
+                    <div
+                      ref={cameraSession.containerRef}
+                      id={cameraSession.containerId}
+                      className="w-full max-w-sm mx-auto rounded-xl overflow-hidden border border-border min-h-[180px] bg-black/5 [&>video]:h-full [&>video]:w-full [&>video]:object-cover"
+                    />
+                    {cameraSession.status === 'starting' && (
+                      <p className="text-xs text-muted-foreground text-center mt-2">Starting the camera…</p>
+                    )}
+                    {cameraSession.error && (
+                      <p className="text-xs text-destructive text-center mt-2" role="alert">
+                        {cameraSession.error} You can keep scanning manually below.
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -1301,7 +1353,12 @@ export default function ScannerPage() {
                       ))}
                     </div>
                     {feed.length > 0 && (
-                      <Button variant="ghost" size="sm" className="tap-h press text-xs text-muted-foreground" onClick={() => setFeed([])}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="tap-h press h-9 text-xs text-foreground"
+                        onClick={() => setFeed([])}
+                      >
                         <Trash2 className="h-3.5 w-3.5 mr-1" /> Clear
                       </Button>
                     )}
@@ -1310,14 +1367,19 @@ export default function ScannerPage() {
               </CardHeader>
               <CardContent className="flex flex-col gap-2">
                 {feed.length === 0 && (
-                  <div className="empty-state !py-8">
-                    <span className="empty-state-icon" aria-hidden>
-                      <ScanLine className="h-5 w-5" />
+                  /* Compact strip — the empty state must never dominate the
+                     page while the real work sits in a thin strip. */
+                  <div
+                    data-testid="recent-scans-empty"
+                    className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2"
+                  >
+                    <span className="shrink-0 text-muted-foreground" aria-hidden>
+                      <ScanLine className="h-4 w-4" />
                     </span>
-                    <div>
-                      <p className="text-sm font-semibold text-foreground">Ready to scan</p>
-                      <p className="text-xs mt-0.5">{help.empty}</p>
-                    </div>
+                    <p className="min-w-0 flex-1 text-xs text-muted-foreground">
+                      <span className="font-semibold text-foreground">Ready to scan.</span>{' '}
+                      {help.accept}
+                    </p>
                   </div>
                 )}
                 {feed.length > 0 && visibleFeed.length === 0 && (
@@ -1327,7 +1389,7 @@ export default function ScannerPage() {
                     </p>
                   </div>
                 )}
-                <div className="flex flex-col gap-2 max-h-[520px] overflow-y-auto pr-0.5" role="log" aria-live="polite" aria-label="Recent scans">
+                <div className="flex flex-col gap-2" role="log" aria-live="polite" aria-label="Recent scans">
                   {visibleFeed.map((h) => {
                     const meta = RESULT_META[h.status] ?? RESULT_META.error
                     const Icon = meta.icon

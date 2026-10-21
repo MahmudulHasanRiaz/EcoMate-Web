@@ -9,11 +9,11 @@ vi.mock('@/lib/api-client', () => ({
   apiClient: { get: mockGet, post: vi.fn(), put: vi.fn(), delete: vi.fn() },
 }))
 
-// The camera lifecycle lives in the packing feature's hardened helper. Stub it
-// so these tests exercise this component's scan HANDLING (decode → exact SKU
+// The camera lifecycle lives in the shared admin camera session. Stub it so
+// these tests exercise this component's scan HANDLING (decode → exact SKU
 // match → select) without a real camera stream.
 const mockScannerStart = vi.hoisted(() => vi.fn())
-vi.mock('@/features/packing/scanner-controller', () => ({
+vi.mock('@/features/camera/camera-controller', () => ({
   createScanner: (
     _elementId: string,
     _config: unknown,

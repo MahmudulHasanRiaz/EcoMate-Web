@@ -3,11 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Html5Qrcode, type CameraDevice } from 'html5-qrcode'
-import {
-  createScanner,
-  pickDefaultCamera,
-  type ScannerController,
-} from '@/features/packing/scanner-controller'
+import { pickDefaultCamera } from '@/features/camera/camera-controller'
+import { useCameraSession } from '@/features/camera/use-camera-session'
 import { apiClient } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -53,8 +50,6 @@ const LOOKUP_DEBOUNCE_MS = 300
  */
 const WEDGE_GAP_MS = 200
 
-/** The scanner attaches its <video> to this id; html5-qrcode requires a real node. */
-const SCANNER_ELEMENT_ID = 'product-sku-combobox-scanner'
 
 function errorMessage(err: unknown): string {
   const raw =
@@ -105,8 +100,7 @@ export function ProductSkuCombobox({
   // ── Camera scan ────────────────────────────────────────────────────────────
   const [scanning, setScanning] = useState(false)
   const [scanError, setScanError] = useState<string | null>(null)
-  const scannerRef = useRef<ScannerController | null>(null)
-  const cameraIdRef = useRef('')
+  const [cameraId, setCameraId] = useState('')
   // Decoded text is matched against `rows`, which arrives from the query one
   // render later than the camera callback — read it through a ref.
   const rowsRef = useRef<LookupRow[]>([])
@@ -195,70 +189,52 @@ export function ProductSkuCombobox({
   )
 
   // ── Camera lifecycle ───────────────────────────────────────────────────────
-  // A bare Html5Qrcode throws if a start/stop overlaps ("already under
-  // transition"), so every lifecycle call goes through createScanner, which
-  // serialises them. Nothing here gates cleanup on `isScanning`.
+  // ONE shared camera session for the whole admin. The decode handler is read
+  // from a ref by the session, so a new callback identity never restarts the
+  // camera (the old per-component lifecycle did exactly that).
   // When the decoded code is not on the current result page yet, the lookup
   // for that exact code is fired and `heldRef` keeps the camera on — the
   // auto-pick effect below selects the row as soon as it lands, so one scan
   // is enough (the backend's exact-SKU phase guarantees the hit is on page 1).
+  const cameraSession = useCameraSession({
+    active: scanning && !!cameraId,
+    cameraId,
+    onScan: (decodedText) => {
+      const code = decodedText.trim()
+      if (!code) return
+      if (selectByCode(code)) return
+      // Not in the current result page: show it, let the operator scan
+      // again once the lookup for that exact code has landed.
+      setInput(code)
+      setDebounced(code)
+      heldRef.current = true
+    },
+    fps: 15,
+    qrboxRatio: 0.7,
+  })
+
+  // The device list is only needed to pick a source — the session itself
+  // never depends on it.
   useEffect(() => {
-    if (!scanning) {
-      void scannerRef.current?.dispose()
-      scannerRef.current = null
-      return
-    }
+    if (!scanning) return
     let cancelled = false
-
-    const controller = createScanner(
-      SCANNER_ELEMENT_ID,
-      {
-        fps: 15,
-        qrbox: (width: number, height: number) => {
-          const size = Math.min(width, height) * 0.7
-          return { width: size, height: size }
-        },
-      },
-      {
-        onScan: (decodedText) => {
-          const code = decodedText.trim()
-          if (!code) return
-          if (selectByCode(code)) return
-          // Not in the current result page: show it, let the operator scan
-          // again once the lookup for that exact code has landed.
-          setInput(code)
-          setDebounced(code)
-          heldRef.current = true
-        },
-        onError: (err) => {
-          console.error('Product scanner error', err)
-          setScanError('Camera is currently in use or not responding.')
-        },
-      },
-    )
-    scannerRef.current = controller
-
     Html5Qrcode.getCameras()
       .then((devices: CameraDevice[]) => {
         if (cancelled) return
-        const cameraId = pickDefaultCamera(devices ?? [])
-        if (!cameraId) {
+        const id = pickDefaultCamera(devices ?? [])
+        if (!id) {
           setScanError('No cameras detected on this device.')
           return
         }
-        cameraIdRef.current = cameraId
-        void controller.start(cameraId)
+        setCameraId(id)
       })
       .catch(() => {
         if (!cancelled) setScanError('Camera permission denied or unavailable.')
       })
-
     return () => {
       cancelled = true
-      void controller.dispose()
-      if (scannerRef.current === controller) scannerRef.current = null
     }
-  }, [scanning, selectByCode])
+  }, [scanning])
 
   // Release the camera as soon as a row is chosen from anywhere (list or scan).
   useEffect(() => {
@@ -554,13 +530,21 @@ export function ProductSkuCombobox({
       {/* Camera scanner — in-flow block under the search bar. */}
       {scanning && (
         <div className='rounded-xl border p-2'>
-          <div id={SCANNER_ELEMENT_ID} className='min-h-24 w-full overflow-hidden rounded-md' />
+          {/* The shared session owns this container — React never remounts it,
+              so the camera feed survives every re-render. */}
+          <div
+            ref={cameraSession.containerRef}
+            id={cameraSession.containerId}
+            className='min-h-24 w-full overflow-hidden rounded-md [&>video]:h-auto [&>video]:w-full'
+          />
           {isFetching && (
             <p className='mt-1 flex items-center justify-center gap-1.5 text-xs text-muted-foreground'>
               <Loader2 className='h-3 w-3 animate-spin' /> Looking up scanned code…
             </p>
           )}
-          {scanError && <p className='mt-1 text-center text-xs text-destructive'>{scanError}</p>}
+          {(scanError ?? cameraSession.error) && (
+            <p className='mt-1 text-center text-xs text-destructive'>{scanError ?? cameraSession.error}</p>
+          )}
           <button
             type='button'
             className='mt-1 w-full text-center text-xs text-muted-foreground underline cursor-pointer'

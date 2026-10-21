@@ -23,7 +23,9 @@ vi.mock('@/components/user-badge', () => ({ UserBadge: () => null }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }))
 
 const mockGet = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/api-client', () => ({ apiClient: { get: mockGet, post: vi.fn(), put: vi.fn(), delete: vi.fn() } }))
+// `delete` must resolve: the order lock releases on unmount and calls
+// `.catch()` on the result (a bare vi.fn() returns undefined → TypeError).
+vi.mock('@/lib/api-client', () => ({ apiClient: { get: mockGet, post: vi.fn().mockResolvedValue({}), put: vi.fn().mockResolvedValue({}), delete: vi.fn().mockResolvedValue({}) } }))
 
 const linkedReturn = { id: 'ret-9', displayId: 'RTN-261014-0009', status: 'REQUESTED', items: [{ productId: 'p-1', variantId: 'v-1', quantity: 2 }] }
 
