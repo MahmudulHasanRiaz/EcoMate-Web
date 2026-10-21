@@ -3,11 +3,25 @@ import { render } from 'vitest-browser-react'
 import { userEvent } from 'vitest/browser'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RecordRefundModal, REFUND_CANCEL_QUESTION } from './record-refund-modal'
+import { useAuthStore } from '@/stores/auth-store'
 
 const mockPost = vi.hoisted(() => vi.fn())
+/** The effective payment settings the modal reads (the refund toggle). */
+const paymentSettings = vi.hoisted(() => ({
+  current: { staffAutoVerified: true, editAllowed: false, staffRefundsAllowed: true },
+}))
 
 vi.mock('@/lib/api-client', () => ({
-  apiClient: { get: vi.fn(), post: mockPost, put: vi.fn(), delete: vi.fn() },
+  apiClient: {
+    get: vi.fn((url: string) =>
+      url === '/payments/settings'
+        ? Promise.resolve({ data: { global: paymentSettings.current, gateways: [] } })
+        : Promise.resolve({ data: {} }),
+    ),
+    post: mockPost,
+    put: vi.fn(),
+    delete: vi.fn(),
+  },
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
@@ -24,6 +38,23 @@ describe('RecordRefundModal (D5)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockPost.mockResolvedValue({ data: { id: 'refund-1' } })
+    paymentSettings.current = {
+      staffAutoVerified: true,
+      editAllowed: false,
+      staffRefundsAllowed: true,
+    }
+    // A staff member with a normal order permission (User Management staff).
+    useAuthStore.setState({
+      auth: {
+        user: {
+          id: 'staff-1',
+          email: 'staff@ecomate.com',
+          role: 'employee',
+          permissions: ['change_status_orders'],
+        },
+        accessToken: 'token',
+      },
+    } as never)
   })
 
   it('asks the cancel-too question verbatim with Yes/No options', async () => {
@@ -64,6 +95,49 @@ describe('RecordRefundModal (D5)', () => {
     await userEvent.click(ui.getByText(/No, later/))
     await userEvent.click(ui.getByRole('button', { name: /^Record refund$/ }))
     expect(mockPost).toHaveBeenCalledWith('/refunds', expect.objectContaining({ cancelToo: false }))
+  })
+
+  it('shows the explanation and blocks the refund when the staff refund toggle is OFF', async () => {
+    paymentSettings.current = {
+      staffAutoVerified: true,
+      editAllowed: false,
+      staffRefundsAllowed: false,
+    }
+    const ui = await renderModal()
+    await expect
+      .element(ui.getByText(/Refunds are restricted to administrators/))
+      .toBeInTheDocument()
+    // The cancel itself is never blocked by the refund gate — the explanation
+    // says so, and no refund request is sent.
+    await expect
+      .element(ui.getByText(/You can still cancel the order without a refund record/))
+      .toBeInTheDocument()
+    await expect
+      .element(ui.getByRole('button', { name: /^Record refund$/ }))
+      .toBeDisabled()
+  })
+
+  it('keeps the refund available for an ADMIN even when the staff toggle is OFF', async () => {
+    paymentSettings.current = {
+      staffAutoVerified: true,
+      editAllowed: false,
+      staffRefundsAllowed: false,
+    }
+    useAuthStore.setState({
+      auth: {
+        user: {
+          id: 'admin-1',
+          email: 'admin@ecomate.com',
+          role: 'admin',
+          permissions: [],
+        },
+        accessToken: 'token',
+      },
+    } as never)
+    const ui = await renderModal()
+    await expect
+      .element(ui.getByRole('button', { name: /^Record refund$/ }))
+      .toBeEnabled()
   })
 
   it('prefills amount + source rows from payment-list selection (D-B)', async () => {

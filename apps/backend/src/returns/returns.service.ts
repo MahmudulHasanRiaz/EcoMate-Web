@@ -406,6 +406,9 @@ export class ReturnsService {
       // variant attributes) in the SAME query — the UI joins Return.items
       // (returned quantities) against these without extra requests.
       include: {
+        // The staff member who received this return (NULL for rows received
+        // before the column existed — the UI then shows the date only).
+        receivedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
         order: {
           select: {
             id: true,
@@ -507,7 +510,44 @@ export class ReturnsService {
     const [data, total] = await Promise.all([
       this.prisma.return.findMany({
         where: where as any,
-        include: { order: { select: { id: true, displayId: true } } },
+        include: {
+          // The receiving staff member (NULL for rows received before the
+          // column existed — those show the date only, never an invented name).
+          receivedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+          // The order's line items ride along so the order-scoped list can
+          // show WHAT is in each return (product image/name/SKU) without a
+          // second query per return.
+          order: {
+            select: {
+              id: true,
+              displayId: true,
+              items: {
+                select: {
+                  productId: true,
+                  variantId: true,
+                  quantity: true,
+                  price: true,
+                  product: { select: { id: true, name: true, sku: true, images: true } },
+                  variant: {
+                    select: {
+                      id: true,
+                      sku: true,
+                      image: true,
+                      images: true,
+                      attributeValues: {
+                        select: {
+                          attributeValue: {
+                            select: { value: true, hexCode: true, attribute: { select: { name: true } } },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -528,11 +568,20 @@ export class ReturnsService {
    *
    * Idempotent: an already-RESTOCKED row returns as-is (never restores twice).
    */
-  async markReceived(id: string, opts?: { items?: ReturnItemInput[]; performedBy?: string }) {
+  async markReceived(
+    id: string,
+    opts?: {
+      items?: ReturnItemInput[];
+      performedBy?: string;
+      /** Explicit staff id (UserProfile) — falls back to the actor email. */
+      receivedById?: string | null;
+    },
+  ) {
     const ret = await this.load(id);
     const restocked = await this.restockReturn(id, {
       items: opts?.items,
       performedBy: opts?.performedBy,
+      receivedById: opts?.receivedById,
       current: ret,
     });
 
@@ -567,7 +616,12 @@ export class ReturnsService {
    */
   async restockReturn(
     id: string,
-    opts?: { items?: ReturnItemInput[]; performedBy?: string; current?: any },
+    opts?: {
+      items?: ReturnItemInput[];
+      performedBy?: string;
+      receivedById?: string | null;
+      current?: any;
+    },
   ) {
     const ret = opts?.current ?? (await this.load(id));
     if ((ret as any).status === 'CLOSED') {
@@ -590,7 +644,13 @@ export class ReturnsService {
       restoreStockForReturnTx(
         { db: tx, cancelReturnStock: this.cancelReturnStock },
         id,
-        { items: effectiveItems, performedBy },
+        {
+          items: effectiveItems,
+          performedBy,
+          // The receiving staff member (resolved from the actor email inside
+          // the transaction; automated actors stay null).
+          receivedById: opts?.receivedById,
+        },
       ),
     );
     this.logger.log(
@@ -610,12 +670,19 @@ export class ReturnsService {
    */
   async restoreStockForReturn(
     returnId: string,
-    opts?: { items?: ReturnItemInput[]; performedBy?: string },
+    opts?: {
+      items?: ReturnItemInput[];
+      performedBy?: string;
+      receivedById?: string | null;
+    },
   ) {
     const ret = await this.load(returnId);
     return this.restockReturn(returnId, {
       ...(opts?.items ? { items: opts.items } : {}),
       ...(opts?.performedBy ? { performedBy: opts.performedBy } : {}),
+      ...(opts?.receivedById !== undefined
+        ? { receivedById: opts.receivedById }
+        : {}),
       current: ret,
     });
   }
@@ -747,24 +814,24 @@ export class ReturnsService {
     return ret;
   }
 
-  /** → RECEIVED (parcel back). Never regresses RESTOCKED/CLOSED. */
-  async setReturnReceived(id: string, courierStatus?: string | null) {
+  /**
+   * Courier signal: "the parcel is back with the merchant".
+   *
+   * OWNER RULE: receiving is ALWAYS a manual act by an employee — no
+   * automated flow, courier webhook or status sync may ever mark a return
+   * received (and therefore never invents a "system" receiver). This method
+   * therefore records the COURIER status ONLY: the Return's lifecycle status,
+   * receivedAt and receivedById are left untouched, and the stock is not
+   * restored. A staff member receives the return (scanner "Process return" or
+   * the return detail page's "Mark received") — that is the only moment the
+   * status moves to RECEIVED/RESTOCKED and the stock returns.
+   */
+  async recordCourierParcelBack(id: string, courierStatus?: string | null) {
     const ret = await this.load(id);
-    const status = (ret as any).status as string;
-    if (status === 'RESTOCKED' || status === 'CLOSED') {
-      if (courierStatus && courierStatus !== (ret as any).courierStatus) {
-        return this.prisma.return.update({ where: { id }, data: { courierStatus } });
-      }
-      return ret;
+    if (courierStatus && courierStatus !== (ret as any).courierStatus) {
+      return this.prisma.return.update({ where: { id }, data: { courierStatus } });
     }
-    return this.prisma.return.update({
-      where: { id },
-      data: {
-        status: 'RECEIVED' as any,
-        courierStatus: courierStatus ?? (ret as any).courierStatus,
-        receivedAt: (ret as any).receivedAt ?? new Date(),
-      },
-    });
+    return ret;
   }
 
   async linkRefund(id: string, dto: { refundId: string }) {

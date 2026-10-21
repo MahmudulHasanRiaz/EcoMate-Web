@@ -1,10 +1,19 @@
-import { Controller, Get, Post, Put, Body, Param, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { RefundsService } from './refunds.service';
 import { CreateRefundDto, UpdateRefundStatusDto } from './dto/refund.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { Permissions } from '../common/decorators/permissions.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
+import { RefundPermissionGuard } from './refund-permission.guard';
 
 @Controller('refunds')
 @RequiresFeature('admin_refunds')
@@ -34,10 +43,16 @@ export class RefundsController {
   }
 
   // Task 9 (D5): recording a refund moves money (Refund row + negative
-  // ledger row, optionally an atomic cancel) — requires the approve
-  // permission, same as payment verification.
+  // ledger row, optionally an atomic cancel).
+  //
+  // The static `approve_payments` permission blocked staff (managed through
+  // User Management) from cancelling with a refund — "Insufficient
+  // permission" made the whole cancel look broken. Payment Settings decide
+  // now: "Staff can process refunds" (default ON); when an admin switches it
+  // off, refunds are admin/superadmin only again. The CANCEL itself is never
+  // gated here.
   @Roles('superadmin', 'admin', 'employee')
-  @Permissions('approve_payments')
+  @UseGuards(RefundPermissionGuard)
   @Post()
   create(
     @Body() dto: CreateRefundDto,
@@ -47,7 +62,7 @@ export class RefundsController {
   }
 
   @Roles('superadmin', 'admin', 'employee')
-  @Permissions('approve_payments')
+  @UseGuards(RefundPermissionGuard)
   @Put(':id/status')
   updateStatus(
     @Param('id') id: string,

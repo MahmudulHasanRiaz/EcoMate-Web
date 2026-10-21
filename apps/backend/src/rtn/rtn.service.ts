@@ -15,7 +15,7 @@ import { StockService } from '../stock/stock.service';
 import { CacheService } from '../cache/cache.service';
 import { Prisma } from '@prisma/client';
 import { CreateReturnOrderDto } from './dto/create-return-order.dto';
-import { generateReturnDisplayId } from '../returns/return-guard';
+import { generateReturnDisplayId, resolveReceivedById } from '../returns/return-guard';
 
 export interface RtnActor {
   userId: string;
@@ -1069,6 +1069,10 @@ export class RtnService {
       };
     });
 
+    // WHO received it — the scanner act is always a logged-in staff member
+    // (never "system"): the actor email resolves to the UserProfile id, the
+    // same way Refund.processedBy does.
+    const receivedById = await resolveReceivedById(tx, actor.email);
     if (existing) {
       return tx.return.update({
         where: { id: (existing as any).id },
@@ -1078,6 +1082,7 @@ export class RtnService {
           stockReconciled: true,
           stockReconciledAt: new Date(now),
           receivedAt: (existing as any).receivedAt ?? new Date(now),
+          receivedById,
         },
         select: { id: true },
       });
@@ -1096,6 +1101,7 @@ export class RtnService {
         stockReconciled: true,
         stockReconciledAt: new Date(now),
         receivedAt: new Date(now),
+        receivedById,
         createdBy: actor.email,
       },
       select: { id: true },

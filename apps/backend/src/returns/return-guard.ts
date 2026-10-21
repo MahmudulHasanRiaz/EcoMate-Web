@@ -407,6 +407,39 @@ export interface RestoreStockForReturnDeps {
 }
 
 /**
+ * Actors that represent automated processes (courier webhooks, reconcile
+ * jobs) rather than a logged-in staff member. They must never receive a
+ * return: receiving is a manual act, and the "Received by" log always names
+ * a person.
+ */
+const AUTOMATED_ACTORS = new Set(['system', 'reconcile', 'webhook']);
+
+/**
+ * Resolve the acting staff member to a UserProfile id (Return.receivedById
+ * mirrors Refund.processedBy: a plain id column + relation). Staff paths
+ * pass the actor's EMAIL; automated actors and unknown emails resolve to
+ * null (the column is nullable) — never a "system" receiver.
+ */
+export async function resolveReceivedById(
+  db: any,
+  actor?: string | null,
+): Promise<string | null> {
+  if (!actor || AUTOMATED_ACTORS.has(actor)) return null;
+  if (actor.includes('@')) {
+    // Defensive: a transaction double without a userProfile delegate simply
+    // has no receiver to record (the column is nullable).
+    const user = db?.userProfile?.findUnique
+      ? await db.userProfile.findUnique({
+          where: { email: actor },
+          select: { id: true },
+        })
+      : null;
+    return user?.id ?? null;
+  }
+  return actor;
+}
+
+/**
  * Guarded restore core — the ONLY path that moves stock for a Return:
  * CLOSED → 400; already reconciled (flag or RESTOCKED) → no-op returning the
  * row as-is; empty items → 400 (the courier never reports the split, so an
@@ -419,7 +452,7 @@ export interface RestoreStockForReturnDeps {
 export async function restoreStockForReturnTx(
   deps: RestoreStockForReturnDeps,
   returnId: string,
-  opts?: { items?: GuardReturnItem[]; performedBy?: string },
+  opts?: { items?: GuardReturnItem[]; performedBy?: string; receivedById?: string | null },
 ): Promise<any> {
   const { db, cancelReturnStock } = deps;
   const ret = await db.return.findUnique({ where: { id: returnId } });
@@ -496,12 +529,17 @@ export async function restoreStockForReturnTx(
           ],
     };
   });
+  // WHO received it — always a person, never "system". Resolved from the
+  // acting staff member (email → UserProfile id); automated actors stay null.
+  const receivedById =
+    opts?.receivedById ?? (await resolveReceivedById(db, opts?.performedBy));
   if ((ret as any).status !== 'RECEIVED') {
     await db.return.update({
       where: { id: returnId },
       data: {
         status: 'RECEIVED',
         receivedAt,
+        receivedById,
       },
     });
   }
@@ -520,6 +558,7 @@ export async function restoreStockForReturnTx(
       stockReconciled: true,
       stockReconciledAt: new Date(),
       receivedAt,
+      receivedById,
     },
   });
 }

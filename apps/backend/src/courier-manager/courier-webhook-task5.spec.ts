@@ -84,7 +84,7 @@ describe('CourierWebhookService — Task 5 owner-approved status mappings', () =
     returns = {
       upsertCourierReturn: jest.fn().mockResolvedValue({ id: 'ret-1', status: 'REQUESTED' }),
       setReturnTransit: jest.fn().mockResolvedValue({ id: 'ret-1', status: 'IN_TRANSIT' }),
-      setReturnReceived: jest.fn().mockResolvedValue({ id: 'ret-1', status: 'RECEIVED' }),
+      recordCourierParcelBack: jest.fn().mockResolvedValue({ id: 'ret-1', status: 'REQUESTED' }),
       restockReturn: jest.fn().mockResolvedValue({ id: 'ret-1', status: 'RESTOCKED' }),
       orderItemsSnapshot: jest.fn().mockResolvedValue([{ productId: 'p-1', quantity: 2 }]),
       findOpenStaffReturnWithItems: jest.fn().mockResolvedValue(null),
@@ -257,7 +257,7 @@ describe('CourierWebhookService — Task 5 owner-approved status mappings', () =
     // Task 6 (Fix 13, row 44 owner-locked): the parcel is back — dispatch
     // RETURNED AND the order surfaces as 'Return Pending' for staff
     // confirmation (was advanceOrder null — the order never surfaced).
-    it('cancelled_return_received → RETURNED + stock reconcile, no COD, order to Return Pending', async () => {
+    it('cancelled_return_received → parcel back recorded (no auto-receive/restore), no COD, order to Return Pending', async () => {
       manager.getSteadfastReturnStatus.mockResolvedValue({
         deliveryStatus: 'cancelled_return_received',
       });
@@ -271,7 +271,7 @@ describe('CourierWebhookService — Task 5 owner-approved status mappings', () =
           reconciled: true,
           deliveryStatus: 'cancelled_return_received',
           dispatchStatus: 'RETURNED',
-          stockReconciled: true,
+          stockReconciled: false,
           codOwed: false,
         }),
       );
@@ -282,11 +282,8 @@ describe('CourierWebhookService — Task 5 owner-approved status mappings', () =
       );
       // Unified Return path: item-level restore via ReturnsService (never a
       // raw blanket restoreForOrder — HIGH legacy-restore fix).
-      expect(returns.setReturnReceived).toHaveBeenCalledWith('ret-1', 'cancelled_return_received');
-      expect(returns.restockReturn).toHaveBeenCalledWith(
-        'ret-1',
-        expect.objectContaining({ items: [{ productId: 'p-1', quantity: 2 }] }),
-      );
+      expect(returns.recordCourierParcelBack).toHaveBeenCalledWith('ret-1', 'cancelled_return_received');
+      expect(returns.restockReturn).not.toHaveBeenCalled();
       expect(cancelReturnStock.restoreForOrder).not.toHaveBeenCalled();
       // NO COD owed: never DELIVERED, never a Delivered advancement.
       const upserts = prisma.dispatch.upsert.mock.calls as any[];
@@ -330,7 +327,7 @@ describe('CourierWebhookService — Task 5 owner-approved status mappings', () =
       expect(ret).toBeDefined();
       // Timeline is truthful: HOLD alert, never "stock reconciled".
       expect(String((ret as any)?.remarks || '')).toMatch(
-        /partial return received — confirm items to restock/,
+        /awaiting staff receive/,
       );
       expect(String((ret as any)?.remarks || '')).not.toMatch(/stock reconciled/);
       // PARTIAL keeps the authoritative Partial advancement path.

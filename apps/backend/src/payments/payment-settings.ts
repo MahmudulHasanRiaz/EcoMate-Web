@@ -14,6 +14,7 @@
 export const PAYMENT_SETTING_KEYS = [
   'payments.staffAutoVerified',
   'payments.editAllowed',
+  'payments.staffRefundsAllowed',
 ] as const;
 
 export interface PaymentSettings {
@@ -21,6 +22,17 @@ export interface PaymentSettings {
   staffAutoVerified: boolean;
   /** S2: staff may directly edit recorded payment rows (with audit). */
   editAllowed: boolean;
+  /**
+   * Staff may process refunds (recording a refund row + the money movement,
+   * including the atomic cancel-with-refund). DEFAULT ON.
+   *
+   * Owner decision (2026-10-21): refund creation is not admin-only — staff
+   * managed through User Management were blocked with "Insufficient
+   * permission" and the whole cancel appeared broken. When this is OFF the
+   * refund endpoints are restricted to admin/superadmin again; the cancel
+   * itself is NEVER blocked by the refund gate.
+   */
+  staffRefundsAllowed: boolean;
 }
 
 export function parsePaymentSettings(
@@ -29,9 +41,12 @@ export function parsePaymentSettings(
   const map = new Map((rows ?? []).map((r) => [r.key, r.value]));
   const staffRaw = map.get('payments.staffAutoVerified');
   const editRaw = map.get('payments.editAllowed');
+  const refundsRaw = map.get('payments.staffRefundsAllowed');
   return {
     staffAutoVerified: staffRaw === undefined ? true : staffRaw === 'true',
     editAllowed: editRaw === undefined ? false : editRaw === 'true',
+    // DEFAULT ON — refunds are not admin-only.
+    staffRefundsAllowed: refundsRaw === undefined ? true : refundsRaw === 'true',
   };
 }
 
@@ -108,6 +123,8 @@ export async function resolveEffectivePaymentSettings(
     staffAutoVerified:
       overrides.staffAutoVerified ?? global.staffAutoVerified,
     editAllowed: overrides.editAllowed ?? global.editAllowed,
+    // No per-gateway override for refunds — the toggle is global only.
+    staffRefundsAllowed: global.staffRefundsAllowed,
     gatewayCode,
     global,
     overrides: gw ? overrides : null,

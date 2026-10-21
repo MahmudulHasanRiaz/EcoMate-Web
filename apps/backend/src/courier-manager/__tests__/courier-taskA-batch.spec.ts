@@ -81,7 +81,7 @@ describe('Courier Task A — mapping corrections batch', () => {
     const returns = {
       upsertCourierReturn: jest.fn().mockResolvedValue({ id: 'ret-1', status: 'REQUESTED' }),
       setReturnTransit: jest.fn().mockResolvedValue({ id: 'ret-1', status: 'IN_TRANSIT' }),
-      setReturnReceived: jest.fn().mockResolvedValue({ id: 'ret-1', status: 'RECEIVED' }),
+      recordCourierParcelBack: jest.fn().mockResolvedValue({ id: 'ret-1', status: 'REQUESTED' }),
       restockReturn: jest.fn().mockResolvedValue({ id: 'ret-1', status: 'RESTOCKED' }),
       orderItemsSnapshot: jest.fn().mockResolvedValue([{ productId: 'p-1', quantity: 2 }]),
       findOpenStaffReturnWithItems: jest.fn().mockResolvedValue(null),
@@ -124,7 +124,7 @@ describe('Courier Task A — mapping corrections batch', () => {
       }
     });
 
-    it('partial_delivered_return_received → PARTIAL + HOLD (unified path) + COD-not-owed + NEVER Delivered', async () => {
+    it('partial_delivered_return_received → PARTIAL + parcel back recorded (no auto-restore) + COD-not-owed + NEVER Delivered', async () => {
       // Unified path (ReturnsService REQUIRED — HIGH legacy-restore fix) NEVER
       // blanket-restores a partial (that would restock the kept part) — it
       // HOLDs with a LOUD "confirm items to restock" alert. Mapper intent flag
@@ -150,7 +150,7 @@ describe('Courier Task A — mapping corrections batch', () => {
       const remarks = timelineEntries()
         .map((e: any) => String(e?.remarks || ''))
         .join('\n');
-      expect(remarks).toMatch(/partial return received — confirm items to restock/);
+      expect(remarks).toMatch(/awaiting staff receive/);
       expect(remarks).not.toMatch(/stock reconciled/);
       expect(ordersService.updateStatus).not.toHaveBeenCalledWith(
         'order-1',
