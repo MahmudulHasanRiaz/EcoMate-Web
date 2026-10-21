@@ -31,12 +31,14 @@
 .animate-pulse-subtle {
   animation: pulse-subtle 2s infinite ease-in-out;
 }
-#scanner-viewport video {
-  width: 100% !important;
-  height: 100% !important;
-  object-fit: cover !important;
-  border-radius: 20px !important;
-}
+/* NOTE: the old `#scanner-viewport video { width:100% !important; … }` rule is
+   GONE on purpose. html5-qrcode samples the camera frame with
+   `frameSize / videoClientSize` and derives the scan region from the video's
+   CSS size — scaling the <video> with CSS breaks that mapping the moment the
+   viewport is resized (the packing order → item transition): the decode
+   canvas freezes on the last good frame and every later scan dies in silence.
+   The shared camera session now renders the <video> 1:1 (see
+   features/camera/use-camera-session.ts). */
 
 @layer base {
   * {

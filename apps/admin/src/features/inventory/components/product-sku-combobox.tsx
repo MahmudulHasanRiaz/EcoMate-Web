@@ -210,7 +210,7 @@ export function ProductSkuCombobox({
       heldRef.current = true
     },
     fps: 15,
-    qrboxRatio: 0.7,
+    qrboxHeightRatio: 0.7,
   })
 
   // The device list is only needed to pick a source — the session itself
@@ -535,7 +535,7 @@ export function ProductSkuCombobox({
           <div
             ref={cameraSession.containerRef}
             id={cameraSession.containerId}
-            className='min-h-24 w-full overflow-hidden rounded-md [&>video]:h-auto [&>video]:w-full'
+            className='relative min-h-24 w-full overflow-hidden rounded-md'
           />
           {isFetching && (
             <p className='mt-1 flex items-center justify-center gap-1.5 text-xs text-muted-foreground'>
