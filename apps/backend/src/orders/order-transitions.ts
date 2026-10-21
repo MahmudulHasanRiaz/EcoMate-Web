@@ -29,7 +29,12 @@ export const ORDER_TRANSITIONS: Record<string, string[]> = {
   Confirmed: ['Hold', 'Packed', 'Packing Hold', 'Cancelled'],
   Packed: ['Shipping', 'Packing Hold'],
   'Packing Hold': ['Packed', 'Cancelled'],
-  Shipping: ['Delivered', 'Partial', 'Return Pending'],
+  // A DISPATCHED order can be cancelled (owner directive, 2026-10-21): the
+  // dispatch is cancelled WITH THE COURIER first, then the order. The runtime
+  // gate refuses it when the parcel was already picked up / handed over (or
+  // when the courier has no cancel API) — this map only says the move EXISTS
+  // for staff, so the admin's status dialog can offer it and explain why.
+  Shipping: ['Delivered', 'Partial', 'Return Pending', 'Cancelled'],
   Delivered: ['Return Pending'],
   Partial: ['Return Pending'],
   'Return Pending': ['Returned', 'Damaged'],
