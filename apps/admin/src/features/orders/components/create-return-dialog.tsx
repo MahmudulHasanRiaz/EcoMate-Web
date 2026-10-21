@@ -117,6 +117,19 @@ export function CreateReturnDialog({
     [order?.items, active],
   )
 
+  const selected = pickerLines(order?.items, qtys)
+  const totalUnits = (order?.items ?? [])
+    .filter((i: any) => i.productId)
+    .reduce((s: number, i: any) => s + (Number(i.quantity) || 0), 0)
+  const selectedUnits = selected.reduce(
+    (s: number, i: any) => s + (Number(i.quantity) || 0),
+    0,
+  )
+  // A PARTIAL selection that consumes every ordered unit is functionally a
+  // full return — the backend refuses delivered-marking and closes the order
+  // as Returned, so the checkbox is replaced by an explicit note.
+  const returnsEverything = kind === 'PARTIAL' && totalUnits > 0 && selectedUnits >= totalUnits
+
   const mut = useMutation({
     mutationFn: () => {
       const items =
@@ -131,7 +144,9 @@ export function CreateReturnDialog({
         source: 'STAFF',
         items,
         ...(reason.trim() ? { reason: reason.trim() } : {}),
-        ...(kind === 'PARTIAL' ? { markOriginalDelivered: markDelivered } : {}),
+        ...(kind === 'PARTIAL' && !returnsEverything
+          ? { markOriginalDelivered: markDelivered }
+          : {}),
         ...(kind === 'PARTIAL' && shipAdjNum !== 0 ? { shippingAdjustment: shipAdjNum } : {}),
         ...(kind === 'PARTIAL' && discAdjNum !== 0 ? { discountAdjustment: discAdjNum } : {}),
       })
@@ -151,11 +166,6 @@ export function CreateReturnDialog({
     },
     onError: (e: unknown) => toast.error(errMsg(e)),
   })
-
-  const selected = pickerLines(order?.items, qtys)
-  const totalUnits = (order?.items ?? [])
-    .filter((i: any) => i.productId)
-    .reduce((s: number, i: any) => s + (Number(i.quantity) || 0), 0)
 
   // Signed per-field billing adjustments (PARTIAL only, applied to the
   // ORIGINAL order). The backend is the authority — these live values exist
@@ -312,23 +322,37 @@ export function CreateReturnDialog({
           </div>
 
           {kind === 'PARTIAL' && (
-            <div className='flex items-start gap-2.5 rounded-lg border border-border p-3'>
-              <Checkbox
-                id='return-mark-delivered'
-                data-testid='return-mark-delivered'
-                checked={markDelivered}
-                onCheckedChange={(v) => setMarkDelivered(v === true)}
-                className='mt-0.5'
-              />
-              <div className='space-y-0.5'>
-                <Label htmlFor='return-mark-delivered' className='text-sm font-medium cursor-pointer'>
-                  Mark the original order as delivered now
-                </Label>
-                <p className='text-xs text-muted-foreground leading-relaxed'>
-                  Uncheck to let courier status updates determine the order status.
+            returnsEverything ? (
+              <div
+                data-testid='return-covers-all'
+                className='rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-500/40 dark:bg-amber-500/10'
+              >
+                <p className='text-sm font-medium text-amber-800 dark:text-amber-300'>
+                  This selection returns everything — the order will close as Returned, not Delivered.
+                </p>
+                <p className='mt-0.5 text-xs text-amber-700/90 dark:text-amber-300/80 leading-relaxed'>
+                  No units remain with the customer, so delivered-marking does not apply.
                 </p>
               </div>
-            </div>
+            ) : (
+              <div className='flex items-start gap-2.5 rounded-lg border border-border p-3'>
+                <Checkbox
+                  id='return-mark-delivered'
+                  data-testid='return-mark-delivered'
+                  checked={markDelivered}
+                  onCheckedChange={(v) => setMarkDelivered(v === true)}
+                  className='mt-0.5'
+                />
+                <div className='space-y-0.5'>
+                  <Label htmlFor='return-mark-delivered' className='text-sm font-medium cursor-pointer'>
+                    Mark the original order as delivered now
+                  </Label>
+                  <p className='text-xs text-muted-foreground leading-relaxed'>
+                    Uncheck to let courier status updates determine the order status.
+                  </p>
+                </div>
+              </div>
+            )
           )}
 
           <div className='flex justify-end gap-2'>

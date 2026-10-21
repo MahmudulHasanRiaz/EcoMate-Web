@@ -46,14 +46,36 @@ describe('ReturnPurpose — DISPATCH_RETURN stage-time truth', () => {
     ...over,
   });
 
+  const activeReturn = (over: any = {}) => ({
+    id: 'ret-1',
+    displayId: 'RTN-260930-0001',
+    orderId: 'o1',
+    type: 'PARTIAL',
+    status: 'REQUESTED',
+    stockReconciled: false,
+    createdAt: new Date('2026-10-14T00:00:00Z'),
+    ...over,
+  });
+
   beforeEach(async () => {
     prisma = {
-      orderStatus: { findMany: async () => [] },
+      orderStatus: { findMany: async () => [{ id: 's-del', name: 'Delivered' }] },
       order: {
-        findMany: jest.fn(async ({ where }: any) =>
-          where.returnOfOrderId ? [] : [order()],
+        findMany: jest.fn(async ({ where }: any) => {
+          if (where.returnOfOrderId) return [];
+          if (where.exchangeOfOrderId) return [];
+          return [order()];
+        }),
+        findUnique: jest.fn(async ({ where }: any) =>
+          where.id === 'o1' ? order() : null,
         ),
       },
+      return: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      product: { findMany: jest.fn().mockResolvedValue([]) },
+      productVariant: { findMany: jest.fn().mockResolvedValue([]) },
       dispatch: {
         findUnique: jest.fn(async () => ({
           consignmentId: 'CONS-1',
@@ -170,5 +192,122 @@ describe('ReturnPurpose — DISPATCH_RETURN stage-time truth', () => {
     );
     expect(result.status).toBe('success');
     expect(result.message).toMatch(/damaged/i);
+  });
+
+  // ── Merged "Process return" task: cross-kind resolve ────────────────────
+
+  const orderPreview = (over: any = {}) => ({
+    id: 'o1',
+    displayId: 'ORD-260930-0001',
+    status: 'Delivered',
+    kind: 'SALE',
+    allowedStatuses: [],
+    customerName: 'Md. Rahim',
+    customerPhone: '01700000001',
+    itemCount: 2,
+    orderTotal: 200,
+    ...over,
+  });
+
+  it('tracking-code scan resolves the dispatch only — linked returns are never loaded', async () => {
+    mockedResolve.mockResolvedValue({
+      status: 'resolved',
+      identifier: 'TRK-9001',
+      dispatches: [dispatch({ id: 'dsp-trk', consignmentId: null, trackingCode: 'TRK-9001' })] as any,
+      order: null,
+    });
+
+    const outcome = await purpose.resolve('TRK-9001');
+
+    expect(outcome.status).toBe('resolved');
+    expect(outcome.dispatches).toHaveLength(1);
+    expect(outcome.linked ?? []).toHaveLength(0);
+    expect(prisma.return.findMany).not.toHaveBeenCalled();
+  });
+
+  it('order number with only an open return resolves to the linked leg (no dispatch)', async () => {
+    mockedResolve.mockResolvedValue({
+      status: 'resolved',
+      identifier: 'ORD-260930-0001',
+      dispatches: [],
+      order: orderPreview() as any,
+    });
+    prisma.return.findMany.mockResolvedValue([activeReturn({ items: [] })]);
+
+    const outcome = await purpose.resolve('ORD-260930-0001');
+
+    expect(outcome.status).toBe('resolved');
+    expect(outcome.dispatches).toHaveLength(0);
+    expect(outcome.linked).toHaveLength(1);
+    expect(outcome.linked?.[0]).toMatchObject({
+      kind: 'return',
+      id: 'ret-1',
+      displayId: 'RTN-260930-0001',
+      labelKind: 'return',
+    });
+  });
+
+  it('order number matching BOTH a dispatch and an open return → one picker with both kinds', async () => {
+    mockedResolve.mockResolvedValue({
+      status: 'resolved',
+      identifier: 'ORD-260930-0001',
+      dispatches: [dispatch()] as any,
+      order: orderPreview() as any,
+    });
+    prisma.return.findMany.mockResolvedValue([activeReturn({ items: [] })]);
+
+    const outcome = await purpose.resolve('ORD-260930-0001');
+
+    expect(outcome.status).toBe('selection_required');
+    expect(outcome.dispatches).toHaveLength(1);
+    expect(outcome.linked).toHaveLength(1);
+    expect(outcome.message).toMatch(/select/i);
+  });
+
+  it('a staff Return RTN display id resolves to exactly that leg', async () => {
+    const ret = activeReturn({ items: [] });
+    prisma.return.findFirst.mockResolvedValue(ret);
+    prisma.return.findMany.mockResolvedValue([ret]);
+    mockedResolve.mockResolvedValue({
+      status: 'resolved',
+      identifier: 'ORD-260930-0001',
+      dispatches: [],
+      order: orderPreview() as any,
+    });
+
+    const outcome = await purpose.resolve('RTN-260930-0001');
+
+    expect(outcome.status).toBe('resolved');
+    expect(outcome.dispatches).toHaveLength(0);
+    expect(outcome.linked).toHaveLength(1);
+    expect(outcome.linked?.[0]).toMatchObject({ id: 'ret-1', kind: 'return' });
+  });
+
+  it('an EXCHANGE Return RTN resolves to the return-receive leg labelled Exchange', async () => {
+    const ret = activeReturn({
+      id: 'ret-ex',
+      displayId: 'RTN-260930-0009',
+      type: 'EXCHANGE',
+      items: [],
+    });
+    prisma.return.findFirst.mockResolvedValue(ret);
+    prisma.return.findMany.mockResolvedValue([ret]);
+    mockedResolve.mockResolvedValue({
+      status: 'resolved',
+      identifier: 'ORD-260930-0001',
+      dispatches: [],
+      order: orderPreview() as any,
+    });
+
+    const outcome = await purpose.resolve('RTN-260930-0009');
+
+    expect(outcome.status).toBe('resolved');
+    // Internal kind stays 'return' (receive path with damaged controls) while
+    // the plain operator label says Exchange.
+    expect(outcome.linked?.[0]).toMatchObject({
+      kind: 'return',
+      labelKind: 'exchange',
+      displayId: 'RTN-260930-0009',
+    });
   });
 });

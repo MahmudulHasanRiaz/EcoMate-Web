@@ -37,7 +37,6 @@ const TASK_NAMES: Record<string, string> = {
   DISPATCH_RETURN: 'Process return',
   ORDER_STATUS: 'Update order status',
   STICKER_PRINT: 'Print sticker',
-  RETURN_RECEIVE: 'Receive return / exchange',
 }
 
 const TASK_ICONS: Record<string, any> = {
@@ -45,8 +44,14 @@ const TASK_ICONS: Record<string, any> = {
   DISPATCH_RETURN: RotateCcw,
   ORDER_STATUS: Package,
   STICKER_PRINT: Printer,
-  RETURN_RECEIVE: RotateCcw,
 }
+
+/**
+ * The BACKEND purpose RETURN_RECEIVE stays an execute handler only — the
+ * staged list sends it per row. It is not a selectable task: "Process return"
+ * resolves and stages BOTH dispatch and return/exchange legs.
+ */
+const EXECUTE_ONLY_PURPOSES = new Set(['RETURN_RECEIVE'])
 
 /** Workspace title + accepted identifiers per task (mirrors the resolver). */
 const TASK_HELP: Record<string, { title: string; accept: string; empty: string }> = {
@@ -57,8 +62,8 @@ const TASK_HELP: Record<string, { title: string; accept: string; empty: string }
   },
   DISPATCH_RETURN: {
     title: 'Process return',
-    accept: 'Scan a returned courier dispatch ID, tracking code, or order QR/barcode.',
-    empty: 'Scan a returned courier ID or order QR/barcode to begin.',
+    accept: 'Scan a courier dispatch ID, tracking code, order QR/barcode, or an RTN return/exchange ID.',
+    empty: 'Scan a courier dispatch, order QR/barcode, or RTN return to begin.',
   },
   ORDER_STATUS: {
     title: 'Update order status',
@@ -69,11 +74,6 @@ const TASK_HELP: Record<string, { title: string; accept: string; empty: string }
     title: 'Print sticker',
     accept: 'Scan an order QR code / barcode (ORD-…).',
     empty: 'Scan an order QR code or barcode to begin.',
-  },
-  RETURN_RECEIVE: {
-    title: 'Receive return / exchange',
-    accept: 'Scan an order QR code / barcode (ORD-…) — the linked return or exchange is resolved, never the order itself.',
-    empty: 'Scan an order QR code or barcode to receive its linked return.',
   },
 }
 
@@ -318,6 +318,12 @@ export default function ScannerPage() {
     queryKey: ['scanner-purposes'],
     queryFn: () => scannerApi.purposes(),
   })
+  // ONE return task for the operator: RETURN_RECEIVE is an execute handler the
+  // staged list calls per row, never a selectable task of its own.
+  const tasks = useMemo(
+    () => (purposes ?? []).filter((p) => !EXECUTE_ONLY_PURPOSES.has(p.purpose)),
+    [purposes],
+  )
 
   // Relative timestamps stay fresh without touching scan state.
   useEffect(() => {
@@ -495,41 +501,62 @@ export default function ScannerPage() {
       }
 
       if (outcome.status === 'selection_required') {
-        // Ambiguous — never guess. The inline panel resolves it. For
-        // RETURN_RECEIVE the picker lists linked return/exchange legs, never
-        // dispatches (the order itself is never a candidate).
-        if (purpose === 'RETURN_RECEIVE') {
-          const linked = outcome.linked ?? []
-          setSelection({ identifier, message: outcome.message ?? 'Multiple returns/exchanges are linked to this order. Select one to continue.', dispatches: [], linked, order: outcome.order ?? null })
-          record({ status: 'warning', identifier, title: `${identifier} — Select return or exchange`, message: 'Select which linked return or exchange to receive below.' })
-          return
-        }
-        setSelection({ identifier, message: outcome.message ?? 'Multiple dispatches found. Select the dispatch to continue.', dispatches: outcome.dispatches, order: outcome.order ?? null })
-        record({ status: 'warning', identifier, title: `${identifier} — Multiple dispatches found`, message: 'Select which dispatch to process below.' })
-        return
-      }
-
-      if (purpose === 'RETURN_RECEIVE') {
-        // A scan NEVER executes RETURN_RECEIVE — it stages. Exactly one
-        // linked leg → stage it; several → the picker (above); none →
-        // not_found already returned with the backend "No active…" message.
+        // Ambiguous — never guess. The inline panel lists EVERY candidate:
+        // courier dispatches AND linked return/exchange legs. The order itself
+        // is never a candidate.
         const linked = outcome.linked ?? []
-        if (linked.length === 1) {
-          stageReturnLeg(identifier, linked[0], outcome.order)
-          return
-        }
-        record({ status: 'error', identifier, title: 'Not found', message: outcome.message ?? 'No active return/exchange for this order.' })
+        setSelection({
+          identifier,
+          message: outcome.message ?? 'Multiple return options found. Select one to continue.',
+          dispatches: outcome.dispatches,
+          linked,
+          order: outcome.order ?? null,
+        })
+        record({
+          status: 'warning',
+          identifier,
+          title: purpose === 'DISPATCH_RETURN'
+            ? `${identifier} — Select return option`
+            : `${identifier} — Multiple dispatches found`,
+          message: purpose === 'DISPATCH_RETURN'
+            ? 'Select which dispatch, return, or exchange to stage below.'
+            : 'Select which dispatch to process below.',
+        })
         return
       }
 
       if (purpose === 'DISPATCH_RETURN') {
-        // Process return is ALWAYS stage-only, batch toggle or not.
-        const d = outcome.dispatches[0]
-        if (!d) {
-          record({ status: 'error', identifier, title: 'Not found', message: 'No dispatch found for this identifier.' })
+        // Process return is ALWAYS stage-only, batch toggle or not. Exactly
+        // one candidate (a dispatch OR a return/exchange leg) stages it; both
+        // kinds / several candidates always open the picker.
+        const linked = outcome.linked ?? []
+        const total = outcome.dispatches.length + linked.length
+        if (total === 0) {
+          record({ status: 'error', identifier, title: 'Not found', message: outcome.message ?? 'No returnable dispatch or return/exchange found.' })
           return
         }
-        stageDispatch(identifier, d)
+        if (total > 1) {
+          setSelection({
+            identifier,
+            message: outcome.message ?? 'Multiple return options found. Select one to continue.',
+            dispatches: outcome.dispatches,
+            linked,
+            order: outcome.order ?? null,
+          })
+          record({
+            status: 'warning',
+            identifier,
+            title: `${identifier} — Select return option`,
+            message: 'Select which dispatch, return, or exchange to stage below.',
+          })
+          return
+        }
+        const d = outcome.dispatches[0]
+        if (d) {
+          stageDispatch(identifier, d)
+          return
+        }
+        stageReturnLeg(identifier, linked[0], outcome.order)
         return
       }
 
@@ -780,16 +807,15 @@ export default function ScannerPage() {
       const el = e.target as HTMLElement | null
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return
       if (e.metaKey || e.ctrlKey || e.altKey) return
-      const list = purposes ?? []
       const idx = ['1', '2', '3', '4'].indexOf(e.key)
-      if (idx >= 0 && list[idx]) {
+      if (idx >= 0 && tasks[idx]) {
         e.preventDefault()
-        selectMode(list[idx].purpose)
+        selectMode(tasks[idx].purpose)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [purposes, selectMode])
+  }, [tasks, selectMode])
 
   // Common target statuses across staged orders (intersection) — a batch can
   // only apply a transition that EVERY staged order currently allows.
@@ -817,9 +843,11 @@ export default function ScannerPage() {
   const help = TASK_HELP[mode] ?? TASK_HELP.DISPATCH_HANDED_OVER
   const isOrderStatus = mode === 'ORDER_STATUS'
   const isSticker = mode === 'STICKER_PRINT'
-  const isReturnReceive = mode === 'RETURN_RECEIVE'
-  const isDispatchPurpose = !isOrderStatus && !isSticker && !isReturnReceive
+  const isDispatchPurpose = !isOrderStatus && !isSticker
   const showBatchToggle = (isDispatchPurpose && mode !== 'DISPATCH_RETURN') || isSticker
+  const selectionDispatches = selection?.dispatches ?? []
+  const selectionLinked = selection?.linked ?? []
+  const selectionOptionCount = selectionDispatches.length + selectionLinked.length
   const TaskIcon = TASK_ICONS[mode] ?? ScanLine
   const canApplyQueue = queue.length > 0 && !busy
   const canApplyStaged = staged.length > 0 && !busy && !!targetStatusId
@@ -888,7 +916,7 @@ export default function ScannerPage() {
                     onChange={(e) => selectMode(e.target.value)}
                     className="h-10 w-full appearance-none rounded-xl border border-border bg-card pl-3 pr-9 text-sm font-semibold outline-none transition-colors duration-200 cursor-pointer hover:border-primary/50 focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/30"
                   >
-                    {(purposes ?? []).map((p: ScanPurposeDescriptor, i: number) => (
+                    {tasks.map((p: ScanPurposeDescriptor, i: number) => (
                       <option key={p.purpose} value={p.purpose}>
                         {i + 1} · {TASK_NAMES[p.purpose] ?? p.label}
                       </option>
@@ -1014,70 +1042,77 @@ export default function ScannerPage() {
 
                 {/* ── Inline dispatch resolution (never leave the page) ── */}
                 {selection && (
-                  <div className="rounded-xl border border-warning/40 bg-warning-soft/40 p-2.5 flex flex-col gap-2" role="group" aria-label="Select dispatch">
+                  <div className="rounded-xl border border-warning/40 bg-warning-soft/40 p-2.5 flex flex-col gap-2" role="group" aria-label="Select return option">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-xs font-semibold">
-                        {selection.linked?.length
-                          ? `${selection.linked.length} linked returns/exchanges found for `
-                          : `${selection.dispatches.length} dispatches found for `}
+                        {mode === 'DISPATCH_RETURN'
+                          ? `${selectionOptionCount} return option${selectionOptionCount === 1 ? '' : 's'} found for `
+                          : `${selectionOptionCount} dispatch${selectionOptionCount === 1 ? '' : 'es'} found for `}
                         <span className="font-mono">{selection.identifier}</span>
                       </p>
                       <button
                         className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
-                        aria-label="Dismiss dispatch selection"
+                        aria-label="Dismiss return selection"
                         onClick={() => { setSelection(null); inputRef.current?.focus() }}
                       >
                         <X className="h-3.5 w-3.5" />
                       </button>
                     </div>
-                    {selection.linked?.length ? (
-                      <>
-                        <p className="text-[11px] text-muted-foreground -mt-1">Select the return or exchange to receive — the scanner stays ready.</p>
-                        <div className="flex flex-col gap-1.5">
-                          {selection.linked.map((c) => (
-                            <div key={c.id} className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2">
-                              <div className="flex-1 min-w-0">
-                                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{c.kind === 'return' ? 'Return' : 'Exchange'}</p>
-                                <p className="font-mono text-sm font-semibold truncate">{c.displayId}</p>
-                                <p className="text-[11px] text-muted-foreground truncate">{c.status}</p>
-                              </div>
-                              <Button
-                                size="sm"
-                                className="tap-h press shrink-0"
-                                disabled={busy}
-                                aria-label={`Select ${c.displayId}`}
-                                onClick={() => void resolveLinked(selection.identifier, c)}
-                              >
-                                Select <ArrowRight className="h-3.5 w-3.5 ml-1" />
-                              </Button>
+                    <p className="text-[11px] text-muted-foreground -mt-1">
+                      {mode === 'DISPATCH_RETURN'
+                        ? 'Select the dispatch, return, or exchange to stage — the scanner stays ready.'
+                        : `Select the dispatch to ${batchMode && isDispatchPurpose ? 'stage' : 'process'} — the scanner stays ready.`}
+                    </p>
+
+                    {selectionDispatches.length > 0 && (
+                      <div className="flex flex-col gap-1.5">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Courier returns</p>
+                        {selectionDispatches.map((d) => (
+                          <div key={d.id} className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold truncate">
+                                Courier return — <span className="font-mono">{d.consignmentId ?? PENDING_WEBHOOK_LABEL}</span>
+                              </p>
+                              <p className="text-[11px] text-muted-foreground truncate">{d.courier} · {d.status} · Order {d.orderDisplayId}</p>
                             </div>
-                          ))}
-                        </div>
-                      </>
-                    ) : (
-                    <>
-                    <p className="text-[11px] text-muted-foreground -mt-1">Select the dispatch to {(mode === 'DISPATCH_RETURN' || batchMode) && isDispatchPurpose ? 'stage' : 'process'} — the scanner stays ready.</p>
-                    <div className="flex flex-col gap-1.5">
-                      {selection.dispatches.map((d) => (
-                        <div key={d.id} className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{d.courier}</p>
-                            <p className="font-mono text-sm font-semibold truncate">{d.consignmentId ?? PENDING_WEBHOOK_LABEL}</p>
-                            <p className="text-[11px] text-muted-foreground truncate">{d.status} · Order {d.orderDisplayId}</p>
+                            <Button
+                              size="sm"
+                              className="tap-h press shrink-0"
+                              disabled={busy}
+                              aria-label={`Select ${d.consignmentId ?? PENDING_WEBHOOK_LABEL} (${d.courier})`}
+                              onClick={() => void resolveSelection(d)}
+                            >
+                              Select <ArrowRight className="h-3.5 w-3.5 ml-1" />
+                            </Button>
                           </div>
-                          <Button
-                            size="sm"
-                            className="tap-h press shrink-0"
-                            disabled={busy}
-                            aria-label={`Select ${d.consignmentId ?? PENDING_WEBHOOK_LABEL} (${d.courier})`}
-                            onClick={() => void resolveSelection(d)}
-                          >
-                            Select <ArrowRight className="h-3.5 w-3.5 ml-1" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                    </>
+                        ))}
+                      </div>
+                    )}
+
+                    {selectionLinked.length > 0 && (
+                      <div className="flex flex-col gap-1.5">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Returns &amp; exchanges</p>
+                        {selectionLinked.map((c) => (
+                          <div key={c.id} className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold truncate">
+                                {c.labelKind === 'exchange' || (c.labelKind === undefined && c.kind === 'exchange') ? 'Exchange' : 'Return'}{' '}
+                                <span className="font-mono">{c.displayId}</span>
+                              </p>
+                              <p className="text-[11px] text-muted-foreground truncate">{c.status}{c.orderDisplayId ? ` · Order ${c.orderDisplayId}` : ''}</p>
+                            </div>
+                            <Button
+                              size="sm"
+                              className="tap-h press shrink-0"
+                              disabled={busy}
+                              aria-label={`Select ${c.displayId}`}
+                              onClick={() => void resolveLinked(selection.identifier, c)}
+                            >
+                              Select <ArrowRight className="h-3.5 w-3.5 ml-1" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
                 )}

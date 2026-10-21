@@ -103,6 +103,12 @@ export interface ResolveOutcome {
 /** One linked return or exchange leg offered to the phase-2 picker/staging. */
 export interface ScanLinkedCandidate {
   kind: 'return' | 'exchange';
+  /**
+   * Operator-facing plain kind for the picker: a Return row of type EXCHANGE
+   * keeps `kind: 'return'` (receive path with damage controls) but is
+   * labelled "Exchange RTN-…". Absent → derives from `kind`.
+   */
+  labelKind?: 'return' | 'exchange';
   id: string;
   displayId: string;
   status: string;

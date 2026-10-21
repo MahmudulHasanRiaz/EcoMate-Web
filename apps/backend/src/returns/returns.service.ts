@@ -142,7 +142,7 @@ export class ReturnsService {
     };
     const order = await db.order.findUnique({
       where: { id: dto.orderId },
-      include: { status: true },
+      include: { status: true, items: { select: { quantity: true } } },
     });
     if (!order || (order as any).trashedAt) {
       throw new NotFoundException(`Order not found: ${dto.orderId}`);
@@ -222,7 +222,7 @@ export class ReturnsService {
       `Return ${displayId} created for order ${(order as any).displayId ?? dto.orderId} ` +
         `(type=${dto.type} source=${source}${performedBy ? ` by=${performedBy}` : ''}` +
         `${hasAdjustments ? ` shippingAdj=${signed(shippingAdjustment)} discountAdj=${signed(discountAdjustment)}` : ''}` +
-        `${decision ? ` markDelivered=${dto.markOriginalDelivered ?? true}` : ''})`,
+        `${decision ? ` markDelivered=${decision.markedDelivered}` : ''})`,
     );
     return ret;
   }
@@ -242,7 +242,7 @@ export class ReturnsService {
     dto: CreateReturnInput,
     displayId: string,
     performedBy: string | undefined,
-  ): Promise<{ entry: unknown; statusId?: string } | null> {
+  ): Promise<{ entry: unknown; statusId?: string; markedDelivered: boolean } | null> {
     if (dto.markOriginalDelivered !== undefined && dto.type !== 'PARTIAL') {
       throw new BadRequestException(
         'Marking the original order as delivered is only supported on partial returns.',
@@ -250,12 +250,45 @@ export class ReturnsService {
     }
     if (dto.type !== 'PARTIAL') return null;
 
-    const markDelivered = dto.markOriginalDelivered ?? true;
     const by = performedBy ?? 'staff';
     const timestamp = new Date().toISOString();
 
+    // Coverage guard: a PARTIAL whose selected quantities consume EVERY
+    // ordered unit is functionally a full return — nothing remains with the
+    // customer, so delivered-marking must never apply. Uses the same
+    // order-units vs returned-units math as the return-detail coverage line.
+    const orderUnits = (Array.isArray(order.items) ? order.items : []).reduce(
+      (sum: number, item: any) => sum + (Number(item?.quantity) || 0),
+      0,
+    );
+    const returnUnits = (Array.isArray(dto.items) ? dto.items : []).reduce(
+      (sum, item) => sum + (Number(item?.quantity) || 0),
+      0,
+    );
+    const coversEveryItem = orderUnits > 0 && returnUnits >= orderUnits;
+
+    if (coversEveryItem) {
+      if (dto.markOriginalDelivered === true) {
+        throw new BadRequestException(
+          'This return covers all items — it cannot mark the original order as Delivered.',
+        );
+      }
+      return {
+        markedDelivered: false,
+        entry: {
+          type: 'status',
+          visibility: 'public',
+          timestamp,
+          note: `Delivered-marking skipped — this return covers all items (partial return ${displayId} by ${by})`,
+          performedBy: by,
+        },
+      };
+    }
+
+    const markDelivered = dto.markOriginalDelivered ?? true;
     if (!markDelivered) {
       return {
+        markedDelivered: false,
         entry: {
           type: 'status',
           visibility: 'public',
@@ -272,6 +305,7 @@ export class ReturnsService {
     }
     const currentStatusId = order.statusId ?? order.status?.id;
     return {
+      markedDelivered: true,
       entry: {
         type: 'status',
         visibility: 'public',
