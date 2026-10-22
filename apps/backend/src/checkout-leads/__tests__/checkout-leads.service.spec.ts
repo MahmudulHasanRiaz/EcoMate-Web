@@ -86,6 +86,19 @@ describe('CheckoutLeadsService', () => {
             payment: {
               create: jest.fn(),
             },
+            // Configured payment gateways (lead conversion validates the
+            // stored/legacy payment method against them). No existing convert
+            // test passes a truthy payment method, so an empty set is inert.
+            paymentGateway: {
+              findUnique: jest.fn().mockResolvedValue(null),
+              findFirst: jest.fn().mockResolvedValue(null),
+              findMany: jest.fn().mockResolvedValue([]),
+            },
+            // resolvePaymentAccountId validates a client-supplied accountId
+            // through this delegate.
+            account: {
+              findUnique: jest.fn(),
+            },
             userProfile: {
               findUnique: jest.fn(),
             },
@@ -424,6 +437,243 @@ describe('CheckoutLeadsService', () => {
           data: expect.objectContaining({ status: 'CONVERTED' }),
         }),
       );
+    });
+
+    // ── Staff payment write-path contract (gateway validation + account) ──
+
+    it('converts a lead but 400s on an unknown gateway code (and writes no payment)', async () => {
+      (prisma.checkoutLead.findUnique as jest.Mock).mockResolvedValue(mockLead);
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        initialStatus,
+      );
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+        firstName: 'Admin',
+        lastName: 'User',
+      });
+      (prisma.order.create as jest.Mock).mockResolvedValue({ id: 'order-x' });
+      (prisma.checkoutLead.update as jest.Mock).mockResolvedValue({});
+      (prisma.checkoutLead.updateMany as jest.Mock).mockResolvedValue({
+        count: 0,
+      });
+      // No configured gateway matches the requested code.
+      (prisma.paymentGateway.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.paymentGateway.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.paymentGateway.findMany as jest.Mock).mockResolvedValue([]);
+
+      await expect(
+        service.convertToOrder('lead-1', 'admin-1', {
+          paymentMethod: 'totally_unknown_gw',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(prisma.payment.create).not.toHaveBeenCalled();
+    });
+
+    it('stamps the gateway-mapped accountId on the created Payment', async () => {
+      (prisma.checkoutLead.findUnique as jest.Mock).mockResolvedValue(mockLead);
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        initialStatus,
+      );
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+        firstName: 'Admin',
+        lastName: 'User',
+      });
+      (prisma.order.create as jest.Mock).mockResolvedValue({ id: 'order-1' });
+      (prisma.payment.create as jest.Mock).mockResolvedValue({});
+      (prisma.checkoutLead.update as jest.Mock).mockResolvedValue({});
+      (prisma.checkoutLead.updateMany as jest.Mock).mockResolvedValue({
+        count: 0,
+      });
+      const gateway = {
+        id: 'gw-1',
+        code: 'bkash',
+        name: 'bKash',
+        enabled: true,
+        type: 'manual',
+        accountId: 'acc-1002',
+      };
+      (prisma.paymentGateway.findUnique as jest.Mock).mockImplementation(
+        ({ where }: any) =>
+          Promise.resolve(where?.code === 'bkash' ? gateway : null),
+      );
+      (prisma.paymentGateway.findMany as jest.Mock).mockResolvedValue([
+        gateway,
+      ]);
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        id: 'order-1',
+        total: 1000,
+        createdAt: new Date('2025-01-15'),
+        salesChannel: 'CALL',
+        trackingSessionId: 'ctx-lead',
+        guestPhone: '+8801812345678',
+        customer: { name: 'Jane Doe', phone: '+8801812345678' },
+        items: [{ productId: 'prod-1', quantity: 2, price: 500 }],
+      });
+
+      await service.convertToOrder('lead-1', 'admin-1', {
+        paymentMethod: 'bkash',
+      });
+
+      expect(prisma.payment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            gatewayCode: 'bkash',
+            accountId: 'acc-1002',
+          }),
+        }),
+      );
+    });
+
+    it('resolves a legacy stored CASH_ON_DELIVERY to the configured COD gateway (never the raw enum)', async () => {
+      (prisma.checkoutLead.findUnique as jest.Mock).mockResolvedValue(mockLead);
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        initialStatus,
+      );
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+        firstName: 'Admin',
+        lastName: 'User',
+      });
+      (prisma.order.create as jest.Mock).mockResolvedValue({ id: 'order-1' });
+      (prisma.payment.create as jest.Mock).mockResolvedValue({});
+      (prisma.checkoutLead.update as jest.Mock).mockResolvedValue({});
+      (prisma.checkoutLead.updateMany as jest.Mock).mockResolvedValue({
+        count: 0,
+      });
+      const codGateway = {
+        id: 'gw-cod',
+        code: 'cash',
+        name: 'Cash on Delivery',
+        enabled: true,
+        type: 'cash',
+        paymentOptionType: 'CASH_ON_DELIVERY',
+        accountId: 'acc-1001',
+      };
+      // Only the configured 'cash' code exists — the legacy enum does not.
+      (prisma.paymentGateway.findUnique as jest.Mock).mockImplementation(
+        ({ where }: any) =>
+          Promise.resolve(where?.code === 'cash' ? codGateway : null),
+      );
+      (prisma.paymentGateway.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.paymentGateway.findMany as jest.Mock).mockResolvedValue([
+        codGateway,
+      ]);
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        id: 'order-1',
+        total: 1000,
+        createdAt: new Date('2025-01-15'),
+        salesChannel: 'CALL',
+        trackingSessionId: 'ctx-lead',
+        guestPhone: '+8801812345678',
+        customer: { name: 'Jane Doe', phone: '+8801812345678' },
+        items: [{ productId: 'prod-1', quantity: 2, price: 500 }],
+      });
+
+      await service.convertToOrder('lead-1', 'admin-1', {
+        paymentMethod: 'CASH_ON_DELIVERY',
+      });
+
+      expect(prisma.payment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            gatewayCode: 'cash',
+            accountId: 'acc-1001',
+          }),
+        }),
+      );
+      const call = (prisma.payment.create as jest.Mock).mock.calls[0][0];
+      expect(call.data.gatewayCode).not.toBe('CASH_ON_DELIVERY');
+    });
+
+    it('lets a client-supplied eligible accountId win over the gateway mapping', async () => {
+      (prisma.checkoutLead.findUnique as jest.Mock).mockResolvedValue(mockLead);
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        initialStatus,
+      );
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+        firstName: 'Admin',
+        lastName: 'User',
+      });
+      (prisma.order.create as jest.Mock).mockResolvedValue({ id: 'order-1' });
+      (prisma.payment.create as jest.Mock).mockResolvedValue({});
+      (prisma.checkoutLead.update as jest.Mock).mockResolvedValue({});
+      (prisma.checkoutLead.updateMany as jest.Mock).mockResolvedValue({
+        count: 0,
+      });
+      const gateway = {
+        id: 'gw-1',
+        code: 'bkash',
+        name: 'bKash',
+        enabled: true,
+        type: 'manual',
+        accountId: 'acc-1002',
+      };
+      (prisma.paymentGateway.findUnique as jest.Mock).mockImplementation(
+        ({ where }: any) =>
+          Promise.resolve(where?.code === 'bkash' ? gateway : null),
+      );
+      (prisma.paymentGateway.findMany as jest.Mock).mockResolvedValue([
+        gateway,
+      ]);
+      // The supplied account is an eligible asset leaf, so it is honoured.
+      (prisma.account.findUnique as jest.Mock).mockResolvedValue({
+        id: 'acc-9',
+        code: '1110',
+        name: 'Counter Cash',
+        type: 'asset',
+        isGroup: false,
+        isActive: true,
+      });
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        id: 'order-1',
+        total: 1000,
+        createdAt: new Date('2025-01-15'),
+        salesChannel: 'CALL',
+        trackingSessionId: 'ctx-lead',
+        guestPhone: '+8801812345678',
+        customer: { name: 'Jane Doe', phone: '+8801812345678' },
+        items: [{ productId: 'prod-1', quantity: 2, price: 500 }],
+      });
+
+      await service.convertToOrder('lead-1', 'admin-1', {
+        paymentMethod: 'bkash',
+        accountId: 'acc-9',
+      });
+
+      expect(prisma.payment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ accountId: 'acc-9' }),
+        }),
+      );
+    });
+
+    it('writes no payment row when the lead has no payment method', async () => {
+      (prisma.checkoutLead.findUnique as jest.Mock).mockResolvedValue(mockLead);
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        initialStatus,
+      );
+      (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+        firstName: 'Admin',
+        lastName: 'User',
+      });
+      (prisma.order.create as jest.Mock).mockResolvedValue({ id: 'order-1' });
+      (prisma.checkoutLead.update as jest.Mock).mockResolvedValue({});
+      (prisma.checkoutLead.updateMany as jest.Mock).mockResolvedValue({
+        count: 0,
+      });
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        id: 'order-1',
+        total: 1000,
+        createdAt: new Date('2025-01-15'),
+        salesChannel: 'CALL',
+        trackingSessionId: 'ctx-lead',
+        guestPhone: '+8801812345678',
+        customer: { name: 'Jane Doe', phone: '+8801812345678' },
+        items: [{ productId: 'prod-1', quantity: 2, price: 500 }],
+      });
+
+      await service.convertToOrder('lead-1', 'admin-1');
+
+      expect(prisma.payment.create).not.toHaveBeenCalled();
     });
   });
 

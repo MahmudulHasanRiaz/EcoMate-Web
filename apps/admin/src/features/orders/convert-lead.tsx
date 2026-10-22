@@ -18,8 +18,10 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
+import { PaymentGatewayAccountSelect } from '@/features/payments/components/payment-gateway-account-select'
+import { normalizeLegacyGatewayCode } from '@/features/payments/lib/gateway-normalize'
+import { gatewayApi } from '@/features/gateways/api'
 import { Loader2, ArrowLeft, Package, DollarSign, Percent } from 'lucide-react'
 
 const statusColors: Record<string, string> = { PENDING: '#F59E0B', CONVERTED: '#22C55E', NOT_CONVERTED: '#6B7280', DELETED: '#EF4444' }
@@ -42,6 +44,14 @@ export function ConvertLead({ id }: { id: string }) {
     queryFn: () => apiClient.get(`/checkout-leads/${id}`).then(r => r.data),
   })
 
+  // Same query key as PaymentGatewayAccountSelect so the configured gateway
+  // list is shared from cache — no duplicate /gateways/admin request.
+  const { data: gateways } = useQuery({
+    queryKey: ['admin-gateways'],
+    queryFn: () => gatewayApi.listGateways().then((r) => r.data),
+    staleTime: 60_000,
+  })
+
   const [orderItems, setOrderItems] = useState<any[]>([])
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
@@ -49,7 +59,8 @@ export function ConvertLead({ id }: { id: string }) {
   const [shippingCharge, setShippingCharge] = useState('')
   const [discount, setDiscount] = useState('')
   const [discountType, setDiscountType] = useState('flat')
-  const [paymentMethod, setPaymentMethod] = useState('cod')
+  const [paymentMethod, setPaymentMethod] = useState('')
+  const [paymentAccountId, setPaymentAccountId] = useState('')
   const [paymentMode, setPaymentMode] = useState('cod')
   const [partialAmount, setPartialAmount] = useState('')
   const [customerNotes, setCustomerNotes] = useState('')
@@ -69,7 +80,7 @@ export function ConvertLead({ id }: { id: string }) {
       setCustomerName(lead.name || '')
       setCustomerPhone(lead.phone || '')
       setCustomerEmail(lead.email || '')
-      setPaymentMethod(lead.paymentMethod || 'cod')
+      setPaymentMethod(lead.paymentMethod || '')
       setPaymentMode(lead.paymentMode || 'cod')
       setPartialAmount(lead.partialAmount || '')
       setOrderItems((lead.items || []).map((i: any) => ({
@@ -86,6 +97,18 @@ export function ConvertLead({ id }: { id: string }) {
       }
     }
   }, [lead])
+
+  // A stored lead.paymentMethod is HISTORY (checkout enum / old shorthand).
+  // Once the configured gateways are available, settle the selection on a
+  // CONFIGURED gateway code so we never submit a legacy string. Idempotent:
+  // an already-configured value — including a deliberate user choice — is
+  // returned unchanged, so this only rewrites legacy/unknown values.
+  useEffect(() => {
+    if (!gateways) return
+    setPaymentMethod((prev) => normalizeLegacyGatewayCode(prev || lead?.paymentMethod, gateways))
+    // `lead?.paymentMethod` is a dependency so ordering cannot strand a raw
+    // legacy value when the gateways response arrives before the lead's.
+  }, [gateways, lead?.paymentMethod])
 
   useEffect(() => {
     apiClient.get('/products', { params: { perPage: 500 } })
@@ -141,7 +164,8 @@ export function ConvertLead({ id }: { id: string }) {
       })),
       guestName: customerName,
       guestPhone: customerPhone,
-      paymentMethod: paymentMethod,
+      paymentMethod: paymentMethod || undefined,
+      ...(paymentAccountId ? { accountId: paymentAccountId } : {}),
       paymentMode: paymentMode,
       ...(paymentMode === 'partial' && partialAmount ? { partialAmount: parseFloat(partialAmount) } : {}),
       shippingAddress: { address, district, thana },
@@ -409,18 +433,17 @@ export function ConvertLead({ id }: { id: string }) {
             <Card>
               <CardHeader className='pb-2'><CardTitle className='text-base'>Payment</CardTitle></CardHeader>
               <CardContent className='space-y-3'>
-                <div>
-                  <Label className='text-xs'>Method</Label>
-                  <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1' value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
-                    <option value='cod'>COD</option>
-                    <option value='bkash'>bKash</option>
-                    <option value='nagad'>Nagad</option>
-                    <option value='bank'>Bank</option>
-                    <option value='card'>Card</option>
-                    <option value='rocket'>Rocket</option>
-                    <option value='bkash_pgw'>bKash PGW</option>
-                  </select>
-                </div>
+                <PaymentGatewayAccountSelect
+                  gatewayCode={paymentMethod}
+                  accountId={paymentAccountId}
+                  onChange={(next) => {
+                    setPaymentMethod(next.gatewayCode)
+                    setPaymentAccountId(next.accountId)
+                  }}
+                  gatewayLabel='Method'
+                  accountLabel='Account'
+                  className='grid gap-3'
+                />
                 <div>
                   <Label className='text-xs'>Mode</Label>
                   <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-sm mt-1' value={paymentMode} onChange={e => setPaymentMode(e.target.value as any)}>
