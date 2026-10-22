@@ -8,6 +8,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateSupplierDto } from './dto/create-supplier.dto';
 import { UpdateSupplierDto } from './dto/update-supplier.dto';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import {
+  requireConfiguredGateway,
+  resolvePaymentAccountId,
+} from '../payments/payment-account';
 
 @Injectable()
 export class SuppliersService {
@@ -96,6 +100,17 @@ export class SuppliersService {
       );
     }
 
+    // Part 5: money-out destination is configured, never typed. A supplied
+    // gateway must exist; the mapped account is stamped unless an eligible
+    // account is supplied explicitly.
+    const gateway = dto.paymentMethod
+      ? await requireConfiguredGateway(this.prisma, dto.paymentMethod)
+      : null;
+    const accountId = await resolvePaymentAccountId(this.prisma, {
+      accountId: dto.accountId,
+      gatewayAccountId: gateway?.accountId,
+    });
+
     const now = new Date();
     const dateStr = `${now.getFullYear().toString().slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
     const todayPrefix = `PINV-${dateStr}-`;
@@ -120,6 +135,7 @@ export class SuppliersService {
           amount: dto.amount,
           paidAt: dto.paidAt ? new Date(dto.paidAt) : new Date(),
           paymentMethod: dto.paymentMethod,
+          accountId,
           reference: dto.reference,
           notes: dto.notes,
           invoices: {

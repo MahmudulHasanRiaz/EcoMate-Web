@@ -1,9 +1,10 @@
-import { useId, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { gatewayApi, type GatewayConfig, type PaymentSettingKey } from './api'
 import { PaymentLogo } from '@/components/payment-logo'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
@@ -13,6 +14,8 @@ import { Separator } from '@/components/ui/separator'
 import { Loader2, Save, ChevronDown, ChevronUp, Phone, Settings2, Info, CheckCircle2, Truck, ShieldCheck, Zap } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
+import { accountingApi } from '@/features/accounting/api'
+import { flattenEligibleAssetAccounts } from '@/features/payments/lib/eligible-accounts'
 
 /**
  * D (owner-locked): Global payment defaults. These are the S1/S2 values every
@@ -150,6 +153,15 @@ export function GatewaySettings() {
     queryKey: ['payment-effective-settings'],
     queryFn: () => gatewayApi.getEffectivePaymentSettings(),
   })
+  const { data: accountTree } = useQuery({
+    queryKey: ['accounts-tree'],
+    queryFn: () => accountingApi.getAccountTree().then((r) => r.data),
+    staleTime: 60_000,
+  })
+  const assetAccounts = useMemo(
+    () => flattenEligibleAssetAccounts(accountTree),
+    [accountTree],
+  )
   const effectiveFor = (code: string) =>
     effectiveSettings?.gateways.find((g) => g.code === code)?.effective
   const globalDefaults = effectiveSettings?.global
@@ -171,6 +183,7 @@ export function GatewaySettings() {
       gatewayApi.updateGateway(code, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payment-options'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-gateways'] })
       queryClient.invalidateQueries({ queryKey: ['payment-effective-settings'] })
       toast.success('Gateway settings updated successfully')
     },
@@ -181,10 +194,15 @@ export function GatewaySettings() {
     setGatewayEditData(prev => ({
       ...prev,
       [g.code]: {
+        name: g.name,
+        type: g.type,
+        paymentOptionType: g.paymentOptionType,
+        sortOrder: g.sortOrder,
         enabled: g.enabled,
         mode: g.mode || (g.type === 'api' ? 'sandbox' : 'personal'),
         phoneNumber: g.phoneNumber || '',
         credentials: g.credentials || {},
+        accountId: g.accountId ?? null,
         staffAutoVerifiedOverride: g.staffAutoVerifiedOverride ?? null,
         editAllowedOverride: g.editAllowedOverride ?? null,
       },
@@ -201,6 +219,49 @@ export function GatewaySettings() {
     if (!d) return
     updateGatewayMut.mutate({ code, data: d })
   }
+
+  const settlementAccountField = (g: GatewayConfig, d: any, compact = false) => (
+    <div className={compact ? 'space-y-1.5' : 'space-y-2'}>
+      <Label className='text-xs font-semibold'>Settlement account</Label>
+      <Select
+        value={d.accountId ?? 'none'}
+        onValueChange={(v) =>
+          setGatewayEditData((p) => ({
+            ...p,
+            [g.code]: { ...d, accountId: v === 'none' ? null : v },
+          }))
+        }
+      >
+        <SelectTrigger className='h-9 text-xs' aria-label={`${g.name} settlement account`}>
+          <SelectValue placeholder='Not set' />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value='none'>Not set</SelectItem>
+          {assetAccounts.map((a) => (
+            <SelectItem key={a.id} value={a.id}>
+              {a.name} ({a.code})
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {assetAccounts.length === 0 ? (
+        <p className='text-[11px] text-amber-600 dark:text-amber-500'>
+          No eligible accounts. Create an active asset leaf in Accounting → Chart of Accounts.
+        </p>
+      ) : (
+        <p className='text-[11px] text-muted-foreground'>
+          Payments on this gateway are stamped with this account. Leave “Not set” to show the warning badge.
+        </p>
+      )}
+    </div>
+  )
+
+  const noSettlementBadge = (g: GatewayConfig) =>
+    g.accountId ? null : (
+      <Badge variant='warning' className='text-[10px] font-medium'>
+        No settlement account
+      </Badge>
+    )
 
   if (isLoading) return (
     <div className='flex items-center justify-center min-h-[400px]'>
@@ -278,9 +339,15 @@ export function GatewaySettings() {
                 const isCashType = g.type === 'cash'
                 const isOpen = expandedGateways[g.code]
                 const d = gatewayEditData[g.code] || {
+                  name: g.name,
+                  type: g.type,
+                  paymentOptionType: g.paymentOptionType,
+                  sortOrder: g.sortOrder,
                   enabled: g.enabled,
                   mode: g.mode || 'personal',
                   phoneNumber: g.phoneNumber || '',
+                  credentials: g.credentials || {},
+                  accountId: g.accountId ?? null,
                   staffAutoVerifiedOverride: g.staffAutoVerifiedOverride ?? null,
                   editAllowedOverride: g.editAllowedOverride ?? null,
                 }
@@ -288,24 +355,40 @@ export function GatewaySettings() {
                 if (isCashType) {
                   return (
                     <Card key={g.id} className='border-none shadow-sm bg-muted/20'>
-                      <CardContent className='p-4 flex items-center justify-between'>
-                        <div className='flex items-center gap-4'>
-                          <div className='p-2 rounded-lg bg-background border shadow-sm'>
-                            <Truck className='h-5 w-5 text-primary' />
+                      <CardContent className='p-4 space-y-3'>
+                        <div className='flex items-center justify-between'>
+                          <div className='flex items-center gap-4'>
+                            <div className='p-2 rounded-lg bg-background border shadow-sm'>
+                              <Truck className='h-5 w-5 text-primary' />
+                            </div>
+                            <div className='space-y-0.5'>
+                              <CardTitle className='text-base flex items-center gap-2'>
+                                {g.name}
+                                {noSettlementBadge(g)}
+                              </CardTitle>
+                              <CardDescription className='text-xs'>Allow customers to pay when they receive the order.</CardDescription>
+                            </div>
                           </div>
-                          <div className='space-y-0.5'>
-                            <CardTitle className='text-base'>{g.name}</CardTitle>
-                            <CardDescription className='text-xs'>Allow customers to pay when they receive the order.</CardDescription>
+                          <div className='flex items-center gap-3'>
+                            <Switch
+                              checked={g.enabled}
+                              onCheckedChange={(v) => updateGatewayMut.mutate({ code: g.code, data: { enabled: v } })}
+                            />
+                            <span className='text-xs font-bold uppercase tracking-wider text-muted-foreground'>
+                              {g.enabled ? 'Active' : 'Inactive'}
+                            </span>
                           </div>
                         </div>
-                        <div className='flex items-center gap-3'>
-                          <Switch
-                            checked={g.enabled}
-                            onCheckedChange={(v) => updateGatewayMut.mutate({ code: g.code, data: { enabled: v } })}
-                          />
-                          <span className='text-xs font-bold uppercase tracking-wider text-muted-foreground'>
-                            {g.enabled ? 'Active' : 'Inactive'}
-                          </span>
+                        <div className='flex items-end gap-2 border-t pt-3'>
+                          <div className='flex-1'>{settlementAccountField(g, d, true)}</div>
+                          <Button
+                            size='sm'
+                            onClick={() => updateGatewayMut.mutate({ code: g.code, data: d })}
+                            disabled={updateGatewayMut.isPending}
+                          >
+                            {updateGatewayMut.isPending ? <Loader2 className='animate-spin h-3.5 w-3.5 mr-2' /> : <Save className='h-3.5 w-3.5 mr-2' />}
+                            Save
+                          </Button>
                         </div>
                       </CardContent>
                     </Card>
@@ -321,6 +404,7 @@ export function GatewaySettings() {
                           <CardTitle className='text-sm flex items-center gap-2'>
                             {g.name}
                             {g.enabled && <CheckCircle2 className='h-3 w-3 text-green-500' />}
+                            {noSettlementBadge(g)}
                           </CardTitle>
                           <CardDescription className='text-[11px]'>{g.type === 'api' ? 'Automatic payment via API' : 'Manual payment with number verification'}</CardDescription>
                         </div>
@@ -339,6 +423,7 @@ export function GatewaySettings() {
                               mode: currentMode,
                               phoneNumber: currentPhone,
                               credentials: currentCreds,
+                              accountId: d.accountId ?? g.accountId ?? null,
                               staffAutoVerifiedOverride: d.staffAutoVerifiedOverride ?? null,
                               editAllowedOverride: d.editAllowedOverride ?? null,
                             };
@@ -354,6 +439,7 @@ export function GatewaySettings() {
                                 mode: currentMode,
                                 phoneNumber: currentPhone,
                                 credentials: currentCreds,
+                                accountId: d.accountId ?? g.accountId ?? null,
                                 sortOrder: g.sortOrder,
                                 staffAutoVerifiedOverride: d.staffAutoVerifiedOverride ?? null,
                                 editAllowedOverride: d.editAllowedOverride ?? null,
@@ -398,6 +484,7 @@ export function GatewaySettings() {
                                   <Input className='h-9' type='password' value={d.credentials?.password || ''} onChange={e => setGatewayEditData(p => ({ ...p, [g.code]: { ...d, credentials: { ...d.credentials, password: e.target.value } } }))} placeholder='Password' />
                                 </div>
                               </div>
+                              {settlementAccountField(g, d)}
                             </div>
                             <div className='md:col-span-5 space-y-4'>
                               <div className='rounded-lg bg-background border p-4 space-y-3'>
@@ -434,6 +521,9 @@ export function GatewaySettings() {
                             <div className='space-y-2'>
                               <Label className='text-xs font-semibold flex items-center gap-1.5'><Phone className='h-3 w-3' /> Phone Number</Label>
                               <Input className='h-9' value={d.phoneNumber || ''} onChange={e => setGatewayEditData(p => ({ ...p, [g.code]: { ...d, phoneNumber: e.target.value } }))} placeholder='01XXXXXXXXX' />
+                            </div>
+                            <div className='sm:col-span-2'>
+                              {settlementAccountField(g, d)}
                             </div>
                             {g.type === 'manual' && (
                               <div className='sm:col-span-2 space-y-3 rounded-lg border bg-background p-3'>

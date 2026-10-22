@@ -119,6 +119,31 @@ describe('approveFinanceRule — versioned approvals (§11/§12)', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('rejects a courier outside the closed configured set', async () => {
+    const { svc } = await make(null);
+    await expect(
+      svc.approveFinanceRule({ ...base, courier: 'patho' }),
+    ).rejects.toThrow(/Unknown courier "patho"/);
+  });
+
+  it('rejects a courier whose credentials are not enabled', async () => {
+    const { svc, prisma } = await make(null);
+    prisma.courierCredentials = { findFirst: jest.fn().mockResolvedValue(null) };
+    await expect(
+      svc.approveFinanceRule({ ...base, courier: 'pathao' }),
+    ).rejects.toThrow(/not enabled/);
+    expect(prisma.courierCredentials.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { courier: 'pathao', enabled: true } }),
+    );
+  });
+
+  it('accepts a courier that is enabled in CourierCredentials', async () => {
+    const { svc, prisma } = await make(null);
+    prisma.courierCredentials = { findFirst: jest.fn().mockResolvedValue({ id: 'cred-1' }) };
+    const res = await svc.approveFinanceRule(base);
+    expect(res.version).toBe(1);
+  });
+
   it('listFinanceRules returns the archived versions for the rule cards', async () => {
     const { svc, prisma } = await make(null);
     prisma.courierSettlementFinanceRule.findMany.mockResolvedValue([

@@ -97,7 +97,9 @@ export interface OrderResponse {
   /** Append-only payment ledger rows (Task 11: account/actor/recordedAt). */
   payments: {
     id: string; method?: string; gatewayCode?: string; amount: number | string; status: string;
-    transactionId?: string | null; account?: string | null;
+    transactionId?: string | null; accountId?: string | null;
+    accountRef?: { id: string; code: string; name: string } | null;
+    account?: string | null;
     recordedBy?: string | null; submittedBy?: string | null; recordedAt?: string | null;
     verifiedBy?: string | null; verifiedAt?: string | null; notes?: string | null;
     createdAt?: string;

@@ -321,7 +321,14 @@ describe('PaymentsService.create credit-grant wiring (Task 8)', () => {
     mockPrisma.$transaction.mockImplementation(async (fn: any) => {
       mockPrisma.$queryRawUnsafe.mockResolvedValue(undefined);
       mockPrisma.order.findUniqueOrThrow.mockResolvedValue(order);
-      mockPrisma.paymentGateway.findUnique.mockResolvedValue(null);
+      mockPrisma.paymentGateway.findUnique.mockResolvedValue({
+        id: 'gw-bkash',
+        code: 'bkash',
+        name: 'bKash',
+        enabled: true,
+        type: 'manual',
+        accountId: null,
+      });
       mockPrisma.systemSetting.findMany.mockResolvedValue([]);
       mockPrisma.payment.create.mockImplementation(async (args: any) => ({
         id: 'pay-new',

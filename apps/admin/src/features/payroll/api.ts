@@ -78,6 +78,8 @@ export interface PayrollPayment {
   amount: number
   paidAt: string
   method: string | null
+  /** Part 5: eligible CoA asset leaf that paid the salary. */
+  accountId: string | null
   referenceNo: string | null
   note: string | null
   voidedAt: string | null
@@ -85,7 +87,7 @@ export interface PayrollPayment {
   voidReason: string | null
 }
 
-export type PaymentMethod = 'Cash' | 'Bank' | 'Check' | 'Mobile'
+export type PaymentMethod = string
 
 export interface PayslipListSummary {
   employeeCount: number
@@ -121,6 +123,8 @@ export interface SetPayslipStatusDto {
 export interface CreatePaymentDto {
   amount: number
   method?: PaymentMethod
+  /** Part 5: eligible CoA asset leaf used to pay the salary. */
+  accountId?: string
   referenceNo?: string
   note?: string
 }

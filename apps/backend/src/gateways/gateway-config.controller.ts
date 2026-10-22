@@ -18,6 +18,7 @@ import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { normalizePhone } from '../common/utils/phone-utils';
+import { normalizeAccountId } from '../payments/payment-account';
 
 @Controller('gateways')
 export class GatewayConfigController implements OnApplicationBootstrap {
@@ -185,6 +186,9 @@ export class GatewayConfigController implements OnApplicationBootstrap {
       include: {
         gateways: {
           orderBy: { sortOrder: 'asc' },
+          include: {
+            account: { select: { id: true, code: true, name: true, type: true } },
+          },
         },
       },
     });
@@ -220,7 +224,10 @@ export class GatewayConfigController implements OnApplicationBootstrap {
     const gateways = await this.prisma.paymentGateway.findMany({
       where,
       orderBy: [{ paymentOptionType: 'asc' }, { sortOrder: 'asc' }],
-      include: { paymentOption: true },
+      include: {
+        paymentOption: true,
+        account: { select: { id: true, code: true, name: true, type: true } },
+      },
     });
     return gateways.map((g) => ({
       id: g.id,
@@ -229,9 +236,12 @@ export class GatewayConfigController implements OnApplicationBootstrap {
       type: g.type,
       paymentOptionType: g.paymentOptionType,
       paymentOptionName: g.paymentOption?.name,
+      paymentOptionEnabled: g.paymentOption?.enabled,
       enabled: g.enabled,
       mode: g.mode,
       phoneNumber: g.phoneNumber,
+      accountId: g.accountId,
+      account: g.account,
       credentials: g.credentials,
       sortOrder: g.sortOrder,
       // D (owner-locked): tri-state overrides — null = use global default.
@@ -247,6 +257,11 @@ export class GatewayConfigController implements OnApplicationBootstrap {
     const phoneNumber = dto.phoneNumber
       ? normalizePhone(dto.phoneNumber)
       : null;
+    const accountId = await normalizeAccountId(
+      this.prisma,
+      dto.accountId,
+      'Settlement account',
+    );
     return this.prisma.paymentGateway.create({
       data: {
         code: dto.code,
@@ -256,6 +271,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
         enabled: dto.enabled ?? false,
         mode: dto.mode || 'personal',
         phoneNumber,
+        accountId: accountId ?? null,
         credentials: dto.credentials || {},
         sortOrder: dto.sortOrder || 0,
       },
@@ -269,6 +285,14 @@ export class GatewayConfigController implements OnApplicationBootstrap {
     const phoneNumber = dto.phoneNumber
       ? normalizePhone(dto.phoneNumber)
       : null;
+    // Part 1: settlement account is optional. Present-and-null clears it;
+    // absent leaves the existing mapping untouched. A supplied id must be an
+    // active, non-group asset leaf.
+    const accountId = await normalizeAccountId(
+      this.prisma,
+      dto.accountId,
+      'Settlement account',
+    );
     // D: tri-state overrides — only touched when the key is present, so
     // existing callers that never send them can't silently clear them.
     const overrideUpdate: Record<string, boolean | null> = {};
@@ -292,6 +316,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
         enabled: dto.enabled ?? false,
         mode: dto.mode || 'personal',
         phoneNumber,
+        accountId: accountId ?? null,
         credentials: dto.credentials || {},
         sortOrder: dto.sortOrder || 0,
         ...overrideUpdate,
@@ -303,6 +328,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
         enabled: dto.enabled,
         mode: dto.mode,
         phoneNumber,
+        ...(accountId !== undefined ? { accountId } : {}),
         credentials: dto.credentials,
         sortOrder: dto.sortOrder,
         ...overrideUpdate,

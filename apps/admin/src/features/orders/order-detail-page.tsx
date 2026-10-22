@@ -17,8 +17,13 @@ import { useAuthStore } from '@/stores/auth-store'
 import { UserBadge } from '@/components/user-badge'
 import { ordersApi, rtnApi, mediaUrl } from '@/features/orders/api'
 import { paymentsApi } from '@/features/payments/api'
+import { PaymentGatewayAccountSelect } from '@/features/payments/components/payment-gateway-account-select'
 import { OrderActionMenu } from '@/features/orders/components/order-action-menu'
 import { LinkedReturnsSection } from '@/features/orders/components/linked-returns-section'
+import {
+  OthersInfoIconButton,
+  canViewOthersInfo as canViewOthersInfoForRole,
+} from '@/features/orders/components/others-info-icon-button'
 
 import { CourierCustomerHistoryCard } from '@/features/orders/courier-customer-history-card'
 import { SteadfastSetPicker } from '@/features/dispatch/steadfast-set-picker'
@@ -64,7 +69,7 @@ import {
   Loader2, ArrowLeft, ArrowRight, Package, Pencil, Save, Clock, User, ChevronDown, ChevronUp,
   Truck, ExternalLink, Printer, Eye, EyeOff, MessageSquarePlus, ArrowRightLeft, Tag, Send,
   AlertTriangle, MoreHorizontal, Minus, Plus, X, MapPin, Mail, Phone, Trash2, RefreshCcw, Ban, Lock,
-  RotateCcw, ScanSearch, Calendar, CreditCard, CheckCircle2, ShoppingBag, History
+  RotateCcw, Calendar, CreditCard, CheckCircle2, ShoppingBag, History
 } from 'lucide-react'
 import { DISPATCH_STATUSES, getDispatchIdentifierLabels } from '@/features/dispatch/data/data'
 import { formatCourierDispatchToast } from '@/features/dispatch/courier-errors'
@@ -85,6 +90,71 @@ const errMsg = (e: unknown): string => {
   if (Array.isArray(msg)) return msg.join(', ')
   if (typeof d === 'string' && d.trim()) return d.trim()
   return 'Update failed. Please try again.'
+}
+
+/**
+ * Part 6: the historic RTN relationship, now the secondary "Legacy RTN record"
+ * sub-block inside the single Returns & Exchanges section. Markup/data are
+ * unchanged from the old standalone card.
+ */
+function LegacyRtnBlock({ order, rtnOrder }: { order: any; rtnOrder: any }) {
+  if (order.kind !== 'RETURN' && !rtnOrder) return null
+  return (
+    <div className='flex flex-col gap-3'>
+      {order.kind === 'RETURN' && order.returnOfOrder && (
+        <div className='text-xs text-muted-foreground flex items-center gap-1.5'>
+          <span>Original Order:</span>
+          <Link to='/op/orders/$id' params={{ id: order.returnOfOrder.id }} className='font-semibold text-primary hover:underline font-mono'>
+            {order.returnOfOrder.displayId}
+          </Link>
+        </div>
+      )}
+      {order.kind !== 'RETURN' && rtnOrder && (
+        <div className='text-xs text-muted-foreground flex items-center gap-1.5'>
+          <span>Linked Return Order:</span>
+          <Link to='/op/orders/$id' params={{ id: rtnOrder.id }} className='font-semibold text-primary hover:underline font-mono'>
+            {rtnOrder.displayId}
+          </Link>
+        </div>
+      )}
+      {rtnOrder && (
+        <div className='grid grid-cols-2 gap-3 p-3 rounded-lg bg-muted/40 border border-border/50'>
+          <div className='flex items-center gap-2'>
+            <span className='text-xs text-muted-foreground'>Return Status:</span>
+            <Badge
+              style={{ backgroundColor: statusColors[rtnOrder.status] || '#6B7280', color: '#fff' }}
+              className='text-xs font-medium'
+            >
+              {rtnOrder.status}
+            </Badge>
+          </div>
+          <div className='text-xs text-muted-foreground'>
+            Items Returned: <span className='font-semibold text-foreground'>{rtnOrder.itemCount}</span>
+          </div>
+          {order.dispatches && order.dispatches.length > 0 && (
+            <div className='text-xs text-muted-foreground flex items-center gap-1.5 col-span-2'>
+              <Truck className='h-3.5 w-3.5 text-muted-foreground' />
+              <span>{order.dispatches[order.dispatches.length - 1].courier} — {order.dispatches[order.dispatches.length - 1].consignmentId ?? 'pending webhook'}</span>
+            </div>
+          )}
+          {rtnOrder.status === 'Returned' && (
+            <p className='text-[11px] text-emerald-600 font-medium col-span-2'>Returned quantities have been restored to stock.</p>
+          )}
+          {rtnOrder.status === 'Return Pending' && (
+            <p className='text-[11px] text-muted-foreground col-span-2'>
+              Stock is restored when the return dispatch is confirmed (Scanner → Dispatch → Return).
+            </p>
+          )}
+        </div>
+      )}
+      {order.kind === 'RETURN' && (
+        <div className='text-xs text-muted-foreground flex flex-col gap-1.5 p-3 rounded-lg bg-muted/40 border border-border/50'>
+          <span>Returned At: <strong className='text-foreground'>{order.returnedAt ? new Date(order.returnedAt).toLocaleString() : '—'}</strong></span>
+          <span>Stock Restored: <strong className='text-foreground'>{order.stockRestored ? 'Yes' : 'No'}</strong></span>
+        </div>
+      )}
+    </div>
+  )
 }
 
 const ep = (p: any) => {
@@ -133,13 +203,16 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
   // 409 ORDER_LOCKED on GET /orders/:id. We surface the holder here and offer
   // the override — after override the query refetches successfully.
   const [showOthersInfo, setShowOthersInfo] = useState(false)
+  // Part 6: history stays one click away, not in the way. Timeline is the
+  // operational default; courier history starts collapsed.
+  const [timelineOpen, setTimelineOpen] = useState(true)
+  const [dispatchOpen, setDispatchOpen] = useState(false)
 
   // Others Information exposes IP, User-Agent, tracking identifiers and customer
   // PII — fraud-review grade data, not day-to-day order operations. Managers are
   // excluded here and the API enforces the same rule independently.
-  const othersInfoRoles = new Set(['superadmin', 'admin'])
   const role = useAuthStore((s) => s.auth.user?.role)
-  const canViewOthersInfo = !!role && othersInfoRoles.has(role)
+  const canViewOthersInfo = canViewOthersInfoForRole(role)
 
   const [viewLock, setViewLock] = useState<{ userName?: string | null; acquiredAt?: string | null } | null>(null)
   const { data: order, isLoading } = useQuery({
@@ -174,7 +247,8 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
 
   // ── Payment edit state (mirrors the create-page payment card) ──
   const [editingPayment, setEditingPayment] = useState(false)
-  const [paymentMethod, setPaymentMethod] = useState('cash')
+  const [paymentMethod, setPaymentMethod] = useState('')
+  const [paymentAccountId, setPaymentAccountId] = useState('')
   const [paymentMode, setPaymentMode] = useState<'cod' | 'full' | 'partial'>('cod')
   const [partialAmount, setPartialAmount] = useState('')
 
@@ -388,7 +462,8 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
       : order.paymentOptionType === 'PARTIAL_PAYMENT' ? 'partial'
       : 'full'
     setPaymentMode(mode)
-    setPaymentMethod((order.payments?.[0]?.gatewayCode) || 'cash')
+    setPaymentMethod((order.payments?.[0]?.gatewayCode) || '')
+    setPaymentAccountId((order.payments?.[0]?.accountId) || '')
     setPartialAmount(order.partialAmount ? String(order.partialAmount) : '')
     setEditingPayment(true)
   }
@@ -413,6 +488,7 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
         data: {
           paymentOptionType: paymentMode === 'cod' ? 'CASH_ON_DELIVERY' : paymentMode === 'full' ? 'FULL_PAYMENT' : 'PARTIAL_PAYMENT',
           gatewayCode: paymentMethod || undefined,
+          ...(paymentAccountId ? { accountId: paymentAccountId } : {}),
           partialAmount: paymentMode === 'partial' && partialAmount ? parseFloat(partialAmount) : undefined,
         },
       })
@@ -743,19 +819,6 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                   'Create return' flow (CreateReturnDialog). RTN backend
                   untouched; historic linked RTN rows still render below. */}
 
-                {canViewOthersInfo && (
-                  <Button
-                    variant='outline'
-                    size='sm'
-                    className='h-8 gap-1.5 text-xs font-medium'
-                    onClick={() => setShowOthersInfo(true)}
-                  >
-                    <ScanSearch className='h-3.5 w-3.5' />
-                    <span className='hidden sm:inline'>Others Information</span>
-                    <span className='sm:hidden'>Others</span>
-                  </Button>
-                )}
-
                 {/* Task 4 (Fix 8): Plus (+) return/exchange action menu */}
                 {!order.trashedAt && <OrderActionMenu order={order} />}
 
@@ -798,6 +861,11 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>
+
+                <OthersInfoIconButton
+                  role={role}
+                  onOpen={() => setShowOthersInfo(true)}
+                />
               </div>
             </div>
           </div>
@@ -1251,16 +1319,15 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                     )}
                     {editingPayment ? (
                       <div className='space-y-3.5'>
-                        <div>
-                          <Label className='text-xs font-medium'>Payment Method</Label>
-                          <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-xs mt-1 font-medium' value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
-                            <option value='cash'>Cash</option>
-                            <option value='bkash'>bKash</option>
-                            <option value='nagad'>Nagad</option>
-                            <option value='bank'>Bank</option>
-                            <option value='card'>Card</option>
-                          </select>
-                        </div>
+                        <PaymentGatewayAccountSelect
+                          compact
+                          gatewayCode={paymentMethod}
+                          accountId={paymentAccountId}
+                          onChange={(next) => {
+                            setPaymentMethod(next.gatewayCode)
+                            setPaymentAccountId(next.accountId)
+                          }}
+                        />
                         <div>
                           <Label className='text-xs font-medium'>Payment Mode</Label>
                           <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-xs mt-1 font-medium' value={paymentMode} onChange={e => setPaymentMode(e.target.value as any)}>
@@ -1330,29 +1397,42 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                         <p className='text-xs text-muted-foreground mt-0.5'>Audit trail of status transitions, courier updates, and staff notes</p>
                       </div>
                     </div>
-                    <div className='flex items-center gap-1 flex-wrap' role='group' aria-label='Filter timeline by source'>
-                      {TIMELINE_FILTERS.map((f) => (
-                        <button
-                          key={f.key}
-                          type='button'
-                          onClick={() => changeTimelineFilter(f.key)}
-                          aria-pressed={timelineFilter === f.key}
-                          data-testid={`timeline-filter-${f.key}`}
-                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                            timelineFilter === f.key
-                              ? 'border-primary/40 bg-primary/10 text-primary'
-                              : 'border-border/60 bg-muted/30 text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                          }`}
-                        >
-                          {f.label}
-                          <span className={`rounded-full px-1.5 text-[10px] tabular-nums ${timelineFilter === f.key ? 'bg-primary/15' : 'bg-muted'}`}>
-                            {timelineCounts[f.key]}
-                          </span>
-                        </button>
-                      ))}
+                    <div className='flex items-center gap-2 flex-wrap'>
+                      <div className='flex items-center gap-1 flex-wrap' role='group' aria-label='Filter timeline by source'>
+                        {TIMELINE_FILTERS.map((f) => (
+                          <button
+                            key={f.key}
+                            type='button'
+                            onClick={() => changeTimelineFilter(f.key)}
+                            aria-pressed={timelineFilter === f.key}
+                            data-testid={`timeline-filter-${f.key}`}
+                            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                              timelineFilter === f.key
+                                ? 'border-primary/40 bg-primary/10 text-primary'
+                                : 'border-border/60 bg-muted/30 text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                            }`}
+                          >
+                            {f.label}
+                            <span className={`rounded-full px-1.5 text-[10px] tabular-nums ${timelineFilter === f.key ? 'bg-primary/15' : 'bg-muted'}`}>
+                              {timelineCounts[f.key]}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                      <Button
+                        variant='ghost'
+                        size='icon'
+                        className='h-7 w-7 shrink-0 text-muted-foreground'
+                        aria-expanded={timelineOpen}
+                        aria-label={timelineOpen ? 'Collapse timeline' : 'Expand timeline'}
+                        onClick={() => setTimelineOpen((v) => !v)}
+                      >
+                        {timelineOpen ? <ChevronUp className='h-4 w-4' /> : <ChevronDown className='h-4 w-4' />}
+                      </Button>
                     </div>
                   </div>
                 </CardHeader>
+                {timelineOpen && (
                 <CardContent className='p-3 sm:p-6'>
                   {timelineEntries.length === 0 ? (
                     <div className='text-center py-8 text-muted-foreground'>
@@ -1487,28 +1567,42 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                     </div>
                   </div>
                 </CardContent>
+                )}
               </Card>
 
               {/* Dispatch History */}
               <Card className='overflow-hidden border border-border/70 shadow-xs'>
                 <CardHeader className='bg-muted/30 border-b border-border/50 py-2.5 px-3.5 sm:py-3.5 sm:px-6'>
-                  <div className='flex items-center gap-2.5'>
-                    <div className='h-8 w-8 rounded-lg bg-blue-500/10 text-blue-500 flex items-center justify-center font-semibold'>
-                      <Truck className='h-4 w-4' />
+                  <div className='flex items-center justify-between gap-2.5'>
+                    <div className='flex items-center gap-2.5'>
+                      <div className='h-8 w-8 rounded-lg bg-blue-500/10 text-blue-500 flex items-center justify-center font-semibold'>
+                        <Truck className='h-4 w-4' />
+                      </div>
+                      <div>
+                        <CardTitle className='text-sm font-semibold tracking-tight text-foreground flex items-center gap-2'>
+                          Courier Dispatch History
+                          {(order.dispatches?.length ?? 0) > 0 && (
+                            <Badge variant='secondary' className='text-[11px] font-medium px-2 py-0.5 rounded-full'>
+                              {order.dispatches?.length}
+                            </Badge>
+                          )}
+                        </CardTitle>
+                        <p className='text-xs text-muted-foreground mt-0.5'>Consignment tracking and courier status logs</p>
+                      </div>
                     </div>
-                    <div>
-                      <CardTitle className='text-sm font-semibold tracking-tight text-foreground flex items-center gap-2'>
-                        Courier Dispatch History
-                        {(order.dispatches?.length ?? 0) > 0 && (
-                          <Badge variant='secondary' className='text-[11px] font-medium px-2 py-0.5 rounded-full'>
-                            {order.dispatches?.length}
-                          </Badge>
-                        )}
-                      </CardTitle>
-                      <p className='text-xs text-muted-foreground mt-0.5'>Consignment tracking and courier status logs</p>
-                    </div>
+                    <Button
+                      variant='ghost'
+                      size='icon'
+                      className='h-7 w-7 shrink-0 text-muted-foreground'
+                      aria-expanded={dispatchOpen}
+                      aria-label={dispatchOpen ? 'Collapse dispatch history' : 'Expand dispatch history'}
+                      onClick={() => setDispatchOpen((v) => !v)}
+                    >
+                      {dispatchOpen ? <ChevronUp className='h-4 w-4' /> : <ChevronDown className='h-4 w-4' />}
+                    </Button>
                   </div>
                 </CardHeader>
+                {dispatchOpen && (
                 <CardContent className='p-0'>
                   {order.dispatches && order.dispatches.length > 0 ? (
                     <>
@@ -1682,83 +1776,19 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                     </div>
                   )}
                 </CardContent>
+                )}
               </Card>
 
-              {/* ── Return relationship (RTN) ─────────────────────────── */}
-              {(order.kind === 'RETURN' || rtnOrder) && (
-                <Card className={`overflow-hidden shadow-xs border ${order.kind === 'RETURN' ? 'border-pink-500/40 bg-pink-500/[0.02]' : 'border-border/70'}`}>
-                  <CardHeader className='bg-muted/30 border-b border-border/50 py-2.5 px-3.5 sm:py-3.5 sm:px-6'>
-                    <div className='flex items-center gap-2.5'>
-                      <div className='h-8 w-8 rounded-lg bg-pink-500/10 text-pink-500 flex items-center justify-center font-semibold'>
-                        <RotateCcw className='h-4 w-4' />
-                      </div>
-                      <div>
-                        <CardTitle className='text-sm font-semibold tracking-tight text-foreground flex items-center gap-2'>
-                          Return Relationship
-                        </CardTitle>
-                        <p className='text-xs text-muted-foreground mt-0.5'>Linked return order and item restitution state</p>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className='p-3 sm:p-6 flex flex-col gap-3'>
-                    {order.kind === 'RETURN' && order.returnOfOrder && (
-                      <div className='text-xs text-muted-foreground flex items-center gap-1.5'>
-                        <span>Original Order:</span>
-                        <Link to='/op/orders/$id' params={{ id: order.returnOfOrder.id }} className='font-semibold text-primary hover:underline font-mono'>
-                          {order.returnOfOrder.displayId}
-                        </Link>
-                      </div>
-                    )}
-                    {order.kind !== 'RETURN' && rtnOrder && (
-                      <div className='text-xs text-muted-foreground flex items-center gap-1.5'>
-                        <span>Linked Return Order:</span>
-                        <Link to='/op/orders/$id' params={{ id: rtnOrder.id }} className='font-semibold text-primary hover:underline font-mono'>
-                          {rtnOrder.displayId}
-                        </Link>
-                      </div>
-                    )}
-                    {rtnOrder && (
-                      <div className='grid grid-cols-2 gap-3 p-3 rounded-lg bg-muted/40 border border-border/50'>
-                        <div className='flex items-center gap-2'>
-                          <span className='text-xs text-muted-foreground'>Return Status:</span>
-                          <Badge
-                            style={{ backgroundColor: statusColors[rtnOrder.status] || '#6B7280', color: '#fff' }}
-                            className='text-xs font-medium'
-                          >
-                            {rtnOrder.status}
-                          </Badge>
-                        </div>
-                        <div className='text-xs text-muted-foreground'>
-                          Items Returned: <span className='font-semibold text-foreground'>{rtnOrder.itemCount}</span>
-                        </div>
-                        {order.dispatches && order.dispatches.length > 0 && (
-                          <div className='text-xs text-muted-foreground flex items-center gap-1.5 col-span-2'>
-                            <Truck className='h-3.5 w-3.5 text-muted-foreground' />
-                            <span>{order.dispatches[order.dispatches.length - 1].courier} — {order.dispatches[order.dispatches.length - 1].consignmentId ?? 'pending webhook'}</span>
-                          </div>
-                        )}
-                        {rtnOrder.status === 'Returned' && (
-                          <p className='text-[11px] text-emerald-600 font-medium col-span-2'>Returned quantities have been restored to stock.</p>
-                        )}
-                        {rtnOrder.status === 'Return Pending' && (
-                          <p className='text-[11px] text-muted-foreground col-span-2'>
-                            Stock is restored when the return dispatch is confirmed (Scanner → Dispatch → Return).
-                          </p>
-                        )}
-                      </div>
-                    )}
-                    {order.kind === 'RETURN' && (
-                      <div className='text-xs text-muted-foreground flex flex-col gap-1.5 p-3 rounded-lg bg-muted/40 border border-border/50'>
-                        <span>Returned At: <strong className='text-foreground'>{order.returnedAt ? new Date(order.returnedAt).toLocaleString() : '—'}</strong></span>
-                        <span>Stock Restored: <strong className='text-foreground'>{order.stockRestored ? 'Yes' : 'No'}</strong></span>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* ── Linked returns & exchanges (unified Return entity) ─── */}
-              {order.kind !== 'RETURN' && <LinkedReturnsSection orderId={order.id} />}
+              {/* ── Returns & Exchanges: linked rows are primary; the historic
+                  RTN relationship is the labelled legacy sub-block. ─── */}
+              <LinkedReturnsSection
+                orderId={order.id}
+                legacy={
+                  order.kind === 'RETURN' || rtnOrder ? (
+                    <LegacyRtnBlock order={order} rtnOrder={rtnOrder} />
+                  ) : null
+                }
+              />
             </div>
 
             {/* ════ RIGHT COLUMN (5/12 or 4/12) ════ */}
@@ -1959,7 +1989,7 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
 
               {/* Courier Customer History */}
               {/* Courier Customer History — phone VALUE from snapshot (D-A) */}
-              <CourierCustomerHistoryCard phone={getCustomerPhone(order)} />
+              <CourierCustomerHistoryCard phone={getCustomerPhone(order)} defaultOpen={false} />
 
             </div>
           </div>

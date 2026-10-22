@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
@@ -9,6 +9,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { refundsApi } from '@/features/refunds/api'
 import { gatewayApi } from '@/features/gateways/api'
+import { paymentsApi, type PaymentRow } from '@/features/payments/api'
+import { PaymentGatewayAccountSelect } from '@/features/payments/components/payment-gateway-account-select'
+import { enabledGatewayOptions } from '@/features/payments/lib/eligible-accounts'
 import { useAuthStore } from '@/stores/auth-store'
 
 export const REFUND_CANCEL_QUESTION = 'Should this order be cancelled too?'
@@ -38,6 +41,7 @@ export function refundUnavailableReason(opts: {
 export interface RefundSourceContext {
   id: string
   gatewayCode: string
+  accountId?: string | null
   amount: number
   remainder: number
 }
@@ -85,16 +89,67 @@ export function RecordRefundModal({
       })
     : null
   const [amount, setAmount] = useState(initialAmount !== undefined ? String(initialAmount) : '')
-  const [method, setMethod] = useState('')
+  const [gatewayCode, setGatewayCode] = useState('')
+  const [accountId, setAccountId] = useState('')
   const [reason, setReason] = useState('')
   const [cancelToo, setCancelToo] = useState(false)
+  const defaultsAppliedRef = useRef(false)
+
+  // Part 4 defaults: the latest verified (PAID) payment on the order. When the
+  // modal is opened from selected ledger rows, those rows win.
+  const { data: paidPayments } = useQuery({
+    queryKey: ['refund-default-payment', orderId],
+    queryFn: () => paymentsApi.list({ orderId, status: 'PAID', perPage: 100 }),
+    enabled: open && !sourceContext?.length,
+    staleTime: 30_000,
+  })
+  const { data: gateways } = useQuery({
+    queryKey: ['admin-gateways'],
+    queryFn: () => gatewayApi.listGateways().then((r) => r.data),
+    enabled: open,
+    staleTime: 60_000,
+  })
+
+  const latestPayment = useMemo<PaymentRow | undefined>(() => {
+    const rows = paidPayments?.data ?? []
+    return [...rows]
+      .filter((r) => r.status === 'PAID' && Number(r.amount) > 0)
+      .sort(
+        (a, b) =>
+          new Date(b.recordedAt || b.verifiedAt || b.createdAt).getTime() -
+          new Date(a.recordedAt || a.verifiedAt || a.createdAt).getTime(),
+      )[0]
+  }, [paidPayments])
+
+  useEffect(() => {
+    if (!open) {
+      defaultsAppliedRef.current = false
+      return
+    }
+    if (defaultsAppliedRef.current || !gateways) return
+    const source = sourceContext?.[0] ?? latestPayment
+    if (!source) return
+    defaultsAppliedRef.current = true
+    const raw = source.gatewayCode || ''
+    const match = enabledGatewayOptions(gateways).find(
+      (g) => g.code === raw || g.code.toLowerCase() === raw.toLowerCase(),
+    )
+    setGatewayCode(match?.code ?? '')
+    setAccountId(match ? source.accountId ?? '' : '')
+  }, [open, gateways, sourceContext, latestPayment])
+
+  const selectedGateway = enabledGatewayOptions(gateways).find(
+    (g) => g.code === gatewayCode,
+  )
 
   const refundMut = useMutation({
     mutationFn: () =>
       refundsApi.create({
         orderId,
         amount: parseFloat(amount),
-        method: method.trim(),
+        method: selectedGateway?.name || gatewayCode,
+        gatewayCode,
+        accountId: accountId || undefined,
         reason: reason.trim(),
         cancelToo,
         ...(sourcePaymentIds?.length ? { sourcePaymentIds } : {}),
@@ -107,9 +162,11 @@ export function RecordRefundModal({
       queryClient.invalidateQueries({ queryKey: ['refunds'] })
       onClose()
       setAmount(initialAmount !== undefined ? String(initialAmount) : '')
-      setMethod('')
+      setGatewayCode('')
+      setAccountId('')
       setReason('')
       setCancelToo(false)
+      defaultsAppliedRef.current = false
     },
     onError: (e: unknown) => {
       const err = e as any
@@ -127,8 +184,12 @@ export function RecordRefundModal({
       toast.error('Enter a refund amount greater than 0')
       return
     }
-    if (!method.trim()) {
-      toast.error('Refund account/method is required')
+    if (!gatewayCode) {
+      toast.error('Select the configured gateway that returned the money')
+      return
+    }
+    if (!accountId) {
+      toast.error('Select the account that received the refund')
       return
     }
     if (!reason.trim()) {
@@ -174,16 +235,6 @@ export function RecordRefundModal({
             />
           </div>
           <div>
-            <Label htmlFor="record-refund-method">Refund to (account / method)</Label>
-            <Input
-              id="record-refund-method"
-              value={method}
-              onChange={(e) => setMethod(e.target.value)}
-              placeholder="e.g. bkash 017XXXXXXXX"
-              className="h-9 text-sm mt-1"
-            />
-          </div>
-          <div>
             <Label htmlFor="record-refund-reason">Reason</Label>
             <Textarea
               id="record-refund-reason"
@@ -194,6 +245,15 @@ export function RecordRefundModal({
               className="text-sm mt-1"
             />
           </div>
+          <PaymentGatewayAccountSelect
+            gatewayCode={gatewayCode}
+            accountId={accountId}
+            onChange={(next) => {
+              defaultsAppliedRef.current = true
+              setGatewayCode(next.gatewayCode)
+              setAccountId(next.accountId)
+            }}
+          />
           <div className="rounded-lg border border-border/60 bg-muted/30 p-3 space-y-2">
             <p className="text-sm font-medium">{REFUND_CANCEL_QUESTION}</p>
             <label className="flex items-center gap-2 text-sm cursor-pointer">

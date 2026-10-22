@@ -20,6 +20,11 @@ import { SalesChannelService } from '../sales-channel/sales-channel.service';
 import { OrdersEventService } from './orders-event.service';
 import { withTimelineSources } from './timeline-source';
 import { resolveEffectivePaymentSettings } from '../payments/payment-settings';
+import {
+  findConfiguredGateway,
+  requireConfiguredGateway,
+  resolvePaymentAccountId,
+} from '../payments/payment-account';
 import { buildOrderSearchFilter } from './order-search';
 import { orderSnapshotCustomer } from './order-recipient';
 import {
@@ -2346,11 +2351,22 @@ export class OrdersService {
         ) {
           const advancePaid = Number(dto.partialAmount);
           const advanceGateway = dto.gatewayCode || 'cash';
+          // Part 3: staff order-create is a staff payment write path. A
+          // supplied unknown code 400s (the internal 'cash' fallback only
+          // resolves its mapping), and the mapped account is stamped.
+          const gateway = dto.gatewayCode
+            ? await requireConfiguredGateway(tx as any, dto.gatewayCode)
+            : await findConfiguredGateway(tx as any, advanceGateway);
+          const advanceAccountId = await resolvePaymentAccountId(tx as any, {
+            accountId: dto.accountId,
+            gatewayAccountId: gateway?.accountId,
+          });
           await tx.payment.create({
             data: {
               orderId: created.id,
               gatewayCode: advanceGateway,
               amount: advancePaid,
+              accountId: advanceAccountId,
               status: PaymentStatus.PAID,
               verifiedAt: new Date(),
               verifiedBy: userId,
@@ -3462,6 +3478,16 @@ export class OrdersService {
           dto.gatewayCode ||
           (dto.paymentOptionType === 'CASH_ON_DELIVERY' ? 'cash' : undefined);
         if (gatewayCode) {
+          // Part 3: staff order edit is a staff payment write path. Validate
+          // a supplied code against config and resolve the account to stamp
+          // (explicit id wins; otherwise the gateway mapping).
+          const gateway = dto.gatewayCode
+            ? await requireConfiguredGateway(tx as any, dto.gatewayCode)
+            : await findConfiguredGateway(tx as any, gatewayCode);
+          const nextAccountId = await resolvePaymentAccountId(tx as any, {
+            accountId: dto.accountId,
+            gatewayAccountId: gateway?.accountId,
+          });
           // Update the earliest non-finalized payment row rather than piling
           // up duplicates; only create when the order has no payment row yet.
           const existing = await tx.payment.findFirst({
@@ -3494,6 +3520,7 @@ export class OrdersService {
                   orderId: id,
                   gatewayCode: existing.gatewayCode,
                   amount: -Number(existing.amount),
+                  accountId: existing.accountId,
                   status: existing.status,
                   notes: `Reversal of payment ${existing.id}: advance covers the full bill — auto-reversal entry, original row retained.`,
                   recordedBy: actor,
@@ -3505,7 +3532,10 @@ export class OrdersService {
               const amountChanged =
                 Number(existing.amount) !== paymentAmount;
               const gatewayChanged = existing.gatewayCode !== gatewayCode;
-              if (amountChanged || gatewayChanged) {
+              const accountChanged =
+                dto.accountId !== undefined &&
+                (dto.accountId ?? null) !== (existing.accountId ?? null);
+              if (amountChanged || gatewayChanged || accountChanged) {
                 // S2 gate (default OFF): direct amount/account edits are
                 // forbidden — staff record a correction entry instead.
                 // D (owner-locked): resolve for the row's gateway — a
@@ -3523,6 +3553,7 @@ export class OrdersService {
                   gatewayCode: existing.gatewayCode,
                   amount: Number(existing.amount),
                   status: existing.status,
+                  accountId: existing.accountId ?? null,
                 };
                 const newStatus =
                   gatewayCode === 'cash'
@@ -3534,6 +3565,9 @@ export class OrdersService {
                     gatewayCode,
                     amount: paymentAmount,
                     status: newStatus,
+                    ...(gatewayChanged || dto.accountId !== undefined
+                      ? { accountId: nextAccountId }
+                      : {}),
                   },
                 });
                 // S2-ON direct edits stay auditable: append old → new + by.
@@ -3551,6 +3585,7 @@ export class OrdersService {
                       gatewayCode,
                       amount: paymentAmount,
                       status: newStatus,
+                      accountId: nextAccountId,
                     },
                     by: editedBy,
                     at: now,

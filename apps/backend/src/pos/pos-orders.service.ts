@@ -22,6 +22,7 @@ import { Prisma } from '@prisma/client';
 import { CommissionsService } from '../commissions/commissions.service';
 import { CustomerAddressService } from '../customers/customer-address.service';
 import { SalesChannelService } from '../sales-channel/sales-channel.service';
+import { resolveGatewayAccountId } from '../payments/payment-account';
 
 @Injectable()
 export class PosOrdersService {
@@ -784,6 +785,7 @@ private async resolveCanonicalPos(
               orderId: order.id,
               amount: pm.amount,
               gatewayCode: pm.method,
+              accountId: await resolveGatewayAccountId(tx as any, pm.method),
               status: 'PAID',
               verifiedBy: cashierId,
               verifiedAt: new Date(),
@@ -796,6 +798,7 @@ private async resolveCanonicalPos(
             orderId: order.id,
             amount: total,
             gatewayCode: 'CASH',
+            accountId: await resolveGatewayAccountId(tx as any, 'CASH'),
             status: 'PAID',
             verifiedBy: cashierId,
             verifiedAt: new Date(),

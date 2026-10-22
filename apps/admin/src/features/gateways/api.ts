@@ -17,9 +17,14 @@ export interface GatewayConfig {
   type: string;
   paymentOptionType: string;
   paymentOptionName: string;
+  /** Whether the gateway's payment option is enabled (POS-visible set). */
+  paymentOptionEnabled?: boolean;
   enabled: boolean;
   mode: string;
   phoneNumber: string | null;
+  /** Part 1: default settlement account mapped in Settings → Payment Gateways. */
+  accountId?: string | null;
+  account?: { id: string; code: string; name: string; type: string } | null;
   credentials: any;
   sortOrder: number;
   /** D: tri-state per-gateway overrides — null = use the global default. */

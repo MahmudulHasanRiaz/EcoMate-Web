@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router'
+import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowRightLeft, RotateCcw } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -132,7 +133,14 @@ function LineList({ lines }: { lines: Line[] }) {
   )
 }
 
-export function LinkedReturnsSection({ orderId }: { orderId: string }) {
+export function LinkedReturnsSection({
+  orderId,
+  legacy,
+}: {
+  orderId: string
+  /** Historic RTN relationship, rendered as the secondary legacy sub-block. */
+  legacy?: ReactNode
+}) {
   const { data: returns } = useQuery({
     queryKey: ['order-returns', orderId],
     queryFn: () => returnsApi.list({ orderId, limit: 100 }).then((r) => r.data),
@@ -150,9 +158,9 @@ export function LinkedReturnsSection({ orderId }: { orderId: string }) {
   const exRows = ready?.exchanges ?? []
   const empty = rtnRows.length === 0 && exRows.length === 0
 
-  // Nothing linked → nothing rendered. An empty card is noise on every order
-  // that never had a return or exchange.
-  if (empty) return null
+  // Nothing linked and no historic relationship → nothing rendered. An empty
+  // card is noise on every order that never had a return or exchange.
+  if (empty && !legacy) return null
 
   return (
     <Card className='overflow-hidden border border-border/70 shadow-xs'>
@@ -163,13 +171,18 @@ export function LinkedReturnsSection({ orderId }: { orderId: string }) {
           </div>
           <div>
             <CardTitle className='text-sm font-semibold tracking-tight text-foreground flex items-center gap-2'>
-              Linked returns &amp; exchanges
+              Returns &amp; Exchanges
             </CardTitle>
             <p className='text-xs text-muted-foreground mt-0.5'>Every return and exchange leg raised against this order</p>
           </div>
         </div>
       </CardHeader>
       <CardContent className='p-3 sm:p-6 flex flex-col gap-2'>
+        {!empty && (
+          <p className='text-[11px] font-medium uppercase tracking-wide text-muted-foreground'>
+            Linked returns &amp; exchanges
+          </p>
+        )}
         {rtnRows.map((r: any) => {
           const lines = returnLines(r)
           const received = receivedByLine(r)
@@ -205,6 +218,14 @@ export function LinkedReturnsSection({ orderId }: { orderId: string }) {
             <LineList lines={exchangeLines(e)} />
           </div>
         ))}
+        {legacy ? (
+          <div className='mt-2 border-t border-border/60 pt-3'>
+            <p className='mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground'>
+              Legacy RTN record
+            </p>
+            {legacy}
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   )

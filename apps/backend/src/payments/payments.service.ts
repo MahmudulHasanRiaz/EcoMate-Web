@@ -17,6 +17,11 @@ import {
   readPaymentSettings,
   resolveEffectivePaymentSettings,
 } from './payment-settings';
+import {
+  findConfiguredGateway,
+  requireConfiguredGateway,
+  resolvePaymentAccountId,
+} from './payment-account';
 
 @Injectable()
 export class PaymentsService {
@@ -241,22 +246,27 @@ export class PaymentsService {
         dto.gatewayCode,
       );
 
-      // Manual gateway detection: look up by code; unknown codes are treated
-      // as manual (safe — forces account + verification instead of silent
-      // auto-verify). Optional-chained so unit-test tx doubles without a
-      // paymentGateway delegate still resolve (as unknown → manual).
-      let gateway: { type?: string } | null = null;
+      // Part 3: staff writes validate gatewayCode against the configured set
+      // — no silent "treat as manual". Customer paths keep legacy tolerance.
+      let gateway: { type?: string; accountId?: string | null } | null = null;
       try {
-        gateway =
-          (await (tx as any).paymentGateway?.findUnique?.({
-            where: { code: dto.gatewayCode },
-          })) ?? null;
-      } catch {
+        gateway = isStaff
+          ? await requireConfiguredGateway(tx as any, dto.gatewayCode)
+          : await findConfiguredGateway(tx as any, dto.gatewayCode);
+      } catch (err) {
+        if (isStaff) throw err;
         gateway = null;
       }
       const isManual = !gateway || gateway.type === 'manual';
 
-      if (isManual && !(dto.account && dto.account.trim())) {
+      // Part 3: stamp the gateway's mapped settlement account unless the
+      // client supplied an eligible one. A supplied-but-ineligible id 400s.
+      const accountId = await resolvePaymentAccountId(tx as any, {
+        accountId: dto.accountId,
+        gatewayAccountId: gateway?.accountId,
+      });
+
+      if (isManual && !isStaff && !accountId && !(dto.account && dto.account.trim())) {
         throw new BadRequestException(
           'Account is required for manual gateway payments',
         );
@@ -293,6 +303,7 @@ export class PaymentsService {
           orderId,
           gatewayCode: dto.gatewayCode,
           amount: dto.amount,
+          accountId,
           account: dto.account,
           transactionId: dto.transactionId,
           screenshot: dto.screenshot,

@@ -110,6 +110,10 @@ describe('PosOrdersService', () => {
             payment: {
               create: jest.fn(),
             },
+            paymentGateway: {
+              findUnique: jest.fn(),
+              findFirst: jest.fn(),
+            },
           },
         },
         {
@@ -821,6 +825,32 @@ describe('PosOrdersService', () => {
           }),
         );
         expect(result).toBeDefined();
+      });
+
+      it('stamps the configured account on POS payments (legacy CASH resolves case-insensitively)', async () => {
+        setupSuccessMocks();
+        (prisma.paymentGateway.findUnique as jest.Mock).mockResolvedValue(null);
+        (prisma.paymentGateway.findFirst as jest.Mock).mockResolvedValue({
+          accountId: 'acc-cash',
+        });
+
+        await service.create(
+          {
+            items: [{ productId: 'prod-1', quantity: 2, price: 1000 }],
+            payments: [{ method: 'CASH', amount: 2000 }],
+          } as any,
+          'session-1',
+          'cashier-1',
+        );
+
+        expect(prisma.payment.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              gatewayCode: 'CASH',
+              accountId: 'acc-cash',
+            }),
+          }),
+        );
       });
 
       it('captures an offline Purchase snapshot for counter sales (physical_store)', async () => {

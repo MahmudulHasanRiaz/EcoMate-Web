@@ -12,6 +12,11 @@ export class CreatePaymentDto {
   @IsString()
   paymentMethod?: string;
 
+  /** Part 5: eligible CoA asset leaf that paid the supplier. */
+  @IsOptional()
+  @IsString()
+  accountId?: string;
+
   @IsOptional()
   @IsString()
   reference?: string;

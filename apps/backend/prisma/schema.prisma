@@ -1070,6 +1070,11 @@ model Payment {
   id                String        @id @default(uuid())
   orderId           String
   gatewayCode       String // Links to PaymentGateway.code (e.g., 'bkash', 'nagad', 'bkash_pgw', 'cash')
+  /// Strategy A (Phase 1) identity bridge: the chart-of-accounts asset leaf
+  /// the money actually landed in. `account` below remains the legacy display
+  /// snapshot — no report reads it. NULL = not yet mapped.
+  accountId         String?
+  accountRef        Account?      @relation("PaymentAccount", fields: [accountId], references: [id])
   amount            Decimal       @db.Decimal(10, 2)
   transactionId     String?
   providerPaymentId String?       @unique // bKash paymentID, bound at initiation
@@ -1109,6 +1114,7 @@ model Payment {
 
   @@unique([transactionId, gatewayCode])
   @@index([orderId])
+  @@index([accountId])
   @@index([gatewayCode])
   @@index([transactionId])
   @@index([sourceOrderId])
@@ -1298,6 +1304,11 @@ model PaymentGateway {
   enabled           Boolean           @default(false)
   mode              String            @default("personal") // 'personal' | 'agent' | 'merchant' | 'sandbox' | 'production'
   phoneNumber       String?
+  /// Strategy A (Phase 1): the default settlement asset leaf for this
+  /// gateway. The admin selects it in Settings → Payment Gateways; payments
+  /// stamp it on creation. NULL = unmapped (visible warning badge).
+  accountId         String?
+  account           Account?          @relation("PaymentGatewaySettlementAccount", fields: [accountId], references: [id])
   credentials       Json?             @default("{}")
   sortOrder         Int               @default(0)
   /// Per-gateway tri-state overrides for the two global payment settings.
@@ -1309,6 +1320,7 @@ model PaymentGateway {
   updatedAt         DateTime          @updatedAt
 
   @@index([paymentOptionType])
+  @@index([accountId])
 }
 
 model ProductPaymentOption {
@@ -2789,6 +2801,9 @@ model PayrollPayment {
   amount       Decimal   @db.Decimal(10, 2)
   paidAt       DateTime  @default(now())
   method       String?
+  /// Strategy A (Phase 1): eligible asset leaf the salary was paid from.
+  accountId    String?
+  account      Account?  @relation("PayrollPaymentAccount", fields: [accountId], references: [id])
   referenceNo  String?
   note         String?
   recordedById String?
@@ -2798,6 +2813,7 @@ model PayrollPayment {
   createdAt    DateTime  @default(now())
 
   @@index([payslipId])
+  @@index([accountId])
 }
 
 model EmploymentHistory {
@@ -2911,6 +2927,10 @@ model Account {
   expenseCategory   ExpenseCategory[]
   expensePayments   Expense[]
   marketingPayments MarketingPayment[]
+  paymentGateways   PaymentGateway[]   @relation("PaymentGatewaySettlementAccount")
+  payments          Payment[]          @relation("PaymentAccount")
+  supplierPayments  SupplierPayment[]  @relation("SupplierPaymentAccount")
+  payrollPayments   PayrollPayment[]   @relation("PayrollPaymentAccount")
 
   @@index([type])
   @@index([parentId])
@@ -3267,6 +3287,9 @@ model SupplierPayment {
   amount        Decimal  @db.Decimal(14, 2)
   paidAt        DateTime @default(now())
   paymentMethod String?
+  /// Strategy A (Phase 1): eligible asset leaf the money left from.
+  accountId     String?
+  account       Account? @relation("SupplierPaymentAccount", fields: [accountId], references: [id])
   reference     String?
   notes         String?  @db.Text
   createdAt     DateTime @default(now())
@@ -3275,6 +3298,7 @@ model SupplierPayment {
   invoices SupplierPaymentInvoice[]
 
   @@index([supplierId])
+  @@index([accountId])
 }
 
 model SupplierPaymentInvoice {

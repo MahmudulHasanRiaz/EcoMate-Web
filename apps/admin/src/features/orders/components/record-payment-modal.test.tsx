@@ -10,6 +10,39 @@ vi.mock('@/lib/api-client', () => ({
   apiClient: { get: vi.fn(), post: mockPost, put: vi.fn(), delete: vi.fn() },
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+vi.mock('@/features/gateways/api', () => ({
+  gatewayApi: {
+    listGateways: vi.fn().mockResolvedValue({
+      data: [
+        {
+          id: 'gw-cash',
+          code: 'cash',
+          name: 'Cash',
+          type: 'cash',
+          paymentOptionType: 'CASH_ON_DELIVERY',
+          paymentOptionName: 'Cash on Delivery',
+          paymentOptionEnabled: true,
+          enabled: true,
+          mode: 'personal',
+          phoneNumber: null,
+          accountId: 'acc-cash',
+          account: { id: 'acc-cash', code: '1001', name: 'Cash', type: 'asset' },
+          credentials: {},
+          sortOrder: 1,
+        },
+      ],
+    }),
+  },
+}))
+vi.mock('@/features/accounting/api', () => ({
+  accountingApi: {
+    getAccountTree: vi.fn().mockResolvedValue({
+      data: [
+        { id: 'acc-cash', code: '1001', name: 'Cash', type: 'asset', parentId: null, isActive: true, isGroup: false, children: [] },
+      ],
+    }),
+  },
+}))
 
 function renderModal(txnRequired: boolean) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -26,7 +59,7 @@ describe('RecordPaymentModal (D1: stays SIMPLE)', () => {
     mockPost.mockResolvedValue({ data: { id: 'pay-new' } })
   })
 
-  it('requires amount, gateway/account and txn when S1 is OFF', async () => {
+  it('requires amount + txn when S1 is OFF and records nothing on empty submit', async () => {
     const ui = await renderModal(true)
     await expect.element(ui.getByText(/Transaction ID.*required/i)).toBeInTheDocument()
     // Empty submit records nothing.
@@ -34,12 +67,11 @@ describe('RecordPaymentModal (D1: stays SIMPLE)', () => {
     expect(mockPost).not.toHaveBeenCalled()
   })
 
-  it('posts the ledger entry and stays disabled while pending', async () => {
+  it('auto-selects the single configured gateway + mapped account and posts them', async () => {
     let resolvePost!: (v: unknown) => void
     mockPost.mockImplementation(() => new Promise((r) => { resolvePost = r }))
     const ui = await renderModal(true)
     await userEvent.fill(ui.getByLabelText(/Amount/), '1500')
-    await userEvent.fill(ui.getByLabelText(/Account/), '017XX')
     await userEvent.fill(ui.getByLabelText(/Transaction ID/), 'TX1')
     const submit = ui.getByRole('button', { name: /^Record payment$/ })
     await userEvent.click(submit)
@@ -49,7 +81,7 @@ describe('RecordPaymentModal (D1: stays SIMPLE)', () => {
     expect(mockPost).toHaveBeenCalledWith('/payments/order-1', expect.objectContaining({
       gatewayCode: 'cash',
       amount: 1500,
-      account: '017XX',
+      accountId: 'acc-cash',
       transactionId: 'TX1',
     }))
     resolvePost({ data: { id: 'pay-new' } })
@@ -59,7 +91,6 @@ describe('RecordPaymentModal (D1: stays SIMPLE)', () => {
     const ui = await renderModal(false)
     await expect.element(ui.getByText(/Transaction ID.*optional/i)).toBeInTheDocument()
     await userEvent.fill(ui.getByLabelText(/Amount/), '500')
-    await userEvent.fill(ui.getByLabelText(/Account/), '017XX')
     await userEvent.click(ui.getByRole('button', { name: /^Record payment$/ }))
     expect(mockPost).toHaveBeenCalledWith('/payments/order-1', expect.objectContaining({ amount: 500 }))
   })

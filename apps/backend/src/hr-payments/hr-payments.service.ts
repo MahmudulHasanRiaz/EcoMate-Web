@@ -6,6 +6,10 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { PayslipStatus } from '@prisma/client';
+import {
+  requireConfiguredGateway,
+  resolvePaymentAccountId,
+} from '../payments/payment-account';
 
 @Injectable()
 export class HrPaymentsService {
@@ -38,12 +42,24 @@ export class HrPaymentsService {
     if (paidSoFar + dto.amount > netPay)
       throw new BadRequestException('Payment exceeds net pay');
 
+    // Part 5: salaries go out over configured rails + an eligible asset leaf.
+    // `method` is the gateway code on the new write path; legacy values stay
+    // readable but are never accepted as typed destinations again.
+    const gateway = dto.method
+      ? await requireConfiguredGateway(this.prisma, dto.method)
+      : null;
+    const accountId = await resolvePaymentAccountId(this.prisma, {
+      accountId: dto.accountId,
+      gatewayAccountId: gateway?.accountId,
+    });
+
     return this.prisma.$transaction(async (tx) => {
       const payment = await tx.payrollPayment.create({
         data: {
           payslipId: dto.payslipId,
           amount: dto.amount,
           method: dto.method ?? null,
+          accountId,
           referenceNo: dto.referenceNo ?? null,
           note: dto.note ?? null,
           recordedById: actorId ?? null,
