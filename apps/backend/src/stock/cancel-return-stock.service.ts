@@ -245,6 +245,31 @@ export class CancelReturnStockService {
       );
     }
   }
+  /**
+   * THE shared order-cancel release routine.
+   *
+   * Every entry point that moves an order to 'Cancelled' must call this —
+   * single cancel (`OrdersService.updateStatus`), bulk cancel, customer
+   * self-cancel, import-driven cancel, refund-with-cancel
+   * (`RefundsService.create`), and the dispatch/courier-driven cancel
+   * (`DispatchService.syncOrderStatus`). `OrdersService.trash` also uses it
+   * (release-on-trash). It releases BOTH layers: the managed hold/deduction
+   * and the physical reservation.
+   *
+   * Idempotent by construction: item flags and reservation statuses are the
+   * gate, so a retry / double-submit is a no-op.
+   */
+  async releaseForCancellation(params: {
+    orderId: string;
+    performedBy?: string;
+    tx: Prisma.TransactionClient;
+  }): Promise<void> {
+    await this.restoreForOrder({
+      ...params,
+      referencePrefix: 'cancel',
+    });
+  }
+
   async restoreForOrder(params: {
     orderId: string;
     referencePrefix: 'cancel' | 'return';

@@ -5671,9 +5671,8 @@ export class OrdersService {
     orderId: string,
     performedBy?: string,
   ) {
-    await this.cancelReturnStock.restoreForOrder({
+    await this.cancelReturnStock.releaseForCancellation({
       orderId,
-      referencePrefix: 'cancel',
       performedBy,
       tx,
     });

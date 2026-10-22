@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { RefundsService } from '../refunds.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CodMismatchService } from '../../cod-mismatch/cod-mismatch.service';
+import { CancelReturnStockService } from '../../stock/cancel-return-stock.service';
 
 /**
  * D-B: refund via payment-list selection.
@@ -41,6 +42,10 @@ describe('RefundsService — sourcePaymentIds bulk refund (D-B)', () => {
         RefundsService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: CodMismatchService, useValue: mockCod },
+        {
+          provide: CancelReturnStockService,
+          useValue: { releaseForCancellation: jest.fn() },
+        },
       ],
     }).compile();
     service = module.get(RefundsService);

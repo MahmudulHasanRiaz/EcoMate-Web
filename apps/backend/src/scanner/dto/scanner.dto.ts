@@ -1,4 +1,14 @@
-import { IsArray, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  IsArray,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Min,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 import type { ScanPurposeId } from '../scanner.types';
 
 export const SCAN_PURPOSES: ScanPurposeId[] = [
@@ -16,6 +26,30 @@ export class ScanResolveDto {
   @IsOptional()
   @IsIn(SCAN_PURPOSES as unknown as string[])
   purpose?: ScanPurposeId;
+}
+
+/**
+ * One confirmed receive line staged by the scanner. The detail-page
+ * mark-received form sends the same shape straight to the same guarded
+ * funnel. `damagedQuantity` is part of the receive fact, not a later
+ * adjustment — it must survive the HTTP whitelist unchanged.
+ */
+export class ScanItemDto {
+  @IsUUID()
+  productId!: string;
+
+  @IsOptional()
+  @IsUUID()
+  variantId?: string | null;
+
+  @IsInt()
+  @Min(1)
+  quantity!: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  damagedQuantity?: number;
 }
 
 export class ScanExecuteDto {
@@ -56,4 +90,15 @@ export class ScanExecuteDto {
   @IsOptional()
   @IsUUID()
   exchangeId?: string;
+
+  /**
+   * Staged receive split (process return / return receive). Declared so the
+   * global `whitelist: true` ValidationPipe does not silently strip it — the
+   * exact bug that lost receive-phase damage before persistence.
+   */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ScanItemDto)
+  items?: ScanItemDto[];
 }

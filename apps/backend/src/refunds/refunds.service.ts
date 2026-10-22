@@ -11,6 +11,7 @@ import {
   DispatchCancelService,
   type DispatchCancelPlan,
 } from '../dispatch-cancel/dispatch-cancel.service';
+import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
 
 import { Prisma } from '@prisma/client';
 import { CreateRefundDto, UpdateRefundStatusDto } from './dto/refund.dto';
@@ -26,6 +27,10 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
 export class RefundsService {
   constructor(
     private readonly prisma: PrismaService,
+    // The shared order-cancel release routine (StockModule is @Global). The
+    // atomic cancel-with-refund MUST release managed + physical reservations
+    // exactly like the plain cancel path; it previously missed this entirely.
+    private readonly cancelReturnStock: CancelReturnStockService,
     @Optional() private readonly cache?: CacheService,
     // Shared COD alert recompute (Feature A). Optional so existing unit
     // tests that build RefundsService without it keep working.
@@ -330,6 +335,15 @@ export class RefundsService {
             timeline: current as any,
           },
         });
+        // Shared cancellation release — same routine as the plain cancel
+        // path. Inside the SAME transaction: an order can never commit as
+        // Cancelled while its managed/physical reservation stays held.
+        // Idempotent, so a client retry cannot release twice.
+        await this.cancelReturnStock.releaseForCancellation({
+          orderId: dto.orderId,
+          performedBy: recordedBy,
+          tx,
+        });
         // The dispatch is cancelled with the courier in the SAME transaction
         // as the refund + the order cancel (the courier push already
         // succeeded above). After the order write: that write REPLACES the
@@ -367,13 +381,33 @@ export class RefundsService {
       );
       const isFullRefund = totalRefunded >= Number(order.total);
 
-      await this.prisma.order.update({
-        where: { id: dto.orderId },
-        data: {
-          statusId: dto.targetStatusId,
-          paymentStatus: isFullRefund ? 'REFUNDED' : 'PARTIAL_REFUNDED',
-        },
-      });
+      // A target status of Cancelled is another order-cancel entry point:
+      // the status write and the shared managed+physical release must commit
+      // atomically, exactly like cancelToo.
+      if (targetStatus.name === 'Cancelled') {
+        await this.prisma.$transaction(async (tx) => {
+          await tx.order.update({
+            where: { id: dto.orderId },
+            data: {
+              statusId: dto.targetStatusId,
+              paymentStatus: isFullRefund ? 'REFUNDED' : 'PARTIAL_REFUNDED',
+            },
+          });
+          await this.cancelReturnStock.releaseForCancellation({
+            orderId: dto.orderId,
+            performedBy: recordedBy,
+            tx,
+          });
+        });
+      } else {
+        await this.prisma.order.update({
+          where: { id: dto.orderId },
+          data: {
+            statusId: dto.targetStatusId,
+            paymentStatus: isFullRefund ? 'REFUNDED' : 'PARTIAL_REFUNDED',
+          },
+        });
+      }
     }
 
     await this.invalidateAnalytics();

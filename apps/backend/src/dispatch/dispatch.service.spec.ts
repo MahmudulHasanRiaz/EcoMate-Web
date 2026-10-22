@@ -19,6 +19,7 @@ describe('DispatchService', () => {
 
   beforeEach(async () => {
     prisma = {
+      $transaction: jest.fn(async (cb: any) => cb(prisma)),
       dispatch: {
         findMany: jest.fn().mockResolvedValue([]),
         findUnique: jest.fn().mockResolvedValue(null),
@@ -29,6 +30,7 @@ describe('DispatchService', () => {
           consignmentId: 'CG-001',
         }),
         update: jest.fn().mockResolvedValue({ id: 'd-1' }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         delete: jest.fn().mockResolvedValue({}),
         count: jest.fn().mockResolvedValue(0),
         groupBy: jest.fn().mockResolvedValue([]),
@@ -72,6 +74,7 @@ describe('DispatchService', () => {
           provide: CancelReturnStockService,
           useValue: {
             holdReservationForReturnPending: jest.fn().mockResolvedValue(undefined),
+            releaseForCancellation: jest.fn().mockResolvedValue(undefined),
           },
         },
         {
@@ -1238,6 +1241,47 @@ describe('DispatchService', () => {
           data: expect.objectContaining({ courierAmount: 750 }),
         }),
       );
+    });
+  });
+
+  describe('manual dispatch cancel', () => {
+    it('releases the order reservation through the shared cancel routine', async () => {
+      prisma.dispatch.findUnique
+        .mockResolvedValueOnce({
+          id: 'd-1',
+          status: 'DISPATCHED',
+          orderId: 'order-1',
+          courier: 'pathao',
+          pickedUpAt: null,
+          deliveredAt: null,
+        })
+        .mockResolvedValueOnce({
+          id: 'd-1',
+          status: 'CANCELLED',
+          orderId: 'order-1',
+          courier: 'pathao',
+        });
+      prisma.order.findUnique.mockResolvedValue({
+        id: 'order-1',
+        trashedAt: null,
+        status: { name: 'Confirmed' },
+        timeline: [],
+        items: [],
+      });
+      prisma.orderStatus.findUnique.mockResolvedValue({
+        id: 'st-cancelled',
+        name: 'Cancelled',
+      });
+
+      await service.updateStatus('d-1', 'CANCELLED', 'staff-1');
+
+      expect(
+        (service as any).cancelReturnStock.releaseForCancellation,
+      ).toHaveBeenCalledWith({
+        orderId: 'order-1',
+        performedBy: 'staff-1',
+        tx: prisma,
+      });
     });
   });
 });

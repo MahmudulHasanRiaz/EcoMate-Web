@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { RefundsService } from './refunds.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
 
 
 describe('RefundsService', () => {
@@ -80,6 +81,10 @@ describe('RefundsService', () => {
         {
           provide: PrismaService,
           useValue: mockPrisma,
+        },
+        {
+          provide: CancelReturnStockService,
+          useValue: { releaseForCancellation: jest.fn() },
         },
       ],
     }).compile();

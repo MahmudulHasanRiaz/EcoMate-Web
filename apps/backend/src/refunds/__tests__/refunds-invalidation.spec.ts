@@ -8,6 +8,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { RefundsService } from '../refunds.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CacheService } from '../../cache/cache.service';
+import { CancelReturnStockService } from '../../stock/cancel-return-stock.service';
 
 describe('RefundsService analytics invalidation', () => {
   let service: RefundsService;
@@ -49,6 +50,10 @@ describe('RefundsService analytics invalidation', () => {
         RefundsService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: CacheService, useValue: mockCache },
+        {
+          provide: CancelReturnStockService,
+          useValue: { releaseForCancellation: jest.fn() },
+        },
       ],
     }).compile();
     service = module.get(RefundsService);

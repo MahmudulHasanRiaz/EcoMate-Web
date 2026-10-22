@@ -406,6 +406,7 @@ describe('OrdersService', () => {
           provide: CancelReturnStockService,
           useValue: {
             restoreForOrder: jest.fn().mockResolvedValue(undefined),
+            releaseForCancellation: jest.fn().mockResolvedValue(undefined),
             restoreForReturnItems: jest.fn().mockResolvedValue({ restored: [] }),
             holdReservationForReturnPending: jest.fn().mockResolvedValue(undefined),
           },
@@ -5180,10 +5181,9 @@ await service.bulkAssign(['order-1', 'trashed-1'], 'staff-1');
       const cancelReturnStock = module.get<CancelReturnStockService>(
         CancelReturnStockService,
       );
-      expect(cancelReturnStock.restoreForOrder).toHaveBeenCalledWith(
+      expect(cancelReturnStock.releaseForCancellation).toHaveBeenCalledWith(
         expect.objectContaining({
           orderId: 'order-id-1',
-          referencePrefix: 'cancel',
         }),
       );
       const commissions = module.get<CommissionsService>(CommissionsService);

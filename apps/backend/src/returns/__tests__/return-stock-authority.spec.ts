@@ -175,6 +175,39 @@ describe('ReturnsService — stock authority funnel (hardening 2)', () => {
     ]);
   });
 
+  it('scanner receive path persists the same receive damage split via the guarded funnel', async () => {
+    await service.restoreStockForReturn('ret-1', {
+      performedBy: 'scanner',
+      items: [{ productId: 'prod-1', quantity: 2, damagedQuantity: 2 }],
+    });
+
+    expect(cancelReturnStock.restoreForReturnItems).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'order-1',
+        returnId: 'ret-1',
+        items: [
+          expect.objectContaining({
+            productId: 'prod-1',
+            quantity: 2,
+            damagedQuantity: 2,
+            warehouseId: 'wh-source',
+          }),
+        ],
+      }),
+    );
+    const items = (prisma.return.update.mock.calls.at(-1)?.[0]?.data?.items ??
+      []) as any[];
+    expect(items[0]).toMatchObject({
+      productId: 'prod-1',
+      quantity: 2,
+      damagedQuantity: 2,
+      warehouseId: 'wh-source',
+    });
+    expect(items[0].damageLog).toEqual([
+      expect.objectContaining({ qty: 2, phase: 'receive', by: 'scanner' }),
+    ]);
+  });
+
   it('rejects damaged quantity above the received quantity (nothing restocks)', async () => {
     await expect(
       service.markReceived('ret-1', {

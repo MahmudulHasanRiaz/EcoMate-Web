@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { RefundsService } from '../refunds.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CancelReturnStockService } from '../../stock/cancel-return-stock.service';
 import {
   DispatchCancelService,
   type DispatchCancelPlan,
@@ -93,6 +94,10 @@ describe('RefundsService — cancel a dispatched order with the refund', () => {
         RefundsService,
         DispatchCancelService,
         { provide: PrismaService, useValue: prisma },
+        {
+          provide: CancelReturnStockService,
+          useValue: { releaseForCancellation: jest.fn() },
+        },
       ],
     }).compile();
     service = module.get<RefundsService>(RefundsService);
