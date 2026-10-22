@@ -1,4 +1,4 @@
-FROM node:24-alpine AS builder
+FROM node:24.22.1-alpine AS builder
 ARG VITE_API_URL=/api
 ENV VITE_API_URL=${VITE_API_URL}
 WORKDIR /app
