@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreatePaymentDto } from './dto/create-payment.dto';
+import { CreatePaymentInput } from './dto/create-payment.dto';
 import { PayslipStatus } from '@prisma/client';
 import {
   requireConfiguredGateway,
@@ -15,7 +15,7 @@ import {
 export class HrPaymentsService {
   constructor(private prisma: PrismaService) {}
 
-  async createPayment(dto: CreatePaymentDto, actorId?: string) {
+  async createPayment(dto: CreatePaymentInput, actorId?: string) {
     const payslip = await this.prisma.payslip.findUnique({
       where: { id: dto.payslipId },
     });
