@@ -22,6 +22,7 @@ import {
   requireConfiguredGateway,
   resolvePaymentAccountId,
 } from './payment-account';
+import { PaymentJournalService } from '../accounting/payment-journal.service';
 
 @Injectable()
 export class PaymentsService {
@@ -34,6 +35,9 @@ export class PaymentsService {
     // Task 8 — marginal overpay grant. Optional for the same reason; the
     // grant call below is skipped when no credit service is wired.
     @Optional() private readonly credit?: CustomerCreditService,
+    // Phase 2 — auto-journal for recorded receipts. Optional for the same
+    // reason: unwired (unit tests) simply posts nothing.
+    @Optional() private readonly paymentJournal?: PaymentJournalService,
   ) {}
 
   /**
@@ -353,6 +357,10 @@ export class PaymentsService {
     });
     await this.invalidateAnalytics();
     await this.refreshCodAlert(orderId);
+    // Phase 2: post the receipt AFTER the payment transaction commits — same
+    // ordering the COD settlement uses. Idempotent, never throws, and a COD
+    // receipt is skipped inside the service (the settlement posts that leg).
+    await this.paymentJournal?.tryPostOrderPayment(created.id);
     return created;
   }
 
@@ -454,6 +462,17 @@ export class PaymentsService {
     });
     await this.invalidateAnalytics();
     await this.refreshCodAlert(updated.orderId);
+    // Phase 2: a payment becoming RECORDED (PENDING→PAID) posts its journal
+    // here; a posted payment that stops being PAID gets a compensating entry on
+    // its own accounts (append-only — the original entry is never deleted).
+    if (updated.status === PaymentStatus.PAID) {
+      await this.paymentJournal?.tryPostOrderPayment(updated.id);
+    } else {
+      await this.paymentJournal?.tryReverseOrderPayment(
+        updated.id,
+        `payment status set to ${updated.status}`,
+      );
+    }
     return updated;
   }
 }

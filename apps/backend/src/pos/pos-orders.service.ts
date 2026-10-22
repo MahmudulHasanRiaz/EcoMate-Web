@@ -4,6 +4,7 @@ import {
   Logger,
   Inject,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
@@ -23,6 +24,7 @@ import { CommissionsService } from '../commissions/commissions.service';
 import { CustomerAddressService } from '../customers/customer-address.service';
 import { SalesChannelService } from '../sales-channel/sales-channel.service';
 import { resolveGatewayAccountId } from '../payments/payment-account';
+import { PaymentJournalService } from '../accounting/payment-journal.service';
 
 @Injectable()
 export class PosOrdersService {
@@ -39,6 +41,10 @@ export class PosOrdersService {
     private readonly commissionsService: CommissionsService,
     private readonly customerAddressService: CustomerAddressService,
     private readonly salesChannelService: SalesChannelService,
+    // Phase 2 — auto-journal for counter-sale receipts. Optional so existing
+    // unit tests that build PosOrdersService without it keep working.
+    @Optional()
+    private readonly paymentJournal?: PaymentJournalService,
   ) {}
 
   private mediaUrls(value: unknown): string[] {
@@ -850,6 +856,13 @@ private async resolveCanonicalPos(
     // terminal status ('Confirmed' for delivery, 'Delivered' for counter/takeaway).
     // Evaluate active commission rules. Resilient — never breaks the sale.
     if (order) {
+      // Phase 2: a POS sale is money RECORDED at the till — post each payment
+      // row's journal. Idempotent; a COD-classified order posts nothing here.
+      for (const payment of ((order as any).payments ?? []) as {
+        id: string;
+      }[]) {
+        await this.paymentJournal?.tryPostOrderPayment(payment.id);
+      }
       try {
         await this.commissionsService.processOrderCommissions(order.id);
       } catch (err) {

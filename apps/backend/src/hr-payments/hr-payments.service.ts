@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePaymentInput } from './dto/create-payment.dto';
@@ -10,10 +11,16 @@ import {
   requireConfiguredGateway,
   resolvePaymentAccountId,
 } from '../payments/payment-account';
+import { PaymentJournalService } from '../accounting/payment-journal.service';
 
 @Injectable()
 export class HrPaymentsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    // Phase 2 — auto-journal for recorded salary payments. Optional so the
+    // existing unit tests that build the service without it keep working.
+    @Optional() private readonly paymentJournal?: PaymentJournalService,
+  ) {}
 
   async createPayment(dto: CreatePaymentInput, actorId?: string) {
     const payslip = await this.prisma.payslip.findUnique({
@@ -78,6 +85,13 @@ export class HrPaymentsService {
       });
 
       return { payment, payslip: updatedPayslip };
+    }).then(async (result) => {
+      // Phase 2: record the salary cost in the books — Dr salary/compensation
+      // expense / Cr the mapped asset leaf the money left from. Posted AFTER
+      // the payment commits, exactly one entry per payment (idempotent), and
+      // never fatal to the payment itself.
+      await this.paymentJournal?.tryPostPayrollPayment(result.payment.id);
+      return result;
     });
   }
 
@@ -154,6 +168,14 @@ export class HrPaymentsService {
       });
 
       return { payment: voided, payslip: updatedPayslip };
+    }).then(async (result) => {
+      // Phase 2: voiding is a REVERSAL, never a delete — a compensating entry
+      // on the original journal's own accounts, keyed by the payment identity.
+      await this.paymentJournal?.tryReversePayrollPayment(
+        result.payment.id,
+        `payroll payment voided: ${reason.trim()}`,
+      );
+      return result;
     });
   }
 }

@@ -65,7 +65,11 @@ describe('RefundsService', () => {
     payment: {
       aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 2000 } }),
       findFirst: jest.fn().mockResolvedValue({ id: 'pay-1' }),
-      create: jest.fn(),
+      // Prisma returns the created row; the service reads its id to anchor the
+      // Phase 2 journal mirror on it.
+      create: jest
+        .fn()
+        .mockImplementation(async ({ data }: any) => ({ id: 'pay-refund-1', ...data })),
     },
     dispatch: {
       findFirst: jest.fn().mockResolvedValue(null),

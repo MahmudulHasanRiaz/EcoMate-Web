@@ -2,6 +2,7 @@ import { Logger, Module, OnModuleInit } from '@nestjs/common';
 import { AccountingService } from './accounting.service';
 import { AccountingController } from './accounting.controller';
 import { AccountingEnabledGuard } from './accounting-enabled.guard';
+import { PaymentJournalService } from './payment-journal.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { FinancialPeriodsModule } from '../financial-periods/financial-periods.module';
 import { FinancialPeriodsService } from '../financial-periods/financial-periods.service';
@@ -9,8 +10,8 @@ import { FinancialPeriodsService } from '../financial-periods/financial-periods.
 @Module({
   imports: [PrismaModule, FinancialPeriodsModule],
   controllers: [AccountingController],
-  providers: [AccountingService, AccountingEnabledGuard],
-  exports: [AccountingService, AccountingEnabledGuard],
+  providers: [AccountingService, AccountingEnabledGuard, PaymentJournalService],
+  exports: [AccountingService, AccountingEnabledGuard, PaymentJournalService],
 })
 export class AccountingModule implements OnModuleInit {
   private readonly logger = new Logger(AccountingModule.name);

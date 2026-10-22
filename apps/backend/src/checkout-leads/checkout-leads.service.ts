@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { PaymentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -23,6 +24,7 @@ import {
   resolveConfiguredGatewayCode,
   resolvePaymentAccountId,
 } from '../payments/payment-account';
+import { PaymentJournalService } from '../accounting/payment-journal.service';
 
 @Injectable()
 export class CheckoutLeadsService {
@@ -35,6 +37,9 @@ export class CheckoutLeadsService {
     private readonly trackingSettings: TrackingSettingsService,
     private readonly customerAddressService: CustomerAddressService,
     private readonly salesChannelService: SalesChannelService,
+    // Phase 2 — auto-journal for receipts recorded during a lead conversion.
+    // Optional so existing unit tests keep working.
+    @Optional() private readonly paymentJournal?: PaymentJournalService,
   ) {}
 
   async findAll(query: {
@@ -742,6 +747,22 @@ private async resolveCanonicalLead(
         await this.fireOfflinePurchase(fullOrder, tx);
       }
     });
+
+    // Phase 2: a conversion can record a receipt (the PGW branch settles PAID
+    // immediately). Post each paid row's journal — idempotent, and a
+    // COD-classified order posts nothing here because the courier settlement
+    // owns that leg.
+    if (fullOrder && this.paymentJournal) {
+      const payments = await this.prisma.payment.findMany({
+        where: { orderId: fullOrder.id },
+        select: { id: true, status: true },
+      });
+      for (const payment of payments) {
+        if (payment.status === PaymentStatus.PAID) {
+          await this.paymentJournal.tryPostOrderPayment(payment.id);
+        }
+      }
+    }
 
     return fullOrder;
   }

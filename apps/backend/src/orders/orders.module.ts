@@ -16,6 +16,7 @@ import { MarketingModule } from '../marketing/marketing.module';
 import { CommissionsModule } from '../commissions/commissions.module';
 import { CodMismatchModule } from '../cod-mismatch/cod-mismatch.module';
 import { DispatchCancelModule } from '../dispatch-cancel/dispatch-cancel.module';
+import { AccountingModule } from '../accounting/accounting.module';
 
 @Module({
   controllers: [OrdersController, OrderStatusController],
@@ -44,6 +45,7 @@ import { DispatchCancelModule } from '../dispatch-cancel/dispatch-cancel.module'
     CommissionsModule,
     CodMismatchModule,
     DispatchCancelModule,
+    AccountingModule,
   ],
 })
 export class OrdersModule {}

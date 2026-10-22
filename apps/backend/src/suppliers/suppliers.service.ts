@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -12,10 +13,16 @@ import {
   requireConfiguredGateway,
   resolvePaymentAccountId,
 } from '../payments/payment-account';
+import { PaymentJournalService } from '../accounting/payment-journal.service';
 
 @Injectable()
 export class SuppliersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    // Phase 2 — auto-journal for recorded supplier payments. Optional so the
+    // existing unit tests that build the service without it keep working.
+    @Optional() private readonly paymentJournal?: PaymentJournalService,
+  ) {}
 
   async create(createSupplierDto: CreateSupplierDto) {
     const existing = await this.prisma.supplier.findUnique({
@@ -153,6 +160,12 @@ export class SuppliersService {
         },
       });
 
+      return payment;
+    }).then(async (payment) => {
+      // Phase 2: paying a supplier settles a payable — Dr the supplier payable
+      // leaf / Cr the mapped asset leaf the money left from. Posted AFTER the
+      // payment commits; idempotent, never fatal to the payment.
+      await this.paymentJournal?.tryPostSupplierPayment(payment.id);
       return payment;
     });
   }
