@@ -3,7 +3,7 @@
   "private": false,
   "version": "2.2.1",
   "engines": {
-    "node": ">=24"
+    "node": ">=24.22.1"
   },
   "type": "module",
   "scripts": {
