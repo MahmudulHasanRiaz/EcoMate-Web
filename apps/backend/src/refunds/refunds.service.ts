@@ -19,6 +19,7 @@ import {
   requireConfiguredGateway,
   resolvePaymentAccountId,
 } from '../payments/payment-account';
+import { PaymentJournalService } from '../accounting/payment-journal.service';
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   pending: ['approved', 'rejected'],
@@ -44,6 +45,9 @@ export class RefundsService {
     // RefundsService without it) — production always wires it: RefundsModule
     // imports DispatchCancelModule.
     @Optional() private readonly dispatchCancel?: DispatchCancelService,
+    // Phase 2 — auto-journal for recorded refunds (the mirror of the original
+    // receipt). Optional so existing unit tests keep working.
+    @Optional() private readonly paymentJournal?: PaymentJournalService,
   ) {}
 
   /**
@@ -259,6 +263,14 @@ export class RefundsService {
     // must never exist without its ledger mirror, and vice versa. Every refund
     // also leaves a timeline entry (previously only cancelToo refunds did).
     const isBulk = !!allocations && allocations.length > 1;
+    // Phase 2: the mirror of each refund's original receipt is posted AFTER
+    // this transaction commits (never inside it — the journal service owns its
+    // own entry transaction). Collected here so bulk allocations each get their
+    // own mirror on their own source row.
+    const refundMirrors: {
+      paymentId: string;
+      sourcePaymentId: string | null;
+    }[] = [];
     const refund = await this.prisma.$transaction(async (tx) => {
       const createdRefunds: any[] = [];
       const refundEntries: any[] = [];
@@ -290,7 +302,7 @@ export class RefundsService {
         // verification. Routing it through PENDING would understate the ledger
         // (every reader sums Σ PAID) and strand the very refund that is
         // supposed to unblock cancellation.
-        await tx.payment.create({
+        const refundPayment = await tx.payment.create({
           data: {
             orderId: dto.orderId,
             gatewayCode: refundGatewayCode,
@@ -303,6 +315,10 @@ export class RefundsService {
             submittedBy: recordedBy ? `staff:${recordedBy}` : undefined,
             recordedAt: new Date(),
           },
+        });
+        refundMirrors.push({
+          paymentId: refundPayment.id,
+          sourcePaymentId: pinId ?? null,
         });
 
         refundEntries.push({
@@ -431,6 +447,14 @@ export class RefundsService {
     await this.invalidateAnalytics();
     // Refund changes the outstanding collectable (Feature A, resilient).
     await this.refreshCodAlert(dto.orderId);
+    // Phase 2: post each refund's journal — the mirror image of the original
+    // receipt, on the original's contra account (see PaymentJournalService).
+    for (const mirror of refundMirrors) {
+      await this.paymentJournal?.tryPostRefundMirror(
+        mirror.paymentId,
+        mirror.sourcePaymentId,
+      );
+    }
     return refund;
   }
 

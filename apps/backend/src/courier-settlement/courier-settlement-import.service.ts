@@ -751,6 +751,11 @@ export class CourierSettlementImportService {
     for (const [orderId, settled] of settledByOrder) {
       const transactionId = `${invoiceId}:${orderId}`;
       if (booked.has(transactionId)) continue;
+      // Phase 2 boundary: these rows are the COD cash the courier collected, and
+      // the COD settlement's own journal is the leg that records it. Phase 2's
+      // payment auto-journal therefore posts NOTHING for them — see the COD
+      // guard in accounting/payment-journal.entry.ts (`isCodOrder`). Posting here
+      // as well would count the same cash twice.
       const created = await tx.payment.create({
         data: {
           orderId,

@@ -9,10 +9,12 @@ import {
   NotFoundException,
   BadRequestException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { PaymentStatus } from '@prisma/client';
 import { BkashPgwService } from './bkash-pgw.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { PaymentJournalService } from '../accounting/payment-journal.service';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
@@ -35,6 +37,9 @@ export class BkashPgwController {
   constructor(
     private readonly bkash: BkashPgwService,
     private readonly prisma: PrismaService,
+    // Phase 2 — auto-journal for the receipt this gateway confirms. Optional so
+    // existing unit tests that build the controller without it keep working.
+    @Optional() private readonly paymentJournal?: PaymentJournalService,
   ) {}
 
   /**
@@ -185,6 +190,8 @@ export class BkashPgwController {
       let redirectViewToken: string | null = null;
       let orderIdForRedirect: string | null = null;
       let isDuplicate = false;
+      // Phase 2: the row that this callback just flipped PENDING→PAID.
+      let paidPaymentId: string | null = null;
 
       await this.prisma.$transaction(async (tx) => {
         const pendingPayment = await tx.payment.findFirst({
@@ -255,6 +262,8 @@ export class BkashPgwController {
           return;
         }
 
+        paidPaymentId = pendingPayment.id;
+
         // Update order paymentStatus from aggregate
         const paidAgg = await tx.payment.aggregate({
           where: { orderId: pendingPayment.orderId, status: PaymentStatus.PAID },
@@ -281,6 +290,12 @@ export class BkashPgwController {
           });
         }
       });
+
+      // Phase 2: the receipt is now RECORDED — post its journal (idempotent,
+      // never throws; a COD-classified order posts nothing).
+      if (paidPaymentId) {
+        await this.paymentJournal?.tryPostOrderPayment(paidPaymentId);
+      }
 
       if (orderIdForRedirect && redirectViewToken) {
         res.redirect(

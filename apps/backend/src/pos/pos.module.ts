@@ -8,9 +8,10 @@ import { TrackingModule } from '../tracking/tracking.module';
 import { CommissionsModule } from '../commissions/commissions.module';
 import { CustomersModule } from '../customers/customers.module';
 import { SalesChannelModule } from '../sales-channel/sales-channel.module';
+import { AccountingModule } from '../accounting/accounting.module';
 
 @Module({
-  imports: [MediaModule, TrackingModule, CommissionsModule, CustomersModule, SalesChannelModule],
+  imports: [MediaModule, TrackingModule, CommissionsModule, CustomersModule, SalesChannelModule, AccountingModule],
   controllers: [SessionsController, PosOrdersController],
   providers: [SessionsService, PosOrdersService],
 })

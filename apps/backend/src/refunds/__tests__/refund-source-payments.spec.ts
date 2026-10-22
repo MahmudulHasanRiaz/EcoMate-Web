@@ -25,7 +25,11 @@ describe('RefundsService — sourcePaymentIds bulk refund (D-B)', () => {
       aggregate: jest.fn(),
       findFirst: jest.fn(),
       findMany: jest.fn(),
-      create: jest.fn(),
+      // Prisma returns the created row; the service reads its id to anchor the
+      // Phase 2 journal mirror on it.
+      create: jest
+        .fn()
+        .mockImplementation(async ({ data }: any) => ({ id: 'pay-refund-1', ...data })),
     },
     order: { findUnique: jest.fn(), update: jest.fn() },
     orderStatus: { findFirst: jest.fn() },

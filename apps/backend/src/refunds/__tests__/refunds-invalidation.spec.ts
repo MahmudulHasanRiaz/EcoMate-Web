@@ -18,7 +18,13 @@ describe('RefundsService analytics invalidation', () => {
       aggregate: jest.fn(),
       create: jest.fn(),
     },
-    payment: { create: jest.fn() },
+    payment: {
+      // Prisma returns the created row; the service reads its id to anchor the
+      // Phase 2 journal mirror on it.
+      create: jest
+        .fn()
+        .mockImplementation(async ({ data }: any) => ({ id: 'pay-refund-1', ...data })),
+    },
     orderStatus: { findFirst: jest.fn() },
     order: { findUnique: jest.fn(), update: jest.fn() },
   };

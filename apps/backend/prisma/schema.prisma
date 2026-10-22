@@ -1102,6 +1102,15 @@ model Payment {
   /// EXCHANGE transfer only: the ORIGINAL PAID row this credit came from
   /// (largest PAID row of the original, null when none). Traceability only.
   sourcePaymentId String?
+  /// Phase 2 auto-journal identity anchor. The single balanced journal entry
+  /// posted when this payment was RECORDED (verified/PAID). `@unique` is the
+  /// exactly-once guarantee — a retry can never post a second entry for the
+  /// same payment row (mirrors CourierSettlementInvoice.journalEntryId).
+  /// NULL = no journal (COD receipt, credit-only row, or accounting disabled).
+  journalEntryId          String?       @unique
+  /// Set when this payment was voided/reversed: the compensating entry that
+  /// negated `journalEntryId` (books stay append-only — never a delete).
+  reversalJournalEntryId  String?       @unique
   createdAt         DateTime      @default(now())
 
   order    Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -2810,6 +2819,12 @@ model PayrollPayment {
   voidedAt     DateTime?
   voidedById   String?
   voidReason   String?
+  /// Phase 2 auto-journal identity anchor — the single balanced entry posted
+  /// when this payroll payment was recorded (Dr salary expense / Cr mapped
+  /// asset leaf). `@unique` = exactly-once; NULL = not posted.
+  journalEntryId         String?   @unique
+  /// The compensating entry that negated `journalEntryId` on void.
+  reversalJournalEntryId String?   @unique
   createdAt    DateTime  @default(now())
 
   @@index([payslipId])
@@ -3292,6 +3307,12 @@ model SupplierPayment {
   account       Account? @relation("SupplierPaymentAccount", fields: [accountId], references: [id])
   reference     String?
   notes         String?  @db.Text
+  /// Phase 2 auto-journal identity anchor — the single balanced entry posted
+  /// when this supplier payment was recorded (Dr supplier payable / Cr mapped
+  /// asset leaf). `@unique` = exactly-once; NULL = not posted.
+  journalEntryId         String?  @unique
+  /// The compensating entry that negated `journalEntryId` on reversal.
+  reversalJournalEntryId String?  @unique
   createdAt     DateTime @default(now())
 
   supplier Supplier                 @relation(fields: [supplierId], references: [id])

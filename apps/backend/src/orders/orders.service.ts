@@ -74,6 +74,7 @@ import { CacheService } from '../cache/cache.service';
 import { OrderStaffPerformanceService } from './order-staff-performance.service';
 import { CommissionEngineService } from '../commissions/commission-engine.service';
 import { CodMismatchService } from '../cod-mismatch/cod-mismatch.service';
+import { PaymentJournalService } from '../accounting/payment-journal.service';
 import {
   DispatchCancelService,
   type DispatchCancelPlan,
@@ -334,7 +335,41 @@ export class OrdersService {
     // skipped there.
     @Optional()
     private readonly dispatchCancel?: DispatchCancelService,
+    // Phase 2 — auto-journal for payments recorded on an order (staff-collected
+    // advance, order edit, order-level payment verification). Optional for the
+    // same reason: unwired (unit tests) simply posts nothing.
+    @Optional()
+    private readonly paymentJournal?: PaymentJournalService,
   ) {}
+
+  /**
+   * Phase 2 — the single journal hook for every order-payment write path in
+   * this service. Called AFTER the mutation's transaction commits, exactly like
+   * the COD settlement posts after finalizing.
+   *
+   * A paid row gets its receipt posted; a row that is no longer PAID gets a
+   * compensating entry for whatever it had posted before. Both calls are
+   * idempotent and guarded inside PaymentJournalService — in particular a COD
+   * receipt posts NOTHING there (the courier settlement posts that leg), and a
+   * row with no journal simply reports `nothing_to_reverse`.
+   */
+  private async postJournalForOrderPayments(orderId: string): Promise<void> {
+    if (!this.paymentJournal) return;
+    const payments = await this.prisma.payment.findMany({
+      where: { orderId },
+      select: { id: true, status: true },
+    });
+    for (const payment of payments) {
+      if (payment.status === PaymentStatus.PAID) {
+        await this.paymentJournal.tryPostOrderPayment(payment.id);
+      } else {
+        await this.paymentJournal.tryReverseOrderPayment(
+          payment.id,
+          `payment is ${payment.status}`,
+        );
+      }
+    }
+  }
 
   /**
    * Business analytics freshness (P2 §6): cached analytics responses are
@@ -2682,6 +2717,9 @@ export class OrdersService {
     await this.invalidateAnalytics();
     // Harmless no-op when no dispatch exists yet (recompute skips the order).
     await this.refreshCodAlert(order.id);
+    // Phase 2: any receipt recorded with this order (staff-collected advance)
+    // gets its journal entry. COD receipts post nothing here by design.
+    await this.postJournalForOrderPayments(order.id);
     return order;
   }
 
@@ -3643,6 +3681,9 @@ export class OrdersService {
     // Order edit changes the collectable (total/shipping/discount) — refresh
     // the post-dispatch COD alert (Feature A, resilient no-op if no dispatch).
     await this.refreshCodAlert(id);
+    // Phase 2: an edit may record or neutralize a payment row — reconcile its
+    // journal (post for PAID, compensate for anything that stopped being PAID).
+    await this.postJournalForOrderPayments(id);
     return updated;
   }
 
@@ -4579,6 +4620,10 @@ export class OrdersService {
         );
       }
     }
+
+    // Phase 2: order-level verification is a RECORDING event for whatever rows
+    // it ends up approving — each paid row posts its own receipt.
+    await this.postJournalForOrderPayments(orderId);
 
     return updated;
   }
