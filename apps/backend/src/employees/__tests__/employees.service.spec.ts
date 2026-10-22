@@ -1451,8 +1451,7 @@ describe('EmployeesService', () => {
       expect(createCall.data.bankAccount).toBeUndefined();
     });
 
-    it('defaults effectiveFrom to today when not sent', async () => {
-      const before = new Date();
+    it('defaults effectiveFrom to the joining day (not the registration instant)', async () => {
       await service.create({
         betterAuthUserId: 'ba-user-test',
         joiningDate: '2025-01-15',
@@ -1461,8 +1460,26 @@ describe('EmployeesService', () => {
       const structureCall = (prisma.salaryStructure.create as jest.Mock)
         .mock.lastCall[0];
       expect(structureCall.data.effectiveFrom).toBeInstanceOf(Date);
-      expect(structureCall.data.effectiveFrom.getTime()).toBeGreaterThanOrEqual(
-        before.getTime() - 1000,
+      // Part 2: the structure must be effective from the joining DATE so the
+      // joining period's payslip generation finds it without a re-save.
+      expect(structureCall.data.effectiveFrom.toISOString()).toBe(
+        '2025-01-15T00:00:00.000Z',
+      );
+    });
+
+    it('normalizes a mid-day effectiveFrom instant to its calendar day', async () => {
+      await service.create({
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+        salaryStructure: {
+          basicSalary: 1000,
+          effectiveFrom: '2025-01-15T11:23:45.000Z',
+        },
+      });
+      const structureCall = (prisma.salaryStructure.create as jest.Mock)
+        .mock.lastCall[0];
+      expect(structureCall.data.effectiveFrom.toISOString()).toBe(
+        '2025-01-15T00:00:00.000Z',
       );
     });
 

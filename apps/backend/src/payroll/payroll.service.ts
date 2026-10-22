@@ -7,6 +7,10 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CompensationExpenseService } from '../expenses/compensation-expense.service';
 import { SetSalaryStructureDto } from './dto/set-salary-structure.dto';
+import {
+  dhakaDateString,
+  toDhakaDateOnly,
+} from '../common/utils/dhaka-time';
 import { LedgerStatus, PayslipStatus } from '@prisma/client';
 
 @Injectable()
@@ -58,12 +62,17 @@ export class PayrollService {
     if (!dto.effectiveFrom)
       throw new BadRequestException('effectiveFrom is required');
 
-    const effectiveFrom = new Date(dto.effectiveFrom);
-    const effDay = new Date(effectiveFrom);
-    effDay.setHours(0, 0, 0, 0);
-    const joinedDay = new Date(employee.joiningDate);
-    joinedDay.setHours(0, 0, 0, 0);
-    if (effDay < joinedDay)
+    // Part 2: effectiveness is a DATE, so store (and compare) the Dhaka calendar
+    // day rather than the raw instant the client happened to send. Without this,
+    // a structure saved at 11:23 on the joining day is "later" than the period's
+    // start-of-day boundary and the first payslip is refused.
+    const effectiveFrom = toDhakaDateOnly(dto.effectiveFrom);
+    if (Number.isNaN(effectiveFrom.getTime()))
+      throw new BadRequestException('effectiveFrom is not a valid date');
+
+    // Guard stays meaningful and is now day-level in the same calendar: a
+    // structure may start on the joining day, never before it.
+    if (dhakaDateString(effectiveFrom) < dhakaDateString(employee.joiningDate))
       throw new BadRequestException(
         'effectiveFrom cannot be before the employee joining date',
       );
@@ -143,23 +152,38 @@ export class PayrollService {
 
   async generatePayslip(
     employeeId: string,
-    periodStart: Date,
-    periodEnd: Date,
+    rawPeriodStart: Date,
+    rawPeriodEnd: Date,
   ) {
+    // Part 2: reduce the period to date-level bounds so it is compared with the
+    // structure's day-level effectiveFrom. A client that sent a mid-day (or
+    // Dhaka-midnight) instant used to shift the period by up to a day and, with
+    // the old `effectiveFrom <= periodStart` test, exclude a structure that
+    // started on the period's own first day.
+    const periodStart = toDhakaDateOnly(rawPeriodStart);
+    const periodEnd = toDhakaDateOnly(rawPeriodEnd);
+    if (Number.isNaN(periodStart.getTime()) || Number.isNaN(periodEnd.getTime()))
+      throw new BadRequestException('A payslip period is required');
+
     const employee = await this.prisma.employee.findUnique({
       where: { id: employeeId },
     });
     if (!employee)
       throw new NotFoundException(`Employee with ID ${employeeId} not found`);
 
+    // Coverage, not containment: the structure in force during the period is the
+    // one whose window INTERSECTS it. `effectiveFrom <= periodStart` demanded the
+    // structure cover the whole period, so a hire joining (and therefore starting
+    // their structure) mid-period — including on the period's first day at a
+    // later clock time — found nothing.
     const salaryStructure = await this.prisma.salaryStructure.findFirst({
       where: {
         employeeId,
         isActive: true,
-        effectiveFrom: { lte: periodStart },
+        effectiveFrom: { lte: periodEnd },
         OR: [
           { effectiveTo: null },
-          { effectiveTo: { gte: periodEnd } },
+          { effectiveTo: { gte: periodStart } },
         ],
       },
     });

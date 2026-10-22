@@ -291,6 +291,53 @@ describe('PayrollService', () => {
       expect(call.data.effectiveTo).toBeNull();
       expect(call.data.isActive).toBe(true);
     });
+
+    // Part 2 — effective-dating is day-level, in the Dhaka calendar.
+    it('normalizes a mid-day effectiveFrom instant to its calendar day', async () => {
+      await service.setSalaryStructure({
+        ...dto,
+        effectiveFrom: '2025-06-01T11:23:45.000Z',
+      });
+      const call = (
+        prisma.salaryStructure.create as jest.Mock
+      ).mock.lastCall[0];
+      expect(call.data.effectiveFrom.toISOString()).toBe(
+        '2025-06-01T00:00:00.000Z',
+      );
+    });
+
+    it('accepts the Dhaka-midnight instant of the joining day', async () => {
+      // The DatePicker value for Jan 1 in Dhaka is 2024-12-31T18:00:00.000Z.
+      // A naive UTC/server-local day truncation called that Dec 31 and refused
+      // the re-save that unblocked the live walk.
+      await expect(
+        service.setSalaryStructure({
+          ...dto,
+          effectiveFrom: '2024-12-31T18:00:00.000Z',
+        }),
+      ).resolves.toBeDefined();
+      const call = (
+        prisma.salaryStructure.create as jest.Mock
+      ).mock.lastCall[0];
+      expect(call.data.effectiveFrom.toISOString()).toBe(
+        '2025-01-01T00:00:00.000Z',
+      );
+    });
+
+    it('still rejects a calendar day before the joining day', async () => {
+      await expect(
+        service.setSalaryStructure({
+          ...dto,
+          effectiveFrom: '2024-12-31T00:00:00.000Z',
+        }),
+      ).rejects.toThrow('effectiveFrom cannot be before the employee joining date');
+    });
+
+    it('rejects an unparseable effectiveFrom', async () => {
+      await expect(
+        service.setSalaryStructure({ ...dto, effectiveFrom: 'not-a-date' }),
+      ).rejects.toThrow(BadRequestException);
+    });
   });
 
   describe('getSalaryStructure', () => {
@@ -753,7 +800,7 @@ describe('PayrollService', () => {
   });
 
   describe('generatePayslip — effective-dating resolution', () => {
-    it('scopes the active-structure lookup to the payslip window', async () => {
+    it('scopes the active-structure lookup to the payslip window (coverage, date-level)', async () => {
       jest.spyOn(prisma.payslip, 'findFirst').mockResolvedValue(null);
       const findFirst = jest.spyOn(prisma.salaryStructure, 'findFirst');
 
@@ -776,13 +823,17 @@ describe('PayrollService', () => {
         new Date('2025-06-30'),
       );
 
+      // Part 2: the structure in force during the period is the one whose window
+      // INTERSECTS it — effectiveFrom is bounded by the period END (a structure
+      // starting on any day inside the period qualifies) and effectiveTo by the
+      // period START. Both sides are date-level (UTC midnight of the Dhaka day).
       expect(findFirst.mock.lastCall[0].where).toMatchObject({
         employeeId: 'emp-1',
         isActive: true,
-        effectiveFrom: { lte: new Date('2025-06-01') },
+        effectiveFrom: { lte: new Date('2025-06-30') },
         OR: [
           { effectiveTo: null },
-          { effectiveTo: { gte: new Date('2025-06-30') } },
+          { effectiveTo: { gte: new Date('2025-06-01') } },
         ],
       });
     });
@@ -833,6 +884,148 @@ describe('PayrollService', () => {
         tx.payslip.create as jest.Mock
       ).mock.calls[0][0].data;
       expect(data).toBeDefined();
+    });
+  });
+
+  describe('Part 2 — joining-period effectiveness (no re-save needed)', () => {
+    const joiningStructure = {
+      ...mockSalaryStructure,
+      id: 'ss-joining',
+      // The row the Register Employee wizard produced BEFORE the fix: a raw
+      // registration instant on the joining day, not a day boundary.
+      effectiveFrom: new Date('2026-10-22T11:23:45.000Z'),
+      effectiveTo: null,
+      isActive: true,
+    };
+
+    /** Evaluate a Prisma salary-structure window predicate in JS. */
+    function windowMatches(structure: typeof joiningStructure, where: any) {
+      const started = structure.effectiveFrom <= where.effectiveFrom.lte;
+      const notEnded = where.OR.some(
+        (clause: any) =>
+          clause.effectiveTo === null ||
+          (clause.effectiveTo?.gte != null &&
+            structure.effectiveTo !== null &&
+            structure.effectiveTo >= clause.effectiveTo.gte),
+      );
+      return started && notEnded;
+    }
+
+    function mockGeneration() {
+      jest.spyOn(prisma.employee, 'findUnique').mockResolvedValue({
+        ...mockEmployee,
+        joiningDate: new Date('2026-10-22'),
+      } as any);
+      jest.spyOn(prisma.salaryStructure, 'findFirst').mockResolvedValue(
+        joiningStructure as any,
+      );
+      jest.spyOn(prisma.payslip, 'findFirst').mockResolvedValue(null);
+      const tx = {
+        payslip: {
+          create: jest.fn().mockReturnValue({ id: 'ps-joining' }),
+          findUnique: jest.fn().mockResolvedValue({
+            ...mockPayslip,
+            status: 'draft',
+            periodKey: '2026-10',
+          }),
+        },
+        payslipItem: { createMany: jest.fn().mockResolvedValue({ count: 8 }) },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb: any) =>
+        cb(tx),
+      );
+      return tx;
+    }
+
+    it('finds a mid-day structure for the period that starts on the joining day', async () => {
+      const tx = mockGeneration();
+      const findFirst = jest.spyOn(prisma.salaryStructure, 'findFirst');
+
+      await service.generatePayslip(
+        'emp-1',
+        new Date('2026-10-22T00:00:00.000Z'),
+        new Date('2026-11-21T00:00:00.000Z'),
+      );
+
+      const where: any = findFirst.mock.lastCall[0].where;
+      expect(windowMatches(joiningStructure, where)).toBe(true);
+      expect(tx.payslip.create).toHaveBeenCalled();
+    });
+
+    it('finds the same structure for a period that merely CONTAINS the joining day', async () => {
+      mockGeneration();
+      const findFirst = jest.spyOn(prisma.salaryStructure, 'findFirst');
+
+      // Monthly cycle that started before the hire.
+      await service.generatePayslip(
+        'emp-1',
+        new Date('2026-10-01T00:00:00.000Z'),
+        new Date('2026-10-31T00:00:00.000Z'),
+      );
+
+      expect(
+        windowMatches(joiningStructure, findFirst.mock.lastCall[0].where),
+      ).toBe(true);
+    });
+
+    it('documents the regression the coverage test replaces', async () => {
+      mockGeneration();
+      const findFirst = jest.spyOn(prisma.salaryStructure, 'findFirst');
+
+      await service.generatePayslip(
+        'emp-1',
+        new Date('2026-10-22T00:00:00.000Z'),
+        new Date('2026-11-21T00:00:00.000Z'),
+      );
+
+      const where: any = findFirst.mock.lastCall[0].where;
+      // The OLD predicate — `effectiveFrom <= periodStart` — excluded the row,
+      // because 11:23 on Oct 22 is after the period's 00:00 boundary.
+      const oldPredicate = {
+        effectiveFrom: { lte: new Date('2026-10-22T00:00:00.000Z') },
+        OR: [
+          { effectiveTo: null },
+          { effectiveTo: { gte: new Date('2026-11-21T00:00:00.000Z') } },
+        ],
+      };
+      expect(windowMatches(joiningStructure, oldPredicate)).toBe(false);
+      expect(windowMatches(joiningStructure, where)).toBe(true);
+    });
+
+    it('normalizes a Dhaka-midnight period to date-level bounds', async () => {
+      const tx = mockGeneration();
+      const findFirst = jest.spyOn(prisma.salaryStructure, 'findFirst');
+
+      // A Dhaka picker for Oct 22 sends 2026-10-21T18:00:00.000Z.
+      await service.generatePayslip(
+        'emp-1',
+        new Date('2026-10-21T18:00:00.000Z'),
+        new Date('2026-11-21T18:00:00.000Z'),
+      );
+
+      const where: any = findFirst.mock.lastCall[0].where;
+      expect(where.OR[1].effectiveTo.gte.toISOString()).toBe(
+        '2026-10-22T00:00:00.000Z',
+      );
+      expect(where.effectiveFrom.lte.toISOString()).toBe(
+        '2026-11-22T00:00:00.000Z',
+      );
+      // The stored payslip carries the same date-level bounds, so periodKey and
+      // the displayed period can never drift across a day boundary.
+      const data = (tx.payslip.create as jest.Mock).mock.calls[0][0].data;
+      expect(data.periodStart.toISOString()).toBe('2026-10-22T00:00:00.000Z');
+      expect(data.periodEnd.toISOString()).toBe('2026-11-22T00:00:00.000Z');
+      expect(data.periodKey).toBe('2026-10');
+    });
+
+    it('rejects a period that is not a valid date', async () => {
+      await expect(
+        service.generatePayslip(
+          'emp-1',
+          new Date('nonsense'),
+          new Date('2026-11-21'),
+        ),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 

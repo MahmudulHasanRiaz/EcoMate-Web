@@ -17,6 +17,7 @@ import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { CreateBankAccountDto } from './dto/create-bank-account.dto';
 import { UpdateBankAccountDto } from './dto/update-bank-account.dto';
+import { toDhakaDateOnly } from '../common/utils/dhaka-time';
 
 const TERMINAL_STATUSES: EmployeeStatus[] = ['terminated', 'resigned'];
 
@@ -416,9 +417,14 @@ export class EmployeesService {
         const totalDeductions =
           taxDeduction + insuranceDeduction + otherDeduction;
         const netSalary = totalEarnings - totalDeductions;
-        const effectiveFrom = dto.salaryStructure.effectiveFrom
-          ? new Date(dto.salaryStructure.effectiveFrom)
-          : new Date();
+        // Part 2: the structure registered alongside a hire starts on the JOINING
+        // day (not the moment the wizard happened to be submitted), stored at the
+        // Dhaka calendar day so it is effective for the joining period. The old
+        // `new Date()` default landed after the period's start-of-day boundary and
+        // the first payslip failed with "No active salary structure for this period".
+        const effectiveFrom = toDhakaDateOnly(
+          dto.salaryStructure.effectiveFrom ?? employee.joiningDate,
+        );
 
         createdStructure = await tx.salaryStructure.create({
           data: {
