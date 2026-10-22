@@ -67,6 +67,13 @@ export class ScannerService {
       targetStatusId?: string;
       returnId?: string;
       exchangeId?: string;
+      /** Confirmed receive lines (damage split included) — never stripped. */
+      items?: Array<{
+        productId: string;
+        variantId?: string | null;
+        quantity: number;
+        damagedQuantity?: number;
+      }>;
     },
     actor: ScanActor,
   ): Promise<ScanResult> {

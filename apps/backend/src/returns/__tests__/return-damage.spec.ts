@@ -104,6 +104,35 @@ describe('ReturnsService — damaged after receive', () => {
     expect(tx.return.update).not.toHaveBeenCalled();
   });
 
+  it('rejects damage on a line whose only unit arrived damaged (0 restocked good)', async () => {
+    prisma.return.findUnique.mockResolvedValue({
+      ...restocked,
+      items: [
+        {
+          productId: 'p1',
+          variantId: null,
+          quantity: 1,
+          damagedQuantity: 1,
+          damageLog: [
+            {
+              qty: 1,
+              at: '2026-10-10T00:00:00.000Z',
+              phase: 'receive',
+              by: 'staff@x.com',
+            },
+          ],
+          warehouseId: 'wh-1',
+        },
+      ],
+    });
+
+    await expect(
+      service.markDamaged('ret-1', [{ productId: 'p1', quantity: 1 }], 'staff@x.com'),
+    ).rejects.toThrow(/only 0 good unit/i);
+    expect(cancelReturnStock.damageWriteOff).not.toHaveBeenCalled();
+    expect(tx.return.update).not.toHaveBeenCalled();
+  });
+
   it('refuses damage before the return is received', async () => {
     prisma.return.findUnique.mockResolvedValue({
       ...restocked,

@@ -402,4 +402,17 @@ describe('ReturnDetail (Task 7 headers/links + actions)', () => {
       })
     })
   })
+
+  it('does not offer mark-as-damaged for a unit that arrived damaged (0 restored)', async () => {
+    const { getByText, container } = await renderDetail({
+      status: 'RESTOCKED',
+      stockReconciled: true,
+      items: [{
+        productId: 'p-1', variantId: 'v-1', quantity: 1, damagedQuantity: 1,
+        damageLog: [{ qty: 1, at: '2026-10-14T10:00:00Z', phase: 'receive', by: 'staff@ecomate.com' }],
+      }],
+    })
+    await expect.element(getByText('0 restored · 1 damaged (not restocked)')).toBeInTheDocument()
+    expect(container.textContent ?? '').not.toContain('Mark as damaged')
+  })
 })
