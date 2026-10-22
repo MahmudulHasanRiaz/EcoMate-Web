@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { DatePicker } from '@/components/date-picker'
+import { toDhakaDateString } from '@/lib/dhaka-time'
 import { useQuery } from '@tanstack/react-query'
 import { employeesApi, type EmployeeResponse } from '@/features/employees/api'
 import { useLeaveTypesQuery, useCreateRequestMutation } from '../hooks'
@@ -70,8 +71,8 @@ export function LeaveRequestDialog({ defaultEmployeeId }: { defaultEmployeeId?: 
     const dto = {
       employeeId,
       typeId,
-      startDate: startDate.toISOString(),
-      endDate: endDate.toISOString(),
+      startDate: toDhakaDateString(startDate),
+      endDate: toDhakaDateString(endDate),
       reason: reason.trim(),
       ...(days.trim() ? { days: Number(days) } : {}),
     }

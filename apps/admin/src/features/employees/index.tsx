@@ -60,10 +60,6 @@ function formatCurrency(amount: number | null | undefined) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
 }
 
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
-}
-
 export function Employees() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()

@@ -3,8 +3,11 @@ import { Badge } from '@/components/ui/badge'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
 import { CheckCircle2, Clock, Package, TrendingUp, ListTodo, ShoppingBag, UserCheck, AlertCircle } from 'lucide-react'
+import { formatDhakaDate } from '@/lib/dhaka-time'
 import type { MyPerformanceResponse } from '../api'
 
+// Date + time: an "assigned at" moment, not a business date — kept as its own
+// local formatting rather than the shared Dhaka date-only helper.
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return '—'
   return new Date(dateStr).toLocaleDateString('en-US', {
@@ -248,7 +251,7 @@ export function PerformanceTab({
                       </div>
                       {t.dueDate && (
                         <p className="mt-1 text-xs text-muted-foreground">
-                          Due: {new Date(t.dueDate).toLocaleDateString()}
+                          Due: {formatDhakaDate(t.dueDate)}
                         </p>
                       )}
                     </div>

@@ -59,3 +59,28 @@ export function parseDhakaDateString(s: string | null | undefined): Date | undef
   }
   return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) - DHAKA_OFFSET_MS)
 }
+
+const DATE_ONLY_OPTS: Intl.DateTimeFormatOptions = {
+  timeZone: 'Asia/Dhaka',
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+}
+
+/**
+ * Render a date-only value (an ISO instant or a "YYYY-MM-DD" string) as the
+ * Dhaka calendar day it names.
+ *
+ * HR date-only columns are stored as the UTC-midnight instant equal to the
+ * Dhaka calendar day. Formatting such a value with the host timezone slides it
+ * back a day in any browser west of UTC, and a UTC-pinned format slides it back
+ * for the local-midnight instants older rows hold. Pinning Asia/Dhaka renders
+ * the business day identically on every host — the admin app's business day is
+ * Dhaka (fixed UTC+6, no DST).
+ */
+export function formatDhakaDate(value: string | Date | null | undefined): string {
+  if (value == null || value === '') return '—'
+  const d = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('en-US', DATE_ONLY_OPTS)
+}

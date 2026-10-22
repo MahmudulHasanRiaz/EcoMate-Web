@@ -11,9 +11,6 @@ import { ThemeSwitch } from '@/components/theme-switch'
 import { CopyButton } from '@/components/copy-button'
 import { CustomerContactActions } from '@/components/customer-contact-actions'
 import { BlockPhoneDialog } from '@/features/orders/block-phone-dialog'
-import { PaymentGatewayAccountSelect } from '@/features/payments/components/payment-gateway-account-select'
-import { normalizeLegacyGatewayCode } from '@/features/payments/lib/gateway-normalize'
-import { gatewayApi } from '@/features/gateways/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,9 +21,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import { SearchableSelect } from '@/components/ui/searchable-select'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import {
   ChevronLeft, ChevronRight, Phone, MapPin, ShoppingCart,
   MoreHorizontal, Inbox, X, ArrowRightLeft, ChevronRight as ChevronRightIcon,
@@ -121,60 +115,6 @@ interface Lead {
   convertedOrder?: { id: string; displayId: string } | null
 }
 
-/**
- * Payment fields for the edit-and-convert dialog. Wraps the ONE shared
- * configured-gateway pair (`PaymentGatewayAccountSelect`) so this dialog can
- * never drift from the convert form's gateway list, and normalizes the lead's
- * stored (legacy) payment intent onto a configured gateway code via the shared
- * helper. Extracted as a named export so the payment fields can be rendered in
- * isolation in tests (the in-page dialog has no trigger of its own — the
- * "Convert with Edit" flow is route-backed — and the full page needs router
- * context).
- */
-export function LeadConvertPaymentFields({
-  gatewayCode,
-  accountId,
-  storedPaymentMethod,
-  onChange,
-}: {
-  gatewayCode: string
-  accountId: string
-  /** The lead's raw stored payment intent — HISTORY, never a wire value. */
-  storedPaymentMethod?: string | null
-  onChange: (next: { gatewayCode: string; accountId: string }) => void
-}) {
-  // Same query key as PaymentGatewayAccountSelect, so the configured gateway
-  // list is shared from cache — no duplicate /gateways/admin request.
-  const { data: gateways } = useQuery({
-    queryKey: ['admin-gateways'],
-    queryFn: () => gatewayApi.listGateways().then((r) => r.data),
-    staleTime: 60_000,
-  })
-
-  // A stored lead payment value is HISTORY (checkout enum / old shorthand).
-  // Once the configured gateways are available, settle the selection onto a
-  // CONFIGURED gateway code so a raw legacy string is never submitted. The
-  // helper is idempotent — an already-configured value, including a deliberate
-  // user choice, comes back unchanged, so only legacy/unknown values rewrite.
-  useEffect(() => {
-    if (!gateways) return
-    const normalized = normalizeLegacyGatewayCode(gatewayCode || storedPaymentMethod, gateways)
-    if (normalized && normalized !== gatewayCode) {
-      onChange({ gatewayCode: normalized, accountId })
-    }
-  }, [gateways, storedPaymentMethod, gatewayCode, accountId, onChange])
-
-  return (
-    <PaymentGatewayAccountSelect
-      gatewayCode={gatewayCode}
-      accountId={accountId}
-      onChange={onChange}
-      gatewayLabel='Payment Method'
-      accountLabel='Account'
-      className='grid gap-3'
-    />
-  )
-}
 
 export function IncompleteLeads() {
   const navigate = useNavigate()
@@ -189,30 +129,7 @@ export function IncompleteLeads() {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [blockPhones, setBlockPhones] = useState<{ phones: string[]; contextLabel?: string } | null>(null)
-  const [editingLead, setEditingLead] = useState<Lead | null>(null)
-  const [editForm, setEditForm] = useState<{
-    guestName: string
-    guestPhone: string
-    paymentMethod: string
-    accountId: string
-    shippingAddress: string
-    items: any[]
-  }>({ guestName: '', guestPhone: '', paymentMethod: '', accountId: '', shippingAddress: '', items: [] })
 
-  useEffect(() => {
-    if (editingLead) {
-      setEditForm({
-        guestName: editingLead.name || '',
-        guestPhone: editingLead.phone || '',
-        // Raw stored intent — normalized onto a configured gateway code by
-        // LeadConvertPaymentFields once the gateway list is available.
-        paymentMethod: editingLead.paymentMethod || '',
-        accountId: '',
-        shippingAddress: editingLead.address ? JSON.stringify(editingLead.address) : '',
-        items: (editingLead.items as any[])?.map(i => ({ ...i })) || [],
-      })
-    }
-  }, [editingLead])
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -314,17 +231,6 @@ export function IncompleteLeads() {
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Bulk lead status change failed'),
   })
 
-  const convertEditMut = useMutation({
-    mutationFn: ({ id, overrides }: { id: string; overrides: any }) =>
-      apiClient.post(`/checkout-leads/${id}/convert`, overrides),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['checkout-leads'] })
-      queryClient.invalidateQueries({ queryKey: ['checkout-leads-summary'] })
-      setEditingLead(null)
-      toast.success('Order created from lead')
-    },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Conversion failed'),
-  })
 
   const leads = (data?.data || []) as Lead[]
   const total = data?.meta?.total || 0
@@ -1379,164 +1285,6 @@ export function IncompleteLeads() {
         contextLabel={blockPhones?.contextLabel}
       />
 
-      {/* ── Quick Convert Modal / Fallback Dialog ── */}
-      <Dialog
-        open={!!editingLead}
-        onOpenChange={open => {
-          if (!open) setEditingLead(null)
-        }}
-      >
-        <DialogContent className='max-w-3xl max-h-[85vh] overflow-y-auto'>
-          <DialogHeader>
-            <DialogTitle>Convert Lead {editingLead?.displayId || ''} to Order</DialogTitle>
-          </DialogHeader>
-          {editingLead && (
-            <div className='space-y-5 py-2'>
-              <div className='grid grid-cols-2 gap-4'>
-                <div className='space-y-1.5'>
-                  <Label className='text-xs'>Customer Name</Label>
-                  <Input
-                    value={editForm.guestName}
-                    onChange={e => setEditForm(f => ({ ...f, guestName: e.target.value }))}
-                  />
-                </div>
-                <div className='space-y-1.5'>
-                  <Label className='text-xs'>Phone</Label>
-                  <Input
-                    value={editForm.guestPhone}
-                    onChange={e => setEditForm(f => ({ ...f, guestPhone: e.target.value }))}
-                  />
-                </div>
-                <LeadConvertPaymentFields
-                  gatewayCode={editForm.paymentMethod}
-                  accountId={editForm.accountId}
-                  storedPaymentMethod={editingLead.paymentMethod}
-                  onChange={(next) => {
-                    setEditForm(f => ({
-                      ...f,
-                      paymentMethod: next.gatewayCode,
-                      accountId: next.accountId,
-                    }))
-                  }}
-                />
-                <div className='space-y-1.5'>
-                  <Label className='text-xs'>Shipping Address</Label>
-                  <Textarea
-                    value={editForm.shippingAddress}
-                    onChange={e => setEditForm(f => ({ ...f, shippingAddress: e.target.value }))}
-                    rows={2}
-                  />
-                </div>
-              </div>
-
-              <div className='space-y-2'>
-                <div className='flex items-center justify-between'>
-                  <Label className='text-xs font-semibold'>Order Items</Label>
-                  <span className='text-xs text-muted-foreground'>
-                    Total: ৳
-                    {editForm.items
-                      .reduce((s: number, i: any) => s + (i.price || 0) * (i.quantity || 1), 0)
-                      .toFixed(2)}
-                  </span>
-                </div>
-                <div className='space-y-2 max-h-60 overflow-y-auto'>
-                  {editForm.items.map((item: any, idx: number) => (
-                    <div key={idx} className='flex items-center gap-2 rounded-lg border bg-background p-2'>
-                      {item.image ? (
-                        <SafeImage
-                          src={item.image}
-                          alt=''
-                          className='h-10 w-10 rounded object-cover shrink-0'
-                          thumbWidth={48}
-                          thumbHeight={48}
-                        />
-                      ) : (
-                        <div className='h-10 w-10 rounded border bg-muted/30 flex items-center justify-center shrink-0'>
-                          <Package className='h-4 w-4 text-muted-foreground/60' />
-                        </div>
-                      )}
-                      <div className='flex-1 min-w-0'>
-                        <div className='text-sm font-medium truncate'>{item.name || 'Product'}</div>
-                        <div className='flex items-center gap-2 mt-1'>
-                          <Input
-                            type='number'
-                            value={item.quantity}
-                            onChange={e => {
-                              const items = [...editForm.items]
-                              items[idx] = { ...items[idx], quantity: parseInt(e.target.value) || 0 }
-                              setEditForm(f => ({ ...f, items }))
-                            }}
-                            className='h-7 w-16 text-xs'
-                            min={1}
-                          />
-                          <Input
-                            type='number'
-                            value={item.price}
-                            onChange={e => {
-                              const items = [...editForm.items]
-                              items[idx] = { ...items[idx], price: parseFloat(e.target.value) || 0 }
-                              setEditForm(f => ({ ...f, items }))
-                            }}
-                            className='h-7 w-20 text-xs'
-                            step='any'
-                            min={0}
-                          />
-                          <span className='text-xs font-medium w-16 text-right'>
-                            ৳{((item.price || 0) * (item.quantity || 1)).toFixed(2)}
-                          </span>
-                        </div>
-                      </div>
-                      <Button
-                        variant='ghost'
-                        size='icon'
-                        className='h-7 w-7 shrink-0 text-red-500'
-                        onClick={() =>
-                          setEditForm(f => ({ ...f, items: f.items.filter((_: any, i: number) => i !== idx) }))
-                        }
-                      >
-                        <Trash2 className='h-3.5 w-3.5' />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-          <DialogFooter className='gap-2'>
-            <Button variant='outline' onClick={() => setEditingLead(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (!editingLead) return
-                let parsedAddress = undefined
-                if (editForm.shippingAddress) {
-                  try {
-                    parsedAddress = JSON.parse(editForm.shippingAddress)
-                  } catch {
-                    toast.error('Invalid shipping address format')
-                    return
-                  }
-                }
-                convertEditMut.mutate({
-                  id: editingLead.id,
-                  overrides: {
-                    items: editForm.items,
-                    guestName: editForm.guestName,
-                    guestPhone: editForm.guestPhone,
-                    paymentMethod: editForm.paymentMethod || undefined,
-                    ...(editForm.accountId ? { accountId: editForm.accountId } : {}),
-                    shippingAddress: parsedAddress,
-                  },
-                })
-              }}
-              disabled={convertEditMut.isPending || editForm.items.length === 0}
-            >
-              {convertEditMut.isPending ? 'Creating...' : 'Create Order'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   )
 }

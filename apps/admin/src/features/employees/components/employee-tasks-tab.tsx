@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { CheckSquare, Clock, ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react'
+import { formatDhakaDate } from '@/lib/dhaka-time'
 
 interface EmployeeTasksTabProps {
   employeeId: string
@@ -167,7 +168,7 @@ export function EmployeeTasksTab({ employeeId }: EmployeeTasksTabProps) {
                       </span>
                     </TableCell>
                     <TableCell className='text-right text-xs text-muted-foreground'>
-                      {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : '—'}
+                      {task.dueDate ? formatDhakaDate(task.dueDate) : '—'}
                     </TableCell>
                   </TableRow>
                 ))

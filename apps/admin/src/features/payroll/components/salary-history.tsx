@@ -9,19 +9,8 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { formatDhakaDate } from '@/lib/dhaka-time'
 import type { PayrollSummaryResponse, SalaryStructureResponse } from '../api'
-
-// UTC-based so window rendering is deterministic regardless of server TZ.
-const FD_OPTS: Intl.DateTimeFormatOptions = {
-  timeZone: 'UTC',
-  year: 'numeric',
-  month: 'short',
-  day: 'numeric',
-}
-
-export function fmtWindowDate(date: string) {
-  return new Date(date).toLocaleDateString('en-US', FD_OPTS)
-}
 
 export function formatSalaryAmount(value: number | string | null | undefined) {
   if (value == null) return '—'
@@ -63,7 +52,7 @@ export function SalaryHistoryCard({
         {pendingEffectiveFrom && (
           <div className='flex flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300'>
             <span className='font-medium'>
-              New structure starts {fmtWindowDate(pendingEffectiveFrom)}
+              New structure starts {formatDhakaDate(pendingEffectiveFrom)}
             </span>
           </div>
         )}
@@ -117,8 +106,8 @@ export function SalaryHistoryCard({
               >
                 <div className='min-w-0 flex-1'>
                   <p className='text-sm font-medium'>
-                    {fmtWindowDate(structure.effectiveFrom)} –{' '}
-                    {structure.effectiveTo ? fmtWindowDate(structure.effectiveTo) : 'Present'}
+                    {formatDhakaDate(structure.effectiveFrom)} –{' '}
+                    {structure.effectiveTo ? formatDhakaDate(structure.effectiveTo) : 'Present'}
                   </p>
                   <p className='mt-0.5 text-sm text-muted-foreground'>
                     Net: {formatSalaryAmount(structure.netSalary)}

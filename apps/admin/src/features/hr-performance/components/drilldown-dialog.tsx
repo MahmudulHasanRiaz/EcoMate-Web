@@ -16,6 +16,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { formatDhakaDate } from '@/lib/dhaka-time'
 import { useOrderDrilldownQuery } from '../hooks'
 import { ChevronLeft, ChevronRight, ShoppingBag } from 'lucide-react'
 
@@ -174,8 +175,8 @@ export function DrilldownDialog({
                       </TableCell>
                       <TableCell className='text-xs text-muted-foreground'>
                         {latestEvent?.createdAt
-                          ? new Date(latestEvent.createdAt).toLocaleDateString()
-                          : new Date(order.createdAt).toLocaleDateString()}
+                          ? formatDhakaDate(latestEvent.createdAt)
+                          : formatDhakaDate(order.createdAt)}
                       </TableCell>
                     </TableRow>
                   )

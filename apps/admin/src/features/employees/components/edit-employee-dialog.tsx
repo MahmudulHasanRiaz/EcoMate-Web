@@ -33,6 +33,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { DatePicker } from '@/components/date-picker'
+import { toDhakaDateString, parseDhakaDateString } from '@/lib/dhaka-time'
 import { useDepartmentsQuery } from '@/features/departments/hooks'
 import { useDesignationsQuery } from '@/features/designations/hooks'
 import { useAccessPresetsQuery } from '@/features/access-presets/hooks'
@@ -152,11 +153,11 @@ export function EditEmployeeDialog({
       accessPresetId: employee.accessPresetId || '',
       reportingToId: employee.reportingTo?.id || '',
       attendanceMethod: employee.attendanceMethod || 'APP',
-      joiningDate: employee.joiningDate ? new Date(employee.joiningDate) : undefined,
-      confirmationDate: employee.confirmationDate ? new Date(employee.confirmationDate) : undefined,
-      exitDate: employee.exitDate ? new Date(employee.exitDate) : undefined,
+      joiningDate: parseDhakaDateString(employee.joiningDate),
+      confirmationDate: parseDhakaDateString(employee.confirmationDate),
+      exitDate: parseDhakaDateString(employee.exitDate),
       exitReason: employee.exitReason || '',
-      dateOfBirth: employee.dateOfBirth ? new Date(employee.dateOfBirth) : undefined,
+      dateOfBirth: parseDhakaDateString(employee.dateOfBirth),
       gender: employee.gender || '',
       nationality: employee.nationality || '',
       nidNumber: employee.nidNumber || '',
@@ -247,11 +248,11 @@ export function EditEmployeeDialog({
         accessPresetId: form.accessPresetId || null,
         reportingToId: form.reportingToId || null,
         attendanceMethod: form.attendanceMethod || 'APP',
-        joiningDate: form.joiningDate ? form.joiningDate.toISOString().slice(0, 10) : null,
-        confirmationDate: form.confirmationDate ? form.confirmationDate.toISOString().slice(0, 10) : null,
-        exitDate: form.exitDate ? form.exitDate.toISOString().slice(0, 10) : null,
+        joiningDate: form.joiningDate ? toDhakaDateString(form.joiningDate) : null,
+        confirmationDate: form.confirmationDate ? toDhakaDateString(form.confirmationDate) : null,
+        exitDate: form.exitDate ? toDhakaDateString(form.exitDate) : null,
         exitReason: form.exitReason || null,
-        dateOfBirth: form.dateOfBirth ? form.dateOfBirth.toISOString().slice(0, 10) : null,
+        dateOfBirth: form.dateOfBirth ? toDhakaDateString(form.dateOfBirth) : null,
         gender: form.gender || null,
         nationality: form.nationality || null,
         nidNumber: form.nidNumber || null,

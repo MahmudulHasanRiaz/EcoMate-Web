@@ -1,18 +1,10 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { User, Briefcase, MapPin, PhoneCall, Building2, Users2, ShieldCheck } from 'lucide-react'
+import { formatDhakaDate } from '@/lib/dhaka-time'
 import type { MyProfileResponse } from '../api'
 
 const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-
-function formatDate(dateStr?: string | null) {
-  if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
-}
 
 function InfoItem({ label, value }: { label: string; value?: React.ReactNode }) {
   return (
@@ -51,8 +43,8 @@ export function PersonalTab({ profile }: { profile: MyProfileResponse }) {
               label="Employment Type"
               value={<span className="capitalize">{profile.employmentType.replace('_', ' ')}</span>}
             />
-            <InfoItem label="Joining Date" value={formatDate(profile.joiningDate)} />
-            <InfoItem label="Confirmation Date" value={formatDate(profile.confirmationDate)} />
+            <InfoItem label="Joining Date" value={formatDhakaDate(profile.joiningDate)} />
+            <InfoItem label="Confirmation Date" value={formatDhakaDate(profile.confirmationDate)} />
             <InfoItem
               label="Reporting Manager"
               value={profile.reportingTo?.betterAuthUser?.name || '—'}
@@ -115,7 +107,7 @@ export function PersonalTab({ profile }: { profile: MyProfileResponse }) {
             <InfoItem label="Email Address" value={profile.betterAuthUser?.email} />
             <InfoItem label="Mobile Phone" value={profile.userProfile?.phoneNumber} />
             <InfoItem label="Username" value={profile.userProfile?.username} />
-            <InfoItem label="Date of Birth" value={formatDate(profile.dateOfBirth)} />
+            <InfoItem label="Date of Birth" value={formatDhakaDate(profile.dateOfBirth)} />
             <InfoItem label="Gender" value={profile.gender ? <span className="capitalize">{profile.gender.toLowerCase()}</span> : '—'} />
             <InfoItem label="Nationality" value={profile.nationality} />
             <InfoItem label="NID Number" value={profile.nidNumber ? <span className="font-mono">{profile.nidNumber}</span> : '—'} />

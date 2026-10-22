@@ -3,18 +3,10 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+import { formatDhakaDate } from '@/lib/dhaka-time'
 import { PAYSLIP_STATUS_BADGE } from './payslip-status-badge'
 import { usePayslipQuery, useSetPayslipStatusMutation } from '../hooks'
 import type { PayslipItemResponse } from '../api'
-
-function formatDate(dateStr?: string | null) {
-  if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
-}
 
 function formatMoney(n?: number | null) {
   return `${Number(n ?? 0).toLocaleString()} ৳`
@@ -103,7 +95,7 @@ export function PayslipDetail({ payslipId }: { payslipId: string }) {
           <div>
             <CardTitle>Payslip {payslip.periodKey ?? ''}</CardTitle>
             <CardDescription>
-              {formatDate(payslip.periodStart)} – {formatDate(payslip.periodEnd)}
+              {formatDhakaDate(payslip.periodStart)} – {formatDhakaDate(payslip.periodEnd)}
             </CardDescription>
           </div>
           <Badge className={`border-transparent ${badge.className}`}>{badge.label}</Badge>

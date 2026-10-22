@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { DatePicker } from '@/components/date-picker'
+import { toDhakaDateString } from '@/lib/dhaka-time'
 import { useGeneratePayslipMutation } from '../hooks'
 
 export function PayslipDialog({ employeeId }: { employeeId: string }) {
@@ -30,8 +31,8 @@ export function PayslipDialog({ employeeId }: { employeeId: string }) {
     generateMut.mutate(
       {
         employeeId,
-        periodStart: periodStart.toISOString(),
-        periodEnd: periodEnd.toISOString(),
+        periodStart: toDhakaDateString(periodStart),
+        periodEnd: toDhakaDateString(periodEnd),
       },
       {
         onSuccess: () => {

@@ -25,6 +25,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { riseStyle, type KpiAccent } from '@/components/ui/dashboard'
 import { cn } from '@/lib/utils'
+import { formatDhakaDate } from '@/lib/dhaka-time'
 import { hasPayrollPermission, useHrOverviewQuery, useHrWorkforceOverviewQuery } from './hooks'
 import { Link } from '@tanstack/react-router'
 import { formatDuration } from '@/features/hr-attendance/api'
@@ -484,7 +485,7 @@ export function HrDashboard() {
                             {money(p.netPay)}
                           </span>
                           <Badge variant="outline" className="text-[10px]">
-                            {new Date(p.paidAt).toLocaleDateString()}
+                            {formatDhakaDate(p.paidAt)}
                           </Badge>
                         </div>
                       </div>

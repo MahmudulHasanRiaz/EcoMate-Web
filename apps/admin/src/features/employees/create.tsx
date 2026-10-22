@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
+import { toDhakaDateString } from '@/lib/dhaka-time'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -231,15 +232,15 @@ export default function CreateEmployeePage() {
     }
     const payload: CreateEmployeeDto = {
       betterAuthUserId: selectedUser.id,
-      joiningDate: basics.joiningDate.toISOString().slice(0, 10),
-      confirmationDate: basics.confirmationDate ? basics.confirmationDate.toISOString().slice(0, 10) : undefined,
+      joiningDate: toDhakaDateString(basics.joiningDate),
+      confirmationDate: basics.confirmationDate ? toDhakaDateString(basics.confirmationDate) : undefined,
       employmentType: basics.employmentType,
       attendanceMethod: basics.attendanceMethod || undefined,
       departmentId: basics.departmentId || undefined,
       designationId: basics.designationId || undefined,
       accessPresetId: basics.accessPresetId || undefined,
       reportingToId: basics.reportingToId || undefined,
-      dateOfBirth: personal.dateOfBirth ? personal.dateOfBirth.toISOString().slice(0, 10) : undefined,
+      dateOfBirth: personal.dateOfBirth ? toDhakaDateString(personal.dateOfBirth) : undefined,
       gender: (personal.gender || undefined) as EmployeeGender | undefined,
       nationality: personal.nationality.trim() || undefined,
       nidNumber: personal.nidNumber.trim() || undefined,
@@ -283,7 +284,7 @@ export default function CreateEmployeePage() {
         taxDeduction: num(salary.taxDeduction),
         insuranceDeduction: num(salary.insuranceDeduction),
         otherDeduction: num(salary.otherDeduction),
-        effectiveFrom: salary.effectiveFrom ? salary.effectiveFrom.toISOString() : undefined,
+        effectiveFrom: salary.effectiveFrom ? toDhakaDateString(salary.effectiveFrom) : undefined,
       }
     }
     if (addBank && bank.bankName && bank.accountNumber) {

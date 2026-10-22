@@ -10,7 +10,10 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { PermissionsAny } from '../common/decorators/permissions.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { HrPaymentsService } from './hr-payments.service';
-import { CreatePaymentDto } from './dto/create-payment.dto';
+import {
+  CreatePaymentDto,
+  CreatePaymentInput,
+} from './dto/create-payment.dto';
 import { VoidPaymentDto } from './dto/void-payment.dto';
 
 @Controller('payroll')
@@ -20,14 +23,18 @@ import { VoidPaymentDto } from './dto/void-payment.dto';
 export class HrPaymentsController {
   constructor(private readonly hrPaymentsService: HrPaymentsService) {}
 
+  // The payslip id travels in the path, never the body: the global
+  // ValidationPipe validates @Body() against CreatePaymentDto before this
+  // handler runs, so a body-level payslipId would reject every request.
   @Post('payslips/:id/payments')
   createPayment(
     @Param('id') id: string,
     @Body() dto: CreatePaymentDto,
     @CurrentUser() user?: any,
   ) {
+    const input: CreatePaymentInput = { ...dto, payslipId: id };
     return this.hrPaymentsService.createPayment(
-      { ...dto, payslipId: id },
+      input,
       user?.userId ?? user?.id,
     );
   }

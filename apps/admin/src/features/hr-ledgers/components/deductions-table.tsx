@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
+import { formatDhakaDate } from '@/lib/dhaka-time'
 import { useDeductionsQuery, useApproveDeductionMutation } from '../hooks'
 import type { DeductionRow, LedgerStatus } from '../api'
 import { DeductionDialog } from './deduction-dialog'
@@ -33,11 +34,6 @@ function StatusBadge({ status }: { status: LedgerStatus }) {
 const TYPE_LABELS: Record<string, string> = {
   fine: 'Fine',
   other: 'Other',
-}
-
-function formatDate(dateStr?: string | null) {
-  if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 export function DeductionsTable({ employeeId, page: initialPage }: { employeeId: string; page?: number }) {
@@ -87,8 +83,8 @@ export function DeductionsTable({ employeeId, page: initialPage }: { employeeId:
               {rows.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell className='text-sm text-muted-foreground'>
-                    {formatDate(row.applicableFrom)}
-                    {row.applicableTo ? ` – ${formatDate(row.applicableTo)}` : ''}
+                    {formatDhakaDate(row.applicableFrom)}
+                    {row.applicableTo ? ` – ${formatDhakaDate(row.applicableTo)}` : ''}
                   </TableCell>
                   <TableCell className='font-medium'>{TYPE_LABELS[row.type] || row.type}</TableCell>
                   <TableCell className='max-w-[280px] truncate'>{row.reason}</TableCell>

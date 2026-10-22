@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { DataTablePagination } from '@/components/data-table-pagination'
+import { formatDhakaDate } from '@/lib/dhaka-time'
 import { payrollApi, type PayslipResponse } from './api'
 import { PayrollSummaryBar } from './components/payroll-summary-bar'
 
@@ -128,7 +129,7 @@ export function Payroll() {
   {ps.employee ? `${ps.employee.employeeId} · ${ps.employee.betterAuthUser?.name || '—'}` : '—'}
 </TableCell>
                         <TableCell className='text-sm text-muted-foreground'>
-                          {new Date(ps.periodStart).toLocaleDateString()} - {new Date(ps.periodEnd).toLocaleDateString()}
+                          {formatDhakaDate(ps.periodStart)} - {formatDhakaDate(ps.periodEnd)}
                         </TableCell>
                         <TableCell>{Number(ps.totalEarnings).toLocaleString()} ৳</TableCell>
                         <TableCell className='text-destructive'>{Number(ps.totalDeductions).toLocaleString()} ৳</TableCell>

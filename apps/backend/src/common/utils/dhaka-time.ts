@@ -96,3 +96,24 @@ export function dhakaHourBucket(d: Date): Date {
 export function dhakaDayKey(d: Date): string {
   return dhakaDateString(d);
 }
+
+/**
+ * Normalize an instant or a date-only string to the UTC-midnight instant of its
+ * Dhaka calendar day — the "stored convention" for HR date-only columns
+ * (Employee.joiningDate, SalaryStructure.effectiveFrom, AttendanceDay.date).
+ *
+ * Effectiveness and tenure are date-level decisions: a structure created at
+ * 11:23 on the joining day must apply to the joining period exactly as one
+ * created at 00:00 does. Comparing a raw instant against a period's
+ * start-of-day boundary made the first payslip of a mid-day hire fail with
+ * "No active salary structure for this period" until the structure was re-saved
+ * on a day boundary. Normalize on the write side and compare day-to-day.
+ *
+ * Returns an Invalid Date for unparseable input — callers validate.
+ */
+export function toDhakaDateOnly(value: Date | string): Date {
+  const instant = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(instant.getTime())) return instant;
+  const [y, m, d] = dhakaDateString(instant).split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d));
+}

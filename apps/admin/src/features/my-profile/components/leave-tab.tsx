@@ -17,6 +17,7 @@ import {
   useCreateMyLeaveRequestMutation,
   useCancelMyLeaveRequestMutation,
 } from '../hooks'
+import { formatDhakaDate, toDhakaDateString } from '@/lib/dhaka-time'
 import type { LeaveStatus } from '../api'
 
 const STATUS_BADGE: Record<LeaveStatus, { label: string; className: string }> = {
@@ -24,15 +25,6 @@ const STATUS_BADGE: Record<LeaveStatus, { label: string; className: string }> = 
   approved: { label: 'Approved', className: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20' },
   rejected: { label: 'Rejected', className: 'bg-destructive/10 text-destructive border-destructive/20' },
   cancelled: { label: 'Cancelled', className: 'bg-muted text-muted-foreground border-border' },
-}
-
-function formatDate(dateStr?: string | null) {
-  if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
 }
 
 export function LeaveTab({
@@ -90,8 +82,8 @@ export function LeaveTab({
     createMut.mutate(
       {
         typeId: selectedTypeId,
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString(),
+        startDate: toDhakaDateString(startDate),
+        endDate: toDhakaDateString(endDate),
         days: calculatedDays,
         reason: reason.trim(),
       },
@@ -224,7 +216,7 @@ export function LeaveTab({
                           {req.type?.name || 'Leave'}
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                          {formatDate(req.startDate)} – {formatDate(req.endDate)}
+                          {formatDhakaDate(req.startDate)} – {formatDhakaDate(req.endDate)}
                         </TableCell>
                         <TableCell className="text-center font-semibold text-xs">
                           {req.days} {req.days === 1 ? 'day' : 'days'}

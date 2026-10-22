@@ -13,16 +13,8 @@ import {
 } from '../hooks'
 import { MyPayslipDialog } from './my-payslip-detail'
 import { PAYSLIP_STATUS_BADGE } from '@/features/payroll/components/payslip-status-badge'
+import { formatDhakaDate } from '@/lib/dhaka-time'
 import type { MyProfileResponse } from '../api'
-
-function formatDate(dateStr?: string | null) {
-  if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
-}
 
 export function CompensationTab({ profile }: { profile?: MyProfileResponse }) {
   const { data: salaryStructure, isLoading: salaryLoading } = useMySalaryQuery()
@@ -55,7 +47,7 @@ export function CompensationTab({ profile }: { profile?: MyProfileResponse }) {
             </div>
             {structure?.effectiveFrom && (
               <Badge variant="outline" className="text-xs">
-                Effective: {formatDate(structure.effectiveFrom)}
+                Effective: {formatDhakaDate(structure.effectiveFrom)}
               </Badge>
             )}
           </div>
@@ -181,7 +173,7 @@ export function CompensationTab({ profile }: { profile?: MyProfileResponse }) {
                       <TableRow key={ps.id}>
                         <TableCell className="font-semibold text-xs">{ps.periodKey || '—'}</TableCell>
                         <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                          {formatDate(ps.periodStart)} – {formatDate(ps.periodEnd)}
+                          {formatDhakaDate(ps.periodStart)} – {formatDhakaDate(ps.periodEnd)}
                         </TableCell>
                         <TableCell className="text-right text-xs tabular-nums">
                           {Number(ps.totalEarnings || 0).toLocaleString()} ৳
@@ -246,7 +238,7 @@ export function CompensationTab({ profile }: { profile?: MyProfileResponse }) {
                   >
                     <div>
                       <span className="font-semibold">{c.order?.displayId || 'Commission'}</span>
-                      <p className="text-[11px] text-muted-foreground">{formatDate(c.createdAt)}</p>
+                      <p className="text-[11px] text-muted-foreground">{formatDhakaDate(c.createdAt)}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
@@ -290,7 +282,7 @@ export function CompensationTab({ profile }: { profile?: MyProfileResponse }) {
                   >
                     <div>
                       <span className="font-semibold capitalize">{e.type}: {e.reason}</span>
-                      <p className="text-[11px] text-muted-foreground">{formatDate(e.createdAt)}</p>
+                      <p className="text-[11px] text-muted-foreground">{formatDhakaDate(e.createdAt)}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-purple-600 dark:text-purple-400 tabular-nums">

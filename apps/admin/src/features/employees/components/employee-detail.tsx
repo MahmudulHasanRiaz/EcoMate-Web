@@ -34,6 +34,7 @@ import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { DatePicker } from '@/components/date-picker'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { formatDhakaDate, toDhakaDateString, parseDhakaDateString } from '@/lib/dhaka-time'
 import { useEmployeeQuery, useUpdateEmployeeMutation, useBankAccountsQuery, useCreateBankAccountMutation, useUpdateBankAccountMutation, useDeleteBankAccountMutation, useSetPrimaryBankAccountMutation } from '../hooks'
 import { employeesApi, type EmployeeStatus, type EmploymentType, type UpdateEmployeeDto, type AttendanceMethod, type EmployeeResponse, type EmployeeGender, GENDER_LABELS, ATTENDANCE_METHOD_LABELS } from '../api'
 import { BankAccountsCard } from './bank-accounts-card'
@@ -78,14 +79,13 @@ function computeTenure(joiningDate?: string | null) {
   return rem > 0 ? `${years}y ${rem}m tenure` : `${years}y tenure`
 }
 
-function formatDate(dateStr?: string | null) {
-  if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
-}
-
-function formatSalary(salary?: number | null) {
-  if (salary == null) return '—'
-  return `${salary.toLocaleString()} ৳`
+// Prisma Decimals reach the client as strings, so coerce before formatting —
+// otherwise the grouping is dropped ('10000 ৳' instead of '10,000 ৳').
+function formatSalary(salary?: number | string | null) {
+  if (salary == null || salary === '') return '—'
+  const value = Number(salary)
+  if (!Number.isFinite(value)) return '—'
+  return `${value.toLocaleString()} ৳`
 }
 
 function InfoRow({ label, children }: { label: string; children: ReactNode }) {
@@ -186,7 +186,7 @@ function CompensationTab({ employeeId, mirrorSalary }: { employeeId: string; mir
         taxDeduction: num('taxDeduction'),
         insuranceDeduction: num('insuranceDeduction'),
         otherDeduction: num('otherDeduction'),
-        effectiveFrom: new Date(form.effectiveFrom).toISOString(),
+        effectiveFrom: form.effectiveFrom,
       },
       { onSuccess: () => setOpen(false) },
     )
@@ -292,8 +292,8 @@ function CompensationTab({ employeeId, mirrorSalary }: { employeeId: string; mir
             <div className='grid gap-2 col-span-2'>
               <Label>Effective From *</Label>
               <DatePicker
-                selected={form.effectiveFrom ? new Date(form.effectiveFrom) : undefined}
-                onSelect={(d) => setForm(f => ({ ...f, effectiveFrom: d ? d.toISOString() : '' }))}
+                selected={parseDhakaDateString(form.effectiveFrom)}
+                onSelect={(d) => setForm(f => ({ ...f, effectiveFrom: d ? toDhakaDateString(d) : '' }))}
                 placeholder='Pick effective date (required)'
               />
               {!form.effectiveFrom && (
@@ -376,7 +376,7 @@ function PayrollTab({ employeeId }: { employeeId: string }) {
                   <TableRow key={row.id}>
                     <TableCell className='font-medium'>{row.periodKey ?? '—'}</TableCell>
                     <TableCell className='text-sm text-muted-foreground'>
-                      {formatDate(row.periodStart)} – {formatDate(row.periodEnd)}
+                      {formatDhakaDate(row.periodStart)} – {formatDhakaDate(row.periodEnd)}
                     </TableCell>
                     <TableCell className='text-right tabular-nums'>
                       {Number(row.netPay).toLocaleString()} ৳
@@ -413,7 +413,7 @@ function PersonalInfoCard({ employee }: { employee: EmployeeResponse }) {
   const updateMut = useUpdateEmployeeMutation()
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({
-    dateOfBirth: employee.dateOfBirth ? new Date(employee.dateOfBirth) : undefined,
+    dateOfBirth: parseDhakaDateString(employee.dateOfBirth),
     gender: (employee.gender || '') as EmployeeGender | '',
     nationality: employee.nationality || '',
     nidNumber: employee.nidNumber || '',
@@ -426,7 +426,7 @@ function PersonalInfoCard({ employee }: { employee: EmployeeResponse }) {
 
   const openPersonalEdit = () => {
     setForm({
-      dateOfBirth: employee.dateOfBirth ? new Date(employee.dateOfBirth) : undefined,
+      dateOfBirth: parseDhakaDateString(employee.dateOfBirth),
       gender: (employee.gender || '') as EmployeeGender | '',
       nationality: employee.nationality || '',
       nidNumber: employee.nidNumber || '',
@@ -441,7 +441,7 @@ function PersonalInfoCard({ employee }: { employee: EmployeeResponse }) {
 
   const savePersonal = () => {
     const dto: UpdateEmployeeDto = {
-      dateOfBirth: form.dateOfBirth ? form.dateOfBirth.toISOString() : null,
+      dateOfBirth: form.dateOfBirth ? toDhakaDateString(form.dateOfBirth) : null,
       gender: form.gender || null,
       nationality: form.nationality || null,
       nidNumber: form.nidNumber || null,
@@ -469,7 +469,7 @@ function PersonalInfoCard({ employee }: { employee: EmployeeResponse }) {
       </CardHeader>
       <CardContent>
         <div className='grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3'>
-          <InfoRow label='Date of Birth'>{formatDate(employee.dateOfBirth)}</InfoRow>
+          <InfoRow label='Date of Birth'>{formatDhakaDate(employee.dateOfBirth)}</InfoRow>
           <InfoRow label='Gender'>
             {employee.gender ? GENDER_LABELS[employee.gender] : '—'}
           </InfoRow>
@@ -692,8 +692,8 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
       departmentId: employee.departmentId || '',
       designationId: employee.designationId || '',
       reportingToId: employee.reportingTo?.id || '',
-      exitDate: employee.exitDate ? new Date(employee.exitDate) : undefined,
-      confirmationDate: employee.confirmationDate ? new Date(employee.confirmationDate) : undefined,
+      exitDate: parseDhakaDateString(employee.exitDate),
+      confirmationDate: parseDhakaDateString(employee.confirmationDate),
       exitReason: employee.exitReason || '',
       attendanceMethod: employee.attendanceMethod,
       notes: employee.notes || '',
@@ -708,8 +708,8 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
     dto.departmentId = empForm.departmentId || null
     dto.designationId = empForm.designationId || null
     dto.reportingToId = empForm.reportingToId || null
-    if (empForm.exitDate) dto.exitDate = empForm.exitDate.toISOString()
-    if (empForm.confirmationDate) dto.confirmationDate = empForm.confirmationDate.toISOString()
+    if (empForm.exitDate) dto.exitDate = toDhakaDateString(empForm.exitDate)
+    if (empForm.confirmationDate) dto.confirmationDate = toDhakaDateString(empForm.confirmationDate)
     if (empForm.exitReason) dto.exitReason = empForm.exitReason
     if (empForm.attendanceMethod) dto.attendanceMethod = empForm.attendanceMethod
     dto.notes = empForm.notes || undefined
@@ -739,14 +739,21 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
     ? leaveBalances.reduce((sum: number, b: any) => sum + (Number(b.allocatedDays) || 0), 0)
     : 0
 
-  const calculatedNetSalary = salaryStructure?.basicSalary
-    ? (salaryStructure.basicSalary + (salaryStructure.houseAllowance || 0) + (salaryStructure.medicalAllowance || 0) + (salaryStructure.transportAllowance || 0) + (salaryStructure.otherAllowance || 0)) - ((salaryStructure.taxDeduction || 0) + (salaryStructure.insuranceDeduction || 0) + (salaryStructure.otherDeduction || 0))
-    : employee?.salary
+  // Part 4: the API serializes Prisma Decimals as STRINGS, so summing the raw
+  // components concatenated them — basic 10,000 with every allowance/deduction 0
+  // became '10000' + 0 + 0 + 0 = '100000000', i.e. "100,000,000 ৳". Read the
+  // structure's own net figure and coerce it, like the rest of this file does.
+  const calculatedNetSalary =
+    salaryStructure != null
+      ? Number(salaryStructure.netSalary)
+      : employee?.salary != null
+        ? Number(employee.salary)
+        : null
 
   const isTerminal = empForm.status === 'terminated' || empForm.status === 'resigned'
 
   const overviewChips = [
-    { label: 'Joined', value: formatDate(employee.joiningDate) },
+    { label: 'Joined', value: formatDhakaDate(employee.joiningDate) },
     { label: 'Employment Type', value: EMPLOYMENT_TYPE_LABELS[employee.employmentType] },
     { label: 'Salary', value: formatSalary(employee.salary) },
     { label: 'Reporting To', value: employee.reportingTo?.betterAuthUser?.name || '—' },
@@ -979,8 +986,8 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
               </CardHeader>
               <CardContent>
                 <div className='grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3'>
-                  <InfoRow label='Joining Date'>{formatDate(employee.joiningDate)}</InfoRow>
-                  <InfoRow label='Exit Date'>{formatDate(employee.exitDate)}</InfoRow>
+                  <InfoRow label='Joining Date'>{formatDhakaDate(employee.joiningDate)}</InfoRow>
+                  <InfoRow label='Exit Date'>{formatDhakaDate(employee.exitDate)}</InfoRow>
                   <InfoRow label='Salary'>{formatSalary(employee.salary)}</InfoRow>
                   <InfoRow label='Bank Account'>
                     {employee.bankName ? `${employee.bankName} · ${employee.bankAccountNo || '—'}` : employee.bankAccountNo || '—'}
@@ -1026,8 +1033,8 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
                       <span className='text-muted-foreground'>—</span>
                     )}
                   </InfoRow>
-                  <InfoRow label='Exit Date'>{formatDate(employee.exitDate)}</InfoRow>
-                  <InfoRow label='Confirmation Date'>{formatDate(employee.confirmationDate)}</InfoRow>
+                  <InfoRow label='Exit Date'>{formatDhakaDate(employee.exitDate)}</InfoRow>
+                  <InfoRow label='Confirmation Date'>{formatDhakaDate(employee.confirmationDate)}</InfoRow>
                   <InfoRow label='Exit Reason'>{employee.exitReason || '—'}</InfoRow>
                   <InfoRow label='Attendance Method'>
                     {employee.attendanceMethod

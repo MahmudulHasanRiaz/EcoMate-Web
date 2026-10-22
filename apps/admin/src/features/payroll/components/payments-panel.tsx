@@ -15,6 +15,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { formatDhakaDate } from '@/lib/dhaka-time'
 import { PaymentGatewayAccountSelect } from '@/features/payments/components/payment-gateway-account-select'
 import { PAYSLIP_STATUS_BADGE } from './payslip-status-badge'
 import {
@@ -24,15 +25,6 @@ import {
   useVoidPaymentMutation,
 } from '../hooks'
 import type { PayslipResponse, PayrollPayment } from '../api'
-
-function formatDate(dateStr?: string | null) {
-  if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
-}
 
 function formatMoney(n?: number | null) {
   return `${Number(n ?? 0).toLocaleString()} ৳`
@@ -91,7 +83,7 @@ export function PaymentsPanel({ employeeId }: { employeeId: string }) {
                   >
                     <TableCell className='font-medium'>{row.periodKey ?? '—'}</TableCell>
                     <TableCell className='text-sm text-muted-foreground'>
-                      {formatDate(row.periodStart)} – {formatDate(row.periodEnd)}
+                      {formatDhakaDate(row.periodStart)} – {formatDhakaDate(row.periodEnd)}
                     </TableCell>
                     <TableCell className='text-right tabular-nums'>{formatMoney(row.netPay)}</TableCell>
                     <TableCell>
@@ -294,7 +286,7 @@ export function PaymentsForPayslip({
               const isVoided = !!p.voidedAt
               return (
                 <TableRow key={p.id} className={isVoided ? 'opacity-60' : undefined}>
-                  <TableCell className='text-sm'>{formatDate(p.paidAt)}</TableCell>
+                  <TableCell className='text-sm'>{formatDhakaDate(p.paidAt)}</TableCell>
                   <TableCell>{p.method ?? '—'}</TableCell>
                   <TableCell className='text-muted-foreground'>
                     {p.referenceNo ?? '—'}
@@ -351,7 +343,7 @@ export function PaymentsForPayslip({
           <div className='grid gap-4 py-4 text-sm'>
             <p className='text-muted-foreground'>
               Voiding the {formatMoney(voidTarget?.amount)} payment of{' '}
-              {formatDate(voidTarget?.paidAt)}. The payment is never deleted —
+              {formatDhakaDate(voidTarget?.paidAt)}. The payment is never deleted —
               an auditable void with a reason is recorded.
             </p>
             <div className='grid gap-2'>

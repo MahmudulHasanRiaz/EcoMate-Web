@@ -16,6 +16,7 @@ import { ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 import { formatDuration } from '@/features/hr-attendance/api'
+import { formatDhakaDate } from '@/lib/dhaka-time'
 
 interface AttendanceSummaryTabProps {
   from?: string
@@ -115,7 +116,7 @@ export function AttendanceSummaryTab({
                 const name = emp?.betterAuthUser?.name || 'Unknown'
                 const code = emp?.employeeId || '—'
                 const dept = emp?.department?.name
-                const dateStr = r.date ? new Date(r.date).toLocaleDateString() : '—'
+                const dateStr = formatDhakaDate(r.date)
 
                 return (
                   <TableRow key={r.id} className='hover:bg-muted/30'>

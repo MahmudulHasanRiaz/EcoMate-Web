@@ -20,6 +20,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { formatDhakaDate } from '@/lib/dhaka-time'
 import {
   useMyAttendanceTodayQuery,
   useMyAttendanceHistoryQuery,
@@ -45,16 +46,6 @@ function formatMinutes(min?: number | null) {
   const m = min % 60
   if (h === 0) return `${m}m`
   return `${h}h ${m}m`
-}
-
-function formatDate(dateStr?: string | null) {
-  if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
 }
 
 function formatTime(isoStr?: string | null) {
@@ -420,7 +411,7 @@ export function AttendanceTab() {
                     return (
                       <TableRow key={row.id}>
                         <TableCell className="font-medium text-xs whitespace-nowrap">
-                          {formatDate(row.date)}
+                          {formatDhakaDate(row.date)}
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className={`text-xs ${badge.className}`}>
