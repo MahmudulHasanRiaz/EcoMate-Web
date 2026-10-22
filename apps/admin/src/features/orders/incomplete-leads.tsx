@@ -11,6 +11,9 @@ import { ThemeSwitch } from '@/components/theme-switch'
 import { CopyButton } from '@/components/copy-button'
 import { CustomerContactActions } from '@/components/customer-contact-actions'
 import { BlockPhoneDialog } from '@/features/orders/block-phone-dialog'
+import { PaymentGatewayAccountSelect } from '@/features/payments/components/payment-gateway-account-select'
+import { normalizeLegacyGatewayCode } from '@/features/payments/lib/gateway-normalize'
+import { gatewayApi } from '@/features/gateways/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -118,6 +121,61 @@ interface Lead {
   convertedOrder?: { id: string; displayId: string } | null
 }
 
+/**
+ * Payment fields for the edit-and-convert dialog. Wraps the ONE shared
+ * configured-gateway pair (`PaymentGatewayAccountSelect`) so this dialog can
+ * never drift from the convert form's gateway list, and normalizes the lead's
+ * stored (legacy) payment intent onto a configured gateway code via the shared
+ * helper. Extracted as a named export so the payment fields can be rendered in
+ * isolation in tests (the in-page dialog has no trigger of its own — the
+ * "Convert with Edit" flow is route-backed — and the full page needs router
+ * context).
+ */
+export function LeadConvertPaymentFields({
+  gatewayCode,
+  accountId,
+  storedPaymentMethod,
+  onChange,
+}: {
+  gatewayCode: string
+  accountId: string
+  /** The lead's raw stored payment intent — HISTORY, never a wire value. */
+  storedPaymentMethod?: string | null
+  onChange: (next: { gatewayCode: string; accountId: string }) => void
+}) {
+  // Same query key as PaymentGatewayAccountSelect, so the configured gateway
+  // list is shared from cache — no duplicate /gateways/admin request.
+  const { data: gateways } = useQuery({
+    queryKey: ['admin-gateways'],
+    queryFn: () => gatewayApi.listGateways().then((r) => r.data),
+    staleTime: 60_000,
+  })
+
+  // A stored lead payment value is HISTORY (checkout enum / old shorthand).
+  // Once the configured gateways are available, settle the selection onto a
+  // CONFIGURED gateway code so a raw legacy string is never submitted. The
+  // helper is idempotent — an already-configured value, including a deliberate
+  // user choice, comes back unchanged, so only legacy/unknown values rewrite.
+  useEffect(() => {
+    if (!gateways) return
+    const normalized = normalizeLegacyGatewayCode(gatewayCode || storedPaymentMethod, gateways)
+    if (normalized && normalized !== gatewayCode) {
+      onChange({ gatewayCode: normalized, accountId })
+    }
+  }, [gateways, storedPaymentMethod, gatewayCode, accountId, onChange])
+
+  return (
+    <PaymentGatewayAccountSelect
+      gatewayCode={gatewayCode}
+      accountId={accountId}
+      onChange={onChange}
+      gatewayLabel='Payment Method'
+      accountLabel='Account'
+      className='grid gap-3'
+    />
+  )
+}
+
 export function IncompleteLeads() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -136,16 +194,20 @@ export function IncompleteLeads() {
     guestName: string
     guestPhone: string
     paymentMethod: string
+    accountId: string
     shippingAddress: string
     items: any[]
-  }>({ guestName: '', guestPhone: '', paymentMethod: '', shippingAddress: '', items: [] })
+  }>({ guestName: '', guestPhone: '', paymentMethod: '', accountId: '', shippingAddress: '', items: [] })
 
   useEffect(() => {
     if (editingLead) {
       setEditForm({
         guestName: editingLead.name || '',
         guestPhone: editingLead.phone || '',
-        paymentMethod: editingLead.paymentMethod || 'cod',
+        // Raw stored intent — normalized onto a configured gateway code by
+        // LeadConvertPaymentFields once the gateway list is available.
+        paymentMethod: editingLead.paymentMethod || '',
+        accountId: '',
         shippingAddress: editingLead.address ? JSON.stringify(editingLead.address) : '',
         items: (editingLead.items as any[])?.map(i => ({ ...i })) || [],
       })
@@ -1345,23 +1407,18 @@ export function IncompleteLeads() {
                     onChange={e => setEditForm(f => ({ ...f, guestPhone: e.target.value }))}
                   />
                 </div>
-                <div className='space-y-1.5'>
-                  <Label className='text-xs'>Payment Method</Label>
-                  <Select
-                    value={editForm.paymentMethod}
-                    onValueChange={v => setEditForm(f => ({ ...f, paymentMethod: v }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value='cod'>Cash On Delivery</SelectItem>
-                      <SelectItem value='bkash'>bKash</SelectItem>
-                      <SelectItem value='nagad'>Nagad</SelectItem>
-                      <SelectItem value='rocket'>Rocket</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                <LeadConvertPaymentFields
+                  gatewayCode={editForm.paymentMethod}
+                  accountId={editForm.accountId}
+                  storedPaymentMethod={editingLead.paymentMethod}
+                  onChange={(next) => {
+                    setEditForm(f => ({
+                      ...f,
+                      paymentMethod: next.gatewayCode,
+                      accountId: next.accountId,
+                    }))
+                  }}
+                />
                 <div className='space-y-1.5'>
                   <Label className='text-xs'>Shipping Address</Label>
                   <Textarea
@@ -1467,7 +1524,8 @@ export function IncompleteLeads() {
                     items: editForm.items,
                     guestName: editForm.guestName,
                     guestPhone: editForm.guestPhone,
-                    paymentMethod: editForm.paymentMethod,
+                    paymentMethod: editForm.paymentMethod || undefined,
+                    ...(editForm.accountId ? { accountId: editForm.accountId } : {}),
                     shippingAddress: parsedAddress,
                   },
                 })
