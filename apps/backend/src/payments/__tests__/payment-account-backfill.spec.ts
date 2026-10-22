@@ -18,11 +18,18 @@ const MIGRATION = readFileSync(
   'utf8',
 );
 
-const connectionString =
-  process.env.DATABASE_URL ||
-  'postgresql://postgres:postgres@localhost:5432/ecomate_web';
+/**
+ * This suite executes real SQL, so it needs a real PostgreSQL — it runs
+ * ONLY when BACKFILL_TEST_DATABASE_URL is set, e.g. locally:
+ *   BACKFILL_TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres
+ * Everywhere else (including CI's unit-test job, which has no database) the
+ * suite skips cleanly instead of failing on a refused connection. All work
+ * happens inside a rolled-back temporary schema, so any scratch DB is safe.
+ */
+const connectionString = process.env.BACKFILL_TEST_DATABASE_URL;
+const describeWithDb = connectionString ? describe : describe.skip;
 
-describe('Payment.accountId backfill (Part 2)', () => {
+describeWithDb('Payment.accountId backfill (Part 2)', () => {
   let client: Client;
   let schema: string;
 
