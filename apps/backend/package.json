@@ -2,7 +2,7 @@
   "name": "backend",
   "version": "0.0.1",
   "engines": {
-    "node": ">=24"
+    "node": ">=24.22.1"
   },
   "description": "",
   "author": "",
