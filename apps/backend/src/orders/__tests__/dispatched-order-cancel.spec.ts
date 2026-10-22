@@ -145,6 +145,7 @@ describe('OrdersService — cancel a dispatched order', () => {
           provide: CancelReturnStockService,
           useValue: {
             restoreForOrder: jest.fn().mockResolvedValue(undefined),
+            releaseForCancellation: jest.fn().mockResolvedValue(undefined),
             restoreForReturnItems: jest.fn().mockResolvedValue({ restored: [] }),
             holdReservationForReturnPending: jest
               .fn()

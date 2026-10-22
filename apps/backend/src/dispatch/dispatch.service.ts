@@ -698,13 +698,32 @@ export class DispatchService {
       },
     ];
 
-    await this.prisma.order.update({
-      where: { id: orderId },
-      data: {
-        statusId: targetStatus.id,
-        timeline: timeline as any,
-      },
-    });
+    if (targetName === 'Cancelled') {
+      // A dispatch-driven cancel is an order-cancel entry point: the status
+      // write and the shared managed+physical release commit atomically.
+      await this.prisma.$transaction(async (tx) => {
+        await tx.order.update({
+          where: { id: orderId },
+          data: {
+            statusId: targetStatus.id,
+            timeline: timeline as any,
+          },
+        });
+        await this.cancelReturnStock.releaseForCancellation({
+          orderId,
+          performedBy,
+          tx,
+        });
+      });
+    } else {
+      await this.prisma.order.update({
+        where: { id: orderId },
+        data: {
+          statusId: targetStatus.id,
+          timeline: timeline as any,
+        },
+      });
+    }
 
     // Order-lifecycle custom tracking event for this genuine system transition
     // (forward-only guard above guarantees prev != new). Same idempotent

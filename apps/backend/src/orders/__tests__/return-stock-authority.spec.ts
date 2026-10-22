@@ -66,6 +66,7 @@ describe('OrdersService — return stock authority (hardening 2)', () => {
     createdReturn = null;
     cancelReturnStock = {
       restoreForOrder: jest.fn().mockResolvedValue(undefined),
+      releaseForCancellation: jest.fn().mockResolvedValue(undefined),
       restoreForReturnItems: jest.fn().mockResolvedValue({ restored: [] }),
       holdReservationForReturnPending: jest.fn().mockResolvedValue(undefined),
     };

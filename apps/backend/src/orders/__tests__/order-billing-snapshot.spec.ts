@@ -113,7 +113,7 @@ describe('Order billing snapshot separation', () => {
         { provide: CouponsService, useValue: {} },
         { provide: ManagedStockLedgerService, useValue: {} },
         { provide: CostingLotService, useValue: {} },
-        { provide: CancelReturnStockService, useValue: {} },
+        { provide: CancelReturnStockService, useValue: { releaseForCancellation: jest.fn() } },
         { provide: OrderStockDeductService, useValue: {} },
         { provide: OrderEditLockService, useValue: {} },
         { provide: CommissionsService, useValue: {} },

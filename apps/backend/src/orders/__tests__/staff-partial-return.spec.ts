@@ -163,7 +163,7 @@ describe('OrdersService — staff-partial flow (Task 5 Fix 9)', () => {
         { provide: CouponsService, useValue: {} },
         { provide: ManagedStockLedgerService, useValue: {} },
         { provide: CostingLotService, useValue: {} },
-        { provide: CancelReturnStockService, useValue: {} },
+        { provide: CancelReturnStockService, useValue: { releaseForCancellation: jest.fn() } },
         {
           provide: OrderStockDeductService,
           useValue: { deductForOrder: jest.fn().mockResolvedValue(undefined) },

@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
 import { RefundsService } from '../refunds.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CancelReturnStockService } from '../../stock/cancel-return-stock.service';
 
 /**
  * Task 9 (D5): cancel/refund gate + atomic cancel-too.
@@ -53,6 +54,10 @@ describe('RefundsService — Task 9 cancel/refund gate (RED)', () => {
       providers: [
         RefundsService,
         { provide: PrismaService, useValue: mockPrisma },
+        {
+          provide: CancelReturnStockService,
+          useValue: { releaseForCancellation: jest.fn() },
+        },
       ],
     }).compile();
 
