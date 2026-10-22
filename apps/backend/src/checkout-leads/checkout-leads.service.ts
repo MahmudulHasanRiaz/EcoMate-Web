@@ -18,6 +18,11 @@ import { ConvertOrderDto } from './dto/convert-order.dto';
 import { LEAD_STATUS } from './checkout-lead.constants';
 import { dhakaDateParts } from '../common/utils/dhaka-time';
 import { buildOrderAttributionSnapshot } from '../orders/order-attribution-snapshot';
+import {
+  findConfiguredGateway,
+  resolveConfiguredGatewayCode,
+  resolvePaymentAccountId,
+} from '../payments/payment-account';
 
 @Injectable()
 export class CheckoutLeadsService {
@@ -628,15 +633,36 @@ private async resolveCanonicalLead(
       }
 
       if (pm) {
+        // Staff conversion is a staff payment write path (same contract as
+        // orders/payments staff writes): a stored/legacy payment method must
+        // resolve to a CONFIGURED gateway — an unknown code is a clear 400 and
+        // the legacy string is never stored verbatim (CASH_ON_DELIVERY → cash)
+        // — and the gateway's mapped settlement account is stamped. Both run
+        // inside this transaction so a failure rolls back the whole conversion.
+        const gatewayCode = await resolveConfiguredGatewayCode(
+          tx as any,
+          String(pm),
+        );
+        if (!gatewayCode) {
+          throw new BadRequestException(
+            `Unknown payment gateway "${pm}". Configure it in Settings → Payment Gateways.`,
+          );
+        }
+        const gateway = await findConfiguredGateway(tx as any, gatewayCode);
+        const accountId = await resolvePaymentAccountId(tx as any, {
+          accountId: overrides?.accountId,
+          gatewayAccountId: gateway?.accountId,
+        });
         const paymentAmount =
           overrides?.paymentMode === 'partial' && overrides?.partialAmount
             ? overrides.partialAmount
             : total;
-        const isPgw = pm === 'bkash_pgw';
+        const isPgw = gatewayCode === 'bkash_pgw';
         await tx.payment.create({
           data: {
             orderId: order.id,
-            gatewayCode: pm,
+            gatewayCode,
+            accountId,
             amount: paymentAmount,
             status: isPgw ? PaymentStatus.PAID : PaymentStatus.PENDING,
             verifiedBy: isPgw ? 'system' : null,

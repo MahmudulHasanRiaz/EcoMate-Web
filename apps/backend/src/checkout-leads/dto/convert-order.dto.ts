@@ -34,6 +34,7 @@ export class ConvertOrderDto {
   @IsOptional() @IsString() sourceSlug?: string;
   @IsOptional() @IsEnum(AcquisitionType) acquisitionType?: AcquisitionType;
   @IsOptional() @IsString() paymentMethod?: string;
+  @IsOptional() @IsString() accountId?: string;
   @IsOptional() @IsNumber() shippingCharge?: number;
   @IsOptional() @IsNumber() discount?: number;
   @IsOptional() @IsString() @IsIn(['flat', 'percentage']) discountType?: string;
