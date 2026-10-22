@@ -57,6 +57,10 @@ export function PaymentGatewayAccountSelect({
   const selectedGateway = gatewayOptions.find((g) => g.code === gatewayCode)
   const mappedAccountId = selectedGateway?.accountId ?? null
   const mappedAccount = mappedAccountId ? accounts.find((a) => a.id === mappedAccountId) : undefined
+  // A mapping can go stale when the account is deactivated after being saved.
+  // Treat it as unmapped (with an explicit warning) instead of rendering an
+  // empty locked select that can only fail on save.
+  const brokenMapping = !!mappedAccountId && !mappedAccount
 
   const isLoading = gatewaysLoading || accountsLoading
 
@@ -76,7 +80,7 @@ export function PaymentGatewayAccountSelect({
 
   useEffect(() => {
     if (isLoading || disabled || !selectedGateway) return
-    if (mappedAccountId) {
+    if (mappedAccountId && mappedAccount) {
       if (accountId !== mappedAccountId) {
         onChange({ gatewayCode, accountId: mappedAccountId })
       }
@@ -90,7 +94,7 @@ export function PaymentGatewayAccountSelect({
     } else if (accountId) {
       onChange({ gatewayCode, accountId: '' })
     }
-  }, [isLoading, disabled, selectedGateway, mappedAccountId, accounts, accountId, gatewayCode, onChange])
+  }, [isLoading, disabled, selectedGateway, mappedAccountId, mappedAccount, accounts, accountId, gatewayCode, onChange])
 
   if (isLoading) {
     return (
@@ -116,11 +120,11 @@ export function PaymentGatewayAccountSelect({
     )
   }
 
-  const accountOptions = mappedAccountId
+  const accountOptions = mappedAccount
     ? accounts.filter((a) => a.id === mappedAccountId)
     : accounts
   const gatewayLocked = disabled || gatewayOptions.length === 1
-  const accountLocked = disabled || !!mappedAccountId || accountOptions.length === 1
+  const accountLocked = disabled || !!mappedAccount || accountOptions.length === 1
   const labelClass = compact ? 'text-xs font-medium' : 'text-sm font-medium'
   const triggerClass = compact ? 'h-9 text-xs' : 'h-9 text-sm'
 
@@ -171,7 +175,9 @@ export function PaymentGatewayAccountSelect({
           <SelectContent>
             {accountOptions.map((a) => (
               <SelectItem key={a.id} value={a.id}>
-                {formatAccountLabel(a)}
+                {mappedAccount && selectedGateway?.phoneNumber
+                  ? `${formatAccountLabel(a)} — ${selectedGateway.phoneNumber}`
+                  : formatAccountLabel(a)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -179,6 +185,10 @@ export function PaymentGatewayAccountSelect({
         {mappedAccount ? (
           <p className='text-[11px] text-muted-foreground'>
             Default settlement account for this gateway — auto-selected.
+          </p>
+        ) : brokenMapping ? (
+          <p className='text-[11px] text-amber-600 dark:text-amber-500'>
+            Mapped settlement account is inactive or missing — choose another account and update Settings → Payment Gateways.
           </p>
         ) : selectedGateway ? (
           <p className='text-[11px] text-amber-600 dark:text-amber-500'>

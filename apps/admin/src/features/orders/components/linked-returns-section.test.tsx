@@ -99,11 +99,11 @@ const readiness = {
   blockReason: null,
 }
 
-async function renderSection() {
+async function renderSection(legacy?: React.ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <LinkedReturnsSection orderId='order-1' />
+      <LinkedReturnsSection orderId='order-1' legacy={legacy} />
     </QueryClientProvider>,
   )
 }
@@ -120,7 +120,7 @@ describe('LinkedReturnsSection', () => {
 
   it('lists RTN rows with type, status and link', async () => {
     const page = await renderSection()
-    expect(page.getByText('Linked returns & exchanges', { exact: false })).not.toBeNull()
+    expect(page.getByText('Returns & Exchanges', { exact: false })).not.toBeNull()
     expect(page.getByText('RTN-261001-0001', { exact: true })).not.toBeNull()
     expect(page.getByText('PARTIAL', { exact: true })).not.toBeNull()
     expect(page.getByText('REQUESTED', { exact: true })).not.toBeNull()
@@ -168,5 +168,19 @@ describe('LinkedReturnsSection', () => {
     })
     const page = await renderSection()
     expect(page.getByText(/no linked returns or exchanges/i)).not.toBeNull()
+  })
+
+  it('puts the historic RTN block under the single Returns & Exchanges heading', async () => {
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/returns') return Promise.resolve({ data: { data: [], meta: { total: 0, page: 1, limit: 100 } } })
+      if (url.startsWith('/exchange/readiness/')) {
+        return Promise.resolve({ data: { ...readiness, linked: false, exchanges: [] } })
+      }
+      return Promise.resolve({ data: {} })
+    })
+    const page = await renderSection(<div>RTN-LEGACY-ROW</div>)
+    expect(page.getByText('Returns & Exchanges', { exact: false })).not.toBeNull()
+    expect(page.getByText('Legacy RTN record')).not.toBeNull()
+    expect(page.getByText('RTN-LEGACY-ROW')).not.toBeNull()
   })
 })

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { courierLogos } from '@/features/settings/courier/courier-logos'
 import { toast } from 'sonner'
-import { Loader2, Shield, ShieldAlert, ShieldCheck, RefreshCw } from 'lucide-react'
+import { Loader2, Shield, ShieldAlert, ShieldCheck, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react'
 
 const courierMeta: Record<string, { name: string }> = {
   steadfast: { name: 'Steadfast' },
@@ -88,9 +88,17 @@ function RefreshRow({ label, onRefresh, pending }: { label: string; onRefresh: (
   )
 }
 
-export function CourierCustomerHistoryCard({ phone }: { phone?: string | null }) {
+export function CourierCustomerHistoryCard({
+  phone,
+  defaultOpen = true,
+}: {
+  phone?: string | null
+  /** Part 6: order detail passes false so history starts collapsed. */
+  defaultOpen?: boolean
+}) {
   const queryClient = useQueryClient()
   const [refreshing, setRefreshing] = useState<string | null>(null)
+  const [open, setOpen] = useState(defaultOpen)
 
   const { data, isLoading } = useQuery({
     queryKey: ['courier-customer-history', phone],
@@ -134,15 +142,27 @@ export function CourierCustomerHistoryCard({ phone }: { phone?: string | null })
       <CardHeader className='p-4 pb-2.5 space-y-1.5'>
         <div className='flex items-center justify-between gap-2'>
           <CardTitle className='text-sm font-semibold tracking-tight'>Customer History</CardTitle>
-          {risk && (
-            <Badge
-              variant='outline'
-              className='h-5 shrink-0 gap-1 px-2 text-[10px] font-medium leading-none'
-              style={{ color: risk.color, borderColor: `${risk.color}40`, backgroundColor: `${risk.color}0d` }}
+          <div className='flex items-center gap-1.5'>
+            {risk && (
+              <Badge
+                variant='outline'
+                className='h-5 shrink-0 gap-1 px-2 text-[10px] font-medium leading-none'
+                style={{ color: risk.color, borderColor: `${risk.color}40`, backgroundColor: `${risk.color}0d` }}
+              >
+                <risk.icon className='h-3 w-3' /> {risk.label}
+              </Badge>
+            )}
+            <Button
+              variant='ghost'
+              size='icon'
+              className='h-7 w-7 shrink-0 text-muted-foreground'
+              aria-expanded={open}
+              aria-label={open ? 'Collapse courier customer history' : 'Expand courier customer history'}
+              onClick={() => setOpen((v) => !v)}
             >
-              <risk.icon className='h-3 w-3' /> {risk.label}
-            </Badge>
-          )}
+              {open ? <ChevronUp className='h-4 w-4' /> : <ChevronDown className='h-4 w-4' />}
+            </Button>
+          </div>
         </div>
         {overall && (
           <p className='text-[11px] text-muted-foreground'>
@@ -152,6 +172,7 @@ export function CourierCustomerHistoryCard({ phone }: { phone?: string | null })
           </p>
         )}
       </CardHeader>
+      {open && (
       <CardContent className='px-4 pb-3.5 pt-0'>
         {isLoading ? (
           <div className='flex justify-center py-5'><Loader2 className='animate-spin h-4 w-4 text-muted-foreground' /></div>
@@ -315,6 +336,7 @@ export function CourierCustomerHistoryCard({ phone }: { phone?: string | null })
           </div>
         )}
       </CardContent>
+      )}
     </Card>
   )
 }

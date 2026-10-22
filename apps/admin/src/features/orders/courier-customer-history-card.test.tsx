@@ -19,9 +19,9 @@ function createWrapper() {
   }
 }
 
-async function renderCard(payload: Record<string, any>) {
+async function renderCard(payload: Record<string, any>, defaultOpen = true) {
   mockGet.mockResolvedValue({ data: payload } as any)
-  const utils = await render(<CourierCustomerHistoryCard phone='01712345678' />, {
+  const utils = await render(<CourierCustomerHistoryCard phone='01712345678' defaultOpen={defaultOpen} />, {
     wrapper: createWrapper(),
   })
   await vi.waitFor(() => expect(mockGet).toHaveBeenCalled())
@@ -69,6 +69,24 @@ function openPopover() {
 describe('CourierCustomerHistoryCard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  it('starts collapsed on order detail while keeping the header summary visible', async () => {
+    const { getByText, getByLabelText } = await renderCard(
+      {
+        steadfast: { report: ACTUAL, cached: true, fresh: false, fetchedAt: '2026-08-19T12:40:00' },
+        pathao: { report: NO_DATA, cached: false, fresh: false },
+        redx: { report: NO_DATA, cached: false, fresh: false },
+        carrybee: { report: NO_DATA, cached: false, fresh: false },
+      },
+      false,
+    )
+    await expect.element(getByText('Customer History', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText('4 parcels', { exact: true })).toBeInTheDocument()
+    await expect
+      .element(getByLabelText('Expand courier customer history'))
+      .toBeInTheDocument()
+    await expect.element(getByText('Delivered', { exact: true })).not.toBeInTheDocument()
   })
 
   it('renders a single overall risk badge and count + percentage cells', async () => {

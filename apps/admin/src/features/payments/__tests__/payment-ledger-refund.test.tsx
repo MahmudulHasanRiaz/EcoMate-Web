@@ -83,6 +83,40 @@ describe('Payment ledger — refund via selection (D-B)', () => {
       if (url === '/payments') {
         return { data: { data: [paidFull, paidPartial, paidRefunded, pendingRow], meta: { total: 4, page: 1, perPage: 20, totalPages: 1 } } }
       }
+      if (url === '/gateways/admin') {
+        return {
+          data: [{
+            id: 'gw-bkash',
+            code: 'bkash',
+            name: 'bKash',
+            type: 'manual',
+            paymentOptionType: 'FULL_PAYMENT',
+            paymentOptionName: 'Full Payment',
+            paymentOptionEnabled: true,
+            enabled: true,
+            mode: 'personal',
+            phoneNumber: '017XX',
+            accountId: 'acc-bkash',
+            account: { id: 'acc-bkash', code: '1001', name: 'bKash Wallet', type: 'asset' },
+            credentials: {},
+            sortOrder: 1,
+          }],
+        }
+      }
+      if (url === '/accounts/tree') {
+        return {
+          data: [{
+            id: 'acc-bkash',
+            code: '1001',
+            name: 'bKash Wallet',
+            type: 'asset',
+            parentId: null,
+            isActive: true,
+            isGroup: false,
+            children: [],
+          }],
+        }
+      }
       return { data: [] }
     })
     mockPut.mockResolvedValue({ data: { id: 'x', status: 'PAID' } })
@@ -108,13 +142,16 @@ describe('Payment ledger — refund via selection (D-B)', () => {
     await userEvent.click(ui.getByRole('button', { name: /Refund.*1300/ }))
     // Modal shows the source rows; the prefilled 1300 posts straight through.
     await expect.element(ui.getByText(/Refunding from 2 payment rows/)).toBeInTheDocument()
-    await userEvent.fill(ui.getByLabelText(/Refund to/), 'bkash 017XX')
+    await expect.element(ui.getByLabelText(/Gateway/)).toBeDisabled()
+    await expect.element(ui.getByLabelText(/Account/)).toBeDisabled()
     await userEvent.fill(ui.getByLabelText(/Reason/), 'bulk return')
     await userEvent.click(ui.getByRole('button', { name: /^Record refund$/ }))
     expect(mockPost).toHaveBeenCalledWith('/refunds', expect.objectContaining({
       orderId: 'order-1',
       amount: 1300,
       sourcePaymentIds: ['pay-full', 'pay-partial'],
+      gatewayCode: 'bkash',
+      accountId: 'acc-bkash',
     }))
   })
 
