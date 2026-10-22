@@ -21,6 +21,11 @@ export class CreatePaymentDto {
   @IsString()
   method?: string;
 
+  /** Part 5: eligible CoA asset leaf used to pay the salary. */
+  @IsOptional()
+  @IsString()
+  accountId?: string;
+
   @IsOptional()
   @IsString()
   referenceNo?: string;

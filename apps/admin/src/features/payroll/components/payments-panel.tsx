@@ -15,13 +15,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { PaymentGatewayAccountSelect } from '@/features/payments/components/payment-gateway-account-select'
 import { PAYSLIP_STATUS_BADGE } from './payslip-status-badge'
 import {
   usePayslipsQuery,
@@ -29,7 +23,7 @@ import {
   useCreatePaymentMutation,
   useVoidPaymentMutation,
 } from '../hooks'
-import type { PaymentMethod, PayslipResponse, PayrollPayment } from '../api'
+import type { PayslipResponse, PayrollPayment } from '../api'
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return '—'
@@ -43,8 +37,6 @@ function formatDate(dateStr?: string | null) {
 function formatMoney(n?: number | null) {
   return `${Number(n ?? 0).toLocaleString()} ৳`
 }
-
-const METHODS: PaymentMethod[] = ['Cash', 'Bank', 'Check', 'Mobile']
 
 export function PaymentsPanel({ employeeId }: { employeeId: string }) {
   const { data, isLoading, isError, refetch } = usePayslipsQuery({ employeeId })
@@ -133,7 +125,8 @@ export function PaymentsForPayslip({
 
   const [open, setOpen] = useState(false)
   const [amount, setAmount] = useState('')
-  const [method, setMethod] = useState<PaymentMethod>('Cash')
+  const [gatewayCode, setGatewayCode] = useState('')
+  const [accountId, setAccountId] = useState('')
   const [referenceNo, setReferenceNo] = useState('')
   const [note, setNote] = useState('')
 
@@ -149,7 +142,8 @@ export function PaymentsForPayslip({
 
   function reset() {
     setAmount('')
-    setMethod('Cash')
+    setGatewayCode('')
+    setAccountId('')
     setReferenceNo('')
     setNote('')
   }
@@ -157,10 +151,12 @@ export function PaymentsForPayslip({
   function handleSubmit() {
     const numeric = Number(amount)
     if (!Number.isFinite(numeric) || numeric <= 0) return
+    if (!gatewayCode || !accountId) return
     createMut.mutate(
       {
         amount: numeric,
-        method,
+        method: gatewayCode,
+        accountId,
         referenceNo: referenceNo.trim() || undefined,
         note: note.trim() || undefined,
       },
@@ -220,17 +216,16 @@ export function PaymentsForPayslip({
                   placeholder='0.00'
                 />
               </div>
-              <div className='grid gap-2'>
-                <Label>Method</Label>
-                <Select value={method} onValueChange={(v) => setMethod(v as PaymentMethod)}>
-                  <SelectTrigger><SelectValue placeholder='Select method' /></SelectTrigger>
-                  <SelectContent>
-                    {METHODS.map((m) => (
-                      <SelectItem key={m} value={m}>{m}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <PaymentGatewayAccountSelect
+                compact
+                gatewayCode={gatewayCode}
+                accountId={accountId}
+                onChange={(next) => {
+                  setGatewayCode(next.gatewayCode)
+                  setAccountId(next.accountId)
+                }}
+                gatewayLabel='Method'
+              />
               <div className='grid gap-2'>
                 <Label>Reference No.</Label>
                 <Input
@@ -252,7 +247,7 @@ export function PaymentsForPayslip({
               <Button variant='outline' onClick={() => setOpen(false)}>Cancel</Button>
               <Button
                 onClick={handleSubmit}
-                disabled={createMut.isPending || !Number.isFinite(Number(amount)) || Number(amount) <= 0}
+                disabled={createMut.isPending || !gatewayCode || !accountId || !Number.isFinite(Number(amount)) || Number(amount) <= 0}
               >
                 {createMut.isPending && <Loader2 className='h-4 w-4 animate-spin mr-1' />}
                 Record

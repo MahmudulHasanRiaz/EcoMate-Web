@@ -16,12 +16,11 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
+import { PaymentGatewayAccountSelect } from '@/features/payments/components/payment-gateway-account-select'
 
 function fmt(v: number | string) {
   return Number(v).toFixed(2)
 }
-
-const paymentMethods = ['cash', 'bank', 'bkash', 'nagad', 'rocket', 'card', 'other']
 
 export function Suppliers() {
   const queryClient = useQueryClient()
@@ -36,7 +35,8 @@ export function Suppliers() {
   const [viewingPayments, setViewingPayments] = useState<SupplierResponse | null>(null)
   const [paymentForm, setPaymentForm] = useState({
     amount: '',
-    paymentMethod: 'cash',
+    paymentMethod: '',
+    accountId: '',
     reference: '',
     paidAt: dhakaTodayString(),
     notes: '',
@@ -68,7 +68,7 @@ export function Suppliers() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['suppliers'] })
       setPayingSupplier(null)
-      setPaymentForm({ amount: '', paymentMethod: 'cash', reference: '', paidAt: dhakaTodayString(), notes: '' })
+      setPaymentForm({ amount: '', paymentMethod: '', accountId: '', reference: '', paidAt: dhakaTodayString(), notes: '' })
       toast.success('Payment recorded')
     },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Error recording payment'),
@@ -154,7 +154,7 @@ export function Suppliers() {
                             </Button>
                             <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => {
                               setPayingSupplier(supplier)
-                              setPaymentForm({ amount: String(supplier.balance || 0), paymentMethod: 'cash', reference: '', paidAt: dhakaTodayString(), notes: '' })
+                              setPaymentForm({ amount: String(supplier.balance || 0), paymentMethod: '', accountId: '', reference: '', paidAt: dhakaTodayString(), notes: '' })
                             }} title='Make Payment'>
                               <Banknote className='h-3.5 w-3.5' />
                             </Button>
@@ -271,18 +271,19 @@ export function Suppliers() {
                 step='0.01'
               />
             </div>
-            <div className='grid gap-2'>
-              <Label>Payment Method</Label>
-              <select
-                className='flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring'
-                value={paymentForm.paymentMethod}
-                onChange={e => setPaymentForm(f => ({ ...f, paymentMethod: e.target.value }))}
-              >
-                {paymentMethods.map(m => (
-                  <option key={m} value={m}>{m.charAt(0).toUpperCase() + m.slice(1)}</option>
-                ))}
-              </select>
-            </div>
+            <PaymentGatewayAccountSelect
+              compact
+              gatewayCode={paymentForm.paymentMethod}
+              accountId={paymentForm.accountId}
+              onChange={(next) =>
+                setPaymentForm((f) => ({
+                  ...f,
+                  paymentMethod: next.gatewayCode,
+                  accountId: next.accountId,
+                }))
+              }
+              gatewayLabel='Payment method'
+            />
             <div className='grid gap-2'>
               <Label>Reference / Transaction ID</Label>
               <Input
@@ -317,12 +318,21 @@ export function Suppliers() {
                   toast.error('Enter a valid amount')
                   return
                 }
+                if (!paymentForm.paymentMethod) {
+                  toast.error('Select a configured payment gateway')
+                  return
+                }
+                if (!paymentForm.accountId) {
+                  toast.error('Select the account that paid the supplier')
+                  return
+                }
                 if (payingSupplier) {
                   paymentMut.mutate({
                     id: payingSupplier.id,
                     data: {
                       amount: Number(paymentForm.amount),
                       paymentMethod: paymentForm.paymentMethod,
+                      accountId: paymentForm.accountId,
                       reference: paymentForm.reference || undefined,
                       paidAt: paymentForm.paidAt,
                       notes: paymentForm.notes || undefined,

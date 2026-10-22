@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { SlidersHorizontal } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { apiClient } from '@/lib/api-client'
 import {
   Select,
   SelectContent,
@@ -25,6 +27,22 @@ const NET_RULES = [
 const prettyRule = (r: string) => r.replace(/_/g, ' ')
 
 /**
+ * Part 5: a finance rule names a courier only from the closed configured set
+ * (enabled CourierCredentials), so a typo can no longer create a rule that
+ * silently never matches. Pure so the guardrail is unit-testable.
+ */
+export function configuredCourierOptions(credentials: unknown): string[] {
+  const rows = Array.isArray(credentials) ? credentials : []
+  return [
+    ...new Set(
+      rows
+        .filter((c: any) => c?.enabled === true && typeof c?.courier === 'string')
+        .map((c: any) => String(c.courier)),
+    ),
+  ].sort()
+}
+
+/**
  * Rules (§11, was "Settings"): versioned declarative finance rules only — no
  * expression evaluation. Every approval archives the superseded configuration
  * as a immutable version (§12), so a finalized invoice always points at the
@@ -35,6 +53,11 @@ const prettyRule = (r: string) => r.replace(/_/g, ' ')
 export function SettingsPanel() {
   const { data: rules, isLoading } = useFinanceRules()
   const { createFinanceRule, testFinanceRule } = useCourierSettlementMutations()
+  const { data: courierCredentials, isLoading: couriersLoading } = useQuery({
+    queryKey: ['courier-creds'],
+    queryFn: () => apiClient.get('/couriers/credentials').then((r) => r.data as any[]),
+    staleTime: 60_000,
+  })
 
   const [openHistory, setOpenHistory] = useState<Set<string>>(new Set())
   const [editing, setEditing] = useState<FinanceRuleResponse | null>(null)
@@ -47,6 +70,16 @@ export function SettingsPanel() {
   const [tolerance, setTolerance] = useState('1')
   const [residualThreshold, setResidualThreshold] = useState('100')
   const [note, setNote] = useState('')
+
+  const courierOptions = useMemo(() => {
+    const configured = configuredCourierOptions(courierCredentials)
+    // Editing an existing rule keeps its historic courier visible even if the
+    // credential is currently disabled; new rules only offer enabled values.
+    if (editing?.courier && !configured.includes(editing.courier)) {
+      return [editing.courier, ...configured]
+    }
+    return configured
+  }, [courierCredentials, editing])
 
   // §12 sample-row test.
   const [sCollected, setSCollected] = useState('')
@@ -286,13 +319,26 @@ export function SettingsPanel() {
         <CardContent className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="fr-courier">Courier</Label>
-            <Input
-              id="fr-courier"
-              value={courier}
-              onChange={(e) => setCourier(e.target.value)}
-              placeholder="e.g. steadfast"
-              disabled={!!editing}
-            />
+            <Select value={courier} onValueChange={setCourier} disabled={!!editing}>
+              <SelectTrigger id="fr-courier" className="tap-h">
+                <SelectValue
+                  placeholder={couriersLoading ? 'Loading couriers…' : 'Select configured courier'}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {courierOptions.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    <span className="capitalize">{c}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {!couriersLoading && courierOptions.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                No courier is enabled. Enable one in Settings → Couriers before approving a
+                settlement rule.
+              </p>
+            ) : null}
           </div>
           <div className="space-y-2">
             <Label htmlFor="fr-format">Format (optional)</Label>

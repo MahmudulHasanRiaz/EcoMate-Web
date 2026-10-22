@@ -6,6 +6,8 @@ export interface SupplierPaymentResponse {
   amount: number
   paidAt: string
   paymentMethod?: string | null
+  /** Part 5: eligible CoA asset leaf used for this payment. */
+  accountId?: string | null
   reference?: string | null
   notes?: string | null
   invoices?: { id: string; invoiceNo: string }[]

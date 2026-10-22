@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SUPPORTED_COURIERS } from './import-wizard'
 import { DRAFT_STATES } from './invoices-table'
+import { configuredCourierOptions } from './settings-panel'
 
 /**
  * Import guardrails: the wizard may only offer couriers that have a parser AND
@@ -19,5 +20,18 @@ describe('courier settlement import guardrails', () => {
     expect([...DRAFT_STATES].sort()).toEqual(['ANALYZED', 'MAPPING_REQUIRED', 'UPLOADED'])
     expect(DRAFT_STATES).not.toContain('IMPORTING')
     expect(DRAFT_STATES).not.toContain('ISSUE_FOUND')
+  })
+
+  it('offers only enabled CourierCredentials in the finance-rule courier select', () => {
+    expect(
+      configuredCourierOptions([
+        { courier: 'steadfast', enabled: true },
+        { courier: 'pathao', enabled: false },
+        { courier: 'redx', enabled: true },
+        { courier: 'steadfast', enabled: true },
+      ]),
+    ).toEqual(['redx', 'steadfast'])
+    expect(configuredCourierOptions(null)).toEqual([])
+    expect(configuredCourierOptions([{ courier: 'pathao' }])).toEqual([])
   })
 })

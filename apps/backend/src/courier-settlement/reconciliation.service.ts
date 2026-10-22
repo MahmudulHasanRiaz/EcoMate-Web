@@ -13,6 +13,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CourierSettlementActivityService } from './activity.service';
 import { CourierSettlementExceptionsService } from './exceptions.service';
 import { CourierSettlementImportService } from './courier-settlement-import.service';
+import { SUPPORTED_COURIERS } from '../courier-manager/courier-status-mapper';
 import { evaluateRules } from './reconciliation/rules';
 import {
   matchRow,
@@ -216,6 +217,25 @@ export class CourierSettlementReconciliationService {
     const allowed = ['declared_field', 'collected_minus_charges', 'billing_when_no_collection', 'component_sum'];
     if (!allowed.includes(input.netRule)) {
       throw new BadRequestException(`netRule must be one of ${allowed.join(', ')}`);
+    }
+    // Part 5: the courier is a configured value, never free text. A typo used
+    // to create a rule that silently never matched any invoice.
+    if (!(SUPPORTED_COURIERS as readonly string[]).includes(input.courier)) {
+      throw new BadRequestException(
+        `Unknown courier "${input.courier}". Supported couriers: ${SUPPORTED_COURIERS.join(', ')}.`,
+      );
+    }
+    const credentials = (this.prisma as any).courierCredentials;
+    if (credentials?.findFirst) {
+      const configured = await credentials.findFirst({
+        where: { courier: input.courier, enabled: true },
+        select: { id: true },
+      });
+      if (!configured) {
+        throw new BadRequestException(
+          `Courier "${input.courier}" is not enabled. Enable it in Settings → Couriers before approving a settlement rule.`,
+        );
+      }
     }
     const existing = await this.prisma.courierSettlementFinanceRule.findFirst({
       where: { courier: input.courier, format: input.format ?? null },

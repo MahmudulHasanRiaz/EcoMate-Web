@@ -50,6 +50,8 @@ describe('HrPaymentsService', () => {
     prismaMock.payrollPayment.findMany.mockReset();
     prismaMock.payrollPayment.findUnique.mockReset();
     prismaMock.payrollPayment.update.mockReset();
+    delete (prismaMock as any).paymentGateway;
+    delete (prismaMock as any).account;
   });
 
   describe('createPayment', () => {
@@ -153,6 +155,86 @@ describe('HrPaymentsService', () => {
         where: { payslipId: 'ps-1', voidedAt: null },
         _sum: { amount: true },
       });
+    });
+
+    it('stamps the configured gateway mapping as accountId', async () => {
+      (prismaMock as any).paymentGateway = {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'gw-bkash',
+          code: 'bkash',
+          name: 'bKash',
+          enabled: true,
+          type: 'manual',
+          accountId: 'acc-bkash',
+        }),
+      };
+      prismaMock.payslip.findUnique.mockResolvedValue(mockPayslip('approved'));
+      prismaMock.payrollPayment.aggregate.mockResolvedValue({
+        _sum: { amount: '0' },
+      });
+      prismaMock.payrollPayment.create.mockResolvedValue({ id: 'pay-1' });
+
+      await service.createPayment(
+        { payslipId: 'ps-1', amount: 1000, method: 'bkash' },
+        'actor-1',
+      );
+
+      expect(prismaMock.payrollPayment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            method: 'bkash',
+            accountId: 'acc-bkash',
+          }),
+        }),
+      );
+    });
+
+    it('rejects an unknown payroll gateway', async () => {
+      (prismaMock as any).paymentGateway = {
+        findUnique: jest.fn().mockResolvedValue(null),
+      };
+      prismaMock.payslip.findUnique.mockResolvedValue(mockPayslip('approved'));
+      prismaMock.payrollPayment.aggregate.mockResolvedValue({
+        _sum: { amount: '0' },
+      });
+
+      await expect(
+        service.createPayment(
+          { payslipId: 'ps-1', amount: 1000, method: 'made_up' },
+          'actor-1',
+        ),
+      ).rejects.toThrow(/Unknown payment gateway/i);
+      expect(prismaMock.payrollPayment.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a payroll account that is not an eligible asset leaf', async () => {
+      (prismaMock as any).account = {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'acc-expense',
+          code: '5001',
+          name: 'Expense',
+          type: 'expense',
+          isGroup: false,
+          isActive: true,
+        }),
+      };
+      prismaMock.payslip.findUnique.mockResolvedValue(mockPayslip('approved'));
+      prismaMock.payrollPayment.aggregate.mockResolvedValue({
+        _sum: { amount: '0' },
+      });
+
+      await expect(
+        service.createPayment(
+          {
+            payslipId: 'ps-1',
+            amount: 1000,
+            method: undefined,
+            accountId: 'acc-expense',
+          } as any,
+          'actor-1',
+        ),
+      ).rejects.toThrow(/not an active, non-group Asset account/i);
+      expect(prismaMock.payrollPayment.create).not.toHaveBeenCalled();
     });
   });
 
