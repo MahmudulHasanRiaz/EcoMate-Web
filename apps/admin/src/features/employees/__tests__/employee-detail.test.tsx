@@ -44,7 +44,7 @@ const EMPLOYEE = {
   accessPreset: null,
 }
 
-function mockRoutes() {
+function mockRoutes(salaryStructure: unknown = null) {
   mockGet.mockImplementation((url: string) => {
     if (url === '/employees/emp-1') {
       return Promise.resolve({ data: EMPLOYEE })
@@ -62,8 +62,12 @@ function mockRoutes() {
       // Must be a bare array: the detail page calls .map() on it directly.
       return Promise.resolve({ data: [] })
     }
-    if (url === '/employees/emp-1/salary-structure') {
-      return Promise.resolve({ data: null })
+    if (url === '/payroll/salary-structure/emp-1') {
+      return Promise.resolve({ data: salaryStructure })
+    }
+    if (url === '/payroll/salary-structure/history/emp-1') {
+      // Must be a bare array: SalaryHistoryCard maps over it.
+      return Promise.resolve({ data: [] })
     }
     if (url === '/employees/emp-1/leave-balances') {
       return Promise.resolve({ data: [] })
@@ -160,5 +164,57 @@ describe('EmployeeDetailPage — Overview dates', () => {
     )
 
     expect(document.body.textContent).not.toContain('Jan 14, 2024')
+  })
+})
+
+/**
+ * Part 4 — the header read "Net Compensation 100,000,000 ৳" for a ৳10,000 salary.
+ * The API serializes Prisma Decimals as strings, so the old component added the
+ * raw fields and JS concatenated them ('10000' + 0 + 0 + 0 → '100000000').
+ */
+describe('EmployeeDetailPage — Net Compensation', () => {
+  // Exactly what the API returns for a 10,000 basic / everything-else-0 structure.
+  const STRUCTURE = {
+    id: 'ss-1',
+    employeeId: 'emp-1',
+    basicSalary: '10000',
+    houseAllowance: '0',
+    medicalAllowance: '0',
+    transportAllowance: '0',
+    otherAllowance: '0',
+    taxDeduction: '0',
+    insuranceDeduction: '0',
+    otherDeduction: '0',
+    totalEarnings: '10000',
+    totalDeductions: '0',
+    netSalary: '10000',
+    effectiveFrom: '2026-10-22T00:00:00.000Z',
+    effectiveTo: null,
+    isActive: true,
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRoutes(STRUCTURE)
+  })
+
+  it('shows the real net compensation, not the concatenated figure', async () => {
+    await wrap(<EmployeeDetailPage employeeId='emp-1' />)
+
+    await vi.waitFor(
+      () => {
+        expect(document.body.textContent).toContain('Net Compensation')
+      },
+      { timeout: 3000, interval: 50 },
+    )
+
+    await vi.waitFor(
+      () => {
+        expect(document.body.textContent).toContain('10,000 ৳')
+      },
+      { timeout: 3000, interval: 50 },
+    )
+
+    expect(document.body.textContent).not.toContain('100,000,000')
   })
 })

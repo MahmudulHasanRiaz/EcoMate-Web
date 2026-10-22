@@ -79,9 +79,13 @@ function computeTenure(joiningDate?: string | null) {
   return rem > 0 ? `${years}y ${rem}m tenure` : `${years}y tenure`
 }
 
-function formatSalary(salary?: number | null) {
-  if (salary == null) return '—'
-  return `${salary.toLocaleString()} ৳`
+// Prisma Decimals reach the client as strings, so coerce before formatting —
+// otherwise the grouping is dropped ('10000 ৳' instead of '10,000 ৳').
+function formatSalary(salary?: number | string | null) {
+  if (salary == null || salary === '') return '—'
+  const value = Number(salary)
+  if (!Number.isFinite(value)) return '—'
+  return `${value.toLocaleString()} ৳`
 }
 
 function InfoRow({ label, children }: { label: string; children: ReactNode }) {
@@ -735,9 +739,16 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
     ? leaveBalances.reduce((sum: number, b: any) => sum + (Number(b.allocatedDays) || 0), 0)
     : 0
 
-  const calculatedNetSalary = salaryStructure?.basicSalary
-    ? (salaryStructure.basicSalary + (salaryStructure.houseAllowance || 0) + (salaryStructure.medicalAllowance || 0) + (salaryStructure.transportAllowance || 0) + (salaryStructure.otherAllowance || 0)) - ((salaryStructure.taxDeduction || 0) + (salaryStructure.insuranceDeduction || 0) + (salaryStructure.otherDeduction || 0))
-    : employee?.salary
+  // Part 4: the API serializes Prisma Decimals as STRINGS, so summing the raw
+  // components concatenated them — basic 10,000 with every allowance/deduction 0
+  // became '10000' + 0 + 0 + 0 = '100000000', i.e. "100,000,000 ৳". Read the
+  // structure's own net figure and coerce it, like the rest of this file does.
+  const calculatedNetSalary =
+    salaryStructure != null
+      ? Number(salaryStructure.netSalary)
+      : employee?.salary != null
+        ? Number(employee.salary)
+        : null
 
   const isTerminal = empForm.status === 'terminated' || empForm.status === 'resigned'
 
