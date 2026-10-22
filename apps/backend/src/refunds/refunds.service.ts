@@ -15,6 +15,10 @@ import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
 
 import { Prisma } from '@prisma/client';
 import { CreateRefundDto, UpdateRefundStatusDto } from './dto/refund.dto';
+import {
+  requireConfiguredGateway,
+  resolvePaymentAccountId,
+} from '../payments/payment-account';
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   pending: ['approved', 'rejected'],
@@ -143,6 +147,19 @@ export class RefundsService {
         'Refund reason is required — it is recorded on the ledger row.',
       );
     }
+
+    // Part 4: refunds are staff writes — the destination gateway must exist in
+    // configuration (legacy callers may only send `method`, which is then the
+    // code). The mapped account is stamped unless an eligible one is supplied.
+    const refundGatewayCode = dto.gatewayCode || dto.method;
+    const refundGateway = await requireConfiguredGateway(
+      this.prisma,
+      refundGatewayCode,
+    );
+    const refundAccountId = await resolvePaymentAccountId(this.prisma, {
+      accountId: dto.accountId,
+      gatewayAccountId: refundGateway?.accountId,
+    });
 
     const paidAgg = await this.prisma.payment.aggregate({
       where: { orderId: dto.orderId, status: 'PAID' },
@@ -276,8 +293,9 @@ export class RefundsService {
         await tx.payment.create({
           data: {
             orderId: dto.orderId,
-            gatewayCode: dto.method,
+            gatewayCode: refundGatewayCode,
             amount: -amount,
+            accountId: refundAccountId,
             account: dto.method,
             status: 'PAID',
             notes: dto.reason,

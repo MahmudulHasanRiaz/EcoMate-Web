@@ -21,6 +21,14 @@ export class CreateRefundDto {
    */
   @IsString() @IsNotEmpty() method: string;
   /**
+   * Part 4: the configured gateway code backing `method`. New clients always
+   * send it; legacy callers may omit it and `method` itself is validated as
+   * the code. The mirrored negative ledger row stores this exact value.
+   */
+  @IsOptional() @IsString() gatewayCode?: string;
+  /** Part 4: eligible CoA asset leaf; omitted = use the gateway mapping. */
+  @IsOptional() @IsString() accountId?: string;
+  /**
    * Task 9 (D5): human reason for the refund. Required — doubles as the
    * notes on the mirrored negative ledger row (negative corrections must
    * always carry a reason).

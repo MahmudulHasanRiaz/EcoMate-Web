@@ -581,6 +581,7 @@ function AllPaymentsLedger() {
           sourceContext={selectedRows.map((r) => ({
             id: r.id,
             gatewayCode: r.gatewayCode,
+            accountId: r.accountId,
             amount: Number(r.amount),
             remainder: Math.round(paymentRemainder(r) * 100) / 100,
           }))}

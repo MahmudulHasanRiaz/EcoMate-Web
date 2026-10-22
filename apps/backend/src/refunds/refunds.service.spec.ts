@@ -95,6 +95,8 @@ describe('RefundsService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+    delete (prisma as any).paymentGateway;
+    delete (prisma as any).account;
   });
 
   describe('findAll', () => {
@@ -341,6 +343,140 @@ describe('RefundsService', () => {
 
       const createCall = (prisma.refund.create as jest.Mock).mock.calls[0][0];
       expect(createCall.data.amount).toBe(500);
+    });
+
+    it('mirrors the selected configured gateway + mapped account onto the negative ledger row', async () => {
+      (prisma as any).paymentGateway = {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'gw-bkash',
+          code: 'bkash',
+          name: 'bKash',
+          enabled: true,
+          type: 'manual',
+          accountId: 'acc-bkash',
+        }),
+      };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        id: 'order-id-1',
+        total: 2000,
+        kind: 'SALE',
+      });
+      (prisma.payment.aggregate as jest.Mock).mockResolvedValue({ _sum: { amount: 2000 } });
+      (prisma.refund.aggregate as jest.Mock).mockResolvedValue({ _sum: { amount: 0 } });
+      (prisma.refund.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.payment.findFirst as jest.Mock).mockResolvedValue({ id: 'pay-1' });
+      (prisma.refund.create as jest.Mock).mockResolvedValue(mockRefund);
+
+      await service.create({
+        ...createDto,
+        method: 'bKash',
+        gatewayCode: 'bkash',
+      });
+
+      expect(prisma.payment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            gatewayCode: 'bkash',
+            accountId: 'acc-bkash',
+            account: 'bKash',
+            amount: -1500,
+          }),
+        }),
+      );
+    });
+
+    it('prefers an explicitly supplied eligible account over the gateway mapping', async () => {
+      (prisma as any).paymentGateway = {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'gw-bkash',
+          code: 'bkash',
+          name: 'bKash',
+          enabled: true,
+          type: 'manual',
+          accountId: 'acc-bkash',
+        }),
+      };
+      (prisma as any).account = {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'acc-custom',
+          code: '1002',
+          name: 'Bank',
+          type: 'asset',
+          isGroup: false,
+          isActive: true,
+        }),
+      };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        id: 'order-id-1',
+        total: 2000,
+        kind: 'SALE',
+      });
+      (prisma.payment.aggregate as jest.Mock).mockResolvedValue({ _sum: { amount: 2000 } });
+      (prisma.refund.aggregate as jest.Mock).mockResolvedValue({ _sum: { amount: 0 } });
+      (prisma.refund.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.payment.findFirst as jest.Mock).mockResolvedValue({ id: 'pay-1' });
+      (prisma.refund.create as jest.Mock).mockResolvedValue(mockRefund);
+
+      await service.create({
+        ...createDto,
+        gatewayCode: 'bkash',
+        accountId: 'acc-custom',
+      });
+
+      expect(prisma.payment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ accountId: 'acc-custom' }),
+        }),
+      );
+    });
+
+    it('rejects an unknown gateway code on the refund write path', async () => {
+      (prisma as any).paymentGateway = {
+        findUnique: jest.fn().mockResolvedValue(null),
+      };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        id: 'order-id-1',
+        total: 2000,
+        kind: 'SALE',
+      });
+
+      await expect(
+        service.create({ ...createDto, gatewayCode: 'made_up' }),
+      ).rejects.toThrow(/Unknown payment gateway/i);
+      expect(prisma.refund.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a refund account that is not an eligible asset leaf', async () => {
+      (prisma as any).paymentGateway = {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'gw-bkash',
+          code: 'bkash',
+          name: 'bKash',
+          enabled: true,
+          type: 'manual',
+          accountId: 'acc-bkash',
+        }),
+      };
+      (prisma as any).account = {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'acc-expense',
+          code: '5001',
+          name: 'Expense',
+          type: 'expense',
+          isGroup: false,
+          isActive: true,
+        }),
+      };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        id: 'order-id-1',
+        total: 2000,
+        kind: 'SALE',
+      });
+
+      await expect(
+        service.create({ ...createDto, gatewayCode: 'bkash', accountId: 'acc-expense' }),
+      ).rejects.toThrow(/not an active, non-group Asset account/i);
+      expect(prisma.refund.create).not.toHaveBeenCalled();
     });
   });
 
