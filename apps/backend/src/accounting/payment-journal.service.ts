@@ -69,6 +69,27 @@ export interface PaymentJournalOutcome {
   reason?: string;
 }
 
+export interface PaymentJournalBackfillItem {
+  kind: 'order' | 'payroll' | 'supplier';
+  paymentId: string;
+  amount: number;
+  outcome: PaymentJournalOutcome;
+}
+
+export interface PaymentJournalBackfillResult {
+  dryRun: boolean;
+  scanned: number;
+  posted: number;
+  adopted: number;
+  skipped: number;
+  failed: number;
+  items: PaymentJournalBackfillItem[];
+}
+
+/** Scan cap per payment kind, so a bulk run is always bounded. */
+const BACKFILL_MAX_PER_KIND = 2000;
+const BACKFILL_DEFAULT_PER_KIND = 500;
+
 /** The three payment tables that carry the journal identity anchor. */
 type AnchorTable = 'Payment' | 'PayrollPayment' | 'SupplierPayment';
 
@@ -395,6 +416,105 @@ export class PaymentJournalService {
       ORDER_PAYMENT_REFERENCE_PREFIX,
       reason,
     );
+  }
+
+  // ── backfill for payments recorded BEFORE this feature shipped ────────────
+
+  /**
+   * Post journals for RECORDED payments that predate Phase 2 (or were recorded
+   * while accounting was off). Additive and idempotent: every candidate is
+   * filtered on `journalEntryId IS NULL`, and each poster re-checks under the
+   * row lock, so a second run posts nothing new.
+   *
+   * Run it as `{ dryRun: true }` FIRST — the report says exactly what would be
+   * posted, per payment — then again with a bounded `limit`. COD receipts are
+   * scanned and reported, never posted (the settlement owns that leg).
+   *
+   * Scope: payroll payments, supplier payments and RECEIPT rows (positive
+   * amounts). Negative rows are refunds, whose mirror needs the original
+   * payment's lineage that only the refund write path carries, so they are not
+   * backfilled here.
+   */
+  async backfillRecordedPayments(
+    opts: { dryRun?: boolean; limit?: number } = {},
+  ): Promise<PaymentJournalBackfillResult> {
+    const dryRun = opts.dryRun === true;
+    const perKind = Math.min(
+      Math.max(Math.trunc(opts.limit ?? BACKFILL_DEFAULT_PER_KIND), 1),
+      BACKFILL_MAX_PER_KIND,
+    );
+
+    const payroll = await this.prisma.payrollPayment.findMany({
+      where: {
+        journalEntryId: null,
+        voidedAt: null,
+        accountId: { not: null },
+      },
+      select: { id: true, amount: true },
+      orderBy: { paidAt: 'desc' },
+      take: perKind,
+    });
+    const supplier = await this.prisma.supplierPayment.findMany({
+      where: { journalEntryId: null, accountId: { not: null } },
+      select: { id: true, amount: true },
+      orderBy: { paidAt: 'desc' },
+      take: perKind,
+    });
+    const receipts = await this.prisma.payment.findMany({
+      where: {
+        journalEntryId: null,
+        status: PaymentStatus.PAID,
+        accountId: { not: null },
+        amount: { gt: 0 },
+      },
+      select: { id: true, amount: true },
+      orderBy: { recordedAt: 'desc' },
+      take: perKind,
+    });
+
+    const items: PaymentJournalBackfillItem[] = [];
+    const candidates: Array<{
+      kind: 'order' | 'payroll' | 'supplier';
+      paymentId: string;
+      amount: number;
+    }> = [
+      ...payroll.map((p) => ({
+        kind: 'payroll' as const,
+        paymentId: p.id,
+        amount: Number(p.amount),
+      })),
+      ...supplier.map((p) => ({
+        kind: 'supplier' as const,
+        paymentId: p.id,
+        amount: Number(p.amount),
+      })),
+      ...receipts.map((p) => ({
+        kind: 'order' as const,
+        paymentId: p.id,
+        amount: Number(p.amount),
+      })),
+    ];
+
+    for (const candidate of candidates) {
+      const outcome: PaymentJournalOutcome = dryRun
+        ? { status: 'skipped', journalEntryId: null, reason: 'dry_run' }
+        : candidate.kind === 'payroll'
+          ? await this.tryPostPayrollPayment(candidate.paymentId)
+          : candidate.kind === 'supplier'
+            ? await this.tryPostSupplierPayment(candidate.paymentId)
+            : await this.tryPostOrderPayment(candidate.paymentId);
+      items.push({ ...candidate, outcome });
+    }
+
+    return {
+      dryRun,
+      scanned: items.length,
+      posted: items.filter((i) => i.outcome.status === 'posted').length,
+      adopted: items.filter((i) => i.outcome.status === 'adopted').length,
+      skipped: items.filter((i) => i.outcome.status === 'skipped').length,
+      failed: items.filter((i) => i.outcome.status === 'failed').length,
+      items,
+    };
   }
 
   // ── internals ────────────────────────────────────────────────────────────

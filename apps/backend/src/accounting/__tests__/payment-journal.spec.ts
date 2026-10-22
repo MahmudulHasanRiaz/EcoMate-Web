@@ -212,9 +212,10 @@ class FakeDb {
         const row = this.payments.find((p) => p.id === where.id);
         return row ? this.hydratePayment(row) : null;
       },
-      findMany: async ({ where }: any) =>
+      findMany: async ({ where, take }: any) =>
         this.payments
-          .filter((p) => (where?.orderId ? p.orderId === where.orderId : true))
+          .filter((p) => this.matches(p, where))
+          .slice(0, take ?? undefined)
           .map((p) => ({ ...p, order: this.orderOf(p) })),
       create: async ({ data }: any) => {
         const row = { id: `pay-${this.payments.length + 1}`, ...data };
@@ -229,6 +230,24 @@ class FakeDb {
     };
   }
 
+  /** Minimal Prisma `where` interpreter for the shapes this suite uses:
+   * equality, `null`, and the `not` / `gt` / `in` operators. */
+  private matches(row: any, where: any): boolean {
+    if (!where) return true;
+    return Object.entries(where).every(([key, cond]) => {
+      const value = row[key];
+      if (cond === null) return value === null || value === undefined;
+      if (cond !== null && typeof cond === 'object' && !Array.isArray(cond)) {
+        const op = cond as Record<string, unknown>;
+        if ('not' in op) return value !== op.not && value !== null && value !== undefined;
+        if ('gt' in op) return Number(value) > Number(op.gt);
+        if ('in' in op) return (op.in as unknown[]).includes(value);
+        return true;
+      }
+      return value === cond;
+    });
+  }
+
   get payrollPayment() {
     return {
       findUnique: async ({ where }: any) => {
@@ -239,6 +258,10 @@ class FakeDb {
           payslip: this.payslips.find((s) => s.id === row.payslipId) ?? null,
         };
       },
+      findMany: async ({ where, take }: any) =>
+        this.payrollPayments
+          .filter((p) => this.matches(p, where))
+          .slice(0, take ?? undefined),
       update: async ({ where, data }: any) => {
         const row = this.payrollPayments.find((p) => p.id === where.id)!;
         Object.assign(row, data);
@@ -257,6 +280,10 @@ class FakeDb {
           supplier: this.suppliers.find((s) => s.id === row.supplierId) ?? null,
         };
       },
+      findMany: async ({ where, take }: any) =>
+        this.supplierPayments
+          .filter((p) => this.matches(p, where))
+          .slice(0, take ?? undefined),
       update: async ({ where, data }: any) => {
         const row = this.supplierPayments.find((p) => p.id === where.id)!;
         Object.assign(row, data);
@@ -799,6 +826,142 @@ describe('PaymentJournalService — Phase 2 auto-journal', () => {
       expect(pnl.netProfit).toBe(0);
       // Append-only: both entries survive.
       expect(db.entries).toHaveLength(2);
+    });
+  });
+
+  describe('backfill for payments recorded before Phase 2', () => {
+    function seeded() {
+      const harness = makeHarness();
+      const { db } = harness;
+      db.orders.push({
+        id: 'ord-1',
+        displayId: 'ORD-260101-0009',
+        paymentOptionType: 'FULL_PAYMENT',
+      });
+      db.orders.push({
+        id: 'ord-cod',
+        displayId: 'ORD-260101-0010',
+        paymentOptionType: 'CASH_ON_DELIVERY',
+      });
+      db.payslips.push({ id: 'ps-1', periodKey: '2026-10' });
+      db.suppliers.push({ id: 'sup-1', name: 'Acme Supplies' });
+      // Recorded before the feature shipped — all three carry no anchor.
+      db.payrollPayments.push({
+        id: 'pp-old',
+        payslipId: 'ps-1',
+        amount: 7000,
+        accountId: 'acc-bank',
+        paidAt: new Date('2026-10-05T06:00:00.000Z'),
+        voidedAt: null,
+        journalEntryId: null,
+        reversalJournalEntryId: null,
+      });
+      db.supplierPayments.push({
+        id: 'sp-old',
+        supplierId: 'sup-1',
+        amount: 3000,
+        accountId: 'acc-bank',
+        paidAt: new Date('2026-10-06T06:00:00.000Z'),
+        journalEntryId: null,
+        reversalJournalEntryId: null,
+      });
+      db.payments.push({
+        id: 'pay-old',
+        orderId: 'ord-1',
+        gatewayCode: 'bkash',
+        amount: 1000,
+        accountId: 'acc-bank',
+        status: 'PAID',
+        recordedAt: new Date('2026-10-07T06:00:00.000Z'),
+        createdAt: new Date('2026-10-07T06:00:00.000Z'),
+        journalEntryId: null,
+        reversalJournalEntryId: null,
+      });
+      db.payments.push({
+        id: 'pay-cod-old',
+        orderId: 'ord-cod',
+        gatewayCode: 'cash',
+        amount: 850,
+        accountId: 'acc-bank',
+        status: 'PAID',
+        recordedAt: new Date('2026-10-08T06:00:00.000Z'),
+        createdAt: new Date('2026-10-08T06:00:00.000Z'),
+        journalEntryId: null,
+        reversalJournalEntryId: null,
+      });
+      db.payments.push({
+        id: 'pay-unmapped',
+        orderId: 'ord-1',
+        gatewayCode: 'bkash',
+        amount: 500,
+        accountId: null,
+        status: 'PAID',
+        recordedAt: new Date('2026-10-09T06:00:00.000Z'),
+        createdAt: new Date('2026-10-09T06:00:00.000Z'),
+        journalEntryId: null,
+        reversalJournalEntryId: null,
+      });
+      return harness;
+    }
+
+    it('dry run reports the candidates and writes NOTHING', async () => {
+      const { db, journal } = seeded();
+
+      const report = await journal.backfillRecordedPayments({ dryRun: true });
+
+      expect(report.dryRun).toBe(true);
+      expect(report.scanned).toBe(4); // 1 payroll + 1 supplier + 2 receipts
+      expect(report.posted).toBe(0);
+      expect(report.items.every((i) => i.outcome.reason === 'dry_run')).toBe(true);
+      expect(report.items.map((i) => i.kind).sort()).toEqual([
+        'order',
+        'order',
+        'payroll',
+        'supplier',
+      ]);
+      expect(db.entries).toHaveLength(0);
+      expect(db.payrollPayments[0].journalEntryId).toBeNull();
+    });
+
+    it('posts exactly one journal per recorded payment and is idempotent', async () => {
+      const { db, journal } = seeded();
+
+      const first = await journal.backfillRecordedPayments();
+
+      expect(first.dryRun).toBe(false);
+      // The COD receipt is scanned and reported, never posted.
+      expect(first.posted).toBe(3);
+      expect(first.skipped).toBe(1);
+      expect(first.items.find((i) => i.paymentId === 'pay-cod-old')?.outcome)
+        .toEqual({
+          status: 'skipped',
+          journalEntryId: null,
+          reason: COD_SKIP_REASON,
+        });
+      // The unmapped row is not even a candidate.
+      expect(first.items.map((i) => i.paymentId)).not.toContain('pay-unmapped');
+
+      expect(db.entries).toHaveLength(3);
+      expect(db.payrollPayments[0].journalEntryId).toBeTruthy();
+      expect(db.supplierPayments[0].journalEntryId).toBeTruthy();
+
+      // The COD row is still unanchored (it is never posted), so it is still
+      // reported as a candidate — but nothing new is WRITTEN.
+      const second = await journal.backfillRecordedPayments();
+      expect(second.scanned).toBe(1);
+      expect(second.posted).toBe(0);
+      expect(second.adopted).toBe(0);
+      expect(db.entries).toHaveLength(3);
+    });
+
+    it('bounds the scan by limit', async () => {
+      const { journal } = seeded();
+      const report = await journal.backfillRecordedPayments({
+        dryRun: true,
+        limit: 1,
+      });
+      // One per kind, not one overall.
+      expect(report.scanned).toBe(3);
     });
   });
 
