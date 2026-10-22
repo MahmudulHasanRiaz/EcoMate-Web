@@ -8,14 +8,13 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { paymentsApi } from '@/features/payments/api'
-
-const GATEWAYS = ['cash', 'bkash', 'nagad', 'bank', 'card']
+import { PaymentGatewayAccountSelect } from '@/features/payments/components/payment-gateway-account-select'
 
 /**
- * Record a ledger payment (D1: stays SIMPLE — amount, gateway/account, txn,
- * note; no date picker, server sets recordedAt). txnRequired mirrors S1:
- * required exactly when the entry will sit PENDING (S1 OFF). A resolver makes
- * it PER-GATEWAY (D: tri-state override ?? global).
+ * Record a ledger payment (D1: stays SIMPLE — amount, configured
+ * gateway/account, txn, note; no date picker, server sets recordedAt).
+ * txnRequired mirrors S1: required exactly when the entry will sit PENDING
+ * (S1 OFF). A resolver makes it PER-GATEWAY (D: tri-state override ?? global).
  */
 export function RecordPaymentModal({
   orderId,
@@ -30,8 +29,8 @@ export function RecordPaymentModal({
 }) {
   const queryClient = useQueryClient()
   const [amount, setAmount] = useState('')
-  const [gatewayCode, setGatewayCode] = useState('cash')
-  const [account, setAccount] = useState('')
+  const [gatewayCode, setGatewayCode] = useState('')
+  const [accountId, setAccountId] = useState('')
   const [transactionId, setTransactionId] = useState('')
   const [notes, setNotes] = useState('')
   const needsTxn =
@@ -42,7 +41,7 @@ export function RecordPaymentModal({
       paymentsApi.record(orderId, {
         gatewayCode,
         amount: parseFloat(amount),
-        account: account.trim() || undefined,
+        accountId: accountId || undefined,
         transactionId: transactionId.trim() || undefined,
         notes: notes.trim() || undefined,
       }),
@@ -67,8 +66,8 @@ export function RecordPaymentModal({
       toast.error('Enter an amount greater than 0')
       return
     }
-    if (!account.trim()) {
-      toast.error('Account is required for manual gateway payments')
+    if (!gatewayCode) {
+      toast.error('Select a configured payment gateway')
       return
     }
     if (needsTxn && !transactionId.trim()) {
@@ -98,31 +97,14 @@ export function RecordPaymentModal({
               className="h-9 text-sm mt-1"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label htmlFor="record-pay-gateway">Gateway</Label>
-              <select
-                id="record-pay-gateway"
-                value={gatewayCode}
-                onChange={(e) => setGatewayCode(e.target.value)}
-                className="w-full h-9 rounded-md border border-input bg-background px-2 text-sm mt-1"
-              >
-                {GATEWAYS.map((g) => (
-                  <option key={g} value={g}>{g}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <Label htmlFor="record-pay-account">Account</Label>
-              <Input
-                id="record-pay-account"
-                value={account}
-                onChange={(e) => setAccount(e.target.value)}
-                placeholder="Receiving account"
-                className="h-9 text-sm mt-1"
-              />
-            </div>
-          </div>
+          <PaymentGatewayAccountSelect
+            gatewayCode={gatewayCode}
+            accountId={accountId}
+            onChange={(next) => {
+              setGatewayCode(next.gatewayCode)
+              setAccountId(next.accountId)
+            }}
+          />
           <div>
             <Label htmlFor="record-pay-txn">
               Transaction ID{' '}

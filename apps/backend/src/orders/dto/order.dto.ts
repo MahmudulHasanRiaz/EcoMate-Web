@@ -64,6 +64,8 @@ export class CreateOrderDto {
   @IsIn(['FULL_PAYMENT', 'PARTIAL_PAYMENT', 'CASH_ON_DELIVERY'])
   paymentOptionType?: 'FULL_PAYMENT' | 'PARTIAL_PAYMENT' | 'CASH_ON_DELIVERY';
   @IsOptional() @IsString() gatewayCode?: string;
+  /** Eligible CoA asset leaf; omitted = stamp from the gateway mapping. */
+  @IsOptional() @IsString() accountId?: string;
   @IsOptional() @IsNumber() partialAmount?: number;
   @IsOptional() @IsString() district?: string;
   @IsOptional() @IsString() thana?: string;
@@ -164,6 +166,8 @@ export class UpdateOrderDto {
   @IsIn(['FULL_PAYMENT', 'PARTIAL_PAYMENT', 'CASH_ON_DELIVERY'])
   paymentOptionType?: 'FULL_PAYMENT' | 'PARTIAL_PAYMENT' | 'CASH_ON_DELIVERY';
   @IsOptional() @IsString() gatewayCode?: string;
+  /** Eligible CoA asset leaf; omitted = stamp from the gateway mapping. */
+  @IsOptional() @IsString() accountId?: string;
   @IsOptional() @IsNumber() partialAmount?: number;
   /** Actual fulfillment/courier cost (BDT). Absent = not recorded (NULL). */
   @IsOptional() @IsNumber() @Min(0) shippingCost?: number;
@@ -185,7 +189,12 @@ export class CreatePaymentDto {
   @IsOptional() @IsString() screenshot?: string;
   @IsOptional() @IsString() notes?: string;
   @IsOptional() @IsString() token?: string;
-  /** Receiving account for manual gateways (required when entry is manual). */
+  /**
+   * Eligible CoA asset leaf. Omitted = the server stamps the gateway's
+   * mapped settlement account (Part 3). Supplied-but-ineligible is a 400.
+   */
+  @IsOptional() @IsString() accountId?: string;
+  /** Legacy display snapshot; new staff forms never send it. */
   @IsOptional() @IsString() account?: string;
 }
 

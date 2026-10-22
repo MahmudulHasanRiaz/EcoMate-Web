@@ -4,6 +4,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { ordersApi, exchangeApi, mediaUrl } from './api'
 import { paymentsApi } from '@/features/payments/api'
+import { PaymentGatewayAccountSelect } from '@/features/payments/components/payment-gateway-account-select'
 import { creditApi } from '@/features/customers/api'
 import {
   CreatePaymentsSection,
@@ -194,7 +195,8 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
 
   const sourceOptions = channel === 'MESSAGING' ? (messagingSources ?? []) : (allSources ?? [])
 
-  const [paymentMethod, setPaymentMethod] = useState('cash')
+  const [paymentMethod, setPaymentMethod] = useState('')
+  const [paymentAccountId, setPaymentAccountId] = useState('')
   const [paymentMode, setPaymentMode] = useState<'cod' | 'full' | 'partial'>('cod')
   const [partialAmount, setPartialAmount] = useState('')
 
@@ -383,7 +385,8 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
         : optType === 'FULL_PAYMENT' ? 'full'
           : 'cod',
   )
-  setPaymentMethod(o.payments?.[0]?.gatewayCode || o.gatewayCode || 'cash')
+  setPaymentMethod(o.payments?.[0]?.gatewayCode || o.gatewayCode || '')
+  setPaymentAccountId(o.payments?.[0]?.accountId || '')
   setPartialAmount(o.partialAmount != null ? String(Number(o.partialAmount)) : '')
 
   if (o.channel) setChannel(o.channel as ChannelV2)
@@ -672,6 +675,7 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
       officeNotes: officeNotes || null,
       paymentOptionType: paymentMode === 'cod' ? 'CASH_ON_DELIVERY' : paymentMode === 'full' ? 'FULL_PAYMENT' : paymentMode === 'partial' ? 'PARTIAL_PAYMENT' : undefined,
       gatewayCode: paymentMethod || undefined,
+      ...(paymentAccountId ? { accountId: paymentAccountId } : {}),
     }
 
     if (paymentMode === 'partial' && partialAmount) {
@@ -790,7 +794,7 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
             await paymentsApi.record(savedId, {
               gatewayCode: r.gatewayCode,
               amount: parseFloat(r.amount),
-              account: r.account.trim(),
+              accountId: r.accountId || undefined,
               transactionId: r.transactionId.trim() || undefined,
               notes: r.note.trim() || undefined,
             })
@@ -905,6 +909,7 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
         // advance/collect-later row from gatewayCode/partialAmount.
         delete payload.gatewayCode
         delete payload.partialAmount
+        delete payload.accountId
       }
       let creditAmt = 0
       const wantCredit = applyCredit && creditBalance > 0
@@ -1792,33 +1797,27 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                 </div>
               </CardHeader>
               <CardContent className='p-4 sm:p-6 space-y-3.5'>
-                <div className='grid grid-cols-1 sm:grid-cols-2 gap-3.5'>
-                  <div>
-                    <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Payment Method</Label>
-                    <select
-                      className='w-full h-9.5 rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
-                      value={paymentMethod}
-                      onChange={e => setPaymentMethod(e.target.value)}
-                    >
-                      <option value='cash'>Cash</option>
-                      <option value='bkash'>bKash</option>
-                      <option value='nagad'>Nagad</option>
-                      <option value='bank'>Bank Transfer</option>
-                      <option value='card'>Card</option>
-                    </select>
-                  </div>
-                  <div>
-                    <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Payment Mode</Label>
-                    <select
-                      className='w-full h-9.5 rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
-                      value={paymentMode}
-                      onChange={e => setPaymentMode(e.target.value as any)}
-                    >
-                      <option value='cod'>Cash on Delivery (COD)</option>
-                      <option value='full'>Full Payment</option>
-                      <option value='partial'>Partial Payment (Advance)</option>
-                    </select>
-                  </div>
+                {!showCollectedRows && (
+                  <PaymentGatewayAccountSelect
+                    gatewayCode={paymentMethod}
+                    accountId={paymentAccountId}
+                    onChange={(next) => {
+                      setPaymentMethod(next.gatewayCode)
+                      setPaymentAccountId(next.accountId)
+                    }}
+                  />
+                )}
+                <div className={showCollectedRows ? '' : 'sm:w-1/2'}>
+                  <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Payment Mode</Label>
+                  <select
+                    className='w-full h-9.5 rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
+                    value={paymentMode}
+                    onChange={e => setPaymentMode(e.target.value as any)}
+                  >
+                    <option value='cod'>Cash on Delivery (COD)</option>
+                    <option value='full'>Full Payment</option>
+                    <option value='partial'>Partial Payment (Advance)</option>
+                  </select>
                 </div>
                 {paymentMode === 'partial' && !showCollectedRows && (
                   <div className='p-3.5 bg-muted/40 rounded-xl border border-border/60 space-y-2'>

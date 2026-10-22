@@ -18,7 +18,10 @@ export interface PaymentRow {
   amount: number
   status: string
   transactionId?: string | null
-  /** Receiving account for manual gateways (Task 11 ledger). */
+  /** Part 1/3: the CoA asset leaf the money landed in. */
+  accountId?: string | null
+  accountRef?: { id: string; code: string; name: string } | null
+  /** Legacy receiving-account string (display only; no report reads it). */
   account?: string | null
   /** `staff:<userId>` for staff entries, null for customer-submitted. */
   recordedBy?: string | null
@@ -76,7 +79,7 @@ export const paymentsApi = {
    * account/txn validation apply server-side; the UI mirrors them only to
    * avoid predictable 400s.
    */
-  record: (orderId: string, dto: { gatewayCode: string; amount: number; account?: string; transactionId?: string; notes?: string }) =>
+  record: (orderId: string, dto: { gatewayCode: string; amount: number; accountId?: string; account?: string; transactionId?: string; notes?: string }) =>
     apiClient.post(`/payments/${orderId}`, dto),
   /**
    * Per-row verify (Task 11 ledger). PAID approves, FAILED rejects.

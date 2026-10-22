@@ -2,21 +2,20 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Plus, Trash2 } from 'lucide-react'
+import { PaymentGatewayAccountSelect } from '@/features/payments/components/payment-gateway-account-select'
 
 export interface CollectedPaymentRow {
   amount: string
   gatewayCode: string
-  account: string
+  accountId: string
   transactionId: string
   note: string
 }
 
-export const GATEWAY_OPTIONS = ['cash', 'bkash', 'nagad', 'bank', 'card']
-
 export const emptyCollectedRow = (): CollectedPaymentRow => ({
   amount: '',
-  gatewayCode: 'cash',
-  account: '',
+  gatewayCode: '',
+  accountId: '',
   transactionId: '',
   note: '',
 })
@@ -24,7 +23,7 @@ export const emptyCollectedRow = (): CollectedPaymentRow => ({
 /** Rows with any filled field — fully-empty rows are ignored, never validated. */
 export function nonEmptyCollectedRows(rows: CollectedPaymentRow[]): CollectedPaymentRow[] {
   return rows.filter(
-    (r) => r.amount.trim() || r.account.trim() || r.transactionId.trim() || r.note.trim(),
+    (r) => r.amount.trim() || r.accountId.trim() || r.transactionId.trim() || r.note.trim(),
   )
 }
 
@@ -51,7 +50,6 @@ export function validateCollectedRows(
     const amt = parseFloat(r.amount)
     if (!r.amount || isNaN(amt) || amt <= 0) errors.push(`${n}: enter an amount greater than 0`)
     if (!r.gatewayCode) errors.push(`${n}: gateway is required`)
-    if (!r.account.trim()) errors.push(`${n}: account is required`)
     if (needsTxn(r.gatewayCode) && !r.transactionId.trim()) errors.push(`${n}: transaction ID is required`)
   })
   return errors
@@ -103,57 +101,36 @@ export function CreatePaymentsSection({
         const needsTxn = rowTxnRequired(r.gatewayCode)
         return (
         <div key={i} className="rounded-lg border border-border/60 bg-background p-3 space-y-2.5">
-          <div className="grid grid-cols-2 gap-2.5">
-            <div>
-              <Label className="text-xs font-medium text-muted-foreground mb-1 block">Amount (৳) *</Label>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={r.amount}
-                onChange={(e) => patch(i, { amount: e.target.value })}
-                placeholder="0.00"
-                className="h-9 text-sm"
-                aria-label={`Row ${i + 1} amount`}
-              />
-            </div>
-            <div>
-              <Label className="text-xs font-medium text-muted-foreground mb-1 block">Gateway *</Label>
-              <select
-                value={r.gatewayCode}
-                onChange={(e) => patch(i, { gatewayCode: e.target.value })}
-                className="w-full h-9 rounded-md border border-input bg-background px-2 text-sm"
-                aria-label={`Row ${i + 1} gateway`}
-              >
-                {GATEWAY_OPTIONS.map((g) => (
-                  <option key={g} value={g}>{g}</option>
-                ))}
-              </select>
-            </div>
+          <div>
+            <Label className="text-xs font-medium text-muted-foreground mb-1 block">Amount (৳) *</Label>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={r.amount}
+              onChange={(e) => patch(i, { amount: e.target.value })}
+              placeholder="0.00"
+              className="h-9 text-sm"
+              aria-label={`Row ${i + 1} amount`}
+            />
           </div>
-          <div className="grid grid-cols-2 gap-2.5">
-            <div>
-              <Label className="text-xs font-medium text-muted-foreground mb-1 block">Account *</Label>
-              <Input
-                value={r.account}
-                onChange={(e) => patch(i, { account: e.target.value })}
-                placeholder="Receiving account"
-                className="h-9 text-sm"
-                aria-label={`Row ${i + 1} account`}
-              />
-            </div>
-            <div>
-              <Label className="text-xs font-medium text-muted-foreground mb-1 block">
-                Transaction ID{needsTxn ? ' *' : ''}
-              </Label>
-              <Input
-                value={r.transactionId}
-                onChange={(e) => patch(i, { transactionId: e.target.value })}
-                placeholder={needsTxn ? 'Required — entry needs verification' : 'Optional — auto-verified'}
-                className="h-9 text-sm font-mono"
-                aria-label={`Row ${i + 1} transaction ID`}
-              />
-            </div>
+          <PaymentGatewayAccountSelect
+            compact
+            gatewayCode={r.gatewayCode}
+            accountId={r.accountId}
+            onChange={(next) => patch(i, next)}
+          />
+          <div>
+            <Label className="text-xs font-medium text-muted-foreground mb-1 block">
+              Transaction ID{needsTxn ? ' *' : ''}
+            </Label>
+            <Input
+              value={r.transactionId}
+              onChange={(e) => patch(i, { transactionId: e.target.value })}
+              placeholder={needsTxn ? 'Required — entry needs verification' : 'Optional — auto-verified'}
+              className="h-9 text-sm font-mono"
+              aria-label={`Row ${i + 1} transaction ID`}
+            />
           </div>
           {needsTxn && (
             <p className="text-[11px] text-muted-foreground">Transaction ID required — entries need verification (auto-verify off for this gateway).</p>

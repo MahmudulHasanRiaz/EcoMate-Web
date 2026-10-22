@@ -17,6 +17,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { UserBadge } from '@/components/user-badge'
 import { ordersApi, rtnApi, mediaUrl } from '@/features/orders/api'
 import { paymentsApi } from '@/features/payments/api'
+import { PaymentGatewayAccountSelect } from '@/features/payments/components/payment-gateway-account-select'
 import { OrderActionMenu } from '@/features/orders/components/order-action-menu'
 import { LinkedReturnsSection } from '@/features/orders/components/linked-returns-section'
 
@@ -174,7 +175,8 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
 
   // ── Payment edit state (mirrors the create-page payment card) ──
   const [editingPayment, setEditingPayment] = useState(false)
-  const [paymentMethod, setPaymentMethod] = useState('cash')
+  const [paymentMethod, setPaymentMethod] = useState('')
+  const [paymentAccountId, setPaymentAccountId] = useState('')
   const [paymentMode, setPaymentMode] = useState<'cod' | 'full' | 'partial'>('cod')
   const [partialAmount, setPartialAmount] = useState('')
 
@@ -388,7 +390,8 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
       : order.paymentOptionType === 'PARTIAL_PAYMENT' ? 'partial'
       : 'full'
     setPaymentMode(mode)
-    setPaymentMethod((order.payments?.[0]?.gatewayCode) || 'cash')
+    setPaymentMethod((order.payments?.[0]?.gatewayCode) || '')
+    setPaymentAccountId((order.payments?.[0]?.accountId) || '')
     setPartialAmount(order.partialAmount ? String(order.partialAmount) : '')
     setEditingPayment(true)
   }
@@ -413,6 +416,7 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
         data: {
           paymentOptionType: paymentMode === 'cod' ? 'CASH_ON_DELIVERY' : paymentMode === 'full' ? 'FULL_PAYMENT' : 'PARTIAL_PAYMENT',
           gatewayCode: paymentMethod || undefined,
+          ...(paymentAccountId ? { accountId: paymentAccountId } : {}),
           partialAmount: paymentMode === 'partial' && partialAmount ? parseFloat(partialAmount) : undefined,
         },
       })
@@ -1251,16 +1255,15 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                     )}
                     {editingPayment ? (
                       <div className='space-y-3.5'>
-                        <div>
-                          <Label className='text-xs font-medium'>Payment Method</Label>
-                          <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-xs mt-1 font-medium' value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
-                            <option value='cash'>Cash</option>
-                            <option value='bkash'>bKash</option>
-                            <option value='nagad'>Nagad</option>
-                            <option value='bank'>Bank</option>
-                            <option value='card'>Card</option>
-                          </select>
-                        </div>
+                        <PaymentGatewayAccountSelect
+                          compact
+                          gatewayCode={paymentMethod}
+                          accountId={paymentAccountId}
+                          onChange={(next) => {
+                            setPaymentMethod(next.gatewayCode)
+                            setPaymentAccountId(next.accountId)
+                          }}
+                        />
                         <div>
                           <Label className='text-xs font-medium'>Payment Mode</Label>
                           <select className='w-full h-9 rounded-md border border-input bg-background px-3 text-xs mt-1 font-medium' value={paymentMode} onChange={e => setPaymentMode(e.target.value as any)}>
