@@ -19,13 +19,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { employeesApi, type EmployeeResponse } from '@/features/employees/api'
 import {
-  formatDate,
   formatTime,
   type AttendanceDevice,
   type CreateDeviceDto,
   type DeviceMapping,
   type DeviceSyncStatus,
 } from '../api'
+import { formatDhakaDate } from '@/lib/dhaka-time'
 import {
   useDevicesQuery,
   useCreateDeviceMutation,
@@ -435,7 +435,7 @@ export function DevicesTab() {
                   </TableCell>
                   <TableCell className='text-sm text-muted-foreground'>
                     {d.lastSyncAt ? formatTime(d.lastSyncAt) : '—'}
-                    {d.lastSyncAt && <div className='text-xs'>{formatDate(d.lastSyncAt)}</div>}
+                    {d.lastSyncAt && <div className='text-xs'>{formatDhakaDate(d.lastSyncAt)}</div>}
                   </TableCell>
                   <TableCell>
                     <Switch checked={d.enabled} onCheckedChange={(v) => toggleEnabled(d, v)} disabled={updateMut.isPending} />

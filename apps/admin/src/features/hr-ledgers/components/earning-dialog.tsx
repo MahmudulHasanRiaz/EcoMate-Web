@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { DatePicker } from '@/components/date-picker'
+import { toDhakaDateString } from '@/lib/dhaka-time'
 import { useCreateEarningMutation } from '../hooks'
 import type { EarningType } from '../api'
 
@@ -56,8 +57,8 @@ export function EarningDialog({ employeeId }: { employeeId: string }) {
         type,
         amount: numeric,
         reason: reason.trim(),
-        applicableFrom: from?.toISOString(),
-        applicableTo: to?.toISOString(),
+        applicableFrom: from ? toDhakaDateString(from) : undefined,
+        applicableTo: to ? toDhakaDateString(to) : undefined,
       },
       {
         onSuccess: () => {

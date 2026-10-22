@@ -9,6 +9,7 @@ import {
   useRejectRequestMutation,
   useCancelRequestMutation,
 } from '../hooks'
+import { formatDhakaDate } from '@/lib/dhaka-time'
 import type { LeaveRequest, LeaveStatus } from '../api'
 
 const STATUS_BADGE: Record<LeaveStatus, string> = {
@@ -77,8 +78,7 @@ export function LeaveRequestTable({
                   <div className='text-xs text-muted-foreground'>{req.type?.code}</div>
                 </TableCell>
                 <TableCell className='text-sm text-muted-foreground'>
-                  {new Date(req.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} –{' '}
-                  {new Date(req.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  {formatDhakaDate(req.startDate)} – {formatDhakaDate(req.endDate)}
                 </TableCell>
                 <TableCell className='text-right tabular-nums'>{req.days}</TableCell>
                 <TableCell className='max-w-[200px] truncate' title={req.reason}>{req.reason}</TableCell>

@@ -136,3 +136,29 @@ describe('EmployeeDetailPage — hook ordering', () => {
     await expect.element(getByText('EMP-0001')).toBeInTheDocument()
   })
 })
+
+/**
+ * Part 3 — HR dates rendered one day early. The fixture stores joiningDate as
+ * the UTC-midnight instant for Jan 15, so the Overview must show Jan 15 — never
+ * the host-rolled-back Jan 14. This is the render half of the fix; the Net
+ * Compensation figure is owned by a different change and is not asserted here.
+ */
+describe('EmployeeDetailPage — Overview dates', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRoutes()
+  })
+
+  it('renders the joining date as its Dhaka calendar day', async () => {
+    await wrap(<EmployeeDetailPage employeeId='emp-1' />)
+
+    await vi.waitFor(
+      () => {
+        expect(document.body.textContent).toContain('Jan 15, 2024')
+      },
+      { timeout: 3000, interval: 50 },
+    )
+
+    expect(document.body.textContent).not.toContain('Jan 14, 2024')
+  })
+})

@@ -8,13 +8,13 @@ import {
   ATTENDANCE_STATUS_BADGE,
   ATTENDANCE_STATUS_LABELS,
   dhakaTodayDate,
-  formatDate,
   formatDuration,
   formatTime,
   sessionTimes,
   toDateKey,
   type AttendanceDayRow,
 } from '../api'
+import { formatDhakaDate } from '@/lib/dhaka-time'
 import {
   useAttendanceHistoryQuery,
   useTodayStateQuery,
@@ -144,7 +144,7 @@ export function AttendanceTab({ employeeId }: { employeeId: string }) {
                 const missing = !!row.missingCheckout
                 return (
                   <TableRow key={row.id}>
-                    <TableCell className='text-sm text-muted-foreground'>{formatDate(row.date)}</TableCell>
+                    <TableCell className='text-sm text-muted-foreground'>{formatDhakaDate(row.date)}</TableCell>
                     <TableCell>
                       <div className='flex flex-wrap items-center gap-1.5'>
                         <Badge className={`border-transparent ${ATTENDANCE_STATUS_BADGE[row.status]}`}>

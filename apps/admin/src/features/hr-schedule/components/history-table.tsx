@@ -1,6 +1,7 @@
 import { Loader2, ChevronLeft, ChevronRight, ArrowRight, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
+import { formatDhakaDate } from '@/lib/dhaka-time'
 import type { HistoryEntry } from '../api'
 
 const FIELD_LABELS: Record<string, string> = {
@@ -13,10 +14,6 @@ const FIELD_LABELS: Record<string, string> = {
 }
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
-}
 
 function formatValue(field: string, value: string | null) {
   if (value == null || value === '') return '—'
@@ -72,7 +69,7 @@ export function HistoryTable({ data, meta, isLoading, isError, onRetry, onPageCh
           <TableBody>
             {data.map((entry) => (
               <TableRow key={entry.id}>
-                <TableCell className='text-sm'>{formatDate(entry.effectiveFrom)}</TableCell>
+                <TableCell className='text-sm'>{formatDhakaDate(entry.effectiveFrom)}</TableCell>
                 <TableCell className='text-sm font-medium'>{FIELD_LABELS[entry.field] || entry.field}</TableCell>
                 <TableCell className='text-sm'>
                   <span className='inline-flex items-center gap-1.5 text-muted-foreground'>

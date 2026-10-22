@@ -278,16 +278,6 @@ export function formatTime(iso?: string | null): string {
   })
 }
 
-export function formatDate(dateStr?: string | null): string {
-  if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'Asia/Dhaka',
-  })
-}
-
 export function formatDuration(minutes?: number | null): string {
   if (minutes === null || minutes === undefined) return '—'
   const m = Math.max(0, Math.round(minutes))

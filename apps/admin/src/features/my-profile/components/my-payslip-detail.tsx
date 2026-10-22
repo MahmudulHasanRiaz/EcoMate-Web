@@ -5,18 +5,10 @@ import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { PAYSLIP_STATUS_BADGE } from '@/features/payroll/components/payslip-status-badge'
+import { formatDhakaDate } from '@/lib/dhaka-time'
 import { useQuery } from '@tanstack/react-query'
 import { myProfileApi } from '../api'
 import type { PayslipItemResponse } from '@/features/payroll/api'
-
-function formatDate(dateStr?: string | null) {
-  if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
-}
 
 function formatMoney(n?: number | null) {
   return `${Number(n ?? 0).toLocaleString()} ৳`
@@ -130,7 +122,7 @@ export function MyPayslipDialog({
                 <div>
                   <CardTitle>Payslip {payslip.periodKey ?? ''}</CardTitle>
                   <CardDescription>
-                    {formatDate(payslip.periodStart)} – {formatDate(payslip.periodEnd)}
+                    {formatDhakaDate(payslip.periodStart)} – {formatDhakaDate(payslip.periodEnd)}
                   </CardDescription>
                 </div>
                 {badge && (

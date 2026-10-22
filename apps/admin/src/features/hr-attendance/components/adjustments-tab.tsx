@@ -22,11 +22,11 @@ import {
   ATTENDANCE_STATUSES,
   ATTENDANCE_STATUS_LABELS,
   dhakaTodayDate,
-  formatDate,
   toDateKey,
   type AdjustmentField,
   type AttendanceStatus,
 } from '../api'
+import { formatDhakaDate } from '@/lib/dhaka-time'
 import { useAdjustmentsQuery, useCreateAdjustmentMutation, useAttendanceHistoryQuery } from '../hooks'
 
 const ADJUSTABLE_FIELDS: { value: AdjustmentField; label: string }[] = [
@@ -202,7 +202,7 @@ function AdjustmentsDialog({ open, onOpenChange }: { open: boolean; onOpenChange
 
           {!dayLoading && employeeId && dateKey && day && (
             <p className='text-xs text-muted-foreground'>
-              Adjusting the day of <span className='font-medium text-foreground'>{formatDate(day.date)}</span> ·
+              Adjusting the day of <span className='font-medium text-foreground'>{formatDhakaDate(day.date)}</span> ·
               current {field}:{' '}
               {field === 'status'
                 ? ATTENDANCE_STATUS_LABELS[day.status]
@@ -314,7 +314,7 @@ export function AdjustmentsTab() {
                   <TableCell className='max-w-[240px] truncate text-sm text-muted-foreground' title={row.reason}>
                     {row.reason}
                   </TableCell>
-                  <TableCell className='text-sm text-muted-foreground'>{formatDate(row.adjustedAt)}</TableCell>
+                  <TableCell className='text-sm text-muted-foreground'>{formatDhakaDate(row.adjustedAt)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

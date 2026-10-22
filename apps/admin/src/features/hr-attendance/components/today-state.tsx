@@ -20,6 +20,7 @@ import {
   type AttendanceStatus,
   type DayStateValue,
 } from '../api'
+import { formatDhakaDate } from '@/lib/dhaka-time'
 import {
   useTodayStateQuery,
   useCheckInMutation,
@@ -191,7 +192,7 @@ export function TodayState({
                 Not Checked In
               </span>
               <p className='mt-3 text-sm text-muted-foreground'>
-                No attendance session is open for {formatDateLabel(dateKey)}.
+                No attendance session is open for {formatDhakaDate(dateKey)}.
               </p>
             </div>
             <div className='flex flex-wrap gap-2'>
@@ -255,9 +256,4 @@ export function TodayState({
       </CardContent>
     </Card>
   )
-}
-
-function formatDateLabel(dateKey: string) {
-  const d = new Date(`${dateKey}T00:00:00`)
-  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
 }

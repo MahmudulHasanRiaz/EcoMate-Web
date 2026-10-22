@@ -13,7 +13,6 @@ import {
   ATTENDANCE_STATUSES,
   ATTENDANCE_STATUS_BADGE,
   ATTENDANCE_STATUS_LABELS,
-  formatDate,
   formatDuration,
   formatTime,
   sessionTimes,
@@ -21,6 +20,7 @@ import {
   type AttendanceDayRow,
   type AttendanceStatus,
 } from '../api'
+import { formatDhakaDate } from '@/lib/dhaka-time'
 import { MissingCheckoutBadge, CloseSessionAction } from './close-session'
 
 export function AttendanceTable({
@@ -156,7 +156,7 @@ export function AttendanceTable({
                       <div className='text-xs text-muted-foreground'>{row.employee.department.name}</div>
                     )}
                   </TableCell>
-                  <TableCell className='text-sm text-muted-foreground'>{formatDate(row.date)}</TableCell>
+                  <TableCell className='text-sm text-muted-foreground'>{formatDhakaDate(row.date)}</TableCell>
                   <TableCell>
                     <div className='flex flex-wrap items-center gap-1.5'>
                       <Badge className={`border-transparent ${ATTENDANCE_STATUS_BADGE[row.status]}`}>
