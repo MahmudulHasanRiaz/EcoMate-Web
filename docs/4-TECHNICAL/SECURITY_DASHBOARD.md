@@ -705,7 +705,7 @@ curl http://localhost:3000/admin/security/dashboard/trends?interval=hourly
 
 - PostgreSQL 14+ with `FOR UPDATE SKIP LOCKED` support (PG 9.5+)
 - Redis 6+ (for BullMQ)
-- Node.js 20+ (NestJS 11)
+- Node.js 24.22.1+ (NestJS 11)
 
 ### Migration
 

@@ -4,7 +4,7 @@
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 24.22.1+
 - PostgreSQL 16+
 - Redis 7+
 - pnpm
