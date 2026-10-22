@@ -12,6 +12,8 @@ import {
 import { AccountingService } from './accounting.service';
 import { AccountingEnabledGuard } from './accounting-enabled.guard';
 import { CreateJournalEntryDto } from './dto/create-journal-entry.dto';
+import { BackfillJournalsDto } from './dto/backfill-journals.dto';
+import { PaymentJournalService } from './payment-journal.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -21,11 +23,25 @@ import { Roles } from '../common/decorators/roles.decorator';
 @UseGuards(AccountingEnabledGuard)
 @RequiresFeature('admin_accounting')
 export class AccountingController {
-  constructor(private readonly accountingService: AccountingService) {}
+  constructor(
+    private readonly accountingService: AccountingService,
+    private readonly paymentJournal: PaymentJournalService,
+  ) {}
 
   @Post('entries')
   createEntry(@Body() dto: CreateJournalEntryDto, @CurrentUser() user?: any) {
     return this.accountingService.createEntry(dto, user?.sub);
+  }
+
+  /**
+   * Phase 2 — post journals for payments RECORDED before the feature shipped
+   * (or while accounting was off). Idempotent: candidates are filtered on
+   * `journalEntryId IS NULL` and every poster re-checks under the row lock, so
+   * re-running changes nothing. Always start with `{ "dryRun": true }`.
+   */
+  @Post('payments/backfill-journals')
+  backfillPaymentJournals(@Body() dto: BackfillJournalsDto) {
+    return this.paymentJournal.backfillRecordedPayments(dto);
   }
 
   @Get('entries')
