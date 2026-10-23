@@ -2,6 +2,10 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MediaService } from '../media/media.service';
 import { CacheService } from '../cache/cache.service';
+import {
+  InitialPhysicalStockService,
+  InitialPhysicalUnit,
+} from '../stock/initial-physical-stock.service';
 import * as Papa from 'papaparse';
 import slugify from './utils/slugify';
 import {
@@ -34,6 +38,7 @@ export class ImportService {
     private readonly prisma: PrismaService,
     private readonly media: MediaService,
     private readonly cache: CacheService,
+    private readonly initialPhysicalStock: InitialPhysicalStockService,
   ) {}
 
   async importFromCsv(
@@ -257,6 +262,12 @@ export class ImportService {
       value: (maxSortOrderResult._max.sortOrder ?? 0) + 1,
     };
 
+    // B4: a MANAGED_STOCK product created with stock but no physical record is
+    // orderable yet can never be confirmed. Resolve the warehouse ONCE, before
+    // any row is written, so a missing warehouse fails the whole import loudly
+    // instead of leaving silently unconfirmable products behind.
+    const initialWarehouseId = await this.resolveImportWarehouse(rows);
+
     let processedCount = 0;
     const groupEntries = Object.entries(groups);
 
@@ -301,6 +312,7 @@ export class ImportService {
           variantCache,
           slugSet,
           sortOrderObj,
+          initialWarehouseId,
         );
       } catch (err) {
         const error = err as Error;
@@ -370,6 +382,24 @@ export class ImportService {
     return groups;
   }
 
+  /**
+   * B4: warehouse for the physical layer when the CSV carries managed units.
+   * Called before any row is written (dry runs return earlier and never write),
+   * so a missing warehouse fails the import loudly instead of producing
+   * products that can be ordered but never confirmed. Returns null when
+   * Inventory Management is off — the managed counter is authoritative then and
+   * nothing needs seeding.
+   */
+  private async resolveImportWarehouse(
+    rows: CsvRowWithMeta[],
+  ): Promise<string | null> {
+    const hasManagedUnits = rows.some(
+      (row) => (this.parseInt(row.data.Stock) ?? 0) > 0,
+    );
+    if (!hasManagedUnits) return null;
+    return this.initialPhysicalStock.resolveWarehouse('MANAGED_STOCK', 1);
+  }
+
   private async processProductGroupCached(
     groupKey: string,
     rows: CsvRowWithMeta[],
@@ -385,6 +415,7 @@ export class ImportService {
     variantCache: Map<string, string>,
     slugSet: Set<string>,
     sortOrderObj: { value: number },
+    initialWarehouseId: string | null = null,
   ): Promise<void> {
     const hasParentRow = rows.some(
       (r) => !(r.data.Type || 'simple').toLowerCase().includes('variation'),
@@ -410,6 +441,8 @@ export class ImportService {
 
     let productId: string;
     const hasVariations = variationRows.length > 0;
+    // Units created by THIS run that must also exist in the physical layer.
+    const physicalUnits: InitialPhysicalUnit[] = [];
 
     if (existingProductId) {
       if (hasParentRow) {
@@ -447,6 +480,14 @@ export class ImportService {
         slugSet,
         sortOrderObj,
       );
+
+      const parentType = (parentRow.data.Type || 'simple').toLowerCase().trim();
+      const parentIsVariable =
+        parentType === 'variable' || parentType === 'variable-subscription';
+      const parentStock = this.parseInt(parentRow.data.Stock);
+      if (!parentIsVariable && parentStock !== undefined && parentStock > 0) {
+        physicalUnits.push({ quantity: parentStock });
+      }
     }
 
     this.logger.log(
@@ -465,7 +506,23 @@ export class ImportService {
         mediaCache,
         variantCache,
         productCache,
+        physicalUnits,
       );
+    }
+
+    if (initialWarehouseId && physicalUnits.length > 0) {
+      const parent = await this.prisma.product.findUnique({
+        where: { id: productId },
+        select: { warehouseId: true },
+      });
+      await this.initialPhysicalStock.mirrorUnits({
+        productId,
+        productWarehouseId: parent?.warehouseId ?? null,
+        warehouseId: initialWarehouseId,
+        units: physicalUnits,
+        reference: 'Initial stock on CSV import',
+        performedBy: 'csv-import',
+      });
     }
 
     // Parent price fallback for variable products: when the CSV leaves the
@@ -799,6 +856,7 @@ export class ImportService {
     mediaCache: Map<string, string>,
     variantCache: Map<string, string>,
     productCache: Map<string, string>,
+    physicalUnits?: InitialPhysicalUnit[],
   ): Promise<void> {
     const data = row.data;
     const varSku = data.SKU?.trim();
@@ -925,6 +983,10 @@ export class ImportService {
     });
 
     variantCache.set(varSku, variant.id);
+
+    if (stock > 0) {
+      physicalUnits?.push({ variantId: variant.id, quantity: stock });
+    }
 
     if (mainImage) {
       const ingested = await this.ingestImageCached(

@@ -11,6 +11,7 @@ import { MediaResolverService } from '../media/media-resolver.service';
 import { CacheService } from '../cache/cache.service';
 import { StockRouterService } from '../stock/stock-router.service';
 import { StockService } from '../stock/stock.service';
+import { InitialPhysicalStockService } from '../stock/initial-physical-stock.service';
 
 jest.mock('uuid', () => ({
   v4: jest.fn(() => 'mock-uuid-v4'),
@@ -190,6 +191,7 @@ describe('ProductsService', () => {
             operatePhysical: jest.fn().mockResolvedValue([]),
           },
         },
+        InitialPhysicalStockService,
       ],
     }).compile();
 

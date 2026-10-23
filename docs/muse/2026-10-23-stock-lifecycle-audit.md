@@ -195,6 +195,31 @@ npx nest build
 
 ---
 
+## Verification addendum (2026-10-23, acceptance pass)
+
+স্বাধীন যাচাইয়ে (কোড বনাম এই রিপোর্ট) নিচের ফাঁকগুলো পাওয়া গেছে। যা প্রমাণিত ও এই pass-এ ঠিক করা হয়েছে, তা নিচে "ফিক্স" হিসেবে; বাকিটা মালিকের সিদ্ধান্তের তালিকায়।
+
+### ১. Trigger map — অসম্পূর্ণ (সংশোধন)
+
+- **Row 10-এর cancel-release কলার ৫টি নয়, ৭টি:** `RefundsService.create`-এর refund-থেকে-cancel পথ দুটোও একই unified entry-তে যায় (`refunds.service.ts:376`, `:430`)। map-এ যোগ করুন।
+- **`RtnService` (return-order মডিউল) আলাদা RESTORE/RELEASE entry:** `rtn.service.ts:837` `restoreForReturnItems`, `:854` `restoreForOrder`, `:1215` `operate('release')` — row 12/13-এ নেই।
+- **"এর বাইরে শুধু রিকনসিলিয়েশন" বাক্যটা ভুল:** `import/import.service.ts:603` ও `:912` এবং `purchases.service.ts:729`/`:745` (GRN goods-in) — দুটোই স্টক লেখে।
+
+### ২. Reconciliation script inventory — অসম্পূর্ণ (সংশোধন)
+
+- **Admin heal trigger বাদ পড়েছিল:** `POST /inventory/reconcile` → `StockReconciliationService.healAll()` / `healOrder()` (`inventory/inventory.controller.ts:242-260`)। `STOCK_RECONCILE_ON_BOOT` gate-এর সাথে এটাও ইনভেন্টরিতে থাকা দরকার।
+- **"ad-hoc ENV script production inventory নষ্ট করতে পারবে না" — এটা এখনো নিশ্চিত নয়, শুধু সুপারিশ।** `reconcile-stock.ts` ও `e2e-inventory-test.ts` এখনো যে-কোনো live `DATABASE_URL`-এ চালানো যায়; কোনো env guard/dry-run-default/removal এখনো যোগ হয়নি। ⇒ মালিকের সিদ্ধান্ত (উপরের টেবিলে #১২-এর সঙ্গে একসাথে)।
+
+### ৩. নতুন প্রমাণিত কনফ্লিক্ট — B4-b: CSV import physical layer এড়িয়ে যেত ⇒ **ফিক্স করা হয়েছে**
+
+- **কনফ্লিক্ট:** product import (`POST /import/products`, admin-এ `/op/import-products`) সরাসরি `prisma.product.create` / `prisma.productVariant.create` করে `managedStockQuantity` + `manageStock` সেট করে, কিন্তু `warehouseId` নেই এবং **কোনো PhysicalInventory রেকর্ড নেই** ⇒ ঠিক B4-এর সেই নীরব ফাঁদ (managed আছে, physical নেই ⇒ Confirm ব্যর্থ), শুধু অন্য entry point দিয়ে। import সাপোর্ট করা live feature, তাই এটা থাকলে "silent unorderable state থাকবে না" শর্ত ভাঙত।
+- **ফিক্স (single entry point):** নতুন `InitialPhysicalStockService` (`apps/backend/src/stock/initial-physical-stock.service.ts`) — warehouse resolve + physical seed একটাই জায়গা। ProductsService (product form + draft publish) এবং ImportService দুটোই এখন এটাই ব্যবহার করে। import এখন **কোনো row লেখার আগেই** warehouse resolve করে (`resolveImportWarehouse`) — active warehouse না থাকলে পুরো import স্পষ্ট 400 নিয়ে থামে, আধা-ইমপোর্ট হয় না। টেস্ট: `import/__tests__/import.service.spec.ts` (৫টি নতুন: simple mirror, variant-wise mirror, warehouse না থাকলে no-op, শুধু stock থাকলে resolve, fail-loud)।
+
+### ৪. মালিকের সিদ্ধান্তে থাকা অবশিষ্ট ঝুঁকি (এই pass-এ ফিক্স করা হয়নি)
+
+- **import-এর UPDATE মোড:** বিদ্যমান product/variant-এর `managedStockQuantity` আপডেট করে (`import.service.ts:738`, `:856`) কিন্তু physical layer ছোঁয় না ⇒ একই ধরনের divergence। এটা আসলে decision #5-এরই (`managed-only adjust`) অংশ — নিয়ম ঠিক করে তারপর ফিক্স হবে।
+- **zero-stock product + পরে managed-only adjust:** creation-এ physical ensure শুধু `initialStock > 0` হলে চলে; পরে managed-এ স্টক যোগ করলে আবার physical-হীন অবস্থা ফিরতে পারে — decision #5 দেখুন।
+
 ## সীমাবদ্ধতা
 
 - পুরো backend স্যুট এই কাজে চালানো হয়নি (কোঅর্ডিনেটরের কাজ); শুধু সম্পর্কিত স্পেক + বিল্ড চালানো হয়েছে।

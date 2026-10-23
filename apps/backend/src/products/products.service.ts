@@ -17,6 +17,10 @@ import { MediaResolverService } from '../media/media-resolver.service';
 import { CacheService } from '../cache/cache.service';
 import { StockRouterService } from '../stock/stock-router.service';
 import { StockService } from '../stock/stock.service';
+import {
+  InitialPhysicalStockService,
+  InitialPhysicalUnit,
+} from '../stock/initial-physical-stock.service';
 
 function slugify(text: string): string {
   return text
@@ -34,6 +38,7 @@ export class ProductsService {
     private readonly stockRouter: StockRouterService,
     private readonly mediaResolver: MediaResolverService,
     private readonly stockService: StockService,
+    private readonly initialPhysicalStock: InitialPhysicalStockService,
   ) {}
 
   private async syncTags(tagNames: string[], productId: string): Promise<void> {
@@ -79,48 +84,9 @@ export class ProductsService {
    *
    * The warehouse is resolved BEFORE the product row is written so a missing
    * warehouse fails the request loudly instead of leaving behind a product
-   * that can be ordered but never fulfilled.
+   * that can be ordered but never fulfilled. The same seeding runs on the CSV
+   * import path through InitialPhysicalStockService.
    */
-  private async resolveInitialWarehouse(
-    avMode: string,
-    initialStock: number,
-    dtoWarehouseId?: string | null,
-  ): Promise<string | null> {
-    if (avMode !== 'MANAGED_STOCK' || initialStock <= 0) return null;
-    if (!(await this.stockRouter.isInventoryManagementEnabled())) return null;
-
-    if (dtoWarehouseId) {
-      const warehouse = await this.prisma.warehouse.findUnique({
-        where: { id: dtoWarehouseId },
-        select: { id: true, isActive: true },
-      });
-      if (!warehouse || !warehouse.isActive) {
-        throw new BadRequestException(
-          'The selected warehouse does not exist or is inactive — initial stock cannot be placed there.',
-        );
-      }
-      return warehouse.id;
-    }
-
-    const warehouse =
-      (await this.prisma.warehouse.findFirst({
-        where: { isActive: true, type: 'main' },
-        orderBy: { createdAt: 'asc' },
-        select: { id: true },
-      })) ??
-      (await this.prisma.warehouse.findFirst({
-        where: { isActive: true },
-        orderBy: { createdAt: 'asc' },
-        select: { id: true },
-      }));
-    if (warehouse) return warehouse.id;
-
-    throw new BadRequestException(
-      'Inventory Management is enabled and this product has initial stock, but no active warehouse exists. ' +
-        'Activate a warehouse (or pass warehouseId) before saving — otherwise orders can be placed but never confirmed.',
-    );
-  }
-
   private initialStockOf(dto: {
     type?: string;
     managedStockQuantity?: number;
@@ -144,7 +110,7 @@ export class ProductsService {
     const { product, avMode, warehouseId, performedBy } = params;
     if (!warehouseId || avMode !== 'MANAGED_STOCK') return;
 
-    const units: Array<{ variantId?: string; quantity: number }> = [];
+    const units: InitialPhysicalUnit[] = [];
     if (product.type === 'variable') {
       for (const variant of product.variants ?? []) {
         const quantity = Number(variant.managedStockQuantity) || 0;
@@ -156,26 +122,14 @@ export class ProductsService {
     }
     if (units.length === 0) return;
 
-    if (!product.warehouseId) {
-      await this.prisma.product.update({
-        where: { id: product.id },
-        data: { warehouseId },
-      });
-      product.warehouseId = warehouseId;
-    }
-
-    for (const unit of units) {
-      await this.stockService.operatePhysical('add', {
-        productId: product.id,
-        variantId: unit.variantId,
-        warehouseId,
-        quantity: unit.quantity,
-        reference: 'Initial stock on product creation',
-        performedBy: performedBy || 'system',
-        ledgerType: 'INITIAL',
-      });
-    }
-    await this.cache.invalidateByPrefix('product:');
+    await this.initialPhysicalStock.mirrorUnits({
+      productId: product.id,
+      productWarehouseId: product.warehouseId ?? null,
+      warehouseId,
+      units,
+      reference: 'Initial stock on product creation',
+      performedBy,
+    });
   }
 
   private buildWhere(query: {
@@ -826,7 +780,7 @@ export class ProductsService {
             ? 'INVENTORY_CONTROLLED'
             : 'MANAGED_STOCK');
 
-    const initialWarehouseId = await this.resolveInitialWarehouse(
+    const initialWarehouseId = await this.initialPhysicalStock.resolveWarehouse(
       avMode,
       this.initialStockOf(dto as any),
       dto.warehouseId,
@@ -1550,7 +1504,7 @@ export class ProductsService {
     } else {
       initialStock = dto.managedStockQuantity ?? p.managedStockQuantity ?? 0;
     }
-    const initialWarehouseId = await this.resolveInitialWarehouse(
+    const initialWarehouseId = await this.initialPhysicalStock.resolveWarehouse(
       newMode,
       initialStock,
       dto.warehouseId ?? p.warehouseId,
