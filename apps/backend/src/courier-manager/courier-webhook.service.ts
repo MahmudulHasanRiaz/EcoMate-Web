@@ -1583,10 +1583,10 @@ export class CourierWebhookService {
       });
     }
 
-    // Sheet Rule 27a: RedX agent-returning / returned create/link the ONE
-    // Return at stage in-progress. RedX documents NO back-with-merchant event
-    // (sheet [?]), so a Return from RedX never reaches delivered — staff
-    // receipt is the only way forward.
+    // Sheet Rule 27a + owner decision 2026-10-23: RedX returns behave like
+    // every other courier's — agent-returning creates/links the ONE Return
+    // in-progress, and the terminal `returned` state marks it DELIVERED
+    // (parcel back with us; staff receipt is still the only stock mover).
     const returnSignal = mapCourierReturnSignal('redx', status);
     if (returnSignal) {
       await this.recordCourierReturnSignal({
