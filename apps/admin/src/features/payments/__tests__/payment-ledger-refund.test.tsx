@@ -143,7 +143,10 @@ describe('Payment ledger — refund via selection (D-B)', () => {
     // Modal shows the source rows; the prefilled 1300 posts straight through.
     await expect.element(ui.getByText(/Refunding from 2 payment rows/)).toBeInTheDocument()
     await expect.element(ui.getByLabelText(/Gateway/)).toBeDisabled()
-    await expect.element(ui.getByLabelText(/Account/)).toBeDisabled()
+    // D7: no account picker anywhere — the refund destination derives
+    // from the gateway's mapped account (asserted in the payload below).
+    expect(ui.getByLabelText(/Account/).elements()).toHaveLength(0)
+    await expect.element(ui.getByText(/Settles to bKash Wallet \(1001\)/)).toBeInTheDocument()
     await userEvent.fill(ui.getByLabelText(/Reason/), 'bulk return')
     await userEvent.click(ui.getByRole('button', { name: /^Record refund$/ }))
     expect(mockPost).toHaveBeenCalledWith('/refunds', expect.objectContaining({
