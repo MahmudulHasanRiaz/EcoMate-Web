@@ -264,6 +264,18 @@ Admin typed it as `Array<{ courier; status; _count }>` and called `data.reduce`,
 | Admin typecheck | `cd apps/admin && npx tsc --noEmit -p tsconfig.app.json` | **exit 0** |
 | Admin suite | `cd apps/admin && npx vitest run --browser.headless` | **1379/1379 passed, 154 files** |
 
+---
+
+## Verification addendum (2026-10-23, acceptance pass)
+
+স্বাধীন যাচাইয়ে (কোড-পাথ বনাম এই টেবিল) একটা ভুল সারি এবং দুটো অসম্পূর্ণ দাবি পাওয়া গেছে। ঠিক করা হয়েছে:
+
+- **সারি 49 (`GET /accounting/entries`) ভুল ছিল।** backend আসলে flat `{ data, total, page, perPage, totalPages }` দিচ্ছিল (`accounting.service.ts` `findAllEntries`), controller কিছুই রি-র্যাপ করত না — অর্থাৎ **envelope ছিল না**। admin `journal-entries.tsx` `response.data.data` (কাজ করত) **এবং** `response.meta?.totalPages` পড়ে → সবসময় `1` → "Page x of y" ও Next/Previous কখনোই আসত না (নীরব পেজিনেশন বাগ)। এখন `AccountingController.findAllEntries` controller-স্তরেই envelope রিটার্ন করে (`FinancialPeriodsController.findAll`-এর মতো), service-এর ফ্ল্যাট কনট্রাক্ট অপরিবর্তিত। কনট্রাক্ট টেস্ট: `apps/backend/src/accounting/__tests__/accounting.controller.spec.ts`.
+- **`/shipping-zones → /shipping/zones` ফিক্সের কনট্রাক্ট টেস্ট ছিল না।** যোগ করা হয়েছে (`shipping.controller.spec.ts`: রুট মেটাডেটা `shipping/zones` + সার্ভিস ডেলিগেশন)।
+- **"FULL inventory" দাবিটা সঠিক নয়:** ডক deployment-এ ২২০টি admin GET path / ৪১৯টি backend handler enumerat করার কথা বললেও টেবিলে ৯৪টি সারি আছে। যেগুলো এখনো সারি-ভিত্তিক যাচাই হয়নি (এবং এই sweep-এ mismatch পাওয়া যায়নি): `/marketing/ad-accounts`, `/marketing/insights`, `/marketing/funding`, `/marketing/payments`, `/marketing/attributions`, `/marketing/sessions`, `/marketing/audit`, HR-performance drill-down গুলো, business-analytics detail endpoint গুলো। এগুলো **follow-up** — এখানে দাবি করা হচ্ছে না যে সব কভার হয়েছে।
+
+**C4 (backfill dry-run):** যাচাই করে সঠিক পাওয়া গেছে — dry-run এখন আসল guard chain চালিয়ে আসল reason দেয় (`would_post` বনাম আসল COD/accounting-disabled skip), `reason: "dry_run"` placeholder আর নেই। সীমা: dry-run row-lock/write-এর আগে থামে, তাই write-time-এ ব্যর্থ হতো এমন কেস (period নেই/বন্ধ/ব্যালান্স নয়) `would_post` দেখাবে — ভবিষ্যতের উন্নতির সুযোগ, বাধা নয়।
+
 ## Owner decisions / follow-ups
 
 - **Envelope convention:** paginated admin lists use `{ data, meta }`; bare arrays remain valid for full-set lists that the UI consumes wholesale; named object shapes are valid when they are intentional and typed (dispatch facets, marketing flat pagination, KPI reports).
