@@ -27,8 +27,16 @@ export async function serverFetch<T = unknown>(
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), TIMEOUT);
     try {
+      // F2: server-to-server calls identify themselves with the shared
+      // internal secret (server-only env — never NEXT_PUBLIC_, never sent
+      // from the browser). The backend exempts these from rate limiting
+      // only when the TCP peer is also a private address (F1).
+      const internalSecret = process.env.INTERNAL_SHARED_SECRET;
       const res = await fetch(`${API}${path}`, {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(internalSecret ? { "x-internal-secret": internalSecret } : {}),
+        },
         ...(revalidate !== undefined ? { next: { revalidate } } : {}),
         signal: controller.signal,
         ...fetchOptions,

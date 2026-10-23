@@ -68,7 +68,13 @@ export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfi
   // Categories and license can be fetched in parallel — both independent of each other
   const [categories, licenseStatus] = await Promise.all([
     getCategoriesServer(),
-    fetch(`${API_URL}/license/status`, { next: { revalidate: 300 } })
+    fetch(`${API_URL}/license/status`, {
+      next: { revalidate: 300 },
+      // F2 internal identity (server-only env; see lib/api-server.ts).
+      ...(process.env.INTERNAL_SHARED_SECRET
+        ? { headers: { 'x-internal-secret': process.env.INTERNAL_SHARED_SECRET } }
+        : {}),
+    })
       .then(r => r.json())
       .catch(() => ({ active: true, features: [], message: '' })),
   ]);

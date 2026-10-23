@@ -15,16 +15,6 @@ export interface CategoryResponse {
   _count?: { products: number }
 }
 
-export interface PaginatedResponse<T> {
-  data: T[]
-  meta: {
-    total: number
-    page: number
-    perPage: number
-    totalPages: number
-  }
-}
-
 export interface CategoriesQuery {
   page?: number
   perPage?: number
@@ -36,8 +26,10 @@ export interface CategoriesQuery {
 }
 
 export const categoriesApi = {
+  // Backend GET /categories returns a bare array (full-set list, no
+  // envelope) — the type now says so; consumers read r.data directly.
   list: (query?: CategoriesQuery) =>
-    apiClient.get<PaginatedResponse<CategoryResponse>>('/categories', { params: query }),
+    apiClient.get<CategoryResponse[]>('/categories', { params: query }),
 
   get: (id: string) =>
     apiClient.get<CategoryResponse>(`/categories/${id}`),

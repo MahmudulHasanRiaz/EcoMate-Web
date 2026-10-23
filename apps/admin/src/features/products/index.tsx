@@ -73,7 +73,7 @@ export function Products() {
 
   const { data: allCats } = useQuery({
     queryKey: ['categories'],
-    queryFn: () => categoriesApi.list().then(r => Array.isArray(r.data) ? r.data : (r.data as any)?.data || []),
+    queryFn: () => categoriesApi.list().then(r => r.data),
   })
 
   const categoryFilterOptions = useMemo(() => {
