@@ -1,6 +1,8 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, cleanup } from 'vitest-browser-react'
+import { userEvent } from 'vitest/browser'
 import '@/styles/index.css'
+import { Button } from '@/components/ui/button'
 import { StagedList, type StagedRow } from './staged-list'
 
 const rows: StagedRow[] = [
@@ -226,7 +228,7 @@ describe('StagedList chevron expansion', () => {
     await chevron.click()
     await vi.waitFor(() => expect(container.textContent).toContain('Sky Tee'))
     // outside click (header area is off-panel)
-    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     await vi.waitFor(() => expect(container.textContent).not.toContain('Sky Tee'))
     // reopen, then Escape closes
     await chevron.click()
@@ -271,5 +273,77 @@ describe('StagedList chevron expansion', () => {
     })
     await expect.element(getByTitle('Open return ORD-261020-0007')).toBeInTheDocument()
     await expect.element(getByLabelText('Open return ORD-261020-0007 in a new tab')).toBeInTheDocument()
+  })
+})
+
+describe('StagedList action footer vs expansion — first click must act', () => {
+  const renderWithProcess = async () => {
+    const onProcess = vi.fn()
+    const screen = await render(
+      <StagedList
+        title="Staged returns"
+        items={rowsWithExpand()}
+        orderHref={() => '#'}
+        onRemove={() => {}}
+        onClear={() => {}}
+        footer={
+          <Button size="sm" className="tap-h press w-full" onClick={onProcess}>
+            Process returns (1 ready)
+          </Button>
+        }
+      />,
+    )
+    return { ...screen, onProcess }
+  }
+
+  it('processes on the FIRST human click while a row is expanded — the action is not a collapse toggle', async () => {
+    const { getByRole, getByText, onProcess } = await renderWithProcess()
+    // The operator opens the row to inspect the returned lines first…
+    await getByRole('button', { name: /expand/i }).click()
+    await expect.element(getByText('Sky Tee')).toBeInTheDocument()
+
+    // …then presses Process returns like a human: press → hold → release.
+    // The `delay` is the regression trigger: a real press lasts longer than one
+    // task, so a dismiss that re-lays out on mousedown moves the button out
+    // from under the release and the browser dispatches the click elsewhere.
+    await getByRole('button', { name: /Process returns/ }).click({ delay: 80 })
+
+    expect(onProcess).toHaveBeenCalledTimes(1)
+    // Using the list's action never folds the details it just used.
+    await expect.element(getByText('Sky Tee')).toBeInTheDocument()
+  })
+
+  it('keyboard activation (Enter / Space) runs the action and keeps the row open', async () => {
+    const { getByRole, getByText, onProcess } = await renderWithProcess()
+    await getByRole('button', { name: /expand/i }).click()
+    await expect.element(getByText('Sky Tee')).toBeInTheDocument()
+    const process = getByRole('button', { name: /Process returns/ })
+    ;(process.element() as HTMLElement).focus()
+    await userEvent.keyboard('{Enter}')
+    expect(onProcess).toHaveBeenCalledTimes(1)
+    await userEvent.keyboard('{Space}')
+    expect(onProcess).toHaveBeenCalledTimes(2)
+    await expect.element(getByText('Sky Tee')).toBeInTheDocument()
+  })
+
+  it('a row action BELOW an expanded row still fires on the first human click', async () => {
+    // Same root cause, different button: anything rendered below the in-flow
+    // panel moves when it collapses, so a press-time dismissal ate its click
+    // too. Proves the fix is at the layout/dismiss layer, not a Process-button
+    // special case.
+    const onRemove = vi.fn()
+    const screen = await render(
+      <StagedList
+        title="Staged returns"
+        items={rowsWithExpand()}
+        orderHref={() => '#'}
+        onRemove={onRemove}
+        onClear={() => {}}
+      />,
+    )
+    await screen.getByRole('button', { name: /expand/i }).click()
+    await expect.element(screen.getByText('Sky Tee')).toBeInTheDocument()
+    await screen.getByRole('button', { name: 'Remove RTN-261020-0002 from staged list' }).click({ delay: 80 })
+    expect(onRemove).toHaveBeenCalledWith('r2')
   })
 })
