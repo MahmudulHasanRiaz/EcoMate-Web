@@ -847,14 +847,18 @@ export class ExchangeService {
     );
   }
 
-  /** EX-YYMMDD-NNNN from the same counter as ORD-, so numbers stay unique. */
+  /**
+   * Ex-YYMMDD-NNNN from the same counter as ORD-, so numbers stay unique.
+   * Sheet Rule 20 is literal: the exchange displayId is `Ex-XXXX`, NOT
+   * `ORD-XXXX` (and not `EX-` — conformance 2026-10-23).
+   */
   private async deriveExchangeDisplayId(): Promise<string> {
     const { year, month, day } = dhakaDateParts();
     const yy = String(year).slice(2);
     const mm = String(month).padStart(2, '0');
     const dd = String(day).padStart(2, '0');
     const dateStr = `${yy}${mm}${dd}`;
-    const prefix = `EX-${dateStr}`;
+    const prefix = `Ex-${dateStr}`;
 
     return this.prisma.$transaction(async (tx) => {
       const counter = await tx.orderCounter.upsert({

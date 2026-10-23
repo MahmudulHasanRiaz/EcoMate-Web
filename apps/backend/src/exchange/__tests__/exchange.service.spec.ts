@@ -330,7 +330,7 @@ describe('ExchangeService — settlement (§4)', () => {
 });
 
 describe('ExchangeService — lifecycle (§5, §6)', () => {
-  it('creates the exchange Confirmed with an EX- id and moves the original to Return Pending', async () => {
+  it('creates the exchange Confirmed with an Ex- id (sheet Rule 20) and moves the original to Return Pending', async () => {
     const order = makeOrder();
     const { service, store } = await setup({ order, paidAmount: 1000 });
     const res = await service.createFromOrder(
@@ -339,7 +339,7 @@ describe('ExchangeService — lifecycle (§5, §6)', () => {
       actor,
     );
 
-    expect(res.exchange.displayId).toMatch(/^EX-\d{6}-\d{4}$/);
+    expect(res.exchange.displayId).toMatch(/^Ex-\d{6}-\d{4}$/);
     expect(res.exchange.kind).toBe('EXCHANGE');
     expect(res.exchange.statusId).toBe('st-confirmed'); // no manual confirm step
     expect(res.exchange.exchangeOfOrderId).toBe('order-1');

@@ -6,6 +6,12 @@ import { useLicenseStore } from '@/stores/license-store'
 import { courierLogos } from './courier-logos'
 import { SteadfastSetsManager } from './steadfast-sets-manager'
 import { unconfiguredCouriers, webhookBannerCopy, type WebhookStatusPayload } from './webhook-status'
+import {
+  COURIER_CREDENTIAL_FIELD_LABELS,
+  missingCourierCredentials,
+  resolveCourierConnectionState,
+} from './courier-connection-state'
+import { useSteadfastSets } from '@/features/dispatch/steadfast-set-picker'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -14,7 +20,7 @@ import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Loader2, Save, CheckCircle2, XCircle, ExternalLink, Webhook, Copy, RefreshCw, Eye, EyeOff, AlertCircle, FileText, ChevronDown, ChevronUp } from 'lucide-react'
+import { Loader2, Save, CheckCircle2, XCircle, ExternalLink, Webhook, Copy, RefreshCw, Eye, EyeOff, AlertCircle, AlertTriangle, FileText, ChevronDown, ChevronUp } from 'lucide-react'
 
 const webhookBase = (() => {
   const apiUrl = import.meta.env.VITE_API_URL
@@ -34,6 +40,9 @@ const webhookBase = (() => {
 const courierApi = {
   listCreds: () => apiClient.get('/couriers/credentials'),
   updateCreds: (courier: string, d: Record<string, unknown>) => apiClient.put(`/couriers/credentials/${courier}`, d),
+  // D1: the enable switch persists on its own — writes ONLY `enabled`, so it
+  // never commits half-typed credentials or resets the legacy credentials JSON.
+  setEnabled: (courier: string, enabled: boolean) => apiClient.patch(`/couriers/credentials/${courier}/enabled`, { enabled }),
   generateWebhookSecret: (courier: string) => apiClient.post(`/couriers/credentials/${courier}/generate-webhook-secret`, {}),
   defaultNote: () => apiClient.get('/couriers/default-note'),
   saveDefaultNote: (note: string) => apiClient.put('/couriers/default-note', { note }),
@@ -117,6 +126,12 @@ export function CourierSettings() {
 
   const [forms, setForms] = useState<Record<string, CourierFormState>>({})
   const hasFeature = useLicenseStore((s) => s.hasFeature)
+  // Steadfast may authenticate through a default credential set even when the
+  // legacy single row below has no keys — the label must not warn in that case.
+  const { data: steadfastSets } = useSteadfastSets()
+  const hasDefaultSteadfastSet = (steadfastSets ?? []).some(
+    (s) => s.isDefault && s.hasApiKey && s.hasSecret,
+  )
 
   const rawList = Array.isArray(creds) ? creds : (creds as Record<string, unknown>)?.data as unknown[] || []
   const list = useMemo(
@@ -154,6 +169,50 @@ export function CourierSettings() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['courier-creds'] }); toast.success('Credentials saved') },
     onError: (e: unknown) => { toast.error((e as Error).message || 'Failed to save') },
   })
+
+  // D1: enabling/disabling is its own persisted action. The switch updates
+  // optimistically, is disabled while the request is in flight, and rolls back
+  // + reports the real error if the write fails (a reload can never silently
+  // revert a toggle the user just made, and a failed toggle never claims success).
+  const toggleEnabledMut = useMutation({
+    mutationFn: ({ courier, enabled }: { courier: string; enabled: boolean; missingFieldLabels: string[] }) =>
+      courierApi.setEnabled(courier, enabled),
+    onSuccess: (_res, vars) => {
+      const name = courierInfo[vars.courier]?.name ?? vars.courier
+      if (vars.enabled && vars.missingFieldLabels.length > 0) {
+        toast.warning(
+          `${name} enabled — credentials missing (${vars.missingFieldLabels.join(', ')}). Dispatch will fail until they are added.`,
+        )
+      } else {
+        toast.success(`${name} ${vars.enabled ? 'enabled' : 'disabled'}`)
+      }
+      queryClient.invalidateQueries({ queryKey: ['courier-creds'] })
+    },
+    onError: (e: unknown, vars) => {
+      setForms((prev) => (
+        prev[vars.courier]
+          ? { ...prev, [vars.courier]: { ...prev[vars.courier], enabled: !vars.enabled } }
+          : prev
+      ))
+      queryClient.invalidateQueries({ queryKey: ['courier-creds'] })
+      toast.error((e as Error).message || 'Failed to update courier. The switch was reverted.')
+    },
+  })
+
+  const handleToggleEnabled = (courier: string, enabled: boolean) => {
+    const next = { ...(forms[courier] ?? defaultForm), enabled }
+    // Optimistic: the switch reflects the intent immediately; onError reverts.
+    setForms((prev) => ({ ...prev, [courier]: next }))
+    const missing = missingCourierCredentials(courier, next)
+    toggleEnabledMut.mutate({
+      courier,
+      enabled,
+      // A managed Steadfast set covers the legacy row's empty keys.
+      missingFieldLabels: courier === 'steadfast' && hasDefaultSteadfastSet
+        ? []
+        : missing.map((f) => COURIER_CREDENTIAL_FIELD_LABELS[f] ?? f),
+    })
+  }
 
   const [showSecret, setShowSecret] = useState<Record<string, boolean>>({})
   const [regenDialog, setRegenDialog] = useState<{ open: boolean; courier: string }>({ open: false, courier: '' })
@@ -306,6 +365,19 @@ export function CourierSettings() {
           const form = forms[courier] || defaultForm
           if (!info) return null
 
+          const connection = resolveCourierConnectionState({
+            courier,
+            enabled: form.enabled,
+            values: form as unknown as Record<string, unknown>,
+            hasManagedCredentialSet: courier === 'steadfast' && hasDefaultSteadfastSet,
+          })
+          const togglePending = toggleEnabledMut.isPending && toggleEnabledMut.variables?.courier === courier
+          const connectionToneClass = connection.tone === 'success'
+            ? 'text-green-600'
+            : connection.tone === 'warning'
+              ? 'text-amber-600 dark:text-amber-400'
+              : 'text-muted-foreground'
+
           return (
             <Card key={courier} className={form.enabled ? 'border-l-4' : ''} style={form.enabled ? { borderLeftColor: info.color } : {}}>
               <CardHeader className='pb-3'>
@@ -314,15 +386,30 @@ export function CourierSettings() {
                   <img src={courierLogos[courier]} alt={info.name} className='h-9 w-9 rounded-lg object-contain bg-muted p-1' />
                   <div>
                       <CardTitle className='text-base'>{info.name}</CardTitle>
-                      <p className='text-xs text-muted-foreground'>
-                        {form.enabled
-                          ? <span className='text-green-600 flex items-center gap-1'><CheckCircle2 className='h-3 w-3' /> Connected</span>
-                          : <span className='flex items-center gap-1'><XCircle className='h-3 w-3' /> Disabled</span>
-                        }
+                      <p
+                        className={`text-xs flex items-center gap-1 ${connectionToneClass}`}
+                        role='status'
+                        aria-live='polite'
+                        title={connection.state === 'enabled-credentials-missing'
+                          ? `Missing: ${connection.missingFieldLabels.join(', ')}`
+                          : undefined}
+                      >
+                        {connection.tone === 'success'
+                          ? <CheckCircle2 className='h-3 w-3' aria-hidden='true' />
+                          : connection.tone === 'warning'
+                            ? <AlertTriangle className='h-3 w-3' aria-hidden='true' />
+                            : <XCircle className='h-3 w-3' aria-hidden='true' />}
+                        {connection.label}
                       </p>
                     </div>
                   </div>
-                  <Switch checked={form.enabled} onCheckedChange={(v) => setForms(prev => ({ ...prev, [courier]: { ...prev[courier], enabled: v } }))} />
+                  <Switch
+                    checked={form.enabled}
+                    onCheckedChange={(v) => handleToggleEnabled(courier, v)}
+                    disabled={toggleEnabledMut.isPending}
+                    aria-busy={togglePending || undefined}
+                    aria-label={`${info.name} courier enabled`}
+                  />
                 </div>
               </CardHeader>
               <CardContent className='space-y-3'>

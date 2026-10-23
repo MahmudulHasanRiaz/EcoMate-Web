@@ -10,6 +10,8 @@ import { MediaService } from '../media/media.service';
 import { MediaResolverService } from '../media/media-resolver.service';
 import { CacheService } from '../cache/cache.service';
 import { StockRouterService } from '../stock/stock-router.service';
+import { StockService } from '../stock/stock.service';
+import { InitialPhysicalStockService } from '../stock/initial-physical-stock.service';
 
 jest.mock('uuid', () => ({
   v4: jest.fn(() => 'mock-uuid-v4'),
@@ -67,6 +69,7 @@ describe('ProductsService', () => {
 
   let cache: CacheService;
   let stockRouter: StockRouterService;
+  let stockService: StockService;
 
   beforeEach(async () => {
     const prismaMock = {
@@ -135,6 +138,13 @@ describe('ProductsService', () => {
       physicalInventory: {
         groupBy: jest.fn().mockResolvedValue([]),
       },
+      warehouse: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      managedStockLedger: {
+        create: jest.fn().mockResolvedValue({}),
+      },
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -175,6 +185,13 @@ describe('ProductsService', () => {
             resolve: jest.fn().mockResolvedValue({}),
           },
         },
+        {
+          provide: StockService,
+          useValue: {
+            operatePhysical: jest.fn().mockResolvedValue([]),
+          },
+        },
+        InitialPhysicalStockService,
       ],
     }).compile();
 
@@ -183,6 +200,7 @@ describe('ProductsService', () => {
     media = module.get<MediaService>(MediaService);
     cache = module.get<CacheService>(CacheService);
     stockRouter = module.get<StockRouterService>(StockRouterService);
+    stockService = module.get<StockService>(StockService);
     (media.syncEntityImages as jest.Mock).mockImplementation(
       (_t: string, _id: string, imgs: string[]) => Promise.resolve(imgs),
     );
@@ -762,6 +780,140 @@ describe('ProductsService', () => {
         ['variant-image.jpg'],
       );
     });
+
+    describe('initial physical stock (B4)', () => {
+      const managedProduct = {
+        ...mockProduct,
+        type: 'simple',
+        availabilityMode: 'MANAGED_STOCK',
+        manageStock: true,
+        managedStockQuantity: 25,
+        warehouseId: null,
+        variants: [],
+      };
+
+      it('mirrors initial managed stock into a physical record at the first active warehouse', async () => {
+        (stockRouter.isInventoryManagementEnabled as jest.Mock).mockResolvedValue(
+          true,
+        );
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+        (prisma.product.create as jest.Mock).mockResolvedValue(managedProduct);
+        (prisma.product.update as jest.Mock).mockResolvedValue({
+          ...managedProduct,
+          warehouseId: 'wh-1',
+        });
+        (prisma.warehouse.findFirst as jest.Mock).mockResolvedValue({
+          id: 'wh-1',
+        });
+
+        await service.create({
+          ...createDto,
+          availabilityMode: 'MANAGED_STOCK',
+          managedStockQuantity: 25,
+        });
+
+        expect(prisma.warehouse.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { isActive: true, type: 'main' },
+          }),
+        );
+        expect(prisma.product.update).toHaveBeenCalledWith({
+          where: { id: 'prod-1' },
+          data: { warehouseId: 'wh-1' },
+        });
+        expect(stockService.operatePhysical).toHaveBeenCalledWith(
+          'add',
+          expect.objectContaining({
+            productId: 'prod-1',
+            warehouseId: 'wh-1',
+            quantity: 25,
+            ledgerType: 'INITIAL',
+          }),
+        );
+      });
+
+      it('fails loudly BEFORE creating the product when no active warehouse exists', async () => {
+        (stockRouter.isInventoryManagementEnabled as jest.Mock).mockResolvedValue(
+          true,
+        );
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+        (prisma.warehouse.findFirst as jest.Mock).mockResolvedValue(null);
+
+        await expect(
+          service.create({
+            ...createDto,
+            availabilityMode: 'MANAGED_STOCK',
+            managedStockQuantity: 25,
+          }),
+        ).rejects.toThrow(/no active warehouse/i);
+
+        expect(prisma.product.create).not.toHaveBeenCalled();
+      });
+
+      it('leaves the physical layer alone when inventory management is off', async () => {
+        (stockRouter.isInventoryManagementEnabled as jest.Mock).mockResolvedValue(
+          false,
+        );
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+        (prisma.product.create as jest.Mock).mockResolvedValue(managedProduct);
+
+        await service.create({
+          ...createDto,
+          availabilityMode: 'MANAGED_STOCK',
+          managedStockQuantity: 25,
+        });
+
+        expect(prisma.warehouse.findFirst).not.toHaveBeenCalled();
+        expect(stockService.operatePhysical).not.toHaveBeenCalled();
+      });
+
+      it('mirrors each variant with stock instead of the parent counter', async () => {
+        const variableProduct = {
+          ...mockProduct,
+          type: 'variable',
+          availabilityMode: 'MANAGED_STOCK',
+          manageStock: true,
+          managedStockQuantity: 0,
+          warehouseId: null,
+          variants: [
+            { id: 'variant-a', managedStockQuantity: 7 },
+            { id: 'variant-b', managedStockQuantity: 0 },
+          ],
+        };
+        (stockRouter.isInventoryManagementEnabled as jest.Mock).mockResolvedValue(
+          true,
+        );
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+        (prisma.product.create as jest.Mock).mockResolvedValue(variableProduct);
+        (prisma.product.update as jest.Mock).mockResolvedValue({
+          ...variableProduct,
+          warehouseId: 'wh-1',
+        });
+        (prisma.warehouse.findFirst as jest.Mock).mockResolvedValue({
+          id: 'wh-1',
+        });
+
+        await service.create({
+          ...createDto,
+          type: 'variable',
+          variants: [
+            { sku: 'V-A', price: 100, managedStockQuantity: 7 },
+            { sku: 'V-B', price: 100, managedStockQuantity: 0 },
+          ],
+        });
+
+        expect(stockService.operatePhysical).toHaveBeenCalledTimes(1);
+        expect(stockService.operatePhysical).toHaveBeenCalledWith(
+          'add',
+          expect.objectContaining({
+            productId: 'prod-1',
+            variantId: 'variant-a',
+            warehouseId: 'wh-1',
+            quantity: 7,
+          }),
+        );
+      });
+    });
   });
 
   describe('checkSkuAvailability', () => {
@@ -1289,6 +1441,54 @@ describe('ProductsService', () => {
         expect(call.data.variants.deleteMany).toEqual({});
         expect(call.data.variants.create[0].sku).toBe('V3');
         expect(result.name).toBe('Ready Product');
+      });
+
+      it('mirrors initial stock into the physical layer when a stocked draft is published', async () => {
+        (stockRouter.isInventoryManagementEnabled as jest.Mock).mockResolvedValue(
+          true,
+        );
+        (prisma.product.findUnique as jest.Mock).mockResolvedValueOnce({
+          ...draftProduct,
+          availabilityMode: 'MANAGED_STOCK',
+          manageStock: true,
+        });
+        (prisma.product.update as jest.Mock).mockResolvedValue({
+          ...draftProduct,
+          name: 'Stocked Product',
+          status: 'active',
+          isActive: true,
+          availabilityMode: 'MANAGED_STOCK',
+          manageStock: true,
+          managedStockQuantity: 12,
+          warehouseId: null,
+          variants: [],
+        });
+        (prisma.warehouse.findFirst as jest.Mock).mockResolvedValue({
+          id: 'wh-1',
+        });
+
+        await service.publishDraft('draft-1', {
+          name: 'Stocked Product',
+          basePrice: 500,
+          availabilityMode: 'MANAGED_STOCK',
+          managedStockQuantity: 12,
+        });
+
+        expect(prisma.product.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: 'draft-1' },
+            data: expect.objectContaining({ warehouseId: 'wh-1' }),
+          }),
+        );
+        expect(stockService.operatePhysical).toHaveBeenCalledWith(
+          'add',
+          expect.objectContaining({
+            productId: 'draft-1',
+            warehouseId: 'wh-1',
+            quantity: 12,
+            ledgerType: 'INITIAL',
+          }),
+        );
       });
 
       it('rejects unnamed drafts', async () => {

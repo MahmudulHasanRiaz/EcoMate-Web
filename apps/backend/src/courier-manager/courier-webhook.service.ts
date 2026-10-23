@@ -5,7 +5,7 @@ import { OrdersService } from '../orders/orders.service';
 import { CourierManagerService } from './courier-manager.service';
 import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
 import { CodMismatchService } from '../cod-mismatch/cod-mismatch.service';
-import { mapSteadfastReturnStatus } from './courier-status-mapper';
+import { mapCourierReturnSignal, mapSteadfastReturnStatus } from './courier-status-mapper';
 import { normalizeInvoiceForCompare } from './courier-settle-guard';
 import { impliesPickup } from '../dispatch/dispatch-timestamps';
 import { ReturnsService } from '../returns/returns.service';
@@ -117,7 +117,9 @@ const PATHAO_DISPATCH_MAP: Record<string, string | null> = {
   'order.exchanged': 'DELIVERED',
   'order.return-id-created': 'RETURN_PENDING',
   'order.return-in-transit': 'RETURN_PENDING',
-  'order.returned-to-merchant': 'RETURNED',
+  // Sheet Rule 25: courier signals cap at RETURN_PENDING — RETURNED is set
+  // only by staff-confirmed receipt (Return markReceived / scanner receive).
+  'order.returned-to-merchant': 'RETURN_PENDING',
 };
 
 // Pathao DispatchStatus → OrderStatus
@@ -170,7 +172,8 @@ const CARRYBEE_DISPATCH_MAP: Record<string, string | null> = {
   'order.paid': 'DELIVERED',
   'order.returned-at-sorting': 'RETURN_PENDING',
   'order.returned-in-transit': 'RETURN_PENDING',
-  'order.returned-to-merchant': 'RETURNED',
+  // Sheet Rule 25: never RETURNED on a courier signal.
+  'order.returned-to-merchant': 'RETURN_PENDING',
 };
 
 // Carrybee DispatchStatus → OrderStatus
@@ -376,6 +379,21 @@ export class CourierWebhookService {
       });
     }
 
+    // Sheet Rules 16 + 27a: CONDITIONAL-CANCEL returns — a cancelled
+    // consignment that had already been picked up is RETURN_PENDING (the
+    // parcel must come back) and is a FULL return in progress. A cancel that
+    // never left our hands stays CANCELLED with no Return.
+    if (rawStatus === 'cancelled' && dispatchStatus === 'RETURN_PENDING') {
+      await this.recordCourierReturnSignal({
+        orderId: order.id,
+        courier: 'steadfast',
+        event: rawStatus,
+        stage: 'IN_PROGRESS',
+        type: 'FULL',
+        courierReturnId: consignmentId,
+      });
+    }
+
     this.logger.log(`Steadfast: ${consignmentId} → dispatch=${dispatchStatus} order=${orderStatusName || '-'}`);
     return { status: 'success', message: 'Webhook received successfully.' };
   }
@@ -575,11 +593,12 @@ export class CourierWebhookService {
    * return_request / pickup_request / user_update. Recorded (timeline + log),
    * never a workflow change.
    *
-   * Task 6 (Fix 13): return_request / return_list_accepted ALSO create/link
-   * the unified COURIER Return (source COURIER, empty items — the split is
-   * unknown). Record-only discipline kept: no dispatch write, no order
-   * advancement. return_request_id / return_list_id ride the timeline entry
-   * (existing minimal linking) AND the Return row.
+   * Sheet Return Creation rows 28–29 (conformance 2026-10-23):
+   * return_request / return_list_accepted only LINK the unified Return when
+   * one already exists — they NEVER create one (create-if-missing is an owner
+   * decision, [?] in the sheet). Record-only discipline kept: no dispatch
+   * write, no order advancement. return_request_id / return_list_id ride the
+   * timeline entry (existing minimal linking) AND the linked Return row.
    */
   private async handleSteadfastRecordOnly(body: Record<string, unknown>) {
     const notificationType = body['notification_type'] as string;
@@ -621,7 +640,9 @@ export class CourierWebhookService {
         remarks: `${notificationType} recorded — no status change`,
       });
 
-      // Task 6: return_request links a COURIER Return (record-only kept).
+      // Sheet Return Creation rows 28–29: return_request is LINK-only. Whether
+      // a FULL Return should be created when none exists is an OWNER DECISION
+      // ([?] in the sheet) — not implemented, so createIfMissing stays false.
       if (notificationType === 'return_request') {
         await this.linkCourierReturn({
           orderId: (order as any).id,
@@ -629,6 +650,7 @@ export class CourierWebhookService {
           courierReturnId: (body['return_request_id'] as string) || undefined,
           courierStatus: notificationType,
           reason: (body['reason'] as string) || undefined,
+          createIfMissing: false,
         });
       }
     }
@@ -683,11 +705,14 @@ export class CourierWebhookService {
         consignments,
         remarks: `return_list_accepted recorded — no status change`,
       });
+      // Sheet Return Creation row 28: return_list_accepted is LINK-only (the
+      // create-when-missing question is an owner decision, not implemented).
       await this.linkCourierReturn({
         orderId: (order as any).id,
         courier: 'steadfast',
         courierReturnId: returnListId,
         courierStatus: 'return_list_accepted',
+        createIfMissing: false,
       });
     }
 
@@ -706,6 +731,7 @@ export class CourierWebhookService {
     courierStatus?: string;
     type?: 'FULL' | 'PARTIAL' | 'EXCHANGE';
     reason?: string;
+    createIfMissing?: boolean;
   }): Promise<void> {
     if (!this.returns) return;
     try {
@@ -715,6 +741,64 @@ export class CourierWebhookService {
         `Return link failed for order ${input.orderId} (${input.courier}:${input.courierReturnId || 'n/a'}): ${(e as Error).message}`,
       );
     }
+  }
+
+  /**
+   * Sheet Rule 27: record a courier return signal on the ONE Return for the
+   * order and advance its STAGE — in-progress (parcel on its way back) or
+   * delivered (courier handed the return to us; still NOT received and never
+   * a stock movement). Shared by every courier webhook and by the manual
+   * "Sync status" path so both routes behave identically.
+   *
+   * Returns null when there is no Return to record on (link-only signal, or a
+   * PARTIAL courier return that must never be auto-created — Rule 27b). The
+   * caller keeps its loud hold + staff-alert log.
+   */
+  async recordCourierReturnSignal(input: {
+    orderId: string;
+    courier: string;
+    event: string;
+    stage: 'IN_PROGRESS' | 'DELIVERED';
+    type?: 'FULL' | 'PARTIAL' | 'EXCHANGE';
+    courierReturnId?: string | null;
+    reason?: string | null;
+    createIfMissing?: boolean;
+  }): Promise<{ returnId: string; displayId: string | null; stage: string } | null> {
+    if (!this.returns) {
+      this.logger.warn(
+        `Courier return signal ${input.courier}:${input.event} for order ${input.orderId} — ` +
+          `ReturnsService is not wired; Return NOT linked`,
+      );
+      return null;
+    }
+    const row = await this.returns.upsertCourierReturn({
+      orderId: input.orderId,
+      courier: input.courier,
+      courierReturnId: input.courierReturnId ?? null,
+      courierStatus: input.event,
+      type: input.type ?? 'FULL',
+      reason: input.reason ?? null,
+      createIfMissing: input.createIfMissing,
+    });
+    if (!row) {
+      this.logger.warn(
+        `Courier return signal ${input.courier}:${input.event} for order ${input.orderId} — ` +
+          `no active Return to link and auto-create is not allowed for this signal. ` +
+          `HOLD + staff alert (sheet Rule 27b).`,
+      );
+      return null;
+    }
+    const returnId = String((row as any).id);
+    if (input.stage === 'DELIVERED') {
+      await this.returns.recordCourierParcelBack(returnId, input.event);
+    } else {
+      await this.returns.setReturnTransit(returnId, input.event);
+    }
+    return {
+      returnId,
+      displayId: ((row as any).displayId as string) ?? null,
+      stage: input.stage,
+    };
   }
 
   /**
@@ -733,33 +817,24 @@ export class CourierWebhookService {
    * reconciliation, sourced ONLY from GET /status_with_return_status_by_cid
    * (the only endpoint that reports how far back a parcel has got).
    *
-   * Dispatch + order flow (unchanged workflow):
+   * Dispatch + order flow (unchanged workflow, sheet Rule 25):
    * - cancelled in-flight (processing/rider_assigned) → RETURN_PENDING.
-   * - cancelled received ("you have it back") → RETURNED + order
-   *   'Return Pending' (row 44 fix — was advanceOrder null).
+   * - cancelled received ("you have it back") → RETURN_PENDING (never
+   *   RETURNED — that is staff-only) + order 'Return Pending'.
    * - partial in-progress → RETURN_PENDING + order Partial (rows 39–40 fix).
-   * - partial received → PARTIAL + order Partial, restore-or-hold
-   *   (owner-locked T6 gap fix): the courier never reports the split, so on
-   *   _received look up the open staff-created Return WITH items for the
-   *   order → if found, item-level restore of THOSE items (RECEIVED →
-   *   RESTOCKED for those lines); if qty unknown (no items) → HOLD
-   *   (RECEIVED, stockReconciled=false) + LOUD staff alert and staff confirm
-   *   exact quantities at mark-received (which restores later).
+   * - partial received → PARTIAL + order Partial. The courier never reports the
+   *   split, so this label is link-only (Rule 27b): no active Return → HOLD +
+   *   staff alert; no auto-create.
    * - *_received never marks COD owed (a returned parcel collects nothing).
    * - 'Returned' stays manual-confirmation-only: the reconcile never sets
    *   the order status to Returned; staff confirms it afterwards.
    *
-   * Mapper note: `reconcileStock:true` on partial_delivered_return_received
-   * is the INTENT flag (parcel physically back with the merchant — see
-   * mapSteadfastReturnStatus). The path behavior below is restore-or-hold via
-   * the staff-Return lookup; the timeline + log derive from the ACTUAL result
-   * (restored vs held — never print "stock reconciled" when held).
-   *
-   * Return entity (new in Task 6): EVERY reconcile creates/updates ONE
-   * COURIER Return (courierReturnId = consignment id, set-once). In-progress
-   * → IN_TRANSIT (stock held); cancelled received → RECEIVED → RESTOCKED
-   * with an item-level restore of the full order snapshot (FULL returns only);
-   * partial received → restore-or-hold above. No phantom Orders, ever.
+   * Return entity (sheet Rules 2 / 19 / 25 / 27): EVERY reconcile links/creates
+   * the ONE Return for the order (courierReturnId = consignment id, set-once)
+   * and moves its STAGE only — in-progress → IN_TRANSIT, back-with-merchant →
+   * DELIVERED (courier delivered it TO US, we have NOT received it). Stock is
+   * NEVER restored here: a staff member must mark the Return received, which is
+   * the only path to RECEIVED/RESTOCKED. No phantom Orders, ever.
    */
   async reconcileSteadfastReturn(input: { consignmentId: string }) {
     const consignmentId = String(input?.consignmentId ?? '').trim();
@@ -811,53 +886,50 @@ export class CourierWebhookService {
       );
     }
 
-    const upserted = await this.returns.upsertCourierReturn({
+    // Sheet Rules 2 / 25 / 27: the courier signal links/creates the ONE Return
+    // and moves its STAGE only. PARTIAL courier returns are never auto-created
+    // (Rule 27b) — no active Return means HOLD + staff alert, no row.
+    const linked = await this.recordCourierReturnSignal({
       orderId: order.id,
       courier: 'steadfast',
-      courierReturnId: consignmentId,
-      courierStatus: rawStatus,
+      event: rawStatus,
+      stage: isReceived ? 'DELIVERED' : 'IN_PROGRESS',
       type: isPartial ? 'PARTIAL' : 'FULL',
+      courierReturnId: consignmentId,
     });
-    const returnId = (upserted as any).id;
 
     let returnStatus: string;
     let stockReconciled = false;
     let remarks: string;
-    if (!isReceived) {
-      await this.returns.setReturnTransit(returnId, rawStatus);
+    if (!linked) {
+      // Partial courier return with no Return to link (the split is unknown and
+      // partial returns are NEVER auto-created).
+      returnStatus = 'HELD';
+      remarks =
+        'Courier reports part of the parcel back — NO Return exists; HOLD + staff alert: ' +
+        'staff creates the Return with the actual items (sheet Rule 27b); stock held, nothing restored yet';
+    } else if (!isReceived) {
       returnStatus = 'IN_TRANSIT';
       remarks = 'Return in progress — stock held, nothing restored yet';
     } else {
-      // Parcel back with the merchant ("you have it back").
+      // Courier delivered the return TO US ("you have it back").
       //
-      // OWNER RULE: receiving is ALWAYS a manual act by an employee — no
-      // automated flow, courier webhook or status sync may ever mark a
-      // return received. The courier signal therefore only records the
-      // COURIER status: the Return stays open (REQUESTED/IN_TRANSIT), the
-      // stock is NOT restored and no "received by" actor is invented. A staff
-      // member receives it (scanner "Process return" or the return detail
-      // page's "Mark received") — that is the moment the status moves to
+      // OWNER RULE (sheet Rule 2): receiving is ALWAYS a manual act by an
+      // employee — no automated flow, courier webhook or status sync may ever
+      // mark a return received. The courier signal therefore moves the Return
+      // STAGE to DELIVERED only: receivedAt/receivedById stay empty, the stock
+      // is NOT restored and no "received by" actor is invented. A staff member
+      // receives it (scanner "Process return" or the return detail page's
+      // "Mark received") — that is the moment the status moves to
       // RECEIVED/RESTOCKED, the stock returns and the receiver is recorded.
-      await this.returns.recordCourierParcelBack(returnId, rawStatus);
-      returnStatus = 'PARCEL_BACK';
+      returnStatus = 'DELIVERED';
       stockReconciled = false;
-      const staffReturn = (this.returns as any).findOpenStaffReturnWithItems
-        ? await (this.returns as any).findOpenStaffReturnWithItems(order.id)
-        : null;
-      const staffItems = Array.isArray((staffReturn as any)?.items)
-        ? ((staffReturn as any).items as unknown[])
-        : [];
-      if (isPartial && staffReturn && staffItems.length > 0) {
-        const display = (staffReturn as any)?.displayId ?? (staffReturn as any)?.id;
-        remarks =
-          `Parcel back with the merchant — partial return of ${staffItems.length} item line(s) ` +
-          `awaiting staff receive (staff Return ${display}); stock held, nothing restored yet`;
-      } else {
-        remarks =
-          'Parcel back with the merchant — awaiting staff receive; stock held, nothing restored yet';
-      }
+      remarks = isPartial
+        ? `Parcel back with the merchant — partial return ${linked.displayId ?? linked.returnId} ` +
+          `awaiting staff receive; stock held, nothing restored yet`
+        : 'Parcel back with the merchant — awaiting staff receive; stock held, nothing restored yet';
       this.logger.log(
-        `Steadfast return-reconcile: ${consignmentId} parcel back recorded — ` +
+        `Steadfast return-reconcile: ${consignmentId} parcel back recorded (Return ${returnStatus}) — ` +
           `a staff member must receive the return (no automatic restock).`,
       );
     }
@@ -1334,18 +1406,34 @@ export class CourierWebhookService {
       });
     }
 
-    // Task 6 (Fix 13): order.return-id-created ALSO creates/links the unified
-    // COURIER Return (existing RETURN_PENDING flow kept above). Courier-side
-    // return id = return_consignment_id; type from return_type
-    // (partial-delivery → PARTIAL, exchange → EXCHANGE, else FULL).
-    if (event === 'order.return-id-created') {
-      await this.linkCourierReturn({
+    // Sheet Rule 27a: EVERY Pathao return-indicating event creates/links the
+    // ONE Return — the first one creates (FULL), later ones only link and move
+    // the stage. Back-with-merchant events create directly at stage delivered.
+    // PARTIAL stays link-only (Rule 27b); courier-side return id =
+    // return_consignment_id.
+    const returnSignal = mapCourierReturnSignal('pathao', event);
+    if (returnSignal) {
+      await this.recordCourierReturnSignal({
         orderId: order.id,
         courier: 'pathao',
+        event,
+        stage: returnSignal.stage,
+        type:
+          event === 'order.return-id-created'
+            ? this.mapPathaoReturnType(body['return_type'])
+            : returnSignal.type,
         courierReturnId: (body['return_consignment_id'] as string) || undefined,
-        courierStatus: event,
-        type: this.mapPathaoReturnType(body['return_type']),
         reason: (body['reason'] as string) || undefined,
+      });
+    } else if (event === 'order.pickup-cancelled' && dispatchStatus === 'RETURN_PENDING') {
+      // Rule 16 / 27a: a conditional-cancel return (parcel was picked up, so
+      // it must come back) is a FULL return in progress.
+      await this.recordCourierReturnSignal({
+        orderId: order.id,
+        courier: 'pathao',
+        event,
+        stage: 'IN_PROGRESS',
+        type: 'FULL',
       });
     }
 
@@ -1492,6 +1580,23 @@ export class CourierWebhookService {
       // Task 5 (Fix 9, Rule 15.4): same confirmed-partial rule as Pathao.
       await this.tryAdvanceOrderStatus(order.id, orderStatusName, {
         confirmedPartial: dispatchStatus === 'PARTIAL',
+      });
+    }
+
+    // Sheet Rule 27a: RedX agent-returning / returned create/link the ONE
+    // Return at stage in-progress. RedX documents NO back-with-merchant event
+    // (sheet [?]), so a Return from RedX never reaches delivered — staff
+    // receipt is the only way forward.
+    const returnSignal = mapCourierReturnSignal('redx', status);
+    if (returnSignal) {
+      await this.recordCourierReturnSignal({
+        orderId: order.id,
+        courier: 'redx',
+        event: status,
+        stage: returnSignal.stage,
+        type: returnSignal.type,
+        courierReturnId: trackingNumber || null,
+        reason: messageEn || undefined,
       });
     }
 
@@ -1660,6 +1765,21 @@ export class CourierWebhookService {
       // Task 5 (Fix 9, Rule 15.4): same confirmed-partial rule as Pathao.
       await this.tryAdvanceOrderStatus(order.id, orderStatusName, {
         confirmedPartial: dispatchStatus === 'PARTIAL',
+      });
+    }
+
+    // Sheet Rule 27a: every Carrybee return-indicating event creates/links the
+    // ONE Return (first event creates FULL, later ones link + move the stage;
+    // returned-to-merchant creates directly at stage delivered).
+    const returnSignal = mapCourierReturnSignal('carrybee', event);
+    if (returnSignal) {
+      await this.recordCourierReturnSignal({
+        orderId: order.id,
+        courier: 'carrybee',
+        event,
+        stage: returnSignal.stage,
+        type: returnSignal.type,
+        reason: (body['reason'] as string) || undefined,
       });
     }
 

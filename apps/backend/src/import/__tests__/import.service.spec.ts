@@ -2,7 +2,9 @@ import { ImportService } from '../import.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MediaService } from '../../media/media.service';
 import { CacheService } from '../../cache/cache.service';
+import { InitialPhysicalStockService } from '../../stock/initial-physical-stock.service';
 import { ImportSummary } from '../types/woocommerce-csv.types';
+import { BadRequestException } from '@nestjs/common';
 
 function makeSummary(): ImportSummary {
   return {
@@ -27,17 +29,26 @@ function makeService() {
   const prisma = {
     product: {
       findUnique: jest.fn().mockResolvedValue(null),
+      findFirst: jest.fn().mockResolvedValue(null),
       update: jest.fn().mockResolvedValue({}),
+    },
+    productVariant: {
+      create: jest.fn().mockResolvedValue({ id: 'variant-created' }),
     },
   };
   const media = {};
   const cache = {};
+  const initialPhysicalStock = {
+    resolveWarehouse: jest.fn().mockResolvedValue(null),
+    mirrorUnits: jest.fn().mockResolvedValue(undefined),
+  };
   const service = new ImportService(
     prisma as unknown as PrismaService,
     media as unknown as MediaService,
     cache as unknown as CacheService,
+    initialPhysicalStock as unknown as InitialPhysicalStockService,
   );
-  return { service, prisma, svc: service as any };
+  return { service, prisma, initialPhysicalStock, svc: service as any };
 }
 
 const row = (rowNumber: number, data: Record<string, unknown>) => ({
@@ -63,6 +74,7 @@ async function runGroup(
   svc: any,
   rows: ReturnType<typeof row>[],
   meta = GROUP_CALL_META(),
+  initialWarehouseId: string | null = null,
 ) {
   await svc.processProductGroupCached(
     'VAR-1',
@@ -79,6 +91,7 @@ async function runGroup(
     meta.variantCache,
     meta.slugSet,
     meta.sortOrderObj,
+    initialWarehouseId,
   );
   return meta;
 }
@@ -275,5 +288,103 @@ describe('ImportService.updateProductCached parent price handling', () => {
 
     const updateData = prisma.product.update.mock.calls[0][0].data;
     expect(updateData.basePrice).toBe(0);
+  });
+});
+
+/**
+ * B4: an imported MANAGED_STOCK product with stock but no PhysicalInventory
+ * record is orderable but can never be confirmed. Creation must seed the
+ * physical layer, exactly like the product form and draft publish do.
+ */
+describe('ImportService initial physical stock on create (B4)', () => {
+  it('mirrors a simple product stock into the physical layer and links the warehouse', async () => {
+    const { svc, prisma, initialPhysicalStock } = makeService();
+    jest.spyOn(svc, 'createProductCached').mockResolvedValue('prod-1');
+    prisma.product.findUnique.mockResolvedValue({ warehouseId: null });
+
+    await runGroup(
+      svc,
+      [row(1, { SKU: 'SIM-1', Type: 'simple', Stock: '5' })],
+      GROUP_CALL_META(),
+      'wh-1',
+    );
+
+    expect(initialPhysicalStock.mirrorUnits).toHaveBeenCalledWith(
+      expect.objectContaining({
+        productId: 'prod-1',
+        productWarehouseId: null,
+        warehouseId: 'wh-1',
+        units: [{ quantity: 5 }],
+      }),
+    );
+  });
+
+  it('mirrors each created variant instead of the parent counter', async () => {
+    const { svc, prisma, initialPhysicalStock } = makeService();
+    jest.spyOn(svc, 'createProductCached').mockResolvedValue('prod-1');
+    prisma.productVariant.create.mockResolvedValue({ id: 'variant-a' });
+    prisma.product.findUnique.mockResolvedValue({ warehouseId: 'wh-1' });
+
+    await runGroup(
+      svc,
+      [
+        row(1, { SKU: 'VAR-1', Type: 'variable' }),
+        row(2, { SKU: 'VAR-1-RED', Type: 'variation', Stock: '3' }),
+      ],
+      GROUP_CALL_META(),
+      'wh-1',
+    );
+
+    expect(initialPhysicalStock.mirrorUnits).toHaveBeenCalledWith(
+      expect.objectContaining({
+        productId: 'prod-1',
+        productWarehouseId: 'wh-1',
+        units: [{ variantId: 'variant-a', quantity: 3 }],
+      }),
+    );
+  });
+
+  it('leaves the physical layer alone when no warehouse was resolved', async () => {
+    const { svc, initialPhysicalStock } = makeService();
+    jest.spyOn(svc, 'createProductCached').mockResolvedValue('prod-1');
+
+    await runGroup(
+      svc,
+      [row(1, { SKU: 'SIM-1', Type: 'simple', Stock: '5' })],
+      GROUP_CALL_META(),
+      null,
+    );
+
+    expect(initialPhysicalStock.mirrorUnits).not.toHaveBeenCalled();
+  });
+
+  it('resolves the warehouse only when the CSV carries managed units', async () => {
+    const { svc, initialPhysicalStock } = makeService();
+    initialPhysicalStock.resolveWarehouse.mockResolvedValue('wh-1');
+
+    await expect(
+      svc.resolveImportWarehouse([{ data: { Stock: '4' } }]),
+    ).resolves.toBe('wh-1');
+    expect(initialPhysicalStock.resolveWarehouse).toHaveBeenCalledWith(
+      'MANAGED_STOCK',
+      1,
+    );
+
+    initialPhysicalStock.resolveWarehouse.mockClear();
+    await expect(
+      svc.resolveImportWarehouse([{ data: { Stock: '0' } }, { data: {} }]),
+    ).resolves.toBeNull();
+    expect(initialPhysicalStock.resolveWarehouse).not.toHaveBeenCalled();
+  });
+
+  it('fails loudly — before any row is written — when no active warehouse exists', async () => {
+    const { svc, initialPhysicalStock } = makeService();
+    initialPhysicalStock.resolveWarehouse.mockRejectedValue(
+      new BadRequestException('no active warehouse exists'),
+    );
+
+    await expect(
+      svc.resolveImportWarehouse([{ data: { Stock: '4' } }]),
+    ).rejects.toThrow(/no active warehouse/i);
   });
 });

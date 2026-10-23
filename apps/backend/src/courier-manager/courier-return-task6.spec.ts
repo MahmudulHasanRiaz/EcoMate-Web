@@ -21,8 +21,9 @@ import {
  * - Rows 39–40 → dispatch RETURN_PENDING + order Partial, BOTH maps (the
  *   parcel is on its way back — no longer a plain PARTIAL hold; the order
  *   keeps its Partial outcome, never Delivered).
- * - Row 44 → dispatch RETURNED + order 'Return Pending' (was advanceOrder
- *   null — the parcel is back, the order must surface for staff confirmation).
+ * - Row 44 → dispatch RETURN_PENDING (sheet Rule 2/25: never RETURNED on a
+ *   courier signal) + order 'Return Pending' (the parcel is back; the order
+ *   must surface for staff confirmation). The Return STAGE becomes DELIVERED.
  * - Rows 41–43 → verified + locked (unchanged).
  * - Stock ONLY on *_received. COD always false (no return status ever settles).
  */
@@ -52,11 +53,11 @@ describe('Task 6 — 6 Steadfast return statuses (Fix 13)', () => {
     });
   });
 
-  describe('row 44: cancelled_return_received → RETURNED + Return Pending', () => {
+  describe('row 44: cancelled_return_received → RETURN_PENDING + Return Pending', () => {
     it('return map advances the order to Return Pending (was null)', () => {
       expect(mapSteadfastReturnStatus('cancelled_return_received')).toEqual(
         expect.objectContaining({
-          dispatchStatus: 'RETURNED',
+          dispatchStatus: 'RETURN_PENDING',
           advanceOrder: 'Return Pending',
           reconcileStock: true,
           codOwed: false,
@@ -64,9 +65,9 @@ describe('Task 6 — 6 Steadfast return statuses (Fix 13)', () => {
       );
     });
 
-    it('tracking map keeps RETURNED', () => {
+    it('tracking map caps at RETURN_PENDING (RETURNED is staff-only)', () => {
       expect(mapCourierStatusToDispatchStatus('steadfast', 'cancelled_return_received')).toBe(
-        'RETURNED',
+        'RETURN_PENDING',
       );
     });
   });

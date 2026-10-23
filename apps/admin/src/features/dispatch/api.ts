@@ -46,10 +46,15 @@ export interface DispatchSyncSummary {
   failed: DispatchSyncItem[]
 }
 
+/**
+ * GET /dispatch/metrics returns ONE object with pre-aggregated groups, not an
+ * array of raw `groupBy` rows. Typing it as an array made every metrics card
+ * render blank because `data.reduce` threw.
+ */
 export interface DispatchMetricsResponse {
-  courier: string
-  status: string
-  _count: number
+  total: number
+  byCourier: { courier: string; count: number }[]
+  byStatus: { status: string; count: number }[]
 }
 
 export interface DispatchFacets {
@@ -75,5 +80,5 @@ export const dispatchApi = {
   // the actor + timestamp and clears the "Panel cancellation pending" marker.
   confirmPanelCancel: (id: string) =>
     apiClient.post(`/dispatch/${id}/confirm-panel-cancel`, {}),
-  getMetrics: () => apiClient.get<DispatchMetricsResponse[]>('/dispatch/metrics'),
+  getMetrics: () => apiClient.get<DispatchMetricsResponse>('/dispatch/metrics'),
 }

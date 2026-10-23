@@ -7,13 +7,13 @@ import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
 import { ReturnsService } from '../returns/returns.service';
 
 /**
- * T6 review gaps:
- * - partial_delivered_return_received with a staff-created Return WITH items
- *   → restore THOSE items (RESTOCKED, stockReconciled true, timeline truthful).
- * - partial received with unknown qty (no staff Return / empty items)
- *   → HOLD (RECEIVED, stockReconciled false) + LOUD staff alert
- *   ("partial return received — confirm items to restock", never "stock reconciled").
- * - single-parcel return_list_accepted (consignment_id only).
+ * Sheet conformance 2026-10-23 (Rules 2 / 25 / 27b):
+ * - Courier partial-return signals NEVER auto-create a Return — the courier
+ *   never reports which items/qty came back. With an active Return they LINK
+ *   it and move the stage to DELIVERED; with none they HOLD + staff alert.
+ * - Courier back-with-merchant signals NEVER receive and NEVER restock: the
+ *   Return stage is DELIVERED (not RECEIVED); stock is staff-receive-only.
+ * - single-parcel return_list_accepted is LINK-only (consignment_id only).
  * - FULL unchanged.
  */
 describe('CourierWebhookService — T6 partial restore-or-hold', () => {
@@ -99,16 +99,12 @@ describe('CourierWebhookService — T6 partial restore-or-hold', () => {
     service = module.get<CourierWebhookService>(CourierWebhookService);
   });
 
-  describe('partial received — items KNOWN (staff Return WITH items)', () => {
+  describe('partial received — active Return exists (linked, stage delivered)', () => {
     it('records the courier signal only — a staff member must receive it (no auto-restore)', async () => {
-      const staffItems = [
-        { productId: 'p-1', variantId: null, quantity: 1 },
-        { productId: 'p-2', variantId: null, quantity: 2 },
-      ];
-      returns.findOpenStaffReturnWithItems.mockResolvedValue({
+      returns.upsertCourierReturn.mockResolvedValue({
         id: 'ret-staff-1',
         displayId: 'RTN-260101-0007',
-        items: staffItems,
+        status: 'REQUESTED',
       });
       manager.getSteadfastReturnStatus.mockResolvedValue({
         deliveryStatus: 'partial_delivered_return_received',
@@ -120,47 +116,28 @@ describe('CourierWebhookService — T6 partial restore-or-hold', () => {
         expect.objectContaining({
           reconciled: true,
           dispatchStatus: 'PARTIAL',
-          returnStatus: 'PARCEL_BACK',
+          returnStatus: 'DELIVERED',
           stockReconciled: false,
         }),
       );
-      // Item-level restore of EXACTLY the staff Return items.
-      expect(returns.restockReturn).not.toHaveBeenCalled();
-      expect(cancelReturnStock.restoreForOrder).not.toHaveBeenCalled();
-      // Timeline reflects ACTUAL outcome (restored — may say reconciled).
-      const remarks = timelineRemarks().join('\n');
-      expect(remarks).toMatch(/restored|reconciled/i);
-    });
-  });
-
-  describe('partial received — qty UNKNOWN (no staff Return)', () => {
-    it('HOLDS with LOUD staff alert and never prints stock reconciled', async () => {
-      returns.findOpenStaffReturnWithItems.mockResolvedValue(null);
-      manager.getSteadfastReturnStatus.mockResolvedValue({
-        deliveryStatus: 'partial_delivered_return_received',
-      });
-
-      const result = await service.reconcileSteadfastReturn({ consignmentId: 'CG-1' });
-
-      expect(result).toEqual(
-        expect.objectContaining({
-          reconciled: true,
-          dispatchStatus: 'PARTIAL',
-          returnStatus: 'PARCEL_BACK',
-          stockReconciled: false,
-        }),
+      // Stage only: the courier delivered the return to us — we have NOT
+      // received it, so nothing restocks and no actor is invented.
+      expect(returns.recordCourierParcelBack).toHaveBeenCalledWith(
+        'ret-staff-1',
+        'partial_delivered_return_received',
       );
-      expect(returns.recordCourierParcelBack).toHaveBeenCalled();
       expect(returns.restockReturn).not.toHaveBeenCalled();
       expect(cancelReturnStock.restoreForOrder).not.toHaveBeenCalled();
       expect(cancelReturnStock.restoreForReturnItems).not.toHaveBeenCalled();
       const remarks = timelineRemarks().join('\n');
-      expect(remarks).toMatch(/awaiting staff receive/);
-      expect(remarks).not.toMatch(/stock reconciled/);
+      expect(remarks).toMatch(/awaiting staff receive/i);
+      expect(remarks).not.toMatch(/stock reconciled/i);
     });
+  });
 
-    it('HOLDS when the staff Return has empty items (split still unknown)', async () => {
-      returns.findOpenStaffReturnWithItems.mockResolvedValue(null);
+  describe('partial received — NO active Return (never auto-created)', () => {
+    it('HOLDS with LOUD staff alert and never prints stock reconciled', async () => {
+      returns.upsertCourierReturn.mockResolvedValue(null);
       manager.getSteadfastReturnStatus.mockResolvedValue({
         deliveryStatus: 'partial_delivered_return_received',
       });
@@ -168,12 +145,42 @@ describe('CourierWebhookService — T6 partial restore-or-hold', () => {
       const result = await service.reconcileSteadfastReturn({ consignmentId: 'CG-1' });
 
       expect(result).toEqual(
-        expect.objectContaining({ returnStatus: 'PARCEL_BACK', stockReconciled: false }),
+        expect.objectContaining({
+          reconciled: true,
+          dispatchStatus: 'PARTIAL',
+          returnStatus: 'HELD',
+          stockReconciled: false,
+        }),
       );
+      // NEVER auto-created (sheet Rule 27b) and never received.
+      expect(returns.recordCourierParcelBack).not.toHaveBeenCalled();
       expect(returns.restockReturn).not.toHaveBeenCalled();
+      expect(cancelReturnStock.restoreForOrder).not.toHaveBeenCalled();
+      expect(cancelReturnStock.restoreForReturnItems).not.toHaveBeenCalled();
       const remarks = timelineRemarks().join('\n');
-      expect(remarks).toMatch(/awaiting staff receive/);
+      expect(remarks).toMatch(/HOLD \+ staff alert/i);
+      expect(remarks).toMatch(/NO Return exists/i);
       expect(remarks).not.toMatch(/stock reconciled/);
+    });
+
+    it('asks for a PARTIAL link-only upsert (createIfMissing is never implied)', async () => {
+      returns.upsertCourierReturn.mockResolvedValue(null);
+      manager.getSteadfastReturnStatus.mockResolvedValue({
+        deliveryStatus: 'partial_delivered_return_received',
+      });
+
+      await service.reconcileSteadfastReturn({ consignmentId: 'CG-1' });
+
+      const call = returns.upsertCourierReturn.mock.calls[0][0];
+      expect(call).toEqual(
+        expect.objectContaining({
+          orderId: 'order-1',
+          courier: 'steadfast',
+          type: 'PARTIAL',
+        }),
+      );
+      // PARTIAL can never create: the flag is never explicitly true.
+      expect(call.createIfMissing).not.toBe(true);
     });
   });
 
@@ -208,8 +215,8 @@ describe('CourierWebhookService — T6 partial restore-or-hold', () => {
       expect(result).toEqual(
         expect.objectContaining({
           reconciled: true,
-          dispatchStatus: 'RETURNED',
-          returnStatus: 'PARCEL_BACK',
+          dispatchStatus: 'RETURN_PENDING',
+          returnStatus: 'DELIVERED',
           stockReconciled: false,
         }),
       );

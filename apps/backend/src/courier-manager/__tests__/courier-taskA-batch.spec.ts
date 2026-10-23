@@ -266,14 +266,15 @@ describe('Courier Task A — mapping corrections batch', () => {
     });
   });
 
-  describe('F10 — RETURNED dispatch → Return Pending ONLY (all couriers)', () => {
-    it('pathao returned-to-merchant → RETURNED dispatch → Return Pending order, never Returned', async () => {
+  describe('F10 — back-with-merchant → RETURN_PENDING dispatch → Return Pending order, never Returned', () => {
+    it('pathao returned-to-merchant → RETURN_PENDING dispatch → Return Pending order, never Returned', async () => {
       await service.handlePathao({
         event: 'order.returned-to-merchant',
         consignment_id: 'CG-1',
       });
+      // Sheet Rule 25: the courier signal caps at RETURN_PENDING.
       expect(prisma.dispatch.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({ update: expect.objectContaining({ status: 'RETURNED' }) }),
+        expect.objectContaining({ update: expect.objectContaining({ status: 'RETURN_PENDING' }) }),
       );
       expect(ordersService.updateStatus).toHaveBeenCalledWith(
         'order-1',
@@ -286,13 +287,14 @@ describe('Courier Task A — mapping corrections batch', () => {
       expect(statusIds).not.toContain('status-returned');
     });
 
-    it('carrybee returned-to-merchant → RETURNED dispatch → Return Pending order, never Returned', async () => {
+    it('carrybee returned-to-merchant → RETURN_PENDING dispatch → Return Pending order, never Returned', async () => {
       await service.handleCarrybee({
         event: 'order.returned-to-merchant',
         consignment_id: 'CG-1',
       });
+      // Sheet Rule 25: the courier signal caps at RETURN_PENDING.
       expect(prisma.dispatch.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({ update: expect.objectContaining({ status: 'RETURNED' }) }),
+        expect.objectContaining({ update: expect.objectContaining({ status: 'RETURN_PENDING' }) }),
       );
       expect(ordersService.updateStatus).toHaveBeenCalledWith(
         'order-1',

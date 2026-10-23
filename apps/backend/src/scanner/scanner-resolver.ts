@@ -10,7 +10,10 @@ import { DispatchPreview, OrderPreview, ResolveOutcome, ScanItemPreview } from '
  * against the Dispatch registry across all supported couriers.
  */
 
-const ORDER_NUMBER = /^(ORD|RTN)-\d{6}-\d{4}$/;
+// ORD- order, RTN- return order, EX- exchange order (sheet Rule 20 uses the
+// literal `Ex-XXXX` prefix; the identifier is uppercased before matching and
+// the DB lookup is case-insensitive, so `Ex-` scans resolve too).
+const ORDER_NUMBER = /^(ORD|RTN|EX)-\d{6}-\d{4}$/;
 
 /**
  * If the scanned value is a storefront tracking URL (e.g. https://…/orders/ORD-260930-0001),
@@ -209,7 +212,7 @@ export async function resolveScanIdentifier(
     ),
   );
 
-  // ---- A. Order number (ORD-… / RTN-…) ------------------------------------
+  // ---- A. Order number (ORD-… / RTN-… / Ex-…) ------------------------------
   // Items fetch both row facts AND line previews in the same query.
   const ORDER_ITEM_SELECT = {
     quantity: true,

@@ -5531,6 +5531,14 @@ export class OrdersService {
     if (order.trashedAt)
       throw new BadRequestException('Order is already trashed');
 
+    // Trash is a soft delete, NOT a cancellation. Once physical units have
+    // left the warehouse (Shipping/Delivered/Partial/return lifecycle) the
+    // stock ledger must stay exactly as it is: running the cancel release
+    // would add back units that were really sold or returned and inflate
+    // on-hand stock. Pre-dispatch orders still hold a reservation, so their
+    // hold is released as before.
+    const goodsAlreadyLeft = ITEM_EDIT_BLOCKED_STATUSES.has(order.status.name);
+
     const timeline = [
       ...this.parseTimeline(order.timeline),
       {
@@ -5551,7 +5559,9 @@ export class OrdersService {
         },
       });
 
-      await this.handleCancelledSideEffects(tx, orderId, performedBy);
+      if (!goodsAlreadyLeft) {
+        await this.handleCancelledSideEffects(tx, orderId, performedBy);
+      }
     });
 
     this.events.emit({

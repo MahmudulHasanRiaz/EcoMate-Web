@@ -22,19 +22,11 @@ export function DispatchMetrics() {
     )
   }
 
-  if (!data?.length) return null
+  if (!data) return null
 
-  const total = data.reduce((sum, d) => sum + d._count, 0)
-
-  const courierCounts = data.reduce<Record<string, number>>((acc, d) => {
-    acc[d.courier] = (acc[d.courier] || 0) + d._count
-    return acc
-  }, {})
-
-  const statusCounts = data.reduce<Record<string, number>>((acc, d) => {
-    acc[d.status] = (acc[d.status] || 0) + d._count
-    return acc
-  }, {})
+  const total = data.total
+  const courierCounts = data.byCourier ?? []
+  const statusCounts = data.byStatus ?? []
 
   return (
     <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-4'>
@@ -48,7 +40,7 @@ export function DispatchMetrics() {
           <div className='text-3xl font-bold'>{total}</div>
         </CardContent>
       </Card>
-      {Object.entries(courierCounts).map(([courier, count]) => (
+      {courierCounts.map(({ courier, count }) => (
         <Card key={courier}>
           <CardHeader className='pb-2'>
             <CardTitle className='text-sm font-medium text-muted-foreground capitalize'>
@@ -60,7 +52,7 @@ export function DispatchMetrics() {
           </CardContent>
         </Card>
       ))}
-      {Object.entries(statusCounts).slice(0, 4).map(([status, count]) => (
+      {statusCounts.slice(0, 4).map(({ status, count }) => (
         <Card key={status}>
           <CardHeader className='pb-2'>
             <CardTitle className='text-sm font-medium text-muted-foreground'>

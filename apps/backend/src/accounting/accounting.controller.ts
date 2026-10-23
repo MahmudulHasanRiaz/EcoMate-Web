@@ -44,8 +44,18 @@ export class AccountingController {
     return this.paymentJournal.backfillRecordedPayments(dto);
   }
 
+  /**
+   * The admin's journal-entries page consumes this endpoint as a paginated
+   * envelope (`{ data, meta }`) and renders `meta.totalPages`; it also reads
+   * `response.data.data`. Returning the service's own flat
+   * `{ data, total, page, perPage, totalPages }` shape left the pager reading
+   * `meta?.totalPages ?? 1`, so page count was always 1 and the Next/Previous
+   * controls never appeared. The service keeps its flat shape for internal
+   * callers; the envelope is applied here, at the HTTP boundary, mirroring
+   * FinancialPeriodsController.findAll.
+   */
   @Get('entries')
-  findAllEntries(
+  async findAllEntries(
     @Query('page') page?: string,
     @Query('perPage') perPage?: string,
     @Query('periodId') periodId?: string,
@@ -57,7 +67,20 @@ export class AccountingController {
         'Page and perPage must be positive numbers',
       );
     }
-    return this.accountingService.findAllEntries(pageNum, perPageNum, periodId);
+    const result = await this.accountingService.findAllEntries(
+      pageNum,
+      perPageNum,
+      periodId,
+    );
+    return {
+      data: result.data,
+      meta: {
+        total: result.total,
+        page: result.page,
+        perPage: result.perPage,
+        totalPages: result.totalPages,
+      },
+    };
   }
 
   @Get('entries/:id')

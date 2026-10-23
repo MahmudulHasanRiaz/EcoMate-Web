@@ -16,6 +16,11 @@ import { MediaService } from '../media/media.service';
 import { MediaResolverService } from '../media/media-resolver.service';
 import { CacheService } from '../cache/cache.service';
 import { StockRouterService } from '../stock/stock-router.service';
+import { StockService } from '../stock/stock.service';
+import {
+  InitialPhysicalStockService,
+  InitialPhysicalUnit,
+} from '../stock/initial-physical-stock.service';
 
 function slugify(text: string): string {
   return text
@@ -32,6 +37,8 @@ export class ProductsService {
     private readonly cache: CacheService,
     private readonly stockRouter: StockRouterService,
     private readonly mediaResolver: MediaResolverService,
+    private readonly stockService: StockService,
+    private readonly initialPhysicalStock: InitialPhysicalStockService,
   ) {}
 
   private async syncTags(tagNames: string[], productId: string): Promise<void> {
@@ -67,6 +74,62 @@ export class ProductsService {
         create: { productId, tagId: tag.id },
       });
     }
+  }
+
+  /**
+   * B4: with Inventory Management ON, confirming a MANAGED_STOCK order
+   * allocates PHYSICAL stock, so units that exist only in the managed counter
+   * can never be confirmed. New products (and published drafts) therefore
+   * mirror their initial units into the physical layer at creation.
+   *
+   * The warehouse is resolved BEFORE the product row is written so a missing
+   * warehouse fails the request loudly instead of leaving behind a product
+   * that can be ordered but never fulfilled. The same seeding runs on the CSV
+   * import path through InitialPhysicalStockService.
+   */
+  private initialStockOf(dto: {
+    type?: string;
+    managedStockQuantity?: number;
+    variants?: Array<{ managedStockQuantity?: number }>;
+  }): number {
+    if (dto.type === 'variable') {
+      return (dto.variants ?? []).reduce(
+        (sum, v) => sum + (v.managedStockQuantity ?? 0),
+        0,
+      );
+    }
+    return dto.managedStockQuantity ?? 0;
+  }
+
+  private async mirrorInitialStockToPhysical(params: {
+    product: any;
+    avMode: string;
+    warehouseId: string | null;
+    performedBy?: string;
+  }): Promise<void> {
+    const { product, avMode, warehouseId, performedBy } = params;
+    if (!warehouseId || avMode !== 'MANAGED_STOCK') return;
+
+    const units: InitialPhysicalUnit[] = [];
+    if (product.type === 'variable') {
+      for (const variant of product.variants ?? []) {
+        const quantity = Number(variant.managedStockQuantity) || 0;
+        if (quantity > 0) units.push({ variantId: variant.id, quantity });
+      }
+    } else {
+      const quantity = Number(product.managedStockQuantity) || 0;
+      if (quantity > 0) units.push({ quantity });
+    }
+    if (units.length === 0) return;
+
+    await this.initialPhysicalStock.mirrorUnits({
+      productId: product.id,
+      productWarehouseId: product.warehouseId ?? null,
+      warehouseId,
+      units,
+      reference: 'Initial stock on product creation',
+      performedBy,
+    });
   }
 
   private buildWhere(query: {
@@ -717,6 +780,12 @@ export class ProductsService {
             ? 'INVENTORY_CONTROLLED'
             : 'MANAGED_STOCK');
 
+    const initialWarehouseId = await this.initialPhysicalStock.resolveWarehouse(
+      avMode,
+      this.initialStockOf(dto as any),
+      dto.warehouseId,
+    );
+
     const scalars = {
       name: dto.name,
       slug: dto.slug,
@@ -888,6 +957,12 @@ export class ProductsService {
         }
       }
     }
+
+    await this.mirrorInitialStockToPhysical({
+      product,
+      avMode,
+      warehouseId: initialWarehouseId,
+    });
 
     return product;
   }
@@ -1409,6 +1484,32 @@ export class ProductsService {
     data.slug = slug;
     data.status = 'active';
     data.isActive = true;
+
+    // Publishing is creation-equivalent: the same initial-stock mirror runs
+    // for a draft that goes live with MANAGED_STOCK units.
+    const finalType = dto.type || p.type;
+    let initialStock: number;
+    if (finalType === 'variable') {
+      initialStock = dto.variants
+        ? dto.variants.reduce(
+            (sum, v) => sum + (v.managedStockQuantity ?? 0),
+            0,
+          )
+        : (
+            await this.prisma.productVariant.findMany({
+              where: { productId: id },
+              select: { managedStockQuantity: true },
+            })
+          ).reduce((sum, v) => sum + (v.managedStockQuantity ?? 0), 0);
+    } else {
+      initialStock = dto.managedStockQuantity ?? p.managedStockQuantity ?? 0;
+    }
+    const initialWarehouseId = await this.initialPhysicalStock.resolveWarehouse(
+      newMode,
+      initialStock,
+      dto.warehouseId ?? p.warehouseId,
+    );
+
     if (dto.variants) {
       data.variants = {
         deleteMany: {},
@@ -1468,6 +1569,13 @@ export class ProductsService {
         });
       }
     }
+
+    await this.mirrorInitialStockToPhysical({
+      product,
+      avMode: newMode,
+      warehouseId: initialWarehouseId,
+    });
+
     await this.cache.invalidateByPrefix('product:');
     return product;
   }

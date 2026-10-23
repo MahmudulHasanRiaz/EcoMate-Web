@@ -173,19 +173,41 @@ export function StagedList({
   const showSearch = items.length > 1
 
   // Expansion panel lifecycle: outside click + Escape close it. Capture phase
-  // so the panel never races a Radix overlay above us (ESC-bubble lesson).
+  // for Escape so the panel never races a Radix overlay above us (ESC-bubble
+  // lesson).
   //
-  // The outside-click close is DEFERRED: the panel now grows IN FLOW, so
-  // collapsing it on mousedown shifts the layout and the pending click lands
-  // on a different element (the Process button was silently swallowed).
+  // Dismiss runs on `click` — NEVER on `mousedown`/`pointerdown`. Collapsing
+  // the panel is a LAYOUT change (it grows in flow), so collapsing between the
+  // press and the release moves everything below it; the browser hit-tests the
+  // release at the old coordinates and dispatches the `click` on a different
+  // element. That is how the FIRST click on "Process returns" was swallowed:
+  // it only folded the expanded row, and a second click (nothing left to
+  // collapse) processed. Deferring the mousedown collapse with a timer does
+  // not help — a real press is held far longer than a task. A `click`
+  // listener runs after the pressed control's own handler, so it can never
+  // steal the press.
+  //
+  // The action footer and the two explicit expand controls belong to the list,
+  // not to "outside": using Process/Apply/Clear must never fold the details
+  // the operator just opened, and the toggles own their own state.
+  //
+  // Membership is read from `composedPath()`, not `target.closest()`: this
+  // listener can be registered DURING the very click that opened the panel
+  // (React flushes the effect synchronously for discrete events), and the
+  // pressed control may already have re-rendered — the chevron swaps
+  // ChevronDown→ChevronUp, detaching the pressed <svg>. `closest()` on that
+  // detached node sees no ancestors; the dispatch-time path still does.
   useEffect(() => {
     if (!expandedKey) return
-    let pending: ReturnType<typeof setTimeout> | null = null
-    const onPointer = (e: MouseEvent) => {
-      const t = e.target as Element | null
-      if (t?.closest('[data-staged-panel]') || t?.closest('button[data-staged-chevron]')) return
-      if (pending) clearTimeout(pending)
-      pending = setTimeout(() => setExpandedKey(null), 0)
+    const isListOwned = (node: EventTarget | null) =>
+      node instanceof Element &&
+      (node.matches('[data-staged-panel]') ||
+        node.matches('[data-staged-actions]') ||
+        node.matches('button[data-staged-chevron]') ||
+        node.matches('button[data-staged-thumb]'))
+    const dismiss = (e: Event) => {
+      if (e.composedPath().some(isListOwned)) return
+      setExpandedKey(null)
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
@@ -195,11 +217,10 @@ export function StagedList({
       e.stopImmediatePropagation()
       setExpandedKey(null)
     }
-    document.addEventListener('mousedown', onPointer, true)
+    document.addEventListener('click', dismiss)
     document.addEventListener('keydown', onKey, true)
     return () => {
-      if (pending) clearTimeout(pending)
-      document.removeEventListener('mousedown', onPointer, true)
+      document.removeEventListener('click', dismiss)
       document.removeEventListener('keydown', onKey, true)
     }
   }, [expandedKey])
@@ -560,8 +581,14 @@ export function StagedList({
         </div>
       </div>
 
-      {/* sticky bulk footer — always visible below the list */}
-      {footer && <div className="border-t border-border/50 bg-card/60 p-2.5">{footer}</div>}
+      {/* sticky bulk footer — the list's action area. Marked so an outside-
+          click dismissal never treats it as "outside" (using an action must
+          not fold the row). */}
+      {footer && (
+        <div data-staged-actions className="border-t border-border/50 bg-card/60 p-2.5">
+          {footer}
+        </div>
+      )}
 
       <Dialog open={confirmingClear} onOpenChange={setConfirmingClear}>
         <DialogContent className="max-w-xs">

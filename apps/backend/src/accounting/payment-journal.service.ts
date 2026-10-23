@@ -60,12 +60,14 @@ export type PaymentJournalStatus =
   | 'adopted'
   | 'reversed'
   | 'skipped'
-  | 'failed';
+  | 'failed'
+  /** Dry-run only: every guard passed, so a real run WOULD post an entry. */
+  | 'would_post';
 
 export interface PaymentJournalOutcome {
   status: PaymentJournalStatus;
   journalEntryId: string | null;
-  /** Always set for `skipped`/`failed` — never a silent no-op. */
+  /** Always set for `skipped`/`failed`/`would_post` — never a silent no-op. */
   reason?: string;
 }
 
@@ -81,6 +83,8 @@ export interface PaymentJournalBackfillResult {
   scanned: number;
   posted: number;
   adopted: number;
+  /** Dry-run only: candidates whose full guard chain passed. */
+  wouldPost: number;
   skipped: number;
   failed: number;
   items: PaymentJournalBackfillItem[];
@@ -108,6 +112,11 @@ function skip(reason: string): PaymentJournalOutcome {
 
 function adopted(journalEntryId: string): PaymentJournalOutcome {
   return { status: 'adopted', journalEntryId };
+}
+
+/** Dry-run verdict: the full guard chain passed, but nothing was written. */
+function wouldPost(): PaymentJournalOutcome {
+  return { status: 'would_post', journalEntryId: null, reason: 'dry_run' };
 }
 
 /** `Payment.recordedBy` may carry the admin's `staff:<userId>` tag. */
@@ -153,7 +162,11 @@ export class PaymentJournalService {
    * Cr the same clearing account the COD settlement credits. A negative amount
    * (a reversal/refund row) posts the mirror automatically.
    */
-  async tryPostOrderPayment(paymentId: string): Promise<PaymentJournalOutcome> {
+  async tryPostOrderPayment(
+    paymentId: string,
+    opts: { dryRun?: boolean } = {},
+  ): Promise<PaymentJournalOutcome> {
+    const dryRun = opts.dryRun === true;
     return this.guard(`order payment ${paymentId}`, async () => {
       const payment = await this.prisma.payment.findUnique({
         where: { id: paymentId },
@@ -173,6 +186,11 @@ export class PaymentJournalService {
 
       const legs = twoLegEntry('asset', 'contra', Number(payment.amount));
       if (legs.length === 0) return skip('zero_amount');
+
+      // Dry run: every guard above has already run (not-found, already
+      // journaled, not recorded, COD, unmapped, disabled, zero). Return the
+      // verdict WITHOUT locking the row, creating system accounts or writing.
+      if (dryRun) return wouldPost();
 
       return this.withAnchorLock('Payment', paymentId, async (tx) => {
         const fresh = await this.anchorDelegate(tx, 'Payment').findUnique({
@@ -281,7 +299,9 @@ export class PaymentJournalService {
   /** Dr the salary/compensation expense leaf / Cr the mapped asset leaf. */
   async tryPostPayrollPayment(
     paymentId: string,
+    opts: { dryRun?: boolean } = {},
   ): Promise<PaymentJournalOutcome> {
+    const dryRun = opts.dryRun === true;
     return this.guard(`payroll payment ${paymentId}`, async () => {
       const payment = await this.prisma.payrollPayment.findUnique({
         where: { id: paymentId },
@@ -295,6 +315,8 @@ export class PaymentJournalService {
 
       const legs = twoLegEntry('expense', 'asset', Number(payment.amount));
       if (legs.length === 0) return skip('zero_amount');
+
+      if (dryRun) return wouldPost();
 
       return this.withAnchorLock('PayrollPayment', paymentId, async (tx) => {
         const fresh = await this.anchorDelegate(tx, 'PayrollPayment').findUnique({
@@ -344,7 +366,9 @@ export class PaymentJournalService {
   /** Dr the supplier payable leaf / Cr the mapped asset leaf. */
   async tryPostSupplierPayment(
     paymentId: string,
+    opts: { dryRun?: boolean } = {},
   ): Promise<PaymentJournalOutcome> {
+    const dryRun = opts.dryRun === true;
     return this.guard(`supplier payment ${paymentId}`, async () => {
       const payment = await this.prisma.supplierPayment.findUnique({
         where: { id: paymentId },
@@ -357,6 +381,8 @@ export class PaymentJournalService {
 
       const legs = twoLegEntry('payable', 'asset', Number(payment.amount));
       if (legs.length === 0) return skip('zero_amount');
+
+      if (dryRun) return wouldPost();
 
       return this.withAnchorLock('SupplierPayment', paymentId, async (tx) => {
         const fresh = await this.anchorDelegate(
@@ -426,9 +452,11 @@ export class PaymentJournalService {
    * filtered on `journalEntryId IS NULL`, and each poster re-checks under the
    * row lock, so a second run posts nothing new.
    *
-   * Run it as `{ dryRun: true }` FIRST — the report says exactly what would be
-   * posted, per payment — then again with a bounded `limit`. COD receipts are
-   * scanned and reported, never posted (the settlement owns that leg).
+   * Run it as `{ dryRun: true }` FIRST — the report runs every poster's real
+   * guard chain per payment and reports `would_post` vs the actual skip reason
+   * (COD, not recorded, accounting disabled, zero amount…), writing nothing —
+   * then again with a bounded `limit`. COD receipts are scanned and reported,
+   * never posted (the settlement owns that leg).
    *
    * Scope: payroll payments, supplier payments and RECEIPT rows (positive
    * amounts). Negative rows are refunds, whose mirror needs the original
@@ -496,13 +524,17 @@ export class PaymentJournalService {
     ];
 
     for (const candidate of candidates) {
-      const outcome: PaymentJournalOutcome = dryRun
-        ? { status: 'skipped', journalEntryId: null, reason: 'dry_run' }
-        : candidate.kind === 'payroll'
-          ? await this.tryPostPayrollPayment(candidate.paymentId)
+      // Dry-run runs the SAME poster with `{ dryRun: true }` so the report
+      // reflects the real guard chain (COD skip, already journaled, disabled,
+      // zero amount…) instead of labelling every row `dry_run`. The poster
+      // returns `would_post` for eligible rows and never locks/writes.
+      const opts = { dryRun };
+      const outcome: PaymentJournalOutcome =
+        candidate.kind === 'payroll'
+          ? await this.tryPostPayrollPayment(candidate.paymentId, opts)
           : candidate.kind === 'supplier'
-            ? await this.tryPostSupplierPayment(candidate.paymentId)
-            : await this.tryPostOrderPayment(candidate.paymentId);
+            ? await this.tryPostSupplierPayment(candidate.paymentId, opts)
+            : await this.tryPostOrderPayment(candidate.paymentId, opts);
       items.push({ ...candidate, outcome });
     }
 
@@ -511,6 +543,7 @@ export class PaymentJournalService {
       scanned: items.length,
       posted: items.filter((i) => i.outcome.status === 'posted').length,
       adopted: items.filter((i) => i.outcome.status === 'adopted').length,
+      wouldPost: items.filter((i) => i.outcome.status === 'would_post').length,
       skipped: items.filter((i) => i.outcome.status === 'skipped').length,
       failed: items.filter((i) => i.outcome.status === 'failed').length,
       items,

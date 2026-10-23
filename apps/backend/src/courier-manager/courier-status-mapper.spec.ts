@@ -6,7 +6,8 @@ describe('mapCourierStatusToDispatchStatus', () => {
     expect(mapCourierStatusToDispatchStatus('steadfast', 'in_transit')).toBe('IN_TRANSIT');
     expect(mapCourierStatusToDispatchStatus('steadfast', 'picked_up')).toBe('PICKED_UP');
     expect(mapCourierStatusToDispatchStatus('steadfast', 'return_pending')).toBe('RETURN_PENDING');
-    expect(mapCourierStatusToDispatchStatus('steadfast', 'returned')).toBe('RETURNED');
+    // Sheet Rule 25: back-with-merchant caps at RETURN_PENDING.
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'returned')).toBe('RETURN_PENDING');
     expect(mapCourierStatusToDispatchStatus('steadfast', 'hold')).toBe('HOLD');
     expect(mapCourierStatusToDispatchStatus('steadfast', 'partial')).toBe('PARTIAL');
     expect(mapCourierStatusToDispatchStatus('steadfast', 'cancelled')).toBe('CANCELLED');
@@ -39,7 +40,7 @@ describe('mapCourierStatusToDispatchStatus', () => {
     expect(mapCourierStatusToDispatchStatus('pathao', 'order.picked')).toBe('PICKED_UP');
     expect(mapCourierStatusToDispatchStatus('pathao', 'order.at-the-sorting-hub')).toBe('IN_TRANSIT');
     expect(mapCourierStatusToDispatchStatus('pathao', 'order.assigned-for-delivery')).toBe('ASSIGNED_TO_RIDER');
-    expect(mapCourierStatusToDispatchStatus('pathao', 'order.returned-to-merchant')).toBe('RETURNED');
+    expect(mapCourierStatusToDispatchStatus('pathao', 'order.returned-to-merchant')).toBe('RETURN_PENDING');
     expect(mapCourierStatusToDispatchStatus('pathao', 'order.on-hold')).toBe('HOLD');
   });
 
@@ -134,8 +135,8 @@ describe('mapCourierStatusToDispatchStatus', () => {
     expect(mapCourierStatusToDispatchStatus('steadfast', 'parcel in transit')).toBe('IN_TRANSIT');
     // "partial" must win over "delivered"
     expect(mapCourierStatusToDispatchStatus('redx', 'partial_delivered')).toBe('PARTIAL');
-    // "returned" must win over "return"
-    expect(mapCourierStatusToDispatchStatus('steadfast', 'returned item')).toBe('RETURNED');
+    // Sheet Rule 25: no courier label yields RETURNED (staff receipt only).
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'returned item')).toBe('RETURN_PENDING');
   });
 
   it('returns null for empty/unknown statuses (no forced change)', () => {
@@ -161,7 +162,7 @@ describe('mapCourierStatusToDispatchStatus', () => {
   it('maps the 6 Steadfast return statuses (return endpoint vocabulary)', () => {
     expect(mapCourierStatusToDispatchStatus('steadfast', 'cancelled_return_proccessing')).toBe('RETURN_PENDING');
     expect(mapCourierStatusToDispatchStatus('steadfast', 'cancelled_return_rider_assigned')).toBe('RETURN_PENDING');
-    expect(mapCourierStatusToDispatchStatus('steadfast', 'cancelled_return_received')).toBe('RETURNED');
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'cancelled_return_received')).toBe('RETURN_PENDING');
     expect(mapCourierStatusToDispatchStatus('steadfast', 'partial_delivered_return_proccessing')).toBe('RETURN_PENDING');
     expect(mapCourierStatusToDispatchStatus('steadfast', 'partial_delivered_return_rider_assigned')).toBe('RETURN_PENDING');
     expect(mapCourierStatusToDispatchStatus('steadfast', 'partial_delivered_return_received')).toBe('PARTIAL');
@@ -207,9 +208,11 @@ describe('mapSteadfastReturnStatus', () => {
     );
   });
 
-  it('routes cancelled_return_received to RETURNED with a stock reconcile and no COD', () => {
+  it('routes cancelled_return_received to RETURN_PENDING (staff-only RETURNED) with a stock reconcile and no COD', () => {
+    // Sheet Rule 2 / 25: the courier delivering the return to us is at most
+    // RETURN_PENDING — RETURNED only after staff physically receive it.
     expect(mapSteadfastReturnStatus('cancelled_return_received')).toEqual(
-      expect.objectContaining({ dispatchStatus: 'RETURNED', reconcileStock: true, codOwed: false }),
+      expect.objectContaining({ dispatchStatus: 'RETURN_PENDING', reconcileStock: true, codOwed: false }),
     );
   });
 

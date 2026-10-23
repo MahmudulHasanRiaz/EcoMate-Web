@@ -117,15 +117,26 @@ describe('ReturnsService — who received the return', () => {
     expect(writes[writes.length - 1].receivedAt).toBeInstanceOf(Date);
   });
 
-  it('the courier parcel-back signal records ONLY the courier status', async () => {
+  it('the courier parcel-back signal moves the STAGE to DELIVERED — never received, never an actor', async () => {
     await service.recordCourierParcelBack('ret-1', 'cancelled_return_received');
 
     expect(prisma.return.update).toHaveBeenCalledTimes(1);
     const data = prisma.return.update.mock.calls[0][0].data;
-    expect(data).toEqual({ courierStatus: 'cancelled_return_received' });
+    // Sheet Rule 2: the courier delivered the return TO US — stage DELIVERED.
+    expect(data).toEqual({
+      courierStatus: 'cancelled_return_received',
+      status: 'DELIVERED',
+    });
     // NEVER a received state, never an actor, never a date.
-    expect(data.status).toBeUndefined();
     expect(data.receivedAt).toBeUndefined();
     expect(data.receivedById).toBeUndefined();
+  });
+
+  it('the parcel-back signal never regresses a staff-received Return', async () => {
+    prisma.return.findUnique.mockResolvedValue({ ...storedRow, status: 'RESTOCKED' });
+    await service.recordCourierParcelBack('ret-1', 'cancelled_return_received');
+    const data = prisma.return.update.mock.calls[0][0].data;
+    expect(data).toEqual({ courierStatus: 'cancelled_return_received' });
+    expect(data.status).toBeUndefined();
   });
 });
