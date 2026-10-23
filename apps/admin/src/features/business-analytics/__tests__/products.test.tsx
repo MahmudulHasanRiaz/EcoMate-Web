@@ -111,10 +111,10 @@ describe('low-margin drill-down', () => {
         detailHref={(r) => `/mon/analytics/products/${r.productId}`}
       />,
     )
-    const lowLinks = [...container.querySelectorAll('a[href="/mon/analytics/products/p-low"]')]
+    const lowLinks = [...container.querySelectorAll('a[href="/admin/mon/analytics/products/p-low"]')]
     expect(lowLinks.length).toBeGreaterThan(0)
     expect(lowLinks.some((a) => (a.textContent ?? '').includes('Low margin'))).toBe(true)
-    const okRowLow = container.querySelector('a[href="/mon/analytics/products/p-ok"]')
+    const okRowLow = container.querySelector('a[href="/admin/mon/analytics/products/p-ok"]')
     expect(okRowLow).not.toBeNull()
     expect(okRowLow?.textContent ?? '').not.toMatch(/Low margin/)
   })
@@ -237,7 +237,7 @@ describe('UncostedFixList', () => {
     const { container, getByText } = await renderWithClient(<UncostedFixList uncosted={uncosted} />)
     await expect.element(getByText(/current product cost is not used instead/)).toBeInTheDocument()
     await expect.element(getByText(/Add the cost on the order/)).toBeInTheDocument()
-    const link = container.querySelector('a[href="/op/orders/o1"]')
+    const link = container.querySelector('a[href="/admin/op/orders/o1"]')
     expect(link).not.toBeNull()
   })
 

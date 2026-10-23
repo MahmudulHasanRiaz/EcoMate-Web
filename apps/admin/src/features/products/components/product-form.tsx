@@ -3,6 +3,7 @@ import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { X, Plus, Loader2, Package, Image as ImageIcon, Pencil, Check, GripVertical, Star, Trash2 } from 'lucide-react'
 import { appUrl } from '@/lib/utils'
+import { appHref } from '@/lib/app-href'
 import { SafeImage } from '@/components/safe-image'
 import { productsApi, type ProductResponse } from '../api'
 import { CustomizationEditor } from './customization-editor'
@@ -1513,7 +1514,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                     </p>
                     {isEdit && (
                        <Button type="button" variant="default" size="sm" onClick={() => {
-                         window.open(`/op/inventory?productId=${currentRow?.id}`, '_blank')
+                         window.open(appHref(`/op/inventory?productId=${currentRow?.id}`), '_blank')
                        }}>
                          Open Inventory
                        </Button>

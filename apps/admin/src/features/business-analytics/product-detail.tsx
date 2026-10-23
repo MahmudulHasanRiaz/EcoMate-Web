@@ -6,6 +6,7 @@ import { Activity } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
+import { appHref } from '@/lib/app-href'
 import { WidgetShell } from '../dashboard/components/WidgetShell'
 import { useAnalyticsProductDetail } from './hooks'
 import { DEFAULT_FILTERS, formatPct, RETURN_INCIDENCE_LABEL, type ProductAnalyticsFilters, type ProductDetailData } from './types'
@@ -104,10 +105,10 @@ export default function ProductAnalyticsDetail() {
         </div>
         {data ? (
           <div className="flex gap-2">
-            <a href={`/op/inventory${inventoryQs ? `?${inventoryQs}` : ''}`} title="Stock check: sales speed, cover days and stock below">
+            <a href={appHref(`/op/inventory${inventoryQs ? `?${inventoryQs}` : ''}`)} title="Stock check: sales speed, cover days and stock below">
               <Badge variant="outline">View in inventory →</Badge>
             </a>
-            <a href={`/op/products/${data.data.product.id}`} title="Open this product in the catalog">
+            <a href={appHref(`/op/products/${data.data.product.id}`)} title="Open this product in the catalog">
               <Badge variant="outline">Open in catalog →</Badge>
             </a>
           </div>

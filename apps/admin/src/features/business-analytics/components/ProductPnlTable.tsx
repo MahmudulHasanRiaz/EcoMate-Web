@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatBDT, formatPct, RETURN_INCIDENCE_LABEL, type KpiValue, type ProductPnlRow, type ProductVariantRow } from '../types'
+import { appHref } from '@/lib/app-href'
 import { MetricUnavailable } from './badges'
 import { BasisBadge } from './ProductBasisBadge'
 
@@ -97,11 +98,11 @@ export function ProductPnlTable({
               {rows.map((r) => (
                 <TableRow key={showVariant && isVariantRow(r) ? `${r.productId}::${r.variantId ?? ''}` : r.productId}>
                   <TableCell className="text-sm sticky left-0 bg-card z-10">
-                    <a href={detailHref(r)} className="font-medium text-foreground hover:underline">
+                    <a href={appHref(detailHref(r))} className="font-medium text-foreground hover:underline">
                       {showVariant && isVariantRow(r) ? r.variantLabel : r.name}
                     </a>
                     {r.lowMargin ? (
-                      <a href={detailHref(r)} title="Profit margin below 10%. Open the product to see why.">
+                      <a href={appHref(detailHref(r))} title="Profit margin below 10%. Open the product to see why.">
                         <Badge variant="warning" className="ml-2">
                           Low margin
                         </Badge>

@@ -71,8 +71,11 @@ describe('drill hrefs resolve to existing canonical routes', () => {
     const canonical = canonicalPaths()
     expect(hrefs.length).toBeGreaterThan(0)
     for (const href of hrefs) {
-      expect(href.startsWith('/mon/analytics/overview'), `dead link ${href}`).toBe(false)
-      const path = href.split('?')[0]
+      // D8: rendered hrefs are DEPLOYED URLs — they carry the router
+      // basepath (/admin). Strip it to compare against canonical routes.
+      const routePath = href.startsWith('/admin/') ? href.slice('/admin'.length) : href
+      expect(routePath.startsWith('/mon/analytics/overview'), `dead link ${href}`).toBe(false)
+      const path = routePath.split('?')[0].split('#')[0]
       expect(canonical.has(path), `drill href ${href} resolves to a canonical route`).toBe(true)
     }
   }
@@ -83,7 +86,7 @@ describe('drill hrefs resolve to existing canonical routes', () => {
     expectResolves(hrefs)
     // The Business Overview renders directly at /mon/analytics — the drill
     // dimensions survive as query params on the canonical landing.
-    expect(hrefs.some(h => h.startsWith('/mon/analytics?') && h.includes('view=ladder'))).toBe(true)
+    expect(hrefs.some(h => h.startsWith('/admin/mon/analytics?') && h.includes('view=ladder'))).toBe(true)
     expect(hrefs.some(h => h.includes('view=bridge'))).toBe(true)
     expect(hrefs.some(h => h.includes('view=fulfillment'))).toBe(true)
     expect(hrefs.some(h => h.includes('view=coverage'))).toBe(true)
@@ -95,7 +98,7 @@ describe('drill hrefs resolve to existing canonical routes', () => {
     )
     const hrefs = [...container.querySelectorAll('a')].map(a => a.getAttribute('href') ?? '')
     expectResolves(hrefs)
-    expect(hrefs.some(h => h.startsWith('/mon/analytics?') && h.includes('view=ladder'))).toBe(true)
+    expect(hrefs.some(h => h.startsWith('/admin/mon/analytics?') && h.includes('view=ladder'))).toBe(true)
     expect(hrefs.some(h => h.includes('view=reconciliation'))).toBe(true)
     expect(hrefs.some(h => h.includes('/mon/analytics/expenses?') && h.includes('view=list'))).toBe(true)
   })
@@ -114,7 +117,7 @@ describe('drill hrefs resolve to existing canonical routes', () => {
       />,
     )
     const href = container.querySelector('a')?.getAttribute('href') ?? ''
-    expect(href).toBe('/mon/analytics')
+    expect(href).toBe('/admin/mon/analytics')
   })
 })
 

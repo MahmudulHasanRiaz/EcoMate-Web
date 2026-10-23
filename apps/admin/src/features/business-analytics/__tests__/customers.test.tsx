@@ -304,7 +304,7 @@ describe('customers page (W2)', () => {
     const pagerBtns = [...(container.querySelector('[data-testid="customer-pager"]')?.querySelectorAll('button') ?? [])]
     expect(pagerBtns.map((b) => b.textContent)).toEqual(['Prev', 'Next'])
     // Acquisition drill links preserved (segment → customers).
-    const drill = container.querySelector('a[href="/mon/analytics/customers?segment=new"]')
+    const drill = container.querySelector('a[href="/admin/mon/analytics/customers?segment=new"]')
     expect(drill).not.toBeNull()
     // Sticky first columns on both tables.
     expect(container.querySelector('[data-testid="cohort-table"] thead th.sticky')).not.toBeNull()

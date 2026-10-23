@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatBDT, type SalesSettlementRow, type SettlementAmount } from '../types'
+import { appHref } from '@/lib/app-href'
 import { SettlementGapBanner } from './FulfillmentEconomicsPanel'
 import { MetricUnavailable } from './badges'
 import { EmptyState } from './analytics-ui'
@@ -70,7 +71,7 @@ export function SettlementTable({
         <CardTitle className="text-sm font-medium">Fulfillment Economics — Per-Order Settlement</CardTitle>
         <p className="text-[11px] text-muted-foreground">
           {panelNote ? plainLine(panelNote) : INFO_FULFILLMENT_NOT_SALES} Courier cost is the{' '}
-          <a href="/mon/analytics" className="underline underline-offset-2">
+          <a href={appHref('/mon/analytics')} className="underline underline-offset-2">
             same cost, shown once in profit
           </a>
           .
@@ -99,7 +100,7 @@ export function SettlementTable({
                 {rows.map((r) => (
                   <TableRow key={r.orderId} data-testid={`settlement-row-${r.orderId}`}>
                     <TableCell className="text-sm">
-                      <a href={`/op/orders/${r.orderId}`} className="font-medium underline underline-offset-2">
+                      <a href={appHref(`/op/orders/${r.orderId}`)} className="font-medium underline underline-offset-2">
                         {r.displayId}
                       </a>
                       <span className="block text-[11px] text-muted-foreground">

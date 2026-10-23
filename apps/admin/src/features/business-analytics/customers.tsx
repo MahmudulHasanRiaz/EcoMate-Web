@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TriangleAlert, Users } from 'lucide-react'
+import { appHref } from '@/lib/app-href'
 import { WidgetShell } from '../dashboard/components/WidgetShell'
 import { StatusBadge, riseStyle, type StatusTone } from '@/components/ui/dashboard'
 import { useCustomerCohorts, useCustomersList, useCustomersSummary } from './hooks'
@@ -317,7 +318,7 @@ export default function CustomerAnalytics() {
                                 <td className="py-2 pr-3 tabular-nums font-medium text-right">{formatBDT(r.lifetimeRevenue)}</td>
                                 <td className="py-2 pr-3 tabular-nums text-right">{r.rangeOrders} order(s) · {formatBDT(r.rangeRevenue)}</td>
                                 <td className="py-2 pr-3">
-                                  <a href={customerHistoryHref(r)} className="text-xs underline underline-offset-2">
+                                  <a href={appHref(customerHistoryHref(r))} className="text-xs underline underline-offset-2">
                                     Order history
                                   </a>
                                 </td>
