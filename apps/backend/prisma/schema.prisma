@@ -1540,6 +1540,10 @@ enum ReturnType {
 enum ReturnStatus {
   REQUESTED
   IN_TRANSIT
+  // Courier delivered the return to us (their 'received' / back-with-merchant
+  // signal) — WE have NOT confirmed receipt. Stock reconcile is forbidden at
+  // this stage; only a staff-confirmed RECEIVED may restore stock.
+  DELIVERED
   RECEIVED
   RESTOCKED
   CLOSED

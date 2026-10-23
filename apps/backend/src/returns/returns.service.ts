@@ -63,6 +63,13 @@ export interface UpsertCourierReturnInput {
   courierStatus?: string | null;
   type?: 'FULL' | 'PARTIAL' | 'EXCHANGE';
   reason?: string | null;
+  /**
+   * Default true. false = LINK-ONLY: never create a Return row (used by
+   * courier notifications that only tell us an existing return exists —
+   * Steadfast return_request / return_list_accepted). PARTIAL signals are
+   * always link-only (sheet Rule 27b).
+   */
+  createIfMissing?: boolean;
 }
 
 const RETURN_TYPES = ['FULL', 'PARTIAL', 'EXCHANGE'];
@@ -560,10 +567,10 @@ export class ReturnsService {
   // ------------------------------------------------------------ markReceived
 
   /**
-   * Staff-confirmed path: REQUESTED/IN_TRANSIT → RECEIVED → item-level restore
-   * → RESTOCKED (+ stockReconciled guard in the same transaction) → dispatch
-   * status (FULL → RETURNED, PARTIAL → PARTIAL, EXCHANGE → untouched). The
-   * ORDER is never touched here (it stays Return Pending / Partial — staff
+   * Staff-confirmed path: REQUESTED/IN_TRANSIT/DELIVERED → RECEIVED → item-level
+   * restore → RESTOCKED (+ stockReconciled guard in the same transaction) →
+   * dispatch status (FULL → RETURNED, PARTIAL → PARTIAL, EXCHANGE → untouched).
+   * The ORDER is never touched here (it stays Return Pending / Partial — staff
    * confirm the order outcome separately on the order detail page).
    *
    * Idempotent: an already-RESTOCKED row returns as-is (never restores twice).
@@ -817,21 +824,33 @@ export class ReturnsService {
   /**
    * Courier signal: "the parcel is back with the merchant".
    *
-   * OWNER RULE: receiving is ALWAYS a manual act by an employee — no
-   * automated flow, courier webhook or status sync may ever mark a return
-   * received (and therefore never invents a "system" receiver). This method
-   * therefore records the COURIER status ONLY: the Return's lifecycle status,
-   * receivedAt and receivedById are left untouched, and the stock is not
-   * restored. A staff member receives the return (scanner "Process return" or
-   * the return detail page's "Mark received") — that is the only moment the
-   * status moves to RECEIVED/RESTOCKED and the stock returns.
+   * OWNER RULE (sheet Rule 2, Rule 25; Return Creation rows 5/9/16): receiving
+   * is ALWAYS a manual act by an employee — no automated flow, courier webhook
+   * or status sync may ever mark a return received (and therefore never
+   * invents a "system" receiver). The courier's back-with-merchant signal
+   * moves the Return STAGE to DELIVERED — the courier delivered the return TO
+   * US, which is NOT our receipt. receivedAt / receivedById stay untouched and
+   * the stock is NOT restored. A staff member receives the return (scanner
+   * "Process return" or the return detail page's "Mark received") — that is
+   * the only moment the status moves to RECEIVED/RESTOCKED, the stock returns
+   * and the dispatch/order may become RETURNED.
+   *
+   * Never regresses a staff-owned stage: RECEIVED / RESTOCKED / CLOSED rows
+   * keep their status (the raw courier status is still recorded).
    */
   async recordCourierParcelBack(id: string, courierStatus?: string | null) {
     const ret = await this.load(id);
+    const current = (ret as any).status as string;
+    const data: Record<string, unknown> = {};
     if (courierStatus && courierStatus !== (ret as any).courierStatus) {
-      return this.prisma.return.update({ where: { id }, data: { courierStatus } });
+      data.courierStatus = courierStatus;
     }
-    return ret;
+    // Pre-receipt stages advance to DELIVERED (idempotent on DELIVERED).
+    if (current === 'REQUESTED' || current === 'IN_TRANSIT') {
+      data.status = 'DELIVERED';
+    }
+    if (Object.keys(data).length === 0) return ret;
+    return this.prisma.return.update({ where: { id }, data: data as any });
   }
 
   async linkRefund(id: string, dto: { refundId: string }) {
@@ -852,54 +871,120 @@ export class ReturnsService {
   // ---------------------------------------------------------- courier upsert
 
   /**
-   * First courier signal for (order, courier) → create a COURIER Return
-   * (status REQUESTED, empty items — the split is unknown). Later signals →
-   * update courierStatus only; courierReturnId is set-once, never clobbered.
+   * Courier return signal → the ONE Return record for the order (sheet Rules
+   * 19 + 27; Return Creation tab rows 1–18).
    *
-   * Hardening (1): deliberately skips assertReturnEligible —
-   * COURIER_GUARD_SKIP_REASON (see return-guard.ts). Abuse is impossible
-   * downstream: stock moves only via restoreStockForReturnTx (flag-guarded,
-   * item-scoped), and a repeat signal re-resolves to this same row.
+   * LINK-FIRST (idempotency): the newest active (not CLOSED) Return for the
+   * ORDER — whatever its source (STAFF / COURIER / EXCHANGE) — absorbs the
+   * courier facts (courierStatus, set-once courierReturnId, courier name when
+   * empty, reason). A later return-indicating event therefore never creates a
+   * second row, and a courier signal for a staff/exchange Return links to it
+   * instead of duplicating it (Rule 27a "later events only link").
+   *
+   * CREATE only when nothing active exists AND `createIfMissing !== false`.
+   * PARTIAL signals NEVER create (Rule 27b — the courier never reports the
+   * split; the caller holds + alerts staff). `createIfMissing: false` is the
+   * LINK-only mode used by Steadfast return_request / return_list_accepted
+   * (Return Creation rows 28–29 — create-if-missing is an owner decision).
+   *
+   * Guard interaction: the shared guard's ONE-active-Return invariant is
+   * preserved by the link-first lookup. Its order-status gate is deliberately
+   * NOT applied to a courier-created row — a courier return signal is an
+   * EXTERNAL FACT about a parcel already moving back (COURIER_GUARD_SKIP_REASON
+   * in return-guard.ts) and Rule 27(a) requires the Return to exist for ANY
+   * courier event, even when the order already sits at Return Pending. Staff
+   * paths still run the full guard.
+   *
+   * Concurrency: two signals for the same order (webhook + sync racing) are
+   * serialised by a transaction-scoped advisory lock keyed on the order id,
+   * then re-checked INSIDE the lock — exactly ONE row can win.
    */
-  async upsertCourierReturn(input: UpsertCourierReturnInput) {
+  async upsertCourierReturn(input: UpsertCourierReturnInput): Promise<any | null> {
     void COURIER_GUARD_SKIP_REASON;
     const order = await this.prisma.order.findUnique({ where: { id: input.orderId } });
     if (!order || (order as any).trashedAt) {
       throw new NotFoundException(`Order not found: ${input.orderId}`);
     }
-    const existing = await this.prisma.return.findFirst({
-      where: { orderId: input.orderId, courier: input.courier, status: { not: 'CLOSED' as any } },
-      orderBy: { createdAt: 'desc' },
+    const type = input.type ?? 'FULL';
+    const createIfMissing = type !== 'PARTIAL' && input.createIfMissing !== false;
+
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockOrderReturnSignal(tx, input.orderId);
+
+      const existing = await tx.return.findFirst({
+        where: { orderId: input.orderId, status: { not: 'CLOSED' as any } },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (existing) {
+        const data: Record<string, unknown> = {};
+        if (input.courierStatus && input.courierStatus !== (existing as any).courierStatus) {
+          data.courierStatus = input.courierStatus;
+        }
+        if (!(existing as any).courierReturnId && input.courierReturnId) {
+          data.courierReturnId = input.courierReturnId;
+        }
+        // Courier identity is set-once too: a staff/exchange Return adopts the
+        // courier that first reported the return, and never flip-flops later.
+        if (!(existing as any).courier && input.courier) {
+          data.courier = input.courier;
+        }
+        if (input.reason !== undefined && input.reason !== null && input.reason !== (existing as any).reason) {
+          data.reason = input.reason;
+        }
+        if (Object.keys(data).length === 0) return existing;
+        return tx.return.update({ where: { id: (existing as any).id }, data: data as any });
+      }
+
+      if (!createIfMissing) {
+        if (type === 'PARTIAL') {
+          this.logger.warn(
+            `Courier PARTIAL return signal for order ${input.orderId} ` +
+              `(${input.courier}:${input.courierStatus ?? input.courierReturnId ?? 'n/a'}) — ` +
+              `NO Return auto-created (sheet Rule 27b: the courier never reports the split). ` +
+              `HOLD the parcel + staff alert; staff creates the Return with the actual items.`,
+          );
+        }
+        return null;
+      }
+
+      const displayId = await this.generateDisplayIdInTx(tx);
+      const created = await tx.return.create({
+        data: {
+          orderId: input.orderId,
+          displayId,
+          type: type as any,
+          status: 'REQUESTED' as any,
+          source: 'COURIER' as any,
+          items: [] as unknown as Prisma.InputJsonValue,
+          courier: input.courier,
+          courierReturnId: input.courierReturnId ?? null,
+          courierStatus: input.courierStatus ?? null,
+          reason: input.reason ?? null,
+        },
+      });
+      this.logger.log(
+        `Courier Return ${displayId} created for order ${(order as any).displayId ?? input.orderId} ` +
+          `(type=${type} courier=${input.courier} status=${input.courierStatus ?? 'n/a'} — stock held until staff receive)`,
+      );
+      return created;
     });
-    if (existing) {
-      const data: Record<string, unknown> = {};
-      if (input.courierStatus && input.courierStatus !== (existing as any).courierStatus) {
-        data.courierStatus = input.courierStatus;
-      }
-      if (!(existing as any).courierReturnId && input.courierReturnId) {
-        data.courierReturnId = input.courierReturnId;
-      }
-      if (input.reason !== undefined && input.reason !== (existing as any).reason) {
-        data.reason = input.reason;
-      }
-      if (Object.keys(data).length === 0) return existing;
-      return this.prisma.return.update({ where: { id: (existing as any).id }, data: data as any });
-    }
-    const displayId = await this.generateDisplayId();
-    return this.prisma.return.create({
-      data: {
-        orderId: input.orderId,
-        displayId,
-        type: (input.type ?? 'FULL') as any,
-        status: 'REQUESTED' as any,
-        source: 'COURIER' as any,
-        items: [] as unknown as Prisma.InputJsonValue,
-        courier: input.courier,
-        courierReturnId: input.courierReturnId ?? null,
-        courierStatus: input.courierStatus ?? null,
-        reason: input.reason ?? null,
-      },
-    });
+  }
+
+  /**
+   * Serialise concurrent return signals for ONE order (webhook + manual sync
+   * racing) with a transaction-scoped advisory lock. Unit doubles may omit
+   * `$executeRaw` — the guard keeps those working.
+   */
+  private async lockOrderReturnSignal(
+    tx: Prisma.TransactionClient,
+    orderId: string,
+  ): Promise<void> {
+    const executeRaw = (tx as any)?.$executeRaw;
+    if (typeof executeRaw !== 'function') return;
+    await executeRaw.call(
+      tx,
+      Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${orderId}))`,
+    );
   }
 
   /**

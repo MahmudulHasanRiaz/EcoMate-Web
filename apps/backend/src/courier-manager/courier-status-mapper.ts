@@ -47,7 +47,10 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     cancelled: 'CANCELLED',
     'cancelled_approval_pending': 'ASSIGNED_TO_RIDER',
     return_pending: 'RETURN_PENDING',
-    returned: 'RETURNED',
+    // Sheet Rule 25: a courier signal never moves dispatch to RETURNED — that
+    // is a staff-confirmed physical receive. A back-with-merchant tracking
+    // label stays at RETURN_PENDING (max).
+    returned: 'RETURN_PENDING',
     hold: 'HOLD',
     // Task 5 (owner-locked): `exceptional` = lost, damaged or otherwise off
     // the normal path. There is NO EXCEPTION value in the DispatchStatus
@@ -71,7 +74,9 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     // labels ride RETURN_PENDING (the parcel is on its way back — no longer a
     // plain PARTIAL hold). The ORDER keeps its Partial outcome (never
     // Delivered) via STEADFAST_RETURN_MAP.advanceOrder below.
-    'cancelled_return_received': 'RETURNED',
+    // Sheet Rule 2 / 25: "courier delivered the return to us" is at most
+    // RETURN_PENDING — RETURNED only after staff physically receive it.
+    'cancelled_return_received': 'RETURN_PENDING',
     'partial_delivered_return_proccessing': 'RETURN_PENDING',
     'partial_delivered_return_processing': 'RETURN_PENDING',
     'partial_delivered_return_rider_assigned': 'RETURN_PENDING',
@@ -111,7 +116,9 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     'order.returned': 'RETURN_PENDING',
     'order.return-id-created': 'RETURN_PENDING',
     'order.return-in-transit': 'RETURN_PENDING',
-    'order.returned-to-merchant': 'RETURNED',
+    // Sheet Rule 25: back-with-merchant stays RETURN_PENDING (max); RETURNED
+    // only when staff marks the Return received.
+    'order.returned-to-merchant': 'RETURN_PENDING',
     'order.paid-return': 'RETURN_PENDING',
     'order.paid': 'DELIVERED',
     // Task 1 (owner-locked, paid = DELIVERED): plain tracking-API `paid`
@@ -205,7 +212,8 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     'order.returned': 'RETURN_PENDING',
     'order.returned-at-sorting': 'RETURN_PENDING',
     'order.returned-in-transit': 'RETURN_PENDING',
-    'order.returned-to-merchant': 'RETURNED',
+    // Sheet Rule 25: never RETURNED on a courier signal.
+    'order.returned-to-merchant': 'RETURN_PENDING',
     'order.paid-return': 'RETURN_PENDING',
     'order.exchange': 'DELIVERED',
     'order.paid': 'DELIVERED',
@@ -237,7 +245,8 @@ const COURIER_TRACKING_STATUS_MAP: Record<
 const KEYWORD_RULES: Array<{ match: RegExp; status: DispatchStatus }> = [
   { match: /partial/i, status: 'PARTIAL' },
   { match: /deliver/i, status: 'DELIVERED' },
-  { match: /returned/i, status: 'RETURNED' },
+  // Sheet Rule 25: no courier label may yield RETURNED — back-with-merchant
+  // is still RETURN_PENDING (max); only staff receipt sets RETURNED.
   { match: /return/i, status: 'RETURN_PENDING' },
   { match: /cancel/i, status: 'CANCELLED' },
   { match: /hold/i, status: 'HOLD' },
@@ -309,10 +318,11 @@ const STEADFAST_RETURN_MAP: Record<string, SteadfastReturnMapping> = {
   'cancelled_return_proccessing': { dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Return Pending', reconcileStock: false, codOwed: false },
   'cancelled_return_processing': { dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Return Pending', reconcileStock: false, codOwed: false },
   'cancelled_return_rider_assigned': { dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Return Pending', reconcileStock: false, codOwed: false },
-  // Task 6 (Fix 13, row 44 owner-locked): the parcel is back — dispatch
-  // RETURNED AND the order surfaces as 'Return Pending' for staff
-  // confirmation (was advanceOrder null — the order never surfaced).
-  'cancelled_return_received': { dispatchStatus: 'RETURNED', advanceOrder: 'Return Pending', reconcileStock: true, codOwed: false },
+  // Sheet Rule 2 / 25 (conformance 2026-10-23): the courier delivered the
+  // return to us — dispatch stays RETURN_PENDING (RETURNED is staff-only) and
+  // the order surfaces as 'Return Pending' for staff confirmation. The Return
+  // record's stage moves to DELIVERED; stock reconciles only on staff receive.
+  'cancelled_return_received': { dispatchStatus: 'RETURN_PENDING', advanceOrder: 'Return Pending', reconcileStock: true, codOwed: false },
   // Task 6 (Fix 13, rows 39–40 owner-locked): partial in-progress labels ride
   // dispatch RETURN_PENDING (parcel on its way back) while the ORDER keeps its
   // Partial outcome — never Delivered.
@@ -334,4 +344,109 @@ export function mapSteadfastReturnStatus(
   const normalized = String(rawStatus || '').trim().toLowerCase();
   if (!normalized) return null;
   return STEADFAST_RETURN_MAP[normalized] ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Return auto-create policy (sheet Rule 27 + Return Creation tab)
+// ---------------------------------------------------------------------------
+
+/**
+ * A courier label that indicates a return, and what it means for the unified
+ * Return record:
+ * - stage IN_PROGRESS → Return stage 'in-progress' (dispatch RETURN_PENDING).
+ * - stage DELIVERED   → courier delivered the return TO US; Return stage
+ *   'delivered' (NOT received — stock/returned status stay staff-only).
+ * - type PARTIAL      → NEVER auto-created (Rule 27b): link-only + hold alert.
+ * - createIfMissing   → false for link-only notifications (Steadfast
+ *   return_request / return_list_accepted — owner decision pending).
+ *
+ * Both vocabularies are covered: webhook event names (`order.returned`) and
+ * plain tracking-API labels (`returned`). Unknown labels return null.
+ */
+export interface CourierReturnSignal {
+  stage: 'IN_PROGRESS' | 'DELIVERED';
+  type: 'FULL' | 'PARTIAL';
+  createIfMissing: boolean;
+}
+
+const RETURN_SIGNAL_IN_PROGRESS: Record<string, readonly string[]> = {
+  pathao: [
+    'order.return-id-created',
+    'order.return-in-transit',
+    'order.returned',
+    'order.paid-return',
+    'return',
+    'paid return',
+    'return_pending',
+    'return pending',
+  ],
+  carrybee: [
+    'order.returned',
+    'order.paid-return',
+    'order.returned-at-sorting',
+    'order.returned-in-transit',
+    'return',
+    'paid return',
+    'return_pending',
+  ],
+  redx: ['agent-returning', 'returned'],
+  steadfast: [
+    'return_pending',
+    'returned',
+    'cancelled_return_proccessing',
+    'cancelled_return_processing',
+    'cancelled_return_rider_assigned',
+  ],
+};
+
+const RETURN_SIGNAL_DELIVERED: Record<string, readonly string[]> = {
+  // Courier delivered the return to us (back-with-merchant). RedX documents no
+  // back-with-merchant event — its return labels never reach DELIVERED.
+  pathao: ['order.returned-to-merchant'],
+  carrybee: ['order.returned-to-merchant'],
+  redx: [],
+  steadfast: ['cancelled_return_received'],
+};
+
+const RETURN_SIGNAL_PARTIAL: Record<string, readonly string[]> = {
+  // Courier partial-return labels: the courier never reports WHICH items/qty
+  // came back → NO auto-create (Rule 27b / Return Creation rows 20–22).
+  steadfast: [
+    'partial_delivered_return_proccessing',
+    'partial_delivered_return_processing',
+    'partial_delivered_return_rider_assigned',
+    'partial_delivered_return_received',
+  ],
+};
+
+const RETURN_SIGNAL_LINK_ONLY: Record<string, readonly string[]> = {
+  // "link to our return" notifications — creating a FULL return when none
+  // exists is an OWNER DECISION ([?] in the sheet) and is NOT implemented.
+  steadfast: ['return_request', 'return_list_accepted'],
+};
+
+export function mapCourierReturnSignal(
+  courier: string,
+  rawStatus: string | null | undefined,
+): CourierReturnSignal | null {
+  const normalized = String(rawStatus || '').trim().toLowerCase();
+  if (!normalized) return null;
+
+  if ((RETURN_SIGNAL_DELIVERED[courier] ?? []).includes(normalized)) {
+    return { stage: 'DELIVERED', type: 'FULL', createIfMissing: true };
+  }
+  if ((RETURN_SIGNAL_PARTIAL[courier] ?? []).includes(normalized)) {
+    return {
+      stage: normalized.endsWith('_received') ? 'DELIVERED' : 'IN_PROGRESS',
+      type: 'PARTIAL',
+      createIfMissing: false,
+    };
+  }
+  if ((RETURN_SIGNAL_LINK_ONLY[courier] ?? []).includes(normalized)) {
+    return { stage: 'IN_PROGRESS', type: 'FULL', createIfMissing: false };
+  }
+  if ((RETURN_SIGNAL_IN_PROGRESS[courier] ?? []).includes(normalized)) {
+    return { stage: 'IN_PROGRESS', type: 'FULL', createIfMissing: true };
+  }
+  return null;
 }

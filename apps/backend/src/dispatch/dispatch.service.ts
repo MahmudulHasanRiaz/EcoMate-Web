@@ -16,6 +16,7 @@ import { CourierWebhookService } from '../courier-manager/courier-webhook.servic
 import { extractScanIdentifier } from '../scanner/scanner-resolver';
 import {
   isSupportedCourier,
+  mapCourierReturnSignal,
   mapCourierStatusToDispatchStatus,
 } from '../courier-manager/courier-status-mapper';
 import { Prisma } from '@prisma/client';
@@ -1033,6 +1034,14 @@ export class DispatchService {
           });
           mutated = true;
           await this.applySyncOrderAdvancement(dispatch, rawStatus);
+          // Sheet Rule 27: the healing path records the Return signal too, so a
+          // missed webhook never leaves a return-indicating parcel without its
+          // ONE Return record.
+          await this.recordSyncReturnSignal(
+            dispatch,
+            rawStatus,
+            mapCourierReturnSignal(courier, rawStatus),
+          );
           await this.logSync(dispatch, 'SYNC_UNCHANGED', rawStatus, {
             performedBy,
             result,
@@ -1109,6 +1118,14 @@ export class DispatchService {
           );
         }
 
+        // Sheet Rule 27: link/create the ONE Return for a return-indicating
+        // courier status — the sync path mirrors the webhook exactly.
+        await this.recordSyncReturnSignal(
+          dispatch,
+          rawStatus,
+          mapCourierReturnSignal(courier, rawStatus),
+        );
+
         await this.logSync(dispatch, 'SYNCED', rawStatus, {
           performedBy,
           result,
@@ -1165,6 +1182,41 @@ export class DispatchService {
     const fetched = result?.fetchedAt;
     if (fetched && !Number.isNaN(Date.parse(fetched))) return new Date(fetched);
     return null;
+  }
+
+  /**
+   * Sheet Rule 27: the manual "Sync status" path records the SAME Return
+   * signal a webhook would (the first return-indicating status creates the ONE
+   * Return; later ones only link + move the stage). Conditional cancels
+   * (Rule 16) are covered too: a CANCELLED consignment that had already
+   * progressed resolves to RETURN_PENDING, which is a return in progress.
+   */
+  private async recordSyncReturnSignal(
+    dispatch: any,
+    rawStatus: string,
+    signal: ReturnType<typeof mapCourierReturnSignal>,
+  ) {
+    if (!this.courierWebhooks?.recordCourierReturnSignal) return;
+    let effective = signal;
+    if (!effective) {
+      const mapped = mapCourierStatusToDispatchStatus(
+        dispatch.courier as string,
+        rawStatus,
+      );
+      if (mapped !== 'CANCELLED') return;
+      const resolved = await this.resolveCancelledWithProgress(dispatch.orderId);
+      if (resolved !== 'RETURN_PENDING') return;
+      effective = { stage: 'IN_PROGRESS', type: 'FULL', createIfMissing: true };
+    }
+    await this.courierWebhooks.recordCourierReturnSignal({
+      orderId: dispatch.orderId,
+      courier: dispatch.courier as string,
+      event: rawStatus,
+      stage: effective.stage,
+      type: effective.type,
+      courierReturnId: dispatch.consignmentId as string,
+      createIfMissing: effective.createIfMissing,
+    });
   }
 
   private async resolveCancelledWithProgress(orderId: string): Promise<string> {

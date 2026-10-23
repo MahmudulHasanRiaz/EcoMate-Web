@@ -60,6 +60,8 @@ describe('ReturnsService — shared eligibility guard (hardening 1)', () => {
           Promise.resolve({ id: 'ret-new', ...data }),
         ),
         findUnique: jest.fn().mockResolvedValue(null),
+        // Courier upsert link-first lookup inside its transaction.
+        findFirst: jest.fn((...args: any[]) => prisma.return.findFirst(...args)),
         findMany: jest.fn().mockImplementation(async (args: any) => {
           if (args?.where?.createdAt) return recent;
           return active;
@@ -267,14 +269,22 @@ describe('ReturnsService — shared eligibility guard (hardening 1)', () => {
     expect(created.displayId).toMatch(/^RTN-/);
   });
 
-  it('courier upsert skips the eligibility guard (external fact, never dropped)', async () => {
-    await build({ active: [ret({ type: 'FULL' })] });
+  it('courier upsert LINKS the existing active Return instead of tripping the FULL guard', async () => {
+    const activeReturn = ret({ type: 'FULL' });
+    await build({ active: [activeReturn] });
+    // findFirst resolves the active row (the shared lookup source above).
+    prisma.return.findFirst.mockResolvedValue(activeReturn);
     const upserted = await service.upsertCourierReturn({
       orderId: 'order-1',
       courier: 'steadfast',
       courierReturnId: 'CG-1',
       courierStatus: 'delivered_return_received',
     });
+    // No duplicate row: the external fact lands on the existing Return.
     expect(upserted).toBeDefined();
+    expect(prisma.return.create).not.toHaveBeenCalled();
+    expect(prisma.return.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'ret-1' } }),
+    );
   });
 });

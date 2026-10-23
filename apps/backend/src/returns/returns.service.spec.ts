@@ -48,6 +48,10 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
           findUnique: jest.fn((...args: any[]) =>
             (prisma.return.findUnique as jest.Mock)(...args),
           ),
+          // Link-first lookup inside the courier upsert transaction.
+          findFirst: jest.fn((...args: any[]) =>
+            (prisma.return.findFirst as jest.Mock)(...args),
+          ),
           findMany: jest.fn().mockResolvedValue([]),
         },
         // Signed adjustment path: original-order write + atomic timeline append.
@@ -372,6 +376,14 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
   });
 
   describe('upsertCourierReturn', () => {
+    let txMock: any;
+    beforeEach(() => {
+      prisma.$transaction.mockImplementation((cb: any) => {
+        txMock = makeTx();
+        return cb(txMock);
+      });
+    });
+
     it('creates a COURIER Return on first signal (status REQUESTED)', async () => {
       prisma.return.findFirst.mockResolvedValue(null);
       const ret = await service.upsertCourierReturn({
@@ -382,7 +394,7 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
         type: 'FULL',
         reason: 'customer asked',
       });
-      expect(prisma.return.create).toHaveBeenCalledWith(
+      expect(txMock.return.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             source: 'COURIER',
@@ -392,14 +404,17 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
           }),
         }),
       );
+      // Concurrency: the whole read-check-create runs under the per-order
+      // transaction advisory lock.
+      expect(txMock.$executeRaw).toHaveBeenCalledTimes(1);
       expect(ret.displayId).toMatch(/^RTN-/);
     });
 
-    it('updates courierStatus on later signals but never clobbers courierReturnId', async () => {
+    it('links ANY active Return for the order (not just the same courier) and never clobbers courierReturnId', async () => {
       prisma.return.findFirst.mockResolvedValue({
         id: 'ret-1',
         orderId: 'order-1',
-        courier: 'steadfast',
+        courier: 'pathao',
         courierReturnId: 'RR-10',
         status: 'REQUESTED',
       });
@@ -409,13 +424,107 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
         courierReturnId: 'RL-99',
         courierStatus: 'return_list_accepted',
       });
-      expect(prisma.return.create).not.toHaveBeenCalled();
-      const updateArg = prisma.return.update.mock.calls[0][0];
+      expect(txMock.return.create).not.toHaveBeenCalled();
+      const updateArg = txMock.return.update.mock.calls[0][0];
       expect(updateArg).toMatchObject({ where: { id: 'ret-1' } });
       // courierStatus advances…
       expect(updateArg.data.courierStatus).toBe('return_list_accepted');
       // …but the first courier return id is set-once, never clobbered.
       expect(updateArg.data.courierReturnId ?? 'RR-10').toBe('RR-10');
+      // …and the existing courier identity is never overwritten.
+      expect(updateArg.data.courier).toBeUndefined();
+    });
+
+    it('two courier signals for ONE order yield exactly ONE Return (create then link)', async () => {
+      const txs: any[] = [];
+      prisma.$transaction.mockImplementation((cb: any) => {
+        const tx = makeTx();
+        txs.push(tx);
+        return cb(tx);
+      });
+      const stored = {
+        id: 'ret-1',
+        orderId: 'order-1',
+        courier: 'pathao',
+        courierReturnId: 'RL-1',
+        courierStatus: 'order.return-id-created',
+        status: 'REQUESTED',
+      };
+      // First signal: nothing open → create. Second signal (a later courier
+      // event, same order): the just-created row is found → link only.
+      prisma.return.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(stored);
+
+      const created = await service.upsertCourierReturn({
+        orderId: 'order-1',
+        courier: 'pathao',
+        courierReturnId: 'RL-1',
+        courierStatus: 'order.return-id-created',
+        type: 'FULL',
+      });
+      const linked = await service.upsertCourierReturn({
+        orderId: 'order-1',
+        courier: 'pathao',
+        courierReturnId: 'RL-2',
+        courierStatus: 'order.returned',
+        type: 'FULL',
+      });
+
+      const creates = txs.reduce((n, tx) => n + tx.return.create.mock.calls.length, 0);
+      expect(creates).toBe(1);
+      expect(created.id).toBe('ret-1');
+      expect(linked.id).toBe('ret-1');
+      const secondUpdate = txs[1].return.update.mock.calls[0][0];
+      expect(secondUpdate).toMatchObject({
+        where: { id: 'ret-1' },
+        data: { courierStatus: 'order.returned' },
+      });
+      // The first courier return id is set-once across signals.
+      expect(secondUpdate.data.courierReturnId).toBeUndefined();
+    });
+
+    it('PARTIAL never auto-creates: no active Return → null + staff hold alert', async () => {
+      prisma.return.findFirst.mockResolvedValue(null);
+      const warn = jest.spyOn((service as any).logger, 'warn');
+      const ret = await service.upsertCourierReturn({
+        orderId: 'order-1',
+        courier: 'steadfast',
+        courierStatus: 'partial_delivered_return_received',
+        type: 'PARTIAL',
+      });
+      expect(ret).toBeNull();
+      expect(txMock.return.create).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/NO Return auto-created/));
+    });
+
+    it('createIfMissing:false links only — Steadfast return_request never creates', async () => {
+      prisma.return.findFirst.mockResolvedValue(null);
+      const ret = await service.upsertCourierReturn({
+        orderId: 'order-1',
+        courier: 'steadfast',
+        courierReturnId: 'RQ-1',
+        courierStatus: 'return_request',
+        createIfMissing: false,
+      });
+      expect(ret).toBeNull();
+      expect(txMock.return.create).not.toHaveBeenCalled();
+    });
+
+    it('courier FULL creates even when the order is past the staff-eligible statuses (external fact)', async () => {
+      // Order already sits at Return Pending (e.g. a previous Return was
+      // closed) — Rule 27(a) still requires the courier signal to be recorded.
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...order,
+        status: { id: 'st-rp', name: 'Return Pending' },
+      });
+      prisma.return.findFirst.mockResolvedValue(null);
+      const ret = await service.upsertCourierReturn({
+        orderId: 'order-1',
+        courier: 'pathao',
+        courierStatus: 'order.returned',
+        type: 'FULL',
+      });
+      expect(txMock.return.create).toHaveBeenCalled();
+      expect(ret.displayId).toMatch(/^RTN-/);
     });
   });
 

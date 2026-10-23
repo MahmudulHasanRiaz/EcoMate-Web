@@ -15,7 +15,16 @@ import {
 
 export const RETURN_TYPES = ['FULL', 'PARTIAL', 'EXCHANGE'] as const;
 export const RETURN_SOURCES = ['STAFF', 'COURIER', 'EXCHANGE'] as const;
-export const RETURN_STATUSES = ['REQUESTED', 'IN_TRANSIT', 'RECEIVED', 'RESTOCKED', 'CLOSED'] as const;
+// DELIVERED = the courier delivered the return TO US (sheet Rule 2). It is NOT
+// receiving: stock reconciles and RETURNED is set only on staff confirmation.
+export const RETURN_STATUSES = [
+  'REQUESTED',
+  'IN_TRANSIT',
+  'DELIVERED',
+  'RECEIVED',
+  'RESTOCKED',
+  'CLOSED',
+] as const;
 
 export type ReturnTypeInput = (typeof RETURN_TYPES)[number];
 export type ReturnSourceInput = (typeof RETURN_SOURCES)[number];

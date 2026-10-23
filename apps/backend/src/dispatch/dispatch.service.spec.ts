@@ -1001,7 +1001,8 @@ describe('DispatchService', () => {
       // Courier status recorded on dispatch + order, mapped dispatch status set…
       expect(summary.synced).toHaveLength(1);
       expect(prisma.dispatch.update.mock.calls[0][0].data.courierStatus).toBe('returned');
-      expect(prisma.dispatch.update.mock.calls[0][0].data.status).toBe('RETURNED');
+      // Sheet Rule 25: a courier 'returned' label caps at RETURN_PENDING.
+      expect(prisma.dispatch.update.mock.calls[0][0].data.status).toBe('RETURN_PENDING');
       // …but the automated order advance was attempted and rejected every time
       // (direct attempt + BFS steps all run under the 'system' actor lock).
       expect(ordersService.updateStatus).toHaveBeenCalled();

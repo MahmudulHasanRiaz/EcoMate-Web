@@ -15,7 +15,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2, RotateCcw } from 'lucide-react'
 
-const RETURN_STATUSES = ['REQUESTED', 'IN_TRANSIT', 'RECEIVED', 'RESTOCKED', 'CLOSED']
+// DELIVERED = courier delivered the return to us; NOT received — stock stays
+// untouched until a staff member marks the Return received (sheet Rule 2).
+const RETURN_STATUSES = ['REQUESTED', 'IN_TRANSIT', 'DELIVERED', 'RECEIVED', 'RESTOCKED', 'CLOSED']
 const RETURN_TYPES = ['FULL', 'PARTIAL', 'EXCHANGE']
 const RETURN_SOURCES = ['STAFF', 'COURIER', 'EXCHANGE']
 const COURIERS = ['steadfast', 'pathao', 'redx', 'carrybee']

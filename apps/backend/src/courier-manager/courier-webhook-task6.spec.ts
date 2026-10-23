@@ -257,8 +257,8 @@ describe('CourierWebhookService — Return records (Task 6)', () => {
       expect(result).toEqual(
         expect.objectContaining({
           reconciled: true,
-          dispatchStatus: 'RETURNED',
-          returnStatus: 'PARCEL_BACK',
+          dispatchStatus: 'RETURN_PENDING',
+          returnStatus: 'DELIVERED',
           stockReconciled: false,
           codOwed: false,
         }),
@@ -289,7 +289,7 @@ describe('CourierWebhookService — Return records (Task 6)', () => {
         expect.objectContaining({
           reconciled: true,
           dispatchStatus: 'PARTIAL',
-          returnStatus: 'PARCEL_BACK',
+          returnStatus: 'DELIVERED',
           stockReconciled: false,
           codOwed: false,
         }),

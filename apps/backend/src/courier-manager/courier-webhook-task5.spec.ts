@@ -12,8 +12,9 @@ import { ReturnsService } from '../returns/returns.service';
  *    (no EXCEPTION value exists in the DispatchStatus enum — verified in
  *    schema.prisma — so the status is kept, never forced to HOLD/DELIVERED).
  *  - 6 return statuses (sourced ONLY from
- *    GET /status_with_return_status_by_cid) → RETURNED/CANCELLED path or
- *    PARTIAL-kept + return state; *_received reconciles stock, NO COD owed.
+ *    GET /status_with_return_status_by_cid) → RETURN_PENDING / PARTIAL path
+ *    (never RETURNED — sheet Rule 25) with a Return stage; *_received moves
+ *    the Return stage to DELIVERED (stock stays staff-receive-only), NO COD.
  *  - RedX `paid` → DELIVERED + Delivered + invoice (Task 1 owner lock;
  *    paid→money-only WITHDRAWN — paid = DELIVERED + money),
  *  - RedX `pickup-pending` → DISPATCHED (booked awaiting pickup).
@@ -254,9 +255,8 @@ describe('CourierWebhookService — Task 5 owner-approved status mappings', () =
   });
 
   describe('reconcileSteadfastReturn (return endpoint vocabulary only)', () => {
-    // Task 6 (Fix 13, row 44 owner-locked): the parcel is back — dispatch
-    // RETURNED AND the order surfaces as 'Return Pending' for staff
-    // confirmation (was advanceOrder null — the order never surfaced).
+    // Sheet Rule 2/25: the parcel is back — dispatch stays RETURN_PENDING (max)
+    // and the order surfaces as 'Return Pending' for staff confirmation.
     it('cancelled_return_received → parcel back recorded (no auto-receive/restore), no COD, order to Return Pending', async () => {
       manager.getSteadfastReturnStatus.mockResolvedValue({
         deliveryStatus: 'cancelled_return_received',
@@ -270,14 +270,15 @@ describe('CourierWebhookService — Task 5 owner-approved status mappings', () =
         expect.objectContaining({
           reconciled: true,
           deliveryStatus: 'cancelled_return_received',
-          dispatchStatus: 'RETURNED',
+          dispatchStatus: 'RETURN_PENDING',
           stockReconciled: false,
           codOwed: false,
         }),
       );
+      // Sheet Rule 2/25: back-with-merchant caps at RETURN_PENDING.
       expect(prisma.dispatch.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
-          update: expect.objectContaining({ status: 'RETURNED' }),
+          update: expect.objectContaining({ status: 'RETURN_PENDING' }),
         }),
       );
       // Unified Return path: item-level restore via ReturnsService (never a

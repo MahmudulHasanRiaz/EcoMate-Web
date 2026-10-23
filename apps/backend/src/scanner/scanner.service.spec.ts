@@ -146,6 +146,34 @@ describe('scanner-resolver — resolveScanIdentifier', () => {
     expect(outcome.status).toBe('resolved');
   });
 
+  it('resolves an exchange order scanned as Ex-XXXX (sheet Rule 20)', async () => {
+    const exchange = saleOrder({
+      id: 'ex-1',
+      displayId: 'Ex-261023-0001',
+      kind: 'EXCHANGE',
+    });
+    const { prisma } = makePrismaFake({ orders: [exchange] });
+    const outcome = await resolveScanIdentifier(prisma, 'ex-261023-0001');
+    expect(outcome.status).toBe('resolved');
+    expect(outcome.order?.displayId).toBe('Ex-261023-0001');
+    expect(outcome.order?.kind).toBe('EXCHANGE');
+  });
+
+  it('resolves an exchange QR URL (Ex-XXXX path segment)', async () => {
+    const exchange = saleOrder({
+      id: 'ex-2',
+      displayId: 'Ex-261023-0002',
+      kind: 'EXCHANGE',
+    });
+    const { prisma } = makePrismaFake({ orders: [exchange] });
+    const outcome = await resolveScanIdentifier(
+      prisma,
+      'https://store.example.com/orders/Ex-261023-0002',
+    );
+    expect(outcome.status).toBe('resolved');
+    expect(outcome.order?.displayId).toBe('Ex-261023-0002');
+  });
+
   it('returns selection_required when an order maps to multiple dispatches', async () => {
     const order = saleOrder();
     const d1 = dispatchFor(order, { id: 'dsp-1', consignmentId: 'CONS-1' });
