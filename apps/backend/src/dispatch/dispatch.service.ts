@@ -683,6 +683,23 @@ export class DispatchService {
       return;
     }
 
+    // Owner directive (2026-10-23): an automated dispatch sync must NEVER
+    // land 'Delivered' on an order that has a Return which is not CLOSED —
+    // the parcel's story includes a return, so delivery completion is a
+    // staff decision. Deterministic (keyed on the Return record); mirrors
+    // the OrdersService.updateStatus guard for automated actors.
+    if (targetName === 'Delivered' && isAutomatedActorId(performedBy)) {
+      const db = this.prisma as any;
+      const openReturn =
+        typeof db?.return?.findFirst === 'function'
+          ? await db.return.findFirst({
+              where: { orderId, status: { not: 'CLOSED' } },
+              select: { id: true },
+            })
+          : null;
+      if (openReturn) return;
+    }
+
     const targetStatus = await this.prisma.orderStatus.findUnique({
       where: { name: targetName },
     });

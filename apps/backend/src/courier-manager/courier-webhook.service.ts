@@ -1067,12 +1067,37 @@ export class CourierWebhookService {
     rawStatus?: string | null,
   ) {
     const trackingCode = (body['tracking_code'] as string) || undefined;
+    // Owner directive (2026-10-23) — return states are STICKY at the
+    // dispatch layer: once a consignment's story is "coming back"
+    // (RETURN_PENDING / RETURNED), a later delivery-family claim for the
+    // SAME consignment (delivered / partial — e.g. the courier reporting
+    // the return leg, or a delayed duplicate of the forward event) must
+    // not rewrite the dispatch's workflow status or stamp deliveredAt.
+    // The raw courier claim is still recorded (courierStatus + timeline by
+    // the callers); only the workflow state is protected. A genuine
+    // re-delivery is a NEW consignment with its own dispatch row.
+    // Return-family events are never blocked by delivery states — the
+    // asymmetry is deliberate and deterministic.
+    const existing =
+      typeof this.prisma.dispatch.findUnique === 'function'
+        ? await this.prisma.dispatch.findUnique({
+            where: {
+              courier_consignmentId: { courier: courier as any, consignmentId },
+            },
+            select: { status: true },
+          })
+        : null;
+    const returnSticky =
+      !!existing &&
+      (existing.status === 'RETURN_PENDING' || existing.status === 'RETURNED') &&
+      (status === 'DELIVERED' || status === 'PARTIAL');
+    const effectiveStatus = returnSticky ? (existing!.status as string) : status;
     await this.prisma.dispatch.upsert({
       where: {
         courier_consignmentId: { courier: courier as any, consignmentId },
       },
       update: {
-        status: status as any,
+        status: effectiveStatus as any,
         trackingCode,
         // Persist the courier's raw running status against the dispatch so the
         // Dispatch list "Courier Status" column reflects the latest state even
@@ -1103,7 +1128,7 @@ export class CourierWebhookService {
         data: { pickedUpAt: new Date() },
       });
     }
-    if (status === 'DELIVERED') {
+    if (effectiveStatus === 'DELIVERED') {
       await this.prisma.dispatch.updateMany({
         where: { courier: courier as any, consignmentId, deliveredAt: null },
         data: { deliveredAt: new Date() },
@@ -1149,6 +1174,40 @@ export class CourierWebhookService {
           remarks:
             `Staff-partial 15.4 promotion on hold; order kept Partial — ` +
             `${reason} — needs staff review`,
+        });
+        return;
+      }
+    }
+
+    // Owner directive (2026-10-23): a courier delivery signal must NEVER
+    // advance an order to Delivered while a Return exists for it that is
+    // not CLOSED. Once the parcel's story includes a return — including a
+    // return the courier itself is now "delivering" back to us — delivery
+    // completion is a staff decision (or the verified Rule 15.4 promotion
+    // above, which targets Partial and re-verifies its own conditions).
+    // Deterministic: keyed on the Return record, not on event order or
+    // timestamps. OrdersService.updateStatus enforces the same rule for
+    // every other automated caller; this pre-check keeps the webhook path
+    // from even attempting (and stepping toward) the transition.
+    if (targetName === 'Delivered') {
+      const db = this.prisma as any;
+      const openReturn =
+        typeof db?.return?.findFirst === 'function'
+          ? await db.return.findFirst({
+              where: { orderId, status: { not: 'CLOSED' } },
+              select: { id: true },
+            })
+          : null;
+      if (openReturn) {
+        this.logger.warn(
+          `Courier Delivered signal ignored for order ${orderId} — a return ` +
+            `is in progress or completed; delivery completion is a staff decision`,
+        );
+        await this.addTimelineEntry(orderId, 'system', order.status.name, {
+          remarks:
+            'Courier delivery signal ignored — this order has a return in ' +
+            'progress or completed; the signal was recorded but the order ' +
+            'status is unchanged (staff decision required)',
         });
         return;
       }
