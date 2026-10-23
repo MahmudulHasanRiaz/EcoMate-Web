@@ -704,7 +704,7 @@ export class PaymentJournalService {
     if (existing) return existing.id;
     try {
       const created = await this.prisma.account.create({
-        data: { code, name, type, isGroup: false },
+        data: { code, name, type, isGroup: false, isSystem: true },
       });
       this.logger.log(`Created system account ${created.code} (${created.id})`);
       return created.id;

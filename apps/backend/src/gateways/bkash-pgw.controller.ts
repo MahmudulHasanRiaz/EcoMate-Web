@@ -15,6 +15,7 @@ import { PaymentStatus } from '@prisma/client';
 import { BkashPgwService } from './bkash-pgw.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PaymentJournalService } from '../accounting/payment-journal.service';
+import { assertGatewayUsableOnSurface } from '../payments/payment-account';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
@@ -59,6 +60,9 @@ export class BkashPgwController {
     dto: { orderId: string; token?: string },
     @CurrentUser() user?: { userId: string },
   ) {
+    // D6: the PGW is a website-surface gateway — refuse initiation when it
+    // is disabled or hidden from the storefront.
+    await assertGatewayUsableOnSurface(this.prisma, 'bkash_pgw', 'storefront');
     // Tx 1: lock, recheck, reserve PENDING Payment
     const paymentRecord = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRawUnsafe(

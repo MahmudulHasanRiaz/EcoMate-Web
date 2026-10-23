@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { accountingApi, type AccountResponse } from '@/features/accounting/api'
 import { gatewayApi } from '@/features/gateways/api'
-import { enabledGatewayOptions, flattenEligibleAssetAccounts } from '@/features/payments/lib/eligible-accounts'
+import { adminSelectableGatewayOptions, enabledGatewayOptions, flattenEligibleAssetAccounts } from '@/features/payments/lib/eligible-accounts'
 
 /**
  * Part 3 (owner-locked): ONE shared gateway + account pair for every staff
@@ -52,7 +52,18 @@ export function PaymentGatewayAccountSelect({
     staleTime: 60_000,
   })
 
-  const gatewayOptions = useMemo(() => enabledGatewayOptions(gateways), [gateways])
+  const gatewayOptions = useMemo(() => {
+    const options = adminSelectableGatewayOptions(gateways)
+    // History guard (D6): a form opened for an existing payment context
+    // (e.g. recording a payment on an older order) keeps its gateway even
+    // when that gateway is now hidden from the admin panel — the flag
+    // hides it for NEW selections, never for work already in flight.
+    if (gatewayCode && !options.some((g) => g.code === gatewayCode)) {
+      const current = enabledGatewayOptions(gateways).find((g) => g.code === gatewayCode)
+      if (current) return [...options, current]
+    }
+    return options
+  }, [gateways, gatewayCode])
   const accounts = useMemo(() => flattenEligibleAssetAccounts(accountTree), [accountTree])
   const selectedGateway = gatewayOptions.find((g) => g.code === gatewayCode)
   const mappedAccountId = selectedGateway?.accountId ?? null

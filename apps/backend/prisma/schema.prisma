@@ -1342,6 +1342,16 @@ model PaymentGateway {
   /// Effective value = override ?? global (see payments/payment-settings.ts).
   staffAutoVerifiedOverride Boolean?
   editAllowedOverride       Boolean?
+  /// D6 (owner-locked 2026-10-23): per-surface visibility. The master
+  /// `enabled` stays the global kill-switch; a surface flag only narrows
+  /// where an enabled gateway may be SELECTED for new payments. Existing
+  /// payments/refunds on a hidden surface keep working (history rule).
+  showOnStorefront          Boolean           @default(true)
+  showOnAdmin               Boolean           @default(true)
+  showOnPos                 Boolean           @default(true)
+  /// D6: gateway logo (Media Picker in Settings → Payment Gateways),
+  /// shown at storefront checkout and in gateway lists.
+  logoUrl                   String?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
@@ -2951,6 +2961,9 @@ model Account {
   description String?     @db.Text
   isActive    Boolean     @default(true)
   isGroup     Boolean     @default(false)
+  /// D6: system accounts (auto-created gateway settlement accounts and the
+  /// lazy accounting leaves) can never be deleted — deactivate instead.
+  isSystem    Boolean     @default(false)
   createdBy   String?
   updatedBy   String?
   createdAt   DateTime    @default(now())

@@ -390,7 +390,11 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, viewToken, onClos
                 <ArrowLeft size={20} />
               </button>
               <div className="flex items-center gap-3">
-                <PaymentLogo method={selectedGw.code} size="md" />
+                {selectedGw.logoUrl ? (
+                  <img src={selectedGw.logoUrl} alt={gwName} className="h-9 w-10 object-contain rounded" />
+                ) : (
+                  <PaymentLogo method={selectedGw.code} size="md" />
+                )}
                 <div>
                   <h3 className="text-lg font-bold text-gray-800">{gwName}</h3>
                   <p className="text-xs text-gray-400">{modeLabel} Account</p>
@@ -465,7 +469,11 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, viewToken, onClos
                 onClick={() => handleSelectGateway(gw)}
                 className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 hover:border-brand-blue hover:bg-brand-blue/5 transition-all"
               >
-                <PaymentLogo method={gw.code} size="md" />
+                {gw.logoUrl ? (
+                  <img src={gw.logoUrl} alt={gwName} className="h-9 w-10 object-contain rounded" />
+                ) : (
+                  <PaymentLogo method={gw.code} size="md" />
+                )}
                 <div className="flex-1 text-left">
                   <p className="font-bold text-gray-800">{gwName}</p>
                   {gw.phoneNumber && <p className="text-xs text-gray-400">{gw.phoneNumber}</p>}

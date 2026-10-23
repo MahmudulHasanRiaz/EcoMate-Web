@@ -119,8 +119,33 @@ export class AccountsService {
 
   async remove(id: string) {
     const account = await this.findOne(id);
+    // D6 (standard accounting practice): system accounts are never
+    // deleted — deactivate them instead so history and mappings survive.
+    if ((account as any).isSystem) {
+      throw new BadRequestException(
+        'System accounts cannot be deleted. Deactivate the account instead.',
+      );
+    }
     if (account.children && account.children.length > 0) {
       throw new BadRequestException('Cannot delete account with children');
+    }
+    // A manual account is deletable only while completely unused: no
+    // journal lines reference it and no gateway settles into it.
+    const journalLines = await this.prisma.journalEntryLine.count({
+      where: { accountId: id },
+    });
+    if (journalLines > 0) {
+      throw new BadRequestException(
+        'Account has journal entries and cannot be deleted. Deactivate it instead.',
+      );
+    }
+    const mappedGateways = await this.prisma.paymentGateway.count({
+      where: { accountId: id },
+    });
+    if (mappedGateways > 0) {
+      throw new BadRequestException(
+        'Account is a gateway settlement account. Change the gateway mapping first.',
+      );
     }
     return this.prisma.account.delete({ where: { id } });
   }

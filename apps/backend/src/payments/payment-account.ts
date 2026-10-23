@@ -78,7 +78,22 @@ export interface ConfiguredGateway {
   enabled: boolean;
   type: string;
   accountId: string | null;
+  showOnStorefront: boolean;
+  showOnAdmin: boolean;
+  showOnPos: boolean;
 }
+
+const CONFIGURED_GATEWAY_SELECT = {
+  id: true,
+  code: true,
+  name: true,
+  enabled: true,
+  type: true,
+  accountId: true,
+  showOnStorefront: true,
+  showOnAdmin: true,
+  showOnPos: true,
+} as const;
 
 /** Case-insensitive, separator-insensitive comparison key (mirrors the admin
  * gateway-normalize helper). */
@@ -169,14 +184,7 @@ export async function findConfiguredGateway(
   if (!db?.paymentGateway?.findUnique) return null;
   return db.paymentGateway.findUnique({
     where: { code: gatewayCode },
-    select: {
-      id: true,
-      code: true,
-      name: true,
-      enabled: true,
-      type: true,
-      accountId: true,
-    },
+    select: CONFIGURED_GATEWAY_SELECT,
   });
 }
 
@@ -238,4 +246,124 @@ export async function resolveGatewayAccountId(
     select: { accountId: true },
   });
   return legacy?.accountId ?? null;
+}
+
+// ─── D6: per-surface usability + auto settlement accounts ──────────────────
+
+export type GatewaySurface = 'storefront' | 'admin' | 'pos';
+
+const SURFACE_FLAG: Record<
+  GatewaySurface,
+  'showOnStorefront' | 'showOnAdmin' | 'showOnPos'
+> = {
+  storefront: 'showOnStorefront',
+  admin: 'showOnAdmin',
+  pos: 'showOnPos',
+};
+
+const SURFACE_LABEL: Record<GatewaySurface, string> = {
+  storefront: 'the website',
+  admin: 'the admin panel',
+  pos: 'POS',
+};
+
+/**
+ * Hard gate for NEW payment creation on a customer/counter surface
+ * (storefront PGW initiation, POS sale). A gateway that exists in config
+ * but is disabled, or hidden on this surface, cannot take a new payment
+ * there. Unknown legacy codes pass — config errors are the job of
+ * requireConfiguredGateway on staff write paths, and history (existing
+ * payments, refunds) is never blocked by surface flags.
+ */
+export async function assertGatewayUsableOnSurface(
+  db: any,
+  gatewayCode: string,
+  surface: GatewaySurface,
+): Promise<void> {
+  if (!db?.paymentGateway?.findUnique) return;
+  let gateway = await findConfiguredGateway(db, gatewayCode);
+  if (!gateway && db?.paymentGateway?.findFirst) {
+    gateway = await db.paymentGateway.findFirst({
+      where: { code: { equals: gatewayCode, mode: 'insensitive' } },
+      select: CONFIGURED_GATEWAY_SELECT,
+    });
+  }
+  if (!gateway) return;
+  if (gateway.enabled === false) {
+    throw new BadRequestException(
+      `Payment gateway "${gateway.name}" is disabled.`,
+    );
+  }
+  if (gateway[SURFACE_FLAG[surface]] === false) {
+    throw new BadRequestException(
+      `Payment gateway "${gateway.name}" is not available on ${SURFACE_LABEL[surface]}.`,
+    );
+  }
+}
+
+/** The CoA account spec auto-created for a gateway (D6). */
+export function gatewaySettlementAccountSpec(gateway: {
+  code: string;
+  name: string;
+}): { code: string; name: string } {
+  if (gateway.code === 'cash') return { code: 'cash-in-hand', name: 'Cash in Hand' };
+  return { code: gateway.code, name: gateway.name };
+}
+
+/**
+ * Ensures the gateway's namesake settlement account exists (an active,
+ * non-group Asset leaf marked isSystem) and — ONLY on the pass that
+ * creates it — maps the gateway to it when the gateway has no mapping.
+ *
+ * Never overrides: a pre-existing account (ours or the client's) is left
+ * untouched, and a gateway that already has ANY mapping (or had one
+ * deliberately cleared after creation) is never re-mapped here. An
+ * account that exists but is not eligible (group / inactive / non-asset)
+ * is skipped silently — the settings-page warnings surface that state.
+ */
+export async function ensureGatewaySettlementAccount(
+  db: any,
+  gateway: { id: string; code: string; name: string; accountId?: string | null },
+): Promise<{ accountId: string | null; created: boolean; mapped: boolean }> {
+  const current = gateway.accountId ?? null;
+  if (!db?.account?.findUnique || !db?.paymentGateway?.update) {
+    return { accountId: current, created: false, mapped: false };
+  }
+  const spec = gatewaySettlementAccountSpec(gateway);
+  let account = await db.account.findUnique({ where: { code: spec.code } });
+  let created = false;
+  if (!account) {
+    try {
+      account = await db.account.create({
+        data: {
+          code: spec.code,
+          name: spec.name,
+          type: 'asset',
+          isGroup: false,
+          isActive: true,
+          isSystem: true,
+          description: `Auto-created settlement account for the ${gateway.name} gateway.`,
+        },
+      });
+      created = true;
+    } catch (e: any) {
+      // Unique-code race (concurrent bootstrap): re-read and continue.
+      if (e?.code !== 'P2002') throw e;
+      account = await db.account.findUnique({ where: { code: spec.code } });
+      if (!account) throw e;
+    }
+  }
+  const eligible =
+    account.type === 'asset' &&
+    account.isGroup === false &&
+    account.isActive === true;
+  let mapped = false;
+  if (created && eligible && !current) {
+    await db.paymentGateway.update({
+      where: { id: gateway.id },
+      data: { accountId: account.id },
+    });
+    mapped = true;
+  }
+  return { accountId: mapped ? account.id : current, created, mapped };
 }

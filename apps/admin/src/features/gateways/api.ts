@@ -30,6 +30,12 @@ export interface GatewayConfig {
   /** D: tri-state per-gateway overrides — null = use the global default. */
   staffAutoVerifiedOverride?: boolean | null;
   editAllowedOverride?: boolean | null;
+  /** D6: per-surface visibility (master `enabled` still rules overall). */
+  showOnStorefront?: boolean;
+  showOnAdmin?: boolean;
+  showOnPos?: boolean;
+  /** D6: gateway logo URL (Media Picker), shown at checkout. */
+  logoUrl?: string | null;
 }
 
 export interface ProductOverride {

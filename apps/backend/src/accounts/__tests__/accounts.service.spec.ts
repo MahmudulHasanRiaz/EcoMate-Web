@@ -65,6 +65,12 @@ describe('AccountsService', () => {
               delete: jest.fn().mockResolvedValue(mockAccount),
               count: jest.fn().mockResolvedValue(1),
             },
+            journalEntryLine: {
+              count: jest.fn().mockResolvedValue(0),
+            },
+            paymentGateway: {
+              count: jest.fn().mockResolvedValue(0),
+            },
           },
         },
       ],
@@ -181,6 +187,29 @@ describe('AccountsService', () => {
     it('should delete leaf account', async () => {
       const result = await service.remove('acc-1');
       expect(result).toEqual(mockAccount);
+    });
+
+    it('D6: refuses to delete a system account', async () => {
+      jest
+        .spyOn(prisma.account, 'findUnique')
+        .mockResolvedValue({ ...mockAccount, isSystem: true, children: [] });
+      await expect(service.remove('acc-1')).rejects.toThrow(
+        /System accounts cannot be deleted/,
+      );
+    });
+
+    it('D6: refuses to delete an account with journal entries', async () => {
+      jest.spyOn(prisma.journalEntryLine, 'count').mockResolvedValue(3);
+      await expect(service.remove('acc-1')).rejects.toThrow(
+        /journal entries/,
+      );
+    });
+
+    it('D6: refuses to delete an account mapped to a gateway', async () => {
+      jest.spyOn(prisma.paymentGateway, 'count').mockResolvedValue(1);
+      await expect(service.remove('acc-1')).rejects.toThrow(
+        /settlement account/,
+      );
     });
 
     it('should throw if not found', async () => {

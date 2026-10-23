@@ -11,7 +11,8 @@ import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
-import { Loader2, Save, ChevronDown, ChevronUp, Phone, Settings2, Info, CheckCircle2, Truck, ShieldCheck, Zap } from 'lucide-react'
+import { Loader2, Save, ChevronDown, ChevronUp, Phone, Settings2, Info, CheckCircle2, Truck, ShieldCheck, Zap, ImagePlus, X } from 'lucide-react'
+import { MediaPicker } from '@/components/media-picker'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 import { accountingApi } from '@/features/accounting/api'
@@ -168,6 +169,7 @@ export function GatewaySettings() {
 
   const [expandedGateways, setExpandedGateways] = useState<Record<string, boolean>>({})
   const [gatewayEditData, setGatewayEditData] = useState<Record<string, any>>({})
+  const [logoPickerCode, setLogoPickerCode] = useState<string | null>(null)
 
   const updateOptionMut = useMutation({
     mutationFn: ({ type, data }: { type: string; data: { enabled?: boolean } }) =>
@@ -205,6 +207,10 @@ export function GatewaySettings() {
         accountId: g.accountId ?? null,
         staffAutoVerifiedOverride: g.staffAutoVerifiedOverride ?? null,
         editAllowedOverride: g.editAllowedOverride ?? null,
+        showOnStorefront: g.showOnStorefront ?? true,
+        showOnAdmin: g.showOnAdmin ?? true,
+        showOnPos: g.showOnPos ?? true,
+        logoUrl: g.logoUrl ?? null,
       },
     }))
   }
@@ -253,6 +259,76 @@ export function GatewaySettings() {
           Payments on this gateway are stamped with this account. Leave “Not set” to show the warning badge.
         </p>
       )}
+    </div>
+  )
+
+  // D6: per-surface visibility. The master enable switch stays global;
+  // these only narrow where an enabled gateway can be picked for NEW
+  // payments. Existing payments and refunds are never affected.
+  const surfaceVisibilityField = (g: GatewayConfig, d: any) => {
+    const surfaces = [
+      { key: 'showOnStorefront', label: 'Website (online checkout)' },
+      { key: 'showOnAdmin', label: 'Admin panel' },
+      { key: 'showOnPos', label: 'POS' },
+    ] as const
+    return (
+      <div className='space-y-2'>
+        <Label className='text-xs font-semibold'>Visible on</Label>
+        <div className='flex flex-wrap gap-x-5 gap-y-2'>
+          {surfaces.map((s) => (
+            <label key={s.key} className='flex items-center gap-2 text-xs'>
+              <Switch
+                checked={d[s.key] ?? true}
+                onCheckedChange={(v) =>
+                  setGatewayEditData((p) => ({ ...p, [g.code]: { ...d, [s.key]: v } }))
+                }
+              />
+              {s.label}
+            </label>
+          ))}
+        </div>
+        <p className='text-[11px] text-muted-foreground'>
+          Turning a surface off hides this gateway for new payments there. Existing payments and refunds keep working.
+        </p>
+      </div>
+    )
+  }
+
+  // D6: gateway logo via the shared Media Picker; shown at checkout.
+  const logoField = (g: GatewayConfig, d: any) => (
+    <div className='space-y-2'>
+      <Label className='text-xs font-semibold'>Gateway logo</Label>
+      <div className='flex items-center gap-3'>
+        {d.logoUrl ? (
+          <img src={d.logoUrl} alt={`${g.name} logo`} className='h-9 w-9 rounded-md border bg-white object-contain p-0.5' />
+        ) : (
+          <div className='flex h-9 w-9 items-center justify-center rounded-md border bg-muted/40 text-muted-foreground'>
+            <ImagePlus className='h-4 w-4' />
+          </div>
+        )}
+        <Button type='button' size='sm' variant='outline' onClick={() => setLogoPickerCode(g.code)}>
+          {d.logoUrl ? 'Change logo' : 'Choose logo'}
+        </Button>
+        {d.logoUrl && (
+          <Button
+            type='button'
+            size='sm'
+            variant='ghost'
+            onClick={() => setGatewayEditData((p) => ({ ...p, [g.code]: { ...d, logoUrl: null } }))}
+          >
+            <X className='h-3.5 w-3.5 mr-1' /> Remove
+          </Button>
+        )}
+      </div>
+      <MediaPicker
+        open={logoPickerCode === g.code}
+        onOpenChange={(open) => setLogoPickerCode(open ? g.code : null)}
+        selected={d.logoUrl ? [d.logoUrl] : []}
+        multiple={false}
+        onSelect={(urls) =>
+          setGatewayEditData((p) => ({ ...p, [g.code]: { ...d, logoUrl: urls[0] ?? null } }))
+        }
+      />
     </div>
   )
 
@@ -350,6 +426,10 @@ export function GatewaySettings() {
                   accountId: g.accountId ?? null,
                   staffAutoVerifiedOverride: g.staffAutoVerifiedOverride ?? null,
                   editAllowedOverride: g.editAllowedOverride ?? null,
+                  showOnStorefront: g.showOnStorefront ?? true,
+                  showOnAdmin: g.showOnAdmin ?? true,
+                  showOnPos: g.showOnPos ?? true,
+                  logoUrl: g.logoUrl ?? null,
                 }
 
                 if (isCashType) {
@@ -390,6 +470,10 @@ export function GatewaySettings() {
                             Save
                           </Button>
                         </div>
+                        <div className='grid gap-3 border-t pt-3 sm:grid-cols-2'>
+                          {surfaceVisibilityField(g, d)}
+                          {logoField(g, d)}
+                        </div>
                       </CardContent>
                     </Card>
                   )
@@ -426,6 +510,10 @@ export function GatewaySettings() {
                               accountId: d.accountId ?? g.accountId ?? null,
                               staffAutoVerifiedOverride: d.staffAutoVerifiedOverride ?? null,
                               editAllowedOverride: d.editAllowedOverride ?? null,
+                              showOnStorefront: d.showOnStorefront ?? g.showOnStorefront ?? true,
+                              showOnAdmin: d.showOnAdmin ?? g.showOnAdmin ?? true,
+                              showOnPos: d.showOnPos ?? g.showOnPos ?? true,
+                              logoUrl: d.logoUrl ?? g.logoUrl ?? null,
                             };
                             setGatewayEditData(p => ({ ...p, [g.code]: updated }));
                             
@@ -443,6 +531,10 @@ export function GatewaySettings() {
                                 sortOrder: g.sortOrder,
                                 staffAutoVerifiedOverride: d.staffAutoVerifiedOverride ?? null,
                                 editAllowedOverride: d.editAllowedOverride ?? null,
+                                showOnStorefront: d.showOnStorefront ?? g.showOnStorefront ?? true,
+                                showOnAdmin: d.showOnAdmin ?? g.showOnAdmin ?? true,
+                                showOnPos: d.showOnPos ?? g.showOnPos ?? true,
+                                logoUrl: d.logoUrl ?? g.logoUrl ?? null,
                               } 
                             });
                           }} 
@@ -485,6 +577,10 @@ export function GatewaySettings() {
                                 </div>
                               </div>
                               {settlementAccountField(g, d)}
+                              <div className='grid gap-4 sm:grid-cols-2'>
+                                {surfaceVisibilityField(g, d)}
+                                {logoField(g, d)}
+                              </div>
                             </div>
                             <div className='md:col-span-5 space-y-4'>
                               <div className='rounded-lg bg-background border p-4 space-y-3'>
@@ -524,6 +620,12 @@ export function GatewaySettings() {
                             </div>
                             <div className='sm:col-span-2'>
                               {settlementAccountField(g, d)}
+                            </div>
+                            <div className='sm:col-span-2'>
+                              {surfaceVisibilityField(g, d)}
+                            </div>
+                            <div className='sm:col-span-2'>
+                              {logoField(g, d)}
                             </div>
                             {g.type === 'manual' && (
                               <div className='sm:col-span-2 space-y-3 rounded-lg border bg-background p-3'>

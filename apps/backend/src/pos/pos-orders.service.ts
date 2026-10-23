@@ -23,7 +23,10 @@ import { Prisma } from '@prisma/client';
 import { CommissionsService } from '../commissions/commissions.service';
 import { CustomerAddressService } from '../customers/customer-address.service';
 import { SalesChannelService } from '../sales-channel/sales-channel.service';
-import { resolveGatewayAccountId } from '../payments/payment-account';
+import {
+  assertGatewayUsableOnSurface,
+  resolveGatewayAccountId,
+} from '../payments/payment-account';
 import { PaymentJournalService } from '../accounting/payment-journal.service';
 
 @Injectable()
@@ -516,6 +519,17 @@ private async resolveCanonicalPos(
       throw new BadRequestException(
         'Session does not belong to this cashier',
       );
+    }
+
+    // D6: every payment method in this sale must be usable on the POS
+    // surface (enabled + not hidden for POS). Checked before any writes;
+    // the no-payments path settles as cash, so it is checked too.
+    if (dto.payments?.length) {
+      for (const pm of dto.payments) {
+        await assertGatewayUsableOnSurface(this.prisma, pm.method, 'pos');
+      }
+    } else {
+      await assertGatewayUsableOnSurface(this.prisma, 'CASH', 'pos');
     }
 
     // Idempotency check: if key provided and already processed, return existing order
