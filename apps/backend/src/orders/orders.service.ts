@@ -4062,6 +4062,35 @@ export class OrdersService {
       );
     }
 
+    // Owner directive (2026-10-23): an automated actor must NEVER mark an
+    // order Delivered while a Return exists for it that is not CLOSED. The
+    // parcel's story already includes a return (requested, in transit back,
+    // delivered to us, received or restocked) — a late or duplicated courier
+    // delivery signal (delivered / paid / exchanged) says nothing about the
+    // kept goods and must not rewrite the order. Deterministic: keyed on
+    // the Return record itself, never on timestamps or inference. Staff
+    // actors are unaffected (they decide), and the Rule 15.4 staff-partial
+    // promotion passes through its verified bypass flag above.
+    if (
+      newStatus.name === 'Delivered' &&
+      isAutomatedActor(userId) &&
+      !staffPartialBypass
+    ) {
+      const db = this.prisma as any;
+      const openReturn =
+        typeof db?.return?.findFirst === 'function'
+          ? await db.return.findFirst({
+              where: { orderId: id, status: { not: 'CLOSED' } },
+              select: { id: true },
+            })
+          : null;
+      if (openReturn) {
+        throw new BadRequestException(
+          'Order has a return in progress or completed — automated processes cannot mark it Delivered. It must be resolved manually.',
+        );
+      }
+    }
+
     // Task 4 (Fix 8): an exchange-linked original confirms Returned ONLY on
     // BOTH signals — its exchange order(s) delivered AND its Return(EXCHANGE)
     // leg(s) arrived. NEVER auto from an exchange event alone (automated

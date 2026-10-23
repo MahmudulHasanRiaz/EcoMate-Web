@@ -427,6 +427,53 @@ describe('OrdersService — staff-partial flow (Task 5 Fix 9)', () => {
     });
   });
 
+  describe('Automated Delivered blocked while a Return is open (owner directive 2026-10-23)', () => {
+    it('rejects an automated Shipping → Delivered when a non-CLOSED Return exists', async () => {
+      prisma.order.findUnique.mockResolvedValue(makeOrder(shippingStatus));
+      prisma.return.findFirst.mockResolvedValue({
+        id: 'ret-9',
+        displayId: 'RTN-261023-0009',
+        source: 'COURIER',
+        type: 'FULL',
+        status: 'IN_TRANSIT',
+      });
+      await expect(
+        service.updateStatus('order-1', { statusId: 'status-delivered' }, 'system'),
+      ).rejects.toThrow(/return in progress or completed/i);
+      expect(prisma.order.update).not.toHaveBeenCalled();
+    });
+
+    it('allows an automated Shipping → Delivered when NO Return exists', async () => {
+      prisma.order.findUnique.mockResolvedValue(makeOrder(shippingStatus));
+      prisma.return.findFirst.mockResolvedValue(null);
+      tx.order.findUnique.mockResolvedValue(makeOrder(shippingStatus));
+      const result = await service.updateStatus(
+        'order-1',
+        { statusId: 'status-delivered' },
+        'system',
+      );
+      expect((result as any).status.name).toBe('Delivered');
+    });
+
+    it('staff actors are unaffected by an open Return', async () => {
+      prisma.order.findUnique.mockResolvedValue(makeOrder(shippingStatus));
+      prisma.return.findFirst.mockResolvedValue({
+        id: 'ret-9',
+        source: 'COURIER',
+        type: 'FULL',
+        status: 'RECEIVED',
+      });
+      tx.order.findUnique.mockResolvedValue(makeOrder(shippingStatus));
+      const result = await service.updateStatus(
+        'order-1',
+        { statusId: 'status-delivered' },
+        actor.userId,
+        actor.email,
+      );
+      expect((result as any).status.name).toBe('Delivered');
+    });
+  });
+
   describe('Delivered→Partial LOCK (covers the staff-Return case)', () => {
     it.each(['staff-1', 'system', 'webhook', 'reconcile'])(
       'updateStatus rejects Delivered → Partial for actor %s (lock is actor-independent)',
