@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { appendOrderTimeline } from '../orders/order-timeline.util';
 import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
 import {
+  assertNoCustomizedLines,
   assertNoDuplicateReturn,
   assertReturnEligible,
   COURIER_GUARD_SKIP_REASON,
@@ -17,6 +18,7 @@ import {
   restoreStockForReturnTx,
   validateReturnItemsShape,
 } from './return-guard';
+import { hasCustomization } from '../customization/customization.types';
 
 export interface ReturnItemInput {
   productId: string;
@@ -149,7 +151,18 @@ export class ReturnsService {
     };
     const order = await db.order.findUnique({
       where: { id: dto.orderId },
-      include: { status: true, items: { select: { quantity: true } } },
+      include: {
+        status: true,
+        items: {
+          select: {
+            quantity: true,
+            productId: true,
+            variantId: true,
+            customization: true,
+            product: { select: { name: true } },
+          },
+        },
+      },
     });
     if (!order || (order as any).trashedAt) {
       throw new NotFoundException(`Order not found: ${dto.orderId}`);
@@ -166,6 +179,17 @@ export class ReturnsService {
     // Hardening (1): shared eligibility guard + 60s duplicate guard. EXCHANGE
     // legs skip the overlap checks (own lifecycle) but keep the duplicate
     // guard — the check runs on the caller's client (tx-aware).
+    // Q17: customized lines are non-returnable/non-exchangeable for
+    // staff- and exchange-initiated returns. COURIER-source rows record
+    // a parcel that physically came back — exempt by design.
+    if (source !== 'COURIER') {
+      assertNoCustomizedLines(
+        ((order as any).items ?? []) as any[],
+        items as any[],
+        hasCustomization,
+      );
+    }
+
     await assertReturnEligible(db, dto.orderId, { type: dto.type, items });
     await assertNoDuplicateReturn(db, dto.orderId, dto.type, items);
 

@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 import { mediaUrl, getStorefrontUrl } from '@/lib/utils'
 import { getCustomerDisplayName, getCustomerPhone } from '@/lib/order-display'
+import { hasCustomization } from '@/lib/customization'
 
 function fmt(v: number | string): string {
   const n = Math.round(Number(v) || 0)
@@ -474,7 +475,8 @@ export function StickerTemplate({ order }: { order: any }) {
             const { baseName, variantBadge, fullTitle } = getItemProductInfo(item)
             const qty = Number(item.quantity) || 1
             const price = Number(item.price) || 0
-            const amount = qty * price
+            const amount = qty * price + (Number(item.addonAmount) || 0)
+            const customized = hasCustomization(item.customization)
             return (
               <div key={item.id || i} className="flex items-center text-[7.5px] leading-tight text-gray-900 py-[1px]">
                 <span className="w-4 text-left text-gray-600 font-medium flex-shrink-0">{i + 1}</span>
@@ -483,6 +485,13 @@ export function StickerTemplate({ order }: { order: any }) {
                   {variantBadge && (
                     <span className="flex-shrink-0 font-bold text-gray-900 ml-1 whitespace-nowrap">
                       {variantBadge}
+                    </span>
+                  )}
+                  {/* Owner Q16: the sticker shows ONLY this badge — the
+                      customization text/details live on the invoice. */}
+                  {customized && (
+                    <span className="flex-shrink-0 font-bold text-gray-900 ml-1 whitespace-nowrap border border-gray-900 rounded-sm px-[2px] text-[6.5px] uppercase">
+                      Customized
                     </span>
                   )}
                 </div>

@@ -55,6 +55,43 @@ const keyOf = (productId: string, variantId?: string | null) =>
   `${productId}::${variantId ?? ''}`;
 
 /**
+ * Owner Q17 (2026-10-23): customized lines are NON-returnable and
+ * NON-exchangeable. Staff/exchange return creation refuses any requested
+ * line whose original order item carries a customization snapshot.
+ * Courier-source returns are exempt (callers skip this check for them):
+ * a parcel physically coming back undelivered is a fulfillment fact,
+ * not a customer return decision.
+ */
+export function assertNoCustomizedLines(
+  originalItems: Array<{
+    productId?: string | null;
+    variantId?: string | null;
+    customization?: unknown;
+    product?: { name?: string | null } | null;
+  }>,
+  requestedItems: Array<{ productId: string; variantId?: string | null }>,
+  hasCustomization: (snapshot: unknown) => boolean,
+): void {
+  const customized = new Map<string, string>();
+  for (const oi of originalItems) {
+    if (!oi.productId || !hasCustomization(oi.customization)) continue;
+    customized.set(
+      keyOf(oi.productId, oi.variantId),
+      oi.product?.name ?? oi.productId,
+    );
+  }
+  if (customized.size === 0) return;
+  for (const req of requestedItems) {
+    const name = customized.get(keyOf(req.productId, req.variantId));
+    if (name) {
+      throw new BadRequestException(
+        `"${name}" is a customized product and cannot be returned or exchanged.`,
+      );
+    }
+  }
+}
+
+/**
  * Shape-check shared by ReturnsService.create, the staff-partial path and the
  * guarded stock core: productId required, quantity a positive integer, no
  * duplicate lines.

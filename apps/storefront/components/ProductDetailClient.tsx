@@ -18,6 +18,11 @@ import type { SizeChartData } from "./SizeChartModal";
 import { toast } from 'sonner';
 import { PdpGallery } from "./pdp/PdpGallery";
 import { BuyBox } from "./pdp/BuyBox";
+import {
+  buildCartCustomization,
+  missingRequiredGroups,
+  type CustomizationSelection,
+} from "@/lib/customization";
 import { PdpSections } from "./pdp/PdpSections";
 import { StickyBar } from "./pdp/StickyBar";
 import dynamic from "next/dynamic";
@@ -136,7 +141,7 @@ function ReviewsSection({ reviews, productId, productName, userLabel, onRefresh 
   );
 }
 
-export default function ProductDetailClient({ product, defaultColor, initialRelatedItems, initialReviews, sanitizedDescription, sanitizedSpecifications, sizeGuideAvailable }: {
+export default function ProductDetailClient({ product, defaultColor, initialRelatedItems, initialReviews, sanitizedDescription, sanitizedSpecifications, sizeGuideAvailable, customizationEnabled }: {
   product: Product;
   defaultColor?: string;
   // SSR-provided data (page.tsx fetches these in parallel with the product).
@@ -149,6 +154,8 @@ export default function ProductDetailClient({ product, defaultColor, initialRela
   // Server-resolved size-chart assignment (endpoint truthiness). The trigger
   // shows ONLY for assigned+active charts — never from the bare flag (Fix 2).
   sizeGuideAvailable: boolean;
+  // License gate for the customization section ('product-customization').
+  customizationEnabled?: boolean;
 }) {
   const { items, addToCart, updateQuantity, startBuyNow } = useCart();
   const { config } = useStorefrontConfig();
@@ -163,6 +170,14 @@ export default function ProductDetailClient({ product, defaultColor, initialRela
   const [heartPop, setHeartPop] = useState(false);
   const [reviews, setReviews] = useState<Review[] | undefined>(initialReviews ?? product.reviews);
   const [qty, setQty] = useState(1);
+  // Customization answer (keys/text only; prices resolve server-side).
+  const customizationDefs = customizationEnabled ? (product.customizations ?? []) : [];
+  const hasCustomization = customizationDefs.length > 0;
+  const [customizationSelection, setCustomizationSelection] = useState<CustomizationSelection | undefined>(undefined);
+  const cartCustomization = useMemo(
+    () => buildCartCustomization(customizationDefs, customizationSelection) ?? undefined,
+    [customizationDefs, customizationSelection],
+  );
   const [showSizeHint, setShowSizeHint] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetHint, setSheetHint] = useState<string | null>(null);
@@ -283,14 +298,22 @@ export default function ProductDetailClient({ product, defaultColor, initialRela
   };
 
   function missingSelectionMessage(): string | null {
-    if (!isVariable || selectedVariant) return null;
-    const missingAttrs = allAttrNames.filter(name => !selectedAttrs[name]);
-    if (missingAttrs.length === 0) return null;
-    return missingAttrs.map(name => {
-      if (name.toLowerCase().includes('color') || name.toLowerCase().includes('colour') || name.includes('রং') || name.includes('কালার')) return 'কালার';
-      if (name.toLowerCase().includes('size') || name.includes('সাইজ') || name.includes('মাপ')) return 'সাইজ';
-      return name;
-    }).join(' ও ') + ' সিলেক্ট করুন';
+    if (isVariable && !selectedVariant) {
+      const missingAttrs = allAttrNames.filter(name => !selectedAttrs[name]);
+      if (missingAttrs.length > 0) {
+        return missingAttrs.map(name => {
+          if (name.toLowerCase().includes('color') || name.toLowerCase().includes('colour') || name.includes('রং') || name.includes('কালার')) return 'কালার';
+          if (name.toLowerCase().includes('size') || name.includes('সাইজ') || name.includes('মাপ')) return 'সাইজ';
+          return name;
+        }).join(' ও ') + ' সিলেক্ট করুন';
+      }
+    }
+    // Required customization groups block the purchase until answered.
+    if (hasCustomization) {
+      const missing = missingRequiredGroups(customizationDefs, customizationSelection);
+      if (missing.length > 0) return `${missing.join(' ও ')} সিলেক্ট করুন`;
+    }
+    return null;
   }
 
   const effectiveStock = useMemo(() => {
@@ -498,7 +521,10 @@ export default function ProductDetailClient({ product, defaultColor, initialRela
     : [product.image ?? '', ...(product.images?.slice(1) || [])].filter((u): u is string => !!u);
 
   const itemKey = cartItemKey(product.id, selectedVariant?.id);
-  const cartItem = items.find((item) => {
+  // With customization, every add is its own cart line (the selection is
+  // part of the line identity) — the in-cart toggle/stepper semantics of
+  // plain lines don't apply, so the PDP always adds a fresh line.
+  const cartItem = hasCustomization ? undefined : items.find((item) => {
     if (selectedVariant) return item.variantId === selectedVariant.id && item.id === product.id;
     return item.id === product.id;
   });
@@ -533,6 +559,7 @@ export default function ProductDetailClient({ product, defaultColor, initialRela
         variantAttributes,
         stock: displayStock,
         catalogId: resolveCatalogId(product, selectedVariant),
+        customization: cartCustomization,
       });
       trackAddToCart({
         contentId: resolveCatalogId(product, selectedVariant),
@@ -576,6 +603,7 @@ export default function ProductDetailClient({ product, defaultColor, initialRela
       variantAttributes,
       stock: displayStock,
       catalogId: resolveCatalogId(product, selectedVariant),
+      customization: cartCustomization,
     });
     // Client-side navigation (same as the cart flow): no full-page reload,
     // so the app shell, providers and buy-now state carry over instantly.
@@ -693,6 +721,9 @@ export default function ProductDetailClient({ product, defaultColor, initialRela
             defaultColor={defaultColor}
             selectedVariant={selectedVariant}
             selectedAttrs={selectedAttrs}
+            customizationDefs={hasCustomization ? customizationDefs : undefined}
+            customizationSelection={customizationSelection}
+            onCustomizationChange={setCustomizationSelection}
             displayPrice={displayPrice}
             displayOriginalPrice={displayOriginalPrice}
             displayStock={displayStock}

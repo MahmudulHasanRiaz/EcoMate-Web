@@ -30,6 +30,8 @@ export class CodMismatchService {
             variantId: true,
             price: true,
             quantity: true,
+            addonAmount: true,
+            addonCostAmount: true,
           },
         },
         returns: {

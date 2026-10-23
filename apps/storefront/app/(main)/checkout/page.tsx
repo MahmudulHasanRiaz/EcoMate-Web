@@ -20,6 +20,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { trackEvent, getCookie, isSyntheticEmail } from '@/lib/tracking';
 import { computeCartSignature } from '@/lib/cart-signature';
+import { cartLineTotal } from '@/lib/customization';
 import { getOrCreateCtxId } from '@/lib/tracking-client';
 import { getLandingAttribution, clearLandingAttribution } from '@/lib/attribution';
 import { collectDeviceContext } from '@/lib/device-context';
@@ -233,6 +234,17 @@ function CheckoutItemRow({ item, removeFromCart, updateQuantity, currencySymbol 
           })()
         )}
 
+        {item.customization && item.customization.lines.length > 0 && (
+          <div className="mt-1 space-y-0.5">
+            <span className="inline-block text-[9px] font-semibold uppercase tracking-wide text-brand-blue border border-brand-blue/40 rounded-sm px-1 py-px">Customized</span>
+            {item.customization.lines.map((l: { label: string; value: string }, idx: number) => (
+              <div key={idx} className="text-[10px] text-gray-500 leading-tight">
+                {l.label}: {l.value}
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Quantity Controls & Remove */}
         <div className="flex items-center gap-2 mt-1.5">
           <div className="flex items-center h-5.5 border border-gray-200 rounded bg-[#f9fafb] overflow-hidden">
@@ -246,7 +258,7 @@ function CheckoutItemRow({ item, removeFromCart, updateQuantity, currencySymbol 
 
       {/* Price */}
       <div className="text-xs font-bold text-gray-800 shrink-0 self-start mt-0.5">
-        {s}{(item.price * item.quantity).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+        {s}{cartLineTotal(item).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
       </div>
     </div>
   );
@@ -481,7 +493,7 @@ export default function CheckoutPage() {
   // +/- here) — the shared cart is neither read nor modified.
   const isBuyNow = !!buyNowItem;
   const coItems = isBuyNow && buyNowItem ? [buyNowItem] : items;
-  const coTotal = isBuyNow && buyNowItem ? buyNowItem.price * buyNowItem.quantity : cartTotal;
+  const coTotal = isBuyNow && buyNowItem ? cartLineTotal(buyNowItem) : cartTotal;
   const coUpdateQuantity = (key: string, qty: number) => {
     if (isBuyNow) updateBuyNowQuantity(qty);
     else updateQuantity(key, qty);
@@ -753,7 +765,15 @@ export default function CheckoutPage() {
       if (item.isCombo) {
         return { comboId: item.comboId, comboSelection: item.comboSelections, quantity: item.quantity, price: item.price };
       }
-      return { productId: item.id, variantId: item.variantId, quantity: item.quantity, price: item.price };
+      return {
+        productId: item.id,
+        variantId: item.variantId,
+        quantity: item.quantity,
+        price: item.price,
+        // Keys/text only — the backend re-resolves all customization
+        // prices against the live product definition.
+        ...(item.customization?.selection ? { customization: item.customization.selection } : {}),
+      };
     });
 
     // Website attribution (spec §20-21): the storefront only COLLECTS the raw

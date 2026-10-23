@@ -6,6 +6,8 @@ import type { Product, Variant } from '@/lib/types';
 import type { StorefrontConfig } from '@/lib/api/storefront-config';
 import type { SizeChartData } from '../SizeChartModal';
 import { VariantSelector } from '../VariantSelector';
+import { CustomizationSection } from './CustomizationSection';
+import { selectionAddon, type CustomizationSelection, type PublicCustomizationGroup } from '@/lib/customization';
 
 export interface BuyBoxProps {
   product: Product;
@@ -39,6 +41,10 @@ export interface BuyBoxProps {
   callHref: string;
   waNumber?: string;
   callNumber?: string;
+  /** Customization (license-gated by the parent): definition + answer. */
+  customizationDefs?: PublicCustomizationGroup[];
+  customizationSelection?: CustomizationSelection;
+  onCustomizationChange?: (next: CustomizationSelection) => void;
   onSelectVariant: (v: Variant | null) => void;
   onSelectAttr: (attrName: string, value: string) => void;
   onDec: () => void;
@@ -89,6 +95,7 @@ export function BuyBox(props: BuyBoxProps) {
     sizeChartData, sizeChartLoading, sizeGuideAvailable, showSizeHint, addedText,
     wishlisted, heartPop, copied, shareUrl, shareText, waHref, callHref,
     waNumber, callNumber,
+    customizationDefs, customizationSelection, onCustomizationChange,
     onSelectVariant, onSelectAttr, onDec, onInc,
     onAddToCart, onBuyNow, onWishlist, onCopyLink, onSizeGuide,
   } = props;
@@ -122,11 +129,22 @@ export function BuyBox(props: BuyBoxProps) {
         <p className="text-[15px] text-brand-blue italic leading-relaxed mb-3">{sections.tagline}</p>
       )}
 
-      {/* 3. Price + stock one-liner + COD */}
+      {/* 3. Price + stock one-liner + COD. The unit price carries the
+          per-unit customization add-on so the headline price is always
+          the real per-item price. */}
       <div className="flex items-center gap-3 mb-1" key={`price-${displayPrice}-${selectedVariant?.id || ''}`}>
         <span className="text-[20px] font-bold text-brand-blue" style={{ animation: 'pricePop 300ms ease' }}>
-          {config.currency.symbol}{(displayPrice ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          {config.currency.symbol}{((displayPrice ?? 0) + (customizationDefs?.length ? selectionAddon(customizationDefs, customizationSelection).perUnit : 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
         </span>
+        {customizationDefs?.length ? (() => {
+          const addon = selectionAddon(customizationDefs, customizationSelection);
+          return addon.perUnit > 0 || addon.perLine > 0 ? (
+            <span className="text-[12px] text-gray-500">
+              incl. customization
+              {addon.perLine > 0 ? ` + ${config.currency.symbol}${addon.perLine.toLocaleString('en-US')} per order` : ''}
+            </span>
+          ) : null;
+        })() : null}
         {displayOriginalPrice && displayOriginalPrice > displayPrice && (
           <>
             <span className="text-[16px] text-gray-400 line-through">{config.currency.symbol}{(displayOriginalPrice ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -199,6 +217,17 @@ export function BuyBox(props: BuyBoxProps) {
             </button>
           )}
         </div>
+      )}
+
+      {/* 6b. Customization (license-gated; parent passes defs only when on) */}
+      {customizationDefs && customizationDefs.length > 0 && onCustomizationChange && (
+        <CustomizationSection
+          definition={customizationDefs}
+          selection={customizationSelection}
+          onChange={onCustomizationChange}
+          qty={inCart ? quantity : qty}
+          currencySymbol={config.currency.symbol}
+        />
       )}
 
       {/* 7. Inline size hint */}

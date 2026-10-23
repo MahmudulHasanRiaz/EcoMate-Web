@@ -76,6 +76,9 @@ export interface PnlItemInput {
   quantity: number;
   costSnapshot: number | null;
   costType: 'actual' | 'estimated' | null;
+  /** Customization add-on line totals (owner Q15) — revenue + cost. */
+  addonAmount?: number;
+  addonCostAmount?: number;
 }
 
 export interface PnlPaymentInput {
@@ -280,7 +283,9 @@ export function computePnl(input: PnlInput): PnlResult {
     const recognisedEver = rev.recognised || partial.recognised;
     const inCohort = recognisedEver && inRange(revenueDate, range);
 
-    const lineGrosses = order.items.map((i) => i.price * i.quantity);
+    const lineGrosses = order.items.map(
+      (i) => i.price * i.quantity + (i.addonAmount ?? 0),
+    );
     const grossSum = lineGrosses.reduce((s, g) => s + g, 0);
     const effectiveDiscount =
       order.discountType === 'percentage'
@@ -297,6 +302,8 @@ export function computePnl(input: PnlInput): PnlResult {
           if (item.costSnapshot !== null && item.costSnapshot !== undefined) {
             returnedCogs += item.costSnapshot * item.quantity;
           }
+          // The frozen add-on cost reverses with the line (Q15).
+          returnedCogs += item.addonCostAmount ?? 0;
         }
       }
       // A dated return already takes the reversal (in whichever period it
@@ -334,6 +341,8 @@ export function computePnl(input: PnlInput): PnlResult {
       price: i.price,
       quantity: i.quantity,
       costSnapshot: i.costSnapshot,
+      addonAmount: i.addonAmount ?? 0,
+      addonCostAmount: i.addonCostAmount ?? 0,
     }));
     const returnImpact =
       recognisedEver && (order.receivedReturns?.length ?? 0) > 0
@@ -413,9 +422,15 @@ export function computePnl(input: PnlInput): PnlResult {
         const item = order.items[i];
         const kept = Math.max(0, item.quantity - (returnedQty[i] ?? 0));
         if (kept === 0) continue;
-        keptGross += item.price * kept;
-        keptNet += lineNets[i] * (kept / item.quantity);
-        returnsPartialValue += item.price * (item.quantity - kept);
+        const keptShare = kept / item.quantity;
+        keptGross += item.price * kept + (item.addonAmount ?? 0) * keptShare;
+        keptNet += lineNets[i] * keptShare;
+        returnsPartialValue +=
+          item.price * (item.quantity - kept) +
+          (item.addonAmount ?? 0) * (1 - keptShare);
+        // Add-on cost is a frozen recorded figure: it joins COGS for the
+        // kept share whether or not the base cost snapshot exists (Q15).
+        cogs += (item.addonCostAmount ?? 0) * keptShare;
 
         const state = cogsLineState({
           costSnapshot: item.costSnapshot,
@@ -445,6 +460,8 @@ export function computePnl(input: PnlInput): PnlResult {
           costSnapshot: item.costSnapshot,
           costType: item.costType,
         });
+        // Add-on cost is frozen on the line (Q15): always part of COGS.
+        cogs += item.addonCostAmount ?? 0;
         if (item.costSnapshot !== null && item.costSnapshot !== undefined) {
           cogs += item.costSnapshot * item.quantity;
           if (state === 'actual') cogsActualUnits += item.quantity;
@@ -863,6 +880,8 @@ export class AnalyticsPnlService {
               quantity: true,
               costSnapshot: true,
               costType: true,
+              addonAmount: true,
+              addonCostAmount: true,
             },
           },
           payments: {
@@ -959,6 +978,8 @@ export class AnalyticsPnlService {
           quantity: i.quantity,
           costSnapshot: i.costSnapshot === null ? null : Number(i.costSnapshot),
           costType: i.costType === 'actual' || i.costType === 'estimated' ? i.costType : null,
+          addonAmount: i.addonAmount == null ? 0 : Number(i.addonAmount),
+          addonCostAmount: i.addonCostAmount == null ? 0 : Number(i.addonCostAmount),
         })),
         receivedReturns: (o.returns ?? []).map((r: any): ReceivedReturnEvent => ({
           id: r.id,

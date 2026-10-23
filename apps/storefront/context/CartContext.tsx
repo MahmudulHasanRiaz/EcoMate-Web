@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import type { CartItem } from "@/lib/types";
+import { cartLineTotal, selectionKey } from "@/lib/customization";
 
 export interface VariantAttribute {
   name: string;
@@ -72,7 +73,13 @@ export function stableStringify(obj: Record<string, string>): string {
   }, {} as Record<string, string>));
 }
 
-export function getItemKey(item: { id: string; variantId?: string; comboSelections?: Record<string, string> }) {
+export function getItemKey(item: { id: string; variantId?: string; comboSelections?: Record<string, string>; customization?: CartItem['customization'] }) {
+  // A customized line is its own cart line: the same product with a
+  // different engraving text or gift option must never merge.
+  if (item.customization?.selection) {
+    const base = item.variantId ? `${item.id}::${item.variantId}` : item.id;
+    return `${base}::cust::${selectionKey(item.customization.selection)}`;
+  }
   if (item.comboSelections && Object.keys(item.comboSelections).length > 0) {
     return `${item.id}::sel::${stableStringify(item.comboSelections)}`;
   }
@@ -176,7 +183,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const clearBuyNow = useCallback(() => setBuyNowItem(null), []);
 
   const cartCount = items.reduce((sum, item) => sum + item.quantity, 0);
-  const cartTotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const cartTotal = items.reduce((sum, item) => sum + cartLineTotal(item), 0);
 
   return (
     <CartContext.Provider value={{ items, addToCart, removeFromCart, updateQuantity, cartCount, cartTotal, isCartOpen, setIsCartOpen: handleSetIsCartOpen, clearCart, buyNowItem, startBuyNow, updateBuyNowQuantity, removeBuyNow, clearBuyNow }}>

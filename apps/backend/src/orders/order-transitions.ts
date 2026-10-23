@@ -76,3 +76,20 @@ export const ITEM_EDIT_WARNING_STATUSES: ReadonlySet<string> = new Set([
   'Packed',
   'Packing Hold',
 ]);
+
+/**
+ * Customization edits lock EARLIER than general item edits (owner Q19,
+ * 2026-10-23): a line's customization may change only until the order is
+ * PACKED — once packing starts, the physical customization work (engraving,
+ * gift wrapping) is already being done to spec. So the customization lock
+ * set is the item-edit blocked set PLUS the packing statuses and
+ * 'Cancelled' (a cancelled order's lines are history). Quantity-only
+ * edits and untouched round-trips of the same snapshot are NOT
+ * customization changes and keep the general item-edit rules.
+ */
+export const CUSTOMIZATION_EDIT_LOCKED_STATUSES: ReadonlySet<string> =
+  new Set([
+    ...ITEM_EDIT_BLOCKED_STATUSES,
+    ...ITEM_EDIT_WARNING_STATUSES,
+    'Cancelled',
+  ]);

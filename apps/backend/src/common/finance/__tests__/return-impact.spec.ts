@@ -42,6 +42,29 @@ describe('computeReceivedReturnImpact', () => {
     });
   });
 
+  it('customized line: value includes the per-unit add-on share and the frozen add-on cost reverses even without a costSnapshot (Q15)', () => {
+    const r = computeReceivedReturnImpact({
+      orderItems: [
+        {
+          productId: 'p9', variantId: null, price: 700, quantity: 2,
+          costSnapshot: null, addonAmount: 320, addonCostAmount: 110,
+        },
+      ],
+      range,
+      returns: [
+        {
+          id: 'r9',
+          status: 'RECEIVED',
+          receivedAt: at('2026-10-10T00:00:00Z'),
+          items: [{ productId: 'p9', quantity: 1 }],
+        },
+      ],
+    });
+    // 1 of 2 units: value = 700 + 320/2; cogs reversal = 110/2 (add-on only).
+    expect(r.value).toBe(860);
+    expect(r.cogsReversal).toBe(55);
+  });
+
   it('deducts nothing for a return that was created but not received', () => {
     const r = computeReceivedReturnImpact({
       orderItems,

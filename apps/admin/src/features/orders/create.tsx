@@ -27,6 +27,8 @@ import {
   ITEM_EDIT_WARNING_STATUSES,
 } from './item-edit-policy'
 import { ExchangePaidConfirm, isPaidConfirmValid } from './components/exchange-paid-confirm'
+import { CustomizationInput } from './components/customization-input'
+import { snapshotToSelection, selectionAddonTotal, snapshotAddonTotal } from '@/lib/customization'
 import { apiClient } from '@/lib/api-client'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -358,6 +360,8 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
           variant: i.variant || null,
           quantity: i.quantity,
           price: Number(i.price),
+          customization: i.customization ?? undefined,
+          _selection: snapshotToSelection(i.customization),
         })),
   )
 
@@ -635,7 +639,19 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
     })
   }
 
-  const calculateSubtotal = () => cartItems.reduce((sum, item) => sum + nn(item.price) * item.quantity, 0)
+  // Display-only add-on total for a cart line (server resolves the real
+  // amounts): working selection against the live definition wins; the
+  // frozen snapshot is the fallback for untouched existing lines.
+  const itemAddon = (item: any) => {
+    const qty = parseInt(item.quantity as any) || 1
+    const sel = item._selection ?? snapshotToSelection(item.customization)
+    if (item.product?.customizations?.length && sel) {
+      return selectionAddonTotal(item.product.customizations, sel, qty)
+    }
+    return snapshotAddonTotal(item.customization, qty)
+  }
+
+  const calculateSubtotal = () => cartItems.reduce((sum, item) => sum + nn(item.price) * item.quantity + itemAddon(item), 0)
 
   const calculateDiscountValue = () => {
     const subtotal = calculateSubtotal()
@@ -662,6 +678,9 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
         quantity: parseInt(item.quantity as any) || 1,
         price: parseFloat(item.price as any) || 0,
         ...(item.variantId ? { variantId: item.variantId } : {}),
+        ...((item._selection ?? snapshotToSelection(item.customization))
+          ? { customization: item._selection ?? snapshotToSelection(item.customization) }
+          : {}),
       })),
       shippingCharge: parseFloat(shippingCharge) || 0,
       discount: parseFloat(discount) || 0,
@@ -1420,6 +1439,19 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                                   )}
                                   <span className='text-sm font-semibold truncate max-w-[200px] text-foreground'>{item.product.name}</span>
                                 </div>
+                                {item.product?.customizations?.length > 0 && (
+                                  <div className='mt-2'>
+                                    <CustomizationInput
+                                      definition={item.product.customizations}
+                                      value={item._selection ?? snapshotToSelection(item.customization)}
+                                      onChange={(sel) => {
+                                        const updated = [...cartItems]
+                                        updated[index] = { ...updated[index], _selection: sel }
+                                        setCartItems(updated)
+                                      }}
+                                    />
+                                  </div>
+                                )}
                               </TableCell>
                               <TableCell className='text-sm text-muted-foreground'>
                                 {item.variant?.name || (item.variantId ? item.variant?.sku || '—' : '—')}
@@ -1453,7 +1485,7 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                                   </Button>
                                 </div>
                               </TableCell>
-                              <TableCell className='text-right text-sm font-bold text-foreground'>৳{fmt(nn(item.price) * item.quantity)}</TableCell>
+                              <TableCell className='text-right text-sm font-bold text-foreground'>৳{fmt(nn(item.price) * item.quantity + itemAddon(item))}</TableCell>
                               <TableCell>
                                 <Button variant='ghost' size='icon' className='h-8 w-8 text-destructive hover:bg-destructive/10' onClick={() => removeFromCart(index)}>
                                   <Trash2 className='h-4 w-4' />
@@ -1539,9 +1571,20 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                             </div>
 
                             <div className='text-right'>
-                              <span className='font-bold text-sm text-foreground'>৳{fmt(nn(item.price) * item.quantity)}</span>
+                              <span className='font-bold text-sm text-foreground'>৳{fmt(nn(item.price) * item.quantity + itemAddon(item))}</span>
                             </div>
                           </div>
+                          {item.product?.customizations?.length > 0 && (
+                            <CustomizationInput
+                              definition={item.product.customizations}
+                              value={item._selection ?? snapshotToSelection(item.customization)}
+                              onChange={(sel) => {
+                                const updated = [...cartItems]
+                                updated[index] = { ...updated[index], _selection: sel }
+                                setCartItems(updated)
+                              }}
+                            />
+                          )}
                         </div>
                       ))}
                     </div>

@@ -38,6 +38,7 @@ import { CouponsService } from '../../coupons/coupons.service';
 import { ManagedStockLedgerService } from '../../inventory/managed-stock-ledger.service';
 import { CostingLotService } from '../../stock/costing-lot.service';
 import { CancelReturnStockService } from '../../stock/cancel-return-stock.service';
+import { CustomizationService } from '../../customization/customization.service';
 import { OrderStockDeductService } from '../../stock/order-stock-deduct.service';
 import { OrderEditLockService } from '../../orders/order-edit-lock.service';
 import { CommissionsService } from '../../commissions/commissions.service';
@@ -318,6 +319,7 @@ describe('OrdersService.verifyPayment self-approve block', () => {
         { provide: CouponsService, useValue: orderStub() },
         { provide: ManagedStockLedgerService, useValue: orderStub() },
         { provide: CostingLotService, useValue: orderStub() },
+        { provide: CustomizationService, useValue: new CustomizationService({ canUse: () => true } as any) },
         { provide: CancelReturnStockService, useValue: orderStub() },
         { provide: OrderStockDeductService, useValue: orderStub() },
         {

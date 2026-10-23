@@ -60,6 +60,35 @@ const input = (orders: PnlOrderInput[], extra: Partial<PnlInput> = {}): PnlInput
   ...extra,
 });
 
+describe('computePnl — customization add-ons (Q15)', () => {
+  it('add-on revenue joins gross sales and the frozen add-on cost joins COGS', () => {
+    const r = computePnl(
+      input([
+        baseOrder({
+          total: 900,
+          subtotal: 900,
+          items: [
+            {
+              productId: 'p1',
+              variantId: null,
+              price: 700,
+              quantity: 1,
+              costSnapshot: 350,
+              costType: 'actual' as const,
+              addonAmount: 200,
+              addonCostAmount: 70,
+            },
+          ],
+        }),
+      ]),
+    );
+    expect(r.grossSales.amount).toBe(900);
+    expect(r.netSales.amount).toBe(900);
+    expect(r.cogs.amount).toBe(420);
+    expect(r.grossProfit.amount).toBe(480);
+  });
+});
+
 describe('computePnl — received partial returns', () => {
   it('deducts the received item value and reverses its COGS', () => {
     const r = computePnl(input([baseOrder({ receivedReturns: [received(1)] })]));

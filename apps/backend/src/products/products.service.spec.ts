@@ -12,6 +12,7 @@ import { CacheService } from '../cache/cache.service';
 import { StockRouterService } from '../stock/stock-router.service';
 import { StockService } from '../stock/stock.service';
 import { InitialPhysicalStockService } from '../stock/initial-physical-stock.service';
+import { CustomizationService } from '../customization/customization.service';
 
 jest.mock('uuid', () => ({
   v4: jest.fn(() => 'mock-uuid-v4'),
@@ -192,6 +193,10 @@ describe('ProductsService', () => {
           },
         },
         InitialPhysicalStockService,
+        {
+          provide: CustomizationService,
+          useValue: new CustomizationService({ canUse: () => true } as any),
+        },
       ],
     }).compile();
 
