@@ -12,12 +12,19 @@ describe('InventoryService — managed-stock destructive guard', () => {
     combo: { findUnique: jest.fn() },
     $transaction: jest.fn(async (cb: any) => cb(prisma)),
   };
-  const stockService: any = { add: jest.fn(), scrap: jest.fn() };
+  const stockService: any = {
+    add: jest.fn(),
+    scrap: jest.fn(),
+    operatePhysical: jest.fn().mockResolvedValue(undefined),
+  };
+  const stockRouter: any = {
+    isInventoryManagementEnabled: jest.fn().mockResolvedValue(false),
+  };
   const ledger: any = { record: jest.fn() };
   const service = new InventoryService(
     prisma,
     stockService,
-    {} as any,
+    stockRouter,
     {} as any,
     ledger,
     { invalidateByPrefix: jest.fn() } as any,
@@ -136,5 +143,49 @@ describe('InventoryService — managed-stock destructive guard', () => {
       service.adjust(undefined, -8, 'write-off', 'admin@x', 'var-1', undefined, true),
     ).resolves.toBeDefined();
     expect(stockService.scrap).toHaveBeenCalled();
+  });
+
+  describe('physical mirror (stock audit #5, owner 2026-10-23)', () => {
+    it('mirrors the adjustment to the physical layer when IM is ON', async () => {
+      stockRouter.isInventoryManagementEnabled.mockResolvedValue(true);
+      prisma.product.findUnique.mockResolvedValue(
+        product({ warehouseId: 'wh-1' }),
+      );
+
+      await service.adjust('prod-1', 5, 'recount');
+
+      expect(stockService.add).toHaveBeenCalled();
+      expect(stockService.operatePhysical).toHaveBeenCalledWith(
+        'add',
+        expect.objectContaining({
+          productId: 'prod-1',
+          warehouseId: 'wh-1',
+          quantity: 5,
+          ledgerType: 'ADJUSTMENT',
+        }),
+      );
+    });
+
+    it('does NOT touch the physical layer when IM is OFF', async () => {
+      stockRouter.isInventoryManagementEnabled.mockResolvedValue(false);
+      prisma.product.findUnique.mockResolvedValue(
+        product({ warehouseId: 'wh-1' }),
+      );
+
+      await service.adjust('prod-1', 5, 'recount');
+
+      expect(stockService.operatePhysical).not.toHaveBeenCalled();
+    });
+
+    it('fails loud when IM is ON but the product has no warehouse', async () => {
+      stockRouter.isInventoryManagementEnabled.mockResolvedValue(true);
+      prisma.product.findUnique.mockResolvedValue(
+        product({ warehouseId: null }),
+      );
+
+      await expect(service.adjust('prod-1', 5, 'recount')).rejects.toThrow(
+        /no warehouse set/,
+      );
+    });
   });
 });

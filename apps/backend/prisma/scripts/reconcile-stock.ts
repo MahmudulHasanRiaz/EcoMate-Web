@@ -6,6 +6,9 @@
  *
  * Usage:
  *   cd apps/backend
+ *   # DRY RUN first — lists every order heal WOULD touch, writes nothing:
+ *   npx tsx prisma/scripts/reconcile-stock.ts --dry-run
+ *   # apply:
  *   npx tsx prisma/scripts/reconcile-stock.ts
  *   # target a single order:
  *   npx tsx prisma/scripts/reconcile-stock.ts --order=<orderId>
@@ -19,15 +22,38 @@ import { AppModule } from '../../src/app.module';
 import { StockReconciliationService } from '../../src/stock/stock-reconciliation.service';
 
 async function main() {
+  const dryRun = process.argv.includes('--dry-run');
+  const orderArg = process.argv.find((a) => a.startsWith('--order='));
+  const orderId = orderArg ? orderArg.split('=')[1] : null;
+
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['log', 'warn', 'error'],
   });
 
   const reconcile = app.get(StockReconciliationService);
 
-  const orderArg = process.argv.find((a) => a.startsWith('--order='));
-  if (orderArg) {
-    const orderId = orderArg.split('=')[1];
+  if (dryRun) {
+    const candidates = await reconcile.scanDriftedOrders();
+    const scoped = orderId
+      ? candidates.filter((c) => c.id === orderId)
+      : candidates;
+    console.log(
+      `[reconcile] DRY RUN — no stock will be changed. ` +
+        `${scoped.length} order(s) would be healed${orderId ? ` (filtered to ${orderId})` : ''}:`,
+    );
+    for (const c of scoped) {
+      console.log(`  - ${c.id} (status: ${c.statusName})`);
+    }
+    if (orderId && scoped.length === 0) {
+      console.log(
+        `[reconcile] order ${orderId} is not a drift candidate — heal would be a no-op for it.`,
+      );
+    }
+    await app.close();
+    return;
+  }
+
+  if (orderId) {
     const outcome = await reconcile.healOrder(orderId);
     console.log(`[reconcile] order ${orderId} → ${outcome}`);
   } else {

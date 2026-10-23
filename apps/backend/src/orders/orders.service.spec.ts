@@ -3140,6 +3140,28 @@ describe('OrdersService', () => {
         ).rejects.toThrow('FK violation');
       });
 
+      it('NEVER swallows a stock-deduction failure on Delivered (owner 2026-10-23)', async () => {
+        mockDeliveredTx();
+        const deduct = (service as any).orderStockDeduct.deductForOrder as jest.Mock;
+        deduct.mockRejectedValueOnce(
+          new Error('"X" এর Physical Reservation পাওয়া যায়নি'),
+        );
+
+        await expect(
+          service.updateStatus(
+            'order-id-1',
+            { statusId: 'status-delivered' },
+            staffUserId,
+            staffEmail,
+          ),
+        ).rejects.toThrow('Physical Reservation');
+        // Strict: a missing reservation/inventory must fail the delivery,
+        // never degrade to a silent log line.
+        expect(deduct).toHaveBeenCalledWith(
+          expect.objectContaining({ strict: true }),
+        );
+      });
+
       it('resolves automated actors to a null verifier on Shipping→Delivered', async () => {
         mockDeliveredTx();
 
@@ -5638,6 +5660,57 @@ await service.bulkAssign(['order-1', 'trashed-1'], 'staff-1');
       expect(cancelReturnStock().releaseForCancellation).toHaveBeenCalledWith(
         expect.objectContaining({ orderId: 'order-id-1' }),
       );
+    });
+  });
+
+  describe('restore from trash re-reserves stock (stock audit #2)', () => {
+    const mockRestore = (statusName: string) => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        trashedAt: new Date(),
+        status: { id: `status-${statusName}`, name: statusName },
+        timeline: [],
+      });
+      (prisma.order.update as jest.Mock).mockResolvedValue(mockOrder);
+    };
+
+    it('re-reserves via verifyStockForOrder for a pre-dispatch order', async () => {
+      mockRestore('Confirmed');
+      const verify = jest
+        .spyOn(service as any, 'verifyStockForOrder')
+        .mockResolvedValue(undefined);
+
+      await service.restore('order-id-1');
+
+      expect(verify).toHaveBeenCalledWith('order-id-1', expect.anything());
+      verify.mockRestore();
+    });
+
+    it.each(['Shipping', 'Delivered', 'Returned', 'Damaged', 'Cancelled'])(
+      'does NOT re-reserve for a %s order',
+      async (statusName) => {
+        mockRestore(statusName);
+        const verify = jest
+          .spyOn(service as any, 'verifyStockForOrder')
+          .mockResolvedValue(undefined);
+
+        await service.restore('order-id-1');
+
+        expect(verify).not.toHaveBeenCalled();
+        verify.mockRestore();
+      },
+    );
+
+    it('fails the restore loudly when the stock is no longer available', async () => {
+      mockRestore('Confirmed');
+      const verify = jest
+        .spyOn(service as any, 'verifyStockForOrder')
+        .mockRejectedValue(new Error('Insufficient managed stock'));
+
+      await expect(service.restore('order-id-1')).rejects.toThrow(
+        'Insufficient managed stock',
+      );
+      verify.mockRestore();
     });
   });
 

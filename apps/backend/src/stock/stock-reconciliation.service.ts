@@ -90,10 +90,13 @@ export interface HealAllResult {
  *
  * Healed cases:
  *   1. Delivered / Partial orders with stock still RESERVED (not deducted) → deduct.
- *   2. Cancelled / Returned / Damaged orders with stock still
+ *   2. Cancelled / Returned orders with stock still
  *      reserved OR deducted → release / restore.
  *      ('Return Pending' is intentionally excluded: stock stays held until a
- *      return is manually confirmed as 'Returned'.)
+ *      return is manually confirmed as 'Returned'. 'Damaged' is intentionally
+ *      excluded too — owner Q7, 2026-10-23: damaged goods NEVER become
+ *      sellable again, so heal must not restore them; they settle only via
+ *      the damage write-off flow.)
  *
  * Idempotency is guaranteed by the underlying services:
  *   - OrderStockDeductService  → guarded by managedStockDeducted / reservation status.
@@ -162,6 +165,14 @@ export class StockReconciliationService implements OnApplicationBootstrap {
     } catch (err) {
       this.logger.error('Stock reconciliation on boot failed:', err);
     }
+  }
+
+  /**
+   * Read-only drift scan for dry runs (reconcile-stock.ts --dry-run): the
+   * orders healAll WOULD process, with their statuses. Never writes.
+   */
+  async scanDriftedOrders(): Promise<{ id: string; statusName: string }[]> {
+    return this.findOrdersWithActiveStock();
   }
 
   /**
@@ -261,15 +272,25 @@ export class StockReconciliationService implements OnApplicationBootstrap {
       });
     }
 
-    // 2. Cancelled / Returned / Damaged → release or restore.
+    // 2. Cancelled / Returned → release or restore.
     // NOTE: 'Return Pending' intentionally NOT healed here — the business rule is
     // that stock must never be released/restored until the return is manually
     // confirmed ('Returned'). Reserved quantities stay held until then.
-    if (['Cancelled', 'Returned', 'Damaged'].includes(status)) {
+    // NOTE: 'Damaged' is NEVER healed (owner decision 2026-10-23, Q7):
+    // damaged goods must never become sellable again, and restoreForOrder
+    // would put them back on the shelf. A Damaged order's stock is settled
+    // only through the returns/damage write-off flow — heal leaves it
+    // untouched and says so loudly.
+    if (status === 'Damaged') {
+      this.logger.warn(
+        `Heal skipped for Damaged order ${orderId}: damaged stock is never ` +
+          `auto-restored (owner Q7, 2026-10-23). Settle it via the damage write-off flow.`,
+      );
+      return 'noop';
+    }
+    if (['Cancelled', 'Returned'].includes(status)) {
       await this.prisma.$transaction(async (tx) => {
-        const prefix = status === 'Returned' || status === 'Damaged'
-          ? 'return'
-          : 'cancel';
+        const prefix = status === 'Returned' ? 'return' : 'cancel';
         await this.cancelReturnStock.restoreForOrder({
           orderId,
           referencePrefix: prefix,
@@ -491,7 +512,9 @@ export class StockReconciliationService implements OnApplicationBootstrap {
   private async findOrdersWithActiveStock(): Promise<
     { id: string; statusName: string }[]
   > {
-    const statuses = ['Delivered', 'Partial', 'Cancelled', 'Returned', 'Damaged'];
+    // 'Damaged' deliberately absent (owner Q7, 2026-10-23): heal never
+    // touches damaged orders, so they are not drift candidates here.
+    const statuses = ['Delivered', 'Partial', 'Cancelled', 'Returned'];
     const [orders, activePhysical, activeCombo] = await Promise.all([
       this.prisma.order.findMany({
         where: {
