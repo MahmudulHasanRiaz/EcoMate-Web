@@ -278,6 +278,13 @@ describe('StockReconciliationService', () => {
     expect(orderStockDeduct.deductForOrder).not.toHaveBeenCalled();
   });
 
+  it('NEVER restores stock for Damaged orders (owner Q7, 2026-10-23)', async () => {
+    const result = await service.healOrder('order-1', 'Damaged');
+    expect(result).toBe('noop');
+    expect(cancelReturnStock.restoreForOrder).not.toHaveBeenCalled();
+    expect(orderStockDeduct.deductForOrder).not.toHaveBeenCalled();
+  });
+
   it('excludes Return Pending orders from the dirty-stock scan', async () => {
     prisma.order.findMany.mockResolvedValue([
       {

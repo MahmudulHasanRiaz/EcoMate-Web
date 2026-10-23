@@ -663,6 +663,54 @@ export class CancelReturnStockService {
   }
 
   /**
+   * Owner decision 2026-10-23 (Q6): the restore layer follows the product's
+   * availability mode AT RESTORE TIME. Managed (virtual) stock is restored
+   * only while the product is in MANAGED_STOCK mode; a product that has
+   * since moved to inventory-control restores to the PHYSICAL layer only —
+   * the managed quantity is NEVER added back. The claim must still be
+   * SETTLED, though: free the managed hold/reservation this order placed
+   * and clear the flags. Otherwise the managed counter leaks a phantom hold
+   * forever and a later flag-driven path could resurrect virtual stock.
+   * Freeing a hold is not a restore: on-hand managed quantity never moves
+   * here, only the reservation counter this order itself raised.
+   */
+  private async settleManagedClaimWithoutRestore(
+    tx: Prisma.TransactionClient,
+    kind: 'line' | 'snap',
+    holder: any,
+    qty: number,
+    reference: string,
+    performedBy?: string,
+  ): Promise<void> {
+    const productId = holder.productId as string;
+    const variantId = (holder.variantId ?? undefined) as string | undefined;
+    if (holder.managedStockDeducted) {
+      await this.releaseHeldReservation(tx, productId, variantId, qty, reference, performedBy);
+    } else if (holder.managedStockReserved) {
+      await this.stockService.operate('release', {
+        productId,
+        variantId,
+        quantity: qty,
+        reference,
+        performedBy: performedBy || 'system',
+        tx,
+        ledgerType: 'CANCEL_RELEASE',
+      });
+    }
+    if (kind === 'line') {
+      await tx.orderItem.update({
+        where: { id: holder.id },
+        data: { managedStockDeducted: false, managedStockReserved: false },
+      });
+    } else {
+      await tx.orderItemComboComponent.update({
+        where: { id: holder.id },
+        data: { managedStockDeducted: false, managedStockReserved: false },
+      });
+    }
+  }
+
+  /**
    * Restore + disarm ONE allocated claim (see restoreForReturnItems).
    * Managed: exact-qty `add` when deducted (plus a capped release of the
    * Return-Pending hold), capped `release` when reserved-only; flags cleared
@@ -727,6 +775,13 @@ export class CancelReturnStockService {
           data: { managedStockDeducted: false, managedStockReserved: false },
         });
       }
+    } else if (holder.managedStockDeducted || holder.managedStockReserved) {
+      // Q6 (owner 2026-10-23): the product has left MANAGED_STOCK since the
+      // order was placed — restore goes to the physical layer only (section
+      // B below); settle the managed claim without reviving virtual stock.
+      await this.settleManagedClaimWithoutRestore(
+        tx, claim.kind, holder, qty, reference, performedBy,
+      );
     }
 
     // B. Physical engine (exact-qty on-hand restore for CONSUMED claims).
@@ -1260,6 +1315,11 @@ export class CancelReturnStockService {
             data: { managedStockReserved: false },
           });
         }
+      } else if (snap.managedStockDeducted || snap.managedStockReserved) {
+        // Q6 (owner 2026-10-23): product left MANAGED_STOCK — physical only.
+        await this.settleManagedClaimWithoutRestore(
+          tx, 'snap', snap, snap.totalQuantity, reference, performedBy,
+        );
       }
 
       // B. Physical Engine
@@ -1343,6 +1403,11 @@ export class CancelReturnStockService {
           data: { managedStockReserved: false },
         });
       }
+    } else if (item.managedStockDeducted || item.managedStockReserved) {
+      // Q6 (owner 2026-10-23): product left MANAGED_STOCK — physical only.
+      await this.settleManagedClaimWithoutRestore(
+        tx, 'line', item, item.quantity, reference, performedBy,
+      );
     }
 
     // B. Physical Engine
@@ -1638,8 +1703,16 @@ export class CancelReturnStockService {
   ): Promise<void> {
     const product = item.product;
     if (!product) return;
-    if (product.availabilityMode !== 'MANAGED_STOCK' || !product.manageStock)
+    if (product.availabilityMode !== 'MANAGED_STOCK' || !product.manageStock) {
+      // Q6 (owner 2026-10-23): product left MANAGED_STOCK — settle the
+      // managed claim (flags + hold) without reviving virtual stock.
+      if (item.managedStockDeducted || item.managedStockReserved) {
+        await this.settleManagedClaimWithoutRestore(
+          tx, 'line', item, item.quantity, reference, performedBy,
+        );
+      }
       return;
+    }
 
     const referencePrefix = reference.startsWith('cancel')
       ? 'cancel'

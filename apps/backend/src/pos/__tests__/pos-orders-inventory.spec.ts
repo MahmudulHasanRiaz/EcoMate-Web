@@ -94,14 +94,35 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
             order: { findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn() },
             orderStatus: { findFirst: jest.fn() },
             orderCounter: { upsert: jest.fn() },
-            orderItem: { create: jest.fn() },
+            orderItem: {
+              create: jest.fn().mockResolvedValue({ id: 'item-1' }),
+              update: jest.fn().mockResolvedValue({}),
+            },
+            orderStockCycle: {
+              create: jest.fn().mockResolvedValue({ id: 'cycle-1' }),
+            },
+            orderItemComboComponent: {
+              create: jest.fn().mockResolvedValue({ id: 'snap-1' }),
+            },
+            physicalReservation: {
+              create: jest.fn().mockResolvedValue({ id: 'res-1' }),
+            },
+            physicalReservationAllocation: {
+              create: jest.fn().mockResolvedValue({}),
+            },
+            comboComponentPhysicalReservation: {
+              create: jest.fn().mockResolvedValue({ id: 'cres-1' }),
+            },
+            comboComponentPhysicalReservationAllocation: {
+              create: jest.fn().mockResolvedValue({}),
+            },
             payment: { create: jest.fn() },
             physicalInventory: {
               findMany: jest.fn().mockResolvedValue([]),
               // Transfer requests validate the exact variant's stock.
               findFirst: jest
                 .fn()
-                .mockResolvedValue({ quantity: 100, reservedQuantity: 0 }),
+                .mockResolvedValue({ id: 'pi-1', quantity: 100, reservedQuantity: 0 }),
             },
             stockTransfer: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
             category: { findMany: jest.fn() },
@@ -831,6 +852,29 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
 
       // addPhysical SHOULD be called for current-showroom items
       expect(stock.addPhysical).toHaveBeenCalled();
+      // Audit #7 bookkeeping: the deduction is recorded as a CONSUMED
+      // physical reservation on an ACTIVE cycle so a later cancel/return
+      // can restore it (previously POS deductions restored nothing).
+      expect(prisma.physicalReservation.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            orderId: 'order-1',
+            orderItemId: 'item-1',
+            cycleId: 'cycle-1',
+            quantity: 2,
+            status: 'CONSUMED',
+          }),
+        }),
+      );
+      expect(prisma.physicalReservationAllocation.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            reservationId: 'res-1',
+            physicalInventoryId: 'pi-1',
+            quantity: 2,
+          }),
+        }),
+      );
     });
 
     it('deducts stock normally when sourceWarehouseId is null (default)', async () => {

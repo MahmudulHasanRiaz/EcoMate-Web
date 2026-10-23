@@ -612,6 +612,54 @@ export class InventoryService {
     });
   }
 
+  /**
+   * Stock audit #5 (owner 2026-10-23): a manual adjustment of a
+   * MANAGED_STOCK product must move BOTH layers while Inventory Management
+   * is on — the same rule the order/return flows follow (router 'add' =
+   * both layers). Adjusting only the managed counter silently diverged the
+   * two layers. IM off → managed only (the physical record is not that
+   * client's engine). No warehouse → the mirror is impossible: fail loud
+   * rather than diverge silently (B4 guarantees stocked managed products
+   * carry a warehouse).
+   */
+  private async mirrorAdjustmentToPhysical(params: {
+    product: {
+      id: string;
+      availabilityMode?: string | null;
+      warehouseId?: string | null;
+      name?: string | null;
+    };
+    variantId?: string | null;
+    quantity: number;
+    reason?: string;
+    performedBy?: string;
+    tx?: Prisma.TransactionClient;
+  }): Promise<void> {
+    if (params.quantity === 0) return;
+    if (params.product.availabilityMode !== 'MANAGED_STOCK') return;
+    const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
+    if (!imEnabled) return;
+    const warehouseId = params.product.warehouseId ?? null;
+    if (!warehouseId) {
+      throw new BadRequestException(
+        `"${params.product.name ?? 'Product'}" has no warehouse set — the physical layer cannot mirror this adjustment while Inventory Management is on.`,
+      );
+    }
+    await this.stockService.operatePhysical('add', {
+      productId: params.product.id,
+      variantId: params.variantId ?? undefined,
+      warehouseId,
+      quantity: params.quantity,
+      reference: params.reason
+        ? `adjust-${params.reason}`
+        : 'manual-adjustment',
+      performedBy: params.performedBy,
+      tx: params.tx,
+      ledgerType: 'ADJUSTMENT',
+      referenceType: 'ADJUSTMENT',
+    });
+  }
+
   async adjust(
     productId?: string,
     quantity?: number,
@@ -671,6 +719,8 @@ export class InventoryService {
                   manageStock: true,
                   managedStockQuantity: true,
                   reservedStock: true,
+                  availabilityMode: true,
+                  warehouseId: true,
                 },
               },
               variant: {
@@ -737,6 +787,13 @@ export class InventoryService {
             productName: item.product.name,
             quantity: qty,
           });
+          await this.mirrorAdjustmentToPhysical({
+            product: item.product,
+            variantId: item.variantId,
+            quantity: qty,
+            reason: reason || `Combo "${combo.name}" stock adjustment`,
+            performedBy,
+          });
         } else if (item.product.manageStock) {
           const avail = item.product.managedStockQuantity;
           if (qty < 0 && avail + qty < 0) {
@@ -776,6 +833,12 @@ export class InventoryService {
             productName: item.product.name,
             quantity: qty,
           });
+          await this.mirrorAdjustmentToPhysical({
+            product: item.product,
+            quantity: qty,
+            reason: reason || `Combo "${combo.name}" stock adjustment`,
+            performedBy,
+          });
         } else {
           skipped.push(
             `${item.product.name} (stock tracking not enabled — no change needed)`,
@@ -801,7 +864,15 @@ export class InventoryService {
       const variant = await this.prisma.productVariant.findUnique({
         where: { id: variantId },
         include: {
-          product: { select: { id: true, name: true, type: true } },
+          product: {
+            select: {
+              id: true,
+              name: true,
+              type: true,
+              availabilityMode: true,
+              warehouseId: true,
+            },
+          },
         },
       });
       if (!variant) throw new NotFoundException('Variant not found');
@@ -829,6 +900,13 @@ export class InventoryService {
         reference: reason ? `adjust-${reason}` : 'manual-adjustment',
         performedBy,
         ledgerType: ManagedStockMovementType.ADJUSTMENT,
+      });
+      await this.mirrorAdjustmentToPhysical({
+        product: variant.product,
+        variantId,
+        quantity: q,
+        reason,
+        performedBy,
       });
       return {
         id: variant.id,
@@ -911,6 +989,13 @@ export class InventoryService {
               tx,
               ledgerType: ManagedStockMovementType.ADJUSTMENT,
             });
+            await this.mirrorAdjustmentToPhysical({
+              product,
+              quantity,
+              reason,
+              performedBy,
+              tx,
+            });
 
             return tx.product.findUnique({
               where: { id: productId },
@@ -933,230 +1018,6 @@ export class InventoryService {
           continue;
         }
         throw error;
-      }
-    }
-  }
-
-  async restockOrderItems(
-    orderId: string,
-    performedBy: string,
-    logType: 'refund_restock' | 'cancellation_restock' = 'cancellation_restock',
-    force = false,
-    tx?: Prisma.TransactionClient,
-  ) {
-    const client = tx || this.prisma;
-    const alreadyRestocked =
-      !force &&
-      (await client.inventoryLog.findFirst({
-        where: {
-          type: { in: ['refund_restock', 'cancellation_restock'] },
-          reason: { contains: orderId },
-        },
-      }));
-    if (alreadyRestocked) return;
-
-    const ledgerType =
-      logType === 'refund_restock'
-        ? ManagedStockMovementType.RETURN
-        : ManagedStockMovementType.CANCEL_RELEASE;
-
-    const orderItems = await client.orderItem.findMany({
-      where: { orderId },
-    });
-
-    for (const item of orderItems) {
-      const product = item.productId
-        ? await client.product.findUnique({
-            where: { id: item.productId },
-            select: {
-              id: true,
-              availabilityMode: true,
-              manageStock: true,
-              type: true,
-              managedStockQuantity: true,
-            },
-          })
-        : null;
-
-      if (!product) continue;
-
-      const isManaged =
-        product.availabilityMode === 'MANAGED_STOCK' ||
-        (!product.availabilityMode && product.manageStock);
-      const isInventoryControlled =
-        product.availabilityMode === 'INVENTORY_CONTROLLED';
-      const isAlwaysIn = product.availabilityMode === 'ALWAYS_IN_STOCK';
-      const isAlwaysOut = product.availabilityMode === 'ALWAYS_OUT_OF_STOCK';
-
-      if (isAlwaysIn || isAlwaysOut) continue;
-
-      if (item.comboId) {
-        const combo = await client.combo.findUnique({
-          where: { id: item.comboId },
-          include: { items: true },
-        });
-        if (!combo) continue;
-
-        for (const ci of combo.items) {
-          const qty = ci.quantity * item.quantity;
-          const effectiveVariantId =
-            ci.variantId ||
-            (item.comboSelection as Record<string, string> | null)?.[
-              ci.productId
-            ] ||
-            null;
-
-          if (isManaged) {
-            const execOp = async (client: any) => {
-              if (effectiveVariantId) {
-                await this.stockService.add({
-                  productId: ci.productId,
-                  variantId: effectiveVariantId,
-                  quantity: qty,
-                  reference: `restock-${orderId}`,
-                  tx: client,
-                });
-              }
-              const ciProduct = await client.product.findUnique({
-                where: { id: ci.productId },
-                select: {
-                  manageStock: true,
-                  type: true,
-                  managedStockQuantity: true,
-                },
-              });
-              if (
-                ciProduct?.manageStock &&
-                (!effectiveVariantId || ciProduct.type === 'simple')
-              ) {
-                await this.stockService.add({
-                  productId: ci.productId,
-                  quantity: qty,
-                  reference: `restock-${orderId}`,
-                  tx: client,
-                });
-              }
-            };
-            if (tx) {
-              await execOp(tx);
-            } else {
-              await this.prisma.$transaction(execOp);
-            }
-          }
-
-          if (isInventoryControlled || isManaged) {
-            await client.inventoryLog.create({
-              data: {
-                productId: ci.productId,
-                variantId: effectiveVariantId,
-                comboId: item.comboId,
-                quantity: qty,
-                type: logType,
-                reason: `${logType === 'refund_restock' ? 'Refund' : 'Cancellation'} restock for order ${orderId}`,
-                performedBy,
-                createdAt: new Date(),
-              },
-            });
-          }
-
-          if (isInventoryControlled && effectiveVariantId) {
-            const costAlreadyRestored = !force && await client.costingLotRestoration.findFirst({
-              where: { returnReferenceId: orderId },
-            });
-            if (costAlreadyRestored) continue;
-
-            const invProduct = await client.product.findUnique({
-              where: { id: ci.productId },
-              select: { warehouseId: true }
-            });
-            if (invProduct?.warehouseId) {
-              await this.stockService.addPhysical({
-                productId: ci.productId,
-                variantId: effectiveVariantId,
-                quantity: qty,
-                warehouseId: invProduct.warehouseId,
-                reference: `restock-${orderId}`,
-                tx: tx || undefined,
-              });
-              await this.costingLotService.restoreForReturn({
-                returnReferenceId: orderId,
-                productId: ci.productId,
-                variantId: effectiveVariantId,
-                warehouseId: invProduct.warehouseId,
-                returnQty: qty,
-                tx: tx || undefined,
-              });
-            }
-          }
-        }
-      } else {
-        if (isManaged) {
-          if (item.variantId) {
-            await this.stockService.add({
-              productId: item.productId || undefined,
-              variantId: item.variantId,
-              quantity: item.quantity,
-              reference: `restock-${orderId}`,
-              tx: tx || undefined,
-            });
-          }
-          if (
-            product.manageStock &&
-            item.productId &&
-            (!item.variantId || product.type === 'simple')
-          ) {
-            await this.stockService.add({
-              productId: item.productId,
-              quantity: item.quantity,
-              reference: `restock-${orderId}`,
-              tx: tx || undefined,
-            });
-          }
-        }
-
-        if (isInventoryControlled || isManaged) {
-          await client.inventoryLog.create({
-            data: {
-              productId: item.productId,
-              variantId: item.variantId,
-              quantity: item.quantity,
-              type: logType,
-              reason: `${logType === 'refund_restock' ? 'Refund' : 'Cancellation'} restock for order ${orderId}`,
-              performedBy,
-              createdAt: new Date(),
-            },
-          });
-        }
-
-        if (isInventoryControlled && item.productId) {
-          const costAlreadyRestored = !force && await client.costingLotRestoration.findFirst({
-            where: { returnReferenceId: orderId },
-          });
-          if (costAlreadyRestored) continue;
-
-          const invProduct = await client.product.findUnique({
-            where: { id: item.productId },
-            select: { warehouseId: true }
-          });
-          if (invProduct?.warehouseId) {
-            await this.stockService.addPhysical({
-              productId: item.productId,
-              variantId: item.variantId ?? undefined,
-              quantity: item.quantity,
-              warehouseId: invProduct.warehouseId,
-              reference: `restock-${orderId}`,
-              tx: tx || undefined,
-            });
-            await this.costingLotService.restoreForReturn({
-              returnReferenceId: orderId,
-              productId: item.productId,
-              variantId: item.variantId ?? null,
-              warehouseId: invProduct.warehouseId,
-              returnQty: item.quantity,
-              tx: tx || undefined,
-            });
-          }
-        }
       }
     }
   }

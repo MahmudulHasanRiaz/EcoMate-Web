@@ -7,7 +7,8 @@
  * - HANDED_OVER   → managed stock DEDUCTED, physical CONSUMED (deducted)
  * - Cancel (any)  → managed reserve/deduction RESTORED, physical reserve CLEARED
  * 
- * Run: npx tsx apps/backend/prisma/scripts/e2e-inventory-test.ts
+ * Run: ALLOW_E2E_INVENTORY_TEST=1 npx tsx apps/backend/prisma/scripts/e2e-inventory-test.ts
+ * (guarded: destructive — test/e2e-named databases only; see SAFETY GUARD below)
  */
 import { PrismaClient } from '@prisma/client';
 import { Pool } from 'pg';
@@ -15,6 +16,40 @@ import { PrismaPg } from '@prisma/adapter-pg';
 
 const BASE_URL = 'http://localhost:4000/api';
 const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/ecomate_web';
+
+// ─── SAFETY GUARD (owner directive, 2026-10-23) ─────────────────────────────
+// This script is DESTRUCTIVE: it deletes blocked IPs, overwrites block
+// settings, wipes PhysicalInventory rows, resets stock and cancels live
+// orders. It must NEVER run against a production or staging database.
+// It refuses to start unless BOTH hold:
+//   1. ALLOW_E2E_INVENTORY_TEST=1 is set explicitly, AND
+//   2. the target database name contains "test" or "e2e"
+//      (override with ALLOW_E2E_INVENTORY_TEST_ON_ANY_DB=1 — do not).
+if (process.env.ALLOW_E2E_INVENTORY_TEST !== '1') {
+  console.error(
+    'REFUSING TO RUN: e2e-inventory-test.ts is destructive. ' +
+      'Set ALLOW_E2E_INVENTORY_TEST=1 explicitly, and only against a throwaway test database.',
+  );
+  process.exit(1);
+}
+const targetDbName = (() => {
+  try {
+    return new URL(connectionString).pathname.replace(/^\//, '');
+  } catch {
+    return '';
+  }
+})();
+if (
+  !/test|e2e/i.test(targetDbName) &&
+  process.env.ALLOW_E2E_INVENTORY_TEST_ON_ANY_DB !== '1'
+) {
+  console.error(
+    `REFUSING TO RUN: database "${targetDbName || '(unknown)'}" does not look like a test database ` +
+      '(name must contain "test" or "e2e"). This script wipes inventory and block settings.',
+  );
+  process.exit(1);
+}
+
 const pool = new Pool({ connectionString });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });

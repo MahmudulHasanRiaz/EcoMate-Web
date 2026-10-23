@@ -5576,6 +5576,7 @@ export class OrdersService {
   async restore(orderId: string) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
+      include: { status: true },
     });
     if (!order) throw new NotFoundException('Order not found');
     if (!order.trashedAt) throw new BadRequestException('Order is not trashed');
@@ -5589,12 +5590,31 @@ export class OrdersService {
       },
     ];
 
-    await this.prisma.order.update({
-      where: { id: orderId },
-      data: {
-        trashedAt: null,
-        timeline: timeline as any,
-      },
+    // Mirror of trash() (stock audit #2, owner 2026-10-23): trash RELEASED
+    // the stock hold of every pre-dispatch order, so a restore must
+    // re-establish it — otherwise the revived order sits in Confirmed/
+    // Pending holding nothing and its units can be sold twice.
+    // verifyStockForOrder restores the invariant and THROWS when the stock
+    // is no longer available, failing the restore loudly instead of
+    // reviving an unfulfillable order. Skipped exactly where trash also
+    // skipped the release: goods-already-left statuses (their ledger must
+    // not move) and Cancelled (a cancelled order must hold no stock; its
+    // Hold/Confirmed revival re-verifies through the status path).
+    const goodsAlreadyLeft = ITEM_EDIT_BLOCKED_STATUSES.has(order.status.name);
+    const mustReReserve = !goodsAlreadyLeft && order.status.name !== 'Cancelled';
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.order.update({
+        where: { id: orderId },
+        data: {
+          trashedAt: null,
+          timeline: timeline as any,
+        },
+      });
+
+      if (mustReReserve) {
+        await this.verifyStockForOrder(orderId, tx);
+      }
     });
 
     this.events.emit({
@@ -5980,22 +6000,22 @@ export class OrdersService {
 
     // Final stock deduction on delivery.
     // Idempotent: managed stock only deducts when managedStockDeducted === false;
-    // physical reservation only when ACTIVE. Safe for courier auto-delivery.
-    try {
-      await this.orderStockDeduct.deductForOrder({
-        orderId: order.id,
-        reference: `Order Delivered: ${order.displayId || order.id}`,
-        performedBy,
-        tx,
-        strict: false,
-      });
-    } catch (err) {
-      // Never let a stock side-effect block the Delivered status from persisting.
-      this.logger.error(
-        `Failed to deduct stock on delivery for order ${order.id}:`,
-        err,
-      );
-    }
+    // physical reservation only when ACTIVE (already-CONSUMED exits cleanly).
+    //
+    // Owner decision 2026-10-23 (stock audit #1): a failed deduction must
+    // NEVER be swallowed. The old try/catch + strict:false let an order show
+    // Delivered while its stock was never deducted — a silent wrong figure
+    // in every downstream report. Now strict, and errors propagate: the
+    // status transaction rolls back, Delivered does not persist, and the
+    // failure is loud (staff action / courier webhook retry) instead of
+    // invisible. Same posture as the dispatch HANDED_OVER deduction.
+    await this.orderStockDeduct.deductForOrder({
+      orderId: order.id,
+      reference: `Order Delivered: ${order.displayId || order.id}`,
+      performedBy,
+      tx,
+      strict: true,
+    });
   }
 
   /**

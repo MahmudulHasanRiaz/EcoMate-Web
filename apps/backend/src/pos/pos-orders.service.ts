@@ -651,8 +651,9 @@ private async resolveCanonicalPos(
       }
 
       // Persist order items with authoritative DB prices
+      const createdItems: any[] = [];
       for (const item of authItems) {
-        await tx.orderItem.create({
+        const createdItem = await tx.orderItem.create({
           data: {
             orderId: order.id,
             productId: item.productId,
@@ -664,12 +665,94 @@ private async resolveCanonicalPos(
             price: item.price,
           },
         });
+        createdItems.push(createdItem);
       }
 
       const imEnabled =
         await this.stockRouter.isInventoryManagementEnabled();
 
-      for (const item of authItems) {
+      // Stock bookkeeping (stock audit #7, owner 2026-10-23): POS deducts
+      // both engines DIRECTLY below, bypassing the reserve→deduct flow — so
+      // without the same records the web flow writes (item flags, combo
+      // snapshots, CONSUMED physical reservations on an ACTIVE stock
+      // cycle), every later reversal (cancel, Return Pending → Returned)
+      // restored NOTHING and the deducted stock was lost forever. Write
+      // those records as the deductions happen so CancelReturnStockService
+      // can restore a POS sale exactly like a web sale.
+      let stockCycleId: string | null = null;
+      const ensureStockCycle = async (): Promise<string> => {
+        if (!stockCycleId) {
+          const cycle = await tx.orderStockCycle.create({
+            data: { orderId: order.id, status: 'ACTIVE' },
+          });
+          stockCycleId = cycle.id;
+        }
+        return stockCycleId;
+      };
+      const recordPhysicalConsumption = async (params: {
+        orderItemId?: string;
+        componentId?: string;
+        productId: string;
+        variantId?: string | null;
+        quantity: number;
+      }): Promise<void> => {
+        const cycleId = await ensureStockCycle();
+        const pi = await tx.physicalInventory.findFirst({
+          where: {
+            productId: params.productId,
+            variantId: params.variantId ?? null,
+            warehouseId: session.showroom.id,
+            binLocationId: null,
+          },
+          select: { id: true },
+        });
+        if (!pi) return;
+        if (params.componentId) {
+          const reservation = await tx.comboComponentPhysicalReservation.create({
+            data: {
+              componentId: params.componentId,
+              orderId: order.id,
+              cycleId,
+              productId: params.productId,
+              variantId: params.variantId ?? null,
+              warehouseId: session.showroom.id,
+              quantity: params.quantity,
+              status: 'CONSUMED',
+            },
+          });
+          await tx.comboComponentPhysicalReservationAllocation.create({
+            data: {
+              reservationId: reservation.id,
+              physicalInventoryId: pi.id,
+              quantity: params.quantity,
+            },
+          });
+        } else {
+          const reservation = await tx.physicalReservation.create({
+            data: {
+              orderId: order.id,
+              orderItemId: params.orderItemId!,
+              cycleId,
+              productId: params.productId,
+              variantId: params.variantId ?? null,
+              warehouseId: session.showroom.id,
+              quantity: params.quantity,
+              status: 'CONSUMED',
+            },
+          });
+          await tx.physicalReservationAllocation.create({
+            data: {
+              reservationId: reservation.id,
+              physicalInventoryId: pi.id,
+              quantity: params.quantity,
+            },
+          });
+        }
+      };
+
+      for (let itemIndex = 0; itemIndex < authItems.length; itemIndex++) {
+        const item = authItems[itemIndex];
+        const createdItem = createdItems[itemIndex];
         // When sourceWarehouseId is set and differs from current showroom,
         // skip stock deduction — Order Management handles fulfillment later.
         const isCrossWarehouse =
@@ -699,7 +782,9 @@ private async resolveCanonicalPos(
               imEnabled,
             );
 
-            if (imEnabled && compDecision.pi !== 'skip') {
+            const compPhysicalDeducted = imEnabled && compDecision.pi !== 'skip';
+            const compManagedDeducted = compDecision.ms === 'deduct';
+            if (compPhysicalDeducted) {
               await this.stock.addPhysical({
                 productId: ci.productId,
                 variantId: compVariantId,
@@ -711,7 +796,7 @@ private async resolveCanonicalPos(
                 tx,
               });
             }
-            if (compDecision.ms === 'deduct') {
+            if (compManagedDeducted) {
               await this.stock.reserve({
                 productId: ci.productId,
                 variantId: compVariantId || undefined,
@@ -728,6 +813,32 @@ private async resolveCanonicalPos(
                 performedBy: cashierId,
                 tx,
               });
+            }
+            // Bookkeeping (audit #7): snapshot the component with the same
+            // flags the web flow carries after deduction, plus a CONSUMED
+            // physical reservation when the physical engine was deducted —
+            // so a later cancel/return restores this component too.
+            if (compPhysicalDeducted || compManagedDeducted) {
+              const snapshot = await tx.orderItemComboComponent.create({
+                data: {
+                  orderItemId: createdItem.id,
+                  comboItemId: ci.id,
+                  productId: ci.productId,
+                  variantId: compVariantId,
+                  unitQuantity: ci.quantity,
+                  totalQuantity: compQty,
+                  managedStockReserved: compManagedDeducted,
+                  managedStockDeducted: compManagedDeducted,
+                },
+              });
+              if (compPhysicalDeducted) {
+                await recordPhysicalConsumption({
+                  componentId: snapshot.id,
+                  productId: ci.productId,
+                  variantId: compVariantId,
+                  quantity: compQty,
+                });
+              }
             }
           }
           continue;
@@ -748,7 +859,9 @@ private async resolveCanonicalPos(
         );
 
         // Physical deduction (IM ON): decrement physical quantity at the showroom.
-        if (imEnabled && decision.pi !== 'skip') {
+        const physicalDeducted = imEnabled && decision.pi !== 'skip';
+        const managedDeducted = decision.ms === 'deduct';
+        if (physicalDeducted) {
           await this.stock.addPhysical({
             productId: item.productId,
             variantId: item.variantId,
@@ -764,7 +877,7 @@ private async resolveCanonicalPos(
         // Managed deduction (per-mode): reserve then deduct so reservedStock
         // ends at 0 — mirrors the IM-OFF branch, but also runs under IM ON for
         // MANAGED_STOCK products.
-        if (decision.ms === 'deduct') {
+        if (managedDeducted) {
           await this.stock.reserve({
             productId: item.productId,
             variantId: item.variantId,
@@ -780,6 +893,25 @@ private async resolveCanonicalPos(
             reference: displayId,
             performedBy: cashierId,
             tx,
+          });
+        }
+
+        // Bookkeeping (audit #7): carry the same post-deduction state the
+        // web flow carries — flags on the line (both true: reserve+deduct
+        // already happened) and a CONSUMED physical reservation — so a
+        // later cancel/return restores this sale's stock.
+        if (managedDeducted) {
+          await tx.orderItem.update({
+            where: { id: createdItem.id },
+            data: { managedStockReserved: true, managedStockDeducted: true },
+          });
+        }
+        if (physicalDeducted && item.productId) {
+          await recordPhysicalConsumption({
+            orderItemId: createdItem.id,
+            productId: item.productId,
+            variantId: item.variantId,
+            quantity: item.quantity,
           });
         }
       }

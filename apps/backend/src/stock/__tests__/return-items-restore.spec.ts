@@ -347,4 +347,97 @@ describe('CancelReturnStockService.restoreForReturnItems (Task 6)', () => {
       );
     });
   });
+
+  describe('Q6 — restore layer follows the product mode AT RETURN TIME (owner 2026-10-23)', () => {
+    // The product was MANAGED_STOCK when the order was placed (managed flags
+    // set, stock deducted + Return-Pending hold placed) but has since moved
+    // to INVENTORY_CONTROLLED. The return must restore PHYSICAL only — the
+    // managed/virtual quantity is never added back — while the managed
+    // claim is still settled (hold freed, flags cleared).
+    const movedProduct = {
+      id: 'pc',
+      availabilityMode: 'INVENTORY_CONTROLLED',
+      manageStock: false,
+      syncManagedStock: false,
+      warehouseId: 'wh-1',
+      name: 'C',
+    };
+
+    function movedOrder() {
+      return {
+        id: 'order-1',
+        items: [
+          {
+            id: 'item-c',
+            orderId: 'order-1',
+            productId: 'pc',
+            variantId: null,
+            comboId: null,
+            quantity: 4,
+            managedStockDeducted: true,
+            managedStockReserved: true,
+            product: movedProduct,
+          },
+        ],
+      };
+    }
+
+    it('item-level return: physical restored, managed add NEVER happens, claim settled', async () => {
+      tx.order.findUnique.mockResolvedValue(movedOrder());
+
+      const res = await service.restoreForReturnItems({
+        orderId: 'order-1',
+        items: [{ productId: 'pc', quantity: 4 }],
+        returnId: 'ret-q6',
+        tx,
+      });
+
+      expect(res.restored).toEqual([{ productId: 'pc', variantId: null, quantity: 4 }]);
+      // No managed on-hand restore for a product that left MANAGED_STOCK.
+      for (const [op, args] of stockService.operate.mock.calls as any[]) {
+        expect([op, args?.productId]).not.toEqual(['add', 'pc']);
+      }
+      // The Return-Pending hold this order placed is freed (release only).
+      expect(stockService.operate).toHaveBeenCalledWith(
+        'release',
+        expect.objectContaining({ productId: 'pc', quantity: 4 }),
+      );
+      // Flags cleared so no later path can resurrect virtual stock.
+      expect(tx.orderItem.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'item-c' },
+          data: expect.objectContaining({
+            managedStockDeducted: false,
+            managedStockReserved: false,
+          }),
+        }),
+      );
+      // Physical layer DID restore (reservation handled + on-hand moved).
+      expect(tx.physicalReservation.update).toHaveBeenCalled();
+    });
+
+    it('blanket restoreForOrder: same rule — no managed add, flags cleared', async () => {
+      tx.order.findUnique.mockResolvedValue(movedOrder());
+      tx.costingLotConsumption.findMany = jest.fn().mockResolvedValue([]);
+
+      await service.restoreForOrder({
+        orderId: 'order-1',
+        referencePrefix: 'return',
+        tx,
+      });
+
+      for (const [op, args] of stockService.operate.mock.calls as any[]) {
+        expect([op, args?.productId]).not.toEqual(['add', 'pc']);
+      }
+      expect(tx.orderItem.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'item-c' },
+          data: expect.objectContaining({
+            managedStockDeducted: false,
+            managedStockReserved: false,
+          }),
+        }),
+      );
+    });
+  });
 });
