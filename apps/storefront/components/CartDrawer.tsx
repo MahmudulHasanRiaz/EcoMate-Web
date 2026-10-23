@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { trackAddToCart } from "@/lib/tracking";
 import { resolveCatalogId } from "@/lib/catalog-id";
+import { cartLineTotal } from "@/lib/customization";
 
 /**
  * Render attribute selections as "Size: M, Color: Red" for the cart drawer.
@@ -252,6 +253,16 @@ export default function CartDrawer() {
                               })}
                             </div>
                           )}
+                          {item.customization && item.customization.lines.length > 0 && (
+                            <div className="space-y-0.5 mt-1">
+                              <span className="inline-block text-[10px] font-semibold uppercase tracking-wide text-brand-blue border border-brand-blue/40 rounded-sm px-1 py-px">Customized</span>
+                              {item.customization.lines.map((l, idx) => (
+                                <div key={idx} className="text-[11px] text-gray-600">
+                                  <span className="text-gray-500">{l.label}:</span> {l.value}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                      
@@ -275,10 +286,10 @@ export default function CartDrawer() {
                       </div>
                       
                       <div className="font-sans text-[13px] text-gray-800 whitespace-nowrap hidden sm:block">
-                        &times; {s}{fmt(item.price)}
+                        &times; {s}{fmt(item.price + (item.customization?.addonPerUnit ?? 0))}
                       </div>
                       <div className="font-sans text-[13px] font-medium text-gray-900 whitespace-nowrap">
-                        = {s}{fmt(item.price * item.quantity)}
+                        = {s}{fmt(cartLineTotal(item))}
                       </div>
                     </div>
                   </div>

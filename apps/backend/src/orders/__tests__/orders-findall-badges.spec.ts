@@ -23,7 +23,7 @@ describe('OrdersService.findAll badges + exchangeScope filter', () => {
         groupBy: jest.fn(),
       },
     };
-    service = new OrdersService(prisma, ...Array(22).fill({}));
+    service = new OrdersService(prisma, ...Array(23).fill({}));
     prisma.order.findMany.mockResolvedValue([]);
     prisma.order.count.mockResolvedValue(0);
     prisma.order.groupBy.mockResolvedValue([]);

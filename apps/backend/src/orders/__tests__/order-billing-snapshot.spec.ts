@@ -25,6 +25,7 @@ import { CouponsService } from '../../coupons/coupons.service';
 import { ManagedStockLedgerService } from '../../inventory/managed-stock-ledger.service';
 import { CostingLotService } from '../../stock/costing-lot.service';
 import { CancelReturnStockService } from '../../stock/cancel-return-stock.service';
+import { CustomizationService } from '../../customization/customization.service';
 import { OrderStockDeductService } from '../../stock/order-stock-deduct.service';
 import { CommissionsService } from '../../commissions/commissions.service';
 import { MarketingAttributionService } from '../../marketing/marketing-attribution.service';
@@ -113,6 +114,7 @@ describe('Order billing snapshot separation', () => {
         { provide: CouponsService, useValue: {} },
         { provide: ManagedStockLedgerService, useValue: {} },
         { provide: CostingLotService, useValue: {} },
+        { provide: CustomizationService, useValue: new CustomizationService({ canUse: () => true } as any) },
         { provide: CancelReturnStockService, useValue: { releaseForCancellation: jest.fn() } },
         { provide: OrderStockDeductService, useValue: {} },
         { provide: OrderEditLockService, useValue: {} },

@@ -12,15 +12,38 @@ import {
   IsEnum,
   IsEmail,
   ArrayMinSize,
+  MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PaymentStatus, SalesChannel, SalesChannelV2, AcquisitionType } from '@prisma/client';
+
+/**
+ * Customization ANSWER DTOs (owner Q14–Q20, 2026-10-23). The client sends
+ * group/option KEYS and text only — never prices. The server resolves
+ * amounts against the product definition (CustomizationService).
+ */
+export class CustomizationSelectionGroupDto {
+  @IsString() key: string;
+  @IsOptional() @IsArray() @IsString({ each: true }) optionKeys?: string[];
+  @IsOptional() @IsString() @MaxLength(1000) text?: string;
+}
+
+export class CustomizationSelectionDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CustomizationSelectionGroupDto)
+  groups: CustomizationSelectionGroupDto[];
+}
 
 export class OrderItemDto {
   @IsOptional() @IsString() productId?: string;
   @IsOptional() @IsString() variantId?: string;
   @IsOptional() @IsString() comboId?: string;
   @IsOptional() @IsObject() comboSelection?: Record<string, string>;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CustomizationSelectionDto)
+  customization?: CustomizationSelectionDto;
   @IsInt() @Min(1) quantity: number;
   @IsNumber() price: number;
 }
@@ -180,6 +203,10 @@ export class UpdateOrderItemDto {
   @IsOptional() @IsString() variantId?: string;
   @IsInt() @Min(1) quantity: number;
   @IsNumber() price: number;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CustomizationSelectionDto)
+  customization?: CustomizationSelectionDto;
 }
 
 export class CreatePaymentDto {

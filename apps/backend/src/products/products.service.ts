@@ -12,6 +12,7 @@ import {
   GenerateVariantsDto,
   UpdateVariantDto,
 } from './dto/product.dto';
+import { CustomizationService } from '../customization/customization.service';
 import { MediaService } from '../media/media.service';
 import { MediaResolverService } from '../media/media-resolver.service';
 import { CacheService } from '../cache/cache.service';
@@ -39,7 +40,22 @@ export class ProductsService {
     private readonly mediaResolver: MediaResolverService,
     private readonly stockService: StockService,
     private readonly initialPhysicalStock: InitialPhysicalStockService,
+    private readonly customization: CustomizationService,
   ) {}
+
+  /**
+   * Customization definition gate + normalization (owner Q15/Q20):
+   * malformed definitions are rejected; the NORMALIZED parse (defaults
+   * materialized) is what's stored. Setting a non-empty definition
+   * requires the 'product-customization' license feature; clearing
+   * (null/[]) is always allowed.
+   */
+  private normalizeCustomizations(raw: unknown): any {
+    const parsed = this.customization.parseDefinition(raw);
+    if (parsed.length === 0) return null;
+    this.customization.assertEnabled();
+    return parsed;
+  }
 
   private async syncTags(tagNames: string[], productId: string): Promise<void> {
     const oldTags = await this.prisma.productTag.findMany({
@@ -800,6 +816,10 @@ export class ProductsService {
         dto.type === 'variable' ? 0 : dto.managedStockQuantity || 0,
       lowStockQty: dto.lowStockQty,
       weightGram: dto.weightGram ?? null,
+      customizations:
+        dto.customizations === undefined
+          ? undefined
+          : this.normalizeCustomizations(dto.customizations),
       categoryId: categoryId || undefined,
       sizeChartId: dto.sizeChartId,
       tags: dto.tags as any,
@@ -978,6 +998,9 @@ export class ProductsService {
       if (exist) throw new ConflictException('Slug already exists');
     }
     const data: any = { ...dto };
+    if (dto.customizations !== undefined) {
+      data.customizations = this.normalizeCustomizations(dto.customizations);
+    }
     if (dto.tags) data.tags = dto.tags as any;
     if (dto.images !== undefined) data.images = dto.images as any;
     if (dto.seoMeta) data.seoMeta = dto.seoMeta;
@@ -1242,6 +1265,14 @@ export class ProductsService {
         managedStockQuantity:
           dto.type === 'variable' ? 0 : dto.managedStockQuantity || 0,
         lowStockQty: dto.lowStockQty,
+        // The draft flow is how the admin form first persists a product —
+        // weight (Q12) and the customization definition (Q15) must survive
+        // it, not just the direct create path.
+        weightGram: dto.weightGram ?? null,
+        customizations:
+          dto.customizations === undefined
+            ? undefined
+            : this.normalizeCustomizations(dto.customizations),
         categoryId: categoryId || undefined,
         productCategories:
           categoryIds.length > 0
@@ -1321,6 +1352,9 @@ export class ProductsService {
     }
 
     const data: any = { ...dto };
+    if (dto.customizations !== undefined) {
+      data.customizations = this.normalizeCustomizations(dto.customizations);
+    }
     if (dto.tags) data.tags = dto.tags as any;
     if (dto.images !== undefined) data.images = dto.images as any;
     if (dto.seoMeta) data.seoMeta = dto.seoMeta;
@@ -1453,6 +1487,9 @@ export class ProductsService {
         : p.slug;
 
     const data: any = { ...dto };
+    if (dto.customizations !== undefined) {
+      data.customizations = this.normalizeCustomizations(dto.customizations);
+    }
     if (dto.tags) data.tags = dto.tags as any;
     if (dto.images !== undefined) data.images = dto.images as any;
     if (dto.seoMeta) data.seoMeta = dto.seoMeta;

@@ -571,7 +571,9 @@ export function orderLineNet(order: Pick<PnlOrderInput, 'items' | 'discount' | '
   gross: number;
   units: number;
 } {
-  const lineGrosses = order.items.map((i) => i.price * i.quantity);
+  const lineGrosses = order.items.map(
+    (i) => i.price * i.quantity + (i.addonAmount ?? 0),
+  );
   const gross = lineGrosses.reduce((s, g) => s + g, 0);
   const effectiveDiscount =
     order.discountType === 'percentage' ? order.subtotal * (order.discount / 100) : order.discount;
@@ -637,6 +639,8 @@ export function computeReturnBreakdown(
           price: i.price,
           quantity: i.quantity,
           costSnapshot: i.costSnapshot,
+          addonAmount: i.addonAmount ?? 0,
+          addonCostAmount: i.addonCostAmount ?? 0,
         })),
         range,
       });
@@ -1060,6 +1064,8 @@ export class AnalyticsSalesService {
               quantity: true,
               costSnapshot: true,
               costType: true,
+              addonAmount: true,
+              addonCostAmount: true,
             },
           },
           payments: {
@@ -1131,6 +1137,8 @@ export class AnalyticsSalesService {
           quantity: i.quantity,
           costSnapshot: i.costSnapshot === null ? null : Number(i.costSnapshot),
           costType: i.costType === 'actual' || i.costType === 'estimated' ? i.costType : null,
+          addonAmount: i.addonAmount == null ? 0 : Number(i.addonAmount),
+          addonCostAmount: i.addonCostAmount == null ? 0 : Number(i.addonCostAmount),
         })),
         receivedReturns: (o.returns ?? []).map((r: any): ReceivedReturnEvent => ({
           id: r.id,

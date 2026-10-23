@@ -10,6 +10,8 @@ import {
   ValidateIf,
   MinLength,
   Min,
+  Max,
+  MaxLength,
   IsObject,
   IsIn,
 } from 'class-validator';
@@ -46,6 +48,35 @@ export class DescriptionSectionsDto {
   @IsOptional() @IsString() stylingTip?: string;
 }
 
+/**
+ * Customization DEFINITION DTOs (owner Q15/Q20, 2026-10-23). Structural
+ * validation here; semantic validation (unique keys, option presence,
+ * delta sanity) runs in CustomizationService.parseDefinition at save
+ * time and the NORMALIZED result is what gets stored.
+ */
+export class CustomizationOptionDto {
+  @IsString() @MaxLength(64) key: string;
+  @IsString() @MaxLength(200) label: string;
+  @IsNumber() @Min(0) priceDelta: number;
+  @IsNumber() @Min(0) costDelta: number;
+  @IsOptional() @IsIn(['per_unit', 'per_line']) pricingKind?: string;
+}
+
+export class CustomizationGroupDto {
+  @IsString() @MaxLength(64) key: string;
+  @IsString() @MaxLength(200) label: string;
+  @IsIn(['single', 'multi', 'text']) type: string;
+  @IsOptional() @IsBoolean() required?: boolean;
+  @IsOptional() @IsInt() @Min(1) @Max(1000) maxLength?: number;
+  @IsOptional() @IsNumber() @Min(0) priceDelta?: number;
+  @IsOptional() @IsNumber() @Min(0) costDelta?: number;
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CustomizationOptionDto)
+  options?: CustomizationOptionDto[];
+}
+
 export class CreateProductDto {
   @IsString() @MinLength(1) name: string;
   @IsString() @MinLength(1) slug: string;
@@ -69,6 +100,13 @@ export class CreateProductDto {
   // Optional parcel weight in grams (owner Q12): wins over courier
   // fallbacks at dispatch when set.
   @IsOptional() @IsInt() @Min(1) weightGram?: number;
+  // Customization definition (owner Q15/Q20); stored normalized after
+  // CustomizationService.parseDefinition. License-gated at save time.
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CustomizationGroupDto)
+  customizations?: CustomizationGroupDto[];
   @IsOptional() @IsString() categoryId?: string;
   @IsOptional() @IsString() brandId?: string;
   @IsOptional() @IsArray() @IsString({ each: true }) categoryIds?: string[];
@@ -125,6 +163,15 @@ export class UpdateProductDto {
   @IsInt()
   @Min(1)
   weightGram?: number | null;
+  // Customization definition (owner Q15/Q20); null or [] clears it.
+  // Clearing is always allowed; setting a non-empty definition requires
+  // the 'product-customization' license feature.
+  @IsOptional()
+  @ValidateIf((o) => o.customizations !== null)
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CustomizationGroupDto)
+  customizations?: CustomizationGroupDto[] | null;
   @IsOptional()
   @ValidateIf((o) => o.categoryId !== null)
   @IsString()

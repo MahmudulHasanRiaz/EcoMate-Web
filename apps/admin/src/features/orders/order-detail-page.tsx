@@ -29,6 +29,8 @@ import { CourierCustomerHistoryCard } from '@/features/orders/courier-customer-h
 import { SteadfastSetPicker } from '@/features/dispatch/steadfast-set-picker'
 import { CodMismatchBanner } from '@/features/orders/components/cod-mismatch-banner'
 import { PaymentLedgerCard } from '@/features/orders/components/payment-ledger-card'
+import { CustomizationInput, CustomizationSummary } from '@/features/orders/components/customization-input'
+import { snapshotToSelection, selectionAddonTotal, snapshotAddonTotal } from '@/lib/customization'
 import { RecordPaymentModal } from '@/features/orders/components/record-payment-modal'
 import { RecordRefundModal } from '@/features/orders/components/record-refund-modal'
 import { OrderSummaryCard } from '@/features/orders/order-summary-card'
@@ -508,6 +510,9 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
             variantId: i.variantId,
             quantity: i.quantity,
             price: Number(i.price),
+            // Round-trip the working selection so the server can tell an
+            // unchanged customization from a changed one (Q19 lock).
+            customization: i._selection ?? snapshotToSelection(i.customization),
           })),
         },
       })
@@ -969,8 +974,24 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                                         </span>
                                       ) : null}
                                     </div>
+                                    {!editingItems && (
+                                      <CustomizationSummary snapshot={item.customization} />
+                                    )}
                                   </div>
                                 </div>
+                                {editingItems && item.product?.customizations?.length > 0 && (
+                                  <div className='mt-2 ml-14'>
+                                    <CustomizationInput
+                                      definition={item.product.customizations}
+                                      value={item._selection ?? snapshotToSelection(item.customization)}
+                                      onChange={(sel) => {
+                                        const newItems = [...orderItems]
+                                        newItems[index] = { ...newItems[index], _selection: sel }
+                                        setOrderItems(newItems)
+                                      }}
+                                    />
+                                  </div>
+                                )}
                               </TableCell>
                               <TableCell className='text-right'>
                                 {editingItems ? (
@@ -1024,7 +1045,11 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                                 )}
                               </TableCell>
                               <TableCell className='text-right pr-4 sm:pr-6 text-sm font-semibold text-foreground'>
-                                ৳{fmt(nn(item.price) * item.quantity)}
+                                ৳{fmt(nn(item.price) * item.quantity + (editingItems
+                                  ? (item.product?.customizations?.length
+                                      ? selectionAddonTotal(item.product.customizations, item._selection ?? snapshotToSelection(item.customization), item.quantity)
+                                      : snapshotAddonTotal(item.customization, item.quantity))
+                                  : nn(item.addonAmount || 0)))}
                               </TableCell>
                               {editingItems && (
                                 <TableCell className='text-center'>
@@ -1088,6 +1113,9 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                                   </span>
                                 ) : null}
                               </div>
+                              {!editingItems && (
+                                <CustomizationSummary snapshot={item.customization} />
+                              )}
                             </div>
                             {editingItems && (
                               <Button
@@ -1100,6 +1128,17 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                               </Button>
                             )}
                           </div>
+                          {editingItems && item.product?.customizations?.length > 0 && (
+                            <CustomizationInput
+                              definition={item.product.customizations}
+                              value={item._selection ?? snapshotToSelection(item.customization)}
+                              onChange={(sel) => {
+                                const newItems = [...orderItems]
+                                newItems[index] = { ...newItems[index], _selection: sel }
+                                setOrderItems(newItems)
+                              }}
+                            />
+                          )}
 
                           {/* Price & Quantity Controls */}
                           {editingItems ? (
@@ -1147,7 +1186,9 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                                 </div>
                                 <div className='text-right'>
                                   <span className='text-xs font-semibold text-foreground'>
-                                    ৳{fmt(nn(item.price) * item.quantity)}
+                                    ৳{fmt(nn(item.price) * item.quantity + (item.product?.customizations?.length
+                                      ? selectionAddonTotal(item.product.customizations, item._selection ?? snapshotToSelection(item.customization), item.quantity)
+                                      : snapshotAddonTotal(item.customization, item.quantity)))}
                                   </span>
                                 </div>
                               </div>
@@ -1161,7 +1202,7 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                                 </span>
                               </div>
                               <div className='text-sm font-semibold text-foreground'>
-                                ৳{fmt(nn(item.price) * item.quantity)}
+                                ৳{fmt(nn(item.price) * item.quantity + nn(item.addonAmount || 0))}
                               </div>
                             </div>
                           )}

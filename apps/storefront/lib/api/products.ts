@@ -1,5 +1,6 @@
 import apiClient from "../api-client";
 import type { Product, Variant, Category } from "../types";
+import { sanitizeDefinition } from "../customization";
 
 export interface ProductsResponse {
   data: Product[];
@@ -110,6 +111,7 @@ export function transformBackendProduct(raw: any): Product {
     descriptionSections: raw.descriptionSections,
     videoUrl: raw.videoUrl || undefined,
     detailRows: Array.isArray(raw.detailRows) ? raw.detailRows : undefined,
+    customizations: sanitizeDefinition(raw.customizations),
     rating: raw.averageRating || raw.rating || 0,
     reviewCount: raw._count?.reviews ?? raw.reviewCount,
     averageRating: raw.averageRating || raw.rating || 0,

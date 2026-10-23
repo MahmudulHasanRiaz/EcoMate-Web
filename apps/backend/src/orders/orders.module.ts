@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { OrdersController } from './orders.controller';
 import { OrderStatusController } from './order-status.controller';
 import { OrdersService } from './orders.service';
+import { CustomizationService } from '../customization/customization.service';
 import { OrderOthersService } from './order-others.service';
 import { OrderEditLockService } from './order-edit-lock.service';
 import { OrdersEventService } from './orders-event.service';
@@ -26,6 +27,7 @@ import { AccountingModule } from '../accounting/accounting.module';
     OrderEditLockService,
     OrderOthersService,
     OrderStaffPerformanceService,
+    CustomizationService,
   ],
   exports: [
     OrdersService,

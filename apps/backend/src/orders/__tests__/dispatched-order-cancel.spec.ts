@@ -17,6 +17,7 @@ import { CouponsService } from '../../coupons/coupons.service';
 import { ManagedStockLedgerService } from '../../inventory/managed-stock-ledger.service';
 import { CostingLotService } from '../../stock/costing-lot.service';
 import { CancelReturnStockService } from '../../stock/cancel-return-stock.service';
+import { CustomizationService } from '../../customization/customization.service';
 import { OrderStockDeductService } from '../../stock/order-stock-deduct.service';
 import { OrderEditLockService } from '../order-edit-lock.service';
 import { CommissionsService } from '../../commissions/commissions.service';
@@ -141,6 +142,10 @@ describe('OrdersService — cancel a dispatched order', () => {
         { provide: CouponsService, useValue: {} },
         { provide: ManagedStockLedgerService, useValue: {} },
         { provide: CostingLotService, useValue: {} },
+        {
+          provide: CustomizationService,
+          useValue: new CustomizationService({ canUse: () => true } as any),
+        },
         {
           provide: CancelReturnStockService,
           useValue: {

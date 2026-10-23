@@ -30,6 +30,7 @@ import { CouponsService } from '../../coupons/coupons.service';
 import { ManagedStockLedgerService } from '../../inventory/managed-stock-ledger.service';
 import { CostingLotService } from '../../stock/costing-lot.service';
 import { CancelReturnStockService } from '../../stock/cancel-return-stock.service';
+import { CustomizationService } from '../../customization/customization.service';
 import { OrderStockDeductService } from '../../stock/order-stock-deduct.service';
 import { OrderEditLockService } from '../order-edit-lock.service';
 import { CommissionsService } from '../../commissions/commissions.service';
@@ -151,6 +152,7 @@ describe('OrdersService.updateOrder cost capture', () => {
         { provide: CouponsService, useValue: stub() },
         { provide: ManagedStockLedgerService, useValue: stub() },
         { provide: CostingLotService, useValue: stub() },
+        { provide: CustomizationService, useValue: new CustomizationService({ canUse: () => true } as any) },
         { provide: CancelReturnStockService, useValue: stub() },
         { provide: OrderStockDeductService, useValue: stub() },
         { provide: OrderEditLockService, useValue: { getLock: editLockGet } },
@@ -249,6 +251,7 @@ describe('OrdersService.verifyPayment fee capture', () => {
         { provide: CouponsService, useValue: stub() },
         { provide: ManagedStockLedgerService, useValue: stub() },
         { provide: CostingLotService, useValue: stub() },
+        { provide: CustomizationService, useValue: new CustomizationService({ canUse: () => true } as any) },
         { provide: CancelReturnStockService, useValue: stub() },
         { provide: OrderStockDeductService, useValue: stub() },
         {

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 import { mediaUrl } from '@/lib/utils'
 import { getCustomerDisplayName, getCustomerPhone, getCustomerEmail } from '@/lib/order-display'
+import { asSnapshot } from '@/lib/customization'
 
 const nm = (v: number | string) => Number(v)
 const fmt = (v: number | string) => nm(v).toFixed(2)
@@ -19,7 +20,7 @@ export function InvoiceTemplate({ order }: { order: any }) {
   const currencySymbol = settings?.currency?.symbol || '৳'
   if (!order) return null
 
-  const subtotal = order.items?.reduce((s: number, i: any) => s + nm(i.price) * i.quantity, 0) || 0
+  const subtotal = order.items?.reduce((s: number, i: any) => s + nm(i.price) * i.quantity + nm(i.addonAmount || 0), 0) || 0
   const sa = order.shippingAddress && typeof order.shippingAddress === 'object' ? order.shippingAddress : {}
   const customerName = getCustomerDisplayName(order)
   const customerPhone = getCustomerPhone(order)
@@ -87,15 +88,48 @@ export function InvoiceTemplate({ order }: { order: any }) {
           </tr>
         </thead>
         <tbody>
-          {order.items?.map((item: any, i: number) => (
+          {order.items?.map((item: any, i: number) => {
+            const snapshot = asSnapshot(item.customization)
+            return (
             <tr key={i} className="border-b">
               <td className="py-2 px-2 text-muted-foreground">{i + 1}</td>
-              <td className="py-2">{item.product?.name || 'Product'}</td>
+              <td className="py-2">
+                {item.product?.name || 'Product'}
+                {/* Customization detail lives ONLY on the invoice (owner
+                    Q16) — the packing sticker gets a badge, couriers get
+                    nothing. Text answers print in full here. */}
+                {snapshot && (
+                  <div className="mt-0.5 space-y-0.5">
+                    {snapshot.groups.map((g) => (
+                      <div key={g.key} className="text-xs text-muted-foreground">
+                        <span className="font-medium">{g.label}:</span>{' '}
+                        {g.type === 'text' ? (
+                          <span>
+                            “{g.text}”
+                            {nm(g.priceDelta || 0) > 0 && (
+                              <> (+{currencySymbol}{fmt(g.priceDelta || 0)})</>
+                            )}
+                          </span>
+                        ) : (
+                          g.options.map((o, oi) => (
+                            <span key={o.key}>
+                              {oi > 0 ? ', ' : ''}
+                              {o.label} (+{currencySymbol}
+                              {fmt(nm(o.priceDelta) * (o.pricingKind === 'per_unit' ? item.quantity : 1))})
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </td>
               <td className="text-right py-2">{item.quantity}</td>
               <td className="text-right py-2">{currencySymbol}{fmt(item.price)}</td>
-              <td className="text-right py-2 font-medium">{currencySymbol}{fmt(nm(item.price) * item.quantity)}</td>
+              <td className="text-right py-2 font-medium">{currencySymbol}{fmt(nm(item.price) * item.quantity + nm(item.addonAmount || 0))}</td>
             </tr>
-          ))}
+            )
+          })}
         </tbody>
       </table>
 

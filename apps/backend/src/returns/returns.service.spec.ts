@@ -133,6 +133,45 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
       expect(ret.displayId).toMatch(/^RTN-\d{6}-\d{4}$/);
     });
 
+    it('Q17: staff return over a customized line is refused; a COURIER-source return of the same line is allowed', async () => {
+      const snapshot = {
+        groups: [
+          {
+            key: 'engraving', label: 'Engraving', type: 'single',
+            options: [
+              { key: 'gold', label: 'Gold Foil', priceDelta: 120, costDelta: 40, pricingKind: 'per_unit' },
+            ],
+          },
+        ],
+      };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...order,
+        items: [
+          {
+            quantity: 1, productId: 'p-1', variantId: null,
+            customization: snapshot, product: { name: 'Wallet' },
+          },
+        ],
+      });
+
+      await expect(
+        service.create({
+          orderId: 'order-1',
+          type: 'FULL',
+          items: [{ productId: 'p-1', quantity: 1 }],
+        }),
+      ).rejects.toThrow(/customized product and cannot be returned/);
+      expect(prisma.return.create).not.toHaveBeenCalled();
+
+      const ret = await service.create({
+        orderId: 'order-1',
+        type: 'FULL',
+        source: 'COURIER',
+        items: [{ productId: 'p-1', quantity: 1 }],
+      } as any);
+      expect(ret.id).toBe('ret-1');
+    });
+
     it('records createdBy = the performing staff email on creation, null without an actor', async () => {
       await service.create({ orderId: 'order-1', type: 'FULL' }, 'staff@ecomate.com');
       expect(prisma.return.create).toHaveBeenCalledWith(

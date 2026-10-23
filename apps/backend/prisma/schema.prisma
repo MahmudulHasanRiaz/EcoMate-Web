@@ -604,6 +604,12 @@ model Product {
   // When set it wins at courier dispatch; when null the couriers fall back
   // to their defaults (Pathao 0.5 kg, RedX/Carrybee 500 g).
   weightGram           Int?
+  // Customization DEFINITION (owner Q15/Q20, 2026-10-23): admin-defined
+  // groups/options JSON (see src/customization/customization.types.ts).
+  // Presentation + validation data only — order-time answers freeze into
+  // OrderItem.customization. Gated by license feature
+  // 'product-customization'.
+  customizations       Json?
   availabilityMode     AvailabilityMode @default(MANAGED_STOCK)
   standardCost         Decimal?         @db.Decimal(10, 2)
   categoryId           String?
@@ -1041,6 +1047,13 @@ model OrderItem {
   variantId            String?
   comboId              String?
   comboSelection       Json?
+  // Product customization (owner Q14–Q20, 2026-10-23; license feature
+  // 'product-customization'): frozen answer snapshot resolved server-side
+  // from the product definition at order time (labels + prices + costs),
+  // plus the line totals it produced. Null/absent = not customized.
+  customization        Json?
+  addonAmount          Decimal? @db.Decimal(10, 2)
+  addonCostAmount      Decimal? @db.Decimal(10, 2)
   quantity             Int      @default(1)
   price                Decimal  @db.Decimal(10, 2)
   costSnapshot         Decimal? @db.Decimal(10, 2)

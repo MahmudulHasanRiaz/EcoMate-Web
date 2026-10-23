@@ -5,6 +5,8 @@ import { X, Plus, Loader2, Package, Image as ImageIcon, Pencil, Check, GripVerti
 import { appUrl } from '@/lib/utils'
 import { SafeImage } from '@/components/safe-image'
 import { productsApi, type ProductResponse } from '../api'
+import { CustomizationEditor } from './customization-editor'
+import { useLicenseStore } from '@/stores/license-store'
 import { productOverrideApi } from '@/features/gateways/api'
 import { MediaPicker } from '@/components/media-picker'
 import { MultiSearchableSelect, type MultiSearchableOption } from '@/components/ui/multi-searchable-select'
@@ -124,6 +126,8 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [stock, setStock] = useState('0')
   const [lowStockQty, setLowStockQty] = useState('')
   const [weightGram, setWeightGram] = useState('')
+  const [customizationGroups, setCustomizationGroups] = useState<any[]>([])
+  const hasCustomizationFeature = useLicenseStore((s) => s.hasFeature)('product-customization')
   const [categoryIds, setCategoryIds] = useState<string[]>([])
   const [brandId, setBrandId] = useState<string>('')
   const [isActive, setIsActive] = useState(true)
@@ -226,7 +230,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const snapshotOf = () => ({
     mode, name, slug, type, desc, shortDesc, videoUrl, detailRows,
     dsTagline, dsBenefits, dsSpecs, dsTip, basePrice, salePrice, sku,
-    stock, lowStockQty, weightGram, categoryIds, brandId, isActive, isFeatured,
+    stock, lowStockQty, weightGram, customizationGroups, categoryIds, brandId, isActive, isFeatured,
     availabilityMode, standardCost, images, tags, sizeChartId,
     seoTitle, seoDesc, seoKeywords, selectedAttrs, selectedValues, localVariants,
   })
@@ -270,6 +274,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     stock: src.type === 'variable' && type !== 'variable' ? '0' : String(src.managedStockQuantity ?? 0),
     lowStockQty: src.lowStockQty != null ? String(src.lowStockQty) : '',
     weightGram: src.weightGram != null ? String(src.weightGram) : '',
+    customizationGroups: Array.isArray(src.customizations) ? src.customizations : [],
     categoryIds: src.productCategories?.map((pc: any) => pc.categoryId) || (src.categoryId ? [src.categoryId] : []),
     brandId: src.brandId || '',
     isActive: src.isActive ?? true,
@@ -339,7 +344,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     }, 1500)
     return () => clearTimeout(timer)
   }, [open, isEdit, serverDraftId, mode, name, slug, type, desc, shortDesc, videoUrl, detailRows, dsTagline, dsBenefits, dsSpecs, dsTip,
-    basePrice, salePrice, sku, stock, lowStockQty, weightGram, categoryIds, brandId,
+    basePrice, salePrice, sku, stock, lowStockQty, weightGram, customizationGroups, categoryIds, brandId,
     isFeatured, availabilityMode, standardCost, images, tags, sizeChartId,
     seoTitle, seoDesc, seoKeywords, localVariants])
 
@@ -466,6 +471,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       setStock(String(source.managedStockQuantity ?? 0))
       setLowStockQty(source.lowStockQty != null ? String(source.lowStockQty) : '')
       setWeightGram(source.weightGram != null ? String(source.weightGram) : '')
+      setCustomizationGroups(Array.isArray(source.customizations) ? source.customizations : [])
       setCategoryIds((source as any).productCategories?.map((pc: any) => pc.categoryId) || (source.categoryId ? [source.categoryId] : []))
       setBrandId(source.brandId || '')
       setIsActive(source.isActive ?? true)
@@ -508,7 +514,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
   useEffect(() => {
     if (open && openStateRef.current === null) openStateRef.current = snapshotOf()
   }, [open, mode, name, slug, type, desc, shortDesc, videoUrl, detailRows, dsTagline, dsBenefits, dsSpecs, dsTip, basePrice, salePrice, sku,
-    stock, lowStockQty, weightGram, categoryIds, brandId, isActive, isFeatured,
+    stock, lowStockQty, weightGram, customizationGroups, categoryIds, brandId, isActive, isFeatured,
     availabilityMode, standardCost, images, tags, sizeChartId,
     seoTitle, seoDesc, seoKeywords, selectedAttrs, selectedValues, localVariants])
 
@@ -790,6 +796,12 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       // Owner Q12: optional parcel weight; empty clears to courier fallback
       // on edit (null), and simply omits on create.
       weightGram: weightGram ? parseInt(weightGram) : (isEdit ? null : undefined),
+      // Customization definition (Q15/Q20): only sent when the license
+      // feature is on — when it's off the field is omitted entirely so an
+      // unrelated edit never wipes a stored definition.
+      customizations: hasCustomizationFeature
+        ? (customizationGroups.length > 0 ? customizationGroups : (isEdit ? [] : undefined))
+        : undefined,
       sizeChartId: sizeChartId || undefined,
       images, tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : undefined, isActive, isFeatured,
       seoMeta: seoTitle || seoDesc ? { title: seoTitle, description: seoDesc, keywords: seoKeywords } : undefined,
@@ -1168,6 +1180,9 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
             <TabsTrigger value='variants' disabled={type !== 'variable'}>Variants</TabsTrigger>
             <TabsTrigger value='payments'>Payments</TabsTrigger>
             <TabsTrigger value='seo'>SEO</TabsTrigger>
+            {hasCustomizationFeature && (
+              <TabsTrigger value='customization'>Customization</TabsTrigger>
+            )}
           </TabsList>
 
           <div className='flex-1 overflow-y-auto px-8 py-6'>
@@ -1879,6 +1894,15 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                 </div>
               </div>
             </TabsContent>
+
+            {hasCustomizationFeature && (
+              <TabsContent value='customization' className='mt-0 space-y-6'>
+                <div className='bg-muted/20 rounded-lg p-5'>
+                  <h3 className='text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4'>Customization Options</h3>
+                  <CustomizationEditor value={customizationGroups} onChange={setCustomizationGroups} />
+                </div>
+              </TabsContent>
+            )}
           </div>
         </Tabs>
 

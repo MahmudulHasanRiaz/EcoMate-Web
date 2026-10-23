@@ -126,6 +126,14 @@ export interface ReturnMatchItem {
   price: number;
   quantity: number;
   costSnapshot?: number | null;
+  /**
+   * Customization line totals (owner Q15): the add-on sell/cost amounts
+   * frozen on the order line. Spread per-unit across the line for return
+   * math — customized lines are non-returnable (Q17), so this only ever
+   * prices COURIER-received physical returns.
+   */
+  addonAmount?: number | null;
+  addonCostAmount?: number | null;
 }
 
 export interface ReceivedReturnImpact {
@@ -276,10 +284,20 @@ function walk({
           : Number(orderLine.costSnapshot);
       const costKnown = cost !== null && Number.isFinite(cost);
       const goodUnits = Math.max(0, take - damage.receiveDamaged);
+      // Customization add-ons (frozen line totals, spread per unit). The
+      // add-on COST is a recorded figure from the order snapshot, so it
+      // reverses even when the base costSnapshot is unavailable.
+      const lineQty = Number(orderLine.quantity) || 0;
+      const addonPerUnit =
+        lineQty > 0 ? (Number(orderLine.addonAmount) || 0) / lineQty : 0;
+      const addonCostPerUnit =
+        lineQty > 0 ? (Number(orderLine.addonCostAmount) || 0) / lineQty : 0;
 
       if (inRange) {
-        impact.value += price * take;
+        impact.value += price * take + addonPerUnit * take;
         impact.receiveDamagedUnits += damage.receiveDamaged;
+        impact.cogsReversal += addonCostPerUnit * goodUnits;
+        impact.receiveDamageCost += addonCostPerUnit * damage.receiveDamaged;
         if (costKnown) {
           impact.cogsReversal += cost * goodUnits;
           impact.receiveDamageCost += cost * damage.receiveDamaged;

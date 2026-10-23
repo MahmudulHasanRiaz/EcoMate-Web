@@ -10,6 +10,7 @@ import {
   getTopProductSlugsServer,
 } from "@/lib/api/products-server";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
+import { hasLicenseFeature } from "@/lib/api/storefront-config";
 import { toMetaDescription } from "@/lib/strip-html";
 import { sanitizeProductHTML } from "@/lib/sanitize-product";
 import { publicMediaUrl, siteUrl } from "@/lib/site-url";
@@ -163,6 +164,12 @@ export default async function ProductPage(props: { params: Promise<{ slug: strin
     try {
       reviewsVisible = (await getStorefrontConfigServer()).features?.showReviews !== false;
     } catch {}
+    // Customization section gate (license feature 'product-customization').
+    let customizationEnabled = false;
+    try {
+      const cfg = await getStorefrontConfigServer();
+      customizationEnabled = hasLicenseFeature(cfg as any, 'product-customization');
+    } catch {}
     const ratingValue = product.averageRating || product.rating || 0;
     const reviewCount = product.reviewCount || 0;
     const productJsonLd: Record<string, unknown> = {
@@ -216,7 +223,7 @@ export default async function ProductPage(props: { params: Promise<{ slug: strin
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
         />
-        <ProductDetailClient product={product} initialRelatedItems={relatedItems} initialReviews={initialReviews} sanitizedDescription={sanitizedDescription} sanitizedSpecifications={sanitizedSpecifications} sizeGuideAvailable={hasSizeChart} />
+        <ProductDetailClient product={product} initialRelatedItems={relatedItems} initialReviews={initialReviews} sanitizedDescription={sanitizedDescription} sanitizedSpecifications={sanitizedSpecifications} sizeGuideAvailable={hasSizeChart} customizationEnabled={customizationEnabled} />
       </>
     );
   } catch {

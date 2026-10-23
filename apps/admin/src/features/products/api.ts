@@ -15,6 +15,7 @@ export interface ProductResponse {
   basePrice: number | string; salePrice?: number | string | null;
   sku?: string | null; managedStockQuantity: number; lowStockQty?: number | null;
   weightGram?: number | null;
+  customizations?: import('@/lib/customization').CustomizationGroupDef[] | null;
   categoryId?: string | null; brandId?: string | null; tags: any; images: any; seoMeta: any;
   isFeatured: boolean; isActive: boolean; manageStock: boolean;
   availabilityMode?: string; standardCost?: number | string | null;

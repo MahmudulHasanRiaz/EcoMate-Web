@@ -72,6 +72,8 @@ export interface Product {
   videoPosition?: number;
   detailRows?: { label: string; value: string }[];
   showRelatedProducts?: boolean;
+  /** Customization definition (public shape — no cost data). */
+  customizations?: import('./customization').PublicCustomizationGroup[];
 }
 
 export interface Category {
@@ -211,6 +213,8 @@ export interface CartItem {
   variantId?: string;
   variantLabel?: string;
   variantAttributes?: { name: string; value: string }[];
+  /** Chosen customization (selection + display lines + add-on split). */
+  customization?: import('./customization').CartCustomization;
   /** Meta Catalog canonical id (sku || product.id, or variant sku) — resolved at add-to-cart time. */
   catalogId?: string;
   availabilityMode?: 'MANAGED_STOCK' | 'ALWAYS_IN_STOCK' | 'ALWAYS_OUT_OF_STOCK' | 'INVENTORY_CONTROLLED';

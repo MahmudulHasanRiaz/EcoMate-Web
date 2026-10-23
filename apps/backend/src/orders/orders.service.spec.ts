@@ -17,6 +17,7 @@ import { CouponsService } from '../coupons/coupons.service';
 import { ManagedStockLedgerService } from '../inventory/managed-stock-ledger.service';
 import { CostingLotService } from '../stock/costing-lot.service';
 import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
+import { CustomizationService } from '../customization/customization.service';
 import { OrderStockDeductService } from '../stock/order-stock-deduct.service';
 import { OrderEditLockService } from './order-edit-lock.service';
 import { CommissionsService } from '../commissions/commissions.service';
@@ -410,6 +411,10 @@ describe('OrdersService', () => {
             restoreForReturnItems: jest.fn().mockResolvedValue({ restored: [] }),
             holdReservationForReturnPending: jest.fn().mockResolvedValue(undefined),
           },
+        },
+        {
+          provide: CustomizationService,
+          useValue: new CustomizationService({ canUse: () => true } as any),
         },
         {
           provide: OrderStockDeductService,
@@ -943,6 +948,79 @@ describe('OrdersService', () => {
         (c: any) => Array.isArray(c[0]?.where?.id?.in) && c[0].where.id.in.includes('prod-1'),
       );
       expect(variantOnlyCall).toBeDefined();
+    });
+
+    it('customization: resolves the selection server-side, folds add-ons into the subtotal, freezes the snapshot (Q14/Q15)', async () => {
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) =>
+          cb({
+            ...prisma,
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+          }),
+      );
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue({
+        id: 'status-pending',
+        name: 'Pending',
+        nextStatuses: [],
+      });
+      (prisma.order.create as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        items: [],
+      });
+      (prisma.product.findMany as jest.Mock).mockImplementation(async (args: any) => {
+        // The ALWAYS_OUT_OF_STOCK pre-guard queries with an availabilityMode
+        // filter — the wallet is orderable, so that query finds nothing.
+        if (args?.where?.availabilityMode) return [];
+        return [
+        {
+          id: 'prod-wallet', basePrice: 700, salePrice: null, isActive: true,
+          availabilityMode: 'MANAGED_STOCK', name: 'Wallet', type: 'simple',
+          managedStockQuantity: 10, reservedStock: 0,
+          customizations: [
+            {
+              key: 'engraving', label: 'Engraving', type: 'single', required: false,
+              options: [
+                { key: 'gold', label: 'Gold Foil', priceDelta: 120, costDelta: 40, pricingKind: 'per_unit' },
+              ],
+            },
+            {
+              key: 'extras', label: 'Extras', type: 'multi', required: false,
+              options: [
+                { key: 'gift_box', label: 'Gift Box', priceDelta: 80, costDelta: 30, pricingKind: 'per_line' },
+              ],
+            },
+          ],
+        },
+        ];
+      });
+
+      await service.create({
+        items: [
+          {
+            productId: 'prod-wallet',
+            quantity: 1,
+            price: 700,
+            customization: {
+              groups: [
+                { key: 'engraving', optionKeys: ['gold'] },
+                { key: 'extras', optionKeys: ['gift_box'] },
+              ],
+            },
+          },
+        ],
+        shippingAddress: { address: '123 Test St' },
+      } as any);
+
+      const createArgs = (prisma.order.create as jest.Mock).mock.calls[0][0];
+      // Base 700 + gold 120 + box 80 folded into the subtotal (Q14).
+      expect(Number(createArgs.data.subtotal)).toBe(900);
+      const line = createArgs.data.items.create[0];
+      expect(Number(line.addonAmount)).toBe(200);
+      expect(Number(line.addonCostAmount)).toBe(70);
+      expect(line.customization.groups).toHaveLength(2);
+      expect(line.customization.groups[0].options[0].label).toBe('Gold Foil');
     });
 
     const createOrderDto = {
@@ -3883,6 +3961,76 @@ describe('OrdersService', () => {
       discount: 100,
       customerNotes: 'Updated notes',
     };
+
+    const walletDefinition = [
+      {
+        key: 'engraving', label: 'Engraving', type: 'single', required: false,
+        options: [
+          { key: 'gold', label: 'Gold Foil', priceDelta: 120, costDelta: 40, pricingKind: 'per_unit' },
+          { key: 'plain', label: 'Plain Etch', priceDelta: 50, costDelta: 10, pricingKind: 'per_unit' },
+        ],
+      },
+    ];
+    const goldSnapshot = {
+      groups: [
+        {
+          key: 'engraving', label: 'Engraving', type: 'single',
+          options: [
+            { key: 'gold', label: 'Gold Foil', priceDelta: 120, costDelta: 40, pricingKind: 'per_unit' },
+          ],
+        },
+      ],
+    };
+
+    function packedCustomizedOrder() {
+      return {
+        ...mockOrder,
+        status: { id: 'status-packed', name: 'Packed', nextStatuses: [] },
+        items: [
+          {
+            id: 'item-1', productId: 'prod-wallet', variantId: null, comboId: null,
+            quantity: 1, price: 700, customization: goldSnapshot,
+            addonAmount: 120, addonCostAmount: 40,
+            product: { id: 'prod-wallet', name: 'Wallet', availabilityMode: 'MANAGED_STOCK' },
+          },
+        ],
+      };
+    }
+
+    it('Q19: changing customization on a Packed order is refused with ORDER_CUSTOMIZATION_LOCKED', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(packedCustomizedOrder());
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([
+        { id: 'prod-wallet', name: 'Wallet', customizations: walletDefinition },
+      ]);
+      await expect(
+        service.updateOrder('order-id-1', {
+          items: [
+            {
+              productId: 'prod-wallet', quantity: 1, price: 700,
+              customization: { groups: [{ key: 'engraving', optionKeys: ['plain'] }] },
+            },
+          ],
+        } as any),
+      ).rejects.toMatchObject({ response: { code: 'ORDER_CUSTOMIZATION_LOCKED' } });
+    });
+
+    it('Q19: an unchanged customization round-trip on a Packed order is NOT blocked by the customization gate', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(packedCustomizedOrder());
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([
+        { id: 'prod-wallet', name: 'Wallet', customizations: walletDefinition },
+      ]);
+      (prisma.$transaction as jest.Mock).mockRejectedValue(new Error('TX_REACHED'));
+      await expect(
+        service.updateOrder('order-id-1', {
+          items: [
+            {
+              productId: 'prod-wallet', quantity: 2, price: 700,
+              customization: { groups: [{ key: 'engraving', optionKeys: ['gold'] }] },
+            },
+          ],
+        } as any),
+      ).rejects.toThrow('TX_REACHED');
+    });
 
     it('preserves an existing assignment when another staff edits the order', async () => {
       const existingOrder = {

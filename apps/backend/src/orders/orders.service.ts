@@ -40,6 +40,11 @@ import { StockService } from '../stock/stock.service';
 import { StockRouterService } from '../stock/stock-router.service';
 import { CostingLotService } from '../stock/costing-lot.service';
 import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
+import { CustomizationService } from '../customization/customization.service';
+import {
+  CustomizationSnapshot,
+  hasCustomization,
+} from '../customization/customization.types';
 import { OrderStockDeductService } from '../stock/order-stock-deduct.service';
 import { CouponsService } from '../coupons/coupons.service';
 import {
@@ -85,6 +90,7 @@ import {
   isPanelCancelPending,
 } from '../dispatch-cancel/dispatch-cancel-eligibility';
 import {
+  assertNoCustomizedLines,
   assertNoDuplicateReturn,
   assertReturnEligible,
   generateReturnDisplayId,
@@ -98,6 +104,7 @@ import {
 import {
   ORDER_TRANSITIONS,
   ITEM_EDIT_BLOCKED_STATUSES,
+  CUSTOMIZATION_EDIT_LOCKED_STATUSES,
 } from './order-transitions';
 export { ORDER_TRANSITIONS };
 
@@ -311,6 +318,7 @@ export class OrdersService {
     private readonly managedStockLedger: ManagedStockLedgerService,
     private readonly costingLotService: CostingLotService,
     private readonly cancelReturnStock: CancelReturnStockService,
+    private readonly customizationService: CustomizationService,
     private readonly orderStockDeduct: OrderStockDeductService,
     private readonly editLock: OrderEditLockService,
     private readonly commissionsService: CommissionsService,
@@ -787,12 +795,17 @@ export class OrdersService {
   }
 
   recalculate(
-    items: { price: number; quantity: number }[],
+    items: { price: number; quantity: number; addonAmount?: number | null }[],
     shipping: number,
     discount: number,
     discountType = 'flat',
   ) {
-    const subtotal = items.reduce((s, i) => s + i.price * i.quantity, 0);
+    // addonAmount (customization line total, owner Q14) folds into the
+    // subtotal, so percentage discounts, due and totals all include it.
+    const subtotal = items.reduce(
+      (s, i) => s + i.price * i.quantity + Number(i.addonAmount ?? 0),
+      0,
+    );
     const effectiveDiscount =
       discountType === 'percentage' ? subtotal * (discount / 100) : discount;
     return {
@@ -819,6 +832,25 @@ export class OrdersService {
       message:
         `Items of a "${statusName}" order can no longer be changed — the goods have already left the warehouse. ` +
         `Use the order status or return workflow instead.`,
+    });
+  }
+
+  /**
+   * Customization changes lock at Packed (owner Q19) — earlier than item
+   * edits in general. Only an actual CHANGE of a line's customization
+   * content reaches this gate; untouched round-trips and quantity-only
+   * edits keep the general item-edit rules.
+   */
+  private assertCustomizationEditable(statusName: string | undefined): void {
+    if (!statusName || !CUSTOMIZATION_EDIT_LOCKED_STATUSES.has(statusName))
+      return;
+    throw new ConflictException({
+      statusCode: 409,
+      code: 'ORDER_CUSTOMIZATION_LOCKED',
+      statusName,
+      message:
+        `Customization of a "${statusName}" order can no longer be changed — ` +
+        `it stays editable only until the order is Packed.`,
     });
   }
 
@@ -1063,6 +1095,7 @@ export class OrdersService {
                 sku: true,
                 images: true,
                 slug: true,
+                customizations: true,
                 category: { select: { name: true } },
               },
             },
@@ -1622,6 +1655,7 @@ export class OrdersService {
                 type: true,
                 managedStockQuantity: true,
                 reservedStock: true,
+                customizations: true,
               },
             })
           : [];
@@ -1672,6 +1706,7 @@ export class OrdersService {
             type: true,
             managedStockQuantity: true,
             reservedStock: true,
+            customizations: true,
           },
         });
         for (const p of parents) productMap.set(p.id, p);
@@ -1844,9 +1879,49 @@ export class OrdersService {
         }
       }
 
+      // ── Customization resolution (owner Q14–Q20, 2026-10-23) ──
+      // Selections arrive as keys/text only; amounts are resolved HERE
+      // against each product's current definition and frozen onto the
+      // item. The add-on total folds into the subtotal, so coupon %,
+      // free-delivery thresholds, due and courier COD all stay correct
+      // with no per-consumer changes (Q14). POS never reaches this
+      // service path with selections (Q18: website + admin-manual only).
+      const resolvedCustomizations = new Map<
+        (typeof dto.items)[number],
+        {
+          snapshot: CustomizationSnapshot | null;
+          addonAmount: number;
+          addonCostAmount: number;
+        }
+      >();
+      if (dto.items.some((i) => i.customization)) {
+        this.customizationService.assertEnabled();
+        for (const item of dto.items) {
+          if (!item.customization) continue;
+          if (item.comboId) {
+            throw new BadRequestException(
+              'Combos do not support customization',
+            );
+          }
+          const ownerProduct = item.variantId
+            ? productMap.get(variantMap.get(item.variantId)?.productId ?? '')
+            : productMap.get(item.productId ?? '');
+          const resolved = this.customizationService.resolveSelection({
+            definition: ownerProduct?.customizations ?? null,
+            selection: item.customization,
+            quantity: item.quantity,
+            productName: ownerProduct?.name ?? item.productId ?? 'product',
+          });
+          if (resolved.snapshot) {
+            resolvedCustomizations.set(item, resolved);
+          }
+        }
+      }
+
       // ── Derive shipping server-side ──
       const computedSubtotal = dto.items.reduce(
-        (s, i) => s + i.price * i.quantity,
+        (s, i) =>
+          s + i.price * i.quantity + (resolvedCustomizations.get(i)?.addonAmount ?? 0),
         0,
       );
       const [
@@ -1995,8 +2070,12 @@ export class OrdersService {
         }
       }
 
+      const itemsForTotals = dto.items.map((i) => ({
+        ...i,
+        addonAmount: resolvedCustomizations.get(i)?.addonAmount ?? 0,
+      }));
       const { subtotal } = this.recalculate(
-        dto.items,
+        itemsForTotals,
         finalShippingCharge,
         0,
         'flat',
@@ -2088,7 +2167,7 @@ export class OrdersService {
       }
 
       const { subtotal: finalSubtotal, total: finalTotal } = this.recalculate(
-        dto.items,
+        itemsForTotals,
         finalShippingCharge,
         effectiveDiscount,
         effectiveDiscountType,
@@ -2268,14 +2347,20 @@ export class OrdersService {
               ? (dto.partialAmount ?? undefined)
               : undefined,
           items: {
-            create: dto.items.map((i) => ({
-              productId: i.productId,
-              variantId: i.variantId,
-              comboId: i.comboId,
-              comboSelection: i.comboSelection || undefined,
-              quantity: i.quantity,
-              price: i.price,
-            })),
+            create: dto.items.map((i) => {
+              const resolved = resolvedCustomizations.get(i);
+              return {
+                productId: i.productId,
+                variantId: i.variantId,
+                comboId: i.comboId,
+                comboSelection: i.comboSelection || undefined,
+                quantity: i.quantity,
+                price: i.price,
+                customization: (resolved?.snapshot ?? undefined) as Prisma.InputJsonValue | undefined,
+                addonAmount: resolved?.addonAmount ?? undefined,
+                addonCostAmount: resolved?.addonCostAmount ?? undefined,
+              };
+            }),
           },
           timeline: [
             {
@@ -2889,12 +2974,109 @@ export class OrdersService {
       });
     }
 
+    // ── Customization edit resolution (owner Q19, 2026-10-23) ──
+    // Per dto line: an explicit `customization` selection re-resolves
+    // against the product's current definition (an empty selection
+    // clears); an ABSENT key preserves the stored snapshot, rescaling
+    // per-unit amounts when only the quantity changed. A resolved
+    // snapshot that differs from the stored one is a customization
+    // CHANGE and is locked once the order reaches Packed.
+    const editCustomizations = new Map<
+      NonNullable<typeof dto.items>[number],
+      {
+        snapshot: CustomizationSnapshot | null;
+        addonAmount: number;
+        addonCostAmount: number;
+      }
+    >();
+    if (dto.items !== undefined) {
+      const oldByKey = new Map<string, (typeof order.items)[number]>();
+      for (const old of order.items) {
+        const key = old.variantId || old.productId || old.id;
+        if (!oldByKey.has(key)) oldByKey.set(key, old);
+      }
+      if (dto.items.some((i) => i.customization !== undefined)) {
+        this.customizationService.assertEnabled();
+      }
+      const defProductIds = new Set<string>();
+      for (const i of dto.items) if (i.productId) defProductIds.add(i.productId);
+      const variantParents = new Map<string, string>();
+      const variantOnly = dto.items.filter((i) => !i.productId && i.variantId);
+      if (variantOnly.length > 0) {
+        const vars = await this.prisma.productVariant.findMany({
+          where: { id: { in: variantOnly.map((i) => i.variantId!) } },
+          select: { id: true, productId: true },
+        });
+        for (const v of vars) {
+          variantParents.set(v.id, v.productId);
+          defProductIds.add(v.productId);
+        }
+      }
+      const defProducts =
+        defProductIds.size > 0
+          ? await this.prisma.product.findMany({
+              where: { id: { in: [...defProductIds] } },
+              select: { id: true, name: true, customizations: true },
+            })
+          : [];
+      const defMap = new Map(defProducts.map((p) => [p.id, p]));
+      let customizationChanged = false;
+      for (const item of dto.items) {
+        const key = item.variantId || item.productId || '';
+        const old = oldByKey.get(key);
+        const oldSnapshot =
+          (old?.customization as CustomizationSnapshot | null) ?? null;
+        if (item.customization !== undefined) {
+          if (item.comboId) {
+            throw new BadRequestException(
+              'Combos do not support customization',
+            );
+          }
+          const ownerId =
+            item.productId ?? variantParents.get(item.variantId ?? '');
+          const owner = ownerId ? defMap.get(ownerId) : undefined;
+          const resolved =
+            !item.customization.groups ||
+            item.customization.groups.length === 0
+              ? { snapshot: null, addonAmount: 0, addonCostAmount: 0 }
+              : this.customizationService.resolveSelection({
+                  definition: owner?.customizations ?? null,
+                  selection: item.customization,
+                  quantity: item.quantity,
+                  productName: owner?.name ?? item.productId ?? 'product',
+                });
+          if (
+            JSON.stringify(resolved.snapshot) !== JSON.stringify(oldSnapshot)
+          ) {
+            customizationChanged = true;
+          }
+          editCustomizations.set(item, resolved);
+        } else if (oldSnapshot && hasCustomization(oldSnapshot)) {
+          editCustomizations.set(item, {
+            snapshot: oldSnapshot,
+            ...this.customizationService.totalsFromSnapshot(
+              oldSnapshot,
+              item.quantity,
+            ),
+          });
+        }
+      }
+      if (customizationChanged) {
+        this.assertCustomizationEditable(order.status?.name);
+      }
+    }
+
     const currentItems =
       dto.items !== undefined
-        ? dto.items
+        ? dto.items.map((i) => ({
+            price: i.price,
+            quantity: i.quantity,
+            addonAmount: editCustomizations.get(i)?.addonAmount ?? 0,
+          }))
         : order.items.map((i) => ({
             price: Number(i.price),
             quantity: i.quantity,
+            addonAmount: Number(i.addonAmount ?? 0),
           }));
     const shipping =
       dto.shippingCharge !== undefined
@@ -3021,15 +3203,21 @@ export class OrdersService {
 
         await tx.orderItem.deleteMany({ where: { orderId: id } });
         await tx.orderItem.createMany({
-          data: dto.items.map((i) => ({
-            orderId: id,
-            productId: i.productId,
-            variantId: i.variantId,
-            comboId: i.comboId,
-            comboSelection: i.comboSelection || undefined,
-            quantity: i.quantity,
-            price: i.price,
-          })),
+          data: dto.items.map((i) => {
+            const resolved = editCustomizations.get(i);
+            return {
+              orderId: id,
+              productId: i.productId,
+              variantId: i.variantId,
+              comboId: i.comboId,
+              comboSelection: i.comboSelection || undefined,
+              quantity: i.quantity,
+              price: i.price,
+              customization: (resolved?.snapshot ?? undefined) as Prisma.InputJsonValue | undefined,
+              addonAmount: resolved?.addonAmount ?? undefined,
+              addonCostAmount: resolved?.addonCostAmount ?? undefined,
+            };
+          }),
         });
 
         const newItems = await tx.orderItem.findMany({
@@ -4144,7 +4332,15 @@ export class OrdersService {
       where: { id: orderId },
       include: {
         status: true,
-        items: { select: { productId: true, variantId: true, quantity: true } },
+        items: {
+          select: {
+            productId: true,
+            variantId: true,
+            quantity: true,
+            customization: true,
+            product: { select: { name: true } },
+          },
+        },
       },
     });
     if (!order || (order as any).trashedAt) {
@@ -4169,6 +4365,14 @@ export class OrdersService {
         variantId: string | null;
         quantity: number;
       }[],
+    );
+
+    // Q17: customized lines are non-returnable — the staff-partial path
+    // is a customer-return decision, so the same guard applies here.
+    assertNoCustomizedLines(
+      ((order as any).items ?? []) as any[],
+      items as any[],
+      hasCustomization,
     );
 
     // Hardening (1): the shared eligibility guard — an active FULL blocks a
@@ -4637,16 +4841,39 @@ export class OrdersService {
       throw new NotFoundException('Order not found');
     this.assertItemsEditable(order.status?.name);
 
+    let addedProduct: {
+      availabilityMode: string;
+      name: string;
+      customizations?: unknown;
+    } | null = null;
     if (dto.productId) {
-      const product = await this.prisma.product.findUnique({
+      addedProduct = await this.prisma.product.findUnique({
         where: { id: dto.productId },
-        select: { availabilityMode: true, name: true },
+        select: { availabilityMode: true, name: true, customizations: true },
       });
-      if (product?.availabilityMode === 'ALWAYS_OUT_OF_STOCK') {
+      if (addedProduct?.availabilityMode === 'ALWAYS_OUT_OF_STOCK') {
         throw new BadRequestException(
-          `Product "${product.name}" is out of stock and cannot be ordered`,
+          `Product "${addedProduct.name}" is out of stock and cannot be ordered`,
         );
       }
+    }
+
+    // A newly added CUSTOMIZED line is a customization change (Q19):
+    // same Packed lock + license gate + server-side resolution as create.
+    let addedCustomization: {
+      snapshot: CustomizationSnapshot | null;
+      addonAmount: number;
+      addonCostAmount: number;
+    } | null = null;
+    if (dto.customization) {
+      this.assertCustomizationEditable(order.status?.name);
+      this.customizationService.assertEnabled();
+      addedCustomization = this.customizationService.resolveSelection({
+        definition: addedProduct?.customizations ?? null,
+        selection: dto.customization,
+        quantity: dto.quantity,
+        productName: addedProduct?.name ?? dto.productId,
+      });
     }
 
     const added = await this.prisma.$transaction(async (tx) => {
@@ -4657,6 +4884,9 @@ export class OrdersService {
           variantId: dto.variantId,
           quantity: dto.quantity,
           price: dto.price,
+          customization: (addedCustomization?.snapshot ?? undefined) as Prisma.InputJsonValue | undefined,
+          addonAmount: addedCustomization?.addonAmount ?? undefined,
+          addonCostAmount: addedCustomization?.addonCostAmount ?? undefined,
         },
       });
 
@@ -4682,8 +4912,13 @@ export class OrdersService {
         ...order.items.map((i) => ({
           price: Number(i.price),
           quantity: i.quantity,
+          addonAmount: Number(i.addonAmount ?? 0),
         })),
-        { price: dto.price, quantity: dto.quantity },
+        {
+          price: dto.price,
+          quantity: dto.quantity,
+          addonAmount: addedCustomization?.addonAmount ?? 0,
+        },
       ];
       const { subtotal, total } = this.recalculate(
         items,
@@ -4767,7 +5002,11 @@ export class OrdersService {
 
       const remaining = order.items
         .filter((i) => i.id !== itemId)
-        .map((i) => ({ price: Number(i.price), quantity: i.quantity }));
+        .map((i) => ({
+          price: Number(i.price),
+          quantity: i.quantity,
+          addonAmount: Number(i.addonAmount ?? 0),
+        }));
       const { subtotal, total } = this.recalculate(
         remaining,
         Number(order.shippingCharge),

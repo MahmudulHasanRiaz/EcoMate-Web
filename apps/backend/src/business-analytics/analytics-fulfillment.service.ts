@@ -550,7 +550,14 @@ export class AnalyticsFulfillmentService {
         total: true,
         payments: { select: { amount: true, status: true, appliedCreditAmount: true, gatewayCode: true } },
         items: {
-          select: { productId: true, variantId: true, price: true, quantity: true },
+          select: {
+            productId: true,
+            variantId: true,
+            price: true,
+            quantity: true,
+            addonAmount: true,
+            addonCostAmount: true,
+          },
         },
         // Received returns lower the collectable exactly like the order card /
         // due listing: the same shared derivation, no separate formula.
