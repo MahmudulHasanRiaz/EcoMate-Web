@@ -358,7 +358,7 @@ export function mapSteadfastReturnStatus(
  *   'delivered' (NOT received — stock/returned status stay staff-only).
  * - type PARTIAL      → NEVER auto-created (Rule 27b): link-only + hold alert.
  * - createIfMissing   → false for link-only notifications (Steadfast
- *   return_request / return_list_accepted — owner decision pending).
+ *   return_request / return_list_accepted — owner decision 2026-10-23).
  *
  * Both vocabularies are covered: webhook event names (`order.returned`) and
  * plain tracking-API labels (`returned`). Unknown labels return null.
@@ -389,7 +389,7 @@ const RETURN_SIGNAL_IN_PROGRESS: Record<string, readonly string[]> = {
     'paid return',
     'return_pending',
   ],
-  redx: ['agent-returning', 'returned'],
+  redx: ['agent-returning'],
   steadfast: [
     'return_pending',
     'returned',
@@ -400,11 +400,14 @@ const RETURN_SIGNAL_IN_PROGRESS: Record<string, readonly string[]> = {
 };
 
 const RETURN_SIGNAL_DELIVERED: Record<string, readonly string[]> = {
-  // Courier delivered the return to us (back-with-merchant). RedX documents no
-  // back-with-merchant event — its return labels never reach DELIVERED.
+  // Courier delivered the return to us (back-with-merchant). RedX has no
+  // separate back-with-merchant event — its terminal `returned` state IS the
+  // parcel back with the merchant (owner decision 2026-10-23: RedX returns
+  // behave exactly like the other couriers — FULL, reaching DELIVERED on the
+  // terminal signal; dispatch still caps at RETURN_PENDING per Rule 25).
   pathao: ['order.returned-to-merchant'],
   carrybee: ['order.returned-to-merchant'],
-  redx: [],
+  redx: ['returned'],
   steadfast: ['cancelled_return_received'],
 };
 
@@ -420,8 +423,9 @@ const RETURN_SIGNAL_PARTIAL: Record<string, readonly string[]> = {
 };
 
 const RETURN_SIGNAL_LINK_ONLY: Record<string, readonly string[]> = {
-  // "link to our return" notifications — creating a FULL return when none
-  // exists is an OWNER DECISION ([?] in the sheet) and is NOT implemented.
+  // "link to our return" notifications — never create a Return from these
+  // (owner decision 2026-10-23: LINK-only confirmed — a return REQUEST is
+  // not a confirmed return).
   steadfast: ['return_request', 'return_list_accepted'],
 };
 

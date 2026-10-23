@@ -63,7 +63,6 @@ describe('Return sheet conformance — auto-create policy (Rules 19, 27)', () =>
       ['carrybee', 'order.returned-at-sorting'],
       ['carrybee', 'order.returned-in-transit'],
       ['redx', 'agent-returning'],
-      ['redx', 'returned'],
       ['steadfast', 'cancelled_return_proccessing'],
       ['steadfast', 'cancelled_return_rider_assigned'],
     ];
@@ -78,10 +77,13 @@ describe('Return sheet conformance — auto-create policy (Rules 19, 27)', () =>
     }
 
     // Back-with-merchant: create directly at stage DELIVERED (Rule 27a).
+    // RedX `returned` is its terminal return state — the parcel back with
+    // the merchant (owner decision 2026-10-23: RedX behaves like the rest).
     for (const [courier, label] of [
       ['pathao', 'order.returned-to-merchant'],
       ['carrybee', 'order.returned-to-merchant'],
       ['steadfast', 'cancelled_return_received'],
+      ['redx', 'returned'],
     ] as Array<[string, string]>) {
       expect(mapCourierReturnSignal(courier, label)).toEqual(
         expect.objectContaining({
@@ -91,15 +93,9 @@ describe('Return sheet conformance — auto-create policy (Rules 19, 27)', () =>
         }),
       );
     }
-
-    // RedX documents NO back-with-merchant event — nothing ever reaches
-    // DELIVERED from a RedX label.
-    expect(mapCourierReturnSignal('redx', 'returned')).toEqual(
-      expect.objectContaining({ stage: 'IN_PROGRESS' }),
-    );
   });
 
-  it('(b) Steadfast return_request / return_list_accepted are LINK-only (owner decision pending)', () => {
+  it('(b) Steadfast return_request / return_list_accepted are LINK-only (owner decision 2026-10-23)', () => {
     for (const label of ['return_request', 'return_list_accepted']) {
       expect(mapCourierReturnSignal('steadfast', label)).toEqual(
         expect.objectContaining({ createIfMissing: false, type: 'FULL' }),
@@ -256,13 +252,13 @@ describe('Return sheet conformance — courier webhook wiring', () => {
     expect(returns.setReturnTransit).toHaveBeenCalledWith('ret-1', 'order.returned');
   });
 
-  it('(b) RedX returned links/creates the Return (in-progress, never delivered)', async () => {
+  it('(b) RedX returned links/creates the Return and marks it DELIVERED (owner 2026-10-23)', async () => {
     await service.handleRedx({ status: 'returned', tracking_number: 'RX-1', invoice_number: 'ORD-1' });
     expect(returns.upsertCourierReturn).toHaveBeenCalledWith(
       expect.objectContaining({ courier: 'redx', courierStatus: 'returned', type: 'FULL' }),
     );
-    expect(returns.setReturnTransit).toHaveBeenCalledWith('ret-1', 'returned');
-    expect(returns.recordCourierParcelBack).not.toHaveBeenCalled();
+    expect(returns.recordCourierParcelBack).toHaveBeenCalledWith('ret-1', 'returned');
+    expect(returns.setReturnTransit).not.toHaveBeenCalled();
   });
 
   it('(b)(d) Pathao back-with-merchant: dispatch capped at RETURN_PENDING, Return stage DELIVERED', async () => {
