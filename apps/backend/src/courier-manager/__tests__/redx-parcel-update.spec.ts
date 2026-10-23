@@ -58,7 +58,12 @@ describe('CourierManagerService — Task 6 RedX PATCH + doc payload', () => {
     guestPhone: null,
     secondaryPhone: null,
     officeNotes: null,
-    shippingAddress: { address: 'Dhaka', district: 'Dhaka', deliveryType: 'home' },
+    shippingAddress: {
+      address: 'Dhaka',
+      district: 'Dhaka',
+      deliveryType: 'home',
+      deliveryAreaId: 12,
+    },
     customer: { name: 'Test', phone: '01712345678', email: null },
     items: [{ product: { name: 'Item' }, price: 500 }],
   };
@@ -175,7 +180,7 @@ describe('CourierManagerService — Task 6 RedX PATCH + doc payload', () => {
       expect(body.customer_name).toBe('Test User');
       expect(body.customer_phone).toBe('01712345678');
       expect(body.delivery_area).toBe('Dhaka');
-      expect(body.delivery_area_id).toBe(1);
+      expect(body.delivery_area_id).toBe(12);
       expect(typeof body.cash_collection_amount).toBe('string');
       expect(typeof body.parcel_weight).toBe('string');
       expect(typeof body.value).toBe('string');
@@ -218,6 +223,44 @@ describe('CourierManagerService — Task 6 RedX PATCH + doc payload', () => {
 
       expect(results[0].ok).toBe(true);
       expect(results[0].trackingCode).toBe('RX-NESTED-1');
+    });
+
+    it('FAILS LOUD when the order has no delivery area — no silent area 1 (owner Q11)', async () => {
+      const noAreaOrder = {
+        ...order,
+        shippingAddress: { address: 'Dhaka', district: 'Dhaka' },
+      };
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([noAreaOrder]);
+      mockFetch(new Response(JSON.stringify({}), { status: 200 }));
+
+      const results = await service.dispatch('redx', ['order-1']);
+
+      expect(results[0].ok).toBe(false);
+      expect(results[0].message).toMatch(/delivery_area_id/);
+      // The parcel endpoint is never called.
+      const parcelCalls = (global.fetch as jest.Mock).mock.calls.filter(
+        (c) => String(c[0]).endsWith('/parcel'),
+      );
+      expect(parcelCalls).toHaveLength(0);
+    });
+
+    it('sends the summed product weightGram as parcel_weight (owner Q12)', async () => {
+      const weightedOrder = {
+        ...order,
+        items: [
+          { product: { name: 'A', weightGram: 300 }, price: 100, quantity: 2 },
+          { product: { name: 'B' }, price: 100, quantity: 1 },
+        ],
+      };
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([weightedOrder]);
+      mockFetch(
+        new Response(JSON.stringify({ tracking_id: 'RX-W' }), { status: 200 }),
+      );
+
+      const results = await service.dispatch('redx', ['order-1']);
+
+      expect(results[0].ok).toBe(true);
+      expect(dispatchedBody().parcel_weight).toBe('600');
     });
   });
 });

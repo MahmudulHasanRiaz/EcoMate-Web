@@ -14,6 +14,7 @@ export interface ProductResponse {
   descriptionSections?: { tagline?: string; benefits?: string[]; specifications?: string; stylingTip?: string } | null;
   basePrice: number | string; salePrice?: number | string | null;
   sku?: string | null; managedStockQuantity: number; lowStockQty?: number | null;
+  weightGram?: number | null;
   categoryId?: string | null; brandId?: string | null; tags: any; images: any; seoMeta: any;
   isFeatured: boolean; isActive: boolean; manageStock: boolean;
   availabilityMode?: string; standardCost?: number | string | null;

@@ -281,7 +281,7 @@ describe('CourierManagerService — Steadfast dispatch error handling', () => {
       await service.bulkCreateSteadfastOrders([mockOrderWithAdvance]);
 
       const postCall = (global.fetch as jest.Mock).mock.calls.find((c) =>
-        c[0].includes('/create_order/bulk-order'),
+        c[0].includes('/create_order/bulk-order/extended'),
       );
       expect(postCall).toBeDefined();
       const body = JSON.parse(postCall[1].body);
@@ -493,7 +493,7 @@ describe('CourierManagerService — order snapshot is recipient source of truth 
     await service.bulkCreateSteadfastOrders([order]);
 
     const postCall = (global.fetch as jest.Mock).mock.calls.find((c) =>
-      String(c[0]).includes('/create_order/bulk-order'),
+      String(c[0]).includes('/create_order/bulk-order/extended'),
     );
     expect(postCall).toBeDefined();
     const body = JSON.parse(postCall[1].body);
@@ -564,7 +564,7 @@ describe('CourierManagerService — Fix 5a Mx. prefix for short names', () => {
     guestPhone: null,
     secondaryPhone: null,
     officeNotes: null,
-    shippingAddress: { address: 'Dhaka', district: 'Dhaka' },
+    shippingAddress: { address: 'Dhaka', district: 'Dhaka', deliveryAreaId: 12 },
     customer: { name: 'STALE', phone: 'STALE', email: 'stale@x.com' },
     items: [{ product: { name: 'Item' } }],
   };
@@ -703,7 +703,7 @@ describe('CourierManagerService — Fix 5a Mx. prefix for short names', () => {
     await service.bulkCreateSteadfastOrders([shortOrder]);
 
     const postCall = (global.fetch as jest.Mock).mock.calls.find((c) =>
-      String(c[0]).includes('/create_order/bulk-order'),
+      String(c[0]).includes('/create_order/bulk-order/extended'),
     );
     expect(JSON.parse(postCall[1].body).data[0].recipient_name).toBe('Jo');
   });
@@ -833,7 +833,7 @@ describe('CourierManagerService — Fix 5a Mx. prefix for short names', () => {
     );
     // The bad entry never reaches the courier API payload.
     const postCall = (global.fetch as jest.Mock).mock.calls.find((c) =>
-      String(c[0]).includes('/create_order/bulk-order'),
+      String(c[0]).includes('/create_order/bulk-order/extended'),
     );
     expect(postCall).toBeDefined();
     const body = JSON.parse(postCall[1].body);

@@ -40,7 +40,12 @@ describe('CourierManagerService — Fix 5 dispatch error bodies + retry discipli
     guestPhone: null,
     secondaryPhone: null,
     officeNotes: null,
-    shippingAddress: { address: 'Dhaka', district: 'Dhaka', deliveryType: 'home' },
+    shippingAddress: {
+      address: 'Dhaka',
+      district: 'Dhaka',
+      deliveryType: 'home',
+      deliveryAreaId: 12,
+    },
     customer: { name: 'Test', phone: '01712345678', email: null },
     items: [{ product: { name: 'Item' } }],
   };

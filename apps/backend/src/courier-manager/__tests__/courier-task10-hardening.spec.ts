@@ -82,7 +82,7 @@ describe('Task 10 — payload truncation/strip', () => {
       guestPhone: null,
       secondaryPhone: null,
       officeNotes: evilNote,
-      shippingAddress: { address: evilAddress, district: 'Dhaka', deliveryType: 'home' },
+      shippingAddress: { address: evilAddress, district: 'Dhaka', deliveryType: 'home', deliveryAreaId: 12 },
       customer: { name: longName, phone: '01712345678', email: null },
       items: [{ product: { name: 'Item {evil}; $x' }, price: 500 }],
     };
@@ -112,15 +112,38 @@ describe('Task 10 — payload truncation/strip', () => {
     global.fetch = originalFetch;
   });
 
-  it('pathao builder: name ≤100, phone ≤40, address ≤490, no { } ; < > $', () => {
+  it('pathao builder: name ≤100, phone ≤40, address ≤220 (Pathao doc cap, owner Q10), no { } ; < > $', () => {
     const payload: any = service.buildPathaoOrderPayload(evilOrder(), '1');
     expect(String(payload.recipient_name).length).toBeLessThanOrEqual(100);
     expect(String(payload.recipient_phone).length).toBeLessThanOrEqual(40);
-    expect(String(payload.recipient_address).length).toBeLessThanOrEqual(490);
+    expect(String(payload.recipient_address).length).toBeLessThanOrEqual(220);
     for (const v of [payload.recipient_name, payload.recipient_address, payload.merchant_order_id]) {
       expect(String(v)).not.toMatch(/[{}$;<>]/);
     }
     expect(String(payload.merchant_order_id).length).toBeLessThanOrEqual(100);
+  });
+
+  it('pathao builder: item_weight from product weightGram, 0.5 kg fallback, 10 kg clamp (owner Q12)', () => {
+    const weighted = evilOrder();
+    weighted.items = [
+      { product: { name: 'A', weightGram: 800 }, price: 100, quantity: 2 },
+    ];
+    expect(
+      (service.buildPathaoOrderPayload(weighted, '1') as any).item_weight,
+    ).toBe(1.6);
+
+    const unweighted = evilOrder();
+    expect(
+      (service.buildPathaoOrderPayload(unweighted, '1') as any).item_weight,
+    ).toBe(0.5);
+
+    const heavy = evilOrder();
+    heavy.items = [
+      { product: { name: 'B', weightGram: 30000 }, price: 100, quantity: 1 },
+    ];
+    expect(
+      (service.buildPathaoOrderPayload(heavy, '1') as any).item_weight,
+    ).toBe(10);
   });
 
   it('steadfast dispatch: invoice/name/phone/address/note truncated + stripped', async () => {
@@ -196,7 +219,7 @@ describe('Task 10 — 401-no-loop + invoice uniqueness on all couriers', () => {
     guestPhone: null,
     secondaryPhone: null,
     officeNotes: null,
-    shippingAddress: { address: 'House 1, Road 2, Dhaka', district: 'Dhaka', deliveryType: 'home' },
+    shippingAddress: { address: 'House 1, Road 2, Dhaka', district: 'Dhaka', deliveryType: 'home', deliveryAreaId: 12 },
     customer: { name: 'Test', phone: '01712345678', email: null },
     items: [{ product: { name: 'Item' }, price: 500 }],
   };
