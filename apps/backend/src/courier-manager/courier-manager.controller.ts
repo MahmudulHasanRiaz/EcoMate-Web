@@ -9,6 +9,7 @@ import { RequiresFeature } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
 import { WebhookAttemptOutcome } from '@prisma/client';
 import { CancelCarrybeeOrderDto } from './dto/cancel-carrybee-order.dto';
+import { UpdateCourierEnabledDto } from './dto/update-courier-enabled.dto';
 import type { SteadfastCredentialSetsService } from './steadfast-credential-sets.service';
 
 @Roles('superadmin', 'admin', 'employee')
@@ -127,6 +128,28 @@ export class CourierManagerController {
         pathaoIntegrationSecret: dto['pathaoIntegrationSecret'] as string,
         credentials: dto['credentials'] || {},
       },
+    });
+  }
+
+  /**
+   * Settings-card enable switch persists on its own (queue burn-down D1).
+   *
+   * The full upsert above rewrites every credential column from the request
+   * body and resets the legacy `credentials` JSON to `{}` when it is omitted.
+   * Using it for a bare toggle would either commit half-typed secrets or
+   * erase legacy credential fallbacks, so this route writes ONLY `enabled`.
+   * The response is deliberately narrow — no secrets are echoed back.
+   */
+  @Patch('credentials/:courier/enabled')
+  async setCourierEnabled(
+    @Param('courier') courier: string,
+    @Body() dto: UpdateCourierEnabledDto,
+  ): Promise<{ courier: string; enabled: boolean }> {
+    // Missing row (P2025) is mapped to 404 by GlobalExceptionFilter.
+    return this.prisma.courierCredentials.update({
+      where: { courier },
+      data: { enabled: dto.enabled },
+      select: { courier: true, enabled: true },
     });
   }
 
