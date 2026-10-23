@@ -2740,6 +2740,28 @@ describe('OrdersService', () => {
         );
       });
 
+      it('rejects confirm when a MANAGED_STOCK product has no physical stock record (B4 claim)', async () => {
+        (module.get<StockService>(StockService) as any).hasExistingPhysicalReservation =
+          jest.fn().mockResolvedValue(false);
+        (module.get<StockRouterService>(StockRouterService).resolve as jest.Mock)
+          .mockImplementation((_mode: string, op: string) =>
+            op === 'allocate'
+              ? { ms: 'skip', pi: 'allocate' }
+              : { ms: 'reserve', pi: 'skip' },
+          );
+        stubConfirmCommon(buildConfirmOrder({})); // warehouseId null, no PhysicalInventory
+
+        await expect(
+          service.updateStatus(
+            'order-id-1',
+            { statusId: 'status-confirmed' },
+            userId,
+          ),
+        ).rejects.toThrow(
+          '"Test Product" এর Physical Inventory-তে কোনো Stock রেকর্ড নেই।',
+        );
+      });
+
       it('rejects confirm when physical stock available is zero', async () => {
         const stockService = module.get<StockService>(StockService);
         (stockService as any).hasExistingPhysicalReservation = jest
@@ -5571,6 +5593,51 @@ await service.bulkAssign(['order-1', 'trashed-1'], 'staff-1');
         service.transitionOrderStatus('missing-id', 'Packed'),
       ).rejects.toThrow(NotFoundException);
       expect(cache.invalidateByPrefix).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('trash stock side effects (goods already left the warehouse)', () => {
+    const cancelReturnStock = () =>
+      module.get<CancelReturnStockService>(CancelReturnStockService);
+
+    const mockTrash = (statusName: string) => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        trashedAt: null,
+        status: { id: `status-${statusName}`, name: statusName },
+        timeline: [],
+      });
+      (prisma.order.update as jest.Mock).mockResolvedValue(mockOrder);
+    };
+
+    it.each([
+      'Shipping',
+      'Delivered',
+      'Partial',
+      'Return Pending',
+      'Returned',
+      'Damaged',
+    ])(
+      'does not restore stock when a %s order is trashed',
+      async (statusName) => {
+        mockTrash(statusName);
+
+        await service.trash('order-id-1', 'staff@example.com');
+
+        expect(
+          cancelReturnStock().releaseForCancellation,
+        ).not.toHaveBeenCalled();
+      },
+    );
+
+    it('still releases the reservation for a pre-dispatch order', async () => {
+      mockTrash('Confirmed');
+
+      await service.trash('order-id-1', 'staff@example.com');
+
+      expect(cancelReturnStock().releaseForCancellation).toHaveBeenCalledWith(
+        expect.objectContaining({ orderId: 'order-id-1' }),
+      );
     });
   });
 
