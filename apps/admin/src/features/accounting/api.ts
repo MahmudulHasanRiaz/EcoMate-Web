@@ -8,6 +8,8 @@ export interface AccountResponse {
   parentId: string | null
   isActive: boolean
   isGroup: boolean
+  /** D6: system accounts (auto-created) can be renamed/deactivated, never deleted. */
+  isSystem?: boolean
   children?: AccountResponse[]
 }
 

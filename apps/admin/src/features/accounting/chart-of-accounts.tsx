@@ -62,6 +62,7 @@ function AccountTreeRow({
             <span className='font-mono text-xs text-muted-foreground mr-1'>{account.code}</span>
             <span>{account.name}</span>
             {account.isGroup && <Badge variant='outline' className='ml-1 text-[10px] h-4 px-1'>Group</Badge>}
+            {account.isSystem && <Badge variant='secondary' className='ml-1 text-[10px] h-4 px-1'>System</Badge>}
           </div>
         </td>
         <td className='py-2 px-4'>
@@ -81,7 +82,7 @@ function AccountTreeRow({
             <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => onEdit(account)}>
               <Pencil className='h-3.5 w-3.5' />
             </Button>
-            {!account.isGroup && (
+            {!account.isGroup && !account.isSystem && (
               <Button variant='ghost' size='icon' className='h-7 w-7' onClick={() => onDelete(account)}>
                 <Trash2 className='h-3.5 w-3.5 text-destructive' />
               </Button>

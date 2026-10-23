@@ -219,7 +219,7 @@ export const buildPosReceipt = async (
 }
 
 export const getPaymentGateways = () =>
-  api.get('/gateways');
+  api.get('/gateways', { params: { surface: 'pos' } });
 
 export const getSessionOrders = (sessionId: string) =>
   api.get(`/pos/sessions/${sessionId}/orders`);

@@ -18,7 +18,10 @@ import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { normalizePhone } from '../common/utils/phone-utils';
-import { normalizeAccountId } from '../payments/payment-account';
+import {
+  ensureGatewaySettlementAccount,
+  normalizeAccountId,
+} from '../payments/payment-account';
 
 @Controller('gateways')
 export class GatewayConfigController implements OnApplicationBootstrap {
@@ -152,14 +155,37 @@ export class GatewayConfigController implements OnApplicationBootstrap {
         update: {},
       });
     }
+
+    // 3. D6: every standard gateway gets its namesake settlement account
+    // (created + mapped on first sight; existing accounts and mappings are
+    // never overridden). Fail-soft per gateway: a bad row must not stop
+    // the app from booting.
+    for (const g of gateways) {
+      try {
+        const row = await this.prisma.paymentGateway.findUnique({
+          where: { code: g.code },
+          select: { id: true, code: true, name: true, accountId: true },
+        });
+        if (row) await ensureGatewaySettlementAccount(this.prisma, row);
+      } catch (err) {
+        console.error(
+          `Failed to ensure settlement account for gateway ${g.code}:`,
+          err,
+        );
+      }
+    }
   }
 
-  // ============ PUBLIC: Storefront fetches enabled gateways ============
+  // ============ PUBLIC: Storefront / POS fetch enabled gateways ============
+  // One public list, two surfaces (D6): the default view is the website's;
+  // the POS app passes ?surface=pos and gets its own visibility set.
   @Public()
   @Get()
-  async findAll() {
+  async findAll(@Query('surface') surface?: string) {
+    const surfaceWhere =
+      surface === 'pos' ? { showOnPos: true } : { showOnStorefront: true };
     const gateways = await this.prisma.paymentGateway.findMany({
-      where: { enabled: true, paymentOption: { enabled: true } },
+      where: { enabled: true, ...surfaceWhere, paymentOption: { enabled: true } },
       orderBy: { sortOrder: 'asc' },
       include: { paymentOption: true },
     });
@@ -173,6 +199,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
       enabled: g.enabled,
       mode: g.mode,
       phoneNumber: g.phoneNumber,
+      logoUrl: g.logoUrl,
     }));
   }
 
@@ -238,6 +265,10 @@ export class GatewayConfigController implements OnApplicationBootstrap {
       paymentOptionName: g.paymentOption?.name,
       paymentOptionEnabled: g.paymentOption?.enabled,
       enabled: g.enabled,
+      showOnStorefront: g.showOnStorefront,
+      showOnAdmin: g.showOnAdmin,
+      showOnPos: g.showOnPos,
+      logoUrl: g.logoUrl,
       mode: g.mode,
       phoneNumber: g.phoneNumber,
       accountId: g.accountId,
@@ -262,13 +293,17 @@ export class GatewayConfigController implements OnApplicationBootstrap {
       dto.accountId,
       'Settlement account',
     );
-    return this.prisma.paymentGateway.create({
+    const created = await this.prisma.paymentGateway.create({
       data: {
         code: dto.code,
         name: dto.name,
         type: dto.type,
         paymentOptionType: dto.paymentOptionType,
         enabled: dto.enabled ?? false,
+        showOnStorefront: dto.showOnStorefront !== false,
+        showOnAdmin: dto.showOnAdmin !== false,
+        showOnPos: dto.showOnPos !== false,
+        logoUrl: dto.logoUrl || null,
         mode: dto.mode || 'personal',
         phoneNumber,
         accountId: accountId ?? null,
@@ -276,6 +311,13 @@ export class GatewayConfigController implements OnApplicationBootstrap {
         sortOrder: dto.sortOrder || 0,
       },
     });
+    // D6: a gateway created without a chosen account gets its namesake
+    // account auto-created + mapped (owner-locked, custom gateways too).
+    if (!created.accountId) {
+      const ensured = await ensureGatewaySettlementAccount(this.prisma, created);
+      if (ensured.mapped) return { ...created, accountId: ensured.accountId };
+    }
+    return created;
   }
 
   @Roles('superadmin', 'admin')
@@ -306,7 +348,18 @@ export class GatewayConfigController implements OnApplicationBootstrap {
       overrideUpdate.editAllowedOverride =
         dto.editAllowedOverride === null ? null : dto.editAllowedOverride === true;
     }
-    return this.prisma.paymentGateway.upsert({
+    // D6: surface flags + logo — same present-key discipline as the
+    // overrides: an absent key leaves the stored value untouched.
+    const surfaceUpdate: Record<string, boolean | string | null> = {};
+    for (const key of ['showOnStorefront', 'showOnAdmin', 'showOnPos'] as const) {
+      if (key in dto) surfaceUpdate[key] = dto[key] === true;
+    }
+    if ('logoUrl' in dto) surfaceUpdate.logoUrl = dto.logoUrl || null;
+    const existing = await this.prisma.paymentGateway.findUnique({
+      where: { code },
+      select: { id: true },
+    });
+    const saved = await this.prisma.paymentGateway.upsert({
       where: { code },
       create: {
         code,
@@ -314,6 +367,10 @@ export class GatewayConfigController implements OnApplicationBootstrap {
         type: dto.type,
         paymentOptionType: dto.paymentOptionType,
         enabled: dto.enabled ?? false,
+        showOnStorefront: dto.showOnStorefront !== false,
+        showOnAdmin: dto.showOnAdmin !== false,
+        showOnPos: dto.showOnPos !== false,
+        logoUrl: dto.logoUrl || null,
         mode: dto.mode || 'personal',
         phoneNumber,
         accountId: accountId ?? null,
@@ -332,8 +389,17 @@ export class GatewayConfigController implements OnApplicationBootstrap {
         credentials: dto.credentials,
         sortOrder: dto.sortOrder,
         ...overrideUpdate,
+        ...surfaceUpdate,
       },
     });
+    // D6: only a genuinely NEW gateway (this call created it) with no
+    // chosen account gets the auto-created namesake account. Updates —
+    // including a deliberate mapping clear — are never re-mapped.
+    if (!existing && !saved.accountId) {
+      const ensured = await ensureGatewaySettlementAccount(this.prisma, saved);
+      if (ensured.mapped) return { ...saved, accountId: ensured.accountId };
+    }
+    return saved;
   }
 
   // ============ ADMIN: Product Payment Option Overrides ============

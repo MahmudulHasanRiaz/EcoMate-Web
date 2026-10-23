@@ -12,11 +12,14 @@ const assetLeaf = {
 
 function controllerWith(overrides: any = {}) {
   const prisma: any = {
-    account: { findUnique: jest.fn() },
+    account: { findUnique: jest.fn(), create: jest.fn() },
     paymentGateway: {
       upsert: jest.fn().mockResolvedValue({ id: 'gw-1' }),
       create: jest.fn().mockResolvedValue({ id: 'gw-1' }),
       findMany: jest.fn().mockResolvedValue([]),
+      // D6: upsertGateway pre-checks existence to detect a genuine create.
+      findUnique: jest.fn().mockResolvedValue({ id: 'gw-1' }),
+      update: jest.fn().mockResolvedValue({}),
     },
     paymentOption: { findMany: jest.fn().mockResolvedValue([]) },
     ...overrides,
