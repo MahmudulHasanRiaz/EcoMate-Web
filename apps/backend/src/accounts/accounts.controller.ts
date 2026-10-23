@@ -7,6 +7,7 @@ import {
   Put,
   Delete,
   Query,
+  BadRequestException,
 } from '@nestjs/common';
 import { AccountsService } from './accounts.service';
 import { CreateAccountDto } from './dto/create-account.dto';
@@ -26,9 +27,35 @@ export class AccountsController {
     return this.accountsService.create(dto, user?.sub);
   }
 
+  /**
+   * The admin accounting pages consume this endpoint exactly like
+   * GET /accounting/entries and GET /financial-periods: a paginated envelope
+   * (`{ data, meta }`). Returning the service's bare array left the chart of
+   * accounts' parent-account picker and the journal-entry/report account
+   * selects permanently empty — every one of those consumers reads
+   * `response.data.data`. The service keeps returning the plain array for its
+   * internal callers; the envelope is applied here, at the HTTP boundary,
+   * mirroring AccountingController.findAllEntries.
+   */
   @Get()
-  findAll(@Query('type') type?: string) {
-    return this.accountsService.findAll(type);
+  async findAll(
+    @Query('type') type?: string,
+    @Query('page') page?: string,
+    @Query('perPage') perPage?: string,
+  ) {
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const perPageNum = perPage ? parseInt(perPage, 10) : 10;
+    if (isNaN(pageNum) || pageNum < 1 || isNaN(perPageNum) || perPageNum < 1) {
+      throw new BadRequestException('Page and perPage must be positive numbers');
+    }
+    const accounts = await this.accountsService.findAll(type);
+    const total = accounts.length;
+    const totalPages = Math.max(1, Math.ceil(total / perPageNum));
+    const start = (pageNum - 1) * perPageNum;
+    return {
+      data: accounts.slice(start, start + perPageNum),
+      meta: { total, page: pageNum, perPage: perPageNum, totalPages },
+    };
   }
 
   @Get('tree')

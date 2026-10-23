@@ -123,9 +123,12 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
     return sysSettings?.['payments.staffAutoVerified'] === 'false'
   }
 
+  // The zone-group route lives under /shipping (`GET /shipping/zones`).
+  // The old `/shipping-zones` path 404'd, so the city → charge suggestion
+  // silently fell back to the flat default and ignored configured zones.
   const { data: shippingZones } = useQuery({
     queryKey: ['shipping-zones'],
-    queryFn: () => apiClient.get('/shipping-zones').then(r => (r.data as any[]) || []),
+    queryFn: () => apiClient.get('/shipping/zones').then(r => (r.data as any[]) || []),
     staleTime: 5 * 60_000,
   })
 

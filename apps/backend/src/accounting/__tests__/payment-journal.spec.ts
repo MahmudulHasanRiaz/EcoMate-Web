@@ -830,8 +830,8 @@ describe('PaymentJournalService — Phase 2 auto-journal', () => {
   });
 
   describe('backfill for payments recorded before Phase 2', () => {
-    function seeded() {
-      const harness = makeHarness();
+    function seeded(opts: { accountingEnabled?: boolean } = {}) {
+      const harness = makeHarness(opts);
       const { db } = harness;
       db.orders.push({
         id: 'ord-1',
@@ -904,7 +904,7 @@ describe('PaymentJournalService — Phase 2 auto-journal', () => {
       return harness;
     }
 
-    it('dry run reports the candidates and writes NOTHING', async () => {
+    it('dry run reports the real would-be outcome per candidate and writes NOTHING', async () => {
       const { db, journal } = seeded();
 
       const report = await journal.backfillRecordedPayments({ dryRun: true });
@@ -912,15 +912,91 @@ describe('PaymentJournalService — Phase 2 auto-journal', () => {
       expect(report.dryRun).toBe(true);
       expect(report.scanned).toBe(4); // 1 payroll + 1 supplier + 2 receipts
       expect(report.posted).toBe(0);
-      expect(report.items.every((i) => i.outcome.reason === 'dry_run')).toBe(true);
-      expect(report.items.map((i) => i.kind).sort()).toEqual([
-        'order',
-        'order',
-        'payroll',
-        'supplier',
-      ]);
+      expect(report.failed).toBe(0);
+      // Three eligible rows, one COD row that the guard skips — the report must
+      // say WHICH, not label everything `dry_run`.
+      expect(report.wouldPost).toBe(3);
+      expect(report.skipped).toBe(1);
+      expect(
+        report.items
+          .filter((i) => i.outcome.status === 'would_post')
+          .map((i) => i.paymentId)
+          .sort(),
+      ).toEqual(['pay-old', 'pp-old', 'sp-old']);
+      expect(report.items.find((i) => i.paymentId === 'pay-cod-old')?.outcome)
+        .toEqual({
+          status: 'skipped',
+          journalEntryId: null,
+          reason: COD_SKIP_REASON,
+        });
+      // The unmapped row is not a candidate (scan scope unchanged).
+      expect(report.items.map((i) => i.paymentId)).not.toContain('pay-unmapped');
+
+      // Zero writes: no journal entry, no anchor, and no lazily-seeded system
+      // account (the dry run must never call `resolveLegs`).
       expect(db.entries).toHaveLength(0);
       expect(db.payrollPayments[0].journalEntryId).toBeNull();
+      expect(db.supplierPayments[0].journalEntryId).toBeNull();
+      expect(db.accounts.map((a) => a.code)).toEqual(['bank-main']);
+    });
+
+    it('dry run reports accounting-disabled as a skip, never would_post', async () => {
+      const { db, journal } = seeded({ accountingEnabled: false });
+
+      const report = await journal.backfillRecordedPayments({ dryRun: true });
+
+      expect(report.wouldPost).toBe(0);
+      expect(report.posted).toBe(0);
+      expect(report.skipped).toBe(4);
+      // Guard order is preserved: the COD row is skipped for COD (it is never
+      // postable regardless of the setting); the other three report the
+      // accounting gate.
+      expect(report.items.find((i) => i.paymentId === 'pay-cod-old')?.outcome)
+        .toEqual({
+          status: 'skipped',
+          journalEntryId: null,
+          reason: COD_SKIP_REASON,
+        });
+      expect(
+        report.items
+          .filter((i) => i.paymentId !== 'pay-cod-old')
+          .every((i) => i.outcome.reason === 'accounting_disabled'),
+      ).toBe(true);
+      expect(db.entries).toHaveLength(0);
+    });
+
+    it('dry run reports an already-journaled payment as adopted, not would_post', async () => {
+      const { db, journal } = makeHarness();
+      db.payrollPayments.push({
+        id: 'pp-anchored',
+        amount: 900,
+        accountId: 'acc-bank',
+        paidAt: new Date('2026-10-10T06:00:00.000Z'),
+        voidedAt: null,
+        journalEntryId: 'je-existing',
+        reversalJournalEntryId: null,
+      });
+
+      const outcome = await journal.tryPostPayrollPayment('pp-anchored', {
+        dryRun: true,
+      });
+
+      expect(outcome).toEqual({
+        status: 'adopted',
+        journalEntryId: 'je-existing',
+      });
+      expect(db.entries).toHaveLength(0);
+    });
+
+    it('dry-run wouldPost count matches what the real run then posts', async () => {
+      const { db, journal } = seeded();
+
+      const preview = await journal.backfillRecordedPayments({ dryRun: true });
+      const real = await journal.backfillRecordedPayments();
+
+      expect(preview.wouldPost).toBe(real.posted);
+      expect(real.posted).toBe(3);
+      expect(db.entries).toHaveLength(3);
     });
 
     it('posts exactly one journal per recorded payment and is idempotent', async () => {

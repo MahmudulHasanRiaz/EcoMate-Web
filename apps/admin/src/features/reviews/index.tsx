@@ -15,7 +15,18 @@ import { SafeImage } from '@/components/safe-image'
 import { Loader2, Star, Trash2, Check, MessageSquareText, EyeOff } from 'lucide-react'
 
 const reviewsApi = {
-  list: (status?: string) => apiClient.get('/reviews', { params: status ? { status } : {} }),
+  // GET /reviews returns the paginated envelope `{ data, meta }` — the same
+  // shape every other admin list uses. Reading it as a bare array left this
+  // page permanently empty.
+  list: (status?: string) =>
+    apiClient.get<{
+      data: ReviewItem[]
+      meta: { total: number; page: number; perPage: number; totalPages: number }
+    }>('/reviews', {
+      // This screen has no pager; ask for a full working page so older reviews
+      // are not silently hidden behind the backend's default of 10.
+      params: { perPage: 100, ...(status ? { status } : {}) },
+    }),
   approve: (id: string) => apiClient.patch(`/reviews/${id}/approve`),
   delete: (id: string) => apiClient.delete(`/reviews/${id}`),
 }
@@ -68,7 +79,7 @@ export function Reviews() {
     queryFn: () => reviewsApi.list(statusParam).then(r => r.data),
   })
 
-  const list: ReviewItem[] = Array.isArray(reviews) ? reviews : []
+  const list: ReviewItem[] = reviews?.data ?? []
 
   const approveMut = useMutation({
     mutationFn: (id: string) => reviewsApi.approve(id),

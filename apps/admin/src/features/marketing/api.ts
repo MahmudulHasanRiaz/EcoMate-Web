@@ -319,7 +319,13 @@ export const marketingApi = {
       apiClient.get<CreditDueResponse[]>('/marketing/payments/credit-due', { params: adAccountId ? { adAccountId } : undefined }),
   },
   accounts: {
-    list: () => apiClient.get<Array<{ id: string; code: string; name: string; type: string; isGroup: boolean; isActive: boolean }>>('/accounts'),
+    // GET /accounts is paginated (`{ data, meta }`) like the rest of the
+    // accounting module; this helper has no consumer yet, keep its type honest.
+    list: () =>
+      apiClient.get<{
+        data: Array<{ id: string; code: string; name: string; type: string; isGroup: boolean; isActive: boolean }>
+        meta: { total: number; page: number; perPage: number; totalPages: number }
+      }>('/accounts'),
   },
   attribution: {
     list: (params?: { page?: number; perPage?: number; campaignId?: string }) =>

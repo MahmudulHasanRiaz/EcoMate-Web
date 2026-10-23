@@ -53,9 +53,11 @@ export function Expenses() {
 
   const { data: accounts } = useQuery({
     queryKey: ['accounts'],
-    queryFn: () => accountingApi.listAccounts().then(r => r.data),
+    queryFn: () => accountingApi.listAccounts({ perPage: 200 }).then(r => r.data),
   })
-  const allAccounts = Array.isArray(accounts) ? accounts : []
+  // GET /accounts returns the same paginated envelope as the rest of the
+  // accounting module (`{ data, meta }`) — never a bare array.
+  const allAccounts = Array.isArray(accounts?.data) ? accounts.data : []
   // Also fetch account tree for structured view
   const { data: accountTree } = useQuery({
     queryKey: ['accounts-tree'],
