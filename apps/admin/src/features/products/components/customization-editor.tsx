@@ -31,6 +31,18 @@ function slugKey(label: string): string {
     .slice(0, 64)
 }
 
+/**
+ * The key follows the label while it is still the auto-derived value of
+ * the PREVIOUS label (or empty). The moment the stored key differs from
+ * what the previous label derives to, the user edited it by hand and it
+ * is never overwritten. (Deriving only from an empty key froze the key
+ * at the first typed character — "G" → "g" — for every group/option.)
+ */
+function deriveKey(currentKey: string, previousLabel: string, nextLabel: string): string {
+  if (!currentKey || currentKey === slugKey(previousLabel)) return slugKey(nextLabel)
+  return currentKey
+}
+
 const num = (v: string) => {
   const n = parseFloat(v)
   return Number.isFinite(n) && n > 0 ? n : 0
@@ -104,7 +116,7 @@ export function CustomizationEditor({
                   placeholder='e.g. Name Engraving'
                   onChange={(e) => {
                     const label = e.target.value
-                    patchGroup(gi, { label, key: g.key || slugKey(label) })
+                    patchGroup(gi, { label, key: deriveKey(g.key, g.label, label) })
                   }}
                 />
               </div>
@@ -202,7 +214,7 @@ export function CustomizationEditor({
                     placeholder='e.g. Gold Foil'
                     onChange={(e) => {
                       const label = e.target.value
-                      patchOption(gi, oi, { label, key: o.key || slugKey(label) })
+                      patchOption(gi, oi, { label, key: deriveKey(o.key, o.label, label) })
                     }}
                   />
                   <Input
