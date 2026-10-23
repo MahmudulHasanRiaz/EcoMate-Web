@@ -261,7 +261,7 @@ vi.mock('@/features/business-analytics/hooks', () => ({
 }))
 
 vi.mock('@/features/categories/api', () => ({
-  categoriesApi: { list: vi.fn().mockResolvedValue({ data: { data: [] } }) },
+  categoriesApi: { list: vi.fn().mockResolvedValue({ data: [] }) },
 }))
 
 function productsFixture(): ProductsResponse {
