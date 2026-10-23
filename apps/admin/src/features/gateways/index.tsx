@@ -57,7 +57,7 @@ function GlobalPaymentDefaults() {
 
   return (
     <Card className='shadow-sm'>
-      <CardContent className='p-4 space-y-4'>
+      <CardContent className='p-3.5 space-y-3'>
         <CardDescription className='text-xs'>
           These defaults apply to every gateway. Expand a manual gateway to override them for that gateway only.
         </CardDescription>
@@ -352,45 +352,48 @@ export function GatewaySettings() {
   }
 
   return (
-    <div className='space-y-8 w-full pb-12'>
+    <div className='space-y-6 w-full pb-10'>
       <div className='space-y-0.5'>
-        <h2 className='text-2xl font-bold tracking-tight'>Payment Gateways</h2>
-        <p className='text-muted-foreground'>
+        <h2 className='text-xl font-bold tracking-tight'>Payment Gateways</h2>
+        <p className='text-sm text-muted-foreground'>
           Manage your store&apos;s payment options and gateway configurations.
         </p>
       </div>
-      <Separator className='my-6' />
 
       {/* SECTION A: Payment Options */}
-      <div className='space-y-4'>
+      <div className='space-y-3'>
         <div className='flex items-center gap-2 px-1'>
           <Settings2 className='h-4 w-4 text-primary' />
-          <h3 className='text-sm font-bold uppercase tracking-wider'>Payment Options</h3>
+          <h3 className='text-xs font-bold uppercase tracking-wider'>Payment Options</h3>
         </div>
-        <div className='grid gap-4 md:grid-cols-3'>
+        <p className='px-1 text-[11px] text-muted-foreground'>
+          These switches control the <b>website checkout only</b> — the admin panel and POS always see every
+          payment option. Which gateways appear on each surface is set per gateway below.
+        </p>
+        <div className='grid gap-3 md:grid-cols-3'>
           {(optionsData || []).sort((a, b) => a.sortOrder - b.sortOrder).map(option => {
             const Icon = optionIcons[option.type] || ShieldCheck
             const isCod = option.type === 'CASH_ON_DELIVERY'
             return (
               <Card key={option.id} className={cn(isCod ? 'border-none shadow-sm bg-muted/20' : 'shadow-sm')}>
-                <CardContent className='p-4 flex items-center justify-between gap-4'>
-                  <div className='flex items-center gap-4'>
-                    <div className={cn('p-2 rounded-lg border shadow-sm shrink-0', isCod ? 'bg-background' : 'bg-primary/5')}>
-                      <Icon className='h-5 w-5 text-primary' />
+                <CardContent className='p-3 flex items-center justify-between gap-3'>
+                  <div className='flex items-center gap-3'>
+                    <div className={cn('p-1.5 rounded-lg border shadow-sm shrink-0', isCod ? 'bg-background' : 'bg-primary/5')}>
+                      <Icon className='h-4 w-4 text-primary' />
                     </div>
                     <div className='space-y-0.5'>
                       <CardTitle className='text-sm'>{option.name}</CardTitle>
                       {option.description && (
-                        <CardDescription className='text-xs'>{option.description}</CardDescription>
+                        <CardDescription className='text-[11px]'>{option.description}</CardDescription>
                       )}
                     </div>
                   </div>
-                  <div className='flex items-center gap-3 shrink-0'>
+                  <div className='flex items-center gap-2.5 shrink-0'>
                     <Switch
                       checked={option.enabled}
                       onCheckedChange={(v) => updateOptionMut.mutate({ type: option.type, data: { enabled: v } })}
                     />
-                    <span className='text-xs font-bold uppercase tracking-wider text-muted-foreground'>
+                    <span className='text-[10px] font-bold uppercase tracking-wider text-muted-foreground'>
                       {option.enabled ? 'Active' : 'Inactive'}
                     </span>
                   </div>
@@ -405,12 +408,12 @@ export function GatewaySettings() {
       {(optionsData || []).filter(o => o.gateways?.length).map(option => {
         const GroupIcon = optionIcons[option.type] || ShieldCheck
         return (
-          <div key={option.type} className='space-y-4 pt-2'>
+          <div key={option.type} className='space-y-3 pt-1'>
             <div className='flex items-center gap-2 px-1'>
               <GroupIcon className='h-4 w-4 text-primary' />
-              <h3 className='text-sm font-bold uppercase tracking-wider'>{option.name} Gateways</h3>
+              <h3 className='text-xs font-bold uppercase tracking-wider'>{option.name} Gateways</h3>
             </div>
-            <div className='grid gap-4'>
+            <div className='grid gap-2.5'>
               {[...option.gateways].sort((a, b) => a.sortOrder - b.sortOrder).map(g => {
                 const isCashType = g.type === 'cash'
                 const isOpen = expandedGateways[g.code]
@@ -435,26 +438,26 @@ export function GatewaySettings() {
                 if (isCashType) {
                   return (
                     <Card key={g.id} className='border-none shadow-sm bg-muted/20'>
-                      <CardContent className='p-4 space-y-3'>
+                      <CardContent className='p-3.5 space-y-2.5'>
                         <div className='flex items-center justify-between'>
-                          <div className='flex items-center gap-4'>
-                            <div className='p-2 rounded-lg bg-background border shadow-sm'>
-                              <Truck className='h-5 w-5 text-primary' />
+                          <div className='flex items-center gap-3'>
+                            <div className='p-1.5 rounded-lg bg-background border shadow-sm'>
+                              <Truck className='h-4 w-4 text-primary' />
                             </div>
                             <div className='space-y-0.5'>
-                              <CardTitle className='text-base flex items-center gap-2'>
+                              <CardTitle className='text-sm flex items-center gap-2'>
                                 {g.name}
                                 {noSettlementBadge(g)}
                               </CardTitle>
-                              <CardDescription className='text-xs'>Allow customers to pay when they receive the order.</CardDescription>
+                              <CardDescription className='text-[11px]'>Allow customers to pay when they receive the order.{g.account ? ` Settles to ${g.account.name} (${g.account.code}).` : ''}</CardDescription>
                             </div>
                           </div>
-                          <div className='flex items-center gap-3'>
+                          <div className='flex items-center gap-2.5'>
                             <Switch
                               checked={g.enabled}
                               onCheckedChange={(v) => updateGatewayMut.mutate({ code: g.code, data: { enabled: v } })}
                             />
-                            <span className='text-xs font-bold uppercase tracking-wider text-muted-foreground'>
+                            <span className='text-[10px] font-bold uppercase tracking-wider text-muted-foreground'>
                               {g.enabled ? 'Active' : 'Inactive'}
                             </span>
                           </div>
@@ -481,19 +484,39 @@ export function GatewaySettings() {
 
                 return (
                   <Card key={g.id} className={cn('transition-all duration-200 border shadow-sm overflow-hidden', isOpen ? 'ring-1 ring-primary' : 'hover:border-muted-foreground/20')}>
-                    <div className='p-4 cursor-pointer flex items-center justify-between gap-4' onClick={() => handleToggleExpand(g)}>
-                      <div className='flex items-center gap-4'>
-                        <PaymentLogo method={g.code} size='md' showName={false} />
+                    <div className='px-3.5 py-3 cursor-pointer flex items-center justify-between gap-3' onClick={() => handleToggleExpand(g)}>
+                      <div className='flex items-center gap-3'>
+                        <PaymentLogo method={g.code} size='sm' showName={false} />
                         <div className='space-y-0.5'>
                           <CardTitle className='text-sm flex items-center gap-2'>
                             {g.name}
                             {g.enabled && <CheckCircle2 className='h-3 w-3 text-green-500' />}
                             {noSettlementBadge(g)}
                           </CardTitle>
-                          <CardDescription className='text-[11px]'>{g.type === 'api' ? 'Automatic payment via API' : 'Manual payment with number verification'}</CardDescription>
+                          <CardDescription className='text-[11px]'>
+                            {g.type === 'api' ? 'Automatic payment via API' : 'Manual payment with number verification'}
+                            {g.account ? ` · Settles to ${g.account.name} (${g.account.code})` : ''}
+                          </CardDescription>
+                          <div className='flex gap-1 pt-0.5' aria-label={`${g.name} surface visibility`}>
+                            {([
+                              ['Web', d.showOnStorefront ?? true],
+                              ['Admin', d.showOnAdmin ?? true],
+                              ['POS', d.showOnPos ?? true],
+                            ] as const).map(([label, on]) => (
+                              <span
+                                key={label}
+                                className={cn(
+                                  'rounded bg-muted/70 px-1.5 py-0.5 text-[10px] font-medium leading-none',
+                                  on ? 'text-foreground/80' : 'text-muted-foreground opacity-40',
+                                )}
+                              >
+                                {label}
+                              </span>
+                            ))}
+                          </div>
                         </div>
                       </div>
-                      <div className='flex items-center gap-4'>
+                      <div className='flex items-center gap-3'>
                         <Switch 
                           checked={d.enabled} 
                           onCheckedChange={(v) => { 
@@ -544,9 +567,9 @@ export function GatewaySettings() {
                       </div>
                     </div>
                     {isOpen && (
-                      <CardContent className='p-4 pt-0 border-t bg-muted/5 animate-in fade-in slide-in-from-top-1'>
+                      <CardContent className='p-3.5 pt-0 border-t bg-muted/5 animate-in fade-in slide-in-from-top-1'>
                         {g.type === 'api' ? (
-                          <div className='pt-4 grid gap-6 md:grid-cols-12'>
+                          <div className='pt-3.5 grid gap-4 md:grid-cols-12'>
                             <div className='md:col-span-7 space-y-4'>
                               <div className='space-y-2'>
                                 <Label className='text-xs font-semibold'>API Environment</Label>
@@ -583,7 +606,7 @@ export function GatewaySettings() {
                               </div>
                             </div>
                             <div className='md:col-span-5 space-y-4'>
-                              <div className='rounded-lg bg-background border p-4 space-y-3'>
+                              <div className='rounded-lg bg-background border p-3 space-y-3'>
                                 <div className='flex items-center gap-2 font-semibold text-xs text-primary'>
                                   <Settings2 className='h-3.5 w-3.5' />
                                   <span>Integration Guide</span>
@@ -602,7 +625,7 @@ export function GatewaySettings() {
                             </div>
                           </div>
                         ) : (
-                          <div className='pt-4 grid gap-4 sm:grid-cols-2'>
+                          <div className='pt-3.5 grid gap-3.5 sm:grid-cols-2'>
                             <div className='space-y-2'>
                               <Label className='text-xs font-semibold'>Account Type</Label>
                               <Select value={d.mode || 'personal'} onValueChange={v => setGatewayEditData(p => ({ ...p, [g.code]: { ...d, mode: v } }))}>
@@ -667,10 +690,10 @@ export function GatewaySettings() {
       {/* SECTION C: Global Payment Defaults — deliberately BELOW the gateway
           list (D, owner-locked): they are store-wide fallbacks, not gateway
           state. Each manual gateway can override them individually. */}
-      <div className='space-y-4 pt-2'>
+      <div className='space-y-3 pt-1'>
         <div className='flex items-center gap-2 px-1'>
           <ShieldCheck className='h-4 w-4 text-primary' />
-          <h3 className='text-sm font-bold uppercase tracking-wider'>Global Payment Defaults</h3>
+          <h3 className='text-xs font-bold uppercase tracking-wider'>Global Payment Defaults</h3>
         </div>
         <GlobalPaymentDefaults />
       </div>

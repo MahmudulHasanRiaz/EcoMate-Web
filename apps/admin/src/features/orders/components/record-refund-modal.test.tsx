@@ -126,7 +126,9 @@ describe('RecordRefundModal (Part 4: config-sourced destination)', () => {
   it('preselects the latest verified payment gateway + mapped account', async () => {
     const ui = await renderModal()
     await expect.element(ui.getByLabelText('Gateway')).toHaveTextContent(/bKash/)
-    await expect.element(ui.getByLabelText('Account')).toHaveTextContent(/bKash Wallet/)
+    // D7: no account picker — the destination is the gateway's mapped
+    // account, shown as a settles-to line; the payload still carries it.
+    await expect.element(ui.getByText(/Settles to bKash Wallet \(1001\)/)).toBeInTheDocument()
     await userEvent.fill(ui.getByLabelText(/Amount/), '1200')
     await userEvent.fill(ui.getByLabelText(/Reason/), 'customer cancelled')
     await userEvent.click(ui.getByText(/Yes, cancel it now/))
@@ -223,7 +225,7 @@ describe('RecordRefundModal (Part 4: config-sourced destination)', () => {
     })
     await expect.element(ui.getByText(/Refunding from 2 payment rows/)).toBeInTheDocument()
     await expect.element(ui.getByLabelText('Gateway')).toHaveTextContent(/Cash/)
-    await expect.element(ui.getByLabelText('Account')).toHaveTextContent(/Cash \(1000\)/)
+    await expect.element(ui.getByText(/Settles to Cash \(1000\)/)).toBeInTheDocument()
     await userEvent.fill(ui.getByLabelText(/Reason/), 'bulk return')
     await userEvent.click(ui.getByRole('button', { name: /^Record refund$/ }))
     // The prefilled 1300 (1000 + 300 remainders) posts straight through.

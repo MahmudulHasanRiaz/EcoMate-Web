@@ -441,7 +441,6 @@ export function ConvertLead({ id }: { id: string }) {
                     setPaymentAccountId(next.accountId)
                   }}
                   gatewayLabel='Method'
-                  accountLabel='Account'
                   className='grid gap-3'
                 />
                 <div>

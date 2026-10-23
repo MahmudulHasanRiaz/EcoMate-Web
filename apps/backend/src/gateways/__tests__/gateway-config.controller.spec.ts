@@ -105,4 +105,52 @@ describe('GatewayConfigController', () => {
     );
     expect(meta).toBeUndefined();
   });
+
+  // D7 (owner-locked 2026-10-24): PaymentOption.enabled is a
+  // storefront-only flag. The POS surface must ignore it; the website
+  // surface must honor it.
+  describe('findAll surface filtering (D7)', () => {
+    const gatewayRow = {
+      id: 'g1',
+      code: 'bkash',
+      name: 'bKash',
+      type: 'manual',
+      paymentOptionType: 'FULL_PAYMENT',
+      paymentOption: { name: 'Full Payment', enabled: false },
+      enabled: true,
+      mode: 'personal',
+      phoneNumber: null,
+      logoUrl: null,
+    };
+    const makeController = () => {
+      const findMany = jest.fn().mockResolvedValue([gatewayRow]);
+      const controller = new GatewayConfigController({
+        paymentGateway: { findMany },
+      } as any);
+      return { controller, findMany };
+    };
+
+    it('storefront surface (default) honors paymentOption.enabled', async () => {
+      const { controller, findMany } = makeController();
+      await controller.findAll(undefined);
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            enabled: true,
+            showOnStorefront: true,
+            paymentOption: { enabled: true },
+          }),
+        }),
+      );
+    });
+
+    it('POS surface ignores paymentOption.enabled', async () => {
+      const { controller, findMany } = makeController();
+      const rows = await controller.findAll('pos');
+      const where = findMany.mock.calls[0][0].where;
+      expect(where).toEqual(expect.objectContaining({ enabled: true, showOnPos: true }));
+      expect(where).not.toHaveProperty('paymentOption');
+      expect(rows).toHaveLength(1);
+    });
+  });
 });

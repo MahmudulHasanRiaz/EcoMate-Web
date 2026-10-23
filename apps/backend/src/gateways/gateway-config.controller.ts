@@ -182,10 +182,17 @@ export class GatewayConfigController implements OnApplicationBootstrap {
   @Public()
   @Get()
   async findAll(@Query('surface') surface?: string) {
-    const surfaceWhere =
-      surface === 'pos' ? { showOnPos: true } : { showOnStorefront: true };
+    const isPos = surface === 'pos';
+    const surfaceWhere = isPos ? { showOnPos: true } : { showOnStorefront: true };
     const gateways = await this.prisma.paymentGateway.findMany({
-      where: { enabled: true, ...surfaceWhere, paymentOption: { enabled: true } },
+      where: {
+        enabled: true,
+        ...surfaceWhere,
+        // D7 (owner-locked 2026-10-24): PaymentOption.enabled is a
+        // STOREFRONT-ONLY flag — it narrows what website customers may
+        // pick at checkout and must never hide gateways from the POS.
+        ...(isPos ? {} : { paymentOption: { enabled: true } }),
+      },
       orderBy: { sortOrder: 'asc' },
       include: { paymentOption: true },
     });
