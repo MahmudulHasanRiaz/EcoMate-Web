@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from 'react'
 import { Badge } from '@/components/ui/badge'
+import { appHref } from '@/lib/app-href'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { CostState } from '../types'
 import { plainLine } from './info-copy'
@@ -84,7 +85,7 @@ export function DataCoverageBadge({
   }
   const link = (
     <a
-      href={href}
+      href={appHref(href)}
       aria-label={a11y}
       className="inline-flex cursor-pointer rounded-full transition-opacity duration-150 hover:opacity-85 focus-visible:outline-2 focus-visible:outline-offset-2"
     >

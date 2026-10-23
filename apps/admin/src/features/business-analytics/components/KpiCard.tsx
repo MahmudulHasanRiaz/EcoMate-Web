@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { CountUp, kpiAccentForTitle, kpiIconForTitle } from '@/components/ui/dashboard'
 import { cn } from '@/lib/utils'
+import { appHref } from '@/lib/app-href'
 import { formatBDT, type KpiValue } from '../types'
 import { MetricUnavailable } from './badges'
 import { InfoDisclosure } from './analytics-ui'
@@ -84,7 +85,7 @@ export function KpiCard({ title, kpi, format, formulaVersion, drilldownHref, ani
   // invalid nested interactive). The Card keeps the hover lift as the affordance.
   const valueNode = drilldownHref ? (
     <a
-      href={drilldownHref}
+      href={appHref(drilldownHref)}
       aria-label={`Drill down into ${title}`}
       className="block rounded-md focus-visible:outline-2 focus-visible:outline-offset-2"
     >

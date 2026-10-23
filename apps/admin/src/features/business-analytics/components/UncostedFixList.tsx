@@ -4,6 +4,7 @@ import { TriangleAlert } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatBDT, type UncostedData } from '../types'
+import { appHref } from '@/lib/app-href'
 
 /**
  * Uncosted-products fix-list (§4.2 coverage badges): every recognised line
@@ -50,7 +51,7 @@ export function UncostedFixList({ uncosted }: { uncosted: UncostedData }) {
                   <TableCell className="text-sm text-right tabular-nums">{r.quantity}</TableCell>
                   <TableCell className="text-sm text-right tabular-nums">{formatBDT(r.lineNet)}</TableCell>
                   <TableCell className="text-sm">
-                    <a href={`/op/orders/${r.orderId}`} className="hover:underline">
+                    <a href={appHref(`/op/orders/${r.orderId}`)} className="hover:underline">
                       Order →
                     </a>
                   </TableCell>

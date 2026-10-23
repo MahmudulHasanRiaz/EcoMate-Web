@@ -9,6 +9,7 @@ import {
 import { RouterProvider, createRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { handleServerError } from '@/lib/handle-server-error'
+import { APP_BASEPATH } from '@/lib/app-href'
 import { DirectionProvider } from './context/direction-provider'
 import { FontProvider } from './context/font-provider'
 import { ThemeProvider } from './context/theme-provider'
@@ -73,7 +74,7 @@ const router = createRouter({
   // don't preload on render.
   defaultPreload: 'intent',
   defaultPreloadStaleTime: 30_000,
-  basepath: '/admin',
+  basepath: APP_BASEPATH,
   // Pending indicator for in-app navigation. On full page reload the HTML
   // boot skeleton (z-index 9999) covers it, so the user sees one continuous
   // loader; on client-side navigation it gives instant feedback while the

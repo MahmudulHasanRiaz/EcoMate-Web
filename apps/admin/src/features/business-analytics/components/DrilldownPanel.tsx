@@ -1,4 +1,5 @@
 import { ArrowUpRight, ListTree } from 'lucide-react'
+import { appHref } from '@/lib/app-href'
 import type { AnalyticsFilters } from '../types'
 import { buildOverviewQuery } from '../api'
 import { EmptyState, SectionHeader } from './analytics-ui'
@@ -44,7 +45,7 @@ export function DrilldownPanel({
   const base = queryBuilder(filters)
   const href = (to: string, params?: Record<string, string>) => {
     const qs = new URLSearchParams({ ...base, ...(params ?? {}) }).toString()
-    return `${to}${qs ? `?${qs}` : ''}`
+    return appHref(`${to}${qs ? `?${qs}` : ''}`)
   }
   const all: DrilldownItem[] = items ?? [
     { label: 'Net Profit → P&L ladder → cost line → orders', description: 'Trace profit into its cost inputs', to: '/mon/analytics', params: { view: 'ladder' } },

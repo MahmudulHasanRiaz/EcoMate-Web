@@ -483,7 +483,7 @@ describe('PnlWaterfall', () => {
     const feeBadge = [...container.querySelectorAll('a')].find((a) =>
       (a.getAttribute('aria-label') ?? '').startsWith('Gateway fees'),
     )
-    expect(feeBadge?.getAttribute('href')).toBe('/mon/analytics/sales')
+    expect(feeBadge?.getAttribute('href')).toBe('/admin/mon/analytics/sales')
   })
 })
 
@@ -582,7 +582,7 @@ describe('no nested interactives', () => {
         drilldownHref="/mon/analytics/customers?segment=new"
       />,
     )
-    const link = container.querySelector('a[href="/mon/analytics/customers?segment=new"]')
+    const link = container.querySelector('a[href="/admin/mon/analytics/customers?segment=new"]')
     expect(link).not.toBeNull()
     // Info control exists and sits outside the link.
     await expect.element(getByRole('button', { name: 'About New Customers' })).toBeInTheDocument()
@@ -648,13 +648,13 @@ describe('PnlWaterfall coverage hrefs', () => {
     const { container } = await renderWithClient(<PnlWaterfall pnl={fullCoveragePnl()} />)
     const byLabel = (prefix: string) =>
       [...container.querySelectorAll('a')].find((a) => (a.getAttribute('aria-label') ?? '').startsWith(prefix))
-    expect(byLabel('COGS')?.getAttribute('href')).toBe('/mon/analytics/products')
-    expect(byLabel('Shipping cost')?.getAttribute('href')).toBe('/mon/analytics/sales')
-    expect(byLabel('Gateway fees')?.getAttribute('href')).toBe('/mon/analytics/sales')
+    expect(byLabel('COGS')?.getAttribute('href')).toBe('/admin/mon/analytics/products')
+    expect(byLabel('Shipping cost')?.getAttribute('href')).toBe('/admin/mon/analytics/sales')
+    expect(byLabel('Gateway fees')?.getAttribute('href')).toBe('/admin/mon/analytics/sales')
     expect(byLabel('Undated marketing spend')?.getAttribute('href')).toBe(
-      '/mon/analytics/marketing#marketing-undated-fixlist',
+      '/admin/mon/analytics/marketing#marketing-undated-fixlist',
     )
-    expect(byLabel('COD settlement')?.getAttribute('href')).toBe('/mon/analytics/sales')
+    expect(byLabel('COD settlement')?.getAttribute('href')).toBe('/admin/mon/analytics/sales')
   })
 })
 
