@@ -27,6 +27,29 @@ export const COURIER_FIELD_LIMITS = {
   note: 480,
 } as const;
 
+/**
+ * Per-courier RECIPIENT ADDRESS caps (owner Q10, 2026-10-23: truncate at
+ * send to each courier's documented max; the stored address never changes).
+ * - steadfast 490: doc "stored to 490 characters" (errors at 500).
+ * - pathao 220: doc recipient_address 10–220 characters.
+ * - redx 490: the RedX doc states no address limit — the Steadfast cap is
+ *   kept as the safe default (Task 10 precedent).
+ * - carrybee 200: doc recipient_address 10–200 characters.
+ */
+export const COURIER_ADDRESS_LIMITS: Record<string, number> = {
+  steadfast: 490,
+  pathao: 220,
+  redx: 490,
+  carrybee: 200,
+};
+
+export function courierAddressLimit(courier: string): number {
+  return (
+    COURIER_ADDRESS_LIMITS[courier.toLowerCase()] ??
+    COURIER_FIELD_LIMITS.address
+  );
+}
+
 /** True for statuses that must NEVER settle (owner-locked). */
 export function isUnsettledCourierStatus(status: string | null | undefined): boolean {
   const s = String(status ?? '').trim().toLowerCase();

@@ -11,6 +11,7 @@ import {
 } from '../orders/order-recipient';
 import {
   COURIER_FIELD_LIMITS,
+  courierAddressLimit,
   sanitizeCourierText,
 } from './courier-settle-guard';
 
@@ -481,7 +482,12 @@ export class CourierManagerService {
             email: true,
           },
         },
-        items: { include: { product: { select: { name: true } } } },
+        items: {
+          include: {
+            // weightGram rides along for the Q12 dispatch weight rule.
+            product: { select: { name: true, weightGram: true } },
+          },
+        },
         payments: true,
       },
     });
@@ -626,7 +632,7 @@ export class CourierManagerService {
       recipient_phone: sanitizeCourierText(phone, COURIER_FIELD_LIMITS.phone),
       recipient_address: sanitizeCourierText(
         formatCourierAddress(address) ?? 'Dhaka',
-        COURIER_FIELD_LIMITS.address,
+        courierAddressLimit('steadfast'),
       ),
       cod_amount: collectAmount,
       note: order.officeNotes
@@ -943,19 +949,23 @@ export class CourierManagerService {
 
     const payload: Record<string, unknown> = {
       // Task 10: same strip + pre-check (Pathao doc states name 3–100;
-      // invoice/phone/address/note caps unstated → Steadfast 100/40/490/480
-      // applied as the safe default, noted here).
+      // invoice/phone/note caps unstated → Steadfast 100/40/480 applied as
+      // the safe default, noted here). Address cap is Pathao's OWN doc
+      // limit (10–220 chars) since owner Q10 (2026-10-23).
       store_id: parseInt(String(storeId)),
       recipient_name: sanitizeCourierText(safeName, COURIER_FIELD_LIMITS.name),
       recipient_phone: sanitizeCourierText(phone, COURIER_FIELD_LIMITS.phone),
       recipient_address: sanitizeCourierText(
         formatCourierAddress(address) ?? 'Dhaka',
-        COURIER_FIELD_LIMITS.address,
+        courierAddressLimit('pathao'),
       ),
       delivery_type: 48,
       item_type: 2,
       item_quantity: order.items?.length || 1,
-      item_weight: 0.5,
+      // Owner Q12 (2026-10-23): product weightGram wins when set; the
+      // long-standing 0.5 kg stays as the fallback. Pathao doc range is
+      // 0.5–10 kg — clamped, never rejected.
+      item_weight: this.resolvePathaoWeightKg(order),
       amount_to_collect: total,
     };
 
@@ -1595,7 +1605,25 @@ export class CourierManagerService {
     const collectable = this.getCollectableAmount(order);
 
     const district = (address?.district as string) || 'Dhaka';
-    const deliveryAreaId = address?.deliveryAreaId || address?.areaId || 1;
+    // Owner Q11 (2026-10-23): NO silent area 1. The old `|| 1` fallback
+    // booked every RedX parcel into area 1 (Malibag per the doc sample)
+    // whenever the order carried no area — misrouted parcels with no
+    // signal. The RedX doc marks delivery_area_id required; a missing or
+    // invalid value now fails the dispatch loudly with the field named,
+    // exactly like the charge-preview guard. The value must be present on
+    // the order's shipping address (deliveryAreaId / areaId).
+    const deliveryAreaId = Number(address?.deliveryAreaId ?? address?.areaId);
+    if (!Number.isFinite(deliveryAreaId) || deliveryAreaId <= 0) {
+      throw new CourierDispatchError({
+        courier: 'redx',
+        status: 0,
+        message:
+          `RedX: field 'delivery_area_id' is required — order ${order.displayId ?? order.id} ` +
+          'has no RedX delivery area on its shipping address, and no default area is assumed.',
+        errors: { delivery_area_id: ['required'] },
+        orderId: order.id,
+      });
+    }
 
     // Fix 5a: courier-safe name (Mx. prefix / truncate); stored order kept.
     const { sent: safeName, raw: rawName } = this.resolveCourierName(
@@ -1638,13 +1666,14 @@ export class CourierManagerService {
       customer_name: sanitizeCourierText(safeName, COURIER_FIELD_LIMITS.name),
       customer_phone: sanitizeCourierText(phone, COURIER_FIELD_LIMITS.phone),
       delivery_area: district,
-      delivery_area_id: Number(deliveryAreaId) || 1,
+      delivery_area_id: deliveryAreaId,
       customer_address: sanitizeCourierText(
         formatCourierAddress(address) ?? 'N/A',
-        COURIER_FIELD_LIMITS.address,
+        courierAddressLimit('redx'),
       ),
       cash_collection_amount: String(collectable),
-      parcel_weight: String(500),
+      // Owner Q12: product weightGram wins; 500 g fallback (pre-Q12 value).
+      parcel_weight: String(this.resolveOrderWeightGrams(order)),
       instruction: order.officeNotes
         ? sanitizeCourierText(String(order.officeNotes), COURIER_FIELD_LIMITS.note)
         : '',
@@ -2186,12 +2215,14 @@ export class CourierManagerService {
   }
 
   /**
-   * Task 7: `item_weight` is REQUIRED, integer grams 1–25000. No weight
-   * column exists on Order/Product (checked schema 2026-10-14), so read an
-   * explicit per-order/per-item gram value when present (summed over items)
-   * and default to 500g otherwise. Rounded + clamped to the doc range.
+   * Owner Q12 (2026-10-23): parcel weight resolution shared by every
+   * courier that books by weight. An explicit per-order gram value wins;
+   * otherwise the sum of per-product `Product.weightGram` × quantity over
+   * the items (products with no weight set contribute nothing); when
+   * nothing anywhere sets a weight, the courier fallback applies — the
+   * pre-Q12 defaults (500 g RedX/Carrybee, 0.5 kg Pathao).
    */
-  private resolveCarrybeeWeightGrams(order: any): number {
+  private resolveOrderWeightGrams(order: any, fallbackGrams = 500): number {
     const num = (v: unknown): number | null => {
       const n = Number(v);
       return Number.isFinite(n) && n > 0 ? n : null;
@@ -2204,8 +2235,19 @@ export class CourierManagerService {
         if (w) grams += w * (Number(item?.quantity) || 1);
       }
     }
-    if (!grams) grams = 500;
-    return Math.min(25000, Math.max(1, Math.round(grams)));
+    if (!grams) grams = fallbackGrams;
+    return Math.round(grams);
+  }
+
+  /** Carrybee doc: `item_weight` REQUIRED, integer grams 1–25000. */
+  private resolveCarrybeeWeightGrams(order: any): number {
+    return Math.min(25000, Math.max(1, this.resolveOrderWeightGrams(order)));
+  }
+
+  /** Pathao doc: `item_weight` float kg, minimum 0.5, maximum 10. */
+  private resolvePathaoWeightKg(order: any): number {
+    const kg = this.resolveOrderWeightGrams(order) / 1000;
+    return Math.min(10, Math.max(0.5, Math.round(kg * 100) / 100));
   }
 
   /**
@@ -2583,17 +2625,51 @@ export class CourierManagerService {
           'steadfast',
           'recipient_name',
         );
-        bodyData.push({
+        const bulkAddress = order.shippingAddress as
+          | Record<string, unknown>
+          | null;
+        const bulkPhone = this.normalizePhone(orderRecipientPhone(order));
+        const entry: Record<string, unknown> = {
           invoice: order.displayId,
           recipient_name: safeName,
-          recipient_phone: this.normalizePhone(orderRecipientPhone(order)),
-          recipient_address:
-            formatCourierAddress(
-              order.shippingAddress as Record<string, unknown>,
-            ) ?? 'Dhaka',
+          recipient_phone: bulkPhone,
+          // Owner Q10: cap at Steadfast's 490 like single dispatch (bulk
+          // previously sent the address uncapped).
+          recipient_address: sanitizeCourierText(
+            formatCourierAddress(bulkAddress) ?? 'Dhaka',
+            courierAddressLimit('steadfast'),
+          ),
           cod_amount: this.getCollectableAmount(order),
           note: order.officeNotes || null,
-        });
+        };
+        // Owner Q13 (2026-10-23): the /extended bulk endpoint accepts
+        // these PER ORDER (the legacy endpoint read them from the top
+        // level instead) — mirror single dispatch's fields.
+        const bulkEmail = orderRecipientEmail(order);
+        if (bulkEmail) entry.recipient_email = bulkEmail;
+        const bulkSecondary =
+          this.normalizePhone(order.secondaryPhone) ||
+          (bulkAddress?.phone && bulkAddress.phone !== bulkPhone
+            ? this.normalizePhone(bulkAddress.phone as string)
+            : null);
+        if (bulkSecondary) entry.alternative_phone = bulkSecondary;
+        const bulkDescription = order.items
+          ?.map((item: any) => item.product?.name || 'Product')
+          .join(', ');
+        if (bulkDescription) {
+          entry.item_description = sanitizeCourierText(
+            bulkDescription,
+            COURIER_FIELD_LIMITS.note,
+          );
+        }
+        const bulkLot = Array.isArray(order.items)
+          ? order.items.reduce(
+              (sum: number, item: any) => sum + (Number(item?.quantity) || 0),
+              0,
+            )
+          : 0;
+        if (bulkLot > 0) entry.total_lot = bulkLot;
+        bodyData.push(entry);
       } catch (e: unknown) {
         // Fix 5: resolveCourierName throws the shaped field error already.
         if (e instanceof CourierDispatchError) {
@@ -2635,7 +2711,12 @@ export class CourierManagerService {
     for (let attempt = 1; attempt <= bulkMaxRetries; attempt++) {
       let res: Response;
       try {
-        res = await this.fetchWithTimeout(`${base}/create_order/bulk-order`, {
+        // Owner Q13 (2026-10-23): /extended — same `data` array, but
+        // per-entry failures come back as readable sentences
+        // (status: "error") instead of codes, and recipient_email /
+        // alternative_phone / item_description / total_lot are read per
+        // order. describeSteadfastBulkEntry already parses both shapes.
+        res = await this.fetchWithTimeout(`${base}/create_order/bulk-order/extended`, {
           method: 'POST',
           headers: bulkHeaders,
           body: bulkBody,

@@ -9,6 +9,7 @@ import {
   ValidateNested,
   ValidateIf,
   MinLength,
+  Min,
   IsObject,
   IsIn,
 } from 'class-validator';
@@ -65,6 +66,9 @@ export class CreateProductDto {
   availabilityMode?: string;
   @IsOptional() @IsNumber() standardCost?: number;
   @IsOptional() @IsInt() lowStockQty?: number;
+  // Optional parcel weight in grams (owner Q12): wins over courier
+  // fallbacks at dispatch when set.
+  @IsOptional() @IsInt() @Min(1) weightGram?: number;
   @IsOptional() @IsString() categoryId?: string;
   @IsOptional() @IsString() brandId?: string;
   @IsOptional() @IsArray() @IsString({ each: true }) categoryIds?: string[];
@@ -114,6 +118,13 @@ export class UpdateProductDto {
   availabilityMode?: string;
   @IsOptional() @IsNumber() standardCost?: number;
   @IsOptional() @IsInt() lowStockQty?: number;
+  // Optional parcel weight in grams (owner Q12); null clears it back to
+  // the courier fallbacks.
+  @IsOptional()
+  @ValidateIf((o) => o.weightGram !== null)
+  @IsInt()
+  @Min(1)
+  weightGram?: number | null;
   @IsOptional()
   @ValidateIf((o) => o.categoryId !== null)
   @IsString()

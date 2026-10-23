@@ -123,6 +123,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [sku, setSku] = useState('')
   const [stock, setStock] = useState('0')
   const [lowStockQty, setLowStockQty] = useState('')
+  const [weightGram, setWeightGram] = useState('')
   const [categoryIds, setCategoryIds] = useState<string[]>([])
   const [brandId, setBrandId] = useState<string>('')
   const [isActive, setIsActive] = useState(true)
@@ -225,7 +226,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const snapshotOf = () => ({
     mode, name, slug, type, desc, shortDesc, videoUrl, detailRows,
     dsTagline, dsBenefits, dsSpecs, dsTip, basePrice, salePrice, sku,
-    stock, lowStockQty, categoryIds, brandId, isActive, isFeatured,
+    stock, lowStockQty, weightGram, categoryIds, brandId, isActive, isFeatured,
     availabilityMode, standardCost, images, tags, sizeChartId,
     seoTitle, seoDesc, seoKeywords, selectedAttrs, selectedValues, localVariants,
   })
@@ -268,6 +269,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     sku: src.sku || '',
     stock: src.type === 'variable' && type !== 'variable' ? '0' : String(src.managedStockQuantity ?? 0),
     lowStockQty: src.lowStockQty != null ? String(src.lowStockQty) : '',
+    weightGram: src.weightGram != null ? String(src.weightGram) : '',
     categoryIds: src.productCategories?.map((pc: any) => pc.categoryId) || (src.categoryId ? [src.categoryId] : []),
     brandId: src.brandId || '',
     isActive: src.isActive ?? true,
@@ -337,7 +339,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
     }, 1500)
     return () => clearTimeout(timer)
   }, [open, isEdit, serverDraftId, mode, name, slug, type, desc, shortDesc, videoUrl, detailRows, dsTagline, dsBenefits, dsSpecs, dsTip,
-    basePrice, salePrice, sku, stock, lowStockQty, categoryIds, brandId,
+    basePrice, salePrice, sku, stock, lowStockQty, weightGram, categoryIds, brandId,
     isFeatured, availabilityMode, standardCost, images, tags, sizeChartId,
     seoTitle, seoDesc, seoKeywords, localVariants])
 
@@ -463,6 +465,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       setSku(source.sku || '')
       setStock(String(source.managedStockQuantity ?? 0))
       setLowStockQty(source.lowStockQty != null ? String(source.lowStockQty) : '')
+      setWeightGram(source.weightGram != null ? String(source.weightGram) : '')
       setCategoryIds((source as any).productCategories?.map((pc: any) => pc.categoryId) || (source.categoryId ? [source.categoryId] : []))
       setBrandId(source.brandId || '')
       setIsActive(source.isActive ?? true)
@@ -505,7 +508,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
   useEffect(() => {
     if (open && openStateRef.current === null) openStateRef.current = snapshotOf()
   }, [open, mode, name, slug, type, desc, shortDesc, videoUrl, detailRows, dsTagline, dsBenefits, dsSpecs, dsTip, basePrice, salePrice, sku,
-    stock, lowStockQty, categoryIds, brandId, isActive, isFeatured,
+    stock, lowStockQty, weightGram, categoryIds, brandId, isActive, isFeatured,
     availabilityMode, standardCost, images, tags, sizeChartId,
     seoTitle, seoDesc, seoKeywords, selectedAttrs, selectedValues, localVariants])
 
@@ -784,6 +787,9 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       brandId: brandId || null,
       categoryIds: categoryIds.length > 0 ? categoryIds : undefined,
       lowStockQty: lowStockQty ? parseInt(lowStockQty) : undefined,
+      // Owner Q12: optional parcel weight; empty clears to courier fallback
+      // on edit (null), and simply omits on create.
+      weightGram: weightGram ? parseInt(weightGram) : (isEdit ? null : undefined),
       sizeChartId: sizeChartId || undefined,
       images, tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : undefined, isActive, isFeatured,
       seoMeta: seoTitle || seoDesc ? { title: seoTitle, description: seoDesc, keywords: seoKeywords } : undefined,
@@ -1269,6 +1275,11 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                     </div>
                     {skuAvailable === false && <p className='text-xs text-destructive'>SKU already in use</p>}
                     {skuAvailable === true && <p className='text-xs text-green-600'>Available</p>}
+                  </div>
+                  <div className='space-y-1.5'>
+                    <Label>Weight (grams, optional)</Label>
+                    <Input type='number' min='1' value={weightGram} onChange={e => setWeightGram(e.target.value)} placeholder='500' />
+                    <p className='text-xs text-muted-foreground'>Parcel weight for courier booking. Leave empty to use the courier default (500 g).</p>
                   </div>
                   <div className='space-y-1.5'>
                     <Label>Tags</Label>

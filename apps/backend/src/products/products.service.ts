@@ -799,6 +799,7 @@ export class ProductsService {
       managedStockQuantity:
         dto.type === 'variable' ? 0 : dto.managedStockQuantity || 0,
       lowStockQty: dto.lowStockQty,
+      weightGram: dto.weightGram ?? null,
       categoryId: categoryId || undefined,
       sizeChartId: dto.sizeChartId,
       tags: dto.tags as any,

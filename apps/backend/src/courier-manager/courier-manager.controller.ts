@@ -429,7 +429,12 @@ export class CourierManagerController {
       where: { id: { in: dto.orderIds } },
       include: {
         customer: { select: { id: true, name: true, phone: true } },
-        items: { include: { product: { select: { name: true } } } },
+        items: {
+          include: {
+            // weightGram rides along for the Q12 dispatch weight rule.
+            product: { select: { name: true, weightGram: true } },
+          },
+        },
         payments: true,
       },
     });

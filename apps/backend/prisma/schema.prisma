@@ -600,6 +600,10 @@ model Product {
   sku                  String?
   managedStockQuantity Int              @default(0) @map("stock")
   lowStockQty          Int?
+  // Optional per-product parcel weight in grams (owner Q12, 2026-10-23).
+  // When set it wins at courier dispatch; when null the couriers fall back
+  // to their defaults (Pathao 0.5 kg, RedX/Carrybee 500 g).
+  weightGram           Int?
   availabilityMode     AvailabilityMode @default(MANAGED_STOCK)
   standardCost         Decimal?         @db.Decimal(10, 2)
   categoryId           String?
