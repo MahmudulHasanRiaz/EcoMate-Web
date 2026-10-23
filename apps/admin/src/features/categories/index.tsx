@@ -24,7 +24,7 @@ export function Categories() {
   const queryClient = useQueryClient()
   const { data: categories, isLoading } = useQuery({
     queryKey: ['categories'],
-    queryFn: () => categoriesApi.list().then(r => Array.isArray(r.data) ? r.data : r.data?.data || []),
+    queryFn: () => categoriesApi.list().then(r => r.data),
   })
 
   const { data: sizeCharts } = useQuery({ queryKey: ['size-charts'], queryFn: () => apiClient.get('/size-charts').then(r => r.data) })

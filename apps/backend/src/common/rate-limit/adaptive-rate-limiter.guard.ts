@@ -12,6 +12,7 @@ import { TrustTierService } from './trust-tier.service';
 import { RateLimitCounterService } from './rate-limit-counter.service';
 import { RiskContextService } from './risk-context.service';
 import { RiskScoreService } from './risk-score.service';
+import { isInternalRequest } from './internal-request';
 import { SecurityEventEmitterService } from '../../security-dashboard/services/security-event-emitter.service';
 import { SecurityEventType } from '../../security-dashboard/registries/event-type.registry';
 import { SecurityEventSource } from '../../security-dashboard/registries/source.registry';
@@ -54,6 +55,12 @@ export class AdaptiveRateLimiterGuard {
     const http = context.switchToHttp();
     const request = http.getRequest<FastifyRequest>();
     const reply = http.getResponse<FastifyReply>();
+
+    // F1+F2: verified internal service-to-service calls (shared secret +
+    // private TCP peer) are exempt from rate limiting. See
+    // internal-request.ts — both factors are required, and the peer is the
+    // socket address, never the spoofable x-forwarded-for header.
+    if (isInternalRequest(request)) return true;
 
     const handler = context.getHandler();
     const controllerClass = context.getClass();

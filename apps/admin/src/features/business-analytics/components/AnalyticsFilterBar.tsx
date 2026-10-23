@@ -109,13 +109,8 @@ export function AnalyticsFilterBar({ value, onChange }: Props) {
 
   const { data: categories, isPending: categoriesPending } = useQuery({
     queryKey: ['filter-bar-categories'],
-    // GET /categories returns a bare array (not a paginated envelope) —
-    // normalize like the categories index page so the Category dimension
-    // filter populates instead of failing the query with undefined data.
-    queryFn: () =>
-      categoriesApi
-        .list({ perPage: 100 })
-        .then((r) => (Array.isArray(r.data) ? r.data : (r.data?.data ?? []))),
+    // GET /categories returns a bare array (not a paginated envelope).
+    queryFn: () => categoriesApi.list({ perPage: 100 }).then((r) => r.data),
     staleTime: 5 * 60_000,
   })
 

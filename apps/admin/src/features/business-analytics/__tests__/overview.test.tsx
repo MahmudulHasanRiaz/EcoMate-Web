@@ -26,7 +26,7 @@ import BusinessOverview from '../index'
 import type { AnalyticsFilters, BridgeData, FulfillmentCompact, KpiValue, OverviewData } from '../types'
 
 vi.mock('@/features/categories/api', () => ({
-  categoriesApi: { list: vi.fn().mockResolvedValue({ data: { data: [] } }) },
+  categoriesApi: { list: vi.fn().mockResolvedValue({ data: [] }) },
 }))
 
 vi.mock('../hooks', () => ({

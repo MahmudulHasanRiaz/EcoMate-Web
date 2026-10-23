@@ -40,7 +40,7 @@ export function ComboForm({ open, onOpenChange, currentRow, mode }: Props) {
   const isEdit = mode === 'edit'
   const [tab, setTab] = useState('general')
 
-  const { data: cats } = useQuery({ queryKey: ['categories'], queryFn: () => categoriesApi.list().then(r => Array.isArray(r.data) ? r.data : []) })
+  const { data: cats } = useQuery({ queryKey: ['categories'], queryFn: () => categoriesApi.list().then(r => r.data) })
   const [productSearch, setProductSearch] = useState('')
   const { data: searchResults } = useQuery({
     queryKey: ['products-search', productSearch],
