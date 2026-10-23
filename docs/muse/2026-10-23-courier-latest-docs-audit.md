@@ -579,6 +579,16 @@
 
 ---
 
+## ৮.১ ভেরিফিকেশন অ্যাডেন্ডাম (২০২৬-১০-২৩, acceptance pass)
+
+এই রিপোর্ট একই run-এর Part A–E-এর সাথে লেখা; তাই "বর্তমান আচরণ" দাবিগুলো HEAD-এর বিপরীতে আরেকবার যাচাই করা হয়েছে:
+
+- **OD-1 এখন অপ্রযোজ্য — ইতিমধ্যে ঠিক হয়ে গেছে (Part A, commit `c554cb20`)।** `courier-status-mapper.ts`-এ সব courier return label এখন `RETURN_PENDING`-এ clamp (`order.returned-to-merchant`, `order.returned-at-sorting`, `order.returned-in-transit`, Pathao/Carrybee return family, Steadfast `cancelled_return_received` ইত্যাদি); `RETURNED` শুধু staff-confirmed receive-এ (`returns.service.ts` `markReceived`)। code-এ `courier-manager/*`-এ আর কোনো `'RETURNED'` literal নেই। ⇒ **OD-1 বাদ দিন** (শিট-এর TARGET `RETURN_PENDING` এখন কোডে বাস্তবায়িত)।
+- **OD-2 / OD-3 / OD-4 / OD-6 যাচাই করে এখনো বৈধ পাওয়া গেছে:** RedX `deliveryAreaId || areaId || 1` ও `Number(...) || 1` (`courier-manager.service.ts:1597`,`:1641`), RedX `parcel_weight: '500'` (`:1647`), Pathao `item_weight: 0.5` + `COURIER_FIELD_LIMITS.address` (`:951-958`), Pathao echo header-এ `pathaoIntegrationSecret` override (`courier-webhook.controller.ts:548-555`) — সবই অপরিবর্তিত।
+- OD-5, OD-7–OD-19 এই pass-এ স্পর্শ করা হয়নি (report-only) — মালিকের সিদ্ধান্তের মতোই আছে।
+
+---
+
 ## ৯. BLOCKED
 
 | # | আইটেম | কারণ | চেষ্টা করা URL |
