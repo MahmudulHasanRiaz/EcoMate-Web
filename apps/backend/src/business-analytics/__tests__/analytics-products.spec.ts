@@ -290,6 +290,50 @@ describe('attributed and allocated lines', () => {
   });
 });
 
+// ─── Add-on parity with the P&L ladder (Q15 / D9) ────────────────────────────
+// The ladder counts the frozen add-on sell amount in gross and the frozen
+// add-on cost in COGS; the product view must agree or per-product profit is
+// overstated for every customized line.
+
+describe('add-on parity with the P&L ladder (Q15)', () => {
+  it('counts add-on sell in gross and add-on cost in COGS for a delivered line', () => {
+    const r = run([
+      order('o1', [
+        line('P', 300, 1, { costSnapshot: 100, addonAmount: 50, addonCostAmount: 20 }),
+      ]),
+    ]);
+    const acc = byKey(r, 'P', null);
+    expect(acc.gross).toBe(350);
+    expect(acc.cogs).toBe(120);
+    expect(acc.uncostedLines).toBe(0);
+  });
+
+  it('still counts the add-on cost when the base snapshot is missing (line stays uncosted)', () => {
+    const r = run([
+      order('o1', [
+        line('P', 300, 1, { costSnapshot: null, costType: null, addonAmount: 50, addonCostAmount: 20 }),
+      ]),
+    ]);
+    const acc = byKey(r, 'P', null);
+    expect(acc.cogs).toBe(20);
+    expect(acc.uncostedUnits).toBe(1);
+    expect(acc.uncostedLines).toBe(1);
+  });
+
+  it('reverses the add-on cost with the line on a return event', () => {
+    const returned = order('o1', [
+      line('P', 300, 1, { costSnapshot: 100, addonAmount: 50, addonCostAmount: 20 }),
+    ], {
+      timeline: [
+        { status: 'Delivered', timestamp: '2026-09-10T10:00:00+06:00' },
+        { status: 'Returned', timestamp: '2026-09-12T10:00:00+06:00' },
+      ],
+    });
+    const acc = byKey(run([returned]), 'P', null);
+    expect(acc.returnedCogs).toBe(120);
+  });
+});
+
 // ─── R1 / R2 registry behaviour ──────────────────────────────────────────────
 
 function reconInput(extra: Partial<ReconciliationInput['products']> = {}): ReconciliationInput {
