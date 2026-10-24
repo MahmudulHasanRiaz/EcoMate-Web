@@ -181,6 +181,36 @@ describe('OrdersService — return stock authority (hardening 2)', () => {
     expect(cancelReturnStock.restoreForOrder).not.toHaveBeenCalled();
   });
 
+  it('Q17: manual mark on a customized order refuses — no auto-created return, no restore', async () => {
+    // The dedicated Create-return flow refuses customized lines; the manual
+    // status path must too (staging ORD-261024-0005 slipped through here).
+    prisma.orderItem = {
+      findMany: jest.fn().mockResolvedValue([
+        {
+          productId: 'prod-1',
+          variantId: null,
+          customization: {
+            groups: [
+              {
+                key: 'gift-wrap',
+                label: 'Gift wrap',
+                options: [{ key: 'premium', label: 'Premium wrap' }],
+              },
+            ],
+          },
+          product: { name: 'Gadget' },
+        },
+      ]),
+    };
+
+    await expect(
+      service.updateStatus('order-1', { statusId: 'status-returned' }, 'staff-123'),
+    ).rejects.toThrow('"Gadget" is a customized product and cannot be returned or exchanged.');
+    expect(prisma.return.create).not.toHaveBeenCalled();
+    expect(cancelReturnStock.restoreForReturnItems).not.toHaveBeenCalled();
+    expect(cancelReturnStock.restoreForOrder).not.toHaveBeenCalled();
+  });
+
   it('full receive → Returned moves with ZERO stock writes on the status change', async () => {
     prisma.return.findMany.mockResolvedValue([
       {

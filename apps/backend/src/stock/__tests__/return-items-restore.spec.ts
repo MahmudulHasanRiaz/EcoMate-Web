@@ -440,4 +440,73 @@ describe('CancelReturnStockService.restoreForReturnItems (Task 6)', () => {
       );
     });
   });
+
+  describe('R-1 — physical restore follows the reservation, not Product.warehouseId (2026-10-24)', () => {
+    // Staging RTN-261024-0002: an INVENTORY_CONTROLLED product with physical
+    // stock + a CONSUMED reservation at Dhaka Eco but NO default warehouse
+    // on the product row. Receive claimed "1 restored" yet nothing moved —
+    // Section B was gated on product.warehouseId. The reservation's
+    // allocations are the authority for where units come back to.
+    it('IC product with warehouseId=null still restores on-hand + writes the RESTORATION ledger', async () => {
+      const noWarehouseProduct = {
+        id: 'pd',
+        availabilityMode: 'INVENTORY_CONTROLLED',
+        manageStock: false,
+        syncManagedStock: false,
+        warehouseId: null,
+        name: 'D',
+      };
+      tx.order.findUnique.mockResolvedValue({
+        id: 'order-1',
+        items: [
+          {
+            id: 'item-d',
+            orderId: 'order-1',
+            productId: 'pd',
+            variantId: null,
+            comboId: null,
+            quantity: 2,
+            managedStockDeducted: false,
+            managedStockReserved: false,
+            product: noWarehouseProduct,
+          },
+        ],
+      });
+      tx.physicalReservation.findUnique.mockResolvedValue({
+        id: 'res-d',
+        status: 'CONSUMED',
+        productId: 'pd',
+        variantId: null,
+        warehouseId: 'wh-9',
+        allocations: [{ id: 'alloc-d', physicalInventoryId: 'pi-9', quantity: 2 }],
+      });
+
+      const res = await service.restoreForReturnItems({
+        orderId: 'order-1',
+        items: [{ productId: 'pd', quantity: 2 }],
+        returnId: 'ret-r1',
+        tx,
+      });
+
+      expect(res.restored).toEqual([
+        { productId: 'pd', variantId: null, quantity: 2 },
+      ]);
+      expect(tx.physicalInventory.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'pi-9' },
+          data: { quantity: { increment: 2 } },
+        }),
+      );
+      expect(tx.physicalInventoryLedger.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            type: 'RESTORATION',
+            warehouseId: 'wh-9',
+            quantity: 2,
+          }),
+        }),
+      );
+      expect(tx.physicalReservation.update).toHaveBeenCalled();
+    });
+  });
 });

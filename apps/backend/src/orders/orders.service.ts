@@ -6094,6 +6094,31 @@ export class OrdersService {
       // items, then receive it through the guarded path below.
       const snapshot = await orderItemsSnapshotForClient(tx, orderId);
       if (snapshot.length > 0) {
+        // Q17 (owner 2026-10-23): customized lines are non-returnable. The
+        // dedicated Create-return flow enforces this, but this legacy
+        // auto-create branch skipped the check — marking a customized
+        // order "Returned" silently created + received a FULL return and
+        // applied the received-returns deduction (staging ORD-261024-0005,
+        // 2026-10-24). Guard ONLY this branch: returns that already exist
+        // came through the guarded staff flow or the exempt courier flow
+        // (an external fulfillment fact), and an arrived linked return
+        // must still let the status proceed.
+        const originalItems = (db as any).orderItem?.findMany
+          ? await (db as any).orderItem.findMany({
+              where: { orderId },
+              select: {
+                productId: true,
+                variantId: true,
+                customization: true,
+                product: { select: { name: true } },
+              },
+            })
+          : [];
+        assertNoCustomizedLines(
+          (originalItems ?? []) as any[],
+          snapshot as any[],
+          hasCustomization,
+        );
         const created = await db.return.create({
           data: {
             orderId,
