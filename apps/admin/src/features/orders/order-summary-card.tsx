@@ -39,6 +39,11 @@ interface OrderSummaryCardProps {
   // Free-delivery threshold (0/unset = no threshold): lets a ৳0 shipping
   // line say WHY — earned free delivery vs simply no charge.
   freeDeliveryMin?: number | string
+  // Discount V2: automatic campaign discount (separate from the
+  // coupon/manual discount above) + its per-campaign breakdown, rendered
+  // as labelled lines so Subtotal + Shipping − Discount − Auto = Total.
+  autoDiscount?: number
+  autoDiscountByDiscount?: { discountTitle: string; amount: number }[]
 }
 
 export function OrderSummaryCard({
@@ -60,6 +65,8 @@ export function OrderSummaryCard({
   paidAmount = 0,
   dueAmount,
   freeDeliveryMin = 0,
+  autoDiscount = 0,
+  autoDiscountByDiscount = [],
 }: OrderSummaryCardProps) {
   // Shipping inline edit state
   const [editShipping, setEditShipping] = useState(false)
@@ -327,6 +334,31 @@ export function OrderSummaryCard({
               </div>
             )}
           </div>
+
+          {/* Automatic Discount Rows (Discount V2) — labelled per campaign
+              so the totals reconcile: the stored total already subtracts
+              this, but no row showed it before, leaving an unexplained gap. */}
+          {nn(autoDiscount) > 0 && (
+            <div className='py-1.5 space-y-1'>
+              {autoDiscountByDiscount.length > 0 ? autoDiscountByDiscount.map((b) => (
+                <div key={b.discountTitle} className='flex items-center justify-between'>
+                  <div className='flex items-center gap-1.5 text-muted-foreground'>
+                    <Tag className='h-3.5 w-3.5' />
+                    <span>Automatic discount ({b.discountTitle})</span>
+                  </div>
+                  <span className='font-medium text-green-600'>-৳{fmt(b.amount)}</span>
+                </div>
+              )) : (
+                <div className='flex items-center justify-between'>
+                  <div className='flex items-center gap-1.5 text-muted-foreground'>
+                    <Tag className='h-3.5 w-3.5' />
+                    <span>Automatic discounts</span>
+                  </div>
+                  <span className='font-medium text-green-600'>-৳{fmt(autoDiscount)}</span>
+                </div>
+              )}
+            </div>
+          )}
 
           <Separator className='my-1' />
 

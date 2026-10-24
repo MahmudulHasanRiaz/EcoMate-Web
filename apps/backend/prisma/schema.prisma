@@ -1826,6 +1826,37 @@ model Discount {
   startsAt       DateTime?
   endsAt         DateTime?
   isActive       Boolean   @default(true)
+  /// Discount V2 (2026-10-24): scoped conditions + campaign controls.
+  /// - minQuantity: total UNITS of in-scope (eligible) lines required.
+  ///   Both thresholds read the ELIGIBLE subset only — never the whole
+  ///   cart — so "Men-এ ৳500 কিনলে ছাড়" means ৳500 of Men, not ৳500 of
+  ///   anything. SITEWIDE rules are unaffected (eligible = whole cart).
+  /// - excludeSaleItems: lines whose price came from a sale price (and is
+  ///   below the regular price) never match, and never count toward the
+  ///   thresholds above. The discount itself always computes on the
+  ///   EFFECTIVE price (sale if present, else regular) — there is no
+  ///   "compute on regular price" mode: on a ৳100/৳80 item, 10% of the
+  ///   regular price would charge ৳90, MORE than the sale price.
+  /// - maxDiscountAmount: caps the rule's TOTAL discount per order (all
+  ///   its lines combined, scaled proportionally when exceeded).
+  /// - combineWithCoupon: false = the rule does not apply on orders that
+  ///   carry a coupon code (coupon still applies on the post-auto base).
+  /// - maxUses / maxUsesPerCustomer: counted from DiscountApplication
+  ///   rows (per-customer keyed on customerId, else guestPhone).
+  /// - firstOrderOnly: no prior non-trashed order for the same key.
+  /// - priority: higher wins when several rules match a line; ties go to
+  ///   the larger line discount, then the oldest rule (input order).
+  /// - variantIds: narrows PRODUCT scope only (empty = all variants of
+  ///   the listed products). Ignored for SITEWIDE/CATEGORY.
+  minQuantity      Int?
+  excludeSaleItems Boolean  @default(false)
+  maxDiscountAmount Decimal? @db.Decimal(10, 2)
+  combineWithCoupon Boolean @default(true)
+  maxUses          Int?
+  maxUsesPerCustomer Int?
+  firstOrderOnly   Boolean  @default(false)
+  priority         Int      @default(0)
+  variantIds       String[] @default([])
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 

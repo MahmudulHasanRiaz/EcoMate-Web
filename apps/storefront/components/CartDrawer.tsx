@@ -5,6 +5,7 @@ import { X, ArrowRight, Gift, ChevronLeft, ChevronRight, ShoppingBag } from 'luc
 import Image from 'next/image';
 import { useCart, getItemKey, VariantAttribute } from "@/context/CartContext";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
+import { useAutoDiscounts } from "@/hooks/useAutoDiscounts";
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import { getProducts } from "@/lib/api/products";
 import { useRouter } from "next/navigation";
@@ -95,6 +96,12 @@ const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 
 
 export default function CartDrawer() {
   const { items, updateQuantity, removeFromCart, cartTotal, isCartOpen, setIsCartOpen } = useCart();
+  // Discount V2: show automatic campaign discounts in the drawer (the
+  // drawer previously showed plain totals even with an active sitewide
+  // discount). Evaluated only while open; the empty cart while closed
+  // resets the result so no stale discount lingers. Checkout and order
+  // creation recompute server-side, so this display can never overcharge.
+  const { autoDiscount, byDiscount } = useAutoDiscounts(isCartOpen ? items : []);
   const { config } = useStorefrontConfig();
   const s = config.currency.symbol;
   const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -313,10 +320,29 @@ export default function CartDrawer() {
         {/* Footer */}
         {items.length > 0 && (
           <div className="p-4 bg-[#f8f9fa] border-t border-gray-100">
-            <div className="flex justify-between items-center mb-4 px-1">
-              <span className="text-[16px] text-gray-800 font-medium tracking-wide">Total:</span>
-              <span className="text-[18px] font-medium text-gray-900 tracking-wide">{s}{fmt(cartTotal)}</span>
-            </div>
+            {autoDiscount > 0 ? (
+              <div className="mb-4 px-1 space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-[14px] text-gray-600">Subtotal:</span>
+                  <span className="text-[14px] text-gray-800">{s}{fmt(cartTotal)}</span>
+                </div>
+                {byDiscount.map((d) => (
+                  <div key={d.discountId} className="flex justify-between items-center">
+                    <span className="text-[13px] text-green-700">Automatic discount ({d.discountTitle})</span>
+                    <span className="text-[13px] font-medium text-green-700">−{s}{fmt(d.amount)}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between items-center pt-1 border-t border-gray-200">
+                  <span className="text-[16px] text-gray-800 font-medium tracking-wide">Total:</span>
+                  <span className="text-[18px] font-medium text-gray-900 tracking-wide">{s}{fmt(Math.max(0, cartTotal - autoDiscount))}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="flex justify-between items-center mb-4 px-1">
+                <span className="text-[16px] text-gray-800 font-medium tracking-wide">Total:</span>
+                <span className="text-[18px] font-medium text-gray-900 tracking-wide">{s}{fmt(cartTotal)}</span>
+              </div>
+            )}
             
             <button 
               onClick={() => {

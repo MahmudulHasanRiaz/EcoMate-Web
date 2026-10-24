@@ -1294,6 +1294,8 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                 isSaving={updateMut.isPending}
                 paidAmount={getOrderPaidAmount(order)}
                 dueAmount={getOrderDueAmount(order)}
+                autoDiscount={nn(order.autoDiscount ?? 0)}
+                autoDiscountByDiscount={(order.autoDiscountBreakdown as any)?.byDiscount ?? []}
               />
 
               {/* Payment Details Card */}

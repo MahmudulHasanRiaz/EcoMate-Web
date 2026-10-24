@@ -2103,6 +2103,11 @@ export class OrdersService {
       let autoDiscountBreakdown: any = null;
       let autoDiscountByDiscount: { discountId: string; amount: number }[] =
         [];
+      // Discount V2: variantId flows through so variant-narrowed rules
+      // match, and sale exclusion is computed server-side inside
+      // evaluateForCart from the product/variant prices (never trusted
+      // from the caller). customerKey marks the order path, where
+      // per-customer caps and first-order checks run under row locks.
       const discountEvalItems = dto.items
         .filter((i) => !i.comboId)
         .map((i) => {
@@ -2111,6 +2116,7 @@ export class OrdersService {
             : (i.productId ?? '');
           return {
             productId,
+            variantId: i.variantId ?? undefined,
             quantity: i.quantity,
             unitPrice: i.price,
             addonAmount: resolvedCustomizations.get(i)?.addonAmount ?? 0,
@@ -2119,8 +2125,16 @@ export class OrdersService {
         .filter((i) => i.productId);
       if (discountEvalItems.length > 0 && this.discountsService) {
         const autoEval = await this.discountsService.evaluateForCart(
-          { items: discountEvalItems },
+          { items: discountEvalItems, couponCode: dto.couponCode },
           tx,
+          new Date(),
+          {
+            couponCode: dto.couponCode,
+            customerKey: {
+              userId: dto.customerId,
+              phone: dto.guestPhone,
+            },
+          },
         );
         autoDiscountMonetary = autoEval.autoDiscount;
         if (autoDiscountMonetary > 0) {
