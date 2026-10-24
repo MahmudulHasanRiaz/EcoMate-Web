@@ -17,7 +17,10 @@
 import { ConflictException } from '@nestjs/common';
 import { AccountingService } from '../accounting.service';
 import { PaymentJournalService } from '../payment-journal.service';
-import { isCodOrder } from '../payment-journal.entry';
+import {
+  isCodOrder,
+  isCourierSettledCodReceipt,
+} from '../payment-journal.entry';
 import {
   SALARY_EXPENSE_ACCOUNT_CODE,
   SUPPLIER_PAYABLE_ACCOUNT_CODE,
@@ -546,7 +549,7 @@ describe('PaymentJournalService — Phase 2 auto-journal', () => {
     });
   });
 
-  describe('(b) THE COD GUARD — a COD receipt posts nothing; the settlement posts once', () => {
+  describe('(b) THE COD GUARD — courier-collected COD cash posts nothing here; the settlement posts once', () => {
     const codOrder = {
       id: 'ord-cod',
       displayId: 'ORD-260101-0001',
@@ -562,6 +565,59 @@ describe('PaymentJournalService — Phase 2 auto-journal', () => {
       expect(isCodOrder({ paymentOptionType: null })).toBe(false);
       expect(isCodOrder({})).toBe(false);
       expect(isCodOrder(null)).toBe(false);
+    });
+
+    it('D15: the journal skip needs BOTH halves — COD order AND cash gateway', () => {
+      // Courier-collected doorstep cash on a COD order → settlement's money.
+      expect(
+        isCourierSettledCodReceipt({ gatewayCode: 'cash' }, codOrder),
+      ).toBe(true);
+      // A direct gateway advance on the SAME COD order is NOT the courier's
+      // money — it must journal (the 2026-10-24 staging proof).
+      expect(
+        isCourierSettledCodReceipt({ gatewayCode: 'bkash' }, codOrder),
+      ).toBe(false);
+      expect(
+        isCourierSettledCodReceipt({ gatewayCode: 'nagad' }, codOrder),
+      ).toBe(false);
+      // POS counter cash: cash gateway but no COD order → posts as today.
+      expect(
+        isCourierSettledCodReceipt(
+          { gatewayCode: 'cash' },
+          { paymentOptionType: null },
+        ),
+      ).toBe(false);
+      expect(isCourierSettledCodReceipt(null, codOrder)).toBe(false);
+      expect(isCourierSettledCodReceipt({ gatewayCode: 'cash' }, null)).toBe(
+        false,
+      );
+    });
+
+    it('D15: a bKash advance on a COD order POSTS its receipt (Dr mapped asset / Cr clearing)', async () => {
+      const { db, journal } = makeHarness();
+      db.orders.push(codOrder);
+      db.payments.push({
+        id: 'pay-cod-advance',
+        orderId: 'ord-cod',
+        gatewayCode: 'bkash',
+        amount: 50,
+        accountId: 'acc-bank',
+        status: 'PAID',
+        recordedBy: 'staff:user-1',
+        recordedAt: new Date('2026-10-24T04:15:00.000Z'),
+        createdAt: new Date('2026-10-24T04:15:00.000Z'),
+        journalEntryId: null,
+        reversalJournalEntryId: null,
+      });
+
+      const outcome = await journal.tryPostOrderPayment('pay-cod-advance');
+      expect(outcome).toEqual({ status: 'posted', journalEntryId: 'je-1' });
+      expect(db.entries).toHaveLength(1);
+      expect(lineSpec(db, 'je-1')).toEqual([
+        { code: 'bank-main', debit: 50, credit: 0 },
+        { code: 'courier-cod-clearing', debit: 0, credit: 50 },
+      ]);
+      expect(db.payments[0].journalEntryId).toBe('je-1');
     });
 
     it('posts ZERO journals for the COD payment row, and exactly ONE for the settlement', async () => {
