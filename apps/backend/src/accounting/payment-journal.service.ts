@@ -6,10 +6,13 @@
 //     balanced journal entry, through the same `AccountingService.createEntry`
 //     the COD courier settlement uses — same service, same entry shape, same
 //     append-only behaviour.
-//  2. COD receipts post NOTHING here. The courier settlement already posts that
-//     leg at finalization (Dr cash / Dr courier expense / Cr COD clearing);
-//     posting it again would double count the same cash. See `isCodOrder()` in
-//     ./payment-journal.entry.ts — THE guard, called out at each entry point.
+//  2. Courier-collected COD cash posts NOTHING here. The courier settlement
+//     already posts that leg at finalization (Dr cash / Dr courier expense /
+//     Cr COD clearing); posting it again would double count the same cash.
+//     D15 (2026-10-24): the guard is payment-level — a DIRECT gateway receipt
+//     on a COD order (bKash advance etc.) is not the courier's money and DOES
+//     post here. See `isCourierSettledCodReceipt()` in
+//     ./payment-journal.entry.ts — THE guard, called at each entry point.
 //  3. Idempotent. The payment's own identity is the anchor: the unique
 //     `journalEntryId` column on Payment/PayrollPayment/SupplierPayment is the
 //     exactly-once constraint, an already-posted payment is ADOPTED (never
@@ -49,7 +52,7 @@ import {
   JournalLeg,
   LedgerLeg,
   isBalanced,
-  isCodOrder,
+  isCourierSettledCodReceipt,
   mirrorEntry,
   round2,
   twoLegEntry,
@@ -178,9 +181,12 @@ export class PaymentJournalService {
       if (payment.journalEntryId) return adopted(payment.journalEntryId);
       if (payment.status !== PaymentStatus.PAID)
         return skip('payment_not_recorded');
-      // ── COD GUARD (directive crux). The courier settlement posts this cash;
-      // posting it here too would count it twice. ──
-      if (isCodOrder(payment.order)) return skip(COD_SKIP_REASON);
+      // ── COD GUARD (D15: payment-level). Only courier-collected cash is
+      // posted by the settlement; a direct gateway receipt on a COD order
+      // (e.g. a bKash advance) is money the courier never touches, so it
+      // posts here like any other receipt. See isCourierSettledCodReceipt.
+      if (isCourierSettledCodReceipt(payment, payment.order))
+        return skip(COD_SKIP_REASON);
       if (!payment.accountId) return skip('no_mapped_account');
       if (!(await this.isEnabled())) return skip('accounting_disabled');
 
@@ -248,7 +254,11 @@ export class PaymentJournalService {
       if (payment.journalEntryId) return adopted(payment.journalEntryId);
       if (payment.status !== PaymentStatus.PAID)
         return skip('payment_not_recorded');
-      if (isCodOrder(payment.order)) return skip(COD_SKIP_REASON);
+      // Same D15 payment-level COD guard as the receipt: a refund paid out
+      // through a real gateway on a COD order mirrors here; only a cash
+      // refund of courier-collected money is the settlement's business.
+      if (isCourierSettledCodReceipt(payment, payment.order))
+        return skip(COD_SKIP_REASON);
 
       const source = sourcePaymentId
         ? await this.prisma.payment.findUnique({

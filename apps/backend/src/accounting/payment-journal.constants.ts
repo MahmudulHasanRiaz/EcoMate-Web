@@ -22,6 +22,14 @@ export const COD_PAYMENT_OPTION_TYPE = 'CASH_ON_DELIVERY';
 /** Reason recorded when the COD guard suppresses a posting. */
 export const COD_SKIP_REASON = 'cod_receipt_posted_by_settlement';
 
+/**
+ * The gateway code of the doorstep/courier cash channel. Storefront COD
+ * orders stamp it on their cash payment rows (orders.service.ts) and POS
+ * counter sales use it too — which is why it can only ever be HALF of the
+ * journal guard's signal (see `isCourierSettledCodReceipt`).
+ */
+export const CASH_GATEWAY_CODE = 'cash';
+
 /** Reference-number prefixes (entryNo itself stays JE-<yyMMdd>-<seq>). */
 export const ORDER_PAYMENT_REFERENCE_PREFIX = 'PAY';
 export const PAYROLL_PAYMENT_REFERENCE_PREFIX = 'PRL';

@@ -57,7 +57,7 @@ export { STATUS_BADGE, STATUS_LABELS, EMPLOYMENT_TYPE_BADGE, EMPLOYMENT_TYPE_LAB
 
 function formatCurrency(amount: number | null | undefined) {
   if (amount == null) return '—'
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'BDT' }).format(amount)
 }
 
 export function Employees() {
