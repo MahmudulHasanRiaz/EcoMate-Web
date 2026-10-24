@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { apiClient } from '@/lib/api-client'
 import { SearchableSelect } from '@/components/ui/searchable-select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Discounts } from './discounts'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -33,6 +35,7 @@ export function Coupons() {
   const [usageCoupon, setUsageCoupon] = useState<Record<string, unknown> | null>(null)
   const [usagePage, setUsagePage] = useState(1)
   const [form, setForm] = useState({ code: '', type: 'flat', value: '', minOrderValue: '', maxUses: '', maxUsesPerCustomer: '', percentageCap: '', startsAt: '', expiresAt: '' })
+  const [tab, setTab] = useState('coupons')
 
   const { data: coupons, isLoading } = useQuery({ queryKey: ['coupons'], queryFn: () => couponsApi.list().then(r => r.data) })
 
@@ -83,9 +86,15 @@ export function Coupons() {
       <Header fixed><GlobalSearchBar className='me-auto' /><ThemeSwitch /><ProfileDropdown /></Header>
       <Main className='flex flex-1 flex-col gap-6'>
         <div className='flex items-end justify-between'>
-          <div><h2 className='text-2xl font-bold tracking-tight'>Coupons</h2><p className='text-muted-foreground'>Create discount coupons.</p></div>
-          <Button size='sm' onClick={() => { resetForm(); setEditing(null); setOpen(true) }}><Plus className='h-4 w-4 mr-1' /> Add</Button>
+          <div><h2 className='text-2xl font-bold tracking-tight'>Coupons & Discounts</h2><p className='text-muted-foreground'>Coupon codes and automatic campaign discounts.</p></div>
+          {tab === 'coupons' && <Button size='sm' onClick={() => { resetForm(); setEditing(null); setOpen(true) }}><Plus className='h-4 w-4 mr-1' /> Add</Button>}
         </div>
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList>
+            <TabsTrigger value='coupons'>Coupons</TabsTrigger>
+            <TabsTrigger value='discounts'>Automatic Discounts</TabsTrigger>
+          </TabsList>
+          <TabsContent value='coupons'>
         <Card><CardContent className='p-0'>
           <Table>
             <TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Type</TableHead><TableHead>Value</TableHead><TableHead>Min Order</TableHead><TableHead>Usage</TableHead><TableHead>Per Customer</TableHead><TableHead>Active</TableHead><TableHead></TableHead></TableRow></TableHeader>
@@ -110,6 +119,11 @@ export function Coupons() {
             </TableBody>
           </Table>
         </CardContent></Card>
+          </TabsContent>
+          <TabsContent value='discounts'>
+            <Discounts />
+          </TabsContent>
+        </Tabs>
       </Main>
 
       <Dialog open={open} onOpenChange={v => { if (!v) { setOpen(false); setEditing(null) } }}>

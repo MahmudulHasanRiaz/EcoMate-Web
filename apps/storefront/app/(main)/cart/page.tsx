@@ -5,6 +5,7 @@ import { ShoppingBag, Minus, Plus, X, Trash2, ArrowRight, Gift, ChevronRight } f
 import Image from "next/image";
 import Link from "next/link";
 import { useCart, getItemKey, type VariantAttribute } from "@/context/CartContext";
+import { useAutoDiscounts } from "@/hooks/useAutoDiscounts";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 
@@ -18,6 +19,9 @@ function fmtAttr(attrs: VariantAttribute[] | undefined, fallback?: string): stri
 
 export default function CartPage() {
   const { items, updateQuantity, removeFromCart, cartTotal, cartCount, clearCart, clearBuyNow } = useCart();
+  // D19: automatic campaign discounts (display only — the backend
+  // recomputes them at order creation).
+  const { autoDiscount, byDiscount } = useAutoDiscounts(items);
   const { config } = useStorefrontConfig();
   const s = config.currency.symbol;
   const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -197,6 +201,12 @@ export default function CartPage() {
                   <span>Subtotal</span>
                   <span className="font-medium text-gray-800">{s}{fmt(cartTotal)}</span>
                 </div>
+                {autoDiscount > 0 && byDiscount.map((d) => (
+                  <div key={d.discountId} className="flex items-center justify-between text-green-600">
+                    <span>Automatic discount ({d.discountTitle})</span>
+                    <span className="font-medium text-green-700">-{s}{fmt(d.amount)}</span>
+                  </div>
+                ))}
                 <div className="flex items-center justify-between text-gray-600">
                   <span>Delivery</span>
                   <span className="font-medium text-green-600">
@@ -207,7 +217,7 @@ export default function CartPage() {
 
               <div className="border-t pt-3 flex items-center justify-between">
                 <span className="text-[16px] font-bold text-gray-900">Total</span>
-                <span className="text-[20px] font-bold text-brand-blue">{s}{fmt(cartTotal)}</span>
+                <span className="text-[20px] font-bold text-brand-blue">{s}{fmt(cartTotal - autoDiscount)}</span>
               </div>
 
               <Link

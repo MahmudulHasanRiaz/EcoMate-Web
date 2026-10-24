@@ -47,6 +47,7 @@ import {
 } from '../customization/customization.types';
 import { OrderStockDeductService } from '../stock/order-stock-deduct.service';
 import { CouponsService } from '../coupons/coupons.service';
+import { DiscountsService } from '../discounts/discounts.service';
 import {
   CreateOrderDto,
   UpdateOrderStatusDto,
@@ -348,6 +349,12 @@ export class OrdersService {
     // same reason: unwired (unit tests) simply posts nothing.
     @Optional()
     private readonly paymentJournal?: PaymentJournalService,
+    // D19 — automatic campaign discounts. Optional for the same reason
+    // (unit tests build OrdersService without it) — production always wires
+    // it: OrdersModule imports DiscountsModule, so the hook below never
+    // skips there. Unwired callers simply apply no automatic discount.
+    @Optional()
+    private readonly discountsService?: DiscountsService,
   ) {}
 
   /**
@@ -2086,6 +2093,52 @@ export class OrdersService {
       let effectiveDiscountMonetary = 0;
       let couponRow: any = null;
 
+      // ── D19: automatic campaign discounts (no code) ──
+      // Evaluated FIRST, from the same engine the storefront evaluate
+      // endpoint uses, so display and charge agree. Combo lines are
+      // excluded (bundle-level pricing has no product/category scope).
+      // POS never reaches this service path (own PosOrdersService), so
+      // campaigns apply to website + admin-manual orders only.
+      let autoDiscountMonetary = 0;
+      let autoDiscountBreakdown: any = null;
+      let autoDiscountByDiscount: { discountId: string; amount: number }[] =
+        [];
+      const discountEvalItems = dto.items
+        .filter((i) => !i.comboId)
+        .map((i) => {
+          const productId = i.variantId
+            ? (variantMap.get(i.variantId)?.productId ?? i.productId ?? '')
+            : (i.productId ?? '');
+          return {
+            productId,
+            quantity: i.quantity,
+            unitPrice: i.price,
+            addonAmount: resolvedCustomizations.get(i)?.addonAmount ?? 0,
+          };
+        })
+        .filter((i) => i.productId);
+      if (discountEvalItems.length > 0 && this.discountsService) {
+        const autoEval = await this.discountsService.evaluateForCart(
+          { items: discountEvalItems },
+          tx,
+        );
+        autoDiscountMonetary = autoEval.autoDiscount;
+        if (autoDiscountMonetary > 0) {
+          autoDiscountBreakdown = {
+            lines: autoEval.lines,
+            byDiscount: autoEval.byDiscount,
+          };
+          autoDiscountByDiscount = autoEval.byDiscount.map((b) => ({
+            discountId: b.discountId,
+            amount: b.amount,
+          }));
+        }
+      }
+      // Coupon / manual percentages are computed on the post-automatic
+      // subtotal (Shopify-style stacking); the coupon's own minimum-order
+      // condition below still reads the raw pre-discount subtotal.
+      const discountBase = Math.max(0, subtotal - autoDiscountMonetary);
+
       if (dto.couponCode) {
         // Fetch full coupon server-side and compute validated discount
         [couponRow] = await tx.$queryRawUnsafe(
@@ -2128,19 +2181,19 @@ export class OrdersService {
           }
         }
 
-        // Compute discount from coupon
+        // Compute discount from coupon (D19: on the post-automatic base).
         const rawValue = Number(couponRow.value);
 
         if (couponRow.type === 'percentage') {
           let cappedPercent = rawValue;
           if (couponRow.percentageCap) {
             const maxPctOfSubtotal =
-              (Number(couponRow.percentageCap) / Number(subtotal)) * 100;
+              (Number(couponRow.percentageCap) / Number(discountBase)) * 100;
             cappedPercent = Math.min(rawValue, maxPctOfSubtotal);
           }
           effectiveDiscount = cappedPercent;
           effectiveDiscountType = 'percentage';
-          effectiveDiscountMonetary = subtotal * (cappedPercent / 100);
+          effectiveDiscountMonetary = discountBase * (cappedPercent / 100);
           if (couponRow.percentageCap) {
             effectiveDiscountMonetary = Math.min(
               effectiveDiscountMonetary,
@@ -2148,29 +2201,40 @@ export class OrdersService {
             );
           }
         } else {
-          effectiveDiscount = Math.min(rawValue, Number(subtotal));
+          effectiveDiscount = Math.min(rawValue, Number(discountBase));
           effectiveDiscountType = 'flat';
           effectiveDiscountMonetary = effectiveDiscount;
         }
       } else if (dto.discount !== undefined && Number(dto.discount) > 0) {
-        // Staff-entered or direct manual discount
+        // Staff-entered or direct manual discount (D19: also on the
+        // post-automatic base, same stacking as coupons).
         const discVal = Number(dto.discount);
         const discType = dto.discountType === 'percentage' ? 'percentage' : 'flat';
         effectiveDiscountType = discType;
         if (discType === 'percentage') {
           effectiveDiscount = Math.min(100, Math.max(0, discVal));
-          effectiveDiscountMonetary = Number(subtotal) * (effectiveDiscount / 100);
+          effectiveDiscountMonetary =
+            Number(discountBase) * (effectiveDiscount / 100);
         } else {
-          effectiveDiscount = Math.min(Number(subtotal), Math.max(0, discVal));
+          effectiveDiscount = Math.min(
+            Number(discountBase),
+            Math.max(0, discVal),
+          );
           effectiveDiscountMonetary = effectiveDiscount;
         }
       }
 
-      const { subtotal: finalSubtotal, total: finalTotal } = this.recalculate(
-        itemsForTotals,
-        finalShippingCharge,
-        effectiveDiscount,
-        effectiveDiscountType,
+      // D19: the final total subtracts the automatic discount explicitly
+      // (recalculate() only knows the single coupon/manual discount). The
+      // stored subtotal stays pre-discount (as before); autoDiscount is
+      // stored separately on the order (never folded into `discount`).
+      const finalSubtotal = subtotal;
+      const finalTotal = Math.max(
+        0,
+        finalSubtotal +
+          finalShippingCharge -
+          autoDiscountMonetary -
+          effectiveDiscountMonetary,
       );
 
       if (dto.paymentOptionType === 'PARTIAL_PAYMENT') {
@@ -2272,6 +2336,8 @@ export class OrdersService {
           selectedShippingOptionId: dto.selectedShippingOptionId || null,
           discount: effectiveDiscount,
           discountType: effectiveDiscountType,
+          autoDiscount: autoDiscountMonetary,
+          autoDiscountBreakdown: autoDiscountBreakdown,
           total: finalTotal,
           viewToken: randomUUID(),
           shippingAddress: {
@@ -2532,6 +2598,20 @@ export class OrdersService {
             discount: effectiveDiscountMonetary,
           },
         });
+      }
+
+      // D19: automatic-discount audit rows — same transaction, so the order
+      // and its campaign attribution can never diverge.
+      if (autoDiscountByDiscount.length > 0) {
+        for (const app of autoDiscountByDiscount) {
+          await tx.discountApplication.create({
+            data: {
+              discountId: app.discountId,
+              orderId: created.id,
+              amount: app.amount,
+            },
+          });
+        }
       }
 
       for (const item of dto.items) {

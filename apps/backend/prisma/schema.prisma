@@ -856,6 +856,12 @@ model Order {
   shippingCharge           Decimal            @default(0) @db.Decimal(10, 2)
   discount                 Decimal            @default(0) @db.Decimal(10, 2)
   discountType             String             @default("flat")
+  /// D19: automatic (campaign) discounts applied at order creation, kept
+  /// SEPARATE from `discount` (coupon code / staff manual discount) so the
+  /// two never blur in reports. Breakdown JSON: { lines: [{productId,
+  /// discountId, amount}], byDiscount: [{discountId, amount}] }.
+  autoDiscount             Decimal            @default(0) @db.Decimal(10, 2)
+  autoDiscountBreakdown    Json?
   total                    Decimal            @db.Decimal(10, 2)
   // ORDER-OWNED HISTORICAL ADDRESS SNAPSHOTS — independent from CustomerProfile
   // and from the customer's CustomerAddress book. Editing the customer's
@@ -990,6 +996,7 @@ model Order {
   dispatchLogs                 CourierDispatchLog[]
   dispatches                   Dispatch[]
   refunds                      Refund[]
+  discountApplications         DiscountApplication[]
   returns                      Return[]                       @relation("OrderReturns")
   exchangeRefunds             Refund[]                       @relation("RefundExchangeOrder")
   sourcePayments              Payment[]                      @relation("PaymentSourceOrder")
@@ -1789,6 +1796,57 @@ model CouponUsage {
   @@index([couponId])
   @@index([orderId])
   @@index([userId])
+}
+
+/// D19: ADVANCED (automatic, Shopify-style) DISCOUNTS — campaign rules that
+/// apply by themselves at order creation, no code needed. Distinct from
+/// Coupon (code-based, single-order discount):
+/// - scope: 'SITEWIDE' (every product) | 'CATEGORY' (the selected categories
+///   AND all their descendant sub/child categories) | 'PRODUCT' (listed ids).
+/// - type: 'percentage' (% off each eligible line) | 'flat' (fixed amount off
+///   PER UNIT of each eligible line, capped at the line total).
+/// - minOrderAmount: optional condition — the ORDER subtotal (before any
+///   discount) must reach it, else the rule is inert for that order.
+/// - startsAt: optional; NULL = effective immediately. endsAt: optional;
+///   NULL = open-ended — an end can be set (or cleared) any time later.
+/// - Precedence (documented, deterministic): per order line, at most ONE
+///   automatic discount applies — the one giving the largest line discount.
+///   A coupon code, when present, stacks AFTER automatic discounts (its %
+///   is computed on the post-automatic subtotal).
+model Discount {
+  id             String    @id @default(uuid())
+  title          String
+  scope          String    @default("SITEWIDE")
+  categoryIds    String[]  @default([])
+  productIds     String[]  @default([])
+  type           String    @default("percentage")
+  value          Decimal   @db.Decimal(10, 2)
+  minOrderAmount Decimal?  @db.Decimal(10, 2)
+  startsAt       DateTime?
+  endsAt         DateTime?
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  applications DiscountApplication[]
+}
+
+/// Audit trail: one row per discount actually applied to an order, so
+/// campaign performance is reportable without re-deriving history from
+/// rules that may since have been edited or deleted. A discount with
+/// applications can never be hard-deleted (service refuses with 400).
+model DiscountApplication {
+  id         String   @id @default(uuid())
+  discountId String
+  orderId    String
+  amount     Decimal  @db.Decimal(10, 2)
+  createdAt  DateTime @default(now())
+
+  discount Discount @relation(fields: [discountId], references: [id])
+  order    Order    @relation(fields: [orderId], references: [id])
+
+  @@index([discountId])
+  @@index([orderId])
 }
 
 model Refund {

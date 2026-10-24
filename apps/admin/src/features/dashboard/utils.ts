@@ -1,5 +1,8 @@
 export function formatCurrency(n: number): string {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'BDT', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n)
+  // D19: same narrowSymbol fix as D16's journal/reports/employees
+  // formatters — without it en-US + BDT renders the "BDT 500" code, which
+  // is what the dashboard widgets and system alerts showed until now.
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'BDT', currencyDisplay: 'narrowSymbol', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n)
 }
 
 export function formatNumber(n: number): string {

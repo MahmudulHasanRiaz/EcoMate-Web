@@ -86,7 +86,7 @@ export const sidebarData: SidebarData = {
         inSection({ title: 'Suppliers', url: '/op/suppliers', icon: Building2, feature: 'admin_suppliers' }, 'Catalog', 'cyan'),
         inSection({ title: 'Purchase Orders', url: '/op/purchases', icon: ShoppingCart, feature: 'admin_purchases' }, 'Catalog', 'cyan'),
         // ── Growth ──
-        inSection({ title: 'Coupons', url: '/op/coupons', icon: Percent, feature: 'admin_coupons' }, 'Growth', 'violet'),
+        inSection({ title: 'Coupons & Discounts', url: '/op/coupons', icon: Percent, feature: 'admin_coupons' }, 'Growth', 'violet'),
         inSection({
           title: 'Marketing', icon: Megaphone, feature: 'admin_email_campaigns',
           items: [{ title: 'Campaigns', url: '/op/campaigns', icon: Megaphone }],

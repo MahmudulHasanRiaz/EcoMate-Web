@@ -96,6 +96,26 @@ export async function validateCoupon(code: string) {
   return data;
 }
 
+export interface EvaluateDiscountItem {
+  productId: string;
+  quantity: number;
+  unitPrice: number;
+  addonAmount?: number;
+}
+
+// Automatic (campaign) discounts — display only. The backend recomputes
+// the same evaluation at order creation, so this can never change what
+// is charged; it only shows the customer the discount early.
+export async function evaluateDiscounts(items: EvaluateDiscountItem[]) {
+  const { data } = await apiClient.post("/discounts/evaluate", { items });
+  return data as {
+    subtotal: number;
+    autoDiscount: number;
+    lines: { productId: string; discountId: string; discountTitle: string; amount: number }[];
+    byDiscount: { discountId: string; discountTitle: string; amount: number }[];
+  };
+}
+
 function getStorefrontApiBase(): string {
   if (
     typeof window !== "undefined" &&

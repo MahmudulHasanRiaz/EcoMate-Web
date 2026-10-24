@@ -517,6 +517,26 @@ export class CourierManagerService {
         results.push({ id: order.id, ok: false, message: 'Already dispatched' });
         continue;
       }
+      // D19-B (owner rule): an order with ANY payment still awaiting
+      // verification (status PENDING — customer-submitted manual payment, or
+      // staff entry while staff-auto-verify is OFF) must NEVER be sent to a
+      // courier, even though its money rows exist. The gate lives here, in
+      // the single booking entry point every courier shares, so no courier
+      // path and no UI can bypass it; the admin toast surfaces this message
+      // verbatim. Pure-COD orders (no payment rows at all) pass: there is
+      // nothing awaiting verification, the courier collects on delivery.
+      // Terminal rows (PAID / FAILED / CANCELLED / VOID) are not pending.
+      if (
+        (order.payments || []).some((p: any) => p.status === 'PENDING')
+      ) {
+        results.push({
+          id: order.id,
+          ok: false,
+          message:
+            'Cannot dispatch: order has payment(s) awaiting verification — verify or reject them first',
+        });
+        continue;
+      }
       try {
         const result = await this.dispatchOne(courier, order, opts?.credentialSetId);
         results.push({ id: order.id, ok: true, ...result });

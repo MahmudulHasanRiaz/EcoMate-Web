@@ -32,6 +32,7 @@ function formatCurrency(n: number) {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'BDT',
+    currencyDisplay: 'narrowSymbol',
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(n)
