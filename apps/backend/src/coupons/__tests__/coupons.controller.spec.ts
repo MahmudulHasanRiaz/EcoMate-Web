@@ -1,4 +1,5 @@
 import { REQUIRES_FEATURE_KEY } from '@ecomate/feature-flags';
+import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
 import { CouponsController } from '../coupons.controller';
 
 describe('CouponsController', () => {
@@ -8,5 +9,13 @@ describe('CouponsController', () => {
       CouponsController,
     );
     expect(featureKey).toBe('admin_coupons');
+  });
+
+  it('exposes coupon validation publicly for storefront guests (D11)', () => {
+    const isPublic = Reflect.getMetadata(
+      IS_PUBLIC_KEY,
+      CouponsController.prototype.validate,
+    );
+    expect(isPublic).toBe(true);
   });
 });
