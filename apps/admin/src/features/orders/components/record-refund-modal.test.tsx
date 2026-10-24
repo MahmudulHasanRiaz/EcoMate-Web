@@ -81,7 +81,7 @@ describe('RecordRefundModal (Part 4: config-sourced destination)', () => {
       if (url === '/payments/settings') {
         return Promise.resolve({ data: { global: paymentSettings.current, gateways: [] } })
       }
-      if (url === '/gateways/admin') {
+      if (url === '/gateways/admin' || url === '/gateways/payment-form') {
         return Promise.resolve({ data: [cashGateway, bkashGateway] })
       }
       if (url === '/accounts/tree') {
@@ -149,7 +149,7 @@ describe('RecordRefundModal (Part 4: config-sourced destination)', () => {
       if (url === '/payments/settings') {
         return Promise.resolve({ data: { global: paymentSettings.current, gateways: [] } })
       }
-      if (url === '/gateways/admin') return Promise.resolve({ data: [] })
+      if (url === '/gateways/admin' || url === '/gateways/payment-form') return Promise.resolve({ data: [] })
       if (url === '/accounts/tree') return Promise.resolve({ data: accounts })
       return Promise.resolve({ data: { data: [], meta: { total: 0, page: 1, perPage: 100, totalPages: 0 } } })
     })

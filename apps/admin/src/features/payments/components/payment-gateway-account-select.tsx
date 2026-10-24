@@ -3,9 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { accountingApi } from '@/features/accounting/api'
 import { gatewayApi } from '@/features/gateways/api'
-import { adminSelectableGatewayOptions, enabledGatewayOptions, flattenEligibleAssetAccounts } from '@/features/payments/lib/eligible-accounts'
+import { adminSelectableGatewayOptions, enabledGatewayOptions } from '@/features/payments/lib/eligible-accounts'
 
 /**
  * Part 3 (owner-locked) + D7 (owner-locked 2026-10-24): ONE shared gateway
@@ -18,6 +17,13 @@ import { adminSelectableGatewayOptions, enabledGatewayOptions, flattenEligibleAs
  * When the mapping is missing or its account is inactive, staff see a
  * non-blocking warning: the payment still records, it just posts no
  * accounting entry until the mapping is fixed in Settings.
+ *
+ * D17: the list comes from the staff-safe /gateways/payment-form endpoint,
+ * which embeds each gateway's mapped account — so this component no longer
+ * calls the admin-only /gateways/admin (which also returns raw gateway
+ * credentials) or /accounts/tree. Both old calls 403'd for employee-role
+ * staff, which surfaced as endless "Loading payment configuration…" and
+ * then a false "No payment gateway is enabled" message.
  */
 
 export interface PaymentAccountSelection {
@@ -46,14 +52,9 @@ export function PaymentGatewayAccountSelect({
   compact = false,
   className,
 }: PaymentGatewayAccountSelectProps) {
-  const { data: gateways, isLoading: gatewaysLoading } = useQuery({
+  const { data: gateways, isLoading, isError } = useQuery({
     queryKey: ['admin-gateways'],
-    queryFn: () => gatewayApi.listGateways().then((r) => r.data),
-    staleTime: 60_000,
-  })
-  const { data: accountTree, isLoading: accountsLoading } = useQuery({
-    queryKey: ['accounts-tree'],
-    queryFn: () => accountingApi.getAccountTree().then((r) => r.data),
+    queryFn: () => gatewayApi.listPaymentFormGateways().then((r) => r.data),
     staleTime: 60_000,
   })
 
@@ -69,10 +70,11 @@ export function PaymentGatewayAccountSelect({
     }
     return options
   }, [gateways, gatewayCode])
-  const accounts = useMemo(() => flattenEligibleAssetAccounts(accountTree), [accountTree])
+  // The mapped settlement account rides on the gateway row itself (D17) —
+  // no separate account-tree lookup is needed for the settles-to line.
   const selectedGateway = gatewayOptions.find((g) => g.code === gatewayCode)
   const mappedAccountId = selectedGateway?.accountId ?? null
-  const mappedAccount = mappedAccountId ? accounts.find((a) => a.id === mappedAccountId) : undefined
+  const mappedAccount = selectedGateway?.account ?? undefined
   // A mapping can go stale when the account is deactivated after being
   // saved. Treat it as unmapped (with an explicit warning) instead of
   // silently stamping an account the journal can no longer post to.
@@ -83,8 +85,6 @@ export function PaymentGatewayAccountSelect({
   // behaves server-side.
   const derivedAccountId = mappedAccount && mappedAccountId ? mappedAccountId : ''
 
-  const isLoading = gatewaysLoading || accountsLoading
-
   // Rule 2: exactly one option is auto-selected. It only fills a blank or
   // invalid value, so an explicit user choice at 2+ is never overwritten.
   useEffect(() => {
@@ -93,11 +93,9 @@ export function PaymentGatewayAccountSelect({
     if (gatewayCode && gatewayOptions.some((g) => g.code === gatewayCode)) return
     const only = gatewayOptions.length === 1 ? gatewayOptions[0] : undefined
     if (!only) return
-    const onlyAccount = only.accountId
-      ? accounts.find((a) => a.id === only.accountId)
-      : undefined
+    const onlyAccount = only.account ?? undefined
     onChange({ gatewayCode: only.code, accountId: onlyAccount ? only.accountId! : '' })
-  }, [isLoading, disabled, gatewayOptions, gatewayCode, accounts, onChange])
+  }, [isLoading, disabled, gatewayOptions, gatewayCode, onChange])
 
   // The account is DERIVED from the gateway mapping (D7) — keep the
   // selection in sync whenever the gateway or the mapping changes.
@@ -112,6 +110,21 @@ export function PaymentGatewayAccountSelect({
     return (
       <div className='flex items-center gap-2 text-xs text-muted-foreground py-2'>
         <Loader2 className='h-3.5 w-3.5 animate-spin' /> Loading payment configuration…
+      </div>
+    )
+  }
+
+  // D17: a failed load must never masquerade as "not configured" — that
+  // misdiagnosis is exactly what employee-role staff saw (403 on the old
+  // admin-only endpoints surfaced as the empty-state message).
+  if (isError) {
+    return (
+      <div
+        role='alert'
+        className='flex items-start gap-2 rounded-lg border border-red-300/70 bg-red-50 px-3 py-2 text-xs text-red-800 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200'
+      >
+        <AlertTriangle className='h-3.5 w-3.5 mt-0.5 shrink-0' />
+        <span>Couldn't load payment gateways. Check your connection and try again — if this persists, ask an admin to confirm the gateway setup.</span>
       </div>
     )
   }
@@ -135,9 +148,7 @@ export function PaymentGatewayAccountSelect({
         value={gatewayCode || undefined}
         onValueChange={(code) => {
           const picked = gatewayOptions.find((g) => g.code === code)
-          const pickedAccount = picked?.accountId
-            ? accounts.find((a) => a.id === picked.accountId)
-            : undefined
+          const pickedAccount = picked?.account ?? undefined
           onChange({
             gatewayCode: code,
             accountId: pickedAccount ? picked!.accountId! : '',

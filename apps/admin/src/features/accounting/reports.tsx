@@ -14,7 +14,7 @@ import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'BDT' }).format(amount)
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'BDT', currencyDisplay: 'narrowSymbol' }).format(amount)
 }
 
 function formatDate(dateStr: string) {

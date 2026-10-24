@@ -5,14 +5,10 @@ import { userEvent } from 'vitest/browser'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PaymentGatewayAccountSelect } from './payment-gateway-account-select'
 
-const listGateways = vi.hoisted(() => vi.fn())
-const getAccountTree = vi.hoisted(() => vi.fn())
+const listPaymentFormGateways = vi.hoisted(() => vi.fn())
 
 vi.mock('@/features/gateways/api', () => ({
-  gatewayApi: { listGateways },
-}))
-vi.mock('@/features/accounting/api', () => ({
-  accountingApi: { getAccountTree },
+  gatewayApi: { listPaymentFormGateways },
 }))
 
 const cash = {
@@ -82,8 +78,7 @@ function renderPair() {
 describe('PaymentGatewayAccountSelect (D7: gateway implies the account)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    listGateways.mockResolvedValue({ data: [cash] })
-    getAccountTree.mockResolvedValue({ data: accounts })
+    listPaymentFormGateways.mockResolvedValue({ data: [cash] })
   })
 
   it('auto-selects and disables a single gateway; no account picker exists', async () => {
@@ -98,7 +93,7 @@ describe('PaymentGatewayAccountSelect (D7: gateway implies the account)', () => 
   })
 
   it('warns (without blocking) when the picked gateway has no mapped account', async () => {
-    listGateways.mockResolvedValue({ data: [cash, bkash] })
+    listPaymentFormGateways.mockResolvedValue({ data: [cash, bkash] })
     const ui = await renderPair()
     const gateway = ui.getByLabelText('Gateway')
     await expect.element(gateway).toBeEnabled()
@@ -112,8 +107,10 @@ describe('PaymentGatewayAccountSelect (D7: gateway implies the account)', () => 
   })
 
   it('warns when the mapped account is inactive (stale mapping)', async () => {
-    getAccountTree.mockResolvedValue({
-      data: accounts.map((a) => (a.id === 'acc-cash' ? { ...a, isActive: false } : a)),
+    // D17: the stale case now arrives as accountId set + account null from
+    // the payment-form endpoint (no account-tree lookup anymore).
+    listPaymentFormGateways.mockResolvedValue({
+      data: [{ ...cash, account: null }],
     })
     const ui = await renderPair()
     await expect.element(
@@ -123,7 +120,7 @@ describe('PaymentGatewayAccountSelect (D7: gateway implies the account)', () => 
   })
 
   it('still offers gateways whose payment option is off for the website (D7)', async () => {
-    listGateways.mockResolvedValue({
+    listPaymentFormGateways.mockResolvedValue({
       data: [{ ...bkash, paymentOptionEnabled: false, accountId: 'acc-bank', account: accounts[1] }],
     })
     const ui = await renderPair()
@@ -133,7 +130,7 @@ describe('PaymentGatewayAccountSelect (D7: gateway implies the account)', () => 
   })
 
   it('shows the not-configured state when no gateway is enabled', async () => {
-    listGateways.mockResolvedValue({ data: [] })
+    listPaymentFormGateways.mockResolvedValue({ data: [] })
     const ui = await renderPair()
     await expect.element(
       ui.getByText(/No payment gateway is enabled.*Settings → Payment Gateways/i),

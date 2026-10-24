@@ -8,13 +8,13 @@ import { ConvertLead } from './convert-lead'
 // `?raw` import is the browser-compatible equivalent of readFileSync here.
 import convertLeadSource from './convert-lead.tsx?raw'
 
-const listGateways = vi.hoisted(() => vi.fn())
+const listPaymentFormGateways = vi.hoisted(() => vi.fn())
 const getAccountTree = vi.hoisted(() => vi.fn())
 const mockGet = vi.hoisted(() => vi.fn())
 const mockPost = vi.hoisted(() => vi.fn())
 
 vi.mock('@/features/gateways/api', () => ({
-  gatewayApi: { listGateways },
+  gatewayApi: { listPaymentFormGateways },
 }))
 vi.mock('@/features/accounting/api', () => ({
   accountingApi: { getAccountTree },
@@ -112,7 +112,7 @@ function renderConvertLead(options: {
   gateways: GatewayFixture[]
   accounts: ReturnType<typeof account>[]
 }) {
-  listGateways.mockResolvedValue({ data: options.gateways })
+  listPaymentFormGateways.mockResolvedValue({ data: options.gateways })
   getAccountTree.mockResolvedValue({ data: options.accounts })
   mockGet.mockImplementation((url: string) => {
     if (url.startsWith('/checkout-leads/')) return Promise.resolve({ data: options.lead })

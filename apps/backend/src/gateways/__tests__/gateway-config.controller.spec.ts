@@ -1,7 +1,29 @@
 import { REQUIRES_FEATURE_KEY } from '@ecomate/feature-flags';
+import { ROLES_KEY } from '../../common/decorators/roles.decorator';
 import { GatewayConfigController } from '../gateway-config.controller';
 
 describe('GatewayConfigController', () => {
+  it('adds RequiresFeature(admin_payments) on findAllForPaymentForm', () => {
+    const meta = Reflect.getMetadata(
+      REQUIRES_FEATURE_KEY,
+      GatewayConfigController.prototype.findAllForPaymentForm,
+    );
+    expect(meta).toBe('admin_payments');
+  });
+
+  it('D17: payment-form list is readable by employee staff AND never exposes credentials', () => {
+    const roles = Reflect.getMetadata(
+      ROLES_KEY,
+      GatewayConfigController.prototype.findAllForPaymentForm,
+    );
+    expect(roles).toEqual(['superadmin', 'admin', 'employee']);
+    // The admin CRUD endpoint (findAllAdmin) keeps credentials in its
+    // response and stays admin-only — the payment-form mapper must not
+    // copy that field. Asserted on the source: the mapper's key list.
+    const src = GatewayConfigController.prototype.findAllForPaymentForm.toString();
+    expect(src).not.toMatch(/credentials/);
+    expect(src).toMatch(/showOnAdmin/);
+  });
   it('adds RequiresFeature(admin_payments) on findAllOptions', () => {
     const meta = Reflect.getMetadata(
       REQUIRES_FEATURE_KEY,
