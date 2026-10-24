@@ -246,7 +246,11 @@ async function bootstrap() {
     immutable: false,
   });
   await app.register(fastifyStatic, {
-    root: join(process.cwd(), 'public'),
+    // The on-disk layout is public/assets/<...> and the public URL space is
+    // /assets/<...> — the root must be the assets folder itself. Pointing it
+    // at public/ instead shifted every URL to /assets/assets/<...> and made
+    // /assets/logos/* 404 (the bundled gateway/courier logos never loaded).
+    root: join(process.cwd(), 'public', 'assets'),
     prefix: '/assets/',
     maxAge: 365 * 24 * 60 * 60 * 1000,
     immutable: true,
