@@ -126,7 +126,6 @@ export class HrController {
    * backfill-view-tokens maintenance endpoint.
    */
   @Post('performance/orders/backfill')
-  @Roles('superadmin', 'admin')
   @PermissionsAny('manage_hr_settings')
   backfillOrderEvents() {
     return this.staffPerformance.backfillFromTimeline();

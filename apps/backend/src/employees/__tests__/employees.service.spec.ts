@@ -14,6 +14,7 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { EmployeeStatus, EmploymentType } from '@prisma/client';
 import { EmployeesService } from '../employees.service';
@@ -546,6 +547,76 @@ describe('EmployeesService', () => {
       } as any);
       const data = (prisma.employee.update as jest.Mock).mock.calls[0][0].data;
       expect(data).not.toHaveProperty('betterAuthUserId');
+    });
+
+    it('writes HR-only custom access to the login row and never to the employee row', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await service.update(
+        'emp-1',
+        {
+          customAccessAdds: ['view_orders', 'ghost_key'],
+          customAccessRemoves: ['create_orders'],
+        },
+        'actor-1',
+        ['view_orders', 'create_orders', 'manage_employees'],
+      );
+      const data = (prisma.employee.update as jest.Mock).mock.calls[0][0].data;
+      expect(data).not.toHaveProperty('customAccessAdds');
+      expect(data).not.toHaveProperty('customAccessRemoves');
+      expect(baPrisma.betterAuthUser.update).toHaveBeenCalledWith({
+        where: { id: 'ba-user-test' },
+        data: {
+          override_permissions: ['view_orders'],
+          denied_permissions: ['create_orders'],
+        },
+      });
+    });
+
+    it('clearing custom access with empty arrays writes empty lists to the login row', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await service.update(
+        'emp-1',
+        { customAccessAdds: [], customAccessRemoves: [] },
+        'actor-1',
+        ['manage_employees'],
+      );
+      expect(baPrisma.betterAuthUser.update).toHaveBeenCalledWith({
+        where: { id: 'ba-user-test' },
+        data: { override_permissions: [], denied_permissions: [] },
+      });
+    });
+
+    it('leaves custom access untouched when neither list is provided', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await service.update('emp-1', { notes: 'x' });
+      expect(baPrisma.betterAuthUser.update).not.toHaveBeenCalled();
+    });
+
+    it('forbids assigning a preset broader than the actor holds', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      (prisma.accessPreset.findUnique as jest.Mock).mockResolvedValue({
+        id: 'preset-1',
+        name: 'Staff',
+        permissions: ['view_orders', 'manage_presets'],
+      });
+      await expect(
+        service.update('emp-1', { accessPresetId: 'preset-1' }, 'actor-1', [
+          'view_orders',
+          'manage_employees',
+        ]),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('forbids custom additions broader than the actor holds', async () => {
+      (prisma.employee.findUnique as jest.Mock).mockResolvedValue(mockEmployee);
+      await expect(
+        service.update(
+          'emp-1',
+          { customAccessAdds: ['manage_presets'] },
+          'actor-1',
+          ['view_orders', 'manage_employees'],
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it('never writes nested shift payloads as scalar columns', async () => {

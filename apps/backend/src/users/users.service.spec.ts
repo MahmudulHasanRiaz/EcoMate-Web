@@ -268,7 +268,7 @@ describe('UsersService', () => {
       expect(prisma.userProfile.create).not.toHaveBeenCalled();
     });
 
-    it('should strip unknown keys and persist override_permissions to betterAuthUser on create', async () => {
+    it('ignores override_permissions on create (custom access is HR-only now, via Employee Management)', async () => {
       (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.userProfile.create as jest.Mock).mockResolvedValue({
         ...mockUserResponse,
@@ -289,20 +289,12 @@ describe('UsersService', () => {
         ...createDto,
         username: 'janesmith3',
         email: 'jane3@example.com',
-        override_permissions: ['view_orders', 'not_a_real_permission'],
-      });
+        override_permissions: ['view_orders'],
+      } as any);
 
-      expect(baPrisma.betterAuthUser.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            override_permissions: ['view_orders'],
-          }),
-        }),
-      );
-      expect(
-        (baPrisma.betterAuthUser.create as jest.Mock).mock.calls[0][0].data
-          .override_permissions,
-      ).not.toContain('not_a_real_permission');
+      const createData = (baPrisma.betterAuthUser.create as jest.Mock).mock
+        .calls[0][0].data;
+      expect(createData).not.toHaveProperty('override_permissions');
     });
 
     it('should omit override_permissions from BA create when not provided', async () => {
@@ -421,7 +413,7 @@ describe('UsersService', () => {
       expect(updateCall.data).not.toHaveProperty('role');
     });
 
-    it('should strip unknown keys and persist override_permissions to betterAuthUser on update', async () => {
+    it('ignores override_permissions on update (custom access is HR-only now, via Employee Management)', async () => {
       (prisma.userProfile.findUnique as jest.Mock)
         .mockResolvedValueOnce({
           ...mockUserResponse,
@@ -434,33 +426,12 @@ describe('UsersService', () => {
       );
 
       await service.update('user-id-1', {
-        override_permissions: ['view_orders', 'view_products', 'ghost_key'],
-      });
+        override_permissions: ['view_orders', 'view_products'],
+      } as any);
 
-      expect(baPrisma.betterAuthUser.update).toHaveBeenCalledWith({
-        where: { id: 'ba-1' },
-        data: { override_permissions: ['view_orders', 'view_products'] },
-      });
-    });
-
-    it('update with empty array clears override_permissions (empty array = clear; undefined = leave unchanged)', async () => {
-      (prisma.userProfile.findUnique as jest.Mock)
-        .mockResolvedValueOnce({
-          ...mockUserResponse,
-          betterAuthUserId: 'ba-1',
-        })
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(null);
-      (prisma.userProfile.update as jest.Mock).mockResolvedValue(
-        mockUserResponse,
-      );
-
-      await service.update('user-id-1', { override_permissions: [] });
-
-      expect(baPrisma.betterAuthUser.update).toHaveBeenCalledWith({
-        where: { id: 'ba-1' },
-        data: { override_permissions: [] },
-      });
+      // The DTO carries only override_permissions, which user update now
+      // ignores entirely — so no BA write happens at all.
+      expect(baPrisma.betterAuthUser.update).not.toHaveBeenCalled();
     });
 
     it('update with undefined override_permissions leaves BA user unchanged (no BA write)', async () => {

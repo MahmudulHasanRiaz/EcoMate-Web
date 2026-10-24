@@ -26,7 +26,7 @@ export class EmployeesController {
   @Post()
   @PermissionsAny('manage_employees')
   create(@Body() dto: CreateEmployeeDto, @CurrentUser() user?: any) {
-    return this.employeesService.create(dto, user?.userId ?? user?.id);
+    return this.employeesService.create(dto, user?.userId ?? user?.id, user?.permissions);
   }
 
   @Get()
@@ -73,7 +73,7 @@ export class EmployeesController {
     @Body() dto: UpdateEmployeeDto,
     @CurrentUser() user?: any,
   ) {
-    return this.employeesService.update(id, dto, user?.userId ?? user?.id);
+    return this.employeesService.update(id, dto, user?.userId ?? user?.id, user?.permissions);
   }
 
   @Delete(':id')

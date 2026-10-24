@@ -9,6 +9,7 @@ import {
   BadRequestException,
   Query,
 } from '@nestjs/common';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
@@ -39,25 +40,25 @@ export class CouponsController {
     return this.couponsService.validate(code, userId);
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('create_coupons')
   @Post()
   async create(@Body() dto: CreateCouponDto) {
     return this.couponsService.create(dto);
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('edit_coupons')
   @Put(':id')
   async update(@Param('id') id: string, @Body() dto: UpdateCouponDto) {
     return this.couponsService.update(id, dto);
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('delete_coupons')
   @Delete(':id')
   async remove(@Param('id') id: string) {
     return this.couponsService.remove(id);
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('view_coupons')
   @Get(':id/usage')
   async getUsage(
     @Param('id') id: string,

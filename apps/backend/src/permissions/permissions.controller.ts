@@ -1,5 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
-import { Roles } from '../common/decorators/roles.decorator';
+import { PermissionsAny } from '../common/decorators/permissions.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { PermissionsService } from './permissions.service';
 
@@ -17,14 +17,14 @@ export class PermissionsController {
    * literally could not grant them.
    */
   @Get('catalogue')
-  @Roles('superadmin', 'admin')
+  @PermissionsAny('view_permissions', 'manage_presets', 'manage_employees')
   getCatalogue() {
     return this.permissionsService.getCatalogue();
   }
 
   /** Flat key list — used by the contract test and by tooling. */
   @Get('keys')
-  @Roles('superadmin', 'admin')
+  @PermissionsAny('view_permissions', 'manage_presets', 'manage_employees')
   getKeys() {
     return this.permissionsService.getKeys();
   }

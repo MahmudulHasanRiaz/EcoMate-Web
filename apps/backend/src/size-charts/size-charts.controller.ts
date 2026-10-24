@@ -7,6 +7,7 @@ import {
   Body,
   Param,
 } from '@nestjs/common';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
@@ -39,21 +40,21 @@ export class SizeChartsController {
     return this.svc.findOne(id);
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('create_size_charts')
   @RequiresFeature('admin_size_charts')
   @Post()
   async create(@Body() dto: CreateSizeChartDto) {
     return this.svc.create(dto);
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('edit_size_charts')
   @RequiresFeature('admin_size_charts')
   @Put(':id')
   async update(@Param('id') id: string, @Body() dto: UpdateSizeChartDto) {
     return this.svc.update(id, dto);
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('delete_size_charts')
   @RequiresFeature('admin_size_charts')
   @Delete(':id')
   async remove(@Param('id') id: string) {

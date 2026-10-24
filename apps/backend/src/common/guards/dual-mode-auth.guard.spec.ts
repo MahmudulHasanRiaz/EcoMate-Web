@@ -62,22 +62,58 @@ describe('DualModeAuthGuard — JWT path permissions via computeEffectivePermiss
     mockJwt.verifyAsync.mockResolvedValue({ sub: 'user-1' });
   });
 
-  it('admin JWT user gets ALL registered permissions without a BA query', async () => {
+  it('admin JWT user with NO linked preset gets ALL registered permissions (BA query now runs to check for one)', async () => {
     (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
       id: 'user-1',
       role: 'admin',
       status: 'active',
       betterAuthUserId: 'ba-1',
     });
+    (prisma.betterAuthUser.findUnique as jest.Mock).mockResolvedValue({
+      override_permissions: [],
+      denied_permissions: [],
+      employee: null,
+    });
 
-    const context = makeContext('Bearer token-1');
+    const context = makeContext('Bearer <redacted>');
     const result = await guard.canActivate(context);
 
     expect(result).toBe(true);
     expect(context.switchToHttp().getRequest().user.permissions).toEqual(
       getAllPermissions(),
     );
-    expect(prisma.betterAuthUser.findUnique).not.toHaveBeenCalled();
+    expect(prisma.betterAuthUser.findUnique).toHaveBeenCalledWith({
+      where: { id: 'ba-1' },
+      select: {
+        override_permissions: true,
+        denied_permissions: true,
+        employee: { include: { accessPreset: true } },
+      },
+    });
+  });
+
+  it('admin JWT user WITH a linked preset gets exactly the preset (preset supremacy)', async () => {
+    (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
+      id: 'user-1',
+      role: 'admin',
+      status: 'active',
+      betterAuthUserId: 'ba-1',
+    });
+    (prisma.betterAuthUser.findUnique as jest.Mock).mockResolvedValue({
+      override_permissions: [],
+      denied_permissions: [],
+      employee: {
+        accessPresetId: 'preset-1',
+        accessPreset: { permissions: ['view_orders'] },
+      },
+    });
+
+    const context = makeContext('Bearer <redacted>');
+    await guard.canActivate(context);
+
+    expect(context.switchToHttp().getRequest().user.permissions).toEqual([
+      'view_orders',
+    ]);
   });
 
   it('employee JWT user with employee link gets preset ∪ override permissions', async () => {
@@ -89,7 +125,9 @@ describe('DualModeAuthGuard — JWT path permissions via computeEffectivePermiss
     });
     (prisma.betterAuthUser.findUnique as jest.Mock).mockResolvedValue({
       override_permissions: ['view_orders', 'ghost_key'],
+      denied_permissions: [],
       employee: {
+        accessPresetId: 'preset-1',
         accessPreset: { permissions: ['view_customers'] },
       },
     });
@@ -101,6 +139,7 @@ describe('DualModeAuthGuard — JWT path permissions via computeEffectivePermiss
       where: { id: 'ba-1' },
       select: {
         override_permissions: true,
+        denied_permissions: true,
         employee: { include: { accessPreset: true } },
       },
     });

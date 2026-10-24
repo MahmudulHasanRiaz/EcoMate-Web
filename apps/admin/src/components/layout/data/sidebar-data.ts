@@ -119,7 +119,7 @@ export const sidebarData: SidebarData = {
           title: 'Accounting', icon: BookOpen, feature: 'admin_accounting',
           items: [
             { title: 'Chart of Accounts', url: '/op/accounting' },
-            { title: 'Journal Entries', url: '/op/accounting/journal-entries', roles: ['superadmin', 'admin'] },
+            { title: 'Journal Entries', url: '/op/accounting/journal-entries', permissions: ['view_accounting'] },
             { title: 'Reports', url: '/op/accounting/reports' },
           ],
         }, 'Finance', 'warning'),
@@ -190,13 +190,13 @@ export const sidebarData: SidebarData = {
         // User administration lives here rather than under HR, since it governs
         // who can reach the app — not who is on payroll. Access Presets stay
         // under Employees in the HR panel, next to the employees they govern.
-        // `view_hr` is retained: it is the permission that gates employee/payroll
-        // data, and user administration is part of that surface. Dropping it
-        // would expose this group to anyone holding the feature alone.
+        // Gated by `view_users` (owner 2026-10-24): normal User Management is
+        // for people WITHOUT the HR module, so it must never require view_hr.
+        // The user list itself lives at /mon/users — HR has no duplicate.
         inSection({
-          title: 'User Management', icon: Users, feature: 'admin_users', permissions: ['view_hr'],
+          title: 'User Management', icon: Users, feature: 'admin_users', permissions: ['view_users'],
           items: [
-            { title: 'All Users', url: '/hr/users' },
+            { title: 'All Users', url: '/mon/users' },
             { title: 'User Creation', url: '/mon/users/create' },
           ],
         }, 'Access', 'violet'),

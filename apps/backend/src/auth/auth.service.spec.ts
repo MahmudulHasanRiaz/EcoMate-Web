@@ -389,7 +389,9 @@ describe('AuthService', () => {
       mockSuccessfulLogin(cashier);
       (prisma.betterAuthUser.findUnique as jest.Mock).mockResolvedValue({
         override_permissions: [],
+        denied_permissions: [],
         employee: {
+          accessPresetId: 'preset-1',
           accessPreset: { permissions: ['view_orders', 'create_orders'] },
         },
       });

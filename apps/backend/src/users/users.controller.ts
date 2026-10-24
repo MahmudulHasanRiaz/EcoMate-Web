@@ -12,9 +12,10 @@ import {
 } from '@nestjs/common';
 import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
-import { Roles } from '../common/decorators/roles.decorator';
 import { Permissions } from '../common/decorators/permissions.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { assertCanAssignRole } from '../common/permissions/no-escalation';
+import { getAllPermissions } from '../common/permissions/registry';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -27,7 +28,6 @@ import { UpdateSettingsDto } from './dto/update-settings.dto';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  @Roles('superadmin', 'admin')
   @Permissions('view_users')
   @Get()
   async findAll(
@@ -50,56 +50,53 @@ export class UsersController {
     });
   }
 
-  @Roles('superadmin', 'admin')
   @Permissions('view_users')
   @Get('by-email/:email')
   async findByEmail(@Param('email') email: string) {
     return this.usersService.findByEmail(email);
   }
 
-  @Roles('superadmin', 'admin')
   @Permissions('view_users')
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.usersService.findOne(id);
   }
 
-  @Roles('superadmin', 'admin')
   @Permissions('create_users')
   @Post()
-  async create(@Body() dto: CreateUserDto) {
+  async create(@Body() dto: CreateUserDto, @CurrentUser() user?: any) {
+    // Preset supremacy: a restricted creator may not mint an admin or
+    // superadmin account (that would bootstrap full access). Other roles
+    // get role defaults (nothing) until HR assigns a preset.
+    assertCanAssignRole(user?.permissions, dto.role, getAllPermissions());
     return this.usersService.create(dto);
   }
 
-  @Roles('superadmin', 'admin')
   @Permissions('edit_users')
   @Put(':id')
-  async update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
+  async update(@Param('id') id: string, @Body() dto: UpdateUserDto, @CurrentUser() user?: any) {
+    assertCanAssignRole(user?.permissions, dto.role, getAllPermissions());
     return this.usersService.update(id, dto);
   }
 
-  @Roles('superadmin', 'admin')
   @Permissions('delete_users')
   @Delete(':id')
   async remove(@Param('id') id: string) {
     return this.usersService.remove(id);
   }
 
-  @Roles('superadmin', 'admin')
   @Permissions('delete_users')
   @Post('bulk-delete')
   async bulkDelete(@Body() dto: BulkDeleteUsersDto) {
     return this.usersService.bulkDelete(dto.ids);
   }
 
-  @Roles('superadmin', 'admin')
   @Permissions('edit_users')
   @Post('bulk-update')
   async bulkUpdate(@Body() dto: BulkUpdateUsersDto) {
     return this.usersService.bulkUpdateStatus(dto.ids, dto.status);
   }
 
-  @Roles('superadmin', 'admin')
   @Permissions('create_users')
   @Post('invite')
   async invite(@Body() dto: InviteUserDto) {

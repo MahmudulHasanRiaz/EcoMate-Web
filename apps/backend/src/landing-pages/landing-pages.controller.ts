@@ -8,16 +8,16 @@ import {
   Param,
   Query,
 } from '@nestjs/common';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { LandingPagesService } from './landing-pages.service';
 import { Public } from '../common/decorators/public.decorator';
-import { Roles } from '../common/decorators/roles.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 
 @Controller('landing-pages')
 export class LandingPagesController {
   constructor(private readonly svc: LandingPagesService) {}
 
-  @Roles('superadmin', 'admin')
+  @Permissions('view_landing_pages')
   @RequiresFeature('admin_landing_pages')
   @Get()
   list(@Query('page') page?: string, @Query('perPage') perPage?: string) {
@@ -27,7 +27,7 @@ export class LandingPagesController {
     });
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('view_landing_pages')
   @RequiresFeature('admin_landing_pages')
   @Get(':id')
   findById(@Param('id') id: string) {
@@ -46,35 +46,35 @@ export class LandingPagesController {
     return this.svc.findBySlug(slug);
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('create_landing_pages')
   @RequiresFeature('admin_landing_pages')
   @Post()
   create(@Body() body: Record<string, any>) {
     return this.svc.create(body);
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('edit_landing_pages')
   @RequiresFeature('admin_landing_pages')
   @Put(':id')
   update(@Param('id') id: string, @Body() body: Record<string, any>) {
     return this.svc.update(id, body);
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('edit_landing_pages')
   @RequiresFeature('admin_landing_pages')
   @Post(':id/publish')
   publish(@Param('id') id: string) {
     return this.svc.publish(id);
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('edit_landing_pages')
   @RequiresFeature('admin_landing_pages')
   @Post(':id/unpublish')
   unpublish(@Param('id') id: string) {
     return this.svc.unpublish(id);
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('delete_landing_pages')
   @RequiresFeature('admin_landing_pages')
   @Delete(':id')
   remove(@Param('id') id: string) {

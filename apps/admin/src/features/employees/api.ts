@@ -116,6 +116,10 @@ export interface UpdateEmployeeDto {
   shiftDays?: number[]
   /** Matches ShiftRotationItemDto — the field is shiftPresetId, not presetId. */
   shiftRotations?: { dayOfWeek: number; shiftPresetId: string }[]
+  /** HR-only custom access additions (widen the preset). Empty array = clear. */
+  customAccessAdds?: string[]
+  /** HR-only custom access removals (narrow the preset). Empty array = clear. */
+  customAccessRemoves?: string[]
 }
 
 // G-15 nested payload captured at employee creation.
@@ -208,8 +212,16 @@ export interface EmployeeResponse {
   updatedAt: string
   department?: { id: string; name: string; slug: string } | null
   designation?: { id: string; name: string; slug: string; level?: number | null } | null
-  accessPreset?: { id: string; name: string } | null
-  betterAuthUser?: { id: string; name: string; email: string; role: string; image?: string | null } | null
+  accessPreset?: { id: string; name: string; permissions?: string[] } | null
+  betterAuthUser?: {
+    id: string
+    name: string
+    email: string
+    role: string
+    image?: string | null
+    override_permissions?: string[]
+    denied_permissions?: string[]
+  } | null
   reportingTo?: {
     id: string
     employeeId: string

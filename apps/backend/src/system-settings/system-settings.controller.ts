@@ -17,6 +17,7 @@ import { MediaResolverService } from '../media/media-resolver.service';
 import { CacheService } from '../cache/cache.service';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import {
@@ -753,7 +754,7 @@ export class SystemSettingsController {
   }
 
   @Get('storage')
-  @Roles('superadmin', 'admin')
+  @Permissions('view_system_settings')
   @RequiresFeature('admin_settings')
   async getStorageConfig() {
     return this.storage.getConfig();
@@ -931,7 +932,7 @@ export class SystemSettingsController {
   }
 
   @Get('smtp')
-  @Roles('superadmin', 'admin')
+  @Permissions('view_system_settings')
   @RequiresFeature('admin_settings')
   async getSmtpSettings() {
     const keys = [
@@ -952,7 +953,7 @@ export class SystemSettingsController {
   }
 
   @Put('smtp')
-  @Roles('superadmin', 'admin')
+  @Permissions('edit_system_settings')
   @RequiresFeature('admin_settings')
   async updateSmtpSettings(@Body() body: Record<string, string>) {
     const allowedKeys = [
@@ -982,7 +983,7 @@ export class SystemSettingsController {
   }
 
   @Post('smtp/test')
-  @Roles('superadmin', 'admin')
+  @Permissions('edit_system_settings')
   @RequiresFeature('admin_settings')
   async testSmtp() {
     const keys = [

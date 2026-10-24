@@ -15,6 +15,7 @@ import { Prisma } from '@prisma/client';
 import { PaymentOptionType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../common/decorators/public.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { normalizePhone } from '../common/utils/phone-utils';
@@ -211,7 +212,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
   }
 
   // ============ ADMIN: Payment Options CRUD ============
-  @Roles('superadmin', 'admin')
+  @Permissions('view_gateways')
   @RequiresFeature('admin_payments')
   @Get('options')
   async findAllOptions() {
@@ -228,7 +229,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
     });
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('edit_gateways')
   @RequiresFeature('admin_payments')
   @Put('options/:type')
   async upsertOption(@Param('type') type: PaymentOptionType, @Body() dto: any) {
@@ -248,7 +249,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
   }
 
   // ============ ADMIN: Payment Gateways CRUD ============
-  @Roles('superadmin', 'admin')
+  @Permissions('view_gateways')
   @RequiresFeature('admin_payments')
   @Get('admin')
   async findAllAdmin(@Query('optionType') optionType?: string) {
@@ -339,7 +340,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
     }));
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('create_gateways')
   @RequiresFeature('admin_payments')
   @Post()
   async createGateway(@Body() dto: any) {
@@ -378,7 +379,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
     return created;
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('edit_gateways')
   @RequiresFeature('admin_payments')
   @Put(':code')
   async upsertGateway(@Param('code') code: string, @Body() dto: any) {
@@ -461,7 +462,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
   }
 
   // ============ ADMIN: Product Payment Option Overrides ============
-  @Roles('superadmin', 'admin')
+  @Permissions('view_gateways')
   @RequiresFeature('admin_payments')
   @Get('product-overrides/:productId')
   async findProductOverrides(@Param('productId') productId: string) {
@@ -471,7 +472,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
     });
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('edit_gateways')
   @RequiresFeature('admin_payments')
   @Put('product-overrides/:productId/:type')
   async upsertProductOverride(
@@ -502,7 +503,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
     });
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('delete_gateways')
   @RequiresFeature('admin_payments')
   @Delete('product-overrides/:productId/:type')
   async deleteProductOverride(
@@ -532,7 +533,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
   }
 
   // ============ ADMIN: Combo Payment Option Overrides ============
-  @Roles('superadmin', 'admin')
+  @Permissions('view_gateways')
   @RequiresFeature('admin_payments')
   @Get('combo-overrides/:comboId')
   async findComboOverrides(@Param('comboId') comboId: string) {
@@ -542,7 +543,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
     });
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('edit_gateways')
   @RequiresFeature('admin_payments')
   @Put('combo-overrides/:comboId/:type')
   async upsertComboOverride(
@@ -573,7 +574,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
     });
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('delete_gateways')
   @RequiresFeature('admin_payments')
   @Delete('combo-overrides/:comboId/:type')
   async deleteComboOverride(
@@ -602,7 +603,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
     }
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('view_gateways')
   @RequiresFeature('admin_payments')
   @Get(':code')
   async findOne(@Param('code') code: string) {

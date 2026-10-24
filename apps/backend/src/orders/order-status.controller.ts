@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RequiresFeature } from '@ecomate/feature-flags';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 
@@ -23,7 +24,7 @@ export class OrderStatusController {
     return this.prisma.orderStatus.findMany({ orderBy: { sortOrder: 'asc' } });
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('edit_orders')
   @Put(':id')
   async update(@Param('id') id: string, @Body() dto: UpdateOrderStatusDto) {
     const existing = await this.prisma.orderStatus.findUnique({

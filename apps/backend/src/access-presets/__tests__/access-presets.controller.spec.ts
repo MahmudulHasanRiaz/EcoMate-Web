@@ -1,11 +1,12 @@
 /**
- * Access-presets authorization wiring.
+ * Access-presets authorization wiring (preset supremacy, owner 2026-10-24).
  *
- * `manage_presets` is a legacy catalogue key that no guard referenced until the
- * PermissionController-era work; these assertions pin both halves of the
- * defence: the permission is enforced by PermissionsGuard, AND `@Roles` stays
- * on every handler so a preset that grants `manage_presets` cannot escalate
- * itself into edit rights over the presets that granted it.
+ * `manage_presets` is enforced by PermissionsGuard, and NO handler carries a
+ * role gate — a preset holder with manage_presets must be able to manage
+ * presets. Self-escalation is prevented capability-side instead: the
+ * controller refuses to grant permissions the actor does not already hold
+ * (assertNoEscalation), so a preset can never be edited into something
+ * broader than its editor.
  */
 import { Reflector } from '@nestjs/core';
 import { ForbiddenException } from '@nestjs/common';
@@ -61,15 +62,35 @@ describe('AccessPresetsController authorization', () => {
     );
   });
 
-  it.each(HANDLERS)(
-    '%s keeps @Roles("superadmin", "admin") so presets cannot grant themselves edit rights',
-    (handler) => {
-      expect(metaFor<string[]>(ROLES_KEY, handler)).toEqual([
-        'superadmin',
-        'admin',
-      ]);
-    },
-  );
+  it.each(HANDLERS)('%s declares NO @Roles() (preset supremacy)', (handler) => {
+    expect(metaFor<string[]>(ROLES_KEY, handler)).toBeUndefined();
+  });
+
+  it('create refuses to grant permissions the actor does not hold', async () => {
+    const service = {
+      create: jest.fn().mockResolvedValue({ id: 'p1' }),
+    } as any;
+    const controller = new AccessPresetsController(service);
+    await expect(
+      controller.create(
+        { name: 'Escalated', permissions: ['view_orders', 'manage_presets'] } as any,
+        { permissions: ['manage_presets'] },
+      ),
+    ).rejects.toThrow(ForbiddenException);
+    expect(service.create).not.toHaveBeenCalled();
+  });
+
+  it('create allows granting permissions the actor already holds', async () => {
+    const service = {
+      create: jest.fn().mockResolvedValue({ id: 'p1' }),
+    } as any;
+    const controller = new AccessPresetsController(service);
+    await controller.create(
+      { name: 'Narrow', permissions: ['view_orders'] } as any,
+      { permissions: ['view_orders', 'manage_presets'] },
+    );
+    expect(service.create).toHaveBeenCalled();
+  });
 
   it.each(HANDLERS)('denies %s without manage_presets', (handler) => {
     expect(() => guard.canActivate(contextFor([], handler))).toThrow(

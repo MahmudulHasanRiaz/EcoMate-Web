@@ -9,20 +9,20 @@ import {
   Query,
   BadRequestException,
 } from '@nestjs/common';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { AccountsService } from './accounts.service';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { UpdateAccountDto } from './dto/update-account.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
-import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('accounts')
-@Roles('superadmin', 'admin')
 @RequiresFeature('admin_accounting')
 export class AccountsController {
   constructor(private readonly accountsService: AccountsService) {}
 
   @Post()
+  @Permissions('create_accounts')
   create(@Body() dto: CreateAccountDto, @CurrentUser() user?: any) {
     return this.accountsService.create(dto, user?.sub);
   }
@@ -38,6 +38,7 @@ export class AccountsController {
    * mirroring AccountingController.findAllEntries.
    */
   @Get()
+  @Permissions('view_accounts')
   async findAll(
     @Query('type') type?: string,
     @Query('page') page?: string,
@@ -64,16 +65,19 @@ export class AccountsController {
   }
 
   @Get(':id')
+  @Permissions('view_accounts')
   findOne(@Param('id') id: string) {
     return this.accountsService.findOne(id);
   }
 
   @Put(':id')
+  @Permissions('edit_accounts')
   update(@Param('id') id: string, @Body() dto: UpdateAccountDto) {
     return this.accountsService.update(id, dto);
   }
 
   @Delete(':id')
+  @Permissions('delete_accounts')
   remove(@Param('id') id: string) {
     return this.accountsService.remove(id);
   }

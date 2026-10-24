@@ -35,8 +35,4 @@ export class CreateUserDto {
   @IsEnum(UserRole)
   role: UserRole;
 
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  override_permissions?: string[];
 }
