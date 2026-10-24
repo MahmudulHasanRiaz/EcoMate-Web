@@ -10,6 +10,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Public } from '../common/decorators/public.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { CouponsService } from './coupons.service';
 import { CreateCouponDto } from './dto/create-coupon.dto';
@@ -25,6 +26,10 @@ export class CouponsController {
     return this.couponsService.findAll();
   }
 
+  // Storefront guests validate coupons before checkout — the route must be
+  // public (DualModeAuthGuard 401s it otherwise) while the class-level
+  // feature gate still applies.
+  @Public()
   @Get('validate')
   async validate(
     @Query('code') code: string,
