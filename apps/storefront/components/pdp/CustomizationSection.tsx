@@ -57,7 +57,6 @@ export function CustomizationSection({
             <div key={g.key}>
               <div className="mb-2 text-[13px] text-gray-700 font-medium">
                 {g.label}
-                {g.required && <span className="text-brand-danger"> *</span>}
                 {g.type === 'text' && (g.priceDelta ?? 0) > 0 && (
                   <span className="text-gray-500 font-normal"> (+{currencySymbol}{fmt(g.priceDelta ?? 0)})</span>
                 )}
@@ -89,7 +88,9 @@ export function CustomizationSection({
                         type="button"
                         onClick={() => {
                           if (g.type === 'single') {
-                            setAnswer(g.key, { optionKeys: selected && !g.required ? [] : [o.key] });
+                            // Add-ons are always optional: tapping the chosen
+                            // option again deselects it (back to plain).
+                            setAnswer(g.key, { optionKeys: selected ? [] : [o.key] });
                           } else {
                             const cur = ans?.optionKeys || [];
                             setAnswer(g.key, {

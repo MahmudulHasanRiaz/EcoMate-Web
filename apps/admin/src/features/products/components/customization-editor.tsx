@@ -1,7 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Checkbox } from '@/components/ui/checkbox'
 import {
   Select,
   SelectContent,
@@ -158,13 +157,6 @@ export function CustomizationEditor({
                 </SelectContent>
               </Select>
             </div>
-            <label className='flex items-center gap-2 pt-5 cursor-pointer'>
-              <Checkbox
-                checked={!!g.required}
-                onCheckedChange={(c) => patchGroup(gi, { required: c === true })}
-              />
-              <span className='text-sm'>Required</span>
-            </label>
           </div>
 
           {g.type === 'text' ? (

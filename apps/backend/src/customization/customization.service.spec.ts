@@ -109,12 +109,18 @@ describe('CustomizationService', () => {
     ).toThrow(/at most 20 characters/);
   });
 
-  it('required group missing → throws; empty selection → null snapshot, zero amounts', () => {
+  it('no selection never blocks (owner rule: add-ons are always optional) → null snapshot, zero amounts', () => {
     const svc = makeService();
+    // Even a legacy definition carrying required:true must not throw —
+    // the product stays buyable without any customization.
     const requiredDef = [{ ...definition[0], required: true }];
-    expect(() =>
-      svc.resolveSelection({ definition: requiredDef, selection: { groups: [] }, quantity: 1 }),
-    ).toThrow(/required/);
+    const skipped = svc.resolveSelection({
+      definition: requiredDef,
+      selection: { groups: [] },
+      quantity: 1,
+    });
+    expect(skipped.snapshot).toBeNull();
+    expect(skipped.addonAmount).toBe(0);
     const empty = svc.resolveSelection({
       definition,
       selection: { groups: [{ key: 'extras', optionKeys: [] }] },
