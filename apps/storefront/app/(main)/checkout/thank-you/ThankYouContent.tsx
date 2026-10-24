@@ -368,19 +368,21 @@ export default function ThankYouContent({
                           ) : gateways.length === 0 ? (
                             <p className="text-xs text-gray-400">No online payment options available.</p>
                           ) : (
-                            <div className="space-y-2">
+                            <div className={`grid gap-2.5 ${gateways.length <= 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
                               {gateways.map(gw => (
                                 <button
                                   key={gw.id}
                                   onClick={() => setSelectedGw(gw)}
-                                  className="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-brand-blue hover:bg-brand-blue/5 transition-all"
+                                  className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-2 py-3 transition-all hover:border-brand-blue hover:bg-brand-blue/[0.03] hover:shadow-sm active:scale-[0.97]"
                                 >
-                                  <PaymentLogo method={gw.code} size="sm" />
-                                  <div className="flex-1 text-left">
-                                    <p className="text-[13px] font-bold text-gray-800">{gw.name || gw.code}</p>
-                                    {gw.phoneNumber && <p className="text-[11px] text-gray-400">{gw.phoneNumber}</p>}
-                                  </div>
-                                  <ChevronRight size={18} className="text-gray-300" />
+                                  <span className="flex h-9 items-center justify-center">
+                                    {gw.logoUrl ? (
+                                      <img src={gw.logoUrl} alt={gw.name || gw.code} className="max-h-9 w-auto max-w-[68px] object-contain" />
+                                    ) : (
+                                      <PaymentLogo method={gw.code} size="md" />
+                                    )}
+                                  </span>
+                                  <span className="w-full truncate text-center text-[11px] font-semibold leading-tight text-gray-700">{gw.name || gw.code}</span>
                                 </button>
                               ))}
                             </div>
@@ -396,6 +398,13 @@ export default function ThankYouContent({
                               <CreditCard size={16} className="text-brand-blue" />
                               Pay via {selectedGw.name || selectedGw.code}
                             </h3>
+                            <span className="ml-auto flex h-9 w-11 items-center justify-center rounded-lg border border-gray-100 bg-gray-50/60 px-1">
+                              {selectedGw.logoUrl ? (
+                                <img src={selectedGw.logoUrl} alt={selectedGw.name || selectedGw.code} className="max-h-7 w-auto max-w-full object-contain" />
+                              ) : (
+                                <PaymentLogo method={selectedGw.code} size="sm" />
+                              )}
+                            </span>
                           </div>
 
                           <div className="bg-blue-50 rounded-xl p-4 space-y-2 mb-4">
