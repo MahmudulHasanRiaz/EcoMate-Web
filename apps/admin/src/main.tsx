@@ -10,6 +10,7 @@ import { RouterProvider, createRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { handleServerError } from '@/lib/handle-server-error'
 import { APP_BASEPATH } from '@/lib/app-href'
+import { initSwUpdate } from '@/lib/sw-update'
 import { DirectionProvider } from './context/direction-provider'
 import { FontProvider } from './context/font-provider'
 import { ThemeProvider } from './context/theme-provider'
@@ -19,8 +20,11 @@ import { GeneralError } from '@/features/errors/general-error'
 // Styles
 import './styles/index.css'
 
-const queryClient = new QueryClient({
-  defaultOptions: {
+// D18: keep long-lived admin tabs on the latest deploy — periodic SW
+// update checks + one reload when a new SW takes control (see lib/sw-update).
+initSwUpdate()
+
+const queryClient = new QueryClient({  defaultOptions: {
     queries: {
       staleTime: 30_000,
       gcTime: 5 * 60_000,
