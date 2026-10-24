@@ -8,8 +8,9 @@ import {
   Param,
   Query,
 } from '@nestjs/common';
-import { Roles } from '../common/decorators/roles.decorator';
 import { Permissions } from '../common/decorators/permissions.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { assertNoEscalation } from '../common/permissions/no-escalation';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { AccessPresetsService } from './access-presets.service';
 import { CreateAccessPresetDto } from './dto/create-access-preset.dto';
@@ -21,20 +22,20 @@ export class AccessPresetsController {
   constructor(private readonly accessPresetsService: AccessPresetsService) {}
 
   /**
-   * `@Roles('superadmin', 'admin')` is deliberately kept on every handler even
-   * though `manage_presets` is now enforced as well. RolesGuard runs before
-   * PermissionsGuard in the global chain, so a preset that grants
-   * `manage_presets` still cannot hand edit rights over the presets that
-   * granted it — without the role gate, a preset could escalate itself.
+   * Preset supremacy (owner 2026-10-24): NO role gate here. The old
+   * `@Roles('superadmin','admin')` gate blocked preset holders with
+   * `manage_presets` from managing presets at all. Self-escalation is
+   * prevented capability-side instead: an actor may only grant permissions
+   * they already hold (assertNoEscalation below), so a preset can never be
+   * edited into something broader than its editor.
    */
-  @Roles('superadmin', 'admin')
   @Permissions('manage_presets')
   @Post()
-  async create(@Body() dto: CreateAccessPresetDto) {
+  async create(@Body() dto: CreateAccessPresetDto, @CurrentUser() user?: any) {
+    assertNoEscalation(user?.permissions, dto.permissions, 'access preset');
     return this.accessPresetsService.create(dto);
   }
 
-  @Roles('superadmin', 'admin')
   @Permissions('manage_presets')
   @Get()
   async findAll(
@@ -47,21 +48,19 @@ export class AccessPresetsController {
     return this.accessPresetsService.findAll(pageNum, perPageNum, search);
   }
 
-  @Roles('superadmin', 'admin')
   @Permissions('manage_presets')
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.accessPresetsService.findOne(id);
   }
 
-  @Roles('superadmin', 'admin')
   @Permissions('manage_presets')
   @Put(':id')
-  async update(@Param('id') id: string, @Body() dto: UpdateAccessPresetDto) {
+  async update(@Param('id') id: string, @Body() dto: UpdateAccessPresetDto, @CurrentUser() user?: any) {
+    assertNoEscalation(user?.permissions, dto.permissions, 'access preset');
     return this.accessPresetsService.update(id, dto);
   }
 
-  @Roles('superadmin', 'admin')
   @Permissions('manage_presets')
   @Delete(':id')
   async remove(@Param('id') id: string) {

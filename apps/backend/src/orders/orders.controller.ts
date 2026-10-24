@@ -119,7 +119,7 @@ export class OrdersController {
     );
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('edit_orders')
   @RequiresFeature('admin_orders')
   @Post('backfill-view-tokens')
   backfillViewTokens() {
@@ -215,7 +215,7 @@ export class OrdersController {
    * admin audit facility (SecurityEvent is a threat-detection ledger and would
    * misclassify a routine authorized read). Recorded as a future hardening item.
    */
-  @Roles('superadmin', 'admin')
+  @Permissions('view_orders')
   @RequiresFeature('admin_orders')
   @Get(':id/others-info')
   othersInfo(@Param('id') id: string) {

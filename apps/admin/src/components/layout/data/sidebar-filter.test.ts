@@ -210,13 +210,15 @@ describe('filterNavItems', () => {
   })
 
   it('sidebarData monitoring > User Management shows All Users when admin_users', () => {
-    const result = filterNavItems([monUserMgmt], ['admin_users'], ['view_hr'])
+    // Preset supremacy 2026-10-24: the group is gated on view_users (not
+    // view_hr), and All Users lives at /mon/users (HR no longer duplicates it).
+    const result = filterNavItems([monUserMgmt], ['admin_users'], ['view_users'])
     expect(result).toHaveLength(1)
     expect(result[0].title).toBe('User Management')
     const items = 'items' in result[0] ? result[0].items : []
     expect(items).toHaveLength(2)
     expect(items[0].title).toBe('All Users')
-    expect(items[0].url).toBe('/hr/users')
+    expect(items[0].url).toBe('/mon/users')
     expect(items[1].title).toBe('User Creation')
     expect(items[1].url).toBe('/mon/users/create')
   })
@@ -244,13 +246,13 @@ describe('filterNavItems', () => {
 
   it('sidebarData monitoring > User Management shows all children with wildcard', () => {
     // The `*` wildcard satisfies the FEATURE gate only — the permission gate
-    // still applies, so `view_hr` must be supplied here too.
-    const result = filterNavItems([monUserMgmt], [EVERYTHING_FEATURE], ['view_hr'])
+    // still applies, so `view_users` must be supplied here too.
+    const result = filterNavItems([monUserMgmt], [EVERYTHING_FEATURE], ['view_users'])
     expect(result).toHaveLength(1)
     expect('items' in result[0] ? result[0].items : []).toHaveLength(2)
   })
 
-  it('sidebarData monitoring > User Management is hidden by wildcard without view_hr', () => {
+  it('sidebarData monitoring > User Management is hidden by wildcard without view_users', () => {
     expect(filterNavItems([monUserMgmt], [EVERYTHING_FEATURE], [])).toHaveLength(0)
   })
 
@@ -339,58 +341,48 @@ describe('filterNavItems', () => {
   })
 })
 
-describe('role gating (journal admin-only, owner decision 2026-10-24)', () => {
+describe('permission gating (journal, preset supremacy 2026-10-24)', () => {
   const accountingGroup: NavItem[] = [
     {
       title: 'Accounting',
       feature: 'admin_accounting',
       items: [
         { title: 'Chart of Accounts', url: '/op/accounting' },
-        { title: 'Journal Entries', url: '/op/accounting/journal-entries', roles: ['superadmin', 'admin'] },
+        { title: 'Journal Entries', url: '/op/accounting/journal-entries', permissions: ['view_accounting'] },
         { title: 'Reports', url: '/op/accounting/reports' },
       ],
     },
   ]
 
-  it('admin sees Journal Entries; the other children are unaffected', () => {
-    const result = filterNavItems(accountingGroup, ['admin_accounting'], [], 'admin')
+  it('a holder of view_accounting sees Journal Entries; the other children are unaffected', () => {
+    const result = filterNavItems(accountingGroup, ['admin_accounting'], ['view_accounting'])
     expect(result).toHaveLength(1)
     expect('items' in result[0] && result[0].items).toHaveLength(3)
   })
 
-  it('superadmin sees Journal Entries', () => {
-    const result = filterNavItems(accountingGroup, ['admin_accounting'], [], 'superadmin')
-    expect('items' in result[0] && result[0].items).toHaveLength(3)
+  it('a preset-granted employee WITH view_accounting sees Journal Entries (preset supremacy: no role gate may hide it)', () => {
+    // The old role gate hid this from every employee even when their preset
+    // granted view_accounting. Under preset supremacy the permission decides.
+    const result = filterNavItems(accountingGroup, ['admin_accounting'], ['view_accounting'])
+    const titles = ('items' in result[0] && result[0].items ? result[0].items : []).map(i => i.title)
+    expect(titles).toContain('Journal Entries')
   })
 
-  it('employee does NOT see Journal Entries but keeps Chart of Accounts + Reports', () => {
-    const result = filterNavItems(accountingGroup, ['admin_accounting'], [], 'employee')
+  it('without view_accounting, Journal Entries hides but Chart of Accounts + Reports stay', () => {
+    const result = filterNavItems(accountingGroup, ['admin_accounting'], [])
     expect(result).toHaveLength(1)
     const titles = ('items' in result[0] && result[0].items ? result[0].items : []).map(i => i.title)
     expect(titles).toEqual(['Chart of Accounts', 'Reports'])
   })
 
-  it('unknown/missing role never sees a role-gated item (deny by default)', () => {
-    const result = filterNavItems(accountingGroup, ['admin_accounting'], [])
-    const titles = ('items' in result[0] && result[0].items ? result[0].items : []).map(i => i.title)
-    expect(titles).not.toContain('Journal Entries')
-  })
-
-  it('a permission grant cannot re-expose a role-gated item to an employee', () => {
-    // The backend locks journal by ROLE, so a preset permission must never
-    // bring the menu back for staff — only the role gate decides.
-    const result = filterNavItems(accountingGroup, ['admin_accounting'], ['view_accounting'], 'employee')
-    const titles = ('items' in result[0] && result[0].items ? result[0].items : []).map(i => i.title)
-    expect(titles).not.toContain('Journal Entries')
-  })
-
-  it('live sidebar data gates Journal Entries to superadmin/admin', () => {
+  it('live sidebar data gates Journal Entries on view_accounting, not on a role', () => {
     const accounting = sidebarData.navGroups
       .flatMap(g => g.items)
       .find(i => i.title === 'Accounting')!
     const journal = 'items' in accounting && accounting.items
       ? accounting.items.find(i => i.title === 'Journal Entries')
       : undefined
-    expect(journal?.roles).toEqual(['superadmin', 'admin'])
+    expect(journal?.permissions).toEqual(['view_accounting'])
+    expect('roles' in (journal ?? {})).toBe(false)
   })
 })

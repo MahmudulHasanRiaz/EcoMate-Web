@@ -18,7 +18,7 @@ async function load() {
 }
 
 describe('/mon/users/create route guard', () => {
-  it('is gated on the view_hr permission, with superadmin always allowed', async () => {
+  it('is gated on the create_users permission, with superadmin always allowed', async () => {
     const { Route } = await load()
     const beforeLoad = (Route.options as { beforeLoad?: () => void }).beforeLoad
     expect(beforeLoad).toBeTypeOf('function')
@@ -33,13 +33,14 @@ describe('/mon/users/create route guard', () => {
       setup(null)
       expect(() => beforeLoad!()).toThrow()
 
-      // Permissions without view_hr → redirect. This page previously had no
-      // guard at all, so any authenticated user could render the create form.
+      // Permissions without create_users → redirect. This page previously had
+      // no guard at all, so any authenticated user could render the create form.
+      // (It was gated on view_hr before the preset-supremacy change 2026-10-24.)
       setup({ role: 'employee', permissions: ['view_orders'] })
       expect(() => beforeLoad!()).toThrow()
 
-      // view_hr → allowed.
-      setup({ role: 'employee', permissions: ['view_hr'] })
+      // create_users → allowed.
+      setup({ role: 'employee', permissions: ['create_users'] })
       expect(() => beforeLoad!()).not.toThrow()
 
       // superadmin → allowed regardless of permissions.

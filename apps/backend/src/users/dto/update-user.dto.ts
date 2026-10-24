@@ -46,8 +46,4 @@ export class UpdateUserDto {
   @MinLength(6)
   password?: string;
 
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  override_permissions?: string[];
 }

@@ -9,13 +9,12 @@ import {
   UseGuards,
   BadRequestException,
 } from '@nestjs/common';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { FinancialPeriodsService } from './financial-periods.service';
 import { CreateFinancialPeriodDto } from './dto/create-financial-period.dto';
 import { AccountingEnabledGuard } from '../accounting/accounting-enabled.guard';
 import { RequiresFeature } from '@ecomate/feature-flags';
-import { Roles } from '../common/decorators/roles.decorator';
 
-@Roles('superadmin', 'admin')
 @UseGuards(AccountingEnabledGuard)
 @Controller('financial-periods')
 @RequiresFeature('admin_accounting')
@@ -25,6 +24,7 @@ export class FinancialPeriodsController {
   ) {}
 
   @Post()
+  @Permissions('post_journal_accounting')
   create(@Body() dto: CreateFinancialPeriodDto) {
     return this.financialPeriodsService.create(dto);
   }
@@ -40,6 +40,7 @@ export class FinancialPeriodsController {
    * boundary, mirroring AccountingController.findAllEntries.
    */
   @Get()
+  @Permissions('view_accounting')
   async findAll(
     @Query('page') page?: string,
     @Query('perPage') perPage?: string,
@@ -62,16 +63,19 @@ export class FinancialPeriodsController {
   }
 
   @Get(':id')
+  @Permissions('view_accounting')
   findOne(@Param('id') id: string) {
     return this.financialPeriodsService.findOne(id);
   }
 
   @Patch(':id/close')
+  @Permissions('post_journal_accounting')
   closePeriod(@Param('id') id: string) {
     return this.financialPeriodsService.closePeriod(id);
   }
 
   @Patch(':id/open')
+  @Permissions('post_journal_accounting')
   openPeriod(@Param('id') id: string) {
     return this.financialPeriodsService.openPeriod(id);
   }

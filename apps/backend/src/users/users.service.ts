@@ -15,7 +15,6 @@ import { randomUUID } from 'crypto';
 import { UserRole, UserStatus } from '@prisma/client';
 import { baPrisma } from '../better-auth/prisma';
 import { hashPassword } from 'better-auth/crypto';
-import { sanitizePermissions } from '../common/permissions/effective-permissions';
 
 @Injectable()
 export class UsersService {
@@ -210,11 +209,6 @@ export class UsersService {
           emailVerified: false,
           role: dto.role,
         };
-        if (dto.override_permissions !== undefined) {
-          baUserData.override_permissions = sanitizePermissions(
-            dto.override_permissions,
-          );
-        }
         const baUser = await baPrisma.betterAuthUser.create({
           data: baUserData,
         });
@@ -309,11 +303,6 @@ export class UsersService {
         }
         if (dto.email !== undefined) baUserData.email = dto.email;
         if (dto.role !== undefined) baUserData.role = dto.role;
-        if (dto.override_permissions !== undefined) {
-          baUserData.override_permissions = sanitizePermissions(
-            dto.override_permissions,
-          );
-        }
         if (Object.keys(baUserData).length > 0) {
           await baPrisma.betterAuthUser.update({
             where: { id: existingUser.betterAuthUserId },

@@ -156,16 +156,25 @@ export class DualModeAuthGuard {
 
   private async loadPermissionsFor(user: any): Promise<string[]> {
     const role = user.role || 'customer';
-    if (role === 'superadmin' || role === 'admin') {
+    // Owner rule 2026-10-24: superadmin is always all-open (Q1). Every
+    // other role goes through the preset-supremacy computation — including
+    // admins, whose linked preset now wins over the old "admin = all".
+    if (role === 'superadmin') {
       return getAllPermissions();
     }
-    if (role === 'customer' || !user.betterAuthUserId) {
+    if (role === 'customer') {
       return [];
+    }
+    // No BA link means no preset can exist for this account: non-admin
+    // roles get nothing, admins fall back to the role default (all).
+    if (!user.betterAuthUserId) {
+      return role === 'admin' ? getAllPermissions() : [];
     }
     const baUser = await this.prisma.betterAuthUser.findUnique({
       where: { id: user.betterAuthUserId },
       select: {
         override_permissions: true,
+        denied_permissions: true,
         employee: { include: { accessPreset: true } },
       },
     });
@@ -173,6 +182,7 @@ export class DualModeAuthGuard {
       role,
       employeeLink: baUser?.employee ?? null,
       overridePermissions: baUser?.override_permissions,
+      deniedPermissions: baUser?.denied_permissions,
     });
   }
 }

@@ -9,7 +9,6 @@ export interface UserResponse {
   phoneNumber: string
   status: string
   role: string
-  override_permissions?: string[]
   createdAt: string
   updatedAt: string
 }
@@ -49,8 +48,7 @@ export const usersApi = {
     phoneNumber: string
     password: string
     role: string
-    override_permissions?: string[]
-  }) => apiClient.post<UserResponse>('/users', data),
+    }) => apiClient.post<UserResponse>('/users', data),
 
   update: (id: string, data: Partial<{
     firstName: string
@@ -61,8 +59,7 @@ export const usersApi = {
     status: string
     role: string
     password: string
-    override_permissions?: string[]
-  }>) => apiClient.put<UserResponse>(`/users/${id}`, data),
+    }>) => apiClient.put<UserResponse>(`/users/${id}`, data),
 
   delete: (id: string) =>
     apiClient.delete(`/users/${id}`),

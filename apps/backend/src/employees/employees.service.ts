@@ -18,6 +18,8 @@ import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { CreateBankAccountDto } from './dto/create-bank-account.dto';
 import { UpdateBankAccountDto } from './dto/update-bank-account.dto';
 import { toDhakaDateOnly } from '../common/utils/dhaka-time';
+import { assertNoEscalation } from '../common/permissions/no-escalation';
+import { sanitizePermissions } from '../common/permissions/effective-permissions';
 
 const TERMINAL_STATUSES: EmployeeStatus[] = ['terminated', 'resigned'];
 
@@ -128,7 +130,10 @@ export interface EmployeeListQuery {
 const EMPLOYEE_DETAIL_INCLUDE: Prisma.EmployeeInclude = {
   department: { select: { id: true, name: true, slug: true } },
   designation: { select: { id: true, name: true, slug: true, level: true } },
-  accessPreset: { select: { id: true, name: true } },
+  // Preset permissions + custom access ride along so the HR edit dialog can
+  // render the effective access (preset + adds - removes) without a second
+  // fetch. Custom access is HR-only data; this include serves findOne only.
+  accessPreset: { select: { id: true, name: true, permissions: true } },
   reportingTo: {
     select: {
       id: true,
@@ -137,7 +142,14 @@ const EMPLOYEE_DETAIL_INCLUDE: Prisma.EmployeeInclude = {
     },
   },
   betterAuthUser: {
-    select: { id: true, name: true, email: true, role: true },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      override_permissions: true,
+      denied_permissions: true,
+    },
   },
   bankAccounts: {
     orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
@@ -226,7 +238,10 @@ export class EmployeesService {
           designation: {
             select: { id: true, name: true, slug: true, level: true },
           },
-          accessPreset: { select: { id: true, name: true } },
+          // Preset permissions + custom access ride along so the HR edit dialog can
+  // render the effective access (preset + adds - removes) without a second
+  // fetch. Custom access is HR-only data; this include serves findOne only.
+  accessPreset: { select: { id: true, name: true, permissions: true } },
           reportingTo: {
             select: {
               id: true,
@@ -288,7 +303,7 @@ export class EmployeesService {
     return employee;
   }
 
-  async create(dto: CreateEmployeeDto, actorId?: string) {
+  async create(dto: CreateEmployeeDto, actorId?: string, actorPermissions?: string[]) {
     const baUser = await baPrisma.betterAuthUser.findUnique({
       where: { id: dto.betterAuthUserId },
     });
@@ -318,6 +333,10 @@ export class EmployeesService {
         where: { id: dto.accessPresetId },
       });
       if (!preset) throw new NotFoundException('Access preset not found');
+      // Preset supremacy: an explicitly requested preset must fit inside
+      // the actor's own access (the resolved DEFAULT preset is exempt — it
+      // is the owner-approved hiring baseline, not an actor-chosen grant).
+      assertNoEscalation(actorPermissions, preset.permissions, 'access preset');
     }
     if (dto.reportingToId) {
       const manager = await this.prisma.employee.findUnique({
@@ -383,7 +402,10 @@ export class EmployeesService {
             designation: {
               select: { id: true, name: true, slug: true, level: true },
             },
-            accessPreset: { select: { id: true, name: true } },
+            // Preset permissions + custom access ride along so the HR edit dialog can
+  // render the effective access (preset + adds - removes) without a second
+  // fetch. Custom access is HR-only data; this include serves findOne only.
+  accessPreset: { select: { id: true, name: true, permissions: true } },
             betterAuthUser: {
               select: { id: true, name: true, email: true, role: true },
             },
@@ -595,11 +617,12 @@ export class EmployeesService {
     });
   }
 
-  async update(id: string, dto: UpdateEmployeeDto, actorId?: string) {
+  async update(id: string, dto: UpdateEmployeeDto, actorId?: string, actorPermissions?: string[]) {
     const current = await this.prisma.employee.findUnique({
       where: { id },
       select: {
         id: true,
+        betterAuthUserId: true,
         status: true,
         employmentType: true,
         departmentId: true,
@@ -659,6 +682,7 @@ export class EmployeesService {
         where: { id: dto.accessPresetId },
       });
       if (!preset) throw new NotFoundException('Access preset not found');
+      assertNoEscalation(actorPermissions, preset.permissions, 'access preset');
     }
     let newManager: {
       id: string;
@@ -789,10 +813,13 @@ export class EmployeesService {
       });
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const employee = await this.prisma.$transaction(async (tx) => {
       // G-15 did not add nested fields to update; strip them defensively so a
       // client cannot pass them into the scalar employee update.
       const updateData: any = { ...dto };
+      // Custom access lives on the login row, not the employee row.
+      delete updateData.customAccessAdds;
+      delete updateData.customAccessRemoves;
       delete updateData.salaryStructure;
       delete updateData.bankAccount;
       // Identity link is immutable after creation. PartialType inherits it from
@@ -828,7 +855,10 @@ export class EmployeesService {
           designation: {
             select: { id: true, name: true, slug: true, level: true },
           },
-          accessPreset: { select: { id: true, name: true } },
+          // Preset permissions + custom access ride along so the HR edit dialog can
+  // render the effective access (preset + adds - removes) without a second
+  // fetch. Custom access is HR-only data; this include serves findOne only.
+  accessPreset: { select: { id: true, name: true, permissions: true } },
           betterAuthUser: {
             select: { id: true, name: true, email: true, role: true },
           },
@@ -982,6 +1012,35 @@ export class EmployeesService {
 
       return employee;
     });
+
+    // HR-only custom access (owner Q3): additions widen the preset,
+    // removals narrow it. Written to the login row; empty array clears,
+    // undefined leaves unchanged. Additions are bounded by the actor's own
+    // access, so HR staff cannot mint access they do not hold.
+    if (dto.customAccessAdds !== undefined || dto.customAccessRemoves !== undefined) {
+      // Sanitize first (unknown keys strip silently, as before), then bound
+      // the known remainder by the actor's own access.
+      assertNoEscalation(
+        actorPermissions,
+        dto.customAccessAdds === undefined
+          ? undefined
+          : sanitizePermissions(dto.customAccessAdds),
+        'custom access',
+      );
+      const baData: any = {};
+      if (dto.customAccessAdds !== undefined) {
+        baData.override_permissions = sanitizePermissions(dto.customAccessAdds);
+      }
+      if (dto.customAccessRemoves !== undefined) {
+        baData.denied_permissions = sanitizePermissions(dto.customAccessRemoves);
+      }
+      await baPrisma.betterAuthUser.update({
+        where: { id: current.betterAuthUserId },
+        data: baData,
+      });
+    }
+
+    return employee;
   }
 
   async remove(id: string, actorId?: string) {

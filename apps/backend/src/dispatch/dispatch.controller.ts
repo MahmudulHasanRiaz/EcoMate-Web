@@ -13,6 +13,7 @@ import { CreateDispatchDto } from './dto/create-dispatch.dto';
 import { DispatchQueryDto } from './dto/dispatch-query.dto';
 import { SyncDispatchStatusDto } from './dto/sync-dispatch-status.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { DispatchCancelService } from '../dispatch-cancel/dispatch-cancel.service';
 
@@ -98,7 +99,7 @@ export class DispatchController {
   }
 
   @Delete(':id')
-  @Roles('superadmin', 'admin')
+  @Permissions('manage_dispatch_dispatch')
   remove(@Param('id') id: string) {
     return this.dispatchService.remove(id);
   }

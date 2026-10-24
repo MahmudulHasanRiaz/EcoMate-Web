@@ -52,6 +52,7 @@ export const auth = betterAuth({
     additionalFields: {
       role: { type: 'string', required: false, defaultValue: 'customer' },
       override_permissions: { type: 'string[]', required: false },
+      denied_permissions: { type: 'string[]', required: false },
     },
   },
   account: { modelName: 'betterAuthAccount' },
@@ -75,9 +76,14 @@ export const auth = betterAuth({
         const role = (user as any).role || 'customer';
         const overridePerms: string[] =
           (user as any).override_permissions || [];
+        const deniedPerms: string[] =
+          (user as any).denied_permissions || [];
 
-        let employeeLink: { accessPreset?: { permissions: string[] } | null } | null = null;
-        if (role !== 'admin' && role !== 'superadmin' && role !== 'customer') {
+        // Preset supremacy (owner 2026-10-24): the employee link is fetched
+        // for admins too — an admin's linked preset now wins over the old
+        // "admin = all". Superadmin stays all-open inside the computation.
+        let employeeLink: { accessPresetId?: string | null; accessPreset?: { permissions: string[] } | null } | null = null;
+        if (role !== 'customer') {
           const emp = await baPrisma.employee.findUnique({
             where: { betterAuthUserId: user.id },
             include: { accessPreset: true },
@@ -92,6 +98,7 @@ export const auth = betterAuth({
           role,
           employeeLink,
           overridePermissions: overridePerms,
+          deniedPermissions: deniedPerms,
         });
 
         if (role === 'customer') {

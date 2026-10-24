@@ -7,7 +7,7 @@ import { UserRole } from '@prisma/client';
 
 const pipe = new ValidationPipe({ whitelist: true, transform: true });
 
-describe('Users DTOs — override_permissions', () => {
+describe('Users DTOs — no override_permissions (HR-only now)', () => {
   const baseCreate = {
     firstName: 'Jane',
     lastName: 'Smith',
@@ -19,74 +19,33 @@ describe('Users DTOs — override_permissions', () => {
   };
 
   it('CreateUserDto accepts role employee via @IsEnum(UserRole)', async () => {
-    const dto = plainToInstance(CreateUserDto, {
-      ...baseCreate,
-      override_permissions: ['view_orders'],
-    });
+    const dto = plainToInstance(CreateUserDto, baseCreate);
     const errors = await validate(dto);
     expect(errors).toHaveLength(0);
     expect(dto.role).toBe(UserRole.employee);
   });
 
-  it('CreateUserDto override_permissions survives whitelist ValidationPipe transform', async () => {
+  it('override_permissions is stripped by the whitelist pipe on create (custom access lives in Employee Management only)', async () => {
     const result: CreateUserDto = await pipe.transform(
       { ...baseCreate, override_permissions: ['view_orders', 'manage_stock'] },
       { type: 'body', metatype: CreateUserDto },
     );
-    expect(result.override_permissions).toEqual([
-      'view_orders',
-      'manage_stock',
-    ]);
+    expect(result).not.toHaveProperty('override_permissions');
   });
 
-  it('CreateUserDto rejects non-string entries in override_permissions', async () => {
-    const dto = plainToInstance(CreateUserDto, {
-      ...baseCreate,
-      override_permissions: ['view_orders', 123],
-    });
-    const errors = await validate(dto);
-    expect(errors.some((e) => e.property === 'override_permissions')).toBe(
-      true,
-    );
-  });
-
-  it('CreateUserDto override_permissions optional (omitted → undefined)', async () => {
-    const result: CreateUserDto = await pipe.transform(baseCreate, {
-      type: 'body',
-      metatype: CreateUserDto,
-    });
-    expect(result.override_permissions).toBeUndefined();
-  });
-
-  it('UpdateUserDto override_permissions survives whitelist ValidationPipe transform', async () => {
+  it('override_permissions is stripped by the whitelist pipe on update', async () => {
     const result: UpdateUserDto = await pipe.transform(
       { override_permissions: ['view_orders'] },
       { type: 'body', metatype: UpdateUserDto },
     );
-    expect(result.override_permissions).toEqual(['view_orders']);
+    expect(result).not.toHaveProperty('override_permissions');
   });
 
-  it('UpdateUserDto override_permissions: empty array and undefined both valid', async () => {
-    const empty = await pipe.transform(
-      { override_permissions: [] },
-      { type: 'body', metatype: UpdateUserDto },
-    );
-    expect(empty.override_permissions).toEqual([]);
-
-    const omitted = await pipe.transform(
-      {},
-      { type: 'body', metatype: UpdateUserDto },
-    );
-    expect(omitted.override_permissions).toBeUndefined();
-  });
-
-  it('UpdateUserDto rejects non-string override_permissions entries', async () => {
-    const dto = plainToInstance(UpdateUserDto, {
-      override_permissions: [true],
+  it('CreateUserDto without override_permissions validates clean', async () => {
+    const result: CreateUserDto = await pipe.transform(baseCreate, {
+      type: 'body',
+      metatype: CreateUserDto,
     });
-    const errors = await validate(dto);
-    expect(errors.some((e) => e.property === 'override_permissions')).toBe(
-      true,
-    );
+    expect(result).not.toHaveProperty('override_permissions');
   });
 });

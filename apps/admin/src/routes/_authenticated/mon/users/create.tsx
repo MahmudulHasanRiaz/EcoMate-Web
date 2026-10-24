@@ -23,20 +23,17 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { PasswordInput } from '@/components/password-input'
-import { PermissionCheckboxMatrix } from '@/components/permissions/PermissionCheckboxMatrix'
 import { usersApi } from '@/features/users/api'
-import { USER_ROLES } from '@/features/users/constants'
+import { STAFF_ROLE_OPTIONS } from '@/features/users/constants'
 
 export const Route = createFileRoute('/_authenticated/mon/users/create')({
-  // User creation was previously reachable only through the Users list dialog,
-  // which sits behind the `view_hr` permission. This route has no such gate, so
-  // without a guard any authenticated user could navigate straight to it and
-  // render a full account-creation form (the backend still rejects the write,
-  // but the surface must not be exposed). Matches the nav gate in
-  // sidebar-data.ts: `view_hr`.
+  // Normal User Management (owner 2026-10-24): this surface is for people
+  // WITHOUT the HR module, so it must never require view_hr. Matches the nav
+  // gate in sidebar-data.ts: `view_users`, with superadmin always allowed.
+  // The backend still rejects the write for anyone without create_users.
   beforeLoad: () => {
-    // Mirrors the gate the nav item uses (sidebar-data.ts): `view_hr`, with
-    // superadmin always allowed.
+    // Mirrors the gate the nav item uses (sidebar-data.ts): `view_users`,
+    // with superadmin always allowed.
     const isAllowed = () => {
       try {
         const raw = localStorage.getItem('eco_mate_user')
@@ -46,13 +43,13 @@ export const Route = createFileRoute('/_authenticated/mon/users/create')({
           permissions?: string[]
         }
         if (user.role === 'superadmin') return true
-        return (user.permissions ?? []).includes('view_hr')
+        return (user.permissions ?? []).includes('create_users')
       } catch {
         return false
       }
     }
     if (isAllowed()) return
-    throw redirect({ to: '/hr/users' })
+    throw redirect({ to: '/mon/users' })
   },
   component: UserCreationPage,
 })
@@ -88,7 +85,6 @@ function UserCreationPage() {
   const [form, setForm] = useState(EMPTY)
   // Per-user permission overrides, previously only settable through the Users
   // dialog when creating an admin. Lost with that dialog, so restore it here.
-  const [permissions, setPermissions] = useState<string[]>([])
 
   const set = (key: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [key]: e.target.value }))
@@ -99,7 +95,6 @@ function UserCreationPage() {
       queryClient.invalidateQueries({ queryKey: ['users'] })
       toast.success('User created successfully')
       setForm(EMPTY)
-      setPermissions([])
     },
     onError: (e: any) =>
       toast.error(e?.response?.data?.message || 'Failed to create user'),
@@ -153,7 +148,6 @@ function UserCreationPage() {
                   phoneNumber: form.phoneNumber,
                   password: form.password,
                   role: form.role,
-                  override_permissions: permissions,
                 })
               }}
             >
@@ -207,7 +201,7 @@ function UserCreationPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {USER_ROLES.map((r) => (
+                    {STAFF_ROLE_OPTIONS.map((r) => (
                       <SelectItem key={r.value} value={r.value}>
                         {r.label}
                       </SelectItem>
@@ -215,19 +209,6 @@ function UserCreationPage() {
                   </SelectContent>
                 </Select>
               </div>
-
-              {form.role === 'admin' && (
-                <div className='sm:col-span-2 border rounded-lg p-4 space-y-3'>
-                  <Label className='font-semibold'>Permissions</Label>
-                  <p className='text-sm text-muted-foreground'>
-                    Assign permissions directly (bypasses Employee module)
-                  </p>
-                  <PermissionCheckboxMatrix
-                    selected={permissions}
-                    onChange={setPermissions}
-                  />
-                </div>
-              )}
 
               <div className='flex justify-end sm:col-span-2'>
                 <Button type='submit' disabled={!valid || create.isPending}>

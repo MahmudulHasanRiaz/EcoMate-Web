@@ -33,6 +33,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { DatePicker } from '@/components/date-picker'
+import { Checkbox } from '@/components/ui/checkbox'
+import { PermissionCheckboxMatrix } from '@/components/permissions/PermissionCheckboxMatrix'
 import { toDhakaDateString, parseDhakaDateString } from '@/lib/dhaka-time'
 import { useDepartmentsQuery } from '@/features/departments/hooks'
 import { useDesignationsQuery } from '@/features/designations/hooks'
@@ -141,6 +143,14 @@ export function EditEmployeeDialog({
   const [shiftValue, setShiftValue] = useState<ShiftSelectionValue>(DEFAULT_SHIFT_VALUE)
   const [shiftDirty, setShiftDirty] = useState(false)
 
+  // HR-only custom access adjustments (owner 2026-10-24, Q3): additions
+  // widen the selected preset, removals narrow it. Never offered in normal
+  // User Management. Only sent on save when touched (customDirty), so an
+  // untouched dialog can never wipe existing adjustments.
+  const [customAdds, setCustomAdds] = useState<string[]>([])
+  const [customRemoves, setCustomRemoves] = useState<string[]>([])
+  const [customDirty, setCustomDirty] = useState(false)
+
   // Populate when employee opens
   useEffect(() => {
     if (!employee) return
@@ -208,11 +218,41 @@ export function EditEmployeeDialog({
       })
       setShiftDirty(false)
     }
+
+    // Custom access comes from the login row (HR-only data).
+    setCustomAdds(employee.betterAuthUser?.override_permissions ?? [])
+    setCustomRemoves(employee.betterAuthUser?.denied_permissions ?? [])
+    setCustomDirty(false)
   }, [employee, rotationData])
 
   if (!employee) return null
 
   const isTerminal = form.status === 'terminated' || form.status === 'resigned'
+
+  // Permissions of the preset currently selected in this dialog: prefer the
+  // employee's own preset record (always present), fall back to the paged
+  // preset list for a newly picked preset.
+  const selectedPresetPermissions: string[] =
+    form.accessPresetId === employee?.accessPresetId
+      ? (employee?.accessPreset?.permissions ?? [])
+      : ((presets?.data || []).find((p: any) => p.id === form.accessPresetId)?.permissions ?? [])
+  const effectivePermissions = Array.from(
+    new Set([...selectedPresetPermissions, ...customAdds]),
+  ).filter((key) => !customRemoves.includes(key))
+
+  const handlePresetChange = (val: string) => {
+    setForm((f) => ({ ...f, accessPresetId: val }))
+    // Removals only make sense against the selected preset's keys: prune
+    // any that the new preset does not grant (they would subtract nothing).
+    const next = (presets?.data || []).find((p: any) => p.id === val)
+    if (next) {
+      setCustomRemoves((prev) => {
+        const pruned = prev.filter((key) => next.permissions.includes(key))
+        if (pruned.length !== prev.length) setCustomDirty(true)
+        return pruned
+      })
+    }
+  }
 
   const handleShiftChange = (val: ShiftSelectionValue) => {
     // The picker seeds its default preset on mount. That is not a user edit, so
@@ -265,6 +305,12 @@ export function EditEmployeeDialog({
         salary: form.salary ? Number(form.salary) : undefined,
         bankName: form.bankName || undefined,
         bankAccountNo: form.bankAccountNo || undefined,
+        ...(customDirty
+          ? {
+              customAccessAdds: customAdds,
+              customAccessRemoves: customRemoves,
+            }
+          : {}),
       }
 
       await employeesApi.update(employee.id, updatePayload)
@@ -442,7 +488,7 @@ export function EditEmployeeDialog({
                   <Label className='text-xs'>Access Preset</Label>
                   <Select
                     value={form.accessPresetId}
-                    onValueChange={(val) => setForm((f) => ({ ...f, accessPresetId: val }))}
+                    onValueChange={handlePresetChange}
                   >
                     <SelectTrigger className='h-9 text-xs'>
                       <SelectValue placeholder='No preset' />
@@ -455,6 +501,56 @@ export function EditEmployeeDialog({
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div className='space-y-3 border rounded-lg p-4'>
+                  <div>
+                    <Label className='text-xs font-semibold'>Custom access adjustments</Label>
+                    <p className='text-xs text-muted-foreground'>
+                      HR-only: the preset above is the base. Additions widen it,
+                      removals narrow it. Effective access is preset + additions
+                      − removals, and a later preset edit still propagates.
+                    </p>
+                    <p className='text-xs text-muted-foreground'>
+                      Effective: {effectivePermissions.length} permissions
+                      (preset {selectedPresetPermissions.length} + added{' '}
+                      {customAdds.filter((k) => !selectedPresetPermissions.includes(k)).length} − removed{' '}
+                      {customRemoves.filter((k) => selectedPresetPermissions.includes(k)).length})
+                    </p>
+                  </div>
+                  <div className='space-y-1.5'>
+                    <Label className='text-xs'>Additional access</Label>
+                    <PermissionCheckboxMatrix
+                      selected={customAdds}
+                      onChange={(v) => {
+                        setCustomAdds(v)
+                        setCustomDirty(true)
+                      }}
+                    />
+                  </div>
+                  {selectedPresetPermissions.length > 0 && (
+                    <div className='space-y-1.5'>
+                      <Label className='text-xs'>Removed access (from the selected preset)</Label>
+                      <div className='grid grid-cols-2 gap-1.5'>
+                        {selectedPresetPermissions.map((key) => (
+                          <label key={key} className='flex items-center gap-2 text-xs'>
+                            <Checkbox
+                              checked={customRemoves.includes(key)}
+                              onCheckedChange={(c) => {
+                                setCustomRemoves(
+                                  c === true
+                                    ? [...customRemoves, key]
+                                    : customRemoves.filter((k) => k !== key),
+                                )
+                                setCustomDirty(true)
+                              }}
+                            />
+                            <span className='font-mono'>{key}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className='space-y-1.5'>

@@ -16,18 +16,17 @@ export function AppSidebar() {
   const { activePanel } = usePanel()
   const features = useLicenseStore((s) => s.features)
   const permissions = useAuthStore((s) => s.auth.user?.permissions) ?? EMPTY_PERMISSIONS
-  const role = useAuthStore((s) => s.auth.user?.role)
 
   const mainGroups = sidebarData.navGroups
     .filter((g) => g.title !== 'Secondary' && (!g.panel || g.panel === activePanel))
-    .map((g) => ({ ...g, items: filterNavItems(g.items, features, permissions, role) }))
+    .map((g) => ({ ...g, items: filterNavItems(g.items, features, permissions) }))
     .filter((g) => g.items.length > 0)
 
   const secondaryGroup = sidebarData.navGroups.find((g) => g.title === 'Secondary')
   const footerItems = secondaryGroup?.items.filter(
     (item) => !item.panel || item.panel === activePanel
   )
-  const filteredFooter = footerItems ? filterNavItems(footerItems, features, permissions, role) : []
+  const filteredFooter = footerItems ? filterNavItems(footerItems, features, permissions) : []
 
   return (
     <Sidebar collapsible={collapsible} variant={variant}>

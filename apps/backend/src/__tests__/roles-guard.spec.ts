@@ -1,4 +1,5 @@
 import { ROLES_KEY } from '../common/decorators/roles.decorator';
+import { PERMISSIONS_KEY } from '../common/decorators/permissions.decorator';
 import { OrdersController } from '../orders/orders.controller';
 import { UsersController } from '../users/users.controller';
 import { DispatchController } from '../dispatch/dispatch.controller';
@@ -19,6 +20,10 @@ import { TasksController } from '../tasks/tasks.controller';
 
 function getRoles(target: any, propertyKey: string): string[] | undefined {
   return Reflect.getMetadata(ROLES_KEY, target.prototype[propertyKey]);
+}
+
+function getPermissions(target: any, propertyKey: string): string[] | undefined {
+  return Reflect.getMetadata(PERMISSIONS_KEY, target.prototype[propertyKey]);
 }
 
 function getHandler(controller: any, methodName: string): any {
@@ -58,23 +63,20 @@ describe('OrdersController role guards', () => {
 
 /* ── UsersController ── */
 
-describe('UsersController role guards', () => {
-  it('GET /users requires superadmin/admin', () => {
-    const roles = getRoles(UsersController, 'findAll');
-    expect(roles).toBeDefined();
-    expect(roles).toEqual(['superadmin', 'admin']);
+describe('UsersController permission guards (preset supremacy 2026-10-24)', () => {
+  it('GET /users requires view_users and has NO role gate', () => {
+    expect(getRoles(UsersController, 'findAll')).toBeUndefined();
+    expect(getPermissions(UsersController, 'findAll')).toEqual(['view_users']);
   });
 
-  it('GET /users/by-email/:email requires superadmin/admin', () => {
-    const roles = getRoles(UsersController, 'findByEmail');
-    expect(roles).toBeDefined();
-    expect(roles).toEqual(['superadmin', 'admin']);
+  it('GET /users/by-email/:email requires view_users and has NO role gate', () => {
+    expect(getRoles(UsersController, 'findByEmail')).toBeUndefined();
+    expect(getPermissions(UsersController, 'findByEmail')).toEqual(['view_users']);
   });
 
-  it('GET /users/:id requires superadmin/admin', () => {
-    const roles = getRoles(UsersController, 'findOne');
-    expect(roles).toBeDefined();
-    expect(roles).toEqual(['superadmin', 'admin']);
+  it('GET /users/:id requires view_users and has NO role gate', () => {
+    expect(getRoles(UsersController, 'findOne')).toBeUndefined();
+    expect(getPermissions(UsersController, 'findOne')).toEqual(['view_users']);
   });
 
   // Settings endpoints are user-scoped, NOT role-restricted:
@@ -107,11 +109,11 @@ describe('DispatchController role guards', () => {
     });
   }
 
-  // DELETE already had @Roles('superadmin', 'admin'), verify unchanged:
-  it('DELETE /dispatch/:id requires superadmin/admin (already existed)', () => {
-    const roles = getRoles(DispatchController, 'remove');
-    expect(roles).toBeDefined();
-    expect(roles).toEqual(['superadmin', 'admin']);
+  // DELETE was @Roles('superadmin','admin'); preset supremacy moved it to the
+  // dispatch capability key (a preset holder with it may remove a dispatch).
+  it('DELETE /dispatch/:id requires manage_dispatch_dispatch and has NO role gate', () => {
+    expect(getRoles(DispatchController, 'remove')).toBeUndefined();
+    expect(getPermissions(DispatchController, 'remove')).toEqual(['manage_dispatch_dispatch']);
   });
 });
 
@@ -139,10 +141,21 @@ describe('WarehousesController role guards', () => {
     });
   }
 
-  // Write endpoints already had roles — verify they didn't regress:
-  it('POST /warehouses requires superadmin/admin', () => {
-    const roles = getRoles(WarehousesController, 'create');
-    expect(roles).toEqual(['superadmin', 'admin']);
+  // Write endpoints moved from @Roles('superadmin','admin') to the
+  // warehouses capability keys (preset supremacy 2026-10-24):
+  it('POST /warehouses requires create_warehouses and has NO role gate', () => {
+    expect(getRoles(WarehousesController, 'create')).toBeUndefined();
+    expect(getPermissions(WarehousesController, 'create')).toEqual(['create_warehouses']);
+  });
+
+  it('PUT /warehouses/:id requires edit_warehouses and has NO role gate', () => {
+    expect(getRoles(WarehousesController, 'update')).toBeUndefined();
+    expect(getPermissions(WarehousesController, 'update')).toEqual(['edit_warehouses']);
+  });
+
+  it('DELETE /warehouses/:id requires delete_warehouses and has NO role gate', () => {
+    expect(getRoles(WarehousesController, 'remove')).toBeUndefined();
+    expect(getPermissions(WarehousesController, 'remove')).toEqual(['delete_warehouses']);
   });
 
   it('POST /warehouses/:id/bin-locations requires superadmin/admin/manager', () => {
@@ -153,23 +166,20 @@ describe('WarehousesController role guards', () => {
 
 /* ── BrandsController ── */
 
-describe('BrandsController role guards', () => {
-  it('POST /brands requires superadmin/admin', () => {
-    const roles = getRoles(BrandsController, 'create');
-    expect(roles).toBeDefined();
-    expect(roles).toEqual(['superadmin', 'admin']);
+describe('BrandsController permission guards (preset supremacy 2026-10-24)', () => {
+  it('POST /brands requires create_brands and has NO role gate', () => {
+    expect(getRoles(BrandsController, 'create')).toBeUndefined();
+    expect(getPermissions(BrandsController, 'create')).toEqual(['create_brands']);
   });
 
-  it('PUT /brands/:id requires superadmin/admin', () => {
-    const roles = getRoles(BrandsController, 'update');
-    expect(roles).toBeDefined();
-    expect(roles).toEqual(['superadmin', 'admin']);
+  it('PUT /brands/:id requires edit_brands and has NO role gate', () => {
+    expect(getRoles(BrandsController, 'update')).toBeUndefined();
+    expect(getPermissions(BrandsController, 'update')).toEqual(['edit_brands']);
   });
 
-  it('DELETE /brands/:id requires superadmin/admin', () => {
-    const roles = getRoles(BrandsController, 'remove');
-    expect(roles).toBeDefined();
-    expect(roles).toEqual(['superadmin', 'admin']);
+  it('DELETE /brands/:id requires delete_brands and has NO role gate', () => {
+    expect(getRoles(BrandsController, 'remove')).toBeUndefined();
+    expect(getPermissions(BrandsController, 'remove')).toEqual(['delete_brands']);
   });
 
   // Public reads must stay public:

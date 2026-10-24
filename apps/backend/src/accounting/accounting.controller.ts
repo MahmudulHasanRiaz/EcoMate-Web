@@ -9,6 +9,7 @@ import {
   UseGuards,
   BadRequestException,
 } from '@nestjs/common';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { AccountingService } from './accounting.service';
 import { AccountingEnabledGuard } from './accounting-enabled.guard';
 import { CreateJournalEntryDto } from './dto/create-journal-entry.dto';
@@ -16,10 +17,8 @@ import { BackfillJournalsDto } from './dto/backfill-journals.dto';
 import { PaymentJournalService } from './payment-journal.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
-import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('accounting')
-@Roles('superadmin', 'admin')
 @UseGuards(AccountingEnabledGuard)
 @RequiresFeature('admin_accounting')
 export class AccountingController {
@@ -29,6 +28,7 @@ export class AccountingController {
   ) {}
 
   @Post('entries')
+  @Permissions('post_journal_accounting')
   createEntry(@Body() dto: CreateJournalEntryDto, @CurrentUser() user?: any) {
     return this.accountingService.createEntry(dto, user?.sub);
   }
@@ -40,6 +40,7 @@ export class AccountingController {
    * re-running changes nothing. Always start with `{ "dryRun": true }`.
    */
   @Post('payments/backfill-journals')
+  @Permissions('post_journal_accounting')
   backfillPaymentJournals(@Body() dto: BackfillJournalsDto) {
     return this.paymentJournal.backfillRecordedPayments(dto);
   }
@@ -55,6 +56,7 @@ export class AccountingController {
    * FinancialPeriodsController.findAll.
    */
   @Get('entries')
+  @Permissions('view_accounting')
   async findAllEntries(
     @Query('page') page?: string,
     @Query('perPage') perPage?: string,
@@ -84,31 +86,37 @@ export class AccountingController {
   }
 
   @Get('entries/:id')
+  @Permissions('view_accounting')
   getEntry(@Param('id') id: string) {
     return this.accountingService.getEntry(id);
   }
 
   @Delete('entries/:id')
+  @Permissions('post_journal_accounting')
   deleteEntry(@Param('id') id: string) {
     return this.accountingService.deleteEntry(id);
   }
 
   @Get('reports/trial-balance')
+  @Permissions('view_accounting')
   trialBalance(@Query('periodId') periodId: string) {
     return this.accountingService.trialBalance(periodId);
   }
 
   @Get('reports/profit-and-loss')
+  @Permissions('view_accounting')
   profitAndLoss(@Query('periodId') periodId: string) {
     return this.accountingService.profitAndLoss(periodId);
   }
 
   @Get('reports/balance-sheet')
+  @Permissions('view_accounting')
   balanceSheet(@Query('periodId') periodId: string) {
     return this.accountingService.balanceSheet(periodId);
   }
 
   @Get('reports/ledger/:accountId')
+  @Permissions('view_accounting')
   accountLedger(
     @Param('accountId') accountId: string,
     @Query('periodId') periodId?: string,

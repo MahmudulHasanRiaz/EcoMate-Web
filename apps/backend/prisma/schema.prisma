@@ -208,6 +208,7 @@ model betterAuthUser {
   image                String?
   role                 String?  @default("customer")
   override_permissions String[]
+  denied_permissions   String[]
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 

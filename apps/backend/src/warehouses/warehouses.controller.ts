@@ -9,6 +9,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { WarehousesService } from './warehouses.service';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
@@ -53,19 +54,19 @@ export class WarehousesController {
   }
 
   @Post()
-  @Roles('superadmin', 'admin')
+  @Permissions('create_warehouses')
   create(@Body() dto: CreateWarehouseDto) {
     return this.svc.create(dto);
   }
 
   @Put(':id')
-  @Roles('superadmin', 'admin')
+  @Permissions('edit_warehouses')
   update(@Param('id') id: string, @Body() dto: UpdateWarehouseDto) {
     return this.svc.update(id, dto);
   }
 
   @Delete(':id')
-  @Roles('superadmin', 'admin')
+  @Permissions('delete_warehouses')
   remove(@Param('id') id: string) {
     return this.svc.remove(id);
   }
