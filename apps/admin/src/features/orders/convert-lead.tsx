@@ -45,10 +45,10 @@ export function ConvertLead({ id }: { id: string }) {
   })
 
   // Same query key as PaymentGatewayAccountSelect so the configured gateway
-  // list is shared from cache — no duplicate /gateways/admin request.
+  // list is shared from cache — no duplicate /gateways/payment-form request.
   const { data: gateways } = useQuery({
     queryKey: ['admin-gateways'],
-    queryFn: () => gatewayApi.listGateways().then((r) => r.data),
+    queryFn: () => gatewayApi.listPaymentFormGateways().then((r) => r.data),
     staleTime: 60_000,
   })
 

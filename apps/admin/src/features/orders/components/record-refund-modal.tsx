@@ -105,7 +105,7 @@ export function RecordRefundModal({
   })
   const { data: gateways } = useQuery({
     queryKey: ['admin-gateways'],
-    queryFn: () => gatewayApi.listGateways().then((r) => r.data),
+    queryFn: () => gatewayApi.listPaymentFormGateways().then((r) => r.data),
     enabled: open,
     staleTime: 60_000,
   })

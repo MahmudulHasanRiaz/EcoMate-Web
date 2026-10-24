@@ -288,6 +288,57 @@ export class GatewayConfigController implements OnApplicationBootstrap {
     }));
   }
 
+  // ============ STAFF-SAFE: Payment-form gateway list (D17) ============
+  // Every role that may record a payment (superadmin/admin/employee) needs
+  // the selectable gateway set — but GET /gateways/admin ALSO returns raw
+  // gateway `credentials`, so it must stay admin-only (widening it would
+  // leak secrets to every staff account). This endpoint returns ONLY the
+  // fields a payment form selects on; it never returns credentials or
+  // settings overrides. The client keeps the D6/D7 filtering (enabled +
+  // showOnAdmin for new selections, enabled set for history), so the
+  // server returns the whole enabled set with each gateway's mapped
+  // settlement account embedded — the form no longer needs the
+  // admin-only /accounts/tree call either.
+  // Placed before @Get(':code') so 'payment-form' is never captured as a code.
+  @Roles('superadmin', 'admin', 'employee')
+  @RequiresFeature('admin_payments')
+  @Get('payment-form')
+  async findAllForPaymentForm() {
+    const gateways = await this.prisma.paymentGateway.findMany({
+      where: { enabled: true },
+      orderBy: [{ paymentOptionType: 'asc' }, { sortOrder: 'asc' }],
+      include: {
+        account: {
+          select: { id: true, code: true, name: true, type: true, isActive: true },
+        },
+      },
+    });
+    return gateways.map((g) => ({
+      id: g.id,
+      code: g.code,
+      name: g.name,
+      type: g.type,
+      paymentOptionType: g.paymentOptionType,
+      enabled: g.enabled,
+      showOnAdmin: g.showOnAdmin,
+      logoUrl: g.logoUrl,
+      phoneNumber: g.phoneNumber,
+      accountId: g.accountId,
+      // A deactivated mapped account reads as unmapped here — the same
+      // stale-mapping warning the form used to derive from the account
+      // tree, without needing that admin-only call.
+      account:
+        g.account && g.account.isActive !== false
+          ? {
+              id: g.account.id,
+              code: g.account.code,
+              name: g.account.name,
+              type: g.account.type,
+            }
+          : null,
+    }));
+  }
+
   @Roles('superadmin', 'admin')
   @RequiresFeature('admin_payments')
   @Post()

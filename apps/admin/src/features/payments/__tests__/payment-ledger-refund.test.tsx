@@ -83,7 +83,7 @@ describe('Payment ledger — refund via selection (D-B)', () => {
       if (url === '/payments') {
         return { data: { data: [paidFull, paidPartial, paidRefunded, pendingRow], meta: { total: 4, page: 1, perPage: 20, totalPages: 1 } } }
       }
-      if (url === '/gateways/admin') {
+      if (url === '/gateways/admin' || url === '/gateways/payment-form') {
         return {
           data: [{
             id: 'gw-bkash',

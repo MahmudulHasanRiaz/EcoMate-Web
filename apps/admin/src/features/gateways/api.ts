@@ -91,6 +91,14 @@ export const gatewayApi = {
     const params = optionType ? { params: { optionType } } : {};
     return apiClient.get<GatewayConfig[]>('/gateways/admin', params);
   },
+  /**
+   * D17: staff-safe payment-form list. The admin CRUD endpoint also returns
+   * raw gateway credentials, so it stays admin-only; every money form
+   * (record payment/refund, order create, lead conversion) uses this one,
+   * which returns only selection fields + the mapped settlement account.
+   */
+  listPaymentFormGateways: () =>
+    apiClient.get<GatewayConfig[]>('/gateways/payment-form'),
   updateGateway: (code: string, data: any) => apiClient.put(`/gateways/${code}`, data),
   /**
    * D: canonical effective settings — global defaults + per-gateway tri-state

@@ -41,7 +41,6 @@ export function CustomizationInput({
           <div key={g.key} className='space-y-1.5'>
             <div className='text-xs font-medium'>
               {g.label}
-              {g.required && <span className='text-destructive'> *</span>}
             </div>
             {g.type === 'text' ? (
               <div>
@@ -61,16 +60,17 @@ export function CustomizationInput({
               </div>
             ) : g.type === 'single' ? (
               <div className='flex flex-wrap gap-1.5'>
-                {!g.required && (
-                  <button
-                    type='button'
-                    disabled={disabled}
-                    onClick={() => setAnswer(g.key, { optionKeys: [] })}
-                    className={`px-2 py-1 rounded text-xs border ${(ans?.optionKeys || []).length === 0 ? 'bg-primary text-primary-foreground' : 'bg-background'}`}
-                  >
-                    None
-                  </button>
-                )}
+                {/* D14/D16: add-ons are always optional — a None choice exists
+                    for every single-choice group, even legacy required-flagged
+                    ones, so staff can always place a plain order. */}
+                <button
+                  type='button'
+                  disabled={disabled}
+                  onClick={() => setAnswer(g.key, { optionKeys: [] })}
+                  className={`px-2 py-1 rounded text-xs border ${(ans?.optionKeys || []).length === 0 ? 'bg-primary text-primary-foreground' : 'bg-background'}`}
+                >
+                  None
+                </button>
                 {(g.options || []).map((o) => {
                   const active = (ans?.optionKeys || []).includes(o.key)
                   return (

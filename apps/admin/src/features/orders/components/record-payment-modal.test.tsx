@@ -12,7 +12,7 @@ vi.mock('@/lib/api-client', () => ({
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/features/gateways/api', () => ({
   gatewayApi: {
-    listGateways: vi.fn().mockResolvedValue({
+    listPaymentFormGateways: vi.fn().mockResolvedValue({
       data: [
         {
           id: 'gw-cash',
