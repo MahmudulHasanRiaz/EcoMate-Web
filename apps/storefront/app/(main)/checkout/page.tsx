@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronDown, ShieldCheck, ChevronRight, X, Minus, Plus, Package2, Loader2, CreditCard, Banknote, ArrowLeft, ExternalLink, CheckCircle, AlertTriangle } from 'lucide-react';
+import { ChevronDown, ShieldCheck, X, Minus, Plus, Package2, Loader2, CreditCard, Banknote, ArrowLeft, ExternalLink, CheckCircle, AlertTriangle } from 'lucide-react';
 import { PaymentLogo } from '@/components/PaymentLogo';
 import { BlockedPhoneDialog } from '@/components/BlockedPhoneDialog';
 import { checkPhoneBlocked } from '@/lib/api/blocked-entries';
@@ -265,6 +265,20 @@ function CheckoutItemRow({ item, removeFromCart, updateQuantity, currencySymbol 
 }
 
 
+function GatewayChips({ gateways }: { gateways: any[] }) {
+  const online = gateways.filter(g => g.enabled && g.code !== 'cash').slice(0, 4);
+  if (online.length === 0) return null;
+  return (
+    <span className="flex items-center gap-1.5">
+      {online.map(gw => gw.logoUrl ? (
+        <img key={gw.id} src={gw.logoUrl} alt={gw.name || gw.code} className="h-6 w-8 rounded object-contain" />
+      ) : (
+        <PaymentLogo key={gw.id} method={gw.code} size="sm" />
+      ))}
+    </span>
+  );
+}
+
 function PaymentPopup({ orderId, total, guestPhone, guestName, viewToken, onClose, onSuccess, isBuyNow }: {
   orderId: string;
   total: number;
@@ -353,8 +367,8 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, viewToken, onClos
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-        <div className="bg-white rounded-2xl p-8 max-w-sm w-full text-center" onClick={e => e.stopPropagation()}>
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="payment-pop-in bg-white rounded-2xl p-8 max-w-sm w-full text-center" onClick={e => e.stopPropagation()}>
           <Loader2 className="animate-spin mx-auto mb-4 text-brand-blue" size={32} />
           <p className="text-gray-500">Loading payment options...</p>
         </div>
@@ -365,7 +379,7 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, viewToken, onClos
   if (submitted) {
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden p-8 text-center" onClick={e => e.stopPropagation()}>
+        <div className="payment-pop-in bg-white rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden p-8 text-center" onClick={e => e.stopPropagation()}>
           <CheckCircle size={48} className="mx-auto mb-4 text-green-500" />
           <h3 className="text-lg font-bold text-gray-800 mb-2">Payment Submitted!</h3>
           <p className="text-sm text-gray-500 mb-6">Your payment info has been received. We will verify it shortly.</p>
@@ -382,19 +396,21 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, viewToken, onClos
     const gwName = selectedGw.name || selectedGw.code;
     const modeLabel = selectedGw.mode === 'agent' ? 'Agent' : selectedGw.mode === 'merchant' ? 'Merchant' : 'Personal';
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-        <div className="bg-white rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="payment-pop-in bg-white rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
           <div className="p-6 border-b border-gray-100">
             <div className="flex items-center gap-3">
               <button onClick={() => setSelectedGw(null)} className="text-gray-400 hover:text-gray-600 p-1">
                 <ArrowLeft size={20} />
               </button>
               <div className="flex items-center gap-3">
-                {selectedGw.logoUrl ? (
-                  <img src={selectedGw.logoUrl} alt={gwName} className="h-9 w-10 object-contain rounded" />
-                ) : (
-                  <PaymentLogo method={selectedGw.code} size="md" />
-                )}
+                <span className="flex h-11 w-12 items-center justify-center rounded-lg border border-gray-100 bg-gray-50/60 px-1.5">
+                  {selectedGw.logoUrl ? (
+                    <img src={selectedGw.logoUrl} alt={gwName} className="max-h-9 w-auto max-w-full object-contain" />
+                  ) : (
+                    <PaymentLogo method={selectedGw.code} size="md" />
+                  )}
+                </span>
                 <div>
                   <h3 className="text-lg font-bold text-gray-800">{gwName}</h3>
                   <p className="text-xs text-gray-400">{modeLabel} Account</p>
@@ -446,42 +462,46 @@ function PaymentPopup({ orderId, total, guestPhone, guestName, viewToken, onClos
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="payment-pop-in bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="p-6 border-b border-gray-100">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-bold text-gray-800">Complete Payment</h3>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1">
+            <button onClick={onClose} aria-label="Close" className="text-gray-400 hover:text-gray-600 p-1">
               <X size={20} />
             </button>
           </div>
           <p className="text-sm text-gray-500 mt-1">Pay {(total).toLocaleString('en-US', {minimumFractionDigits: 2})} BDT</p>
         </div>
-        <div className="p-6 space-y-3">
+        <div className="p-6">
           {gateways.length === 0 && (
             <p className="text-sm text-gray-400 text-center py-4">No online payment gateways available. Your order has been saved as pending.</p>
           )}
-          {gateways.map(gw => {
-            const gwName = gw.name || gw.code;
-            return (
-              <button
-                key={gw.id}
-                onClick={() => handleSelectGateway(gw)}
-                className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 hover:border-brand-blue hover:bg-brand-blue/5 transition-all"
-              >
-                {gw.logoUrl ? (
-                  <img src={gw.logoUrl} alt={gwName} className="h-9 w-10 object-contain rounded" />
-                ) : (
-                  <PaymentLogo method={gw.code} size="md" />
-                )}
-                <div className="flex-1 text-left">
-                  <p className="font-bold text-gray-800">{gwName}</p>
-                  {gw.phoneNumber && <p className="text-xs text-gray-400">{gw.phoneNumber}</p>}
-                </div>
-                <ChevronRight size={20} className="text-gray-300" />
-              </button>
-            );
-          })}
+          <div className={`grid gap-2.5 ${gateways.length <= 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+            {gateways.map(gw => {
+              const gwName = gw.name || gw.code;
+              return (
+                <button
+                  key={gw.id}
+                  onClick={() => handleSelectGateway(gw)}
+                  className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-2 py-3.5 transition-all hover:border-brand-blue hover:bg-brand-blue/[0.03] hover:shadow-sm active:scale-[0.97]"
+                >
+                  <span className="flex h-10 items-center justify-center">
+                    {gw.logoUrl ? (
+                      <img src={gw.logoUrl} alt={gwName} className="max-h-10 w-auto max-w-[76px] object-contain" />
+                    ) : (
+                      <PaymentLogo method={gw.code} size="md" />
+                    )}
+                  </span>
+                  <span className="w-full truncate text-center text-[11px] font-semibold leading-tight text-gray-700">{gwName}</span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-[11px] text-gray-400">
+            <ShieldCheck size={13} className="text-gray-300" />
+            Your order is saved — you can also pay later from the order page.
+          </p>
         </div>
         <div className="px-6 pb-6">
           <button onClick={onClose} className="w-full py-2.5 text-sm text-gray-500 hover:text-gray-700 font-medium">
@@ -1209,9 +1229,7 @@ export default function CheckoutPage() {
                 </div>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
-                <PaymentLogo method="bkash" size="sm" />
-                <PaymentLogo method="nagad" size="sm" />
-                <PaymentLogo method="rocket" size="sm" />
+                <GatewayChips gateways={gateways} />
                 <CreditCard size={16} className={paymentOptionType === 'FULL_PAYMENT' ? 'text-brand-blue ml-1' : 'text-gray-400 ml-1'} />
               </div>
             </label>
@@ -1240,9 +1258,7 @@ export default function CheckoutPage() {
                 </div>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
-                <PaymentLogo method="bkash" size="sm" />
-                <PaymentLogo method="nagad" size="sm" />
-                <PaymentLogo method="rocket" size="sm" />
+                <GatewayChips gateways={gateways} />
                 <CreditCard size={16} className={paymentOptionType === 'PARTIAL_PAYMENT' ? 'text-brand-blue ml-1' : 'text-gray-400 ml-1'} />
               </div>
             </label>
