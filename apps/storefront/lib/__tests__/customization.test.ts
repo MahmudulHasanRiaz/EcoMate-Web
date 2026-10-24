@@ -5,7 +5,6 @@ import {
   selectionAddon,
   selectionKey,
   cartLineTotal,
-  missingRequiredGroups,
 } from '../customization';
 
 const RAW_DEF = [
@@ -78,10 +77,5 @@ describe('selection math', () => {
     const c = selectionKey({ groups: [{ key: 'engraving', optionKeys: ['plain'] }] });
     expect(a).toBe(b);
     expect(a).not.toBe(c);
-  });
-
-  it('required groups are reported until answered', () => {
-    expect(missingRequiredGroups(def, undefined)).toEqual(['Engraving']);
-    expect(missingRequiredGroups(def, selection)).toEqual([]);
   });
 });

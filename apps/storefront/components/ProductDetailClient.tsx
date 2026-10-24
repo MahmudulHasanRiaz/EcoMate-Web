@@ -20,7 +20,6 @@ import { PdpGallery } from "./pdp/PdpGallery";
 import { BuyBox } from "./pdp/BuyBox";
 import {
   buildCartCustomization,
-  missingRequiredGroups,
   type CustomizationSelection,
 } from "@/lib/customization";
 import { PdpSections } from "./pdp/PdpSections";
@@ -307,11 +306,6 @@ export default function ProductDetailClient({ product, defaultColor, initialRela
           return name;
         }).join(' ও ') + ' সিলেক্ট করুন';
       }
-    }
-    // Required customization groups block the purchase until answered.
-    if (hasCustomization) {
-      const missing = missingRequiredGroups(customizationDefs, customizationSelection);
-      if (missing.length > 0) return `${missing.join(' ও ')} সিলেক্ট করুন`;
     }
     return null;
   }

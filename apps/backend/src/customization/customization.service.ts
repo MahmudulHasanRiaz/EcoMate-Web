@@ -235,11 +235,10 @@ export class CustomizationService {
       if (group.type === 'text') {
         const text = answer?.text?.trim() ?? '';
         if (!text) {
-          if (group.required) {
-            throw new BadRequestException(
-              `"${group.label}" is required for ${productName}`,
-            );
-          }
+          // Customization is an OPTIONAL add-on (owner rule, 2026-10-24):
+          // a product that offers add-ons must always be buyable without
+          // them, so an unanswered group — required flag or not — never
+          // blocks the purchase; it simply contributes nothing.
           continue;
         }
         const max = group.maxLength ?? DEFAULT_TEXT_MAX_LENGTH;
@@ -264,11 +263,8 @@ export class CustomizationService {
       }
       const keys = [...new Set(answer?.optionKeys ?? [])];
       if (keys.length === 0) {
-        if (group.required) {
-          throw new BadRequestException(
-            `"${group.label}" is required for ${productName}`,
-          );
-        }
+        // Optional add-on (owner rule, 2026-10-24): no selection → the
+        // group contributes nothing and never blocks the purchase.
         continue;
       }
       if (group.type === 'single' && keys.length > 1) {

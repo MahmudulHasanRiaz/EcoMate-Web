@@ -120,24 +120,6 @@ export function buildCartCustomization(
   return { selection, lines, addonPerUnit: perUnit, addonPerLine: perLine };
 }
 
-/** Labels of required groups with no answer — blocks add-to-cart. */
-export function missingRequiredGroups(
-  definition: PublicCustomizationGroup[],
-  selection: CustomizationSelection | undefined,
-): string[] {
-  const missing: string[] = [];
-  for (const g of definition) {
-    if (!g.required) continue;
-    const ans = selection?.groups.find((x) => x.key === g.key);
-    const answered =
-      g.type === 'text'
-        ? !!ans?.text?.trim()
-        : (ans?.optionKeys?.length ?? 0) > 0;
-    if (!answered) missing.push(g.label);
-  }
-  return missing;
-}
-
 /** Stable cart-identity fragment for a selection. */
 export function selectionKey(selection: CustomizationSelection): string {
   const parts = [...selection.groups]
