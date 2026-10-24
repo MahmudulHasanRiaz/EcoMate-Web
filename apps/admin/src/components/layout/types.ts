@@ -21,6 +21,12 @@ type BaseNavItem = {
   icon?: React.ElementType
   feature?: string
   permissions?: string[]
+  /** Role gate (e.g. ['superadmin', 'admin']). Unlike `permissions`, a role
+   *  can never be granted through an access preset, so it is the right gate
+   *  for surfaces the backend locks by role — e.g. journal entries, whose
+   *  controller is @Roles('superadmin','admin'). A preset grant must never
+   *  re-expose a role-locked menu item. */
+  roles?: string[]
   panel?: 'operational' | 'monitoring' | 'hr'
   /** Presentational section grouping (label + icon-chip hue). */
   section?: { label: string; hue: HueName }
