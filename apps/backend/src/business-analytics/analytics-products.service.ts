@@ -15,8 +15,9 @@
  * (productId/variantId/totalQuantity, quantity-share split); the combo line
  * itself attributes nothing, so combo lines never double-count. Parent
  * aggregation is ALWAYS derived (parent = Σ children); simple products carry
- * one implicit child (variantId = null). COGS uses costSnapshot only — the
- * current standardCost is never consulted (no back-fill, §2.3). Product /
+ * one implicit child (variantId = null). COGS uses the frozen line figures
+ * only — costSnapshot plus the line's add-on cost (Q15, mirroring the P&L
+ * ladder); the current standardCost is never consulted (no back-fill, §2.3). Product /
  * variant return rate is order-level incidence, labelled (F2 — never
  * fractional).
  */
@@ -93,6 +94,9 @@ export interface ProductLineInput {
   quantity: number;
   costSnapshot: number | null;
   costType: 'actual' | 'estimated' | null;
+  /** Frozen customization add-on totals for the line (Q15), per line. */
+  addonAmount?: number | null;
+  addonCostAmount?: number | null;
   sourceWarehouseId: string | null;
   /** Line product's own categories (primary + secondary) for line scoping. */
   categoryIds: string[];
@@ -312,7 +316,9 @@ export function computeProductPnl(input: ProductPnlInput): ProductPnlResult {
     const inReturnEvent =
       recognisedEver && ret.reversesRevenue && inRange(ret.returnAt, range);
 
-    const lineGrosses = order.items.map((i) => i.price * i.quantity);
+    const lineGrosses = order.items.map(
+      (i) => i.price * i.quantity + (i.addonAmount ?? 0),
+    );
     const effectiveDiscount =
       order.discountType === 'percentage'
         ? order.subtotal * (order.discount / 100)
@@ -376,6 +382,9 @@ export function computeProductPnl(input: ProductPnlInput): ProductPnlResult {
               lineNet: netShare,
             });
           }
+          // The frozen add-on cost joins COGS whether or not the base
+          // snapshot exists (Q15 — same rule as the P&L ladder).
+          acc.cogs += (line.addonCostAmount ?? 0) * attr.share;
           acc.marketing += line.marketingCost * attr.share;
           acc.fulfillment += shippingCost * weight * attr.share;
           acc.fees += paidFees * weight * attr.share;
@@ -400,6 +409,8 @@ export function computeProductPnl(input: ProductPnlInput): ProductPnlResult {
             acc.returnedCogs +=
               line.costSnapshot * line.quantity * attr.share;
           }
+          // The frozen add-on cost reverses with the line (Q15).
+          acc.returnedCogs += (line.addonCostAmount ?? 0) * attr.share;
           markOrders(acc, order.id, true);
         }
       }
@@ -620,6 +631,8 @@ export class AnalyticsProductsService {
             quantity: true,
             costSnapshot: true,
             costType: true,
+            addonAmount: true,
+            addonCostAmount: true,
             sourceWarehouseId: true,
             product: {
               select: {
@@ -695,6 +708,9 @@ export class AnalyticsProductsService {
           price: Number(i.price),
           quantity: i.quantity,
           costSnapshot: i.costSnapshot === null ? null : Number(i.costSnapshot),
+          addonAmount: i.addonAmount == null ? null : Number(i.addonAmount),
+          addonCostAmount:
+            i.addonCostAmount == null ? null : Number(i.addonCostAmount),
           costType:
             i.costType === 'actual' || i.costType === 'estimated'
               ? i.costType
@@ -844,7 +860,7 @@ export class AnalyticsProductsService {
         reason:
           cogsState === 'unavailable'
             ? `${parent.uncostedUnits} unit(s) without costSnapshot — see uncosted fix-list`
-            : 'costSnapshot only (no standardCost fallback)',
+            : 'costSnapshot + frozen add-on cost (no standardCost fallback)',
       }),
       marketing: this.money(parent.marketing, 'actual', {
         ...base,
