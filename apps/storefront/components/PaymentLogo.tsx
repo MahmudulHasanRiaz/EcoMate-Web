@@ -2,18 +2,22 @@
 
 import { useState } from 'react';
 
-const API = typeof window !== 'undefined'
-  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api').replace('/api', '')
-  : '';
-
+// Bundled gateway logos are served by the backend under /assets/ and the
+// storefront proxies /assets/* to it (next.config rewrites) — so a plain
+// same-origin relative path is correct on every deployment. NEVER build
+// these from NEXT_PUBLIC_API_URL with a localhost fallback: that env var is
+// not baked into CI-built images, and a browser pointed at
+// http://localhost:4000 makes Chrome demand the Local Network Access
+// permission ("wants to access other apps and services on this device")
+// from every visitor — and the logos fail to load anyway.
 const logoMap: Record<string, string> = {
-  bkash: `${API}/assets/logos/BKash_Logo.svg`,
-  bkash_pgw: `${API}/assets/logos/bkash_payment_logo.png`,
-  nagad: `${API}/assets/logos/Nagad_Logo.svg`,
-  rocket: `${API}/assets/logos/Rocket_logo.svg`,
-  upay: `${API}/assets/logos/Upay_logo.svg`,
-  cellfin: `${API}/assets/logos/Cellfin_Logo.png`,
-  selfin: `${API}/assets/logos/Cellfin_Logo.png`,
+  bkash: '/assets/logos/BKash_Logo.svg',
+  bkash_pgw: '/assets/logos/bkash_payment_logo.png',
+  nagad: '/assets/logos/Nagad_Logo.svg',
+  rocket: '/assets/logos/Rocket_logo.svg',
+  upay: '/assets/logos/Upay_logo.svg',
+  cellfin: '/assets/logos/Cellfin_Logo.png',
+  selfin: '/assets/logos/Cellfin_Logo.png',
 };
 
 const labelMap: Record<string, string> = {
