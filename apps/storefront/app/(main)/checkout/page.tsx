@@ -523,9 +523,19 @@ export default function CheckoutPage() {
   const isBuyNow = !!buyNowItem;
   const coItems = isBuyNow && buyNowItem ? [buyNowItem] : items;
   const coTotal = isBuyNow && buyNowItem ? cartLineTotal(buyNowItem) : cartTotal;
+  // Coupon state lives above the discount hook: the applied code must
+  // flow into the evaluation, or a non-combining rule would keep showing
+  // after a coupon is applied while order creation suppresses it.
+  const [couponInput, setCouponInput] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
+  const [couponError, setCouponError] = useState('');
+  const [couponLoading, setCouponLoading] = useState(false);
   // D19: automatic campaign discounts (display only — the backend
   // recomputes them at order creation, so this can never overcharge).
-  const { autoDiscount, byDiscount } = useAutoDiscounts(coItems);
+  const { autoDiscount, byDiscount } = useAutoDiscounts(
+    coItems,
+    appliedCoupon?.valid ? appliedCoupon.coupon.code : undefined,
+  );
   const coUpdateQuantity = (key: string, qty: number) => {
     if (isBuyNow) updateBuyNowQuantity(qty);
     else updateQuantity(key, qty);
@@ -569,10 +579,6 @@ export default function CheckoutPage() {
   const phoneCheckTimer = useRef<any>(null);
   const paymentSuccessCallback = useRef<(() => void) | null>(null);
   const [selectedShippingOptionId, setSelectedShippingOptionId] = useState('')
-  const [couponInput, setCouponInput] = useState('');
-  const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
-  const [couponError, setCouponError] = useState('');
-  const [couponLoading, setCouponLoading] = useState(false);
   const wasSubmitted = useRef(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const clearFieldError = useCallback((field: string) => {

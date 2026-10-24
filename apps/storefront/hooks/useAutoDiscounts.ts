@@ -8,13 +8,14 @@ import { evaluateDiscounts } from "@/lib/api/orders";
  * pricing has no product/category scope. Add-on amounts fold into the
  * evaluated line totals, matching the backend engine.
  */
-export function useAutoDiscounts(items: CartItem[]) {
+export function useAutoDiscounts(items: CartItem[], couponCode?: string) {
   const [result, setResult] = useState<{
     autoDiscount: number;
     byDiscount: { discountId: string; discountTitle: string; amount: number }[];
   }>({ autoDiscount: 0, byDiscount: [] });
 
-  const signature = JSON.stringify(
+  const signature = JSON.stringify([
+    couponCode ?? null,
     items
       .filter((i) => !i.isCombo)
       .map((i) => [
@@ -25,7 +26,7 @@ export function useAutoDiscounts(items: CartItem[]) {
         i.customization?.addonPerUnit ?? 0,
         i.customization?.addonPerLine ?? 0,
       ]),
-  );
+  ]);
 
   useEffect(() => {
     const evalItems = items
@@ -44,7 +45,7 @@ export function useAutoDiscounts(items: CartItem[]) {
       return;
     }
     let cancelled = false;
-    evaluateDiscounts(evalItems)
+    evaluateDiscounts(evalItems, couponCode)
       .then((r) => {
         if (!cancelled) {
           setResult({

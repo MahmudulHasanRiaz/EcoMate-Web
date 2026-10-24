@@ -108,8 +108,17 @@ export interface EvaluateDiscountItem {
 // Automatic (campaign) discounts — display only. The backend recomputes
 // the same evaluation at order creation, so this can never change what
 // is charged; it only shows the customer the discount early.
-export async function evaluateDiscounts(items: EvaluateDiscountItem[]) {
-  const { data } = await apiClient.post("/discounts/evaluate", { items });
+// couponCode: when a coupon is applied at checkout, non-combining rules
+// must disappear from the display too — otherwise the shown total would
+// be lower than what order creation charges.
+export async function evaluateDiscounts(
+  items: EvaluateDiscountItem[],
+  couponCode?: string,
+) {
+  const { data } = await apiClient.post("/discounts/evaluate", {
+    items,
+    ...(couponCode ? { couponCode } : {}),
+  });
   return data as {
     subtotal: number;
     autoDiscount: number;
