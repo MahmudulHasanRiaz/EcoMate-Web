@@ -338,3 +338,59 @@ describe('filterNavItems', () => {
     expect(filterNavItems([analytics], [], ownPermissions)).toHaveLength(0)
   })
 })
+
+describe('role gating (journal admin-only, owner decision 2026-10-24)', () => {
+  const accountingGroup: NavItem[] = [
+    {
+      title: 'Accounting',
+      feature: 'admin_accounting',
+      items: [
+        { title: 'Chart of Accounts', url: '/op/accounting' },
+        { title: 'Journal Entries', url: '/op/accounting/journal-entries', roles: ['superadmin', 'admin'] },
+        { title: 'Reports', url: '/op/accounting/reports' },
+      ],
+    },
+  ]
+
+  it('admin sees Journal Entries; the other children are unaffected', () => {
+    const result = filterNavItems(accountingGroup, ['admin_accounting'], [], 'admin')
+    expect(result).toHaveLength(1)
+    expect('items' in result[0] && result[0].items).toHaveLength(3)
+  })
+
+  it('superadmin sees Journal Entries', () => {
+    const result = filterNavItems(accountingGroup, ['admin_accounting'], [], 'superadmin')
+    expect('items' in result[0] && result[0].items).toHaveLength(3)
+  })
+
+  it('employee does NOT see Journal Entries but keeps Chart of Accounts + Reports', () => {
+    const result = filterNavItems(accountingGroup, ['admin_accounting'], [], 'employee')
+    expect(result).toHaveLength(1)
+    const titles = ('items' in result[0] && result[0].items ? result[0].items : []).map(i => i.title)
+    expect(titles).toEqual(['Chart of Accounts', 'Reports'])
+  })
+
+  it('unknown/missing role never sees a role-gated item (deny by default)', () => {
+    const result = filterNavItems(accountingGroup, ['admin_accounting'], [])
+    const titles = ('items' in result[0] && result[0].items ? result[0].items : []).map(i => i.title)
+    expect(titles).not.toContain('Journal Entries')
+  })
+
+  it('a permission grant cannot re-expose a role-gated item to an employee', () => {
+    // The backend locks journal by ROLE, so a preset permission must never
+    // bring the menu back for staff — only the role gate decides.
+    const result = filterNavItems(accountingGroup, ['admin_accounting'], ['view_accounting'], 'employee')
+    const titles = ('items' in result[0] && result[0].items ? result[0].items : []).map(i => i.title)
+    expect(titles).not.toContain('Journal Entries')
+  })
+
+  it('live sidebar data gates Journal Entries to superadmin/admin', () => {
+    const accounting = sidebarData.navGroups
+      .flatMap(g => g.items)
+      .find(i => i.title === 'Accounting')!
+    const journal = 'items' in accounting && accounting.items
+      ? accounting.items.find(i => i.title === 'Journal Entries')
+      : undefined
+    expect(journal?.roles).toEqual(['superadmin', 'admin'])
+  })
+})

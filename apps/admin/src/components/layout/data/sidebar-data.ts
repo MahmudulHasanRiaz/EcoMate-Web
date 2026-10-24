@@ -119,7 +119,7 @@ export const sidebarData: SidebarData = {
           title: 'Accounting', icon: BookOpen, feature: 'admin_accounting',
           items: [
             { title: 'Chart of Accounts', url: '/op/accounting' },
-            { title: 'Journal Entries', url: '/op/accounting/journal-entries' },
+            { title: 'Journal Entries', url: '/op/accounting/journal-entries', roles: ['superadmin', 'admin'] },
             { title: 'Reports', url: '/op/accounting/reports' },
           ],
         }, 'Finance', 'warning'),

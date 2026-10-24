@@ -52,7 +52,7 @@ export function JournalEntries() {
     lines: [] as { accountId: string; debit: string; credit: string; description: string }[],
   })
 
-  const { data: entriesData, isLoading } = useQuery({
+  const { data: entriesData, isLoading, error: entriesError } = useQuery({
     queryKey: ['journal-entries', page, selectedPeriodId],
     queryFn: () => accountingApi.listJournalEntries({ page, perPage, periodId: selectedPeriodId || undefined }).then(r => r.data),
   })
@@ -191,6 +191,16 @@ export function JournalEntries() {
                   <TableRow>
                     <TableCell colSpan={8} className='text-center py-8'>
                       <Loader2 className='animate-spin h-6 w-6 mx-auto text-muted-foreground' />
+                    </TableCell>
+                  </TableRow>
+                ) : (entriesError as any)?.response?.status === 403 ? (
+                  // Journal is admin-only (backend @Roles superadmin/admin).
+                  // Never render the empty state for a 403: staff used to read
+                  // "No journal entries found" as "there are no entries".
+                  <TableRow>
+                    <TableCell colSpan={8} className='text-center py-8 text-muted-foreground'>
+                      <FileText className='h-8 w-8 mx-auto mb-2' />
+                      You don&apos;t have access to journal entries. Ask an admin if you need to check an entry.
                     </TableCell>
                   </TableRow>
                 ) : entries.length === 0 ? (
