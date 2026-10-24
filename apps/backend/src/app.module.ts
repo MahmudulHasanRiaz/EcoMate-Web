@@ -36,6 +36,7 @@ import { CourierModule } from './courier/courier.module';
 import { GatewayModule } from './gateways/gateway.module';
 import { HealthModule } from './health/health.module';
 import { CouponsModule } from './coupons/coupons.module';
+import { DiscountsModule } from './discounts/discounts.module';
 import { ShipmentModule } from './shipment/shipment.module';
 import { RefundsModule } from './refunds/refunds.module';
 import { InventoryModule } from './inventory/inventory.module';
@@ -144,6 +145,7 @@ import { SecurityDashboardModule } from './security-dashboard/security-dashboard
     GatewayModule,
     HealthModule,
     CouponsModule,
+    DiscountsModule,
     ShipmentModule,
     RefundsModule,
     InventoryModule,

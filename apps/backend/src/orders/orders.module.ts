@@ -12,6 +12,7 @@ import { CustomersModule } from '../customers/customers.module';
 import { SalesChannelModule } from '../sales-channel/sales-channel.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { CouponsModule } from '../coupons/coupons.module';
+import { DiscountsModule } from '../discounts/discounts.module';
 import { BlockedEntriesModule } from '../blocked-entries/blocked-entries.module';
 import { MarketingModule } from '../marketing/marketing.module';
 import { CommissionsModule } from '../commissions/commissions.module';
@@ -43,6 +44,7 @@ import { AccountingModule } from '../accounting/accounting.module';
     InventoryModule,
     BlockedEntriesModule,
     CouponsModule,
+    DiscountsModule,
     MarketingModule,
     CommissionsModule,
     CodMismatchModule,

@@ -12,6 +12,7 @@ import { useCart, getItemKey, VariantAttribute } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import { createOrder } from '@/lib/api/orders';
+import { useAutoDiscounts } from '@/hooks/useAutoDiscounts';
 import { resolveDeliveryCharge } from '@/lib/shipping-charge';
 import { getDistricts, getThanas, getGateways } from '@/lib/api/delivery-areas';
 import { submitPayment } from '@/lib/api/payments';
@@ -522,6 +523,9 @@ export default function CheckoutPage() {
   const isBuyNow = !!buyNowItem;
   const coItems = isBuyNow && buyNowItem ? [buyNowItem] : items;
   const coTotal = isBuyNow && buyNowItem ? cartLineTotal(buyNowItem) : cartTotal;
+  // D19: automatic campaign discounts (display only — the backend
+  // recomputes them at order creation, so this can never overcharge).
+  const { autoDiscount, byDiscount } = useAutoDiscounts(coItems);
   const coUpdateQuantity = (key: string, qty: number) => {
     if (isBuyNow) updateBuyNowQuantity(qty);
     else updateQuantity(key, qty);
@@ -617,12 +621,16 @@ export default function CheckoutPage() {
     freeDeliveryMin: config.delivery.freeDeliveryMin,
     subtotal: coTotal,
   });
+  // D19: coupon percentages/flats are computed on the post-automatic
+  // subtotal, matching the backend stacking order (automatic first, then
+  // coupon). With no automatic discount this is identical to before.
+  const couponBase = Math.max(0, coTotal - autoDiscount);
   const discountAmount = appliedCoupon?.valid && appliedCoupon.coupon
     ? (appliedCoupon.coupon.type === 'percentage'
-      ? (coTotal * Number(appliedCoupon.coupon.value)) / 100
-      : Number(appliedCoupon.coupon.value))
+      ? (couponBase * Number(appliedCoupon.coupon.value)) / 100
+      : Math.min(Number(appliedCoupon.coupon.value), couponBase))
     : 0;
-  const totalWithDelivery = coTotal + deliveryCharge - discountAmount;
+  const totalWithDelivery = coTotal + deliveryCharge - autoDiscount - discountAmount;
 
   useEffect(() => {
     getDistricts().then(setDistricts).catch(() => {});
@@ -1151,6 +1159,12 @@ export default function CheckoutPage() {
             )}
           </span>
         </div>
+        {autoDiscount > 0 && byDiscount.map((d) => (
+          <div key={d.discountId} className="flex justify-between items-center text-green-600">
+            <span>Automatic discount ({d.discountTitle})</span>
+            <span className="font-bold text-green-700">-{s}{d.amount.toFixed(2)}</span>
+          </div>
+        ))}
         {appliedCoupon?.valid && discountAmount > 0 && (
           <div className="flex justify-between items-center text-green-600">
             <span>Discount ({appliedCoupon.coupon.code})</span>
