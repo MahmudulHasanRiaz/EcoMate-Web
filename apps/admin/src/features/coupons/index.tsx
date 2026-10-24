@@ -87,7 +87,7 @@ export function Coupons() {
       <Main className='flex flex-1 flex-col gap-6'>
         <div className='flex items-end justify-between'>
           <div><h2 className='text-2xl font-bold tracking-tight'>Coupons & Discounts</h2><p className='text-muted-foreground'>Coupon codes and automatic campaign discounts.</p></div>
-          {tab === 'coupons' && <Button size='sm' onClick={() => { resetForm(); setEditing(null); setOpen(true) }}><Plus className='h-4 w-4 mr-1' /> Add</Button>}
+          {tab === 'coupons' && <Button size='sm' onClick={() => { resetForm(); setEditing(null); setOpen(true) }}><Plus className='h-4 w-4 mr-1' /> Add Coupon</Button>}
         </div>
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>

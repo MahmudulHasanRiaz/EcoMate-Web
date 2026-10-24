@@ -19,6 +19,14 @@ export interface OrderResponse {
   stockRestored?: boolean;
   subtotal: number | string; shippingCharge: number | string; discount: number | string;
   discountType: string; total: number | string;
+  /** Discount V2: automatic (campaign) discount, kept separate from the
+   * coupon/manual `discount` above — the detail page renders it as its
+   * own labelled lines so the totals reconcile. */
+  autoDiscount?: number | string | null;
+  autoDiscountBreakdown?: {
+    lines?: { productId: string; discountId: string; discountTitle: string; amount: number }[];
+    byDiscount?: { discountId: string; discountTitle: string; amount: number }[];
+  } | null;
   /** Server-derived: received returns value + shared due formula. */
   receivedReturnValue?: number | string | null;
   due?: number | string | null;

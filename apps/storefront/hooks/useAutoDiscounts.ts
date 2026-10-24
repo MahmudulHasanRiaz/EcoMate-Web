@@ -19,6 +19,7 @@ export function useAutoDiscounts(items: CartItem[]) {
       .filter((i) => !i.isCombo)
       .map((i) => [
         i.id,
+        i.variantId ?? null,
         i.quantity,
         i.price,
         i.customization?.addonPerUnit ?? 0,
@@ -31,6 +32,7 @@ export function useAutoDiscounts(items: CartItem[]) {
       .filter((i) => !i.isCombo)
       .map((i) => ({
         productId: i.id,
+        variantId: i.variantId,
         quantity: i.quantity,
         unitPrice: i.price,
         addonAmount:

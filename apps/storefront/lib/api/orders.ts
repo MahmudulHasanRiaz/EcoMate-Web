@@ -98,6 +98,8 @@ export async function validateCoupon(code: string) {
 
 export interface EvaluateDiscountItem {
   productId: string;
+  /** Discount V2: narrows PRODUCT-scope rules with variantIds. */
+  variantId?: string;
   quantity: number;
   unitPrice: number;
   addonAmount?: number;
