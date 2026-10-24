@@ -785,7 +785,15 @@ export class CancelReturnStockService {
     }
 
     // B. Physical engine (exact-qty on-hand restore for CONSUMED claims).
-    if (cycleId && product.warehouseId) {
+    // The restore follows the line's physical RESERVATION — its allocations
+    // carry the exact warehouse the units left from — never the product's
+    // default warehouse. The old `product.warehouseId` precondition silently
+    // skipped the ENTIRE physical restore for products that hold warehouse
+    // stock but have no default warehouse set: the return flipped to
+    // RESTOCKED while no unit (and no ledger entry) ever came back
+    // (staging RTN-261024-0002, 2026-10-24). restorePhysicalForReturnLine
+    // already no-ops safely when no reservation exists.
+    if (cycleId) {
       const decision = this.stockRouter.resolve(
         product.availabilityMode,
         'add',
