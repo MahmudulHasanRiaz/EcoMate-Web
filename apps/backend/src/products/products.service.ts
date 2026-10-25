@@ -57,6 +57,98 @@ export class ProductsService {
     return parsed;
   }
 
+  /**
+   * Video URLs are stored trimmed: a padded value otherwise ships a broken
+   * link to the storefront. `undefined` stays `undefined` (write path leaves
+   * the column untouched), `null` stays `null` (explicit clear), and a
+   * whitespace-only value clears the field instead of storing blanks.
+   */
+  private normalizeVideoUrl(
+    value: string | null | undefined,
+  ): string | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  /**
+   * Variant SKUs are globally unique in the DB (ProductVariant.sku @unique),
+   * including drafts — but the old availability check excluded drafts, so a
+   * "free" SKU could 500 the final save. Pre-check here so every write path
+   * fails with a named 409 instead of a raw Prisma 500.
+   */
+  private async assertVariantSkusFree(
+    variants: Array<{ sku?: string }> | undefined,
+    excludeProductId?: string,
+  ): Promise<void> {
+    if (!variants?.length) return;
+    const skus = variants.map((v) => (v.sku || '').trim()).filter(Boolean);
+    const seen = new Set<string>();
+    for (const sku of skus) {
+      if (seen.has(sku)) {
+        throw new ConflictException(
+          `Variant SKU already in use: ${sku} (used twice in this product)`,
+        );
+      }
+      seen.add(sku);
+    }
+    if (skus.length === 0) return;
+    const clash = await this.prisma.productVariant.findFirst({
+      where: {
+        sku: { in: skus },
+        ...(excludeProductId
+          ? { productId: { not: excludeProductId } }
+          : {}),
+      },
+      select: { sku: true },
+    });
+    if (clash) {
+      throw new ConflictException(
+        `Variant SKU already in use: ${clash.sku} — change it to a unique SKU and try again`,
+      );
+    }
+  }
+
+  /** Map raw Prisma write errors to named, user-actionable HTTP errors. */
+  private mapProductWriteError(e: any): never {
+    if (e?.code === 'P2002') {
+      const target = Array.isArray(e.meta?.target)
+        ? e.meta.target.join(',')
+        : String(e.meta?.target || '');
+      if (target.includes('slug')) {
+        throw new ConflictException('Slug already exists');
+      }
+      if (target.includes('sku')) {
+        throw new ConflictException(
+          'Variant SKU already in use — change the conflicting variant SKU and try again',
+        );
+      }
+      throw new ConflictException('A unique value is already in use');
+    }
+    if (e?.code === 'P2003') {
+      const raw = String(e.meta?.field_name || '');
+      const friendly = raw.includes('categor')
+        ? 'category'
+        : raw.includes('brand')
+          ? 'brand'
+          : raw.includes('sizeChart') || raw.includes('size_chart')
+            ? 'size chart'
+            : raw.includes('warehouse')
+              ? 'warehouse'
+              : raw.includes('attribute')
+                ? 'attribute value'
+                : 'referenced record';
+      throw new BadRequestException(
+        `The selected ${friendly} no longer exists — refresh and pick it again`,
+      );
+    }
+    if (e?.code === 'P2025') {
+      throw new NotFoundException('Product not found');
+    }
+    throw e;
+  }
+
   private async syncTags(tagNames: string[], productId: string): Promise<void> {
     const oldTags = await this.prisma.productTag.findMany({
       where: { productId },
@@ -812,6 +904,7 @@ export class ProductsService {
       basePrice: dto.basePrice,
       salePrice: dto.salePrice,
       sku: dto.sku,
+      standardCost: dto.standardCost,
       managedStockQuantity:
         dto.type === 'variable' ? 0 : dto.managedStockQuantity || 0,
       lowStockQty: dto.lowStockQty,
@@ -825,7 +918,7 @@ export class ProductsService {
       tags: dto.tags as any,
       images: (dto.images || []) as any,
       seoMeta: dto.seoMeta,
-      videoUrl: dto.videoUrl,
+      videoUrl: this.normalizeVideoUrl(dto.videoUrl),
       detailRows: dto.detailRows as any,
       descriptionSections: dto.descriptionSections as any,
       isFeatured: dto.isFeatured || false,
@@ -835,10 +928,12 @@ export class ProductsService {
       warehouseId: dto.warehouseId,
     };
 
-    const variantsCreate = dto.variants?.map((v) => ({
+    const variantsCreate = dto.variants?.map((v, i) => ({
       sku: v.sku,
+      sortOrder: v.sortOrder ?? i,
       price: v.price,
       salePrice: v.salePrice,
+      standardCost: v.standardCost,
       managedStockQuantity: v.managedStockQuantity || 0,
       image: v.image,
       images: (v.images || []) as any,
@@ -895,6 +990,8 @@ export class ProductsService {
         include,
       });
 
+    await this.assertVariantSkusFree(dto.variants, existing?.id);
+
     let product;
     try {
       if (existing && existing.status === 'draft') {
@@ -917,14 +1014,40 @@ export class ProductsService {
       }
     } catch (e: any) {
       if (e.code === 'P2002') {
-        const skuHolder = await this.prisma.product.findFirst({
-          where: { sku: dto.sku, status: 'draft' },
-          select: { id: true },
-        });
-        if (skuHolder) {
-          product = await promote(skuHolder.id);
+        // Product SKU is NOT unique, so a P2002 with a KNOWN target is
+        // either a slug race (promote the draft holding that slug) or a
+        // variant-SKU collision (named 409, never a draft promotion —
+        // promoting by product SKU here once overwrote UNRELATED drafts
+        // whose main SKU merely coincided). Real Prisma always sets
+        // meta.target; the target-less branch keeps the legacy autosave
+        // adopt path for errors that carry no target.
+        const target = Array.isArray(e.meta?.target)
+          ? e.meta.target.join(',')
+          : String(e.meta?.target || '');
+        if (target.includes('slug')) {
+          const slugHolder = await this.prisma.product.findFirst({
+            where: { slug: dto.slug, status: 'draft' },
+            select: { id: true },
+          });
+          if (slugHolder) {
+            product = await promote(slugHolder.id);
+          } else {
+            throw new ConflictException('Slug already exists');
+          }
+        } else if (!target) {
+          const skuHolder = await this.prisma.product.findFirst({
+            where: { sku: dto.sku, status: 'draft' },
+            select: { id: true },
+          });
+          if (skuHolder) {
+            product = await promote(skuHolder.id);
+          } else {
+            throw new ConflictException('SKU already in use');
+          }
         } else {
-          throw new ConflictException('SKU already in use');
+          throw new ConflictException(
+            'Variant SKU already in use — change the conflicting variant SKU and try again',
+          );
         }
       } else {
         throw e;
@@ -1004,6 +1127,9 @@ export class ProductsService {
     if (dto.tags) data.tags = dto.tags as any;
     if (dto.images !== undefined) data.images = dto.images as any;
     if (dto.seoMeta) data.seoMeta = dto.seoMeta;
+    if (dto.videoUrl !== undefined) {
+      data.videoUrl = this.normalizeVideoUrl(dto.videoUrl);
+    }
     delete data.variants;
     delete data.attributes;
     delete data.categoryIds;
@@ -1252,7 +1378,11 @@ export class ProductsService {
       dto.categoryIds || (dto.categoryId ? [dto.categoryId] : []);
     const categoryId = dto.categoryId || categoryIds[0] || null;
 
-    const product = await this.prisma.product.create({
+    await this.assertVariantSkusFree(dto.variants);
+
+    let product: any;
+    try {
+    product = await this.prisma.product.create({
       data: {
         name: dto.name?.trim() || 'Untitled Draft',
         slug,
@@ -1262,6 +1392,8 @@ export class ProductsService {
         basePrice: dto.basePrice ?? 0,
         salePrice: dto.salePrice,
         sku: dto.sku,
+        brandId: dto.brandId || undefined,
+        standardCost: dto.standardCost,
         managedStockQuantity:
           dto.type === 'variable' ? 0 : dto.managedStockQuantity || 0,
         lowStockQty: dto.lowStockQty,
@@ -1282,7 +1414,7 @@ export class ProductsService {
         tags: dto.tags as any,
         images: (dto.images || []) as any,
         seoMeta: dto.seoMeta,
-        videoUrl: dto.videoUrl,
+        videoUrl: this.normalizeVideoUrl(dto.videoUrl),
         detailRows: dto.detailRows as any,
         descriptionSections: dto.descriptionSections as any,
         isFeatured: dto.isFeatured || false,
@@ -1294,10 +1426,12 @@ export class ProductsService {
         warehouseId: dto.warehouseId,
         variants: dto.variants
           ? {
-              create: dto.variants.map((v) => ({
+              create: dto.variants.map((v, i) => ({
                 sku: v.sku,
+                sortOrder: v.sortOrder ?? i,
                 price: v.price,
                 salePrice: v.salePrice,
+                standardCost: v.standardCost,
                 managedStockQuantity: v.managedStockQuantity || 0,
                 image: v.image,
                 images: (v.images || []) as any,
@@ -1329,6 +1463,25 @@ export class ProductsService {
         },
       },
     });
+    } catch (e) {
+      this.mapProductWriteError(e);
+    }
+
+    if (product.variants?.length) {
+      for (const variant of product.variants) {
+        const variantImages = ((variant as any).images as string[]) || [];
+        if (variant.image && !variantImages.includes(variant.image)) {
+          variantImages.unshift(variant.image);
+        }
+        if (variantImages.length > 0) {
+          await this.media.syncEntityImages(
+            'variant',
+            variant.id,
+            variantImages,
+          );
+        }
+      }
+    }
 
     await this.syncTags(dto.tags || [], product.id);
     await this.cache.invalidateByPrefix('product:');
@@ -1344,6 +1497,7 @@ export class ProductsService {
         'Only draft products can be saved with the draft endpoint',
       );
     }
+    await this.assertVariantSkusFree(dto.variants, id);
     if (dto.slug && dto.slug !== p.slug) {
       const exists = await this.prisma.product.findUnique({
         where: { slug: dto.slug },
@@ -1358,6 +1512,9 @@ export class ProductsService {
     if (dto.tags) data.tags = dto.tags as any;
     if (dto.images !== undefined) data.images = dto.images as any;
     if (dto.seoMeta) data.seoMeta = dto.seoMeta;
+    if (dto.videoUrl !== undefined) {
+      data.videoUrl = this.normalizeVideoUrl(dto.videoUrl);
+    }
     delete data.attributes;
     delete data.status;
     delete data.isActive;
@@ -1367,10 +1524,12 @@ export class ProductsService {
       // variations never get lost between the form and the stored draft.
       data.variants = {
         deleteMany: {},
-        create: dto.variants.map((v) => ({
+        create: dto.variants.map((v, i) => ({
           sku: v.sku,
+          sortOrder: v.sortOrder ?? i,
           price: v.price,
           salePrice: v.salePrice,
+          standardCost: v.standardCost,
           managedStockQuantity: v.managedStockQuantity || 0,
           image: v.image,
           images: (v.images || []) as any,
@@ -1418,7 +1577,9 @@ export class ProductsService {
       data.manageStock = newMode === 'MANAGED_STOCK';
     }
 
-    const product = await this.prisma.product.update({
+    let product: any;
+    try {
+      product = await this.prisma.product.update({
       where: { id },
       data,
       include: {
@@ -1439,6 +1600,9 @@ export class ProductsService {
         },
       },
     });
+    } catch (e) {
+      this.mapProductWriteError(e);
+    }
 
     if (dto.tags !== undefined) {
       await this.syncTags(dto.tags || [], id);
@@ -1456,6 +1620,22 @@ export class ProductsService {
         });
       }
     }
+
+    if (product.variants?.length) {
+      for (const variant of product.variants) {
+        const variantImages = ((variant as any).images as string[]) || [];
+        if (variant.image && !variantImages.includes(variant.image)) {
+          variantImages.unshift(variant.image);
+        }
+        if (variantImages.length > 0) {
+          await this.media.syncEntityImages(
+            'variant',
+            variant.id,
+            variantImages,
+          );
+        }
+      }
+    }
     await this.cache.invalidateByPrefix('product:');
     return product;
   }
@@ -1467,6 +1647,7 @@ export class ProductsService {
     if (p.status !== 'draft') {
       throw new BadRequestException('Product is not a draft');
     }
+    await this.assertVariantSkusFree(dto.variants, id);
 
     const name = (dto.name?.trim() || p.name || '').trim();
     if (!name || name === 'Untitled Draft') {
@@ -1475,9 +1656,27 @@ export class ProductsService {
       );
     }
     const basePrice = Number(dto.basePrice ?? p.basePrice) || 0;
-    if (basePrice < 0) {
+    if (basePrice <= 0) {
       throw new BadRequestException(
-        'A non-negative base price is required before publishing',
+        'A positive base price is required before publishing',
+      );
+    }
+    const salePrice = dto.salePrice ?? p.salePrice;
+    if (salePrice != null && Number(salePrice) > basePrice) {
+      throw new BadRequestException(
+        'Sale price cannot exceed the base price before publishing',
+      );
+    }
+    const finalTypeForValidation = dto.type || p.type;
+    const variantCountForValidation =
+      finalTypeForValidation === 'variable'
+        ? dto.variants
+          ? dto.variants.length
+          : await this.prisma.productVariant.count({ where: { productId: id } })
+        : 0;
+    if (finalTypeForValidation === 'variable' && variantCountForValidation === 0) {
+      throw new BadRequestException(
+        'A variable product needs at least one variant before publishing',
       );
     }
 
@@ -1493,6 +1692,9 @@ export class ProductsService {
     if (dto.tags) data.tags = dto.tags as any;
     if (dto.images !== undefined) data.images = dto.images as any;
     if (dto.seoMeta) data.seoMeta = dto.seoMeta;
+    if (dto.videoUrl !== undefined) {
+      data.videoUrl = this.normalizeVideoUrl(dto.videoUrl);
+    }
     delete data.attributes;
     delete data.categoryIds;
 
@@ -1510,8 +1712,11 @@ export class ProductsService {
       };
     }
 
+    // Row Publish sends only { name } — default to the draft's STORED mode
+    // instead of recomputing from the IM default, or an ALWAYS_IN_STOCK
+    // draft would publish as MANAGED/INVENTORY_CONTROLLED with qty 0.
     const newMode = await this.draftAvailabilityMode({
-      availabilityMode: dto.availabilityMode,
+      availabilityMode: dto.availabilityMode ?? p.availabilityMode,
       type: dto.type || p.type,
       manageStock: dto.manageStock,
     });
@@ -1551,10 +1756,12 @@ export class ProductsService {
     if (dto.variants) {
       data.variants = {
         deleteMany: {},
-        create: dto.variants.map((v) => ({
+        create: dto.variants.map((v, i) => ({
           sku: v.sku,
+          sortOrder: v.sortOrder ?? i,
           price: v.price,
           salePrice: v.salePrice,
+          standardCost: v.standardCost,
           managedStockQuantity: v.managedStockQuantity || 0,
           image: v.image,
           images: (v.images || []) as any,
@@ -1569,7 +1776,9 @@ export class ProductsService {
       };
     }
 
-    const product = await this.prisma.product.update({
+    let product: any;
+    try {
+      product = await this.prisma.product.update({
       where: { id },
       data,
       include: {
@@ -1590,6 +1799,9 @@ export class ProductsService {
         },
       },
     });
+    } catch (e) {
+      this.mapProductWriteError(e);
+    }
 
     if (dto.tags !== undefined) {
       await this.syncTags(dto.tags || [], id);
@@ -1608,11 +1820,42 @@ export class ProductsService {
       }
     }
 
+    if (product.variants?.length) {
+      for (const variant of product.variants) {
+        const variantImages = ((variant as any).images as string[]) || [];
+        if (variant.image && !variantImages.includes(variant.image)) {
+          variantImages.unshift(variant.image);
+        }
+        if (variantImages.length > 0) {
+          await this.media.syncEntityImages(
+            'variant',
+            variant.id,
+            variantImages,
+          );
+        }
+      }
+    }
+
     await this.mirrorInitialStockToPhysical({
       product,
       avMode: newMode,
       warehouseId: initialWarehouseId,
     });
+
+    // Creation-equivalent ledger entry (create() writes one; publish did not).
+    if (newMode === 'MANAGED_STOCK' && finalType !== 'variable' && initialStock > 0) {
+      await this.prisma.managedStockLedger.create({
+        data: {
+          productId: id,
+          quantity: initialStock,
+          direction: 'IN',
+          type: 'INITIAL',
+          stockBefore: 0,
+          stockAfter: initialStock,
+          note: 'Initial stock on draft publish',
+        },
+      });
+    }
 
     await this.cache.invalidateByPrefix('product:');
     return product;
@@ -1680,6 +1923,11 @@ export class ProductsService {
 
     const groups = Object.values(grouped);
     const combinations = this.cartesian(groups);
+    if (combinations.length > 500) {
+      throw new BadRequestException(
+        'Too many variant combinations (max 500) — narrow the attribute selection',
+      );
+    }
 
     const variants = combinations.map((combo, index) => {
       const values = combo.map((av) => av.value).join(' / ');
@@ -1745,6 +1993,7 @@ export class ProductsService {
     if (dto.sku !== undefined) data.sku = dto.sku;
     if (dto.price !== undefined) data.price = dto.price;
     if (dto.salePrice !== undefined) data.salePrice = dto.salePrice;
+    if (dto.standardCost !== undefined) data.standardCost = dto.standardCost;
     if (dto.image !== undefined) data.image = dto.image;
     if (dto.images !== undefined) data.images = dto.images as any;
     const updated = await this.prisma.productVariant.update({
@@ -1897,10 +2146,12 @@ export class ProductsService {
       select: { id: true },
     });
     if (productWithSku) return { available: false };
+    // Variant SKUs are globally unique INCLUDING drafts — excluding drafts
+    // here used to report "available" and then 500 the save.
     const variantWithSku = await this.prisma.productVariant.findFirst({
       where: {
         sku,
-        product: { status: { not: 'draft' } },
+        ...(excludeId ? { productId: { not: excludeId } } : {}),
       },
       select: { id: true },
     });
