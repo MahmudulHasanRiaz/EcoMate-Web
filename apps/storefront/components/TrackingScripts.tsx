@@ -7,6 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import { setPixelIds, setPixelIdentity, setTrackingConfig, setConsent, setTrackingConsent, isTrackingAllowed, trackingAuthHeaders } from "@/lib/tracking";
 import { getTrackingApiUrl, syncContext, captureMarketingSession } from "@/lib/tracking-client";
 import { captureLandingAttribution } from "@/lib/attribution";
+import { stringifyForScript } from "@/lib/safe-json";
 
 declare global {
   interface Window {
@@ -185,9 +186,9 @@ export default function TrackingScripts() {
         dangerouslySetInnerHTML={{
           __html: `
           (function() {
-            const metaIds = ${JSON.stringify(metaIds)};
-            const tiktokCode = ${JSON.stringify(tiktokCode)};
-            const gaId = ${JSON.stringify(gaMeasurementId)};
+            const metaIds = ${stringifyForScript(metaIds)};
+            const tiktokCode = ${stringifyForScript(tiktokCode)};
+            const gaId = ${stringifyForScript(gaMeasurementId)};
 
             // মেটা পিক্সেল — one fbq install serves every enabled pixel; each id is
             // registered by initMetaPixel() once identity is resolved.
@@ -231,7 +232,7 @@ export default function TrackingScripts() {
               window.gtag = function(){window.dataLayer.push(arguments);};
               window.gtag('js', new Date());
               window.gtag('config', gaId, { send_page_view: true });
-              ${gaAdsConversionId ? `window.gtag('config', ${JSON.stringify(gaAdsConversionId)});` : ''}
+              ${gaAdsConversionId ? `window.gtag('config', ${stringifyForScript(gaAdsConversionId)});` : ''}
 
               var s = document.createElement('script');
               s.async = true;

@@ -145,6 +145,26 @@ const DEFAULT_POLICIES: Record<string, Omit<RateLimitPolicy, 'name'>> = {
   },
 
   /**
+   * Public enumeration-sensitive endpoints (SECURITY 2026-10-25, F19):
+   * coupon validation, discount evaluation, public reviews, and the
+   * public order lookups. These are unauthenticated and cheap to abuse
+   * for code/order enumeration, so they get a much tighter budget than
+   * the general api policy — a legitimate shopper validating one coupon
+   * or tracking one order never notices.
+   */
+  strict_public: {
+    limits: {
+      [TrustTier.UNKNOWN]: { limit: 20, windowMs: 60000 },
+      [TrustTier.SESSION]: { limit: 40, windowMs: 60000 },
+      [TrustTier.BROWSER_TRUST]: { limit: 60, windowMs: 60000 },
+      [TrustTier.AUTHENTICATED]: { limit: 120, windowMs: 60000 },
+    },
+    burst: { limit: 10, windowMs: 10000 },
+    riskScore: { violationWeight: 2, autoBlockThreshold: 10, autoBlockDurationMinutes: 60 },
+    trackingKey: 'identity',
+  },
+
+  /**
    * General API — default for unprotected routes.
    */
   api: {

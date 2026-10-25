@@ -107,7 +107,7 @@ export class OrdersController {
   }
 
   @Public()
-  @RateLimitPolicy('api')
+  @RateLimitPolicy('checkout')
   @Post()
   create(@Body() dto: CreateOrderDto, @Req() req: any, @CurrentUser() user?: any) {
     return this.svc.create(
@@ -127,7 +127,7 @@ export class OrdersController {
   }
 
   @Public()
-  @RateLimitPolicy('api')
+  @RateLimitPolicy('strict_public')
   @Get('public/phone/:phone')
   findByPhone(@Param('phone') phone: string) {
     return this.svc.findByPhone(phone);
@@ -138,7 +138,7 @@ export class OrdersController {
    * Never accepts or searches by viewToken.
    */
   @Public()
-  @RateLimitPolicy('api')
+  @RateLimitPolicy('strict_public')
   @Get('public/display/:displayId')
   findByDisplayId(@Param('displayId') displayId: string) {
     return this.svc.findByDisplayId(displayId);
@@ -150,7 +150,7 @@ export class OrdersController {
    * Never treats the input as a displayId.
    */
   @Public()
-  @RateLimitPolicy('api')
+  @RateLimitPolicy('strict_public')
   @Get('public/token/:viewToken')
   findByViewToken(@Param('viewToken') viewToken: string) {
     return this.svc.findByViewToken(viewToken);
@@ -161,7 +161,7 @@ export class OrdersController {
    * Never guesses or treats it as a viewToken.
    */
   @Public()
-  @RateLimitPolicy('api')
+  @RateLimitPolicy('strict_public')
   @Get('public/:reference')
   findByReference(@Param('reference') reference: string) {
     return this.svc.findByDisplayId(reference);

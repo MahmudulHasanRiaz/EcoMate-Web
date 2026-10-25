@@ -23,6 +23,11 @@ import { CacheService } from './cache/cache.service';
 import { PrismaService } from './prisma/prisma.service';
 import { randomUUID } from 'crypto';
 
+// BA brute-force attempt log (F5): key `${ip}:${endpoint}` → attempt
+// timestamps (60s window); lockouts key → locked-until ms.
+const baAttemptLog = new Map<string, number[]>();
+const baLockouts = new Map<string, number>();
+
 async function bootstrap() {
   // Load .env — try project root, backend root, then cwd
   const { config } = await import('dotenv');
@@ -244,6 +249,15 @@ async function bootstrap() {
     // instruct browsers/CDNs to pin that path for a year.
     maxAge: 60 * 60 * 1000,
     immutable: false,
+    // SECURITY (2026-10-25, F15): /uploads/ serves user-controlled files
+    // (incl. stored HTML/SVG) from the API origin. Sandbox + nosniff mean
+    // a stored HTML file can never run scripts or be sniffed into an
+    // executable type in a visitor's browser, even if one slips past the
+    // MIME-only extension rule.
+    setHeaders: (res) => {
+      res.header('Content-Security-Policy', 'sandbox');
+      res.header('X-Content-Type-Options', 'nosniff');
+    },
   });
   await app.register(fastifyStatic, {
     // The on-disk layout is public/assets/<...> and the public URL space is
@@ -310,6 +324,46 @@ async function bootstrap() {
       ];
   fastifyInstance.addHook('onRequest', async (request, reply) => {
     if (!request.url.startsWith('/api/better-auth/')) return;
+    // SECURITY (2026-10-25, F5): per-IP brute-force limiter for the
+    // credential endpoints, applied BEFORE the hijack (the hijacked BA
+    // handler runs outside Nest guards/rate-limiters). 10 attempts per
+    // IP per endpoint per minute, then 429 for 15 minutes. In-memory
+    // (single-instance API); a lockout here never blocks legitimate
+    // traffic from other IPs. Email-keyed limiting is intentionally NOT
+    // done here — it would require consuming the request body before
+    // the hijacked handler reads it.
+    if (
+      request.method === 'POST' &&
+      (request.url.startsWith('/api/better-auth/sign-in/email') ||
+        request.url.startsWith('/api/better-auth/sign-up/email'))
+    ) {
+      // Fastify runs with trustProxy: true, so request.ip already follows
+      // the edge's X-Forwarded-For. (Residual: if the edge does not strip
+      // client-sent XFF, this key is spoofable — same caveat as the rest
+      // of the app's IP handling; the edge must overwrite XFF.)
+      const ip = request.ip || 'unknown';
+      const key = `${ip}:${request.url.split('?')[0]}`;
+      const now = Date.now();
+      const attempts = (baAttemptLog.get(key) || []).filter(
+        (t) => now - t < 60_000,
+      );
+      attempts.push(now);
+      baAttemptLog.set(key, attempts);
+      const lockedUntil = baLockouts.get(key);
+      if (lockedUntil && now < lockedUntil) {
+        reply.code(429).send({
+          message: 'Too many sign-in attempts. Try again later.',
+        });
+        return;
+      }
+      if (attempts.length > 10) {
+        baLockouts.set(key, now + 15 * 60_000);
+        reply.code(429).send({
+          message: 'Too many sign-in attempts. Try again later.',
+        });
+        return;
+      }
+    }
     try {
       reply.hijack();
       const rawBody = await new Promise<string>((resolve) => {
@@ -388,6 +442,28 @@ async function bootstrap() {
                   where: { id: profile.id },
                   data: { password: hashedPassword },
                 });
+              }
+              // SECURITY (2026-10-25): a password change revokes every
+              // OTHER session (the current one stays, so the user who just
+              // changed their password is not logged out). Stolen sessions
+              // must not survive a password change. Reset-password revokes
+              // ALL sessions via revokeSessionsOnPasswordReset in
+              // auth.config.ts; sign-out already deletes its own session.
+              try {
+                const currentToken = (session as any)?.session?.token;
+                await baPrisma.betterAuthSession.deleteMany({
+                  where: {
+                    userId: session.user.id,
+                    ...(currentToken
+                      ? { token: { not: currentToken } }
+                      : {}),
+                  },
+                });
+              } catch (revokeErr) {
+                console.error(
+                  '[BA-sync] Failed to revoke other sessions after password change:',
+                  revokeErr,
+                );
               }
             }
           }

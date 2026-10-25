@@ -238,7 +238,17 @@ export class DashboardQueryService {
       window === '1h' ? 3600000 : window === '24h' ? 86400000 : 604800000;
     const since = new Date(Date.now() - windowMs);
 
-    const actorFilter = actorType ? `AND "actorType"::text = '${actorType}'` : '';
+    // SECURITY (2026-10-25): actorType used to be interpolated directly
+    // into this SQL string — an admin-supplied value could break out of
+    // the quote. Now it is allowlisted against the enum AND bound as a
+    // parameter; anything else is ignored (no filter) rather than rejected,
+    // preserving the old lenient behavior for unknown values.
+    const ALLOWED_ACTOR_TYPES = ['IP', 'USER', 'SESSION', 'BROWSER_TRUST', 'SYSTEM'];
+    const safeActorType =
+      actorType && ALLOWED_ACTOR_TYPES.includes(actorType)
+        ? actorType
+        : null;
+    const actorFilter = safeActorType ? `AND "actorType"::text = $3` : '';
 
     const rows: Array<{ actorType: string; actorId: string; count: number; lastSeen: string }> =
       await this.prisma.$queryRawUnsafe(`
@@ -254,7 +264,7 @@ export class DashboardQueryService {
         GROUP BY "actorType", COALESCE("ipAddress", "userId", 'unknown')
         ORDER BY count DESC
         LIMIT $2
-      `, since, limit);
+      `, since, limit, ...(safeActorType ? [safeActorType] : []));
 
     return {
       items: rows.map((r) => ({

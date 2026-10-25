@@ -12,6 +12,8 @@ import {
   IsEnum,
   IsEmail,
   ArrayMinSize,
+  ArrayMaxSize,
+  Max,
   MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -44,14 +46,15 @@ export class OrderItemDto {
   @ValidateNested()
   @Type(() => CustomizationSelectionDto)
   customization?: CustomizationSelectionDto;
-  @IsInt() @Min(1) quantity: number;
-  @IsNumber() price: number;
+  @IsInt() @Min(1) @Max(9999) quantity: number;
+  @IsNumber() @Min(0) @Max(1000000000) price: number;
 }
 
 export class CreateOrderDto {
   @IsOptional() @IsString() customerId?: string;
   @IsArray()
   @ArrayMinSize(1)
+  @ArrayMaxSize(100)
   @ValidateNested({ each: true })
   @Type(() => OrderItemDto)
   items: OrderItemDto[];

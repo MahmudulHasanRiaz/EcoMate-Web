@@ -15,6 +15,7 @@ import { siteUrl } from "@/lib/site-url";
 import { hasLicenseFeature } from "@/lib/api/storefront-config";
 import type { CSSProperties } from "react";
 import type { StorefrontConfig } from "@/lib/api/storefront-config";
+import { stringifyForScript } from "@/lib/safe-json";
 
 
 const geistSans = Geist({
@@ -176,13 +177,13 @@ export default async function RootLayout({
         )}
 
         {initialConfig && (
-          <script id="__INITIAL_CONFIG__" type="application/json" dangerouslySetInnerHTML={{ __html: JSON.stringify(initialConfig) }} />
+          <script id="__INITIAL_CONFIG__" type="application/json" dangerouslySetInnerHTML={{ __html: stringifyForScript(initialConfig) }} />
         )}
 
-        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: stringifyForScript(jsonLd) }} />
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify({
+          dangerouslySetInnerHTML={{ __html: stringifyForScript({
             '@context': 'https://schema.org',
             '@type': 'WebSite',
             name: initialConfig?.store.name || 'Store',

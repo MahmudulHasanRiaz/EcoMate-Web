@@ -26,6 +26,8 @@ export interface GatewayConfig {
   accountId?: string | null;
   account?: { id: string; code: string; name: string; type: string } | null;
   credentials: any;
+  /** SECURITY (2026-10-25): list no longer returns values — only set keys. */
+  credentialKeys?: string[];
   sortOrder: number;
   /** D: tri-state per-gateway overrides — null = use the global default. */
   staffAutoVerifiedOverride?: boolean | null;

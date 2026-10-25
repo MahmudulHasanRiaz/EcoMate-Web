@@ -1973,6 +1973,44 @@ describe('OrdersService', () => {
       expect(createdData.discountType).toBe('flat');
     });
 
+    it('ignores guest-supplied manual discount and shipping charge (security 2026-10-25)', async () => {
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) =>
+          cb({
+            ...prisma,
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+            shippingZoneGroup: {
+              findMany: jest.fn().mockResolvedValue([]),
+            },
+          }),
+      );
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        mockInitialStatus,
+      );
+      (prisma.systemSetting.findUnique as jest.Mock).mockImplementation(
+        async ({ where: { key } }) => {
+          if (key === 'delivery_charge') return { value: '60' };
+          return null;
+        },
+      );
+      (prisma.order.create as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.productVariant.update as jest.Mock).mockResolvedValue({});
+
+      // No user context = guest checkout.
+      await service.create({
+        ...createOrderDto,
+        discount: 100,
+        discountType: 'percentage',
+        shippingCharge: 0,
+      });
+
+      const createdData = (prisma.order.create as jest.Mock).mock.calls[0][0].data;
+      expect(createdData.discount).toBe(0);
+      expect(createdData.shippingCharge).toBe(60);
+    });
+
     it('records advance paid payment and sets PARTIAL_PAID for staff partial payment create', async () => {
       const createdPayments: any[] = [];
       (prisma.$transaction as jest.Mock).mockImplementation(

@@ -139,11 +139,26 @@ export function CourierSettings() {
     [rawList, hasFeature],
   )
 
+  // SECURITY (2026-10-25): GET /couriers/credentials no longer returns
+  // values — only fieldsPresent. Saved secrets stay blank in the form
+  // ("Saved — leave blank to keep"); the backend treats blank as keep.
+  const [savedFields, setSavedFields] = useState<Record<string, string[]>>({})
+  const effectiveValues = (courier: string, form: CourierFormState) => {
+    const saved = savedFields[courier] || []
+    const out: Record<string, unknown> = { ...(form as unknown as Record<string, unknown>) }
+    for (const field of saved) {
+      if (!out[field]) out[field] = 'saved'
+    }
+    return out
+  }
+
   useEffect(() => {
     if (list.length > 0) {
       const f: Record<string, CourierFormState> = {}
+      const s: Record<string, string[]> = {}
       for (const c of list as Record<string, unknown>[]) {
         const courier = c['courier'] as string
+        s[courier] = Array.isArray(c['fieldsPresent']) ? (c['fieldsPresent'] as string[]) : []
         f[courier] = {
           enabled: c['enabled'] as boolean || false,
           apiKey: (c['apiKey'] as string) || (c['credentials'] as Record<string, string>)?.['apiKey'] || '',
@@ -161,6 +176,7 @@ export function CourierSettings() {
         }
       }
       setForms(f)
+      setSavedFields(s)
     }
   }, [list.length])
 
@@ -203,7 +219,7 @@ export function CourierSettings() {
     const next = { ...(forms[courier] ?? defaultForm), enabled }
     // Optimistic: the switch reflects the intent immediately; onError reverts.
     setForms((prev) => ({ ...prev, [courier]: next }))
-    const missing = missingCourierCredentials(courier, next)
+    const missing = missingCourierCredentials(courier, effectiveValues(courier, next))
     toggleEnabledMut.mutate({
       courier,
       enabled,
@@ -368,7 +384,7 @@ export function CourierSettings() {
           const connection = resolveCourierConnectionState({
             courier,
             enabled: form.enabled,
-            values: form as unknown as Record<string, unknown>,
+            values: effectiveValues(courier, form),
             hasManagedCredentialSet: courier === 'steadfast' && hasDefaultSteadfastSet,
           })
           const togglePending = toggleEnabledMut.isPending && toggleEnabledMut.variables?.courier === courier
@@ -432,7 +448,9 @@ export function CourierSettings() {
                         type={field.includes('secret') || field === 'password' ? 'password' : 'text'}
                         value={String(form[field] || '')}
                         onChange={e => setForms(prev => ({ ...prev, [courier]: { ...prev[courier], [field]: e.target.value } }))}
-                        placeholder={`Enter ${fieldLabel[field] || field}...`}
+                        placeholder={(savedFields[courier] || []).includes(field) && !form[field]
+                          ? 'Saved — leave blank to keep'
+                          : `Enter ${fieldLabel[field] || field}...`}
                       />
                     </div>
                   ))}
@@ -443,7 +461,9 @@ export function CourierSettings() {
                         className='h-8 text-sm'
                         value={String(form[info.integrationField] || '')}
                         onChange={e => setForms(prev => ({ ...prev, [courier]: { ...prev[courier], [info.integrationField!]: e.target.value } }))}
-                        placeholder='The fixed token shown in Pathao docs (e.g. f3992ecc-...) — echoed in the response header'
+                        placeholder={(savedFields[courier] || []).includes(info.integrationField) && !form[info.integrationField]
+                          ? 'Saved — leave blank to keep'
+                          : 'The fixed token shown in Pathao docs (e.g. f3992ecc-...) — echoed in the response header'}
                       />
                     </div>
                   )}

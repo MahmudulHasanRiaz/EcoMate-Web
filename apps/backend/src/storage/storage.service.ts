@@ -40,6 +40,17 @@ const MIME_EXT_MAP: Record<string, string> = {
   'image/webp': '.webp',
   'image/svg+xml': '.svg',
   'image/avif': '.avif',
+  // Types the magic-byte validator accepts (file-validation.ts) — the map
+  // must cover them, or F13's MIME-only extension rule would strip their
+  // extensions entirely.
+  'image/heic': '.heic',
+  'image/heif': '.heif',
+  'image/bmp': '.bmp',
+  'image/tiff': '.tiff',
+  'video/webm': '.webm',
+  'video/x-msvideo': '.avi',
+  'video/quicktime': '.mov',
+  'video/x-matroska': '.mkv',
   'application/pdf': '.pdf',
   'text/plain': '.txt',
   'text/html': '.html',
@@ -541,8 +552,11 @@ export class StorageService {
     filename?: string,
   ): Promise<{ url: string; filename: string; size: number }> {
     const config = await this.getConfig();
-    let ext = extname(file.originalname).toLowerCase();
-    if (!ext) ext = MIME_EXT_MAP[file.mimetype] || '';
+    // SECURITY (2026-10-25): the stored extension ALWAYS comes from the
+    // (server-validated) MIME type, never from the client-supplied
+    // originalname — a file named "photo.html" with image content used to
+    // be stored as .html. Unknown MIME → no extension (never a guess).
+    const ext = MIME_EXT_MAP[file.mimetype] || '';
     const name = filename
       ? await this.resolveFilename(filename + ext)
       : `${uuid()}${ext}`;
@@ -744,8 +758,8 @@ export class StorageService {
     filename?: string,
   ): Promise<{ url: string; filename: string; size: number }> {
     const config = await this.getConfig();
-    let ext = extname(originalname).toLowerCase();
-    if (!ext) ext = MIME_EXT_MAP[mimeType] || '';
+    // SECURITY (2026-10-25): see upload() — extension from MIME only.
+    const ext = MIME_EXT_MAP[mimeType] || '';
     const name = filename
       ? await this.resolveFilename(filename + ext)
       : `${uuid()}${ext}`;

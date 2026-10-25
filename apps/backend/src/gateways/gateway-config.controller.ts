@@ -281,7 +281,19 @@ export class GatewayConfigController implements OnApplicationBootstrap {
       phoneNumber: g.phoneNumber,
       accountId: g.accountId,
       account: g.account,
-      credentials: g.credentials,
+      // SECURITY (2026-10-25): never return credential VALUES from a
+      // list endpoint — only which keys are set. Editing is blank=keep
+      // (see upsertGateway merge below); no endpoint reveals values.
+      credentialKeys:
+        g.credentials && typeof g.credentials === 'object'
+          ? Object.entries(g.credentials as Record<string, unknown>)
+              .filter(
+                ([, v]) =>
+                  (typeof v === 'string' && v.trim() !== '') ||
+                  (typeof v !== 'string' && v !== null && v !== undefined),
+              )
+              .map(([k]) => k)
+          : [],
       sortOrder: g.sortOrder,
       // D (owner-locked): tri-state overrides — null = use global default.
       staffAutoVerifiedOverride: g.staffAutoVerifiedOverride,
@@ -372,11 +384,23 @@ export class GatewayConfigController implements OnApplicationBootstrap {
     });
     // D6: a gateway created without a chosen account gets its namesake
     // account auto-created + mapped (owner-locked, custom gateways too).
+    // SECURITY (2026-10-25): create responses are masked like the list.
+    const maskCreated = (row: any) => {
+      const { credentials, ...rest } = row;
+      return {
+        ...rest,
+        credentialKeys:
+          credentials && typeof credentials === 'object'
+            ? Object.keys(credentials as Record<string, unknown>)
+            : [],
+      };
+    };
     if (!created.accountId) {
       const ensured = await ensureGatewaySettlementAccount(this.prisma, created);
-      if (ensured.mapped) return { ...created, accountId: ensured.accountId };
+      if (ensured.mapped)
+        return maskCreated({ ...created, accountId: ensured.accountId });
     }
-    return created;
+    return maskCreated(created);
   }
 
   @Permissions('edit_gateways')
@@ -416,8 +440,27 @@ export class GatewayConfigController implements OnApplicationBootstrap {
     if ('logoUrl' in dto) surfaceUpdate.logoUrl = dto.logoUrl || null;
     const existing = await this.prisma.paymentGateway.findUnique({
       where: { code },
-      select: { id: true },
+      select: { id: true, credentials: true },
     });
+    // SECURITY (2026-10-25): credentials merge, blank=keep. The list no
+    // longer returns values, so the admin form sends blank for unchanged
+    // secrets — and the enable-toggle save sends credentials: {} — and
+    // neither may wipe stored secrets. Only non-empty supplied values
+    // overwrite; absent/empty keys keep the stored value.
+    const existingCreds =
+      existing?.credentials && typeof existing.credentials === 'object'
+        ? (existing.credentials as Record<string, unknown>)
+        : {};
+    const suppliedCreds =
+      dto.credentials && typeof dto.credentials === 'object'
+        ? (dto.credentials as Record<string, unknown>)
+        : {};
+    const mergedCreds = { ...existingCreds };
+    for (const [k, v] of Object.entries(suppliedCreds)) {
+      if (typeof v === 'string' ? v.trim() !== '' : v !== null && v !== undefined) {
+        mergedCreds[k] = v;
+      }
+    }
     const saved = await this.prisma.paymentGateway.upsert({
       where: { code },
       create: {
@@ -433,7 +476,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
         mode: dto.mode || 'personal',
         phoneNumber,
         accountId: accountId ?? null,
-        credentials: dto.credentials || {},
+        credentials: mergedCreds as any,
         sortOrder: dto.sortOrder || 0,
         ...overrideUpdate,
       },
@@ -445,7 +488,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
         mode: dto.mode,
         phoneNumber,
         ...(accountId !== undefined ? { accountId } : {}),
-        credentials: dto.credentials,
+        credentials: mergedCreds as any,
         sortOrder: dto.sortOrder,
         ...overrideUpdate,
         ...surfaceUpdate,
@@ -454,11 +497,29 @@ export class GatewayConfigController implements OnApplicationBootstrap {
     // D6: only a genuinely NEW gateway (this call created it) with no
     // chosen account gets the auto-created namesake account. Updates —
     // including a deliberate mapping clear — are never re-mapped.
+    // SECURITY (2026-10-25): upsert responses are masked like the list.
+    const maskSaved = (row: any) => {
+      const { credentials, ...rest } = row;
+      return {
+        ...rest,
+        credentialKeys:
+          credentials && typeof credentials === 'object'
+            ? Object.entries(credentials as Record<string, unknown>)
+                .filter(
+                  ([, v]) =>
+                    (typeof v === 'string' && v.trim() !== '') ||
+                    (typeof v !== 'string' && v !== null && v !== undefined),
+                )
+                .map(([k]) => k)
+            : [],
+      };
+    };
     if (!existing && !saved.accountId) {
       const ensured = await ensureGatewaySettlementAccount(this.prisma, saved);
-      if (ensured.mapped) return { ...saved, accountId: ensured.accountId };
+      if (ensured.mapped)
+        return maskSaved({ ...saved, accountId: ensured.accountId });
     }
-    return saved;
+    return maskSaved(saved);
   }
 
   // ============ ADMIN: Product Payment Option Overrides ============
@@ -611,6 +672,21 @@ export class GatewayConfigController implements OnApplicationBootstrap {
       where: { code },
     });
     if (!gateway) throw new NotFoundException(`Gateway "${code}" not found`);
-    return gateway;
+    // SECURITY (2026-10-25): same masking as the list — no endpoint
+    // returns credential values anymore (see findAllAdmin note).
+    const { credentials, ...rest } = gateway as any;
+    return {
+      ...rest,
+      credentialKeys:
+        credentials && typeof credentials === 'object'
+          ? Object.entries(credentials as Record<string, unknown>)
+              .filter(
+                ([, v]) =>
+                  (typeof v === 'string' && v.trim() !== '') ||
+                  (typeof v !== 'string' && v !== null && v !== undefined),
+              )
+              .map(([k]) => k)
+          : [],
+    };
   }
 }

@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsDateString,
@@ -8,6 +9,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
   Min,
   ValidateNested,
@@ -209,20 +211,24 @@ export class EvaluateItemDto {
 
   @IsNumber()
   @Min(1)
+  @Max(9999)
   quantity!: number;
 
   @IsNumber()
   @Min(0)
+  @Max(1000000000)
   unitPrice!: number;
 
   @IsOptional()
   @IsNumber()
   @Min(0)
+  @Max(1000000000)
   addonAmount?: number;
 }
 
 export class EvaluateDiscountsDto {
   @IsArray()
+  @ArrayMaxSize(200)
   @ValidateNested({ each: true })
   @Type(() => EvaluateItemDto)
   items!: EvaluateItemDto[];

@@ -1242,15 +1242,35 @@ export class OrdersService {
         });
       }
     }
-    // Note: edit-lock presence is stripped by transformOrder for the public/customer
-    // shape (it never exposes the holder). Staff only.
+    // SECURITY (2026-10-25, F26): token viewers and owner-customers used
+    // to receive the FULL staff transform — payment rows with verifier
+    // names, internal dispatch sync logs, the live edit-lock holder, the
+    // assignee, and the RAW timeline (private staff notes, performedBy
+    // emails). The old comment claiming transformOrder stripped the lock
+    // was wrong: it normalizes and KEEPS it. Non-admin viewers now get
+    // the same allowlisted shape as the public lookups: internal
+    // relations deleted, timeline reduced by toPublicTimeline, and no
+    // source attribution (there is no actor left to attribute). What
+    // stays is the customer's own order: totals, paymentStatus, items,
+    // shipment tracking, customer snapshot — the thank-you page reads
+    // exactly those fields.
     // exchangeOfOrder is a cross-order snapshot (another order's customer/items):
     // staff only. Public/customer token viewers never see it.
-    if (!isAdmin) delete (order as any).exchangeOfOrder;
+    if (!isAdmin) {
+      delete (order as any).exchangeOfOrder;
+      delete (order as any).payments;
+      delete (order as any).dispatchLogs;
+      delete (order as any).editLock;
+      delete (order as any).assignee;
+      delete (order as any).returnOfOrder;
+      delete (order as any).returnOrders;
+    }
     const transformed = this.transformOrder(order);
-    // Timeline source attribution for the admin All/Staff/Courier/System
-    // filters — derived at read time (writers never persist a source field).
-    if (Array.isArray(transformed.timeline)) {
+    if (!isAdmin) {
+      transformed.timeline = this.toPublicTimeline(order.timeline);
+    } else if (Array.isArray(transformed.timeline)) {
+      // Timeline source attribution for the admin All/Staff/Courier/System
+      // filters — derived at read time (writers never persist a source field).
       transformed.timeline = withTimelineSources(transformed.timeline);
     }
     return transformed;
@@ -2070,8 +2090,14 @@ export class OrdersService {
       let finalShippingCharge = derivedShippingCharge;
       let isShippingOverridden = false;
       if (dto.shippingCharge !== undefined && !isNaN(Number(dto.shippingCharge))) {
-        const explicitShipping = Number(dto.shippingCharge);
-        if (isStaffCreate || explicitShipping >= 0) {
+        // SECURITY (2026-10-25): only staff may set a shipping charge.
+        // Guest/storefront callers used to zero it with shippingCharge: 0.
+        // Non-staff values are ignored — the charge above is derived from
+        // configured options/zones/district map (+ free-delivery threshold),
+        // which mirrors the storefront's own resolver, so a legitimate
+        // guest checkout keeps exactly the charge it displayed.
+        if (isStaffCreate) {
+          const explicitShipping = Number(dto.shippingCharge);
           finalShippingCharge = explicitShipping;
           isShippingOverridden = Math.abs(finalShippingCharge - derivedShippingCharge) > 0.01;
         }
@@ -2184,9 +2210,17 @@ export class OrdersService {
         }
 
         // Check per-customer usage limit inside the transaction
-        if (dto.customerId && couponRow.maxUsesPerCustomer) {
+        // (SECURITY 2026-10-25, F27): guests key on their normalized
+        // phone — the same key the usage row is written with below, or
+        // the cap can never fire for guest orders.
+        const couponCustomerKey =
+          dto.customerId ||
+          (dto.guestPhone && normalizePhone(dto.guestPhone)
+            ? `guest:${normalizePhone(dto.guestPhone)}`
+            : null);
+        if (couponCustomerKey && couponRow.maxUsesPerCustomer) {
           const userUsageCount = await tx.couponUsage.count({
-            where: { couponId: couponRow.id, userId: dto.customerId },
+            where: { couponId: couponRow.id, userId: couponCustomerKey },
           });
           if (userUsageCount >= couponRow.maxUsesPerCustomer) {
             throw new BadRequestException(
@@ -2219,7 +2253,11 @@ export class OrdersService {
           effectiveDiscountType = 'flat';
           effectiveDiscountMonetary = effectiveDiscount;
         }
-      } else if (dto.discount !== undefined && Number(dto.discount) > 0) {
+      } else if (dto.discount !== undefined && Number(dto.discount) > 0 && isStaffCreate) {
+        // SECURITY (2026-10-25): manual discounts are staff-only. A guest
+        // used to pass discount: 100 + discountType: 'percentage' for a
+        // free order. Non-staff values are ignored (not 400) so a
+        // storefront client that echoes the field cannot break checkout.
         // Staff-entered or direct manual discount (D19: also on the
         // post-automatic base, same stacking as coupons).
         const discVal = Number(dto.discount);
@@ -2608,7 +2646,12 @@ export class OrdersService {
           data: {
             couponId: couponRow.id,
             orderId: created.id,
-            userId: dto.customerId || null,
+            // F27: same guest-phone key as the cap check above.
+            userId:
+              dto.customerId ||
+              (dto.guestPhone && normalizePhone(dto.guestPhone)
+                ? `guest:${normalizePhone(dto.guestPhone)}`
+                : null),
             discount: effectiveDiscountMonetary,
           },
         });
@@ -2875,15 +2918,11 @@ export class OrdersService {
         });
     }
 
-    if (dto.couponCode) {
-      await this.couponsService.apply(
-        dto.couponCode,
-        order.id,
-        undefined,
-        dto.discount || 0,
-      );
-    }
-
+    // NOTE (2026-10-25): no post-commit coupon apply() here. Usage is
+    // already incremented inside the order transaction (see the
+    // "Coupon usage increment" block above); the apply() call that used to
+    // sit here incremented usedCount a SECOND time and created a second
+    // couponUsage row, so maxUses caps were consumed twice as fast.
     this.events.emit({
       type: 'order.created',
       data: { id: order.id, displayId: order.displayId },
@@ -4926,6 +4965,30 @@ export class OrdersService {
             err,
           );
         }
+      }
+
+      // SECURITY (2026-10-25, F24): order-level verify used to set only
+      // order.paymentStatus='PAID' while the PENDING rows stayed PENDING —
+      // due math, journaling (postJournalForOrderPayments below reads PAID
+      // rows) and the verification lists all disagreed with the header.
+      // Flip the rows in the SAME transaction and return the fresh
+      // snapshot. Rejection (verified=false) leaves rows PENDING: the
+      // order returns to 'Payment Pending' for re-verification, and the
+      // per-row FAILED path stays the granular reject.
+      if (verified) {
+        await tx.payment.updateMany({
+          where: { orderId, status: 'PENDING' },
+          data: {
+            status: 'PAID',
+            verifiedBy: userId ?? null,
+            verifiedAt: new Date(),
+            verificationSource: 'manual',
+          },
+        });
+        return tx.order.findUnique({
+          where: { id: orderId },
+          include: { status: true, payments: true },
+        });
       }
 
       return updated;

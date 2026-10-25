@@ -13,6 +13,7 @@ import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import { hasLicenseFeature } from "@/lib/api/storefront-config";
 import { toMetaDescription } from "@/lib/strip-html";
 import { sanitizeProductHTML } from "@/lib/sanitize-product";
+import { stringifyForScript } from "@/lib/safe-json";
 import { publicMediaUrl, siteUrl } from "@/lib/site-url";
 import ProductDetailClient from "@/components/ProductDetailClient";
 
@@ -217,11 +218,11 @@ export default async function ProductPage(props: { params: Promise<{ slug: strin
       <>
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }}
+          dangerouslySetInnerHTML={{ __html: stringifyForScript(productJsonLd) }}
         />
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+          dangerouslySetInnerHTML={{ __html: stringifyForScript(breadcrumbJsonLd) }}
         />
         <ProductDetailClient product={product} initialRelatedItems={relatedItems} initialReviews={initialReviews} sanitizedDescription={sanitizedDescription} sanitizedSpecifications={sanitizedSpecifications} sizeGuideAvailable={hasSizeChart} customizationEnabled={customizationEnabled} />
       </>

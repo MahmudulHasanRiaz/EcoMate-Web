@@ -375,6 +375,19 @@ export class PaymentsService {
         throw new BadRequestException('VOID payments cannot be verified (void rows are terminal)');
       }
 
+      // SECURITY (2026-10-25, F24): the DTO's @IsEnum accepted ANY
+      // PaymentStatus, so a verify call could stamp REFUNDED/CANCELLED/
+      // PARTIAL_* directly — bypassing the refund path's caps, mirrors
+      // and audit. Verification only ever approves or rejects.
+      if (
+        dto.status !== PaymentStatus.PAID &&
+        dto.status !== PaymentStatus.FAILED
+      ) {
+        throw new BadRequestException(
+          'Only PAID or FAILED can be set via verification (refunds use the refund path)',
+        );
+      }
+
       // Self-approve block (Task 6): recordedBy is `staff:<userId>` for
       // staff entries (null for customer-submitted), verifiedBy is the raw
       // userId — same id space, so a direct comparison is exact.

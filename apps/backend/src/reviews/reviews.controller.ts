@@ -11,6 +11,7 @@ import {
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
+import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
 import { ReviewsService } from './reviews.service';
 import { CreateReviewDto } from './dto/create-review.dto';
 
@@ -33,6 +34,7 @@ export class ReviewsController {
   }
 
   @Public()
+  @RateLimitPolicy('strict_public')
   @Post()
   async create(@Body() dto: CreateReviewDto) {
     return this.svc.create(dto);

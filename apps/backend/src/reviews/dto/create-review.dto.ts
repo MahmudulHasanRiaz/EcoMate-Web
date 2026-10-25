@@ -1,10 +1,11 @@
 import {
   IsString,
-  IsNumber,
+  IsInt,
   IsOptional,
   IsNotEmpty,
   Min,
   Max,
+  MaxLength,
   MinLength,
   ValidateIf,
 } from 'class-validator';
@@ -21,13 +22,14 @@ export class CreateReviewDto {
   customerName?: string;
 
   @IsOptional()
-  @IsNumber()
+  @IsInt()
   @Min(1)
   @Max(5)
   rating?: number;
 
   @IsOptional()
   @IsString()
+  @MaxLength(2000)
   text?: string;
 
   @IsString()

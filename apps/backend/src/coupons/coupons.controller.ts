@@ -13,6 +13,7 @@ import { Permissions } from '../common/decorators/permissions.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
+import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
 import { CouponsService } from './coupons.service';
 import { CreateCouponDto } from './dto/create-coupon.dto';
 import { UpdateCouponDto } from './dto/update-coupon.dto';
@@ -31,13 +32,15 @@ export class CouponsController {
   // public (DualModeAuthGuard 401s it otherwise) while the class-level
   // feature gate still applies.
   @Public()
+  @RateLimitPolicy('strict_public')
   @Get('validate')
   async validate(
     @Query('code') code: string,
     @Query('userId') userId?: string,
+    @Query('phone') phone?: string,
   ) {
     if (!code) throw new BadRequestException('Coupon code is required');
-    return this.couponsService.validate(code, userId);
+    return this.couponsService.validate(code, userId, phone);
   }
 
   @Permissions('create_coupons')
