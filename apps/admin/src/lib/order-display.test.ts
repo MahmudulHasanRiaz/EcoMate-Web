@@ -79,20 +79,20 @@ describe('getOrderPaidAmount', () => {
     expect(getOrderPaidAmount({ total: 1500, paymentStatus: 'PAID' })).toBe(1500)
   })
 
-  it('falls back to total for FULL_PAYMENT', () => {
+  it('returns 0 for a FULL_PAYMENT order with no recorded payments (Pay Later)', () => {
     expect(
       getOrderPaidAmount({ total: 1500, paymentOptionType: 'FULL_PAYMENT' }),
-    ).toBe(1500)
+    ).toBe(0)
   })
 
-  it('uses partialAmount for a partial order with no recorded payments', () => {
+  it('returns 0 for a partial order with no recorded payments (Pay Later)', () => {
     expect(
       getOrderPaidAmount({
         total: 1500,
         paymentOptionType: 'PARTIAL_PAYMENT',
         partialAmount: 500,
       }),
-    ).toBe(500)
+    ).toBe(0)
   })
 
   it('prefers recorded payments over partialAmount', () => {
@@ -128,7 +128,10 @@ describe('getOrderDueAmount', () => {
 
   it('returns 0 for a fully paid order', () => {
     expect(getOrderDueAmount({ total: 1500, paymentStatus: 'PAID' })).toBe(0)
-    expect(getOrderDueAmount({ total: 1500, paymentOptionType: 'FULL_PAYMENT' })).toBe(0)
+  })
+
+  it('returns the full total for a FULL_PAYMENT order with no recorded payments (Pay Later)', () => {
+    expect(getOrderDueAmount({ total: 1500, paymentOptionType: 'FULL_PAYMENT' })).toBe(1500)
   })
 
   it('subtracts verified advance payments from the total', () => {
@@ -163,6 +166,13 @@ describe('getOrderDueAmount', () => {
 
   it('guarantees paid + due equals the total for cash-on-delivery', () => {
     const order = { total: 2750.5, paymentOptionType: 'CASH_ON_DELIVERY' }
+    expect(getOrderPaidAmount(order) + getOrderDueAmount(order)).toBe(order.total)
+  })
+
+  it('guarantees paid + due equals the total for a row-less FULL Pay Later order with server due', () => {
+    const order = { total: 420, paymentOptionType: 'FULL_PAYMENT', due: 420 }
+    expect(getOrderPaidAmount(order)).toBe(0)
+    expect(getOrderDueAmount(order)).toBe(420)
     expect(getOrderPaidAmount(order) + getOrderDueAmount(order)).toBe(order.total)
   })
 
