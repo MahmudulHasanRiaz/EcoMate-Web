@@ -1299,8 +1299,9 @@ describe('ProductsService', () => {
         const result = await service.findBySlug('test-product');
 
         expect(result).toBeTruthy();
+        // F16: the cache key is scope-qualified — a token-less call is public.
         expect(cache.set).toHaveBeenCalledWith(
-          'product:slug:test-product',
+          'product:slug:test-product:public',
           expect.anything(),
           10_000,
         );

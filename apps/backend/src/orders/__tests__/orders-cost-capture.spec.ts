@@ -199,7 +199,12 @@ describe('OrdersService.verifyPayment fee capture', () => {
   const txMocks: any = {
     order: { findUnique: jest.fn(), update: jest.fn() },
     orderStatus: { findUnique: jest.fn() },
-    payment: { findMany: jest.fn(), update: jest.fn() },
+    payment: {
+      findMany: jest.fn(),
+      update: jest.fn(),
+      // F24: order-level verify flips PENDING rows to PAID inside the tx.
+      updateMany: jest.fn(),
+    },
   };
   const mockPrisma: any = {
     $transaction: jest.fn(async (fn: any) => fn(txMocks)),
@@ -211,11 +216,13 @@ describe('OrdersService.verifyPayment fee capture', () => {
     trashedAt: null,
     paymentStatus: 'PAYMENT_VERIFYING',
     status: { name: 'Payment Verifying' },
+    payments: [],
   };
 
   beforeEach(async () => {
     jest.clearAllMocks();
     txMocks.order.findUnique.mockResolvedValue(verifyingOrder);
+    txMocks.payment.updateMany.mockResolvedValue({ count: 1 });
     txMocks.orderStatus.findUnique.mockResolvedValue({
       id: 's1',
       name: 'Confirmed',

@@ -209,6 +209,9 @@ describe('OrdersService', () => {
               create: jest.fn(),
               findFirst: jest.fn(),
               update: jest.fn(),
+              // F24: order-level verify flips every PENDING row to PAID in the
+              // same transaction, then re-reads the order.
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
               count: jest.fn().mockResolvedValue(0),
               // Task 9 (D5) cancel gate: netPaid side of outstanding.
               aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 } }),
@@ -688,10 +691,14 @@ describe('OrdersService', () => {
         expect.objectContaining({ where: { id: 'order-id-1' } }),
       );
       // D-A: customer is built from the snapshot (stale profile ignored).
+      // F26: a token view is the non-admin path — internal relations
+      // (payments, dispatchLogs, assignee, returns, exchange) are deleted
+      // before the transform and the timeline is the public allowlist
+      // (status/timestamp/note only — no actor source to attribute).
+      const { payments: _payments, ...publicOrder } = mockOrder;
       expect(result).toEqual({
-        ...mockOrder,
-        // Read-time attribution: actor-less entries are system.
-        timeline: [{ ...mockOrder.timeline[0], source: 'system' }],
+        ...publicOrder,
+        timeline: [{ ...mockOrder.timeline[0] }],
         customerFirstName: 'John',
         customerLastName: 'Doe',
         customerPhone: '+1234567890',
@@ -719,7 +726,13 @@ describe('OrdersService', () => {
         ],
       });
 
-      const result = await service.findOne('order-id-1', { token: 'mock-view-token' });
+      // F26: source attribution is a STAFF feature — the non-admin
+      // token path redacts the timeline. Read it as staff (token + admin
+      // still authorizes; the valid token skips the edit-lock gate).
+      const result = await service.findOne('order-id-1', {
+        token: 'mock-view-token',
+        role: 'admin',
+      });
 
       expect(result.timeline.map((t: any) => t.source)).toEqual([
         'system',
