@@ -58,6 +58,21 @@ export class ProductsService {
   }
 
   /**
+   * Video URLs are stored trimmed: a padded value otherwise ships a broken
+   * link to the storefront. `undefined` stays `undefined` (write path leaves
+   * the column untouched), `null` stays `null` (explicit clear), and a
+   * whitespace-only value clears the field instead of storing blanks.
+   */
+  private normalizeVideoUrl(
+    value: string | null | undefined,
+  ): string | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  /**
    * Variant SKUs are globally unique in the DB (ProductVariant.sku @unique),
    * including drafts — but the old availability check excluded drafts, so a
    * "free" SKU could 500 the final save. Pre-check here so every write path
@@ -903,7 +918,7 @@ export class ProductsService {
       tags: dto.tags as any,
       images: (dto.images || []) as any,
       seoMeta: dto.seoMeta,
-      videoUrl: dto.videoUrl,
+      videoUrl: this.normalizeVideoUrl(dto.videoUrl),
       detailRows: dto.detailRows as any,
       descriptionSections: dto.descriptionSections as any,
       isFeatured: dto.isFeatured || false,
@@ -1112,6 +1127,9 @@ export class ProductsService {
     if (dto.tags) data.tags = dto.tags as any;
     if (dto.images !== undefined) data.images = dto.images as any;
     if (dto.seoMeta) data.seoMeta = dto.seoMeta;
+    if (dto.videoUrl !== undefined) {
+      data.videoUrl = this.normalizeVideoUrl(dto.videoUrl);
+    }
     delete data.variants;
     delete data.attributes;
     delete data.categoryIds;
@@ -1396,7 +1414,7 @@ export class ProductsService {
         tags: dto.tags as any,
         images: (dto.images || []) as any,
         seoMeta: dto.seoMeta,
-        videoUrl: dto.videoUrl,
+        videoUrl: this.normalizeVideoUrl(dto.videoUrl),
         detailRows: dto.detailRows as any,
         descriptionSections: dto.descriptionSections as any,
         isFeatured: dto.isFeatured || false,
@@ -1494,6 +1512,9 @@ export class ProductsService {
     if (dto.tags) data.tags = dto.tags as any;
     if (dto.images !== undefined) data.images = dto.images as any;
     if (dto.seoMeta) data.seoMeta = dto.seoMeta;
+    if (dto.videoUrl !== undefined) {
+      data.videoUrl = this.normalizeVideoUrl(dto.videoUrl);
+    }
     delete data.attributes;
     delete data.status;
     delete data.isActive;
@@ -1671,6 +1692,9 @@ export class ProductsService {
     if (dto.tags) data.tags = dto.tags as any;
     if (dto.images !== undefined) data.images = dto.images as any;
     if (dto.seoMeta) data.seoMeta = dto.seoMeta;
+    if (dto.videoUrl !== undefined) {
+      data.videoUrl = this.normalizeVideoUrl(dto.videoUrl);
+    }
     delete data.attributes;
     delete data.categoryIds;
 
