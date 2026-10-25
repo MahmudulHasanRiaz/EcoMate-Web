@@ -23,6 +23,7 @@ export class VariantAttributeDto {
 
 export class CreateVariantDto {
   @IsString() @MinLength(1) sku: string;
+  @IsOptional() @IsInt() sortOrder?: number;
   @IsOptional() @IsNumber() price?: number;
   @IsOptional() @IsNumber() salePrice?: number;
   @IsOptional() @IsInt() managedStockQuantity?: number;

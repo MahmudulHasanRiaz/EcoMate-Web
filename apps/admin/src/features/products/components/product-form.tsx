@@ -187,22 +187,57 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const populateKeyRef = useRef<string | null>(null)
   const prevOpenRef = useRef(false)
   const prevSku = useRef(sku)
+  const slugTouchedRef = useRef(false)
   const openStateRef = useRef<any>(null)
   const notifySaveErrorRef = useRef(false)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
 
-  const notifyDraftSaveFailure = (e: any) => {
+  const notifySaveErrorMsgRef = useRef<string | null>(null)
+  const notifySaveErrorAtRef = useRef(0)
+  const notifyDraftSaveFailure = (e: any, force = false) => {
     console.error('[draft-save]', e?.response?.data || e?.message || e)
-    if (notifySaveErrorRef.current) return
-    notifySaveErrorRef.current = true
     const raw = e?.response?.data?.message
     const msg = Array.isArray(raw) ? raw.join('. ') : (raw || 'The draft could not be saved to the server')
+    // Throttle repeats of the SAME cause (autosave ticks every edit), but
+    // never latch-suppress forever: a persistent failure re-toasts every
+    // 30s, and an explicit/manual save always reports.
+    if (!force && notifySaveErrorMsgRef.current === msg && Date.now() - notifySaveErrorAtRef.current < 30000) return
+    notifySaveErrorMsgRef.current = msg
+    notifySaveErrorAtRef.current = Date.now()
+    notifySaveErrorRef.current = true
     toast.error(`Draft not saved: ${msg}`)
-    if (msg.toLowerCase().includes('sku')) {
-      // variant SKUs are globally unique — nudge towards unique values
-      setTimeout(() => notifySaveErrorRef.current = false, 4000)
+  }
+
+  // Single-flight server-draft saver shared by the autosave timer and the
+  // exit flush: a flush arriving while an autosave create is still in flight
+  // used to fire a SECOND createDraft (orphan "...-2" draft). Now the flush
+  // only records the latest snapshot; it is written once the in-flight
+  // request settles, against the draft id that request created.
+  const draftSaveInFlightRef = useRef(false)
+  const pendingDraftPayloadRef = useRef<any | null>(null)
+  const queueDraftSave = (payload: any) => {
+    if (draftSaveInFlightRef.current) {
+      pendingDraftPayloadRef.current = payload
+      return
     }
+    const targetId = serverDraftId || (isDraftEdit && currentRow ? currentRow.id : null)
+    draftSaveInFlightRef.current = true
+    const req = targetId
+      ? productsApi.updateDraft(targetId, { ...payload, isActive: false })
+      : productsApi.createDraft({ ...payload, isActive: false })
+    req.then((res: any) => {
+      notifySaveErrorRef.current = false
+      const created = res.data || res
+      if (!targetId && created?.id) setServerDraftId(created.id)
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+    }).catch((e: any) => notifyDraftSaveFailure(e))
+      .finally(() => {
+        draftSaveInFlightRef.current = false
+        const pending = pendingDraftPayloadRef.current
+        pendingDraftPayloadRef.current = null
+        if (pending) queueDraftSave(pending)
+      })
   }
   const hasSavedRef = useRef(false)
   const availabilityModeTouchedRef = useRef(false)
@@ -325,29 +360,12 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       !!payload.descriptionSections ||
       !!(payload.variants && payload.variants.length > 0)
     if (!hasContent) return
-    const timer = setTimeout(() => {
-      if (serverDraftId) {
-        productsApi.updateDraft(serverDraftId, { ...payload, isActive: false })
-          .then(() => { notifySaveErrorRef.current = false; queryClient.invalidateQueries({ queryKey: ['products'] }) })
-          .catch((e: any) => notifyDraftSaveFailure(e))
-      } else {
-        productsApi.createDraft({ ...payload, isActive: false })
-          .then((res: any) => {
-            const created = res.data || res
-            if (created?.id) {
-              notifySaveErrorRef.current = false
-              setServerDraftId(created.id)
-              queryClient.invalidateQueries({ queryKey: ['products'] })
-            }
-          })
-          .catch((e: any) => notifyDraftSaveFailure(e))
-      }
-    }, 1500)
+    const timer = setTimeout(() => queueDraftSave(payload), 1500)
     return () => clearTimeout(timer)
   }, [open, isEdit, serverDraftId, mode, name, slug, type, desc, shortDesc, videoUrl, detailRows, dsTagline, dsBenefits, dsSpecs, dsTip,
     basePrice, salePrice, sku, stock, lowStockQty, weightGram, customizationGroups, categoryIds, brandId,
     isFeatured, availabilityMode, standardCost, images, tags, sizeChartId,
-    seoTitle, seoDesc, seoKeywords, localVariants])
+    seoTitle, seoDesc, seoKeywords, localVariants, isActive])
 
   // Exit flush: the debounced auto-save above is cleared when the dialog
   // closes or the page unmounts, which would drop text typed less than ~1.5s
@@ -370,24 +388,9 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       !!(payload.variants && payload.variants.length > 0)
     if (!hasContent) return
     // Draft edits target the row being edited; creation targets the session's
-    // server draft (created on first autosave) or creates a fresh one.
-    const targetId = serverDraftId || (isDraftEdit && currentRow ? currentRow.id : null)
-    if (targetId) {
-      productsApi.updateDraft(targetId, { ...payload, isActive: false })
-        .then(() => { notifySaveErrorRef.current = false; queryClient.invalidateQueries({ queryKey: ['products'] }) })
-        .catch((e: any) => notifyDraftSaveFailure(e))
-    } else {
-      productsApi.createDraft({ ...payload, isActive: false })
-        .then((res: any) => {
-          const created = res.data || res
-          if (created?.id) {
-            notifySaveErrorRef.current = false
-            setServerDraftId(created.id)
-            queryClient.invalidateQueries({ queryKey: ['products'] })
-          }
-        })
-        .catch((e: any) => notifyDraftSaveFailure(e))
-    }
+    // server draft. Single-flight: if an autosave is in flight, this only
+    // records the latest snapshot (no second createDraft, no orphan draft).
+    queueDraftSave(payload)
   }
 
   useEffect(() => {
@@ -444,15 +447,27 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
 
     if (source) {
       const isClone = isDuplicate
-      const dupSuffix = `-CP${Date.now().toString(36).toUpperCase()}`
-      const cloneVariants = isClone
-        ? (source.variants?.map((v: any) => ({
-            ...v,
-            id: undefined,
-            productId: undefined,
-            sku: v.sku ? `${v.sku}${dupSuffix}` : '',
-          })) || [])
-        : []
+      // Duplicate rule (owner): variants are REGENERATED, never carried over.
+      // Carrying them crashed the save (no attributeValueIds), corrupted
+      // edits/deletes (shared undefined keys) and mirrored phantom physical
+      // stock. The duplicate opens with zero variants; the source's attribute
+      // selection is pre-selected so regeneration is one click.
+      const cloneVariants: any[] = []
+      const dupAttrs: string[] = []
+      const dupValues: Record<string, string[]> = {}
+      if (isClone) {
+        ;(source.variants || []).forEach((v: any) => {
+          ;(v.attributeValues || []).forEach((av: any) => {
+            const val = av.attributeValue
+            if (!val) return
+            const attrId = val.attribute?.id || val.attributeId
+            if (!attrId) return
+            if (!dupAttrs.includes(attrId)) dupAttrs.push(attrId)
+            if (!dupValues[attrId]) dupValues[attrId] = []
+            if (!dupValues[attrId].includes(val.id)) dupValues[attrId].push(val.id)
+          })
+        })
+      }
       availabilityModeTouchedRef.current = true
       setName(source.name || '')
       setSlug(source.slug || '')
@@ -486,7 +501,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       setSeoDesc((source.seoMeta as any)?.description || '')
       setSeoKeywords((source.seoMeta as any)?.keywords || '')
       setFieldErrors({})
-      setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({})
+      setSelectedAttrs(isDuplicate ? dupAttrs : []); setSelectedValues(isDuplicate ? dupValues : {}); setNewValueInput({})
       setDefaultVariantStock('0')
       setLocalVariants(cloneVariants)
       // Baseline is derived from the source, not from the just-queued state —
@@ -623,8 +638,12 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     const msg = Array.isArray(raw) ? raw.join('. ') : raw || 'Error'
     const code = e.response?.data?.statusCode
     if (code === 409 || (typeof raw === 'string' && raw.toLowerCase().includes('slug'))) {
-      setSlugError(typeof raw === 'string' ? raw : 'This slug is already taken')
-      setTab('general')
+      if (typeof raw === 'string' && raw.toLowerCase().includes('variant sku')) {
+        setTab('variants')
+      } else {
+        setSlugError(typeof raw === 'string' ? raw : 'This slug is already taken')
+        setTab('general')
+      }
     }
     toast.error(msg)
   }
@@ -688,6 +707,24 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     onError: handleBackendError,
   })
 
+  // Manual Save Draft for create/duplicate sessions (draft-edit already has
+  // one). A manual save always reports its result — it bypasses the autosave
+  // throttle so a click never silently vanishes.
+  const manualDraftMut = useMutation({
+    mutationFn: async () => {
+      const payload = buildPayload()
+      if (serverDraftId) return productsApi.updateDraft(serverDraftId, { ...payload, isActive: false })
+      return productsApi.createDraft({ ...payload, isActive: false })
+    },
+    onSuccess: (res: any) => {
+      const created = res.data || res
+      if (created?.id && !serverDraftId) setServerDraftId(created.id)
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      toast.success('Draft saved')
+    },
+    onError: (e: any) => notifyDraftSaveFailure(e, true),
+  })
+
   const genVariantMut = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) => productsApi.generateVariants(id, data),
     onSuccess: (res: any) => {
@@ -726,6 +763,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['product', id] })
       setClearVariantConfirm(false)
+      setType('simple')
       toast.success('All variants removed')
     },
     onError: handleBackendError,
@@ -782,17 +820,24 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
   }
 
   const buildPayload = () => {
+    // Bengali-only names derive an empty slug from the latin-only regex —
+    // fall back to a generated slug instead of failing validation.
+    const derivedSlug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
     const payload: any = {
-      name, slug: slug || name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
-      description: desc || undefined, shortDesc: shortDesc || undefined,
-      videoUrl: videoUrl.trim() || undefined,
+      name, slug: slug || derivedSlug || `product-${Date.now().toString(36)}`,
+      // On edit, cleared fields must actually clear: send explicit null for
+      // nullable fields (backend accepts null) and [] for tags/categories.
+      // On create, omit them instead.
+      description: isEdit ? (desc || null) : (desc || undefined),
+      shortDesc: isEdit ? (shortDesc || null) : (shortDesc || undefined),
+      videoUrl: isEdit ? (videoUrl.trim() || null) : (videoUrl.trim() || undefined),
       detailRows: (() => { const cleaned = cleanDetailRows(detailRows); return cleaned.length > 0 ? cleaned : undefined })(),
       descriptionSections: cleanDescriptionSections({ tagline: dsTagline, benefits: dsBenefits, specifications: dsSpecs, stylingTip: dsTip }),
       basePrice: parseFloat(basePrice) || 0, salePrice: salePrice ? parseFloat(salePrice) : undefined,
-      sku: sku || undefined, type,
+      sku: isEdit ? (sku || null) : (sku || undefined), type,
       categoryId: categoryIds[0] || undefined,
       brandId: brandId || null,
-      categoryIds: categoryIds.length > 0 ? categoryIds : undefined,
+      categoryIds: isEdit ? categoryIds : (categoryIds.length > 0 ? categoryIds : undefined),
       lowStockQty: lowStockQty ? parseInt(lowStockQty) : undefined,
       // Owner Q12: optional parcel weight; empty clears to courier fallback
       // on edit (null), and simply omits on create.
@@ -803,34 +848,46 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       customizations: hasCustomizationFeature
         ? (customizationGroups.length > 0 ? customizationGroups : (isEdit ? [] : undefined))
         : undefined,
-      sizeChartId: sizeChartId || undefined,
-      images, tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : undefined, isActive, isFeatured,
-      seoMeta: seoTitle || seoDesc ? { title: seoTitle, description: seoDesc, keywords: seoKeywords } : undefined,
+      sizeChartId: isEdit ? (sizeChartId || null) : (sizeChartId || undefined),
+      images, tags: isEdit ? tags.split(',').map(t => t.trim()).filter(Boolean) : (tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : undefined), isActive, isFeatured,
+      seoMeta: seoTitle || seoDesc || seoKeywords ? { title: seoTitle, description: seoDesc, keywords: seoKeywords } : undefined,
     }
     payload.availabilityMode = availabilityMode
     payload.standardCost = standardCost ? parseFloat(standardCost) : undefined
-    if (type !== 'variable' && availabilityMode === 'MANAGED_STOCK') {
+    // Plain edits never send managedStockQuantity: update() rejects a value
+    // differing from stock (stock changes only via the adjustment tool), and
+    // the form's stock state goes stale after an in-form adjustment.
+    if (!isEdit && type !== 'variable' && availabilityMode === 'MANAGED_STOCK') {
       payload.managedStockQuantity = parseInt(stock) || 0
     }
     if (type === 'variable' && localVariants.length > 0) {
-      payload.variants = localVariants.map(v => ({
+      payload.variants = localVariants.map((v, i) => ({
         sku: v.sku,
+        sortOrder: v.sortOrder ?? i,
         price: v.price,
         salePrice: v.salePrice || undefined,
         managedStockQuantity: v.managedStockQuantity || 0,
         standardCost: v.standardCost || undefined,
         image: v.images?.[0] || v.image || undefined,
         images: v.images || undefined,
-        attributeValues: v.attributeValueIds.map((id: string) => ({ attributeValueId: id })),
+        // Defensive: never throw on a variant without attributeValueIds
+        // (the old duplicate clones) — derive from attributeValues instead.
+        attributeValues: (v.attributeValueIds || (v.attributeValues || []).map((av: any) => av.attributeValue?.id || av.attributeValueId)).filter(Boolean).map((id: string) => ({ attributeValueId: id })),
       }))
     }
     return payload
   }
 
   const handleSave = () => {
-    const payload = buildPayload()
+    let payload: any
+    try {
+      payload = buildPayload()
+    } catch (err: any) {
+      toast.error(`Could not prepare the product data: ${err?.message || err}`)
+      return
+    }
     if (isDraftEdit && currentRow) publishDraftMut.mutate({ id: currentRow.id, data: payload })
-    else if (isEdit && currentRow) updateMut.mutate({ id: currentRow.id, data: payload })
+    else if ((isEdit && currentRow) || createdProductId) updateMut.mutate({ id: (currentRow?.id || createdProductId)!, data: payload })
     else createMut.mutate(payload)
   }
 
@@ -895,6 +952,10 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
         if (activeValues.length > 0) groups.push(activeValues)
       }
       const combinations = cartesian(groups)
+      if (combinations.length > 500) {
+        toast.error('Too many variant combinations (max 500) — narrow the attribute selection')
+        return
+      }
       const generated = combinations.map((combo, idx) => {
         const values = combo.map((av: any) => av.value)
         const fullSku = `${sku || 'PRD'}-${values.join('-').replace(/\s+/g, '-').replace(/\//g, '_').toUpperCase()}`
@@ -1108,7 +1169,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
   // Any nested overlay/dialog open — main dialog must NOT close from outside clicks.
   // Radix Dialog (modal) fires main onOpenChange(false) on any pointerdown outside its
   // content, which includes clicks inside nested dialogs (bulk update, confirmations).
-  const hasSubOverlay = bulkUpdateOpen || clearVariantConfirm || regenerateConfirm || showReviewGuard || adjustmentModalOpen || !!variantImgMgr || showDiscardConfirm
+  const hasSubOverlay = bulkUpdateOpen || clearVariantConfirm || regenerateConfirm || showReviewGuard || adjustmentModalOpen || !!variantImgMgr || showDiscardConfirm || galleryOpen || variantImgGalleryOpen
 
   // Closing a plain edit with unsaved edits silently discarded them; warn
   // first. Create/duplicate/draft-edit sessions persist to a server draft on
@@ -1128,6 +1189,19 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     }
     closeNow()
   }
+
+  // Tab close / refresh bypasses the in-dialog exit flush entirely, so warn
+  // while the form holds unsaved work instead of losing it silently.
+  const dirtyRef = useRef(false)
+  dirtyRef.current = !!open && openStateRef.current !== null && !formUntouched()
+  useEffect(() => {
+    if (!open) return
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (dirtyRef.current) e.preventDefault()
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [open])
 
   const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
@@ -1198,6 +1272,10 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                       value={type}
                       onChange={e => {
                         const next = e.target.value
+                        if (isEdit && next === 'simple' && currentRow?.type === 'variable' && (fullProduct?.variants?.length || currentRow?.variants?.length || 0) > 0) {
+                          toast.error('Remove all variants first (Variants tab → Clear All) before switching to Simple')
+                          return
+                        }
                         setType(next)
                         // Smart default on type switch: variable products are
                         // managed per-variant. Only auto-snap while the user
@@ -1240,13 +1318,13 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                 <div className='grid grid-cols-2 gap-6'>
                   <div className='space-y-1.5'>
                     <Label>Product Name *</Label>
-                    <Input id='product-field-name' value={name} onChange={e => { clearFieldError('name'); setName(e.target.value); if (!isEdit && !isDuplicate) setSlug(e.target.value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')) }} placeholder='Product name' className={fieldErrors.name ? 'border-destructive' : ''} />
+                    <Input id='product-field-name' value={name} onChange={e => { clearFieldError('name'); setName(e.target.value); if (!isEdit && !isDuplicate && !slugTouchedRef.current) setSlug(e.target.value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')) }} placeholder='Product name' className={fieldErrors.name ? 'border-destructive' : ''} />
                     {fieldErrors.name && <p className='text-xs text-destructive'>{fieldErrors.name}</p>}
                   </div>
                   <div className='space-y-1.5'>
                     <Label>Slug</Label>
                     <div className='relative'>
-                      <Input value={slug} onChange={e => { setSlug(e.target.value); setSlugError(''); setSlugAvailable(null) }} placeholder='product-slug' className={slugError ? 'border-destructive' : ''} />
+                      <Input value={slug} onChange={e => { slugTouchedRef.current = true; setSlug(e.target.value); setSlugError(''); setSlugAvailable(null) }} placeholder='product-slug' className={slugError ? 'border-destructive' : ''} />
                       <div className='absolute right-2 top-1/2 -translate-y-1/2'>
                         {slugChecking && <Loader2 className='h-3.5 w-3.5 animate-spin text-muted-foreground' />}
                         {!slugChecking && slugAvailable === false && !slugError && <X className='h-3.5 w-3.5 text-destructive' />}
@@ -1568,6 +1646,13 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
             </TabsContent>
 
             <TabsContent value='variants' className='mt-0 space-y-6'>
+              {isDuplicate && type === 'variable' && (
+                <div className='bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md px-4 py-3'>
+                  <p className='text-sm text-blue-700 dark:text-blue-300'>
+                    Variants are <strong>not copied</strong> from the original product. Select the attributes below and click <strong>Generate Variants</strong> to create fresh variants with new SKUs. Stock starts at 0 — add it from Inventory &gt; Stock after creation.
+                  </p>
+                </div>
+              )}
               {type !== 'variable' ? (
                 <div className='bg-muted/20 rounded-lg p-8 text-center space-y-3'>
                   <Package className='h-10 w-10 text-muted-foreground mx-auto' />
@@ -1669,7 +1754,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                           <div className='mt-3 bg-muted/20 rounded-lg p-4 space-y-2'>
                             <div className='flex items-center justify-between'>
                               <span className='text-sm font-medium'>Expected combinations: <strong>{total}</strong></span>
-                              <span className='text-xs text-muted-foreground'>Default stock: {parseInt(defaultVariantStock) || 10} per variant</span>
+                              <span className='text-xs text-muted-foreground'>Default stock: {parseInt(defaultVariantStock) || 0} per variant</span>
                             </div>
 
                             {counts.map(c => (
@@ -1913,7 +1998,10 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
               <span className='h-1.5 w-1.5 rounded-full bg-amber-500' /> Unsaved changes
             </span>
           )}
-          <Button variant='outline' onClick={requestClose}>Cancel</Button>
+          {/* Cancel on create/duplicate/draft-edit FLUSHES a server draft, so
+              it is not a discard — label it honestly. Plain-edit Cancel
+              discards (with the confirm dialog). */}
+          <Button variant='outline' onClick={requestClose}>{isEdit && !isDraftEdit ? 'Cancel' : 'Save & Close'}</Button>
           {isDraftEdit && currentRow && (
             <Button
               variant='outline'
@@ -1924,9 +2012,22 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
               Save Draft
             </Button>
           )}
+          {!isEdit && (
+            <Button
+              variant='outline'
+              disabled={manualDraftMut.isPending}
+              onClick={() => {
+                if (formUntouched()) { toast('No changes to save yet'); return }
+                try { manualDraftMut.mutate() } catch (err: any) { toast.error(`Could not prepare the product data: ${err?.message || err}`) }
+              }}
+            >
+              {manualDraftMut.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+              Save Draft
+            </Button>
+          )}
           <Button onClick={() => handleSaveClick()} disabled={createMut.isPending || updateMut.isPending || publishDraftMut.isPending || !fullProductReady}>
             {(createMut.isPending || updateMut.isPending || publishDraftMut.isPending) && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
-            {isDraftEdit ? 'Publish' : isEdit ? 'Update Product' : 'Create Product'}
+            {isDraftEdit ? 'Publish' : isEdit ? 'Update Product' : createdProductId ? 'Update Product' : 'Create Product'}
           </Button>
         </div>
       </DialogContent>

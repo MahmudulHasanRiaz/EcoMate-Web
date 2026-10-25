@@ -201,7 +201,9 @@ export function Products() {
   })
 
   const publishMut = useMutation({
-    mutationFn: (row: ProductResponse) => productsApi.publishDraft(row.id, { name: row.name }),
+    // Send the draft's stored mode/type too — the backend also defaults to
+    // the stored mode now, but the row action must not rely on that alone.
+    mutationFn: (row: ProductResponse) => productsApi.publishDraft(row.id, { name: row.name, availabilityMode: (row as any).availabilityMode, type: (row as any).type }),
     onSuccess: (res: any, row) => {
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['product', row.id] })
@@ -218,9 +220,12 @@ export function Products() {
       const source = res.data
       const cleanName = source.name.replace(/^(Copy of\s*)+/, '')
       const copyMatch = source.name.match(/\(copy (\d+)\)$/)
-      const copyIndex = copyMatch ? parseInt(copyMatch[1]) + 1 : 2
+      const copyIndex = copyMatch ? parseInt(copyMatch[1]) + 1 : 1
       const newName = copyIndex > 1 ? `${cleanName} (copy ${copyIndex})` : `Copy of ${cleanName}`
-      const newSku = source.sku ? `${source.sku}-CP${Date.now().toString(36).toUpperCase()}` : ''
+      // One suffix, generated once: strip a previous -CP suffix first so
+      // duplicating a copy does not grow "-CP...-CP..." SKUs.
+      const baseSku = (source.sku || '').replace(/-CP[0-9A-Z]+$/, '')
+      const newSku = baseSku ? `${baseSku}-CP${Date.now().toString(36).toUpperCase()}` : ''
       setDuplicateSourceRow({
         ...source,
         name: newName,
