@@ -23,6 +23,7 @@ import {
   type CustomizationSelection,
 } from "@/lib/customization";
 import { PdpSections } from "./pdp/PdpSections";
+import VideoEmbed from "./VideoEmbed";
 import { StickyBar } from "./pdp/StickyBar";
 import dynamic from "next/dynamic";
 
@@ -698,13 +699,25 @@ export default function ProductDetailClient({ product, defaultColor, initialRela
       </div>
 
       <div className="mx-auto grid min-[901px]:grid-cols-[1.05fr_1fr] gap-5 min-[901px]:gap-12 min-[901px]:px-6 min-[901px]:max-w-screen-xl">
-        <PdpGallery
-          images={itemGallery}
-          productName={product.name}
-          mediaMeta={product.mediaMeta}
-          fallbackImage={parentImg}
-          galleryKey={selectedVariant?.id || product.id}
-        />
+        {/* Left column sticks on desktop: on medium screens (901-1250px)
+            the 4/5 gallery is much shorter than the BuyBox, which used to
+            leave a large blank under the image. The column now pins while
+            the shopper scrolls the options, and the video below the gallery
+            fills most of the remaining height with sales content. */}
+        <div className="min-w-0 min-[901px]:sticky min-[901px]:top-4 min-[901px]:self-start">
+          <PdpGallery
+            images={itemGallery}
+            productName={product.name}
+            mediaMeta={product.mediaMeta}
+            fallbackImage={parentImg}
+            galleryKey={selectedVariant?.id || product.id}
+          />
+          {product.videoUrl && (
+            <div className="hidden min-[901px]:block mt-5">
+              <VideoEmbed key={product.videoUrl} url={product.videoUrl} />
+            </div>
+          )}
+        </div>
 
         <div className="min-[901px]:sticky min-[901px]:top-4 self-start min-w-0">
           <BuyBox

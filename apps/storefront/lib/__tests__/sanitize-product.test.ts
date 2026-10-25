@@ -20,4 +20,12 @@ describe('sanitizeProductHTML', () => {
     expect(out).not.toMatch(/<\/p><br>/);
     expect(out).toContain('bye');
   });
+
+  it('drops the empty aspect-ratio wrapper left by a pasted video embed', () => {
+    const out = sanitizeProductHTML(
+      '<div style="position:relative;padding-bottom:56.25%;height:0"><iframe src="https://www.youtube.com/embed/x"></iframe></div><p>Real description</p>',
+    );
+    expect(out).not.toContain('padding-bottom');
+    expect(out).toContain('Real description');
+  });
 });

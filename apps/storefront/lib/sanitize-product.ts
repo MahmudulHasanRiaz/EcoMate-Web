@@ -44,7 +44,7 @@ export function sanitizeProductHTML(html: string): string {
       )
       .join('');
   }
-  return DOMPurify.sanitize(processed, {
+  const cleaned = DOMPurify.sanitize(processed, {
     ALLOWED_TAGS: [
       'b',
       'i',
@@ -83,4 +83,18 @@ export function sanitizeProductHTML(html: string): string {
       'height',
     ],
   });
+  // Pasted YouTube embeds leave an empty aspect-ratio wrapper div behind
+  // (the iframe is stripped, but div + style survive) — a blank box inside
+  // the description. Strip empty divs whose style reserves height
+  // (aspect-ratio / padding-bottom / explicit height) and nothing else.
+  let out = cleaned;
+  let prev = '';
+  while (prev !== out) {
+    prev = out;
+    out = out.replace(
+      /<div[^>]*style="[^"]*(?:padding-(?:bottom|top)\s*:|aspect-ratio\s*:|height\s*:)[^"]*"[^>]*>(?:\s|<br\s*\/?>)*<\/div>/gi,
+      '',
+    );
+  }
+  return out;
 }

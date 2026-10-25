@@ -26,7 +26,14 @@ export function PdpSections({ product, sizeValues, sanitizedDescription, sanitiz
 
   return (
     <div>
-      {product.videoUrl && <VideoEmbed url={product.videoUrl} />}
+      {/* Mobile only: on desktop the video lives under the gallery in the
+          hero grid (see ProductDetailClient), where it fills the column
+          instead of sitting as a full-width block above Description. */}
+      {product.videoUrl && (
+        <div className="min-[901px]:hidden">
+          <VideoEmbed key={product.videoUrl} url={product.videoUrl} />
+        </div>
+      )}
 
       {product.description && (
         <div className="mb-6">
