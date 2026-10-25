@@ -575,6 +575,13 @@ export default function CheckoutPage() {
   const [paymentOptionType, setPaymentOptionType] = useState<'FULL_PAYMENT' | 'PARTIAL_PAYMENT' | 'CASH_ON_DELIVERY'>('CASH_ON_DELIVERY');
   const [partialAmount, setPartialAmount] = useState('');
   const [paymentPopup, setPaymentPopup] = useState<{ orderId: string; total: number; viewToken?: string } | null>(null);
+  // True from the moment a successful checkout starts clearing the cart
+  // until the thank-you navigation lands. While true, the empty-cart guard
+  // below must NOT paint: without this, the cleared cart re-renders into
+  // the empty-cart page for a beat before the new route arrives (the
+  // post-deploy flash customers saw after paying). The page unmounts on
+  // navigation, so the flag is never cleared.
+  const [isRedirectingToThankYou, setIsRedirectingToThankYou] = useState(false);
   const [blockedPhoneOpen, setBlockedPhoneOpen] = useState(false);
   const phoneCheckTimer = useRef<any>(null);
   const paymentSuccessCallback = useRef<(() => void) | null>(null);
@@ -1035,6 +1042,9 @@ export default function CheckoutPage() {
         // manual "I Have Sent the Money" submit (see PaymentPopup
         // onSuccess); PGW initiation redirects externally and never calls it.
         paymentSuccessCallback.current = () => {
+          // Flag BEFORE clearing (see the state comment): the cleared cart
+          // would otherwise paint the empty-cart guard before navigation.
+          setIsRedirectingToThankYou(true);
           coClear();
           try {
             ['checkout_guestName','checkout_guestPhone','checkout_guestEmail','checkout_district','checkout_thana',
@@ -1049,6 +1059,8 @@ export default function CheckoutPage() {
         // for a ৳100 deposit.
         setPaymentPopup({ orderId: order.id, total: (paymentOptionType === 'PARTIAL_PAYMENT' && partialAmount ? parseFloat(partialAmount) : totalWithDelivery), viewToken: order.viewToken });
       } else {
+        // Same flag-before-clear as the manual path (covers COD + Buy Now).
+        setIsRedirectingToThankYou(true);
         coClear();
         try {
           ['checkout_guestName','checkout_guestPhone','checkout_guestEmail','checkout_district','checkout_thana',
@@ -1324,6 +1336,17 @@ export default function CheckoutPage() {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-brand-blue animate-spin" />
+      </div>
+    );
+  }
+
+  if (isRedirectingToThankYou) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <Loader2 className="w-8 h-8 text-brand-blue animate-spin mx-auto" />
+          <p className="text-xs text-gray-500 font-medium">Payment successful — taking you to your order…</p>
+        </div>
       </div>
     );
   }
