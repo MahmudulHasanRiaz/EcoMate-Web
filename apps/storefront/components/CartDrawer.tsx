@@ -27,8 +27,7 @@ function formatAttributes(attrs: VariantAttribute[] | undefined, fallback?: stri
   return null;
 }
 
-function UpsellSection({ currencySymbol }: { currencySymbol: string }) {
-  const [upsells, setUpsells] = useState<any[]>([]);
+function UpsellSection({ currencySymbol, upsells }: { currencySymbol: string; upsells: any[] | null }) {
   const { addToCart } = useCart();
   const { config } = useStorefrontConfig();
   const { user } = useAuth();
@@ -37,11 +36,30 @@ function UpsellSection({ currencySymbol }: { currencySymbol: string }) {
   const s = currencySymbol;
 const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  useEffect(() => {
-    getProducts({ isFeatured: true, perPage: 6, isActive: true })
-      .then(res => setUpsells(res.data || []))
-      .catch(() => {});
-  }, []);
+  // While the featured products are still loading, hold the section's
+  // place with a fixed-height skeleton. The old code returned null until
+  // the fetch resolved, so the whole section popped in late on every
+  // open — on a slow connection the drawer visibly jumped from
+  // half-content to full content.
+  if (upsells === null) {
+    return (
+      <div className="px-4 mt-6 mb-8" data-testid="upsell-skeleton" aria-hidden="true">
+        <div className="mb-4">
+          <div className="h-5 w-40 rounded bg-gray-200 animate-pulse" />
+        </div>
+        <div className="flex gap-3 pb-2">
+          <div className="min-w-[75%] rounded-xl p-3 flex gap-3 border border-gray-100 bg-white">
+            <div className="w-[70px] h-[70px] rounded bg-gray-200 animate-pulse flex-shrink-0" />
+            <div className="flex-1 flex flex-col justify-center gap-2 min-w-0">
+              <div className="h-3 w-3/4 rounded bg-gray-200 animate-pulse" />
+              <div className="h-3 w-1/3 rounded bg-gray-200 animate-pulse" />
+              <div className="h-6 w-16 rounded-full bg-gray-200 animate-pulse" />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (upsells.length === 0) return null;
 
@@ -109,6 +127,21 @@ export default function CartDrawer() {
   const [imgErrors, setImgErrors] = useState<{ [key: string]: boolean }>({});
   const [imgFallbackErrors, setImgFallbackErrors] = useState<{ [key: string]: boolean }>({});
 
+  // "You May Also Like" is fetched ONCE per page load, not once per
+  // open. The old code fetched inside UpsellSection, which only mounts
+  // while the drawer is open — so every open refetched on a slow
+  // connection and the section popped in late, shifting the drawer
+  // content. The drawer itself stays mounted (see below), so fetching
+  // here means the data is usually already there when the user opens it.
+  const [upsells, setUpsells] = useState<any[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getProducts({ isFeatured: true, perPage: 6, isActive: true })
+      .then(res => { if (!cancelled) setUpsells(res.data || []); })
+      .catch(() => { if (!cancelled) setUpsells([]); });
+    return () => { cancelled = true; };
+  }, []);
+
   // Lock body scroll while the drawer is open. Without this, dragging the cart
   // list on mobile scroll-chains into the page behind (sticky header + fixed
   // widgets drift under the fixed panel) and the page visibly tears apart.
@@ -142,9 +175,15 @@ export default function CartDrawer() {
       />
 
       {/* Drawer — kept mounted (like MobileMenu) so the slide is one owned
-          animation instead of a mount/unmount pop */}
+          animation instead of a mount/unmount pop.
+          h-dvh (with h-full fallback) keeps the panel exactly one
+          viewport tall on mobile: h-full tracks the large viewport, so
+          the drawer visibly jumped when the browser chrome showed or
+          hid mid-slide. will-change-transform promotes the panel to its
+          own compositor layer before the slide starts, so a busy main
+          thread can't tear the first frames. */}
       <div
-        className={`fixed top-0 right-0 h-full w-full sm:w-[400px] bg-[#fcfcfc] z-[70] shadow-2xl flex flex-col transform transition-transform duration-300 ease-out ${isCartOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`}
+        className={`fixed top-0 right-0 h-full supports-[height:100dvh]:h-dvh w-full sm:w-[400px] bg-[#fcfcfc] z-[70] shadow-2xl flex flex-col transform transition-transform duration-300 ease-out will-change-transform ${isCartOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`}
         role="dialog"
         aria-modal="true"
         aria-label="Shopping cart"
@@ -313,8 +352,11 @@ export default function CartDrawer() {
             </div>
           )}
 
-          {/* You May Also Like (from footer upsells) */}
-          {isCartOpen && items.length > 0 && <UpsellSection currencySymbol={s} />}
+          {/* You May Also Like (from footer upsells). No isCartOpen gate:
+              the data is fetched once at drawer mount, so keeping the
+              section mounted across opens costs nothing and avoids a
+              remount + refetch flash on every open. */}
+          {items.length > 0 && <UpsellSection currencySymbol={s} upsells={upsells} />}
         </div>
 
         {/* Footer */}
