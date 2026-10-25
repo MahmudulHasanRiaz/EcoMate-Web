@@ -186,11 +186,14 @@ export function getOrderPaidAmount(order: OrderPaymentSummarySource | null | und
       })
       .reduce((sum, p) => sum + Number(p.amount || 0), 0)
   }
-  if (order.paymentStatus === 'PAID' || order.paymentOptionType === 'FULL_PAYMENT') {
+  // Row-less orders: only a server-confirmed PAID status means money arrived.
+  // A FULL_PAYMENT or PARTIAL_PAYMENT order with no payment rows is a Pay
+  // Later / modal-closed order — nothing has been received yet, so it must
+  // NOT report the total (or the deposit) as paid. The old fallbacks made a
+  // Pay Later FULL order show PAID = total while the server due was still
+  // the full total (paid + due = 2x total, "Paid" badge on an unpaid order).
+  if (order.paymentStatus === 'PAID') {
     return total
-  }
-  if (order.paymentOptionType === 'PARTIAL_PAYMENT' && order.partialAmount) {
-    return Number(order.partialAmount)
   }
   return 0
 }
@@ -243,7 +246,7 @@ export function getOrderDueAmount(order: OrderPaymentSummarySource | null | unde
       total - getOrderPaidAmount(order) - getOrderCreditApplied(order) - receivedReturns,
     )
   }
-  if (order.paymentStatus === 'PAID' || order.paymentOptionType === 'FULL_PAYMENT') {
+  if (order.paymentStatus === 'PAID') {
     return 0
   }
   const paid = getOrderPaidAmount(order)
