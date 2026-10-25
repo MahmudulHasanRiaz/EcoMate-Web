@@ -1450,8 +1450,11 @@ export class InventoryService {
       whereConditions.push(`p."categoryId" = $${params.length}`);
     }
     if (query.search) {
-      params.push(`%${query.search}%`);
-      whereConditions.push(`(p.name ILIKE $${params.length} OR p.sku ILIKE $${params.length})`);
+      // SECURITY (2026-10-25): escape LIKE wildcards — a search of "%"
+      // used to match every product, and "_" matched any single character.
+      const escaped = query.search.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+      params.push(`%${escaped}%`);
+      whereConditions.push(`(p.name ILIKE $${params.length} ESCAPE '\\' OR p.sku ILIKE $${params.length} ESCAPE '\\')`);
     }
 
     const whereClause = whereConditions.length > 0

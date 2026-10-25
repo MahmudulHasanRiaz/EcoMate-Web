@@ -272,6 +272,9 @@ model VerificationToken {
   expiresAt DateTime
   usedAt    DateTime?
   createdAt DateTime  @default(now())
+  // SECURITY (2026-10-25, F23): failed OTP guesses against the latest
+  // live token; 5 failures invalidate every live token for the email.
+  failedAttempts Int @default(0)
 
   @@index([email, type])
   @@index([token, type])

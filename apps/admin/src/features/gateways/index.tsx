@@ -584,19 +584,19 @@ export function GatewaySettings() {
                               <div className='grid gap-4 sm:grid-cols-2'>
                                 <div className='space-y-2'>
                                   <Label className='text-xs font-semibold'>App Key</Label>
-                                  <Input className='h-9' value={d.credentials?.appKey || ''} onChange={e => setGatewayEditData(p => ({ ...p, [g.code]: { ...d, credentials: { ...d.credentials, appKey: e.target.value } } }))} placeholder='App Key' />
+                                  <Input className='h-9' value={d.credentials?.appKey || ''} onChange={e => setGatewayEditData(p => ({ ...p, [g.code]: { ...d, credentials: { ...d.credentials, appKey: e.target.value } } }))} placeholder={(g.credentialKeys || []).includes('appKey') && !d.credentials?.appKey ? 'Saved — leave blank to keep' : 'App Key'} />
                                 </div>
                                 <div className='space-y-2'>
                                   <Label className='text-xs font-semibold'>App Secret</Label>
-                                  <Input className='h-9' type='password' value={d.credentials?.appSecret || ''} onChange={e => setGatewayEditData(p => ({ ...p, [g.code]: { ...d, credentials: { ...d.credentials, appSecret: e.target.value } } }))} placeholder='App Secret' />
+                                  <Input className='h-9' type='password' value={d.credentials?.appSecret || ''} onChange={e => setGatewayEditData(p => ({ ...p, [g.code]: { ...d, credentials: { ...d.credentials, appSecret: e.target.value } } }))} placeholder={(g.credentialKeys || []).includes('appSecret') && !d.credentials?.appSecret ? 'Saved — leave blank to keep' : 'App Secret'} />
                                 </div>
                                 <div className='space-y-2'>
                                   <Label className='text-xs font-semibold'>API Username</Label>
-                                  <Input className='h-9' value={d.credentials?.username || ''} onChange={e => setGatewayEditData(p => ({ ...p, [g.code]: { ...d, credentials: { ...d.credentials, username: e.target.value } } }))} placeholder='Username' />
+                                  <Input className='h-9' value={d.credentials?.username || ''} onChange={e => setGatewayEditData(p => ({ ...p, [g.code]: { ...d, credentials: { ...d.credentials, username: e.target.value } } }))} placeholder={(g.credentialKeys || []).includes('username') && !d.credentials?.username ? 'Saved — leave blank to keep' : 'Username'} />
                                 </div>
                                 <div className='space-y-2'>
                                   <Label className='text-xs font-semibold'>API Password</Label>
-                                  <Input className='h-9' type='password' value={d.credentials?.password || ''} onChange={e => setGatewayEditData(p => ({ ...p, [g.code]: { ...d, credentials: { ...d.credentials, password: e.target.value } } }))} placeholder='Password' />
+                                  <Input className='h-9' type='password' value={d.credentials?.password || ''} onChange={e => setGatewayEditData(p => ({ ...p, [g.code]: { ...d, credentials: { ...d.credentials, password: e.target.value } } }))} placeholder={(g.credentialKeys || []).includes('password') && !d.credentials?.password ? 'Saved — leave blank to keep' : 'Password'} />
                                 </div>
                               </div>
                               {settlementAccountField(g, d)}

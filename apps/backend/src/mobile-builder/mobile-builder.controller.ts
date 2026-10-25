@@ -9,10 +9,44 @@ import {
   ConflictException,
   UseInterceptors,
   UploadedFile,
+  UseGuards,
+  UnauthorizedException,
+  CanActivate,
+  ExecutionContext,
+  Injectable,
 } from '@nestjs/common';
+import { timingSafeEqual } from 'crypto';
+
+// SECURITY (2026-10-25, F14): the artifact callback is an unauthenticated
+// external webhook — its token MUST be checked by a guard, which runs
+// BEFORE the multer interceptor. The old code checked the token inside
+// the handler, i.e. AFTER multer had already written the file to disk,
+// and fail-OPEN when the env var was unset (anyone could write files).
+// Contract change: callers send X-Callback-Token header (the body field
+// is no longer accepted). Env unset = refused, always.
+@Injectable()
+export class MobileBuilderCallbackGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const req = context.switchToHttp().getRequest();
+    const expected = process.env.MOBILE_BUILDER_CALLBACK_TOKEN;
+    const provided = req.headers?.['x-callback-token'];
+    if (!expected || typeof provided !== 'string' || !provided) {
+      throw new UnauthorizedException('Invalid callback token');
+    }
+    const a = Buffer.from(provided);
+    const b = Buffer.from(expected);
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+      throw new UnauthorizedException('Invalid callback token');
+    }
+    return true;
+  }
+}
+
+const MOBILE_BUILDER_APPS = ['storefront', 'admin', 'pos'] as const;
+const MOBILE_BUILDER_PLATFORMS = ['android', 'ios'] as const;
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import { extname, join } from 'path';
+import { join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { FeatureFlagsService } from '@ecomate/feature-flags';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -315,20 +349,37 @@ export class MobileBuilderController {
   }
 
   // ── Artifact upload (multipart) ──
+  // Guard runs BEFORE multer: a bad/missing token never touches disk.
   @Post('artifact')
+  @UseGuards(MobileBuilderCallbackGuard)
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
         destination: (req, file, cb) => {
+          // Allowlisted components only — the old code joined raw body
+          // values, so app=../../x escaped MOBILE_BUILD_DIR entirely.
+          // (Body fields may arrive after the file part, so the handler
+          // moves the file to its final allowlisted dir below.)
           const baseDir = process.env.MOBILE_BUILD_DIR || './mobile-builds';
-          const app = req.body?.app || 'storefront';
-          const platform = req.body?.platform || 'android';
+          const app = (MOBILE_BUILDER_APPS as readonly string[]).includes(req.body?.app)
+            ? req.body.app
+            : 'storefront';
+          const platform = (MOBILE_BUILDER_PLATFORMS as readonly string[]).includes(req.body?.platform)
+            ? req.body.platform
+            : 'android';
           const dir = join(baseDir, app, platform);
+          try {
+            mkdirSync(dir, { recursive: true });
+          } catch {}
           cb(null, dir);
         },
         filename: (req, file, cb) => {
-          const ext = extname(file.originalname) || '.apk';
-          cb(null, `latest${ext}`);
+          // Extension from the allowlisted platform, never originalname
+          // (an uploaded ".html"/".js" used to be stored verbatim).
+          const platform = (MOBILE_BUILDER_PLATFORMS as readonly string[]).includes(req.body?.platform)
+            ? req.body.platform
+            : 'android';
+          cb(null, `latest${platform === 'ios' ? '.ipa' : '.apk'}`);
         },
       }),
     }),
@@ -337,36 +388,62 @@ export class MobileBuilderController {
     @UploadedFile() file: Express.Multer.File,
     @Body() body: any,
   ) {
-    const callbackToken = process.env.MOBILE_BUILDER_CALLBACK_TOKEN;
-    if (callbackToken && body.callbackToken !== callbackToken) {
-      throw new BadRequestException('Invalid callback token');
+    try {
+      const { buildId, app, platform, status, buildLogUrl, errorMessage } = body;
+      if (!buildId || !status) throw new BadRequestException('buildId and status required');
+      if (app && !(MOBILE_BUILDER_APPS as readonly string[]).includes(app)) {
+        throw new BadRequestException(`Invalid app: ${app}`);
+      }
+      if (platform && !(MOBILE_BUILDER_PLATFORMS as readonly string[]).includes(platform)) {
+        throw new BadRequestException(`Invalid platform: ${platform}`);
+      }
+
+      const existing = await this.prisma.mobileBuild.findUnique({ where: { id: buildId } });
+      if (!existing) throw new BadRequestException(`Build ${buildId} not found`);
+
+      const updateData: any = { status };
+      if (file?.path) {
+        // Final placement under the validated app/platform (multer may
+        // have used defaults if the body fields arrived after the file).
+        const finalApp = app || existing.app || 'storefront';
+        const finalPlatform = platform || existing.platform || 'android';
+        const baseDir = process.env.MOBILE_BUILD_DIR || './mobile-builds';
+        const finalDir = join(baseDir, finalApp, finalPlatform);
+        mkdirSync(finalDir, { recursive: true });
+        const finalPath = join(
+          finalDir,
+          `latest${finalPlatform === 'ios' ? '.ipa' : '.apk'}`,
+        );
+        if (file.path !== finalPath) {
+          const { renameSync } = await import('fs');
+          renameSync(file.path, finalPath);
+        }
+        updateData.artifactPath = finalPath;
+      }
+      if (buildLogUrl) updateData.buildLogUrl = buildLogUrl;
+      if (errorMessage) updateData.errorMessage = errorMessage;
+      if (app) updateData.app = app;
+      if (platform) updateData.platform = platform;
+
+      await this.prisma.mobileBuild.update({ where: { id: buildId }, data: updateData });
+
+      return { received: true, buildId, status };
+    } catch (err) {
+      // Never leave an orphan artifact on disk after a rejected upload.
+      if (file?.path) {
+        try {
+          const { unlinkSync, existsSync } = await import('fs');
+          if (existsSync(file.path)) unlinkSync(file.path);
+        } catch {}
+      }
+      throw err;
     }
-
-    const { buildId, app, platform, status, buildLogUrl, errorMessage } = body;
-    if (!buildId || !status) throw new BadRequestException('buildId and status required');
-
-    const existing = await this.prisma.mobileBuild.findUnique({ where: { id: buildId } });
-    if (!existing) throw new BadRequestException(`Build ${buildId} not found`);
-
-    const updateData: any = { status };
-    if (file?.path) updateData.artifactPath = file.path;
-    if (buildLogUrl) updateData.buildLogUrl = buildLogUrl;
-    if (errorMessage) updateData.errorMessage = errorMessage;
-    if (app) updateData.app = app;
-    if (platform) updateData.platform = platform;
-
-    await this.prisma.mobileBuild.update({ where: { id: buildId }, data: updateData });
-
-    return { received: true, buildId, status };
   }
 
   // ── Pull artifact from GitHub Actions (no multipart upload needed) ──
   @Post('artifact/pull')
+  @UseGuards(MobileBuilderCallbackGuard)
   async receiveArtifactFromGitHub(@Body() body: any) {
-    const callbackToken = process.env.MOBILE_BUILDER_CALLBACK_TOKEN;
-    if (callbackToken && body.callbackToken !== callbackToken) {
-      throw new BadRequestException('Invalid callback token');
-    }
 
     const { buildId, app, platform, status, runId } = body;
     if (!buildId || !status) throw new BadRequestException('buildId and status required');

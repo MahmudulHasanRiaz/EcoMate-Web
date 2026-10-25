@@ -662,16 +662,21 @@ private async resolveCanonicalLead(
           overrides?.paymentMode === 'partial' && overrides?.partialAmount
             ? overrides.partialAmount
             : total;
-        const isPgw = gatewayCode === 'bkash_pgw';
+        // SECURITY (2026-10-25, F25): a converted lead's payment is NEVER
+        // system-PAID — not even for bkash_pgw. Conversion records that a
+        // payment was CLAIMED, not that money arrived; the old code minted
+        // a PAID row with verifiedBy 'system' and no proof, which fed due
+        // math, journaling and COD alerts as if cash were in hand. The row
+        // is PENDING until a human verifies it through the normal flow.
         await tx.payment.create({
           data: {
             orderId: order.id,
             gatewayCode,
             accountId,
             amount: paymentAmount,
-            status: isPgw ? PaymentStatus.PAID : PaymentStatus.PENDING,
-            verifiedBy: isPgw ? 'system' : null,
-            verifiedAt: isPgw ? new Date() : null,
+            status: PaymentStatus.PENDING,
+            verifiedBy: null,
+            verifiedAt: null,
           },
         });
       }

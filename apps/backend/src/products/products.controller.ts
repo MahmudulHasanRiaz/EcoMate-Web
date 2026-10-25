@@ -24,9 +24,14 @@ import { RequiresFeature } from '@ecomate/feature-flags';
 export class ProductsController {
   constructor(private readonly svc: ProductsService) {}
 
+  private isStaffUser(user: any): boolean {
+    return !!user && !!user.role && user.role !== 'customer';
+  }
+
   @Public()
   @Get()
   async findAll(
+    @CurrentUser() user: any,
     @Query('page') page?: string,
     @Query('perPage') perPage?: string,
     @Query('search') search?: string,
@@ -78,7 +83,7 @@ export class ProductsController {
         ids: ids ? ids.split(',').filter(Boolean) : undefined,
         hasStock: parsedHasStock,
         status,
-      });
+      }, { isStaff: this.isStaffUser(user) });
     }
     const parsedMinPrice = minPrice ? parseFloat(minPrice) : undefined;
     const parsedMaxPrice = maxPrice ? parseFloat(maxPrice) : undefined;
@@ -99,13 +104,13 @@ export class ProductsController {
       order,
       hasStock: parsedHasStock,
       status,
-    });
+    }, { isStaff: this.isStaffUser(user) });
   }
 
   @Public()
   @Get('slug/:slug')
-  async findBySlug(@Param('slug') slug: string) {
-    return this.svc.findBySlug(slug);
+  async findBySlug(@Param('slug') slug: string, @CurrentUser() user: any) {
+    return this.svc.findBySlug(slug, { isStaff: this.isStaffUser(user) });
   }
 
   @Public()

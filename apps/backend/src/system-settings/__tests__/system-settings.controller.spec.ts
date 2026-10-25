@@ -180,4 +180,41 @@ describe('SystemSettingsController', () => {
       expect(prisma.systemSetting.upsert).toHaveBeenCalled();
     });
   });
+
+  // SECURITY lock-in (2026-10-25, F9): getAll must never leak secrets.
+  describe('getAll secret redaction', () => {
+    it('redacts smtp_pass and tracking tokens, keeps presence flags', async () => {
+      const prisma = {
+        systemSetting: {
+          findMany: jest.fn().mockResolvedValue([
+            { key: 'smtp_pass', value: 'hunter2' },
+            { key: 'tracking_meta_access_token', value: 'EAAB-secret' },
+            {
+              key: 'tracking_meta_destinations',
+              value: JSON.stringify([
+                { name: 'Main', accessToken: 'EAAB-dest' },
+              ]),
+            },
+            { key: 'store_name', value: 'EcoMate' },
+          ]),
+        },
+      };
+      const ctrl = new SystemSettingsController(
+        prisma as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        {} as any,
+      );
+      const res: any = await ctrl.getAll();
+      expect(res['smtp_pass']).toBe('********');
+      expect(res['tracking_meta_access_token']).toBe('');
+      expect(res['tracking_meta_access_token_set']).toBe('true');
+      const dests = JSON.parse(res['tracking_meta_destinations']);
+      expect(dests[0].accessToken).toBe('');
+      expect(dests[0].hasAccessToken).toBe(true);
+      expect(res['store_name']).toBe('EcoMate');
+    });
+  });
 });

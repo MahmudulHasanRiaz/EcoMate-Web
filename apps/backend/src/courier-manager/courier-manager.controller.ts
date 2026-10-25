@@ -30,6 +30,45 @@ export class CourierManagerController {
     return this.sets;
   }
 
+  // SECURITY (2026-10-25): this list endpoint NEVER returns credential
+  // values — an employee with courier-settings access used to read every
+  // courier API key/secret in one GET. Callers get fieldsPresent (which
+  // secret fields are set) and must send new values to change them; the
+  // PUT below treats an empty/missing secret field as "keep existing".
+  private maskCredentials(row: any) {
+    const SECRET_FIELDS = [
+      'apiKey',
+      'secretKey',
+      'username',
+      'password',
+      'clientId',
+      'clientSecret',
+      'clientContext',
+      'storeId',
+      'shopId',
+      'webhookSecret',
+      'pathaoIntegrationSecret',
+    ];
+    const credsJson =
+      row.credentials && typeof row.credentials === 'object'
+        ? row.credentials
+        : {};
+    const fieldsPresent = SECRET_FIELDS.filter(
+      (f) =>
+        (typeof row[f] === 'string' && row[f].trim() !== '') ||
+        (typeof credsJson[f] === 'string' && credsJson[f].trim() !== ''),
+    );
+    return {
+      id: row.id,
+      courier: row.courier,
+      enabled: row.enabled,
+      mode: row.mode,
+      fieldsPresent,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
   @Get('credentials')
   async listCredentials() {
     const existing = await this.prisma.courierCredentials.findMany({
@@ -52,12 +91,13 @@ export class CourierManagerController {
           },
         });
       }
-      return this.prisma.courierCredentials.findMany({
+      const rows = await this.prisma.courierCredentials.findMany({
         orderBy: { courier: 'asc' },
       });
+      return rows.map((r) => this.maskCredentials(r));
     }
 
-    return existing;
+    return existing.map((r) => this.maskCredentials(r));
   }
 
   @Get('default-note')
@@ -93,42 +133,51 @@ export class CourierManagerController {
     @Param('courier') courier: string,
     @Body() dto: Record<string, unknown>,
   ) {
-    return this.prisma.courierCredentials.upsert({
+    // Empty = keep (2026-10-25): since GET no longer returns values, the
+    // admin form sends blank for unchanged secrets. A blank must never
+    // wipe a stored secret — only a non-empty value overwrites it. (There
+    // is deliberately no way to clear a single secret through this route;
+    // use a direct DB edit for that rare case.)
+    const existing = await this.prisma.courierCredentials.findUnique({
       where: { courier },
-      create: {
-        courier,
-        enabled: (dto['enabled'] as boolean) ?? false,
-        mode: (dto['mode'] as string) || 'sandbox',
-        apiKey: dto['apiKey'] as string,
-        secretKey: dto['secretKey'] as string,
-        username: dto['username'] as string,
-        password: dto['password'] as string,
-        clientId: dto['clientId'] as string,
-        clientSecret: dto['clientSecret'] as string,
-        clientContext: dto['clientContext'] as string,
-        storeId: dto['storeId'] as string,
-        shopId: dto['shopId'] as string,
-        webhookSecret: dto['webhookSecret'] as string,
-        pathaoIntegrationSecret: dto['pathaoIntegrationSecret'] as string,
-        credentials: dto['credentials'] || {},
-      },
-      update: {
-        enabled: dto['enabled'] as boolean,
-        mode: dto['mode'] as string,
-        apiKey: dto['apiKey'] as string,
-        secretKey: dto['secretKey'] as string,
-        username: dto['username'] as string,
-        password: dto['password'] as string,
-        clientId: dto['clientId'] as string,
-        clientSecret: dto['clientSecret'] as string,
-        clientContext: dto['clientContext'] as string,
-        storeId: dto['storeId'] as string,
-        shopId: dto['shopId'] as string,
-        webhookSecret: dto['webhookSecret'] as string,
-        pathaoIntegrationSecret: dto['pathaoIntegrationSecret'] as string,
-        credentials: dto['credentials'] || {},
-      },
     });
+    const secret = (field: string): string | undefined => {
+      const v = dto[field];
+      if (typeof v === 'string' && v.trim() !== '') return v;
+      return (existing as any)?.[field] ?? undefined;
+    };
+    const credsDto = dto['credentials'];
+    const credsValue =
+      credsDto &&
+      typeof credsDto === 'object' &&
+      Object.keys(credsDto as object).length > 0
+        ? credsDto
+        : ((existing as any)?.credentials ?? {});
+    const data = {
+      enabled:
+        typeof dto['enabled'] === 'boolean'
+          ? dto['enabled']
+          : (existing?.enabled ?? false),
+      mode: (dto['mode'] as string) || existing?.mode || 'sandbox',
+      apiKey: secret('apiKey'),
+      secretKey: secret('secretKey'),
+      username: secret('username'),
+      password: secret('password'),
+      clientId: secret('clientId'),
+      clientSecret: secret('clientSecret'),
+      clientContext: secret('clientContext'),
+      storeId: secret('storeId'),
+      shopId: secret('shopId'),
+      webhookSecret: secret('webhookSecret'),
+      pathaoIntegrationSecret: secret('pathaoIntegrationSecret'),
+      credentials: credsValue,
+    };
+    const saved = await this.prisma.courierCredentials.upsert({
+      where: { courier },
+      create: { courier, ...data },
+      update: data,
+    });
+    return this.maskCredentials(saved);
   }
 
   /**

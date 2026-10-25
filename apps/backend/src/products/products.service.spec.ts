@@ -237,6 +237,37 @@ describe('ProductsService', () => {
       });
     });
 
+    it('strips internal fields for public callers, keeps them for staff (security 2026-10-25)', async () => {
+      const makeSensitive = () => ({
+        ...mockProduct,
+        standardCost: 400,
+        managedStockQuantity: 25,
+        reservedStock: 3,
+        warehouseId: 'wh-1',
+        variants: [
+          { id: 'v-1', standardCost: 100, managedStockQuantity: 7, reservedStock: 1, warehouseId: 'wh-1' },
+        ],
+        _count: { orderItems: 9 },
+      });
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([makeSensitive()]);
+      (prisma.product.count as jest.Mock).mockResolvedValue(1);
+
+      const pub = await service.findAll({ page: 1, perPage: 10 });
+      const pubRow: any = pub.data[0];
+      expect(pubRow.standardCost).toBeUndefined();
+      expect(pubRow.managedStockQuantity).toBeUndefined();
+      expect(pubRow.reservedStock).toBeUndefined();
+      expect(pubRow.warehouseId).toBeUndefined();
+      expect(pubRow._count).toBeUndefined();
+      expect(pubRow.variants[0].standardCost).toBeUndefined();
+      expect(pubRow.name).toBe('Test Product');
+
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([makeSensitive()]);
+      const staff = await service.findAll({ page: 1, perPage: 10 }, { isStaff: true });
+      expect((staff.data[0] as any).standardCost).toBe(400);
+      expect((staff.data[0] as any).managedStockQuantity).toBe(25);
+    });
+
     it('clamps an unbounded perPage so one page cannot dump the catalogue', async () => {
       (prisma.product.findMany as jest.Mock).mockResolvedValue([]);
       (prisma.product.count as jest.Mock).mockResolvedValue(0);
@@ -1339,8 +1370,9 @@ describe('ProductsService', () => {
         const result = await service.findBySlug('test-product');
 
         expect(result).toBeTruthy();
+        // F16: the cache key is scope-qualified — a token-less call is public.
         expect(cache.set).toHaveBeenCalledWith(
-          'product:slug:test-product',
+          'product:slug:test-product:public',
           expect.anything(),
           10_000,
         );

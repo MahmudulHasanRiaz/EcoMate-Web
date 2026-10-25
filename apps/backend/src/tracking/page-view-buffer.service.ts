@@ -17,8 +17,20 @@ export class PageViewBufferService implements OnModuleDestroy {
   private buffer: PageViewEntry[] = [];
   private readonly FLUSH_INTERVAL = 5_000;
   private readonly FLUSH_THRESHOLD = 100;
+  // SECURITY (2026-10-25, F20): hard cap. The old buffer was unbounded:
+  // a sustained flood (or a DB outage that kept requeueing failed
+  // batches) grew process memory without limit. Over-cap entries are
+  // dropped oldest-first and counted — losing page-view analytics under
+  // flood is acceptable; OOMing the API is not.
+  private readonly MAX_BUFFER = 10_000;
+  private droppedCount = 0;
   private flushTimer: ReturnType<typeof setInterval>;
   private activeFlush: Promise<void> | null = null;
+
+  /** Entries discarded by the cap (monitoring/tests). */
+  getDroppedCount(): number {
+    return this.droppedCount;
+  }
 
   constructor(private readonly prisma: PrismaService) {
     this.flushTimer = setInterval(() => {
@@ -29,6 +41,15 @@ export class PageViewBufferService implements OnModuleDestroy {
   }
 
   push(entry: PageViewEntry) {
+    if (this.buffer.length >= this.MAX_BUFFER) {
+      this.buffer.shift();
+      this.droppedCount++;
+      if (this.droppedCount % 1000 === 0) {
+        this.logger.warn(
+          `Page-view buffer cap hit: ${this.droppedCount} entries dropped (oldest-first)`,
+        );
+      }
+    }
     this.buffer.push(entry);
     if (this.buffer.length >= this.FLUSH_THRESHOLD) {
       this.flush().catch((err) => {
@@ -68,8 +89,18 @@ export class PageViewBufferService implements OnModuleDestroy {
       });
       this.logger.debug(`Flushed ${batch.length} page views`);
     } catch (err: unknown) {
-      // Requeue failed batch at front, preserving original order
-      this.buffer.unshift(...batch);
+      // Requeue failed batch at front, preserving original order — but
+      // still capped: a batch requeued while new views arrived must not
+      // push the buffer past MAX_BUFFER.
+      const overflow = this.buffer.length + batch.length - this.MAX_BUFFER;
+      const requeued = [...batch, ...this.buffer].slice(0, this.MAX_BUFFER);
+      if (overflow > 0) {
+        this.droppedCount += overflow;
+        this.logger.warn(
+          `Page-view buffer cap hit on requeue: ${overflow} entries dropped`,
+        );
+      }
+      this.buffer = requeued;
       this.logger.error(
         `Batch insert failed (${batch.length} entries requeued): ${(err as Error).message}`,
       );

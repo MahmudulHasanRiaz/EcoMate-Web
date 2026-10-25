@@ -27,7 +27,12 @@ export const auth = betterAuth({
     'http://localhost:4000',
   ],
   database: prismaAdapter(baPrisma, { provider: 'postgresql' }),
-  emailAndPassword: { enabled: true },
+  emailAndPassword: {
+    enabled: true,
+    // SECURITY (2026-10-25): a password reset must kill every session —
+    // otherwise a stolen session survives the victim's reset.
+    revokeSessionsOnPasswordReset: true,
+  },
   socialProviders: {
     google: {
       clientId: process.env.AUTH_GOOGLE_ID || '',
@@ -50,9 +55,40 @@ export const auth = betterAuth({
   user: {
     modelName: 'betterAuthUser',
     additionalFields: {
-      role: { type: 'string', required: false, defaultValue: 'customer' },
-      override_permissions: { type: 'string[]', required: false },
-      denied_permissions: { type: 'string[]', required: false },
+      // SECURITY (2026-10-25): privilege fields are NEVER client input.
+      // `input: false` removes them from the sign-up/update input schema,
+      // so a guest can no longer self-assign role:"superadmin" through
+      // /api/better-auth/*. The databaseHooks below are the second layer:
+      // even if a future better-auth version re-admits the fields, the
+      // values are forced/stripped server-side before the write.
+      role: { type: 'string', required: false, defaultValue: 'customer', input: false },
+      override_permissions: { type: 'string[]', required: false, input: false },
+      denied_permissions: { type: 'string[]', required: false, input: false },
+    },
+  },
+  databaseHooks: {
+    user: {
+      create: {
+        before: async (user) => ({
+          data: {
+            ...user,
+            role: 'customer',
+            override_permissions: [],
+            denied_permissions: [],
+          },
+        }),
+      },
+      update: {
+        before: async (user) => {
+          const {
+            role: _role,
+            override_permissions: _override,
+            denied_permissions: _denied,
+            ...rest
+          } = user as Record<string, unknown>;
+          return { data: rest };
+        },
+      },
     },
   },
   account: { modelName: 'betterAuthAccount' },

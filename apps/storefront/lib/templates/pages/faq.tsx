@@ -1,4 +1,5 @@
 import { HelpCircle, ChevronDown } from 'lucide-react';
+import { stringifyForScript } from '@/lib/safe-json';
 
 export default function FaqTemplate({ config }: { config: Record<string, any> }) {
   const items = Array.isArray(config?.items) ? config.items : [];
@@ -21,7 +22,7 @@ export default function FaqTemplate({ config }: { config: Record<string, any> })
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}
+        dangerouslySetInnerHTML={{ __html: stringifyForScript(faqSchema) }}
       />
     <div className="max-w-4xl mx-auto px-4 py-8 md:py-16">
       <div className="text-center mb-10">

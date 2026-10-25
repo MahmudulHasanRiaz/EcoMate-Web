@@ -599,8 +599,34 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       .digest('hex');
     const isOtpValid = hashedOtp === tokenRecord.token;
     if (!isOtpValid) {
+      // SECURITY (2026-10-25, F23): 5 failed guesses invalidate EVERY
+      // live OTP for this email — a 6-digit code with unlimited guesses
+      // is not a secret. Below the threshold, count the failure.
+      const attempts = (tokenRecord.failedAttempts ?? 0) + 1;
+      if (attempts >= 5) {
+        await this.prisma.verificationToken.updateMany({
+          where: { email, type: 'RESET_PASSWORD', usedAt: null },
+          data: { usedAt: new Date() },
+        });
+        throw new BadRequestException(
+          'Too many failed attempts. Request a new code.',
+        );
+      }
+      await this.prisma.verificationToken.update({
+        where: { id: tokenRecord.id },
+        data: { failedAttempts: attempts },
+      });
       throw new BadRequestException('Invalid or expired OTP');
     }
+
+    // SECURITY (2026-10-25, F23): consume on verify — the old code left
+    // the OTP live, so one correct guess minted unlimited fresh reset
+    // JWTs inside the 15-minute window. The reset step now trusts the
+    // 5-minute reset JWT alone (see resetPassword).
+    await this.prisma.verificationToken.update({
+      where: { id: tokenRecord.id },
+      data: { usedAt: new Date() },
+    });
 
     const resetToken = this.jwtService.sign(
       { sub: tokenRecord.id, email },
@@ -627,11 +653,11 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       where: { id: payload.sub },
     });
 
-    if (
-      !tokenRecord ||
-      tokenRecord.usedAt ||
-      tokenRecord.expiresAt < new Date()
-    ) {
+    // SECURITY (2026-10-25, F23): reset trusts the reset JWT alone. The
+    // OTP record was already consumed at verify time, so requiring it
+    // unused here would break every legitimate reset; the JWT's own
+    // 5-minute expiry is the capability window.
+    if (!tokenRecord) {
       throw new BadRequestException('Invalid or expired reset token');
     }
 

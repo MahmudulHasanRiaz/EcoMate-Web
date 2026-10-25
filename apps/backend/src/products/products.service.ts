@@ -401,6 +401,33 @@ export class ProductsService {
     return Math.min(Math.floor(perPage as number), ProductsService.LIST_MAX_PER_PAGE);
   }
 
+  // SECURITY (2026-10-25, F16): the public payload strips internal
+  // fields — cost, managed/reserved stock components, warehouse routing
+  // and sales counts. Staff callers (admin/POS, identified by the auth
+  // guard on the shared list endpoint) keep the full payload. The
+  // customer-facing availability signal, availableStock, is intentionally
+  // kept: it is the number the PDP actually renders.
+  private stripPublicProduct(p: any) {
+    if (!p || typeof p !== 'object') return p;
+    delete p.standardCost;
+    delete p.managedStockQuantity;
+    delete p.reservedStock;
+    delete p.warehouseId;
+    delete p.defaultBinLocationId;
+    delete p._count;
+    if (Array.isArray(p.variants)) {
+      for (const v of p.variants) {
+        delete v.standardCost;
+        delete v.managedStockQuantity;
+        delete v.reservedStock;
+        delete v.warehouseId;
+        delete v.binLocationId;
+        delete v._count;
+      }
+    }
+    return p;
+  }
+
   async findAll(query: {
     page?: number;
     perPage?: number;
@@ -419,7 +446,7 @@ export class ProductsService {
     cursor?: string;
     hasStock?: boolean;
     status?: 'active' | 'draft';
-  }) {
+  }, opts?: { isStaff?: boolean }) {
     const rawPage = query.page || 1;
     const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.floor(rawPage) : 1;
     const perPage = this.clampListPerPage(query.perPage);
@@ -514,6 +541,17 @@ export class ProductsService {
         },
       ];
     }
+    // SECURITY (2026-10-25, F16): sort/order are allowlisted — the old
+    // code used the raw query value as an orderBy key.
+    const ALLOWED_SORTS = ['createdAt', 'basePrice', 'price', 'popularity', 'name'];
+    if (query.sort && !ALLOWED_SORTS.includes(query.sort)) {
+      query.sort = undefined;
+    }
+    if (query.order && query.order !== 'asc' && query.order !== 'desc') {
+      query.order = undefined;
+    }
+    if (query.ids && query.ids.length > 200) query.ids = query.ids.slice(0, 200);
+
     let orderBy: any;
     if (query.sort === 'basePrice' || query.sort === 'price') {
       const dir = query.order === 'asc' ? 'asc' : 'desc';
@@ -606,6 +644,7 @@ export class ProductsService {
 
     await this.enrichProductsWithAvailableStock(data);
     await this.enrichWithDerivatives(data);
+    if (!opts?.isStaff) data.forEach((p) => this.stripPublicProduct(p));
     const hasMore = page * perPage < total;
     const last = data[data.length - 1];
     const nextCursor = query.sort
@@ -644,8 +683,9 @@ export class ProductsService {
     ids?: string[];
     hasStock?: boolean;
     status?: 'active' | 'draft';
-  }) {
+  }, opts?: { isStaff?: boolean }) {
     const perPage = this.clampListPerPage(query.perPage);
+    if (query.ids && query.ids.length > 200) query.ids = query.ids.slice(0, 200);
     const effectiveCategoryId =
       query.categoryId ||
       (query.category
@@ -776,6 +816,7 @@ export class ProductsService {
     ]);
     await this.enrichProductsWithAvailableStock(data);
     await this.enrichWithDerivatives(data);
+    if (!opts?.isStaff) data.forEach((p) => this.stripPublicProduct(p));
     const hasMore = data.length === perPage;
     const last = data[data.length - 1];
     const nextCursor =
@@ -791,12 +832,16 @@ export class ProductsService {
     };
   }
 
-  async findBySlug(slug: string) {
-    const cacheKey = `product:slug:${slug}`;
+  async findBySlug(slug: string, opts?: { isStaff?: boolean }) {
+    // SECURITY (2026-10-25, F16): the public slug endpoint serves only
+    // ACTIVE products (an inactive/draft slug used to resolve), and the
+    // cache is scoped by caller — a staff fetch must never poison the
+    // public cache with the full payload, or vice versa.
+    const cacheKey = `product:slug:${slug}:${opts?.isStaff ? 'staff' : 'public'}`;
     const cached = await this.cache.get<any>(cacheKey);
     if (cached) return cached;
     const product = await this.prisma.product.findUnique({
-      where: { slug },
+      where: { slug, isActive: true, status: { not: 'draft' } },
       include: {
         brand: true,
         category: true,
@@ -818,6 +863,7 @@ export class ProductsService {
     if (!product) throw new NotFoundException('Product not found');
     const enriched = (await this.enrichProductsWithAvailableStock([product]))[0];
     await this.enrichWithDerivatives([enriched]);
+    if (!opts?.isStaff) this.stripPublicProduct(enriched);
     // Short TTL: availableStock is baked into this payload, so the cache is
     // only a brief read amplifier. Every stock-mutating path invalidates
     // 'product:' explicitly; this 10s window is the safety net that bounds

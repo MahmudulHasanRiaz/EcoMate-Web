@@ -1,4 +1,5 @@
-const CACHE_VERSION = 'v4';
+// SECURITY (2026-10-25, F21): v5 — sensitive shells are never cached.
+const CACHE_VERSION = 'v5';
 const CACHE_NAMES = {
   pages: `ecomate-pages-${CACHE_VERSION}`,
   static: `ecomate-static-${CACHE_VERSION}`,
@@ -48,6 +49,22 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
+
+  // SECURITY (2026-10-25, F21): checkout/account/orders/cart/wishlist
+  // shells must never be served from cache — a stale cached shell can
+  // show one shopper's account/order state to the next, or a signed-out
+  // shell to a signed-in shopper. Network-only: no cache put, no cache
+  // match, and a network failure is a real failure (no stale fallback).
+  const NETWORK_ONLY_PREFIXES = ['/checkout', '/account', '/orders', '/cart', '/wishlist'];
+  if (
+    request.mode === 'navigate' &&
+    NETWORK_ONLY_PREFIXES.some(
+      (p) => url.pathname === p || url.pathname.startsWith(p + '/'),
+    )
+  ) {
+    event.respondWith(fetch(request));
+    return;
+  }
 
   if (request.mode === 'navigate') {
     event.respondWith(networkFirst(request, CACHE_NAMES.pages));

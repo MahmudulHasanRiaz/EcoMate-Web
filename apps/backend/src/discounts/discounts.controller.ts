@@ -10,6 +10,7 @@ import {
 import { Roles } from '../common/decorators/roles.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
+import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
 import { DiscountsService } from './discounts.service';
 import {
   CreateDiscountDto,
@@ -34,6 +35,7 @@ export class DiscountsController {
   // public like coupon validation; the order-creation hook recomputes
   // server-side, so this endpoint can never change what is charged.
   @Public()
+  @RateLimitPolicy('strict_public')
   @Post('evaluate')
   async evaluate(@Body() dto: EvaluateDiscountsDto) {
     return this.discountsService.evaluateForCart(dto);

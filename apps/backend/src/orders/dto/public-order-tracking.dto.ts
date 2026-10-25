@@ -1,4 +1,4 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, MaxLength } from 'class-validator';
 
 /** Minimal public order-tracking response. Explicit allowlist — no viewToken, paymentProof, verifier, assignee, internal notes, or staff PII. */
 export class PublicOrderTrackingDto {
@@ -23,14 +23,17 @@ export class PublicOrderTrackingDto {
 export class SubmitPaymentProofDto {
   @IsString()
   @IsOptional()
+  @MaxLength(200)
   transactionId?: string;
 
   @IsString()
   @IsOptional()
+  @MaxLength(2000)
   screenshot?: string;
 
   @IsString()
   @IsOptional()
+  @MaxLength(100)
   /** Required to prove ownership for unauthenticated guests. */
   token?: string;
 }

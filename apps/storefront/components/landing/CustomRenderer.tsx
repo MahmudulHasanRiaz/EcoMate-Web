@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { LandingOrderProvider, type OrderLineItem } from "./LandingOrderContext";
 import { CheckoutFormSection } from "./TemplateRenderer";
+import { stringifyForScript } from "@/lib/safe-json";
 
 /**
  * EcoMate SDK — injected as inline script BEFORE user HTML.
@@ -18,8 +19,8 @@ export function EcoMateSDK({ products, currency }: {
 (function(){
   window.EcoMate = window.EcoMate || {};
   window.EcoMate.version = '1.0';
-  window.EcoMate.config = ${JSON.stringify({ currency })};
-  window.EcoMate.products = ${JSON.stringify(products || [])};
+  window.EcoMate.config = ${stringifyForScript({ currency })};
+  window.EcoMate.products = ${stringifyForScript(products || [])};
   window.EcoMate.theme = { primary: '#4f46e5', primaryDark: '#3730a3', currency: '৳' };
 
   /* Tracking handled by TrackingScripts in root layout — no inline tracking here */
