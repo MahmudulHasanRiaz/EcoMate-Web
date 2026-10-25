@@ -1025,14 +1025,29 @@ export default function CheckoutPage() {
       clearLandingAttribution();
 
       if (isOnlinePayment) {
+        // Manual-payment submit lands on thank-you from HERE, not from the
+        // modal's submitted panel: clearing the cart re-renders the checkout
+        // page into its empty-cart state, which unmounts the modal (and its
+        // "View Order Status" button) before the user can ever see it — the
+        // customer was left staring at an empty cart with a saved order and
+        // a saved payment. Navigate in the same tick, mirroring the Pay
+        // Later / modal-close path. This callback is invoked only by the
+        // manual "I Have Sent the Money" submit (see PaymentPopup
+        // onSuccess); PGW initiation redirects externally and never calls it.
         paymentSuccessCallback.current = () => {
           coClear();
           try {
             ['checkout_guestName','checkout_guestPhone','checkout_guestEmail','checkout_district','checkout_thana',
              'checkout_address','checkout_notes','checkout_paymentOptionType'].forEach(k => localStorage.removeItem(k));
           } catch {}
+          router.push(`/checkout/thank-you?orderId=${order.id}&t=${order.viewToken || ''}&pending=true${isBuyNow ? '&mode=buynow' : ''}`);
         };
-        setPaymentPopup({ orderId: order.id, total: totalWithDelivery, viewToken: order.viewToken });
+        // The modal's pay-now amount: for PARTIAL it is the deposit the
+        // customer entered, not the full total — the modal header, the Send
+        // Money form amount, AND the submitted payment amount all come from
+        // this value, so sending the full total here recorded a ৳640 payment
+        // for a ৳100 deposit.
+        setPaymentPopup({ orderId: order.id, total: (paymentOptionType === 'PARTIAL_PAYMENT' && partialAmount ? parseFloat(partialAmount) : totalWithDelivery), viewToken: order.viewToken });
       } else {
         coClear();
         try {
