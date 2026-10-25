@@ -36,6 +36,7 @@ function Probe() {
   return (
     <div>
       <button onClick={() => addToCart(ITEM)}>add</button>
+      <button onClick={() => setIsCartOpen(true)}>open</button>
       <button onClick={() => setIsCartOpen(false)}>close</button>
       <span data-testid="open-state">{isCartOpen ? 'open' : 'closed'}</span>
     </div>
@@ -97,5 +98,32 @@ describe('CartDrawer', () => {
     renderDrawer();
     fireEvent.click(screen.getByText('add'));
     expect(document.querySelector('.overscroll-contain')).toBeTruthy();
+  });
+
+  it('sizes the panel to the dynamic viewport so mobile chrome cannot resize it mid-slide', () => {
+    const { container } = renderDrawer();
+    const dialog = container.querySelector('[role="dialog"]') as HTMLElement;
+    expect(dialog.className).toContain('h-dvh');
+    expect(dialog.className).toContain('will-change-transform');
+  });
+
+  it('fetches upsells once per page load, not once per open', () => {
+    renderDrawer();
+    const callsAfterMount = getProductsMock.mock.calls.length;
+    expect(callsAfterMount).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByText('add'));
+    fireEvent.click(screen.getByText('close'));
+    fireEvent.click(screen.getByText('open'));
+    fireEvent.click(screen.getByText('close'));
+    fireEvent.click(screen.getByText('open'));
+    expect(getProductsMock.mock.calls.length).toBe(callsAfterMount);
+  });
+
+  it('holds the upsell section place with a skeleton while featured products load', () => {
+    getProductsMock.mockImplementationOnce(() => new Promise(() => {}));
+    renderDrawer();
+    fireEvent.click(screen.getByText('add'));
+    expect(screen.getByTestId('upsell-skeleton')).toBeTruthy();
   });
 });
