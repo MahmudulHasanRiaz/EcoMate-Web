@@ -24,7 +24,7 @@ export function ActivityLog(_props: WidgetProps) {
   return (
     <WidgetShell
       title="Activity Log"
-      description="Live updates on order processing"
+      description="Live updates on order processing · Last 20 by updatedAt, ignores the date filter"
       isLoading={isLoading}
       error={error ?? undefined}
       onRetry={() => refetch()}

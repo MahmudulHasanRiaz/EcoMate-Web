@@ -468,8 +468,24 @@ export class DashboardService {
                   ($2::timestamp AT TIME ZONE 'UTC') AS range_end
          ),
          events AS (
-           -- 1. Order lifecycle transitions recorded in the order timeline
-           SELECT o.id AS order_id, e->>'status' AS status
+           -- Statuses are NORMALIZED to one canonical form here, in SQL, so
+           -- the GROUP BY below counts each order exactly once per status:
+           -- a normal delivery writes BOTH a timeline 'Delivered' entry and
+           -- a dispatch row with deliveredAt, and a pickup writes BOTH a
+           -- timeline 'Shipping' entry and a dispatch pickedUpAt. Summing the
+           -- two spellings afterwards (the old behaviour) double-counted
+           -- every such order; taking the larger (the old Shipping
+           -- heuristic) under-counted whenever the two sources covered
+           -- different orders. COUNT(DISTINCT order_id) over the normalized
+           -- status is the exact union of both sources.
+           -- 1. Order lifecycle transitions recorded in the order timeline.
+           --    Courier webhook entries use the literal forms 'PICKED_UP' /
+           --    'DELIVERED'; every other timeline entry already carries the
+           --    configured status name.
+           SELECT o.id AS order_id,
+                  CASE WHEN e->>'status' = 'DELIVERED' THEN 'Delivered'
+                       WHEN e->>'status' = 'PICKED_UP' THEN 'Shipping'
+                       ELSE e->>'status' END AS status
            FROM "Order" o
            CROSS JOIN LATERAL jsonb_array_elements(COALESCE(o.timeline::jsonb, '[]'::jsonb)) e
            CROSS JOIN period p
@@ -485,18 +501,23 @@ export class DashboardService {
            --     MUST be pinned to UTC before comparing against the timestamptz
            --     period bounds. Without this the comparison silently shifts by
            --     the session offset and disagrees with the timeline branch.
-           SELECT d."orderId", 'PICKED_UP'
+           --     Dispatch branches carry the SALE kind filter like the
+           --     timeline branch: return/exchange orders must never inflate
+           --     the sale lifecycle counts.
+           SELECT d."orderId", 'Shipping'
            FROM "Dispatch" d
            JOIN "Order" o ON o.id = d."orderId" AND o."trashedAt" IS NULL
            CROSS JOIN period p
-           WHERE (d."pickedUpAt" AT TIME ZONE 'UTC') BETWEEN p.range_start AND p.range_end
+           WHERE ${SALE_ORDER_SQL_FILTER}
+             AND (d."pickedUpAt" AT TIME ZONE 'UTC') BETWEEN p.range_start AND p.range_end
            UNION ALL
            -- 2b. Delivery event (manual dispatch board)
-           SELECT d."orderId", 'DELIVERED'
+           SELECT d."orderId", 'Delivered'
            FROM "Dispatch" d
            JOIN "Order" o ON o.id = d."orderId" AND o."trashedAt" IS NULL
            CROSS JOIN period p
-           WHERE (d."deliveredAt" AT TIME ZONE 'UTC') BETWEEN p.range_start AND p.range_end
+           WHERE ${SALE_ORDER_SQL_FILTER}
+             AND (d."deliveredAt" AT TIME ZONE 'UTC') BETWEEN p.range_start AND p.range_end
          )
          -- One row per status instead of a fixed set of FILTER columns, so
          -- EVERY configured order status gets a count in a single pass.
@@ -667,13 +688,16 @@ export class DashboardService {
    * One tile per CONFIGURED OrderStatus for the Activity view: how many
    * DISTINCT orders entered that status during the period.
    *
-   * `PICKED_UP` / `DELIVERED` come from Dispatch rather than the order
-   * timeline, so they are folded into Shipping / Delivered — otherwise a
-   * courier-driven pickup would show up under a status that does not exist in
-   * `OrderStatus` (and would double-count an order that also has the timeline
-   * entry). `Pending` is an ORDER-CREATION measure, not a transition, so it
-   * takes `newOrders` (orders created in the period) — the panel labels it
-   * "New Orders".
+   * The event rows arrive ALREADY normalized: the lifecycle query maps the
+   * dispatch/courier literal forms ('PICKED_UP' / 'DELIVERED') onto the
+   * canonical names ('Shipping' / 'Delivered') and counts DISTINCT order_id
+   * per canonical status, so one delivered order contributes exactly one to
+   * Delivered even when it has both a timeline entry and a dispatch row.
+   * This method is therefore a straight lookup — it must NOT sum two
+   * spellings of one status, and must NOT take a max across sources (both
+   * were wrong: the sum double-counted, the max under-counted). `Pending`
+   * is an ORDER-CREATION measure, not a transition, so it takes `newOrders`
+   * (orders created in the period) — the panel labels it "New Orders".
    */
   private async activityStatusCounts(
     eventRows: Array<{ status: string | null; orders: number }>,
@@ -689,19 +713,9 @@ export class DashboardService {
       if (!row.status) continue;
       events.set(row.status, (events.get(row.status) ?? 0) + row.orders);
     }
-    const delivered = (events.get('Delivered') ?? 0) + (events.get('DELIVERED') ?? 0);
-    const shipping = events.get('Shipping') ?? 0;
 
     return statuses.map((s) => {
-      let count: number;
-      if (s.name === 'Pending') count = newOrders;
-      else if (s.name === 'Delivered') count = delivered;
-      else if (s.name === 'Shipping') {
-        // Timeline 'Shipping' entries and dispatch PICKED_UP events describe
-        // the same milestone for the same order, so take the larger of the two
-        // rather than summing (which would double-count).
-        count = Math.max(shipping, events.get('PICKED_UP') ?? 0);
-      } else count = events.get(s.name) ?? 0;
+      const count = s.name === 'Pending' ? newOrders : (events.get(s.name) ?? 0);
       return { name: s.name, count, color: s.color, sortOrder: s.sortOrder };
     });
   }

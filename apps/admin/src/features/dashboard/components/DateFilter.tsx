@@ -29,6 +29,15 @@ export function DateFilter() {
   const [startDate, setStartDate] = useState<Date | undefined>(undefined)
   const [endDate, setEndDate] = useState<Date | undefined>(undefined)
 
+  // The resolved range for the active preset, in Dhaka calendar dates.
+  // Custom already shows its range inside its own button, so the text is
+  // only needed for the named presets (which previously showed no dates
+  // at all — the range a dashboard number covers was invisible).
+  const resolvedStart = formatParam(dateRange.start)
+  const resolvedEnd = formatParam(dateRange.end)
+  const resolvedLabel =
+    resolvedStart === resolvedEnd ? resolvedStart : `${resolvedStart} – ${resolvedEnd}`
+
   useEffect(() => {
     if (!customOpen) {
       setStartDate(undefined)
@@ -120,6 +129,11 @@ export function DateFilter() {
           </PopoverContent>
         </Popover>
       </div>
+      {preset !== 'custom' && (
+        <span className="shrink-0 text-[11px] font-medium text-muted-foreground">
+          {resolvedLabel}
+        </span>
+      )}
     </div>
   )
 }

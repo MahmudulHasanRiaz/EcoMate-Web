@@ -26,6 +26,8 @@ import {
 import { dashboardApi } from '../api'
 import { formatNumber } from '../utils'
 import { CountUp, riseStyle, type KpiAccent } from '@/components/ui/dashboard'
+import { apiClient } from '@/lib/api-client'
+import { useOrdersFilterStore } from '@/stores/orders-filter-store'
 import type { DatePresetKey, OrderStatusCount, WidgetProps } from '../types'
 
 interface KpiTile {
@@ -40,6 +42,12 @@ interface KpiTile {
   icon: React.ReactNode
   accent: KpiAccent
   link: string
+  /**
+   * Status name the tile filters the order list to on click. Null = the
+   * tile's number has no matching status filter (a creation total, not a
+   * status backlog), so the click clears any filter instead.
+   */
+  filterStatusName: string | null
   /** Native hover tooltip (title attr) — used where the label needs a basis note. */
   tooltip?: string
 }
@@ -77,7 +85,13 @@ interface StatusPresentation {
  * concept, while the panel has always shown it as newly-created orders.
  */
 const STATUS_PRESENTATION: Record<string, StatusPresentation> = {
-  Pending: { label: 'New Orders', icon: ShoppingCart, accent: 'primary' },
+  Pending: {
+    label: 'New Orders',
+    icon: ShoppingCart,
+    accent: 'primary',
+    activityTooltip: 'Orders created in the selected period',
+    pipelineTooltip: 'Orders created in the selected period, currently in Pending status',
+  },
   'Payment Pending': { label: 'Payment Pending', icon: Wallet, accent: 'warning' },
   'Payment Verifying': { label: 'Payment Verifying', icon: CreditCard, accent: 'violet' },
   Hold: { label: 'Hold', icon: PauseCircle, accent: 'warning' },
@@ -145,6 +159,33 @@ export function OperationalKpiStrip({ dateRange, preset, view = 'activity' }: Wi
   // events — the subtext must say so on every tile.
   const cohortLabel = `Now · ${periodLabel} cohort`
 
+  // Order statuses for tile-click filtering (shared cache with the
+  // PendingOrders widget). Tiles carry a status NAME; the order list
+  // filters by status ID, so the name has to resolve here.
+  const { data: statusesData } = useQuery({
+    queryKey: ['order-statuses'],
+    queryFn: () => apiClient.get('/order-statuses').then(r => r.data as any[]),
+  })
+  const setStatusFilter = useOrdersFilterStore(s => s.setStatusFilter)
+
+  /**
+   * Tile click → the order list, filtered to that tile's status. The list
+   * filter is a Zustand store (persisted to sessionStorage), so setting it
+   * before navigation is enough — the list reads the store on mount. A
+   * tile whose number is a creation total (not a status backlog) clears
+   * any filter instead: filtering it to a status would show a different
+   * population than the number. If statuses haven't loaded, fall through
+   * to an unfiltered list rather than blocking navigation.
+   */
+  const handleTileClick = (tile: KpiTile) => {
+    if (tile.filterStatusName === null) {
+      setStatusFilter('all')
+      return
+    }
+    const match = statusesData?.find(s => s.name === tile.filterStatusName)
+    if (match) setStatusFilter(match.id)
+  }
+
   // One tile per order status, straight from the response. While loading or on
   // error the catalogue is unknown, so tiles fall back to the known statuses
   // with a null (—) value rather than collapsing the strip to nothing.
@@ -177,11 +218,45 @@ export function OperationalKpiStrip({ dateRange, preset, view = 'activity' }: Wi
         icon: <Icon className="h-4 w-4" />,
         accent: p.accent,
         link: '/op/orders',
+        // Activity "New Orders" is a CREATION count (orders created in the
+        // period), not the current Pending backlog — filtering it to Pending
+        // would show a different population than the number. Every other
+        // tile filters to its status; the order list itself is current-state,
+        // not period-scoped, so an activity tile's list is the status as it
+        // stands now, not the period events.
+        filterStatusName: !isPipeline && s.name === 'Pending' ? null : s.name,
       }
     })
     // A status with no orders in the selected period is not shown at all —
     // but only once its real (zero) value is known, never while loading.
     .filter((t) => t.raw === null || t.raw > 0)
+
+  // Total Orders — pipeline view only. In pipeline, `newOrders` is the
+  // cohort total, a number no status tile shows (Pending there is the
+  // cohort's CURRENT Pending count, a subset). In activity view the
+  // "New Orders" tile already IS `newOrders`, so a second tile with the
+  // same number would be a confusing duplicate — the activity caption
+  // below says the tiles do not sum to a total instead. Gated on `kpi`
+  // so no phantom dash renders while loading.
+  const totalTile: KpiTile | null =
+    kpi && isPipeline
+      ? {
+          label: 'Total Orders',
+          statusName: '__total__',
+          raw: kpi.newOrders,
+          format: formatNumber,
+          subtext: `Cohort total · ${periodLabel}`,
+          tooltip: 'All orders created in the selected period',
+          icon: <ShoppingCart className="h-4 w-4" />,
+          accent: 'primary',
+          link: '/op/orders',
+          filterStatusName: null,
+        }
+      : null
+  const allTiles = [
+    ...(totalTile && totalTile.raw !== null && totalTile.raw > 0 ? [totalTile] : []),
+    ...tiles,
+  ]
 
   return (
     <div className="space-y-2">
@@ -194,13 +269,21 @@ export function OperationalKpiStrip({ dateRange, preset, view = 'activity' }: Wi
           Some KPIs could not be loaded — showing values where available.
         </p>
       )}
+      {/* Basis caption: Activity and Pipeline count different populations,
+          and neither is labelled as the other anywhere on this page. */}
+      <p className="text-[11px] text-muted-foreground font-medium">
+        {isPipeline
+          ? 'Pipeline basis: current status of orders created in the selected period. One count per order; tiles sum to Total Orders.'
+          : 'Activity basis: orders entering each status in the selected period. One order can appear under several statuses, so tiles do not sum to a total.'}
+      </p>
       {/* Every configured order status gets a card, so the row reflows with the
           filter: a status with no orders in the period is simply absent. */}
       <div key={view} className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        {tiles.map((tile, i) => (
+        {allTiles.map((tile, i) => (
           <Link
             key={tile.statusName}
             to={tile.link as any}
+            onClick={() => handleTileClick(tile)}
             className="block h-full animate-rise"
             style={riseStyle(i)}
           >

@@ -97,7 +97,7 @@ export function SystemAlerts(_props: WidgetProps) {
   return (
     <WidgetShell
       title="System Alerts"
-      description="Payment, refund & inventory status"
+      description="Payment, refund & inventory status · All-time backlog, ignores the date filter"
       isLoading={isLoading}
       error={undefined}
       icon={<BellRing className="h-4 w-4" />}

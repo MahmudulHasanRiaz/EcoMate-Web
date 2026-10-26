@@ -145,28 +145,36 @@ describe('DashboardService — operational status distribution', () => {
       expect(res.statusCounts.find((s) => s.name === 'Pending')?.count).toBe(42);
     });
 
-    it('folds dispatch PICKED_UP / DELIVERED events into Shipping / Delivered', async () => {
+    it('counts each order once per canonical status — folding moved into SQL', async () => {
       // Courier paths stamp Dispatch timestamps instead of writing a timeline
-      // entry; those must not surface as a non-existent status and must not
-      // double-count an order that has both.
-      const { service } = makeService({
+      // entry. The lifecycle query now normalizes those literals onto the
+      // canonical names ('PICKED_UP' → 'Shipping', 'DELIVERED' →
+      // 'Delivered') BEFORE GROUP BY and counts DISTINCT order_id, so by
+      // the time rows reach this method one delivered order is already
+      // exactly one Delivered — even when it has both a timeline entry and
+      // a dispatch row. The old TypeScript sum (Delivered + DELIVERED) and
+      // Math.max (Shipping vs PICKED_UP) are gone: the sum double-counted,
+      // the max under-counted.
+      const { service, prisma } = makeService({
         newOrders: 10,
         statusEventRows: [
           { status: 'Shipping', orders: 4 },
-          { status: 'PICKED_UP', orders: 3 },
-          { status: 'Delivered', orders: 2 },
-          { status: 'DELIVERED', orders: 1 },
+          { status: 'Delivered', orders: 3 },
         ],
       });
 
       const res = await service.getOperationalKpis();
       const byName = Object.fromEntries(res.statusCounts.map((s) => [s.name, s.count]));
 
-      // Distinct order sets: take the larger, never the sum.
       expect(byName.Shipping).toBe(4);
       expect(byName.Delivered).toBe(3);
-      // No phantom 'PICKED_UP' status in the output.
+      // No phantom literal-form status in the output.
       expect(res.statusCounts.some((s) => s.name === 'PICKED_UP')).toBe(false);
+      expect(res.statusCounts.some((s) => s.name === 'DELIVERED')).toBe(false);
+      // And the query itself performs the normalization.
+      const sql: string = prisma.$queryRawUnsafe.mock.calls[0][0];
+      expect(sql).toContain(`WHEN e->>'status' = 'DELIVERED' THEN 'Delivered'`);
+      expect(sql).toContain(`WHEN e->>'status' = 'PICKED_UP' THEN 'Shipping'`);
     });
 
     it('returns every configured status, in lifecycle order, with zeros', async () => {
