@@ -1343,6 +1343,26 @@ describe('ProductsService', () => {
         expect(call.data.slug).toBe('test-product-2');
       });
 
+      it('treats a no-alphanumeric slug as empty and falls back to the SKU slug', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+        (prisma.product.create as jest.Mock).mockResolvedValue(draftProduct);
+
+        await service.createDraft({ slug: '-', sku: 'WOO-ID-127' });
+
+        const call = (prisma.product.create as jest.Mock).mock.calls[0][0];
+        expect(call.data.slug).toBe('woo-id-127');
+      });
+
+      it('falls back to a draft-uuid slug when name and SKU yield nothing usable', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+        (prisma.product.create as jest.Mock).mockResolvedValue(draftProduct);
+
+        await service.createDraft({ slug: '-', name: 'টেস্ট পণ্য' });
+
+        const call = (prisma.product.create as jest.Mock).mock.calls[0][0];
+        expect(call.data.slug).toMatch(/^draft-[0-9a-f]{8}$/);
+      });
+
       it('creates nested variants and invalidates the product cache', async () => {
         (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
         (prisma.product.create as jest.Mock).mockResolvedValue(draftProduct);
@@ -1518,6 +1538,72 @@ describe('ProductsService', () => {
         });
         expect(prisma.tag.updateMany).toHaveBeenCalled();
       });
+
+      it('drops DTO-only categoryIds instead of passing them to Prisma', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue(draftProduct);
+        (prisma.product.update as jest.Mock).mockResolvedValue(draftProduct);
+
+        await service.updateDraft('draft-1', {
+          name: 'Categorized Draft',
+          categoryIds: ['cat-1', 'cat-2'],
+        });
+
+        const call = (prisma.product.update as jest.Mock).mock.calls[0][0];
+        expect(call.data.categoryIds).toBeUndefined();
+        expect(call.data.categoryId).toBe('cat-1');
+        expect(call.data.productCategories).toEqual({
+          deleteMany: {},
+          create: [{ categoryId: 'cat-1' }, { categoryId: 'cat-2' }],
+        });
+      });
+
+      it('drops variant attribute rows without an attributeValueId', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue(draftProduct);
+        (prisma.product.update as jest.Mock).mockResolvedValue(draftProduct);
+
+        await service.updateDraft('draft-1', {
+          variants: [
+            {
+              sku: 'V-1',
+              price: 100,
+              attributeValues: [
+                { attributeValueId: 'av-1' },
+                { attributeValueId: undefined as any },
+              ],
+            },
+            { sku: 'V-2', price: 150, attributeValues: [] },
+          ],
+        });
+
+        const call = (prisma.product.update as jest.Mock).mock.calls[0][0];
+        expect(call.data.variants.create[0].attributeValues).toEqual({
+          create: [{ attributeValueId: 'av-1' }],
+        });
+        expect(call.data.variants.create[1].attributeValues).toBeUndefined();
+      });
+
+      it('never stores a no-alphanumeric slug on update (keeps the stored slug)', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue(draftProduct);
+        (prisma.product.update as jest.Mock).mockResolvedValue(draftProduct);
+
+        await service.updateDraft('draft-1', { slug: '-' });
+
+        const call = (prisma.product.update as jest.Mock).mock.calls[0][0];
+        expect(call.data.slug).toBeUndefined();
+      });
+
+      it('maps post-update media failures to a named error, not a bare 500', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue(draftProduct);
+        (prisma.product.update as jest.Mock).mockResolvedValue(draftProduct);
+        (media.syncEntityImages as jest.Mock).mockRejectedValue({
+          code: 'P2003',
+          meta: { field_name: 'Product_images_fkey (index)' },
+        });
+
+        await expect(
+          service.updateDraft('draft-1', { images: ['gone.jpg'] }),
+        ).rejects.toThrow(BadRequestException);
+      });
     });
 
     describe('publishDraft', () => {
@@ -1549,6 +1635,27 @@ describe('ProductsService', () => {
         expect(call.data.variants.deleteMany).toEqual({});
         expect(call.data.variants.create[0].sku).toBe('V3');
         expect(result.name).toBe('Ready Product');
+      });
+
+      it('keeps the stored slug when the publish payload carries "-"', async () => {
+        (prisma.product.findUnique as jest.Mock)
+          .mockResolvedValueOnce(draftProduct)
+          .mockResolvedValueOnce(null);
+        (prisma.product.update as jest.Mock).mockResolvedValue({
+          ...draftProduct,
+          name: 'Ready Product',
+          status: 'active',
+          isActive: true,
+        });
+
+        await service.publishDraft('draft-1', {
+          name: 'Ready Product',
+          basePrice: 1200,
+          slug: '-',
+        });
+
+        const call = (prisma.product.update as jest.Mock).mock.calls[0][0];
+        expect(call.data.slug).toBe('draft-mock-uui');
       });
 
       it('mirrors initial stock into the physical layer when a stocked draft is published', async () => {
