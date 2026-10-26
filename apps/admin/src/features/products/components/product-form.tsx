@@ -18,6 +18,7 @@ const imgUrl = appUrl
 import { apiClient } from '@/lib/api-client'
 import { useInventoryManagement } from '@/features/inventory/hooks/use-inventory-management'
 import { defaultAvailabilityMode } from '@/features/products/lib/availability-defaults'
+import { resolveProductSlug, slugifyLatin, slugHasChars } from '@/features/products/lib/product-slug'
 import { isSupportedVideoUrl, cleanDetailRows, cleanDescriptionSections, type DetailRow } from '@/features/products/lib/pdp-fields'
 import { attributesApi } from '@/features/attributes/api'
 import { categoriesApi } from '@/features/categories/api'
@@ -820,11 +821,11 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
   }
 
   const buildPayload = () => {
-    // Bengali-only names derive an empty slug from the latin-only regex —
-    // fall back to a generated slug instead of failing validation.
-    const derivedSlug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+    // A Bengali-only name derives "-" (truthy), so the old
+    // `slug || derivedSlug || ...` chain silently kept it. Slugs with
+    // no latin letter/digit resolve through the SKU, then a timestamp.
     const payload: any = {
-      name, slug: slug || derivedSlug || `product-${Date.now().toString(36)}`,
+      name, slug: resolveProductSlug({ slug, name, sku }),
       // On edit, cleared fields must actually clear: send explicit null for
       // nullable fields (backend accepts null) and [] for tags/categories.
       // On create, omit them instead.
@@ -1318,7 +1319,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                 <div className='grid grid-cols-2 gap-6'>
                   <div className='space-y-1.5'>
                     <Label>Product Name *</Label>
-                    <Input id='product-field-name' value={name} onChange={e => { clearFieldError('name'); setName(e.target.value); if (!isEdit && !isDuplicate && !slugTouchedRef.current) setSlug(e.target.value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')) }} placeholder='Product name' className={fieldErrors.name ? 'border-destructive' : ''} />
+                    <Input id='product-field-name' value={name} onChange={e => { clearFieldError('name'); setName(e.target.value); if (!isEdit && !isDuplicate && !slugTouchedRef.current) { const d = slugifyLatin(e.target.value); setSlug(slugHasChars(d) ? d : '') } }} placeholder='Product name' className={fieldErrors.name ? 'border-destructive' : ''} />
                     {fieldErrors.name && <p className='text-xs text-destructive'>{fieldErrors.name}</p>}
                   </div>
                   <div className='space-y-1.5'>

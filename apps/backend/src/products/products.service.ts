@@ -983,13 +983,7 @@ export class ProductsService {
       managedStockQuantity: v.managedStockQuantity || 0,
       image: v.image,
       images: (v.images || []) as any,
-      attributeValues: v.attributeValues
-        ? {
-            create: v.attributeValues.map((av) => ({
-              attributeValueId: av.attributeValueId,
-            })),
-          }
-        : undefined,
+      attributeValues: this.variantAttributeLinks(v.attributeValues),
     }));
 
     const include = {
@@ -1371,6 +1365,47 @@ export class ProductsService {
   // only goes live through an explicit publish that validates the data.
   // ─────────────────────────────────────────────────────────────────────
 
+  /**
+   * A slug with no latin letter or digit is not a usable slug: a
+   * Bengali-only name derives "-" from the latin-only regex, and "-"
+   * is truthy, so every `slug || fallback` chain silently keeps it.
+   * Such values are treated as EMPTY so the fallback chain triggers.
+   */
+  private usableSlug(value: string | null | undefined): string | null {
+    if (!value) return null;
+    const trimmed = value.trim();
+    return trimmed && /[a-z0-9]/.test(trimmed) ? trimmed : null;
+  }
+
+  /** Latin-only slug derivation (same regex as the admin form). */
+  private slugifyLatin(value: string | null | undefined): string | null {
+    if (!value) return null;
+    const slug = value
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '');
+    return /[a-z0-9]/.test(slug) ? slug : null;
+  }
+
+  /**
+   * Map a variant payload's attribute links, dropping id-less rows: a
+   * variant row without attributeValueIds (manually added rows, old
+   * duplicate clones) must never reach Prisma — an undefined id fails
+   * validation and an empty create set is rejected, both surfacing as
+   * a bare 500. A variant with no ids keeps no attribute links.
+   */
+  private variantAttributeLinks(
+    attributeValues: Array<{ attributeValueId?: string }> | undefined,
+  ): { create: Array<{ attributeValueId: string }> } | undefined {
+    if (!attributeValues?.length) return undefined;
+    const ids = attributeValues
+      .map((av) => av?.attributeValueId)
+      .filter((id): id is string => !!id);
+    return ids.length > 0
+      ? { create: ids.map((attributeValueId) => ({ attributeValueId })) }
+      : undefined;
+  }
+
   private async ensureUniqueSlug(base: string): Promise<string> {
     const exists = await this.prisma.product.findUnique({
       where: { slug: base },
@@ -1411,9 +1446,9 @@ export class ProductsService {
   /** Create a NEW independent draft record (one per form session). */
   async createDraft(dto: UpdateProductDto) {
     const slug = await this.ensureUniqueSlug(
-      dto.slug?.trim()
-        ? dto.slug.trim()
-        : `draft-${randomUUID().slice(0, 8)}`,
+      this.usableSlug(dto.slug) ??
+        this.slugifyLatin(dto.sku) ??
+        `draft-${randomUUID().slice(0, 8)}`,
     );
     const avMode = await this.draftAvailabilityMode({
       availabilityMode: dto.availabilityMode,
@@ -1481,13 +1516,8 @@ export class ProductsService {
                 managedStockQuantity: v.managedStockQuantity || 0,
                 image: v.image,
                 images: (v.images || []) as any,
-                attributeValues: v.attributeValues
-                  ? {
-                      create: v.attributeValues.map((av) => ({
-                        attributeValueId: av.attributeValueId,
-                      })),
-                    }
-                  : undefined,
+                attributeValues:
+                  this.variantAttributeLinks(v.attributeValues),
               })),
             }
           : undefined,
@@ -1544,9 +1574,12 @@ export class ProductsService {
       );
     }
     await this.assertVariantSkusFree(dto.variants, id);
-    if (dto.slug && dto.slug !== p.slug) {
+    // A no-alphanumeric slug (e.g. "-" from a Bengali-only name) is
+    // treated as not provided: it must never be stored or conflict-checked.
+    const cleanSlug = this.usableSlug(dto.slug);
+    if (cleanSlug && cleanSlug !== p.slug) {
       const exists = await this.prisma.product.findUnique({
-        where: { slug: dto.slug },
+        where: { slug: cleanSlug },
       });
       if (exists) throw new ConflictException('Slug already exists');
     }
@@ -1564,6 +1597,14 @@ export class ProductsService {
     delete data.attributes;
     delete data.status;
     delete data.isActive;
+    // DTO-only keys must never reach Prisma: update() deletes
+    // categoryIds, but updateDraft did not, so the form's always-sent
+    // categoryIds arrived as an unknown argument → Prisma validation
+    // error → rethrown raw by mapProductWriteError → bare 500. The
+    // mocked suite never caught it (mocks accept any data).
+    delete data.categoryIds;
+    if (cleanSlug) data.slug = cleanSlug;
+    else delete data.slug;
 
     if (dto.variants) {
       // Autosave carries the generated variant set — replace it wholesale so
@@ -1579,13 +1620,7 @@ export class ProductsService {
           managedStockQuantity: v.managedStockQuantity || 0,
           image: v.image,
           images: (v.images || []) as any,
-          attributeValues: v.attributeValues
-            ? {
-                create: v.attributeValues.map((av) => ({
-                  attributeValueId: av.attributeValueId,
-                })),
-              }
-            : undefined,
+          attributeValues: this.variantAttributeLinks(v.attributeValues),
         })),
       };
     } else if (dto.type === 'simple') {
@@ -1650,39 +1685,46 @@ export class ProductsService {
       this.mapProductWriteError(e);
     }
 
-    if (dto.tags !== undefined) {
-      await this.syncTags(dto.tags || [], id);
-    }
-    if (dto.images !== undefined) {
-      const synced = await this.media.syncEntityImages(
-        'product',
-        id,
-        dto.images || [],
-      );
-      if (JSON.stringify(synced) !== JSON.stringify(dto.images || [])) {
-        await this.prisma.product.update({
-          where: { id },
-          data: { images: synced as any },
-        });
+    // Post-update steps used to run outside any error mapping, so a
+    // failure here surfaced as a bare 500 even when Prisma named the
+    // cause. Map them like the main write.
+    try {
+      if (dto.tags !== undefined) {
+        await this.syncTags(dto.tags || [], id);
       }
-    }
+      if (dto.images !== undefined) {
+        const synced = await this.media.syncEntityImages(
+          'product',
+          id,
+          dto.images || [],
+        );
+        if (JSON.stringify(synced) !== JSON.stringify(dto.images || [])) {
+          await this.prisma.product.update({
+            where: { id },
+            data: { images: synced as any },
+          });
+        }
+      }
 
-    if (product.variants?.length) {
-      for (const variant of product.variants) {
-        const variantImages = ((variant as any).images as string[]) || [];
-        if (variant.image && !variantImages.includes(variant.image)) {
-          variantImages.unshift(variant.image);
-        }
-        if (variantImages.length > 0) {
-          await this.media.syncEntityImages(
-            'variant',
-            variant.id,
-            variantImages,
-          );
+      if (product.variants?.length) {
+        for (const variant of product.variants) {
+          const variantImages = ((variant as any).images as string[]) || [];
+          if (variant.image && !variantImages.includes(variant.image)) {
+            variantImages.unshift(variant.image);
+          }
+          if (variantImages.length > 0) {
+            await this.media.syncEntityImages(
+              'variant',
+              variant.id,
+              variantImages,
+            );
+          }
         }
       }
+      await this.cache.invalidateByPrefix('product:');
+    } catch (e) {
+      this.mapProductWriteError(e);
     }
-    await this.cache.invalidateByPrefix('product:');
     return product;
   }
 
@@ -1726,10 +1768,16 @@ export class ProductsService {
       );
     }
 
+    const dtoSlug = this.usableSlug(dto.slug);
     const slug =
-      dto.slug?.trim() && dto.slug.trim() !== p.slug
-        ? await this.ensureUniqueSlug(dto.slug.trim())
-        : p.slug;
+      dtoSlug && dtoSlug !== p.slug
+        ? await this.ensureUniqueSlug(dtoSlug)
+        : this.usableSlug(p.slug)
+          ? p.slug
+          : await this.ensureUniqueSlug(
+              this.slugifyLatin(dto.sku ?? p.sku) ??
+                `draft-${randomUUID().slice(0, 8)}`,
+            );
 
     const data: any = { ...dto };
     if (dto.customizations !== undefined) {
@@ -1811,13 +1859,7 @@ export class ProductsService {
           managedStockQuantity: v.managedStockQuantity || 0,
           image: v.image,
           images: (v.images || []) as any,
-          attributeValues: v.attributeValues
-            ? {
-                create: v.attributeValues.map((av) => ({
-                  attributeValueId: av.attributeValueId,
-                })),
-              }
-            : undefined,
+          attributeValues: this.variantAttributeLinks(v.attributeValues),
         })),
       };
     }
@@ -1849,61 +1891,67 @@ export class ProductsService {
       this.mapProductWriteError(e);
     }
 
-    if (dto.tags !== undefined) {
-      await this.syncTags(dto.tags || [], id);
-    }
-    if (dto.images !== undefined) {
-      const synced = await this.media.syncEntityImages(
-        'product',
-        id,
-        dto.images || [],
-      );
-      if (JSON.stringify(synced) !== JSON.stringify(dto.images || [])) {
-        await this.prisma.product.update({
-          where: { id },
-          data: { images: synced as any },
+    // Same post-update error mapping as updateDraft: a failure here
+    // must surface as a named error, not a bare 500.
+    try {
+      if (dto.tags !== undefined) {
+        await this.syncTags(dto.tags || [], id);
+      }
+      if (dto.images !== undefined) {
+        const synced = await this.media.syncEntityImages(
+          'product',
+          id,
+          dto.images || [],
+        );
+        if (JSON.stringify(synced) !== JSON.stringify(dto.images || [])) {
+          await this.prisma.product.update({
+            where: { id },
+            data: { images: synced as any },
+          });
+        }
+      }
+
+      if (product.variants?.length) {
+        for (const variant of product.variants) {
+          const variantImages = ((variant as any).images as string[]) || [];
+          if (variant.image && !variantImages.includes(variant.image)) {
+            variantImages.unshift(variant.image);
+          }
+          if (variantImages.length > 0) {
+            await this.media.syncEntityImages(
+              'variant',
+              variant.id,
+              variantImages,
+            );
+          }
+        }
+      }
+
+      await this.mirrorInitialStockToPhysical({
+        product,
+        avMode: newMode,
+        warehouseId: initialWarehouseId,
+      });
+
+      // Creation-equivalent ledger entry (create() writes one; publish did not).
+      if (newMode === 'MANAGED_STOCK' && finalType !== 'variable' && initialStock > 0) {
+        await this.prisma.managedStockLedger.create({
+          data: {
+            productId: id,
+            quantity: initialStock,
+            direction: 'IN',
+            type: 'INITIAL',
+            stockBefore: 0,
+            stockAfter: initialStock,
+            note: 'Initial stock on draft publish',
+          },
         });
       }
+
+      await this.cache.invalidateByPrefix('product:');
+    } catch (e) {
+      this.mapProductWriteError(e);
     }
-
-    if (product.variants?.length) {
-      for (const variant of product.variants) {
-        const variantImages = ((variant as any).images as string[]) || [];
-        if (variant.image && !variantImages.includes(variant.image)) {
-          variantImages.unshift(variant.image);
-        }
-        if (variantImages.length > 0) {
-          await this.media.syncEntityImages(
-            'variant',
-            variant.id,
-            variantImages,
-          );
-        }
-      }
-    }
-
-    await this.mirrorInitialStockToPhysical({
-      product,
-      avMode: newMode,
-      warehouseId: initialWarehouseId,
-    });
-
-    // Creation-equivalent ledger entry (create() writes one; publish did not).
-    if (newMode === 'MANAGED_STOCK' && finalType !== 'variable' && initialStock > 0) {
-      await this.prisma.managedStockLedger.create({
-        data: {
-          productId: id,
-          quantity: initialStock,
-          direction: 'IN',
-          type: 'INITIAL',
-          stockBefore: 0,
-          stockAfter: initialStock,
-          note: 'Initial stock on draft publish',
-        },
-      });
-    }
-
-    await this.cache.invalidateByPrefix('product:');
     return product;
   }
 
