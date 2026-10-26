@@ -34,9 +34,11 @@ export function PendingOrders({ dateRange, view = 'activity' }: WidgetProps) {
 
   const orders = data?.data || []
 
-  // Status transitions
+  // Status transitions. The lifecycle status is 'Shipping' — there is no
+  // status named 'Shipped', so looking it up always missed and the Ship
+  // button always toasted "configuration not loaded".
   const confirmedStatus = statusesData?.find(s => s.name === 'Confirmed')
-  const shippedStatus = statusesData?.find(s => s.name === 'Shipped')
+  const shippingStatus = statusesData?.find(s => s.name === 'Shipping')
 
   const updateStatusMut = useMutation({
     mutationFn: ({ orderId, statusId, statusName }: { orderId: string; statusId: string; statusName: string }) =>
@@ -63,11 +65,11 @@ export function PendingOrders({ dateRange, view = 'activity' }: WidgetProps) {
   }
 
   const handleShip = (orderId: string) => {
-    if (!shippedStatus) {
-      toast.error('Shipped status configuration not loaded')
+    if (!shippingStatus) {
+      toast.error('Shipping status configuration not loaded')
       return
     }
-    updateStatusMut.mutate({ orderId, statusId: shippedStatus.id, statusName: 'Shipped' })
+    updateStatusMut.mutate({ orderId, statusId: shippingStatus.id, statusName: 'Shipping' })
   }
 
   return (
@@ -89,8 +91,12 @@ export function PendingOrders({ dateRange, view = 'activity' }: WidgetProps) {
           <div className="h-10 w-10 rounded-full bg-success-soft border border-success/25 flex items-center justify-center mb-3">
             <CheckCircle2 className="h-6 w-6 text-success" />
           </div>
-          <p className="text-sm font-semibold text-foreground">All orders processed successfully</p>
-          <p className="text-xs text-muted-foreground mt-1">Excellent job! No pending orders remaining.</p>
+          {/* Honest empty state: this widget lists pre-confirmation orders
+              (Pending, Payment Pending, Recall, No Response) created in
+              the selected period, capped at 20 — empty means none in this
+              period, not that every order everywhere is processed. */}
+          <p className="text-sm font-semibold text-foreground">No pending orders in the selected period</p>
+          <p className="text-xs text-muted-foreground mt-1">Pre-confirmation orders appear here when they arrive.</p>
         </div>
       ) : (
         <>

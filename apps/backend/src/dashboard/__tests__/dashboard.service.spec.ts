@@ -81,9 +81,11 @@ describe('DashboardService', () => {
           ...(overrides.packed != null
             ? [{ status: 'Packed', orders: overrides.packed }]
             : []),
-          // Pickup events are the dispatch-derived PICKED_UP pseudo-status.
+          // Pickup events arrive normalized to 'Shipping': the lifecycle
+          // query maps the dispatch/courier literal 'PICKED_UP' onto the
+          // canonical status name before GROUP BY.
           ...(overrides.pickedUp != null
-            ? [{ status: 'PICKED_UP', orders: overrides.pickedUp }]
+            ? [{ status: 'Shipping', orders: overrides.pickedUp }]
             : []),
           ...(overrides.delivered != null
             ? [{ status: 'Delivered', orders: overrides.delivered }]
@@ -206,9 +208,90 @@ describe('DashboardService', () => {
       expect(sql).toContain('COUNT(DISTINCT order_id)');
       expect(sql).toMatch(/GROUP BY status/);
       // Both event sources are unioned: timeline transitions and the
-      // dispatch-derived pickup/delivery pseudo-statuses.
+      // dispatch pickup/delivery events. The dispatch/courier literal forms
+      // still appear — inside the CASE that normalizes them onto the
+      // canonical status names before GROUP BY (see the normalization test).
       expect(sql).toMatch(/'PICKED_UP'/);
       expect(sql).toMatch(/'DELIVERED'/);
+    });
+
+    // ── REGRESSION: Activity Delivered double-count ─────────────────
+    // A normal delivery writes BOTH a timeline 'Delivered' entry and a
+    // dispatch row with deliveredAt. The old code grouped by raw spelling
+    // and SUMMED the two groups, so one delivered order counted twice;
+    // Shipping used a Math.max heuristic that under-counted whenever the
+    // two sources covered different orders. The fix normalizes statuses
+    // in SQL and counts DISTINCT order_id per canonical status (exact
+    // union), and the folding method below is a straight lookup.
+    it('normalizes dispatch/courier literal statuses to canonical names in the lifecycle query', async () => {
+      mockAll({});
+
+      await service.getOperationalKpis('2025-06-01', '2025-06-15');
+
+      const sql: string = prisma.$queryRawUnsafe.mock.calls[0][0];
+      expect(sql).toContain(`WHEN e->>'status' = 'DELIVERED' THEN 'Delivered'`);
+      expect(sql).toContain(`WHEN e->>'status' = 'PICKED_UP' THEN 'Shipping'`);
+      // Dispatch branches emit the canonical names directly.
+      expect(sql).toContain(`SELECT d."orderId", 'Shipping'`);
+      expect(sql).toContain(`SELECT d."orderId", 'Delivered'`);
+    });
+
+    it('applies the SALE kind filter to the dispatch branches, not only the timeline branch', async () => {
+      mockAll({});
+
+      await service.getOperationalKpis('2025-06-01', '2025-06-15');
+
+      const sql: string = prisma.$queryRawUnsafe.mock.calls[0][0];
+      // One occurrence per branch: timeline + pickup dispatch + delivery
+      // dispatch. Return/exchange orders must never inflate sale counts.
+      expect((sql.match(/o\."kind" = 'SALE'/g) || []).length).toBe(3);
+    });
+
+    it('counts one delivered order exactly once (no sum across spellings, no max heuristic)', async () => {
+      // Rows exactly as the normalized query produces them: a single
+      // 'Delivered' group already holding the exact union of timeline +
+      // dispatch deliveries. The old sum would have needed two groups to
+      // double-count; the old max would have hidden the union for Shipping.
+      mockAll({
+        statusEvents: [
+          { status: 'Shipping', orders: 7 },
+          { status: 'Delivered', orders: 5 },
+        ],
+      });
+
+      const result = await service.getOperationalKpis(
+        '2025-06-01',
+        '2025-06-15',
+      );
+
+      expect(result.delivered).toBe(5);
+      expect(result.pickedUp).toBe(7);
+    });
+
+    it('never sums separate literal-form rows into Delivered', async () => {
+      // Literal-form rows cannot occur in production (the query normalizes
+      // them), but if one ever slips through it must NOT be added to the
+      // canonical count — the sum was the double-count bug.
+      mockAll({
+        statusEvents: [
+          { status: 'Delivered', orders: 2 },
+          { status: 'DELIVERED', orders: 1 },
+          { status: 'PICKED_UP', orders: 3 },
+        ],
+      });
+
+      const result = await service.getOperationalKpis(
+        '2025-06-01',
+        '2025-06-15',
+      );
+
+      expect(result.delivered).toBe(2);
+      expect(result.pickedUp).toBe(0);
+      expect(
+        result.statusCounts.some(
+          (s) => s.name === 'DELIVERED' || s.name === 'PICKED_UP',
+        ),
+      ).toBe(false);
     });
 
     it('lifecycle query unions the order timeline with dispatch event timestamps', async () => {

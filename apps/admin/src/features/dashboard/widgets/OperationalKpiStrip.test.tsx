@@ -3,11 +3,31 @@ import { render } from 'vitest-browser-react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { OperationalKpiStrip, PERIOD_LABELS } from './OperationalKpiStrip'
 import { dashboardApi } from '@/features/dashboard/api'
+import { apiClient } from '@/lib/api-client'
+import { useOrdersFilterStore } from '@/stores/orders-filter-store'
 import type { OperationalKpi, OrderStatusCount } from '@/features/dashboard/types'
 
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ to, children }: { to: string; children: React.ReactNode }) => (
-    <a href={typeof to === 'string' ? to : '#'}>{children}</a>
+  Link: ({
+    to,
+    onClick,
+    children,
+  }: {
+    to: string
+    onClick?: (e: React.MouseEvent) => void
+    children: React.ReactNode
+  }) => (
+    <a
+      href={typeof to === 'string' ? to : '#'}
+      onClick={(e) => {
+        // Stay on the test page (the real target has no route here) while
+        // still running the tile's filter side effect.
+        e.preventDefault()
+        onClick?.(e)
+      }}
+    >
+      {children}
+    </a>
   ),
 }))
 
@@ -16,6 +36,10 @@ vi.mock('@/features/dashboard/api', () => ({
     getOperationalKpis: vi.fn(),
     getOperationalPipelineKpis: vi.fn(),
   },
+}))
+
+vi.mock('@/lib/api-client', () => ({
+  apiClient: { get: vi.fn() },
 }))
 
 /** The 16 configured order statuses, in lifecycle (sortOrder) sequence. */
@@ -124,6 +148,15 @@ beforeEach(() => {
   vi.mocked(dashboardApi.getOperationalPipelineKpis).mockResolvedValue({
     data: KPIS,
   } as any)
+  // Statuses the tile-click filter resolves names against.
+  vi.mocked(apiClient.get).mockResolvedValue({
+    data: [
+      { id: 'st-pending', name: 'Pending' },
+      { id: 'st-ship', name: 'Shipping' },
+      { id: 'st-deliv', name: 'Delivered' },
+    ],
+  } as any)
+  useOrdersFilterStore.getState().setStatusFilter('all')
 })
 
 describe('OperationalKpiStrip', () => {
@@ -420,6 +453,74 @@ describe('OperationalKpiStrip', () => {
       await vi.waitFor(() => {
         expect(view.getByText('Today').elements().length).toBe(8)
       })
+    })
+
+    it('shows the Total Orders tile from newOrders in the pipeline view', async () => {
+      const view = await wrap(makeClient(), RANGE_TODAY, 'today', 'pipeline')
+
+      await expect
+        .element(view.getByText('Total Orders', { exact: true }))
+        .toBeInTheDocument()
+      // Leading tile, ahead of the status tiles.
+      await vi.waitFor(() => {
+        expect(cardLabels(view)[0]).toBe('Total Orders')
+      })
+    })
+
+    it('does not duplicate the total in the activity view', async () => {
+      // Activity "New Orders" already IS newOrders (orders created in the
+      // period), so a second tile with the same number would be a
+      // confusing duplicate — the activity caption carries the basis note
+      // instead.
+      const view = await wrap(makeClient(), RANGE_TODAY, 'today', 'activity')
+
+      await vi.waitFor(() => {
+        expect(cardLabels(view)).toEqual([
+          'New Orders',
+          'Payment Pending',
+          'Payment Verifying',
+          'Confirmed',
+          'Packed',
+          'Shipping',
+          'Delivered',
+          'Cancelled',
+        ])
+      })
+      await expect
+        .element(view.getByText('Total Orders', { exact: true }))
+        .not.toBeInTheDocument()
+    })
+
+    it('states the counting basis for each view', async () => {
+      const activity = await wrap(makeClient(), RANGE_TODAY, 'today', 'activity')
+
+      await expect
+        .element(activity.getByText(/tiles do not sum to a total/))
+        .toBeInTheDocument()
+
+      const pipeline = await wrap(makeClient(), RANGE_TODAY, 'today', 'pipeline')
+
+      await expect
+        .element(pipeline.getByText(/tiles sum to Total Orders/))
+        .toBeInTheDocument()
+    })
+
+    it('clicking a status tile filters the order list to that status', async () => {
+      const view = await wrap(makeClient(), RANGE_TODAY, 'today', 'activity')
+
+      await vi.waitFor(() => {
+        expect(cardLabels(view)).toContain('Shipping')
+      })
+      await view.getByText('Shipping', { exact: true }).click()
+      expect(useOrdersFilterStore.getState().statusFilter).toBe('st-ship')
+    })
+
+    it('clicking the Total tile clears any status filter', async () => {
+      useOrdersFilterStore.getState().setStatusFilter('st-deliv')
+      const view = await wrap(makeClient(), RANGE_TODAY, 'today', 'pipeline')
+
+      await view.getByText('Total Orders', { exact: true }).click()
+      expect(useOrdersFilterStore.getState().statusFilter).toBe('all')
     })
 
     it('caches pipeline separately from activity for the same range', async () => {
