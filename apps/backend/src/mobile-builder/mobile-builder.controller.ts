@@ -49,7 +49,7 @@ import { diskStorage } from 'multer';
 import { join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { FeatureFlagsService } from '@ecomate/feature-flags';
-import { Roles } from '../common/decorators/roles.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { SkipLicenseCheck } from '../common/decorators/skip-license-check.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
@@ -189,7 +189,7 @@ export class MobileBuilderController {
 
   // ── Cancel a build ──
   @Post('builds/:id/cancel')
-  @Roles('superadmin', 'admin')
+  @Permissions('edit_mobile_builder')
   @RequiresFeature('mobile_distribution')
   async cancelBuild(@Param('id') id: string) {
     const build = await this.prisma.mobileBuild.findUnique({ where: { id } });
@@ -202,7 +202,7 @@ export class MobileBuilderController {
 
   // ── Publish (trigger) ──
   @Post('publish')
-  @Roles('superadmin', 'admin')
+  @Permissions('create_mobile_builder')
   @RequiresFeature('mobile_distribution')
   async publishBuild(@Body() body: { app?: string; platform?: string }) {
     const appInput = body?.app || 'storefront';
@@ -293,7 +293,7 @@ export class MobileBuilderController {
 
   // ── Manual pull: check GitHub for latest completed build ──
   @Post('pull-pending')
-  @Roles('superadmin', 'admin')
+  @Permissions('edit_mobile_builder')
   @RequiresFeature('mobile_distribution')
   async pullPendingBuild(@Body() body: any = {}) {
     const token = process.env.MOBILE_BUILDER_GITHUB_TOKEN;

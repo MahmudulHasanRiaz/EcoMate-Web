@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Param } from '@nestjs/common';
-import { Roles } from '../common/decorators/roles.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CodMismatchService } from './cod-mismatch.service';
@@ -8,14 +8,14 @@ import { CodMismatchService } from './cod-mismatch.service';
 export class CodMismatchController {
   constructor(private readonly svc: CodMismatchService) {}
 
-  @Roles('superadmin', 'admin', 'employee')
+  @Permissions('view_cod_mismatch')
   @RequiresFeature('admin_orders')
   @Get(':id/cod-alerts')
   list(@Param('id') id: string) {
     return this.svc.listForOrder(id);
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('resolve_cod_mismatch')
   @RequiresFeature('admin_orders')
   @Post(':id/cod-alerts/:alertId/resolve')
   resolve(

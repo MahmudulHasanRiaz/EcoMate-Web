@@ -156,10 +156,20 @@ export const CATALOGUE_MODULES: CatalogueModule[] = [
     ] },
   { key: 'rtn', label: 'Returns (RTO)', group: 'FULFILMENT', crud: true },
   { key: 'exchange', label: 'Exchange Orders', group: 'FULFILMENT', crud: true },
+  // Action-only surface: listing COD-mismatch alerts is a read, resolving one
+  // is a distinct act — no create/update/delete of its own.
+  { key: 'cod_mismatch', label: 'COD Mismatches', group: 'FULFILMENT', crud: false,
+    extras: [
+      { verb: 'view', label: 'View COD Mismatches' },
+      { verb: 'resolve', label: 'Resolve COD Mismatches' },
+    ] },
 
   // ── Marketing & content ────────────────────────────────────────────────
   { key: 'campaigns', label: 'Campaigns', group: 'MARKETING', crud: true },
   { key: 'coupons', label: 'Coupons', group: 'MARKETING', crud: true },
+  // Same license surface as coupons: the admin menu is one "Coupons &
+  // Discounts" entry (discounts.controller.ts @RequiresFeature admin_coupons).
+  { key: 'discounts', label: 'Discounts', group: 'MARKETING', feature: 'admin_coupons', crud: true },
   { key: 'landing_pages', label: 'Landing Pages', group: 'MARKETING', crud: true },
   { key: 'cms_pages', label: 'CMS Pages', group: 'MARKETING', crud: true },
   { key: 'referrals', label: 'Referrals', group: 'MARKETING', crud: true },
@@ -230,6 +240,15 @@ export const LEGACY_PERMISSION_KEYS: readonly string[] = [
   // legacy key resolves" contract test covers them explicitly.
   'manage_stock',
   'modify_integrations',
+  // Guard keys used verbatim by @Permissions where the verb alone IS the
+  // key (same shape as manage_stock above). These are NOT renames of
+  // existing grants: the declared extras on the import/security modules
+  // generate the doubled keys run_import_import and
+  // view_security_dashboard_security, which are left untouched so any
+  // existing grant of a doubled key keeps working. The guard keys below
+  // are the ones controllers actually check.
+  'run_import',
+  'view_security_dashboard',
 ] as const;
 
 const LEGACY_DETAILS: Record<string, { label: string; module: string; group: string }> = {
@@ -252,6 +271,8 @@ const LEGACY_DETAILS: Record<string, { label: string; module: string; group: str
   adjust_courier_settlement: { label: 'Adjust Courier Settlement', module: 'courier_settlement', group: 'FULFILMENT' },
   manage_stock: { label: 'Manage Stock', module: 'inventory', group: 'INVENTORY' },
   modify_integrations: { label: 'Modify Integrations', module: 'system_settings', group: 'SETTINGS' },
+  run_import: { label: 'Run Imports', module: 'import', group: 'SETTINGS' },
+  view_security_dashboard: { label: 'View Security Dashboard', module: 'security', group: 'SETTINGS' },
 };
 
 /** Catalogue entries for the legacy keys, folded into their module. */

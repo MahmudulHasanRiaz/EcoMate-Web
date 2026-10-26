@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { LicenseController } from '../license.controller';
 import { LicenseService } from '../license.service';
 import { LicenseActivationService } from '../license-activation.service';
-import { ROLES_KEY } from '../../common/decorators/roles.decorator';
+import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
 import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
 
 describe('LicenseController', () => {
@@ -97,11 +97,13 @@ describe('LicenseController', () => {
      * live deployment. These assertions are the regression guard for that.
      */
     it('requires an admin session to activate — not public', () => {
-      const roles = Reflect.getMetadata(
-        ROLES_KEY,
+      const permissions = Reflect.getMetadata(
+        PERMISSIONS_KEY,
         LicenseController.prototype.activate,
       );
-      expect(roles).toEqual(expect.arrayContaining(['superadmin', 'admin']));
+      expect(permissions).toEqual(
+        expect.arrayContaining(['manage_license']),
+      );
 
       const isPublic = Reflect.getMetadata(
         IS_PUBLIC_KEY,

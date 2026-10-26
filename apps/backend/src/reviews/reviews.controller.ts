@@ -9,7 +9,7 @@ import {
   Delete,
 } from '@nestjs/common';
 import { Public } from '../common/decorators/public.decorator';
-import { Roles } from '../common/decorators/roles.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
 import { ReviewsService } from './reviews.service';
@@ -46,7 +46,7 @@ export class ReviewsController {
     return this.svc.findLatest(limit ? parseInt(limit) : 6);
   }
 
-  @Roles('superadmin', 'admin', 'employee')
+  @Permissions('view_customer_reviews')
   @RequiresFeature('admin_reviews')
   @Get()
   async findAll(
@@ -63,14 +63,14 @@ export class ReviewsController {
     });
   }
 
-  @Roles('superadmin', 'admin', 'employee')
+  @Permissions('approve_customer_reviews')
   @RequiresFeature('admin_reviews')
   @Patch(':id/approve')
   async approve(@Param('id') id: string) {
     return this.svc.approve(id);
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('delete_customer_reviews')
   @RequiresFeature('admin_reviews')
   @Delete(':id')
   async remove(@Param('id') id: string) {
