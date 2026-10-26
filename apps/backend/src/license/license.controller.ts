@@ -2,7 +2,7 @@ import { Controller, Get, Post, Body, Req } from '@nestjs/common';
 import { LicenseService, normalizeDomain } from './license.service';
 import { ActivateLicenseDto } from './dto/activate-license.dto';
 import { SkipLicenseCheck } from '../common/decorators/skip-license-check.decorator';
-import { Roles } from '../common/decorators/roles.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
@@ -29,7 +29,7 @@ export class LicenseController {
    */
   @SkipLicenseCheck()
   @Post('activate')
-  @Roles('superadmin', 'admin')
+  @Permissions('manage_license')
   async activate(@Body() dto: ActivateLicenseDto, @Req() req: any) {
     const domain = normalizeDomain(req?.hostname) || undefined;
     return this.licenseService.activateWithKeymate(
@@ -49,7 +49,7 @@ export class LicenseController {
    */
   @SkipLicenseCheck()
   @Post('sync')
-  @Roles('superadmin', 'admin')
+  @Permissions('manage_license')
   async sync(@Req() req: any) {
     return this.licenseService.sync(normalizeDomain(req?.hostname));
   }

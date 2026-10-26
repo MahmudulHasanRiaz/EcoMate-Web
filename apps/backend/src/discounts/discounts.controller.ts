@@ -7,7 +7,7 @@ import {
   Post,
   Put,
 } from '@nestjs/common';
-import { Roles } from '../common/decorators/roles.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { RateLimitPolicy } from '../common/rate-limit/rate-limit-policy.decorator';
@@ -25,7 +25,7 @@ import {
 export class DiscountsController {
   constructor(private readonly discountsService: DiscountsService) {}
 
-  @Roles('superadmin', 'admin', 'employee')
+  @Permissions('view_discounts')
   @Get()
   async findAll() {
     return this.discountsService.findAll();
@@ -47,31 +47,31 @@ export class DiscountsController {
     return this.discountsService.findActiveSummaries();
   }
 
-  @Roles('superadmin', 'admin', 'employee')
+  @Permissions('view_discounts')
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.discountsService.findOne(id);
   }
 
-  @Roles('superadmin', 'admin', 'employee')
+  @Permissions('view_discounts')
   @Get(':id/applications')
   async findApplications(@Param('id') id: string) {
     return this.discountsService.findApplications(id);
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('create_discounts')
   @Post()
   async create(@Body() dto: CreateDiscountDto) {
     return this.discountsService.create(dto);
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('edit_discounts')
   @Put(':id')
   async update(@Param('id') id: string, @Body() dto: UpdateDiscountDto) {
     return this.discountsService.update(id, dto);
   }
 
-  @Roles('superadmin', 'admin')
+  @Permissions('delete_discounts')
   @Delete(':id')
   async remove(@Param('id') id: string) {
     return this.discountsService.remove(id);

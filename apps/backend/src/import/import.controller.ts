@@ -12,7 +12,7 @@ import { ImportService } from './import.service';
 import { OrderImportService } from './order-import.service';
 import { ImportJobManager } from './import-job-manager';
 import { RequiresFeature } from '@ecomate/feature-flags';
-import { Roles } from '../common/decorators/roles.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import * as Papa from 'papaparse';
 
 function estimateCsvRows(content: string): number {
@@ -34,7 +34,7 @@ export class ImportController {
   ) {}
 
   @Get('status/:jobId')
-  @Roles('superadmin', 'admin')
+  @Permissions('run_import')
   getJobStatus(@Param('jobId') jobId: string) {
     const job = this.jobManager.getJob(jobId);
     if (!job) {
@@ -44,7 +44,7 @@ export class ImportController {
   }
 
   @Post('products')
-  @Roles('superadmin', 'admin')
+  @Permissions('run_import')
   async importProducts(
     @Req() req: fastify.FastifyRequest,
     @Query('mode') mode?: string,
@@ -113,7 +113,7 @@ export class ImportController {
   }
 
   @Post('orders')
-  @Roles('superadmin', 'admin')
+  @Permissions('run_import')
   async importOrders(@Req() req: fastify.FastifyRequest) {
     const file = await req.file();
     if (!file) {

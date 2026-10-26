@@ -9,6 +9,7 @@ import {
   DefaultValuePipe,
   NotFoundException,
 } from '@nestjs/common';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { SecurityEventSeverity, SecurityEventCategory, SecurityActorType } from '@prisma/client';
 import { DashboardQueryService } from './services/dashboard-query.service';
@@ -24,7 +25,7 @@ import type {
 } from './interfaces/dashboard-data.interface';
 
 @Controller('admin/security/dashboard')
-@Roles('superadmin', 'admin')
+@Permissions('view_security_dashboard')
 export class SecurityDashboardController {
   constructor(private readonly query: DashboardQueryService) {}
 
@@ -102,6 +103,12 @@ export class SecurityDashboardController {
     return this.query.getCorrelationChain(correlationId);
   }
 
+  // EXCEPTION (2026-10-26, documented): retention stays @Roles('superadmin'),
+  // NOT a permission key. A permission key cannot express superadmin-only
+  // here: preset-less admins receive ALL catalogue keys via
+  // getAllPermissions(), so @Permissions('manage_security_retention') would
+  // silently grant retention to every preset-less admin. Widen only with an
+  // explicit owner decision.
   @Get('retention')
   @Roles('superadmin')
   async getRetentionConfig(): Promise<RetentionConfigResponse> {
