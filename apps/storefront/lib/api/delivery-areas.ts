@@ -22,6 +22,19 @@ export async function getThanas(district: string): Promise<BDThana[]> {
   return data;
 }
 
+/** Merchant receiving bank account (Bank manual gateway, NPSB). */
+export interface BankAccount {
+  id: string;
+  bankName: string;
+  accountHolderName: string;
+  accountNumber: string;
+  branchName: string;
+  routingNumber: string;
+  accountType: 'SAVINGS' | 'CURRENT';
+  isActive: boolean;
+  sortOrder: number;
+}
+
 export interface GatewayConfig {
   id: string;
   code: string;
@@ -32,6 +45,8 @@ export interface GatewayConfig {
   enabled: boolean;
   mode: string;
   phoneNumber?: string;
+  /** Bank gateway only: accounts customers transfer to. */
+  bankAccounts?: BankAccount[];
 }
 
 export async function getGateways(): Promise<GatewayConfig[]> {

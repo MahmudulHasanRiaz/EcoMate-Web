@@ -39,6 +39,35 @@ export interface GatewayConfig {
   showOnPos?: boolean;
   /** D6: gateway logo URL (Media Picker), shown at checkout. */
   logoUrl?: string | null;
+  /** Bank (manual) gateway only: merchant receiving accounts. */
+  bankAccounts?: BankAccount[];
+}
+
+/**
+ * One merchant receiving bank account for the Bank (manual) gateway.
+ * NPSB payment instructions — customer-facing, never secrets.
+ */
+export interface BankAccount {
+  id: string;
+  bankName: string;
+  accountHolderName: string;
+  accountNumber: string;
+  branchName: string;
+  routingNumber: string;
+  accountType: 'SAVINGS' | 'CURRENT';
+  isActive: boolean;
+  sortOrder: number;
+}
+
+export interface BankAccountInput {
+  bankName: string;
+  accountHolderName: string;
+  accountNumber: string;
+  branchName: string;
+  routingNumber: string;
+  accountType: 'SAVINGS' | 'CURRENT';
+  isActive?: boolean;
+  sortOrder?: number;
 }
 
 export interface ProductOverride {
@@ -103,6 +132,11 @@ export const gatewayApi = {
   listPaymentFormGateways: () =>
     apiClient.get<GatewayConfig[]>('/gateways/payment-form'),
   updateGateway: (code: string, data: any) => apiClient.put(`/gateways/${code}`, data),
+  /** Bank (manual) gateway accounts — managed inside its settings card. */
+  listBankAccounts: () => apiClient.get<BankAccount[]>('/gateways/bank-accounts'),
+  createBankAccount: (data: BankAccountInput) => apiClient.post<BankAccount>('/gateways/bank-accounts', data),
+  updateBankAccount: (id: string, data: Partial<BankAccountInput>) => apiClient.put<BankAccount>(`/gateways/bank-accounts/${id}`, data),
+  deleteBankAccount: (id: string) => apiClient.delete(`/gateways/bank-accounts/${id}`),
   /**
    * D: canonical effective settings — global defaults + per-gateway tri-state
    * overrides + resolved effective values (what the backend enforces).
