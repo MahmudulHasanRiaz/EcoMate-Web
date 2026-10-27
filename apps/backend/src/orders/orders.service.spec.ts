@@ -21,6 +21,7 @@ import { CustomizationService } from '../customization/customization.service';
 import { OrderStockDeductService } from '../stock/order-stock-deduct.service';
 import { OrderEditLockService } from './order-edit-lock.service';
 import { CommissionsService } from '../commissions/commissions.service';
+import { DiscountsService } from '../discounts/discounts.service';
 import { TrackingEligibilityGate } from '../tracking/tracking-eligibility-gate';
 import { CacheService } from '../cache/cache.service';
 
@@ -453,6 +454,21 @@ describe('OrdersService', () => {
               configValue: true,
               reason: 'Order source "DIRECT_WEBSITE" is eligible for tracking',
               metadata: {},
+            }),
+          },
+        },
+        {
+          // @Optional() on the service: pre-existing tests run without
+          // it (auto skipped). Default-zero keeps them identical, while
+          // coupon tests below override the evaluation per case.
+          provide: DiscountsService,
+          useValue: {
+            evaluateForCart: jest.fn().mockResolvedValue({
+              autoDiscount: 0,
+              lines: [],
+              byDiscount: [],
+              subtotal: 0,
+              skipped: [],
             }),
           },
         },
@@ -913,6 +929,129 @@ describe('OrdersService', () => {
   });
 
   describe('create', () => {
+    // Coupon + automatic-discount agreement (Combine-OFF stacking fix):
+    // the order must record exactly what the settled checkout display
+    // shows. A suppressed (Combine-OFF) rule contributes zero, so the
+    // coupon % falls on the RAW subtotal; a combining rule keeps its
+    // auto amount, so the coupon % falls on the post-automatic base.
+    // Live numbers: 2 x 34.99 = 69.98; suppressed -> coupon 6.998,
+    // total 62.982 (+ shipping); combining (auto 10.50) -> coupon
+    // 5.948, total 53.532 (+ shipping).
+    const couponRow = {
+      id: 'coupon-1',
+      isActive: true,
+      type: 'percentage',
+      value: 10,
+      minOrderValue: null,
+      percentageCap: null,
+      maxUses: null,
+      usedCount: 0,
+      maxUsesPerCustomer: null,
+      expiresAt: null,
+      startsAt: null,
+    };
+    const setupCouponOrder = async (autoEval: any) => {
+      const discountsMock = module.get(DiscountsService) as any;
+      (discountsMock.evaluateForCart as jest.Mock).mockResolvedValue(
+        autoEval,
+      );
+      // Order creation resolves the line price server-side from the
+      // variant (variant.price wins over the DTO price), so pin the
+      // variant price to 34.99 to reproduce the live 2 x 34.99 = 69.98
+      // cart; stock fields stay as the default mock provides them.
+      (prisma.productVariant.findMany as jest.Mock).mockResolvedValue([
+        {
+          id: 'variant-1',
+          price: 34.99,
+          salePrice: null,
+          isActive: true,
+          productId: 'prod-1',
+          managedStockQuantity: 10,
+          reservedStock: 0,
+        },
+      ]);
+      (prisma.$queryRawUnsafe as jest.Mock).mockImplementation(
+        async (sql: string) =>
+          String(sql).includes('"Coupon"') ? [couponRow] : [],
+      );
+      (prisma as any).couponUsage = { create: jest.fn() };
+      (prisma as any).discountApplication = { create: jest.fn() };
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) =>
+          cb({
+            ...prisma,
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+          }),
+      );
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue({
+        id: 'status-pending',
+        name: 'Pending',
+        nextStatuses: [],
+      });
+      (prisma.order.create as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        items: [],
+      });
+      await service.create({
+        items: [{ variantId: 'variant-1', quantity: 2, price: 34.99 }],
+        shippingAddress: { address: '123 Test St' },
+        couponCode: 'TESTAUDIT10',
+      } as any);
+      const data = (prisma.order.create as jest.Mock).mock.calls[0][0].data;
+      const couponUsage =
+        ((prisma as any).couponUsage.create as jest.Mock).mock.calls[0]?.[0]
+          ?.data;
+      return { data, couponUsage };
+    };
+
+    it('coupon replaces a suppressed (Combine-OFF) auto discount and is computed on the raw subtotal', async () => {
+      const { data, couponUsage } = await setupCouponOrder({
+        autoDiscount: 0,
+        lines: [],
+        byDiscount: [],
+        subtotal: 69.98,
+        skipped: [
+          {
+            discountId: 'd-v2',
+            discountTitle: 'TEST-VERIFY V2 Discount',
+            reason: 'coupon-present',
+          },
+        ],
+      });
+      expect(data.subtotal).toBeCloseTo(69.98, 2);
+      expect(data.autoDiscount).toBe(0);
+      expect(data.discount).toBe(10);
+      expect(data.discountType).toBe('percentage');
+      // 10% of the RAW subtotal (auto suppressed -> base is raw).
+      expect(couponUsage.discount).toBeCloseTo(6.998, 2);
+      expect(data.total).toBeCloseTo(
+        data.subtotal + data.shippingCharge - 6.998,
+        2,
+      );
+    });
+
+    it('coupon stacks on the post-automatic base when the rule combines', async () => {
+      const { data, couponUsage } = await setupCouponOrder({
+        autoDiscount: 10.5,
+        lines: [],
+        byDiscount: [{ discountId: 'd-v2', amount: 10.5 }],
+        subtotal: 69.98,
+        skipped: [],
+      });
+      expect(data.subtotal).toBeCloseTo(69.98, 2);
+      expect(data.autoDiscount).toBe(10.5);
+      expect(data.discount).toBe(10);
+      expect(data.discountType).toBe('percentage');
+      // 10% of the POST-automatic base (69.98 - 10.50 = 59.48).
+      expect(couponUsage.discount).toBeCloseTo(5.948, 2);
+      expect(data.total).toBeCloseTo(
+        data.subtotal + data.shippingCharge - 10.5 - 5.948,
+        2,
+      );
+    });
+
     it('accepts a variant-only line item by resolving its parent product', async () => {
       // Regression: productIds was built solely from item.productId, so a line
       // carrying only a variantId never loaded its parent and the order was
