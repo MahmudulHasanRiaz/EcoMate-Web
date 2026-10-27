@@ -13,6 +13,7 @@ import { buildPurchaseSharedData, buildPurchaseUserData } from '@/lib/purchase-p
 import { ResumePaymentButton } from '@/components/ThankYou/ResumePaymentButton';
 import { PaymentProofUpload } from '@/components/ThankYou/PaymentProofUpload';
 import { submitPayment } from '@/lib/api/payments';
+import { getDiscountLines } from '@/lib/order-discount-lines';
 import { getGateways } from '@/lib/api/delivery-areas';
 import { PaymentLogo } from '@/components/PaymentLogo';
 import { BankAccountInstructions } from '@/components/BankAccountInstructions';
@@ -163,6 +164,10 @@ export default function ThankYouContent({
   const totalPaid = verifiedPayments.reduce((s: number, p: any) => s + nn(p.amount), 0);
   const orderTotal = nn(order.total);
   const remaining = Math.max(0, orderTotal - totalPaid);
+  // Discount lines from the stored order: order.discount is the coupon
+  // PERCENT when discountType is 'percentage', never render it as money
+  // (it showed "−৳10.00" for a 10% coupon worth ৳4.50). See lib/order-discount-lines.
+  const discountLines = getDiscountLines(order);
   const isCod = paymentOptionType === 'CASH_ON_DELIVERY';
   const hasBkasPgw = (order.payments || []).some((p: any) => p.gatewayCode === 'bkash_pgw');
   const isBkas = hasBkasPgw || (order.payments || []).some((p: any) => p.gatewayCode === 'bkash');
@@ -605,15 +610,15 @@ export default function ThankYouContent({
                     : 'Free'}
                 </span>
               </div>
-              {nn(order.discount) > 0 && (
-                <div className="flex justify-between text-green-600">
-                  <span>Discount</span>
+              {discountLines.map((line, i) => (
+                <div key={`${line.label}-${i}`} className="flex justify-between text-green-600">
+                  <span>{line.label}</span>
                   <span>
                     -{config.currency.symbol}
-                    {fmt(order.discount)}
+                    {fmt(line.amount)}
                   </span>
                 </div>
-              )}
+              ))}
               <div className="flex justify-between font-bold text-[14px] text-gray-900 pt-2 border-t mt-2">
                 <span>Total</span>
                 <span className="text-brand-blue">
