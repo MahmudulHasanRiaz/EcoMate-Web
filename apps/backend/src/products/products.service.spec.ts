@@ -1127,6 +1127,40 @@ describe('ProductsService', () => {
         'https://cdn.example.com/new-image.jpg',
       ]);
     });
+
+    it('repairs manageStock on a MANAGED_STOCK variable stranded with manageStock=false (CSV-import state)', async () => {
+      const stranded = {
+        ...mockProduct,
+        type: 'variable',
+        availabilityMode: 'MANAGED_STOCK',
+        manageStock: false,
+      };
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue(stranded);
+      (prisma.product.update as jest.Mock).mockResolvedValue(stranded);
+
+      await service.update('prod-1', { name: 'Updated Product' });
+
+      expect(
+        (prisma.product.update as jest.Mock).mock.calls[0][0].data.manageStock,
+      ).toBe(true);
+    });
+
+    it('leaves manageStock untouched for a non-MANAGED variable on edit-save', async () => {
+      const icProduct = {
+        ...mockProduct,
+        type: 'variable',
+        availabilityMode: 'INVENTORY_CONTROLLED',
+        manageStock: true,
+      };
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue(icProduct);
+      (prisma.product.update as jest.Mock).mockResolvedValue(icProduct);
+
+      await service.update('prod-1', { name: 'Updated Product' });
+
+      expect(
+        (prisma.product.update as jest.Mock).mock.calls[0][0].data,
+      ).not.toHaveProperty('manageStock');
+    });
   });
 
   describe('remove', () => {

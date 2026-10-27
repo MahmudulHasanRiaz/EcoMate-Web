@@ -1,0 +1,11 @@
+-- Repair MANAGED_STOCK products stranded with manageStock=false.
+-- Written by CSV import for every variable product and every 0-stock
+-- simple product (manageStock was derived from "has stock", while
+-- availabilityMode defaulted to MANAGED_STOCK), and unrepairable from the
+-- UI because the product-update path deleted manageStock for variables.
+-- The managed engine (adjust guard, order reserve, deduct, restore) gates
+-- on manageStock, so these products could never be managed-adjusted,
+-- reserved, or deducted despite their MANAGED_STOCK mode. This repair is
+-- idempotent and touches no other rows (INVENTORY_CONTROLLED and
+-- ALWAYS_* products keep their flags as-is).
+UPDATE "Product" SET "manageStock" = true WHERE "availabilityMode" = 'MANAGED_STOCK' AND "manageStock" = false;

@@ -289,6 +289,36 @@ describe('ImportService.updateProductCached parent price handling', () => {
     const updateData = prisma.product.update.mock.calls[0][0].data;
     expect(updateData.basePrice).toBe(0);
   });
+
+  it('repairs manageStock=true for a MANAGED_STOCK variable on re-import (CSV-import state)', async () => {
+    const { svc, prisma } = makeService();
+    (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+      availabilityMode: 'MANAGED_STOCK',
+    });
+    await runUpdate(svc, prisma, {
+      SKU: 'VAR-1',
+      Type: 'variable',
+      Name: 'Var Parent',
+    });
+
+    const updateData = prisma.product.update.mock.calls[0][0].data;
+    expect(updateData.manageStock).toBe(true);
+  });
+
+  it('does not flip manageStock for an INVENTORY_CONTROLLED product on re-import', async () => {
+    const { svc, prisma } = makeService();
+    (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+      availabilityMode: 'INVENTORY_CONTROLLED',
+    });
+    await runUpdate(svc, prisma, {
+      SKU: 'VAR-1',
+      Type: 'variable',
+      Name: 'Var Parent',
+    });
+
+    const updateData = prisma.product.update.mock.calls[0][0].data;
+    expect(updateData.manageStock).toBe(false);
+  });
 });
 
 /**

@@ -187,5 +187,23 @@ describe('InventoryService — managed-stock destructive guard', () => {
         /no warehouse set/,
       );
     });
+
+    it('refuses a MANAGED_STOCK product whose manageStock flag is false (the guard gates on the flag, not the mode)', async () => {
+      // Regression lock for the 2026-10-27 staging report: a CSV-imported
+      // variable product (MANAGED_STOCK mode, manageStock=false) hit exactly
+      // this refusal in the "Adjust Managed Stock" dialog. The guard itself
+      // is correct — the fix repairs the flag at the write paths and in
+      // stored data — but this test pins the refusal to the flag so a
+      // future mode-only change cannot silently reopen it.
+      prisma.product.findUnique.mockResolvedValue(
+        product({ manageStock: false, availabilityMode: 'MANAGED_STOCK' }),
+      );
+
+      await expect(
+        service.adjust('prod-1', 5, 'Supplier restock', undefined, 'variant-1'),
+      ).rejects.toThrow('Stock tracking is disabled for this product');
+      expect(stockService.add).not.toHaveBeenCalled();
+      expect(stockService.scrap).not.toHaveBeenCalled();
+    });
   });
 });

@@ -627,9 +627,17 @@ export class ImportService {
     const basePrice = parsedPrice ?? 0;
     const salePrice = this.parsePrice(data['Sale price']);
     const parsedStock = this.parseInt(data.Stock);
-    const manageStock =
-      !isVariable && parsedStock !== undefined && parsedStock > 0;
-    const stock = manageStock ? parsedStock : 0;
+    // INVARIANT (2026-10-27): manageStock means "tracks stock", not "has
+    // stock". This import never sets availabilityMode, so every imported
+    // product lands MANAGED_STOCK (schema default) — and a MANAGED_STOCK
+    // product with manageStock=false can never be managed-adjusted,
+    // reserved, or deducted (the inventory guard and the order reserve both
+    // gate on manageStock), with no UI repair path for variables. The old
+    // derivation (false for every variable product and every 0-stock
+    // product) stranded exactly those rows. Imported products therefore
+    // always track stock; the quantity still comes from the CSV.
+    const hasStock = !isVariable && parsedStock !== undefined && parsedStock > 0;
+    const stock = hasStock ? parsedStock : 0;
     const seoMeta = this.buildSeoMeta(data);
 
     // WooCommerce-compatible stock status
@@ -683,7 +691,8 @@ export class ImportService {
         seoMeta: seoMeta as any,
         isFeatured,
         isActive,
-        manageStock,
+        // Mode defaults to MANAGED_STOCK, so the invariant requires true.
+        manageStock: true,
       },
     });
 
@@ -757,15 +766,26 @@ export class ImportService {
 
     const type = (data.Type || 'simple').toLowerCase().trim();
     const isVariable = type === 'variable' || type === 'variable-subscription';
+    // INVARIANT (2026-10-27): same as create — manageStock follows the
+    // product's mode, not its current quantity. The import never sets the
+    // mode, so the stored mode decides: a re-import must repair a stranded
+    // MANAGED_STOCK row, and must NOT flip an INVENTORY_CONTROLLED row's
+    // flag (combo availability checks read manageStock independently of
+    // mode). Unknown rows default to MANAGED_STOCK, matching the schema.
+    const existingModeRow = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: { availabilityMode: true },
+    });
+    const existingMode =
+      (existingModeRow as any)?.availabilityMode ?? 'MANAGED_STOCK';
     const parsedPrice =
       this.parsePrice(data['Regular price']) ?? this.parsePrice(data['Price']);
     const basePrice = parsedPrice ?? 0;
     const salePrice = this.parsePrice(data['Sale price']);
     const parsedStock = this.parseInt(data.Stock);
     const slug = data.Slug?.trim();
-    const manageStock =
-      !isVariable && parsedStock !== undefined && parsedStock > 0;
-    const stock = manageStock ? parsedStock : 0;
+    const hasStock = !isVariable && parsedStock !== undefined && parsedStock > 0;
+    const stock = hasStock ? parsedStock : 0;
     const seoMeta = this.buildSeoMeta(data);
 
     // WooCommerce-compatible stock status
@@ -815,7 +835,7 @@ export class ImportService {
     updateData.seoMeta = seoMeta;
     updateData.isFeatured = isFeatured;
     updateData.isActive = isActive;
-    updateData.manageStock = manageStock;
+    updateData.manageStock = existingMode === 'MANAGED_STOCK';
 
     if (await this.isProductUnchanged(productId, updateData)) {
       this.logger.log(
