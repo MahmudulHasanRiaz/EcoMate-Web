@@ -216,7 +216,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
   @RequiresFeature('admin_payments')
   @Get('options')
   async findAllOptions() {
-    return this.prisma.paymentOption.findMany({
+    const options = await this.prisma.paymentOption.findMany({
       orderBy: { sortOrder: 'asc' },
       include: {
         gateways: {
@@ -227,6 +227,33 @@ export class GatewayConfigController implements OnApplicationBootstrap {
         },
       },
     });
+    // SECURITY (2026-10-27): the nested gateways include used to return raw
+    // credential VALUES — Prisma include without select returns every scalar
+    // field, including the credentials JSON. F8 (2026-10-25) masked the
+    // gateway routes but missed this options endpoint, and the admin
+    // gateway settings page builds its edit form from THIS response, so a
+    // stored App Key rendered populated here even on the masked backend.
+    // Same keys-only shape as findAllAdmin; blank=keep is preserved by the
+    // upsert merge (blank/absent keys never wipe stored secrets).
+    return options.map((o) => ({
+      ...o,
+      gateways: o.gateways.map((g: any) => {
+        const { credentials, ...rest } = g;
+        return {
+          ...rest,
+          credentialKeys:
+            credentials && typeof credentials === 'object'
+              ? Object.entries(credentials as Record<string, unknown>)
+                  .filter(
+                    ([, v]) =>
+                      (typeof v === 'string' && v.trim() !== '') ||
+                      (typeof v !== 'string' && v !== null && v !== undefined),
+                  )
+                  .map(([k]) => k)
+              : [],
+        };
+      }),
+    }));
   }
 
   @Permissions('edit_gateways')
@@ -303,9 +330,9 @@ export class GatewayConfigController implements OnApplicationBootstrap {
 
   // ============ STAFF-SAFE: Payment-form gateway list (D17) ============
   // Every role that may record a payment (superadmin/admin/employee) needs
-  // the selectable gateway set — but GET /gateways/admin ALSO returns raw
-  // gateway `credentials`, so it must stay admin-only (widening it would
-  // leak secrets to every staff account). This endpoint returns ONLY the
+  // the selectable gateway set — but GET /gateways/admin is admin-only
+  // (it exposes admin settings/overrides), so staff use this endpoint.
+  // This endpoint returns ONLY the
   // fields a payment form selects on; it never returns credentials or
   // settings overrides. The client keeps the D6/D7 filtering (enabled +
   // showOnAdmin for new selections, enabled set for history), so the
