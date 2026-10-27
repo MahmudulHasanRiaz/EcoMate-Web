@@ -87,11 +87,23 @@ describe('BankAccountManager', () => {
     )
   })
 
-  it('deletes an account after confirmation', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
+  it('deletes an account after in-app confirmation', async () => {
     const ui = await renderManager()
     await expect.element(ui.getByText('Dutch-Bangla Bank')).toBeInTheDocument()
     await userEvent.click(ui.getByRole('button', { name: 'Delete account' }))
+    // The confirm step must render in the DOM (a native window.confirm
+    // never surfaces under automation — that is what made Delete inert).
+    await expect.element(ui.getByText(/Delete the Dutch-Bangla Bank account/)).toBeInTheDocument()
+    await userEvent.click(ui.getByRole('button', { name: 'Delete' }))
     expect(deleteBankAccount).toHaveBeenCalledWith('ba-1')
+  })
+
+  it('does not delete when the confirmation is cancelled', async () => {
+    const ui = await renderManager()
+    await expect.element(ui.getByText('Dutch-Bangla Bank')).toBeInTheDocument()
+    await userEvent.click(ui.getByRole('button', { name: 'Delete account' }))
+    await expect.element(ui.getByText(/Delete the Dutch-Bangla Bank account/)).toBeInTheDocument()
+    await userEvent.click(ui.getByRole('button', { name: 'Cancel' }))
+    expect(deleteBankAccount).not.toHaveBeenCalled()
   })
 })

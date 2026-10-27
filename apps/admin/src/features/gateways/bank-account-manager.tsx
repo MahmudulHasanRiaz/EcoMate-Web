@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { gatewayApi, type BankAccount, type BankAccountInput } from './api'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -118,6 +119,13 @@ export function BankAccountManager() {
   })
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  // Account awaiting delete confirmation. The confirm step used to be a
+  // native window.confirm, which never surfaces in automated browsers
+  // (they auto-dismiss it → confirm returns false) and can be suppressed
+  // by dialog blockers — the click then did nothing at all: no dialog,
+  // no toast, no request. An in-app ConfirmDialog renders in the DOM, so
+  // the confirmation is clickable in every context, human or automated.
+  const [deleting, setDeleting] = useState<BankAccount | null>(null)
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['bank-accounts'] })
 
@@ -144,6 +152,7 @@ export function BankAccountManager() {
     mutationFn: (id: string) => gatewayApi.deleteBankAccount(id),
     onSuccess: () => {
       toast.success('Bank account deleted')
+      setDeleting(null)
       invalidate()
     },
     onError: () => toast.error('Failed to delete bank account'),
@@ -197,11 +206,7 @@ export function BankAccountManager() {
                     variant='ghost'
                     className='h-7 px-2 text-destructive'
                     aria-label='Delete account'
-                    onClick={() => {
-                      if (window.confirm(`Delete the ${a.bankName} account (${a.accountNumber})?`)) {
-                        deleteMut.mutate(a.id)
-                      }
-                    }}
+                    onClick={() => setDeleting(a)}
                     disabled={deleteMut.isPending}
                   >
                     <Trash2 className='h-3.5 w-3.5' />
@@ -223,6 +228,19 @@ export function BankAccountManager() {
           busy={createMut.isPending}
           onCancel={() => setAdding(false)}
           onSubmit={(data) => createMut.mutate(data)}
+        />
+      )}
+
+      {deleting && (
+        <ConfirmDialog
+          open
+          onOpenChange={(open) => { if (!open) setDeleting(null) }}
+          title='Delete bank account?'
+          desc={`Delete the ${deleting.bankName} account (${deleting.accountNumber})? Customers will no longer see it at checkout.`}
+          confirmText='Delete'
+          destructive
+          isLoading={deleteMut.isPending}
+          handleConfirm={() => deleteMut.mutate(deleting.id)}
         />
       )}
     </div>
