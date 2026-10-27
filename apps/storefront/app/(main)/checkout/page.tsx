@@ -547,10 +547,11 @@ export default function CheckoutPage() {
   const [couponLoading, setCouponLoading] = useState(false);
   // D19: automatic campaign discounts (display only — the backend
   // recomputes them at order creation, so this can never overcharge).
-  const { autoDiscount, byDiscount } = useAutoDiscounts(
-    coItems,
-    appliedCoupon?.valid ? appliedCoupon.coupon.code : undefined,
-  );
+  // The coupon code the evaluation must reflect, extracted so the
+  // settled-pair gate below can compare against it.
+  const couponCode = appliedCoupon?.valid ? appliedCoupon.coupon.code : undefined;
+  const { autoDiscount, byDiscount, evaluatedCouponCode, isEvaluating } =
+    useAutoDiscounts(coItems, couponCode);
   const coUpdateQuantity = (key: string, qty: number) => {
     if (isBuyNow) updateBuyNowQuantity(qty);
     else updateQuantity(key, qty);
@@ -649,16 +650,27 @@ export default function CheckoutPage() {
     freeDeliveryMin: config.delivery.freeDeliveryMin,
     subtotal: coTotal,
   });
+  // Combine-OFF safety: an auto result is only valid for the coupon it
+  // was evaluated with. Until the re-evaluation for the CURRENT coupon
+  // settles, the previous auto value must not be paired with the new
+  // coupon — that pairing is the stacking bug (stale auto kept showing
+  // + coupon % computed on the stale post-automatic base), and a failed
+  // evaluation would otherwise leave it stacked forever. While
+  // unsettled, show the total with no discounts: never lower than what
+  // order creation charges.
+  const discountsSettled = evaluatedCouponCode === (couponCode ?? null);
+  const effAutoDiscount = discountsSettled ? autoDiscount : 0;
   // D19: coupon percentages/flats are computed on the post-automatic
   // subtotal, matching the backend stacking order (automatic first, then
-  // coupon). With no automatic discount this is identical to before.
-  const couponBase = Math.max(0, coTotal - autoDiscount);
-  const discountAmount = appliedCoupon?.valid && appliedCoupon.coupon
+  // coupon). With a suppressed (Combine-OFF) rule the automatic part is
+  // zero, so the base is the raw subtotal — no separate base change.
+  const couponBase = Math.max(0, coTotal - effAutoDiscount);
+  const discountAmount = discountsSettled && appliedCoupon?.valid && appliedCoupon.coupon
     ? (appliedCoupon.coupon.type === 'percentage'
       ? (couponBase * Number(appliedCoupon.coupon.value)) / 100
       : Math.min(Number(appliedCoupon.coupon.value), couponBase))
     : 0;
-  const totalWithDelivery = coTotal + deliveryCharge - autoDiscount - discountAmount;
+  const totalWithDelivery = coTotal + deliveryCharge - effAutoDiscount - discountAmount;
 
   useEffect(() => {
     getDistricts().then(setDistricts).catch(() => {});
@@ -1207,16 +1219,21 @@ export default function CheckoutPage() {
             )}
           </span>
         </div>
-        {autoDiscount > 0 && byDiscount.map((d) => (
+        {discountsSettled && effAutoDiscount > 0 && byDiscount.map((d) => (
           <div key={d.discountId} className="flex justify-between items-center text-green-600">
             <span>Automatic discount ({d.discountTitle})</span>
             <span className="font-bold text-green-700">-{s}{d.amount.toFixed(2)}</span>
           </div>
         ))}
-        {appliedCoupon?.valid && discountAmount > 0 && (
+        {discountsSettled && appliedCoupon?.valid && discountAmount > 0 && (
           <div className="flex justify-between items-center text-green-600">
             <span>Discount ({appliedCoupon.coupon.code})</span>
             <span className="font-bold text-green-700">-{s}{discountAmount.toFixed(2)}</span>
+          </div>
+        )}
+        {!discountsSettled && (
+          <div className="flex justify-between items-center text-gray-500">
+            <span>{isEvaluating ? 'Updating discounts…' : 'Discounts couldn’t be refreshed — total shown without discounts.'}</span>
           </div>
         )}
         {paymentOptionType === 'PARTIAL_PAYMENT' && partialAmount && parseFloat(partialAmount) > 0 && (
