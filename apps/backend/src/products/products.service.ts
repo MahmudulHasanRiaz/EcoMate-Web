@@ -1154,12 +1154,10 @@ export class ProductsService {
   async update(id: string, dto: UpdateProductDto, performedBy?: string) {
     const p = await this.prisma.product.findUnique({ where: { id } });
     if (!p) throw new NotFoundException('Product not found');
-    if (dto.slug && dto.slug !== p.slug) {
-      const exist = await this.prisma.product.findUnique({
-        where: { slug: dto.slug },
-      });
-      if (exist) throw new ConflictException('Slug already exists');
-    }
+    // Same rule as updateDraft: a usable provided slug wins (with the
+    // usual conflict check); an invalid stored slug regenerates on save
+    // instead of persisting; a valid stored slug never changes.
+    const resolvedSlug = await this.resolveUpdateSlug(dto, p);
     const data: any = { ...dto };
     if (dto.customizations !== undefined) {
       data.customizations = this.normalizeCustomizations(dto.customizations);
@@ -1173,6 +1171,8 @@ export class ProductsService {
     delete data.variants;
     delete data.attributes;
     delete data.categoryIds;
+    if (resolvedSlug) data.slug = resolvedSlug;
+    else delete data.slug;
     if (p.status === 'draft') {
       data.isActive = false;
       delete data.status;
@@ -1403,6 +1403,40 @@ export class ProductsService {
   }
 
   /**
+   * Resolve the slug an UPDATE actually stores, for update() and
+   * updateDraft(). Fallback order: the provided slug (when usable, with
+   * the usual conflict check) → the STORED slug, untouched, when it is
+   * valid → regenerated from the name → SKU → draft-uuid fallback when
+   * the stored slug itself is empty or has no alphanumeric character
+   * (e.g. "-" from a pre-fix Bengali-only draft). A valid slug NEVER
+   * changes on save; only invalid ones regenerate — an invalid slug
+   * carries no meaningful inbound link, so regenerating it breaks
+   * nothing. Returns null when the stored slug stays (caller must not
+   * send a slug key at all in that case).
+   */
+  private async resolveUpdateSlug(
+    dto: { slug?: string | null; name?: string | null; sku?: string | null },
+    p: { slug: string | null; name?: string | null; sku?: string | null },
+  ): Promise<string | null> {
+    const provided = this.usableSlug(dto.slug);
+    if (provided) {
+      if (provided !== p.slug) {
+        const exists = await this.prisma.product.findUnique({
+          where: { slug: provided },
+        });
+        if (exists) throw new ConflictException('Slug already exists');
+      }
+      return provided;
+    }
+    if (this.usableSlug(p.slug)) return null;
+    return this.ensureUniqueSlug(
+      this.slugifyLatin(dto.name ?? p.name) ??
+        this.slugifyLatin(dto.sku ?? p.sku) ??
+        `draft-${randomUUID().slice(0, 8)}`,
+    );
+  }
+
+  /**
    * Map a variant payload's attribute links, dropping id-less rows: a
    * variant row without attributeValueIds (manually added rows, old
    * duplicate clones) must never reach Prisma — an undefined id fails
@@ -1590,14 +1624,10 @@ export class ProductsService {
     }
     await this.assertVariantSkusFree(dto.variants, id);
     // A no-alphanumeric slug (e.g. "-" from a Bengali-only name) is
-    // treated as not provided: it must never be stored or conflict-checked.
-    const cleanSlug = this.usableSlug(dto.slug);
-    if (cleanSlug && cleanSlug !== p.slug) {
-      const exists = await this.prisma.product.findUnique({
-        where: { slug: cleanSlug },
-      });
-      if (exists) throw new ConflictException('Slug already exists');
-    }
+    // treated as not provided — and when the STORED slug itself is
+    // invalid, the save regenerates it instead of persisting "-" forever
+    // (see resolveUpdateSlug: a valid stored slug never changes).
+    const resolvedSlug = await this.resolveUpdateSlug(dto, p);
 
     const data: any = { ...dto };
     if (dto.customizations !== undefined) {
@@ -1618,7 +1648,7 @@ export class ProductsService {
     // error → rethrown raw by mapProductWriteError → bare 500. The
     // mocked suite never caught it (mocks accept any data).
     delete data.categoryIds;
-    if (cleanSlug) data.slug = cleanSlug;
+    if (resolvedSlug) data.slug = resolvedSlug;
     else delete data.slug;
 
     if (dto.variants) {
@@ -1790,7 +1820,11 @@ export class ProductsService {
         : this.usableSlug(p.slug)
           ? p.slug
           : await this.ensureUniqueSlug(
-              this.slugifyLatin(dto.sku ?? p.sku) ??
+              // Full rule order for a regenerated slug: name → SKU →
+              // draft-uuid fallback (a Bengali-only name yields nothing
+              // usable, so it falls through to the SKU like before).
+              this.slugifyLatin(name) ??
+                this.slugifyLatin(dto.sku ?? p.sku) ??
                 `draft-${randomUUID().slice(0, 8)}`,
             );
 

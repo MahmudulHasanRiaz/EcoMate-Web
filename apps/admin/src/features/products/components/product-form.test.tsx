@@ -220,6 +220,19 @@ describe('ProductForm edit-mode initialization (staging regression)', () => {
     })
   })
 
+  it('an invalid stored slug loads as a blank field instead of "-"', async () => {
+    // Pre-fix Bengali draft: the stored "-" must not sit in the field —
+    // blank lets the save-time resolver regenerate it, and the backend
+    // regenerates it too if the save bypasses the form.
+    mockProductGet.mockImplementation(() =>
+      Promise.resolve({ data: { ...FULL_PRODUCT, slug: '-' } }),
+    )
+    const ui = await renderForm()
+
+    await expect.element(ui.getByPlaceholder('Product name')).toHaveValue('Test Product')
+    await expect.element(ui.getByPlaceholder('product-slug')).toHaveValue('')
+  })
+
   it('reopening the SAME product after closing repopulates the form (ghost guard regression)', async () => {
     const ui = await renderForm()
     await expect.element(ui.getByPlaceholder('Product name')).toHaveValue('Test Product')

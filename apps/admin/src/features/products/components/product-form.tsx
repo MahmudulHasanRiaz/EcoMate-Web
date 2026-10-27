@@ -298,7 +298,7 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   // variable products. `localVariants` is passed in because the duplicate
   // suffix must be identical between the state and the baseline.
   const baselineFromSource = (src: any, localVariantList: any[]) => ({
-    mode, name: src.name || '', slug: src.slug || '', type: src.type || 'simple',
+    mode, name: src.name || '', slug: src.slug && slugHasChars(src.slug) ? src.slug : '', type: src.type || 'simple',
     desc: src.description || '', shortDesc: src.shortDesc || '', videoUrl: src.videoUrl || '',
     detailRows: Array.isArray(src.detailRows) ? src.detailRows : [],
     dsTagline: src.descriptionSections?.tagline || '',
@@ -471,7 +471,11 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
       }
       availabilityModeTouchedRef.current = true
       setName(source.name || '')
-      setSlug(source.slug || '')
+      // An invalid stored slug (e.g. "-" from a pre-fix Bengali-only
+      // draft) must not sit in the field: blank lets the save-time
+      // resolveProductSlug() regenerate it from name → SKU → timestamp,
+      // and the backend regenerates it too if the save bypasses the form.
+      setSlug(source.slug && slugHasChars(source.slug) ? source.slug : '')
       setType(source.type || 'simple')
       setDesc(source.description || '')
       setShortDesc(source.shortDesc || '')
