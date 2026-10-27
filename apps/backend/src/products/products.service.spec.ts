@@ -1110,6 +1110,31 @@ describe('ProductsService', () => {
       expect(prisma.product.update).toHaveBeenCalled();
     });
 
+    it('regenerates an invalid stored slug on update instead of persisting it', async () => {
+      // Once-only mock: the uniqueness check for the regenerated slug
+      // must see "no collision" (undefined), not the stored row again.
+      (prisma.product.findUnique as jest.Mock).mockResolvedValueOnce({
+        ...mockProduct,
+        slug: '-',
+      });
+      (prisma.product.update as jest.Mock).mockResolvedValue(mockProduct);
+
+      await service.update('prod-1', { name: 'Renamed Product' });
+
+      const call = (prisma.product.update as jest.Mock).mock.calls[0][0];
+      expect(call.data.slug).toBe('renamed-product');
+    });
+
+    it('keeps a valid stored slug when an invalid slug is sent on update', async () => {
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue(mockProduct);
+      (prisma.product.update as jest.Mock).mockResolvedValue(mockProduct);
+
+      await service.update('prod-1', { slug: '-' });
+
+      const call = (prisma.product.update as jest.Mock).mock.calls[0][0];
+      expect(call.data.slug).toBeUndefined();
+    });
+
     it('should sync images via MediaService when images are provided', async () => {
       (prisma.product.findUnique as jest.Mock).mockResolvedValueOnce(
         mockProduct,
@@ -1492,6 +1517,50 @@ describe('ProductsService', () => {
         ).rejects.toThrow(ConflictException);
       });
 
+      it('regenerates an invalid stored slug from the SKU on draft save', async () => {
+        // Pre-fix Bengali draft: stored "-" must not survive a save.
+        // Name-derived yields nothing usable, so the SKU slug wins.
+        (prisma.product.findUnique as jest.Mock).mockResolvedValueOnce({
+          ...draftProduct,
+          slug: '-',
+          name: 'টেস্ট পণ্য',
+          sku: 'TEST-BN-001',
+        });
+        (prisma.product.update as jest.Mock).mockResolvedValue(draftProduct);
+
+        await service.updateDraft('draft-1', {
+          name: 'টেস্ট পণ্য',
+          sku: 'TEST-BN-001',
+        });
+
+        const call = (prisma.product.update as jest.Mock).mock.calls[0][0];
+        expect(call.data.slug).toBe('test-bn-001');
+      });
+
+      it('regenerates an invalid stored slug from the name when the SKU yields nothing', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValueOnce({
+          ...draftProduct,
+          slug: '-',
+          name: 'Old Name',
+        });
+        (prisma.product.update as jest.Mock).mockResolvedValue(draftProduct);
+
+        await service.updateDraft('draft-1', { name: 'New Latin Name' });
+
+        const call = (prisma.product.update as jest.Mock).mock.calls[0][0];
+        expect(call.data.slug).toBe('new-latin-name');
+      });
+
+      it('keeps a valid stored slug when the draft save carries an unusable slug', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue(draftProduct);
+        (prisma.product.update as jest.Mock).mockResolvedValue(draftProduct);
+
+        await service.updateDraft('draft-1', { slug: '-' });
+
+        const call = (prisma.product.update as jest.Mock).mock.calls[0][0];
+        expect(call.data.slug).toBeUndefined();
+      });
+
       it('replaces the variant set wholesale when variants are provided', async () => {
         (prisma.product.findUnique as jest.Mock).mockResolvedValue(draftProduct);
         (prisma.product.update as jest.Mock).mockResolvedValue(draftProduct);
@@ -1690,6 +1759,27 @@ describe('ProductsService', () => {
 
         const call = (prisma.product.update as jest.Mock).mock.calls[0][0];
         expect(call.data.slug).toBe('draft-mock-uui');
+      });
+
+      it('regenerates an invalid stored slug from the name on publish', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValueOnce({
+          ...draftProduct,
+          slug: '-',
+        });
+        (prisma.product.update as jest.Mock).mockResolvedValue({
+          ...draftProduct,
+          name: 'Ready Product',
+          status: 'active',
+          isActive: true,
+        });
+
+        await service.publishDraft('draft-1', {
+          name: 'Ready Product',
+          basePrice: 1200,
+        });
+
+        const call = (prisma.product.update as jest.Mock).mock.calls[0][0];
+        expect(call.data.slug).toBe('ready-product');
       });
 
       it('mirrors initial stock into the physical layer when a stocked draft is published', async () => {
