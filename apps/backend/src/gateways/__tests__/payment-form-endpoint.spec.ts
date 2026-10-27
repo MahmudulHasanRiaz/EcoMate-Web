@@ -1,9 +1,9 @@
 import { GatewayConfigController } from '../gateway-config.controller';
 
 // D17: the staff-safe payment-form list must carry exactly the fields a
-// payment form selects on — and nothing sensitive. The admin CRUD endpoint
-// (findAllAdmin) returns raw gateway credentials, which is why it stays
-// admin-only; this spec pins the payment-form mapper to its safe shape.
+// payment form selects on — and nothing sensitive. The admin CRUD endpoints
+// stay admin-only (they expose admin settings/overrides); this spec pins
+// the payment-form mapper to its safe shape.
 function controllerWith(gateways: any[]) {
   const prisma: any = {
     paymentGateway: { findMany: jest.fn().mockResolvedValue(gateways) },

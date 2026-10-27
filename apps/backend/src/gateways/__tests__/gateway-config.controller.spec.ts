@@ -17,9 +17,9 @@ describe('GatewayConfigController', () => {
       GatewayConfigController.prototype.findAllForPaymentForm,
     );
     expect(roles).toEqual(['superadmin', 'admin', 'employee']);
-    // The admin CRUD endpoint (findAllAdmin) keeps credentials in its
-    // response and stays admin-only — the payment-form mapper must not
-    // copy that field. Asserted on the source: the mapper's key list.
+    // The admin CRUD endpoints return keys-only (F8) and stay admin-only —
+    // the payment-form mapper must not copy credential fields. Asserted
+    // on the source: the mapper's key list.
     const src = GatewayConfigController.prototype.findAllForPaymentForm.toString();
     expect(src).not.toMatch(/credentials/);
     expect(src).toMatch(/showOnAdmin/);
@@ -174,5 +174,65 @@ describe('GatewayConfigController', () => {
       expect(where).not.toHaveProperty('paymentOption');
       expect(rows).toHaveLength(1);
     });
+  });
+});
+
+// 2026-10-27: GET /gateways/options returned raw credential VALUES nested
+// inside each option's gateways (Prisma include without select returns every
+// scalar field, including the credentials JSON) — F8 masked the gateway
+// routes but missed this endpoint. The admin gateway settings page builds
+// its edit form from THIS response, so a stored App Key rendered populated
+// even on the masked backend. These tests pin the keys-only shape.
+describe('GatewayConfigController — findAllOptions credential masking', () => {
+  function controllerWithOptions(options: any[]) {
+    const prisma: any = {
+      paymentOption: { findMany: jest.fn().mockResolvedValue(options) },
+    };
+    return { controller: new GatewayConfigController(prisma), prisma };
+  }
+
+  const bkashPgwRow = {
+    id: 'gw-pgw',
+    code: 'bkash_pgw',
+    name: 'bKash PGW (API)',
+    type: 'api',
+    paymentOptionType: 'FULL_PAYMENT',
+    enabled: true,
+    mode: 'sandbox',
+    phoneNumber: null,
+    accountId: null,
+    account: null,
+    credentials: { appKey: 'SECRET-APP-KEY', appSecret: '', username: '', password: '' },
+    sortOrder: 7,
+  };
+
+  it('never returns credential VALUES in nested gateways — keys-only, like findAllAdmin', async () => {
+    const { controller } = controllerWithOptions([
+      { id: 'opt-full', type: 'FULL_PAYMENT', name: 'Full Payment', sortOrder: 1, gateways: [bkashPgwRow] },
+    ]);
+    const rows = await controller.findAllOptions();
+    expect(rows).toHaveLength(1);
+    const g = (rows[0] as any).gateways[0];
+    expect(g).not.toHaveProperty('credentials');
+    // Only the non-empty key is listed — the stored value itself never leaves the server.
+    expect(g.credentialKeys).toEqual(['appKey']);
+    expect(JSON.stringify(rows)).not.toContain('SECRET-APP-KEY');
+    // Non-credential fields pass through untouched.
+    expect(g.code).toBe('bkash_pgw');
+    expect(g.mode).toBe('sandbox');
+  });
+
+  it('reports empty credentialKeys when no credentials are stored', async () => {
+    const { controller } = controllerWithOptions([
+      {
+        id: 'opt-cod',
+        type: 'CASH_ON_DELIVERY',
+        name: 'Cash on Delivery',
+        sortOrder: 3,
+        gateways: [{ ...bkashPgwRow, code: 'cash', credentials: {} }],
+      },
+    ]);
+    const rows = await controller.findAllOptions();
+    expect((rows[0] as any).gateways[0].credentialKeys).toEqual([]);
   });
 });

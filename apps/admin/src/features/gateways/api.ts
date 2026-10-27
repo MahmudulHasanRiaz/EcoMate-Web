@@ -25,8 +25,9 @@ export interface GatewayConfig {
   /** Part 1: default settlement account mapped in Settings → Payment Gateways. */
   accountId?: string | null;
   account?: { id: string; code: string; name: string; type: string } | null;
-  credentials: any;
-  /** SECURITY (2026-10-25): list no longer returns values — only set keys. */
+  /** Absent on keys-only responses (admin + options lists never return values). */
+  credentials?: any;
+  /** SECURITY (2026-10-25, extended 2026-10-27 to the options list): lists return only set keys, never values. */
   credentialKeys?: string[];
   sortOrder: number;
   /** D: tri-state per-gateway overrides — null = use the global default. */
@@ -94,8 +95,8 @@ export const gatewayApi = {
     return apiClient.get<GatewayConfig[]>('/gateways/admin', params);
   },
   /**
-   * D17: staff-safe payment-form list. The admin CRUD endpoint also returns
-   * raw gateway credentials, so it stays admin-only; every money form
+   * D17: staff-safe payment-form list. The admin CRUD endpoints are
+   * admin-only (they expose admin settings/overrides); every money form
    * (record payment/refund, order create, lead conversion) uses this one,
    * which returns only selection fields + the mapped settlement account.
    */
