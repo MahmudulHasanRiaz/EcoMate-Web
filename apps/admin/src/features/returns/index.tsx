@@ -28,9 +28,27 @@ export function stockLabel(r: Pick<ReturnListItem, 'status' | 'stockReconciled'>
   return 'Pending'
 }
 
-function itemsLabel(r: Pick<ReturnListItem, 'items'>): string {
-  const n = (r.items ?? []).reduce((s, l) => s + Number((l as { quantity: number }).quantity ?? 0), 0)
-  return `${n} pcs`
+function itemsLabel(r: Pick<ReturnListItem, 'items' | 'type' | 'order'>): string {
+  const rows = r.items ?? []
+  if (rows.length > 0) {
+    const n = rows.reduce((s, l) => s + Number((l as { quantity: number }).quantity ?? 0), 0)
+    return `${n} pcs`
+  }
+  // Courier FULL returns are created with an empty split BY DESIGN (the
+  // courier never reports it; staff confirm exact quantities at
+  // mark-received, and nothing restocks until then). A bare "0 pcs" reads
+  // as an empty return, so a FULL row with no confirmed split falls back
+  // to its order's total — the full-order scope in transit back, NOT
+  // confirmed received quantities. PARTIAL/EXCHANGE rows have no derivable
+  // scope, so they keep "0 pcs" rather than an invented number.
+  if (r.type === 'FULL') {
+    const orderQty = (r.order?.items ?? []).reduce(
+      (s, l) => s + Number((l as { quantity: number }).quantity ?? 0),
+      0,
+    )
+    if (orderQty > 0) return `${orderQty} pcs (full)`
+  }
+  return '0 pcs'
 }
 
 /**

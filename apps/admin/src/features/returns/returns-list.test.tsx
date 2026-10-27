@@ -81,4 +81,78 @@ describe('ReturnsList (Task 7)', () => {
       expect((last[1] as { params: Record<string, unknown> }).params.search).toBe('RTN-261014')
     })
   })
+
+  it('shows the full-order scope (not 0 pcs) for a FULL courier return with an empty split', async () => {
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/returns')
+        return Promise.resolve({
+          data: {
+            data: [
+              {
+                ...row,
+                id: 'ret-courier-full',
+                displayId: 'RTN-261014-0002',
+                source: 'COURIER',
+                items: [],
+                order: {
+                  id: 'order-1',
+                  displayId: 'ORD-261014-0001',
+                  items: [
+                    { productId: 'p-1', quantity: 1 },
+                    { productId: 'p-2', quantity: 2 },
+                  ],
+                },
+              },
+            ],
+            meta: { total: 1, page: 1, limit: 20 },
+          },
+        })
+      return Promise.reject(new Error(`Unexpected URL ${url}`))
+    })
+    const { getByText } = await renderList()
+    await expect.element(getByText('3 pcs (full)')).toBeInTheDocument()
+  })
+
+  it('keeps 0 pcs for a FULL return with an empty split and no order lines', async () => {
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/returns')
+        return Promise.resolve({
+          data: {
+            data: [{ ...row, id: 'ret-full-no-order', displayId: 'RTN-261014-0003', source: 'COURIER', items: [] }],
+            meta: { total: 1, page: 1, limit: 20 },
+          },
+        })
+      return Promise.reject(new Error(`Unexpected URL ${url}`))
+    })
+    const { getByText } = await renderList()
+    await expect.element(getByText('0 pcs')).toBeInTheDocument()
+  })
+
+  it('does not invent a scope for a PARTIAL return with an empty split', async () => {
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/returns')
+        return Promise.resolve({
+          data: {
+            data: [
+              {
+                ...row,
+                id: 'ret-partial-empty',
+                displayId: 'RTN-261014-0004',
+                type: 'PARTIAL',
+                items: [],
+                order: {
+                  id: 'order-1',
+                  displayId: 'ORD-261014-0001',
+                  items: [{ productId: 'p-1', quantity: 5 }],
+                },
+              },
+            ],
+            meta: { total: 1, page: 1, limit: 20 },
+          },
+        })
+      return Promise.reject(new Error(`Unexpected URL ${url}`))
+    })
+    const { getByText } = await renderList()
+    await expect.element(getByText('0 pcs')).toBeInTheDocument()
+  })
 })
