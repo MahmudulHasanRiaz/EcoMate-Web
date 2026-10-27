@@ -1191,6 +1191,21 @@ export class ProductsService {
         data.manageStock = dto.availabilityMode === 'MANAGED_STOCK';
       }
     }
+    // INVARIANT (2026-10-27): the managed engine gates on Product.manageStock
+    // (adjust guard, order reserve, deduct, restore), while the storefront and
+    // the adjustment dialog gate on availabilityMode. A MANAGED_STOCK product
+    // with manageStock=false — written by CSV import for every variable
+    // product and every 0-stock simple product, and stranded because the
+    // variable carve-out above deleted manageStock from updates — could never
+    // be managed-adjusted, reserved, or deducted, and no UI action could
+    // repair it. Mode wins: a MANAGED_STOCK product always tracks stock, so
+    // any edit-save repairs the flag. (Non-MANAGED modes leave manageStock
+    // untouched — forcing it false could break combo components that rely
+    // on it.)
+    const effectiveMode = dto.availabilityMode ?? p.availabilityMode;
+    if (effectiveMode === 'MANAGED_STOCK') {
+      data.manageStock = true;
+    }
 
     if (dto.categoryIds !== undefined) {
       data.categoryId = dto.categoryIds[0] || null;
