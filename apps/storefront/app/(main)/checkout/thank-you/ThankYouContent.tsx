@@ -15,6 +15,7 @@ import { PaymentProofUpload } from '@/components/ThankYou/PaymentProofUpload';
 import { submitPayment } from '@/lib/api/payments';
 import { getGateways } from '@/lib/api/delivery-areas';
 import { PaymentLogo } from '@/components/PaymentLogo';
+import { BankAccountInstructions } from '@/components/BankAccountInstructions';
 import { motion } from 'motion/react';
 
 export type PaymentStatus = 'paid' | 'pending' | 'partial' | 'failed' | 'cancelled';
@@ -168,6 +169,7 @@ export default function ThankYouContent({
   const isManual = (order.payments || []).some((p: any) =>
     p.gatewayCode && p.gatewayCode !== 'cash' && p.gatewayCode !== 'bkash_pgw'
   );
+  const isBank = selectedGw?.code === 'bank';
 
   const supportCall = config.order?.callNumber || config.store?.phone || '';
   const supportWhatsapp = config.order?.whatsapp || config.social?.whatsapp || '';
@@ -407,28 +409,41 @@ export default function ThankYouContent({
                             </span>
                           </div>
 
-                          <div className="bg-blue-50 rounded-xl p-4 space-y-2 mb-4">
-                            <p className="text-xs font-bold text-gray-800 flex items-center gap-1">
-                              <ExternalLink size={14} className="text-brand-blue" />
-                              Send Money to This Number
-                            </p>
-                            <p className="text-xl font-black text-center text-brand-blue tracking-wide">
-                              {selectedGw.phoneNumber || 'Not set'}
-                            </p>
-                            <p className="text-xs text-gray-500 text-center">
-                              Amount: <span className="font-bold text-gray-800">{config.currency.symbol}{fmt(orderTotal)}</span>
-                            </p>
-                          </div>
+                          {isBank ? (
+                            <div className="space-y-2 mb-4">
+                              <p className="text-xs font-bold text-gray-800 flex items-center gap-1">
+                                <ExternalLink size={14} className="text-brand-blue" />
+                                Transfer to This Bank Account
+                              </p>
+                              <BankAccountInstructions accounts={selectedGw.bankAccounts || []} />
+                              <p className="text-xs text-gray-500 text-center">
+                                Amount: <span className="font-bold text-gray-800">{config.currency.symbol}{fmt(orderTotal)}</span>
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="bg-blue-50 rounded-xl p-4 space-y-2 mb-4">
+                              <p className="text-xs font-bold text-gray-800 flex items-center gap-1">
+                                <ExternalLink size={14} className="text-brand-blue" />
+                                Send Money to This Number
+                              </p>
+                              <p className="text-xl font-black text-center text-brand-blue tracking-wide">
+                                {selectedGw.phoneNumber || 'Not set'}
+                              </p>
+                              <p className="text-xs text-gray-500 text-center">
+                                Amount: <span className="font-bold text-gray-800">{config.currency.symbol}{fmt(orderTotal)}</span>
+                              </p>
+                            </div>
+                          )}
 
                           <div className="space-y-3 mb-4">
                             <div className="space-y-1">
-                              <label className="text-[11px] font-bold text-gray-600 uppercase tracking-wider">Your Phone Number (Sent From)</label>
-                              <input type="tel" value={senderPhone} onChange={e => setSenderPhone(e.target.value)}
-                                placeholder="01XXXXXXXXX"
+                              <label className="text-[11px] font-bold text-gray-600 uppercase tracking-wider">{isBank ? 'Your Bank Account Number (Sent From)' : 'Your Phone Number (Sent From)'}</label>
+                              <input type={isBank ? 'text' : 'tel'} value={senderPhone} onChange={e => setSenderPhone(e.target.value)}
+                                placeholder={isBank ? 'Your bank account number' : '01XXXXXXXXX'}
                                 className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-[13px] outline-none focus:border-brand-blue bg-[#fcfcfc]" />
                             </div>
                             <div className="space-y-1">
-                              <label className="text-[11px] font-bold text-gray-600 uppercase tracking-wider">Transaction ID (TrxID)</label>
+                              <label className="text-[11px] font-bold text-gray-600 uppercase tracking-wider">{isBank ? 'Transaction / Reference ID' : 'Transaction ID (TrxID)'}</label>
                               <input type="text" value={trxId} onChange={e => setTrxId(e.target.value)}
                                 placeholder="e.g. TrxID8A7B3C"
                                 className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-[13px] outline-none focus:border-brand-blue bg-[#fcfcfc]" />
@@ -437,11 +452,11 @@ export default function ThankYouContent({
 
                           <button onClick={handleSubmitPayment} disabled={submittingPayment}
                             className={`w-full text-white font-bold py-2.5 rounded-lg text-[14px] transition-all active:scale-[0.98] ${submittingPayment ? 'bg-gray-400 cursor-not-allowed' : 'bg-brand-blue hover:bg-brand-blue/90 shadow-lg shadow-brand-blue/20'}`}>
-                            {submittingPayment ? <Loader2 className="animate-spin mx-auto" size={18} /> : 'I Have Sent the Money'}
+                            {submittingPayment ? <Loader2 className="animate-spin mx-auto" size={18} /> : isBank ? 'I Have Transferred the Money' : 'I Have Sent the Money'}
                           </button>
 
                           <p className="text-[11px] text-gray-400 text-center mt-3 leading-relaxed">
-                            After sending the money, enter your TrxID above and click submit. Our team will verify your payment within 24 hours.
+                            {isBank ? 'After transferring the money, enter your transaction / reference ID above and click submit. Our team will verify your payment within 24 hours.' : 'After sending the money, enter your TrxID above and click submit. Our team will verify your payment within 24 hours.'}
                           </p>
                         </div>
                       )}

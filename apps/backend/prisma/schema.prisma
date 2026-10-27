@@ -1363,11 +1363,42 @@ model PaymentGateway {
   /// D6: gateway logo (Media Picker in Settings → Payment Gateways),
   /// shown at storefront checkout and in gateway lists.
   logoUrl                   String?
+  /// Bank (manual) gateway only: the merchant's receiving bank accounts,
+  /// shown to customers at checkout so they can pay by bank transfer
+  /// (NPSB). Unlike `credentials`, these are payment instructions, not
+  /// secrets — the public gateway list returns them like `phoneNumber`.
+  bankAccounts              BankAccount[]
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
   @@index([paymentOptionType])
   @@index([accountId])
+}
+
+/// One merchant receiving bank account for the Bank (manual) gateway.
+/// accountType reuses the existing BankAccountType enum (shared with
+/// employee bank accounts, which is why it also carries OTHERS); the
+/// DTO restricts merchant receiving accounts to SAVINGS/CURRENT only.
+/// All fields are customer-facing payment instructions (same trust level
+/// as a manual gateway's phoneNumber) — never secrets.
+model BankAccount {
+  id                String          @id @default(uuid())
+  gatewayId         String
+  gateway           PaymentGateway  @relation(fields: [gatewayId], references: [id], onDelete: Cascade)
+  bankName          String
+  accountHolderName String
+  accountNumber     String
+  branchName        String
+  /// Bangladesh Bank routing number (9 digits). Stored as text: routing
+  /// numbers may carry leading zeros and are identifiers, not quantities.
+  routingNumber     String
+  accountType       BankAccountType
+  isActive          Boolean         @default(true)
+  sortOrder         Int             @default(0)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([gatewayId])
 }
 
 model ProductPaymentOption {

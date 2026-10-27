@@ -2,6 +2,7 @@ import { useId, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { gatewayApi, type GatewayConfig, type PaymentSettingKey } from './api'
+import { BankAccountManager } from './bank-account-manager'
 import { PaymentLogo } from '@/components/payment-logo'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -637,10 +638,16 @@ export function GatewaySettings() {
                                 </SelectContent>
                               </Select>
                             </div>
-                            <div className='space-y-2'>
-                              <Label className='text-xs font-semibold flex items-center gap-1.5'><Phone className='h-3 w-3' /> Phone Number</Label>
-                              <Input className='h-9' value={d.phoneNumber || ''} onChange={e => setGatewayEditData(p => ({ ...p, [g.code]: { ...d, phoneNumber: e.target.value } }))} placeholder='01XXXXXXXXX' />
-                            </div>
+                            {g.code === 'bank' ? (
+                              <div className='sm:col-span-2'>
+                                <BankAccountManager />
+                              </div>
+                            ) : (
+                              <div className='space-y-2'>
+                                <Label className='text-xs font-semibold flex items-center gap-1.5'><Phone className='h-3 w-3' /> Phone Number</Label>
+                                <Input className='h-9' value={d.phoneNumber || ''} onChange={e => setGatewayEditData(p => ({ ...p, [g.code]: { ...d, phoneNumber: e.target.value } }))} placeholder='01XXXXXXXXX' />
+                              </div>
+                            )}
                             <div className='sm:col-span-2'>
                               {settlementAccountField(g, d)}
                             </div>

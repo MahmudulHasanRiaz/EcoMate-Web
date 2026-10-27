@@ -23,6 +23,27 @@ import {
   ensureGatewaySettlementAccount,
   normalizeAccountId,
 } from '../payments/payment-account';
+import {
+  CreateBankAccountDto,
+  UpdateBankAccountDto,
+} from './dto/bank-account.dto';
+
+/**
+ * Public-safe shape of a BankAccount row. Every field is a customer-facing
+ * NPSB payment instruction (same trust level as a manual gateway's
+ * phoneNumber) — there is nothing secret to strip.
+ */
+const toPublicBankAccount = (a: any) => ({
+  id: a.id,
+  bankName: a.bankName,
+  accountHolderName: a.accountHolderName,
+  accountNumber: a.accountNumber,
+  branchName: a.branchName,
+  routingNumber: a.routingNumber,
+  accountType: a.accountType,
+  isActive: a.isActive,
+  sortOrder: a.sortOrder,
+});
 
 @Controller('gateways')
 export class GatewayConfigController implements OnApplicationBootstrap {
@@ -148,6 +169,20 @@ export class GatewayConfigController implements OnApplicationBootstrap {
         credentials: { appKey: '', appSecret: '', username: '', password: '' },
         sortOrder: 7,
       },
+      {
+        // Bank (manual): same pattern as bKash/Nagad manual — FULL_PAYMENT,
+        // disabled until the merchant configures bank accounts + enables it.
+        // Receiving accounts live in BankAccount rows, not phoneNumber.
+        code: 'bank',
+        name: 'Bank (Manual)',
+        type: 'manual',
+        paymentOptionType: PaymentOptionType.FULL_PAYMENT,
+        enabled: false,
+        mode: 'personal',
+        phoneNumber: null,
+        credentials: {},
+        sortOrder: 8,
+      },
     ];
     for (const g of gateways) {
       await this.prisma.paymentGateway.upsert({
@@ -195,7 +230,15 @@ export class GatewayConfigController implements OnApplicationBootstrap {
         ...(isPos ? {} : { paymentOption: { enabled: true } }),
       },
       orderBy: { sortOrder: 'asc' },
-      include: { paymentOption: true },
+      include: {
+        paymentOption: true,
+        // Customers must see the bank accounts at checkout, like a manual
+        // gateway's phoneNumber. Only active accounts are customer-facing.
+        bankAccounts: {
+          where: { isActive: true },
+          orderBy: { sortOrder: 'asc' },
+        },
+      },
     });
     return gateways.map((g) => ({
       id: g.id,
@@ -208,6 +251,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
       mode: g.mode,
       phoneNumber: g.phoneNumber,
       logoUrl: g.logoUrl,
+      bankAccounts: ((g as any).bankAccounts ?? []).map(toPublicBankAccount),
     }));
   }
 
@@ -289,6 +333,8 @@ export class GatewayConfigController implements OnApplicationBootstrap {
       include: {
         paymentOption: true,
         account: { select: { id: true, code: true, name: true, type: true } },
+        // Admin manages all accounts, including inactive ones.
+        bankAccounts: { orderBy: { sortOrder: 'asc' } },
       },
     });
     return gateways.map((g) => ({
@@ -322,6 +368,7 @@ export class GatewayConfigController implements OnApplicationBootstrap {
               .map(([k]) => k)
           : [],
       sortOrder: g.sortOrder,
+      bankAccounts: ((g as any).bankAccounts ?? []).map(toPublicBankAccount),
       // D (owner-locked): tri-state overrides — null = use global default.
       staffAutoVerifiedOverride: g.staffAutoVerifiedOverride,
       editAllowedOverride: g.editAllowedOverride,
@@ -691,19 +738,138 @@ export class GatewayConfigController implements OnApplicationBootstrap {
     }
   }
 
+  // ============ ADMIN: Bank (manual) gateway accounts ============
+  // Placed before @Get(':code') so 'bank-accounts' is never captured as
+  // a gateway code (same reason as the payment-form route above).
+  // Bank accounts are NPSB payment instructions, not secrets: the GET
+  // responses return every field, mirroring a manual gateway's
+  // phoneNumber. Writes reuse the gateway settings permissions — no new
+  // permission key: managing accounts is part of managing gateways.
+  private async requireBankGateway() {
+    const gateway = await this.prisma.paymentGateway.findUnique({
+      where: { code: 'bank' },
+    });
+    if (!gateway)
+      throw new NotFoundException(
+        'Bank gateway is not configured yet (run the gateway seed)',
+      );
+    return gateway;
+  }
+
+  @Permissions('view_gateways')
+  @RequiresFeature('admin_payments')
+  @Get('bank-accounts')
+  async findAllBankAccounts() {
+    const gateway = await this.requireBankGateway();
+    const accounts = await this.prisma.bankAccount.findMany({
+      where: { gatewayId: gateway.id },
+      orderBy: { sortOrder: 'asc' },
+    });
+    return accounts.map(toPublicBankAccount);
+  }
+
+  @Permissions('edit_gateways')
+  @RequiresFeature('admin_payments')
+  @Post('bank-accounts')
+  async createBankAccount(@Body() dto: CreateBankAccountDto) {
+    const gateway = await this.requireBankGateway();
+    const created = await this.prisma.bankAccount.create({
+      data: {
+        gatewayId: gateway.id,
+        bankName: dto.bankName,
+        accountHolderName: dto.accountHolderName,
+        accountNumber: dto.accountNumber,
+        branchName: dto.branchName,
+        routingNumber: dto.routingNumber,
+        accountType: dto.accountType,
+        isActive: dto.isActive ?? true,
+        sortOrder: dto.sortOrder ?? 0,
+      },
+    });
+    return toPublicBankAccount(created);
+  }
+
+  @Permissions('edit_gateways')
+  @RequiresFeature('admin_payments')
+  @Put('bank-accounts/:id')
+  async updateBankAccount(
+    @Param('id') id: string,
+    @Body() dto: UpdateBankAccountDto,
+  ) {
+    const gateway = await this.requireBankGateway();
+    // Prisma update/delete take a unique filter only, so scope the row to
+    // this gateway with a lookup first (404 when it belongs elsewhere).
+    const existing = await this.prisma.bankAccount.findFirst({
+      where: { id, gatewayId: gateway.id },
+    });
+    if (!existing)
+      throw new NotFoundException(`Bank account "${id}" not found`);
+    try {
+      const updated = await this.prisma.bankAccount.update({
+        where: { id },
+        data: {
+          ...(dto.bankName !== undefined ? { bankName: dto.bankName } : {}),
+          ...(dto.accountHolderName !== undefined
+            ? { accountHolderName: dto.accountHolderName }
+            : {}),
+          ...(dto.accountNumber !== undefined
+            ? { accountNumber: dto.accountNumber }
+            : {}),
+          ...(dto.branchName !== undefined
+            ? { branchName: dto.branchName }
+            : {}),
+          ...(dto.routingNumber !== undefined
+            ? { routingNumber: dto.routingNumber }
+            : {}),
+          ...(dto.accountType !== undefined
+            ? { accountType: dto.accountType }
+            : {}),
+          ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+          ...(dto.sortOrder !== undefined
+            ? { sortOrder: dto.sortOrder }
+            : {}),
+        },
+      });
+      return toPublicBankAccount(updated);
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2025'
+      )
+        throw new NotFoundException(`Bank account "${id}" not found`);
+      throw err;
+    }
+  }
+
+  @Permissions('edit_gateways')
+  @RequiresFeature('admin_payments')
+  @Delete('bank-accounts/:id')
+  async deleteBankAccount(@Param('id') id: string) {
+    const gateway = await this.requireBankGateway();
+    const existing = await this.prisma.bankAccount.findFirst({
+      where: { id, gatewayId: gateway.id },
+    });
+    if (!existing)
+      throw new NotFoundException(`Bank account "${id}" not found`);
+    await this.prisma.bankAccount.delete({ where: { id } });
+    return { deleted: true };
+  }
+
   @Permissions('view_gateways')
   @RequiresFeature('admin_payments')
   @Get(':code')
   async findOne(@Param('code') code: string) {
     const gateway = await this.prisma.paymentGateway.findUnique({
       where: { code },
+      include: { bankAccounts: { orderBy: { sortOrder: 'asc' } } },
     });
     if (!gateway) throw new NotFoundException(`Gateway "${code}" not found`);
     // SECURITY (2026-10-25): same masking as the list — no endpoint
     // returns credential values anymore (see findAllAdmin note).
-    const { credentials, ...rest } = gateway as any;
+    const { credentials, bankAccounts, ...rest } = gateway as any;
     return {
       ...rest,
+      bankAccounts: (bankAccounts ?? []).map(toPublicBankAccount),
       credentialKeys:
         credentials && typeof credentials === 'object'
           ? Object.entries(credentials as Record<string, unknown>)
