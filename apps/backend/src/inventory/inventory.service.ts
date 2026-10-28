@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stock/stock.service';
 import { StockRouterService } from '../stock/stock-router.service';
+import { InitialPhysicalStockService } from '../stock/initial-physical-stock.service';
 import { CostingLotService, CostingLotShortfallError } from '../stock/costing-lot.service';
 import { CacheService } from '../cache/cache.service';
 import { ManagedStockLedgerService } from './managed-stock-ledger.service';
@@ -62,6 +63,7 @@ export class InventoryService {
     private readonly costingLotService: CostingLotService,
     private readonly managedStockLedgerService: ManagedStockLedgerService,
     private readonly cache: CacheService,
+    private readonly initialPhysicalStock: InitialPhysicalStockService,
   ) {}
 
   async lowStock() {
@@ -613,14 +615,89 @@ export class InventoryService {
   }
 
   /**
+   * Warehouse for the physical mirror, resolved automatically — never a new
+   * demand on the user (owner rule 2026-10-28: updates must auto-align with
+   * whatever state already exists). Resolution order:
+   *   (a) the product's own warehouseId, when set (unchanged behavior for
+   *       well-formed products);
+   *   (b) the warehouse of the product's existing PhysicalInventory rows —
+   *       this variant's row first, then any row for the product (the
+   *       Woo-imported / legacy case: physical stock exists somewhere, but
+   *       the product field was never set, and no admin screen can set it);
+   *   (c) the first active 'main' warehouse, else the first active warehouse
+   *       (InitialPhysicalStockService.resolveWarehouse, same fallback the
+   *       creation paths use).
+   * Returns null when the mirror does not apply at all (zero quantity,
+   * non-MANAGED_STOCK mode, or Inventory Management off). Throws ONLY when
+   * Inventory Management is on, the product is MANAGED_STOCK, and literally
+   * no warehouse exists anywhere — the zero-warehouse edge. Fail-loud is
+   * deliberate here (owner decision 2026-10-28): proceeding with no
+   * warehouse would write managed stock while silently skipping the
+   * physical mirror — silent layer divergence, the exact failure mode the
+   * audit history fights — whereas a loud error names the missing
+   * warehouse, and the case is near-impossible in practice (IM implies a
+   * warehouse exists). The throw below preserves the pre-existing message
+   * for that edge.
+   */
+  private async resolveMirrorWarehouse(params: {
+    product: {
+      id: string;
+      availabilityMode?: string | null;
+      warehouseId?: string | null;
+      name?: string | null;
+    };
+    variantId?: string | null;
+    quantity: number;
+  }): Promise<string | null> {
+    if (params.quantity === 0) return null;
+    if (params.product.availabilityMode !== 'MANAGED_STOCK') return null;
+    const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
+    if (!imEnabled) return null;
+    if (params.product.warehouseId) return params.product.warehouseId;
+
+    const physicalRow =
+      (params.variantId
+        ? await this.prisma.physicalInventory.findFirst({
+            where: {
+              productId: params.product.id,
+              variantId: params.variantId,
+            },
+            orderBy: { createdAt: 'asc' },
+            select: { warehouseId: true },
+          })
+        : null) ??
+      (await this.prisma.physicalInventory.findFirst({
+        where: { productId: params.product.id },
+        orderBy: { createdAt: 'asc' },
+        select: { warehouseId: true },
+      }));
+    if (physicalRow) return physicalRow.warehouseId;
+
+    try {
+      const resolved = await this.initialPhysicalStock.resolveWarehouse(
+        'MANAGED_STOCK',
+        Math.abs(params.quantity),
+      );
+      if (resolved) return resolved;
+    } catch {
+      // resolveWarehouse throws for the no-active-warehouse case with an
+      // initial-stock message; rethrow with the adjustment-context message
+      // below so staff see the same wording this path always had.
+    }
+    throw new BadRequestException(
+      `"${params.product.name ?? 'Product'}" has no warehouse set — the physical layer cannot mirror this adjustment while Inventory Management is on.`,
+    );
+  }
+
+  /**
    * Stock audit #5 (owner 2026-10-23): a manual adjustment of a
    * MANAGED_STOCK product must move BOTH layers while Inventory Management
    * is on — the same rule the order/return flows follow (router 'add' =
    * both layers). Adjusting only the managed counter silently diverged the
    * two layers. IM off → managed only (the physical record is not that
-   * client's engine). No warehouse → the mirror is impossible: fail loud
-   * rather than diverge silently (B4 guarantees stocked managed products
-   * carry a warehouse).
+   * client's engine). The warehouse is resolved automatically by
+   * resolveMirrorWarehouse and, when it came from a fallback, persisted onto
+   * the product so later adjusts don't re-resolve (precedent: mirrorUnits).
    */
   private async mirrorAdjustmentToPhysical(params: {
     product: {
@@ -635,15 +712,17 @@ export class InventoryService {
     performedBy?: string;
     tx?: Prisma.TransactionClient;
   }): Promise<void> {
-    if (params.quantity === 0) return;
-    if (params.product.availabilityMode !== 'MANAGED_STOCK') return;
-    const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
-    if (!imEnabled) return;
-    const warehouseId = params.product.warehouseId ?? null;
-    if (!warehouseId) {
-      throw new BadRequestException(
-        `"${params.product.name ?? 'Product'}" has no warehouse set — the physical layer cannot mirror this adjustment while Inventory Management is on.`,
-      );
+    const warehouseId = await this.resolveMirrorWarehouse({
+      product: params.product,
+      variantId: params.variantId,
+      quantity: params.quantity,
+    });
+    if (!warehouseId) return;
+    if (!params.product.warehouseId) {
+      await (params.tx ?? this.prisma).product.update({
+        where: { id: params.product.id },
+        data: { warehouseId },
+      });
     }
     await this.stockService.operatePhysical('add', {
       productId: params.product.id,
@@ -888,6 +967,18 @@ export class InventoryService {
         reserved: variant.reservedStock ?? 0,
         removalQty: Math.abs(Math.min(q, 0)),
         confirmed: confirmDestructive,
+      });
+      // Fail-fast warehouse resolution (2026-10-28): the mirror used to
+      // throw AFTER the managed write, leaving managed written + physical
+      // flat — the very divergence the mirror exists to prevent. Resolve
+      // before any write so a missing warehouse fails with zero writes.
+      // (The simple-product path is already atomic via the shared tx in
+      // adjustProductWithRetry; the combo path still writes-then-mirrors
+      // per item — pre-existing, out of this change's scope.)
+      await this.resolveMirrorWarehouse({
+        product: variant.product,
+        variantId,
+        quantity: q,
       });
       const op =
         q >= 0
