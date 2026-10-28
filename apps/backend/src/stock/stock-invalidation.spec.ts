@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
 import { CostingLotService } from './costing-lot.service';
 import { StockRouterService } from './stock-router.service';
+import { InitialPhysicalStockService } from './initial-physical-stock.service';
 import { ManagedStockLedgerService } from '../inventory/managed-stock-ledger.service';
 
 /**
@@ -223,6 +224,10 @@ describe('Product cache invalidation on direct stock writes', () => {
             useValue: {
               invalidateByPrefix: jest.fn().mockResolvedValue(undefined),
             },
+          },
+          {
+            provide: InitialPhysicalStockService,
+            useValue: { resolveWarehouse: jest.fn() },
           },
         ],
       }).compile();

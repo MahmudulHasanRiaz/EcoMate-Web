@@ -4,6 +4,7 @@ import { InventoryService } from '../inventory.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StockService } from '../../stock/stock.service';
 import { StockRouterService } from '../../stock/stock-router.service';
+import { InitialPhysicalStockService } from '../../stock/initial-physical-stock.service';
 import { CostingLotService } from '../../stock/costing-lot.service';
 import { CacheService } from '../../cache/cache.service';
 import { ManagedStockLedgerService } from '../managed-stock-ledger.service';
@@ -68,6 +69,10 @@ describe('InventoryService — transfer guards', () => {
         { provide: CostingLotService, useValue: {} },
         { provide: ManagedStockLedgerService, useValue: {} },
         { provide: CacheService, useValue: {} },
+        {
+          provide: InitialPhysicalStockService,
+          useValue: { resolveWarehouse: jest.fn() },
+        },
       ],
     }).compile();
 
