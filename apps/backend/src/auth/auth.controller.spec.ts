@@ -4,7 +4,10 @@ import { AuthService } from './auth.service';
 import { SecurityService } from '../security/security.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { getAllPermissions } from '../common/permissions/registry';
-import { computeEffectivePermissions } from '../common/permissions/effective-permissions';
+import {
+  computeEffectivePermissions,
+  getRoleDefaultPermissions,
+} from '../common/permissions/effective-permissions';
 
 describe('AuthController — me() permission fallback', () => {
   let controller: AuthController;
@@ -21,8 +24,14 @@ describe('AuthController — me() permission fallback', () => {
       if (role === 'superadmin' || role === 'admin') {
         return getAllPermissions();
       }
-      if (role === 'customer' || !user.betterAuthUserId) {
+      if (role === 'customer') {
         return [];
+      }
+      // Mirror of the real no-BA-link fallback: shared role defaults, not
+      // a hardcoded [] — preset-less employees get their four restored
+      // keys (2026-10-28 client-compat fix).
+      if (!user.betterAuthUserId) {
+        return getRoleDefaultPermissions(role);
       }
       const baUser = await prisma!.betterAuthUser.findUnique({
         where: { id: user.betterAuthUserId },
@@ -112,7 +121,7 @@ describe('AuthController — me() permission fallback', () => {
     });
   });
 
-  it('employee with BA row but no employee link → []', async () => {
+  it('employee with BA row but no employee link → employee role defaults (no preset in use)', async () => {
     (prisma.betterAuthUser.findUnique as jest.Mock).mockResolvedValue({
       override_permissions: [],
       employee: null,
@@ -122,7 +131,14 @@ describe('AuthController — me() permission fallback', () => {
       role: 'employee',
       betterAuthUserId: 'ba-1',
     });
-    expect(result.permissions).toEqual([]);
+    // Was [] before the 2026-10-28 client-compat fix; no preset is in use
+    // here, so the four restored role-default keys apply.
+    expect(result.permissions).toEqual([
+      'view_media',
+      'view_customer_reviews',
+      'approve_customer_reviews',
+      'view_cod_mismatch',
+    ]);
   });
 
   it('customer → [] (no throw) even with betterAuthUserId', async () => {
@@ -135,13 +151,20 @@ describe('AuthController — me() permission fallback', () => {
     expect(prisma.betterAuthUser.findUnique).not.toHaveBeenCalled();
   });
 
-  it('non-admin with null betterAuthUserId → [] without BA query (no throw)', async () => {
+  it('non-admin with null betterAuthUserId → employee role defaults without BA query (no throw)', async () => {
     const result = await controller.me({
       userId: 'user-1',
       role: 'employee',
       betterAuthUserId: null,
     });
-    expect(result.permissions).toEqual([]);
+    // Was [] before the 2026-10-28 client-compat fix; the no-BA-query
+    // behaviour is unchanged, only the fallback value changed.
+    expect(result.permissions).toEqual([
+      'view_media',
+      'view_customer_reviews',
+      'approve_customer_reviews',
+      'view_cod_mismatch',
+    ]);
     expect(prisma.betterAuthUser.findUnique).not.toHaveBeenCalled();
   });
 

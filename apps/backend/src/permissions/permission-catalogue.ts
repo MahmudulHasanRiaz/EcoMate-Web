@@ -186,7 +186,16 @@ export const CATALOGUE_MODULES: CatalogueModule[] = [
   { key: 'blocked_entries', label: 'Blocked Entries', group: 'SETTINGS', crud: true },
   { key: 'tasks', label: 'Tasks', group: 'SETTINGS', crud: true },
   { key: 'notifications', label: 'Notifications', group: 'SETTINGS', crud: true },
-  { key: 'media', label: 'Media Library', group: 'SETTINGS', crud: true },
+  // `maintain` is a real guard key: the five media-maintenance endpoints
+  // (migrate-orphans, reprocess, reprocess-failed, backfill, recover-stuck)
+  // check @Permissions('maintain_media'). Declaring it here as an extra (not
+  // a legacy entry) is what makes it grantable: the generated key is exactly
+  // `maintain_media`, so it lands in getAllPermissions(), superadmin/admin
+  // effective sets, and the preset editor. Before this extra existed the
+  // guard key resolved nowhere and NOBODY — not even superadmin — could call
+  // those endpoints (PermissionsGuard has no role bypass).
+  { key: 'media', label: 'Media Library', group: 'SETTINGS', crud: true,
+    extras: [{ verb: 'maintain', label: 'Maintain Media' }] },
   { key: 'backup', label: 'Backup', group: 'SETTINGS', crud: false,
     extras: [{ verb: 'manage_backup', label: 'Manage Backups' }] },
   { key: 'import', label: 'Data Import', group: 'SETTINGS', crud: false,

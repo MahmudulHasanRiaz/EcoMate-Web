@@ -148,7 +148,7 @@ describe('DualModeAuthGuard — JWT path permissions via computeEffectivePermiss
     expect(req.user.userId).toBe('user-1');
   });
 
-  it('employee JWT user without betterAuthUserId gets [] and no BA query (no throw)', async () => {
+  it('employee JWT user without betterAuthUserId gets employee role defaults and no BA query (no throw)', async () => {
     (prisma.userProfile.findUnique as jest.Mock).mockResolvedValue({
       id: 'user-1',
       role: 'employee',
@@ -160,7 +160,15 @@ describe('DualModeAuthGuard — JWT path permissions via computeEffectivePermiss
     const result = await guard.canActivate(context);
 
     expect(result).toBe(true);
-    expect(context.switchToHttp().getRequest().user.permissions).toEqual([]);
+    // Was [] before the 2026-10-28 client-compat fix; preset-less employees
+    // now fall back to their four restored role-default keys (see
+    // effective-permissions.ts). The no-BA-query behaviour is unchanged.
+    expect(context.switchToHttp().getRequest().user.permissions).toEqual([
+      'view_media',
+      'view_customer_reviews',
+      'approve_customer_reviews',
+      'view_cod_mismatch',
+    ]);
     expect(prisma.betterAuthUser.findUnique).not.toHaveBeenCalled();
   });
 
