@@ -247,7 +247,15 @@ describe('ReturnPurpose — DISPATCH_RETURN stage-time truth', () => {
     });
   });
 
-  it('order number matching BOTH a dispatch and an open return → one picker with both kinds', async () => {
+  it('order number with a dispatch AND an open return resolves to the leg only (dispatch suppressed)', async () => {
+    // 2026-10-28: a dispatch and a Return row for one order are two faces of
+    // ONE return. Dispatch finalize restores per order/RTN-order lines and
+    // never touches Return rows, while leg receive restores per Return-row
+    // quantities guarded only by that row's stockReconciled flag — neither
+    // guard sees the other path, so processing both faces double-restores in
+    // either order. The leg path (manual receive, WHO + WHEN, damage split)
+    // owns the return once a Return row exists; the dispatch option is
+    // suppressed, so the single leg auto-stages instead of opening a picker.
     mockedResolve.mockResolvedValue({
       status: 'resolved',
       identifier: 'ORD-260930-0001',
@@ -258,10 +266,159 @@ describe('ReturnPurpose — DISPATCH_RETURN stage-time truth', () => {
 
     const outcome = await purpose.resolve('ORD-260930-0001');
 
+    expect(outcome.status).toBe('resolved');
+    expect(outcome.dispatches).toHaveLength(0);
+    expect(outcome.linked).toHaveLength(1);
+    expect(outcome.linked?.[0]).toMatchObject({
+      kind: 'return',
+      id: 'ret-1',
+      displayId: 'RTN-260930-0001',
+    });
+  });
+
+  it('duplicate linked legs (same return row twice) dedupe to one and auto-stage', async () => {
+    mockedResolve.mockResolvedValue({
+      status: 'resolved',
+      identifier: 'ORD-260930-0001',
+      dispatches: [] as any,
+      order: orderPreview() as any,
+    });
+    const ret = activeReturn({ items: [] });
+    prisma.return.findMany.mockResolvedValue([ret, ret]);
+
+    const outcome = await purpose.resolve('ORD-260930-0001');
+
+    expect(outcome.status).toBe('resolved');
+    expect(outcome.linked).toHaveLength(1);
+    expect(outcome.linked?.[0]).toMatchObject({ id: 'ret-1' });
+  });
+
+  it('two rows sharing a displayId dedupe to one (same leg, data anomaly)', async () => {
+    mockedResolve.mockResolvedValue({
+      status: 'resolved',
+      identifier: 'ORD-260930-0001',
+      dispatches: [] as any,
+      order: orderPreview() as any,
+    });
+    prisma.return.findMany.mockResolvedValue([
+      activeReturn({ id: 'ret-1', displayId: 'RTN-260930-0001', items: [] }),
+      activeReturn({ id: 'ret-2', displayId: 'RTN-260930-0001', items: [] }),
+    ]);
+
+    const outcome = await purpose.resolve('ORD-260930-0001');
+
+    expect(outcome.status).toBe('resolved');
+    expect(outcome.linked).toHaveLength(1);
+    expect(outcome.linked?.[0]).toMatchObject({ id: 'ret-1' });
+  });
+
+  it('two distinct open returns + a dispatch → picker with legs only', async () => {
+    mockedResolve.mockResolvedValue({
+      status: 'resolved',
+      identifier: 'ORD-260930-0001',
+      dispatches: [dispatch()] as any,
+      order: orderPreview() as any,
+    });
+    prisma.return.findMany.mockResolvedValue([
+      activeReturn({ id: 'ret-1', displayId: 'RTN-260930-0001', items: [] }),
+      activeReturn({ id: 'ret-2', displayId: 'RTN-260930-0002', items: [] }),
+    ]);
+
+    const outcome = await purpose.resolve('ORD-260930-0001');
+
+    expect(outcome.status).toBe('selection_required');
+    expect(outcome.dispatches).toHaveLength(0);
+    expect(outcome.linked).toHaveLength(2);
+    expect(outcome.message).toMatch(/select/i);
+  });
+
+  it('dispatch kept when no Return row covers the order (dispatch-only return)', async () => {
+    mockedResolve.mockResolvedValue({
+      status: 'resolved',
+      identifier: 'ORD-260930-0001',
+      dispatches: [dispatch()] as any,
+      order: orderPreview() as any,
+    });
+    prisma.return.findMany.mockResolvedValue([]);
+
+    const outcome = await purpose.resolve('ORD-260930-0001');
+
+    expect(outcome.status).toBe('resolved');
+    expect(outcome.dispatches).toHaveLength(1);
+    expect(outcome.dispatches[0]).toMatchObject({ id: 'dsp-1' });
+    expect(outcome.linked).toHaveLength(0);
+  });
+
+  it('duplicate dispatches for one consignment dedupe to one and auto-stage', async () => {
+    mockedResolve.mockResolvedValue({
+      status: 'resolved',
+      identifier: 'ORD-260930-0001',
+      dispatches: [
+        dispatch({ id: 'dsp-1', consignmentId: 'CONS-1' }),
+        dispatch({ id: 'dsp-2', consignmentId: 'CONS-1' }),
+      ] as any,
+      order: orderPreview() as any,
+    });
+    prisma.return.findMany.mockResolvedValue([]);
+
+    const outcome = await purpose.resolve('ORD-260930-0001');
+
+    expect(outcome.status).toBe('resolved');
+    expect(outcome.dispatches).toHaveLength(1);
+    expect(outcome.dispatches[0]).toMatchObject({ id: 'dsp-1' });
+  });
+
+  it('two distinct consignments → picker with both dispatches (genuinely ambiguous)', async () => {
+    mockedResolve.mockResolvedValue({
+      status: 'resolved',
+      identifier: 'ORD-260930-0001',
+      dispatches: [
+        dispatch({ id: 'dsp-1', consignmentId: 'CONS-1' }),
+        dispatch({ id: 'dsp-2', consignmentId: 'CONS-2' }),
+      ] as any,
+      order: orderPreview() as any,
+    });
+    prisma.return.findMany.mockResolvedValue([]);
+
+    const outcome = await purpose.resolve('ORD-260930-0001');
+
+    expect(outcome.status).toBe('selection_required');
+    expect(outcome.dispatches).toHaveLength(2);
+    expect(outcome.linked).toHaveLength(0);
+  });
+
+  it('exchange child alone does NOT suppress the dispatch (no Return row)', async () => {
+    mockedResolve.mockResolvedValue({
+      status: 'resolved',
+      identifier: 'ORD-260930-0001',
+      dispatches: [dispatch()] as any,
+      order: orderPreview() as any,
+    });
+    prisma.return.findMany.mockResolvedValue([]);
+    prisma.order.findMany.mockImplementation(async ({ where }: any) => {
+      if (where.returnOfOrderId) return [];
+      if (where.exchangeOfOrderId) {
+        return [
+          {
+            id: 'o1-ex',
+            displayId: 'ORD-260930-0009',
+            status: { name: 'Delivered' },
+            items: [],
+          },
+        ];
+      }
+      return [order()];
+    });
+
+    const outcome = await purpose.resolve('ORD-260930-0001');
+
     expect(outcome.status).toBe('selection_required');
     expect(outcome.dispatches).toHaveLength(1);
     expect(outcome.linked).toHaveLength(1);
-    expect(outcome.message).toMatch(/select/i);
+    expect(outcome.linked?.[0]).toMatchObject({
+      kind: 'exchange',
+      displayId: 'ORD-260930-0009',
+    });
   });
 
   it('a staff Return RTN display id resolves to exactly that leg', async () => {

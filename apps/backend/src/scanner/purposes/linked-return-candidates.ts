@@ -67,6 +67,31 @@ const VARIANT_SELECT = {
   },
 } satisfies Prisma.ProductVariantSelect;
 
+/**
+ * Picker hygiene (2026-10-28): the scanner picker renders candidates
+ * verbatim, so the same leg twice is a wrong tap waiting to happen. A Return
+ * row maps once and an exchange order maps once, but a repeated row (double
+ * load, data anomaly) must never surface twice: dedupe by row id first, then
+ * by displayId (Return.displayId is @unique, so a repeated displayId is the
+ * same leg even when the row ids differ). Keep-first preserves the loader's
+ * order (returns newest-first, exchanges oldest-first).
+ */
+export function dedupeLinkedCandidates(
+  candidates: ScanLinkedCandidate[],
+): ScanLinkedCandidate[] {
+  const seenIds = new Set<string>();
+  const seenDisplayIds = new Set<string>();
+  const out: ScanLinkedCandidate[] = [];
+  for (const c of candidates) {
+    if (seenIds.has(c.id)) continue;
+    if (c.displayId && seenDisplayIds.has(c.displayId)) continue;
+    seenIds.add(c.id);
+    if (c.displayId) seenDisplayIds.add(c.displayId);
+    out.push(c);
+  }
+  return out;
+}
+
 export async function loadLinkedReturnCandidates(
   prisma: PrismaService,
   orderId: string,
@@ -209,5 +234,5 @@ export async function loadLinkedReturnCandidates(
       labelKind: 'exchange',
     });
   }
-  return out;
+  return dedupeLinkedCandidates(out);
 }

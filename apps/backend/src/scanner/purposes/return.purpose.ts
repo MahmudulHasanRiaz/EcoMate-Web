@@ -8,6 +8,7 @@ import {
   orderItemPreview,
 } from '../scanner-resolver';
 import {
+  DispatchPreview,
   ResolveOutcome,
   ScanActor,
   ScanLinkedCandidate,
@@ -18,6 +19,29 @@ import { loadLinkedReturnCandidates } from './linked-return-candidates';
 
 const ORDER_NUMBER = /^(ORD|RTN)-\d{6}-\d{4}$/;
 const RETURN_NUMBER = /^RTN-\d{6}-\d{4}$/;
+
+/**
+ * Picker hygiene (2026-10-28): the scanner picker renders candidates
+ * verbatim, so the same courier booking twice is a wrong tap waiting to
+ * happen. An order can carry two Dispatch rows for one booking (manual row +
+ * webhook row), so dedupe by row id first, then by consignment id (a courier
+ * booking id is unique per booking — a repeated consignment is the same
+ * dispatch). Rows without a consignment dedupe by id only. Keep-first
+ * preserves the resolver's order (newest dispatch first).
+ */
+function dedupeDispatches(dispatches: DispatchPreview[]): DispatchPreview[] {
+  const seenIds = new Set<string>();
+  const seenConsignments = new Set<string>();
+  const out: DispatchPreview[] = [];
+  for (const d of dispatches) {
+    if (seenIds.has(d.id)) continue;
+    if (d.consignmentId && seenConsignments.has(d.consignmentId)) continue;
+    seenIds.add(d.id);
+    if (d.consignmentId) seenConsignments.add(d.consignmentId);
+    out.push(d);
+  }
+  return out;
+}
 
 /**
  * Purpose 2 — Process return (merged task).
@@ -75,6 +99,23 @@ export class ReturnPurpose implements ScanPurposeHandler {
     const linked = orderId
       ? await loadLinkedReturnCandidates(this.prisma, orderId)
       : [];
+    // Picker hygiene (2026-10-28): a dispatch and a Return row for the same
+    // order are two faces of ONE return, and offering both is not just
+    // confusing — it can restore the same goods twice. Dispatch finalize
+    // (finalizeDispatchReturn) restores per order/RTN-order lines and never
+    // touches Return rows, while leg receive (restoreStockForReturn) restores
+    // per Return-row quantities guarded only by that row's stockReconciled
+    // flag — neither guard sees the other path, so processing both faces
+    // double-restores in either order. When a Return row already records the
+    // order's return, the leg path owns it (manual receive recording WHO +
+    // WHEN, with damage split) and the dispatch option is suppressed. A
+    // dispatch stays a candidate only when no Return row covers the order's
+    // return. Exchange-only children (info-only, no Return row) do NOT
+    // suppress: they are not a recorded return.
+    const dedupedDispatches = dedupeDispatches(outcome.dispatches);
+    outcome.dispatches = linked.some((c) => c.kind === 'return')
+      ? []
+      : dedupedDispatches;
     await this.enrichDispatches(outcome);
 
     const total = outcome.dispatches.length + linked.length;
