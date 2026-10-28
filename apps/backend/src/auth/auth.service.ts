@@ -21,6 +21,7 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { normalizePhone } from '../common/utils/phone-utils';
 import {
   computeEffectivePermissions,
+  getRoleDefaultPermissions,
 } from '../common/permissions/effective-permissions';
 import { getAllPermissions } from '../common/permissions/registry';
 import * as bcrypt from 'bcryptjs';
@@ -323,10 +324,12 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     if (role === 'customer') {
       return [];
     }
-    // No BA link means no preset can exist for this account: non-admin
-    // roles get nothing, admins fall back to the role default (all).
+    // No BA link means no preset can exist for this account: fall back to
+    // the shared role defaults (admin → all, employee → its four restored
+    // keys, everyone else → nothing). Keep this branch on the helper —
+    // an inline copy here is how the three call sites drifted before.
     if (!user.betterAuthUserId) {
-      return role === 'admin' ? getAllPermissions() : [];
+      return getRoleDefaultPermissions(role);
     }
     const baUser = await this.prisma.betterAuthUser.findUnique({
       where: { id: user.betterAuthUserId },

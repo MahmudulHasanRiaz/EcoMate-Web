@@ -73,9 +73,45 @@ describe('computeEffectivePermissions', () => {
     expect(perms).toEqual([]);
   });
 
-  it('manager without employeeLink → []', () => {
+  it('employee without employeeLink → role defaults restored 2026-10-28 (NOT [])', () => {
+    // Was [] before the client-compat fix. The @Permissions conversion took
+    // these four keys from preset-less employees (they previously held them
+    // through employee-inclusive gates); restoring exactly these four is
+    // the auto-align fix. A linked preset — even an empty one — still wins
+    // over these defaults (see the empty-preset test above).
     const perms = computeEffectivePermissions({ role: 'employee' });
-    expect(perms).toEqual([]);
+    expect(perms).toEqual([
+      'view_media',
+      'view_customer_reviews',
+      'approve_customer_reviews',
+      'view_cod_mismatch',
+    ]);
+  });
+
+  it('cashier without employeeLink → [] (lost nothing in the conversion)', () => {
+    expect(computeEffectivePermissions({ role: 'cashier' })).toEqual([]);
+  });
+
+  it('packing_assistant without employeeLink → [] (lost nothing in the conversion)', () => {
+    expect(
+      computeEffectivePermissions({ role: 'packing_assistant' }),
+    ).toEqual([]);
+  });
+
+  it('superadmin effective set includes maintain_media (2026-10-28 client-compat fix)', () => {
+    const perms = computeEffectivePermissions({ role: 'superadmin' });
+    expect(perms).toContain('maintain_media');
+  });
+
+  it('employee with a preset granting maintain_media keeps it (sanitize recognises the key)', () => {
+    const perms = computeEffectivePermissions({
+      role: 'employee',
+      employeeLink: {
+        accessPresetId: 'preset-1',
+        accessPreset: { permissions: ['maintain_media'] },
+      },
+    });
+    expect(perms).toEqual(['maintain_media']);
   });
 
   it('employee with preset + override → union, deduplicated, deterministic order, unknown override keys stripped', () => {
@@ -179,12 +215,20 @@ describe('computeEffectivePermissions', () => {
     expect(permsA).toEqual(['view_orders', 'manage_stock']);
   });
 
-  it('undefined employeeLink.accessPreset (null preset id) → [] when no override', () => {
+  it('undefined employeeLink.accessPreset (null preset id) + no override → employee role defaults (no preset in use)', () => {
+    // Distinct from the empty-LINKED-preset case above: accessPresetId is
+    // null here, so no preset is in use and the role defaults apply (the
+    // four restored keys, 2026-10-28 client-compat fix). Was [] before.
     const perms = computeEffectivePermissions({
       role: 'employee',
       employeeLink: { accessPreset: null },
     });
-    expect(perms).toEqual([]);
+    expect(perms).toEqual([
+      'view_media',
+      'view_customer_reviews',
+      'approve_customer_reviews',
+      'view_cod_mismatch',
+    ]);
   });
 
   it('all registered PERMISSIONS keys are covered by the all-keys list', () => {

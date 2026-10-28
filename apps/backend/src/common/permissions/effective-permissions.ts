@@ -23,6 +23,42 @@ export interface ComputeEffectivePermissionsParams {
 
 const knownKeys = new Set<string>(getAllPermissions());
 
+/**
+ * Role defaults for staff WITHOUT a preset in use (no linked preset and no
+ * custom adds/removes — see computeEffectivePermissions below).
+ *
+ * Owner rule 2026-10-28 (client-batch auto-align): the @Permissions
+ * conversion took these four read/approve keys away from preset-less
+ * employees, who previously held them through employee-inclusive gates
+ * (media view, reviews view+approve, COD-mismatch view). Restoring exactly
+ * those four — no more — keeps a previously-working flow working without
+ * inventing new access. Cashier and packing_assistant keep []: they lost
+ * nothing in the conversion, so minimal change is the correct change.
+ * A linked preset (even an empty one) still wins over these defaults.
+ */
+export const EMPLOYEE_DEFAULT_PERMISSIONS: readonly string[] = [
+  'view_media',
+  'view_customer_reviews',
+  'approve_customer_reviews',
+  'view_cod_mismatch',
+];
+
+/**
+ * Single shared role-default function. The login response (auth.service),
+ * the request guard (dual-mode-auth.guard) and the preset computation all
+ * used to carry their own inline copy of this ternary — and those copies
+ * drifted. Use this everywhere a "no preset in use" fallback is needed.
+ */
+export function getRoleDefaultPermissions(role: string): string[] {
+  if (role === 'admin') {
+    return getAllPermissions();
+  }
+  if (role === 'employee') {
+    return [...EMPLOYEE_DEFAULT_PERMISSIONS];
+  }
+  return [];
+}
+
 export function sanitizePermissions(keys: string[] | undefined): string[] {
   if (!keys || keys.length === 0) return [];
   const out: string[] = [];
@@ -76,9 +112,7 @@ export function computeEffectivePermissions(
     const deniedSet = new Set(sanitizePermissions(denies));
     return granted.filter((key) => !deniedSet.has(key));
   }
-  // No preset in use: role defaults.
-  if (role === 'admin') {
-    return getAllPermissions();
-  }
-  return [];
+  // No preset in use: role defaults (shared helper — keep the three
+  // call sites in sync through it, never another inline copy).
+  return getRoleDefaultPermissions(role);
 }

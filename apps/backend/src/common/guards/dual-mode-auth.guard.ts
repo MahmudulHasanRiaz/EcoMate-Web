@@ -11,6 +11,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import {
   computeEffectivePermissions,
+  getRoleDefaultPermissions,
 } from '../permissions/effective-permissions';
 import { getAllPermissions } from '../permissions/registry';
 
@@ -165,10 +166,12 @@ export class DualModeAuthGuard {
     if (role === 'customer') {
       return [];
     }
-    // No BA link means no preset can exist for this account: non-admin
-    // roles get nothing, admins fall back to the role default (all).
+    // No BA link means no preset can exist for this account: fall back to
+    // the shared role defaults (admin → all, employee → its four restored
+    // keys, everyone else → nothing). Keep this branch on the helper —
+    // an inline copy here is how the three call sites drifted before.
     if (!user.betterAuthUserId) {
-      return role === 'admin' ? getAllPermissions() : [];
+      return getRoleDefaultPermissions(role);
     }
     const baUser = await this.prisma.betterAuthUser.findUnique({
       where: { id: user.betterAuthUserId },

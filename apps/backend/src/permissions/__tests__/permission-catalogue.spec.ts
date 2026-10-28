@@ -22,7 +22,12 @@ import {
 import { getAllPermissions } from '../../common/permissions/registry';
 import { PERMISSIONS } from '../../common/permissions/registry';
 
-const SRC = path.resolve(__dirname, '..');
+// Whole backend src, not just this folder: the maintain_media miss proved
+// a folder-scoped guard cannot catch a guard key used by another module's
+// controller (media.controller.ts). Comments are stripped before matching:
+// a doc comment once cited a hypothetical @Permissions('...') key and must
+// not trip the guard — only live code counts.
+const SRC = path.resolve(__dirname, '..', '..');
 
 describe('permission catalogue', () => {
   it('has no duplicate keys', () => {
@@ -135,7 +140,12 @@ describe('permission decorators resolve to real keys', () => {
   it('every @Permissions / @PermissionsAny literal is a known key', () => {
     const offenders: string[] = [];
     for (const file of controllerAndServiceFiles()) {
-      const src = fs.readFileSync(file, 'utf8');
+      let src = fs.readFileSync(file, 'utf8');
+      // Strip block + line comments: doc comments may cite hypothetical
+      // guard keys (e.g. the retention exception note) that are not live.
+      src = src
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/(^|\s)\/\/.*$/gm, '$1');
       const matches = src.match(/@Permissions(?:Any)?\(([^)]*)\)/g) ?? [];
       for (const call of matches) {
         const literals = [...call.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
@@ -152,5 +162,21 @@ describe('permission decorators resolve to real keys', () => {
   it('the catalogue is non-trivially sized', () => {
     // A guard against a broken generator silently collapsing to a handful.
     expect(getAllCatalogueKeys().length).toBeGreaterThan(100);
+  });
+
+  describe('maintain_media (2026-10-28 client-compat fix)', () => {
+    it('is a catalogue key via the media-module extra, not a legacy entry', () => {
+      expect(isCatalogueKey('maintain_media')).toBe(true);
+      expect(LEGACY_PERMISSION_KEYS).not.toContain('maintain_media');
+      const entry = PERMISSION_CATALOGUE.find(
+        (e) => e.key === 'maintain_media',
+      );
+      expect(entry?.module).toBe('media');
+      expect(entry?.label).toBe('Maintain Media');
+    });
+
+    it('is in the shared registry, so superadmin/admin effective sets include it', () => {
+      expect(getAllPermissions()).toContain('maintain_media');
+    });
   });
 });
