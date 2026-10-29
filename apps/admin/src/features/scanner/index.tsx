@@ -310,6 +310,14 @@ interface PendingSelection {
 interface FeedItem extends ScanResult {
   rid: number
   at: string
+  /** Staged row key this entry belongs to, when it was created by staging.
+   *  Process outcomes transition THIS entry in place instead of appending a
+   *  second one (no double history). Entries without a staged row (scan
+   *  errors, info notices, "Already staged" duplicates) never carry it. */
+  stagedKey?: string
+  /** Set when a process outcome transitions a staged entry in place: the
+   *  outcome time. `at` stays the staged time, so both times survive. */
+  outcomeAt?: string
 }
 
 const FEED_CAP = 200
@@ -319,6 +327,10 @@ export default function ScannerPage() {
   const [mode, setMode] = useState<string>(() => readStoredTask())
   const [input, setInput] = useState('')
   const [feed, setFeed] = useState<FeedItem[]>([])
+  // Mirror of `feed` for synchronous lookups (same pattern as returnStagedRef):
+  // recordOutcome must know whether a staged entry exists BEFORE setFeed runs.
+  const feedRef = useRef(feed)
+  feedRef.current = feed
   const [feedFilter, setFeedFilter] = useState<FeedFilter>('all')
   const [batchMode, setBatchMode] = useState(false)
   const [queue, setQueue] = useState<QueuedDispatch[]>([])
@@ -381,9 +393,45 @@ export default function ScannerPage() {
     persistStagedReturns(localStorage, returnStaged)
   }, [returnStaged])
 
-  const record = useCallback((res: ScanResult) => {
-    setFeed((h) => [{ ...res, rid: ++ridRef.current, at: new Date().toISOString() }, ...h].slice(0, FEED_CAP))
+  const record = useCallback((res: ScanResult, stagedKey?: string) => {
+    setFeed((h) => [{ ...res, rid: ++ridRef.current, at: new Date().toISOString(), ...(stagedKey ? { stagedKey } : {}) }, ...h].slice(0, FEED_CAP))
   }, [])
+
+  /** Transition a staged feed entry in place to its process outcome — no second
+   *  entry, no double history. Matches the most recent still-OPEN entry for
+   *  the staged row key: never outcome-transitioned yet, or whose last
+   *  outcome was a retryable error/warning (Failed → retry success must
+   *  transition that SAME entry). Success/duplicate outcomes are terminal —
+   *  the row leaves the list — so a later call never rewrites a settled
+   *  entry and instead falls back to a fresh one. "Already staged" duplicate
+   *  notices never carry a stagedKey, so matching is unambiguous. Falls back
+   *  to a fresh entry when no open entry exists (e.g. the page reloaded
+   *  between stage and process — staged rows persist, the session feed does
+   *  not) so an outcome is never lost. */
+  const recordOutcome = useCallback((stagedKey: string, res: ScanResult) => {
+    const isOpen = (e: FeedItem) => e.stagedKey === stagedKey && (e.outcomeAt === undefined || e.status === 'error' || e.status === 'warning')
+    if (!feedRef.current.some(isOpen)) {
+      record(res)
+      return
+    }
+    setFeed((h) => {
+      const idx = h.findIndex(isOpen)
+      if (idx === -1) return h
+      const next = [...h]
+      next[idx] = {
+        ...next[idx],
+        status: res.status,
+        title: res.title,
+        message: res.message,
+        ...(res.oldState ? { oldState: res.oldState } : {}),
+        ...(res.newState ? { newState: res.newState } : {}),
+        ...(res.details ? { details: res.details } : {}),
+        ...(res.courier ? { courier: res.courier } : {}),
+        outcomeAt: new Date().toISOString(),
+      }
+      return next
+    })
+  }, [record])
 
   /** Stage one linked return/exchange leg. Validation happens on STAGE so a
    *  RESTOCKED/blocked leg is visible before the batch ever runs; duplicates
@@ -423,7 +471,7 @@ export default function ScannerPage() {
       message: processable
         ? 'Staged for batch receiving. Process the batch when ready.'
         : leg.reason ?? 'This leg cannot be received in its current state.',
-    })
+    }, leg.id)
     // Re-check inside the updater for concurrency safety (idempotent either way).
     setReturnStaged((rs) =>
       rs.some((i) => i.key === leg.id) ? rs : [row, ...rs].slice(0, STAGED_RETURNS_CAP),
@@ -470,7 +518,7 @@ export default function ScannerPage() {
       message: processable
         ? `Return staged for Order ${d.orderDisplayId}. Process the list when ready.`
         : d.reason ?? 'This dispatch cannot be returned in its current state.',
-    })
+    }, d.id)
     setReturnStaged((rs) =>
       rs.some((i) => i.key === d.id) ? rs : [row, ...rs].slice(0, STAGED_RETURNS_CAP),
     )
@@ -792,7 +840,7 @@ export default function ScannerPage() {
                   ...(items ? { items } : {}),
                 },
           )
-          record(res)
+          recordOutcome(cur.key, res)
           if (res.status === 'success' || res.status === 'duplicate') {
             setReturnStaged((rs) => rs.filter((r) => r.key !== cur.key))
             // A receive moves the return's lifecycle status (and records who
@@ -809,7 +857,7 @@ export default function ScannerPage() {
           }
         } catch (e) {
           const msg = errMsg(e)
-          record({ status: 'error', identifier: cur.identifier, title: `${cur.displayId} — Failed`, message: msg })
+          recordOutcome(cur.key, { status: 'error', identifier: cur.identifier, title: `${cur.displayId} — Failed`, message: msg })
           setReturnStaged((rs) => rs.map((r) => r.key === cur.key ? { ...r, failed: true, reason: msg } : r))
         }
       }
@@ -817,7 +865,7 @@ export default function ScannerPage() {
       setBusy(false)
       inputRef.current?.focus()
     }
-  }, [busy, record])
+  }, [busy, record, recordOutcome])
 
   // Camera lifecycle — ONE shared session for the whole admin.
   //
@@ -1441,8 +1489,8 @@ export default function ScannerPage() {
                             </Button>
                           )}
                         </div>
-                        <span className="shrink-0 whitespace-nowrap text-[10px] text-muted-foreground tabular-nums" title={new Date(h.at).toLocaleString()}>
-                          {relTime(h.at, now)}
+                        <span className="shrink-0 whitespace-nowrap text-[10px] text-muted-foreground tabular-nums" title={h.outcomeAt ? `${new Date(h.at).toLocaleString()} → ${new Date(h.outcomeAt).toLocaleString()}` : new Date(h.at).toLocaleString()}>
+                          {h.outcomeAt ? `${relTime(h.at, now)} → ${relTime(h.outcomeAt, now)}` : relTime(h.at, now)}
                         </span>
                       </div>
                     )

@@ -927,6 +927,117 @@ describe('Scanner page — staged returns: persistence, attention rows, batch pr
   })
 })
 
+describe('Scanner page — feed transitions in place (no double history)', () => {
+  beforeEach(() => {
+    mockGet.mockReset()
+    mockPost.mockReset()
+    cameraStarts.length = 0
+    cameraStops.length = 0
+    cameraDecodes.length = 0
+    mockGet.mockResolvedValue({ data: purposes })
+    resetStagedStorage()
+  })
+
+  const returnLeg = (overrides: Record<string, unknown> = {}) => ({
+    kind: 'return', id: 'ret-1', displayId: 'RTN-1', status: 'REQUESTED', orderDisplayId: 'ORD-1',
+    coversUnits: 2, orderUnits: 3, processable: true, reason: null,
+    items: [{ name: 'Blue Hoodie', variantLabel: 'Size: M', sku: 'HD-BLU-M', image: null, quantity: 2, price: 600 }],
+    ...overrides,
+  })
+
+  const mockReturnResolve = (leg: Record<string, unknown>, identifier = 'ORD-1') => {
+    mockPost.mockImplementation((url: string) => {
+      if (url === '/scanner/resolve') {
+        return Promise.resolve({
+          data: {
+            status: 'resolved', identifier, dispatches: [],
+            order: orderPreview('o1', identifier, [], 'Md. Rahim', '01700000001'),
+            linked: [returnLeg(leg)],
+            message: 'One active return is linked to this order.',
+          },
+        })
+      }
+      return Promise.resolve({ data: {} })
+    })
+  }
+
+  /** Override only the /scanner/scan result, keeping any resolve mock in place. */
+  const mockScan = (result: Record<string, unknown>) => {
+    const base = mockPost.getMockImplementation()!
+    mockPost.mockImplementation((url: string, body?: any) => {
+      if (url === '/scanner/scan') return Promise.resolve({ data: result })
+      return base(url, body)
+    })
+  }
+
+  const feedEntryCount = () => document.querySelectorAll('[role="log"] > div').length
+
+  it('process success transitions the SAME feed entry from Staged to Received', async () => {
+    mockReturnResolve({})
+    mockScan({ status: 'success', identifier: 'ORD-1', title: 'RTN-1 — Received', message: 'Return RTN-1 → RESTOCKED.' })
+    const page = await renderPage()
+    await userEvent.selectOptions(page.getByRole('combobox'), 'DISPATCH_RETURN')
+    await scanText(page, 'ORD-1')
+    await expect.element(page.getByText('RTN-1 — Staged')).toBeInTheDocument()
+    expect(feedEntryCount()).toBe(1)
+    await userEvent.click(page.getByRole('button', { name: /Process returns/ }))
+    await expect.element(page.getByText('RTN-1 — Received')).toBeInTheDocument()
+    await expect.element(page.getByText('RTN-1 — Staged')).not.toBeInTheDocument()
+    expect(feedEntryCount()).toBe(1)
+    await expect.element(page.getByRole('button', { name: 'Remove RTN-1 from staged list' })).not.toBeInTheDocument()
+  })
+
+  it('process duplicate transitions the same entry to Already Received', async () => {
+    mockReturnResolve({})
+    mockScan({ status: 'duplicate', identifier: 'ORD-1', title: 'RTN-1 — Already Received', message: 'No stock was restored again.' })
+    const page = await renderPage()
+    await userEvent.selectOptions(page.getByRole('combobox'), 'DISPATCH_RETURN')
+    await scanText(page, 'ORD-1')
+    await userEvent.click(page.getByRole('button', { name: /Process returns/ }))
+    await expect.element(page.getByText('RTN-1 — Already Received')).toBeInTheDocument()
+    await expect.element(page.getByText('RTN-1 — Staged')).not.toBeInTheDocument()
+    expect(feedEntryCount()).toBe(1)
+  })
+
+  it('process error keeps the same entry as Failed, and a retry success transitions it to Received', async () => {
+    mockReturnResolve({})
+    mockScan({ status: 'error', identifier: 'ORD-1', title: 'RTN-1 — Failed', message: 'Printer jam' })
+    const page = await renderPage()
+    await userEvent.selectOptions(page.getByRole('combobox'), 'DISPATCH_RETURN')
+    await scanText(page, 'ORD-1')
+    await userEvent.click(page.getByRole('button', { name: /Process returns/ }))
+    await expect.element(page.getByText('RTN-1 — Failed')).toBeInTheDocument()
+    // The reason shows in the feed entry AND on the failed row — presence is the assertion.
+    await expect.element(page.getByText('Printer jam').first()).toBeInTheDocument()
+    expect(feedEntryCount()).toBe(1)
+    // The failed row stays retryable in place; the retry transitions the SAME entry.
+    mockScan({ status: 'success', identifier: 'ORD-1', title: 'RTN-1 — Received', message: 'Return RTN-1 → RESTOCKED.' })
+    await userEvent.click(page.getByRole('button', { name: /Process returns/ }))
+    await expect.element(page.getByText('RTN-1 — Received')).toBeInTheDocument()
+    await expect.element(page.getByText('RTN-1 — Failed')).not.toBeInTheDocument()
+    expect(feedEntryCount()).toBe(1)
+  })
+
+  it('a page reload between stage and process falls back to a fresh Received entry', async () => {
+    // Staged rows persist in localStorage; the session feed does not survive a
+    // reload, so Process has no stage entry to transition — the outcome must
+    // still appear, as a new entry.
+    localStorage.setItem(RETURN_STAGING_KEY, JSON.stringify([{
+      key: 'ret-1', purpose: 'RETURN_RECEIVE', identifier: 'ORD-1', kind: 'return', legId: 'ret-1',
+      orderId: 'o1', displayId: 'RTN-1', orderDisplayId: 'ORD-1', status: 'REQUESTED',
+      processable: true, failed: false, reason: null, customerName: '', customerPhone: '', items: [],
+    }]))
+    mockScan({ status: 'success', identifier: 'ORD-1', title: 'RTN-1 — Received', message: 'Return RTN-1 → RESTOCKED.' })
+    const page = await renderPage()
+    await expect.element(page.getByRole('button', { name: 'Remove RTN-1 from staged list' })).toBeInTheDocument()
+    expect(feedEntryCount()).toBe(0)
+    await userEvent.click(page.getByRole('button', { name: /Process returns/ }))
+    await expect.element(page.getByText('RTN-1 — Received')).toBeInTheDocument()
+    await expect.element(page.getByText('RTN-1 — Staged')).not.toBeInTheDocument()
+    expect(feedEntryCount()).toBe(1)
+  })
+})
+
 describe('Scanner page — Process return (DISPATCH_RETURN) is stage-only', () => {
   beforeEach(() => {
     mockGet.mockReset()
