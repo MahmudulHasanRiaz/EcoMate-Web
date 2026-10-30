@@ -77,6 +77,7 @@ export const sidebarData: SidebarData = {
             { title: 'Transfers', url: '/op/inventory/transfers' },
             { title: 'Valuation', url: '/op/inventory/valuation', feature: 'admin_inventory_valuation' },
             { title: 'Reports', url: '/op/inventory/reports' },
+            { title: 'Reconciliation', url: '/op/inventory/reconciliation', permissions: ['run_stock_reconciliation'] },
             { title: 'Movement History', url: '/op/inventory/history' },
             { title: 'Warehouses', url: '/op/inventory/warehouses', feature: 'admin_warehouses' },
             { title: 'Bin Locations', url: '/op/inventory/bin-locations', feature: 'admin_warehouses' },

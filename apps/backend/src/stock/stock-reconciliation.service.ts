@@ -115,55 +115,26 @@ export class StockReconciliationService implements OnApplicationBootstrap {
   ) {}
 
   /**
-   * Boot-time auto-heal. Enabled only when STOCK_RECONCILE_ON_BOOT=true so it
-   * is an explicit opt-in on redeploy (e.g. set via portainer environment) and
-   * never runs by surprise on ordinary restarts.
+   * Boot-time auto-heal was REMOVED on 2026-10-30 (owner-commissioned
+   * reconciliation directive): the heal logic is sound, but an AUTOMATIC,
+   * unchecked trigger on every backend start is not — a stack carrying
+   * STOCK_RECONCILE_ON_BOOT=true healed on every restart/crash-loop with no
+   * preview, no backup and no audit record. Reconciliation is now explicit
+   * only: the hardened one-time tool (prisma/scripts/reconcile-stock.ts,
+   * dry-run by default) or the admin Inventory → Reconciliation page.
+   *
+   * The flag itself is inert now. If it is still SET (any value) we log a
+   * loud startup warning so a stack still carrying it is noticed instead of
+   * silently skipping — the operator should delete it from the stack env.
    */
   async onApplicationBootstrap(): Promise<void> {
-    if (process.env['STOCK_RECONCILE_ON_BOOT'] !== 'true') {
-      return;
-    }
-    this.logger.log('Stock reconciliation on boot: START (STOCK_RECONCILE_ON_BOOT=true)');
-    try {
-      const result = await this.healAll();
-      const v = result.verification;
-      const d = result.delta;
-      const s = result.summary;
-      this.logger.log(
-        `Stock reconciliation on boot: DONE scanned=${result.scanned} ` +
-        `deducted=${result.deliveredDeducted} restored=${result.cancelledRestored} ` +
-        `released=${result.releasedOrphaned} ` +
-        `blocked=${result.blocked.length}`,
+    if (process.env['STOCK_RECONCILE_ON_BOOT'] !== undefined) {
+      this.logger.warn(
+        'STOCK_RECONCILE_ON_BOOT is set but auto-heal was removed (2026-10-30); ' +
+          'the flag has no effect. Reconciliation is explicit-only: run ' +
+          'reconcile-stock.ts --dry-run or use the admin Inventory → Reconciliation ' +
+          'page. Remove the flag from this stack\'s environment.',
       );
-      this.logger.log(
-        `Heal delta: reservationsReleased=${d.reservationsReleased} ` +
-        `deductions=${d.deductions} restorations=${d.restorations} ` +
-        `ordersRepaired=${d.ordersRepaired}`,
-      );
-      this.logger.log(
-        `Stock verification: checked=${v.checked} pass=${v.pass} fail=${v.fail} ` +
-        `negativeAvailable=${v.negativeAvailable.length}`,
-      );
-      this.logger.log(
-        `Reconcile summary: affected=${s.totalAffectedProducts} ` +
-        `repaired=${s.repairedProducts} remaining=${s.remainingMismatches}`,
-      );
-      for (const u of v.products) {
-        if (!u.pass) {
-          this.logger.warn(
-            `Stock verification FAIL [${u.scope}] ${u.key}: ` +
-            `on-hand ${u.onHandActual} (snap ${u.onHandExpected}), ` +
-            `reserved ${u.reservedActual} (snap ${u.reservedExpected}), ` +
-            `available ${u.availableActual}${u.notes.length ? ` — ${u.notes.join('; ')}` : ''}`,
-          );
-        }
-      }
-      for (const r of s.unresolved) this.logger.warn(`Unresolved after heal: ${r}`);
-      if (result.blocked.length > 0) {
-        this.logger.warn(`Stock reconciliation blocked orders: ${result.blocked.join(' ; ')}`);
-      }
-    } catch (err) {
-      this.logger.error('Stock reconciliation on boot failed:', err);
     }
   }
 

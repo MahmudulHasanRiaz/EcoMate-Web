@@ -119,7 +119,9 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       SEED_DUMMY_DATA: ${SEED_DUMMY_DATA:-false}
       RUN_SEED: ${RUN_SEED:-false}
-      STOCK_RECONCILE_ON_BOOT: ${STOCK_RECONCILE_ON_BOOT:-false}
+      # NOTE: STOCK_RECONCILE_ON_BOOT was REMOVED 2026-10-30 — boot-time
+      # auto-heal no longer exists; reconciliation is explicit-only
+      # (reconcile-stock.ts / admin Inventory → Reconciliation page).
       # Node heap ceiling, consumed by startup.sh. Must stay below the container
       # memory limit set in the deploy block below, or the kernel OOM-kills the
       # process before Node reaches its own ceiling.

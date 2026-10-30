@@ -111,6 +111,7 @@ import { Route as AuthenticatedOpInventoryDetailRouteImport } from './routes/_au
 import { Route as AuthenticatedOpInventoryHierarchyRouteImport } from './routes/_authenticated/op/inventory/hierarchy'
 import { Route as AuthenticatedOpInventoryHistoryRouteImport } from './routes/_authenticated/op/inventory/history'
 import { Route as AuthenticatedOpInventoryOverviewRouteImport } from './routes/_authenticated/op/inventory/overview'
+import { Route as AuthenticatedOpInventoryReconciliationRouteImport } from './routes/_authenticated/op/inventory/reconciliation'
 import { Route as AuthenticatedOpInventoryReportsRouteImport } from './routes/_authenticated/op/inventory/reports'
 import { Route as AuthenticatedOpInventoryTransfersRouteImport } from './routes/_authenticated/op/inventory/transfers'
 import { Route as AuthenticatedOpInventoryValuationRouteImport } from './routes/_authenticated/op/inventory/valuation'
@@ -772,6 +773,12 @@ const AuthenticatedOpInventoryOverviewRoute =
     path: '/op/inventory/overview',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOpInventoryReconciliationRoute =
+  AuthenticatedOpInventoryReconciliationRouteImport.update({
+    id: '/op/inventory/reconciliation',
+    path: '/op/inventory/reconciliation',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpInventoryReportsRoute =
   AuthenticatedOpInventoryReportsRouteImport.update({
     id: '/op/inventory/reports',
@@ -1286,6 +1293,7 @@ export interface FileRoutesByFullPath {
   '/op/inventory/hierarchy': typeof AuthenticatedOpInventoryHierarchyRoute
   '/op/inventory/history': typeof AuthenticatedOpInventoryHistoryRoute
   '/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
+  '/op/inventory/reconciliation': typeof AuthenticatedOpInventoryReconciliationRoute
   '/op/inventory/reports': typeof AuthenticatedOpInventoryReportsRoute
   '/op/inventory/transfers': typeof AuthenticatedOpInventoryTransfersRoute
   '/op/inventory/valuation': typeof AuthenticatedOpInventoryValuationRoute
@@ -1463,6 +1471,7 @@ export interface FileRoutesByTo {
   '/op/inventory/hierarchy': typeof AuthenticatedOpInventoryHierarchyRoute
   '/op/inventory/history': typeof AuthenticatedOpInventoryHistoryRoute
   '/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
+  '/op/inventory/reconciliation': typeof AuthenticatedOpInventoryReconciliationRoute
   '/op/inventory/reports': typeof AuthenticatedOpInventoryReportsRoute
   '/op/inventory/transfers': typeof AuthenticatedOpInventoryTransfersRoute
   '/op/inventory/valuation': typeof AuthenticatedOpInventoryValuationRoute
@@ -1642,6 +1651,7 @@ export interface FileRoutesById {
   '/_authenticated/op/inventory/hierarchy': typeof AuthenticatedOpInventoryHierarchyRoute
   '/_authenticated/op/inventory/history': typeof AuthenticatedOpInventoryHistoryRoute
   '/_authenticated/op/inventory/overview': typeof AuthenticatedOpInventoryOverviewRoute
+  '/_authenticated/op/inventory/reconciliation': typeof AuthenticatedOpInventoryReconciliationRoute
   '/_authenticated/op/inventory/reports': typeof AuthenticatedOpInventoryReportsRoute
   '/_authenticated/op/inventory/transfers': typeof AuthenticatedOpInventoryTransfersRoute
   '/_authenticated/op/inventory/valuation': typeof AuthenticatedOpInventoryValuationRoute
@@ -1821,6 +1831,7 @@ export interface FileRouteTypes {
     | '/op/inventory/hierarchy'
     | '/op/inventory/history'
     | '/op/inventory/overview'
+    | '/op/inventory/reconciliation'
     | '/op/inventory/reports'
     | '/op/inventory/transfers'
     | '/op/inventory/valuation'
@@ -1998,6 +2009,7 @@ export interface FileRouteTypes {
     | '/op/inventory/hierarchy'
     | '/op/inventory/history'
     | '/op/inventory/overview'
+    | '/op/inventory/reconciliation'
     | '/op/inventory/reports'
     | '/op/inventory/transfers'
     | '/op/inventory/valuation'
@@ -2176,6 +2188,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/inventory/hierarchy'
     | '/_authenticated/op/inventory/history'
     | '/_authenticated/op/inventory/overview'
+    | '/_authenticated/op/inventory/reconciliation'
     | '/_authenticated/op/inventory/reports'
     | '/_authenticated/op/inventory/transfers'
     | '/_authenticated/op/inventory/valuation'
@@ -3016,6 +3029,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpInventoryOverviewRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/op/inventory/reconciliation': {
+      id: '/_authenticated/op/inventory/reconciliation'
+      path: '/op/inventory/reconciliation'
+      fullPath: '/op/inventory/reconciliation'
+      preLoaderRoute: typeof AuthenticatedOpInventoryReconciliationRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/inventory/reports': {
       id: '/_authenticated/op/inventory/reports'
       path: '/op/inventory/reports'
@@ -3715,6 +3735,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpInventoryHierarchyRoute: typeof AuthenticatedOpInventoryHierarchyRoute
   AuthenticatedOpInventoryHistoryRoute: typeof AuthenticatedOpInventoryHistoryRoute
   AuthenticatedOpInventoryOverviewRoute: typeof AuthenticatedOpInventoryOverviewRoute
+  AuthenticatedOpInventoryReconciliationRoute: typeof AuthenticatedOpInventoryReconciliationRoute
   AuthenticatedOpInventoryReportsRoute: typeof AuthenticatedOpInventoryReportsRoute
   AuthenticatedOpInventoryTransfersRoute: typeof AuthenticatedOpInventoryTransfersRoute
   AuthenticatedOpInventoryValuationRoute: typeof AuthenticatedOpInventoryValuationRoute
@@ -3875,6 +3896,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
     AuthenticatedOpInventoryHierarchyRoute,
   AuthenticatedOpInventoryHistoryRoute: AuthenticatedOpInventoryHistoryRoute,
   AuthenticatedOpInventoryOverviewRoute: AuthenticatedOpInventoryOverviewRoute,
+  AuthenticatedOpInventoryReconciliationRoute:
+    AuthenticatedOpInventoryReconciliationRoute,
   AuthenticatedOpInventoryReportsRoute: AuthenticatedOpInventoryReportsRoute,
   AuthenticatedOpInventoryTransfersRoute:
     AuthenticatedOpInventoryTransfersRoute,
