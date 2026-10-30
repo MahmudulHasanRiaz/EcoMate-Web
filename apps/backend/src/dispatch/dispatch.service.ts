@@ -23,7 +23,12 @@ import { Prisma } from '@prisma/client';
 import { CreateDispatchDto } from './dto/create-dispatch.dto';
 import { DispatchQueryDto } from './dto/dispatch-query.dto';
 import { impliesPickup } from './dispatch-timestamps';
-import { isPanelCancelPending } from '../dispatch-cancel/dispatch-cancel-eligibility';
+import {
+  courierLabel,
+  evaluateDispatchCancelEligibility,
+  isPanelCancelPending,
+} from '../dispatch-cancel/dispatch-cancel-eligibility';
+import { DispatchCancelService } from '../dispatch-cancel/dispatch-cancel.service';
 
 // Actors that represent automated processes rather than a logged-in staff
 // member. They must never move an order that is already 'Partial'.
@@ -116,8 +121,11 @@ const SYNC_DISPATCH_TO_ORDER: Record<string, string | null> = {
   IN_TRANSIT: 'Shipping',
   HOLD: 'Shipping',
   ASSIGNED_TO_RIDER: 'Shipping',
-  // Task 3 (owner-locked F7): failed-pickup + hub states keep Shipping.
-  PICKUP_FAILED: 'Shipping',
+  // Owner ruling 2026-10-30: a failed pickup NEVER moves the order — the
+  // parcel never left, so the order keeps its current status (staff may
+  // re-dispatch or cancel). Only the dispatch becomes PICKUP_FAILED.
+  // ASSIGNED_TO_HUB keeps Shipping: the parcel IS with the courier.
+  PICKUP_FAILED: null,
   ASSIGNED_TO_HUB: 'Shipping',
   DELIVERED: 'Delivered',
   PARTIAL: 'Partial',
@@ -160,6 +168,11 @@ export class DispatchService {
     // unit tests that build DispatchService without it keep working;
     // production always wires it via CourierManagerModule's export.
     @Optional() private readonly courierWebhooks?: CourierWebhookService,
+    // Pre-cancel live verification (owner spec 2026-10-30): the cancel
+    // preview re-evaluates eligibility AFTER a courier sync. Optional so
+    // existing unit tests that build DispatchService without it keep
+    // working; production always wires it via DispatchCancelModule.
+    @Optional() private readonly dispatchCancel?: DispatchCancelService,
   ) {}
 
   /**
@@ -633,8 +646,9 @@ export class DispatchService {
       IN_TRANSIT: 'Shipping',
       HOLD: 'Shipping',
       ASSIGNED_TO_RIDER: 'Shipping',
-      // Task 3 (owner-locked F7): failed-pickup + hub states keep Shipping.
-      PICKUP_FAILED: 'Shipping',
+      // Owner ruling 2026-10-30: PICKUP_FAILED has NO entry here — a failed
+      // pickup never moves the order (the parcel never left); only the
+      // dispatch status changes. ASSIGNED_TO_HUB keeps Shipping.
       ASSIGNED_TO_HUB: 'Shipping',
       DELIVERED: 'Delivered',
       PARTIAL: 'Partial',
@@ -1180,6 +1194,155 @@ export class DispatchService {
     if (mutated) await this.invalidateAnalytics();
 
     return summary;
+  }
+
+  /**
+   * Pre-cancel live verification + refund picture (owner spec 2026-10-30,
+   * confirmed the same day). The admin's dispatched-cancel dialog calls
+   * this when it opens:
+   *
+   *  1. The order's live dispatches are SYNCED with their couriers first —
+   *     the cancel decision must never rest on a stale local status (an
+   *     order that IS cancellable was being refused because the dispatch
+   *     still showed an old status). All four couriers go through the same
+   *     syncStatusFromCourier path.
+   *  2. Eligibility is then evaluated on the FRESH rows. If the sync could
+   *     not verify (courier down / not configured), the decision falls back
+   *     to the local status and `verificationFailed` tells the dialog to
+   *     show a "could not verify live" warning.
+   *  3. The paid picture rides along (outstanding balance + per-payment
+   *     refundable remainders) so the dialog can offer its refund choices
+   *     without a second round-trip.
+   *
+   * This endpoint never cancels anything — it only refreshes and reports.
+   */
+  async getCancelPreview(orderId: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { id: true },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+
+    const liveBefore = await this.prisma.dispatch.findMany({
+      where: { orderId, status: { not: 'CANCELLED' } },
+      select: { id: true, consignmentId: true, trackingCode: true },
+    });
+    const syncableIds = liveBefore
+      .filter((d) => d.consignmentId || d.trackingCode)
+      .map((d) => d.id);
+
+    let verificationAttempted = false;
+    let verificationFailed = false;
+    if (syncableIds.length > 0) {
+      verificationAttempted = true;
+      try {
+        const summary = await this.syncStatusFromCourier(syncableIds);
+        verificationFailed = (summary?.failed?.length ?? 0) > 0;
+      } catch {
+        verificationFailed = true;
+      }
+    }
+
+    // Fresh state AFTER the sync — the dialog's dispatches and the blocked
+    // verdict both come from these reads, never the pre-sync ones. The
+    // per-dispatch cancelEligibility shape matches the order detail's
+    // embedding exactly, so the dialog renders both identically.
+    let dispatches: any[] = [];
+    let blockedReason: string | null = null;
+    if (this.dispatchCancel) {
+      const plan = await this.dispatchCancel.evaluateOrder(orderId);
+      blockedReason = plan.blockedReason;
+      const rows = await this.prisma.dispatch.findMany({
+        where: { orderId },
+        orderBy: { createdAt: 'asc' },
+      });
+      dispatches = rows.map((d: any) => {
+        if (!d?.status) return { ...d, cancelEligibility: null };
+        const evaluation = evaluateDispatchCancelEligibility({
+          courier: d.courier,
+          status: d.status,
+          pickedUpAt: d.pickedUpAt ?? null,
+          handedOverAt: d.handedOverAt ?? null,
+          deliveredAt: d.deliveredAt ?? null,
+          courierStatus: d.courierStatus ?? null,
+          courierStatusAt: d.courierStatusAt ?? null,
+        });
+        return {
+          ...d,
+          cancelEligibility: {
+            eligible: evaluation.eligible,
+            reason: evaluation.reason,
+            needsCourierPanel: evaluation.needsCourierPanel,
+            manualPanelCancel: evaluation.manualPanelCancel,
+            warning: evaluation.warning,
+            courierLabel: courierLabel(d.courier),
+            collectedAt: evaluation.collectedAt,
+          },
+        };
+      });
+    }
+
+    // Outstanding refundable balance — the shared gate formula (same as
+    // orders.service / refunds.service): Σ signed PAID rows − legacy
+    // NULL-method refunds.
+    const [paidAgg, legacyAgg, paidRows] = await Promise.all([
+      this.prisma.payment.aggregate({
+        where: { orderId, status: 'PAID' },
+        _sum: { amount: true },
+      }),
+      this.prisma.refund.aggregate({
+        where: {
+          orderId,
+          status: { in: ['approved', 'completed'] },
+          method: null,
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.payment.findMany({
+        where: { orderId, status: 'PAID', amount: { gt: 0 } },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          gatewayCode: true,
+          account: true,
+          accountId: true,
+          amount: true,
+          createdAt: true,
+        },
+      }),
+    ]);
+    const outstanding =
+      Number((paidAgg as any)?._sum?.amount || 0) -
+      Number((legacyAgg as any)?._sum?.amount || 0);
+
+    const payments: any[] = [];
+    for (const row of paidRows) {
+      const agg = await this.prisma.refund.aggregate({
+        where: {
+          sourcePaymentId: row.id,
+          status: { in: ['pending', 'approved', 'completed'] },
+        },
+        _sum: { amount: true },
+      });
+      const refunded = Number((agg as any)?._sum?.amount || 0);
+      const amount = Number(row.amount);
+      payments.push({
+        ...row,
+        amount,
+        refunded,
+        refundable: Math.max(0, amount - refunded),
+      });
+    }
+
+    return {
+      orderId,
+      verificationAttempted,
+      verificationFailed,
+      blockedReason,
+      dispatches,
+      outstanding,
+      payments,
+    };
   }
 
   private normalizePhone(raw?: string | null): string {

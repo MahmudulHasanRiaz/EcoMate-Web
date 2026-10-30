@@ -33,6 +33,7 @@ import { CustomizationInput, CustomizationSummary } from '@/features/orders/comp
 import { snapshotToSelection, selectionAddonTotal, snapshotAddonTotal } from '@/lib/customization'
 import { RecordPaymentModal } from '@/features/orders/components/record-payment-modal'
 import { RecordRefundModal } from '@/features/orders/components/record-refund-modal'
+import { refundsApi } from '@/features/refunds/api'
 import { OrderSummaryCard } from '@/features/orders/order-summary-card'
 import { OrderEditLockGuard } from '@/features/orders/order-edit-lock'
 import { ExchangeOrderSection } from '@/features/exchanges/exchange-order-section'
@@ -368,7 +369,7 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
   })
 
   const statusMut = useMutation({
-    mutationFn: ({ id, statusId, note }: { id: string; statusId: string; note?: string }) => ordersApi.updateStatus(id, statusId, note),
+    mutationFn: ({ id, statusId, note, refundChoice }: { id: string; statusId: string; note?: string; refundChoice?: 'none' }) => ordersApi.updateStatus(id, statusId, note, refundChoice),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['order', id] }); toast.success('Status updated') },
     onError: (e: unknown) => {
       const msg = errMsg(e)
@@ -387,6 +388,71 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
       toast.error(msg)
     },
   })
+
+  // ── Pre-cancel live verification + refund choices (owner spec
+  // 2026-10-30) ── When the status dialog targets Cancelled on an order
+  // WITH a live dispatch, the server first syncs the dispatch with its
+  // courier and returns the FRESH eligibility + paid picture; the dialog
+  // decides on that, never on the page's possibly-stale rows. If the
+  // preview itself fails, the dialog falls back to the loaded rows with a
+  // warning (the server re-checks everything at confirm time anyway).
+  const [cancelPreview, setCancelPreview] = useState<any>(null)
+  const [cancelPreviewError, setCancelPreviewError] = useState(false)
+  const [refundChoice, setRefundChoice] = useState<'full' | 'none'>('full')
+  const cancelPreviewMut = useMutation({
+    mutationFn: (orderId: string) =>
+      ordersApi.cancelPreview(orderId).then((r) => r.data),
+    onSuccess: (data) => {
+      setCancelPreview(data)
+      setCancelPreviewError(false)
+    },
+    onError: () => {
+      setCancelPreview(null)
+      setCancelPreviewError(true)
+    },
+  })
+  const cancelRefundMut = useMutation({
+    mutationFn: () => {
+      const preview = cancelPreview
+      const first =
+        preview.payments.find((p: any) => Number(p.refundable) > 0) ||
+        preview.payments[0]
+      return refundsApi.create({
+        orderId: id,
+        amount: Number(preview.outstanding),
+        method: first?.account || first?.gatewayCode || 'cash',
+        gatewayCode: first?.gatewayCode || undefined,
+        reason: 'Order cancelled — full refund',
+        cancelToo: true,
+        sourcePaymentIds: preview.payments
+          .filter((p: any) => Number(p.refundable) > 0)
+          .map((p: any) => p.id),
+      })
+    },
+    onSuccess: () => {
+      toast.success('Refund recorded and order cancelled')
+      queryClient.invalidateQueries({ queryKey: ['order', id] })
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
+      queryClient.invalidateQueries({ queryKey: ['payments-all'] })
+      queryClient.invalidateQueries({ queryKey: ['refunds'] })
+      setShowStatusDialog(null)
+      setStatusNote('')
+    },
+    onError: (e: unknown) => toast.error(errMsg(e)),
+  })
+  const statusDialogTargetName = statusList.find(
+    (s: any) => s.id === showStatusDialog,
+  )?.name
+  useEffect(() => {
+    if (statusDialogTargetName !== 'Cancelled') return
+    setCancelPreview(null)
+    setCancelPreviewError(false)
+    setRefundChoice('full')
+    if (dispatchCancelState(order?.dispatches).live.length > 0) {
+      cancelPreviewMut.mutate(id)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showStatusDialog, statusDialogTargetName])
 
   const noteMut = useMutation({
     mutationFn: ({ id, note, visibility }: { id: string; note: string; visibility: 'public' | 'private' }) => ordersApi.addNote(id, note, visibility),
@@ -620,7 +686,46 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
   const cancelStatusId = statusList.find((s: any) => s.name === 'Cancelled')?.id
   const isCancellingStatus = !!cancelStatusId && showStatusDialog === cancelStatusId
   const dispatchCancel = dispatchCancelState(order.dispatches)
-  const dispatchCancelBlocked = isCancellingStatus && dispatchCancel.isBlocked
+  // Once the live preview lands, the dialog judges by the FRESH dispatches;
+  // while it is in flight on a dispatched order, Confirm waits. A failed
+  // preview falls back to the loaded rows (with a warning in the dialog).
+  const cancelPreviewActive = isCancellingStatus && dispatchCancel.live.length > 0
+  const dialogDispatches = cancelPreview?.dispatches ?? order.dispatches
+  const dialogCancelState = dispatchCancelState(dialogDispatches)
+  const dispatchCancelBlocked =
+    isCancellingStatus &&
+    (dialogCancelState.isBlocked ||
+      (cancelPreviewActive && cancelPreviewMut.isPending))
+
+  const handleStatusConfirm = () => {
+    // Refund choice 'full': one refunds-flow call records a refund record
+    // per payment (same gateway + account the money came in on) and cancels
+    // atomically — dispatch included.
+    if (
+      isCancellingStatus &&
+      cancelPreview &&
+      Number(cancelPreview.outstanding) > 0 &&
+      refundChoice === 'full'
+    ) {
+      cancelRefundMut.mutate()
+      return
+    }
+    statusMut.mutate(
+      {
+        id,
+        statusId: showStatusDialog!,
+        note: statusNote || undefined,
+        refundChoice:
+          isCancellingStatus &&
+          cancelPreview &&
+          Number(cancelPreview.outstanding) > 0 &&
+          refundChoice === 'none'
+            ? 'none'
+            : undefined,
+      },
+      { onSuccess: () => { setShowStatusDialog(null); setStatusNote('') } },
+    )
+  }
 
   // D-A: edit-sheet init reads the SAME snapshot fields the save writes.
   const customerEditInit = resolveCustomerEditInitial(order)
@@ -2079,15 +2184,94 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
               <p className='text-sm'>Current: <Badge style={{ backgroundColor: statusColors[order.status.name] || '#6B7280', color: '#fff' }}>{order.status.name}</Badge></p>
               {showStatusDialog && <p className='text-sm'>New: <Badge style={{ backgroundColor: statusColors[statusList.find((s: any) => s.id === showStatusDialog)?.name] || '#6B7280', color: '#fff' }}>{statusList.find((s: any) => s.id === showStatusDialog)?.name}</Badge></p>}
               {isCancellingStatus ? (
-                <DispatchCancelNotice dispatches={order.dispatches} />
+                <DispatchCancelNotice dispatches={dialogDispatches} />
+              ) : null}
+              {cancelPreviewActive && cancelPreviewMut.isPending ? (
+                <p className='text-xs text-muted-foreground'>
+                  Verifying the live courier status…
+                </p>
+              ) : null}
+              {isCancellingStatus &&
+              (cancelPreviewError || cancelPreview?.verificationFailed) ? (
+                <div className='rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-500/40 dark:bg-amber-500/10'>
+                  <p className='text-xs text-amber-800 dark:text-amber-200'>
+                    Could not verify the live courier status — the decision
+                    below uses the last known status.
+                  </p>
+                </div>
+              ) : null}
+              {isCancellingStatus &&
+              cancelPreview &&
+              Number(cancelPreview.outstanding) > 0 ? (
+                <div className='rounded-lg border border-rose-300 bg-rose-50 p-3 dark:border-rose-500/40 dark:bg-rose-500/10'>
+                  <p className='text-sm font-semibold text-rose-900 dark:text-rose-200'>
+                    This order has ৳
+                    {Number(cancelPreview.outstanding).toFixed(2)} already
+                    paid — refund it first, or choose below.
+                  </p>
+                  <div className='mt-1 space-y-0.5'>
+                    {cancelPreview.payments.map((p: any) => (
+                      <p
+                        key={p.id}
+                        className='text-xs text-rose-800 dark:text-rose-200'
+                      >
+                        {p.account || p.gatewayCode} · ৳
+                        {Number(p.amount).toFixed(2)}
+                        {Number(p.refunded) > 0
+                          ? ` · ৳${Number(p.refunded).toFixed(2)} already refunded`
+                          : ''}
+                      </p>
+                    ))}
+                  </div>
+                  <div className='mt-2 space-y-1.5'>
+                    <label className='flex items-start gap-2 text-sm text-rose-900 dark:text-rose-100'>
+                      <input
+                        type='radio'
+                        name='cancel-refund-choice'
+                        className='mt-0.5'
+                        checked={refundChoice === 'full'}
+                        onChange={() => setRefundChoice('full')}
+                      />
+                      <span>
+                        Record a full refund (৳
+                        {Number(cancelPreview.outstanding).toFixed(2)}) and
+                        cancel the order
+                        <span className='block text-xs opacity-80'>
+                          One refund record per payment, through the same
+                          gateway and account the money came in on.
+                        </span>
+                      </span>
+                    </label>
+                    <label className='flex items-start gap-2 text-sm text-rose-900 dark:text-rose-100'>
+                      <input
+                        type='radio'
+                        name='cancel-refund-choice'
+                        className='mt-0.5'
+                        checked={refundChoice === 'none'}
+                        onChange={() => setRefundChoice('none')}
+                      />
+                      <span>
+                        Cancel without refunding
+                        <span className='block text-xs opacity-80'>
+                          The paid amount stays as-is — you can refund it
+                          later from Payments.
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                </div>
               ) : null}
               <div><Label>Note (optional)</Label><Textarea value={statusNote} onChange={e => setStatusNote(e.target.value)} rows={2} /></div>
             </div>
             <div className='flex justify-end gap-2'>
               <Button variant='outline' onClick={() => { setShowStatusDialog(null); setStatusNote('') }}>Cancel</Button>
               <Button
-                disabled={dispatchCancelBlocked}
-                onClick={() => { statusMut.mutate({ id, statusId: showStatusDialog!, note: statusNote || undefined }, { onSuccess: () => { setShowStatusDialog(null); setStatusNote('') } }) }}
+                disabled={
+                  dispatchCancelBlocked ||
+                  statusMut.isPending ||
+                  cancelRefundMut.isPending
+                }
+                onClick={handleStatusConfirm}
               >
                 Confirm
               </Button>

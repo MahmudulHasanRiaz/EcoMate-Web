@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { dispatchApi } from './api'
+import type { DispatchSyncSummary } from './api'
 import { formatCourierDispatchToast } from './courier-errors'
 
 export function useDispatchList(params?: any) {
@@ -75,12 +76,51 @@ export function useDispatchMutations() {
   }
 }
 
+/**
+ * Bulk courier sync runs in sequential batches (owner report 2026-10-30:
+ * syncing 50-60 marked dispatches at once "failed" most of them). The
+ * backend handles ONE request's ids sequentially with a live courier call
+ * per dispatch, so a single 60-id request cannot finish inside any sane
+ * client timeout. Batches of 10 keep each request comfortably inside its
+ * (raised) timeout; the summaries merge into one result for the toast.
+ * A batch whose REQUEST fails (timeout/network) does not stop the rest —
+ * its ids are counted as failed-to-confirm and the refreshed list shows
+ * the true states.
+ */
+export const DISPATCH_SYNC_BATCH_SIZE = 10
+
+export async function syncDispatchesInBatches(
+  ids: string[],
+  call: (batch: string[]) => Promise<{ data: DispatchSyncSummary }> = (batch) =>
+    dispatchApi.syncStatus(batch),
+): Promise<DispatchSyncSummary> {
+  const merged: DispatchSyncSummary = {
+    total: ids.length,
+    synced: [],
+    unchanged: [],
+    failed: [],
+  }
+  for (let i = 0; i < ids.length; i += DISPATCH_SYNC_BATCH_SIZE) {
+    const batch = ids.slice(i, i + DISPATCH_SYNC_BATCH_SIZE)
+    try {
+      const res = await call(batch)
+      merged.synced.push(...res.data.synced)
+      merged.unchanged.push(...res.data.unchanged)
+      merged.failed.push(...res.data.failed)
+    } catch {
+      for (const id of batch) {
+        merged.failed.push({ id, reason: 'Sync request failed' })
+      }
+    }
+  }
+  return merged
+}
+
 export function useDispatchSync() {
   const qc = useQueryClient()
 
   return useMutation({
-    mutationFn: (ids: string[]) =>
-      dispatchApi.syncStatus(ids).then((r) => r.data),
+    mutationFn: (ids: string[]) => syncDispatchesInBatches(ids),
     onSuccess: (summary) => {
       const parts = [
         `${summary.synced.length} synced`,

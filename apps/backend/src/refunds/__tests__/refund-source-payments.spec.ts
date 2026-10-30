@@ -260,4 +260,53 @@ describe('RefundsService — sourcePaymentIds bulk refund (D-B)', () => {
     ).rejects.toThrow(/remaining refundable/i);
     expect(mockPrisma.refund.create).not.toHaveBeenCalled();
   });
+
+  it('per-slice channel: each negative row carries its SOURCE payment gateway + account (owner spec 2026-10-30)', async () => {
+    saleOrderPaid('order-1', 1500);
+    mockPrisma.payment.findMany.mockResolvedValue([
+      {
+        ...paidRow('pay-1', 'order-1', 1000),
+        gatewayCode: 'bkash_manual',
+        accountId: 'acc-bkash',
+        account: 'bKash (Manual)',
+      },
+      {
+        ...paidRow('pay-2', 'order-1', 500),
+        gatewayCode: 'nagad_manual',
+        accountId: 'acc-nagad',
+        account: 'Nagad (Manual)',
+      },
+    ]);
+
+    await service.create({
+      orderId: 'order-1',
+      amount: 1500,
+      method: 'bKash (Manual)',
+      gatewayCode: 'bkash_manual',
+      reason: 'Order cancelled — full refund',
+      sourcePaymentIds: ['pay-1', 'pay-2'],
+    } as any);
+
+    const paymentCreates = mockPrisma.payment.create.mock.calls.map(
+      (c: any) => c[0].data,
+    );
+    expect(paymentCreates).toHaveLength(2);
+    expect(paymentCreates[0]).toMatchObject({
+      amount: -1000,
+      gatewayCode: 'bkash_manual',
+      accountId: 'acc-bkash',
+      account: 'bKash (Manual)',
+    });
+    expect(paymentCreates[1]).toMatchObject({
+      amount: -500,
+      gatewayCode: 'nagad_manual',
+      accountId: 'acc-nagad',
+      account: 'Nagad (Manual)',
+    });
+    const refundCreates = mockPrisma.refund.create.mock.calls.map(
+      (c: any) => c[0].data,
+    );
+    expect(refundCreates[0].method).toBe('bKash (Manual)');
+    expect(refundCreates[1].method).toBe('Nagad (Manual)');
+  });
 });

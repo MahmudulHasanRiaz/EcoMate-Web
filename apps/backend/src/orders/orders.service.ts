@@ -4171,8 +4171,20 @@ export class OrdersService {
     }
 
     // Task 9 (D5): cancel blocked while money is still out — refund first.
+    // Owner spec 2026-10-30: the dispatched-cancel dialog may explicitly
+    // choose "cancel without refunding" (refundChoice: 'none') after being
+    // shown the paid amount. The choice is honored ONLY when the order has
+    // a live dispatch (that dialog is the dispatched one); every other
+    // caller keeps the refund-first gate exactly as before.
     if (newStatus.name === 'Cancelled') {
-      await this.assertNoOutstandingForCancel(id);
+      const skipMoneyGate =
+        dto.refundChoice === 'none' &&
+        (await this.prisma.dispatch.count({
+          where: { orderId: id, status: { not: 'CANCELLED' } },
+        })) > 0;
+      if (!skipMoneyGate) {
+        await this.assertNoOutstandingForCancel(id);
+      }
     }
 
     // Cancel a DISPATCHED order (owner directive, 2026-10-21): the dispatch

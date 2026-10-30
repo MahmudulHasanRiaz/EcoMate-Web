@@ -74,7 +74,14 @@ export const dispatchApi = {
   updateStatus: (id: string, status: string) =>
     apiClient.patch(`/dispatch/${id}/status`, { status }),
   syncStatus: (ids: string[]) =>
-    apiClient.post<DispatchSyncSummary>('/dispatch/sync-status', { ids }),
+    apiClient.post<DispatchSyncSummary>('/dispatch/sync-status', { ids }, {
+      // The backend syncs sequentially, one live courier call per dispatch
+      // (up to ~10s each). A batch of 10 can legitimately take far longer
+      // than the client's default 15s timeout — that mismatch is what made
+      // bulk syncs of 50-60 dispatches "fail" wholesale (the request died
+      // client-side while the server was still working). 120s per batch.
+      timeout: 120_000,
+    }),
   remove: (id: string) => apiClient.delete(`/dispatch/${id}`),
   // Staff confirm the MANUAL courier-panel cancellation; the server records
   // the actor + timestamp and clears the "Panel cancellation pending" marker.

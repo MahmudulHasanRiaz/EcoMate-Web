@@ -461,9 +461,10 @@ describe('Carrybee v2 rewrite (Task 7, doc-exact mocked shapes)', () => {
     });
 
     // Task 3 (owner-locked F7): pickup-failed is a real PICKUP_FAILED
-    // workflow state (record attempt + reason, order Shipping) — staff can
-    // retry/update the same dispatch. delivery-failed stays record-only.
-    it('order.pickup-failed upserts PICKUP_FAILED + advances the order to Shipping', async () => {
+    // workflow state (record attempt + reason) — staff can retry/update the
+    // same dispatch. Owner ruling 2026-10-30: the ORDER status is NOT moved.
+    // delivery-failed stays record-only.
+    it('order.pickup-failed upserts PICKUP_FAILED + order status UNCHANGED', async () => {
       prisma.order.findFirst.mockResolvedValue({
         ...cbOrder,
         status: { id: 'status-packed', name: 'Packed' },
@@ -500,11 +501,8 @@ describe('Carrybee v2 rewrite (Task 7, doc-exact mocked shapes)', () => {
       const notes = JSON.stringify(timelineWrite[0].data.timeline);
       expect(notes).toContain('Shop closed at pickup time');
       expect(notes).toContain('1');
-      expect(ordersService.updateStatus).toHaveBeenCalledWith(
-        'order-1',
-        { statusId: 'status-shipping' },
-        'system',
-      );
+      // Owner ruling 2026-10-30: a failed pickup never moves the order.
+      expect(ordersService.updateStatus).not.toHaveBeenCalled();
     });
 
     it('falls back to merchant_order_id → displayId when the consignment is unknown', async () => {

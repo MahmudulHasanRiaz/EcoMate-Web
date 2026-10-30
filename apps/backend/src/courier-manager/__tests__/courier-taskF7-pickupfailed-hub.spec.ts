@@ -14,7 +14,8 @@ import { impliesPickup } from '../../dispatch/dispatch-timestamps';
 /**
  * Task 3 / Fix 7 (courier FINAL follow-up, owner-locked):
  * - order.pickup-failed (Pathao + Carrybee) → PICKUP_FAILED: record attempt +
- *   reason + alert, order Shipping; staff can retry/update the same dispatch.
+ *   reason + alert; staff can retry/update the same dispatch. ORDER STATUS:
+ *   unchanged — owner ruling 2026-10-30 supersedes F7's "order Shipping".
  * - order.received-at-last-mile-hub (Pathao + Carrybee) → ASSIGNED_TO_HUB,
  *   order Shipping. ASSIGNED_TO_RIDER is then ONLY for assigned-for-delivery.
  * - order.delivery-failed stays record-only (both couriers) — locked here.
@@ -399,15 +400,21 @@ describe('Courier Task 3 — manual-board transitions + sync order mapping', () 
     );
   });
 
-  it('PICKUP_FAILED advances the order to Shipping (sync map)', async () => {
+  it('PICKUP_FAILED does NOT move the order (owner ruling 2026-10-30)', async () => {
     mockClaimed('DISPATCHED');
     await service.updateStatus('d-1', 'PICKUP_FAILED', 'staff-123');
-    expect(prisma.order.update).toHaveBeenCalledWith(
+    // The dispatch itself still becomes PICKUP_FAILED…
+    expect(prisma.dispatch.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'order-1' },
-        data: expect.objectContaining({ statusId: 'status-shipping' }),
+        data: expect.objectContaining({ status: 'PICKUP_FAILED' }),
       }),
     );
+    // …but the order is never advanced to Shipping: the parcel never left,
+    // so the order keeps whatever status it had.
+    const orderUpdates = (prisma.order.update as jest.Mock).mock.calls;
+    expect(
+      orderUpdates.some((c: any) => c[0]?.data?.statusId === 'status-shipping'),
+    ).toBe(false);
   });
 
   it('ASSIGNED_TO_HUB advances the order to Shipping (sync map)', async () => {
