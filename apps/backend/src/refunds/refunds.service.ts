@@ -226,7 +226,15 @@ export class RefundsService {
     // is distributed across the rows in the given order (first row first); a
     // repeated refund of the same row 400s via the cap. The legacy single
     // `sourcePaymentId` (exchange flow) goes through the same validation.
-    let allocations: { paymentId: string; amount: number }[] | undefined;
+    let allocations:
+      | {
+          paymentId: string;
+          amount: number;
+          gatewayCode?: string | null;
+          accountId?: string | null;
+          account?: string | null;
+        }[]
+      | undefined;
     const explicitIds = dto.sourcePaymentIds?.length
       ? [...new Set(dto.sourcePaymentIds)]
       : dto.sourcePaymentId
@@ -258,6 +266,23 @@ export class RefundsService {
       sourcePaymentId = candidate && !consumed.has(candidate.id) ? candidate.id : undefined;
     }
 
+    // Owner spec 2026-10-30: a refund slice pinned to a source payment goes
+    // back through THAT payment's channel and account — the negative ledger
+    // row carries the source row's gateway + settlement account, never a
+    // staff-typed substitute. The unpinned single slice resolves its source
+    // the same way (the traceability pin above). Fail-soft: if the lookup
+    // is unavailable the slice keeps the call-level resolution, exactly as
+    // before this change.
+    const singleSource =
+      !allocations &&
+      sourcePaymentId &&
+      typeof this.prisma.payment.findUnique === 'function'
+        ? await this.prisma.payment.findUnique({
+            where: { id: sourcePaymentId },
+            select: { gatewayCode: true, accountId: true, account: true },
+          })
+        : null;
+
     // Single $transaction: Refund row(s) + negative ledger row(s) (+ optional
     // atomic Cancelled transition) commit together or not at all — a refund
     // must never exist without its ledger mirror, and vice versa. Every refund
@@ -277,12 +302,26 @@ export class RefundsService {
       const at = new Date().toISOString();
       const actor = recordedBy ? `staff:${recordedBy}` : 'system';
 
-      const writeRefundSlice = async (amount: number, pinId?: string) => {
+      const writeRefundSlice = async (
+        amount: number,
+        pinId?: string,
+        source?: {
+          gatewayCode?: string | null;
+          accountId?: string | null;
+          account?: string | null;
+        } | null,
+      ) => {
+        // Per-slice channel/account (owner spec 2026-10-30): a pinned slice
+        // refunds through its source payment's gateway + account; only an
+        // unpinned slice falls back to the call-level resolution.
+        const sliceGatewayCode = source?.gatewayCode || refundGatewayCode;
+        const sliceAccountId = source?.accountId ?? refundAccountId;
+        const sliceMethod = source?.account || dto.method;
         const created = await tx.refund.create({
           data: {
             orderId: dto.orderId,
             amount,
-            method: dto.method,
+            method: sliceMethod,
             reason: dto.reason,
             notes: dto.notes,
             // Exchange-sourced refunds carry their lineage so the money is
@@ -305,10 +344,10 @@ export class RefundsService {
         const refundPayment = await tx.payment.create({
           data: {
             orderId: dto.orderId,
-            gatewayCode: refundGatewayCode,
+            gatewayCode: sliceGatewayCode,
             amount: -amount,
-            accountId: refundAccountId,
-            account: dto.method,
+            accountId: sliceAccountId,
+            account: sliceMethod,
             status: 'PAID',
             notes: dto.reason,
             recordedBy: recordedBy ? `staff:${recordedBy}` : undefined,
@@ -324,7 +363,7 @@ export class RefundsService {
         refundEntries.push({
           type: 'refund',
           amount,
-          method: dto.method,
+          method: sliceMethod,
           reason: dto.reason,
           ...(pinId ? { sourcePaymentId: pinId } : {}),
           timestamp: at,
@@ -335,10 +374,10 @@ export class RefundsService {
 
       if (allocations?.length) {
         for (const alloc of allocations) {
-          await writeRefundSlice(alloc.amount, alloc.paymentId);
+          await writeRefundSlice(alloc.amount, alloc.paymentId, alloc);
         }
       } else {
-        await writeRefundSlice(dto.amount, sourcePaymentId);
+        await writeRefundSlice(dto.amount, sourcePaymentId, singleSource);
       }
 
       const current = Array.isArray(order.timeline)
@@ -470,10 +509,26 @@ export class RefundsService {
     orderId: string,
     total: number,
     ids: string[],
-  ): Promise<{ paymentId: string; amount: number }[]> {
+  ): Promise<
+    {
+      paymentId: string;
+      amount: number;
+      gatewayCode?: string | null;
+      accountId?: string | null;
+      account?: string | null;
+    }[]
+  > {
     const rows = await this.prisma.payment.findMany({
       where: { id: { in: ids } },
-      select: { id: true, orderId: true, status: true, amount: true },
+      select: {
+        id: true,
+        orderId: true,
+        status: true,
+        amount: true,
+        gatewayCode: true,
+        accountId: true,
+        account: true,
+      },
     });
     if (rows.length !== ids.length) {
       throw new BadRequestException(
@@ -512,13 +567,27 @@ export class RefundsService {
         `Refund amount (${total}) exceeds the remaining refundable amount for the selected payment rows (remainder: ${totalRemainder}).`,
       );
     }
-    const allocations: { paymentId: string; amount: number }[] = [];
+    const rowById = new Map(rows.map((r) => [r.id, r]));
+    const allocations: {
+      paymentId: string;
+      amount: number;
+      gatewayCode?: string | null;
+      accountId?: string | null;
+      account?: string | null;
+    }[] = [];
     let remaining = total;
     for (const id of ids) {
       if (remaining <= 0) break;
       const take = Math.min(remainders.get(id) ?? 0, remaining);
       if (take > 0) {
-        allocations.push({ paymentId: id, amount: take });
+        const src = rowById.get(id);
+        allocations.push({
+          paymentId: id,
+          amount: take,
+          gatewayCode: src?.gatewayCode,
+          accountId: src?.accountId,
+          account: src?.account,
+        });
         remaining -= take;
       }
     }

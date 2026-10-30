@@ -99,8 +99,9 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     'order.pickup-requested': null,
     'order.assigned-for-pickup': null,
     // Task 3 (owner-locked F7): pickup-failed is a real PICKUP_FAILED
-    // workflow state (record attempt + reason + alert, order Shipping) —
-    // never the skip path. delivery-failed stays record-only (null).
+    // workflow state (record attempt + reason + alert) — never the skip
+    // path. Owner ruling 2026-10-30: it never moves the ORDER status.
+    // delivery-failed stays record-only (null).
     'order.pickup-failed': 'PICKUP_FAILED',
     'order.picked': 'PICKED_UP',
     'order.at-the-sorting-hub': 'IN_TRANSIT',

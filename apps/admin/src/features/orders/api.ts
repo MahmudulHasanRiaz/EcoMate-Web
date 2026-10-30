@@ -115,6 +115,26 @@ export interface OrderResponse {
   shipment?: { id: string; trackingNo?: string | null; courier?: string | null; status: string } | null;
 }
 
+export interface CancelPreviewPayment {
+  id: string
+  gatewayCode?: string | null
+  account?: string | null
+  accountId?: string | null
+  amount: number
+  refunded: number
+  refundable: number
+}
+
+export interface CancelPreviewResponse {
+  orderId: string
+  verificationAttempted: boolean
+  verificationFailed: boolean
+  blockedReason: string | null
+  dispatches: any[]
+  outstanding: number
+  payments: CancelPreviewPayment[]
+}
+
 export interface PaginatedResponse<T> {
   data: T[]
   meta: {
@@ -422,7 +442,22 @@ export const ordersApi = {
   othersInfo: (id: string) => apiClient.get<OrderOthersInfoResponse>(`/orders/${id}/others-info`),
   create: (data: any) => apiClient.post<OrderResponse>('/orders', data),
   updateOrder: (id: string, data: any) => apiClient.put<OrderResponse>(`/orders/${id}`, data),
-  updateStatus: (id: string, statusId: string, note?: string) => apiClient.put(`/orders/${id}/status`, { statusId, note }),
+  updateStatus: (id: string, statusId: string, note?: string, refundChoice?: 'none') =>
+    apiClient.put(`/orders/${id}/status`, {
+      statusId,
+      note,
+      ...(refundChoice ? { refundChoice } : {}),
+    }),
+  // Pre-cancel live verification (owner spec 2026-10-30): the server syncs
+  // the order's live dispatches with their couriers FIRST, then returns the
+  // FRESH cancel eligibility + the paid picture for the dialog's refund
+  // choices. Long timeout: a preview can make several live courier calls.
+  cancelPreview: (orderId: string) =>
+    apiClient.post<CancelPreviewResponse>(
+      '/dispatch/cancel-preview',
+      { orderId },
+      { timeout: 120_000 },
+    ),
   addNote: (orderId: string, note: string, visibility: 'public' | 'private') => apiClient.post(`/orders/${orderId}/note`, { note, visibility }),
   addItem: (orderId: string, data: { productId: string; quantity: number; price: number; variantId?: string }) => apiClient.post(`/orders/${orderId}/items`, data),
   removeItem: (orderId: string, itemId: string) => apiClient.delete(`/orders/${orderId}/items/${itemId}`),

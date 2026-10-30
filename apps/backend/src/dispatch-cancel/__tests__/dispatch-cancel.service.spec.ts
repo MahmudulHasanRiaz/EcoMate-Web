@@ -103,6 +103,55 @@ describe('DispatchCancelService', () => {
     expect(tx.$executeRaw).toHaveBeenCalled();
   });
 
+  it('a PICKUP_FAILED dispatch: NO courier call — the booking is already dead (owner ruling 2026-10-30)', async () => {
+    prisma.dispatch.findMany.mockResolvedValue([
+      dispatch({
+        courier: 'pathao',
+        status: 'PICKUP_FAILED',
+        courierStatus: 'order.pickup-failed',
+      }),
+    ]);
+
+    const plan = await service.prepare('order-1', 'staff@ecomate.com');
+
+    expect(courierCancel).not.toHaveBeenCalled();
+    expect(plan.blockedReason).toBeNull();
+    expect(plan.outcomes).toHaveLength(1);
+    expect(plan.outcomes[0]).toMatchObject({
+      dispatchId: 'dsp-1',
+      courier: 'pathao',
+      reference: 'CONS-1',
+      mode: 'MANUAL',
+    });
+    expect((plan.outcomes[0].response as any)?.pickupFailed).toBe(true);
+  });
+
+  it('apply() on a pickup-failed outcome auto-confirms: no panel cancellation is owed', async () => {
+    prisma.dispatch.findMany.mockResolvedValue([
+      dispatch({
+        courier: 'pathao',
+        status: 'PICKUP_FAILED',
+        courierStatus: 'order.pickup-failed',
+      }),
+    ]);
+    const plan = await service.prepare('order-1', 'staff@ecomate.com');
+    const tx = makeTx();
+
+    await service.apply(tx as any, plan, 'staff@ecomate.com');
+
+    expect(tx.dispatch.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'dsp-1' }),
+        data: expect.objectContaining({
+          status: 'CANCELLED',
+          courierCancelMode: 'MANUAL',
+          panelCancelConfirmedAt: expect.any(Date),
+          panelCancelConfirmedBy: 'staff@ecomate.com',
+        }),
+      }),
+    );
+  });
+
   it('a picked-up dispatch is BLOCKED server-side and no courier call is made', async () => {
     prisma.dispatch.findMany.mockResolvedValue([
       dispatch({ status: 'PICKED_UP', pickedUpAt: new Date('2026-10-20T10:00:00Z') }),

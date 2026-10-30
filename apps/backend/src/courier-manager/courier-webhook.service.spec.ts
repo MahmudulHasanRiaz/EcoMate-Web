@@ -452,9 +452,10 @@ describe('CourierWebhookService — PARTIAL rules', () => {
     });
 
     // Task 3 (owner-locked F7): pickup-failed is a real PICKUP_FAILED
-    // workflow state (record attempt + reason + alert, order Shipping) — no
-    // longer the record-only skip path. delivery-failed stays record-only.
-    it('order.pickup-failed: upserts PICKUP_FAILED + advances the order to Shipping', async () => {
+    // workflow state (record attempt + reason + alert) — no longer the
+    // record-only skip path. Owner ruling 2026-10-30: the ORDER status is
+    // NOT moved (the parcel never left). delivery-failed stays record-only.
+    it('order.pickup-failed: upserts PICKUP_FAILED + order status UNCHANGED', async () => {
       prisma.order.findFirst.mockResolvedValue({
         ...order,
         status: { id: 'status-packed', name: 'Packed' },
@@ -494,12 +495,10 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       const notes = JSON.stringify(timelineWrite[0].data.timeline);
       expect(notes).toContain('Rider could not reach pickup point');
       expect(notes).toContain('1');
-      // …and the order advances to Shipping.
-      expect(ordersService.updateStatus).toHaveBeenCalledWith(
-        'order-1',
-        { statusId: 'status-shipping' },
-        'system',
-      );
+      // …and the order status is NOT advanced (owner ruling 2026-10-30):
+      // a failed pickup means the parcel never left, so the order keeps
+      // its current status (here: Packed).
+      expect(ordersService.updateStatus).not.toHaveBeenCalled();
     });
 
     it('order.delivery-failed: records courierStatus + timeline, never forces RETURN_PENDING', async () => {

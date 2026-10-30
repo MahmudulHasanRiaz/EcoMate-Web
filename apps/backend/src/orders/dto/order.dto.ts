@@ -124,6 +124,12 @@ export class CreateOrderDto {
 export class UpdateOrderStatusDto {
   @IsString() statusId: string;
   @IsOptional() @IsString() note?: string;
+  // Owner spec 2026-10-30: the dispatched-cancel dialog's explicit choice
+  // to cancel WITHOUT refunding the outstanding paid balance. (The dialog's
+  // other choice — refund in full, then cancel — goes through the refunds
+  // flow with cancelToo and never sets this.) Honored only when the order
+  // has a live dispatch; every other cancel keeps the refund-first gate.
+  @IsOptional() @IsIn(['none']) refundChoice?: 'none';
 }
 
 export class CustomerInfoDto {

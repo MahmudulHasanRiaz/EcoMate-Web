@@ -58,6 +58,12 @@ export class DispatchController {
   }
 
   @Roles('superadmin', 'admin', 'employee')
+  @Post('cancel-preview')
+  cancelPreview(@Body('orderId') orderId: string) {
+    return this.dispatchService.getCancelPreview(orderId);
+  }
+
+  @Roles('superadmin', 'admin', 'employee')
   @Post('sync-status')
   syncStatusFromCourier(
     @Body() dto: SyncDispatchStatusDto,

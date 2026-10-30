@@ -37,6 +37,9 @@ import {
  *     MANUAL mode. The dispatch keeps a "panel cancellation pending" marker
  *     until staff confirm they cancelled the booking in the Steadfast panel
  *     (confirmManualPanelCancel records the actor + timestamp).
+ *   - ANY courier, PICKUP_FAILED dispatch: the booking is already dead at
+ *     the courier (owner ruling 2026-10-30) — prepare() pushes nothing and
+ *     owes no panel follow-up; apply() auto-confirms the local cancel.
  *
  * The rules themselves live in dispatch-cancel-eligibility.ts (pure, shared
  * with the admin dialog).
@@ -148,7 +151,9 @@ export class DispatchCancelService {
 
     const outcomes: CourierCancelOutcome[] = [];
     for (const dispatch of plan.cancellable) {
-      if (dispatch.manualPanelCancel) {
+      if (dispatch.status === 'PICKUP_FAILED') {
+        outcomes.push(this.pickupFailedOutcome(dispatch));
+      } else if (dispatch.manualPanelCancel) {
         outcomes.push(this.manualOutcome(dispatch));
       } else {
         outcomes.push(await this.pushCourierCancel(dispatch, actor));
@@ -173,6 +178,32 @@ export class DispatchCancelService {
       response: {
         manual: true,
         warning: dispatch.warning,
+      },
+    };
+  }
+
+  /**
+   * Owner ruling 2026-10-30: a PICKUP_FAILED dispatch's booking is already
+   * dead at the courier — the pickup failed, nothing was ever collected — so
+   * there is nothing to push and nothing owed in the courier panel. Pushing
+   * the courier cancel API anyway gets refused (Pathao) and used to abort
+   * the whole cancel, leaving staff stuck. The local cancel proceeds in
+   * MANUAL mode and apply() auto-confirms it (no panel marker).
+   */
+  protected pickupFailedOutcome(
+    dispatch: DispatchCancelPlanEntry,
+  ): CourierCancelOutcome {
+    return {
+      dispatchId: dispatch.id,
+      courier: dispatch.courier,
+      reference: dispatch.consignmentId || dispatch.trackingCode || null,
+      mode: 'MANUAL',
+      response: {
+        pickupFailed: true,
+        note:
+          'Pickup already failed at the courier — the booking is treated as ' +
+          'already cancelled; no courier cancel was pushed and no panel ' +
+          'cancellation is owed.',
       },
     };
   }
@@ -271,8 +302,13 @@ export class DispatchCancelService {
     const entries: any[] = [];
     for (const outcome of outcomes) {
       const label = courierLabel(outcome.courier);
-      const manualWithoutBooking =
-        outcome.mode === 'MANUAL' && !outcome.reference;
+      const pickupFailed =
+        (outcome.response as { pickupFailed?: unknown } | null)?.pickupFailed === true;
+      // MANUAL outcomes with nothing owed in the courier panel confirm
+      // themselves: no booking reference at all, or a pickup that already
+      // failed (booking dead courier-side — owner ruling 2026-10-30).
+      const autoConfirmed =
+        outcome.mode === 'MANUAL' && (!outcome.reference || pickupFailed);
 
       await tx.dispatch.updateMany({
         where: { id: outcome.dispatchId, status: { not: 'CANCELLED' } },
@@ -282,7 +318,7 @@ export class DispatchCancelService {
           courierCancelAt: now,
           courierCancelMode: outcome.mode,
           courierCancelResponse: (outcome.response ?? null) as any,
-          ...(manualWithoutBooking
+          ...(autoConfirmed
             ? {
                 panelCancelConfirmedAt: now,
                 panelCancelConfirmedBy: performedBy,
@@ -291,7 +327,23 @@ export class DispatchCancelService {
         },
       });
 
-      if (outcome.mode === 'MANUAL' && outcome.reference) {
+      if (outcome.mode === 'MANUAL' && pickupFailed) {
+        entries.push({
+          type: 'dispatch.cancelled',
+          visibility: 'private',
+          timestamp: now.toISOString(),
+          note:
+            `Dispatch marked cancelled in EcoMate. The ${label} pickup had ` +
+            `already failed, so the booking was already dead at the courier — ` +
+            `no courier cancel was pushed and no panel cancellation is owed.`,
+          performedBy,
+          courier: outcome.courier,
+          dispatchId: outcome.dispatchId,
+          courierReference: outcome.reference,
+          courierCancelMode: 'MANUAL',
+          panelCancelPending: false,
+        });
+      } else if (outcome.mode === 'MANUAL' && outcome.reference) {
         entries.push({
           type: 'dispatch.cancelled',
           visibility: 'private',

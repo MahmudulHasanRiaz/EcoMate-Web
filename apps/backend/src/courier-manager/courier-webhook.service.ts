@@ -79,9 +79,12 @@ const DISPATCH_TO_ORDER_STATUS: Record<string, string | null> = {
   IN_TRANSIT: 'Shipping',
   HOLD: 'Shipping',
   ASSIGNED_TO_RIDER: 'Shipping',
-  // Task 3 (owner-locked F7): pickup-failed + last-mile-hub keep the order
-  // at Shipping (never Delivered/Partial/Cancelled side effects).
-  PICKUP_FAILED: 'Shipping',
+  // Owner ruling 2026-10-30 (supersedes F7's order-status half): a failed
+  // pickup NEVER moves the order — the parcel never left, so the order keeps
+  // its current status (staff may re-dispatch or cancel). Only the dispatch
+  // becomes PICKUP_FAILED. ASSIGNED_TO_HUB keeps Shipping: the parcel IS
+  // with the courier.
+  PICKUP_FAILED: null,
   ASSIGNED_TO_HUB: 'Shipping',
   DELIVERED: 'Delivered',
   PARTIAL: 'Partial',
@@ -97,8 +100,8 @@ const PATHAO_DISPATCH_MAP: Record<string, string | null> = {
   'order.assigned-for-pickup': null,
   'order.picked': 'PICKED_UP',
   // Task 3 (owner-locked F7): pickup-failed is a real PICKUP_FAILED workflow
-  // state (record attempt + reason + alert, order Shipping); delivery-failed
-  // stays record-only (null).
+  // state (record attempt + reason + alert); delivery-failed stays
+  // record-only (null). Owner ruling 2026-10-30: it never moves the ORDER.
   'order.pickup-failed': 'PICKUP_FAILED',
   'order.pickup-cancelled': 'CANCELLED',
   'order.at-the-sorting-hub': 'IN_TRANSIT',
@@ -131,8 +134,9 @@ const PATHAO_DISPATCH_TO_ORDER: Record<string, string | null> = {
   IN_TRANSIT: 'Shipping',
   HOLD: 'Shipping',
   ASSIGNED_TO_RIDER: 'Shipping',
-  // Task 3 (owner-locked F7): failed-pickup + hub states keep Shipping.
-  PICKUP_FAILED: 'Shipping',
+  // Owner ruling 2026-10-30: failed pickup NEVER moves the order (see the
+  // generic map above). ASSIGNED_TO_HUB keeps Shipping.
+  PICKUP_FAILED: null,
   ASSIGNED_TO_HUB: 'Shipping',
   DELIVERED: 'Delivered',
   PARTIAL: 'Partial',
@@ -150,8 +154,8 @@ const CARRYBEE_DISPATCH_MAP: Record<string, string | null> = {
   'order.assigned-for-pickup': null,
   'order.picked': 'PICKED_UP',
   // Task 3 (owner-locked F7): pickup-failed is a real PICKUP_FAILED workflow
-  // state (record attempt + reason + alert, order Shipping); delivery-failed
-  // stays record-only (null).
+  // state (record attempt + reason + alert); delivery-failed stays
+  // record-only (null). Owner ruling 2026-10-30: it never moves the ORDER.
   'order.pickup-failed': 'PICKUP_FAILED',
   'order.pickup-cancelled': 'CANCELLED',
   'order.at-the-sorting-hub': 'IN_TRANSIT',
@@ -183,8 +187,9 @@ const CARRYBEE_DISPATCH_TO_ORDER: Record<string, string | null> = {
   IN_TRANSIT: 'Shipping',
   HOLD: 'Shipping',
   ASSIGNED_TO_RIDER: 'Shipping',
-  // Task 3 (owner-locked F7): failed-pickup + hub states keep Shipping.
-  PICKUP_FAILED: 'Shipping',
+  // Owner ruling 2026-10-30: failed pickup NEVER moves the order (see the
+  // generic map above). ASSIGNED_TO_HUB keeps Shipping.
+  PICKUP_FAILED: null,
   ASSIGNED_TO_HUB: 'Shipping',
   DELIVERED: 'Delivered',
   PARTIAL: 'Partial',
@@ -228,9 +233,9 @@ const REDX_DISPATCH_TO_ORDER: Record<string, string | null> = {
   IN_TRANSIT: 'Shipping',
   HOLD: 'Shipping',
   ASSIGNED_TO_RIDER: 'Shipping',
-  // Task 3 (owner-locked F7): completeness — RedX never emits these, but the
-  // states keep Shipping wherever they appear.
-  PICKUP_FAILED: 'Shipping',
+  // Owner ruling 2026-10-30: completeness — RedX never emits these; a failed
+  // pickup NEVER moves the order, the hub state keeps Shipping.
+  PICKUP_FAILED: null,
   ASSIGNED_TO_HUB: 'Shipping',
   DELIVERED: 'Delivered',
   PARTIAL: 'Partial',

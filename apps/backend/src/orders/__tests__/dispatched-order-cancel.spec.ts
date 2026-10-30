@@ -318,4 +318,40 @@ describe('OrdersService — cancel a dispatched order', () => {
       reference: 'CONS-1',
     });
   });
+
+  describe('refundChoice (owner spec 2026-10-30)', () => {
+    const paidOrder = () => {
+      prisma.payment.aggregate.mockResolvedValue({ _sum: { amount: 1000 } });
+      (prisma.dispatch as any).count = jest.fn().mockResolvedValue(1);
+    };
+    const cancelWithChoice = () =>
+      service.updateStatus(
+        'order-1',
+        { statusId: 'status-cancelled', refundChoice: 'none' } as any,
+        'staff-1',
+        'staff@ecomate.com',
+      );
+
+    it('paid + live dispatch + NO choice: the refund-first gate still blocks', async () => {
+      paidOrder();
+      await expect(cancelOrder()).rejects.toThrow(/outstanding paid balance/);
+      expect(courierCancel).not.toHaveBeenCalled();
+    });
+
+    it("paid + live dispatch + refundChoice 'none': the cancel proceeds (paid amount left as-is)", async () => {
+      paidOrder();
+      const result: any = await cancelWithChoice();
+      expect(result?.status?.name ?? result?.status).toBeDefined();
+      expect(courierCancel).toHaveBeenCalled();
+    });
+
+    it("refundChoice 'none' without a live dispatch does NOT bypass the gate", async () => {
+      paidOrder();
+      (prisma.dispatch as any).count = jest.fn().mockResolvedValue(0);
+      await expect(cancelWithChoice()).rejects.toThrow(
+        /outstanding paid balance/,
+      );
+      expect(courierCancel).not.toHaveBeenCalled();
+    });
+  });
 });

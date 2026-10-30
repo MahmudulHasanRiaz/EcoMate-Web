@@ -28,6 +28,7 @@ describe('RefundsService — Task 9 cancel/refund gate (RED)', () => {
     payment: {
       aggregate: jest.fn(),
       findFirst: jest.fn(),
+      findUnique: jest.fn().mockResolvedValue(null),
       create: jest.fn(),
     },
     order: {
