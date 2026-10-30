@@ -258,6 +258,11 @@ export const LEGACY_PERMISSION_KEYS: readonly string[] = [
   // are the ones controllers actually check.
   'run_import',
   'view_security_dashboard',
+  // Stock reconciliation (2026-10-30): the verb alone is the key, exactly
+  // like run_import — guards POST /inventory/reconcile + /apply and the
+  // admin Inventory → Reconciliation page. Must stay grantable through
+  // getAllPermissions() + the preset editor (the maintain_media miss).
+  'run_stock_reconciliation',
 ] as const;
 
 const LEGACY_DETAILS: Record<string, { label: string; module: string; group: string }> = {
@@ -281,6 +286,7 @@ const LEGACY_DETAILS: Record<string, { label: string; module: string; group: str
   manage_stock: { label: 'Manage Stock', module: 'inventory', group: 'INVENTORY' },
   modify_integrations: { label: 'Modify Integrations', module: 'system_settings', group: 'SETTINGS' },
   run_import: { label: 'Run Imports', module: 'import', group: 'SETTINGS' },
+  run_stock_reconciliation: { label: 'Run Stock Reconciliation', module: 'inventory', group: 'INVENTORY' },
   view_security_dashboard: { label: 'View Security Dashboard', module: 'security', group: 'SETTINGS' },
 };
 

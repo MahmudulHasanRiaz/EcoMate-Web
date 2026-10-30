@@ -1,3 +1,14 @@
+/**
+ * ⛔ DO NOT RUN — ARCHIVED 2026-10-30 (reconciliation directive §2.5).
+ *
+ * This script rewrites EVERY PhysicalInventoryLedger before/after value
+ * from 0 per product+warehouse, ignoring variant and bin. A re-run
+ * corrupts ledger history and blinds the stock verifier that reads those
+ * snapshots. It is kept ONLY as a historical record of a one-off repair.
+ * It has been moved out of apps/backend/prisma/scripts/ so it can never
+ * be picked up by tooling or run by accident. NEVER execute it against
+ * any database — staging, client, or local-with-real-data.
+ */
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();

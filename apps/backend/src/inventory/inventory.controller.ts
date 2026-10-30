@@ -1,4 +1,6 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller, Get, Post, Body, Param, Query, UseGuards, BadRequestException, Logger,
+} from '@nestjs/common';
 import { InventoryService } from './inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -6,7 +8,9 @@ import { Permissions } from '../common/decorators/permissions.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { InventoryEnabledGuard } from '../stock/inventory-enabled.guard';
-import { StockReconciliationService } from '../stock/stock-reconciliation.service';
+import { ReconciliationFinderService } from '../reconciliation/reconciliation-finder.service';
+import { ReconciliationApplyService } from '../reconciliation/reconciliation-apply.service';
+import { ReconcileApplyDto } from './dto/reconcile-apply.dto';
 import {
   AdjustInventoryDto,
   BulkAdjustInventoryDto,
@@ -18,12 +22,14 @@ import { LedgerQueryDto } from './dto/ledger-query.dto';
 @Controller('inventory')
 @RequiresFeature('admin_inventory')
 export class InventoryController {
+  private readonly logger = new Logger(InventoryController.name);
   /** Hard ceiling for list endpoints — an unbounded perPage is a DB/memory hazard. */
   private static readonly MAX_PER_PAGE = 100;
 
   constructor(
     private readonly inventoryService: InventoryService,
-    private readonly reconciliation: StockReconciliationService,
+    private readonly reconFinder: ReconciliationFinderService,
+    private readonly reconApply: ReconciliationApplyService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -233,29 +239,49 @@ export class InventoryController {
   }
 
   /**
-   * On-demand stock reconciliation / healing.
-   * Heals orders whose stock state drifted from their status (delivered-but-not-
-   * deducted, cancelled-but-not-released, returned-but-not-restored).
-   * Idempotent. Optional ?orderId=... to heal a single order.
+   * Stock reconciliation report (2026-10-30 directive §2.3/§2.8).
+   *
+   * READ-ONLY: returns the finder table (R1–R5) + the Q1–Q8 verification
+   * set and writes NOTHING. (This route previously triggered the blanket
+   * boot heal on demand — that apply path is deleted. The only write path
+   * is POST /inventory/reconcile/apply below, which applies ONLY
+   * still-R1/R2 rows, never a blanket heal.)
    */
-  @Roles('superadmin', 'admin', 'employee')
+  @Permissions('run_stock_reconciliation')
   @Post('reconcile')
-  async reconcile(
-    @Query('orderId') orderId?: string,
+  async reconcile(@CurrentUser() user: { email: string }) {
+    this.logger.log(`Reconciliation report requested by ${user?.email ?? 'unknown'}`);
+    return this.reconFinder.buildReport();
+  }
+
+  /**
+   * Guarded reconciliation Apply (§2.8): re-runs the finder, applies ONLY
+   * rows that are still R1/R2 and listed in rowIds, via the guarded
+   * restore primitives. Requires a tested backup id + explicit
+   * confirmation; refuses while another run is RUNNING (409) and while
+   * STOCK_RECONCILE_ON_BOOT=true is present in the environment. The
+   * acting user is recorded from the auth token, never from the body.
+   */
+  @Permissions('run_stock_reconciliation')
+  @Post('reconcile/apply')
+  async reconcileApply(
+    @Body() body: ReconcileApplyDto,
+    @CurrentUser() user: { email: string },
   ) {
-    if (orderId) {
-      const outcome = await this.reconciliation.healOrder(orderId);
-      return { orderId, outcome };
+    if (body.confirmed !== true) {
+      throw new BadRequestException(
+        'Apply requires confirmed=true — preview the report and confirm first.',
+      );
     }
-    const result = await this.reconciliation.healAll();
-    return {
-      scanned: result.scanned,
-      deducted: result.deliveredDeducted,
-      restored: result.cancelledRestored,
-      blocked: result.blocked,
-      delta: result.delta,
-      verification: result.verification,
-      summary: result.summary,
-    };
+    if (!body.backupId || !body.backupId.trim()) {
+      throw new BadRequestException(
+        'Apply requires the id of a restore-tested backup taken immediately before the run.',
+      );
+    }
+    return this.reconApply.apply({
+      performedBy: user?.email ?? 'unknown',
+      backupId: body.backupId,
+      rowIds: body.rowIds ?? [],
+    });
   }
 }

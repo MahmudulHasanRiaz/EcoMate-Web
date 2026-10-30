@@ -333,4 +333,87 @@ describe('StockReconciliationService', () => {
     expect(result.releasedOrphaned).toBe(1);
     expect(result.deliveredDeducted).toBe(0);
   });
+
+  // ── 2026-10-30 reconciliation directive §5 ──────────────────────────
+
+  it('boot: warns and does NOT heal when STOCK_RECONCILE_ON_BOOT is set (auto-heal removed)', async () => {
+    const prev = process.env['STOCK_RECONCILE_ON_BOOT'];
+    process.env['STOCK_RECONCILE_ON_BOOT'] = 'true';
+    const healSpy = jest.spyOn(service, 'healAll');
+    const warnSpy = jest
+      .spyOn((service as any).logger, 'warn')
+      .mockImplementation(() => undefined);
+    try {
+      await service.onApplicationBootstrap();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('auto-heal was removed'),
+      );
+      expect(healSpy).not.toHaveBeenCalled();
+      expect(cancelReturnStock.restoreForOrder).not.toHaveBeenCalled();
+      expect(orderStockDeduct.deductForOrder).not.toHaveBeenCalled();
+    } finally {
+      if (prev === undefined) delete process.env['STOCK_RECONCILE_ON_BOOT'];
+      else process.env['STOCK_RECONCILE_ON_BOOT'] = prev;
+    }
+  });
+
+  it('boot: silent when the flag is absent', async () => {
+    const prev = process.env['STOCK_RECONCILE_ON_BOOT'];
+    delete process.env['STOCK_RECONCILE_ON_BOOT'];
+    const warnSpy = jest
+      .spyOn((service as any).logger, 'warn')
+      .mockImplementation(() => undefined);
+    try {
+      await service.onApplicationBootstrap();
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      if (prev !== undefined) process.env['STOCK_RECONCILE_ON_BOOT'] = prev;
+    }
+  });
+
+  it('heal double-run: the second healAll produces an EMPTY delta (idempotency regression)', async () => {
+    // Stateful fake: the Cancelled order is dirty until restoreForOrder
+    // "heals" it; the scan then no longer returns it — the same contract
+    // the real flag-clearing restore path provides.
+    let healed = false;
+    prisma.order.findMany.mockImplementation(async () =>
+      healed
+        ? []
+        : [
+            {
+              id: 'order-1',
+              status: { name: 'Cancelled' },
+              items: [
+                {
+                  managedStockReserved: false,
+                  managedStockDeducted: true,
+                  comboComponents: [],
+                },
+              ],
+            },
+          ],
+    );
+    prisma.order.findFirst.mockResolvedValue({ status: { name: 'Cancelled' } });
+    prisma.order.findUnique.mockResolvedValue({ status: { name: 'Cancelled' } });
+    cancelReturnStock.restoreForOrder.mockImplementation(async () => {
+      healed = true;
+    });
+
+    const first = await service.healAll();
+    expect(first.scanned).toBe(1);
+    expect(first.cancelledRestored).toBe(1);
+    expect(cancelReturnStock.restoreForOrder).toHaveBeenCalledTimes(1);
+
+    const second = await service.healAll();
+    expect(second.scanned).toBe(0);
+    expect(second.deliveredDeducted).toBe(0);
+    expect(second.cancelledRestored).toBe(0);
+    expect(second.releasedOrphaned).toBe(0);
+    expect(second.delta.reservationsReleased).toBe(0);
+    expect(second.delta.deductions).toBe(0);
+    expect(second.delta.restorations).toBe(0);
+    expect(second.delta.ordersRepaired).toBe(0);
+    // The underlying restore ran exactly once across both runs.
+    expect(cancelReturnStock.restoreForOrder).toHaveBeenCalledTimes(1);
+  });
 });

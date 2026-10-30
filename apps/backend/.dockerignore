@@ -5,3 +5,8 @@ node_modules
 dist
 coverage
 *.md
+
+# Destructive e2e inventory script must never ship in the production image
+# (2026-10-30 directive §2.6 — wipes blocked IPs, deletes PhysicalInventory,
+# resets stock, cancels live orders if its env flags are ever set).
+prisma/scripts/e2e-inventory-test.ts

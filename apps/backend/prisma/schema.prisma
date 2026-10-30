@@ -2132,6 +2132,28 @@ model ReturnCounter {
   seq  Int
 }
 
+// Audit record for one stock-reconciliation Apply run (admin page §2.8 or
+// the hardened reconcile-stock.ts tool). Written BEFORE the writes start
+// (status RUNNING) so a concurrent Apply can be refused with 409, and
+// completed with the outcome. performedBy comes from the auth token (or
+// the script's operator label) — never from a request body.
+model ReconciliationRun {
+  id           String    @id @default(uuid())
+  performedBy  String
+  backupId     String?
+  appliedCount Int       @default(0)
+  skippedCount Int       @default(0)
+  // JSON summary: { applied: string[], skipped: [{ id, reason }],
+  // checks: Q1–Q8 outcome, idempotency: { ok, remainingR1R2 } }
+  result       Json?
+  // RUNNING | COMPLETED | FAILED (plain string — no enum migration risk)
+  status       String    @default("RUNNING")
+  createdAt    DateTime  @default(now())
+  finishedAt   DateTime?
+
+  @@index([status, createdAt])
+}
+
 model Review {
   id           String   @id @default(uuid())
   productId    String
