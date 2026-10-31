@@ -4,7 +4,7 @@ import { CacheService } from '../cache/cache.service';
 import { CourierTokenService } from './courier-token.service';
 import { buildTrackingUrl } from './courier-webhook.service';
 import { orderRecipientPhone } from '../orders/order-recipient';
-import type { SteadfastCredentialSetsService } from './steadfast-credential-sets.service';
+import { SteadfastCredentialSetsService } from './steadfast-credential-sets.service';
 
 interface TrackingEvent {
   status: string;

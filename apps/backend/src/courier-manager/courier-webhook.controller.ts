@@ -19,7 +19,7 @@ import { Public } from '../common/decorators/public.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { WebhookAttemptOutcome, WebhookAttemptStage } from '@prisma/client';
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import type { SteadfastCredentialSetsService } from './steadfast-credential-sets.service';
+import { SteadfastCredentialSetsService } from './steadfast-credential-sets.service';
 import {
   timingSafeEqualText,
   verifyRawHmacSha256Hex,
