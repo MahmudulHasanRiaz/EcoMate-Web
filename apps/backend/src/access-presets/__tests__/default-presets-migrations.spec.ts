@@ -43,15 +43,25 @@ describe('access-preset repair migration stays conditional', () => {
   });
 
   it('converts to TEXT[] and defensively ensures isSystem exists', () => {
-    expect(repairSql).toContain('TYPE TEXT[]');
+    expect(repairSql).toContain('ADD COLUMN "permissions_repaired" TEXT[]');
     expect(repairSql).toContain(
       'ADD COLUMN IF NOT EXISTS "isSystem" BOOLEAN NOT NULL DEFAULT false',
     );
   });
 
-  it('never drops the table or the column', () => {
+  it('never drops the table, and converts via a shadow column', () => {
     expect(repairSql).not.toMatch(/DROP\s+TABLE/i);
-    expect(repairSql).not.toMatch(/DROP\s+COLUMN/i);
+    expect(repairSql).toContain('permissions_repaired');
+    expect(repairSql).toContain('RENAME COLUMN "permissions_repaired" TO "permissions"');
+  });
+
+  it('no stored value can abort the repair — per-row EXCEPTION fallback preserves it verbatim', () => {
+    // The first version of this migration failed on fxdmostul because a
+    // single ALTER ... USING (CASE ...) threw on an unanticipated stored
+    // shape. The row loop must keep its guarded parse attempts and the
+    // preserve-verbatim fallback.
+    expect(repairSql).toContain('EXCEPTION WHEN others THEN');
+    expect(repairSql).toContain('unparseable permissions value preserved verbatim');
   });
 });
 

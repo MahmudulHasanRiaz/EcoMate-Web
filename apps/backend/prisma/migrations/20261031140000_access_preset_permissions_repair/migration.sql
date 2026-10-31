@@ -7,26 +7,30 @@
 -- (20260707100000), which created the table correctly on fresh installs
 -- but never reshaped a table that already existed — so on that database
 -- the permissions column kept an early-era scalar shape (TEXT/JSONB
--- holding a JSON array string), and the Prisma driver cannot map a
--- string into a String[] field.
+-- holding permission keys in some serialized form), and the Prisma
+-- driver cannot map a string into a String[] field.
 --
--- This migration is deliberately CONDITIONAL and a strict NO-OP on every
--- healthy database (staging, avelto, fresh installs): it only acts when
--- information_schema says the column is not already TEXT[]. Per the
--- owner's backward-compatibility rule, the repair travels with the
--- redeploy and heals the affected client automatically — no manual SQL,
--- no data loss: every stored value is converted by shape:
---   NULL                -> {}
---   '["a","b"]' (JSON)  -> {a,b}
---   '{a,b}' (PG literal)-> {a,b}
---   '"a"' (JSON string) -> {a}
---   'a'   (bare value)  -> {a}
---   ''                  -> {}
--- An unparseable value fails the migration loudly rather than silently
--- dropping a client's permission data.
+-- FIRST VERSION OF THIS MIGRATION FAILED ON FXDMOSTUL (2026-10-31): a
+-- single-statement ALTER ... USING (CASE ...) aborted on a stored value
+-- whose shape matched a branch whose cast then threw. This version is
+-- therefore written so NO stored value can abort it:
+--   * conditional — a strict NO-OP when the column is already TEXT[]
+--     (staging, avelto, every healthy install);
+--   * row-by-row conversion through a shadow column, each parse attempt
+--     wrapped in its own EXCEPTION block;
+--   * a value that parses in NO known shape is preserved verbatim as a
+--     single array element with a WARNING — never silently dropped
+--     (sanitizePermissions ignores unknown keys at read time, and the
+--     original bytes stay auditable in the row).
+-- Shapes handled: NULL/'' -> {}; '["a","b"]' JSON array -> {a,b};
+-- '{a,b}' PG array literal -> {a,b}; '"a"' JSON string -> {a};
+-- 'a' bare value -> {a}.
 DO $$
 DECLARE
   col_udt text;
+  r record;
+  raw text;
+  converted TEXT[];
 BEGIN
   SELECT udt_name INTO col_udt
   FROM information_schema.columns
@@ -40,22 +44,45 @@ BEGIN
     RAISE NOTICE 'AccessPreset.permissions is already TEXT[] — no repair needed';
   ELSE
     RAISE NOTICE 'Repairing AccessPreset.permissions from % to TEXT[]', col_udt;
-    ALTER TABLE "AccessPreset"
-      ALTER COLUMN "permissions" TYPE TEXT[]
-      USING (
-        CASE
-          WHEN "permissions" IS NULL THEN '{}'::TEXT[]
-          WHEN btrim("permissions"::TEXT) LIKE '[%'
-            THEN ARRAY(SELECT jsonb_array_elements_text(("permissions"::TEXT)::jsonb))
-          WHEN btrim("permissions"::TEXT) LIKE '{%'
-            THEN ("permissions"::TEXT)::TEXT[]
-          WHEN btrim("permissions"::TEXT) LIKE '"%'
-            THEN ARRAY[trim(both '"' from "permissions"::TEXT)]
-          WHEN btrim("permissions"::TEXT) = '' THEN '{}'::TEXT[]
-          ELSE ARRAY["permissions"::TEXT]
-        END
-      );
+
+    ALTER TABLE "AccessPreset" ADD COLUMN "permissions_repaired" TEXT[];
+
+    FOR r IN SELECT id, "permissions"::TEXT AS raw_value FROM "AccessPreset" LOOP
+      raw := r.raw_value;
+      converted := NULL;
+
+      IF raw IS NULL OR btrim(raw) = '' THEN
+        converted := '{}'::TEXT[];
+      ELSIF btrim(raw) LIKE '[%' THEN
+        BEGIN
+          converted := ARRAY(SELECT jsonb_array_elements_text(raw::jsonb));
+        EXCEPTION WHEN others THEN
+          converted := NULL;
+        END;
+      ELSIF btrim(raw) LIKE '{%' THEN
+        BEGIN
+          converted := raw::TEXT[];
+        EXCEPTION WHEN others THEN
+          converted := NULL;
+        END;
+      ELSIF btrim(raw) LIKE '"%' THEN
+        converted := ARRAY[trim(both '"' from btrim(raw))];
+      ELSE
+        converted := ARRAY[raw];
+      END IF;
+
+      IF converted IS NULL THEN
+        RAISE WARNING 'AccessPreset %: unparseable permissions value preserved verbatim', r.id;
+        converted := ARRAY[raw];
+      END IF;
+
+      UPDATE "AccessPreset" SET "permissions_repaired" = converted WHERE id = r.id;
+    END LOOP;
+
+    ALTER TABLE "AccessPreset" DROP COLUMN "permissions";
+    ALTER TABLE "AccessPreset" RENAME COLUMN "permissions_repaired" TO "permissions";
     ALTER TABLE "AccessPreset" ALTER COLUMN "permissions" SET NOT NULL;
+    ALTER TABLE "AccessPreset" ALTER COLUMN "permissions" SET DEFAULT '{}';
   END IF;
 END $$;
 
