@@ -7,6 +7,7 @@ import { SafeImage } from '@/components/safe-image'
 import { CustomerContactActions } from '@/components/customer-contact-actions'
 import { CopyButton } from '@/components/copy-button'
 import { BlockPhoneDialog } from '@/features/orders/block-phone-dialog'
+import { blockedEntriesApi } from '@/features/blocking/api'
 import { CanonicalAttributionBadges } from '@/features/orders/canonical-attribution-badge'
 import { OthersInfoDialog } from '@/features/orders/others-info-dialog'
 import {
@@ -71,7 +72,7 @@ import { Separator } from '@/components/ui/separator'
 import {
   Loader2, ArrowLeft, ArrowRight, Package, Pencil, Save, Clock, User, ChevronDown, ChevronUp,
   Truck, ExternalLink, Printer, Eye, EyeOff, MessageSquarePlus, ArrowRightLeft, Tag, Send,
-  AlertTriangle, MoreHorizontal, Minus, Plus, X, MapPin, Mail, Phone, Trash2, RefreshCcw, Ban, Lock,
+  AlertTriangle, MoreHorizontal, Minus, Plus, X, MapPin, Mail, Phone, Trash2, RefreshCcw, Ban, Shield, Lock,
   RotateCcw, Calendar, CreditCard, CheckCircle2, ShoppingBag, History
 } from 'lucide-react'
 import { DISPATCH_STATUSES, getDispatchIdentifierLabels } from '@/features/dispatch/data/data'
@@ -93,6 +94,61 @@ const errMsg = (e: unknown): string => {
   if (Array.isArray(msg)) return msg.join(', ')
   if (typeof d === 'string' && d.trim()) return d.trim()
   return 'Update failed. Please try again.'
+}
+
+/**
+ * State-aware phone block control (2026-10-31): the order payload carries
+ * live `phoneBlocks` from the backend (active + not whitelisted + not
+ * expired — the same predicate order creation enforces), so a blocked
+ * number shows a Blocked badge + Unblock instead of the old static "Block"
+ * button that never reflected reality and offered no way back. Blocking
+ * from here touches ONLY the phone number (the dialog creates a phone
+ * block entry — never the customer account, never the IP).
+ */
+function PhoneBlockControl({ order, phone, onBlock }: { order: any; phone: string; onBlock: () => void }) {
+  const queryClient = useQueryClient()
+  const [unblocking, setUnblocking] = useState(false)
+  const state = Array.isArray(order?.phoneBlocks)
+    ? order.phoneBlocks.find((b: any) => b.phone === phone)
+    : undefined
+
+  if (state?.blocked && state.blockId) {
+    return (
+      <span className='inline-flex items-center gap-1.5'>
+        <span className='rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] sm:text-[11px] font-medium text-destructive'>Blocked</span>
+        <button
+          onClick={async () => {
+            setUnblocking(true)
+            try {
+              await blockedEntriesApi.unblock('phone', state.blockId)
+              toast.success('Phone number unblocked')
+              await queryClient.invalidateQueries({ queryKey: ['order', order.id] })
+              await queryClient.invalidateQueries({ queryKey: ['blocked-entries'] })
+            } catch {
+              toast.error('Failed to unblock phone')
+            } finally {
+              setUnblocking(false)
+            }
+          }}
+          disabled={unblocking}
+          className='inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] sm:text-[11px] font-medium text-primary hover:bg-primary/10 transition-colors disabled:opacity-50'
+          title='Unblock this phone'
+        >
+          <Shield className='h-3 w-3' />{unblocking ? 'Unblocking…' : 'Unblock'}
+        </button>
+      </span>
+    )
+  }
+
+  return (
+    <button
+      onClick={onBlock}
+      className='inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] sm:text-[11px] font-medium text-destructive hover:bg-destructive/10 transition-colors'
+      title='Block this phone from ordering'
+    >
+      <Ban className='h-3 w-3' />Block
+    </button>
+  )
 }
 
 /**
@@ -1994,13 +2050,11 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                             <span>{getCustomerPhone(order)}</span>
                           </a>
                           <CustomerContactActions phone={getCustomerPhone(order)} />
-                          <button
-                            onClick={() => setBlockPhones({ phones: [getCustomerPhone(order)], contextLabel: order.displayId })}
-                            className='inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] sm:text-[11px] font-medium text-destructive hover:bg-destructive/10 transition-colors'
-                            title='Block this phone from ordering'
-                          >
-                            <Ban className='h-3 w-3' />Block
-                          </button>
+                          <PhoneBlockControl
+                            order={order}
+                            phone={getCustomerPhone(order)}
+                            onBlock={() => setBlockPhones({ phones: [getCustomerPhone(order)], contextLabel: order.displayId })}
+                          />
                         </div>
                       )}
                       {(order as any).secondaryPhone && (
@@ -2011,13 +2065,11 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                           </a>
                           <span className='rounded border border-border/60 px-1 py-px text-[9px] sm:text-[10px] text-muted-foreground'>2nd</span>
                           <CustomerContactActions phone={(order as any).secondaryPhone} />
-                          <button
-                            onClick={() => setBlockPhones({ phones: [(order as any).secondaryPhone], contextLabel: order.displayId })}
-                            className='inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] sm:text-[11px] font-medium text-destructive hover:bg-destructive/10 transition-colors'
-                            title='Block this phone from ordering'
-                          >
-                            <Ban className='h-3 w-3' />Block
-                          </button>
+                          <PhoneBlockControl
+                            order={order}
+                            phone={(order as any).secondaryPhone}
+                            onBlock={() => setBlockPhones({ phones: [(order as any).secondaryPhone], contextLabel: order.displayId })}
+                          />
                         </div>
                       )}
                     </div>
@@ -2148,6 +2200,7 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
           onOpenChange={o => { if (!o) setBlockPhones(null) }}
           phones={blockPhones?.phones || []}
           contextLabel={blockPhones?.contextLabel}
+          onBlocked={() => { void queryClient.invalidateQueries({ queryKey: ['order', id] }) }}
         />
 
         {canViewOthersInfo && (

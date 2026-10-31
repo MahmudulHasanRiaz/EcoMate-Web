@@ -185,9 +185,19 @@ export class CustomersService {
 
     // ---- Linked phones (primary + secondaries), each with block state ----
     const linkedPhones = await this.getLinkedPhones(user.id);
+    // LIVE block state only — the same predicate the order-creation
+    // enforcement uses (BlockedEntriesService.findBlockedPhone). This query
+    // previously matched ANY historical row, so an unblocked or expired
+    // number showed "Blocked" forever and Unblock appeared to do nothing
+    // (owner report 2026-10-31).
     const phoneBlockRows = linkedPhones.length
       ? await this.prisma.blockedPhone.findMany({
-          where: { phone: { in: linkedPhones.map((p) => p.phone) } },
+          where: {
+            phone: { in: linkedPhones.map((p) => p.phone) },
+            isActive: true,
+            whitelisted: false,
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+          },
           select: { id: true, phone: true },
         })
       : [];
@@ -232,7 +242,12 @@ export class CustomersService {
     const ipList = [...ipMap.keys()];
     const ipBlockRows = ipList.length
       ? await this.prisma.blockedIp.findMany({
-          where: { ip: { in: ipList }, isActive: true },
+          where: {
+            ip: { in: ipList },
+            isActive: true,
+            whitelisted: false,
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+          },
           select: { id: true, ip: true, reason: true },
         })
       : [];

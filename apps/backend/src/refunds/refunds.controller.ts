@@ -58,7 +58,7 @@ export class RefundsController {
     @Body() dto: CreateRefundDto,
     @CurrentUser() user?: { userId: string; email: string },
   ) {
-    return this.svc.create(dto, user?.userId);
+    return this.svc.create(dto, user?.userId, user?.email);
   }
 
   @Roles('superadmin', 'admin', 'employee')

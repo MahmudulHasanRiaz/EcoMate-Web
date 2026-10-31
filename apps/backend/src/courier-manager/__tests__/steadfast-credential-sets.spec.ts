@@ -123,6 +123,24 @@ describe('Task 8: Steadfast hybrid credential sets', () => {
     expect(mockEncryption.encrypt).toHaveBeenCalled();
   });
 
+  it('revealSet decrypts one set on explicit request; unknown id 404s (2026-10-31)', async () => {
+    const prisma: any = makePrisma();
+    const svc = new SteadfastCredentialSetsService(prisma, mockEncryption);
+    const created = await svc.createSet({
+      label: 'Shop A',
+      apiKey: 'key-a',
+      secretKey: 'sec-a',
+      webhookSecret: 'wh-a',
+    });
+    const revealed = await svc.revealSet((created as any).id);
+    expect(revealed).toEqual({
+      apiKey: 'key-a',
+      secretKey: 'sec-a',
+      webhookSecret: 'wh-a',
+    });
+    await expect(svc.revealSet('set-999')).rejects.toThrow(/not found/i);
+  });
+
   it('order override wins over default', async () => {
     const prisma: any = makePrisma();
     const svc = new SteadfastCredentialSetsService(prisma, mockEncryption);

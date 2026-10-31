@@ -39,6 +39,7 @@ const webhookBase = (() => {
 
 const courierApi = {
   listCreds: () => apiClient.get('/couriers/credentials'),
+  revealCreds: (courier: string) => apiClient.get(`/couriers/credentials/${courier}/reveal`),
   updateCreds: (courier: string, d: Record<string, unknown>) => apiClient.put(`/couriers/credentials/${courier}`, d),
   // D1: the enable switch persists on its own — writes ONLY `enabled`, so it
   // never commits half-typed credentials or resets the legacy credentials JSON.
@@ -143,6 +144,29 @@ export function CourierSettings() {
   // values — only fieldsPresent. Saved secrets stay blank in the form
   // ("Saved — leave blank to keep"); the backend treats blank as keep.
   const [savedFields, setSavedFields] = useState<Record<string, string[]>>({})
+
+  // Owner-requested reveal (2026-10-31): a saved field's eye toggle fetches
+  // that courier's stored values ONCE (per-courier reveal endpoint) and
+  // shows them as selectable text so staff can read or mark-and-copy
+  // manually. Deliberately NO copy buttons. Form state is untouched by
+  // revealing — saving still sends only what staff typed (blank = keep).
+  const [revealedValues, setRevealedValues] = useState<Record<string, Record<string, string>>>({})
+  const [shownFields, setShownFields] = useState<Record<string, boolean>>({})
+  const revealCourier = async (courier: string) => {
+    if (revealedValues[courier]) return
+    try {
+      const r = await courierApi.revealCreds(courier)
+      setRevealedValues(prev => ({ ...prev, [courier]: (r.data as any)?.values || {} }))
+    } catch {
+      toast.error('Could not load the saved value')
+    }
+  }
+  const toggleFieldShown = (courier: string, field: string) => {
+    const key = `${courier}:${field}`
+    const next = !shownFields[key]
+    setShownFields(prev => ({ ...prev, [key]: next }))
+    if (next) void revealCourier(courier)
+  }
   const effectiveValues = (courier: string, form: CourierFormState) => {
     const saved = savedFields[courier] || []
     const out: Record<string, unknown> = { ...(form as unknown as Record<string, unknown>) }
@@ -440,31 +464,67 @@ export function CourierSettings() {
                 </div>
 
                 <div className='space-y-2'>
-                  {info.fields.map(field => (
-                    <div key={field}>
-                      <Label className='text-xs'>{fieldLabel[field] || field}</Label>
-                      <Input
-                        className='h-8 text-sm'
-                        type={field.includes('secret') || field === 'password' ? 'password' : 'text'}
-                        value={String(form[field] || '')}
-                        onChange={e => setForms(prev => ({ ...prev, [courier]: { ...prev[courier], [field]: e.target.value } }))}
-                        placeholder={(savedFields[courier] || []).includes(field) && !form[field]
-                          ? 'Saved — leave blank to keep'
-                          : `Enter ${fieldLabel[field] || field}...`}
-                      />
-                    </div>
-                  ))}
+                  {info.fields.map(field => {
+                    const isSavedField = (savedFields[courier] || []).includes(field)
+                    const shown = !!shownFields[`${courier}:${field}`]
+                    const isSecretField = /secret|password/i.test(field)
+                    const formValue = String(form[field] || '')
+                    // Revealing never writes form state: an untouched field
+                    // DISPLAYS the stored value while shown, and a save still
+                    // sends blank (= keep) unless staff actually type.
+                    const displayValue = formValue || (shown ? (revealedValues[courier]?.[field] || '') : '')
+                    return (
+                      <div key={field}>
+                        <Label className='text-xs'>{fieldLabel[field] || field}</Label>
+                        <div className='relative'>
+                          <Input
+                            className='h-8 text-sm pr-8'
+                            type={isSecretField && !shown ? 'password' : 'text'}
+                            value={displayValue}
+                            onChange={e => setForms(prev => ({ ...prev, [courier]: { ...prev[courier], [field]: e.target.value } }))}
+                            placeholder={isSavedField && !formValue && !shown
+                              ? 'Saved — leave blank to keep'
+                              : `Enter ${fieldLabel[field] || field}...`}
+                          />
+                          {isSavedField && (
+                            <button
+                              type='button'
+                              aria-label={shown ? `Hide saved ${fieldLabel[field] || field}` : `Show saved ${fieldLabel[field] || field}`}
+                              title={shown ? 'Hide saved value' : 'Show saved value'}
+                              onClick={() => toggleFieldShown(courier, field)}
+                              className='absolute right-1 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground'
+                            >
+                              {shown ? <EyeOff className='h-3.5 w-3.5' /> : <Eye className='h-3.5 w-3.5' />}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
                   {info.integrationField && (
                     <div>
                       <Label className='text-xs'>{fieldLabel[info.integrationField] || info.integrationField}</Label>
-                      <Input
-                        className='h-8 text-sm'
-                        value={String(form[info.integrationField] || '')}
-                        onChange={e => setForms(prev => ({ ...prev, [courier]: { ...prev[courier], [info.integrationField!]: e.target.value } }))}
-                        placeholder={(savedFields[courier] || []).includes(info.integrationField) && !form[info.integrationField]
-                          ? 'Saved — leave blank to keep'
-                          : 'The fixed token shown in Pathao docs (e.g. f3992ecc-...) — echoed in the response header'}
-                      />
+                      <div className='relative'>
+                        <Input
+                          className='h-8 text-sm pr-8'
+                          value={String(form[info.integrationField] || '') || (shownFields[`${courier}:${info.integrationField}`] ? (revealedValues[courier]?.[info.integrationField] || '') : '')}
+                          onChange={e => setForms(prev => ({ ...prev, [courier]: { ...prev[courier], [info.integrationField!]: e.target.value } }))}
+                          placeholder={(savedFields[courier] || []).includes(info.integrationField) && !form[info.integrationField] && !shownFields[`${courier}:${info.integrationField}`]
+                            ? 'Saved — leave blank to keep'
+                            : 'The fixed token shown in Pathao docs (e.g. f3992ecc-...) — echoed in the response header'}
+                        />
+                        {(savedFields[courier] || []).includes(info.integrationField) && (
+                          <button
+                            type='button'
+                            aria-label={shownFields[`${courier}:${info.integrationField}`] ? 'Hide saved value' : 'Show saved value'}
+                            title={shownFields[`${courier}:${info.integrationField}`] ? 'Hide saved value' : 'Show saved value'}
+                            onClick={() => toggleFieldShown(courier, info.integrationField!)}
+                            className='absolute right-1 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground'
+                          >
+                            {shownFields[`${courier}:${info.integrationField}`] ? <EyeOff className='h-3.5 w-3.5' /> : <Eye className='h-3.5 w-3.5' />}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>

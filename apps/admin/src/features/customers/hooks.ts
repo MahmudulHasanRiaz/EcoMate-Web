@@ -26,13 +26,18 @@ export function useCustomerDetail(id: string) {
   })
 }
 
+// These two hit /customers/:id/block|unblock — the ACCOUNT suspend toggle
+// behind the profile's "Block Account" button (the backend names are
+// historical). The toasts must say "account": the old "Phone number
+// blocked" text made an account action look like a phone block
+// (owner report 2026-10-31).
 export function useBlockPhone() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => customersApi.blockPhone(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['customer-detail'] })
-      toast.success('Phone number blocked')
+      toast.success('Account blocked')
     },
   })
 }
@@ -43,7 +48,7 @@ export function useUnblockPhone() {
     mutationFn: (id: string) => customersApi.unblockPhone(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['customer-detail'] })
-      toast.success('Phone number unblocked')
+      toast.success('Account unblocked')
     },
   })
 }

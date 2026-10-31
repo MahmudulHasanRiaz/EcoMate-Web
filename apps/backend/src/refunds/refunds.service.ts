@@ -117,7 +117,7 @@ export class RefundsService {
     return refund;
   }
 
-  async create(dto: CreateRefundDto, recordedBy?: string) {
+  async create(dto: CreateRefundDto, recordedBy?: string, actorEmail?: string) {
     const order = await this.prisma.order.findUnique({
       where: { id: dto.orderId },
       select: { id: true, total: true, kind: true, timeline: true },
@@ -300,7 +300,12 @@ export class RefundsService {
       const createdRefunds: any[] = [];
       const refundEntries: any[] = [];
       const at = new Date().toISOString();
-      const actor = recordedBy ? `staff:${recordedBy}` : 'system';
+      // Timeline `performedBy` convention is the staff EMAIL (orders.service
+      // writes user.email; the admin UserBadge resolves emails/ids to a
+      // name). The `staff:<userId>` tag belongs ONLY on Payment.recordedBy —
+      // using it here rendered the raw tag as the actor on refund/cancel
+      // timeline entries (owner report 2026-10-31).
+      const actor = actorEmail || 'system';
 
       const writeRefundSlice = async (
         amount: number,

@@ -758,6 +758,43 @@ describe('OrdersService', () => {
       ]);
     });
 
+    it('resolves legacy staff:<id> timeline actors to emails and attaches live phone block states (2026-10-31)', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        customerPhone: '+8801700000004',
+        timeline: [
+          {
+            type: 'refund',
+            amount: 100,
+            performedBy: 'staff:user-7',
+            timestamp: new Date().toISOString(),
+          },
+          {
+            status: 'Pending',
+            performedBy: 'admin@shop.com',
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      });
+      (prisma.userProfile as any).findMany = jest
+        .fn()
+        .mockResolvedValue([{ id: 'user-7', email: 'refunder@shop.com' }]);
+      (blockedEntries.findBlockedPhone as jest.Mock).mockResolvedValue({
+        id: 'block-1',
+      });
+
+      const result = await service.findOne('order-id-1', {
+        token: 'valid-token',
+        role: 'admin',
+      });
+
+      expect(result.timeline[0].performedBy).toBe('refunder@shop.com');
+      expect(result.timeline[1].performedBy).toBe('admin@shop.com');
+      expect((result as any).phoneBlocks).toEqual([
+        { phone: '+8801700000004', blocked: true, blockId: 'block-1' },
+      ]);
+    });
+
     it('loads product.category + combo relations so the browser Purchase can map content metadata (F1)', async () => {
       (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
 

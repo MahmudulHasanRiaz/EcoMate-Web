@@ -310,4 +310,40 @@ describe('CustomersService — linked phone numbers (CustomerPhone)', () => {
     expect(result?.stats).toMatchObject({ delivered: 0, cancelled: 0, successRate: 0 });
     expect(result?.summary).toMatchObject({ totalOrders: 2, totalSpent: 500 });
   });
+
+  it('findOne reads phone/IP block state with the LIVE predicate (active, not whitelisted, not expired) — 2026-10-31', async () => {
+    prisma.userProfile.findUnique.mockResolvedValue({
+      id: 'cust-1', firstName: 'Jane', lastName: 'Doe', username: 'cust_x',
+      email: null, phoneNumber: '+8801812345678', lastIp: null,
+      status: 'active', role: 'customer', createdAt: new Date(), updatedAt: new Date(),
+    });
+    prisma.order.aggregate.mockResolvedValue({ _count: 0, _sum: { total: 0 } });
+    prisma.customerProfile.findUnique.mockResolvedValue({
+      phone: '+8801812345678',
+      lastOrderIp: null,
+    });
+    prisma.customerPhone.findMany.mockResolvedValue([]);
+    prisma.blockedPhone.findMany.mockResolvedValue([]);
+    prisma.blockedIp.findMany.mockResolvedValue([]);
+
+    const result = await service.findOne('cust-1');
+
+    // The historical bug: this query matched ANY BlockedPhone row (even
+    // unblocked/expired), so numbers showed "Blocked" forever.
+    expect(prisma.blockedPhone.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          phone: { in: ['+8801812345678'] },
+          isActive: true,
+          whitelisted: false,
+          OR: [{ expiresAt: null }, { expiresAt: { gt: expect.any(Date) } }],
+        }),
+      }),
+    );
+    expect(result?.phones[0]).toMatchObject({
+      phone: '+8801812345678',
+      blocked: false,
+      blockId: null,
+    });
+  });
 });
