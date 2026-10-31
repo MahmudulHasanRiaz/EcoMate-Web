@@ -10,21 +10,28 @@
 -- holding permission keys in some serialized form), and the Prisma
 -- driver cannot map a string into a String[] field.
 --
--- FIRST VERSION OF THIS MIGRATION FAILED ON FXDMOSTUL (2026-10-31): a
--- single-statement ALTER ... USING (CASE ...) aborted on a stored value
--- whose shape matched a branch whose cast then threw. This version is
--- therefore written so NO stored value can abort it:
---   * conditional — a strict NO-OP when the column is already TEXT[]
---     (staging, avelto, every healthy install);
---   * row-by-row conversion through a shadow column, each parse attempt
---     wrapped in its own EXCEPTION block;
---   * a value that parses in NO known shape is preserved verbatim as a
---     single array element with a WARNING — never silently dropped
---     (sanitizePermissions ignores unknown keys at read time, and the
---     original bytes stay auditable in the row).
+-- This migration is written so NO stored value can abort it. (Two
+-- earlier shapes failed the incident review: a single ALTER ... USING
+-- (CASE ...) threw on a stored value whose branch cast failed, and a
+-- shadow-column swap would have to drop the old column, which the
+-- repo's post-P0 migration-safety gate forbids.) The conversion is
+-- three phases, all
+-- inside one conditional block:
+--   Phase 1: retype the column to TEXT (a ::TEXT cast never throws,
+--            whatever the source type).
+--   Phase 2: row-by-row, rewrite each value into a canonical Postgres
+--            array literal produced by serializing a TEXT[] built in
+--            PL/pgSQL. Every parse attempt is wrapped in EXCEPTION; a
+--            value that parses in NO known shape is preserved verbatim
+--            as a single element with a WARNING — never dropped
+--            (sanitizePermissions ignores unknown keys at read time).
+--   Phase 3: retype TEXT -> TEXT[]; every value is now a serializer-
+--            produced literal, so this cast cannot throw.
 -- Shapes handled: NULL/'' -> {}; '["a","b"]' JSON array -> {a,b};
 -- '{a,b}' PG array literal -> {a,b}; '"a"' JSON string -> {a};
 -- 'a' bare value -> {a}.
+-- On every healthy database (column already TEXT[]) the block is a
+-- strict NO-OP.
 DO $$
 DECLARE
   col_udt text;
@@ -45,9 +52,13 @@ BEGIN
   ELSE
     RAISE NOTICE 'Repairing AccessPreset.permissions from % to TEXT[]', col_udt;
 
-    ALTER TABLE "AccessPreset" ADD COLUMN "permissions_repaired" TEXT[];
+    -- Phase 1: anything -> TEXT (never throws).
+    ALTER TABLE "AccessPreset"
+      ALTER COLUMN "permissions" TYPE TEXT
+      USING "permissions"::TEXT;
 
-    FOR r IN SELECT id, "permissions"::TEXT AS raw_value FROM "AccessPreset" LOOP
+    -- Phase 2: normalize each stored value into an array literal.
+    FOR r IN SELECT id, "permissions" AS raw_value FROM "AccessPreset" LOOP
       raw := r.raw_value;
       converted := NULL;
 
@@ -76,11 +87,13 @@ BEGIN
         converted := ARRAY[raw];
       END IF;
 
-      UPDATE "AccessPreset" SET "permissions_repaired" = converted WHERE id = r.id;
+      UPDATE "AccessPreset" SET "permissions" = converted::TEXT WHERE id = r.id;
     END LOOP;
 
-    ALTER TABLE "AccessPreset" DROP COLUMN "permissions";
-    ALTER TABLE "AccessPreset" RENAME COLUMN "permissions_repaired" TO "permissions";
+    -- Phase 3: TEXT -> TEXT[] (all values are valid literals by now).
+    ALTER TABLE "AccessPreset"
+      ALTER COLUMN "permissions" TYPE TEXT[]
+      USING "permissions"::TEXT[];
     ALTER TABLE "AccessPreset" ALTER COLUMN "permissions" SET NOT NULL;
     ALTER TABLE "AccessPreset" ALTER COLUMN "permissions" SET DEFAULT '{}';
   END IF;

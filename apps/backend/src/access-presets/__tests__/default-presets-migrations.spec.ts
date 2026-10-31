@@ -43,16 +43,24 @@ describe('access-preset repair migration stays conditional', () => {
   });
 
   it('converts to TEXT[] and defensively ensures isSystem exists', () => {
-    expect(repairSql).toContain('ADD COLUMN "permissions_repaired" TEXT[]');
+    expect(repairSql).toContain('ALTER COLUMN "permissions" TYPE TEXT[]');
     expect(repairSql).toContain(
       'ADD COLUMN IF NOT EXISTS "isSystem" BOOLEAN NOT NULL DEFAULT false',
     );
   });
 
-  it('never drops the table, and converts via a shadow column', () => {
+  it('uses the three-phase conversion and no destructive statements', () => {
+    // Phase 1 retypes to TEXT (a cast that never throws), Phase 2
+    // normalizes row-by-row, Phase 3 retypes to TEXT[]. A shadow-column
+    // swap would need DROP COLUMN, which the repo migration-safety gate
+    // forbids in post-P0 migrations — keep this file free of it.
+    expect(repairSql).toContain('ALTER COLUMN "permissions" TYPE TEXT');
     expect(repairSql).not.toMatch(/DROP\s+TABLE/i);
-    expect(repairSql).toContain('permissions_repaired');
-    expect(repairSql).toContain('RENAME COLUMN "permissions_repaired" TO "permissions"');
+    // Same anchoring as the repo migration-safety gate (statement level,
+    // not comment prose).
+    expect(repairSql).not.toMatch(/^\s*ALTER\s+TABLE\b[^;]*\bDROP\s+COLUMN\b/im);
+    expect(repairSql).not.toMatch(/DELETE\s+FROM/i);
+    expect(repairSql).not.toMatch(/TRUNCATE/i);
   });
 
   it('no stored value can abort the repair — per-row EXCEPTION fallback preserves it verbatim', () => {
