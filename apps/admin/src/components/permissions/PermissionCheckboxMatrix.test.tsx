@@ -88,6 +88,12 @@ describe('PermissionCheckboxMatrix', () => {
     await expect.element(screen.getByText('Attendance Devices', { exact: true })).toBeInTheDocument()
     await expect.element(screen.getByText('Manage Attendance Devices')).toBeInTheDocument()
 
+    // Owner UX call (2026-10-31): raw permission keys (view_orders) are
+    // NOT rendered next to the labels — labels only, the key stays an
+    // internal identifier (search still matches it).
+    expect(screen.getByText('view_orders', { exact: true }).elements()).toHaveLength(0)
+    expect(screen.getByText('create_orders', { exact: true }).elements()).toHaveLength(0)
+
     expect(mockGet).toHaveBeenCalledWith('/permissions/catalogue')
   })
 
