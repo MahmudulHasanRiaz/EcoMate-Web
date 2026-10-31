@@ -1,6 +1,6 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import type { SteadfastCredentialSetsService } from './steadfast-credential-sets.service';
+import { SteadfastCredentialSetsService } from './steadfast-credential-sets.service';
 
 const CACHE_TTL_MS = 5 * 24 * 60 * 60 * 1000;
 

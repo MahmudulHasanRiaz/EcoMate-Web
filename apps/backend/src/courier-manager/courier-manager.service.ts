@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CourierTokenService } from './courier-token.service';
-import type { SteadfastCredentialSetsService } from './steadfast-credential-sets.service';
+import { SteadfastCredentialSetsService } from './steadfast-credential-sets.service';
 import { formatCourierAddress } from './address-format';
 import {
   courierSafeRecipientName,

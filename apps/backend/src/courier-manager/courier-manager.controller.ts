@@ -10,7 +10,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { WebhookAttemptOutcome } from '@prisma/client';
 import { CancelCarrybeeOrderDto } from './dto/cancel-carrybee-order.dto';
 import { UpdateCourierEnabledDto } from './dto/update-courier-enabled.dto';
-import type { SteadfastCredentialSetsService } from './steadfast-credential-sets.service';
+import { SteadfastCredentialSetsService } from './steadfast-credential-sets.service';
 
 @Roles('superadmin', 'admin', 'employee')
 @Controller('couriers')
