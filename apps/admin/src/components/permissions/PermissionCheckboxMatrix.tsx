@@ -298,10 +298,12 @@ export function PermissionCheckboxMatrix({ selected, onChange }: PermissionCheck
                           onCheckedChange={() => togglePermission(perm.key)}
                         />
                         <Label htmlFor={perm.key} className='cursor-pointer leading-snug'>
+                          {/* Owner UX call (2026-10-31): the raw key
+                              (view_coupons) is a developer artifact — staff
+                              think in labels, and the slug line only added
+                              visual noise. Search still matches on the key
+                              (see `matches` above) for anyone who knows it. */}
                           <span className='block text-sm'>{perm.label}</span>
-                          <span className='block font-mono text-[10px] text-muted-foreground'>
-                            {perm.key}
-                          </span>
                         </Label>
                       </div>
                     ))}
