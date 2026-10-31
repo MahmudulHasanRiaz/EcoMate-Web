@@ -625,6 +625,27 @@ probe_ddl() {
       fi
       ;;
 
+    20261031140000_access_preset_permissions_repair)
+      # DDL: AccessPreset.permissions retyped to TEXT[] (Prisma String[]).
+      # The migration is conditional and idempotent; its end state is
+      # exactly "the column is _text". Any other existing shape means the
+      # repair did NOT land (or stopped in a safely re-runnable state) ->
+      # rolled back, and the corrected migration re-applies on this boot.
+      col_type="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT udt_name FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'AccessPreset'
+             AND column_name = 'permissions';"
+      )"
+      if [ "$col_type" = "_text" ]; then
+        echo "APPLIED"
+      elif [ -n "$col_type" ]; then
+        echo "NOT_APPLIED"
+      else
+        echo "UNKNOWN"
+      fi
+      ;;
+
     *)
       echo "UNKNOWN"
       ;;
