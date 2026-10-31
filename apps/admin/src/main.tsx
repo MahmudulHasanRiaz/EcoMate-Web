@@ -9,6 +9,7 @@ import {
 import { RouterProvider, createRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { handleServerError } from '@/lib/handle-server-error'
+import { handleQueryError } from '@/lib/query-error-handler'
 import { APP_BASEPATH } from '@/lib/app-href'
 import { initSwUpdate } from '@/lib/sw-update'
 import { DirectionProvider } from './context/direction-provider'
@@ -45,25 +46,9 @@ const queryClient = new QueryClient({  defaultOptions: {
     },
   },
   queryCache: new QueryCache({
-    onError: (error) => {
-      if (import.meta.env.DEV) console.error('[Query Error]', error)
-
-      if (error instanceof AxiosError) {
-        if (error.response?.status === 401) {
-          return
-        }
-        if (error.response?.status === 500) {
-          toast.error('Internal Server Error!')
-          // Only navigate to error page in production to avoid disrupting HMR in development
-          if (import.meta.env.PROD) {
-            router.navigate({ to: '/500' })
-          }
-        }
-        if (error.response?.status === 403) {
-          // router.navigate("/forbidden", { replace: true });
-        }
-      }
-    },
+    // A failed query must never hijack the app to the /500 page — see
+    // lib/query-error-handler.ts (2026-10-31 presets-incident fix).
+    onError: handleQueryError,
   }),
 })
 

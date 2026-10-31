@@ -4,21 +4,40 @@ export interface ComputeEffectivePermissionsParams {
   role: string;
   employeeLink?: {
     accessPresetId?: string | null;
-    accessPreset?: { permissions: string[] } | null;
+    accessPreset?: { permissions: unknown } | null;
   } | null;
   /**
    * Custom additions, edited ONLY in Employee Management (HR) — never in
    * normal User Management. A hand-picked set with no linked preset behaves
    * as a custom preset (owner Q2).
+   *
+   * Typed `unknown` on purpose: these values come from Prisma Json columns
+   * (`better_auth_users.override_permissions` / `denied_permissions`,
+   * `access_presets.permissions`). A legacy or hand-edited row can hold a
+   * non-array JSON value, and this computation runs on EVERY authenticated
+   * request — spreading/iterating a non-array threw a TypeError and 500'd
+   * the whole request (the fixedplus HR-presets incident, 2026-10-31).
+   * asKeyArray() below coerces anything malformed to [].
    */
-  overridePermissions?: string[];
+  overridePermissions?: unknown;
   /**
    * Custom removals, edited ONLY in Employee Management (HR). Lets a preset
    * grant a capability while one employee loses exactly that capability
    * (owner Q3: preset + custom decrease/increase, done as deltas so a later
    * preset edit still propagates to everyone on it).
    */
-  deniedPermissions?: string[];
+  deniedPermissions?: unknown;
+}
+
+/**
+ * Coerce a stored permission list to a clean string array. Non-array JSON
+ * (object/string/number/null) becomes [], and non-string entries are
+ * dropped — a malformed stored value must degrade to "no keys from this
+ * source", never crash the caller.
+ */
+export function asKeyArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is string => typeof v === 'string');
 }
 
 const knownKeys = new Set<string>(getAllPermissions());
@@ -59,10 +78,11 @@ export function getRoleDefaultPermissions(role: string): string[] {
   return [];
 }
 
-export function sanitizePermissions(keys: string[] | undefined): string[] {
-  if (!keys || keys.length === 0) return [];
+export function sanitizePermissions(keys: unknown): string[] {
+  const list = asKeyArray(keys);
+  if (list.length === 0) return [];
   const out: string[] = [];
-  for (const key of keys) {
+  for (const key of list) {
     if (knownKeys.has(key) && !out.includes(key)) {
       out.push(key);
     }
@@ -101,9 +121,9 @@ export function computeEffectivePermissions(
   if (role === 'customer') {
     return [];
   }
-  const preset = params.employeeLink?.accessPreset?.permissions ?? [];
-  const adds = overridePermissions ?? [];
-  const denies = deniedPermissions ?? [];
+  const preset = asKeyArray(params.employeeLink?.accessPreset?.permissions);
+  const adds = asKeyArray(overridePermissions);
+  const denies = asKeyArray(deniedPermissions);
   const presetInUse =
     params.employeeLink?.accessPresetId != null ||
     (role !== 'admin' && (adds.length > 0 || denies.length > 0));

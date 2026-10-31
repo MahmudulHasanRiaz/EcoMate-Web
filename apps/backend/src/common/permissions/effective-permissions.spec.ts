@@ -1,4 +1,4 @@
-import { computeEffectivePermissions } from './effective-permissions';
+import { computeEffectivePermissions, sanitizePermissions } from './effective-permissions';
 import { getAllPermissions, PERMISSIONS } from './registry';
 
 describe('computeEffectivePermissions', () => {
@@ -235,5 +235,68 @@ describe('computeEffectivePermissions', () => {
     Object.values(PERMISSIONS)
       .flat()
       .forEach((key) => expect(allKeys).toContain(key));
+  });
+
+  // Regression (2026-10-31, fixedplus HR-presets 500s): the three stored
+  // permission lists come from Prisma Json columns. A legacy/hand-edited
+  // non-array value used to throw a TypeError inside this computation —
+  // which runs on every authenticated request — and 500 the request.
+  // Malformed values must degrade to "no keys from this source".
+  describe('malformed stored JSON (non-array permission lists)', () => {
+    it('object-shaped preset permissions → treated as an empty preset, no throw', () => {
+      const perms = computeEffectivePermissions({
+        role: 'employee',
+        employeeLink: {
+          accessPresetId: 'preset-1',
+          accessPreset: { permissions: { view_media: true } as unknown as string[] },
+        },
+      });
+      expect(perms).toEqual([]);
+    });
+
+    it('string-shaped override_permissions → ignored, role defaults apply', () => {
+      const perms = computeEffectivePermissions({
+        role: 'employee',
+        overridePermissions: 'view_media' as unknown as string[],
+      });
+      expect(perms).toEqual([
+        'view_media',
+        'view_customer_reviews',
+        'approve_customer_reviews',
+        'view_cod_mismatch',
+      ]);
+    });
+
+    it('object-shaped denied_permissions → ignored, preset grants stand', () => {
+      const perms = computeEffectivePermissions({
+        role: 'employee',
+        employeeLink: {
+          accessPresetId: 'preset-1',
+          accessPreset: { permissions: ['view_media'] },
+        },
+        deniedPermissions: { view_media: true } as unknown as string[],
+      });
+      expect(perms).toEqual(['view_media']);
+    });
+
+    it('non-string entries inside a stored array are dropped, valid keys survive', () => {
+      const perms = computeEffectivePermissions({
+        role: 'employee',
+        employeeLink: {
+          accessPresetId: 'preset-1',
+          accessPreset: {
+            permissions: ['view_media', 42, null, 'not_a_key'] as unknown as string[],
+          },
+        },
+      });
+      expect(perms).toEqual(['view_media']);
+    });
+
+    it('sanitizePermissions itself never throws on non-array input', () => {
+      expect(sanitizePermissions(undefined)).toEqual([]);
+      expect(sanitizePermissions(null as unknown as string[])).toEqual([]);
+      expect(sanitizePermissions({ a: 1 } as unknown as string[])).toEqual([]);
+      expect(sanitizePermissions('view_media' as unknown as string[])).toEqual([]);
+    });
   });
 });
