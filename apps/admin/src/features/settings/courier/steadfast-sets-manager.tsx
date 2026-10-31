@@ -8,18 +8,22 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Loader2, Plus, Pencil, Trash2, Star } from 'lucide-react'
+import { Loader2, Plus, Pencil, Trash2, Star, Eye, EyeOff } from 'lucide-react'
 
 const setsApi = {
   create: (d: Record<string, unknown>) => apiClient.post('/couriers/credential-sets', d),
   update: (id: string, d: Record<string, unknown>) => apiClient.put(`/couriers/credential-sets/${id}`, d),
   remove: (id: string) => apiClient.delete(`/couriers/credential-sets/${id}`),
   makeDefault: (id: string) => apiClient.post(`/couriers/credential-sets/${id}/make-default`, {}),
+  reveal: (id: string) => apiClient.get(`/couriers/credential-sets/${id}/reveal`),
 }
 
 // Task 8: Steadfast multi-account list (labels + default radio + masked
-// keys). Keys are write-only: the list endpoint never returns them, and the
-// form only sends a key when staff typed a new value (blank = keep).
+// keys). The list endpoint never returns keys, and the form only sends a
+// key when staff typed a new value (blank = keep). Owner-requested
+// exception (2026-10-31): the edit dialog's eye toggle reveals the stored
+// keys via a per-set reveal endpoint, shown as selectable text (no copy
+// buttons).
 export function SteadfastSetsManager() {
   const queryClient = useQueryClient()
   const { data: sets = [], isLoading } = useSteadfastSets()
@@ -28,6 +32,24 @@ export function SteadfastSetsManager() {
     label: '',
   })
   const [keys, setKeys] = useState({ apiKey: '', secretKey: '', webhookSecret: '' })
+  const [shownKeys, setShownKeys] = useState(false)
+
+  const toggleRevealKeys = async () => {
+    if (!dialog.id) return
+    if (shownKeys) { setShownKeys(false); return }
+    try {
+      const r = await setsApi.reveal(dialog.id)
+      const v = (r.data as any) || {}
+      setKeys({
+        apiKey: v.apiKey || '',
+        secretKey: v.secretKey || '',
+        webhookSecret: v.webhookSecret || '',
+      })
+      setShownKeys(true)
+    } catch {
+      toast.error('Could not load the saved keys')
+    }
+  }
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ['steadfast-credential-sets'] })
@@ -55,10 +77,12 @@ export function SteadfastSetsManager() {
 
   const openAdd = () => {
     setKeys({ apiKey: '', secretKey: '', webhookSecret: '' })
+    setShownKeys(false)
     setDialog({ open: true, label: '' })
   }
   const openEdit = (id: string, label: string) => {
     setKeys({ apiKey: '', secretKey: '', webhookSecret: '' })
+    setShownKeys(false)
     setDialog({ open: true, id, label })
   }
   const save = () => {
@@ -93,8 +117,8 @@ export function SteadfastSetsManager() {
       </div>
       <p className='text-[11px] text-muted-foreground leading-relaxed'>
         Multiple Steadfast merchant profiles (e.g. separate shops). The default books
-        every order unless staff picks another account at dispatch. Keys are never
-        displayed — only labels.
+        every order unless staff picks another account at dispatch. Keys stay hidden —
+        open an account and tap the eye on a key field to view it.
       </p>
       {isLoading ? (
         <div className='flex justify-center py-2'><Loader2 className='h-4 w-4 animate-spin' /></div>
@@ -143,36 +167,35 @@ export function SteadfastSetsManager() {
                 placeholder='e.g. Dhaka Shop'
               />
             </div>
-            <div>
-              <Label className='text-xs'>API Key{dialog.id && ' (blank = keep)'}</Label>
-              <Input
-                className='h-8 text-sm'
-                type='password'
-                value={keys.apiKey}
-                onChange={(e) => setKeys((p) => ({ ...p, apiKey: e.target.value }))}
-                placeholder={dialog.id ? '•••••••• (unchanged)' : 'Enter API Key...'}
-              />
-            </div>
-            <div>
-              <Label className='text-xs'>Secret Key{dialog.id && ' (blank = keep)'}</Label>
-              <Input
-                className='h-8 text-sm'
-                type='password'
-                value={keys.secretKey}
-                onChange={(e) => setKeys((p) => ({ ...p, secretKey: e.target.value }))}
-                placeholder={dialog.id ? '•••••••• (unchanged)' : 'Enter Secret Key...'}
-              />
-            </div>
-            <div>
-              <Label className='text-xs'>Webhook Token (optional, blank = keep)</Label>
-              <Input
-                className='h-8 text-sm'
-                type='password'
-                value={keys.webhookSecret}
-                onChange={(e) => setKeys((p) => ({ ...p, webhookSecret: e.target.value }))}
-                placeholder='•••••••• (unchanged)'
-              />
-            </div>
+            {([
+              { key: 'apiKey', label: `API Key${dialog.id ? ' (blank = keep)' : ''}`, placeholder: dialog.id ? '•••••••• (unchanged)' : 'Enter API Key...' },
+              { key: 'secretKey', label: `Secret Key${dialog.id ? ' (blank = keep)' : ''}`, placeholder: dialog.id ? '•••••••• (unchanged)' : 'Enter Secret Key...' },
+              { key: 'webhookSecret', label: 'Webhook Token (optional, blank = keep)', placeholder: '•••••••• (unchanged)' },
+            ] as const).map((f) => (
+              <div key={f.key}>
+                <Label className='text-xs'>{f.label}</Label>
+                <div className='relative'>
+                  <Input
+                    className='h-8 text-sm pr-8'
+                    type={shownKeys ? 'text' : 'password'}
+                    value={keys[f.key]}
+                    onChange={(e) => setKeys((p) => ({ ...p, [f.key]: e.target.value }))}
+                    placeholder={f.placeholder}
+                  />
+                  {dialog.id && (
+                    <button
+                      type='button'
+                      aria-label={shownKeys ? 'Hide saved keys' : 'Show saved keys'}
+                      title={shownKeys ? 'Hide saved keys' : 'Show saved keys'}
+                      onClick={() => void toggleRevealKeys()}
+                      className='absolute right-1 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground'
+                    >
+                      {shownKeys ? <EyeOff className='h-3.5 w-3.5' /> : <Eye className='h-3.5 w-3.5' />}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
           <DialogFooter>
             <Button variant='outline' onClick={() => setDialog({ open: false, label: '' })}>Cancel</Button>

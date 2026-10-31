@@ -16,6 +16,8 @@ interface BlockPhoneDialogProps {
   onOpenChange: (open: boolean) => void
   phones: string[]
   contextLabel?: string
+  /** Called after at least one number was blocked (e.g. so an order page can refetch its live block state). */
+  onBlocked?: () => void
 }
 
 /**
@@ -28,6 +30,7 @@ export function BlockPhoneDialog({
   onOpenChange,
   phones,
   contextLabel,
+  onBlocked,
 }: BlockPhoneDialogProps) {
   const qc = useQueryClient()
   const [reason, setReason] = useState('')
@@ -52,6 +55,7 @@ export function BlockPhoneDialog({
       const succeeded = unique.length - failedBlocks.length
       await qc.invalidateQueries({ queryKey: ['blocked-entries'] })
       if (succeeded > 0) {
+        onBlocked?.()
         toast.success(
           succeeded === 1 ? '1 phone blocked from ordering' : `${succeeded} phones blocked from ordering`,
         )

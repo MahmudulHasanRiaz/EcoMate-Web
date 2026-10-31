@@ -59,6 +59,9 @@ const credentialRow = (courier: string, overrides: CourierRow = {}): CourierRow 
 function mockGets(creds: CourierRow[]) {
   getMock.mockImplementation(async (url: string) => {
     if (url === '/couriers/credentials') return { data: creds } as never
+    if (url === '/couriers/credentials/steadfast/reveal') {
+      return { data: { courier: 'steadfast', values: { apiKey: 'saved-key-123', secretKey: 'saved-secret-456' } } } as never
+    }
     if (url === '/couriers/default-note') return { data: { note: '' } } as never
     if (url === '/couriers/webhook-status') {
       return {
@@ -184,5 +187,42 @@ describe('CourierSettings — D2 truthful connection label', () => {
     const screen = await renderSettings()
 
     await expect.element(screen.getByText('Enabled — credentials missing')).toBeInTheDocument()
+  })
+})
+
+describe('CourierSettings — credential eye reveal (2026-10-31)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('eye toggle fetches the saved value once and displays it as selectable text; form state stays blank so Save still sends blank (= keep)', async () => {
+    mockGets([
+      credentialRow('steadfast', { fieldsPresent: ['apiKey', 'secretKey'] }),
+    ])
+    putMock.mockResolvedValue({ data: {} } as never)
+    const screen = await renderSettings()
+
+    const eye = screen.getByRole('button', { name: 'Show saved API Key' })
+    await expect.element(eye).toBeInTheDocument()
+    await userEvent.click(eye)
+
+    await vi.waitFor(() => {
+      expect(getMock).toHaveBeenCalledWith('/couriers/credentials/steadfast/reveal')
+    })
+    // The revealed value is rendered in the field (selectable text).
+    await vi.waitFor(() => {
+      const inputs = Array.from(document.querySelectorAll('input'))
+      expect(inputs.some((i) => (i as HTMLInputElement).value === 'saved-key-123')).toBe(true)
+    })
+    // No copy buttons were added for credential fields.
+    expect(screen.getByRole('button', { name: /copy/i }).elements()).toHaveLength(0)
+
+    // Saving without typing must still send blank for the field (backend
+    // blank = keep): revealing must not write the value into form state.
+    await userEvent.click(screen.getByRole('button', { name: /Save Credentials/i }))
+    await vi.waitFor(() => expect(putMock).toHaveBeenCalled())
+    const payload = putMock.mock.calls[0][1] as Record<string, unknown>
+    expect(payload.apiKey).toBe('')
+    expect(payload.secretKey).toBe('')
   })
 })

@@ -147,6 +147,30 @@ export class SteadfastCredentialSetsService {
     }
   }
 
+  /**
+   * Owner-requested reveal (2026-10-31): decrypt one set's stored keys for
+   * the settings eye toggle. The list endpoint stays labels/flags-only;
+   * values leave the server only through this explicit per-set request,
+   * behind the controller's settings @Roles gate.
+   */
+  async revealSet(
+    id: string,
+  ): Promise<{ apiKey: string; secretKey: string; webhookSecret: string }> {
+    const delegate = (this.prisma as any)?.courierCredentialSet;
+    const row =
+      typeof delegate?.findUnique === 'function'
+        ? await delegate.findUnique({ where: { id } })
+        : null;
+    if (!row) throw new NotFoundException(`Credential set ${id} not found`);
+    return {
+      apiKey: row.apiKeyEnc ? this.encryption.decrypt(row.apiKeyEnc) : '',
+      secretKey: row.secretKeyEnc ? this.encryption.decrypt(row.secretKeyEnc) : '',
+      webhookSecret: row.webhookSecretEnc
+        ? this.encryption.decrypt(row.webhookSecretEnc)
+        : '',
+    };
+  }
+
   async createSet(input: {
     label: string;
     apiKey: string;

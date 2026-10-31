@@ -239,6 +239,77 @@ describe('RefundsService', () => {
       expect(result.status).toBe('pending');
     });
 
+    it('stamps the refund timeline entry with the actor EMAIL, never the staff:<id> tag (2026-10-31)', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        id: 'order-id-1',
+        total: 2000,
+        kind: 'SALE',
+        timeline: [],
+      });
+      (prisma.payment.aggregate as jest.Mock).mockResolvedValue({
+        _sum: { amount: 2000 },
+      });
+      (prisma.refund.aggregate as jest.Mock).mockResolvedValue({
+        _sum: { amount: 0 },
+      });
+      (prisma.refund.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.payment.findFirst as jest.Mock).mockResolvedValue({ id: 'pay-1' });
+      (prisma.refund.create as jest.Mock).mockResolvedValue(mockRefund);
+
+      await service.create(createDto, 'user-id-9', 'staff.person@example.com');
+
+      const timelineWrite = (prisma.order.update as jest.Mock).mock.calls
+        .map((c) => c[0])
+        .find((a) => Array.isArray(a?.data?.timeline));
+      expect(timelineWrite).toBeTruthy();
+      const refundEntry = timelineWrite.data.timeline.find(
+        (e: any) => e.type === 'refund',
+      );
+      expect(refundEntry).toBeTruthy();
+      expect(refundEntry.performedBy).toBe('staff.person@example.com');
+      expect(refundEntry.performedBy).not.toContain('staff:');
+    });
+
+    it('cancelToo stamps BOTH the refund and the Cancelled timeline entries with the actor email (2026-10-31)', async () => {
+      (prisma as any).orderStatus = {
+        findFirst: jest.fn().mockResolvedValue({ id: 'st-cancelled' }),
+      };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        id: 'order-id-1',
+        total: 2000,
+        kind: 'SALE',
+        timeline: [],
+      });
+      (prisma.payment.aggregate as jest.Mock).mockResolvedValue({
+        _sum: { amount: 2000 },
+      });
+      (prisma.refund.aggregate as jest.Mock).mockResolvedValue({
+        _sum: { amount: 0 },
+      });
+      (prisma.refund.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.payment.findFirst as jest.Mock).mockResolvedValue({ id: 'pay-1' });
+      (prisma.refund.create as jest.Mock).mockResolvedValue(mockRefund);
+
+      await service.create(
+        { ...createDto, amount: 2000, cancelToo: true },
+        'user-id-9',
+        'staff.person@example.com',
+      );
+
+      const timelineWrite = (prisma.order.update as jest.Mock).mock.calls
+        .map((c) => c[0])
+        .find((a) => Array.isArray(a?.data?.timeline));
+      expect(timelineWrite).toBeTruthy();
+      const entries = timelineWrite.data.timeline;
+      expect(
+        entries.find((e: any) => e.type === 'refund')?.performedBy,
+      ).toBe('staff.person@example.com');
+      expect(
+        entries.find((e: any) => e.status === 'Cancelled')?.performedBy,
+      ).toBe('staff.person@example.com');
+      delete (prisma as any).orderStatus;
+    });
+
     it('caps the refund by the amount actually PAID, not the order total', async () => {
       // Order worth 2000 but only 500 collected (COD). A refund of 1000 would
       // reverse revenue that was never recognised.

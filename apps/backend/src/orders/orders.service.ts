@@ -1268,12 +1268,91 @@ export class OrdersService {
     const transformed = this.transformOrder(order);
     if (!isAdmin) {
       transformed.timeline = this.toPublicTimeline(order.timeline);
-    } else if (Array.isArray(transformed.timeline)) {
-      // Timeline source attribution for the admin All/Staff/Courier/System
-      // filters — derived at read time (writers never persist a source field).
-      transformed.timeline = withTimelineSources(transformed.timeline);
+    } else {
+      if (Array.isArray(transformed.timeline)) {
+        // Legacy repair (2026-10-31): refund timeline entries written before
+        // the actor fix carry performedBy as a `staff:<userId>` tag (the
+        // Payment.recordedBy convention) — the admin badge cannot resolve
+        // it and prints the raw tag. Resolve the tag to the staff email at
+        // read time, the timeline's actual convention.
+        transformed.timeline =
+          await this.resolveLegacyTimelineActors(transformed.timeline);
+        // Timeline source attribution for the admin All/Staff/Courier/System
+        // filters — derived at read time (writers never persist a source field).
+        transformed.timeline = withTimelineSources(transformed.timeline);
+      }
+      // Live phone-block state for the order's numbers, so the detail page
+      // can render Block vs Unblock truthfully (owner report 2026-10-31).
+      (transformed as any).phoneBlocks =
+        await this.findPhoneBlockStates(transformed);
     }
     return transformed;
+  }
+
+  /** Resolve legacy `staff:<userId>` timeline actors to staff emails. */
+  private async resolveLegacyTimelineActors(
+    timeline: any[],
+  ): Promise<any[]> {
+    const ids = new Set<string>();
+    for (const e of timeline) {
+      const v = (e as any)?.performedBy ?? (e as any)?.performer;
+      if (typeof v === 'string' && v.startsWith('staff:')) {
+        ids.add(v.slice('staff:'.length));
+      }
+    }
+    if (ids.size === 0) return timeline;
+    const delegate = (this.prisma as any)?.userProfile;
+    if (typeof delegate?.findMany !== 'function') return timeline;
+    const users = await delegate
+      .findMany({
+        where: { id: { in: [...ids] } },
+        select: { id: true, email: true },
+      })
+      .catch(() => [] as { id: string; email: string }[]);
+    if (users.length === 0) return timeline;
+    const emailById = new Map(users.map((u) => [u.id, u.email]));
+    return timeline.map((e) => {
+      if (!e || typeof e !== 'object') return e;
+      const out = { ...(e as any) };
+      for (const key of ['performedBy', 'performer']) {
+        const v = out[key];
+        if (typeof v === 'string' && v.startsWith('staff:')) {
+          const email = emailById.get(v.slice('staff:'.length));
+          if (email) out[key] = email;
+        }
+      }
+      return out;
+    });
+  }
+
+  /**
+   * Live block state (BlockedEntriesService semantics: active, not
+   * whitelisted, not expired) for the order's primary + secondary phones.
+   */
+  private async findPhoneBlockStates(
+    order: any,
+  ): Promise<{ phone: string; blocked: boolean; blockId: string | null }[]> {
+    const primary =
+      order?.customerPhone ||
+      order?.guestPhone ||
+      order?.customer?.phone ||
+      order?.customer?.phoneNumber ||
+      '';
+    const phones = [
+      ...new Set(
+        [primary, order?.secondaryPhone].filter(
+          (p): p is string => typeof p === 'string' && p.trim() !== '',
+        ),
+      ),
+    ];
+    return Promise.all(
+      phones.map(async (phone) => {
+        const hit = await this.blockedEntries
+          .findBlockedPhone(phone)
+          .catch(() => null);
+        return { phone, blocked: !!hit, blockId: hit?.id ?? null };
+      }),
+    );
   }
 
   /**

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, Optional } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, Optional, NotFoundException } from '@nestjs/common';
 import { CourierManagerService } from './courier-manager.service';
 import { CourierTrackingService } from './courier-tracking.service';
 import { CourierWebhookService } from './courier-webhook.service';
@@ -35,20 +35,25 @@ export class CourierManagerController {
   // courier API key/secret in one GET. Callers get fieldsPresent (which
   // secret fields are set) and must send new values to change them; the
   // PUT below treats an empty/missing secret field as "keep existing".
+  // Owner-requested exception (2026-10-31): the per-courier reveal
+  // endpoint further down returns ONE courier's values on an explicit
+  // eye-toggle click — the bulk list stays masked.
+  private static readonly SECRET_FIELDS = [
+    'apiKey',
+    'secretKey',
+    'username',
+    'password',
+    'clientId',
+    'clientSecret',
+    'clientContext',
+    'storeId',
+    'shopId',
+    'webhookSecret',
+    'pathaoIntegrationSecret',
+  ];
+
   private maskCredentials(row: any) {
-    const SECRET_FIELDS = [
-      'apiKey',
-      'secretKey',
-      'username',
-      'password',
-      'clientId',
-      'clientSecret',
-      'clientContext',
-      'storeId',
-      'shopId',
-      'webhookSecret',
-      'pathaoIntegrationSecret',
-    ];
+    const SECRET_FIELDS = CourierManagerController.SECRET_FIELDS;
     const credsJson =
       row.credentials && typeof row.credentials === 'object'
         ? row.credentials
@@ -98,6 +103,39 @@ export class CourierManagerController {
     }
 
     return existing.map((r) => this.maskCredentials(r));
+  }
+
+  /**
+   * Reveal ONE courier's stored credential values (owner request
+   * 2026-10-31: eye toggle on the settings page; revealed text is
+   * selectable for manual copy — no bulk exposure). Same class-level
+   * @Roles gate as credential writes. Values merge the columns with the
+   * legacy credentials JSON, exactly as dispatch reads them.
+   */
+  @Get('credentials/:courier/reveal')
+  async revealCredentials(@Param('courier') courier: string) {
+    const row = await this.prisma.courierCredentials.findUnique({
+      where: { courier },
+    });
+    if (!row) {
+      throw new NotFoundException(`Courier ${courier} is not configured`);
+    }
+    const credsJson =
+      row.credentials && typeof row.credentials === 'object'
+        ? (row.credentials as Record<string, unknown>)
+        : {};
+    const values: Record<string, string> = {};
+    for (const f of CourierManagerController.SECRET_FIELDS) {
+      const col = (row as any)[f];
+      const legacy = credsJson[f];
+      values[f] =
+        typeof col === 'string' && col !== ''
+          ? col
+          : typeof legacy === 'string'
+            ? legacy
+            : '';
+    }
+    return { courier, values };
   }
 
   @Get('default-note')
@@ -323,6 +361,12 @@ export class CourierManagerController {
   @Post('credential-sets/:id/make-default')
   async makeCredentialSetDefault(@Param('id') id: string) {
     return this.requireSets().setDefault(id);
+  }
+
+  /** Reveal one Steadfast set's decrypted keys (eye toggle, 2026-10-31). */
+  @Get('credential-sets/:id/reveal')
+  async revealCredentialSet(@Param('id') id: string) {
+    return this.requireSets().revealSet(id);
   }
 
   @Get('steadfast/balance')
