@@ -831,6 +831,7 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
         // normal create; failures are surfaced, never silent.
         const post = postCreateRef.current
         postCreateRef.current = null
+        let recordedSum = 0
         if (post && exId && post.rows.length > 0) {
           const failures: string[] = []
           for (let i = 0; i < post.rows.length; i++) {
@@ -843,6 +844,7 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                 transactionId: r.transactionId.trim() || undefined,
                 notes: r.note.trim() || undefined,
               })
+              recordedSum += parseFloat(r.amount) || 0
             } catch (e: any) {
               failures.push(`payment row ${i + 1}: ${e?.response?.data?.message || 'failed'}`)
             }
@@ -856,10 +858,21 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
           queryClient.invalidateQueries({ queryKey: ['order', exId] })
         }
         if (s?.status === 'SETTLED_DUE') {
-          toast.warning(
-            `Collect ৳${Number(s.delta).toFixed(2)} — the customer paid ৳${Number(s.originalPaid).toFixed(2)} on the original, the exchange costs ৳${Number(s.exchangeTotal).toFixed(2)}.`,
-            { duration: 9000 },
-          )
+          // s.delta is the creation-time settlement figure — net out what
+          // was just recorded above, or the toast tells staff to collect
+          // money already collected via the gateway.
+          const remainingCod = Math.max(0, Number(s.delta) - recordedSum)
+          if (remainingCod > 0) {
+            toast.warning(
+              `Collect ৳${remainingCod.toFixed(2)} on delivery — the customer paid ৳${Number(s.originalPaid).toFixed(2)} on the original, the exchange costs ৳${Number(s.exchangeTotal).toFixed(2)}.`,
+              { duration: 9000 },
+            )
+          } else if (recordedSum > 0) {
+            toast.success(
+              `Collected ৳${recordedSum.toFixed(2)} now — nothing to collect on delivery.`,
+              { duration: 9000 },
+            )
+          }
         } else if (s?.status === 'SETTLED_REFUND') {
           toast.warning(
             `Refund ৳${Number(s.delta).toFixed(2)} — unused credit from the original order. A refund has been raised for review.`,
@@ -2211,6 +2224,13 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                   : isEdit ? <Save className='h-4 w-4 mr-2' /> : <Plus className='h-4 w-4 mr-2' />}
                 {submitLabel}
               </Button>
+              {isExchange && !paidValid && (
+                <p className='text-[11px] text-amber-600 dark:text-amber-400 mt-1.5 text-center'>
+                  {!paidConfirmedChecked
+                    ? 'Tick “I confirm the customer paid…” in Payment Details to enable this button.'
+                    : 'Enter the adjustment reason in Payment Details to enable this button.'}
+                </p>
+              )}
             </div>
 
           </div>

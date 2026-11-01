@@ -143,6 +143,7 @@ describe('ExchangeService — paidConfirmed + transfer rows (hardening 4)', () =
               return { subtotal, total: Math.max(0, subtotal + shipping - eff) };
             },
             applyStockForLine: jest.fn().mockResolvedValue(undefined),
+            verifyStockForOrder: jest.fn().mockResolvedValue(undefined),
           },
         },
         { provide: OrdersEventService, useValue: { emit: jest.fn() } },
