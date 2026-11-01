@@ -47,7 +47,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Loader2, ArrowLeft, ArrowRightLeft, Package, Barcode, Plus, Trash2, X, User, Phone, Mail, MapPin, CreditCard, ShoppingCart, Tag, Minus, Search, FileText, Receipt, Layers, Save, AlertTriangle } from 'lucide-react'
+import { Loader2, ArrowLeft, Package, Barcode, Plus, Trash2, X, User, Phone, Mail, MapPin, CreditCard, ShoppingCart, Tag, Minus, Search, FileText, Receipt, Layers, Save, AlertTriangle } from 'lucide-react'
 const nn = (v: number | string) => Number(v)
 
 const fmt = (v: number | string) => nn(v).toFixed(2)
@@ -293,6 +293,27 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
   const [exFullAccountId, setExFullAccountId] = useState('')
   const [exFullTxn, setExFullTxn] = useState('')
   const [exFullNote, setExFullNote] = useState('')
+
+  // Unified exchange money math — mirrors the backend settle() exactly, so
+  // every figure on the page agrees (owner round 2026-11-01: the old
+  // Settlement card read the RECORDED-only preview while the confirm block
+  // used the CONFIRMED figure, and the two "To collect" numbers diverged
+  // whenever staff confirmed a payment the ledger had not recorded yet —
+  // e.g. a COD order the courier collected but settlement has not posted).
+  // Credit = confirmed paid − what sibling exchanges already consumed.
+  const exchangeMoney = (exchangeTotal: number) => {
+    const priorCredit = settlementPreview
+      ? Math.max(0, recordedPaid - nn(settlementPreview.creditAvailable))
+      : 0
+    const available = Math.max(0, paid - priorCredit)
+    const creditApplied = Math.min(available, exchangeTotal)
+    return {
+      available,
+      creditApplied,
+      dueAfterCredit: Math.max(0, exchangeTotal - creditApplied),
+      refundDue: Math.max(0, available - creditApplied),
+    }
+  }
 
   // ── Task 11 (JOB C): customer credit offer (create mode, linked customer) ─
   const { data: customerCredit, isLoading: creditLoading } = useQuery({
@@ -930,7 +951,7 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
       // Payment cascade for the still-to-collect difference: validate the
       // collection and snapshot it — the success handler records it against
       // the new exchange order (postCreateRef, same pattern as create).
-      const toCollectNow = Math.max(0, calculateTotal() - paid)
+      const toCollectNow = exchangeMoney(calculateTotal()).dueAfterCredit
       postCreateRef.current = null
       if (toCollectNow > 0.005 && paymentMode === 'full') {
         if (!exFullGateway) {
@@ -1044,6 +1065,18 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
   const subtotal = calculateSubtotal()
   const discountValue = calculateDiscountValue()
   const total = calculateTotal()
+
+  // Exchange payment summary (render): ONE set of figures for the whole
+  // page — credit from the confirmed paid, what is collected now, and the
+  // single remaining COD amount.
+  const exMoney = isExchange ? exchangeMoney(total) : null
+  const exCollectedNow =
+    !exMoney || paymentMode === 'cod'
+      ? 0
+      : paymentMode === 'full'
+        ? exMoney.dueAfterCredit
+        : collectedRowsTotal(nonEmptyCollectedRows(collectedRows))
+  const exCodDue = exMoney ? Math.max(0, exMoney.dueAfterCredit - exCollectedNow) : 0
 
   const submitLabel =
     isExchange ? 'Create Exchange Order' : isEdit ? 'Update Order' : 'Create Order'
@@ -1854,71 +1887,12 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
               </CardContent>
             </Card>
 
-            {/* Exchange paid-confirm (phase-1 contract): pre-filled from the
-              ledger, CONFIRM required, reason required on adjustment. */}
-            {isExchange && editOrder && (
-              <ExchangePaidConfirm
-                recordedPaid={recordedPaid}
-                exchangeTotal={total}
-                paid={paid}
-                reason={paidReason}
-                confirmed={paidConfirmedChecked}
-                onPaid={setPaid}
-                onReason={setPaidReason}
-                onConfirmed={setPaidConfirmedChecked}
-              />
-            )}
-
-            {/* Exchange settlement preview (§4) */}
-            {isExchange && settlementPreview && (
-              <Card className='overflow-hidden border border-primary/30 shadow-xs rounded-xl'>
-                <CardHeader className='bg-primary/5 border-b border-primary/20 py-3 px-4 sm:py-3.5 sm:px-6'>
-                  <div className='flex items-center gap-2.5'>
-                    <div className='h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-semibold shrink-0'>
-                      <ArrowRightLeft className='h-4 w-4' />
-                    </div>
-                    <div>
-                      <CardTitle className='text-sm sm:text-base font-semibold tracking-tight text-foreground'>
-                        Settlement
-                      </CardTitle>
-                      <p className='text-xs text-muted-foreground mt-0.5'>
-                        Settled against what the customer already paid
-                      </p>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className='p-4 sm:p-6 space-y-3'>
-                  <div className='bg-muted/50 rounded-xl p-3.5 space-y-2 text-sm border border-border/40'>
-                    <div className='flex justify-between items-center'>
-                      <span className='text-muted-foreground'>Paid on {settlementPreview.displayId}</span>
-                      <span className='font-medium text-foreground'>৳{fmt(nn(settlementPreview.originalPaid))}</span>
-                    </div>
-                    <div className='flex justify-between items-center'>
-                      <span className='text-muted-foreground'>This exchange</span>
-                      <span className='font-medium text-foreground'>৳{fmt(total)}</span>
-                    </div>
-                    <div className='flex justify-between items-center font-bold text-base pt-2.5 border-t border-border/60'>
-                      <span>To collect</span>
-                      <span className='text-primary text-lg font-extrabold'>
-                        ৳{fmt(Math.max(0, total - nn(settlementPreview.creditAvailable)))}
-                      </span>
-                    </div>
-                    {total < nn(settlementPreview.creditAvailable) && (
-                      <div className='flex justify-between items-center text-xs font-semibold text-amber-600 dark:text-amber-400 pt-1.5 border-t border-dashed border-border/60'>
-                        <span>Refund due (unused credit)</span>
-                        <span>৳{fmt(nn(settlementPreview.creditAvailable) - total)}</span>
-                      </div>
-                    )}
-                  </div>
-                  <p className='text-[11px] text-muted-foreground leading-relaxed'>
-                    Only the difference above is collected from the customer — the amount already paid
-                    on the original is never collected again. Any unused credit is raised as a refund
-                    against the original.
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-
+            {/* Payment Details Card — on the exchange page this ONE card
+              carries the whole payment story in order: what was paid on the
+              original (confirm/adjust) → how the rest is collected → one
+              summary with a single To-collect (COD) figure. The separate
+              Settlement card was removed (owner round 2026-11-01): its
+              recorded-only numbers contradicted the confirmed figures. */}
             {/* Payment Details Card */}
             <Card className='overflow-hidden border border-border/70 shadow-xs rounded-xl'>
               <CardHeader className='bg-muted/30 border-b border-border/50 py-3 px-4 sm:py-3.5 sm:px-6'>
@@ -1932,7 +1906,7 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                     </CardTitle>
                     <p className='text-xs text-muted-foreground mt-0.5'>
                       {isExchange
-                        ? 'How the remaining amount will be collected — mode first, gateway second'
+                        ? 'Paid on the original, collection, and the COD amount — in order'
                         : 'Select payment gateway and payment mode'}
                     </p>
                   </div>
@@ -1940,101 +1914,133 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
               </CardHeader>
               <CardContent className='p-4 sm:p-6 space-y-3.5'>
                 {isExchange ? (
-                  Math.max(0, total - paid) <= 0.005 ? (
-                    <p className='text-sm text-muted-foreground leading-relaxed'>
-                      Nothing more to collect — the amount already paid on the original covers
-                      this exchange. Any unused credit is handled by the settlement above.
-                    </p>
-                  ) : (
-                    <>
-                      <div>
-                        <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Payment Mode</Label>
-                        <select
-                          className='w-full h-9.5 rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
-                          value={paymentMode}
-                          onChange={e => setPaymentMode(e.target.value as any)}
-                        >
-                          <option value='cod'>Cash on Delivery (COD)</option>
-                          <option value='full'>Full Payment</option>
-                          <option value='partial'>Partial Payment (Advance)</option>
-                        </select>
-                        <p className='text-xs text-muted-foreground mt-1'>
-                          For the ৳{fmt(Math.max(0, total - paid))} still to collect on this exchange.
-                        </p>
-                      </div>
-                      {paymentMode === 'cod' && (
-                        <p className='text-xs text-muted-foreground leading-relaxed'>
-                          The remaining ৳{fmt(Math.max(0, total - paid))} will be collected by the
-                          courier on delivery — no gateway is needed for COD.
-                        </p>
-                      )}
-                      {paymentMode === 'full' && (
-                        <div className='p-3.5 bg-muted/40 rounded-xl border border-border/60 space-y-3'>
-                          <div>
-                            <Label className='text-xs font-semibold block text-foreground mb-1'>Amount (৳)</Label>
-                            <Input
-                              value={fmt(Math.max(0, total - paid))}
-                              disabled
-                              className='h-9.5 text-sm bg-background'
-                            />
-                            <p className='text-[11px] text-muted-foreground mt-1'>
-                              The full amount to collect — taken now through the gateway below.
-                            </p>
-                          </div>
-                          <PaymentGatewayAccountSelect
-                            gatewayCode={exFullGateway}
-                            accountId={exFullAccountId}
-                            onChange={(next) => {
-                              setExFullGateway(next.gatewayCode)
-                              setExFullAccountId(next.accountId)
-                            }}
-                          />
-                          <div>
-                            <Label className='text-xs font-semibold block text-foreground mb-1'>
-                              Transaction ID{exFullGateway && txnRequiredFor(exFullGateway) ? ' *' : ''}
-                            </Label>
-                            <Input
-                              value={exFullTxn}
-                              onChange={e => setExFullTxn(e.target.value)}
-                              placeholder={
-                                exFullGateway && txnRequiredFor(exFullGateway)
-                                  ? 'Required for this gateway'
-                                  : 'Optional — auto-verified'
-                              }
-                              className='h-9.5 text-sm bg-background'
-                            />
-                          </div>
-                          <div>
-                            <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Note (optional)</Label>
-                            <Input
-                              value={exFullNote}
-                              onChange={e => setExFullNote(e.target.value)}
-                              className='h-9.5 text-sm bg-background'
-                            />
-                          </div>
+                  <>
+                    {editOrder && (
+                      <ExchangePaidConfirm
+                        recordedPaid={recordedPaid}
+                        exchangeTotal={total}
+                        paid={paid}
+                        reason={paidReason}
+                        confirmed={paidConfirmedChecked}
+                        onPaid={setPaid}
+                        onReason={setPaidReason}
+                        onConfirmed={setPaidConfirmedChecked}
+                        hideSummary
+                      />
+                    )}
+                    {exMoney && exMoney.dueAfterCredit > 0.005 && (
+                      <>
+                        <div>
+                          <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Payment Mode</Label>
+                          <select
+                            className='w-full h-9.5 rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
+                            value={paymentMode}
+                            onChange={e => setPaymentMode(e.target.value as any)}
+                          >
+                            <option value='cod'>Cash on Delivery (COD)</option>
+                            <option value='full'>Full Payment</option>
+                            <option value='partial'>Partial Payment (Advance)</option>
+                          </select>
                         </div>
-                      )}
-                      {paymentMode === 'partial' && (
-                        <>
+                        {paymentMode === 'cod' && (
+                          <p className='text-xs text-muted-foreground leading-relaxed'>
+                            No gateway needed — the courier collects the COD amount below on delivery.
+                          </p>
+                        )}
+                        {paymentMode === 'full' && (
+                          <div className='p-3.5 bg-muted/40 rounded-xl border border-border/60 space-y-3'>
+                            <div>
+                              <Label className='text-xs font-semibold block text-foreground mb-1'>Amount (৳)</Label>
+                              <Input
+                                value={fmt(exMoney.dueAfterCredit)}
+                                disabled
+                                className='h-9.5 text-sm bg-background'
+                              />
+                              <p className='text-[11px] text-muted-foreground mt-1'>
+                                Taken now through the gateway below.
+                              </p>
+                            </div>
+                            <PaymentGatewayAccountSelect
+                              gatewayCode={exFullGateway}
+                              accountId={exFullAccountId}
+                              onChange={(next) => {
+                                setExFullGateway(next.gatewayCode)
+                                setExFullAccountId(next.accountId)
+                              }}
+                            />
+                            <div>
+                              <Label className='text-xs font-semibold block text-foreground mb-1'>
+                                Transaction ID{exFullGateway && txnRequiredFor(exFullGateway) ? ' *' : ''}
+                              </Label>
+                              <Input
+                                value={exFullTxn}
+                                onChange={e => setExFullTxn(e.target.value)}
+                                placeholder={
+                                  exFullGateway && txnRequiredFor(exFullGateway)
+                                    ? 'Required for this gateway'
+                                    : 'Optional — auto-verified'
+                                }
+                                className='h-9.5 text-sm bg-background'
+                              />
+                            </div>
+                            <div>
+                              <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Note (optional)</Label>
+                              <Input
+                                value={exFullNote}
+                                onChange={e => setExFullNote(e.target.value)}
+                                className='h-9.5 text-sm bg-background'
+                              />
+                            </div>
+                          </div>
+                        )}
+                        {paymentMode === 'partial' && (
                           <CreatePaymentsSection
                             rows={collectedRows}
                             onRowsChange={setCollectedRows}
                             txnRequired={txnRequiredFor}
-                            total={Math.max(0, total - paid)}
+                            total={exMoney.dueAfterCredit}
                             creditBalance={0}
                             applyCredit={false}
                             onApplyCreditChange={() => {}}
                             creditAmount=''
                             onCreditAmountChange={() => {}}
                           />
-                          <p className='text-xs text-muted-foreground leading-relaxed'>
-                            The advance above is recorded as paid now. The rest of the ৳
-                            {fmt(Math.max(0, total - paid))} will be collected by the courier on delivery.
-                          </p>
-                        </>
-                      )}
-                    </>
-                  )
+                        )}
+                      </>
+                    )}
+                    {exMoney && (
+                      <div className='bg-muted/50 rounded-xl p-3.5 space-y-2 text-sm border border-border/40'>
+                        <div className='flex justify-between items-center'>
+                          <span className='text-muted-foreground'>This exchange</span>
+                          <span className='font-medium text-foreground'>৳{fmt(total)}</span>
+                        </div>
+                        {exMoney.creditApplied > 0.005 && (
+                          <div className='flex justify-between items-center'>
+                            <span className='text-muted-foreground'>Credit from the original</span>
+                            <span className='font-medium text-foreground'>−৳{fmt(exMoney.creditApplied)}</span>
+                          </div>
+                        )}
+                        {exCollectedNow > 0.005 && (
+                          <div className='flex justify-between items-center'>
+                            <span className='text-muted-foreground'>Collected now</span>
+                            <span className='font-medium text-foreground'>
+                              −৳{fmt(Math.min(exCollectedNow, exMoney.dueAfterCredit))}
+                            </span>
+                          </div>
+                        )}
+                        <div className='flex justify-between items-center font-bold text-base pt-2.5 border-t border-border/60'>
+                          <span>To collect on delivery (COD)</span>
+                          <span className='text-primary text-lg font-extrabold'>৳{fmt(exCodDue)}</span>
+                        </div>
+                        {exMoney.refundDue > 0.005 && (
+                          <div className='flex justify-between items-center text-xs font-semibold text-amber-600 dark:text-amber-400 pt-1.5 border-t border-dashed border-border/60'>
+                            <span>Refund due (unused credit)</span>
+                            <span>৳{fmt(exMoney.refundDue)}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <>
                     {!showCollectedRows && (
