@@ -828,6 +828,18 @@ describe('PaymentJournalService — Phase 2 auto-journal', () => {
   });
 
   describe('Part 3 — the accounting P&L sees a paid payslip, exactly once', () => {
+    // The posting is dated by paidAt (2026-10-15) while a reversal is dated
+    // the day it is made (today) — correct accounting: a void never
+    // backdates into a prior period. These tests assert same-period
+    // behaviour, so pin "today" to the payment's own date; without the pin
+    // the voiding test breaks on the 1st of every month after 2026-10.
+    beforeEach(() => {
+      jest.useFakeTimers({ now: new Date('2026-10-15T06:00:00.000Z') });
+    });
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
     const payrollPayment = () => ({
       id: 'pp-1',
       payslipId: 'ps-1',
