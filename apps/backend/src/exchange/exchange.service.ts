@@ -11,6 +11,7 @@ import { ReturnsService, ReturnItemInput } from '../returns/returns.service';
 import { appendOrderTimeline } from '../orders/order-timeline.util';
 import { OrdersEventService } from '../orders/orders-event.service';
 import { CacheService } from '../cache/cache.service';
+import { normalizeInvoiceForCompare } from '../courier-manager/courier-settle-guard';
 import { dhakaDateParts } from '../common/utils/dhaka-time';
 import { Prisma } from '@prisma/client';
 import { CreateExchangeOrderDto } from './dto/create-exchange-order.dto';
@@ -572,6 +573,13 @@ export class ExchangeService {
         // managedStockReserved on every line).
         await this.ordersService.verifyStockForOrder(created.id, tx);
 
+        // ---- Retro-link a courier-first exchange consignment -------------
+        // When the courier-side exchange was booked BEFORE this exchange
+        // existed here (e.g. a Pathao panel exchange under the original's
+        // invoice), its consignment is waiting as an UNMATCHED dispatch.
+        // Attach it to this exchange now (owner design, 2026-11-01).
+        await this.linkUnmatchedDispatches(tx, original, created.id);
+
         // ---- Settlement against the original's ACTUAL payments (§4) ------
         const settlement = await this.settle(
           tx,
@@ -695,6 +703,54 @@ export class ExchangeService {
    * all exchanges: every prior exchange that already spent credit reduces what
    * is still available.
    */
+  /**
+   * Attach UNMATCHED courier dispatches that belong to this exchange
+   * (owner design, 2026-11-01). A row qualifies when its recorded invoice
+   * matches the ORIGINAL's displayId (cut-tolerant compare) AND the
+   * original already has its own dispatch with that courier — otherwise
+   * the stray row is the original's own panel booking and must stay
+   * available for assignment to the original, not this exchange. At most
+   * one row per courier is attached here; further rows stay unmatched for
+   * staff assignment or the next exchange.
+   */
+  private async linkUnmatchedDispatches(
+    tx: Prisma.TransactionClient,
+    original: { id: string; displayId: string },
+    exchangeOrderId: string,
+  ): Promise<void> {
+    if (typeof tx.dispatch?.findMany !== 'function') return;
+    const unmatched = await tx.dispatch.findMany({
+      where: { orderId: null, courierInvoiceRef: { not: null } },
+      select: { id: true, courier: true, courierInvoiceRef: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (unmatched.length === 0) return;
+    const target = normalizeInvoiceForCompare(original.displayId);
+    const attachedCouriers = new Set<string>();
+    for (const row of unmatched) {
+      if (attachedCouriers.has(row.courier)) continue;
+      if (
+        !row.courierInvoiceRef ||
+        normalizeInvoiceForCompare(row.courierInvoiceRef) !== target
+      ) {
+        continue;
+      }
+      const originalHasOwn = await tx.dispatch.count({
+        where: {
+          orderId: original.id,
+          courier: row.courier,
+          consignmentId: { not: null },
+        },
+      });
+      if (originalHasOwn === 0) continue;
+      await tx.dispatch.update({
+        where: { id: row.id },
+        data: { orderId: exchangeOrderId },
+      });
+      attachedCouriers.add(row.courier);
+    }
+  }
+
   private async settle(
     tx: Prisma.TransactionClient,
     original: { id: string; displayId: string },

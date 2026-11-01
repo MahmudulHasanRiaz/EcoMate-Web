@@ -34,6 +34,7 @@ describe('CourierWebhookService — PARTIAL rules', () => {
     prisma = {
       order: {
         findFirst: jest.fn().mockResolvedValue(order),
+        findMany: jest.fn().mockResolvedValue([]),
         findUnique: jest.fn().mockResolvedValue(order),
         update: jest.fn().mockResolvedValue({}),
       },
@@ -43,6 +44,8 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       dispatch: {
         upsert: jest.fn().mockResolvedValue({}),
         findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
+        count: jest.fn().mockResolvedValue(0),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       courierDispatchLog: {
@@ -324,17 +327,27 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       expect(result.status).toBe('success');
     });
 
-    it('throws 404 Order not found only when every source misses (Task 4: never-200 discipline)', async () => {
+    it('records an UNMATCHED dispatch when every source misses (2026-11-01: no longer dropped as 404)', async () => {
       prisma.order.findFirst.mockResolvedValue(null); // consignment + invoice miss
       prisma.dispatch.findFirst.mockResolvedValue(null);
 
-      await expect(service.handleSteadfast({
+      const result = await service.handleSteadfast({
         notification_type: 'delivery_status',
         consignment_id: 'UNKNOWN-99',
         invoice: 'INV-MISSING',
         status: 'delivered',
-      })).rejects.toMatchObject({ status: 404 });
-      expect(prisma.dispatch.upsert).not.toHaveBeenCalled();
+      });
+      expect(result.status).toBe('success');
+      expect(prisma.dispatch.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            orderId: null,
+            courier: 'steadfast',
+            consignmentId: 'UNKNOWN-99',
+            courierInvoiceRef: 'INV-MISSING',
+          }),
+        }),
+      );
       expect(ordersService.updateStatus).not.toHaveBeenCalled();
     });
   });
@@ -431,16 +444,108 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       expect(prisma.dispatch.upsert).toHaveBeenCalled();
     });
 
-    it('throws 404 Order not found only when every source misses (incl. no merchant_order_id)', async () => {
+    it('records an UNMATCHED dispatch when every source misses (2026-11-01: no longer dropped as 404)', async () => {
       prisma.order.findFirst.mockResolvedValue(null);
       prisma.dispatch.findFirst.mockResolvedValue(null);
 
-      await expect(service.handlePathao({
+      const result = await service.handlePathao({
         event: 'order.delivered',
         consignment_id: 'UNKNOWN-99',
-      })).rejects.toMatchObject({ status: 404 });
-      expect(prisma.dispatch.upsert).not.toHaveBeenCalled();
+      });
+      expect(result.status).toBe('success');
+      expect(prisma.dispatch.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            orderId: null,
+            courier: 'pathao',
+            consignmentId: 'UNKNOWN-99',
+          }),
+        }),
+      );
       expect(ordersService.updateStatus).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Consignment auto-connect (2026-11-01)', () => {
+    it('pathao: a new consignment under a dispatched original\u2019s invoice routes to its unshipped exchange', async () => {
+      const original = {
+        ...order,
+        id: 'order-1',
+        displayId: 'ORD-100',
+        courierService: 'pathao',
+        courierConsignmentId: 'PH-ORIGINAL',
+      };
+      const exchange = {
+        ...order,
+        id: 'ex-1',
+        displayId: 'Ex-200',
+        kind: 'EXCHANGE',
+        courierService: 'pathao',
+        courierConsignmentId: null,
+      };
+      // Consignment + registry miss; the invoice identifies the original.
+      prisma.order.findFirst.mockImplementation((args: any) =>
+        args?.where?.displayId ? original : null,
+      );
+      prisma.order.findUnique.mockResolvedValue(original);
+      prisma.order.findMany.mockResolvedValue([exchange]);
+      prisma.dispatch.findFirst.mockResolvedValue(null);
+      // Original already has its own pathao dispatch; the exchange has none.
+      prisma.dispatch.count.mockImplementation((args: any) =>
+        args?.where?.orderId === 'order-1' ? 1 : 0,
+      );
+
+      const result = await service.handlePathao({
+        event: 'order.created',
+        consignment_id: 'PH-EXCHANGE',
+        merchant_order_id: 'ORD-100',
+      });
+
+      expect(result.status).toBe('success');
+      expect(prisma.dispatch.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            orderId: 'ex-1',
+            courier: 'pathao',
+            consignmentId: 'PH-EXCHANGE',
+          }),
+        }),
+      );
+    });
+
+    it('pathao: the same invoice routes to the ORIGINAL while it has no dispatch of its own', async () => {
+      const original = {
+        ...order,
+        id: 'order-1',
+        displayId: 'ORD-100',
+        courierService: 'pathao',
+        courierConsignmentId: null,
+      };
+      prisma.order.findFirst.mockImplementation((args: any) =>
+        args?.where?.displayId ? original : null,
+      );
+      prisma.order.findUnique.mockResolvedValue(original);
+      prisma.order.findMany.mockResolvedValue([
+        { ...original, id: 'ex-1', displayId: 'Ex-200', kind: 'EXCHANGE' },
+      ]);
+      prisma.dispatch.findFirst.mockResolvedValue(null);
+      prisma.dispatch.count.mockResolvedValue(0);
+
+      const result = await service.handlePathao({
+        event: 'order.created',
+        consignment_id: 'PH-PANEL',
+        merchant_order_id: 'ORD-100',
+      });
+
+      expect(result.status).toBe('success');
+      expect(prisma.dispatch.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            orderId: 'order-1',
+            consignmentId: 'PH-PANEL',
+          }),
+        }),
+      );
     });
   });
 
@@ -918,17 +1023,25 @@ describe('CourierWebhookService — PARTIAL rules', () => {
       expect(prisma.dispatch.upsert).toHaveBeenCalled();
     });
 
-    it('carrybee with no match warns LOUDLY and leaves identifiers blank', async () => {
+    it('carrybee with no match records an UNMATCHED dispatch (2026-11-01)', async () => {
       prisma.order.findFirst.mockResolvedValue(null);
       prisma.dispatch.findFirst.mockResolvedValue(null);
       const warnSpy = jest.spyOn((service as any).logger, 'warn');
 
-      await expect(service.handleCarrybee({
+      const result = await service.handleCarrybee({
         event: 'order.delivered',
         consignment_id: 'CB-NOPE',
-      })).rejects.toMatchObject({ status: 404 });
-      expect(prisma.dispatch.upsert).not.toHaveBeenCalled();
-      expect(prisma.dispatch.update).not.toHaveBeenCalled();
+      });
+      expect(result.status).toBe('success');
+      expect(prisma.dispatch.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            orderId: null,
+            courier: 'carrybee',
+            consignmentId: 'CB-NOPE',
+          }),
+        }),
+      );
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining('UNMATCHED'),
       );

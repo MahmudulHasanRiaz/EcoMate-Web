@@ -297,6 +297,29 @@ export class CourierWebhookService {
       (body['invoice'] as string) || undefined,
     );
     if (!order) {
+      // No order carries this consignment/invoice — record an UNMATCHED
+      // dispatch for staff assignment instead of dropping the event (owner
+      // design, 2026-11-01). Return labels and the order-context states
+      // (unknown / exceptional / tracking_update) keep the old behaviour:
+      // they cannot be represented honestly without an order.
+      const rawStatus = (body['status'] as string)?.toLowerCase() || '';
+      const mapped = STEADFAST_DISPATCH_MAP[rawStatus];
+      if (
+        notificationType !== 'tracking_update' &&
+        !rawStatus.includes('return') &&
+        rawStatus !== 'unknown' &&
+        rawStatus !== 'exceptional' &&
+        mapped
+      ) {
+        return this.upsertUnmatchedDispatch(
+          'steadfast',
+          consignmentId,
+          (body['invoice'] as string) || undefined,
+          mapped,
+          body,
+          rawStatus,
+        );
+      }
       this.logger.warn(`Steadfast: Order not found for consignment ${consignmentId}`);
       throw new NotFoundException(`Order not found for consignment ${consignmentId}`);
     }
@@ -989,7 +1012,7 @@ export class CourierWebhookService {
       },
       select: { orderId: true },
     });
-    if (dispatch) {
+    if (dispatch?.orderId) {
       const viaDispatch = await this.prisma.order.findUnique({
         where: { id: dispatch.orderId },
       });
@@ -997,21 +1020,121 @@ export class CourierWebhookService {
     }
 
     if (invoice) {
-      // Task 10: tolerate server-cut text — the courier truncates long
-      // invoices (Steadfast: 100); compare the cut form (dispatch now sends
-      // the truncated invoice, so this matches what the courier holds).
-      const cutInvoice = normalizeInvoiceForCompare(invoice);
-      const viaInvoice = await this.prisma.order.findFirst({
-        where: {
-          displayId: cutInvoice,
-          courierService: 'steadfast',
-          trashedAt: null,
-        },
-      });
-      if (viaInvoice) return viaInvoice;
+      return this.resolveInvoiceTarget('steadfast', invoice, false);
     }
 
     return null;
+  }
+
+  /**
+   * Invoice / merchant-order-id fallback, exchange-aware (owner design,
+   * 2026-11-01). Couriers carry OUR displayId as the invoice, and a
+   * courier-panel EXCHANGE is booked under the ORIGINAL order's invoice —
+   * the exchange order's own displayId (Ex-…) can never match it. So:
+   *  1. The invoice identifies the ORIGINAL order.
+   *  2. When the original already has a dispatch with this courier (its own
+   *     booking is linked), a further consignment under the same invoice
+   *     belongs to an EXCHANGE: the newest exchange of the original that is
+   *     still dispatchable and has no dispatch with this courier yet.
+   *  3. An explicit exchange signal from the courier (Carrybee
+   *     order.exchange, RedX delivery_type=exchange-*) takes the exchange
+   *     branch even when the original's own dispatch is not linked yet.
+   *  4. Otherwise the original itself (panel-booked original whose own
+   *     consignment arrives before/without an in-app dispatch).
+   * Returns null when no order carries the invoice at all — callers then
+   * record an UNMATCHED dispatch instead of dropping the event.
+   */
+  private async resolveInvoiceTarget(
+    courier: 'steadfast' | 'pathao' | 'redx' | 'carrybee',
+    invoice: string,
+    exchangeSignal: boolean,
+  ): Promise<any | null> {
+    // Task 10: tolerate server-cut text — couriers truncate long invoices;
+    // compare the cut form (dispatch sends the truncated invoice, so this
+    // matches what the courier holds).
+    const cutId = normalizeInvoiceForCompare(invoice);
+    const original = await this.prisma.order.findFirst({
+      where: {
+        displayId: cutId,
+        courierService: courier as any,
+        trashedAt: null,
+      },
+    });
+    if (!original) return null;
+
+    // Only a dispatch WITH a consignment counts as "the original's own
+    // booking is linked" — a manual row with a NULL consignment is still
+    // waiting for its own booking and must not divert the original's
+    // consignment to an exchange.
+    const originalDispatchCount = await this.prisma.dispatch.count({
+      where: {
+        orderId: original.id,
+        courier: courier as any,
+        consignmentId: { not: null },
+      },
+    });
+
+    if (exchangeSignal || originalDispatchCount > 0) {
+      const exchanges = await this.prisma.order.findMany({
+        where: {
+          kind: 'EXCHANGE',
+          exchangeOfOrderId: original.id,
+          trashedAt: null,
+          status: {
+            name: { notIn: ['Delivered', 'Cancelled', 'Returned', 'Return Pending'] },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      for (const ex of exchanges) {
+        // An exchange whose only dispatch row is a manual NULL-consignment
+        // row is still unbooked — the incoming consignment is its booking
+        // (fillManualDispatchIdentifiers completes that row downstream).
+        const exDispatchCount = await this.prisma.dispatch.count({
+          where: {
+            orderId: ex.id,
+            courier: courier as any,
+            consignmentId: { not: null },
+          },
+        });
+        if (exDispatchCount === 0) return ex;
+      }
+    }
+
+    return original;
+  }
+
+  /**
+   * Record a consignment no order could be resolved for as an UNMATCHED
+   * Dispatch row (orderId NULL + the invoice verbatim). It lists in the
+   * admin Dispatch list with an Unmatched badge; staff assign it to an
+   * order, or the exchange-create flow retro-links it automatically.
+   * Returns a success payload so the courier stops retrying the webhook.
+   */
+  private async upsertUnmatchedDispatch(
+    courier: 'steadfast' | 'pathao' | 'redx' | 'carrybee',
+    consignmentId: string,
+    invoice: string | undefined,
+    dispatchStatus: string,
+    body: Record<string, unknown>,
+    rawStatus?: string | null,
+  ) {
+    this.logger.warn(
+      `${courier}: UNMATCHED consignment ${consignmentId} (invoice ${invoice || 'n/a'}) — recorded as an unmatched dispatch for staff assignment.`,
+    );
+    await this.upsertDispatch(
+      null,
+      courier,
+      consignmentId,
+      dispatchStatus,
+      body,
+      rawStatus,
+      invoice ?? null,
+    );
+    return {
+      status: 'success',
+      message: 'Consignment recorded as unmatched dispatch.',
+    };
   }
 
   private async resolveCancelledStatus(orderId: string): Promise<string> {
@@ -1064,12 +1187,13 @@ export class CourierWebhookService {
   }
 
   private async upsertDispatch(
-    orderId: string,
+    orderId: string | null,
     courier: string,
     consignmentId: string,
     status: string,
     body: Record<string, unknown>,
     rawStatus?: string | null,
+    invoiceRef?: string | null,
   ) {
     const trackingCode = (body['tracking_code'] as string) || undefined;
     // Owner directive (2026-10-23) — return states are STICKY at the
@@ -1116,6 +1240,7 @@ export class CourierWebhookService {
         trackingCode,
         status: status as any,
         courierStatus: rawStatus || null,
+        courierInvoiceRef: invoiceRef ?? null,
         lastSyncedAt: new Date(),
       },
     });
@@ -1374,8 +1499,19 @@ export class CourierWebhookService {
       (body['merchant_order_id'] as string) || undefined,
     );
     if (!order) {
-      this.logger.warn(`Pathao: Order not found for consignment ${consignmentId}`);
-      throw new NotFoundException(`Order not found for consignment ${consignmentId}`);
+      // No order carries this consignment/invoice — record it as an
+      // UNMATCHED dispatch for staff assignment instead of dropping it
+      // (owner design, 2026-11-01; e.g. a panel-created exchange booked
+      // under an invoice our system does not know yet). Skip-status events
+      // still land on the row's raw courier status via upsertDispatch.
+      return this.upsertUnmatchedDispatch(
+        'pathao',
+        consignmentId,
+        (body['merchant_order_id'] as string) || undefined,
+        PATHAO_DISPATCH_MAP[event] ?? 'DISPATCHED',
+        body,
+        event,
+      );
     }
 
     let dispatchStatus: string | null = PATHAO_DISPATCH_MAP[event] ?? null;
@@ -1543,7 +1679,7 @@ export class CourierWebhookService {
       },
       select: { orderId: true },
     });
-    if (dispatch) {
+    if (dispatch?.orderId) {
       const viaDispatch = await this.prisma.order.findUnique({
         where: { id: dispatch.orderId },
       });
@@ -1551,17 +1687,7 @@ export class CourierWebhookService {
     }
 
     if (merchantOrderId) {
-      // Task 10: tolerate server-cut text (cut form documented in
-      // courier-settle-guard.normalizeInvoiceForCompare).
-      const cutId = normalizeInvoiceForCompare(merchantOrderId);
-      const viaMerchantId = await this.prisma.order.findFirst({
-        where: {
-          displayId: cutId,
-          courierService: 'pathao',
-          trashedAt: null,
-        },
-      });
-      if (viaMerchantId) return viaMerchantId;
+      return this.resolveInvoiceTarget('pathao', merchantOrderId, false);
     }
 
     return null;
@@ -1590,13 +1716,37 @@ export class CourierWebhookService {
       order = await this.prisma.order.findFirst({
         where: { courierTrackingCode: trackingNumber, courierService: 'redx', trashedAt: null },
       });
-    if (!order && invoiceNumber)
-      // Task 10: tolerate server-cut text (cut form documented in
-      // courier-settle-guard.normalizeInvoiceForCompare).
-      order = await this.prisma.order.findFirst({
-        where: { displayId: normalizeInvoiceForCompare(invoiceNumber), courierService: 'redx', trashedAt: null },
-      });
+    if (!order && invoiceNumber) {
+      // Exchange-aware invoice fallback (resolveInvoiceTarget): a RedX
+      // exchange parcel carries delivery_type exchange-delivery /
+      // exchange-return and the ORIGINAL order's invoice.
+      const target = await this.resolveInvoiceTarget(
+        'redx',
+        invoiceNumber,
+        !!deliveryType?.startsWith('exchange'),
+      );
+      if (target) order = target;
+    }
     if (!order) {
+      // No order carries this tracking/invoice — record an UNMATCHED
+      // dispatch for staff assignment instead of dropping the event (owner
+      // design, 2026-11-01). The `paid` money event keeps the old
+      // behaviour: it needs its order (the settlement CSV owns the money
+      // and will surface the consignment there).
+      let unmatchedStatus: string | null = REDX_DISPATCH_MAP[status] ?? null;
+      if (status === 'delivered' && deliveryType === 'partial-delivery') {
+        unmatchedStatus = 'PARTIAL';
+      }
+      if (trackingNumber && status !== 'paid' && unmatchedStatus) {
+        return this.upsertUnmatchedDispatch(
+          'redx',
+          trackingNumber,
+          invoiceNumber || undefined,
+          unmatchedStatus,
+          body,
+          status,
+        );
+      }
       this.logger.warn(`RedX: Order not found for tracking ${trackingNumber || invoiceNumber}`);
       throw new NotFoundException(`Order not found for tracking ${trackingNumber || invoiceNumber}`);
     }
@@ -1766,13 +1916,26 @@ export class CourierWebhookService {
     const order = await this.findCarrybeeOrder(
       consignmentId,
       (body['merchant_order_id'] as string) || undefined,
+      event === 'order.exchange',
     );
     if (!order) {
-      // Portal-side bookings never stamp the Order row and carry no invoice
-      // fallback — nothing can be matched. Say so LOUDLY and leave the manual
-      // row (if any) blank rather than fabricating identifiers.
+      // No order carries this consignment/invoice — record it as an
+      // UNMATCHED dispatch for staff assignment instead of dropping it
+      // (owner design, 2026-11-01). Events with no workflow status stay
+      // dropped, as before.
+      const unmatchedStatus = CARRYBEE_DISPATCH_MAP[event] ?? null;
+      if (unmatchedStatus) {
+        return this.upsertUnmatchedDispatch(
+          'carrybee',
+          consignmentId,
+          (body['merchant_order_id'] as string) || undefined,
+          unmatchedStatus,
+          body,
+          event,
+        );
+      }
       this.logger.warn(
-        `Carrybee: UNMATCHED webhook — no Order or manual Dispatch row for consignment ${consignmentId} (courier=carrybee, event=${event}). Leaving identifiers blank; create the dispatch from admin or stamp the Order row.`,
+        `Carrybee: UNMATCHED webhook — no Order for consignment ${consignmentId} (event=${event}) and no workflow status to record.`,
       );
       throw new NotFoundException(`Order not found for consignment ${consignmentId}`);
     }
@@ -1987,6 +2150,7 @@ export class CourierWebhookService {
   private async findCarrybeeOrder(
     consignmentId: string,
     merchantOrderId?: string,
+    exchangeSignal = false,
   ): Promise<{ id: string } | null> {
     const direct = await this.prisma.order.findFirst({
       where: { courierConsignmentId: consignmentId, trashedAt: null },
@@ -2001,7 +2165,7 @@ export class CourierWebhookService {
       },
       select: { orderId: true },
     });
-    if (dispatch) {
+    if (dispatch?.orderId) {
       const viaDispatch = await this.prisma.order.findUnique({
         where: { id: dispatch.orderId },
       });
@@ -2009,17 +2173,7 @@ export class CourierWebhookService {
     }
 
     if (merchantOrderId) {
-      // Task 10: tolerate server-cut text (cut form documented in
-      // courier-settle-guard.normalizeInvoiceForCompare).
-      const cutId = normalizeInvoiceForCompare(merchantOrderId);
-      const viaMerchantId = await this.prisma.order.findFirst({
-        where: {
-          displayId: cutId,
-          courierService: 'carrybee',
-          trashedAt: null,
-        },
-      });
-      if (viaMerchantId) return viaMerchantId;
+      return this.resolveInvoiceTarget('carrybee', merchantOrderId, exchangeSignal);
     }
 
     return null;

@@ -52,6 +52,16 @@ export class DispatchController {
   }
 
   @Roles('superadmin', 'admin', 'employee')
+  @Post(':id/assign')
+  assignToOrder(
+    @Param('id') id: string,
+    @Body('orderId') orderId: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.dispatchService.assignToOrder(id, orderId, user?.email);
+  }
+
+  @Roles('superadmin', 'admin', 'employee')
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.dispatchService.findOne(id);

@@ -2,8 +2,12 @@ import { apiClient } from '@/lib/api-client'
 
 export interface DispatchResponse {
   id: string
-  orderId: string
+  // NULL = UNMATCHED: the courier reported this consignment but no order
+  // could be resolved for it yet — staff assign it from the Dispatch list.
+  orderId: string | null
   courier: string
+  // The merchant order id / invoice the courier carries, verbatim.
+  courierInvoiceRef: string | null
   // NULL until the courier booking exists — the webhook backfills it.
   consignmentId: string | null
   trackingCode: string | null
@@ -28,7 +32,7 @@ export interface DispatchResponse {
   panelCancelConfirmedBy?: string | null
   createdAt: string
   updatedAt: string
-  order?: { displayId: string; total: number; guestName?: string; guestPhone?: string; courierStatus?: string | null }
+  order?: { displayId: string; total: number; guestName?: string; guestPhone?: string; courierStatus?: string | null } | null
 }
 
 export interface DispatchSyncItem {
@@ -87,5 +91,8 @@ export const dispatchApi = {
   // the actor + timestamp and clears the "Panel cancellation pending" marker.
   confirmPanelCancel: (id: string) =>
     apiClient.post(`/dispatch/${id}/confirm-panel-cancel`, {}),
+  // Assign an UNMATCHED dispatch to an order (auto-connect, 2026-11-01).
+  assign: (id: string, orderId: string) =>
+    apiClient.post<DispatchResponse>(`/dispatch/${id}/assign`, { orderId }),
   getMetrics: () => apiClient.get<DispatchMetricsResponse>('/dispatch/metrics'),
 }

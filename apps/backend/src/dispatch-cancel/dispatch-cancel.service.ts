@@ -419,6 +419,14 @@ export class DispatchCancelService {
       },
     });
     if (!dispatch) throw new NotFoundException('Dispatch not found');
+    if (!dispatch.orderId) {
+      // A panel-cancel confirmation presupposes a dispatched ORDER; an
+      // unmatched dispatch has nothing to confirm against.
+      throw new BadRequestException(
+        'This dispatch is not assigned to an order yet.',
+      );
+    }
+    const dispatchOrderId: string = dispatch.orderId;
 
     if (
       dispatch.courierCancelMode !== 'MANUAL' ||
@@ -458,7 +466,7 @@ export class DispatchCancelService {
         );
       }
 
-      await appendOrderTimeline(tx, dispatch.orderId, [
+      await appendOrderTimeline(tx, dispatchOrderId, [
         {
           type: 'dispatch.panel-cancel-confirmed',
           visibility: 'private',

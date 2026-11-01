@@ -11,6 +11,8 @@ import { useDispatchList, useDispatchMutations, useDispatchSync } from './hooks'
 import { DispatchMetrics } from './dispatch-metrics'
 import { DispatchTable } from './dispatch-table'
 import { CreateDispatchDialog } from './create-dispatch-dialog'
+import { AssignDispatchDialog } from './assign-dispatch-dialog'
+import type { DispatchResponse } from './api'
 
 export function DispatchPage() {
   const [pagination, setPagination] = useState<PaginationState>({
@@ -27,16 +29,20 @@ export function DispatchPage() {
   }, [search])
   const [statusFilter, setStatusFilter] = useState('')
   const [courierFilter, setCourierFilter] = useState('')
+  const [unmatchedOnly, setUnmatchedOnly] = useState(false)
 
   // Filters are server-side (manual pagination) — any filter/search change
   // must reset to page 1, otherwise results disappear on a filtered page
   // whose page number no longer exists.
   useEffect(() => {
     setPagination((p) => ({ ...p, pageIndex: 0 }))
-  }, [statusFilter, courierFilter, debouncedSearch])
+  }, [statusFilter, courierFilter, debouncedSearch, unmatchedOnly])
 
   const [createOpen, setCreateOpen] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [assignTarget, setAssignTarget] = useState<DispatchResponse | null>(
+    null,
+  )
 
   const { data, isLoading } = useDispatchList({
     page: pagination.pageIndex + 1,
@@ -44,17 +50,19 @@ export function DispatchPage() {
     search: debouncedSearch || undefined,
     status: statusFilter || undefined,
     courier: courierFilter || undefined,
+    unmatched: unmatchedOnly ? 'true' : undefined,
   })
 
   const { remove, confirmPanelCancel } = useDispatchMutations()
   const syncMutation = useDispatchSync()
 
   const activeFilterCount =
-    (statusFilter ? 1 : 0) + (courierFilter ? 1 : 0)
+    (statusFilter ? 1 : 0) + (courierFilter ? 1 : 0) + (unmatchedOnly ? 1 : 0)
 
   const resetFilters = () => {
     setStatusFilter('')
     setCourierFilter('')
+    setUnmatchedOnly(false)
   }
 
   return (
@@ -105,12 +113,22 @@ export function DispatchPage() {
               ? (confirmPanelCancel.variables as string | undefined) ?? null
               : null
           }
+          onAssign={(dispatch) => setAssignTarget(dispatch)}
+          unmatchedOnly={unmatchedOnly}
+          onUnmatchedOnlyChange={setUnmatchedOnly}
         />
       </Main>
 
       <CreateDispatchDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
+      />
+
+      <AssignDispatchDialog
+        dispatch={assignTarget}
+        onOpenChange={(open) => {
+          if (!open) setAssignTarget(null)
+        }}
       />
 
       <ConfirmDialog

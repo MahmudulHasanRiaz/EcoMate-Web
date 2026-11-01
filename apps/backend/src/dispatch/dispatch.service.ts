@@ -20,6 +20,7 @@ import {
   mapCourierStatusToDispatchStatus,
 } from '../courier-manager/courier-status-mapper';
 import { Prisma } from '@prisma/client';
+import { appendOrderTimeline } from '../orders/order-timeline.util';
 import { CreateDispatchDto } from './dto/create-dispatch.dto';
 import { DispatchQueryDto } from './dto/dispatch-query.dto';
 import { impliesPickup } from './dispatch-timestamps';
@@ -210,6 +211,7 @@ export class DispatchService {
     const where: Prisma.DispatchWhereInput = {};
 
     if (query.orderId) where.orderId = query.orderId;
+    if (query.unmatched === 'true') where.orderId = null;
     if (query.courier) where.courier = query.courier as any;
     if (query.status) where.status = query.status as any;
     if (query.search) {
@@ -530,6 +532,11 @@ export class DispatchService {
       },
     });
     if (!current) throw new NotFoundException('Dispatch not found');
+    if (!current.orderId) {
+      throw new BadRequestException(
+        'This dispatch is not assigned to an order yet — assign it before changing its status.',
+      );
+    }
     const allowed = DISPATCH_TRANSITIONS[current.status] || [];
     if (!allowed.includes(status)) {
       throw new BadRequestException(
@@ -577,6 +584,9 @@ export class DispatchService {
       // the update above and would hand a stale status to the order sync.
       const dispatch = await tx.dispatch.findUnique({ where: { id } });
       if (!dispatch) return { claimed: false, dispatch: null };
+      // Unreachable (updateStatus rejects unmatched rows up front) — an
+      // unmatched dispatch has no order to deduct/sync against.
+      if (!dispatch.orderId) return { claimed: false, dispatch: null };
 
       if (
         status === 'HANDED_OVER' ||
@@ -616,12 +626,13 @@ export class DispatchService {
       return { claimed: true, dispatch };
     });
 
-    if (result.claimed && result.dispatch) {
+    const claimedOrderId = result.dispatch?.orderId;
+    if (result.claimed && result.dispatch && claimedOrderId) {
       // Sync the ORDER from the status this transition actually applied — not
       // from a re-read, and not one step behind (which silently dropped the
       // final Delivered advance).
       await this.syncOrderStatus(
-        result.dispatch.orderId,
+        claimedOrderId,
         status,
         result.dispatch.courier,
         performedBy,
@@ -1088,9 +1099,10 @@ export class DispatchService {
 
         const mappedStatus = mapCourierStatusToDispatchStatus(courier, rawStatus);
         let nextDispatchStatus: string | null = mappedStatus;
-        if (mappedStatus === 'CANCELLED') {
+        if (mappedStatus === 'CANCELLED' && dispatch.orderId) {
           // Same business rule as the courier webhooks: a cancelled consignment
           // becomes RETURN_PENDING when the parcel had already progressed.
+          // (Unmatched dispatch: no order history to protect — stays CANCELLED.)
           nextDispatchStatus = await this.resolveCancelledWithProgress(
             dispatch.orderId,
           );
@@ -1125,21 +1137,25 @@ export class DispatchService {
         });
 
         // Order-level courier status (webhook parity: raw courier status).
-        await this.prisma.order.update({
-          where: { id: dispatch.orderId },
-          data: {
-            courierStatus: rawStatus,
-            courierService: dispatch.courier,
-          },
-        });
-        mutated = true;
+        // Unmatched dispatches have no order to stamp yet — the dispatch
+        // row above already carries the fresh state.
+        if (dispatch.orderId) {
+          await this.prisma.order.update({
+            where: { id: dispatch.orderId },
+            data: {
+              courierStatus: rawStatus,
+              courierService: dispatch.courier,
+            },
+          });
 
-        await this.addCourierSyncTimelineEntry(
-          dispatch.orderId,
-          courier,
-          nextDispatchStatus || rawStatus,
-          rawStatus,
-        );
+          await this.addCourierSyncTimelineEntry(
+            dispatch.orderId,
+            courier,
+            nextDispatchStatus || rawStatus,
+            rawStatus,
+          );
+        }
+        mutated = true;
 
         if (nextDispatchStatus) {
           await this.applySyncOrderAdvancement(
@@ -1376,6 +1392,8 @@ export class DispatchService {
     rawStatus: string,
     signal: ReturnType<typeof mapCourierReturnSignal>,
   ) {
+    // Unmatched dispatch: no order exists to attach a Return to yet.
+    if (!dispatch.orderId) return;
     if (!this.courierWebhooks?.recordCourierReturnSignal) return;
     let effective = signal;
     if (!effective) {
@@ -1464,6 +1482,9 @@ export class DispatchService {
     rawStatus: string,
     preMapped?: string | null,
   ) {
+    // Unmatched dispatch (no order yet): the caller already persisted the
+    // dispatch-row state; there is no order to advance.
+    if (!dispatch.orderId) return;
     let mappedStatus: string | null =
       preMapped ??
       mapCourierStatusToDispatchStatus(
@@ -1621,6 +1642,9 @@ export class DispatchService {
       error?: string;
     },
   ) {
+    // CourierDispatchLog.orderId is NOT NULL — an unmatched dispatch has no
+    // order to log against yet; its row state is the record.
+    if (!dispatch.orderId) return;
     try {
       await this.prisma.courierDispatchLog.create({
         data: {
@@ -1692,6 +1716,66 @@ export class DispatchService {
           ? `${dispatch.notes}\n[${action === 'accessories' ? 'Accessories' : 'Accepted'}]`
           : `[${action === 'accessories' ? 'Accessories' : 'Accepted'}]`,
       },
+    });
+    return updated;
+  }
+
+  /**
+   * Assign an UNMATCHED dispatch (orderId NULL — a consignment the courier
+   * reported before any order could be resolved for it) to an order
+   * (owner design, 2026-11-01). Also stamps the order's courier identifiers
+   * when they are still empty, mirroring the API dispatch flow, and leaves
+   * a timeline entry on the order.
+   */
+  async assignToOrder(id: string, orderId: string, performedBy?: string) {
+    const dispatch = await this.prisma.dispatch.findUnique({
+      where: { id },
+    });
+    if (!dispatch) throw new NotFoundException('Dispatch not found');
+    if (dispatch.orderId) {
+      throw new BadRequestException(
+        'Dispatch is already assigned to an order.',
+      );
+    }
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        id: true,
+        trashedAt: true,
+        courierConsignmentId: true,
+        courierService: true,
+        status: { select: { name: true } },
+      },
+    });
+    if (!order || order.trashedAt) {
+      throw new NotFoundException('Order not found');
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.dispatch.update({
+        where: { id },
+        data: { orderId },
+      });
+      if (dispatch.consignmentId && !order.courierConsignmentId) {
+        await tx.order.update({
+          where: { id: orderId },
+          data: {
+            courierConsignmentId: dispatch.consignmentId,
+            ...(order.courierService
+              ? {}
+              : { courierService: dispatch.courier }),
+          },
+        });
+      }
+      await appendOrderTimeline(tx, orderId, [
+        {
+          status: order.status?.name ?? '',
+          timestamp: new Date().toISOString(),
+          note: `Unmatched ${dispatch.courier} consignment ${dispatch.consignmentId ?? ''} assigned to this order`,
+          performedBy: performedBy || 'system',
+        },
+      ]);
+      return row;
     });
     return updated;
   }
