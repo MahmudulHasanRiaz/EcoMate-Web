@@ -41,6 +41,7 @@ export function ExchangePaidConfirm({
   onPaid,
   onReason,
   onConfirmed,
+  hideSummary = false,
 }: {
   recordedPaid: number
   exchangeTotal: number
@@ -50,6 +51,8 @@ export function ExchangePaidConfirm({
   onPaid: (v: number) => void
   onReason: (v: string) => void
   onConfirmed: (v: boolean) => void
+  /** The exchange page renders its own unified summary below — the dialog keeps this one. */
+  hideSummary?: boolean
 }) {
   const diff = (Number(paid) || 0) - (Number(recordedPaid) || 0)
   const differs = Math.abs(diff) > 0.005
@@ -59,8 +62,7 @@ export function ExchangePaidConfirm({
     <div className='rounded-lg border border-border p-3.5 space-y-3'>
       <div className='text-xs font-semibold text-foreground'>Already paid on the original</div>
       <p className='text-[11px] text-muted-foreground -mt-1.5'>
-        Ledger Σ PAID: <span className='font-semibold text-foreground'>{fmt(recordedPaid)}</span>.
-        Confirm the figure below — a positive change ADDS credit, a negative change REDUCES it.
+        Recorded: <span className='font-semibold text-foreground'>{fmt(recordedPaid)}</span>
       </p>
 
       <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
@@ -105,6 +107,7 @@ export function ExchangePaidConfirm({
         </div>
       </div>
 
+      {!hideSummary && (
       <div className='bg-muted/50 rounded-xl p-3 space-y-1.5 text-sm border border-border/40'>
         <div className='flex justify-between items-center text-xs'>
           <span className='text-muted-foreground'>Original paid</span>
@@ -123,7 +126,7 @@ export function ExchangePaidConfirm({
         <div className='flex justify-between items-center font-bold text-sm pt-1.5 border-t border-border/60'>
           {due > 0.005 ? (
             <>
-              <span>To collect</span>
+              <span>To collect on delivery (COD)</span>
               <span className='text-primary'>{fmt(due)}</span>
             </>
           ) : due < -0.005 ? (
@@ -139,6 +142,7 @@ export function ExchangePaidConfirm({
           )}
         </div>
       </div>
+      )}
 
       <label htmlFor='ex-paid-confirm' className='flex items-start gap-2.5 cursor-pointer select-none rounded-lg border border-border p-3 hover:bg-muted/40'>
         <Checkbox
@@ -148,7 +152,6 @@ export function ExchangePaidConfirm({
         />
         <span className='text-xs text-muted-foreground leading-relaxed'>
           <span className='font-semibold text-foreground block'>I confirm the customer paid {fmt(paid)} on the original order.</span>
-          This figure drives the settlement — it cannot be skipped.
         </span>
       </label>
     </div>
