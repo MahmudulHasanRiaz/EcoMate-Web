@@ -281,6 +281,19 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
   const paidValid =
     !isExchange || isPaidConfirmValid(paid, recordedPaid, paidReason, paidConfirmedChecked)
 
+  // ── Exchange payment cascade (owner rule: Payment Mode FIRST, gateway
+  // second — mirroring normal create). The Payment Details card on the
+  // exchange page governs ONLY the still-to-collect difference (exchange
+  // total − confirmed paid): COD asks for no gateway at all (the courier
+  // collects), Full takes the whole difference through ONE gateway (amount
+  // locked to the difference), Partial reuses the collected-rows flow from
+  // normal create. The collection is recorded against the NEW exchange
+  // order after creation — the same post-create pattern as normal create.
+  const [exFullGateway, setExFullGateway] = useState('')
+  const [exFullAccountId, setExFullAccountId] = useState('')
+  const [exFullTxn, setExFullTxn] = useState('')
+  const [exFullNote, setExFullNote] = useState('')
+
   // ── Task 11 (JOB C): customer credit offer (create mode, linked customer) ─
   const { data: customerCredit, isLoading: creditLoading } = useQuery({
     queryKey: ['customer-credit', selectedCustomerId],
@@ -776,6 +789,12 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
           ...(cn ? { customerNotes: cn } : {}),
           ...(on ? { officeNotes: on } : {}),
           paidConfirmed: paid,
+          paymentOptionType:
+            paymentMode === 'cod'
+              ? 'CASH_ON_DELIVERY'
+              : paymentMode === 'full'
+                ? 'FULL_PAYMENT'
+                : 'PARTIAL_PAYMENT',
           ...(Math.abs(paid - recordedPaid) > 0.005 ? { paidAdjustmentReason: paidReason.trim() } : {}),
         })
       }
@@ -786,6 +805,35 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
         // the whole point of the flow — surface it instead of a bare "created".
         const s = res?.settlement
         const exId = res?.exchange?.id
+        // Record what was collected toward the difference (Full/Partial)
+        // against the NEW exchange order — the same post-create pattern as
+        // normal create; failures are surfaced, never silent.
+        const post = postCreateRef.current
+        postCreateRef.current = null
+        if (post && exId && post.rows.length > 0) {
+          const failures: string[] = []
+          for (let i = 0; i < post.rows.length; i++) {
+            const r = post.rows[i]
+            try {
+              await paymentsApi.record(exId, {
+                gatewayCode: r.gatewayCode,
+                amount: parseFloat(r.amount),
+                accountId: r.accountId || undefined,
+                transactionId: r.transactionId.trim() || undefined,
+                notes: r.note.trim() || undefined,
+              })
+            } catch (e: any) {
+              failures.push(`payment row ${i + 1}: ${e?.response?.data?.message || 'failed'}`)
+            }
+          }
+          if (failures.length > 0) {
+            toast.error(
+              `Exchange created, but some money movements failed — finish them on the order page: ${failures.join('; ')}`,
+              { duration: 10000 },
+            )
+          }
+          queryClient.invalidateQueries({ queryKey: ['order', exId] })
+        }
         if (s?.status === 'SETTLED_DUE') {
           toast.warning(
             `Collect ৳${Number(s.delta).toFixed(2)} — the customer paid ৳${Number(s.originalPaid).toFixed(2)} on the original, the exchange costs ৳${Number(s.exchangeTotal).toFixed(2)}.`,
@@ -878,6 +926,50 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
       if (Math.abs(paid - recordedPaid) > 0.005 && !paidReason.trim()) {
         toast.error('Explain why the confirmed figure differs from the ledger')
         return
+      }
+      // Payment cascade for the still-to-collect difference: validate the
+      // collection and snapshot it — the success handler records it against
+      // the new exchange order (postCreateRef, same pattern as create).
+      const toCollectNow = Math.max(0, calculateTotal() - paid)
+      postCreateRef.current = null
+      if (toCollectNow > 0.005 && paymentMode === 'full') {
+        if (!exFullGateway) {
+          toast.error('Select the gateway the payment was taken through')
+          return
+        }
+        if (txnRequiredFor(exFullGateway) && !exFullTxn.trim()) {
+          toast.error('Transaction ID is required for this gateway')
+          return
+        }
+        postCreateRef.current = {
+          rows: [
+            {
+              amount: String(toCollectNow),
+              gatewayCode: exFullGateway,
+              accountId: exFullAccountId,
+              transactionId: exFullTxn,
+              note: exFullNote,
+            },
+          ],
+          apply: false,
+          creditAmt: 0,
+        }
+      } else if (toCollectNow > 0.005 && paymentMode === 'partial') {
+        const rowErrors = validateCollectedRows(collectedRows, txnRequiredFor)
+        if (rowErrors.length > 0) {
+          toast.error(rowErrors[0])
+          return
+        }
+        const rows = nonEmptyCollectedRows(collectedRows)
+        if (rows.length === 0) {
+          toast.error('Add at least one collected payment row for the partial advance')
+          return
+        }
+        if (collectedRowsTotal(rows) >= toCollectNow - 0.005) {
+          toast.error('The advance covers the full amount to collect — use Full Payment instead')
+          return
+        }
+        postCreateRef.current = { rows, apply: false, creditAmt: 0 }
       }
       submitMut.mutate(buildPayload())
       return
@@ -1838,71 +1930,175 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                     <CardTitle className='text-sm sm:text-base font-semibold tracking-tight text-foreground'>
                       Payment Details
                     </CardTitle>
-                    <p className='text-xs text-muted-foreground mt-0.5'>Select payment gateway and payment mode</p>
+                    <p className='text-xs text-muted-foreground mt-0.5'>
+                      {isExchange
+                        ? 'How the remaining amount will be collected — mode first, gateway second'
+                        : 'Select payment gateway and payment mode'}
+                    </p>
                   </div>
                 </div>
               </CardHeader>
               <CardContent className='p-4 sm:p-6 space-y-3.5'>
-                {!showCollectedRows && (
-                  <PaymentGatewayAccountSelect
-                    gatewayCode={paymentMethod}
-                    accountId={paymentAccountId}
-                    onChange={(next) => {
-                      setPaymentMethod(next.gatewayCode)
-                      setPaymentAccountId(next.accountId)
-                    }}
-                  />
-                )}
-                <div className={showCollectedRows ? '' : 'sm:w-1/2'}>
-                  <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Payment Mode</Label>
-                  <select
-                    className='w-full h-9.5 rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
-                    value={paymentMode}
-                    onChange={e => setPaymentMode(e.target.value as any)}
-                  >
-                    <option value='cod'>Cash on Delivery (COD)</option>
-                    <option value='full'>Full Payment</option>
-                    <option value='partial'>Partial Payment (Advance)</option>
-                  </select>
-                </div>
-                {paymentMode === 'partial' && !showCollectedRows && (
-                  <div className='p-3.5 bg-muted/40 rounded-xl border border-border/60 space-y-2'>
-                    <div>
-                      <Label className='text-xs font-semibold block text-foreground mb-1'>Advance Paid Amount (৳) *</Label>
-                      <Input
-                        type='number'
-                        step='0.01'
-                        min='0'
-                        value={partialAmount === '0' ? '' : partialAmount}
-                        onChange={e => setPartialAmount(e.target.value)}
-                        onFocus={e => {
-                          if (e.target.value === '0' || partialAmount === '0') {
-                            setPartialAmount('')
-                          } else {
-                            e.target.select()
-                          }
-                        }}
-                        className='h-9.5 text-sm bg-background'
-                        placeholder='0'
-                      />
-                    </div>
-                    <p className='text-xs text-muted-foreground leading-relaxed'>
-                      Advance of ৳{fmt(parseFloat(partialAmount) || 0)} will be recorded as paid now. Balance of ৳{fmt(Math.max(0, total - (parseFloat(partialAmount) || 0)))} will be assigned to courier collection.
+                {isExchange ? (
+                  Math.max(0, total - paid) <= 0.005 ? (
+                    <p className='text-sm text-muted-foreground leading-relaxed'>
+                      Nothing more to collect — the amount already paid on the original covers
+                      this exchange. Any unused credit is handled by the settlement above.
                     </p>
-                  </div>
-                )}
-                {showCollectedRows && (
-                  <CreatePaymentsSection
-                    rows={collectedRows}
-                    onRowsChange={setCollectedRows}
-                    txnRequired={txnRequiredFor}
-                    total={total}
-                    creditBalance={creditBalance}
-                    applyCredit={applyCredit}
-                    onApplyCreditChange={setApplyCredit}
-                    creditAmount={creditAmount}
-                    onCreditAmountChange={setCreditAmount}
-                  />
+                  ) : (
+                    <>
+                      <div>
+                        <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Payment Mode</Label>
+                        <select
+                          className='w-full h-9.5 rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
+                          value={paymentMode}
+                          onChange={e => setPaymentMode(e.target.value as any)}
+                        >
+                          <option value='cod'>Cash on Delivery (COD)</option>
+                          <option value='full'>Full Payment</option>
+                          <option value='partial'>Partial Payment (Advance)</option>
+                        </select>
+                        <p className='text-xs text-muted-foreground mt-1'>
+                          For the ৳{fmt(Math.max(0, total - paid))} still to collect on this exchange.
+                        </p>
+                      </div>
+                      {paymentMode === 'cod' && (
+                        <p className='text-xs text-muted-foreground leading-relaxed'>
+                          The remaining ৳{fmt(Math.max(0, total - paid))} will be collected by the
+                          courier on delivery — no gateway is needed for COD.
+                        </p>
+                      )}
+                      {paymentMode === 'full' && (
+                        <div className='p-3.5 bg-muted/40 rounded-xl border border-border/60 space-y-3'>
+                          <div>
+                            <Label className='text-xs font-semibold block text-foreground mb-1'>Amount (৳)</Label>
+                            <Input
+                              value={fmt(Math.max(0, total - paid))}
+                              disabled
+                              className='h-9.5 text-sm bg-background'
+                            />
+                            <p className='text-[11px] text-muted-foreground mt-1'>
+                              The full amount to collect — taken now through the gateway below.
+                            </p>
+                          </div>
+                          <PaymentGatewayAccountSelect
+                            gatewayCode={exFullGateway}
+                            accountId={exFullAccountId}
+                            onChange={(next) => {
+                              setExFullGateway(next.gatewayCode)
+                              setExFullAccountId(next.accountId)
+                            }}
+                          />
+                          <div>
+                            <Label className='text-xs font-semibold block text-foreground mb-1'>
+                              Transaction ID{exFullGateway && txnRequiredFor(exFullGateway) ? ' *' : ''}
+                            </Label>
+                            <Input
+                              value={exFullTxn}
+                              onChange={e => setExFullTxn(e.target.value)}
+                              placeholder={
+                                exFullGateway && txnRequiredFor(exFullGateway)
+                                  ? 'Required for this gateway'
+                                  : 'Optional — auto-verified'
+                              }
+                              className='h-9.5 text-sm bg-background'
+                            />
+                          </div>
+                          <div>
+                            <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Note (optional)</Label>
+                            <Input
+                              value={exFullNote}
+                              onChange={e => setExFullNote(e.target.value)}
+                              className='h-9.5 text-sm bg-background'
+                            />
+                          </div>
+                        </div>
+                      )}
+                      {paymentMode === 'partial' && (
+                        <>
+                          <CreatePaymentsSection
+                            rows={collectedRows}
+                            onRowsChange={setCollectedRows}
+                            txnRequired={txnRequiredFor}
+                            total={Math.max(0, total - paid)}
+                            creditBalance={0}
+                            applyCredit={false}
+                            onApplyCreditChange={() => {}}
+                            creditAmount=''
+                            onCreditAmountChange={() => {}}
+                          />
+                          <p className='text-xs text-muted-foreground leading-relaxed'>
+                            The advance above is recorded as paid now. The rest of the ৳
+                            {fmt(Math.max(0, total - paid))} will be collected by the courier on delivery.
+                          </p>
+                        </>
+                      )}
+                    </>
+                  )
+                ) : (
+                  <>
+                    {!showCollectedRows && (
+                      <PaymentGatewayAccountSelect
+                        gatewayCode={paymentMethod}
+                        accountId={paymentAccountId}
+                        onChange={(next) => {
+                          setPaymentMethod(next.gatewayCode)
+                          setPaymentAccountId(next.accountId)
+                        }}
+                      />
+                    )}
+                    <div className={showCollectedRows ? '' : 'sm:w-1/2'}>
+                      <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Payment Mode</Label>
+                      <select
+                        className='w-full h-9.5 rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
+                        value={paymentMode}
+                        onChange={e => setPaymentMode(e.target.value as any)}
+                      >
+                        <option value='cod'>Cash on Delivery (COD)</option>
+                        <option value='full'>Full Payment</option>
+                        <option value='partial'>Partial Payment (Advance)</option>
+                      </select>
+                    </div>
+                    {paymentMode === 'partial' && !showCollectedRows && (
+                      <div className='p-3.5 bg-muted/40 rounded-xl border border-border/60 space-y-2'>
+                        <div>
+                          <Label className='text-xs font-semibold block text-foreground mb-1'>Advance Paid Amount (৳) *</Label>
+                          <Input
+                            type='number'
+                            step='0.01'
+                            min='0'
+                            value={partialAmount === '0' ? '' : partialAmount}
+                            onChange={e => setPartialAmount(e.target.value)}
+                            onFocus={e => {
+                              if (e.target.value === '0' || partialAmount === '0') {
+                                setPartialAmount('')
+                              } else {
+                                e.target.select()
+                              }
+                            }}
+                            className='h-9.5 text-sm bg-background'
+                            placeholder='0'
+                          />
+                        </div>
+                        <p className='text-xs text-muted-foreground leading-relaxed'>
+                          Advance of ৳{fmt(parseFloat(partialAmount) || 0)} will be recorded as paid now. Balance of ৳{fmt(Math.max(0, total - (parseFloat(partialAmount) || 0)))} will be assigned to courier collection.
+                        </p>
+                      </div>
+                    )}
+                    {showCollectedRows && (
+                      <CreatePaymentsSection
+                        rows={collectedRows}
+                        onRowsChange={setCollectedRows}
+                        txnRequired={txnRequiredFor}
+                        total={total}
+                        creditBalance={creditBalance}
+                        applyCredit={applyCredit}
+                        onApplyCreditChange={setApplyCredit}
+                        creditAmount={creditAmount}
+                        onCreditAmountChange={setCreditAmount}
+                      />
+                    )}
+                  </>
                 )}
               </CardContent>
             </Card>

@@ -95,4 +95,14 @@ export class CreateExchangeOrderDto {
   /** Why paidConfirmed differs from the recorded payments (max 500 chars). */
   @IsOptional() @IsString() @MaxLength(500)
   paidAdjustmentReason?: string;
+
+  /**
+   * How the still-to-collect DIFFERENCE will be taken (the admin exchange
+   * page's Payment Mode cascade). Stamped on the new exchange order; the
+   * money itself is recorded against the exchange order through the normal
+   * payments API right after creation. Defaults to CASH_ON_DELIVERY when
+   * omitted — the historical behaviour of every exchange order.
+   */
+  @IsOptional() @IsIn(['CASH_ON_DELIVERY', 'FULL_PAYMENT', 'PARTIAL_PAYMENT'])
+  paymentOptionType?: 'CASH_ON_DELIVERY' | 'FULL_PAYMENT' | 'PARTIAL_PAYMENT';
 }
