@@ -202,6 +202,7 @@ async function setup(opts: {
             return { subtotal, total: Math.max(0, subtotal + shipping - eff) };
           },
           applyStockForLine,
+          verifyStockForOrder: jest.fn().mockResolvedValue(undefined),
         },
       },
       { provide: OrdersEventService, useValue: { emit: jest.fn() } },

@@ -559,38 +559,60 @@ export class OrdersService {
         });
       }
 
-      if (!wh) {
-        const firstStock = await tx.physicalInventory.findFirst({
+      const alreadyReserved =
+        await this.stockService.hasExistingPhysicalReservation(
+          options.orderId,
+          options.orderItemId,
+          undefined,
+          cycle.id,
+        );
+      if (!alreadyReserved) {
+        // Candidate warehouses, most-preferred first: the caller's/product's
+        // warehouse, then every other warehouse holding a row for this
+        // product+variant. Availability is SUMMED across all bin rows at a
+        // warehouse — reservePhysicalAllocated allocates across bins, so the
+        // check must aggregate the same way. Previously only the single
+        // pinned warehouse and a single row were consulted, so stock sitting
+        // in another warehouse (or split across bins) read as "Available: 0"
+        // and blocked orders/exchanges for products that were in stock.
+        const rows = await tx.physicalInventory.findMany({
           where: { productId, variantId: variantId || null },
-          select: { warehouseId: true },
+          select: { warehouseId: true, quantity: true, reservedQuantity: true },
         });
-        if (firstStock) wh = firstStock.warehouseId;
-      }
-
-      if (wh) {
-        const alreadyReserved =
-          await this.stockService.hasExistingPhysicalReservation(
-            options.orderId,
-            options.orderItemId,
-            undefined,
-            cycle.id,
-          );
-        if (!alreadyReserved) {
-          const existingPi = await tx.physicalInventory.findFirst({
-            where: { productId, variantId: variantId || null, warehouseId: wh },
-          });
-          if (!existingPi) {
+        if (rows.length === 0) {
+          // Preserve the two long-standing behaviours: a resolved/pinned
+          // warehouse with no record anywhere is a hard failure; no
+          // warehouse and no record stays a silent skip.
+          if (wh) {
             throw new BadRequestException(
               `Insufficient physical stock. No physical inventory record found.`,
             );
           }
-          const availablePhysical =
-            existingPi.quantity - existingPi.reservedQuantity;
-          if (availablePhysical < quantity) {
-            throw new BadRequestException(
-              `Insufficient physical stock. Available: ${availablePhysical}, needed: ${quantity}.`,
+        } else {
+          const availableByWarehouse = new Map<string, number>();
+          for (const r of rows) {
+            availableByWarehouse.set(
+              r.warehouseId,
+              (availableByWarehouse.get(r.warehouseId) ?? 0) +
+                (r.quantity - r.reservedQuantity),
             );
           }
+          const candidates = [...availableByWarehouse.keys()].sort((a, b) =>
+            a === wh ? -1 : b === wh ? 1 : 0,
+          );
+          const chosen = candidates.find(
+            (w) => (availableByWarehouse.get(w) ?? 0) >= quantity,
+          );
+          if (!chosen) {
+            const totalAvailable = [...availableByWarehouse.values()].reduce(
+              (s, n) => s + n,
+              0,
+            );
+            throw new BadRequestException(
+              `Insufficient physical stock. Available: ${totalAvailable}, needed: ${quantity}.`,
+            );
+          }
+          wh = chosen;
           await this.stockService.reservePhysicalAllocated({
             orderId: options.orderId,
             cycleId: cycle.id,
@@ -6613,7 +6635,14 @@ export class OrdersService {
     }
   }
 
-  private async verifyStockForOrder(
+  /**
+   * Confirm-time stock verification + physical allocation. Public because
+   * exchange orders are born Confirmed and must run the exact same pass —
+   * previously they skipped it, so the physical allocation a normal order
+   * gets at confirm never happened for an exchange and delivery-time
+   * deduction had nothing allocated to deduct.
+   */
+  async verifyStockForOrder(
     orderId: string,
     tx: Prisma.TransactionClient,
   ) {

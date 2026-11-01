@@ -125,6 +125,21 @@ export function ExchangeOrderSection({ order }: { order: ExchangeSectionOrder | 
   // Source payment → the payment row that BOOKED credit against the original.
   const payments = o.payments ?? []
   const srcPayment = payments.find((p) => p.sourceOrderId) ?? payments.find((p) => p.sourcePaymentId) ?? null
+
+  // settlementDelta is frozen at creation (credit vs. total) and does NOT
+  // know about payments recorded on the exchange order itself afterwards
+  // (e.g. a Full Payment collected at creation). Net those in so the tile
+  // never tells staff to collect money that was already collected: own PAID
+  // rows = everything except the exchange_transfer credit row (identified
+  // by its source pointers); negatives are refunds paid out.
+  const ownPaid = payments
+    .filter((p) => p.status === 'PAID' && !p.sourceOrderId && !p.sourcePaymentId)
+    .reduce((s, p) => s + Number(p.amount ?? 0), 0)
+  const remainingDelta = deltaNum > 0
+    ? Math.max(0, deltaNum - ownPaid)
+    : deltaNum < 0
+      ? Math.max(0, -deltaNum + ownPaid)
+      : 0
   const srcHref = srcPayment ? `/op/orders/${srcPayment.sourceOrderId ?? o.exchangeOfOrderId ?? ''}` : null
   const srcLabel = srcPayment ? (original?.displayId ?? 'Source payment') : null
 
@@ -194,10 +209,10 @@ export function ExchangeOrderSection({ order }: { order: ExchangeSectionOrder | 
             <p className='text-xs text-muted-foreground'>
               {deltaNum > 0 ? 'Collect on delivery' : deltaNum < 0 ? 'Refund pending' : 'No settlement due'}
             </p>
-            <p className={cn('font-semibold', deltaNum > 0 && 'text-amber-600 dark:text-amber-400', deltaNum < 0 && 'text-rose-600 dark:text-rose-400')}>
+            <p className={cn('font-semibold', remainingDelta > 0 && deltaNum > 0 && 'text-amber-600 dark:text-amber-400', remainingDelta > 0 && deltaNum < 0 && 'text-rose-600 dark:text-rose-400')}>
               {delta === null || delta === undefined
                 ? '—'
-                : `${deltaNum > 0 ? '+' : deltaNum < 0 ? '−' : ''}৳${fmt(Math.abs(deltaNum))}`}
+                : `${remainingDelta > 0 && deltaNum > 0 ? '+' : remainingDelta > 0 && deltaNum < 0 ? '−' : ''}৳${fmt(remainingDelta)}`}
             </p>
           </div>
           <div className='rounded-lg border bg-muted/30 px-3 py-2'>

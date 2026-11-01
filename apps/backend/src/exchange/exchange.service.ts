@@ -562,6 +562,16 @@ export class ExchangeService {
           );
         }
 
+        // ---- Confirm-time allocation parity --------------------------------
+        // The exchange order is created directly in the Confirmed status, so
+        // the transition hook a normal order passes through never fires for
+        // it. Run the same verification/allocation pass now: for a
+        // MANAGED_STOCK replacement under inventory management this is what
+        // creates the physical allocation that delivery-time deduction later
+        // consumes (its managed leg no-ops — the reserve above already set
+        // managedStockReserved on every line).
+        await this.ordersService.verifyStockForOrder(created.id, tx);
+
         // ---- Settlement against the original's ACTUAL payments (§4) ------
         const settlement = await this.settle(
           tx,
