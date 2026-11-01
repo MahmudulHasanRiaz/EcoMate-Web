@@ -348,6 +348,27 @@ describe('ExchangeService — lifecycle (§5, §6)', () => {
     expect(store.orders[0].shippingCharge).toBe(0); // nothing copied (§2)
   });
 
+  it('stamps the requested paymentOptionType; defaults to CASH_ON_DELIVERY', async () => {
+    const plain = await setup({ order: makeOrder(), paidAmount: 1000 });
+    await plain.service.createFromOrder(
+      'order-1',
+      { items: [{ productId: 'prod-1', quantity: 1, price: 1000 }] },
+      actor,
+    );
+    expect(plain.store.orders[0].paymentOptionType).toBe('CASH_ON_DELIVERY');
+
+    const full = await setup({ order: makeOrder(), paidAmount: 700 });
+    await full.service.createFromOrder(
+      'order-1',
+      {
+        items: [{ productId: 'prod-1', quantity: 1, price: 769 }],
+        paymentOptionType: 'FULL_PAYMENT',
+      },
+      actor,
+    );
+    expect(full.store.orders[0].paymentOptionType).toBe('FULL_PAYMENT');
+  });
+
   it('copies customer identity but never the original financials', async () => {
     const order = makeOrder({ total: 999, shippingCharge: 120, discount: 55 });
     const { service, store } = await setup({ order, paidAmount: 999 });

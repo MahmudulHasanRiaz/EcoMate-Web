@@ -100,6 +100,23 @@ export function ExchangeScopeDialog({
     return () => clearTimeout(t)
   }, [search, open, step])
 
+  // Partial is only meaningful when a SUBSET can come back: more than one
+  // unit in total across the order's lines (several lines, or one line with
+  // qty > 1). A single-unit order can only ever exchange in full — asking
+  // Full/Partial there is noise, so the chooser is skipped entirely and the
+  // staff lands straight on the exchange order page.
+  const totalUnits = (order?.items ?? []).reduce(
+    (s: number, i: any) => s + (Number(i?.quantity) || 0),
+    0,
+  )
+  const canPartial = totalUnits > 1
+
+  useEffect(() => {
+    if (open && order?.id && !canPartial) goFull()
+    // goFull is stable for a given order; re-run only on open/order change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, order?.id, canPartial])
+
   const returning = pickerLines(order?.items, returnQtys)
   const partialTotal =
     rows.reduce((s, r) => s + r.quantity * (Number(r.price) || 0), 0) +
@@ -151,7 +168,7 @@ export function ExchangeScopeDialog({
           </DialogTitle>
         </DialogHeader>
 
-        {step === 'ask' ? (
+        {!canPartial ? null : step === 'ask' ? (
           <div className='grid grid-cols-1 sm:grid-cols-2 gap-3 py-2'>
             <button
               type='button'
@@ -255,6 +272,17 @@ export function ExchangeScopeDialog({
               </div>
             </div>
 
+            <ExchangePaidConfirm
+              recordedPaid={recordedPaid}
+              exchangeTotal={Math.max(0, partialTotal)}
+              paid={paid}
+              reason={paidReason}
+              confirmed={paidConfirmedChecked}
+              onPaid={setPaid}
+              onReason={setPaidReason}
+              onConfirmed={setPaidConfirmedChecked}
+            />
+
             <div className='flex justify-between gap-2'>
               <Button variant='ghost' onClick={() => setStep('ask')}>Back</Button>
               <div className='flex gap-2'>
@@ -272,17 +300,6 @@ export function ExchangeScopeDialog({
                 </Button>
               </div>
             </div>
-
-            <ExchangePaidConfirm
-              recordedPaid={recordedPaid}
-              exchangeTotal={Math.max(0, partialTotal)}
-              paid={paid}
-              reason={paidReason}
-              confirmed={paidConfirmedChecked}
-              onPaid={setPaid}
-              onReason={setPaidReason}
-              onConfirmed={setPaidConfirmedChecked}
-            />
           </div>
         )}
       </DialogContent>

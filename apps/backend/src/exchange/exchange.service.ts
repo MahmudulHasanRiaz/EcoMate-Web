@@ -497,7 +497,7 @@ export class ExchangeService {
             discount,
             discountType,
             total,
-            paymentOptionType: 'CASH_ON_DELIVERY',
+            paymentOptionType: dto.paymentOptionType ?? 'CASH_ON_DELIVERY',
             paymentStatus: 'UNPAID',
             // Customer + shipping snapshot copied from the original (§2) —
             // identity only, never the original's money.

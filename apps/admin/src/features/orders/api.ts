@@ -566,6 +566,12 @@ export const exchangeApi = {
     paidConfirmed?: number
     /** Why paidConfirmed differs from the recorded payments (max 500 chars). */
     paidAdjustmentReason?: string
+    /**
+     * How the still-to-collect difference will be taken (Payment Mode
+     * cascade on the exchange page). Stamped on the new exchange order;
+     * the money itself is recorded via the payments API after creation.
+     */
+    paymentOptionType?: 'CASH_ON_DELIVERY' | 'FULL_PAYMENT' | 'PARTIAL_PAYMENT'
   }) =>
     apiClient
       .post<{ exchange: OrderResponse; settlement: ExchangeSettlement; mode: 'FULL' | 'PARTIAL'; returnRecord: ReturnRecord | null }>(
