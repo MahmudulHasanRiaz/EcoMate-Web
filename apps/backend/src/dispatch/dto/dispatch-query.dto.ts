@@ -4,6 +4,10 @@ export class DispatchQueryDto {
   @IsOptional()
   @IsString()
   orderId?: string;
+  /** 'true' → only UNMATCHED dispatches (orderId NULL). */
+  @IsOptional()
+  @IsString()
+  unmatched?: string;
   @IsOptional()
   @IsString()
   courier?: string;

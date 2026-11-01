@@ -144,8 +144,8 @@ export class CourierSettlementReconciliationService {
       select: { id: true, orderId: true, consignmentId: true, trackingCode: true },
     });
     for (const d of dispatches) {
-      if (d.consignmentId) indexes.dispatchByConsignment.set(norm(d.consignmentId), { id: d.id, orderId: d.orderId });
-      if (d.trackingCode) indexes.dispatchByTracking.set(norm(d.trackingCode), { id: d.id, orderId: d.orderId });
+      if (d.consignmentId && d.orderId) indexes.dispatchByConsignment.set(norm(d.consignmentId), { id: d.id, orderId: d.orderId });
+      if (d.trackingCode && d.orderId) indexes.dispatchByTracking.set(norm(d.trackingCode), { id: d.id, orderId: d.orderId });
     }
 
     const orders = await this.prisma.order.findMany({

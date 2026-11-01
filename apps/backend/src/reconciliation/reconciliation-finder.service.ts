@@ -388,7 +388,13 @@ export class ReconciliationFinderService {
       where: { status: 'RETURNED' },
       select: { orderId: true },
     });
-    const dispatchOrderIds = [...new Set(returnedDispatches.map((d) => d.orderId))];
+    const dispatchOrderIds = [
+      ...new Set(
+        returnedDispatches
+          .map((d) => d.orderId)
+          .filter((id): id is string => !!id),
+      ),
+    ];
     if (dispatchOrderIds.length) {
       const withReturns = await this.prisma.return.findMany({
         where: { orderId: { in: dispatchOrderIds } },

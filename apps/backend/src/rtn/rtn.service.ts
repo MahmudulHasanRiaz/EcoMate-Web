@@ -596,9 +596,15 @@ export class RtnService {
       where: { id: dispatchId },
     });
     if (!dispatch) throw new NotFoundException('Dispatch not found.');
+    if (!dispatch.orderId) {
+      throw new BadRequestException(
+        'This dispatch is not assigned to an order yet — assign it before finalizing a return.',
+      );
+    }
+    const dispatchOrderId: string = dispatch.orderId;
 
     const order = await this.prisma.order.findUnique({
-      where: { id: dispatch.orderId },
+      where: { id: dispatchOrderId },
       include: { status: true },
     });
     if (!order || order.trashedAt) {
@@ -680,7 +686,7 @@ export class RtnService {
         // report the settled state without mutating anything.
         const current = await tx.dispatch.findUnique({ where: { id: dispatch.id } });
         const freshOrder = await tx.order.findUnique({
-          where: { id: dispatch.orderId },
+          where: { id: dispatchOrderId },
           include: { status: true },
         });
         return {

@@ -164,6 +164,7 @@ describe('DispatchService', () => {
     prisma.dispatch.findUnique.mockResolvedValueOnce({
       id: 'd-1',
       status: 'RETURN_PENDING',
+      orderId: 'order-1',
     });
     prisma.dispatch.updateMany = jest.fn().mockResolvedValue({ count: 1 });
     // findOne result used inside the transaction (claim winner).
@@ -209,7 +210,7 @@ describe('DispatchService', () => {
 
   it('courier DELIVERED sync emits the OrderDelivered lifecycle event for the genuine transition', async () => {
     prisma.dispatch.findUnique
-      .mockResolvedValueOnce({ id: 'd-1', status: 'ASSIGNED_TO_RIDER' })
+      .mockResolvedValueOnce({ id: 'd-1', status: 'ASSIGNED_TO_RIDER', orderId: 'order-1' })
       .mockResolvedValueOnce({
         id: 'd-1',
         orderId: 'order-1',
@@ -445,7 +446,7 @@ describe('DispatchService', () => {
 
   it('never writes a Returned order status via then dispatch sync path', async () => {
     prisma.dispatch.findUnique
-      .mockResolvedValueOnce({ id: 'd-1', status: 'RETURN_PENDING' })
+      .mockResolvedValueOnce({ id: 'd-1', status: 'RETURN_PENDING', orderId: 'order-1' })
       .mockResolvedValueOnce({
         id: 'd-1',
         orderId: 'order-1',
@@ -484,7 +485,7 @@ describe('DispatchService', () => {
 
   it('a staff member can manually move a Partial order forward via dispatch status change', async () => {
     prisma.dispatch.findUnique
-      .mockResolvedValueOnce({ id: 'd-1', status: 'PARTIAL' })
+      .mockResolvedValueOnce({ id: 'd-1', status: 'PARTIAL', orderId: 'order-1' })
       .mockResolvedValueOnce({
         id: 'd-1',
         orderId: 'order-1',

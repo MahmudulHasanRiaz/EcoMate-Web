@@ -11,7 +11,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import { Trash2, Eye, ExternalLink, RefreshCw, ChevronDown, Loader2, CheckCircle2 } from 'lucide-react'
+import { Trash2, Eye, ExternalLink, RefreshCw, ChevronDown, Loader2, CheckCircle2, Link2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { extractOrderScanCode } from '@/lib/order-display'
 import { useAuthStore } from '@/stores/auth-store'
@@ -68,6 +68,9 @@ type DispatchTableProps = {
   onSyncSelected: (ids: string[]) => void
   onConfirmPanelCancel: (id: string) => void
   confirmingId?: string | null
+  onAssign: (dispatch: DispatchResponse) => void
+  unmatchedOnly: boolean
+  onUnmatchedOnlyChange: (value: boolean) => void
 }
 
 function ServerFilterDropdown({
@@ -167,6 +170,9 @@ export function DispatchTable({
   onSyncSelected,
   onConfirmPanelCancel,
   confirmingId,
+  onAssign,
+  unmatchedOnly,
+  onUnmatchedOnlyChange,
 }: DispatchTableProps) {
   const [rowSelection, setRowSelection] = useState({})
   const [sorting, setSorting] = useState<SortingState>([])
@@ -212,11 +218,32 @@ export function DispatchTable({
     {
       accessorKey: 'orderId',
       header: 'Order ID',
-      cell: ({ row }) => (
-        <div className='font-mono text-sm'>
-          {row.original.order?.displayId || row.original.orderId.slice(0, 8)}
-        </div>
-      ),
+      cell: ({ row }) => {
+        const dispatch = row.original
+        if (!dispatch.orderId) {
+          // UNMATCHED: the courier reported this consignment but no order
+          // could be resolved for it — show the invoice it was booked
+          // under so staff can identify and assign it.
+          return (
+            <div className='flex flex-col items-start gap-1'>
+              <span className='font-mono text-sm'>
+                {dispatch.courierInvoiceRef || '—'}
+              </span>
+              <Badge
+                variant='outline'
+                className='border-amber-400 bg-amber-50 text-[11px] font-medium text-amber-800 dark:border-amber-500/50 dark:bg-amber-500/10 dark:text-amber-200'
+              >
+                Unmatched
+              </Badge>
+            </div>
+          )
+        }
+        return (
+          <div className='font-mono text-sm'>
+            {dispatch.order?.displayId || dispatch.orderId.slice(0, 8)}
+          </div>
+        )
+      },
       meta: { className: 'w-28', tdClassName: 'ps-4' },
     },
     {
@@ -386,11 +413,17 @@ export function DispatchTable({
                 <span className='sr-only'>Open menu</span>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align='end' className='w-40'>
+            <DropdownMenuContent align='end' className='w-44'>
               <DropdownMenuItem>
                 <Eye size={16} className='me-2' />
                 View
               </DropdownMenuItem>
+              {!dispatch.orderId && (
+                <DropdownMenuItem onClick={() => onAssign(dispatch)}>
+                  <Link2 size={16} className='me-2' />
+                  Assign to order…
+                </DropdownMenuItem>
+              )}
               {canDelete && (
                 <>
                   <DropdownMenuSeparator />
@@ -474,6 +507,22 @@ export function DispatchTable({
               options={courierFilterOpts}
               counts={courierCounts}
             />
+            <Button
+              variant='outline'
+              size='sm'
+              className={cn(
+                'h-8 border-dashed',
+                unmatchedOnly &&
+                  'border-solid border-amber-400 bg-amber-50 text-amber-800 dark:border-amber-500/50 dark:bg-amber-500/10 dark:text-amber-200',
+              )}
+              onClick={() => onUnmatchedOnlyChange(!unmatchedOnly)}
+              title='Show only courier consignments that are not assigned to an order yet'
+            >
+              Unmatched
+              {unmatchedOnly && (
+                <Cross2Icon className='ms-1 h-3.5 w-3.5' />
+              )}
+            </Button>
           </div>
           {(search || activeFilterCount > 0) && (
             <Button

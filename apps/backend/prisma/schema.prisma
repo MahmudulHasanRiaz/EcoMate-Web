@@ -1678,8 +1678,17 @@ model Return {
 
 model Dispatch {
   id              String         @id @default(uuid())
-  orderId         String
+  // NULL = UNMATCHED: a consignment the courier reported (webhook) that no
+  // order could be resolved for yet — e.g. a courier-panel exchange booked
+  // under the original order's invoice before the exchange existed here.
+  // Staff assign it to an order from the Dispatch list (or the exchange
+  // create flow retro-links it automatically).
+  orderId         String?
   courier         CourierService
+  // The merchant order id / invoice the courier carries for this
+  // consignment, verbatim as received. Recorded on courier-created rows
+  // (esp. unmatched ones) so the row can be matched to an order later.
+  courierInvoiceRef String?
   // NULL until known: staff may create the row before booking the courier;
   // the courier webhook backfills it (see fillManualDispatchIdentifiers).
   consignmentId   String?
@@ -1726,10 +1735,11 @@ model Dispatch {
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
-  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order Order? @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@unique([courier, consignmentId])
   @@index([orderId])
+  @@index([courierInvoiceRef])
   @@index([courier])
   @@index([status])
   @@index([courierStatus])

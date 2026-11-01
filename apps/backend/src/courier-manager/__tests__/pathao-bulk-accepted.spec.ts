@@ -98,6 +98,8 @@ describe('Pathao bulk accepted-rows + webhook completion', () => {
       dispatch: {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
+        count: jest.fn().mockResolvedValue(0),
         upsert: jest.fn().mockResolvedValue({}),
         create: jest.fn().mockImplementation(({ data }: any) =>
           Promise.resolve({ id: `d-${data.orderId}`, ...data }),
@@ -284,6 +286,7 @@ describe('Pathao bulk accepted-rows + webhook completion', () => {
         ),
       },
       dispatch: {
+        count: jest.fn().mockImplementation(({ where }: any) => Promise.resolve(db.dispatches.filter((d) => d.orderId === where?.orderId && d.courier === where?.courier).length)),
         findMany: jest.fn().mockImplementation(({ where }: any) => {
           const ids = Array.isArray(where?.orderId?.in)
             ? where.orderId.in
